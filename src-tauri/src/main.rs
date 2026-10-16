@@ -306,6 +306,7 @@ fn clear_webview_cache_at_launch(identifier: &str) -> Option<String> {
 
 fn main() {
     applog::install_panic_hook();
+    macwindow::log_objc_exceptions();
     let scrubbed_env = shellenv::scrub_inherited_agent_env();
     let path_probe = shellenv::PathProbe::start();
     #[allow(unused_mut)]

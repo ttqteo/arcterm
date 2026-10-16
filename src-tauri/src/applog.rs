@@ -101,7 +101,7 @@ pub fn install_panic_hook() {
             info.location().map(|l| l.to_string()).as_deref(),
             &std::backtrace::Backtrace::force_capture().to_string(),
         );
-        write_panic(&lines);
+        write_now(&lines);
         default_hook(info);
     }));
 }
@@ -127,10 +127,11 @@ fn panic_lines(thread: &str, message: &str, location: Option<&str>, backtrace: &
     lines
 }
 
-fn write_panic(lines: &[String]) {
+/// Writes lines that come just before an abort: a panic's, or an Objective-C exception's (macwindow).
+pub fn write_now(lines: &[String]) {
     let Some(log) = LOG.get() else { return };
-    // never block: the panic may have come from inside write_line on this thread, which holds the lock, so wait only a
-    // moment for another thread's write to finish
+    // never block: the panic or exception may have come from inside write_line on this thread, which holds the lock,
+    // so wait only a moment for another thread's write to finish
     for _ in 0..40 {
         let mut log = match log.try_lock() {
             Ok(log) => log,

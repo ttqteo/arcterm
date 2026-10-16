@@ -56,6 +56,7 @@ fn brings_to_front(u: Unfolded) -> bool {
 #[cfg(target_os = "macos")]
 mod imp {
     use std::cell::{Cell, RefCell};
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::OnceLock;
 
     use objc2::rc::Retained;
@@ -255,6 +256,45 @@ mod imp {
         );
         ns.orderFrontRegardless();
         ns.makeKeyWindow();
+    }
+
+    // An exception AppKit throws inside a tao callback cannot unwind into Rust, so the process aborts and the crash
+    // report keeps only "abort() called" (the tray popover's crash, 2026-10-16). The preprocessor sees each exception
+    // as it is thrown, before any unwinding, and writes the first few to the log with the stack that threw them.
+    static PREV_PREPROCESSOR: OnceLock<unsafe extern "C" fn(*mut AnyObject) -> *mut AnyObject> = OnceLock::new();
+    static EXCEPTIONS_LOGGED: AtomicU32 = AtomicU32::new(0);
+
+    unsafe extern "C" fn log_exception(exception: *mut AnyObject) -> *mut AnyObject {
+        if let Some(e) = unsafe { exception.as_ref() } {
+            // anything can be thrown; only an NSException answers name and reason
+            let is_ns: bool = unsafe { msg_send![e, isKindOfClass: objc2::class!(NSException)] };
+            if is_ns && EXCEPTIONS_LOGGED.fetch_add(1, Ordering::Relaxed) < 20 {
+                let name: Option<Retained<NSString>> = unsafe { msg_send![e, name] };
+                let reason: Option<Retained<NSString>> = unsafe { msg_send![e, reason] };
+                let stack: Option<Retained<AnyObject>> = unsafe { msg_send![objc2::class!(NSThread), callStackSymbols] };
+                let stack: Option<Retained<NSString>> = match stack {
+                    Some(s) => unsafe { msg_send![&*s, description] },
+                    None => None,
+                };
+                let mut lines = vec![format!(
+                    "[tauri] objc exception {}: {}",
+                    name.map(|n| n.to_string()).unwrap_or_default(),
+                    reason.map(|r| r.to_string()).unwrap_or_default()
+                )];
+                let stack = stack.map(|s| s.to_string()).unwrap_or_default();
+                lines.extend(stack.lines().map(|l| format!("[tauri]   {}", l.trim())));
+                applog::write_now(&lines);
+            }
+        }
+        match PREV_PREPROCESSOR.get() {
+            Some(prev) => unsafe { prev(exception) },
+            None => exception,
+        }
+    }
+
+    pub fn log_objc_exceptions() {
+        let prev = unsafe { objc2::ffi::objc_setExceptionPreprocessor(log_exception) };
+        let _ = PREV_PREPROCESSOR.set(prev);
     }
 
     /// Colours the first character of the status item's title (trayicon::MAC_ALERT) red, keeping the button's own
@@ -507,7 +547,34 @@ mod imp {
             assert!(folded.contains(B::CanJoinAllSpaces | B::FullScreenAuxiliary | B::Managed));
             assert!(!folded.intersects(B::MoveToActiveSpace | B::FullScreenPrimary | B::Transient));
         }
+
+        #[test]
+        fn a_thrown_exception_passes_through_the_log_and_on_to_its_catcher() {
+            use objc2::rc::Retained;
+            use objc2::runtime::AnyObject;
+            use objc2::{class, msg_send};
+            use objc2_foundation::ns_string;
+            use std::sync::atomic::Ordering;
+
+            super::log_objc_exceptions();
+            let before = super::EXCEPTIONS_LOGGED.load(Ordering::Relaxed);
+            let caught = objc2::exception::catch(|| unsafe {
+                let e: Retained<AnyObject> = msg_send![class!(NSException), exceptionWithName: ns_string!("ArcProbe"),
+                    reason: ns_string!("thrown by the test"), userInfo: std::ptr::null::<AnyObject>()];
+                let _: () = msg_send![&*e, raise];
+            });
+            let e = caught.expect_err("raise throws").expect("an NSException");
+            let name: Option<Retained<objc2_foundation::NSString>> = unsafe { msg_send![&*e, name] };
+            assert_eq!(name.map(|n| n.to_string()).as_deref(), Some("ArcProbe"));
+            assert_eq!(super::EXCEPTIONS_LOGGED.load(Ordering::Relaxed), before + 1);
+        }
     }
+}
+
+// Runs first thing in main, after the panic hook.
+pub fn log_objc_exceptions() {
+    #[cfg(target_os = "macos")]
+    imp::log_objc_exceptions();
 }
 
 // Runs from setup, on the main thread, once Tauri has installed the app menu.

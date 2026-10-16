@@ -139,7 +139,7 @@ pub fn set_tray_status(app: AppHandle, count: u32, alert: bool, visible: bool) {
     };
     apply(&app, &st);
     if !visible {
-        close(&app);
+        close(&app, "the icon is off");
     }
 }
 
@@ -170,7 +170,7 @@ pub fn wavesrv_gone() {
 
 fn toggle(app: &AppHandle, rect: Rect) {
     if app.get_webview_window(TRAY_LABEL).is_some() {
-        close(app);
+        close(app, "a second click on the icon");
         return;
     }
     {
@@ -207,9 +207,10 @@ fn open(app: &AppHandle) -> tauri::Result<()> {
     let handle = app.clone();
     win.on_window_event(move |ev| {
         if let WindowEvent::Focused(false) = ev {
+            log_line("[tray] the popover lost focus");
             let app = handle.clone();
             // not inside the window's own event: destroying it there tears down what is dispatching
-            let _ = handle.run_on_main_thread(move || close(&app));
+            let _ = handle.run_on_main_thread(move || close(&app, "it lost focus"));
         }
     });
     if cfg!(target_os = "macos") {
@@ -251,9 +252,13 @@ fn place(app: &AppHandle, win: &WebviewWindow) {
     let _ = win.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
 }
 
-fn close(app: &AppHandle) {
+// `why` is logged on either side of the destroy: on the Mac an Objective-C exception aborted the app 2 s after the
+// popover opened, as it lost focus (2026-10-16), and a line before the destroy with none after puts it inside destroy
+fn close(app: &AppHandle, why: &str) {
     if let Some(win) = app.get_webview_window(TRAY_LABEL) {
+        log_line(&format!("[tray] closing the popover: {why}"));
         let _ = win.destroy();
+        log_line("[tray] popover closed");
         state().lock().unwrap().closed_at = Some(Instant::now());
         let _ = app.emit("tray:closed", ());
     }
@@ -275,11 +280,11 @@ fn on_act(app: &AppHandle, payload: &str) {
                 let _ = app.emit_to(TRAY_LABEL, "tray:offline", serde_json::json!({}));
             }
         }
-        "close" => close(app),
+        "close" => close(app, "the page asked"),
         "restart" => app.restart(),
         "quit" => app.exit(0),
         "showlog" => {
-            close(app);
+            close(app, "Show log");
             if let Some(path) = crate::applog::log_path() {
                 if let Err(e) = open::that(&path) {
                     log_line(&format!("[tray] opening {path:?} failed: {e}"));
@@ -287,7 +292,7 @@ fn on_act(app: &AppHandle, payload: &str) {
             }
         }
         "open-monitor" => {
-            close(app);
+            close(app, "the OS monitor");
             let spawned = if cfg!(target_os = "macos") {
                 std::process::Command::new("open").args(["-a", "Activity Monitor"]).spawn()
             } else {
@@ -297,7 +302,7 @@ fn on_act(app: &AppHandle, payload: &str) {
                 log_line(&format!("[tray] opening the OS's monitor failed: {e}"));
             }
         }
-        k if k.starts_with("open-") => close(app),
+        k if k.starts_with("open-") => close(app, k),
         _ => {}
     }
 }
