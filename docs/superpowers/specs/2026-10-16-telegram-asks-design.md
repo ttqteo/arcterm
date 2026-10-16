@@ -88,7 +88,10 @@ one is ignored without a reply. A paired chat's message that is neither `/start`
 gets one fixed reply: "I only answer agent questions. Reply to a question message to answer it." A reply to a
 message whose ask is gone gets "Already answered." instead.
 
-### Reconcile loop (`pkg/telebot/sync.go`)
+After 5 wrong `/start <code>` messages inside a minute, every `/start` is ignored until the minute clears, which caps
+guesses at about 50 per code against a space of 10^6.
+
+### Reconcile loop (`pkg/telebot/state.go`, run by `bot.go`)
 
 Every 2 s it compares the registry with what it has sent (the 8 s grace below makes an event-driven trigger buy
 nothing):
@@ -106,17 +109,21 @@ nothing):
 
 State is memory only. After a restart the still-pending asks are sent again as new messages; that is acceptable for v1.
 
-### Answering (`pkg/telebot/answer.go`)
+### Answering (`pkg/telebot/state.go`, delivered by `bot.go`)
 
 Callback data is short (`a:<n>:<q>:<o>`, `t:<n>:<q>:<o>` toggle, `s:<n>:<q>` send), where `<n>` is a per-process
-counter mapped to the ask id, because Telegram caps callback data at 64 bytes.
+counter mapped to the ask id, because Telegram caps callback data at 64 bytes. The counter starts at the Unix time,
+so a tap on a button sent before a restart matches no ask and reads "Already answered" instead of answering a new ask
+that took the same number.
 
 When the last question is answered, it calls `agentask.DeliverAnswer(oref, askId, answers)` with
 `[]baseds.AgentAnswerItem` (`SelectedIndexes` for buttons, `Text` for a reply). Passing the ask id makes a stale
 answer to a replaced ask fail instead of answering the new one. It is the same claim-then-deliver path the cockpit,
 the Gatekeeper and the dag lead use (`pkg/agentask/deliver.go:52`), so the answer hook records the lifecycle row and
 publishes the clear; a dag child's ask that went back to the lead is no longer counted, and `DeliverAnswer` refuses
-a claimed one. A delivery error edits the message to "Could not answer — open arcterm" and keeps the buttons off.
+a claimed one. A delivery error edits the message to "Could not answer — open arcterm" and keeps the buttons off, except a refusal
+wrapping `agentask.ErrNoPendingAsk` (answered elsewhere between the tap and the delivery), which edits it to
+"✓ Answered in arcterm".
 
 ### Message text
 
