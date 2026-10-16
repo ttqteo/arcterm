@@ -11,15 +11,11 @@ floor 1, and portfolio-journal, vnstock-js-docs and Home on G, show plain carpet
 
 **Depends on:** none
 
-**Files:**
-- Modify: `frontend/app/view/agents/officeplanmodel.ts` (the `// one plant` block after the chip in `buildPlan`; the
-  `Room` type's `plant?: Point`)
-- Modify: `frontend/app/view/agents/officeplanmodel.test.ts` ("a room without a run")
-- Modify: `frontend/app/view/agents/officeboss.ts` (furniture: one pot per plant)
-- Modify: `frontend/app/view/office/scenery.ts` (draw each plant; the value at line ~640 that reads `r.plant`)
-- Modify: `frontend/app/view/office/scenery.test.ts` (where it asserts plants)
-- Modify: `frontend/app/view/agents/cockpitoffice.tsx` (the DEV probe's `plant` field)
-- Modify: `scripts/cdp/cockpitofficescenarios.mjs` (`cockpit-office-floors` step 10)
+**Files:** `frontend/app/view/agents/officeplanmodel.ts`, `frontend/app/view/agents/officeplanmodel.test.ts`, `frontend/app/view/agents/officeboss.ts`, `frontend/app/view/agents/officeboss.test.ts`, `frontend/app/view/office/scenery.ts`, `frontend/app/view/office/scenery.test.ts`, `frontend/app/view/agents/cockpitoffice.tsx`, `scripts/cdp/cockpitofficescenarios.mjs`
+
+Where: the `// one plant` block after the chip in `buildPlan` and the `Room` type's `plant?: Point`; officeboss's
+furniture (one pot per plant); scenery's plant drawing and the value at line ~640 that reads `r.plant`; the DEV probe's
+`plant` field; `cockpit-office-floors` step 10.
 
 **Steps:**
 
