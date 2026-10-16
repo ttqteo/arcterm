@@ -110,13 +110,15 @@ type RunState struct {
 
 // Env is everything a provider reads from outside the filesystem, so tests run against temp dirs and fakes.
 type Env struct {
-	Now              func() time.Time
-	ProjectPaths     func() []string                           // the projects in config
-	RunOfWorktree    func(path string) (runID string, ok bool) // the run that owns an engine tree; ok false for a name the engine never makes
-	RunState         func(ctx context.Context, runID string) (RunState, error)
-	BusyProjects     func(ctx context.Context) (map[string]string, error) // project path -> why its build output must stay now
-	LiveTranscripts  func(ctx context.Context) ([]string, error)          // the transcripts open tabs are writing
-	RemoveWorktree   func(ctx context.Context, projectPath, wt string) error
+	Now             func() time.Time
+	ProjectPaths    func() []string                           // the projects in config
+	RunOfWorktree   func(path string) (runID string, ok bool) // the run that owns an engine tree; ok false for a name the engine never makes
+	RunState        func(ctx context.Context, runID string) (RunState, error)
+	BusyProjects    func(ctx context.Context) (map[string]string, error) // project path -> why its build output must stay now
+	LiveTranscripts func(ctx context.Context) ([]string, error)          // the transcripts open tabs are writing
+	RemoveWorktree  func(ctx context.Context, projectPath, wt string) error
+	// the engine's shared tree root (<user cache dir>/arc-wt), "" or nil when trees stay under each project
+	WorktreeRoot     func() string
 	DataDir          string // <data>: logs, the store, the cache marker
 	TrashDir         string
 	AttachmentsDir   string // ~/.arc/attachments: the images sent with a new agent's task, which its transcript shows
