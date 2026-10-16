@@ -44,7 +44,7 @@ import {
     type GridCard,
     type RowTarget,
 } from "./cardgridlayout";
-import { hiddenAgentIds, rosterLoadPhase, splitRecentlyIdle } from "./cockpitsurfacemodel";
+import { hiddenAgentIds, rosterLoadPhase, rosterOverlay, splitRecentlyIdle } from "./cockpitsurfacemodel";
 import { BackgroundAgentsStrip } from "./backgroundagentsstrip";
 import { backgroundAgentVMsAtom } from "./backgroundagentsstore";
 import { BackgroundedSection } from "./backgroundedsection";
@@ -1006,6 +1006,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     );
 
     const phase = rosterLoadPhase(seeded, [...asking, ...working, ...idle].filter((a) => !hidden.has(a.id)).length);
+    const overlay = rosterOverlay(view, phase);
 
     return (
         <MotionConfig reducedMotion="user">
@@ -1067,12 +1068,12 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
 
                 <div className="relative flex min-h-0 flex-1 flex-col">
                     <AnimatePresence initial={false}>
-                        {phase === "empty" ? (
+                        {overlay === "empty" ? (
                             <CockpitEmptyState
                                 key="empty"
                                 onNewAgent={() => openLauncher(model, "agent")}
                             />
-                        ) : phase === "loading" ? (
+                        ) : overlay === "loading" ? (
                             <CockpitGridSkeleton key="loading" />
                         ) : null}
                     </AnimatePresence>

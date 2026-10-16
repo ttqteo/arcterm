@@ -58,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The Office opens straight onto the office when no agent is running: no grey card placeholders while it loads, and
+  no "No agents running" panel over the rooms. The Cards view keeps both.
 - Highlighted sentences in Claude's replies now show on Team accounts too. Claude Code's security plugin there kept
   the instructions out of the system prompt, so Claude never marked anything; they now ride with your prompt instead.
 - `Esc` in the Office stays in the Office: it only steps back, and no longer reaches the window behind it, where on a

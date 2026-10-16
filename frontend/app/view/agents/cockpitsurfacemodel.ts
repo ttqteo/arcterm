@@ -8,6 +8,7 @@
 import { gridFallbackFocus, gridHold, pruneMissing, type GridState } from "./agentgrid";
 import { isRecentlyIdle, type AgentVM } from "./agentsviewmodel";
 import type { LoadPhase } from "./loadphase";
+import type { CockpitView } from "./officestore";
 import { roleRunId, type Lineage } from "./runlineage";
 
 // a just-finished agent's dismissal is keyed by idle episode (id:idleSince) so a later re-idle re-shows it.
@@ -22,6 +23,16 @@ export function rosterLoadPhase(seeded: boolean, agentCount: number): LoadPhase 
         return "ready";
     }
     return seeded ? "empty" : "loading";
+}
+
+// What the Cockpit lays over its view while the roster has no agents: the grid's skeleton, then its empty state, over
+// the cards only. The office draws its own empty building, its rooms saying "Empty room", and agents take their desks
+// as they load, as they do once the first one is there.
+export function rosterOverlay(view: CockpitView, phase: LoadPhase): "loading" | "empty" | null {
+    if (view === "office") {
+        return null;
+    }
+    return phase === "loading" || phase === "empty" ? phase : null;
 }
 
 export interface ShownAgentInput<T extends { id: string }> {

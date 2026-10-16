@@ -11,6 +11,7 @@ import {
     hiddenAgentIds,
     resolveShownAgent,
     rosterLoadPhase,
+    rosterOverlay,
     splitRecentlyIdle,
     toggleInSet,
     type ShownAgentInput,
@@ -40,6 +41,19 @@ describe("rosterLoadPhase", () => {
     it("is ready whenever there are agents to show, read or not", () => {
         expect(rosterLoadPhase(false, 2)).toBe("ready");
         expect(rosterLoadPhase(true, 1)).toBe("ready");
+    });
+});
+
+describe("rosterOverlay", () => {
+    it("lays the skeleton, then the empty state, over the cards", () => {
+        expect(rosterOverlay("cards", "loading")).toBe("loading");
+        expect(rosterOverlay("cards", "empty")).toBe("empty");
+        expect(rosterOverlay("cards", "ready")).toBeNull();
+    });
+    it("lays nothing over the office, which draws its own empty building", () => {
+        expect(rosterOverlay("office", "loading")).toBeNull();
+        expect(rosterOverlay("office", "empty")).toBeNull();
+        expect(rosterOverlay("office", "ready")).toBeNull();
     });
 });
 

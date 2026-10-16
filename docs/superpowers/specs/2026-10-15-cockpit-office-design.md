@@ -63,6 +63,9 @@ No part calls a model. Every rule reads data arcterm already holds: agent and ta
   agents of the Idle section (an agent idle past the Finished window, which the grid parks there), so a filter
   narrows the office as it narrows the grid. In Office the Idle section is not drawn under it: its agents are in the
   lounge. Background agents and plain terminals stay in their folded sections.
+- The grid's load states are the cards' only (`rosterOverlay`): while the roster loads, and once it holds no agents,
+  Office lays neither the card skeleton nor the "No agents running" panel over the office. Its rooms say "Empty room",
+  and agents take their desks as they load, as they do once the first one is there.
 - Off (Cards), nothing of the office is mounted. Leaving the Cockpit unmounts it, as every surface but Agent does.
 
 ## The plan
