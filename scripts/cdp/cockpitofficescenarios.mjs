@@ -362,8 +362,9 @@ export function makeCockpitOfficeScenarios(fx) {
             const drawsBeforeWalk = (await probe(h))?.sceneryDraws;
 
             // 4. a wall stops the boss, a door lets it through. From loom's desk (below the door) the boss walks right
-            // long enough to reach the room's wall at any office width, and must stop there; then up to the door's
-            // middle and right again, into the hall
+            // until the room's plant pot by the door stops it (officeboss.ts furniture), then up past the door's top
+            // and right again, long enough to reach the room's wall at any office width, and must stop there; then
+            // down to the door's middle and right again, into the hall
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
             const start = await settleBoss(h);
             // the desk click opened its dialog box, where the arrows move the ▶: shut it so they walk
@@ -372,11 +373,15 @@ export function makeCockpitOfficeScenarios(fx) {
             await sleep(150);
             const arc = start?.boxes?.["room:arcterm"];
             const edge = arc ? arc.x + arc.w : NaN;
+            const walkMs = (from, to) => Math.max(0, Math.round((Math.abs(to - from) / BOSS_PX_PER_S) * 1000));
             await focusCockpit(h);
-            await hold(h, "ArrowRight", arc && start?.boss ? Math.round(((edge - start.boss.x) / BOSS_PX_PER_S) * 1000) + 1500 : 4000);
+            await hold(h, "ArrowRight", arc && start?.boss ? walkMs(start.boss.x, edge) + 1500 : 4000);
+            const atPot = await settleBoss(h, 1000);
+            await hold(h, "ArrowUp", atPot?.boss && arc?.door ? walkMs(atPot.boss.y, arc.door.y - 16) : 400);
+            await hold(h, "ArrowRight", 1500);
             const blocked = await settleBoss(h, 1000);
             const doorMid = arc?.door ? arc.door.y + arc.door.h / 2 : NaN;
-            await hold(h, "ArrowUp", blocked?.boss && arc?.door ? Math.max(0, Math.round(((blocked.boss.y - doorMid) / BOSS_PX_PER_S) * 1000)) : 400);
+            await hold(h, "ArrowDown", blocked?.boss && arc?.door ? walkMs(blocked.boss.y, doorMid) : 400);
             await hold(h, "ArrowRight", 2500);
             const through = await settleBoss(h, 1000);
             rec(
@@ -385,7 +390,7 @@ export function makeCockpitOfficeScenarios(fx) {
                     blocked.boss.x >= edge - 3 &&
                     blocked.boss.x <= edge &&
                     through?.boss?.room === "hall",
-                JSON.stringify({ edge, doorMid, blocked: blocked?.boss, through: through?.boss })
+                JSON.stringify({ edge, doorMid, atPot: atPot?.boss, blocked: blocked?.boss, through: through?.boss })
             );
 
             // 4b. desks are solid: from loom's spot the boss walks up and stops in front of the desk, still at it with ↵
@@ -930,8 +935,8 @@ export function makeCockpitOfficeScenarios(fx) {
                             ? `localStorage.removeItem(${JSON.stringify(VIEW_KEY)})`
                             : `localStorage.setItem(${JSON.stringify(VIEW_KEY)}, ${JSON.stringify(ctx.prevView)})`
                     );
+                    // the temp dir is the run's cwd: teardownFixtureRun removes it once the run is cancelled
                     if (ctx.prevFixture != null) writeFileSync(FIXTURE, ctx.prevFixture);
-                    rmSync(ctx.cwd, { recursive: true, force: true });
                 },
             });
         },
@@ -1213,8 +1218,9 @@ export function makeCockpitOfficeScenarios(fx) {
 
             // 9b. a HUD filter that hides the open box's desk: the box goes and the keys walk. probe.layer is the raw
             // layer atom, so the box's absence is read from probe.dialog
+            // the boss may start across the office: the walk to quill's desk can outlast settleBoss's default 4 s
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-quill"))})?.click()`);
-            const inBox = await settleBoss(h);
+            const inBox = await settleBoss(h, 12000);
             const chipSel = `[...document.querySelectorAll('[data-office-hud] [aria-label="Show"] button')].find((b) => b.textContent.includes("working"))`;
             await h.ev(`${chipSel}?.click()`);
             await sleep(300);
