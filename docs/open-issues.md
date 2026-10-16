@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-16 (the Office's sounds)**
+
+- [ ] (arcterm) In the real app: Cockpit → Office with real agents and a run. Are the jingles pleasant and the default
+  volume right; does the music (Settings → Appearance → Office music) duck under a jingle and stop when arcterm loses
+  focus; do the footsteps and the wall bump feel right with Boss sounds on. The `office-sound` scenario logged the cues
+  only and played no sound. `officeaudio.ts`, `officescores.ts`, `officesound.tsx`.
+
 **2026-10-16 (the Office's pet boss)**
 
 - [ ] (arcterm) In the installed app: Cockpit → Office with Spider-Man picked. He swings in through a window, unmasks
@@ -925,6 +932,9 @@ Tracked in their own initiatives, not here:
   so it joins the production-build re-measure already open. Budgets: 5 MB, 2,000, 2 %, 0.5 %, 0.3 %, 600, 1 MB, 150 ms.
   The pet's entrance is a one-off 0.5 to 2.2 s as the office opens and is skipped in the bench (`entrance: "skip"`), so
   none of these include it.
+- **Office music** (2026-10-16, not measured): to measure by hand: arcterm's WebView2 processes in Task Manager, Office
+  open, music off then on for a minute (spec estimate 1–3 MB). Nothing exists with the Office closed or music off but
+  the jingles' short-lived nodes. The `office-sound` scenario logs the cues and plays no sound, so it reads no memory.
 
 ---
 

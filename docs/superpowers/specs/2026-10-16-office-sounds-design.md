@@ -1,7 +1,7 @@
 # Office sounds — design
 
 **Date:** 2026-10-16
-**Status:** design agreed, not built
+**Status:** built
 **Changes:** nothing in `2026-10-15-cockpit-office-design.md` or `2026-10-16-office-floors-design.md`; it adds sound to
 the office they draw. It stands apart from the office's four parts and does not wait on part 2 (coins): that part
 adds a `coin` cue to the table below and nothing else.
