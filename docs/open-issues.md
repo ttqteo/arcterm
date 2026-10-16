@@ -71,6 +71,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   chip per reviewer in the DAG view; a round-2 resubmit shows one `Round-2 follow-up`. `agenttree.tsx`.
 - [ ] (arcterm) Settings → Background AI → Radar: a **Commit classifier** row under Radar audit, its placeholder
   `haiku` on claude and `pi default` on pi. `settingspages/backgroundai.tsx`.
+- [ ] (arcterm) Agent sidebar → a project's Conversations: an ended orchestrator run whose lead landed in `arc-wt`
+  shows as one run entry under that project, not missing (counted in "elsewhere") or under a key like `006c403f`.
+  `agentsidebarmodel.ts` `projectKeyResolver`, `sessionruns.go` `fillEngineTreeRoots`.
 - [ ] (arcterm) A Claude agent's background command (`run_in_background`) that redirects stdout to a file is refused
   with the "Claude Code already saves…" reason; `2>&1`, `> $null` and a foreground redirect pass. `guard-core.ts`.
 - [ ] (arcterm) Settings → Storage → Run worktrees lists the trees under `%LOCALAPPDATA%rc-wt` with their project and

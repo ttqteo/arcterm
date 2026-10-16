@@ -287,6 +287,9 @@ type SessionActivity struct {
 	TaskId     string `json:"taskid,omitempty"`
 	Role       string `json:"role,omitempty"`
 	StageRunId string `json:"stagerunid,omitempty"`
+	// ProjectRoot is set for a run's session whose cwd is one of the engine's trees: the checkout of the run's
+	// project, which the sidebar files it under. ProjectPath stays the tree, where its transcript lives.
+	ProjectRoot string `json:"projectroot,omitempty"`
 }
 
 type PathCommandData struct {

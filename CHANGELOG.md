@@ -126,6 +126,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Settings → Storage sees the engine's trees**: Run worktrees now lists and cleans the trees runs leave in
   `arc-wt` (under your cache folder), not only the old `.waveterm/worktrees`. A tree whose run this app does not
   know, such as one the dev app and the installed arcterm share, is left to its own button.
+- **Finished orchestrator runs show under their project again**: in the Agent sidebar's Conversations, a run whose
+  lead and workers ran in arcterm's own tree folder (`arc-wt`) is filed under its project instead of under the tree's
+  name, where the sidebar hid it.
 - **A background command's log is never empty**: a Claude agent that starts a background command with its output
   redirected to a file (`task dev > dev.log`) is told to drop the redirect, since Claude Code already keeps that
   output in the file the Background tasks and Servers lists open.
