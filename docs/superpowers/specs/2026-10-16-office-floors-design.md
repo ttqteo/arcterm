@@ -53,7 +53,11 @@ The Office menu (`m`) lists each of these with its key, plus `Arrange automatica
 - **The foot of the building:** on G, the facade (brick, the glass doors, the **ARCTERM** sign); above G, a plain
   outer wall with windows.
 - **Minimum size:** a floor is drawn no smaller than the office's 900 px minimum width (rooms 317 px wide) and rooms
-  300 px tall. A shorter view scrolls the floor rather than shrinking its rooms further.
+  300 px tall. A shorter view scrolls the floor rather than shrinking its rooms further: below a 676 px tall Office
+  (e.g. 1,050 × 650) the floor scrolls by the shortfall, since two 300 px rooms, the walls and the foot strip need
+  676 px. A taller view gives its extra height to the rooms: a room is half of the view's height less 94 px (the top
+  wall, the wall between the rows, the 40 px foot strip and 18 px of margin). The foot strip takes the 18 px and the
+  odd pixel the halving leaves, so the floor fills the view exactly.
 
 ## A room
 
@@ -71,7 +75,7 @@ One kind of room for every project, drawn by the `Room` board.
 - **A project with no run** has no table: the strip is carpet with a plant. There is no empty meeting room.
 - **Capacity comes from the room's size:** desks per row `⌊(w − 24) / 116⌋`, desk rows `max(1, ⌊(h − 124 − 60) / 110⌋)`,
   tables `max(1, ⌊(w − 10) / 190⌋)`. At a 1,050 × 650 Office a room is about 390 × 300: 3 desks and 2 tables. At
-  1,600 × 1,000 it is about 660 × 480: 10 desks and 3 tables.
+  1,600 × 1,000 it is about 667 × 453: 10 desks and 3 tables.
 - **What does not fit goes in one chip** at the right of the title row: `+3 agents · +1 run`. While someone in it asks,
   the chip is amber and starts with `!`. The chip is a stop in the office order: ↵ at it opens the dialog box with one
   row per hidden agent or run (name and state word); ↵ on a row opens that card beside the chip.

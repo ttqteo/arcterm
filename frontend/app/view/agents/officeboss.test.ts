@@ -43,6 +43,18 @@ const plan = buildPlan({
 });
 const room = (k: string) => plan.rooms.find((r) => r.key === k)!;
 const a1 = spotOf(plan, "a1")!;
+// a floor with all four rooms taken (Home, a, b, c), the rooms narrow and short, asks and runs among them
+const full = buildPlan({
+    agents: [
+        ...["a", "b", "c"].flatMap((p) => [ag(`${p}1`, p), ag(`${p}2`, p, "asking")]),
+        ...[1, 2, 3, 4, 5].map((i) => ag(`h${i}`)),
+    ],
+    runs: [run("r1", "a"), run("r2", "c")],
+    width: 900,
+    now: 0,
+    away: {},
+    night: false,
+});
 
 // every 3 px along every segment must be floor: a corner check alone would let a path cut through a wall
 function offFloor(p: Plan, path: Point[]): Point[] {
@@ -79,12 +91,17 @@ describe("officeboss", () => {
     });
 
     it("stops at a wall and goes through a door", () => {
+        // alpha is in the right column: its wall is on its right, its door on its left
         const r = room("room:alpha");
         const blocked = stepToward(plan, a1, "right", 600);
         expect(blocked.x).toBeLessThanOrEqual(r.box.x + r.box.w);
         expect(roomAt(plan, blocked)).toBe("room:alpha");
-        const atDoor = { x: a1.x, y: r.door!.y + r.door!.h / 2 };
-        expect(roomAt(plan, stepToward(plan, atDoor, "right", 600))).toBe("hall");
+        const atDoor = { x: r.door!.x + r.door!.w + 8, y: r.door!.y + r.door!.h / 2 };
+        expect(roomAt(plan, stepToward(plan, atDoor, "left", 60))).toBe("hall");
+        // Home is in the left column: the other way round
+        const home = room("room:Home");
+        const homeDoor = { x: home.door!.x - 8, y: home.door!.y + home.door!.h / 2 };
+        expect(roomAt(plan, stepToward(plan, homeDoor, "right", 60))).toBe("hall");
     });
 
     it("does not tunnel through a wall on a long step", () => {
@@ -114,24 +131,15 @@ describe("officeboss", () => {
         expect(offFloor(plan, pathBetween(plan, h1, spotOf(plan, "r1")!))).toEqual([]);
     });
 
-    it("walks from every desk to every other desk and seat on a tall Home booth, never off the floor", () => {
-        const tall = buildPlan({
-            agents: [
-                ...["a", "b", "c", "d"].flatMap((p) => [ag(`${p}1`, p), ag(`${p}2`, p, "asking")]),
-                ...[1, 2, 3, 4, 5].map((i) => ag(`h${i}`)),
-            ],
-            runs: [run("r1", "a"), run("r2", "d")],
-            width: 900,
-            now: 0,
-            away: {},
-            night: false,
-        });
-        const keys = [...tall.desks.map((d) => d.key), ...tall.seats.map((s) => s.key)];
-        expect(tall.desks.filter((d) => d.room === "room:home")).toHaveLength(5);
+    it("walks from every desk to every other desk and seat on a full floor, never off the floor", () => {
+        const keys = [...full.desks.map((d) => d.key), ...full.seats.map((s) => s.key)];
+        // Home's narrow room seats two of its five, the rest are in its chip
+        expect(full.desks.filter((d) => d.room === "room:Home")).toHaveLength(2);
+        expect(full.rooms.filter((r) => r.kind === "agents")).toHaveLength(4);
         for (const from of keys) {
             for (const to of keys) {
-                const path = pathBetween(tall, spotOf(tall, from)!, spotOf(tall, to)!);
-                expect(offFloor(tall, path), `${from} -> ${to}`).toEqual([]);
+                const path = pathBetween(full, spotOf(full, from)!, spotOf(full, to)!);
+                expect(offFloor(full, path), `${from} -> ${to}`).toEqual([]);
             }
         }
     });
@@ -199,7 +207,7 @@ describe("officeboss", () => {
         expect(canWalk(plan, { x: d.x + 40, y: d.y + 10 })).toBe(false); // the desk top
         expect(canWalk(plan, { x: d.x + 40, y: d.y - 10 })).toBe(false); // the person at it
         expect(canStand(plan, { x: d.x + 40, y: d.y + 10 })).toBe(true); // still floor, for a jump's path
-        const t = room(plan.seats.find((x) => x.key === "r1")!.room).table!;
+        const t = room(plan.seats.find((x) => x.key === "r1")!.zone).table!;
         expect(canWalk(plan, { x: t.x + t.w / 2, y: t.y + 10 })).toBe(false);
         expect(canWalk(plan, spotOf(plan, "r1")!)).toBe(true);
         for (const s of [...plan.desks, ...plan.seats]) {
@@ -286,7 +294,7 @@ describe("officeboss", () => {
             expect(cardAt(plan, { at: spot, path: [], holding: "left" }, BOARD_KEY)).toBeUndefined();
         });
 
-        it("walks from a desk, a seat and Home's booth to it, on floor all the way", () => {
+        it("walks from a desk, a seat and Home's room to it, on floor all the way", () => {
             for (const from of ["a1", "b1", "r1", "h1"]) {
                 const path = pathBetween(plan, spotOf(plan, from)!, spot);
                 expect(path[path.length - 1], from).toEqual(spot);
@@ -296,23 +304,12 @@ describe("officeboss", () => {
             }
         });
 
-        it("stays on the floor of a tall Home booth too", () => {
-            const tall = buildPlan({
-                agents: [
-                    ...["a", "b", "c", "d"].map((p) => ag(`${p}1`, p)),
-                    ...[1, 2, 3, 4, 5].map((i) => ag(`h${i}`)),
-                ],
-                runs: [run("r1", "a"), run("r2", "d")],
-                width: 900,
-                now: 0,
-                away: {},
-                night: false,
-            });
-            for (const key of [...tall.desks.map((d) => d.key), ...tall.seats.map((s) => s.key)]) {
-                expect(offFloor(tall, pathBetween(tall, spotOf(tall, key)!, tall.board.spot)), key).toEqual([]);
-                expect(offFloor(tall, pathBetween(tall, tall.board.spot, spotOf(tall, key)!)), key).toEqual([]);
+        it("stays on the floor of a full floor too", () => {
+            for (const key of [...full.desks.map((d) => d.key), ...full.seats.map((s) => s.key)]) {
+                expect(offFloor(full, pathBetween(full, spotOf(full, key)!, full.board.spot)), key).toEqual([]);
+                expect(offFloor(full, pathBetween(full, full.board.spot, spotOf(full, key)!)), key).toEqual([]);
             }
-            expect(canWalk(tall, tall.board.spot)).toBe(true);
+            expect(canWalk(full, full.board.spot)).toBe(true);
         });
     });
 
@@ -355,7 +352,7 @@ describe("officeboss", () => {
         expect(bossLook(null)).toBeNull();
     });
 
-    it("orders j/k stops band by band: the agents' room by rows, then its meeting seats, Home last", () => {
+    it("orders j/k stops room by room: Home first, each room's desks by rows, then its table's seats, then its chip", () => {
         const p = buildPlan({
             agents: [
                 ag("z9", "zeta"),
@@ -381,8 +378,13 @@ describe("officeboss", () => {
             away: {},
             night: false,
         });
-        // alpha's four agents run by rows of three, then its run's lead and tasks; zeta next; Home's agents last
-        expect(p.order).toEqual(["a1", "a2", "a3", "a4", "ra", "ra:t1", "ra:t2", "z9", "rz", "rz:t1", "h1", "h2"]);
+        // Home's room is the first slot; alpha's fourth agent has no desk (a room seats three at this width) and is in
+        // its chip, which comes after its run's lead and tasks; zeta's room next
+        expect(p.order).toEqual([
+            ...["h1", "h2"],
+            ...["a1", "a2", "a3", "ra", "ra:t1", "ra:t2", "chip:room:alpha"],
+            ...["z9", "rz", "rz:t1"],
+        ]);
     });
 
     it("walks n's target through both doors, on floor, with its dots starting at the boss", () => {

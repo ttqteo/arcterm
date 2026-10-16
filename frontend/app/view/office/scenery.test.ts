@@ -208,10 +208,13 @@ describe("scenery", () => {
 
     it("darkens a room with no one at work, its wall face included", () => {
         const p = plan();
-        const home = p.rooms.find((r) => r.key === "room:home")!;
+        const home = p.rooms.find((r) => r.key === "room:Home")!;
         expect(home.lit).toBe(false);
-        const dark = rects(scenery(p, "day", false).over, "dark").find((r) => r.x === art(home.box.x))!;
-        expect(dark.y).toBe(art(home.box.y) - 3);
+        // the rooms of a column share their x, so the tint is found by its top as well
+        const dark = rects(scenery(p, "day", false).over, "dark").find(
+            (r) => r.x === art(home.box.x) && r.y === art(home.box.y) - 3
+        )!;
+        expect(dark).toBeDefined();
         expect(dark.h).toBe(art(home.box.y + home.box.h) - art(home.box.y) + 3);
     });
 
@@ -317,7 +320,7 @@ describe("sceneryKey", () => {
     it("changes with a room's light and with a desk's light alone", () => {
         const p = plan();
         const k = key(p);
-        expect(key({ ...p, rooms: p.rooms.map((r) => (r.key === "room:home" ? { ...r, lit: !r.lit } : r)) })).not.toBe(
+        expect(key({ ...p, rooms: p.rooms.map((r) => (r.key === "room:Home" ? { ...r, lit: !r.lit } : r)) })).not.toBe(
             k
         );
         expect(

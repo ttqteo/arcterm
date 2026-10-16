@@ -1,13 +1,16 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Cockpit office's floor plan (cockpit office spec, "The plan" and "Poses"): the cards the grid would draw and
-// the Idle section's agents, laid out as a band of rooms per project around a hall, with every room, door, wall,
-// desk, seat and label, the office order the keyboard walks, and which rooms have their lights on. Pure: no React,
-// no DOM; sizes are CSS pixels at the office's width.
+// The Cockpit office's floor plan (cockpit office spec, "The plan" and "Poses"; office floors spec): one floor of the
+// building, four project rooms in a 2 x 2 around the hall, each holding its agents' desks above and its runs' tables
+// in a strip at its foot, with the lounge, the notice board and the lift in the hall. It holds every room, door, wall,
+// desk, seat and label, the office order the keyboard walks, which rooms have their lights on, what does not fit a
+// room (its chip), and a summary of every other floor. Pure: no React, no DOM; sizes are CSS pixels at the office's
+// width.
 
 import type { SeatPose } from "@/app/view/office/plansprite";
 import { shortAge, type Away } from "./officebehavior";
+import { EMPTY_LAYOUT, floorLabel, floorsShown, placeRooms, SLOTS, type Placements } from "./officelayout";
 
 export interface Box {
     x: number;
@@ -53,16 +56,29 @@ export interface PlanInput {
     agents: PlanAgent[];
     runs: PlanRun[];
     width: number;
-    // the height to fill, the view's: the building grows to it when what it holds is shorter
+    // the height to fill, the view's: the rooms grow to it, but never under two ROOM_MIN_H rooms (a shorter view scrolls)
     height?: number;
+    // the floor to build: G (0) unless told, and the nearest floor that holds a room when that one does not
+    floor?: number;
+    // which floor and slot each project's room takes; the rooms arranged automatically unless told
+    at?: Placements;
     now: number;
     away: Record<string, Away>;
     night: boolean;
 }
 
-export type RoomKind = "agents" | "meeting" | "lounge" | "home";
+export type RoomKind = "agents" | "meeting" | "lounge" | "empty";
 export type DoorSide = "left" | "right" | "top";
 export type ScreenCell = "done" | "work" | "wait" | "fail";
+/** What did not fit a room: one chip at the right of its title row, a stop in the office order. */
+export interface RoomChip {
+    box: Box;
+    spot: Point; // where the boss stands to open it
+    key: string;
+    text: string; // `+3 agents · +1 run`
+    ask: boolean; // someone in it asks
+    hidden: string[]; // the agent ids, then the run ids, it holds
+}
 export interface Room {
     key: string;
     kind: RoomKind;
@@ -72,10 +88,14 @@ export interface Room {
     title: string;
     sub: string;
     lit: boolean;
+    slot?: number; // an agents' or empty room's place on its floor: row * 2 + column
     runId?: string;
     table?: Box;
     more?: number;
     screen?: ScreenCell[];
+    parent?: string; // a table zone's project room
+    chip?: RoomChip;
+    plant?: Point;
 }
 export type Tone = "plain" | "asking" | "done" | "muted";
 export type Light = "working" | "asking" | "off";
@@ -99,7 +119,8 @@ export interface Desk {
 }
 export interface Seat {
     key: string;
-    room: string;
+    room: string; // the project room it is in
+    zone: string; // the table zone it sits at
     runId: string;
     taskId?: string;
     x: number; // the person's left edge
@@ -123,17 +144,25 @@ export interface Lounger {
     label: string; // `name · age`, the person's title
     harness?: string;
 }
+/** One floor of the building as the lift panel lists it. */
+export interface FloorSummary {
+    floor: number;
+    label: string; // "G", "1", "2"…
+    rooms: string[]; // the projects in its rooms, by slot
+    asks: number; // asking agents, leads and tasks in them, the hidden ones too
+    lit: boolean;
+}
 export interface Plan {
     width: number;
     height: number;
-    body: Box; // under the outer top wall, above the facade
+    body: Box; // under the outer top wall, above the foot strip
     hall: Box;
-    hallFloor: Box[]; // where one may stand in the hall: all of it but Home's booth
+    hallFloor: Box[]; // where one may stand in the hall: all of it
     lounge: Box;
     coffee: Point; // feet at the coffee machine
     sofa: Point; // feet on the sofa
-    entrance: Box;
-    rooms: Room[];
+    entrance: Box; // the glass doors in the foot strip, drawn on G only
+    rooms: Room[]; // each project's (or empty) room by slot, its table zones after it, then the lounge
     walls: Box[];
     desks: Desk[];
     seats: Seat[];
@@ -141,29 +170,42 @@ export interface Plan {
     loungeOverflow: string[]; // agent ids with no spot left: their desk is empty, the lounge draws only "+N"
     loungeMore: Box; // where "+N in the lounge" goes
     board: { box: Box; spot: Point }; // the Needs you notice board in the hall, and where the boss stands at it
+    lift: { doors: Box; dial: Box; spot: Point }; // the lift at the hall's foot, and where the boss stands at it
+    floor: number; // the floor built
+    floors: FloorSummary[]; // every floor that holds a room, from G up
+    ground: boolean; // the floor built is G
     order: string[];
-    asks: string[];
+    asks: string[]; // this floor's asks, in office order
+    otherAsks: { key: string; floor: number }[]; // the asks on the other floors, in floor order then office order
 }
 
 export const WALL = 8; // a vertical wall: its top only
 export const HWALL = 18; // a horizontal wall: top 8, face 10
 export const HALL_W = 234;
 export const MIN_W = 900;
-export const DESK_DX = 120;
-export const DESK_DY = 130;
-export const ROOM_TOP = 120; // the first desk row's top below its room's top
-export const MEETING_H = 132;
-export const SEAT_DX = 56; // the widest seat pitch; a narrow room seats closer
+export const DESK_DX = 116;
+export const DESK_DY = 110;
+export const ROOM_TOP = 104; // the first desk row's top below its room's top
+export const ROOM_MIN_H = 300; // a room is never shorter: a shorter view scrolls the floor
+export const MEET_H = 124; // the strip of table zones at a room's foot
+export const TABLE_W = 190; // one table zone
+const TABLE_TOP = 51; // a table's top below its zone's: the far side's heads above it, the near side and the boss's spot below
+export const SEAT_DX = 56; // the widest seat pitch; a narrow zone seats closer
 const SEAT_PAD = 12;
-export const MAX_SEATS = 12; // the lead and eleven tasks
+export const TABLE_SEATS = 5; // the lead and four tasks
+const DESK_SPOT_DY = 84; // the boss's feet below a desk top: between its row's desks and the next row's
 export const LOUNGE_H = 230;
 export const BOARD_KEY = "board:needs-you"; // the notice board's cursor key, like a desk's
+export const LIFT_KEY = "lift"; // the lift's, the same
+export const CHIP_KEY = (roomKey: string) => `chip:${roomKey}`; // a room's chip, the same
 export const BOARD_W = 96;
 export const BOARD_H = 96;
 const BOARD_GAP = 16; // the board's top below the lounge's foot
 const BOARD_SPOT_DY = 22; // the boss's feet below the board's foot
-const BOARD_FOOT = 40; // the hall under the board: its spot, and clear of Home's booth wall
-export const BOOTH_W = 152;
+const LIFT_W = 70;
+const LIFT_H = 68;
+const CHIP_H = 20;
+const CHIP_CHAR_W = 6.4; // the chip's label is 11 px text
 export const FACADE_H = 40;
 export const DOOR = 50;
 export const LOUNGE_PERSON_W = 42; // a person's sprite: 14 cells of PLAN_CELL px
@@ -173,7 +215,6 @@ export const POPUP_H = 320;
 export const POPUP_BIG_W = 720; // the card grown with ⤢ or f
 export const POPUP_BIG_H = 640;
 export const HOME = "Home";
-export const OTHER_RUNS = "Other runs";
 
 const RUNNING = new Set(["running"]);
 const AT_WORK = new Set(["ready", "running", "reviewing", "verifying", "blocked-merge"]);
@@ -227,6 +268,8 @@ export function peopleDrawn(plan: Plan, walking: ReadonlySet<string>, boss: bool
 
 const byName = (a: PlanAgent, b: PlanAgent) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
 const byStart = (a: PlanRun, b: PlanRun) => (a.createdTs ?? 0) - (b.createdTs ?? 0) || a.id.localeCompare(b.id);
+// runs at work take the tables before the ones that are done, then by start
+const byTable = (a: PlanRun, b: PlanRun) => Number(a.done) - Number(b.done) || byStart(a, b);
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 type Look = Pick<Desk, "pose" | "animated" | "light" | "dim" | "word" | "tone" | "bubble"> & { state: string };
@@ -307,19 +350,18 @@ export function runLit(r: PlanRun): boolean {
     return r.leadAsking || r.tasks.some((t) => t.asking || RUNNING.has(t.state));
 }
 
-/** A vertical wall with its doors left open. */
 /** Pure: the box of the card beside the desk the boss stands at, kept inside the office's box: on the hall's side of
- *  the desk (right of the agents' room, left of a meeting room), POPUP_H tall or the office's height, and where its
- *  pointer to the desk sits on the box's edge. The box sets the card's height: a card fills its box and scrolls,
- *  as it fills its share of a column in the grid. Big, it takes the room that side has, up to POPUP_BIG_W, never
- *  less than the small card. */
+ *  the desk (right of a left-column room, left of a right-column one: the side its door is on), POPUP_H tall or the
+ *  office's height, and where its pointer to the desk sits on the box's edge. The box sets the card's height: a card
+ *  fills its box and scrolls, as it fills its share of a column in the grid. Big, it takes the room that side has, up
+ *  to POPUP_BIG_W, never less than the small card. */
 export function popupBox(
     size: { width: number; height: number },
     anchor: Point,
-    room: Pick<Room, "kind" | "box">,
+    room: Pick<Room, "box" | "doorSide">,
     big = false
 ): { box: Box; right: boolean; pointerTop: number } {
-    const right = room.kind !== "meeting";
+    const right = room.doorSide !== "left";
     const h = Math.min(big ? POPUP_BIG_H : POPUP_H, size.height);
     const side = right ? size.width - (anchor.x + 100) : room.box.x;
     const w = big ? Math.max(POPUP_W, Math.min(POPUP_BIG_W, side)) : POPUP_W;
@@ -329,6 +371,7 @@ export function popupBox(
     return { box: { x, y, w, h }, right, pointerTop };
 }
 
+/** A vertical wall with its doors left open. */
 export function cut(wall: Box, doors: Box[]): Box[] {
     const out: Box[] = [];
     let y = wall.y;
@@ -344,6 +387,136 @@ export function cut(wall: Box, doors: Box[]): Box[] {
     return out;
 }
 
+const projectOf = (project?: string) => project?.trim() || HOME;
+
+/** Pure: the rooms the cards need, in arranging order: Home first (when an agent or a run has no project), then the
+ *  project names by localeCompare. The office's arrangement (officelayout.ts) places exactly these. */
+export function projectsOf(agents: readonly PlanAgent[], runs: readonly PlanRun[]): string[] {
+    const names = new Set<string>();
+    for (const a of agents) {
+        names.add(projectOf(a.project));
+    }
+    for (const r of runs) {
+        names.add(projectOf(r.project));
+    }
+    const rest = [...names].filter((n) => n !== HOME).sort((a, b) => a.localeCompare(b));
+    return names.has(HOME) ? [HOME, ...rest] : rest;
+}
+
+interface Cards {
+    agents: PlanAgent[]; // by name
+    runs: PlanRun[]; // the table order
+}
+function groupCards(agents: readonly PlanAgent[], runs: readonly PlanRun[]): Map<string, Cards> {
+    const out = new Map<string, Cards>();
+    const of = (name: string) => {
+        let c = out.get(name);
+        if (c == null) {
+            c = { agents: [], runs: [] };
+            out.set(name, c);
+        }
+        return c;
+    };
+    for (const a of agents) {
+        of(projectOf(a.project)).agents.push(a);
+    }
+    for (const r of runs) {
+        of(projectOf(r.project)).runs.push(r);
+    }
+    for (const c of out.values()) {
+        c.agents.sort(byName);
+        c.runs.sort(byTable);
+    }
+    return out;
+}
+
+// how much a room of this size holds: desks per row and rows, and table zones across the strip at its foot
+interface Capacity {
+    perRow: number;
+    rows: number;
+    tables: number;
+}
+const capacityOf = (w: number, h: number): Capacity => ({
+    perRow: Math.max(1, Math.floor((w - 24) / DESK_DX)),
+    rows: Math.max(1, Math.floor((h - MEET_H - 60) / DESK_DY)),
+    tables: Math.max(1, Math.floor((w - 10) / TABLE_W)),
+});
+
+const seatKey = (r: PlanRun, t: PlanTask) => t.key ?? `${r.id}:${t.id}`;
+
+// what a project's room holds, before any geometry: who sits, which runs have a table, the chip, the lights, and the
+// stops the keyboard walks. The built floor and the summaries of the other floors both read it, so they agree.
+interface Fill {
+    seated: PlanAgent[];
+    tabled: PlanRun[];
+    chip?: { text: string; ask: boolean; hidden: string[] };
+    lit: boolean;
+    asks: number; // asking agents, leads and tasks, the hidden ones too
+    order: string[];
+    askKeys: string[];
+}
+function fillRoom(roomKey: string, c: Cards, cap: Capacity): Fill {
+    const seated = c.agents.slice(0, cap.perRow * cap.rows);
+    const hidden = c.agents.slice(seated.length);
+    const tabled = c.runs.slice(0, cap.tables);
+    const hiddenRuns = c.runs.slice(tabled.length);
+    const order: string[] = seated.map((a) => a.id);
+    const askKeys: string[] = seated.filter((a) => a.state === "asking").map((a) => a.id);
+    for (const r of tabled) {
+        order.push(r.id);
+        if (r.leadAsking) {
+            askKeys.push(r.id);
+        }
+        for (const t of r.tasks.slice(0, TABLE_SEATS - 1)) {
+            order.push(seatKey(r, t));
+            if (t.asking) {
+                askKeys.push(seatKey(r, t));
+            }
+        }
+    }
+    let chip: Fill["chip"];
+    if (hidden.length || hiddenRuns.length) {
+        const text = [
+            hidden.length ? `+${plural(hidden.length, "agent")}` : "",
+            hiddenRuns.length ? `+${plural(hiddenRuns.length, "run")}` : "",
+        ]
+            .filter(Boolean)
+            .join(" · ");
+        const ask =
+            hidden.some((a) => a.state === "asking") ||
+            hiddenRuns.some((r) => r.leadAsking || r.tasks.some((t) => t.asking));
+        chip = { text, ask, hidden: [...hidden.map((a) => a.id), ...hiddenRuns.map((r) => r.id)] };
+        order.push(CHIP_KEY(roomKey));
+        if (ask) {
+            askKeys.push(CHIP_KEY(roomKey));
+        }
+    }
+    const asks =
+        c.agents.filter((a) => a.state === "asking").length +
+        c.runs.reduce((n, r) => n + (r.leadAsking ? 1 : 0) + r.tasks.filter((t) => t.asking).length, 0);
+    return {
+        seated,
+        tabled,
+        chip,
+        lit: c.agents.some((a) => a.state !== "idle") || tabled.some(runLit),
+        asks,
+        order,
+        askKeys,
+    };
+}
+
+// the floor to build: the one asked for when it holds a room, else the nearest one below it, else the lowest
+function clampFloor(want: number, shown: readonly number[]): number {
+    const f = Number.isFinite(want) ? Math.trunc(want) : 0;
+    if (shown.includes(f)) {
+        return f;
+    }
+    if (f > shown[shown.length - 1]) {
+        return shown[shown.length - 1];
+    }
+    return [...shown].reverse().find((s) => s < f) ?? shown[0];
+}
+
 export function buildPlan(input: PlanInput): Plan {
     const width = Math.max(MIN_W, Math.round(input.width));
     const colW = Math.floor((width - 4 * WALL - HALL_W) / 2);
@@ -351,56 +524,48 @@ export function buildPlan(input: PlanInput): Plan {
     const hallX = leftX + colW + WALL;
     const rightX = hallX + HALL_W + WALL;
     const top = HWALL;
+    // two rows of rooms and the wall between them fill the view, but a room is never shorter than ROOM_MIN_H
+    const rowH = Math.max(ROOM_MIN_H, Math.floor(((input.height ?? 0) - top - HWALL - FACADE_H - HWALL) / 2));
+    const bodyH = 2 * rowH + HWALL;
+    const cap = capacityOf(colW, rowH);
 
-    // a band per project with an agent or a run, by name; agents with no project go to Home's booth
-    const bands = new Map<string, { agents: PlanAgent[]; runs: PlanRun[] }>();
-    const band = (name: string) => {
-        let b = bands.get(name);
-        if (b == null) {
-            b = { agents: [], runs: [] };
-            bands.set(name, b);
-        }
-        return b;
-    };
-    const home: PlanAgent[] = [];
-    for (const a of input.agents) {
-        const p = a.project?.trim();
-        if (p) {
-            band(p).agents.push(a);
-        } else {
-            home.push(a);
+    const cards = groupCards(input.agents, input.runs);
+    const at = input.at ?? placeRooms(EMPTY_LAYOUT, projectsOf(input.agents, input.runs)).at;
+    // only the projects with a card hold a room
+    const placed: Placements = {};
+    const fills = new Map<string, Fill>();
+    for (const [name, place] of Object.entries(at)) {
+        const c = cards.get(name);
+        if (c != null) {
+            placed[name] = place;
+            fills.set(name, fillRoom(`room:${name}`, c, cap));
         }
     }
-    for (const r of input.runs) {
-        band(r.project?.trim() || OTHER_RUNS).runs.push(r);
-    }
-    const names = [...bands.keys()].sort((a, b) => a.localeCompare(b));
-    home.sort(byName);
-
-    const heights = names.map((n) => {
-        const b = bands.get(n)!;
-        b.agents.sort(byName);
-        b.runs.sort(byStart);
-        const rows = Math.max(1, Math.ceil(b.agents.length / 3));
-        const meetings = Math.max(1, b.runs.length);
-        return Math.max(ROOM_TOP + rows * DESK_DY, meetings * MEETING_H + (meetings - 1) * HWALL);
+    const shown = floorsShown(placed);
+    const floor = clampFloor(input.floor ?? 0, shown);
+    // the projects of a floor, by slot
+    const onFloor = (f: number) =>
+        Object.keys(placed)
+            .filter((n) => placed[n].floor === f)
+            .sort((a, b) => placed[a].slot - placed[b].slot);
+    const floors: FloorSummary[] = shown.map((f) => {
+        const names = onFloor(f);
+        return {
+            floor: f,
+            label: floorLabel(f),
+            rooms: names,
+            asks: names.reduce((n, p) => n + fills.get(p)!.asks, 0),
+            lit: names.some((p) => fills.get(p)!.lit),
+        };
     });
-    const boothH = home.length ? 60 + home.length * DESK_DY : 0;
-    const bandsH = heights.reduce((s, h) => s + h, 0) + Math.max(0, heights.length - 1) * HWALL;
-    // Home's booth sits at the hall's foot: its top wall must clear the last band's door (at most y + 200 down)
-    const lastY = bandsH - (heights[heights.length - 1] ?? 0);
-    const boothClear = boothH ? lastY + 150 + DOOR + 10 + boothH + HWALL : 0;
-    const bodyH = Math.max(
-        bandsH,
-        LOUNGE_H + (boothH ? boothH + HWALL : 0) + 80,
-        // the notice board under the lounge, its spot clear of Home's booth wall
-        LOUNGE_H + BOARD_GAP + BOARD_H + BOARD_FOOT + (boothH ? boothH + HWALL : 0),
-        boothClear,
-        Math.floor((input.height ?? 0) - top - FACADE_H)
-    );
-    // the last band stretches to the hall when the hall is the taller
-    if (heights.length > 0 && bodyH > bandsH) {
-        heights[heights.length - 1] += bodyH - bandsH;
+    const otherAsks = shown
+        .filter((f) => f !== floor)
+        .flatMap((f) => onFloor(f).flatMap((p) => fills.get(p)!.askKeys.map((key) => ({ key, floor: f }))));
+    const slotOf = new Map<number, string>();
+    for (const name of onFloor(floor)) {
+        if (!slotOf.has(placed[name].slot)) {
+            slotOf.set(placed[name].slot, name);
+        }
     }
 
     const rooms: Room[] = [];
@@ -413,10 +578,12 @@ export function buildPlan(input: PlanInput): Plan {
     const leftDoors: Box[] = [];
     const rightDoors: Box[] = [];
 
-    const placeDesks = (list: PlanAgent[], room: Room, x0: number, y0: number, perRow: number) => {
+    const placeDesks = (list: PlanAgent[], room: Room) => {
+        const x0 = room.box.x + 24;
+        const y0 = room.box.y + ROOM_TOP;
         list.forEach((a, i) => {
-            const x = x0 + (i % perRow) * DESK_DX;
-            const y = y0 + Math.floor(i / perRow) * DESK_DY;
+            const x = x0 + (i % cap.perRow) * DESK_DX;
+            const y = y0 + Math.floor(i / cap.perRow) * DESK_DY;
             const away = input.away[a.id];
             const { state, ...look } = agentLook(a, input.now, away, input.night);
             desks.push({
@@ -424,16 +591,12 @@ export function buildPlan(input: PlanInput): Plan {
                 room: room.key,
                 x,
                 y,
-                spot: { x: x + 40, y: y + 108 },
+                spot: { x: x + 40, y: y + DESK_SPOT_DY },
                 ...look,
                 name: a.name,
                 tip: `${a.name} · ${state} (Enter opens the card)`,
                 harness: a.harness,
             });
-            order.push(a.id);
-            if (a.state === "asking") {
-                asks.push(a.id);
-            }
             if (away && !input.night && a.state === "idle") {
                 const age = a.idleSince != null ? `idle ${shortAge(input.now - a.idleSince)}` : "idle";
                 lounging.push({
@@ -449,28 +612,28 @@ export function buildPlan(input: PlanInput): Plan {
         });
     };
 
-    const placeSeats = (r: PlanRun, room: Room) => {
-        const shown = r.tasks.slice(0, MAX_SEATS - 1);
-        const far = Math.ceil((shown.length + 1) / 2);
-        // the table and its chairs stay SEAT_PAD off the walls: a narrow room (eleven tasks at MIN_W) seats its
-        // people closer together rather than past its walls
-        const maxW = room.box.w - 2 * SEAT_PAD;
+    // a run's lead and its first four tasks round the table of its zone; every seat is in the project room
+    const placeSeats = (r: PlanRun, zone: Room, project: Room) => {
+        const shownTasks = r.tasks.slice(0, TABLE_SEATS - 1);
+        const far = Math.ceil((shownTasks.length + 1) / 2);
+        // the table and its chairs stay SEAT_PAD off the zone's edges, so two zones side by side leave a lane between
+        // their tables; with three people on the far side they sit closer than SEAT_DX
+        const maxW = zone.box.w - 2 * SEAT_PAD;
         const dx = Math.min(SEAT_DX, Math.floor((maxW - 30) / far));
-        const tw = Math.min(maxW, Math.max(170, far * dx + 30));
-        const inner = room.box.x + SEAT_PAD;
-        const tx = Math.min(inner + maxW - tw, Math.max(inner, room.box.x + Math.round((room.box.w - tw) / 2) - 20));
-        const ty = room.box.y + Math.round(room.box.h / 2) + 12;
-        room.table = { x: tx, y: ty, w: tw, h: 33 };
-        if (r.tasks.length > shown.length) {
-            room.more = r.tasks.length - shown.length;
+        const tx = zone.box.x + SEAT_PAD;
+        const ty = zone.box.y + TABLE_TOP;
+        zone.table = { x: tx, y: ty, w: maxW, h: 33 };
+        if (r.tasks.length > shownTasks.length) {
+            zone.more = r.tasks.length - shownTasks.length;
         }
-        const spotY = Math.min(room.box.y + room.box.h - 6, ty + 76);
+        const spotY = zone.box.y + zone.box.h - 6;
         const lead = r.leadAsking
             ? { pose: "hand" as const, animated: true, bubble: "!" as const }
             : { pose: (r.done ? "doze" : "sit") as SeatPose, animated: false };
         seats.push({
             key: r.id,
-            room: room.key,
+            room: project.key,
+            zone: zone.key,
             runId: r.id,
             x: tx + 20,
             bottom: ty + 6,
@@ -479,11 +642,7 @@ export function buildPlan(input: PlanInput): Plan {
             lane: 0,
             tip: `${r.title} · lead (Enter opens the run)`,
         });
-        order.push(r.id);
-        if (r.leadAsking) {
-            asks.push(r.id);
-        }
-        shown.forEach((t, i) => {
+        shownTasks.forEach((t, i) => {
             const n = i + 1; // seat 0 is the lead
             const farSide = n % 2 === 0;
             const k = Math.floor(n / 2);
@@ -492,10 +651,10 @@ export function buildPlan(input: PlanInput): Plan {
             // the near side shows its back, but an asking worker raises a hand on either side
             const pose: SeatPose =
                 look.pose === "empty" ? "empty" : farSide || look.pose === "hand" ? look.pose : "back";
-            const key = t.key ?? `${r.id}:${t.id}`;
             seats.push({
-                key,
-                room: room.key,
+                key: seatKey(r, t),
+                room: project.key,
+                zone: zone.key,
                 runId: r.id,
                 taskId: t.id,
                 x,
@@ -507,100 +666,107 @@ export function buildPlan(input: PlanInput): Plan {
                 lane: n,
                 tip: `Task ${n} · ${t.label} · ${t.asking ? "Needs you" : t.state}`,
             });
-            order.push(key);
-            if (t.asking) {
-                asks.push(key);
-            }
         });
     };
 
-    let y = top;
-    names.forEach((name, bi) => {
-        const b = bands.get(name)!;
-        const h = heights[bi];
+    for (let slot = 0; slot < SLOTS; slot++) {
+        const right = slot % 2 === 1;
+        const x = right ? rightX : leftX;
+        const y = top + Math.floor(slot / 2) * (rowH + HWALL);
+        const box: Box = { x, y, w: colW, h: rowH };
+        // high on the hall-side wall
+        const door: Box = { x: right ? rightX - WALL : leftX + colW, y: y + 60, w: WALL, h: DOOR };
+        (right ? rightDoors : leftDoors).push(door);
+        const doorSide: DoorSide = right ? "left" : "right";
+        const name = slotOf.get(slot);
+        if (name == null) {
+            rooms.push({
+                key: `empty:${floor}:${slot}`,
+                kind: "empty",
+                box,
+                door,
+                doorSide,
+                title: "Empty room",
+                sub: "Drag a room here",
+                lit: false,
+                slot,
+            });
+            continue;
+        }
+
+        const c = cards.get(name)!;
+        const fill = fills.get(name)!;
+        const key = `room:${name}`;
         const sub = [
-            b.agents.length ? plural(b.agents.length, "agent") : "",
-            b.runs.length ? plural(b.runs.length, "run") : "",
+            c.agents.length ? plural(c.agents.length, "agent") : "",
+            c.runs.length ? plural(c.runs.length, "run") : "",
         ]
             .filter(Boolean)
             .join(" · ");
-        const agentsRoom: Room = {
-            key: `room:${name}`,
+        const project: Room = {
+            key,
             kind: "agents",
-            box: { x: leftX, y, w: colW, h },
-            door: { x: leftX + colW, y: y + Math.min(150, h - DOOR - 10), w: WALL, h: DOOR },
-            doorSide: "right",
+            box,
+            door,
+            doorSide,
             title: name,
             sub: sub || "no one here",
-            lit: b.agents.some((a) => a.state !== "idle"),
+            lit: fill.lit,
+            slot,
         };
-        rooms.push(agentsRoom);
-        leftDoors.push(agentsRoom.door!);
-        placeDesks(b.agents, agentsRoom, leftX + 32, y + ROOM_TOP, 3);
+        rooms.push(project);
+        placeDesks(fill.seated, project);
 
-        // a meeting room per run, the last stretched to the band; a band with no run keeps an empty one
-        const runs: (PlanRun | undefined)[] = b.runs.length ? b.runs : [undefined];
-        let ry = y;
-        runs.forEach((r, ri) => {
-            const rh = ri === runs.length - 1 ? y + h - ry : MEETING_H;
-            const done = r ? r.tasks.filter((t) => t.state === "done").length : 0;
-            const room: Room = {
-                key: r ? `meet:${r.id}` : `meet:${name}`,
+        const zy = y + rowH - MEET_H;
+        fill.tabled.forEach((r, i) => {
+            const done = r.tasks.filter((t) => t.state === "done").length;
+            const zone: Room = {
+                key: `meet:${r.id}`,
                 kind: "meeting",
-                box: { x: rightX, y: ry, w: colW, h: rh },
-                door: { x: rightX - WALL, y: ry + 50, w: WALL, h: DOOR },
-                doorSide: "left",
-                title: r ? r.title : "Meeting room",
-                sub: r ? `run · ${done} of ${r.tasks.length} done` : "no run",
-                lit: r ? runLit(r) : false,
-                runId: r?.id,
-                screen: r ? r.tasks.map(screenCell) : undefined,
+                box: { x: x + 8 + i * TABLE_W, y: zy, w: TABLE_W, h: MEET_H },
+                title: r.title,
+                sub: `run · ${done} of ${r.tasks.length} done`,
+                lit: runLit(r),
+                runId: r.id,
+                screen: r.tasks.slice(0, 12).map(screenCell),
+                parent: key,
             };
-            rooms.push(room);
-            rightDoors.push(room.door!);
-            if (r) {
-                placeSeats(r, room);
-            }
-            if (ri < runs.length - 1) {
-                walls.push({ x: rightX, y: ry + rh, w: colW, h: HWALL });
-            }
-            ry += rh + HWALL;
+            rooms.push(zone);
+            placeSeats(r, zone, project);
         });
-        if (bi < names.length - 1) {
-            walls.push({ x: leftX, y: y + h, w: colW, h: HWALL }, { x: rightX, y: y + h, w: colW, h: HWALL });
-        }
-        y += h + HWALL;
-    });
 
-    // the hall: the lounge at its top, Home's booth at its foot by the entrance
+        if (fill.chip) {
+            const w = Math.ceil((fill.chip.text.length + 2) * CHIP_CHAR_W) + 14; // room for the "! " an ask puts first
+            const cbox: Box = { x: x + colW - 14 - w, y: y + 8, w, h: CHIP_H };
+            project.chip = {
+                box: cbox,
+                spot: { x: Math.round(cbox.x + w / 2), y: cbox.y + cbox.h + 22 },
+                key: CHIP_KEY(key),
+                ...fill.chip,
+            };
+        }
+        // one plant: top right while the first desk row has a place free, else in the strip's left when no table is there
+        if (fill.seated.length < cap.perRow) {
+            project.plant = { x: x + colW - 44, y: y + 64 };
+        } else if (fill.tabled.length === 0) {
+            project.plant = { x: x + 16, y: zy + 50 };
+        }
+        order.push(...fill.order);
+        asks.push(...fill.askKeys);
+    }
+    // a wall between each column's two rows
+    walls.push({ x: leftX, y: top + rowH, w: colW, h: HWALL }, { x: rightX, y: top + rowH, w: colW, h: HWALL });
+
+    // the hall: the lounge at its top, the notice board under it, the lift at its foot by the entrance
     const hall: Box = { x: hallX, y: top, w: HALL_W, h: bodyH };
     const lounge: Box = { x: hallX, y: top, w: HALL_W, h: LOUNGE_H };
     rooms.push({ key: "lounge", kind: "lounge", box: lounge, title: "Lounge", sub: "", lit: true });
-    let hallFloor: Box[] = [hall];
-    if (home.length) {
-        const by = top + bodyH - boothH;
-        const booth: Room = {
-            key: "room:home",
-            kind: "home",
-            box: { x: hallX, y: by, w: BOOTH_W, h: boothH },
-            door: { x: hallX + 52, y: by - HWALL, w: 40, h: HWALL },
-            doorSide: "top",
-            title: HOME,
-            sub: plural(home.length, "agent"),
-            lit: home.some((a) => a.state !== "idle"),
-        };
-        rooms.push(booth);
-        walls.push(
-            { x: hallX, y: by - HWALL, w: 52, h: HWALL },
-            { x: hallX + 92, y: by - HWALL, w: BOOTH_W - 92, h: HWALL },
-            { x: hallX + BOOTH_W, y: by - HWALL, w: WALL, h: boothH + HWALL }
-        );
-        placeDesks(home, booth, hallX + 40, by + 70, 1);
-        hallFloor = [
-            { x: hallX, y: top, w: HALL_W, h: bodyH - boothH - HWALL },
-            { x: hallX + BOOTH_W + WALL, y: by - HWALL, w: HALL_W - BOOTH_W - WALL, h: boothH + HWALL },
-        ];
-    }
+    const foot = top + bodyH;
+    const lift = {
+        doors: { x: hallX + 20, y: foot - LIFT_H, w: LIFT_W, h: LIFT_H },
+        dial: { x: hallX + 29, y: foot - LIFT_H - 26, w: 52, h: 26 },
+        spot: { x: hallX + 55, y: foot - 84 },
+    };
 
     walls.push(
         { x: 0, y: 0, w: width, h: HWALL },
@@ -623,10 +789,10 @@ export function buildPlan(input: PlanInput): Plan {
     };
     const loungers: Lounger[] = [];
     const loungeOverflow: string[] = [];
-    for (const at of ["sofa", "coffee"] as const) {
-        const free = LOUNGE_SPOTS.filter((s) => s.at === at);
+    for (const place of ["sofa", "coffee"] as const) {
+        const free = LOUNGE_SPOTS.filter((s) => s.at === place);
         lounging
-            .filter((l) => l.at === at)
+            .filter((l) => l.at === place)
             .sort(byIdle)
             .forEach((l, i) => {
                 const s = free[i];
@@ -634,15 +800,15 @@ export function buildPlan(input: PlanInput): Plan {
                     loungeOverflow.push(l.agentId);
                     return;
                 }
-                const h = at === "sofa" ? SEATED_H : STANDING_H;
-                const x = lounge.x + s.x;
+                const h = place === "sofa" ? SEATED_H : STANDING_H;
+                const lx = lounge.x + s.x;
                 const bottom = lounge.y + s.bottom;
                 loungers.push({
                     agentId: l.agentId,
-                    at,
-                    x,
+                    at: place,
+                    x: lx,
                     bottom,
-                    box: { x, y: bottom - h, w: LOUNGE_PERSON_W, h },
+                    box: { x: lx, y: bottom - h, w: LOUNGE_PERSON_W, h },
                     labelBox: { ...s.label, x: lounge.x + s.label.x, y: lounge.y + s.label.y },
                     name: l.name,
                     age: l.age,
@@ -654,10 +820,11 @@ export function buildPlan(input: PlanInput): Plan {
 
     return {
         width,
-        height: top + bodyH + FACADE_H,
+        // the foot strip takes whatever the view has over the rooms: brick on G, a plain wall above
+        height: Math.max(top + bodyH + FACADE_H, Math.floor(input.height ?? 0)),
         body: { x: 0, y: top, w: width, h: bodyH },
         hall,
-        hallFloor,
+        hallFloor: [hall],
         lounge,
         coffee,
         sofa,
@@ -670,7 +837,12 @@ export function buildPlan(input: PlanInput): Plan {
         loungeOverflow,
         loungeMore: { x: lounge.x + 8, y: lounge.y + 106, w: 150, h: LOUNGE_LABEL_H },
         board,
+        lift,
+        floor,
+        floors,
+        ground: floor === 0,
         order,
         asks,
+        otherAsks,
     };
 }

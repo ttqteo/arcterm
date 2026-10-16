@@ -168,7 +168,7 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
     under.fill(body.x, body.y, body.w, body.h, "tiles");
     for (const r of plan.rooms) {
         const b = artBox(r.box);
-        if (r.kind === "agents" || r.kind === "home") {
+        if (r.kind === "agents") {
             under.fill(b.x, b.y, b.w, b.h, "wood");
         }
         if (r.kind === "meeting") {
