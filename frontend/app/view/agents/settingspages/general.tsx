@@ -105,6 +105,7 @@ function WindowRows() {
     const choice = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize")));
     const autoSprout = autoSproutOn(useAtomValue(getSettingsKeyAtom("window:autosprout")));
     const trayOn = (useAtomValue(getSettingsKeyAtom("app:tray")) as boolean | undefined) ?? true;
+    const trayMemory = (useAtomValue(getSettingsKeyAtom("app:traymemory")) as boolean | undefined) ?? true;
     const corner = spotCorner(useAtomValue(sproutSpotAtom));
     const cornerItems: ContextMenuItem[] = SPROUT_CORNERS.map((c) => ({
         label: SPROUT_CORNER_LABEL[c],
@@ -154,6 +155,13 @@ function WindowRows() {
                     on={trayOn}
                     onToggle={() => writeConfig({ "app:tray": !trayOn })}
                     label={isMacOS() ? "Show arcterm in the menu bar" : "Show arcterm in the tray"}
+                />
+            </SettingRow>
+            <SettingRow id="app.traymemory">
+                <Toggle
+                    on={trayMemory}
+                    onToggle={() => writeConfig({ "app:traymemory": !trayMemory })}
+                    label="Show the memory free beside the icon"
                 />
             </SettingRow>
         </>

@@ -165,3 +165,8 @@ export function traySnapshot(i: TraySnapshotInput): TraySnapshot {
 export function trayBadge(rows: PeekRow[], pressure: string): { count: number; alert: boolean } {
     return { count: rows.length, alert: pressure === "critical" };
 }
+
+/** The memory free beside the icon (`app:traymemory`, on unless set off), or null to show none; 0 is no reading. */
+export function trayMemFree(on: boolean, available: number): number | null {
+    return on && available > 0 ? available : null;
+}

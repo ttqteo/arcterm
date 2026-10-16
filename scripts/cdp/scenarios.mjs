@@ -45015,7 +45015,7 @@ const trayActions = {
     async teardown() {},
 };
 
-// --- Settings → General: the menu bar / tray icon's toggle -------------------------------------
+// --- Settings → General: the menu bar / tray icon's toggles -------------------------------------
 // Settings opens on Appearance, so the scenario picks General first. The icon itself is the host's and has no CDP view.
 const traySettingsRow = {
     name: "tray-settings-row",
@@ -45034,12 +45034,23 @@ const traySettingsRow = {
                 `document.querySelector('[data-setting-row="app.tray"] [role="switch"]')?.getAttribute("aria-label") ?? ""`
             )) ?? "";
         const ok = found && (text.includes("Show arcterm in the menu bar") || text.includes("Show arcterm in the tray"));
+        const memSwitch = `document.querySelector('[data-setting-row="app.traymemory"] [role="switch"]')`;
+        const mem =
+            (await h.ev(
+                `(() => { const s = ${memSwitch}; return s ? s.getAttribute("aria-label") + " " + s.getAttribute("aria-checked") : ""; })()`
+            )) ?? "";
         await h.shot("cdp-shots/tray-settings-row.png");
         return [
             {
                 step: "1. Settings → General offers the menu bar icon's toggle",
                 ok,
                 detail: found ? text : "no [data-setting-row=app.tray]",
+            },
+            {
+                // unset is on: the memory free shows beside the icon until it is switched off
+                step: "2. under it, the memory free beside the icon, on by default",
+                ok: mem === "Show the memory free beside the icon true",
+                detail: mem || "no [data-setting-row=app.traymemory]",
             },
         ];
     },

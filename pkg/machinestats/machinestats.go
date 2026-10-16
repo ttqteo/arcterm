@@ -139,16 +139,37 @@ func Read(ctx context.Context) (Stats, error) {
 	return st, nil
 }
 
-// WatchPressure calls publish with the level's word at start and each time it changes, reading it every interval
-// until ctx ends. On macOS a reading is one sysctl.
-func WatchPressure(ctx context.Context, read func(context.Context) jobqueue.Pressure, interval time.Duration, publish func(string)) {
+// MemReading is what WatchMemory reads: the pressure's word and the memory available, 0 with no reading.
+type MemReading struct {
+	Level     string
+	Available uint64
+}
+
+// ReadMemory is one MemReading. On macOS it is a few sysctls and one host_statistics64.
+func ReadMemory(ctx context.Context) MemReading {
+	r := MemReading{Level: PressureWord(jobqueue.ReadPressure(ctx))}
+	if vm, err := mem.VirtualMemoryWithContext(ctx); err == nil {
+		r.Available = vm.Available
+	}
+	return r
+}
+
+// a tenth of a GiB: the step the tray's figure shows (frontend fmtSize, trayicon.rs fmt_mem)
+const memStep = (1 << 30) / 10
+
+// WatchMemory calls publish at start and each time the level's word or the memory available, to the tenth of a GiB,
+// changes, reading both every interval until ctx ends.
+func WatchMemory(ctx context.Context, read func(context.Context) MemReading, interval time.Duration, publish func(MemReading)) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
-	last, first := "", true
+	var last MemReading
+	first := true
+	steps := func(b uint64) uint64 { return (b + memStep/2) / memStep }
 	for {
-		if w := PressureWord(read(ctx)); first || w != last {
-			publish(w)
-			last, first = w, false
+		r := read(ctx)
+		if first || r.Level != last.Level || steps(r.Available) != steps(last.Available) {
+			publish(r)
+			last, first = r, false
 		}
 		select {
 		case <-ctx.Done():

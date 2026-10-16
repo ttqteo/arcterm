@@ -17,6 +17,9 @@
         "app:tray": {
           "type": "boolean"
         },
+        "app:traymemory": {
+          "type": "boolean"
+        },
         "notify:*": {
           "type": "boolean"
         },

@@ -2863,6 +2863,7 @@ declare global {
     // wshrpc.MemoryPressureData
     type MemoryPressureData = {
         level: string;
+        memavailable: number;
     };
 
     // waveobj.MetaTSType
@@ -3602,6 +3603,7 @@ declare global {
         "app:ctrlvpaste"?: boolean;
         "app:disablectrlshiftdisplay"?: boolean;
         "app:tray"?: boolean;
+        "app:traymemory"?: boolean;
         "notify:*"?: boolean;
         "notify:os"?: boolean;
         "notify:toast"?: boolean;

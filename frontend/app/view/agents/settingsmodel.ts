@@ -205,6 +205,16 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             scope: "synced",
                             config: true,
                         },
+                        {
+                            id: "app.traymemory",
+                            title: "Free memory beside the icon",
+                            desc: isMacOS()
+                                ? "The memory free, as the popover's Memory card reads it, beside arcterm's icon in the menu bar. It follows within 10 seconds."
+                                : "The memory free, as the popover's Memory card reads it, in the tray icon's tooltip. It follows within 10 seconds.",
+                            key: "app:traymemory",
+                            scope: "synced",
+                            config: true,
+                        },
                     ],
                 },
                 {

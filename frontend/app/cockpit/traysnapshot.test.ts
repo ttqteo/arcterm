@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { trayBadge, traySnapshot, type TraySnapshotInput } from "./traysnapshot";
+import { trayBadge, trayMemFree, traySnapshot, type TraySnapshotInput } from "./traysnapshot";
 
 const GB = 1024 ** 3;
 const NOW = 1_800_000_000_000;
@@ -214,5 +214,13 @@ describe("trayBadge", () => {
     it("counts what waits and raises the dot only at critical", () => {
         expect(trayBadge([row("a", "ask", "x", "q")], "critical")).toEqual({ count: 1, alert: true });
         expect(trayBadge([], "high")).toEqual({ count: 0, alert: false });
+    });
+});
+
+describe("trayMemFree", () => {
+    it("sends the memory free while the setting is on and wavesrv has a reading", () => {
+        expect(trayMemFree(true, 1.1 * 2 ** 30)).toBe(1.1 * 2 ** 30);
+        expect(trayMemFree(false, 1.1 * 2 ** 30)).toBeNull();
+        expect(trayMemFree(true, 0)).toBeNull();
     });
 });

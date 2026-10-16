@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The cockpit's side of the menu bar / tray popover (spec 2026-10-15-tray-popover-design.md): it keeps the icon's
-// count and red dot current (set_tray_status), and while the popover is open it sends it a TraySnapshot built from
+// count, red dot and memory free current (set_tray_status), and while the popover is open it sends it a TraySnapshot built from
 // the cockpit's own stores and carries out what trayActPlan decides for each TrayAct it sends back. The host
 // (src-tauri/src/tray.rs) handles close, restart, quit, show log and the OS's monitor itself. Mounted once in the
 // cockpit shell, which lives as long as arcterm does, folded into Sprout or not.
@@ -35,7 +35,7 @@ import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { jobQueueAtom } from "./jobqueuestore";
 import { trayActPlan, type TrayStep } from "./trayactmodel";
-import { trayBadge, traySnapshot } from "./traysnapshot";
+import { trayBadge, trayMemFree, traySnapshot } from "./traysnapshot";
 import type { TrayAct, TrayPage } from "./traytypes";
 
 const MACHINE_POLL_MS = 1000;
@@ -85,7 +85,9 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
     const messages = useAtomValue(channelMessagesAtom);
     const peekRows = useMemo(() => queueRows(items, agents, messages), [items, agents, messages]);
     const trayOn = (useAtomValue(getSettingsKeyAtom("app:tray")) as boolean | undefined) ?? true;
+    const memOn = (useAtomValue(getSettingsKeyAtom("app:traymemory")) as boolean | undefined) ?? true;
     const [pressure, setPressure] = useState("");
+    const [memAvailable, setMemAvailable] = useState(0);
     const [open, setOpen] = useState(false);
     const [page, setPage] = useState<TrayPage>("main");
     const [machine, setMachine] = useState<MachineStatsData | null>(null);
@@ -99,18 +101,22 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
     const now = useAtomValue(model.nowAtom);
     useConsumersPoll(open && page === "freeup");
 
-    // the icon's red dot: one reading at start, then each change wavesrv publishes
+    // the icon's red dot and memory free: one reading at start, then each change wavesrv publishes (the memory by a
+    // tenth of a GiB, read every 10 s)
     useEffect(() => {
         RpcApi.GetMachineStatsCommand(TabRpcClient)
             .then((m) => {
                 setPressure(m.pressure);
+                setMemAvailable(m.memavailable);
                 setHeardAt(Date.now());
             })
             .catch(() => {});
         return waveEventSubscribeSingle({
             eventType: "memorypressure",
             handler: (e) => {
-                setPressure((e.data as MemoryPressureData)?.level ?? "");
+                const data = e.data as MemoryPressureData;
+                setPressure(data?.level ?? "");
+                setMemAvailable(data?.memavailable ?? 0);
                 setHeardAt(Date.now());
             },
         });
@@ -128,9 +134,12 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
     }, []);
 
     const badge = trayBadge(peekRows, pressure);
+    const memFree = trayMemFree(memOn, memAvailable);
     useEffect(() => {
-        void invoke("set_tray_status", { count: badge.count, alert: badge.alert, visible: trayOn }).catch(() => {});
-    }, [badge.count, badge.alert, trayOn]);
+        void invoke("set_tray_status", { count: badge.count, alert: badge.alert, memFree, visible: trayOn }).catch(
+            () => {}
+        );
+    }, [badge.count, badge.alert, memFree, trayOn]);
 
     useEffect(() => {
         if (!open) {

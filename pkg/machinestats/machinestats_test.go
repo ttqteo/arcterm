@@ -63,35 +63,54 @@ func TestSamplerKeepsTheLastSixty(t *testing.T) {
 	}
 }
 
-func TestWatchPressurePublishesOnChange(t *testing.T) {
-	seq := []jobqueue.Pressure{jobqueue.PressureNormal, jobqueue.PressureNormal, jobqueue.PressureWarn, jobqueue.PressureWarn, jobqueue.PressureCritical}
+func TestWatchMemoryPublishesOnChange(t *testing.T) {
+	const gib = 1 << 30
+	seq := []MemReading{
+		{"normal", 2 * gib},
+		{"normal", 2*gib + 10<<20}, // 2.0 GB still: not published
+		{"normal", 1 * gib},
+		{"high", 1 * gib},
+		{"high", 1*gib + 20<<20}, // 1.0 GB still
+		{"critical", 1 * gib},
+	}
 	var mu sync.Mutex
 	i := 0
-	read := func(context.Context) jobqueue.Pressure {
+	read := func(context.Context) MemReading {
 		mu.Lock()
 		defer mu.Unlock()
-		p := seq[min(i, len(seq)-1)]
+		r := seq[min(i, len(seq)-1)]
 		i++
-		return p
+		return r
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	got := make(chan string, 10)
-	go WatchPressure(ctx, read, 2*time.Millisecond, func(w string) { got <- w })
-	var words []string
-	for len(words) < 3 {
+	got := make(chan MemReading, 10)
+	go WatchMemory(ctx, read, 2*time.Millisecond, func(r MemReading) { got <- r })
+	var readings []MemReading
+	for len(readings) < 4 {
 		select {
-		case w := <-got:
-			words = append(words, w)
+		case r := <-got:
+			readings = append(readings, r)
 		case <-time.After(2 * time.Second):
-			t.Fatalf("published %v, want three changes", words)
+			t.Fatalf("published %v, want four changes", readings)
 		}
 	}
-	want := []string{"normal", "high", "critical"}
+	want := []MemReading{seq[0], seq[2], seq[3], seq[5]}
 	for k := range want {
-		if words[k] != want[k] {
-			t.Fatalf("published %v, want %v", words, want)
+		if readings[k] != want[k] {
+			t.Fatalf("published %v, want %v", readings, want)
 		}
+	}
+	select {
+	case r := <-got:
+		t.Fatalf("published %v after the last change", r)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestReadMemory(t *testing.T) {
+	if r := ReadMemory(context.Background()); r.Available == 0 {
+		t.Fatalf("no memory available in %+v", r)
 	}
 }
 

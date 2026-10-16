@@ -43,7 +43,8 @@ type SettingsType struct {
 	AppClear                   bool  `json:"app:*,omitempty"`
 	AppCtrlVPaste              *bool `json:"app:ctrlvpaste,omitempty"`
 	AppDisableCtrlShiftDisplay bool  `json:"app:disablectrlshiftdisplay,omitempty"`
-	AppTray                    *bool `json:"app:tray,omitempty"` // arcterm's icon in the menu bar / tray; unset is on
+	AppTray                    *bool `json:"app:tray,omitempty"`       // arcterm's icon in the menu bar / tray; unset is on
+	AppTrayMemory              *bool `json:"app:traymemory,omitempty"` // free memory beside the menu bar icon (in the tray's tooltip on Windows); unset is on
 
 	NotifyClear bool  `json:"notify:*,omitempty"`
 	NotifyOs    *bool `json:"notify:os,omitempty"`

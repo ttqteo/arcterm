@@ -10,6 +10,7 @@ const (
 	ConfigKey_AppCtrlVPaste                  = "app:ctrlvpaste"
 	ConfigKey_AppDisableCtrlShiftDisplay     = "app:disablectrlshiftdisplay"
 	ConfigKey_AppTray                        = "app:tray"
+	ConfigKey_AppTrayMemory                  = "app:traymemory"
 
 	ConfigKey_NotifyClear                    = "notify:*"
 	ConfigKey_NotifyOs                       = "notify:os"

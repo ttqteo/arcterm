@@ -205,6 +205,7 @@ describe("settingsSections", () => {
             "window:minimize",
             "window:autosprout",
             "app:tray",
+            "app:traymemory",
             "memory:vaultpath",
             "term:fontfamily",
             "term:fontsize",
@@ -323,6 +324,7 @@ describe("settings pages", () => {
             "window.sproutcorner",
             "window.autosprout",
             "app.tray",
+            "app.traymemory",
         ]);
         expect(cards["general/vault"]).toEqual(["memory.vaultpath", "memory.remote"]);
         expect(cards["appearance/theme"]).toEqual(["appearance.theme"]);
@@ -381,7 +383,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(59 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(60 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

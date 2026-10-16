@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/machinestats"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/wps"
@@ -32,15 +31,16 @@ func (ws *WshServer) GetMachineStatsCommand(ctx context.Context) (*wshrpc.Machin
 	}, nil
 }
 
-// StartMachineWatch publishes memorypressure whenever the level changes: the tray icon's red dot while the popover
-// is shut.
+// StartMachineWatch publishes memorypressure whenever the level or the memory available changes: the tray icon's red
+// dot and free memory while the popover is shut.
 func StartMachineWatch(ctx context.Context) {
 	go func() {
 		defer func() {
-			panichandler.PanicHandler("machinestats.WatchPressure", recover())
+			panichandler.PanicHandler("machinestats.WatchMemory", recover())
 		}()
-		machinestats.WatchPressure(ctx, jobqueue.ReadPressure, 10*time.Second, func(level string) {
-			wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_MemoryPressure, Data: wshrpc.MemoryPressureData{Level: level}})
+		machinestats.WatchMemory(ctx, machinestats.ReadMemory, 10*time.Second, func(r machinestats.MemReading) {
+			data := wshrpc.MemoryPressureData{Level: r.Level, MemAvailable: r.Available}
+			wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_MemoryPressure, Data: data})
 		})
 	}()
 }

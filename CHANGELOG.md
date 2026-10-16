@@ -33,6 +33,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Your pet is the Office's boss**: in the Cockpit's Office you walk around as Sprout, the Minion, or Spider-Man, who
   swings in through a window and turns into Peter Parker in a shirt and tie. Its speech bubble and the condition panel
   open over it, and the footer pet comes back when you leave. <!-- big --> <!-- shot: 0.15.15-office-boss.webp -->
+- The memory free shows beside arcterm's menu bar icon on a Mac (`4 · 1.1 GB`), and in the tray icon's tooltip on
+  Windows. Settings → General → Window turns it off.
 
 ### Changed
 

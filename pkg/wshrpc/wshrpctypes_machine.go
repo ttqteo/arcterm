@@ -21,7 +21,9 @@ type MachineStatsData struct {
 	DiskFree     uint64    `json:"diskfree"`
 }
 
-// MemoryPressureData is the memorypressure event: the level's word each time it changes.
+// MemoryPressureData is the memorypressure event: the level's word and the memory available, each time either
+// changes (the memory by a tenth of a GiB).
 type MemoryPressureData struct {
-	Level string `json:"level"`
+	Level        string `json:"level"`
+	MemAvailable uint64 `json:"memavailable"` // 0 with no reading
 }

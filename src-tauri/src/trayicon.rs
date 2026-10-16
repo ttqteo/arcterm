@@ -177,24 +177,55 @@ pub fn badge_text(count: u32) -> String {
 /// attributed title, or "!" when that cannot be done (the spec's fallback, `! 4`).
 pub const MAC_ALERT: &str = "●";
 
-/// The text beside the macOS glyph.
-pub fn mac_title(count: u32, alert: bool, offline: bool) -> String {
-    match (offline, alert, count) {
-        (true, _, _) => String::new(),
-        (false, true, 0) => MAC_ALERT.to_string(),
-        (false, true, n) => format!("{MAC_ALERT} {n}"),
-        (false, false, 0) => String::new(),
-        (false, false, n) => n.to_string(),
+/// Memory as the popover reads it (trayformat.ts fmtSize): binary units, GB from 0.1 GB up, one decimal under 100 GB
+/// and none when it is .0.
+pub fn fmt_mem(bytes: u64) -> String {
+    const MIB: f64 = 1024.0 * 1024.0;
+    const GIB: f64 = 1024.0 * MIB;
+    let b = bytes as f64;
+    if b < GIB / 10.0 {
+        return format!("{} MB", (b / MIB).round());
+    }
+    let g = b / GIB;
+    if g < 100.0 {
+        let t = format!("{g:.1}");
+        format!("{} GB", t.strip_suffix(".0").unwrap_or(&t))
+    } else {
+        format!("{} GB", g.round())
     }
 }
 
-pub fn tooltip(count: u32, alert: bool, offline: bool) -> String {
+/// The text beside the macOS glyph: the red dot, what waits on you, then the memory free (`mem`, None when
+/// `app:traymemory` is off or there is no reading).
+pub fn mac_title(count: u32, alert: bool, offline: bool, mem: Option<u64>) -> String {
+    if offline {
+        return String::new();
+    }
+    let mut body = Vec::new();
+    if count > 0 {
+        body.push(count.to_string());
+    }
+    if let Some(m) = mem {
+        body.push(fmt_mem(m));
+    }
+    let body = body.join(" · ");
+    match (alert, body.is_empty()) {
+        (true, true) => MAC_ALERT.to_string(),
+        (true, false) => format!("{MAC_ALERT} {body}"),
+        (false, _) => body,
+    }
+}
+
+pub fn tooltip(count: u32, alert: bool, offline: bool, mem: Option<u64>) -> String {
     if offline {
         return "arcterm: its server is not answering".to_string();
     }
     let mut parts = Vec::new();
     if alert {
         parts.push("memory pressure critical".to_string());
+    }
+    if let Some(m) = mem {
+        parts.push(format!("{} free", fmt_mem(m)));
     }
     if count > 0 {
         parts.push(format!("{count} waiting on you"));
@@ -308,18 +339,43 @@ mod tests {
         assert_eq!(win_icon_size(2.0), 32);
     }
 
+    const GIB: u64 = 1 << 30;
+
     #[test]
     fn mac_title_and_tooltip() {
-        assert_eq!(mac_title(0, false, false), "");
-        assert_eq!(mac_title(4, false, false), "4");
-        assert_eq!(mac_title(12, false, false), "12");
-        assert_eq!(mac_title(4, true, false), format!("{MAC_ALERT} 4"));
-        assert_eq!(mac_title(0, true, false), MAC_ALERT);
-        assert_eq!(mac_title(4, true, true), "");
-        assert_eq!(tooltip(0, false, false), "arcterm");
-        assert_eq!(tooltip(4, true, false), "arcterm: memory pressure critical, 4 waiting on you");
-        assert_eq!(tooltip(1, false, false), "arcterm: 1 waiting on you");
-        assert_eq!(tooltip(4, false, true), "arcterm: its server is not answering");
+        assert_eq!(mac_title(0, false, false, None), "");
+        assert_eq!(mac_title(4, false, false, None), "4");
+        assert_eq!(mac_title(12, false, false, None), "12");
+        assert_eq!(mac_title(4, true, false, None), format!("{MAC_ALERT} 4"));
+        assert_eq!(mac_title(0, true, false, None), MAC_ALERT);
+        assert_eq!(mac_title(4, true, true, None), "");
+        assert_eq!(tooltip(0, false, false, None), "arcterm");
+        assert_eq!(tooltip(4, true, false, None), "arcterm: memory pressure critical, 4 waiting on you");
+        assert_eq!(tooltip(1, false, false, None), "arcterm: 1 waiting on you");
+        assert_eq!(tooltip(4, false, true, None), "arcterm: its server is not answering");
+    }
+
+    #[test]
+    fn free_memory_follows_the_count() {
+        let free = Some(GIB + GIB / 10);
+        assert_eq!(mac_title(0, false, false, free), "1.1 GB");
+        assert_eq!(mac_title(4, false, false, free), "4 · 1.1 GB");
+        assert_eq!(mac_title(0, true, false, free), format!("{MAC_ALERT} 1.1 GB"));
+        assert_eq!(mac_title(4, true, false, free), format!("{MAC_ALERT} 4 · 1.1 GB"));
+        assert_eq!(mac_title(4, true, true, free), "");
+        assert_eq!(tooltip(0, false, false, free), "arcterm: 1.1 GB free");
+        assert_eq!(tooltip(4, true, false, free), "arcterm: memory pressure critical, 1.1 GB free, 4 waiting on you");
+        assert_eq!(tooltip(4, false, true, free), "arcterm: its server is not answering");
+    }
+
+    #[test]
+    fn fmt_mem_reads_as_the_popover_does() {
+        assert_eq!(fmt_mem(GIB / 20), "51 MB");
+        assert_eq!(fmt_mem(GIB / 5), "0.2 GB");
+        assert_eq!(fmt_mem(GIB + GIB / 10), "1.1 GB");
+        assert_eq!(fmt_mem(8 * GIB), "8 GB");
+        assert_eq!(fmt_mem(99 * GIB + GIB / 2), "99.5 GB");
+        assert_eq!(fmt_mem(128 * GIB), "128 GB");
     }
 
     const MAC_WORK: R = R { x: 0.0, y: 50.0, w: 2880.0, h: 1750.0 }; // below a 50 px (@2x) menu bar

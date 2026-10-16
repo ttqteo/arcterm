@@ -29,6 +29,8 @@ const REOPEN_GUARD: Duration = Duration::from_millis(250);
 struct State {
     count: u32,
     alert: bool,
+    // the memory free beside the icon; None when app:traymemory is off or wavesrv gave no reading
+    mem: Option<u64>,
     visible: bool,
     offline: bool,
     icon: Option<R>,
@@ -107,24 +109,25 @@ fn apply(app: &AppHandle, st: &State) {
     #[cfg(target_os = "macos")]
     {
         let _ = tray.set_icon_as_template(true);
-        let title = trayicon::mac_title(st.count, st.alert, st.offline);
+        let title = trayicon::mac_title(st.count, st.alert, st.offline, st.mem);
         // Some(""), never None: tray-icon 0.24.1's set_title(None) leaves the old title on the button
         let _ = tray.set_title(Some(title.clone()));
         if title.starts_with(trayicon::MAC_ALERT) {
             crate::macwindow::tint_tray_alert(&tray, title);
         }
     }
-    let _ = tray.set_tooltip(Some(trayicon::tooltip(st.count, st.alert, st.offline)));
+    let _ = tray.set_tooltip(Some(trayicon::tooltip(st.count, st.alert, st.offline, st.mem)));
     // `app:tray` off keeps the icon hidden, offline too.
     let _ = tray.set_visible(st.visible);
 }
 
 #[tauri::command]
-pub fn set_tray_status(app: AppHandle, count: u32, alert: bool, visible: bool) {
+pub fn set_tray_status(app: AppHandle, count: u32, alert: bool, mem_free: Option<u64>, visible: bool) {
     let st = {
         let mut s = state().lock().unwrap();
         s.count = count;
         s.alert = alert;
+        s.mem = mem_free;
         s.visible = visible;
         s.clone()
     };
