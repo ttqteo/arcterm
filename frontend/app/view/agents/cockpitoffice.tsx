@@ -713,6 +713,9 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     // reduced motion or the animation off nothing is drawn moving, the entrance included
     const [entrancePlays] = useState(() => shouldPlayEntrance(Date.now(), !moving));
 
+    // the Needs you rows follow the project filter, so the office's sound rebases its board when it changes
+    const projectFilter = useAtomValue(props.model.projectFilterAtom);
+
     const now = props.now;
     const livePct = useAtomValue(officeFiveHourAtom);
     const pct = dev?.energy ?? livePct;
@@ -1900,7 +1903,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
 
     return (
         <div className="relative flex min-h-0 flex-1 flex-col">
-            <OfficeSound agents={agents} runs={runs} board={props.boardCues} night={night} />
+            <OfficeSound agents={agents} runs={runs} board={props.boardCues} night={night} scope={projectFilter} />
             <div
                 ref={scrollRef}
                 data-cockpit-office

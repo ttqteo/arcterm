@@ -3,7 +3,16 @@
 
 import { describe, expect, it } from "vitest";
 import type { PlanAgent, PlanRun } from "./officeplanmodel";
-import { CUE_GAP_MS, cueSnapshot, diffCues, pickCue, soundGate, STEP_SOUND_PX, stepSound } from "./officesoundcues";
+import {
+    CUE_GAP_MS,
+    cueSnapshot,
+    diffCues,
+    pickCue,
+    soundGate,
+    STEP_SOUND_PX,
+    stepSound,
+    withBoardBaseline,
+} from "./officesoundcues";
 
 const agent = (id: string, state: PlanAgent["state"] = "working"): PlanAgent => ({
     id,
@@ -89,6 +98,43 @@ describe("diffCues", () => {
         expect(diffCues(a, snap([agent("a", "asking")], [run("r", ["done", "failed"])]))).toEqual([
             "needsYou",
             "setback",
+            "taskDone",
+        ]);
+    });
+});
+
+describe("withBoardBaseline", () => {
+    it("keeps null null", () => {
+        expect(withBoardBaseline(null)).toBeNull();
+    });
+
+    it("makes rows that only came into view through a filter change a baseline", () => {
+        const prev = snap([], [], [{ key: "a", kind: "plan-review" }]);
+        const next = snap(
+            [],
+            [],
+            [
+                { key: "a", kind: "plan-review" },
+                { key: "b", kind: "plan-review" },
+            ]
+        );
+        expect(diffCues(prev, next)).toEqual(["needsYou"]);
+        expect(diffCues(withBoardBaseline(prev), next)).toEqual([]);
+        expect(prev.board).not.toBeNull();
+    });
+
+    it("leaves the agents' and tasks' cues alone", () => {
+        const prev = snap([agent("a")], [run("r", ["running", "running"])], [{ key: "a", kind: "plan-review" }]);
+        const next = snap(
+            [agent("a", "asking")],
+            [run("r", ["done", "failed"])],
+            [
+                { key: "a", kind: "plan-review" },
+                { key: "b", kind: "run-land-held" },
+            ]
+        );
+        expect(diffCues(withBoardBaseline(prev), next)).toEqual(["needsYou", "setback", "taskDone"]);
+        expect(diffCues(withBoardBaseline(snap([], [run("r", ["running"])])), snap([], [run("r", ["done"])]))).toEqual([
             "taskDone",
         ]);
     });

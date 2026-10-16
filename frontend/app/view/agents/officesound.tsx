@@ -16,6 +16,7 @@ import {
     diffCues,
     pickCue,
     soundGate,
+    withBoardBaseline,
     type BoardCue,
     type CueSnapshot,
     type SoundGate,
@@ -41,8 +42,15 @@ function useSoundGate(): SoundGate {
     return soundGate({ events, ui, music, volume, muted }, focused || soundLogging());
 }
 
-export function OfficeSound(props: { agents: PlanAgent[]; runs: PlanRun[]; board: BoardCue[]; night: boolean }) {
-    const { agents, runs, night } = props;
+// scope is the project filter: the Needs you rows follow it, so a change of it rebases the board (withBoardBaseline)
+export function OfficeSound(props: {
+    agents: PlanAgent[];
+    runs: PlanRun[];
+    board: BoardCue[];
+    night: boolean;
+    scope: string;
+}) {
+    const { agents, runs, night, scope } = props;
     // the Needs you list can land after the office mounts: until its first load (or a DEV fixture) it is not there,
     // so that load is a baseline and does not chime (officesoundcues.ts, CueSnapshot.board)
     const loaded = useAtomValue(attentionLoadedAtom);
@@ -53,11 +61,14 @@ export function OfficeSound(props: { agents: PlanAgent[]; runs: PlanRun[]; board
     gateRef.current = gate;
     const prev = useRef<CueSnapshot | null>(null);
     const lastAt = useRef<number | null>(null);
+    const lastScope = useRef(scope);
 
     // the snapshot moves on even while jingles are off, so turning them on later plays no backlog
     useEffect(() => {
         const next = cueSnapshot(agents, runs, board);
-        const cues = diffCues(prev.current, next);
+        const rescoped = scope !== lastScope.current;
+        lastScope.current = scope;
+        const cues = diffCues(rescoped ? withBoardBaseline(prev.current) : prev.current, next);
         prev.current = next;
         if (!gateRef.current.events) {
             return;
@@ -68,7 +79,7 @@ export function OfficeSound(props: { agents: PlanAgent[]; runs: PlanRun[]; board
             lastAt.current = now;
             officeSink().play(cue);
         }
-    }, [agents, runs, board]);
+    }, [agents, runs, board, scope]);
 
     useEffect(() => {
         officeSink().volume(gate.volume);

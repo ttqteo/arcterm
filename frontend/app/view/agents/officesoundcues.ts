@@ -99,6 +99,12 @@ export function diffCues(prev: CueSnapshot | null, next: CueSnapshot): CueId[] {
     return CUE_RANK.filter((c) => out.has(c));
 }
 
+// The Needs you rows follow the project filter, so a filter change makes other projects' rows appear as new keys
+// without anything new needing the person: diff against this and the board is a baseline, as on the list's first load.
+export function withBoardBaseline(s: CueSnapshot | null): CueSnapshot | null {
+    return s ? { ...s, board: null } : null;
+}
+
 export function pickCue(cues: readonly CueId[], lastAt: number | null, now: number): CueId | null {
     if (cues.length === 0 || (lastAt != null && now - lastAt < CUE_GAP_MS)) {
         return null;
