@@ -49,6 +49,8 @@ export interface PlanRun {
     project?: string;
     createdTs?: number;
     done: boolean;
+    // landed on its base; done alone also counts a cancelled run (runFinished). Unset in fixtures: not landed
+    landed?: boolean;
     leadAsking: boolean;
     tasks: PlanTask[];
 }

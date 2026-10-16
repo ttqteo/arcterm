@@ -45,6 +45,7 @@ export function officeInputs(
             project: c.run.project || undefined,
             createdTs: c.run.createdTs,
             done: runFinished(c.run),
+            landed: c.run.land?.state === "landed",
             leadAsking: c.lead?.state === "asking",
             tasks: (c.run.dag?.tasks ?? []).map((t) => {
                 const worker = taskAgentOf(lineage, roster, c.run.runId, t.id);

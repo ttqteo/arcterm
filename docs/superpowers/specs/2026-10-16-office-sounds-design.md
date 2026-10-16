@@ -1,7 +1,7 @@
 # Office sounds — design
 
 **Date:** 2026-10-16
-**Status:** design agreed, not built
+**Status:** built
 **Changes:** nothing in `2026-10-15-cockpit-office-design.md` or `2026-10-16-office-floors-design.md`; it adds sound to
 the office they draw. It stands apart from the office's four parts and does not wait on part 2 (coins): that part
 adds a `coin` cue to the table below and nothing else.
@@ -34,7 +34,8 @@ channel). None is taken from Pokémon or any other game.
 
 **Against noise:**
 
-- The first snapshot after the office mounts is a baseline: opening Office makes no sound, only what changes after.
+- The first snapshot after the office mounts is a baseline, and so is the first Needs you list after its first load
+  (`attentionLoadedAtom`; it can land after the office mounts): opening Office makes no sound, only what changes after.
 - A burst gives one cue: several events at once (five tasks done in a second) play the one ranked highest,
   `needsYou` > `setback` > `landed` > `taskDone`.
 - Event jingles keep at least 1.5 s apart; a cue that falls inside the gap is dropped, not queued. The boss's sounds
@@ -43,7 +44,7 @@ channel). None is taken from Pokémon or any other game.
 ## Music
 
 Two loops: one for work hours, one for after hours and weekends, chosen by `officeHoursAtom` as the office's day and
-night are. While a jingle plays the music ducks and comes back after. Losing focus pauses the music; focus resumes it.
+night are. While a jingle plays the music ducks and comes back after. Losing focus stops the music; focus starts its loop again from the top (a loop is four bars, 8–11 s).
 
 ## Controls
 
@@ -66,12 +67,13 @@ Pure logic with a test beside it, consumed by thin wiring, as everywhere in `fro
 
 - **`officesoundcues.ts`** (pure). `cueSnapshot(agents, runs, boardRows)` reduces what the office draws to what can
   sound: each agent's state, each run's `landed` and `leadAsking`, each task's state and `asking`, and the Needs you
-  row keys with their kinds. `diffCues(prev, next)` turns two snapshots into cues by the table above; with no `prev`
+  row keys with their kinds (none, not empty, until the list's first load). `diffCues(prev, next)` turns two snapshots into cues by the table above; with no `prev`
   it returns none. `pickCue(cues, lastAt, now)` applies the ranking and the 1.5 s gap.
 - **`PlanRun.landed`** (new field, `officeplanmodel.ts`), set in `officeinputs.ts` from the run's
   `land.state === "landed"`. `done` cannot stand in for it: `runFinished` counts a cancelled run as done.
 - **`officescores.ts`** (pure). Each cue and each loop as note data:
-  `{ ch: "sq1" | "sq2" | "tri" | "noise", note, start, dur, vol, duty? }`, times in beats with a tempo per score.
+  `{ ch: "sq1" | "sq2" | "tri" | "noise", at, len, freq, vol, duty }`, times in sixteenth notes with a bpm per
+  score, written as lines of `name/length` tokens (`C5/2 r/1 N/1`).
 - **`officeaudio.ts`**, the player. One `AudioContext`, made on the first sound the person's own action allows
   (browsers block audio before a gesture); a short-lived `OscillatorNode` per note; one shared 1 s noise
   `AudioBuffer`; a master `GainNode` for the volume and a music `GainNode` for the duck; `close()` on unmount.
@@ -88,7 +90,7 @@ Pure logic with a test beside it, consumed by thin wiring, as everywhere in `fro
 
 With Office off nothing of this exists: no `AudioContext`, no node. Jingles make a handful of nodes that end with
 their notes. Music playing is expected at 1–3 MB and next to no CPU; the measured figure goes into the RAM watch of
-`docs/open-issues.md` and into the office's line of the RAM panel.
+`docs/open-issues.md`.
 
 ## Testing
 
@@ -98,8 +100,10 @@ their notes. Music playing is expected at 1–3 MB and next to no CPU; the measu
   `officestore.test.ts` (defaults and garbage for the five new keys).
 - **CDP:** a scenario `office-sound` in `scripts/cdp/cockpitofficescenarios.mjs`, beside `cockpit-office-controls`.
   It swaps the player for a log through `cockpitofficedevhooks.ts` (no real sound), injects a fixture, turns a task
-  done and asserts `taskDone` in the log, presses `s` and asserts nothing more is logged, then shoots the office menu
-  with its Sound item and Settings → Office with the four new rows.
+  done and asserts `taskDone` in the log, presses `s` and asserts nothing more is logged, walks the boss with Boss
+  sounds on (`step`, one `bump` at a wall, `blip` on `m`), turns the music on (`music:day`, then `music:night` after
+  hours) and `s` stops it, then shoots the office menu with its Sound item and Settings → Office with the four new
+  rows, a switch and a volume picked there.
 - **RAM:** WebAudio's buffers live outside the JS heap the bench reads, so the figure is taken by hand: arcterm's
   WebView2 processes in Task Manager with Office open, music off and then on for a minute.
 - **Hand check** (`docs/open-issues.md`, "0 · Waiting on a hand check"): listen in the real app. Are the jingles

@@ -82,6 +82,13 @@ describe("officeKey", () => {
         }
     });
 
+    it("mutes on s, except while the menu takes every key", () => {
+        expect(officeKey("walk", false, "s")).toEqual({ do: "sound" });
+        expect(officeKey("dialog", false, "s")).toEqual({ do: "sound" });
+        expect(officeKey("walk", true, "s")).toEqual({ do: "none" });
+        expect(officeKey("walk", false, "s", { ctrl: true })).toEqual({ do: "pass" });
+    });
+
     it("rides the lift on PageUp and PageDown, and carries a room on g, while walking", () => {
         expect(officeKey("walk", false, "PageUp")).toEqual({ do: "floor", delta: 1 });
         expect(officeKey("walk", false, "PageDown")).toEqual({ do: "floor", delta: -1 });
@@ -217,6 +224,7 @@ describe("officeMenuItems", () => {
             "Move this room",
             "Arrange automatically",
             "Events",
+            "Mute sound",
             "Cards view",
             "All keys",
         ]);
@@ -229,6 +237,7 @@ describe("officeMenuItems", () => {
             "g",
             undefined,
             undefined,
+            "s",
             "o",
             "?",
         ]);
@@ -277,6 +286,19 @@ describe("officeMenuItems' Background", () => {
         expect(officeMenuItems(0, 0, false, 0, true, 0, true).find((i) => i.id === "background")?.label).toBe(
             "Hide background"
         );
+    });
+});
+
+describe("officeMenuItems' sound item", () => {
+    it("names the sound item by what it will do, after Background and before Cards view", () => {
+        expect(officeMenuItems(0, 0, false, 0, true, 0, false, false).find((i) => i.id === "sound")?.label).toBe(
+            "Mute sound"
+        );
+        expect(officeMenuItems(0, 0, false, 0, true, 0, false, true).find((i) => i.id === "sound")?.label).toBe(
+            "Sound on"
+        );
+        const ids = officeMenuItems(0, 0, false, 0, true, 2, false).map((i) => i.id);
+        expect(ids.slice(ids.indexOf("events"))).toEqual(["events", "background", "sound", "cards", "keys"]);
     });
 });
 

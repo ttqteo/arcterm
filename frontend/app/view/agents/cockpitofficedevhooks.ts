@@ -13,7 +13,8 @@ import type { AgentsViewModel } from "./agents";
 import { attentionFixtureAtom } from "./attentionstore";
 import { backgroundAgentsFixtureAtom } from "./backgroundagentsstore";
 import { officeDevAtom, readOfficeProbe, type OfficeDev } from "./cockpitoffice";
-import { officeAnimationAtom, officeFloorAtom } from "./officestore";
+import { officeSoundLog, setOfficeSoundLog } from "./officeaudio";
+import { officeAnimationAtom, officeFloorAtom, officeSoundMusicAtom, officeSoundUiAtom } from "./officestore";
 import { themePresetAtom } from "./themestore";
 
 declare global {
@@ -26,6 +27,9 @@ declare global {
         __cockpitOfficeTheme?: (preset: string) => string;
         __cockpitOfficePet?: (character: string) => string;
         __cockpitOfficeBubble?: (on: boolean) => void;
+        __cockpitOfficeSound?: (on: boolean) => void;
+        __cockpitOfficeSoundLog?: () => string[] | null;
+        __cockpitOfficeSoundSet?: (o: { ui?: boolean; music?: boolean }) => void;
     }
 }
 
@@ -65,6 +69,19 @@ export function installCockpitOfficeDevHooks(model: AgentsViewModel): void {
             petBubbleAtom,
             on ? quoteEvent(0, Date.now(), quotePool(petCharacter(globalStore.get(petCharacterAtom)))) : null
         );
+    // the office-sound scenario: what the office would play, logged instead of played
+    window.__cockpitOfficeSound = (on) => setOfficeSoundLog(on);
+    window.__cockpitOfficeSoundLog = () => officeSoundLog();
+    // turns the boss sounds or the music on or off as the Settings switch does (a localStorage write alone does not
+    // reach the atoms)
+    window.__cockpitOfficeSoundSet = (o) => {
+        if (o.ui != null) {
+            globalStore.set(officeSoundUiAtom, o.ui);
+        }
+        if (o.music != null) {
+            globalStore.set(officeSoundMusicAtom, o.music);
+        }
+    };
     window.__cockpitOfficeProbe = () => {
         const cursor = globalStore.get(model.cursorIdAtom);
         const sel = cursor ? (globalStore.get(model.answerSelAtom)[cursor] ?? {}) : {};
