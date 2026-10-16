@@ -139,6 +139,8 @@ Ngay dưới tiêu đề là **khối đầu**: các dòng `**Depends on:**`, `*
 
 > `**Depends on:**` phải là dòng **đầu tiên** dưới tiêu đề. Đặt nó sau `Model`, `Chunk` hay `Files` thì nó không phải khối đầu nữa: parser coi nó là chữ của task và **không báo lỗi**, task cứ chạy theo mặc định (sau task trước).
 
+Một task phụ thuộc task dài chỉ vì interface của nó (một kiểu, một trường wire, một bảng, một chữ ký) là cách thường gặp khiến plan mọc chuỗi dài: cho interface đáp trước thành task nhỏ riêng, để phần cài đặt và các task dùng nó cùng phụ thuộc vào đó và chạy song song. Đo trên 69 run đã xong (2026-10-15), thời gian worker trên chuỗi dài nhất chiếm khoảng 70% pha task, còn chạy lại với độ rộng 8 thay vì 3 chỉ rút ngắn run khoảng 2%.
+
 | Dòng | Ý nghĩa |
 |---|---|
 | `**Depends on:** none` | Task độc lập, chạy được ngay. |

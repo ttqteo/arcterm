@@ -60,7 +60,11 @@ const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before
 	"leave it out to run after the previous task, write `none` for no dependencies, or list earlier tasks (`Task 1, Task 3`).\n" +
 	"The engine runs tasks at the same time whenever nothing makes them wait, so the Depends on lines are what set a plan's width. " +
 	"Split the work by what can proceed independently, and make a task wait only when it truly builds on another's output — a plan " +
-	"with no Depends on lines is one serial chain and gets none of that. A file has one owner among the tasks that can run at " +
+	"with no Depends on lines is one serial chain and gets none of that. When several tasks build on one interface (a type, a " +
+	"wire field, a table, a function's signature) whose implementation is long, land the interface first as its own small " +
+	"task: the task that implements it and the tasks that use it then depend on that one and run beside each other, instead " +
+	"of waiting for the whole implementation. Keep it for long implementations, since every task adds minutes of review and " +
+	"merge. A file has one owner among the tasks that can run at " +
 	"the same time: when two tasks edit the same file, generated files included, give it to one of them or put a Depends on " +
 	"line between them, since two workers' edits to one file collide at merge. The Files lines are how submit checks this.\n\n" +
 	"# <plan title>\n\n" +

@@ -215,6 +215,7 @@ Mỗi reviewer là một session mới trong cây nơi lane đáp xuống. Nó �
 - mọi yêu cầu trong spec có một task;
 - không hai task sửa cùng file mà thiếu `Depends` giữa chúng (submit đã chặn các cặp cùng liệt kê `Files`, nên reviewer tìm task không có dòng `Files` hoặc file bị bỏ sót);
 - kiểu, hàm, cờ có cùng tên trong mọi task nhắc tới chúng;
+- không task nào chờ phần cài đặt dài của task khác khi nó chỉ cần interface: interface đáp trước thành một task nhỏ riêng;
 - mỗi task nêu tiêu chí chấp nhận và các test chứng minh chúng;
 - các lệnh plan nêu (Verify, Setup, Check, Final) tồn tại;
 - mỗi task thêm hoặc đổi một view, một trạng thái hiển thị hay một tương tác nêu **bước của scenario Final** cho thấy nó (một scenario chỉ mở surface thì không tính); có Prototype thì mỗi board `.dc.html` trong thư mục canvas cần một bước.
