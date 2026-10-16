@@ -11,6 +11,8 @@ import { PET_GRID } from "@/app/view/jarvis/petsprite";
 import type { WalkDir } from "@/app/view/office/plansprite";
 import {
     BOARD_KEY,
+    BOSS_HALF_W,
+    BOSS_HEADROOM,
     LIFT_KEY,
     type Box,
     type Desk,
@@ -32,7 +34,8 @@ export const BOSS_SPEED = 240;
 export const BOSS_RUN = 2;
 export const JUMP_SPEED = 400;
 export const WALKER_SPEED = 60;
-const DOOR_REACH = 14;
+// a path's stops either side of a door: far enough out that the boss's body clears the wall's end
+const DOOR_REACH = BOSS_HALF_W + 4;
 // how far from a desk's or seat's spot the boss may stand and still be at it, like a game's interaction zone: the
 // desk's width, and from the spot up to the desk
 const REACH_X = 40;
@@ -48,12 +51,36 @@ const DELTA: Record<Dir, Point> = {
 };
 const inside = (p: Point, b: Box) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
 
-/** Where anyone may stand: every room (an empty one too), every door, and the hall's floor. */
+const floorCache = new WeakMap<Plan, Box[]>();
+
+/** Where the boss's feet may be, so all of it stays on the floor: each room (an empty one too) and the hall, less a body's
+ *  half width by each side wall and its headroom under the wall behind it (BOSS_HALF_W, BOSS_HEADROOM); and each door's
+ *  opening, as wide as a body each side of it, so the boss walks through it from one room's floor to the other's. */
+function floor(plan: Plan): Box[] {
+    let boxes = floorCache.get(plan);
+    if (boxes == null) {
+        const clear = (b: Box): Box => ({
+            x: b.x + BOSS_HALF_W,
+            y: b.y + BOSS_HEADROOM,
+            w: b.w - 2 * BOSS_HALF_W,
+            h: b.h - BOSS_HEADROOM,
+        });
+        boxes = [
+            ...plan.hallFloor.map(clear),
+            ...plan.rooms.map((r) => clear(r.box)),
+            ...plan.rooms.flatMap((r) =>
+                r.door ? [{ x: r.door.x - BOSS_HALF_W, y: r.door.y, w: r.door.w + 2 * BOSS_HALF_W, h: r.door.h }] : []
+            ),
+        ];
+        floorCache.set(plan, boxes);
+    }
+    return boxes;
+}
+
+/** Where the boss may stand: on a room's floor (an empty one too), in a door, on the hall's, with none of its body over a
+ *  wall or in the next room. */
 export function canStand(plan: Plan, p: Point): boolean {
-    return (
-        plan.hallFloor.some((b) => inside(p, b)) ||
-        plan.rooms.some((r) => inside(p, r.box) || (r.door != null && inside(p, r.door)))
-    );
+    return floor(plan).some((b) => inside(p, b));
 }
 
 const furnitureCache = new WeakMap<Plan, Box[]>();

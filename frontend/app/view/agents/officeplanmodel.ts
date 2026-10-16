@@ -213,6 +213,12 @@ const CHIP_CHAR_W = 6.4; // the chip's label is 11 px text
 export const FACADE_H = 40;
 export const DOOR = 50;
 export const LOUNGE_PERSON_W = 42; // a person's sprite: 14 cells of PLAN_CELL px
+// the boss's body about its feet (the pet's grid at BOSS_CELL_PX, officeboss.ts): half its widest walk or stand frame,
+// either way it faces, and the height of the tallest one, Peter's hair. Its feet keep that far off a side wall, and its
+// head stays under the top of the wall behind it, so none of it stands over a wall or in the next room
+export const BOSS_HALF_W = 30;
+export const BOSS_H = 70;
+export const BOSS_HEADROOM = BOSS_H - HWALL; // the nearest its feet come to the wall behind it
 export const LOUNGE_LABEL_H = 14;
 export const POPUP_W = 380; // the card beside the desk
 export const POPUP_H = 320;
@@ -678,8 +684,9 @@ export function buildPlan(input: PlanInput): Plan {
         const x = right ? rightX : leftX;
         const y = top + Math.floor(slot / 2) * (rowH + HWALL);
         const box: Box = { x, y, w: colW, h: rowH };
-        // high on the hall-side wall
-        const door: Box = { x: right ? rightX - WALL : leftX + colW, y: y + 60, w: WALL, h: DOOR };
+        // high on the hall-side wall: its top as high as the boss's head lets its feet go, so its middle opens onto the
+        // floor above the first desk row
+        const door: Box = { x: right ? rightX - WALL : leftX + colW, y: y + BOSS_HEADROOM, w: WALL, h: DOOR };
         (right ? rightDoors : leftDoors).push(door);
         const doorSide: DoorSide = right ? "left" : "right";
         const name = slotOf.get(slot);
@@ -744,7 +751,8 @@ export function buildPlan(input: PlanInput): Plan {
             const cbox: Box = { x: x + colW - 14 - w, y: y + 8, w, h: CHIP_H };
             project.chip = {
                 box: cbox,
-                spot: { x: Math.round(cbox.x + w / 2), y: cbox.y + cbox.h + 22 },
+                // under it, as high in the room as the boss's head lets its feet go
+                spot: { x: Math.round(cbox.x + w / 2), y: Math.max(cbox.y + cbox.h + 22, y + BOSS_HEADROOM) },
                 key: CHIP_KEY(key),
                 ...fill.chip,
             };

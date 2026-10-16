@@ -39,6 +39,8 @@ const KEY_CODES = {
 };
 // the boss's walking speed (officeboss.ts BOSS_SPEED), for how long to hold an arrow
 const BOSS_PX_PER_S = 240;
+// half the boss's body (officeplanmodel.ts BOSS_HALF_W): how far off a side wall its feet stop
+const BOSS_HALF_W = 30;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const HOLD_MS = 30000;
 // main thread busy as a percent of a window: a TaskDuration delta (seconds) over its length, to 0.1
@@ -542,8 +544,9 @@ export function makeCockpitOfficeScenarios(fx) {
             const drawsBeforeWalk = (await probe(h))?.sceneryDraws;
 
             // 4. a wall stops the boss, a door lets it through. From loom's desk (below the door) the boss walks toward the
-            // room's hall side, the door's, long enough to reach the wall at any office width, and must stop there; then up
-            // to the door's middle and on, into the hall
+            // room's hall side, the door's, long enough to reach the wall at any office width, and must stop with its body
+            // against it, its feet half a body off the wall. The desk by the wall leaves no lane up it, so the door is
+            // walked from the hall: a click on the floor in front of it, then into the room through its middle, and out
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
             const start = await settleBoss(h);
             // the desk click opened its dialog box, where the arrows move the ▶: shut it so they walk
@@ -554,24 +557,41 @@ export function makeCockpitOfficeScenarios(fx) {
             // a room in the left column has its door on its right wall, one in the right column on its left
             const doorLeft = !!arc?.door && arc.door.x < arc.x;
             const toHall = doorLeft ? "ArrowLeft" : "ArrowRight";
-            const edge = arc ? (doorLeft ? arc.x : arc.x + arc.w) : NaN;
+            const edge = arc ? (doorLeft ? arc.x + BOSS_HALF_W : arc.x + arc.w - BOSS_HALF_W) : NaN;
             await focusCockpit(h);
             await hold(h, toHall, arc && start?.boss ? Math.round((Math.abs(edge - start.boss.x) / BOSS_PX_PER_S) * 1000) + 1500 : 4000);
             const blocked = await settleBoss(h, 1000);
-            const doorMid = arc?.door ? arc.door.y + arc.door.h / 2 : NaN;
-            await hold(h, "ArrowUp", blocked?.boss && arc?.door ? Math.max(0, Math.round(((blocked.boss.y - doorMid) / BOSS_PX_PER_S) * 1000)) : 400);
-            await hold(h, toHall, 700);
+            await h.shot("cdp-shots/cockpit-office-wall.png");
+            const doorMid = arc?.door ? Math.round((arc.door.y + arc.door.h / 2) / 3) * 3 : NaN;
+            if (arc?.door) {
+                const x = doorLeft ? arc.door.x - 45 : arc.door.x + arc.door.w + 45;
+                await h.ev(`(() => {
+                    const root = document.querySelector("[data-office-root]");
+                    const r = root.getBoundingClientRect();
+                    root.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${x}, clientY: r.top + ${doorMid} }));
+                })()`);
+            }
+            const atDoor = await settleBoss(h, 5000);
+            await focusCockpit(h);
+            await hold(h, doorLeft ? "ArrowRight" : "ArrowLeft", 500);
+            const inRoom = await settleBoss(h, 1000);
+            await focusCockpit(h);
+            await hold(h, toHall, 500);
             const through = await settleBoss(h, 1000);
             rec(
-                "4. the arrows walk the boss: it stops at the room's wall, and its door lets it into the hall",
+                "4. the arrows walk the boss: it stops with its body against the room's wall, and its door lets it in and out of the hall",
                 blocked?.boss?.room === "room:arcterm" &&
                     (doorLeft ? blocked.boss.x >= edge && blocked.boss.x <= edge + 3 : blocked.boss.x >= edge - 3 && blocked.boss.x <= edge) &&
+                    atDoor?.boss?.room === "hall" &&
+                    inRoom?.boss?.room === "room:arcterm" &&
                     through?.boss?.room === "hall",
-                JSON.stringify({ doorLeft, edge, doorMid, blocked: blocked?.boss, through: through?.boss })
+                JSON.stringify({ doorLeft, edge, doorMid, blocked: blocked?.boss, atDoor: atDoor?.boss, inRoom: inRoom?.boss, through: through?.boss })
             );
 
             // 4b. desks are solid: from loom's spot the boss walks up and stops in front of the desk, still at it with ↵
-            // offering its card; walked off to the side, out of every desk's reach, nothing is offered and the cursor stays
+            // offering its card; walked off to the side, out of every desk's reach, nothing is offered and the cursor stays.
+            // The wall on loom's left is nearer its spot than a desk's reach, so the side is its right, short of the next
+            // desk's reach (desks stand 116 apart, a reach is 40)
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
             await settleBoss(h);
             await focusCockpit(h);
@@ -586,9 +606,15 @@ export function makeCockpitOfficeScenarios(fx) {
             await hold(h, "ArrowUp", 1500);
             const front = await settleBoss(h, 1000);
             await h.shot("cdp-shots/cockpit-office-front.png");
-            await focusCockpit(h);
-            await hold(h, "ArrowLeft", 400);
-            const aside = await settleBoss(h, 1000);
+            if (front?.boss) {
+                const x = loom.x + 40 + 57;
+                await h.ev(`(() => {
+                    const root = document.querySelector("[data-office-root]");
+                    const r = root.getBoundingClientRect();
+                    root.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${x}, clientY: r.top + ${front.boss.y} }));
+                })()`);
+            }
+            const aside = await settleBoss(h, 3000);
             rec(
                 "4b. walking up to loom's desk the boss stops in front of it, still offered its card; walked aside, out of reach, nothing is offered",
                 front?.boss &&
@@ -597,7 +623,7 @@ export function makeCockpitOfficeScenarios(fx) {
                     front.cursor === "fx-office-loom" &&
                     front.prompt === "agent" &&
                     aside?.boss &&
-                    aside.boss.x < loom.x + 40 - 40 &&
+                    Math.abs(aside.boss.x - (loom.x + 40)) > 40 &&
                     aside.prompt === "" &&
                     aside.popup === "" &&
                     aside.cursor === "fx-office-loom",

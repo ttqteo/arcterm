@@ -7,6 +7,7 @@ import { BOSS_PX, canStand, canWalk } from "./officeboss";
 import { EMPTY_LAYOUT, placeRooms, type Placements } from "./officelayout";
 import {
     agentLook,
+    BOSS_HEADROOM,
     buildPlan,
     cut,
     DOOR,
@@ -137,10 +138,10 @@ describe("officeplanmodel", () => {
                     h: rowH,
                 });
                 expect(r.doorSide, r.title).toBe(right ? "left" : "right");
-                // the door is high on the hall-side wall, 60 px under its room's top
+                // the door is high on the hall-side wall, as far under its room's top as the boss's feet come
                 expect(r.door, r.title).toEqual({
                     x: right ? rightX - WALL : WALL + colW,
-                    y: r.box.y + 60,
+                    y: r.box.y + BOSS_HEADROOM,
                     w: WALL,
                     h: DOOR,
                 });

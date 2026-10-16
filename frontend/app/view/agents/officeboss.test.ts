@@ -17,7 +17,18 @@ import {
     spotOf,
     stepToward,
 } from "./officeboss";
-import { BOARD_KEY, buildPlan, LIFT_KEY, type Plan, type PlanAgent, type Point } from "./officeplanmodel";
+import {
+    BOARD_KEY,
+    BOSS_H,
+    BOSS_HALF_W,
+    BOSS_HEADROOM,
+    buildPlan,
+    HWALL,
+    LIFT_KEY,
+    type Plan,
+    type PlanAgent,
+    type Point,
+} from "./officeplanmodel";
 
 const ag = (id: string, project?: string, state: PlanAgent["state"] = "working"): PlanAgent => ({
     id,
@@ -120,10 +131,43 @@ describe("officeboss", () => {
 
     it("does not tunnel through a wall on a long step", () => {
         const r = room("room:alpha");
-        const nearWall = { x: r.box.x + r.box.w - 3, y: a1.y };
-        expect(stepToward(plan, nearWall, "right", 30).x).toBeLessThanOrEqual(r.box.x + r.box.w);
+        const nearWall = { x: r.box.x + r.box.w - BOSS_HALF_W - 3, y: a1.y };
+        expect(stepToward(plan, nearWall, "right", 30).x).toBeLessThanOrEqual(r.box.x + r.box.w - BOSS_HALF_W);
         // a 100 ms hitch at the boss's speed is a 16 px step: still no wall crossed
         expect(canStand(plan, stepToward(plan, nearWall, "right", 16))).toBe(true);
+    });
+
+    it("keeps all of the boss's body on its floor: off the side walls, its head under the wall behind it", () => {
+        const r = room("room:alpha");
+        // alpha's right wall, and the hall's two walls
+        const right = stepToward(plan, a1, "right", 600).x;
+        expect(right).toBeLessThanOrEqual(r.box.x + r.box.w - BOSS_HALF_W);
+        expect(right).toBeGreaterThan(r.box.x + r.box.w - BOSS_HALF_W - 3);
+        // at the lift, clear of every door
+        const inHall = plan.lift.spot;
+        const left = stepToward(plan, inHall, "left", 600).x;
+        expect(left).toBeGreaterThanOrEqual(plan.hall.x + BOSS_HALF_W);
+        expect(left).toBeLessThan(plan.hall.x + BOSS_HALF_W + 3);
+        expect(stepToward(plan, inHall, "right", 600).x).toBeLessThanOrEqual(plan.hall.x + plan.hall.w - BOSS_HALF_W);
+        // the wall over a room, here an empty one under another: the head, BOSS_HEADROOM + HWALL over the feet, reaches
+        // the top of that wall and stays out of the room above
+        const empty = plan.rooms.find((x) => x.kind === "empty")!;
+        expect(empty.box.y).toBeGreaterThan(plan.hall.y);
+        const up = stepToward(plan, { x: empty.box.x + empty.box.w / 2, y: empty.box.y + 200 }, "up", 600);
+        expect(up.y).toBeGreaterThanOrEqual(empty.box.y + BOSS_HEADROOM);
+        expect(up.y).toBeLessThan(empty.box.y + BOSS_HEADROOM + 3);
+        expect(up.y - BOSS_H).toBeGreaterThanOrEqual(empty.box.y - HWALL);
+        expect(canStand(plan, { x: up.x, y: empty.box.y + BOSS_HEADROOM - 1 })).toBe(false);
+        // the lounge under the outer wall: no head over the top of the view
+        expect(canStand(plan, { x: plan.hall.x + 100, y: plan.hall.y + BOSS_HEADROOM - 1 })).toBe(false);
+        expect(canStand(plan, { x: plan.hall.x + 100, y: plan.hall.y + BOSS_HEADROOM })).toBe(true);
+        // the door still lets it through, though the body is wider than the wall
+        const door = r.door!;
+        const inDoor = { x: door.x + door.w + BOSS_HALF_W, y: door.y + door.h / 2 };
+        expect(roomAt(plan, stepToward(plan, inDoor, "left", 2 * BOSS_HALF_W + door.w + 9))).toBe("hall");
+        // but not above or below its opening
+        expect(canStand(plan, { x: door.x + door.w + 6, y: door.y - 3 })).toBe(false);
+        expect(canStand(plan, { x: door.x + door.w + 6, y: door.y + door.h + 3 })).toBe(false);
     });
 
     it("walks out of one room, along the hall and into another, on floor all the way", () => {
@@ -251,7 +295,7 @@ describe("officeboss", () => {
         expect(withPlant.length).toBeGreaterThan(0);
         for (const r of full.rooms.filter((x) => x.kind === "agents")) {
             // the old bottom-right plant is gone from every room
-            expect(canWalk(full, { x: r.box.x + r.box.w - 27, y: r.box.y + r.box.h - 28 }), r.key).toBe(true);
+            expect(canWalk(full, { x: r.box.x + r.box.w - BOSS_HALF_W, y: r.box.y + r.box.h - 28 }), r.key).toBe(true);
             for (const p of r.plants ?? []) {
                 expect(canWalk(full, { x: p.x + 17, y: p.y + 35 }), r.key).toBe(false);
             }
