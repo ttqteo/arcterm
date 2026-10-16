@@ -24,8 +24,8 @@ after**, and its sheet says so.
 
 ## Rows in Runs
 
-A pure `queuedBriefLines(entries, drawnRunLines)` in `briefrows.ts`, fed by `runQueueAtom` (live through
-`runqueue:changed`), turns each entry into a `BriefLine`:
+A pure `withQueuedLines(runLines, queuedRows, runKind, query, now)` in a new `briefqueue.ts`, fed by `runQueueAtom`
+(live through `runqueue:changed`), turns each entry into a `BriefLine`:
 
 | Field | Value |
 |---|---|
@@ -33,11 +33,12 @@ A pure `queuedBriefLines(entries, drawnRunLines)` in `briefrows.ts`, fed by `run
 | `title` | the entry's title |
 | `meta` | `after it lands` when nested; `after <title>` when its parent is not drawn; `waiting for room` |
 | `state` | `#N` (its place among the waiting entries, as the Agent tree counts it); `blocked` in the warning tone, the reason in its tooltip |
-| `parentOref` | `run:<after>` when After names a run; the queued line of the entry it names when After names an entry |
-| `target` | `{ queued: <entry id> }` |
+| `depth` | 1 under a drawn run, one more per link of a chain, 0 at the top |
+| `target` | `{ runQueue: <entry id> }` (the Brief's `{ queue }` target is a Waiting on you item) |
 
-- **Order.** A nested row follows its parent (and the parent's earlier nested rows); `settleNesting` sets the depth, so
-  a chain nests one level per link. Room-only entries follow every run, in queue order.
+- **Order.** A nested row follows its parent (and the parent's earlier nested rows); `withQueuedLines` sets the depth
+  itself (`settleNesting` keys parents by `oref`, which a queued line has none of), so a chain nests one level per
+  link. Room-only entries follow every run, in queue order.
 - **A parent not drawn** (filtered out, folded as stale, gone): the row stands at the top and its meta names the
   parent's title, which `queuedRows` already resolves (`runqueuemodel.ts`).
 - **The run-kind toggle** reads the entry's `data.mode`, as a run row reads `run.mode`: an entry can be a quick run.
@@ -50,7 +51,7 @@ A pure `queuedBriefLines(entries, drawnRunLines)` in `briefrows.ts`, fed by `run
 ## The queue sheet
 
 A queue entry is not an `ActiveSubject` and does not become one (it would reach the subject store, restore and the
-palette). The row's `LineTarget` is `{ queued: entryId }`; the Brief keeps the open entry in its own atom, and
+palette). The row's `LineTarget` is `{ runQueue: entryId }`; the Brief keeps the open entry in its own atom, and
 `sheetFace` gains `{ kind: "queued"; entryId }`. Opening any other row clears it.
 
 The sheet, in the run sheet's frame, top to bottom:
@@ -60,7 +61,7 @@ The sheet, in the run sheet's frame, top to bottom:
   entry it names, that entry's title, a link to its queue sheet. A room-only entry reads `a free slot (3 of 3
   running)`, from `runs:maxactive` and the active runs.
 - **Blocked:** the whole reason, unclipped.
-- **Plan:** the plan path, opening the file.
+- **Plan:** the plan path, opening the file; a quick entry shows its goal instead.
 - **Route:** lead and workers, as `queuedTooltip` words them: the models approved at queue time.
 - **Queued:** its age, and the session that queued it when that tab is known.
 - **Actions:** **Start now**, **Run next** (not at #1), **Remove** (the Agent tree's confirm), each the existing
@@ -71,16 +72,17 @@ The lines come from a pure `queueSheetModel(entry, runs, maxActive)` beside the 
 **When the entry starts while its sheet is open,** the sheet becomes that run's sheet. `runqueue:changed` carries only
 the new list today, so `RunQueueChangedData` gains `started: [{ entryid, runid }]`, filled by `startQueuedEntry` for
 the entry it just started (`leaveRunQueue` already has the run id); every other publish leaves it empty. A sheet whose
-entry vanishes with no `started` for it (removed, or the event missed) closes, and the Brief's toast says why:
-`Office Floors started` or `Office Floors was removed from the queue`.
+entry vanishes with no `started` for it (removed, or the event missed) closes, and the Brief's toast says
+`Office Floors left the queue` (the list alone cannot tell a removal from a missed start).
 
 ## A started run remembers what it waited on
 
 `waveobj.Run` gains `AfterRunId string json:"afterrunid,omitempty"`. `startQueuedEntry` sets it when the entry's After
 names a run (an After still naming an entry, which only Start now can start, sets nothing). The run sheet prints one
-fact line, `Queued after <title>`, linking to that run's sheet; a run that is gone reads its first 8 characters. Runs
-that did not come from the queue, and every run from before this change, print nothing. It says *queued* after, not
-*started* after: Start now starts an entry past its After, so the run it waited on may not have landed.
+fact line, `queued after <title>` (lowercase, as its neighbour `started from <session>`), linking to that run's sheet;
+a run that is gone reads its first 8 characters. Runs that did not come from the queue, and every run from before this
+change, print nothing. It says *queued* after, not *started* after: Start now starts an entry past its After, so the
+run it waited on may not have landed.
 
 Wire changes (`pkg/wshrpc` types and `waveobj.Run`) are followed by `task generate`; no migration, since `Run` is
 stored as JSON.
@@ -88,7 +90,7 @@ stored as JSON.
 ## Testing
 
 - **vitest**, all pure:
-  - `briefrows.test.ts`, `queuedBriefLines`: nests under a drawn run; a chain nests one level per link; a parent not
+  - `briefqueue.test.ts`, `withQueuedLines`: nests under a drawn run; a chain nests one level per link; a parent not
     drawn puts the row at the top with `after <title>`; room-only entries sit at the end in queue order; a blocked
     row's state, tone and reason; the kind toggle by `data.mode`; queued rows count toward neither `ACTIVE_CAP` nor the
     fold.
@@ -96,12 +98,13 @@ stored as JSON.
   - `queueSheetModel`: waits-on text for a run, an entry and room; Run next hidden at #1; the blocked reason.
 - **Go:** a started entry's `runqueue:changed` carries `started` with its run id and a failed start's does not; a run
   started from an entry whose After names a run has `AfterRunId`, and one whose After names an entry has none.
-- **CDP scenario `brief-run-queue`**, arranged as `run-queue` is: `runs:maxactive` 1, one `deferstart` run filling it,
-  entry A `--after` that run, B `--after` A, C room-only, D blocked. On the Brief it shows A under the run, B under A, C
-  at the end with `waiting for room`, D `blocked`; it opens A's sheet and checks its lines and three actions; it presses
-  Start now on C and checks the sheet becomes C's run sheet with no After line, then Start now on A and checks A's run
-  sheet reads `Queued after` the filling run, and B's row now nests under A's run. Teardown restores `runs:maxactive`
-  and removes the entries and the channel.
+- **CDP scenario `brief-run-queue`**, arranged as `run-queue` is: `runs:maxactive` 1, one quick `deferstart` run
+  filling it, plan entries A `--after` that run and B `--after` A, quick entry C room-only, plan entry D blocked, quick
+  entry E `--after` the filling run. On the Brief: A under the run, B under A, E under the run, C and D at the end (C
+  `waiting for room`, D `blocked`); A's sheet shows its lines with Start now and Remove but no Run next (#1); B's sheet
+  names A and offers Run next; Start now on E turns the sheet into E's run sheet, which reads `queued after` the
+  filling run. No plan entry whose plan exists is ever started: its start spawns a plan reviewer. Teardown restores
+  `runs:maxactive` and removes the entries, the runs and the channel.
 
 ## Out of scope
 
