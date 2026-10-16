@@ -8,7 +8,7 @@
 // plan holds (office floors spec, "A floor"): four rooms round the hall with the lift at its foot, G's facade or a
 // plain wall under it. Pure: no React, no DOM.
 
-import { HWALL, MEET_H, WALL, type Box, type Plan } from "@/app/view/agents/officeplanmodel";
+import { HWALL, MEET_H, WALL, type Box, type Plan, type Point } from "@/app/view/agents/officeplanmodel";
 import { NEAR_CHAIR } from "./officegrids";
 import type { OfficeColors, OfficePhase, OfficeRole } from "./officepalette";
 import type { Rgb } from "./spritecache";
@@ -17,6 +17,10 @@ export const CELL = 3;
 export const art = (v: number) => Math.round(v / CELL);
 // the rows of a wall's face that fall inside the room under its box
 const FACE = 3;
+// a horizontal wall's rows above its face: ink, cap, ink
+const FACE_TOP = 3;
+// an outer-wall window pane's width in art px
+const WINDOW_W = 12;
 
 export type Material = "wood" | "tiles" | "carpet" | "face" | "brick";
 export type Op =
@@ -137,6 +141,29 @@ const artBox = (b: Box) => {
     const y = art(b.y);
     return { x, y, w: art(b.x + b.w) - x, h: art(b.y + b.h) - y };
 };
+
+// the lounge's TV on the outer wall's face, in art px: no window goes over its x span
+const tvSpan = (plan: Plan) => ({ x: artBox(plan.lounge).x + art(60), w: art(114) });
+
+/** The outer wall's windows in plan px: each one's centre at the wall face's top (Spider-Man's entrance swings in
+ *  through the nearest). The scenery draws a pane at each. */
+export function outerWindows(plan: Plan): Point[] {
+    const wall = plan.walls.find((w) => w.y === 0 && w.h === HWALL && w.w > WALL);
+    if (!wall) {
+        return [];
+    }
+    const tv = tvSpan(plan);
+    const y = (artBox(wall).y + FACE_TOP) * CELL;
+    const out: Point[] = [];
+    for (let x = 60; x < plan.width - 80; x += 130) {
+        const wx = art(x);
+        if (wx + WINDOW_W > tv.x && wx < tv.x + tv.w) {
+            continue;
+        }
+        out.push({ x: (wx + WINDOW_W / 2) * CELL, y });
+    }
+    return out;
+}
 
 const BOARD_ART_W = 26;
 const BOARD_ART_H = 17;
@@ -382,24 +409,21 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
     // walls: faces under people, caps over them
     const horiz = plan.walls.filter((w) => w.h === HWALL && w.w > WALL);
     const vert = plan.walls.filter((w) => !(w.h === HWALL && w.w > WALL));
-    const tv = { x: l.x + art(60), w: art(114) };
+    const tv = tvSpan(plan);
     for (const w of horiz) {
         const b = artBox(w);
         // rows: 0 ink, 1 cap, 2 ink, 3.. face (into the room below by FACE rows), then the trim and its shadow
-        const fy = b.y + 3;
-        const fh = b.h - 3 + FACE;
+        const fy = b.y + FACE_TOP;
+        const fh = b.h - FACE_TOP + FACE;
         under.fill(b.x, fy, b.w, fh, "face");
         under.rect(b.x, fy + fh, b.w, 1, "trim");
         under.rect(b.x, fy + fh + 1, b.w, 1, "shadow");
         if (w.y === 0) {
             // the outer wall's windows, light glass by day and dark after hours
-            for (let x = 60; x < plan.width - 80; x += 130) {
-                const wx = art(x);
-                if (wx + 12 > tv.x && wx < tv.x + tv.w) {
-                    continue;
-                }
+            for (const win of outerWindows(plan)) {
+                const wx = art(win.x) - WINDOW_W / 2;
                 const spark = night ? "glass2" : "glassHi";
-                under.box(wx, fy, 12, fh, "glass");
+                under.box(wx, fy, WINDOW_W, fh, "glass");
                 under.rect(wx + 6, fy + 1, 1, fh - 2, "ink");
                 under.px(wx + 2, fy + 1, spark);
                 under.px(wx + 3, fy + 2, spark);
