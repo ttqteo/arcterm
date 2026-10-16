@@ -25,8 +25,9 @@ import { LAUNCHER_LABEL } from "./launcheragentfields";
 import { ColumnLabel, rowTone } from "./launcherrows";
 import { launcherGoalAtom, launcherPrototypeAtom } from "./launcherstore";
 import { RoutePicker } from "./routepicker";
-import { START_OPTIONS, startNote, type StartFrom } from "./runconfig";
+import { approvalsNote, START_OPTIONS, startNote, type StartFrom } from "./runconfig";
 import {
+    autonomousAtom,
     parallelismAtom,
     planPathAtom,
     reviewerPicksAtom,
@@ -34,6 +35,7 @@ import {
     routeOpenRequestAtom,
     runRouteAtom,
     runShapeAtom,
+    setAutonomous,
     setPlanPath,
     setReviewerPicks,
     setReviewerRoute,
@@ -201,6 +203,44 @@ function LeadPicker() {
     );
 }
 
+const APPROVALS: { autonomous: boolean; label: string }[] = [
+    { autonomous: false, label: "Ask me" },
+    { autonomous: true, label: "Autonomous" },
+];
+
+// Approvals: who answers the run's questions, the human or the lead on its own
+function RunApprovals() {
+    const autonomous = useAtomValue(autonomousAtom);
+    return (
+        <div data-launcher-approvals className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className={LAUNCHER_LABEL}>Approvals</span>
+            <div
+                role="group"
+                aria-label="Approvals"
+                className="flex w-fit gap-0.5 rounded-[8px] border border-border bg-surface p-0.5"
+            >
+                {APPROVALS.map((option) => (
+                    <button
+                        key={option.label}
+                        type="button"
+                        aria-pressed={autonomous === option.autonomous}
+                        onClick={() => setAutonomous(option.autonomous)}
+                        className={cn(
+                            "cursor-pointer rounded-[6px] px-3 py-1 text-[11.5px] font-semibold",
+                            autonomous === option.autonomous
+                                ? "bg-accentbg text-accent-soft"
+                                : "text-ink-mid hover:text-secondary"
+                        )}
+                    >
+                        {option.label}
+                    </button>
+                ))}
+            </div>
+            <span className="text-[11px] leading-[1.45] text-muted">{approvalsNote(autonomous)}</span>
+        </div>
+    );
+}
+
 function RunModels() {
     const workerRoute = useAtomValue(workerRouteAtom);
     const reviewerPicks = useAtomValue(reviewerPicksAtom);
@@ -298,6 +338,7 @@ export function RunFields({ projectPath, goalRef, planRef, ramWarning }: RunFiel
                 </div>
             )}
             {orchestrator ? <RunModels /> : null}
+            {orchestrator ? <RunApprovals /> : null}
             {orchestrator && prototype !== "" ? (
                 <div data-launcher-prototype className="flex items-center gap-1.5">
                     <span title={prototype} className="min-w-0 truncate text-[11px] text-muted">
