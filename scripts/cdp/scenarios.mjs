@@ -19546,6 +19546,8 @@ const dagObservability = {
 // Four tasks at parallelism 1: only t-1 dispatches. One seed makes t-2 a done gate and t-3 a failed task, and gives
 // the dag its Check, Verify and Final commands with no final, so the final node is the waiting stage with five rows.
 // The dag is not finalizing, so the engine leaves the stage alone. A seeded DAG proves the UI, not the engine.
+// t-2 stays an unreleased done gate, which halts all dispatch (gateBlocked), so t-4 stays undispatched for step g
+// even if t-1 finishes and merges: never approve t-2 in this scenario.
 const DAG_PEEK_VIEWPORT = { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false };
 const DAG_PEEK_DONE_WHEN = "Done when: `git status --porcelain` prints nothing";
 const DAG_PEEK_BULLETS = ["make no file changes", "run no commands", "send no messages"];
