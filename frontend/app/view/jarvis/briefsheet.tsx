@@ -59,13 +59,17 @@ import {
 } from "@/app/view/agents/runconfigstore";
 import { RunLauncher } from "@/app/view/agents/runlauncher";
 import { isTerminal, leadAsker } from "@/app/view/agents/runmodel";
+import { runQueueAtom, runQueueStartedAtom } from "@/app/view/agents/runqueuestore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { QueueSheet } from "./briefqueuesheet";
+import { briefQueueSheetAtom } from "./briefqueuestore";
 import { RunSettingsPanel, SHEET_BTN, SheetShell } from "./briefrunsheet";
 import { sheetFace, type SheetFace } from "./briefsheetmodel";
 import { REGION_LABEL } from "./briefstyle";
+import { briefUndo } from "./briefundo";
 import { EffortDetailView } from "./effortdetailview";
 import { briefRunListAtom, briefSheetOpenAtom } from "./jarvisstore";
 import {
@@ -338,6 +342,9 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
     const bandsOpen = useAtomValue(recordBandOpenAtom);
     const projects = useAtomValue(projectsAtom);
     const runList = useAtomValue(briefRunListAtom);
+    const queuedId = useAtomValue(briefQueueSheetAtom);
+    const entries = useAtomValue(runQueueAtom);
+    const started = useAtomValue(runQueueStartedAtom);
 
     useEffect(() => ensureAmbient(), []);
 
@@ -353,7 +360,44 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
 
     // memoized because the latch below has it in a dep array: sheetFace builds a fresh object each call,
     // so an unmemoized face would refire the latch every render and setState its way into a loop
-    const face = useMemo(() => sheetFace(subject, run), [subject, run]);
+    const face = useMemo(() => sheetFace(subject, run, queuedId), [subject, run, queuedId]);
+    // opening a subject closes the queue face (a queue entry is no subject: briefqueuestore.ts)
+    useEffect(() => {
+        if (subject != null) {
+            globalStore.set(briefQueueSheetAtom, null);
+        }
+    }, [subject]);
+    // the entry's title is the header's, and the last one seen outlives the entry: the latch below and the toast
+    // still name a plan that has left the queue. `id` keeps one entry's title from naming the next.
+    const queuedEntry = queuedId != null ? entries.find((e) => e.id === queuedId) : undefined;
+    const lastQueued = useRef<{ id: string; title: string } | null>(null);
+    useEffect(() => {
+        if (queuedEntry != null) {
+            lastQueued.current = { id: queuedEntry.id, title: queuedEntry.title };
+        }
+    }, [queuedEntry]);
+    const queuedTitle = queuedEntry?.title ?? (lastQueued.current?.id === queuedId ? lastQueued.current.title : "");
+    // the sheet on a queued plan follows it when it leaves the queue: into its run when it started, else it closes
+    useEffect(() => {
+        if (queuedId == null || !open || entries.some((e) => e.id === queuedId)) {
+            return;
+        }
+        // the queue is read once at mount, so an entry never seen against an empty list is a feed that has not
+        // answered yet, not a plan that left
+        if (lastQueued.current?.id !== queuedId && entries.length === 0 && started[queuedId] == null) {
+            return;
+        }
+        globalStore.set(briefQueueSheetAtom, null);
+        const runId = started[queuedId];
+        if (runId != null) {
+            fireAndForget(() => openOrPeekAddress(model, "run:" + runId));
+            return;
+        }
+        globalStore.set(briefSheetOpenAtom, false);
+        briefUndo.notify(
+            `${lastQueued.current?.id === queuedId ? lastQueued.current.title : "That plan"} left the queue`
+        );
+    }, [queuedId, open, entries, started]);
     const subjectId = subject?.id ?? null;
     const bandOpen = subjectId != null ? (bandsOpen[subjectId] ?? false) : false;
     const tags = run != null ? ambient.tagsFor({ oref: "run:" + run.id }) : [];
@@ -369,12 +413,14 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
 
     const close = () => {
         globalStore.set(briefSheetOpenAtom, false);
+        globalStore.set(briefQueueSheetAtom, null);
         clearSubject();
         returnToOrigin("sheet");
     };
     // an initiative's body leads with its own title, so the header naming it again would be a second one.
     // "none" is never drawn — `visible` below excludes it, so it is never latched.
-    const title = face.kind === "channel" ? channelProjectLabel(channel, projects) : "";
+    const title =
+        face.kind === "channel" ? channelProjectLabel(channel, projects) : face.kind === "queued" ? queuedTitle : "";
     const meta = face.kind === "channel" && face.body === "run" && run != null ? runLine(run) : undefined;
     // where the shown run sits in the list the Brief published (design L420-424); a run outside it (opened
     // from Waiting, say) has no position and its arrows are inert
@@ -408,7 +454,13 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
                 <div className="flex h-full min-h-0 flex-col">
                     <SheetShell
                         face={shown.face.kind}
-                        label={shown.face.kind === "effort" ? "initiative" : "project"}
+                        label={
+                            shown.face.kind === "effort"
+                                ? "initiative"
+                                : shown.face.kind === "queued"
+                                  ? "queued"
+                                  : "project"
+                        }
                         title={shown.title}
                         meta={shown.meta}
                         runId={shown.runId}
@@ -484,6 +536,7 @@ export function BriefSheet({ model }: { model: AgentsViewModel }) {
                                 <EffortDetailView model={model} />
                             </div>
                         ) : null}
+                        {face.kind === "queued" ? <QueueSheet model={model} entryId={face.entryId} /> : null}
                     </SheetShell>
                 </div>
             )}

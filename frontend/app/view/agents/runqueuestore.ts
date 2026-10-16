@@ -55,6 +55,9 @@ export const queuedRowsAtom: Atom<QueuedRow[]> = atom((get) => {
     return queuedRows(get(runQueueAtom), after.titles, after.landed);
 });
 
+// the run each started entry became, from runqueue:changed's `started`, so a view open on an entry can follow it
+export const runQueueStartedAtom = atom<Record<string, string>>({}) as PrimitiveAtom<Record<string, string>>;
+
 /** Feeds runQueueAtom: one read, then every `runqueue:changed` event. The event is subscribed first, and a read that
  *  lands after an event is dropped, so a slow read never puts back a queue the event already moved on from. */
 export function useRunQueueFeed(): void {
@@ -65,7 +68,15 @@ export function useRunQueueFeed(): void {
             eventType: "runqueue:changed",
             handler: (e) => {
                 heard = true;
-                globalStore.set(runQueueAtom, (e.data as RunQueueChangedData | undefined)?.entries ?? []);
+                const data = e.data as RunQueueChangedData | undefined;
+                // the pairs go in first, so a reader of the new list already sees the run an entry became
+                if (data?.started?.length) {
+                    globalStore.set(runQueueStartedAtom, (cur) => ({
+                        ...cur,
+                        ...Object.fromEntries(data.started.map((s) => [s.entryid, s.runid])),
+                    }));
+                }
+                globalStore.set(runQueueAtom, data?.entries ?? []);
             },
         });
         RpcApi.RunQueueListCommand(TabRpcClient)

@@ -27,6 +27,7 @@ import { AskCard, CancelRunButton, CancelSurvivorsCard } from "@/app/view/agents
 import { needsEvidenceSeal, verifCounts } from "@/app/view/agents/runcompletion";
 import { useRunEvents } from "@/app/view/agents/runeventstore";
 import { RunGoal } from "@/app/view/agents/rungoalview";
+import { runTitle } from "@/app/view/agents/runlineage";
 import {
     cancelSurvivors,
     canResume,
@@ -62,6 +63,7 @@ import { FinalShotsViewer, VERDICT_DOT } from "./finalshotsviewer";
 import { briefEffortIndexAtom, briefRevealChunkAtom } from "./jarvisstore";
 import { landAgain } from "./landrun";
 import { useLocalImage } from "./localimage";
+import { openOrPeekAddress } from "./openref";
 import { RunReportView } from "./runreportview";
 import type { LinkedGroupRead } from "./runsettings";
 import {
@@ -369,6 +371,24 @@ function FinalThumb({
     );
 }
 
+// the run this one was queued after (`wsh runs start --after`): kept on the run once its queue entry is gone
+function QueuedAfter({ model, runId }: { model: AgentsViewModel; runId: string }) {
+    const after = useAtomValue(runAtom(runId));
+    const name = after != null ? runTitle(after, undefined) : runId.slice(0, 8);
+    return (
+        <button
+            type="button"
+            data-run-queued-after={runId}
+            title={`Open ${name}, the run this one was queued after`}
+            onClick={() => fireAndForget(() => openOrPeekAddress(model, "run:" + runId))}
+            className="inline-flex max-w-full cursor-pointer items-center gap-1 self-start text-[10.5px] text-ink-mid hover:text-accent-soft focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        >
+            <CornerDownRight size={11} aria-hidden className="flex-none text-muted" />
+            <span className="truncate">queued after {name}</span>
+        </button>
+    );
+}
+
 function Reading({
     model,
     run,
@@ -463,6 +483,7 @@ function Reading({
                     </span>
                 </button>
             ) : null}
+            {run.afterrunid ? <QueuedAfter model={model} runId={run.afterrunid} /> : null}
             {ref != null && effort != null ? (
                 <button
                     type="button"
