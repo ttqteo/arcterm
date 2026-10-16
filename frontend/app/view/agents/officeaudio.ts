@@ -39,6 +39,8 @@ const DUCK = 0.3;
 const LOOKAHEAD_S = 0.25;
 // the release at a note's end, so it does not click
 const RELEASE_S = 0.03;
+// the music stopping, or the office closing (a switch to Cards or another surface), fades out over this long
+const FADE_S = 0.4;
 const HARMONICS = 32;
 const DUCKING: ReadonlySet<string> = new Set<string>(CUE_IDS);
 
@@ -56,6 +58,19 @@ export function pulseHarmonics(duty: number, n = HARMONICS): Float32Array {
         real[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * duty);
     }
     return real;
+}
+
+// ramps a gain to silence over FADE_S from where it is now, then calls done; with no context (or one closed) at once
+function fadeOut(ctx: AudioContext | null, gain: AudioParam, done: () => void): void {
+    if (!ctx || ctx.state === "closed") {
+        done();
+        return;
+    }
+    const t = ctx.currentTime;
+    gain.cancelScheduledValues(t);
+    gain.setValueAtTime(gain.value, t);
+    gain.linearRampToValueAtTime(0, t + FADE_S);
+    setTimeout(done, FADE_S * 1000 + 50);
 }
 
 class ChipPlayer implements OfficeSink {
@@ -187,8 +202,11 @@ class ChipPlayer implements OfficeSink {
             clearTimeout(this.timer);
             this.timer = null;
         }
-        // the notes already scheduled on the bus play on into nothing and end
-        this.musicBus?.disconnect();
+        // the bus fades out, then is cut: the notes already scheduled on it play on into nothing and end
+        const bus = this.musicBus;
+        if (bus) {
+            fadeOut(this.ctx, bus.gain, () => bus.disconnect());
+        }
         this.musicBus = null;
         this.track = null;
     }
@@ -202,7 +220,11 @@ class ChipPlayer implements OfficeSink {
 
     close(): void {
         this.stopMusic();
-        void this.ctx?.close().catch(() => {});
+        // a jingle still sounding fades with the music, and the context closes once both are silent
+        const ctx = this.ctx;
+        if (ctx && this.master) {
+            fadeOut(ctx, this.master.gain, () => void ctx.close().catch(() => {}));
+        }
         this.ctx = null;
         this.master = null;
         this.waves.clear();

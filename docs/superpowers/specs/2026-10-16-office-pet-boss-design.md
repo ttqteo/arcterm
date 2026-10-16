@@ -43,10 +43,12 @@ on the boss's spot).
 
 A pure `frontend/app/view/agents/officepet.ts` picks the pose, with `officepet.test.ts` beside it:
 
-- **Walking:** `walk1` / `walk2` on `walkFrameAtom`, in every direction. Sprout's and the Minion's walks are side-on
-  and mirror to walk left, as on the footer; walking up or down keeps the last horizontal facing. Peter's walk is
-  front-on (below), so it is never mirrored.
-- **Standing:** `stand`.
+- **Walking:** `walk1` / `walk2` on `walkFrameAtom`, turned the way it walks (`PetFacing`, 2026-10-16): its front
+  going down, its back going up, its side going left or right, drawn facing right and mirrored for left. The side and
+  back are the boss's own grids (`BOSS_FACING` in `petsprite.ts`, two frames each, the second with the feet together);
+  the footer's poses are the front. In the VN shirt a turned boss wears it without the star, which is on the front.
+- **Standing:** `stand`, still turned the way it last went (frame 2 of that facing), so an arrow pressed with reduced
+  motion on, where nothing walks, still turns it; a pastime, sleep, speech or tiredness faces the viewer.
 - **Idle a few seconds:** a pastime from `REST_POSES`, its frames on `PASTIMES`' timing (`petwalk.ts`), in place. It
   never wanders off on its own: where the boss stands is the Cockpit's cursor.
 - **No input for `SLEEP_AFTER_MS`:** `sleep`, with its z mark.
@@ -59,8 +61,8 @@ A pure `frontend/app/view/agents/officepet.ts` picks the pose, with `officepet.t
 copied from the canvas's `Main` board: `stand`, `walk1`, `walk2`, `speak`, `tired`, `work1`, `work2` and `sit`. The suit
 is hidden: a buttoned shirt (`v`), a tie down its middle in a new cell code drawn in a new token `--color-peter-tie`
 (added beside the other Peter tokens in `tailwindsetup.css`; the runtime themes do not set them), jeans, and the hair
-and glasses of the Peter rest poses. The walk is front-on with the `stand` head, a foot lifted in turn: a side-on head
-on the 16-cell grid read as a long face, so it was dropped. `PETER_BOSS_POSES` is a full `Record<PetPose, …>`: the
+and glasses of the Peter rest poses. The front walk has the `stand` head, a foot lifted in turn; his side and back
+are in `BOSS_FACING` with the rest (above). `PETER_BOSS_POSES` is a full `Record<PetPose, …>`: the
 other poses (`sleep`, `read1/2`, `music1/2`, `ball1/2`, `dangle`) are the existing Peter grids with the open shirt
 buttoned over the suit (the suit cells under it become shirt, the chest's spider the tie), the mapping the canvas
 uses, so the boss never shows the suit after the entrance. The footer keeps `SPIDEY_POSES` and `SPIDEY_LOOK` as they

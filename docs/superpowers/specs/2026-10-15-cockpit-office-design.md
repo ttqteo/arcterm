@@ -289,7 +289,7 @@ what to port from where).
 - **Frame clock** (450 ms) flips the 2-frame poses. It runs only while some drawn person has an animated pose
   (the nod, a raised hand, cheer, yawn, stretch); only those people subscribe to it.
 - **Walk clock** (`requestAnimationFrame`) runs only while the boss or a walker is moving, and moves them by
-  `transform: translate(x, y)` in whole cells (3 px). The boss walks at ~160 px/s, ~400 px/s on `j` `k` `n` or a
+  `transform: translate(x, y)` in whole cells (3 px). The boss walks at ~240 px/s (twice that with `Shift` held), ~400 px/s on `j` `k` `n` or a
   click; a walker at ~60 px/s. It stops when everyone has arrived. A step writes that transform on the DOM, not
   through React: React draws a mover again only when it turns, sets off, stops or flips its walking frame (180 ms),
   and a mover has its own layer (`will-change: transform`) while it walks, so a step repaints nothing under it.

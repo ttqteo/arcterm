@@ -119,6 +119,7 @@ import {
 import { boardPage } from "./officeboardmodel";
 import {
     advance,
+    BOSS_RUN,
     BOSS_SPEED,
     bossLook,
     canWalk,
@@ -823,6 +824,24 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     devRef.current = dev;
     const arrivedRef = useRef<string | undefined>(undefined);
     const carry = useRef(0);
+    // Shift held runs the boss (BOSS_RUN): read off every key event, so pressing or letting go of it mid-walk counts
+    const shiftRef = useRef(false);
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            shiftRef.current = e.shiftKey;
+        };
+        const onBlur = () => {
+            shiftRef.current = false;
+        };
+        window.addEventListener("keydown", onKey, true);
+        window.addEventListener("keyup", onKey, true);
+        window.addEventListener("blur", onBlur);
+        return () => {
+            window.removeEventListener("keydown", onKey, true);
+            window.removeEventListener("keyup", onKey, true);
+            window.removeEventListener("blur", onBlur);
+        };
+    }, []);
     // the boss's sounds (office sounds spec, "Architecture"): a step every STEP_SOUND_PX the arrows walk it, one bump
     // per arrow held against a wall
     const stepAcc = useRef(0);
@@ -894,7 +913,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                 globalStore.set(bossAtom, { ...b, at: r.at, path: done ? [] : r.rest, dir: facing(b.at, r.at, b.dir) });
                 bossBusy = !done;
             } else if (b.holding) {
-                carry.current += (BOSS_SPEED * dt) / 1000;
+                carry.current += (BOSS_SPEED * (shiftRef.current ? BOSS_RUN : 1) * dt) / 1000;
                 if (carry.current >= STEP_PX) {
                     const dist = Math.floor(carry.current / STEP_PX) * STEP_PX;
                     carry.current -= dist;
@@ -1009,7 +1028,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         }
         globalStore.set(layerAtom, "walk");
         if (!movingRef.current) {
-            const to = stepToward(planRef.current, b.at, dir, ARROW_STEP_PX);
+            const to = stepToward(planRef.current, b.at, dir, ARROW_STEP_PX * (shiftRef.current ? BOSS_RUN : 1));
             bossSound(b.at, to);
             globalStore.set(bossAtom, {
                 ...b,
@@ -2876,7 +2895,7 @@ function BossPet({
         unread,
     });
     s.flip = out.flip;
-    const sprite = bossSprite(out.pose, out.marks, outfit, character);
+    const sprite = bossSprite(out.pose, out.marks, outfit, character, out.facing);
 
     // the entrance: held by a DEV seam at that many ms, or live
     const t = held ?? (live != null ? performance.now() - live : null);

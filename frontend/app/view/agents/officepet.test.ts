@@ -34,8 +34,27 @@ describe("bossPet", () => {
         expect(bossPet({ ...base, moving: true, dir: "down", flip: false }).flip).toBe(false);
     });
 
-    it("never mirrors Peter, whose walk is front-on", () => {
-        expect(bossPet({ ...base, moving: true, dir: "left", character: "spidey" }).flip).toBe(false);
+    it("turns where it walks: its back going up, its side going left or right, its front going down", () => {
+        expect(bossPet({ ...base, moving: true, dir: "up" }).facing).toBe("back");
+        expect(bossPet({ ...base, moving: true, dir: "down" }).facing).toBe("front");
+        expect(bossPet({ ...base, moving: true, dir: "left" }).facing).toBe("side");
+        expect(bossPet({ ...base, moving: true, dir: "right" }).facing).toBe("side");
+    });
+
+    it("keeps turned standing, so an arrow with no walking (reduced motion) still turns it", () => {
+        const standing = { ...base, now: base.stillSince + 1 };
+        expect(bossPet({ ...standing, dir: "left" })).toMatchObject({ pose: "stand", facing: "side", flip: true });
+        expect(bossPet({ ...standing, dir: "up" })).toMatchObject({ pose: "stand", facing: "back" });
+    });
+
+    it("faces the viewer in a pastime", () => {
+        expect(bossPet({ ...base, dir: "up", now: base.stillSince + REST_AFTER_MS + 1 }).facing).toBe("front");
+    });
+
+    it("mirrors Peter's side going left, never his front", () => {
+        expect(bossPet({ ...base, moving: true, dir: "left", character: "spidey" }).flip).toBe(true);
+        const pastime = { ...base, character: "spidey" as const, flip: true, now: base.stillSince + REST_AFTER_MS + 1 };
+        expect(bossPet(pastime).flip).toBe(false);
     });
 
     it("stands when it has just stopped", () => {

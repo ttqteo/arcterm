@@ -1386,6 +1386,251 @@ export const PETER_BOSS_POSES: Record<PetPose, readonly string[]> = {
     ],
 };
 
+// Which way the office's boss shows itself: the poses above face the viewer (front); walking up it shows its back, and
+// walking sideways its side, drawn facing right (the renderer mirrors it for left).
+export type PetFacing = "front" | "side" | "back";
+
+// The boss's side and back, two walk frames each: frame 1 has the feet together, so it is also the standing frame.
+const BOSS_FACING: Record<PetCharacter, Record<"side" | "back", readonly [readonly string[], readonly string[]]>> = {
+    sprout: {
+        side: [
+            [
+                E,
+                E,
+                E,
+                ".........d......",
+                ".......dddd.....",
+                "........d.......",
+                "........d.......",
+                "....llbbbbbb....",
+                "...lbbbbbbbbb...",
+                "..bbbbbbbbbbbb..",
+                "..bbbbbbbbbkbb..",
+                "..bbbbbbbbbkbb..",
+                "..bbbbbbbbbbbbb.",
+                "..bbbbbbbbbbbb..",
+                "...bbbbbbbbbb...",
+                "..dd.......dd...",
+            ],
+            [
+                E,
+                E,
+                E,
+                "........d.......",
+                ".......dddd.....",
+                "........d.......",
+                "........d.......",
+                "....llbbbbbb....",
+                "...lbbbbbbbbb...",
+                "..bbbbbbbbbbbb..",
+                "..bbbbbbbbbkbb..",
+                "..bbbbbbbbbkbb..",
+                "..bbbbbbbbbbbbb.",
+                "..bbbbbbbbbbbb..",
+                "...bbbbbbbbbb...",
+                "......dddd......",
+            ],
+        ],
+        back: [
+            [
+                E,
+                E,
+                E,
+                "........d.......",
+                "......dddd......",
+                ".......d........",
+                ".......d........",
+                "....bbbbbbll....",
+                "...bbbbbbbbbl...",
+                "..bbbbbbbbbbbb..",
+                "..bbbbbbbbbbbb..",
+                "..bbbbbbbbbbbb..",
+                "..bbbbbbbbbbbb..",
+                "..bbbbbbbbbbbb..",
+                "...bbbbbbbbbb...",
+                "...dd......dd...",
+            ],
+            [
+                E,
+                E,
+                E,
+                "......d.........",
+                "......dddd......",
+                ".......d........",
+                ".......d........",
+                "....bbbbbbll....",
+                "...bbbbbbbbbl...",
+                "..bbbbbbbbbbbb..",
+                "..bbbbbbbbbbbb..",
+                "..bbbbbbbbbbbb..",
+                "..bbbbbbbbbbbb..",
+                "..bbbbbbbbbbbb..",
+                "...bbbbbbbbbb...",
+                "....dd....dd....",
+            ],
+        ],
+    },
+    // the Minion: its goggle at the front edge, the strap round the back of its head, the overalls' straps behind
+    minion: {
+        side: [
+            [
+                E,
+                E,
+                E,
+                ".....s.s..s.....",
+                "....hjjjjjjj....",
+                "...hjjjjjmmmj...",
+                "...kkkkkmwwwm...",
+                "...kkkkkmwwkm...",
+                "...jjjjjmwwkm...",
+                "...jjjjjjmmmj...",
+                "...jjjjjjjjjk...",
+                "...jjjjjjjkkj...",
+                "...jjjjjjooOo...",
+                "...oooooooooo...",
+                "...oooooooooo...",
+                "..ss.......ss...",
+            ],
+            [
+                E,
+                E,
+                E,
+                "....s.s..s......",
+                "....hjjjjjjj....",
+                "...hjjjjjmmmj...",
+                "...kkkkkmwwwm...",
+                "...kkkkkmwwkm...",
+                "...jjjjjmwwkm...",
+                "...jjjjjjmmmj...",
+                "...jjjjjjjjjk...",
+                "...jjjjjjjkkj...",
+                "...jjjjjjooOo...",
+                "...oooooooooo...",
+                "...oooooooooo...",
+                "......ssss......",
+            ],
+        ],
+        back: [
+            [
+                E,
+                E,
+                E,
+                ".....s.s..s.....",
+                "....jjjjjjjh....",
+                "...jjjjjjjjjh...",
+                "...kkkkkkkkkk...",
+                "...kkkkkkkkkk...",
+                "...jjjjjjjjjj...",
+                "...jjjjjjjjjj...",
+                "...jjjjjjjjjj...",
+                "...jjojjjjojj...",
+                "...jjojjjjojj...",
+                "...oooooooooo...",
+                "...oooooooooo...",
+                "...ss......ss...",
+            ],
+            [
+                E,
+                E,
+                E,
+                "....s.s..s......",
+                "....jjjjjjjh....",
+                "...jjjjjjjjjh...",
+                "...kkkkkkkkkk...",
+                "...kkkkkkkkkk...",
+                "...jjjjjjjjjj...",
+                "...jjjjjjjjjj...",
+                "...jjjjjjjjjj...",
+                "...jjojjjjojj...",
+                "...jjojjjjojj...",
+                "...oooooooooo...",
+                "...oooooooooo...",
+                ".....ss..ss.....",
+            ],
+        ],
+    },
+    // Peter the boss: his hair at the back of his head, one lens and the tie at the front edge; from behind, the
+    // glasses' arms over his ears
+    spidey: {
+        side: [
+            [
+                E,
+                E,
+                "......HHH.......",
+                ".....HHHHHH.....",
+                ".....HHHHHHH....",
+                ".....HHHpppp....",
+                ".....HHppgeg....",
+                ".....Hppppppp...",
+                ".....pppppkp....",
+                "......ppppp.....",
+                ".....vvvvvt.....",
+                ".....vvvvvt.....",
+                ".....vvvvvvp....",
+                ".....BBBBBB.....",
+                "....BB....BB....",
+                "...ss......ss...",
+            ],
+            [
+                E,
+                E,
+                "......HHH.......",
+                ".....HHHHHH.....",
+                ".....HHHHHHH....",
+                ".....HHHpppp....",
+                ".....HHppgeg....",
+                ".....Hppppppp...",
+                ".....pppppkp....",
+                "......ppppp.....",
+                ".....vvvvvt.....",
+                ".....vvvvvt.....",
+                "....pvvvvvv.....",
+                ".....BBBBBB.....",
+                "......BBBB......",
+                "......ssss......",
+            ],
+        ],
+        back: [
+            [
+                E,
+                E,
+                "......H.H.......",
+                ".....HHHHHH.....",
+                ".....HHHHHHHH...",
+                ".....HHHHHHH....",
+                ".....gHHHHHg....",
+                ".....pHHHHHp....",
+                "......ppppp.....",
+                "......ppppp.....",
+                "....vvvvvvvvv...",
+                "....pvvvvvvvv...",
+                ".....vvvvvvvp...",
+                ".....BBBBBBB....",
+                ".....BB...ss....",
+                "....ss..........",
+            ],
+            [
+                E,
+                E,
+                "......H.H.......",
+                ".....HHHHHH.....",
+                ".....HHHHHHHH...",
+                ".....HHHHHHH....",
+                ".....gHHHHHg....",
+                ".....pHHHHHp....",
+                "......ppppp.....",
+                "......ppppp.....",
+                "....vvvvvvvvv...",
+                "....vvvvvvvvp...",
+                "...pvvvvvvv.....",
+                ".....BBBBBBB....",
+                ".....ss...BB....",
+                "..........ss....",
+            ],
+        ],
+    },
+};
+
 // The office entrance's frames (officeentrance.ts): the mask pulled up off the hair, then the puff of smoke the suit
 // turns into Peter's shirt in, only the face showing through
 export const SPIDEY_UNMASK: readonly string[] = [
@@ -1514,7 +1759,7 @@ function stampStar(g: string[][], top: number, star: readonly string[]): void {
 // the face (eyes, and the mouth while speaking) moves up two rows and every body cell below it becomes the shirt,
 // with the star's point centred on its first row. Only recolours: the outline and the sprout stay as they are, so
 // the marks still sit clear of the body and the creature still stands on the ledge.
-function dressInFlag(rows: readonly string[]): string[] {
+function dressInFlag(rows: readonly string[], star = true): string[] {
     const g = rows.map((row) => [...row]);
     const face: [number, number][] = [];
     rows.forEach((row, y) => [...row].forEach((code, x) => code === "k" && face.push([x, y])));
@@ -1534,19 +1779,23 @@ function dressInFlag(rows: readonly string[]): string[] {
             }
         }
     }
-    stampStar(g, top, FLAG_STAR);
+    if (star) {
+        stampStar(g, top, FLAG_STAR);
+    }
     return g.map((row) => row.join(""));
 }
 
 // The flag shirt on the Minion: its overalls are the shirt, so only they turn red and the face stays where it is. A
 // pose with no overalls showing (reading, the book on its lap) is left as it is.
-function dressMinionInFlag(rows: readonly string[]): readonly string[] {
+function dressMinionInFlag(rows: readonly string[], star = true): readonly string[] {
     const g = rows.map((row) => [...row].map((code) => (code === "o" || code === "O" ? "R" : code)));
     const top = g.findIndex((row) => row.includes("R"));
     if (top < 0) {
         return rows;
     }
-    stampStar(g, top, MINION_STAR);
+    if (star) {
+        stampStar(g, top, MINION_STAR);
+    }
     return g.map((row) => row.join(""));
 }
 
@@ -1664,22 +1913,62 @@ export function spriteOfRows(rows: readonly string[], marks: readonly PetMark[])
 
 /** A pose's grid for the office's boss in an outfit: Spider-Man is Peter the boss there, always in his white shirt and
  *  tie (the VN shirt is not put over it; the flag in hand still is, in bossSprite); the others wear their outfit. */
-export function bossRows(pose: PetPose, outfit: PetOutfit | null, character: PetCharacter): readonly string[] {
+export function bossRows(
+    pose: PetPose,
+    outfit: PetOutfit | null,
+    character: PetCharacter,
+    facing: PetFacing = "front"
+): readonly string[] {
+    const turned = facingRows(pose, outfit, character, facing);
+    if (turned) {
+        return turned;
+    }
     return character === "spidey" ? PETER_BOSS_POSES[pose] : outfitRows(pose, outfit, character);
 }
 
-/** The office boss's cells, as spriteFor draws the footer's: body, marks, and the flag in hand behind it. */
+// The Sprout's back in the flag shirt: no face to measure the shirt from, so it starts where the front's does, starless
+const SPROUT_BACK_SHIRT_TOP = 10;
+
+/** The boss's side or back grid for a walk frame or the stand (frame 1, feet together), in its outfit; null for the
+ *  front, or a pose that only faces the viewer (sit, a pastime, sleep). */
+function facingRows(
+    pose: PetPose,
+    outfit: PetOutfit | null,
+    character: PetCharacter,
+    facing: PetFacing
+): readonly string[] | null {
+    if (facing === "front" || (pose !== "walk1" && pose !== "walk2" && pose !== "stand")) {
+        return null;
+    }
+    const rows = BOSS_FACING[character][facing][pose === "walk1" ? 0 : 1];
+    // Peter the boss is always in his shirt and tie
+    if (outfit !== "vn-shirt" || character === "spidey") {
+        return rows;
+    }
+    // the star is on the shirt's front
+    if (character === "minion") {
+        return dressMinionInFlag(rows, false);
+    }
+    if (facing === "side") {
+        return dressInFlag(rows, false);
+    }
+    return rows.map((row, y) => (y >= SPROUT_BACK_SHIRT_TOP ? row.replace(/[bl]/g, "R") : row));
+}
+
+/** The office boss's cells, as spriteFor draws the footer's: body, marks, and the flag in hand behind it. `facing` turns
+ *  it while it walks or stands (PetFacing); the other poses face the viewer. */
 export function bossSprite(
     pose: PetPose,
     marks: readonly PetMark[],
     outfit: PetOutfit | null,
-    character: PetCharacter
+    character: PetCharacter,
+    facing: PetFacing = "front"
 ): PetSprite {
-    if (character !== "spidey") {
+    if (character !== "spidey" && facingRows(pose, outfit, character, facing) == null) {
         return spriteFor(pose, marks, outfit, character);
     }
     return {
-        ...spriteOfRows(bossRows(pose, outfit, character), marks),
+        ...spriteOfRows(bossRows(pose, outfit, character, facing), marks),
         back: outfit === "vn-flag" ? [...FLAG_CELLS] : [],
     };
 }

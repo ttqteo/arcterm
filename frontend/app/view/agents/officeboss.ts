@@ -22,7 +22,9 @@ import {
 export type Dir = WalkDir;
 
 export const STEP_PX = 3; // one pixel-art cell: moves happen in whole cells
-export const BOSS_SPEED = 160;
+export const BOSS_SPEED = 240;
+// Shift held: the arrows walk the boss this many times as fast
+export const BOSS_RUN = 2;
 export const JUMP_SPEED = 400;
 export const WALKER_SPEED = 60;
 const DOOR_REACH = 14;

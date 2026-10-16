@@ -27,6 +27,15 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Office, Windows and Mac: hold an arrow, the boss walks faster than before (~240 px/s); hold `Shift`
+  with it, it runs at twice that; let go of `Shift` mid-walk, it slows back. With reduced motion on, `Shift`+arrow
+  jumps 48 px instead of 24. 2026-10-16.
+- [ ] (arcterm) Office with music on: press `o` to Cards, switch surface, or click another window; the music fades
+  out over ~0.4 s instead of cutting off (a jingle playing fades too). 2026-10-16.
+- [ ] (arcterm) Office, each pet (Sprout, Minion, Spider-Man) and the VN shirt: walk with the arrows; the boss shows its
+  back going up, its side going left / right (mirrored for left), its front going down, and stays turned standing.
+  Judge Peter's side head (the spec once dropped one as a long face). 2026-10-16.
+
 **2026-10-16 (the Office's sounds)**
 
 - [ ] (arcterm) In the real app: Cockpit → Office with real agents and a run. Are the jingles pleasant and the default

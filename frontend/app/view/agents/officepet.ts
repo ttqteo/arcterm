@@ -7,7 +7,7 @@
 
 import type { PetExpression, PetPosture } from "@/app/view/jarvis/petcondition";
 import { wearsTired } from "@/app/view/jarvis/petcondition";
-import type { PetCharacter, PetMark, PetPose } from "@/app/view/jarvis/petsprite";
+import type { PetCharacter, PetFacing, PetMark, PetPose } from "@/app/view/jarvis/petsprite";
 import { PASTIMES, POSTURE_MARK, REST_POSES, SLEEP_AFTER_MS } from "@/app/view/jarvis/petwalk";
 import type { Dir } from "./officeboss";
 
@@ -38,6 +38,9 @@ export interface BossPetInput {
 
 export interface BossPetLook {
     pose: PetPose;
+    // which way it shows itself: walking or standing it turns where it went (its back going up, its side going left or
+    // right); every other pose faces the viewer
+    facing: PetFacing;
     flip: boolean;
     marks: PetMark[];
 }
@@ -73,9 +76,11 @@ function poseOf(i: BossPetInput): PetPose {
 
 export function bossPet(i: BossPetInput): BossPetLook {
     const pose = poseOf(i);
-    const sideways = i.moving && (i.dir === "left" || i.dir === "right");
-    // Peter's walk is front-on: never mirrored
-    const flip = i.character === "spidey" ? false : sideways ? i.dir === "left" : i.flip;
+    const turns = pose === "walk1" || pose === "walk2" || pose === "stand";
+    const sideways = turns && (i.dir === "left" || i.dir === "right");
+    const facing: PetFacing = !turns || i.dir === "down" ? "front" : i.dir === "up" ? "back" : "side";
+    // the side is drawn facing right; a front-on Peter (sitting, a pastime) is never mirrored
+    const flip = sideways ? i.dir === "left" : i.character === "spidey" ? false : i.flip;
     const marks: PetMark[] = [];
     const postureMark = POSTURE_MARK[i.posture];
     if (postureMark != null) {
@@ -90,5 +95,5 @@ export function bossPet(i: BossPetInput): BossPetLook {
     if (i.unread) {
         marks.push("unread");
     }
-    return { pose, flip, marks };
+    return { pose, facing, flip, marks };
 }

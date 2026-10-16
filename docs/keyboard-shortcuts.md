@@ -213,7 +213,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `t` | Open the agent's terminal |
 | `b` | Background the agent (keeps it running) |
 | `o` | Switch the Cockpit between Cards and Office |
-| `←` `↑` `↓` `→` (Office) | Walk the boss; walls stop it, doors let it through. In the dialog box `↑` `↓` move the ▶ and `←` `→` switch the question (or, at the notice board, the page) |
+| `←` `↑` `↓` `→` (Office) | Walk the boss (hold `Shift` to run); walls stop it, doors let it through. In the dialog box `↑` `↓` move the ▶ and `←` `→` switch the question (or, at the notice board, the page) |
 | `j` / `k` (Office) | The boss walks to the next / previous desk or seat, the notice board last while something waits on you |
 | `n` (Office) | Show the way to the next Needs you for a second, then walk there, riding the lift first when it is on another floor; the notice board comes after the asking desks |
 | `Enter` (Office) | At a desk, the notice board, the lift or a room's `+N` chip (the agents and runs that did not fit a desk or a table; `Enter` on one opens its card beside the chip), open its dialog box; in the box, do what the ▶ points at (an answer, then Send); on the full card, Enter works as above |

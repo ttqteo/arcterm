@@ -17,7 +17,7 @@ that ships by default is short jingles on events; music is there to turn on, off
 
 Only while the Cockpit shows **Office** and the arcterm window has focus. Cards, every other surface, and a window in
 the background stay silent; in the background the OS toast speaks as it does today, so nothing sounds twice. When the
-office unmounts every sound stops and its `AudioContext` closes.
+office unmounts every sound fades out (0.4 s) and its `AudioContext` closes.
 
 All tunes are original, written for arcterm in the style of a GBA soundtrack (two square channels, a triangle, a noise
 channel). None is taken from Pokémon or any other game.
@@ -44,7 +44,7 @@ channel). None is taken from Pokémon or any other game.
 ## Music
 
 Two loops: one for work hours, one for after hours and weekends, chosen by `officeHoursAtom` as the office's day and
-night are. While a jingle plays the music ducks and comes back after. Losing focus stops the music; focus starts its loop again from the top (a loop is four bars: about 8.6 s by day, 11.4 s at night).
+night are. While a jingle plays the music ducks and comes back after. Losing focus fades the music out (0.4 s); focus starts its loop again from the top (a loop is four bars: about 8.6 s by day, 11.4 s at night).
 
 ## Controls
 

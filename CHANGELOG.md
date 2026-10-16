@@ -42,6 +42,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   so the office fills the Cockpit. The office menu (`m`) lists **Background** with how many agents are there; pick
   it to show both lists under the office, and **Hide background** to tuck them away again. Cards still shows them.
   <!-- big --> <!-- shot: 0.15.15-office-background.webp -->
+- The Office's music and jingles fade out instead of cutting off when you leave the Office, switch away from the
+  window, or mute.
+- The Office's boss turns the way it walks again: its back going up, its side going left or right, its front going
+  down, and it stays turned when it stops.
+- The Office's boss walks faster, and runs while you hold `Shift` with the arrows.
 - The agent header no longer shows a bare `i` key beside the initiative; `i` still opens it, and the link's tooltip
   says so.
 

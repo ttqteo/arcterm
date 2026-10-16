@@ -716,6 +716,53 @@ describe("Peter the boss", () => {
         expect(bossSprite("stand", [], null, "spidey").back).toEqual([]);
     });
 
+    describe("the boss turned", () => {
+        const characters = ["sprout", "minion", "spidey"] as const;
+        const outfits = [null, "vn-shirt", "vn-flag"] as const;
+
+        it("draws a 16×16 side and back for each walk frame and the stand, in every outfit, from known codes", () => {
+            for (const character of characters) {
+                for (const facing of ["side", "back"] as const) {
+                    for (const outfit of outfits) {
+                        for (const pose of ["walk1", "walk2", "stand"] as const) {
+                            const rows = bossRows(pose, outfit, character, facing);
+                            expect(rows).toHaveLength(16);
+                            for (const row of rows) {
+                                expect(row).toHaveLength(16);
+                                for (const code of row) {
+                                    expect(code === "." || code in PET_TOKENS).toBe(true);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        it("differs from the front, and its two walk frames step", () => {
+            for (const character of characters) {
+                for (const facing of ["side", "back"] as const) {
+                    expect(bossRows("walk1", null, character, facing)).not.toEqual(bossRows("walk1", null, character));
+                    expect(bossRows("walk1", null, character, facing)).not.toEqual(
+                        bossRows("walk2", null, character, facing)
+                    );
+                }
+            }
+        });
+
+        it("shows the Sprout no eyes from behind, one from the side", () => {
+            const eyes = (rows: readonly string[]) => rows.join("").split("k").length - 1;
+            expect(eyes(bossRows("walk1", null, "sprout", "back"))).toBe(0);
+            expect(eyes(bossRows("walk1", null, "sprout", "side"))).toBe(2);
+            expect(eyes(bossRows("walk1", null, "sprout"))).toBe(4);
+        });
+
+        it("faces the viewer in any other pose", () => {
+            expect(bossRows("sit", null, "sprout", "back")).toBe(POSES.sit);
+            expect(bossSprite("sleep", [], null, "minion", "side")).toEqual(spriteFor("sleep", [], null, "minion"));
+        });
+    });
+
     it("defines the tie's token in the theme", () => {
         expect(THEME_BLOCK).toMatch(/--color-peter-tie:\s*#[0-9a-f]{6};/i);
     });
