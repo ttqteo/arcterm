@@ -1,5 +1,5 @@
 // Verification scenario manifest. Each entry: { name, surface, arrange(h)->ctx, assert(h,ctx)->steps,
-// teardown(h,ctx) }. arrange/assert/teardown run in Node and drive the browser via h (see attach.mjs).
+// teardown(h,ctx), gotoShot? }; gotoShot: false skips the runner's <name>.png taken right after its goto. arrange/assert/teardown run in Node and drive the browser via h (see attach.mjs).
 // Asserts are RPC-based (backend state) or DOM-based (h.ev); they do not read jotai atoms (globalStore is not exposed on
 // window), with one exception: agent-history step 14 reads listNavAtom, which leaves no DOM trace, by importing the app's own
 // modules from the dev server (see ahResolveModules); diff-worktrees step 6 reads focusIdAtom through the focusId prop the
@@ -35413,6 +35413,8 @@ async function tgShot(h, n) {
 const settingsTelegram = {
     name: "settings-telegram",
     surface: "settings",
+    // Settings reopens the page last used, an earlier scenario's; settings-telegram-1.png is the row as it opens
+    gotoShot: false,
     async arrange(h) {
         const status = await h.rpc("telegramstatus", null);
         if (status?.hastoken) {
@@ -35424,18 +35426,6 @@ const settingsTelegram = {
         const prev = Object.fromEntries(TG_KEYS.map((k) => [k, settings[k] ?? null]));
         const fake = await tgStartFake();
         await h.rpc("setconfig", Object.fromEntries(TG_KEYS.map((k) => [k, null])));
-        // the harness shoots settings-telegram.png right after its goto, and Settings reopens the page last used (an
-        // earlier scenario's Appearance): open General with the row in view first, so that shot shows the row. Never
-        // thrown out of: arrange has already started the fake and cleared the settings, and only teardown undoes them
-        try {
-            await h.goto("settings");
-            await spOpen(h, "general");
-            await polishWaitFor(h, `${TG_ROW} != null`, 5000);
-            await h.ev(`${TG_ROW}?.scrollIntoView({ block: "center" })`);
-            await polishNap(200);
-        } catch {
-            // step 1 opens the page again and fails there if it cannot
-        }
         return { prev, fake };
     },
     async assert(h, ctx) {
