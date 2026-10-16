@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -174,5 +175,60 @@ func TestCleanRefusesAPathOutsideTheProjectsWorktrees(t *testing.T) {
 	res := runWorktrees{}.clean(context.Background(), env, []string{filepath.Join(repo, "src")}, CleanOpts{AllowGuarded: true})
 	if len(res.Skipped) != 1 || len(res.Cleaned) != 0 {
 		t.Fatalf("got %+v, want the path refused", res)
+	}
+}
+
+// addSharedTree links an engine-shaped worktree <root>/<key> on branch wave/<key>, as the shared root lays them out
+func addSharedTree(t *testing.T, repo, root, key string) string {
+	t.Helper()
+	wt := filepath.Join(root, key)
+	git(t, repo, "worktree", "add", "-q", "-b", "wave/"+key, wt)
+	writeFile(t, filepath.Join(wt, "out.bin"), 100)
+	return wt
+}
+
+func TestSharedRootTreesAreListedAndCleaned(t *testing.T) {
+	repo := newRepo(t)
+	root := t.TempDir()
+	done := addSharedTree(t, repo, root, runDone)
+	going := addSharedTree(t, repo, root, runGoing)
+	foreign := addSharedTree(t, repo, root, runOrphan)
+	for _, wt := range []string{done, going, foreign} {
+		git(t, wt, "add", "out.bin")
+		git(t, wt, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "work")
+	}
+	writeFile(t, filepath.Join(root, runDone[:8]+".run"), 36)
+	env := worktreeEnv(repo, map[string]RunState{
+		runDone:  {Found: true, Finished: true, Status: "done"},
+		runGoing: {Found: true, Status: "executing"},
+	})
+	env.WorktreeRoot = func() string { return root }
+
+	rep := runWorktrees{}.measure(context.Background(), env)
+	if it := itemByID(rep.Items, done); !it.Cleanable || it.Bytes < 100 || !strings.HasPrefix(it.Detail, filepath.Base(repo)) {
+		t.Fatalf("a finished run's shared tree must be listed under its project and cleanable: %+v", it)
+	}
+	if it := itemByID(rep.Items, going); it.Cleanable || it.Reason != "run still running" {
+		t.Fatalf("a running run's shared tree must stay: %+v", it)
+	}
+	// the dev app and the packaged one share the root: a run this store lacks may be the other app's live one
+	if it := itemByID(rep.Items, foreign); it.Cleanable || !it.Guarded {
+		t.Fatalf("a shared tree whose run this store lacks must be guarded: %+v", it)
+	}
+	if len(rep.Items) != 3 {
+		t.Fatalf("the .run marker is not a tree: %+v", rep.Items)
+	}
+
+	if res := (runWorktrees{}).clean(context.Background(), env, []string{done, foreign}, CleanOpts{AllowGuarded: true, Auto: true}); len(res.Cleaned) != 1 || res.Cleaned[0] != done {
+		t.Fatalf("auto-clean removes the finished tree only: %+v", res)
+	}
+	if _, err := os.Stat(done); err == nil {
+		t.Fatal("the finished tree must be gone")
+	}
+	if out, _ := gitOut(context.Background(), repo, "branch", "--list", "wave/"+runDone); out == "" {
+		t.Fatal("its branch must stay")
+	}
+	if res := (runWorktrees{}).clean(context.Background(), env, []string{foreign}, CleanOpts{AllowGuarded: true}); len(res.Cleaned) != 1 {
+		t.Fatalf("its own button removes the foreign tree: %+v", res)
 	}
 }

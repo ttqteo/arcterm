@@ -48,6 +48,7 @@ func StartStorage(ctx context.Context) {
 		BusyProjects:     storageBusyProjects,
 		LiveTranscripts:  openTabTranscripts,
 		RemoveWorktree:   orchestrate.RemoveWorktreeKeepBranch,
+		WorktreeRoot:     orchestrate.WorktreeRoot,
 		DataDir:          dataDir,
 		TrashDir:         sessiontrash.TrashDir(),
 		AttachmentsDir:   keptAttachmentsDir(),

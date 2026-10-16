@@ -8,6 +8,7 @@ import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
 import { formatChordString } from "@/util/keysym";
 import { joinRepoPath } from "@/util/paths";
+import { isWindows } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import {
@@ -40,6 +41,7 @@ import {
 import { RailResizeGrip, RailStats, RailTabStrip, useWideWidth } from "./agentrailpanel";
 import {
     bgTaskStatusLabel,
+    bgTaskStoppable,
     planAgentRail,
     planRailStats,
     railStatClick,
@@ -71,7 +73,7 @@ import { artifactsView } from "./railartifacts";
 import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
 import { clearRailSectionRequest, railSectionRequestAtom } from "./railsection";
-import { ServersSection } from "./railservers";
+import { ServersSection, ServerStopButton } from "./railservers";
 import {
     loadRailForAgent,
     railChangesRangeAtom,
@@ -89,7 +91,7 @@ import type { SubagentState } from "./session-models/sessionviewmodel";
 import { SessionSection } from "./sessionsection";
 import { spendHeadline } from "./sessionusage";
 import { StatusDot } from "./statusdot";
-import { backgroundTasksByIdAtom, focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
+import { backgroundTasksByIdAtom, focusSubagentAtom, stopBackgroundTask, subagentsByIdAtom } from "./subagentsstore";
 import type { BackgroundTask } from "./transcriptprojection";
 import { loadSessionUsage, sessionUsageAtom, UsageUnavailable } from "./transcriptusagestore";
 import { pickAndAttach } from "./uploadsingest";
@@ -387,8 +389,19 @@ const BG_DOT: Record<BgTaskLabel, string> = {
 };
 
 // A background command: what it is for, the command itself under it, and its status. With an output file it opens
-// that file in the panel's File tab with its Live toggle, following the output while the task runs.
-function BackgroundTaskRow({ task, live, onOpen }: { task: BackgroundTask; live: boolean; onOpen?: () => void }) {
+// that file in the panel's File tab with its Live toggle, following the output while the task runs. A running one
+// has a Stop beside it (two clicks), which ends its process and what it started.
+function BackgroundTaskRow({
+    task,
+    live,
+    onOpen,
+    onStop,
+}: {
+    task: BackgroundTask;
+    live: boolean;
+    onOpen?: () => void;
+    onStop?: () => void;
+}) {
     const label = bgTaskStatusLabel(task.status, live);
     const showCommand = task.command != null && task.command !== task.label;
     const body = (
@@ -404,23 +417,30 @@ function BackgroundTaskRow({ task, live, onOpen }: { task: BackgroundTask; live:
         </>
     );
     const cls = "flex w-full items-center gap-[10px] rounded-[8px] bg-surface-raised px-[11px] py-[8px] text-left";
-    if (onOpen == null) {
-        return (
+    const row =
+        onOpen == null ? (
             <div title={task.command} data-bg-task={task.toolUseId} className={cls}>
                 {body}
             </div>
+        ) : (
+            <button
+                type="button"
+                data-bg-task={task.toolUseId}
+                title={`${task.command ?? task.label}\n\nOpen its output`}
+                onClick={onOpen}
+                className={cn(cls, "cursor-pointer hover:bg-surface-hover")}
+            >
+                {body}
+            </button>
         );
+    if (onStop == null) {
+        return row;
     }
     return (
-        <button
-            type="button"
-            data-bg-task={task.toolUseId}
-            title={`${task.command ?? task.label}\n\nOpen its output`}
-            onClick={onOpen}
-            className={cn(cls, "cursor-pointer hover:bg-surface-hover")}
-        >
-            {body}
-        </button>
+        <div data-bg-task-stoppable className="flex items-center gap-[6px]">
+            <div className="min-w-0 flex-1">{row}</div>
+            <ServerStopButton confirmLabel="Stop" onStop={onStop} />
+        </div>
     );
 }
 
@@ -1015,6 +1035,12 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         key={t.toolUseId}
                         task={t}
                         live={live}
+                        onStop={
+                            // the kill finds the task among the agent block's job object: Windows only
+                            isWindows() && agent.blockId != null && bgTaskStoppable(t, live)
+                                ? () => fireAndForget(() => stopBackgroundTask(agent.id, agent.blockId!, t))
+                                : undefined
+                        }
                         onOpen={
                             t.outputFile != null
                                 ? () =>

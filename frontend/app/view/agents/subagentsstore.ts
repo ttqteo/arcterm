@@ -7,10 +7,12 @@
 // activity, drop on leave. The source of truth is the on-disk subagents/ dir (GetSubagentsCommand);
 // the parent transcript tail supplies the Task spawns that correlate type + outcome onto each file.
 
+import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
+import { bgTaskStopNote } from "./agentrailsections";
 import type { SubagentVM } from "./session-models/sessionviewmodel";
 import { correlateSubagents } from "./subagentcorrelate";
 import { extractBackgroundTasks, extractSubagentSpawns, type BackgroundTask } from "./transcriptprojection";
@@ -28,6 +30,34 @@ export const subagentsByIdAtom = atom<Record<string, SubagentVM[]>>({}) as Primi
 export const backgroundTasksByIdAtom = atom<Record<string, BackgroundTask[]>>({}) as PrimitiveAtom<
     Record<string, BackgroundTask[]>
 >;
+/** Stop a background task's processes in its agent's terminal block (pkg/resmon KillShellTask). A stopped task reads
+ *  stopped at once; claude then reports it, so the next transcript read agrees, and a task still running comes back. */
+export async function stopBackgroundTask(agentId: string, blockId: string, task: BackgroundTask): Promise<void> {
+    let r: ResMonKillRtnData;
+    try {
+        r = await RpcApi.ResMonKillShellTaskCommand(TabRpcClient, {
+            ownerid: blockId,
+            taskid: task.taskId ?? "",
+            command: task.command ?? "",
+            startedts: task.startMs ?? 0,
+        });
+    } catch (e) {
+        r = { outcome: "failed", killed: 0, error: e instanceof Error ? e.message : String(e) };
+    }
+    if (r.outcome === "killed") {
+        const list = globalStore.get(backgroundTasksByIdAtom)[agentId] ?? [];
+        setIn(
+            backgroundTasksByIdAtom,
+            agentId,
+            list.map((t) => (t.toolUseId === task.toolUseId ? { ...t, status: "stopped" as const } : t))
+        );
+    }
+    const note = bgTaskStopNote(r, task.label);
+    if (note != null) {
+        pushToast({ title: "Stop background task", message: note, level: r.outcome === "gone" ? "info" : "error" });
+    }
+}
+
 // the child interior currently open in the focused view (null = show the parent terminal)
 export const focusSubagentAtom = atom<FocusSubagent | null>(null) as PrimitiveAtom<FocusSubagent | null>;
 

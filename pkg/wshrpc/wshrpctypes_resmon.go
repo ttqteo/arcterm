@@ -11,6 +11,7 @@ type ResMonCommands interface {
 	ResMonSnapshotCommand(ctx context.Context, data CommandResMonSnapshotData) (*ResMonSnapshotData, error)
 	ResMonKillCommand(ctx context.Context, data CommandResMonKillData) (*ResMonKillRtnData, error)
 	ResMonKillChildrenCommand(ctx context.Context, data CommandResMonKillChildrenData) (*ResMonKillRtnData, error)
+	ResMonKillShellTaskCommand(ctx context.Context, data CommandResMonKillShellTaskData) (*ResMonKillRtnData, error) // kill one of a claude agent's background shell tasks
 }
 
 const (
@@ -60,6 +61,14 @@ type CommandResMonKillData struct {
 
 type CommandResMonKillChildrenData struct {
 	OwnerId string `json:"ownerid"`
+}
+
+// CommandResMonKillShellTaskData names a background shell task as the agent's transcript records it.
+type CommandResMonKillShellTaskData struct {
+	OwnerId   string `json:"ownerid"` // the agent's block id
+	TaskId    string `json:"taskid"`
+	Command   string `json:"command"`   // the Bash tool's command, verbatim
+	StartedTs int64  `json:"startedts"` // epoch ms; picks between two tasks running the same command
 }
 
 type ResMonKillRtnData struct {

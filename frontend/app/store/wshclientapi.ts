@@ -1164,6 +1164,12 @@ export class RpcApiType {
         return client.wshRpcCall("resmonkillchildren", data, opts);
     }
 
+    // command "resmonkillshelltask" [call]
+    ResMonKillShellTaskCommand(client: WshClient, data: CommandResMonKillShellTaskData, opts?: RpcOpts): Promise<ResMonKillRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "resmonkillshelltask", data, opts);
+        return client.wshRpcCall("resmonkillshelltask", data, opts);
+    }
+
     // command "resmonsnapshot" [call]
     ResMonSnapshotCommand(client: WshClient, data: CommandResMonSnapshotData, opts?: RpcOpts): Promise<ResMonSnapshotData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "resmonsnapshot", data, opts);

@@ -181,7 +181,12 @@ func removeWorktreeDir(ctx context.Context, projectPath, wt string) error {
 // RemoveWorktreeKeepBranch unregisters and deletes a linked worktree and keeps its branch: Settings → Storage
 // cleans a finished run's leftover tree without touching the commits on wave/<runId>. RemoveRunWorktree, by
 // contrast, deletes the branch too.
+// It holds the tree's removal lock with TryLock, so it never removes a tree the engine is removing: ErrTreeBusy then.
 func RemoveWorktreeKeepBranch(ctx context.Context, projectPath, wt string) error {
+	if !treeRemovals.TryLock(wt) {
+		return ErrTreeBusy
+	}
+	defer treeRemovals.Unlock(wt)
 	return removeWorktreeDir(ctx, projectPath, wt)
 }
 

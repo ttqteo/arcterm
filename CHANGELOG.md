@@ -26,6 +26,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Initiatives by project**: the Brief's Initiatives head has a project filter (all, each project, no project) when
+  the initiatives name more than one; it narrows before the list is cut, and the paused count and archived ones follow
+  it.
+- **Stop a background command**: a Claude agent's running background command (a hung build, a dev server it left
+  behind) has a Stop beside it in the agent rail's Background tasks; two clicks end it and what it started. Windows.
 - The Office has a notice board in the hall: what needs you waits there as pinned slips, and ↵ at the board pages
   through them with the same buttons the Cards view shows. The Office's "need you" count adds the board's slips to the
   agents that ask.
@@ -60,6 +65,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A plan queued behind another run reads **Queued · after** and the run's name in the Agent tree, so its row says it is queued even when
+  the run's name is cut off.
 - **The office lives in the Cockpit only**: Jarvis's Runs list no longer has an **office** chip, and Jarvis stays on
   the footer instead of taking a desk under the runs.
 - **The Office plays like a pixel game**: ↵ at a desk opens a dialog box at the edge of the office with what the agent
@@ -113,6 +120,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **A lead's wake is no longer held** by a tool hook that reported after its turn ended, or while you type an answer
   to its question.
 - **A spec the run revised no longer holds its land.**
+- **Settings → Storage sees the engine's trees**: Run worktrees now lists and cleans the trees runs leave in
+  `arc-wt` (under your cache folder), not only the old `.waveterm/worktrees`. A tree whose run this app does not
+  know, such as one the dev app and the installed arcterm share, is left to its own button.
+- **A background command's log is never empty**: a Claude agent that starts a background command with its output
+  redirected to a file (`task dev > dev.log`) is told to drop the redirect, since Claude Code already keeps that
+  output in the file the Background tasks and Servers lists open.
 - **"The Mac slept for…" counts the whole sleep**: it counts from when the Mac fell asleep, not from the last few
   seconds macOS woke it in the night for maintenance, so a night's sleep no longer reads as nine minutes. The pet now
   says it two minutes after the Mac wakes.

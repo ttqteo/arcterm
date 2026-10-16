@@ -124,3 +124,23 @@ export type BgTaskLabel = BackgroundTaskStatus | "unknown";
 export function bgTaskStatusLabel(status: BackgroundTaskStatus, live: boolean): BgTaskLabel {
     return status === "running" && !live ? "unknown" : status;
 }
+
+// a running task of a live session with a command and a terminal block to find its process in can be stopped
+export function bgTaskStoppable(task: { status: BackgroundTaskStatus; command?: string }, live: boolean): boolean {
+    return task.status === "running" && live && (task.command ?? "") !== "";
+}
+
+/** Pure: what to tell the user after stopping a background task, or null when the row turning "stopped" says it. */
+export function bgTaskStopNote(r: { outcome: string; error?: string }, label: string): string | null {
+    switch (r.outcome) {
+        case "killed":
+            return null;
+        case "gone":
+            return `"${label}" had already ended.`;
+        case "failed":
+            // the OS text ends in its own period
+            return `Could not stop "${label}"${r.error ? `: ${r.error.replace(/\.$/, "")}` : ""}.`;
+        default:
+            return `Not stopped: "${label}" is not a process of this agent's tab.`;
+    }
+}

@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-16 (queued row says Queued)**
+
+- [ ] Queue a plan `--after` a running run: its row in the Agent tree reads `Queued · after <run title>`, and a narrow
+  sidebar still shows `Queued ·` before the cut. `runqueuemodel.ts` `queuedMeta`.
+
 **2026-10-16 (the Office's Needs you notice board, run 0e23de6a)**
 
 - [ ] (arcterm) With real Needs you rows (a plan to review, a run to land, a learned rule): Cockpit → Office. The
@@ -56,6 +61,16 @@ does not, say what you saw and it becomes a bug row under Actionable.
   chip per reviewer in the DAG view; a round-2 resubmit shows one `Round-2 follow-up`. `agenttree.tsx`.
 - [ ] (arcterm) Settings → Background AI → Radar: a **Commit classifier** row under Radar audit, its placeholder
   `haiku` on claude and `pi default` on pi. `settingspages/backgroundai.tsx`.
+- [ ] (arcterm) A Claude agent's background command (`run_in_background`) that redirects stdout to a file is refused
+  with the "Claude Code already saves…" reason; `2>&1`, `> $null` and a foreground redirect pass. `guard-core.ts`.
+- [ ] (arcterm) Settings → Storage → Run worktrees lists the trees under `%LOCALAPPDATA%rc-wt` with their project and
+  run status; one whose run the dev app's store lacks shows guarded, and Clean all leaves it. `pkg/storage/worktrees.go`.
+- [ ] (arcterm) Agent rail → Background tasks: a running command has a red Stop; two clicks end it (the row reads
+  stopped, the process is gone from Task Manager), a task already ended toasts "had already ended". Windows only.
+  `agentdetailsrail.tsx`, `pkg/resmon/shelltask.go`.
+- [ ] (arcterm) Jarvis Brief → Initiatives: with initiatives in two or more projects, the head shows `all · <project>…`
+  chips; picking one narrows the rows, the paused count and "Show N archived"; a project with none shows No match.
+  `briefsurface.tsx`.
 - [ ] (arcterm) A terminal after a GPU reset (or a WebGL context loss): it goes on drawing with the DOM renderer at
   once, no white sad-face canvas, and WebGL comes back about 2 s later. `termwrap.ts`.
 
@@ -828,6 +843,13 @@ Tracked in their own initiatives, not here:
   beyond the holds' noise of ±3 points: the raw readings are 14.7–16.5 % before and 15.2–18.0 % after, and every
   over-Cards figure sits below the baseline, so the budgets read as held from a baseline that swings by more than
   they allow.
+- **Cockpit office with the pixel-game controls** (2026-10-16, `cockpit-office-bench` at fd9c41ac0, after run 25462413's
+  HUD bar, dialog box and office menu; Tauri dev app on Windows through `final-verify.mjs`, its own ports and store,
+  the Cards baseline read 36.6 %): every budget held. 76 people, the office's own DOM nodes 245 (218 before the
+  controls), −1174 nodes and −4.68 MB heap against Cards; busy walking −16.2 % over Cards (20.4 % raw), reduced motion
+  −16.9 %, quiet −26.8 % with no clock running; 145 sprites; 115 ms to draw; a second round trip −2 MB. The first
+  bench run on Windows rather than the Mac, so the busy figures are not comparable with the rows above; the
+  production-build re-measure is still open.
 
 ---
 

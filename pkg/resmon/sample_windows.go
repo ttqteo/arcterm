@@ -97,3 +97,15 @@ func readCmdline(pid int) string {
 		buf = make([]byte, retLen)
 	}
 }
+
+// splitCmdline splits a command line as the C runtime would into argv; nil when it cannot.
+func splitCmdline(cmdline string) []string {
+	if cmdline == "" {
+		return nil
+	}
+	argv, err := windows.DecomposeCommandLine(cmdline)
+	if err != nil {
+		return nil
+	}
+	return argv
+}
