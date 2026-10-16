@@ -170,7 +170,7 @@ export interface Plan {
     loungeOverflow: string[]; // agent ids with no spot left: their desk is empty, the lounge draws only "+N"
     loungeMore: Box; // where "+N in the lounge" goes
     board: { box: Box; spot: Point }; // the Needs you notice board in the hall, and where the boss stands at it
-    lift: { doors: Box; dial: Box; spot: Point }; // the lift at the hall's foot, and where the boss stands at it
+    lift: { doors: Box; dial: Box; spot: Point }; // the lift at the hall's foot, and where the boss stands at it: above its dial
     floor: number; // the floor built
     floors: FloorSummary[]; // every floor that holds a room, from G up
     ground: boolean; // the floor built is G
@@ -204,6 +204,8 @@ const BOARD_GAP = 16; // the board's top below the lounge's foot
 const BOARD_SPOT_DY = 22; // the boss's feet below the board's foot
 const LIFT_W = 70;
 const LIFT_H = 68;
+const LIFT_DIAL_H = 26;
+const LIFT_LABEL_H = 24; // the strip over the dial that the view puts `Floor n` in: the boss stands above it, so its body covers neither
 const CHIP_H = 20;
 const CHIP_CHAR_W = 6.4; // the chip's label is 11 px text
 export const FACADE_H = 40;
@@ -764,8 +766,8 @@ export function buildPlan(input: PlanInput): Plan {
     const foot = top + bodyH;
     const lift = {
         doors: { x: hallX + 20, y: foot - LIFT_H, w: LIFT_W, h: LIFT_H },
-        dial: { x: hallX + 29, y: foot - LIFT_H - 26, w: 52, h: 26 },
-        spot: { x: hallX + 55, y: foot - 84 },
+        dial: { x: hallX + 29, y: foot - LIFT_H - LIFT_DIAL_H, w: 52, h: LIFT_DIAL_H },
+        spot: { x: hallX + 55, y: foot - LIFT_H - LIFT_DIAL_H - LIFT_LABEL_H },
     };
 
     walls.push(

@@ -83,7 +83,7 @@ import {
 } from "./officestore";
 import { dialogItems, questionTabs, type DeskKind, type DialogInput, type DialogItemId } from "./officedialogmodel";
 import { boardCall, boardItems, boardPage, boardTabs, boardWords } from "./officeboardmodel";
-import { BOARD_KEY } from "./officeplanmodel";
+import { BOARD_KEY, LIFT_KEY } from "./officeplanmodel";
 import { useNeedsYou } from "./needsyou";
 import type { StripRow } from "./needsyoustripmodel";
 import {
@@ -362,15 +362,17 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
 
     // keep the cursor on a visible stop as the set changes; a worker's id follows its row, else the first stop
     useEffect(() => {
-        // the office's stops include the Idle section's agents and seats with no card row. The notice board is a stop the
-        // cursor may stay on at any row count (the boss stands at it even when nothing waits), but never the one it falls
-        // back to: before the roster loads it would be the first stop, and the boss would open at the board
+        // the office's stops include the Idle section's agents and seats with no card row. The notice board and the lift are
+        // stops the cursor may stay on at any row count (the boss stands at them even when nothing waits), but never the one
+        // it falls back to: before the roster loads it would be the first stop, and the boss would open at the board
         const stops =
             view === "office"
                 ? [...navigableIds, ...(officeRef.current?.order() ?? []).filter((k) => k !== BOARD_KEY)]
                 : navigableIds;
         const next =
-            view === "office" && cursorId === BOARD_KEY ? cursorId : resolveCursor(cursorId, stops, cursorAlias);
+            view === "office" && (cursorId === BOARD_KEY || cursorId === LIFT_KEY)
+                ? cursorId
+                : resolveCursor(cursorId, stops, cursorAlias);
         if (next !== cursorId) {
             setCursorId(next);
         }

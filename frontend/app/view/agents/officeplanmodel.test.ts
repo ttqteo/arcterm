@@ -567,6 +567,18 @@ describe("officeplanmodel", () => {
             expect(overlaps(dial, p.board.box)).toBe(false);
         });
 
+        it("stands the boss clear of the dial and the strip over it that holds `Floor n`", () => {
+            const { dial, spot } = p.lift;
+            const label = { x: dial.x, y: dial.y - 24, w: dial.w, h: 24 };
+            // the sprite stands on its feet at the spot, 14 cells wide, as tall as its taller pose
+            const h = Math.max(PLAN_SPRITES.stand.length, PLAN_SPRITES.boss.length) * PLAN_CELL;
+            const body = { x: spot.x - 7 * PLAN_CELL, y: spot.y - h, w: 14 * PLAN_CELL, h };
+            expect(overlaps(body, dial)).toBe(false);
+            expect(overlaps(body, label)).toBe(false);
+            // and it stays under the notice board's spot (the shortest view is the tight one)
+            expect(body.y).toBeGreaterThan(p.board.spot.y);
+        });
+
         it("builds the same hall on every floor", () => {
             const at: Placements = { a: { floor: 0, slot: 0 }, b: { floor: 1, slot: 0 } };
             const two = [ag("a", { project: "a" }), ag("b", { project: "b" })];
