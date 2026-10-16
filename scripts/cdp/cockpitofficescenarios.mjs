@@ -10,7 +10,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { officeRunWorker, SCENARIOS as ROSTERS } from "../cockpit-fixtures/scenarios.mjs";
-import { busyPct, HOLD_MS, mb, metrics, round1 } from "./officescenarios.mjs";
 
 export const FIXTURE = new URL("../../public/cockpit-fixtures/active.json", import.meta.url);
 export const VIEW_KEY = "cockpit.view";
@@ -18,6 +17,21 @@ const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, E
 // the boss's walking speed (officeboss.ts BOSS_SPEED), for how long to hold an arrow
 const BOSS_PX_PER_S = 160;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const HOLD_MS = 30000;
+// main thread busy as a percent of a window: a TaskDuration delta (seconds) over its length, to 0.1
+const busyPct = (from, to) => ((to.task - from.task) / (HOLD_MS / 1000)) * 100;
+const round1 = (n) => Math.round(n * 10) / 10;
+const mb = (bytes) => Math.round((bytes / (1024 * 1024)) * 100) / 100;
+
+async function metrics(h) {
+    // React's dev build logs every component render as a performance.measure entry that the page keeps (~50 a second
+    // here, tens of thousands in a session), so the heap would read the app's own rendering, not the office's
+    await h.ev("performance.clearMeasures()");
+    await h.cdp("HeapProfiler.collectGarbage");
+    const { metrics: list } = await h.cdp("Performance.getMetrics");
+    const m = Object.fromEntries(list.map((x) => [x.name, x.value]));
+    return { heap: m.JSHeapUsedSize, nodes: m.Nodes, task: m.TaskDuration };
+}
 
 // fixture runs the office draws after the live ones
 function devRuns(prefix, specs) {

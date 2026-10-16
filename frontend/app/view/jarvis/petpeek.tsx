@@ -102,7 +102,7 @@ const ORIGIN: Record<PeekCorner, string> = {
 function originOf(placement: Placement): string {
     const [side, align] = placement.split("-");
     if (side === "left" || side === "right") {
-        // beside the anchor (Jarvis's seat on the office floor, officeview.tsx): the aligned end is vertical
+        // beside the anchor: the aligned end is vertical
         const v = align === "end" ? "bottom" : align === "start" ? "top" : "center";
         return `${v} ${side === "right" ? "left" : "right"}`;
     }

@@ -27,7 +27,6 @@ import { fileURLToPath } from "node:url";
 import { SURFACE_LABEL } from "./attach.mjs";
 import { narrationFeed } from "./narrationfeed.mjs";
 import { notesWsh, vaultRemote, vaultRoot } from "./notes-wsh.mjs";
-import { makeOfficeScenarios } from "./officescenarios.mjs";
 import { makeCockpitOfficeScenarios } from "./cockpitofficescenarios.mjs";
 import {
     arrangeSetupFixture,
@@ -38357,15 +38356,6 @@ const whatsNew = {
     },
 };
 
-// the run office's scenarios take the run-fixture helpers (docs/reference/cdp-run-fixtures.md) from here
-const { jarvisOffice, jarvisOfficeBench, jarvisOfficeFloor } = makeOfficeScenarios({
-    arrangeFixtureRun,
-    waitForDispatch,
-    briefReload,
-    teardownFixtureRun,
-    tasks: RUN_SHEET_POLISH_TASKS,
-    leadId: TREE_RAIL_LEAD_ID,
-});
 const { cockpitOffice, cockpitOfficeControls, cockpitOfficeBench } = makeCockpitOfficeScenarios({ arrangeFixtureRun, teardownFixtureRun });
 
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
@@ -42779,9 +42769,6 @@ export const SCENARIOS = [
     setupProject,
     setupSkillEdit,
     whatsNew,
-    jarvisOffice,
-    jarvisOfficeBench,
-    jarvisOfficeFloor,
     cockpitOffice,
     cockpitOfficeControls,
     cockpitOfficeBench,

@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **The office lives in the Cockpit only**: Jarvis's Runs list no longer has an **office** chip, and Jarvis stays on
+  the footer instead of taking a desk under the runs.
 - **The Office plays like a pixel game**: ↵ at a desk opens a dialog box at the edge of the office with what the agent
   says, its question and its numbers, and a ▶ menu of what you can do there: ↑ ↓ pick, ↵ does it, Esc steps back, and
   Full card (f) shows the whole card. A run's room offers Open lead and Adjust, a worker's seat its task's own buttons.
