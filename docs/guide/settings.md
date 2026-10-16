@@ -59,7 +59,7 @@ Trang **General**, thẻ **Notifications**, hàng **Telegram**. Khi một agent 
 
 1. Trong Telegram, nhắn `@BotFather`, gửi `/newbot` và làm theo; BotFather trả một token.
 2. Dán token vào ô **Bot token from @BotFather** rồi Enter. Token nằm trong kho bí mật của hệ điều hành, không bao giờ hiện lại; hàng chỉ ghi có token hay chưa, và có liên kết **Remove token** để xóa.
-3. Bật công tắc. arcterm hỏi Telegram đúng một lần xem token có dùng được không: dòng trạng thái đi từ `Checking the token…` tới `@<bot> · not paired`. Token sai thì dòng đó đổi thành `Token rejected by Telegram`.
+3. Bật công tắc. arcterm hỏi Telegram đúng một lần xem token có dùng được không: dòng trạng thái đi từ `Checking the token…` tới `@<bot> · not paired`. Token sai thì dòng đó đổi thành `Token rejected by Telegram`. Nếu mạng lỗi (Telegram không trả lời), dòng hiện lỗi đó và arcterm hỏi lại khi bạn đổi một cài đặt hay bấm Pair, nếu không thì sau 1 phút, rồi giãn dần tới 30 phút.
 4. Bấm **Pair**. Hàng hiện một mã 6 số, dùng được khoảng 10 phút. Trong 10 phút đó arcterm kết nối với Telegram dù đang ở chế độ nào, để nhận `/start`.
 5. Trong Telegram, gửi `/start <mã>` cho bot. Hàng đổi thành `Paired with <tên chat> · …` và bot trả lời "Paired. Agent questions will arrive here.". Chỉ chat đã ghép được trả lời; tin nhắn của chat khác bị bỏ qua.
 

@@ -220,7 +220,8 @@ has something to do: a question waiting past the grace or still open in Telegram
 any mode (above). With
 neither, it disconnects after 30 s, and no request leaves the machine until the next question. Switching it on or
 storing a new token makes one `getMe`, to show the bot's name and catch a wrong token, and nothing more; it runs in
-every mode, also outside the allowed time, since the person just acted. A rejected token (401, from that `getMe` or a
+every mode, also outside the allowed time, since the person just acted. One that fails on the network (no answer
+from Telegram) is tried again at the next settings change or Pair, or else after 1 min, doubling to 30 min. A rejected token (401, from that `getMe` or a
 session's) starts no session until the token changes or the settings do (as today). The
 tracker of sent questions lives on the bot, not the session, so a reconnect does not resend them. The 2 s tick that
 decides all this reads only the local ask registry and the clock.
