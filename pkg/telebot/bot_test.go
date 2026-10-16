@@ -1140,6 +1140,22 @@ func withLinger(t *testing.T, d time.Duration) {
 	t.Cleanup(func() { idleLinger = was })
 }
 
+// withValidateBackoff shrinks the wait before a tick retries a validation that failed on the network. Call it before
+// r.start(), for the reason withLinger gives.
+func withValidateBackoff(t *testing.T, lo, hi time.Duration) {
+	t.Helper()
+	wasLo, wasHi := validateBackoffMin, validateBackoffMax
+	validateBackoffMin, validateBackoffMax = lo, hi
+	t.Cleanup(func() { validateBackoffMin, validateBackoffMax = wasLo, wasHi })
+}
+
+// setGetMe changes the code getMe answers with while the bot runs: 0 = ok.
+func (f *fakeTelegram) setGetMe(code int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.getMeCode = code
+}
+
 // wed returns h:m on Wednesday 2026-10-14 in the local zone; thu is the day after.
 func wed(h, m int) time.Time { return time.Date(2026, 10, 14, h, m, 0, 0, time.Local) }
 
@@ -1244,6 +1260,148 @@ func TestValidationNamesTheBotOnSwitchOn(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if n := r.tg.total(); n != 1 {
 		t.Errorf("requests = %d, want 1 getMe outside the allowed time", n)
+	}
+}
+
+// namedAndClear is the row after a good getMe: the bot's name, and no error ahead of it.
+func (r *rig) namedAndClear() bool {
+	st := r.bot.Status()
+	return st.BotName == "arc_test_bot" && st.LastError == ""
+}
+
+// dialError is the row after a getMe that failed on the network: an error that is not the 401's.
+func (r *rig) dialError() bool {
+	st := r.bot.Status()
+	return st.LastError != "" && st.LastError != errTokenRejected
+}
+
+func TestValidationNetworkErrorIsRetriedOnPoke(t *testing.T) {
+	r := newRig(t)
+	r.set.When = When{Mode: ModeManual}
+	r.tg.getMeCode = 500
+	r.start()
+	r.waitFor("the dial error", r.dialError)
+	if st := r.bot.Status(); st.BotName != "" {
+		t.Errorf("BotName = %q after a failed getMe, want none", st.BotName)
+	}
+
+	r.tg.setGetMe(0)
+	r.bot.Poke() // the same token: the network is back
+	r.waitFor("the bot's name and no error", r.namedAndClear)
+	if n := len(r.tg.callsOf("getMe")); n != 2 {
+		t.Errorf("getMe calls = %d, want 2 (the failure and the poke's retry)", n)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if n := len(r.tg.callsOf("getMe")); n != 2 {
+		t.Errorf("getMe calls = %d after ticks, want 2 (a good getMe settles the token)", n)
+	}
+}
+
+func TestValidationNetworkErrorIsRetriedAfterBackoff(t *testing.T) {
+	withValidateBackoff(t, 400*time.Millisecond, 800*time.Millisecond)
+	r := newRig(t)
+	r.set.When = When{Mode: ModeManual}
+	r.tg.getMeCode = 500
+	r.start()
+	r.waitFor("the dial error", r.dialError)
+
+	time.Sleep(100 * time.Millisecond) // ten ticks, all inside the wait
+	if n := len(r.tg.callsOf("getMe")); n != 1 {
+		t.Errorf("getMe calls = %d inside the backoff, want 1", n)
+	}
+
+	r.tg.setGetMe(0) // no poke: the tick after the wait retries
+	r.waitFor("the retry to name the bot and clear the error", r.namedAndClear)
+	if n := len(r.tg.callsOf("getMe")); n != 2 {
+		t.Errorf("getMe calls = %d, want 2 (the failure and one retry)", n)
+	}
+}
+
+func TestValidationBackoffDoublesAndResets(t *testing.T) {
+	withValidateBackoff(t, time.Minute, 5*time.Minute)
+	r := newRig(t)
+	r.tg.getMeCode = 500
+	r.bot = New(r.deps())
+	sv := &supervisor{b: r.bot, ctx: context.Background()}
+
+	for _, want := range []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 5 * time.Minute, 5 * time.Minute} {
+		before := time.Now()
+		sv.validate("TKN")
+		if sv.failWait != want || sv.failTok != "TKN" || sv.knownTok != "" || sv.retryAt.Before(before.Add(want)) {
+			t.Fatalf("after a failure: failWait = %v, failTok = %q, knownTok = %q, want %v on TKN, unknown",
+				sv.failWait, sv.failTok, sv.knownTok, want)
+		}
+	}
+
+	sv.validate("NEW") // another token starts the wait over
+	if sv.failWait != time.Minute || sv.failTok != "NEW" {
+		t.Errorf("new token: failWait = %v, failTok = %q, want 1m on NEW", sv.failWait, sv.failTok)
+	}
+
+	r.tg.setGetMe(0)
+	sv.validate("NEW") // a good getMe clears it
+	if sv.failTok != "" || sv.knownTok != "NEW" {
+		t.Errorf("after success: failTok = %q, knownTok = %q, want none and NEW", sv.failTok, sv.knownTok)
+	}
+
+	r.tg.setGetMe(500)
+	sv.validate("NEW")
+	r.setSettings(Settings{Enabled: false, ChatID: pairedChat}, "NEW")
+	sv.step(false) // switching off clears it too
+	if sv.failTok != "" || sv.knownTok != "" {
+		t.Errorf("after switch-off: failTok = %q, knownTok = %q, want both cleared", sv.failTok, sv.knownTok)
+	}
+}
+
+func TestValidationRejectedIsNotRetriedByTick(t *testing.T) {
+	withValidateBackoff(t, 5*time.Millisecond, 10*time.Millisecond) // a network failure would retry in these ticks
+	r := newRig(t)
+	r.set.When = When{Mode: ModeManual}
+	r.tg.getMeCode = 401
+	r.start()
+	r.waitFor("the rejected token", func() bool { return r.bot.Status().LastError == errTokenRejected })
+
+	time.Sleep(100 * time.Millisecond) // ten ticks
+	if n := len(r.tg.callsOf("getMe")); n != 1 {
+		t.Errorf("getMe calls = %d after ten ticks, want 1 (a 401 waits for a poke)", n)
+	}
+}
+
+func TestSessionRejectionMarksTheSessionsToken(t *testing.T) {
+	r := newRig(t)
+	r.add("block:a", old("a1", single("Which?", "x", "y"))) // a question is waiting, so a session may start
+	r.bot = New(r.deps())
+	sv := &supervisor{b: r.bot, ctx: t.Context()}
+	defer sv.stop()
+
+	// A session on token A that Telegram refused, seen by the pass after the token changed to B.
+	ended := make(chan struct{})
+	close(ended)
+	sv.cur = &session{b: r.bot, token: "A", cancel: func() {}, done: ended}
+	sv.cur.rejected.Store(true)
+	sv.knownTok = "A"
+	r.setSettings(Settings{Enabled: true, ChatID: pairedChat, When: When{Mode: ModeAlways}}, "B")
+	sv.step(false)
+
+	if sv.rejectedTok != "A" {
+		t.Errorf("rejectedTok = %q, want A: the token Telegram refused", sv.rejectedTok)
+	}
+	if sv.cur == nil || sv.cur.token != "B" {
+		t.Fatalf("no session on B: the new token was held as rejected")
+	}
+	r.waitFor("a getMe on B", func() bool {
+		for _, c := range r.tg.callsOf("getMe") {
+			if c.Token == "B" {
+				return true
+			}
+		}
+		return false
+	})
+
+	r.setSettings(Settings{Enabled: true, ChatID: pairedChat, When: When{Mode: ModeAlways}}, "A")
+	sv.step(false) // back to A with no poke: A is still held
+	if sv.cur != nil {
+		t.Errorf("a session on A started, want A held as rejected until a poke")
 	}
 }
 

@@ -55,6 +55,10 @@ var idleLinger = 30 * time.Second
 // validateTimeout bounds the one getMe a new token or a switch-on makes outside any session.
 const validateTimeout = 20 * time.Second
 
+// validateBackoffMin and validateBackoffMax bound the wait before a tick makes that getMe again after it failed on the
+// network (a 401 is not retried by a tick, and a poke retries either at once); vars so a test can shrink them.
+var validateBackoffMin, validateBackoffMax = time.Minute, 30 * time.Minute
+
 // Deps is everything the bot takes from wavesrv, as funcs so the test drives it with fakes.
 type Deps struct {
 	Pending  func(ctx context.Context) map[string]agentask.PendingAsk // live, non-dead asks
@@ -332,10 +336,16 @@ type supervisor struct {
 	cur *session
 
 	rejectedTok string    // the token Telegram answered 401, until a poke
-	knownTok    string    // the token the last getMe ran on, a session's or the validation's
+	knownTok    string    // the token Telegram answered a getMe for (a 401 too) or a session started on; "" after a network failure
 	trackedTok  string    // the token the tracker's messages went through
 	lastWanted  time.Time // the last pass that wanted a session
 	lastPairing time.Time // the last pass that saw a live pairing code
+
+	// The wait before a tick retries a validation that failed on the network: failTok is the token it failed on ("" =
+	// none), failWait the wait that follows the latest failure, retryAt when it ends.
+	failTok  string
+	failWait time.Duration
+	retryAt  time.Time
 }
 
 func (sv *supervisor) stop() {
@@ -354,8 +364,9 @@ func (sv *supervisor) step(poked bool) {
 
 	// A session that ended on a 401 is not restarted by a tick; a poke, the same token too, tries again.
 	if sv.cur != nil && sv.cur.rejected.Load() {
+		rejTok := sv.cur.token // the token Telegram refused, which is not the current one if it changed meanwhile
 		sv.stop()
-		sv.rejectedTok = tok
+		sv.rejectedTok = rejTok
 	}
 	if sv.cur != nil && sv.cur.ended() {
 		sv.cur = nil
@@ -367,7 +378,7 @@ func (sv *supervisor) step(poked bool) {
 	if !set.Enabled || tok == "" {
 		sv.stop()
 		b.resetStatus()
-		sv.knownTok, sv.rejectedTok = "", ""
+		sv.knownTok, sv.rejectedTok, sv.failTok = "", "", ""
 		return
 	}
 	rejected := sv.rejectedTok == tok
@@ -411,10 +422,16 @@ func (sv *supervisor) step(poked bool) {
 		return
 	}
 	// Nothing to do, so nothing is connected. Switching on or a new token (and a poke after a rejection) makes one
-	// getMe to show the bot's name and catch a wrong token, in every mode, and then nothing more.
-	if tok != sv.knownTok || wasRejected {
+	// getMe to show the bot's name and catch a wrong token, in every mode, and then nothing more. One that failed on the
+	// network is tried again on the next poke, and on a tick once its wait is over.
+	if (tok != sv.knownTok || wasRejected) && (poked || !sv.validateWaits(tok, wall)) {
 		sv.validate(tok)
 	}
+}
+
+// validateWaits reports that tok's validation failed on the network and a tick must still wait to retry it.
+func (sv *supervisor) validateWaits(tok string, wall time.Time) bool {
+	return sv.failTok == tok && wall.Before(sv.retryAt)
 }
 
 // wind ends the session that has nothing to do: at once when the allowed time ended (no code in play), else once it
@@ -439,14 +456,14 @@ func (sv *supervisor) start(tok string) {
 		cancel: cancel,
 		done:   make(chan struct{}),
 	}
-	sv.knownTok = tok
+	sv.knownTok, sv.failTok = tok, "" // the session makes its own getMe, and retries it itself
 	go sv.cur.run(sctx)
 }
 
-// validate is the one getMe a bot with nothing to do makes: the name for the row, or the 401.
+// validate is the one getMe a bot with nothing to do makes: the name for the row, or the 401. Either answer settles
+// the token; a network failure does not, so the token stays unknown and is retried (see validateBackoffMin).
 func (sv *supervisor) validate(tok string) {
 	b := sv.b
-	sv.knownTok = tok
 	ctx, cancel := context.WithTimeout(sv.ctx, validateTimeout)
 	defer cancel()
 	api := &Client{Base: b.d.APIBase, Token: tok}
@@ -457,12 +474,21 @@ func (sv *supervisor) validate(tok string) {
 	var ae *APIError
 	switch {
 	case err == nil:
+		sv.knownTok, sv.failTok = tok, ""
 		b.setBotName(me.Username)
 		b.setErr(&b.pollErr, "")
 	case errors.As(err, &ae) && ae.Code == 401:
+		sv.knownTok, sv.failTok = tok, ""
 		b.setErr(&b.pollErr, errTokenRejected)
 		sv.rejectedTok = tok
 	default:
+		sv.knownTok = ""
+		if sv.failTok != tok { // a new token starts the wait over
+			sv.failTok, sv.failWait = tok, validateBackoffMin
+		} else {
+			sv.failWait = min(sv.failWait*2, validateBackoffMax)
+		}
+		sv.retryAt = time.Now().Add(sv.failWait)
 		b.setErr(&b.pollErr, err.Error())
 	}
 }
