@@ -225,7 +225,7 @@ git commit -m "feat(runqueue): runqueue:changed names the run a start became; a 
 
 **Depends on:** none
 
-**Files:** `frontend/app/view/jarvis/briefqueue.ts`, `frontend/app/view/jarvis/briefqueue.test.ts`, `frontend/app/view/jarvis/briefrows.ts`, `frontend/app/view/agents/runqueuemodel.ts`, `frontend/app/view/agents/runqueuemodel.test.ts`
+**Files:** `frontend/app/view/jarvis/briefqueue.ts`, `frontend/app/view/jarvis/briefqueue.test.ts`, `frontend/app/view/jarvis/briefrows.ts`, `frontend/app/view/jarvis/briefsurface.tsx`, `frontend/app/view/agents/runqueuemodel.ts`, `frontend/app/view/agents/runqueuemodel.test.ts`
 
 What each file is for:
 - Create: `briefqueue.ts` — `withQueuedLines` (Runs lines with the queued lines placed among them) and
@@ -233,6 +233,7 @@ What each file is for:
 - Modify: `briefrows.ts` — `LineTarget` gains `{ runQueue: string }`, `BriefLine` gains `queued?: QueuedFace`,
   `lineOpenTarget` returns `null` for a run-queue target (Space has nothing to peek).
 - Modify: `runqueuemodel.ts` — export `queuedRoute(entry)`, the tooltip's route line, so the sheet words it the same.
+- Modify: `briefsurface.tsx` — only the one-line `openLine` stub of Step 2, so the new `LineTarget` arm compiles.
 
 - [ ] **Step 1: `queuedRoute` in runqueuemodel.ts**
 
@@ -288,7 +289,8 @@ Create `briefqueue.test.ts`. Build entries and rows with the real helpers so the
 import { describe, expect, it } from "vitest";
 import { queuedRows } from "@/app/view/agents/runqueuemodel";
 import type { BriefLine } from "./briefrows";
-import { queueSheetModel, withQueuedLines } from "./briefqueue";
+import { ACTIVE_CAP } from "./briefingmodel";
+import { liveRunCount, queueSheetModel, withQueuedLines } from "./briefqueue";
 
 const NOW = 1_700_000_000_000;
 
@@ -395,6 +397,17 @@ describe("withQueuedLines", () => {
         const runs = [runLine("r1", "Board")];
         expect(withQueuedLines(runs, [], "all", "", NOW)).toBe(runs);
     });
+
+    // the Runs window (sessionWindow) caps and folds the runs before the queue joins them, so neither ACTIVE_CAP nor
+    // `+N more` sees a queued line; and the region's "N live" counts running work only
+    it("draws every queued entry past ACTIVE_CAP, and counts none of them live", () => {
+        const runs = [runLine("r1", "Board"), { ...runLine("r2", "Old"), stale: true }];
+        const e = Array.from({ length: ACTIVE_CAP + 2 }, (_, i) => entry(`q-${i}`));
+        const out = withQueuedLines(runs, rowsOf(e), "all", "", NOW);
+        expect(out).toHaveLength(runs.length + ACTIVE_CAP + 2);
+        expect(liveRunCount(out)).toBe(1);
+        expect(liveRunCount(runs)).toBe(1);
+    });
 });
 ```
 
@@ -438,6 +451,18 @@ describe("queueSheetModel", () => {
         expect(m.chip).toBe("Blocked");
         expect(m.blocked).toBe(true);
         expect(m.reason).toBe("the plan file is gone");
+    });
+
+    it("names the session that queued it when that tab is known", () => {
+        const data = { ...entry("q-a").data, origintabid: "tab-1" } as CommandCreateRunData;
+        const [row] = rowsOf([entry("q-a", { data })]);
+        expect(queueSheetModel(row, { ...slots, originName: "arcterm · lead", now: NOW }).queuedBy).toEqual({
+            tabId: "tab-1",
+            name: "arcterm · lead",
+        });
+        // a tab no longer in the roster, or an entry queued from no session, names none
+        expect(queueSheetModel(row, { ...slots, originName: null, now: NOW }).queuedBy).toBeNull();
+        expect(queueSheetModel(rowsOf([entry("q-b")])[0], { ...slots, originName: "x", now: NOW }).queuedBy).toBeNull();
     });
 
     it("shows a quick run's goal where a plan would be", () => {
@@ -560,6 +585,11 @@ export function withQueuedLines(
     return out;
 }
 
+/** Pure: the Runs region's "N live": running work only, so neither a run folded as stale nor a queued plan counts. */
+export function liveRunCount(lines: readonly BriefLine[]): number {
+    return lines.filter((l) => !l.stale && l.queued == null).length;
+}
+
 export type QueueSheetModel = {
     chip: string;
     blocked: boolean;
@@ -570,14 +600,17 @@ export type QueueSheetModel = {
     goal: string | null;
     route: string;
     queued: string;
+    // the session that queued it, when its tab is in the roster
+    queuedBy: { tabId: string; name: string } | null;
     runNext: boolean;
 };
 
 /** Pure: the queue sheet's lines. `afterStage` is the stage of the run it waits on, when it waits on a run that is
- *  loaded; maxActive and active are runs:maxactive (0 is no cap) and the active runs, from RunQueueList. */
+ *  loaded; maxActive and active are runs:maxactive (0 is no cap) and the active runs, from RunQueueList; originName is
+ *  the roster's name for the entry's origintabid (useOriginName), null when that tab is not known. */
 export function queueSheetModel(
     row: QueuedRow,
-    i: { maxActive: number; active: number; afterStage?: string; now: number }
+    i: { maxActive: number; active: number; afterStage?: string; originName?: string | null; now: number }
 ): QueueSheetModel {
     const { entry } = row;
     const blocked = isBlockedEntry(entry);
@@ -598,6 +631,7 @@ export function queueSheetModel(
         goal: entry.data.planpath ? null : entry.data.goal || null,
         route: queuedRoute(entry),
         queued: `queued ${formatAge(i.now - entry.queuedts)}`,
+        queuedBy: entry.data.origintabid && i.originName ? { tabId: entry.data.origintabid, name: i.originName } : null,
         runNext: row.place != null && row.place > 1,
     };
 }
@@ -666,25 +700,34 @@ export function openQueueSheet(entryId: string): void {
 - The Runs `Region`'s `empty` becomes `sessions.rows.length === 0 && queued.length === 0`.
 - `openLine` (line 1348): replace Task 2's stub with
   `if ("runQueue" in target) { openQueueSheet(target.runQueue); return; }`.
-- In the Runs map (line ~2246), draw a queued line with its own view:
+- In the Runs map (line ~2246), draw a queued line with its own view, outside the motion wrapper:
   ```tsx
-  {l.queued != null ? (
-      <QueuedRunRowView
-          line={l}
-          focused={cursor === l.id}
-          selected={sheetOpen && queueSheetId === l.queued.entryId}
-          onOpen={() => openLine(l.target)}
-      />
-  ) : (
-      <BriefRunRow … /* as today */ />
+  {view.sessionLines.map((l) =>
+      l.queued != null ? (
+          <div key={l.id}>
+              <QueuedRunRowView
+                  line={l}
+                  focused={cursor === l.id}
+                  selected={sheetOpen && queueSheetId === l.queued.entryId}
+                  onOpen={() => openLine(l.target)}
+              />
+          </div>
+      ) : (
+          <motion.div key={l.id} … /* as today */>
+              <BriefRunRow … /* as today */ />
+          </motion.div>
+      )
   )}
   ```
   with `const queueSheetId = useAtomValue(briefQueueSheetAtom);`.
 - `j`/`k` already walk `view.visible`, which spreads `sessionLines`: nothing to add. Check that Enter on a queued
   line opens its sheet (the "every other row opens its target" path at line ~1372 reaches `openLine`); if it reads
   `target.oref` directly anywhere, route it through `openLine`.
-- `liveN` (line 1469) counts `!l.stale` lines: exclude queued lines (`!l.stale && l.queued == null`), so "N live"
-  still counts running work.
+- `liveN` (line 1469) becomes `liveRunCount(view.sessionLines)` (Task 2), so "N live" still counts running work.
+- No animation for a queued line (spec: an entry's row leaves and its run's row arrives with no animation): inside the
+  Runs `AnimatePresence` map (line ~2245), a queued line renders as a plain keyed `<div key={l.id}>` holding
+  `QueuedRunRowView`, never a `motion.div` (no `layout`, variants or exit); only run lines keep today's `motion.div`.
+  A plain child of `AnimatePresence` has no exit to wait for, so it leaves at once.
 
 - [ ] **Step 3: `QueuedRunRowView` in `briefrowviews.tsx`**
 
@@ -761,13 +804,15 @@ use; if `text-warning` is not a token in `tailwindsetup.css`, use the one `agent
 Run the Check line, then `npx vitest run frontend/app/view/jarvis/`
 Expected: exit 0; PASS.
 
-- [ ] **Step 5: Look at it in the dev app**
+- [ ] **Step 5: Acceptance, and a look in the dev app**
 
-With `task dev` running, queue two entries in a scratch channel (see Task 5's arrange, or
-`wsh runs start --plan <file> --after <a running run id>` in a throwaway checkout) and open Jarvis. The queued row
-sits under its run, indented, `queued` badge, `after it lands · 4m`, `#2` on the right. Shot it with
-`node scripts/cdp-shot.mjs cdp-shots/brief-run-queue-rows.png`. Remove the entries afterwards
-(`wsh runs dequeue <id>`).
+This task's views are shown by the `brief-run-queue` scenario (Task 5 Step 1): step 1 (the rows, their order, depth,
+meta and state, the blocked state's tooltip), step 5 (`j` / `k` and Enter on a queued row) and step 8 (the run-kind
+toggle hiding the quick entries). The scenario lands in Task 5; until then, with `task dev` running, queue two
+entries in a scratch channel (see Task 5's arrange, or `wsh runs start --plan <file> --after <a running run id>` in a
+throwaway checkout) and open Jarvis. The queued row sits under its run, indented, `queued` badge,
+`after it lands · 4m`, `#2` on the right. Shot it with `node scripts/cdp-shot.mjs cdp-shots/brief-run-queue-rows.png`.
+Remove the entries afterwards (`wsh runs dequeue <id>`).
 
 - [ ] **Step 6: Commit**
 
@@ -875,9 +920,13 @@ It takes `{ model, entryId }`, and:
     (`openOrPeekAddress(model, "run:" + runId)`) or `entryId` (`openQueueSheet(entryId)`);
   - `data-queue-sheet-reason` when `m.reason`: the whole reason, `text-warning`, wrapping;
   - `data-queue-sheet-plan`: `m.plan` (a button opening the file the way the Agent tree opens a plan path, if one
-    exists; grep `planpath` in `frontend/app/view/agents/` for it; plain text otherwise) or `m.goal`;
+    exists; grep `planpath` in `frontend/app/view/agents/` for it; plain text otherwise); for a quick entry,
+    `data-queue-sheet-goal`: `m.goal`, wrapping;
   - `data-queue-sheet-route`: `m.route`;
-  - `data-queue-sheet-queued`: `m.queued`;
+  - `data-queue-sheet-queued`: `m.queued`, then, when `m.queuedBy`, ` · from <name>` as a button
+    (`data-queue-sheet-origin`) calling `openOriginSession(model, m.queuedBy.tabId)` (`agents/runoriginstore.ts`),
+    in the run sheet's `started from` button recipe (`runsheet.tsx:446`). The name comes from
+    `useOriginName(model, row.entry.data.origintabid)` (same module), passed to `queueSheetModel` as `originName`;
   - the actions in a dock at the bottom (`border-t border-edge-faint`, `SHEET_BTN` from `briefrunsheet.tsx`):
     `data-queue-sheet-act="start"` → `startQueuedNow(row.entry)`, `"next"` (only when `m.runNext`) →
     `runQueuedNext(row.entry)`, `"remove"` → `confirmRemoveQueued(row.entry)`, all from `runqueuestore.ts`.
@@ -948,12 +997,18 @@ function QueuedAfter({ model, runId }: { model: AgentsViewModel; runId: string }
 
 (`runTitle` from `@/app/view/agents/runlineage`, `openOrPeekAddress` from `./openref`.)
 
-- [ ] **Step 6: Typecheck, test, look**
+- [ ] **Step 6: Typecheck, test, acceptance**
 
 Run the Check line and `npx vitest run frontend/app/view/jarvis/ frontend/app/view/agents/runqueuemodel.test.ts`:
-exit 0, PASS. In the dev app, open a queued row's sheet: the chip, waits on, plan, route, queued and the actions
-draw; Start now on a quick deferred entry turns the sheet into that run's sheet, which reads `queued after …` when it
-had a run After. Shot: `node scripts/cdp-shot.mjs cdp-shots/brief-run-queue-sheet.png`.
+exit 0, PASS.
+
+This task's views are shown by the `brief-run-queue` scenario (Task 5 Step 1): steps 2 and 3 (the queue sheet: chip,
+waits on a run and on an entry, plan, route, queued, the actions, Run next only past #1), step 4 (another row clears
+the queue face), step 6 (the blocked reason), step 7 (a room-only quick entry: `a free slot (1 of 1 running)` and its
+goal), step 9 (Start now follows the entry into its run sheet, which reads `queued after`) and step 11 (Remove:
+confirm, the sheet closes, the `left the queue` toast). The scenario lands in Task 5; until then, in the dev app, open
+a queued row's sheet and Start now a quick deferred entry. Shot:
+`node scripts/cdp-shot.mjs cdp-shots/brief-run-queue-sheet.png`.
 
 - [ ] **Step 7: Commit**
 
@@ -987,20 +1042,40 @@ Arrange (`surface: "jarvis"`):
 - D: orchestrator plan entry whose plan file is then removed, Start now until it is blocked (as `run-queue` does);
 - E: quick `deferstart` entry, `after: ctx.fillId`.
 
-Assert, each a numbered step with its own shot under `cdp-shots/brief-run-queue-*.png`:
+Assert, each a numbered step with its own shot under `cdp-shots/brief-run-queue-*.png`. The order matters: steps
+1–8 read the queue while the fill run is the one active run, step 9 starts E (two active after it), and step 11
+removes C last.
 1. `h.goto("jarvis")`; wait (up to 20 s: the Brief's runs come from the briefing read) for the fill run's Runs row and
    for `[data-brief-queued]` rows for A–E. Read every `[data-jarvis-brief-region="sessions"] [data-jarvis-brief-row]`
-   in order as `{ row, queued, depth, meta, state }`. Pass when A is right after the fill run at depth 1 with meta
-   starting `after it lands`, B right after A at depth 2, E after B at depth 1, and C and D at depth 0 after every
-   `session` row, C's meta starting `waiting for room` and D's state `blocked` (its `title` holding the reason).
+   in order as `{ row, queued, depth, meta, state, stateTitle }` (`stateTitle` is `[data-brief-queued-state]`'s
+   `title`). Pass when A is right after the fill run at depth 1 with meta starting `after it lands`, B right after A at
+   depth 2, E after B at depth 1, and C and D at depth 0 after every `session` row, C's meta starting
+   `waiting for room`, D's state `blocked` and D's `stateTitle` equal to D's `reason` in `rqList` (the blocked
+   state's tooltip).
 2. Click A's row: `[data-jarvis-brief-sheet="queued"]` is open; `[data-queue-sheet-waits]` contains the fill run's
-   goal; `[data-queue-sheet-plan]` ends `a.md`; `[data-queue-sheet-route]` starts `Lead claude`; acts `start` and
-   `remove` exist and `next` does not (A is #1).
+   goal; `[data-queue-sheet-plan]` ends `a.md`; `[data-queue-sheet-route]` starts `Lead claude`;
+   `[data-queue-sheet-queued]` starts `queued `; acts `start` and `remove` exist and `next` does not (A is #1).
 3. Click B's row: the sheet now shows B; its waits names A's title; act `next` exists.
-4. Click E's row, then its `[data-queue-sheet-act="start"]`: within 15 s the sheet is a run sheet
+4. Another row clears the queue face: with B's sheet open, click the fill run's Runs row. The sheet is
+   `[data-jarvis-brief-sheet="channel"]` with `[data-run-sheet]`, and no `[data-jarvis-brief-sheet="queued"]` is in
+   the page.
+5. `j` / `k` and Enter: press Escape (no sheet open), then press `j` (at most 30 times, each through
+   `Input.dispatchKeyEvent` as the other Brief scenarios send keys) until `[data-brief-queued="<A>"]` carries
+   `data-jarvis-brief-cursor="true"`; press Enter: the queue sheet is open on A (its header title is A's title).
+6. Click D's row: the chip reads `Blocked`, and `[data-queue-sheet-reason]`'s text equals D's `reason` in `rqList`,
+   whole (not clipped: its `scrollWidth <= clientWidth` and it holds no `…`).
+7. Click C's row: `[data-queue-sheet-waits]` reads `a free slot (1 of 1 running)`; there is no
+   `[data-queue-sheet-plan]`, and `[data-queue-sheet-goal]` holds C's goal; act `next` exists (C is #3).
+8. The run-kind toggle: press Escape, then click the `orchestrator` button in `[data-jarvis-run-kind]`: the queued
+   rows are A, B and D (C and E, quick entries, are gone); click `quick`: they are C and E; click `all`: A–E are back.
+9. Click E's row, then its `[data-queue-sheet-act="start"]`: within 15 s the sheet is a run sheet
    (`[data-jarvis-brief-sheet="channel"]` with `[data-run-sheet]`), and `[data-run-queued-after]` equals `ctx.fillId`
    and its text contains the fill run's goal. Record E's run for teardown (it is in the channel's runs).
-5. Press Escape: the sheet closes; E's queued row is gone from Runs.
+10. Press Escape: the sheet closes; E's queued row is gone from Runs.
+11. Remove: click C's row, then `[data-queue-sheet-act="remove"]`; a `[role="dialog"]` appears (wait up to 3 s);
+    click its button whose text includes `Remove` (as `run-queue`'s step 1c does). Within 15 s: no
+    `[data-jarvis-brief-sheet="queued"]`, a `[data-jarvis-brief-toast]` whose text contains `<C's title> left the
+    queue`, no `[data-brief-queued="<C>"]` row, and C is not in `rqList`.
 
 Teardown: as `run-queue`'s.
 
