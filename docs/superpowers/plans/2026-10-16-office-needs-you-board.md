@@ -45,7 +45,9 @@ wait, and opens its dialog through the existing `dialogFor` / layer machinery; t
 
 **Depends on:** none
 
-**Files:**
+**Files:** `frontend/app/view/agents/needsyou.ts`, `frontend/app/view/agents/needsyoustrip.tsx`, `frontend/app/view/agents/attentionstore.ts`
+
+What each file is for:
 - Create: `frontend/app/view/agents/needsyou.ts`
 - Modify: `frontend/app/view/agents/needsyoustrip.tsx`
 - Modify: `frontend/app/view/agents/attentionstore.ts`
@@ -112,7 +114,9 @@ git commit -m "refactor(cockpit): share the Needs you rows and acts through useN
 
 **Depends on:** none
 
-**Files:**
+**Files:** `frontend/app/view/agents/officeboardmodel.ts`, `frontend/app/view/agents/officeboardmodel.test.ts`, `frontend/app/view/agents/officedialogmodel.ts`
+
+What each file is for:
 - Create: `frontend/app/view/agents/officeboardmodel.ts`
 - Create: `frontend/app/view/agents/officeboardmodel.test.ts`
 - Modify: `frontend/app/view/agents/officedialogmodel.ts` (two type unions)
@@ -209,7 +213,6 @@ Expected: FAIL (module not found).
 Pure, with the repo's header comment (cite the spec and the canvas's Dialog board). Exports:
 
 ```ts
-export const BOARD_KEY = "board:needs-you";
 export type BoardAct = "act" | "act2" | "open" | "accept" | "dismiss" | "why";
 
 /** Pure: the ▶ menu of one page: the strip's buttons for its row, in their order. A learned rule is Accept, Dismiss
@@ -253,7 +256,9 @@ git commit -m "feat(office): the notice board's dialog model" -- frontend/app/vi
 
 **Depends on:** none
 
-**Files:**
+**Files:** `frontend/app/view/agents/officeplanmodel.ts`, `frontend/app/view/agents/officeplanmodel.test.ts`, `frontend/app/view/agents/officeboss.ts`, `frontend/app/view/agents/officeboss.test.ts`, `frontend/app/view/agents/officecontrols.ts`, `frontend/app/view/agents/officecontrols.test.ts`, `frontend/app/view/agents/cockpitoffice.tsx`
+
+What each file is for:
 - Modify: `frontend/app/view/agents/officeplanmodel.ts` (the `Plan` interface at :126, `buildPlan`'s return at
   ~:638)
 - Modify: `frontend/app/view/agents/officeboss.ts` (`deskAt` :189, `cardAt` :212, `spotOf` :183)
@@ -287,13 +292,14 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement**
 
-- `officeplanmodel.ts`: `export const BOARD_W = 96, BOARD_H = 96;` (the canvas's NoticeBoard board) and
+- `officeplanmodel.ts`: `export const BOARD_KEY = "board:needs-you";` (the board's cursor key; Task 4 and
+  `officeboss.ts` import it from here), `export const BOARD_W = 96, BOARD_H = 96;` (the canvas's NoticeBoard board) and
   `board: { box: Box; spot: Point }` on `Plan`. In `buildPlan`: `box = { x: hallX + 8, y: top + LOUNGE_H + 16, w:
   BOARD_W, h: BOARD_H }`, `spot = { x: box.x + box.w / 2, y: box.y + box.h + 22 }`. Keep it clear of the lounge's
   `loungeMore` label and of the hall lane at `hall.x + hall.w - 36` (`officeboss.ts` `LANE_FROM_RIGHT`). If the
   building is too short for it (the hall shorter than `LOUNGE_H + 16 + BOARD_H + 40`), grow `bodyH` the way the booth
   does (`officeplanmodel.ts:383-394`).
-- `officeboss.ts`: import `BOARD_KEY`. `deskAt`: in the hall, return `BOARD_KEY` when `p` is within `REACH_X` /
+- `officeboss.ts`: import `BOARD_KEY` from `./officeplanmodel`. `deskAt`: in the hall, return `BOARD_KEY` when `p` is within `REACH_X` /
   `REACH_Y` of `plan.board.spot`, before the `undefined`. `spotOf`: `BOARD_KEY` → `plan.board.spot`. `cardAt`: when
   `cursorId === BOARD_KEY` and the boss stands still at it, return `{ room: undefined, board: true }`; widen the
   return type to `{ desk?: Desk; seat?: Seat; room?: Room; board?: boolean }` and check each caller in
@@ -321,7 +327,9 @@ git commit -m "feat(office): a notice board in the hall the boss can stand at" -
 
 **Depends on:** Task 1, Task 2, Task 3
 
-**Files:**
+**Files:** `frontend/app/view/agents/cockpitoffice.tsx`, `frontend/app/view/agents/cockpitsurface.tsx`, `frontend/app/view/agents/officestore.ts`, `frontend/app/view/agents/usecockpitkeyboard.ts`, `frontend/app/view/agents/officedialog.tsx`, `frontend/app/view/office/plansprite.ts`
+
+What each file is for:
 - Modify: `frontend/app/view/agents/cockpitoffice.tsx`
 - Modify: `frontend/app/view/agents/cockpitsurface.tsx`
 - Modify: `frontend/app/view/agents/officestore.ts`
@@ -432,7 +440,9 @@ git commit -m "feat(office): the Needs you notice board" -- frontend/app/view/ag
 
 **Depends on:** Task 4
 
-**Files:**
+**Files:** `frontend/app/view/agents/cockpitofficedevhooks.ts`, `scripts/cdp/cockpitofficescenarios.mjs`, `CHANGELOG.md`, `docs/keyboard-shortcuts.md`, `docs/open-issues.md`, `docs/superpowers/specs/2026-10-15-cockpit-office-design.md`
+
+What each file is for:
 - Modify: `frontend/app/view/agents/cockpitofficedevhooks.ts`
 - Modify: `scripts/cdp/cockpitofficescenarios.mjs`
 - Modify: `CHANGELOG.md`, `docs/keyboard-shortcuts.md` (if it lists the office menu), `docs/open-issues.md`
