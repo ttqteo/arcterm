@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-16 (initiative sheet day header)**
+
+- [ ] (arcterm) Open an initiative with notes in the sheet (e.g. from Needs you) and scroll its Notes: the sticky
+  `TODAY` header shares the sheet's background, with no darker band. `briefsheet.tsx` effort face `bg-background`.
+
 **2026-10-16 (run workers in their project's room)**
 
 - [ ] With an orchestrator run's workers or reviewers live, open Cockpit → Office: they sit in the run's project room
