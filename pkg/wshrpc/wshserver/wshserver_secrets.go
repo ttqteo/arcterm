@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/wavetermdev/waveterm/pkg/secretstore"
+	"github.com/wavetermdev/waveterm/pkg/telebot"
 )
 
 func (ws *WshServer) GetSecretsNamesCommand(ctx context.Context) ([]string, error) {
@@ -31,6 +32,10 @@ func (ws *WshServer) SetSecretsCommand(ctx context.Context, secrets map[string]*
 				return fmt.Errorf("error setting secret %q: %w", name, err)
 			}
 		}
+	}
+	// a token set after the switch is on does not fire the config hook, so tell the bot to look again
+	if _, ok := secrets[telebot.TokenSecretName]; ok && telebot.Default != nil {
+		telebot.Default.Poke()
 	}
 	return nil
 }

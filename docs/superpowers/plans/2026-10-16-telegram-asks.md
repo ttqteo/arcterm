@@ -46,7 +46,9 @@ commands back a Telegram row under Settings → General → Notifications.
   the total row count (~l.376).
 - `CHANGELOG.md` has no `## Unreleased` section today: its top section is `## 0.15.14 — 2026-10-16`, which already has
   5 `<!-- big -->` lines, the most `whatsnew.test.ts` allows.
-- Dev mode: `wavebase.IsDevMode()` (`pkg/wavebase/wavebase.go:114`).
+- Dev app of the test harnesses: `wavebase.NoGlobalInstall()` (`pkg/wavebase/wavebase.go:120`), set by
+  `ARC_DEV_NO_GLOBAL_INSTALL`, which `final-verify.mjs` and `browser-app.mjs` set and a packaged build never does.
+  `wavebase.IsDevMode()` needs `WAVETERM_DEV`, which nothing in the repo sets: don't gate on it.
 - wshrpc command groups are interfaces in `pkg/wshrpc/wshrpctypes_*.go`, composed in `WshRpcInterface`
   (`pkg/wshrpc/wshrpctypes.go:34`); handlers live in `pkg/wshrpc/wshserver/wshserver_*.go`. Run `task generate` after.
 
@@ -387,7 +389,7 @@ Commit: `feat(telebot): long-poll runtime that sends asks and delivers answers`.
 
 **Depends on:** Task 3
 
-**Files:** `pkg/wconfig/settingsconfig.go`, `pkg/wshrpc/wshrpctypes_telegram.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_telegram.go`, `pkg/wshrpc/wshserver/wshserver_telegram_test.go`, `pkg/jarvis/attention.go`, `pkg/jarvis/attention_askprune_test.go`, `cmd/server/main-server.go`, `pkg/wshrpc/wshserver/wshserver_secrets.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`, `schema/settings.json`
+**Files:** `pkg/wconfig/settingsconfig.go`, `pkg/wshrpc/wshrpctypes_telegram.go`, `pkg/wshrpc/wshrpctypes.go`, `pkg/wshrpc/wshserver/wshserver_telegram.go`, `pkg/wshrpc/wshserver/wshserver_telegram_test.go`, `pkg/jarvis/attention.go`, `pkg/jarvis/attention_askprune_test.go`, `cmd/server/main-server.go`, `pkg/wshrpc/wshserver/wshserver_secrets.go`, `frontend/app/store/wshclientapi.ts`, `frontend/types/gotypes.d.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/wconfig/metaconsts.go`, `pkg/wconfig/vaultlayer.go`, `pkg/wconfig/vaultlayer_test.go`, `schema/settings.json`
 
 1. Settings (`SettingsType`, beside the `notify:*` fields at `settingsconfig.go:51`):
 
@@ -482,7 +484,7 @@ Commit: `feat(telebot): long-poll runtime that sends asks and delivers answers`.
    }
    ```
 
-   `devTelegramAPIBase()` returns `os.Getenv("ARC_TELEGRAM_API_BASE")` when `wavebase.IsDevMode()`, else `""`: the CDP
+   `devTelegramAPIBase()` returns `os.Getenv("ARC_TELEGRAM_API_BASE")` when `wavebase.NoGlobalInstall()`, else `""`: the CDP
    scenario points a dev app at a fake Bot API; a packaged build never reads it. Log once when it is set.
 
    Call `telebot.Default.Poke()` in `wconfig.ConfigHook` (line ~393). A token set through `SetSecretsCommand` does not
@@ -490,6 +492,12 @@ Commit: `feat(telebot): long-poll runtime that sends asks and delivers answers`.
    `telebot.TokenSecretName`.
 
 6. `task generate`. It also rewrites `schema/settings.json` with the three `telegram:*` keys; commit it.
+
+7. Machine-local: add `ConfigKey_TelegramEnabled`, `ConfigKey_TelegramChatID` and `ConfigKey_TelegramChatName` to
+   `machineLocalKeys` in `pkg/wconfig/vaultlayer.go`, with a comment that the token they go with lives only in this
+   machine's secretstore (as `claude:activeaccount`'s does): otherwise a second machine syncing the vault inherits
+   enabled + chatid and polls the same bot (a 409 loop). `TestVaultLayerIgnoresMachineLocalKeys` asserts
+   `IsMachineLocalKey` for the three.
 
 **Tests (`wshserver_telegram_test.go`):** `TestTelegramStatusWithoutBot` (nil Default → zero status, no panic);
 `TestTelegramUnpairClearsSettings` (`unpairSettings()` has exactly the keys `telegram:chatid` and `telegram:chatname`,

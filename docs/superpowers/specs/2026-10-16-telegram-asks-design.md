@@ -74,8 +74,10 @@ then starts at its `update_id + 1`, so the last one is dropped too.
 A 401 stops polling whether `getMe` or `getUpdates` returns it. A 409 on `getUpdates` keeps backing off and reports
 "Another app is polling this bot".
 
-The API base (`https://api.telegram.org`) can be overridden by the env var `ARC_TELEGRAM_API_BASE`, read only in a dev
-build (`wavebase.IsDevMode()`), so the CDP scenario can run a fake Bot API. A packaged build ignores it.
+The API base (`https://api.telegram.org`) can be overridden by the env var `ARC_TELEGRAM_API_BASE`, read only when
+`wavebase.NoGlobalInstall()` is true (the test harnesses' dev app: `final-verify.mjs` and `browser-app.mjs` set
+`ARC_DEV_NO_GLOBAL_INSTALL`, a packaged build never does), so the CDP scenario can run a fake Bot API. A packaged build
+ignores it.
 
 ### Pairing (`pkg/telebot/pair.go`)
 
@@ -130,6 +132,11 @@ a claimed one. A delivery error edits the message to "Could not answer — open 
 
 New settings in `pkg/wconfig/settingsconfig.go`: `telegram:enabled` (bool), `telegram:chatid` (string: a chat id can
 pass 2^53, which a JSON number does not hold exactly), `telegram:chatname` (string). Secret name `telegram_bottoken`.
+
+All three `telegram:*` keys are machine-local (`machineLocalKeys` in `pkg/wconfig/vaultlayer.go`): never written to the
+vault layer and ignored if found there. The token they go with lives only in this machine's secret store, so a second
+machine that synced `enabled` and `chatid` would poll the same bot without it (or with its own token: a 409 loop between
+the two pollers).
 
 New wshrpc commands (`pkg/wshrpc/wshrpctypes_telegram.go`, then `task generate`):
 

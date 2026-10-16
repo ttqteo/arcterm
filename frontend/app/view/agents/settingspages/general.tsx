@@ -27,6 +27,7 @@ import {
     Toggle,
     writeConfig,
 } from "../settingsui";
+import { TelegramRow } from "../telegramrow";
 import { autoSproutOn, minimizeChoice } from "../windowsize";
 
 export function GeneralPage() {
@@ -95,6 +96,7 @@ function NotificationRows() {
                     label="When an agent finishes"
                 />
             </SettingRow>
+            <TelegramRow />
         </>
     );
 }

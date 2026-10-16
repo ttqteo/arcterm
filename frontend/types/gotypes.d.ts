@@ -3606,6 +3606,9 @@ declare global {
         "notify:os"?: boolean;
         "notify:toast"?: boolean;
         "notify:reply"?: boolean;
+        "telegram:enabled"?: boolean;
+        "telegram:chatid"?: string;
+        "telegram:chatname"?: string;
         "storage:*"?: boolean;
         "storage:autoclean"?: boolean;
         "storage:nudgegb"?: number;
@@ -3946,6 +3949,24 @@ declare global {
         leadguidance?: string;
         leadnotes?: string[];
         leadtold?: string[];
+    };
+
+    // wshrpc.TelegramPairData
+    type TelegramPairData = {
+        code: string;
+        expires: number;
+    };
+
+    // wshrpc.TelegramStatusData
+    type TelegramStatusData = {
+        enabled: boolean;
+        hastoken: boolean;
+        polling: boolean;
+        botname?: string;
+        chatname?: string;
+        paircode?: string;
+        paircodeexpires?: number;
+        lasterror?: string;
     };
 
     // waveobj.TermSize

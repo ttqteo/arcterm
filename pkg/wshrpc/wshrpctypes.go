@@ -58,6 +58,7 @@ type WshRpcInterface interface {
 	ClaudeAccountCommands
 	AskCommands
 	NotifyCommands
+	TelegramCommands
 	VaultCommands
 	UiCommands
 	StreamCommands

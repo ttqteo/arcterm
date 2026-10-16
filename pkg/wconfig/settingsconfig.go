@@ -50,6 +50,10 @@ type SettingsType struct {
 	NotifyToast *bool `json:"notify:toast,omitempty"`
 	NotifyReply *bool `json:"notify:reply,omitempty"`
 
+	TelegramEnabled  *bool  `json:"telegram:enabled,omitempty"`  // send pending asks to the paired Telegram chat; unset is off
+	TelegramChatID   string `json:"telegram:chatid,omitempty"`   // the paired chat's id, as a string (it can pass 2^53)
+	TelegramChatName string `json:"telegram:chatname,omitempty"` // shown in Settings
+
 	StorageClear        bool     `json:"storage:*,omitempty"`
 	StorageAutoClean    *bool    `json:"storage:autoclean,omitempty"`
 	StorageNudgeGb      *float64 `json:"storage:nudgegb,omitempty"`
