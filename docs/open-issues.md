@@ -32,6 +32,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] With an orchestrator run's workers or reviewers live, open Cockpit → Office: they sit in the run's project room
   (e.g. `arcterm`), with no room named `1` / `4` or a run-id hash. `projectname.ts` `projectNameFromTranscriptPath`.
 
+**2026-10-16 (the run queue in Jarvis's Brief, run 0f988c55)**
+
+- [ ] (arcterm) Queue a plan `--after` a lead run that has a DAG, then open its row in Jarvis → Brief → Runs. The queue
+  sheet's waits-on line reads `<stage> <done>/<total>` (for example `working 2/5`). Start now turns the sheet into the
+  run's sheet with no blank frame between the two. The Final waited only on a quick run with no DAG and did not record
+  frames across the switch. `briefqueuesheet.tsx`, `briefsheet.tsx`.
+
 **2026-10-16 (queued row says Queued)**
 
 - [ ] Queue a plan `--after` a running run: its row in the Agent tree reads `Queued · after <run title>`, and a narrow
