@@ -505,6 +505,9 @@ type cancelledDag struct {
 }
 
 func Cancel(ctx context.Context, dagID string) error {
+	// the lock can be held for minutes (Setup) and the wait spends the caller's rpc budget; a cancel must still
+	// land after its caller stops waiting, or the run keeps going
+	ctx = context.WithoutCancel(ctx)
 	var c *cancelledDag
 	if err := withDagMutation(dagID, func() error {
 		var err error

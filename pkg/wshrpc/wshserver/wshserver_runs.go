@@ -977,6 +977,8 @@ func (ws *WshServer) CancelRunCommand(ctx context.Context, data wshrpc.CommandCa
 			return fmt.Errorf("loading linked dag %s: %w", linkedRun.DagORef, err)
 		}
 		if grp.RunID == linkedRun.ID {
+			// Cancel can outlast the rpc budget waiting on the dag lock; what follows it must still run
+			ctx := context.WithoutCancel(ctx)
 			cerr := orchestrate.Cancel(ctx, linkedRun.DagORef)
 			appendRunEvent(ctx, data.ChannelId, data.RunId, waveobj.RunEventKindRunCancelled, nil, map[string]any{})
 			if linkedRun.RadarOrigin != nil {

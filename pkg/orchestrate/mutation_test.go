@@ -469,6 +469,41 @@ func TestCancelDetachesWorkerCleanupFromCallerContext(t *testing.T) {
 	}
 }
 
+// the dag lock can be held for minutes (Setup), and the wait for it spent the caller's rpc budget, so the
+// cancelled state's write failed with "context deadline exceeded" and the run kept going
+func TestCancelLandsAfterTheCallerDeadlinePassesWaitingForTheLock(t *testing.T) {
+	baseCtx, dag, owner, _ := seedRunningDag(t)
+	oldStop := stopRunWorkers
+	stopRunWorkers = func(context.Context, *waveobj.Run) error { return nil }
+	restoreAfterStages(t, func() { stopRunWorkers = oldStop })
+
+	held, release := make(chan struct{}), make(chan struct{})
+	go func() {
+		_ = WithDagMutation(dag.OID, func() error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	ctx, cancel := context.WithTimeout(baseCtx, 50*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- Cancel(ctx, dag.OID) }()
+	<-ctx.Done()
+	close(release)
+
+	if err := <-done; err != nil {
+		t.Fatalf("cancel after the caller's deadline: %v", err)
+	}
+	if got := mustLoadDag(t, baseCtx, dag.OID); got.Status != DagStatus_Cancelled {
+		t.Fatalf("dag status = %q, want cancelled", got.Status)
+	}
+	if got, _ := wstore.GetRun(baseCtx, dag.ChannelId, owner.ID); got.Status != jarvis.RunStatus_Cancelled {
+		t.Fatalf("owner run status = %q, want cancelled", got.Status)
+	}
+}
+
 func TestCancelReturnsStopFailureWithoutRevertingState(t *testing.T) {
 	ctx, dag, _, child := seedRunningDag(t)
 	oldStop := stopRunWorkers
