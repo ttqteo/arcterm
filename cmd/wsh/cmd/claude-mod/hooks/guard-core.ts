@@ -12,6 +12,17 @@ const KILL_REASON =
     "Refused by arcterm: this stops arcterm by image name, which also kills the running arcterm and every agent in it. " +
     "List the processes with their paths and stop only the pid you mean.";
 
+// a stdout redirect to a file outside quotes: `>`, `>>`, `1>` or `&>`. `2>`, `>&2` and a discard (/dev/null, NUL,
+// PowerShell's $null) never match
+const STDOUT_REDIRECT = /(?:^|[\s;|&(])(?:1|&)?>>?\s*(?!&|\/dev\/null\b|nul\b|\$null\b)[^\s;|&<>()]/i;
+const QUOTED = /"[^"]*"|'[^']*'/g;
+
+// the cockpit shows a background task's output from claude's own output file, which a redirect leaves empty
+const REDIRECT_REASON =
+    "Refused by arcterm: Claude Code already saves a background command's output to its output file, which arcterm " +
+    "shows; a redirect to a file leaves it empty. Drop the stdout redirect, and read or grep the output file " +
+    "once the task ends.";
+
 // a tree the engine made for a run: <user cache dir>/arc-wt/<key>, or the legacy
 // <project>/.waveterm/worktrees/<run or task key>
 const ENGINE_TREE = /[\\/](?:\.waveterm[\\/]worktrees|arc-wt)[\\/][^\\/]+/;
@@ -32,9 +43,13 @@ const LANE_RULES: [RegExp, string][] = [
 ];
 
 // why the session may not run this command from this directory; null when it may
-export function denial(command: string, cwd: string): string | null {
+export function denial(command: string, cwd: string, background = false): string | null {
     if (ARC_IMAGE.test(command) && KILL_BY_NAME.test(command)) {
         return KILL_REASON;
+    }
+    // quoted text is masked so a `>` inside a quoted script is not a redirect
+    if (background && STDOUT_REDIRECT.test(command.replace(QUOTED, (q) => q[0] + "_".repeat(q.length - 2) + q[0]))) {
+        return REDIRECT_REASON;
     }
     if (!ENGINE_TREE.test(cwd)) {
         return null;

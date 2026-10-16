@@ -139,8 +139,8 @@ async function steerTurn($: EngineInterface, text: string) {
 }
 
 // why this session may not run the shell command; null when it may, and always outside arcterm
-async function refusal($: EngineInterface, command: string): Promise<string | null> {
-    return active ? denial(command, await $.session.cwd()) : null;
+async function refusal($: EngineInterface, command: string, background?: boolean): Promise<string | null> {
+    return active ? denial(command, await $.session.cwd(), background === true) : null;
 }
 
 // a heavy command (a build, the typecheck, a whole test suite) waits for its turn in arcterm's job queue, and
@@ -444,13 +444,13 @@ export const register: Register = (on) => {
 
     // refused in code: a prompt's rule is one the model can talk itself out of
     on("tool.call", { tool: "Bash" }, async ($, e, next) => {
-        const why = await refusal($, e.command);
-        return why === null ? withJobSlot($, e.command, () => next(e)) : { deny: why };
+        const why = await refusal($, e.command, e.run_in_background);
+        return why === null ? next(e) : { deny: why };
     });
 
     on("tool.call", { tool: "PowerShell" }, async ($, e, next) => {
-        const why = await refusal($, e.command);
-        return why === null ? withJobSlot($, e.command, () => next(e)) : { deny: why };
+        const why = await refusal($, e.command, e.run_in_background);
+        return why === null ? next(e) : { deny: why };
     });
 
     // a costly spawn waits on the person's card; refused in code, as the shell is. always runs outside arcterm

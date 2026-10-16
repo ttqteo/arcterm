@@ -110,6 +110,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **A lead's wake is no longer held** by a tool hook that reported after its turn ended, or while you type an answer
   to its question.
 - **A spec the run revised no longer holds its land.**
+- **A background command's log is never empty**: a Claude agent that starts a background command with its output
+  redirected to a file (`task dev > dev.log`) is told to drop the redirect, since Claude Code already keeps that
+  output in the file the Background tasks and Servers lists open.
 - **"The Mac slept for…" counts the whole sleep**: it counts from when the Mac fell asleep, not from the last few
   seconds macOS woke it in the night for maintenance, so a night's sleep no longer reads as nine minutes. The pet now
   says it two minutes after the Mac wakes.
