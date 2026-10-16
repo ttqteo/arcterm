@@ -40,6 +40,7 @@ import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { RollingCount } from "@/app/view/agents/rollingcount";
 import { confirmCancelRun, pendingRunDraftAtom } from "@/app/view/agents/runactions";
 import { leadAsker, leadWorker, liveWorkers } from "@/app/view/agents/runmodel";
+import { queuedRowsAtom, useRunQueueFeed } from "@/app/view/agents/runqueuestore";
 import { DagModal } from "@/app/view/orchestrate/dagmodal";
 import { setDagModalAgentsContext } from "@/app/view/orchestrate/dagmodalstate";
 import { formatChordString } from "@/util/keysym";
@@ -99,6 +100,8 @@ import { resolveBriefCursor } from "./briefnav";
 import { isArchivedStatus } from "./briefpalette";
 import { BriefPeek } from "./briefpeekview";
 import { BriefProfileModal } from "./briefprofileview";
+import { liveRunCount, withQueuedLines } from "./briefqueue";
+import { briefQueueSheetAtom, openQueueSheet } from "./briefqueuestore";
 import { briefRestorePlan } from "./briefrestore";
 import {
     behindGroups,
@@ -133,6 +136,7 @@ import {
     IdeaRow,
     InitiativeRow,
     LinkedInitiatives,
+    QueuedRunRowView,
     ReviewBody,
     ReviewDone,
     ReviewTools,
@@ -682,6 +686,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const fixture = useAtomValue(briefingFixtureAtom);
     const liveAgents = useAtomValue(model.agentsAtom);
     const liveAttention = useAtomValue(attentionAtom);
+    // the run queue, drawn among the Runs. The Agent tree feeds the same atom from the same event; the Brief does
+    // not depend on the tree being mounted.
+    useRunQueueFeed();
+    const queued = useAtomValue(queuedRowsAtom);
 
     useEffect(() => {
         loadBriefing();
@@ -1061,7 +1069,9 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         // the side column and its ideas are drawn only when no one region is being read alone
         const sideShown = only == null;
         // a search reaches the folded runs too: a match hidden behind the fold would read as no match
-        const sessionLines = staleOpen || filtering ? lines.sessions : lines.sessions.filter((l) => !l.stale);
+        const runLines = staleOpen || filtering ? lines.sessions : lines.sessions.filter((l) => !l.stale);
+        // the queue sits among the runs: under the run it waits on, a room-only entry after the last (briefqueue.ts)
+        const sessionLines = withQueuedLines(runLines, queued, runKind, query, Date.now());
         const behindLines = lines.behind.filter((g) => g.label !== SHIPPED_LABEL).flatMap((g) => g.lines);
         const shippedLines = lines.behind.find((g) => g.label === SHIPPED_LABEL)?.lines ?? NO_LINES;
         // j/k walks the rows in the order they are drawn: the main column (Waiting, Runs, Initiatives), then the
@@ -1075,7 +1085,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             ...(sideShown ? lines.ideas : []),
         ];
         return { shows, sideShown, sessionLines, shippedLines, visible };
-    }, [lines, only, staleOpen, filtering, waitingWindow]);
+    }, [lines, only, staleOpen, filtering, waitingWindow, queued, runKind, query]);
 
     // --- inline tracker -----------------------------------------------------------------------------
     // The expanded initiative's plan is spliced into the SAME row list the cursor walks, so j/k falls
@@ -1344,10 +1354,15 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         };
     };
     const sheetOpen = useAtomValue(briefSheetOpenAtom);
+    const queueSheetId = useAtomValue(briefQueueSheetAtom);
     // a click hands its event over, so Ctrl peeks the row's target instead
     const openLine = useCallback(
         (target: LineTarget, e?: React.MouseEvent) => {
             if (target == null) {
+                return;
+            }
+            if ("runQueue" in target) {
+                openQueueSheet(target.runQueue);
                 return;
             }
             if ("queue" in target) {
@@ -1466,7 +1481,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
 
     const projectCount = snapshot?.state.projects?.length ?? 0;
     const paused = projectTrackers.filter((e) => e.status === "paused").length;
-    const liveN = view.sessionLines.filter((l) => !l.stale).length;
+    const liveN = liveRunCount(view.sessionLines);
     const visitCursor = useAtomValue(briefingCursorAtom);
     const deltaRowsN = lines.behind.filter((g) => g.label !== SHIPPED_LABEL).reduce((n, g) => n + g.lines.length, 0);
 
@@ -2218,7 +2233,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                     {view.shows("sessions") ? (
                                         <Region
                                             id="sessions"
-                                            empty={sessions.rows.length === 0}
+                                            empty={
+                                                sessions.rows.length === 0 &&
+                                                !queued.some((r) => keepsRunKind(runKind, r.entry.data.mode ?? ""))
+                                            }
                                             absent={runKind === "all" ? undefined : `No ${runKind} run is going.`}
                                             gap="gap-[9px]"
                                             meta={`${liveN} live`}
@@ -2243,33 +2261,51 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                 {filtering && view.sessionLines.length === 0 ? <NoMatch /> : null}
                                                 <MotionConfig reducedMotion="user">
                                                     <AnimatePresence initial={false}>
-                                                        {view.sessionLines.map((l) => (
-                                                            <motion.div
-                                                                key={l.id}
-                                                                layout
-                                                                variants={cardVariants}
-                                                                initial={entering.has(keyOf(l)) ? "initial" : false}
-                                                                animate="animate"
-                                                                exit="exit"
-                                                                transition={{
-                                                                    duration: MOTION.durMacro,
-                                                                    ease: MOTION.easeFluid,
-                                                                }}
-                                                            >
-                                                                <BriefRunRow
-                                                                    model={model}
-                                                                    line={l}
-                                                                    focused={cursor === l.id}
-                                                                    selected={sheetOpen && stageRun?.id === l.runOid}
-                                                                    onOpenSheet={
-                                                                        l.target != null
-                                                                            ? (e) => openLine(l.target, e)
-                                                                            : undefined
-                                                                    }
-                                                                    onOpenChunk={revealChunk}
-                                                                />
-                                                            </motion.div>
-                                                        ))}
+                                                        {view.sessionLines.map((l) =>
+                                                            l.queued != null ? (
+                                                                // a queued row has no motion: its entry's row leaves and its
+                                                                // run's row arrives at once, as a plain child of AnimatePresence
+                                                                <div key={l.id}>
+                                                                    <QueuedRunRowView
+                                                                        line={l}
+                                                                        focused={cursor === l.id}
+                                                                        selected={
+                                                                            sheetOpen &&
+                                                                            queueSheetId === l.queued.entryId
+                                                                        }
+                                                                        onOpen={() => openLine(l.target)}
+                                                                    />
+                                                                </div>
+                                                            ) : (
+                                                                <motion.div
+                                                                    key={l.id}
+                                                                    layout
+                                                                    variants={cardVariants}
+                                                                    initial={entering.has(keyOf(l)) ? "initial" : false}
+                                                                    animate="animate"
+                                                                    exit="exit"
+                                                                    transition={{
+                                                                        duration: MOTION.durMacro,
+                                                                        ease: MOTION.easeFluid,
+                                                                    }}
+                                                                >
+                                                                    <BriefRunRow
+                                                                        model={model}
+                                                                        line={l}
+                                                                        focused={cursor === l.id}
+                                                                        selected={
+                                                                            sheetOpen && stageRun?.id === l.runOid
+                                                                        }
+                                                                        onOpenSheet={
+                                                                            l.target != null
+                                                                                ? (e) => openLine(l.target, e)
+                                                                                : undefined
+                                                                        }
+                                                                        onOpenChunk={revealChunk}
+                                                                    />
+                                                                </motion.div>
+                                                            )
+                                                        )}
                                                     </AnimatePresence>
                                                 </MotionConfig>
                                                 {/* runs the lead marked executing and then never touched again: they are
