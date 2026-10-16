@@ -437,6 +437,57 @@ export function officeRunWorker(now, runId) {
     return { id: "fx-office-vole", name: "vole", project: "arcterm", task: "machine stats", state: "working", agent: "claude", model: "sonnet", activeMs: 300_000, activity: "reading the memory-pressure API", runId, blockId: "fx-blk-office-vole", previousInfo: [{ kind: "message", text: "Reading the memory-pressure API." }] };
 }
 
+// the cockpit-office-floors scenario's roster: the nine projects of the floors canvas's Main board (its FLOORS list),
+// which floor each is on being the arrangement's (OFFICE_FLOORS_LAYOUT in scripts/cdp/cockpitofficescenarios.mjs) and
+// their runs the office runs hook's (OFFICE_FLOORS_RUNS there). arcterm holds seven agents in a room that seats four: its
+// two asking agents sort so that Changelog pass (c) sits and Tray popover (t) is past the first four, in its chip.
+// "idle" is idle past the Finished window, in the lounge; "done" is idle just inside it, asleep at its desk.
+function officeFloors(now) {
+    const said = (text) => [{ kind: "message", text }];
+    const HARNESS = { claude: "sonnet", codex: "gpt", pi: "pi" };
+    const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const A = (project, name, state, agent = "claude") => {
+        const id = `fx-floors-${slug(project ?? "home")}-${slug(name)}`;
+        const base = { id, name, task: name, agent, model: HARNESS[agent], blockId: `fx-blk-${id.slice(3)}`, previousInfo: said(`Working on ${name}.`) };
+        if (project) base.project = project;
+        if (state === "asking") {
+            return {
+                ...base,
+                state,
+                blockedMs: 120_000,
+                ask: {
+                    askId: `${id}-ask`,
+                    oref: `block:${base.blockId}`,
+                    questions: [{ header: "Next", question: `Carry on with ${name}?`, options: [{ label: "Carry on" }, { label: "Wait" }] }],
+                },
+            };
+        }
+        if (state === "working") return { ...base, state, activeMs: 600_000, activity: "running tests" };
+        return { ...base, state: "idle", idleSince: state === "done" ? now - 60_000 : now - 9 * 60_000 };
+    };
+    return [
+        A(undefined, "Scratch notes", "working"),
+        A(undefined, "Tidy downloads", "idle", "pi"),
+        A("portfolio-journal", "Import broker CSV", "idle"),
+        A("vnstock-js", "Docs examples", "done"),
+        A("vnstock-js", "MCP watchlist", "working", "codex"),
+        A("vnstock-js-docs", "Blog draft", "idle"),
+        A("arcterm", "Canvas gallery", "working"),
+        A("arcterm", "Changelog pass", "asking"),
+        A("arcterm", "Land queue review", "working", "codex"),
+        A("arcterm", "Office floors", "working"),
+        A("arcterm", "Sleepwatch", "done", "pi"),
+        A("arcterm", "Tray popover", "asking"),
+        A("arcterm", "Worktree cleanup", "idle"),
+        A("cuscofi-app", "Checkout flow", "working"),
+        A("cuscofi-app", "Locale fixes", "idle", "pi"),
+        A("mit-thesis", "Related work", "idle"),
+        A("cuscofi-production", "Nginx certs", "working", "codex"),
+        A("chotkeo", "Deal scraper", "asking"),
+        A("chotkeo", "Price alerts", "working", "pi"),
+    ];
+}
+
 // the cockpit office's bench: 48 agents over 6 projects, every state, 2 asking
 const BENCH_PROJECTS = ["arcterm", "mozox", "thesis", "cuscofi", "notes", "infra"];
 function officeBench(now) {
@@ -471,6 +522,7 @@ function officeBench(now) {
 export const SCENARIOS = {
     office,
     "office-controls": officeControls,
+    "office-floors": officeFloors,
     "office-bench": officeBench,
     mixed,
     "all-asking": allAsking,

@@ -8,6 +8,7 @@ import {
     canStand,
     canWalk,
     cardAt,
+    carriedStop,
     deskAt,
     dotsAlong,
     facing,
@@ -618,5 +619,28 @@ describe("officeboss", () => {
         expect(nearDoorMiddle(path, p.rooms.find((r) => r.key === "room:alpha")!)).toBe(true);
         expect(nearDoorMiddle(path, p.rooms.find((r) => r.key === "room:beta")!)).toBe(true);
         expect(dotsAlong(path)[0]).toEqual(from);
+    });
+});
+
+describe("carriedStop", () => {
+    it("keeps the cursor's stop when it is a desk or a seat of the carried room", () => {
+        expect(carriedStop(plan, "room:alpha", "a2")).toBe("a2");
+        expect(carriedStop(plan, "room:alpha", "r1")).toBe("r1");
+    });
+
+    it("goes to the room's first desk when the cursor is elsewhere, on the lift or nowhere", () => {
+        expect(carriedStop(plan, "room:alpha", "b1")).toBe("a1");
+        expect(carriedStop(plan, "room:alpha", LIFT_KEY)).toBe("a1");
+        expect(carriedStop(plan, "room:beta", undefined)).toBe("b1");
+    });
+
+    it("keeps the cursor on the room's chip, which is a stop of it", () => {
+        const chip = full.rooms.find((r) => r.chip)!;
+        expect(carriedStop(full, chip.key, chip.chip!.key)).toBe(chip.chip!.key);
+    });
+
+    it("is none for a room with no one, and for a room that is not on the floor", () => {
+        expect(carriedStop(lone, "empty:0:1", "a1")).toBeUndefined();
+        expect(carriedStop(upstairs, "room:alpha", "a1")).toBeUndefined();
     });
 });

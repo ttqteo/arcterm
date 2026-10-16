@@ -5,16 +5,22 @@ import { describe, expect, it } from "vitest";
 import type { AgentEntry, AgentVM } from "./agentsviewmodel";
 import {
     agentMeta,
+    carryOver,
+    carryWords,
+    chipDialog,
     clampSel,
     dialogItems,
     dialogWords,
     enabledOf,
+    liftAskLines,
+    liftDialog,
     questionTabs,
     rowActionLabel,
     runTaskList,
     selAfterActivate,
     type DialogInput,
 } from "./officedialogmodel";
+import type { FloorSummary, PlanAgent, PlanRun } from "./officeplanmodel";
 
 const agent = (over: Partial<AgentVM> = {}): AgentVM => ({
     id: "a1",
@@ -276,5 +282,235 @@ describe("runTaskList", () => {
     it("falls back to the done rows, and to nothing before a plan", () => {
         expect(runTaskList([], [], ["x", "y"], 4)).toEqual({ heading: "Done · 2", shown: ["x", "y"], more: 0 });
         expect(runTaskList([], [], [], 4)).toEqual({ heading: "", shown: [], more: 0 });
+    });
+});
+
+const floorOf = (floor: number, rooms: string[], asks = 0): FloorSummary => ({
+    floor,
+    label: floor === 0 ? "G" : String(floor),
+    rooms,
+    asks,
+    lit: true,
+});
+const building = [
+    floorOf(0, ["Home", "portfolio-journal", "vnstock-js", "vnstock-js-docs"]),
+    floorOf(1, ["arcterm", "cuscofi-app", "mit-thesis", "cuscofi-production"], 3),
+    floorOf(2, ["chotkeo"], 1),
+];
+
+describe("liftDialog", () => {
+    it("lists one item per floor from the top down, the ground floor as Ground", () => {
+        const d = liftDialog(building, 1);
+        expect(d.kind).toBe("lift");
+        expect(d.title).toBe("Lift");
+        expect(d.items.map((i) => i.label)).toEqual(["Floor 2", "Floor 1", "Ground"]);
+        expect(d.items.map((i) => i.id)).toEqual(["floor:2", "floor:1", "floor:0"]);
+    });
+
+    it("gives each floor its asks and its projects joined by a comma", () => {
+        const d = liftDialog(building, 1);
+        expect(d.items.map((i) => i.count)).toEqual([1, 3, 0]);
+        expect(d.items[0].sub).toBe("chotkeo");
+        expect(d.items[2].sub).toBe("Home, portfolio-journal, vnstock-js, vnstock-js-docs");
+    });
+
+    it("lists the floors top down however they come", () => {
+        const d = liftDialog([...building].reverse(), 0);
+        expect(d.items.map((i) => i.label)).toEqual(["Floor 2", "Floor 1", "Ground"]);
+    });
+
+    it("marks the shown floor current, and the ▶ cannot rest on it", () => {
+        const d = liftDialog(building, 1);
+        expect(d.items.map((i) => !!i.current)).toEqual([false, true, false]);
+        expect(d.items[1].dim).toBe(true);
+        expect(enabledOf(d.items)).toEqual([true, false, true]);
+    });
+
+    it("puts the ▶ on the first floor that is not the current one", () => {
+        expect(clampSel(liftDialog(building, 1).items, -1)).toBe(0);
+        expect(clampSel(liftDialog(building, 2).items, -1)).toBe(1);
+        expect(clampSel(liftDialog(building, 0).items, -1)).toBe(0);
+    });
+
+    it("has nothing to pick with one floor", () => {
+        const d = liftDialog([floorOf(0, ["Home"])], 0);
+        expect(d.items).toHaveLength(1);
+        expect(enabledOf(d.items)).toEqual([false]);
+    });
+});
+
+describe("liftAskLines", () => {
+    it("says where the asks on the other floors are, the top floor first", () => {
+        expect(liftAskLines(building, 0).map((l) => l.text)).toEqual(["▲ 1 on 2", "▲ 3 on 1"]);
+        expect(liftAskLines(building, 1).map((l) => l.text)).toEqual(["▲ 1 on 2"]);
+        expect(liftAskLines(building, 2).map((l) => l.text)).toEqual(["▼ 3 on 1"]);
+    });
+
+    it("lists the floors above before the floors below", () => {
+        const b = [floorOf(0, ["a"], 2), floorOf(1, ["b"], 1), floorOf(2, ["c"], 4)];
+        const lines = liftAskLines(b, 1);
+        expect(lines.map((l) => l.text)).toEqual(["▲ 4 on 2", "▼ 2 on G"]);
+        expect(lines.map((l) => l.up)).toEqual([true, false]);
+    });
+
+    it("leaves out the shown floor and the floors with no ask", () => {
+        expect(liftAskLines([floorOf(0, ["a"], 5), floorOf(1, ["b"])], 0)).toEqual([]);
+    });
+});
+
+describe("liftDialog while a room is carried", () => {
+    it("is the map of the floors, with New floor on top", () => {
+        const d = liftDialog(building, 1, { project: "mit-thesis" });
+        expect(d.items.map((i) => i.id)).toEqual(["floor:new", "floor:2", "floor:1", "floor:0"]);
+        expect(d.items[0]).toMatchObject({ label: "New floor", dim: false });
+    });
+
+    it("says Floor full for a floor with no slot left for the room, and takes no drop there", () => {
+        const d = liftDialog(building, 1, { project: "chotkeo" });
+        const ground = d.items.find((i) => i.id === "floor:0")!;
+        expect(ground).toMatchObject({ sub: "Floor full", full: true, dim: true });
+        expect(d.items.find((i) => i.id === "floor:2")).toMatchObject({ sub: "chotkeo", dim: false });
+    });
+
+    it("counts a floor's own room out, so the floor it is on is not full for it", () => {
+        const d = liftDialog(building, 1, { project: "Home" });
+        expect(d.items.find((i) => i.id === "floor:0")).toMatchObject({
+            sub: "Home, portfolio-journal, vnstock-js, vnstock-js-docs",
+            dim: false,
+        });
+        expect(d.items.find((i) => i.id === "floor:0")?.full).toBeUndefined();
+    });
+
+    it("takes no New floor for the only room of the top floor", () => {
+        expect(liftDialog(building, 2, { project: "chotkeo" }).items[0]).toMatchObject({ id: "floor:new", dim: true });
+        expect(liftDialog(building, 2, { project: "Home" }).items[0].dim).toBe(false);
+    });
+
+    it("has no New floor and no full floor when nothing is carried", () => {
+        const d = liftDialog(building, 1);
+        expect(d.items.some((i) => i.id === "floor:new" || i.full)).toBe(false);
+    });
+});
+
+const person = (id: string, name: string, state: PlanAgent["state"], finished = false): PlanAgent => ({
+    id,
+    name,
+    state,
+    finished,
+});
+const run = (id: string, title: string, over: Partial<PlanRun> = {}): PlanRun => ({
+    id,
+    title,
+    done: false,
+    leadAsking: false,
+    tasks: [],
+    ...over,
+});
+
+describe("chipDialog", () => {
+    const room = { title: "arcterm", chip: { hidden: ["a5", "a6", "a7", "r3"] } } as Parameters<typeof chipDialog>[0];
+    const agents = [
+        person("a1", "Canvas", "working"),
+        person("a5", "Sleepwatch", "idle", true),
+        person("a6", "Tray popover", "asking"),
+        person("a7", "Worktree cleanup", "working"),
+    ];
+    const runs = [run("r1", "Land queue"), run("r3", "Tray popover run", { done: true })];
+
+    it("is titled after the room and lists what did not fit, not who sits", () => {
+        const d = chipDialog(room, agents, runs);
+        expect(d.kind).toBe("chip");
+        expect(d.title).toBe("arcterm · not at a desk");
+        expect(d.items.map((i) => i.id)).toEqual(["hidden:a6", "hidden:a5", "hidden:a7", "hidden:r3"]);
+    });
+
+    it("names each with its state word, asking ones first and flagged", () => {
+        const d = chipDialog(room, agents, runs);
+        expect(d.items.map((i) => [i.label, i.word, !!i.ask])).toEqual([
+            ["Tray popover", "Needs you", true],
+            ["Sleepwatch", "done", false],
+            ["Worktree cleanup", "working", false],
+            ["Tray popover run", "done", false],
+        ]);
+    });
+
+    it("puts a run that asks before the others, among the asking", () => {
+        const asking = run("r3", "Menu sync", { tasks: [{ id: "t", label: "x", state: "running", asking: true }] });
+        const d = chipDialog(room, agents, [asking]);
+        expect(d.items.map((i) => i.id)).toEqual(["hidden:a6", "hidden:r3", "hidden:a5", "hidden:a7"]);
+        expect(d.items[1]).toMatchObject({ word: "Needs you", ask: true });
+    });
+
+    it("lists nothing for a room with no chip", () => {
+        expect(chipDialog({ title: "Home", chip: undefined }, agents, runs).items).toEqual([]);
+    });
+});
+
+describe("carryWords", () => {
+    it("says by keyboard what the target holds, under Moving <room>, with the keys", () => {
+        const w = carryWords({ project: "cuscofi-app", by: "key", over: "swap", other: "mit-thesis" });
+        expect(w).toEqual({
+            head: "Moving cuscofi-app",
+            line: "Swap with mit-thesis",
+            keys: "← ↑ ↓ → slot · PgUp PgDn floor · ↵ put down · Esc cancel",
+        });
+        expect(carryWords({ project: "a", by: "key", over: "empty" }).line).toBe("Put it here");
+        expect(carryWords({ project: "a", by: "key", over: "new" }).line).toBe("Put it on a new floor");
+        expect(carryWords({ project: "a", by: "key", over: "own" }).line).toBe("Back where it was");
+    });
+
+    it("says by pointer what dropping does, under the room's name and counts", () => {
+        const w = carryWords({
+            project: "mit-thesis",
+            by: "pointer",
+            over: "swap",
+            other: "arcterm",
+            counts: "1 agent",
+        });
+        expect(w).toEqual({
+            head: "mit-thesis",
+            sub: "1 agent",
+            line: "Drop to swap with arcterm",
+            keys: "Esc cancel",
+        });
+        expect(carryWords({ project: "a", by: "pointer", over: "empty" }).line).toBe("Drop here");
+        expect(carryWords({ project: "a", by: "pointer", over: "floor", floor: "Floor 2" }).line).toBe(
+            "Drop to move it to Floor 2"
+        );
+        expect(carryWords({ project: "a", by: "pointer", over: "new" }).line).toBe("Drop to build a new floor");
+        expect(carryWords({ project: "a", by: "pointer", over: "none" }).line).toBe("Drop on a room or a floor");
+    });
+});
+
+describe("carryOver", () => {
+    const rooms = [
+        { slot: 0, kind: "agents", title: "arcterm" },
+        { slot: 1, kind: "agents", title: "cuscofi-app" },
+        { slot: 2, kind: "empty", title: "Empty room" },
+    ];
+    const from = { floor: 1, slot: 1 };
+
+    it("finds the room to swap with, or an empty slot, on the floor shown", () => {
+        expect(carryOver({ floor: 1, slot: 0 }, from, 1, rooms, "cuscofi-app")).toEqual({
+            over: "swap",
+            other: "arcterm",
+        });
+        expect(carryOver({ floor: 1, slot: 2 }, from, 1, rooms, "cuscofi-app")).toEqual({ over: "empty" });
+    });
+
+    it("knows the room's own place, a new floor, another floor, and no target", () => {
+        expect(carryOver({ floor: 1, slot: 1 }, from, 1, rooms, "cuscofi-app")).toEqual({ over: "own" });
+        expect(carryOver("new", from, 1, rooms, "cuscofi-app")).toEqual({ over: "new" });
+        expect(carryOver({ floor: 2, slot: 0 }, from, 1, rooms, "cuscofi-app")).toEqual({ over: "floor" });
+        expect(carryOver(null, from, 1, rooms, "cuscofi-app")).toEqual({ over: "none" });
+    });
+
+    it("reads the slot on the floor shown after a ride, where the room itself is not", () => {
+        expect(
+            carryOver({ floor: 2, slot: 0 }, from, 2, [{ slot: 0, kind: "agents", title: "chotkeo" }], "cuscofi-app")
+        ).toEqual({
+            over: "swap",
+            other: "chotkeo",
+        });
     });
 });

@@ -27,6 +27,16 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-16 (the Office's floors and lift, run 006c403f)**
+
+- [ ] (arcterm) In the installed Mac app (the `cockpit-office-floors` scenario ran in the Windows dev app, WebView2,
+  with real keys and the real mouse, and Final's headless Chrome on a Mac is not WKWebView): Cockpit → Office. One floor
+  of four project rooms round the hall, a run as a table in its project's room, a `+N` chip for what does not fit.
+  PageUp / PageDown ride the lift (the doors shut, the dial ticks, they open on the new floor); `g` in a room picks it up
+  (← ↑ ↓ → a slot, PageUp / PageDown a floor, ↵ puts it down, Esc puts it back); dragging a room by its title does the
+  same with the mouse, the lift's panel opening by itself to take it to a floor's button. Reload and the arrangement is
+  kept. `cockpitoffice.tsx`, `officelayout.ts`, `officeplanmodel.ts`.
+
 **2026-10-16 (the Office's Needs you notice board, run 0e23de6a)**
 
 - [ ] (arcterm) With real Needs you rows (a plan to review, a run to land, a learned rule): Cockpit → Office. The
@@ -828,6 +838,16 @@ Tracked in their own initiatives, not here:
   beyond the holds' noise of ±3 points: the raw readings are 14.7–16.5 % before and 15.2–18.0 % after, and every
   over-Cards figure sits below the baseline, so the budgets read as held from a baseline that swings by more than
   they allow.
+- **Cockpit office as floors** (2026-10-16, `cockpit-office-bench`, the same 48 agents over six projects and three
+  fixture runs; two runs, in the Windows dev app (WebView2) on a loaded machine, so the absolute figures do not compare
+  with the Mac's above): the office draws one floor of four rooms, so it holds 31 people (20 desks, 10 seats and the boss)
+  where it held 76, on two floors (G and 1); its own DOM nodes 218 → 113, −1,345 / −1,347 over Cards; heap −5.67 / −5.16
+  MB; busy walking −13.5 / −20.8 % over Cards (raw 14.9 / 22 %, baselines 28.4 / 42.8 %), reduced motion −15.2 / −28.5
+  %, quiet −18.4 / −32.3 %; sprite cache 81; a second round trip −0.73 / −0.66 MB; time to draw 76 / 155 ms. One budget
+  missed: the second run drew in 155 ms (budget 150), with its Cards baseline at 42.8 % against 28.4 % in the first,
+  which drew in 76 ms: the same noise as the pixel-art entry's miss, so re-measure the open on a production build or a
+  quiet machine. The bench's roster check (step 0) now asks for a full floor of about 30 people and a second floor,
+  not 75 people.
 
 ---
 

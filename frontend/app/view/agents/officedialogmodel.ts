@@ -16,9 +16,11 @@ import {
 } from "./agentsviewmodel";
 import { REVIEW_ACTIONS, ROW_ACTION_LABEL, type RowAction } from "./leadcardmodel";
 import type { BoardAct } from "./officeboardmodel";
-import { firstSel } from "./officecontrols";
+import { canBuildFloor, firstSel } from "./officecontrols";
+import { SLOTS, type RoomPlace } from "./officelayout";
+import type { FloorSummary, PlanAgent, PlanRun, Room } from "./officeplanmodel";
 
-export type DeskKind = "agent" | "lead" | "worker" | "leadless" | "board";
+export type DeskKind = "agent" | "lead" | "worker" | "leadless" | "board" | "lift" | "chip";
 
 export type DialogItemId =
     | "open"
@@ -30,7 +32,9 @@ export type DialogItemId =
     | "send"
     | `opt:${number}`
     | `row:${number}`
-    | `board:${BoardAct}`;
+    | `board:${BoardAct}`
+    | `floor:${number | "new"}`
+    | `hidden:${string}`;
 
 export interface DialogItem {
     id: DialogItemId;
@@ -45,6 +49,15 @@ export interface DialogItem {
     rule?: boolean;
     // an answer of a question that takes several
     multi?: boolean;
+    // a lift floor's asks (a `! N` beside it when above 0), its projects, and whether it is the floor shown
+    count?: number;
+    sub?: string;
+    current?: boolean;
+    // a lift floor with no slot left for the room carried: it takes no drop
+    full?: boolean;
+    // a chip's hidden card: its state word, drawn after its name, in the asking tone while it asks
+    word?: string;
+    ask?: boolean;
 }
 
 export interface DialogInput {
@@ -139,6 +152,164 @@ export function selAfterActivate(items: readonly DialogItem[], sel: number): num
     }
     const send = items.findIndex((x) => x.id === "send");
     return send < 0 ? sel : send;
+}
+
+/** Pure: the lift's panel (office floors spec, "The lift"): one item per floor from the top down, the floor shown among
+ *  them. The floor shown cannot be picked, so the ▶ starts on the first floor that is not it. While a room is carried it
+ *  is the map of the floors: a `New floor` row on top (taking no drop while the carried room is the top floor's only
+ *  one), and a floor with no slot left for that room says `Floor full` and takes no drop. */
+export function liftDialog(
+    floors: readonly FloorSummary[],
+    current: number,
+    carry?: { project: string }
+): { kind: "lift"; title: string; items: DialogItem[] } {
+    const items = [...floors]
+        .sort((a, b) => b.floor - a.floor)
+        .map((f): DialogItem => {
+            const full = carry != null && f.rooms.filter((r) => r !== carry.project).length >= SLOTS;
+            return {
+                id: `floor:${f.floor}`,
+                label: f.floor === 0 ? "Ground" : `Floor ${f.label}`,
+                count: f.asks,
+                sub: full ? "Floor full" : f.rooms.join(", "),
+                current: f.floor === current,
+                dim: f.floor === current || full,
+                full: full || undefined,
+            };
+        });
+    if (carry) {
+        items.unshift({
+            id: "floor:new",
+            label: "New floor",
+            sub: "Builds the next floor",
+            dim: !canBuildFloor(floors, carry.project),
+        });
+    }
+    return { kind: "lift", title: "Lift", items };
+}
+
+const hiddenWord = (a: PlanAgent): string =>
+    a.state === "asking" ? "Needs you" : a.state === "working" ? "working" : a.finished ? "done" : "idle";
+const hiddenRunWord = (r: PlanRun): string =>
+    r.leadAsking || r.tasks.some((t) => t.asking) ? "Needs you" : r.done ? "done" : "at work";
+
+/** Pure: a room's chip dialog (office floors spec, "A room"): the agents and runs that did not fit a desk or a table,
+ *  asking ones first, each with its state word. The agents come before the runs, each in the order the room holds them. */
+export function chipDialog(
+    room: Pick<Room, "title" | "chip">,
+    agents: readonly PlanAgent[],
+    runs: readonly PlanRun[]
+): { kind: "chip"; title: string; items: DialogItem[] } {
+    const hidden = new Set(room.chip?.hidden ?? []);
+    const items: DialogItem[] = [
+        ...agents
+            .filter((a) => hidden.has(a.id))
+            .map(
+                (a): DialogItem => ({
+                    id: `hidden:${a.id}`,
+                    label: a.name,
+                    word: hiddenWord(a),
+                    ask: a.state === "asking",
+                })
+            ),
+        ...runs
+            .filter((r) => hidden.has(r.id))
+            .map(
+                (r): DialogItem => ({
+                    id: `hidden:${r.id}`,
+                    label: r.title,
+                    word: hiddenRunWord(r),
+                    ask: r.leadAsking || r.tasks.some((t) => t.asking),
+                })
+            ),
+    ];
+    // asking first; the sort is stable, so the rest keep their order
+    items.sort((a, b) => Number(!!b.ask) - Number(!!a.ask));
+    return { kind: "chip", title: `${room.title} · not at a desk`, items };
+}
+
+/** What a carried room's target holds: its own place, an empty slot, another room to swap with, a new floor, a floor
+ *  (the pointer over its button), or nowhere (the pointer over no slot). */
+export type CarryOver = "own" | "empty" | "swap" | "new" | "floor" | "none";
+
+/** Pure: the words of the card a carried room shows (office floors spec, "Arranging rooms"). By keyboard it sits in the
+ *  target slot: `Moving <room>`, what the drop does, and the keys. By pointer it follows the pointer: the room's name and
+ *  counts, and what dropping here does. `other` is the room swapped with, `floor` the floor's name. */
+export function carryWords(input: {
+    project: string;
+    by: "key" | "pointer";
+    over: CarryOver;
+    other?: string;
+    floor?: string;
+    counts?: string;
+}): { head: string; sub?: string; line: string; keys?: string } {
+    const { project, by, over, other, floor, counts } = input;
+    if (by === "key") {
+        const line =
+            over === "swap"
+                ? `Swap with ${other}`
+                : over === "empty"
+                  ? "Put it here"
+                  : over === "new"
+                    ? "Put it on a new floor"
+                    : over === "floor"
+                      ? `Put it on ${floor}`
+                      : "Back where it was";
+        return { head: `Moving ${project}`, line, keys: "← ↑ ↓ → slot · PgUp PgDn floor · ↵ put down · Esc cancel" };
+    }
+    const line =
+        over === "swap"
+            ? `Drop to swap with ${other}`
+            : over === "empty"
+              ? "Drop here"
+              : over === "new"
+                ? "Drop to build a new floor"
+                : over === "floor"
+                  ? `Drop to move it to ${floor}`
+                  : over === "own"
+                    ? "Drop to put it back"
+                    : "Drop on a room or a floor";
+    return { head: project, sub: counts, line, keys: "Esc cancel" };
+}
+
+/** Pure: what the carried room's target holds, for carryWords: `rooms` are the rooms of the floor shown (an agents'
+ *  or empty room each, with its slot), `from` where the room came from. */
+export function carryOver(
+    target: RoomPlace | "new" | null,
+    from: RoomPlace,
+    shown: number,
+    rooms: readonly { slot?: number; kind: string; title: string }[],
+    project: string
+): { over: CarryOver; other?: string } {
+    if (target == null) {
+        return { over: "none" };
+    }
+    if (target === "new") {
+        return { over: "new" };
+    }
+    if (target.floor === from.floor && target.slot === from.slot) {
+        return { over: "own" };
+    }
+    if (target.floor !== shown) {
+        return { over: "floor" };
+    }
+    const there = rooms.find((r) => r.slot === target.slot && r.kind === "agents" && r.title !== project);
+    return there ? { over: "swap", other: there.title } : { over: "empty" };
+}
+
+/** Pure: the amber lines beside the lift's doors, one per other floor with asks, the top floor first: `▲ 1 on 2` for a
+ *  floor above the one shown, `▼ 2 on G` for one below. */
+export function liftAskLines(
+    floors: readonly FloorSummary[],
+    current: number
+): { text: string; floor: number; up: boolean }[] {
+    return [...floors]
+        .filter((f) => f.floor !== current && f.asks > 0)
+        .sort((a, b) => b.floor - a.floor)
+        .map((f) => {
+            const up = f.floor > current;
+            return { text: `${up ? "▲" : "▼"} ${f.asks} on ${f.label}`, floor: f.floor, up };
+        });
 }
 
 export interface DialogWords {

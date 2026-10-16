@@ -278,6 +278,20 @@ export function cardAt(
     return room ? { desk, seat, room } : undefined;
 }
 
+/** The stop the boss goes to with a room it carried to its new slot: the cursor's, when it is a desk, seat or chip of that
+ *  room, else the room's first desk, seat or chip; none when the room holds no one. */
+export function carriedStop(plan: Plan, roomKey: string, cursor: string | undefined): string | undefined {
+    const chip = plan.rooms.find((r) => r.key === roomKey)?.chip?.key;
+    const inRoom = (key: string) =>
+        key === chip ||
+        plan.desks.some((d) => d.key === key && d.room === roomKey) ||
+        plan.seats.some((s) => s.key === key && s.room === roomKey);
+    if (cursor != null && inRoom(cursor)) {
+        return cursor;
+    }
+    return plan.desks.find((d) => d.room === roomKey)?.key ?? plan.seats.find((s) => s.room === roomKey)?.key ?? chip;
+}
+
 /** What the boss's sprite and the card beside its desk are drawn from. Its spot is in it only while it stands
  * still: a walk step that only moves it gives an equal look, so the office re-renders nothing for it and moves the
  * boss's <img> on the DOM instead. */

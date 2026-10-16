@@ -11,6 +11,7 @@
 // moves the boss's and the walkers' <img> on the DOM, and React draws them again only when they turn, set off, stop or
 // flip their walking frame; only animated people read the frame clock; no clock runs while nothing moves.
 
+import { MOTION } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import {
     officeClocks,
@@ -64,8 +65,10 @@ import {
     type CSSProperties,
     type MutableRefObject,
     type ReactNode,
+    type PointerEvent as ReactPointerEvent,
     type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import type { AgentsViewModel } from "./agents";
 import {
     admitWalkers,
@@ -88,6 +91,7 @@ import {
     bossLook,
     canWalk,
     cardAt,
+    carriedStop,
     deskAt,
     dotsAlong,
     facing,
@@ -104,6 +108,9 @@ import {
 import {
     backFrom,
     boxLayer,
+    canBuildFloor,
+    carryPlace,
+    carryTarget,
     DIALOG_FOOT_PX,
     dialogEdge,
     HUD_SPACE_PX,
@@ -114,14 +121,27 @@ import {
     type OfficeMenuItem,
 } from "./officecontrols";
 import { OfficeDialogBox, OfficeHudBar, OfficeMenuBox, type OfficeDialogVM } from "./officedialog";
-import { clampSel, enabledOf, selAfterActivate, type DeskKind } from "./officedialogmodel";
+import {
+    carryOver,
+    carryWords,
+    clampSel,
+    enabledOf,
+    liftAskLines,
+    liftDialog,
+    selAfterActivate,
+    type DeskKind,
+} from "./officedialogmodel";
+import { floorLabel, moveToFloor, parseLayout, placeRooms, swapRooms } from "./officelayout";
 import {
     BOARD_KEY,
     buildPlan,
+    LIFT_KEY,
     peopleDrawn,
     popupBox,
+    projectsOf,
     type Box,
     type Desk,
+    type FloorSummary,
     type Lounger,
     type Plan,
     type PlanAgent,
@@ -137,8 +157,12 @@ import {
     officeBigCardAtom,
     officeBoardPageAtom,
     officeBoardWhyAtom,
+    officeCarryAtom,
+    officeFloorAtom,
     officeHoursAtom,
+    officeLayoutAtom,
     officeMenuOpenAtom,
+    type Carry,
 } from "./officestore";
 import { themeOverridesAtom, themePresetAtom } from "./themestore";
 import { usePlanDonuts } from "./usagemeters";
@@ -153,6 +177,8 @@ export interface OfficeDev {
     walkers?: number; // this many people walk desk to coffee and back without end (the bench)
     sheet?: boolean; // every sprite on a sheet over the office (the States board)
     crowd?: number; // this many more idle agents past the Finished window, to crowd the lounge
+    floor?: number; // the floor to show at once: cockpitofficedevhooks.ts writes it to officeFloorAtom, not to this atom
+    rideHold?: boolean; // the next ride keeps its doors shut after the dial has ticked, until this is false (the Ride board)
 }
 export const officeDevAtom = atom<OfficeDev | null>(null) as PrimitiveAtom<OfficeDev | null>;
 
@@ -184,6 +210,33 @@ export interface OfficeHandle {
     pageBoard(delta: -1 | 1): void;
     /** The office menu's Notice board, and a click on the board: the boss walks there and its box opens. */
     openBoard(): void;
+    /** The office menu's Lift, and a click on the lift's doors: the boss walks there and the lift's panel opens. */
+    openLift(): void;
+    /** Rides the lift to floor `to`, one of `floors()`: the doors close over the office, the dial ticks, the doors open on
+     *  the new floor with the boss by the lift. At once, with no doors, under reduced motion or with the animation off.
+     *  A ride already under way, or the floor already shown, does nothing. */
+    ride(to: number): void;
+    /** The floor shown. */
+    floor(): number;
+    /** Every floor that holds a room, from G up, as the lift's panel lists them. */
+    floors(): FloorSummary[];
+    /** g and the office menu's Move this room: picks up the room the boss stands in. False when it stands in none (or
+     *  not still, or a room is already carried). */
+    grab(): boolean;
+    /** ← ↑ ↓ → while a room is carried: its target moves to the neighbouring slot of the floor shown. */
+    slot(dir: Dir): void;
+    /** PageUp / PageDown while a room is carried: it rides to the next floor with it, and past the top its target is a
+     *  new floor. */
+    carryFloor(delta: -1 | 1): void;
+    /** ↵ while a room is carried, and the pointer let go over its target: the room goes there, swapping with the room in
+     *  the slot, and the boss goes with it. A pointer over no target puts it back. */
+    drop(): void;
+    /** Esc and g while a room is carried: it goes back where it was, riding back when the floor changed. */
+    cancel(): void;
+    /** A room's chip by its key: the room, and the cards its hidden ids name. */
+    chipOf(key: string): { room: Room; agents: PlanAgent[]; runs: PlanRun[] } | undefined;
+    /** ↵ on a row of a chip's dialog: that card opens beside the chip. */
+    openChipCard(id: string): void;
 }
 
 export interface CockpitOfficeProps {
@@ -250,6 +303,24 @@ const selAtom = atom(0) as PrimitiveAtom<number>;
 const menuSelAtom = atom(0) as PrimitiveAtom<number>;
 // the full card the box's Adjust opened: a run's card with its Adjust panel open
 const cardAdjustAtom = atom(false) as PrimitiveAtom<boolean>;
+// a ride in progress (the lift's doors over the office): whether the doors are shut or shutting, the ms they take, and
+// what the dial says (the floor, with the way it ticks); null while no ride
+interface RideState {
+    closed: boolean;
+    ms: number;
+    label: string;
+    arrow: "" | "▲" | "▼";
+}
+const rideAtom = atom<RideState | null>(null) as PrimitiveAtom<RideState | null>;
+// the card of a chip's hidden agent or run, open beside the chip (↵ on a row of the chip's dialog): its id, and which it is
+const chipCardAtom = atom<{ id: string; kind: "agent" | "run" } | null>(null) as PrimitiveAtom<{
+    id: string;
+    kind: "agent" | "run";
+} | null>;
+// where the pointer is over the office, in plan px, while a room is dragged by its title: the carry's card follows it
+const carryPointerAtom = atom<Point | null>(null) as PrimitiveAtom<Point | null>;
+// whether the boss stood in a project room when the office menu opened: Move this room is disabled outside one
+const menuInRoomAtom = atom(false) as PrimitiveAtom<boolean>;
 // the 5-hour window's use, rounded; FiveHourLeaf sets it, so the 1 s clock the meter reads re-renders that leaf only
 const officeFiveHourAtom = atom<number | undefined>(undefined) as PrimitiveAtom<number | undefined>;
 
@@ -257,12 +328,12 @@ const BOSS_OUTFIT: PlanOutfit = { shirt: BOSS_SHIRT, look: 1, boss: true };
 const WALK_FRAME_MS = 180;
 const ARROW_STEP_PX = 24; // one arrow press when people do not walk (reduced motion, animation off)
 const PATH_HINT_MS = 1000;
+const DRAG_PX = 4; // a room's title moves this far before a press on it becomes a drag, so a click still selects
 
 // what the probe reads, kept up to date as the office draws
 const probe = {
     desks: 0,
     seats: 0,
-    rooms: 0,
     dark: [] as string[],
     night: false,
     lamps: 0,
@@ -287,12 +358,58 @@ const probe = {
 };
 let lastPlan: Plan | null = null;
 let lastWalking: ReadonlySet<string> = new Set();
+let lastRoot: HTMLElement | null = null;
+
+// a room's title label as the page drew it, in plan coordinates; the plan's guess at its place before it is drawn
+function titleBoxOf(r: Room): Box {
+    const el = lastRoot?.querySelector(`[data-office-room-title="${r.key}"]`);
+    const root = lastRoot?.getBoundingClientRect();
+    if (el && root) {
+        const b = el.getBoundingClientRect();
+        return {
+            x: Math.round(b.left - root.left),
+            y: Math.round(b.top - root.top),
+            w: Math.round(b.width),
+            h: Math.round(b.height),
+        };
+    }
+    return { x: r.box.x + 14, y: r.box.y + 10, w: 0, h: 0 };
+}
+
+const carryProbe = (c: Carry | null) => (c ? { project: c.project, target: c.target, by: c.by } : null);
 
 /** What the office drew, for the DEV probe (cockpitofficedevhooks.ts). */
 export function readOfficeProbe() {
     const b = globalStore.get(bossAtom);
     return {
         ...probe,
+        // the floor shown, the floors' labels from G up, and each room of this floor by slot (a project's or an empty one):
+        // how many desks and tables it drew, whether it has a plant, its chip, its title label's box
+        floor: lastPlan?.floor ?? 0,
+        floors: lastPlan?.floors.map((f) => f.label) ?? [],
+        rooms: lastPlan
+            ? lastPlan.rooms
+                  .filter((r) => r.kind === "agents" || r.kind === "empty")
+                  .map((r) => ({
+                      key: r.key,
+                      kind: r.kind,
+                      title: r.title,
+                      slot: r.slot ?? -1,
+                      box: r.box,
+                      titleBox: titleBoxOf(r),
+                      chip: r.chip ? { text: r.chip.text, ask: r.chip.ask, box: r.chip.box } : null,
+                      desks: lastPlan!.desks.filter((d) => d.room === r.key).length,
+                      tables: lastPlan!.rooms.filter((z) => z.parent === r.key).length,
+                      plant: r.plant != null,
+                  }))
+            : [],
+        // the lift: its doors and where the boss stands at them, the amber lines drawn beside it, and whether a ride is on
+        lift: lastPlan ? { doors: lastPlan.lift.doors, spot: lastPlan.lift.spot } : null,
+        liftAsks: lastPlan ? liftAskLines(lastPlan.floors, lastPlan.floor).map((l) => l.text) : [],
+        riding: globalStore.get(rideAtom) != null,
+        // the room carried: which, where a drop would put it (a slot of some floor, "new", or null while the pointer is over
+        // none), and whether the keys or the pointer carry it; null while none is
+        carry: carryProbe(globalStore.get(officeCarryAtom)),
         // counted when read: the boss draws a render after the plan does
         people: lastPlan ? peopleDrawn(lastPlan, lastWalking, b != null) : 0,
         boss:
@@ -532,9 +649,22 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         }
         return a;
     }, [settled, walking]);
+    // which floor and slot each project's room takes (officelayout.ts): a newcomer takes the first empty slot from G up,
+    // and is saved there
+    const layoutRaw = useAtomValue(officeLayoutAtom);
+    const placed = useMemo(
+        () => placeRooms(parseLayout(layoutRaw), projectsOf(agents, runs)),
+        [layoutRaw, agents, runs]
+    );
+    useEffect(() => {
+        if (!sameValues(layoutRaw, placed.layout)) {
+            globalStore.set(officeLayoutAtom, placed.layout);
+        }
+    }, [layoutRaw, placed.layout]);
+    const floorWanted = useAtomValue(officeFloorAtom);
     const plan = useMemo(
-        () => buildPlan({ agents, runs, width, height, now, away: planAway, night }),
-        [agents, runs, width, height, now, planAway, night]
+        () => buildPlan({ agents, runs, width, height, floor: floorWanted, at: placed.at, now, away: planAway, night }),
+        [agents, runs, width, height, floorWanted, placed.at, now, planAway, night]
     );
     lastPlan = plan;
     const sceneKey = sceneryKey(plan, phase, tired, theme);
@@ -548,6 +678,12 @@ export function CockpitOffice(props: CockpitOfficeProps) {
 
     const planRef = useRef(plan);
     planRef.current = plan;
+    const placedRef = useRef(placed);
+    placedRef.current = placed;
+    // a room is carried (g, or a title dragged): the boss walks no more, and the keys are the carry's
+    const carrying = () => globalStore.get(officeCarryAtom) != null;
+    // the stop the boss stood at when it picked a room up: where it walks back to when the room is put back after a ride
+    const carryStop = useRef<string | undefined>(undefined);
     const cursorRef = useRef(cursorId);
     cursorRef.current = cursorId;
     const onCursorRef = useRef(onCursor);
@@ -560,6 +696,15 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     const carry = useRef(0);
     const bossWasMoving = useRef(false);
     const hintTimer = useRef<number | undefined>(undefined);
+    // the lift: whether a ride is on, its timers, the floor it goes to, what it does once the boss has stopped walking
+    // into the lift (afterWalk), what it holds the doors for (rideHeld, the DEV hold), and what to do once the new floor
+    // is shown and the doors are open (afterRide: the walk to an ask on that floor)
+    const ridingRef = useRef(false);
+    const rideTimers = useRef<number[]>([]);
+    const rideTo = useRef<number | null>(null);
+    const afterWalk = useRef<(() => void) | null>(null);
+    const rideHeld = useRef<(() => void) | null>(null);
+    const afterRide = useRef<{ floor: number; run: () => void } | null>(null);
 
     // the boss has stopped: the desk it stands at becomes the Cockpit's cursor
     const afterStop = () => {
@@ -567,9 +712,16 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         if (!b) {
             return;
         }
+        const walked = afterWalk.current;
+        if (walked) {
+            afterWalk.current = null;
+            walked();
+            return;
+        }
         const key = deskAt(planRef.current, b.at);
         if (key) {
-            globalStore.set(bossAtom, { ...b, dir: "up" });
+            // at a desk or a chip the boss looks up at it; at the lift it faces the doors, which are below
+            globalStore.set(bossAtom, { ...b, dir: key === LIFT_KEY ? "down" : "up" });
             if (key !== cursorRef.current) {
                 arrivedRef.current = key;
                 onCursorRef.current(key);
@@ -647,9 +799,19 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     const kick = useWalkLoop(stepAll);
 
     const goTo = (key: string) => {
+        if (carrying()) {
+            return;
+        }
         const b = globalStore.get(bossAtom);
+        const elsewhere = planRef.current.otherAsks.find((a) => a.key === key);
+        if (elsewhere) {
+            // an ask on another floor: ride there, then walk to it
+            arrivedRef.current = key;
+            ride(elsewhere.floor, () => goTo(key));
+            return;
+        }
         const spot = spotOf(planRef.current, key);
-        if (!b || !spot) {
+        if (!b || !spot || ridingRef.current) {
             return;
         }
         arrivedRef.current = key;
@@ -667,9 +829,18 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         kick();
     };
     const showPath = (key: string) => {
+        if (carrying()) {
+            return;
+        }
         const b = globalStore.get(bossAtom);
+        const elsewhere = planRef.current.otherAsks.find((a) => a.key === key);
+        if (elsewhere) {
+            // no path to show across floors: the lift takes the boss
+            goTo(key);
+            return;
+        }
         const spot = spotOf(planRef.current, key);
-        if (!b || !spot) {
+        if (!b || !spot || ridingRef.current) {
             return;
         }
         arrivedRef.current = key;
@@ -682,7 +853,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     };
     const walk = (dir: Dir) => {
         const b = globalStore.get(bossAtom);
-        if (!b) {
+        if (!b || ridingRef.current || carrying()) {
             return;
         }
         globalStore.set(layerAtom, "walk");
@@ -713,7 +884,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     const walkTo = (p: Point) => {
         const b = globalStore.get(bossAtom);
         const at = { x: Math.round(p.x / STEP_PX) * STEP_PX, y: Math.round(p.y / STEP_PX) * STEP_PX };
-        if (!b || !canWalk(planRef.current, at)) {
+        if (!b || ridingRef.current || carrying() || !canWalk(planRef.current, at)) {
             return;
         }
         globalStore.set(layerAtom, "walk");
@@ -730,11 +901,374 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         });
         kick();
     };
+
+    // The lift (office floors spec, "Riding"). With motion on: the boss steps into the lift when it stands at the doors,
+    // two steel doors close over the office (MOTION.durExit), the floor changes behind them and the dial ticks floor by
+    // floor (MOTION.durMacro each), the doors open (MOTION.durMacro) on the new floor with the boss by its lift, facing
+    // down. Without motion the floor swaps at once. `then` runs once the new floor is shown and the doors are open.
+    // everyone who is walking is at once where they were going: a walker belongs to the floor it set off on
+    const settleWalkers = () => {
+        const ws = globalStore.get(walkersAtom);
+        if (ws.length > 0) {
+            globalStore.set(walkersAtom, []);
+            globalStore.set(walkingAtom, {});
+            setSettled((s) => ws.reduce((acc, w) => (w.loop ? acc : withAway(acc, w.id, w.to)), s));
+        }
+    };
+    const clearRide = () => {
+        rideTimers.current.forEach((t) => window.clearTimeout(t));
+        rideTimers.current = [];
+    };
+    const later = (ms: number, fn: () => void) => {
+        rideTimers.current.push(window.setTimeout(fn, ms));
+    };
+    // the floor shows and the boss stands by its lift; the cursor goes to the lift unless a walk is waiting to move it
+    const arriveAt = (to: number) => {
+        settleWalkers();
+        globalStore.set(officeFloorAtom, to);
+        globalStore.set(bossAtom, { at: planRef.current.lift.spot, path: [], dir: "down", speed: BOSS_SPEED });
+        if (!afterRide.current) {
+            arrivedRef.current = LIFT_KEY;
+            onCursorRef.current(LIFT_KEY);
+        }
+    };
+    const settleRide = () => {
+        clearRide();
+        ridingRef.current = false;
+        rideTo.current = null;
+        rideHeld.current = null;
+        globalStore.set(rideAtom, null);
+        const p = afterRide.current;
+        // the plan may not have drawn the new floor yet: the effect on plan.floor runs it then
+        if (p && planRef.current.floor === p.floor) {
+            afterRide.current = null;
+            p.run();
+        }
+    };
+    const ride = (to: number, then?: () => void) => {
+        const shown = planRef.current.floors;
+        const from = planRef.current.floor;
+        if (ridingRef.current || to === from || !shown.some((f) => f.floor === to)) {
+            return;
+        }
+        window.clearTimeout(hintTimer.current);
+        globalStore.set(dotsAtom, []);
+        // a room carried rides with the boss: the carry's keys stay up
+        if (!carrying()) {
+            globalStore.set(layerAtom, "walk");
+        }
+        globalStore.set(officeMenuOpenAtom, false);
+        afterRide.current = then ? { floor: to, run: then } : null;
+        if (!movingRef.current) {
+            arriveAt(to);
+            return;
+        }
+        ridingRef.current = true;
+        rideTo.current = to;
+        // the labels the dial reads after the doors shut, in the order it ticks to them
+        const at = shown.findIndex((f) => f.floor === from);
+        const end = shown.findIndex((f) => f.floor === to);
+        const labels = (end > at ? shown.slice(at + 1, end + 1) : shown.slice(end, at).reverse()).map((f) => f.label);
+        const arrow = end > at ? "▲" : "▼";
+        const closeMs = Math.round(MOTION.durExit * 1000);
+        const tickMs = Math.round(MOTION.durMacro * 1000);
+        const open = () => {
+            rideHeld.current = null;
+            globalStore.set(rideAtom, { closed: false, ms: tickMs, label: labels[labels.length - 1], arrow: "" });
+            later(tickMs, settleRide);
+        };
+        const close = () => {
+            globalStore.set(rideAtom, { closed: true, ms: closeMs, label: shown[at].label, arrow: "" });
+            later(closeMs, () => {
+                arriveAt(to);
+                globalStore.set(rideAtom, { closed: true, ms: 0, label: shown[at].label, arrow });
+                labels.forEach((label, i) =>
+                    later((i + 1) * tickMs, () => globalStore.set(rideAtom, { closed: true, ms: 0, label, arrow }))
+                );
+                later(labels.length * tickMs, () => {
+                    if (devRef.current?.rideHold) {
+                        rideHeld.current = open;
+                    } else {
+                        open();
+                    }
+                });
+            });
+        };
+        const b = globalStore.get(bossAtom);
+        const d = planRef.current.lift.doors;
+        if (b && b.path.length < 2 && deskAt(planRef.current, b.at) === LIFT_KEY) {
+            // the boss steps into the lift
+            afterWalk.current = close;
+            globalStore.set(bossAtom, {
+                ...b,
+                path: [b.at, { x: d.x + d.w / 2, y: d.y + d.h - 8 }],
+                speed: JUMP_SPEED,
+                holding: undefined,
+            });
+            kick();
+        } else {
+            close();
+        }
+    };
+    // motion turned off mid-ride: the floor shows and the boss is by its lift at once
+    const finishRide = () => {
+        clearRide();
+        afterWalk.current = null;
+        const to = rideTo.current;
+        if (to != null && planRef.current.floor !== to) {
+            arriveAt(to);
+        }
+        settleRide();
+    };
+    // the doors held shut by the DEV hold open when it lets go
+    useEffect(() => {
+        if (!dev?.rideHold) {
+            rideHeld.current?.();
+        }
+    }, [dev?.rideHold]);
+    // a walk that waited for the ride to end (an ask on another floor) starts once that floor is drawn
+    useEffect(() => {
+        const p = afterRide.current;
+        if (p && plan.floor === p.floor && !ridingRef.current) {
+            afterRide.current = null;
+            p.run();
+        }
+    }, [plan.floor]);
+    // a new floor draws other desks, and a button of the old one that held focus (a click on a desk or the chip) takes it
+    // along: the keys are the Cockpit surface's, so focus goes back to it, or the next PageUp would reach nobody
+    const floorShown = useRef(plan.floor);
+    useEffect(() => {
+        if (floorShown.current === plan.floor) {
+            return;
+        }
+        floorShown.current = plan.floor;
+        const surface = rootRef.current?.closest<HTMLElement>("[data-cockpit-surface]");
+        if (surface && !surface.contains(document.activeElement)) {
+            surface.focus({ preventScroll: true });
+        }
+        // the lift is at the floor's foot, and the view may be scrolled to its head
+        rootRef.current?.querySelector("[data-office-boss]")?.scrollIntoView({ block: "nearest" });
+    }, [plan.floor]);
+
+    // Carrying a room (office floors spec, "Arranging rooms"). The carry holds the room and its target; the layout is
+    // written only when it is put down. By keyboard the boss rides the lift with the room (the floor shown is the
+    // target's); by pointer the view stays and the target follows the slot or the floor's button under the pointer.
+    const endCarry = () => {
+        globalStore.set(officeCarryAtom, null);
+        globalStore.set(carryPointerAtom, null);
+        globalStore.set(layerAtom, "walk");
+    };
+    const beginCarry = (project: string, by: Carry["by"]): boolean => {
+        const from = placedRef.current.at[project];
+        if (!from || ridingRef.current || carrying()) {
+            return false;
+        }
+        window.clearTimeout(hintTimer.current);
+        globalStore.set(dotsAtom, []);
+        globalStore.set(officeMenuOpenAtom, false);
+        globalStore.set(officeCarryAtom, { project, from, target: from, by });
+        globalStore.set(layerAtom, "carry");
+        return true;
+    };
+    const setTarget = (c: Carry, target: Carry["target"]) => {
+        if (!sameValues(c.target, target)) {
+            globalStore.set(officeCarryAtom, { ...c, target });
+        }
+    };
+    const carryCtx = (c: Carry) => ({ floors: planRef.current.floors, project: c.project, fromSlot: c.from.slot });
+    const grab = (): boolean => {
+        const b = globalStore.get(bossAtom);
+        const p = planRef.current;
+        if (!b || b.path.length > 1 || b.holding || ridingRef.current || carrying()) {
+            return false;
+        }
+        const key = roomAt(p, b.at);
+        const room = p.rooms.find((r) => r.kind === "agents" && r.key === key);
+        if (!room) {
+            return false;
+        }
+        carryStop.current = deskAt(p, b.at);
+        return beginCarry(room.title, "key");
+    };
+    const cancelCarry = () => {
+        const c = globalStore.get(officeCarryAtom);
+        if (!c || ridingRef.current) {
+            return;
+        }
+        endCarry();
+        // the room was ridden to another floor: the lift takes the boss back, and it walks to where it stood
+        if (c.by === "key" && planRef.current.floor !== c.from.floor) {
+            const stop = carryStop.current;
+            ride(c.from.floor, stop ? () => goTo(stop) : undefined);
+        }
+    };
+    const dropCarry = () => {
+        const c = globalStore.get(officeCarryAtom);
+        if (!c || ridingRef.current) {
+            return;
+        }
+        const was = placedRef.current;
+        // the pointer let go over no slot and no floor that takes the room, or a room put down where it was
+        const place = c.target == null ? undefined : carryPlace(c.target, was.at);
+        if (!place || sameValues(place, was.at[c.project])) {
+            cancelCarry();
+            return;
+        }
+        const next = placeRooms(parseLayout(swapRooms(was.layout, was.at, c.project, place)), projectsOf(agents, runs));
+        const there = buildPlan({
+            agents,
+            runs,
+            width,
+            height,
+            floor: place.floor,
+            at: next.at,
+            now,
+            away: planAway,
+            night,
+        });
+        // the boss goes with the room: to the stop it stood at when that is in the room, else the room's first
+        const stop = carriedStop(there, `room:${c.project}`, cursorRef.current);
+        if (place.floor !== planRef.current.floor) {
+            settleWalkers();
+        }
+        endCarry();
+        globalStore.set(officeLayoutAtom, next.layout);
+        globalStore.set(officeFloorAtom, place.floor);
+        globalStore.set(bossAtom, {
+            at: (stop && spotOf(there, stop)) || there.lift.spot,
+            path: [],
+            dir: stop ? "up" : "down",
+            speed: BOSS_SPEED,
+        });
+        arrivedRef.current = stop ?? LIFT_KEY;
+        onCursorRef.current(stop ?? LIFT_KEY);
+    };
+    // the target the pointer is over: the slot of the floor shown under it, a floor's button of the lift's map (the first
+    // empty slot of that floor, or a new floor), or none
+    const pointerTarget = (ev: PointerEvent, p: Point, c: Carry): Carry["target"] => {
+        const plan = planRef.current;
+        const row = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("[data-office-floor]");
+        if (row) {
+            if (row.dataset.officeFloor === "new") {
+                return canBuildFloor(plan.floors, c.project) ? "new" : null;
+            }
+            const floor = Number(row.dataset.officeFloor);
+            const moved =
+                floor === plan.floor
+                    ? null
+                    : moveToFloor(placedRef.current.layout, placedRef.current.at, c.project, floor);
+            return moved?.rooms[c.project] ?? null;
+        }
+        const room = plan.rooms.find(
+            (r) =>
+                (r.kind === "agents" || r.kind === "empty") &&
+                p.x >= r.box.x &&
+                p.x <= r.box.x + r.box.w &&
+                p.y >= r.box.y &&
+                p.y <= r.box.y + r.box.h
+        );
+        return room?.slot != null ? { floor: plan.floor, slot: room.slot } : null;
+    };
+    // a press on a project room's title: past DRAG_PX it picks the room up, the pointer carries it until it is let go
+    // (dropped where it is, or put back when nothing there takes it) or Esc puts it back. Everything here runs after the
+    // render that made it, so it reads the plan and the arrangement through refs and the handle
+    const dragRef = useRef<(roomKey: string, e: ReactPointerEvent) => void>(() => undefined);
+    dragRef.current = (roomKey, e) => {
+        if (e.button !== 0 || ridingRef.current || carrying()) {
+            return;
+        }
+        const project = planRef.current.rooms.find((r) => r.key === roomKey && r.kind === "agents")?.title;
+        if (project == null || placedRef.current.at[project] == null) {
+            return;
+        }
+        // no text selection or focus change under a drag; a click is still sent
+        e.preventDefault();
+        const start = { x: e.clientX, y: e.clientY };
+        let dragging = false;
+        let cancelled = false;
+        const aim = (ev: PointerEvent) => {
+            const c = globalStore.get(officeCarryAtom);
+            const r = rootRef.current?.getBoundingClientRect();
+            if (!c || !r) {
+                return;
+            }
+            const p = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+            globalStore.set(carryPointerAtom, p);
+            setTarget(c, pointerTarget(ev, p, c));
+        };
+        const onMove = (ev: PointerEvent) => {
+            if (cancelled) {
+                return;
+            }
+            if (!dragging) {
+                if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < DRAG_PX) {
+                    return;
+                }
+                if (!beginCarry(project, "pointer")) {
+                    cancelled = true;
+                    return;
+                }
+                dragging = true;
+            }
+            aim(ev);
+        };
+        const unsub = globalStore.sub(officeCarryAtom, () => {
+            if (dragging && globalStore.get(officeCarryAtom) == null) {
+                cancelled = true;
+            }
+        });
+        const cleanup = () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+            window.removeEventListener("pointercancel", onAbort);
+            unsub();
+        };
+        // the click that ends a drag is no click on the floor: it would walk the boss to where the room was dropped
+        const swallowClick = () => {
+            const stop = (ev: Event) => {
+                ev.stopPropagation();
+                ev.preventDefault();
+            };
+            window.addEventListener("click", stop, { capture: true, once: true });
+            window.setTimeout(() => window.removeEventListener("click", stop, true), 0);
+        };
+        const onUp = (ev: PointerEvent) => {
+            cleanup();
+            if (!dragging) {
+                return;
+            }
+            swallowClick();
+            if (!cancelled) {
+                aim(ev);
+                handleRef.current?.drop();
+            }
+        };
+        const onAbort = () => {
+            cleanup();
+            if (dragging && !cancelled) {
+                handleRef.current?.cancel();
+            }
+        };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+        window.addEventListener("pointercancel", onAbort);
+    };
+    const onGrab = useCallback((roomKey: string, e: ReactPointerEvent) => dragRef.current(roomKey, e), []);
+    // the project of the room carried left (its cards are gone): nothing to put down
+    useEffect(() => {
+        const c = globalStore.get(officeCarryAtom);
+        if (c && placed.at[c.project] == null) {
+            endCarry();
+        }
+    }, [placed.at]);
+
     const dialogRef = useRef(props.dialogFor);
     dialogRef.current = props.dialogFor;
     const onMenuRef = useRef(props.onMenu);
     onMenuRef.current = props.onMenu;
-    const menuItems = officeMenuItems(plan.asks.length, props.newEvents, props.eventsOpen, props.boardRows);
+    // read when the menu opens (a walk step renders nothing): the boss in a project room can pick it up
+    const menuInRoom = useAtomValue(menuInRoomAtom);
+    const menuItems = officeMenuItems(plan.asks.length, props.newEvents, props.eventsOpen, props.boardRows, menuInRoom);
     const menuItemsRef = useRef(menuItems);
     menuItemsRef.current = menuItems;
     // whether OfficeDialogLayer draws a box now: with none at the boss's desk the dialog layer is walking, and the keys
@@ -802,7 +1336,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         },
         move: (delta) => {
             if (globalStore.get(officeMenuOpenAtom)) {
-                const all = menuItemsRef.current.map(() => true);
+                const all = menuItemsRef.current.map((it) => !it.disabled);
                 globalStore.set(menuSelAtom, stepSel(globalStore.get(menuSelAtom), delta, all));
                 return;
             }
@@ -815,6 +1349,9 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         activate: () => {
             if (globalStore.get(officeMenuOpenAtom)) {
                 const it = menuItemsRef.current[globalStore.get(menuSelAtom)];
+                if (it?.disabled) {
+                    return;
+                }
                 globalStore.set(officeMenuOpenAtom, false);
                 if (it) {
                     onMenuRef.current(it.id);
@@ -843,15 +1380,30 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             return true;
         },
         toggleMenu: () => {
+            // a carried room takes every key, and the menu waits for it to be put down
+            if (carrying()) {
+                return;
+            }
             const open = !globalStore.get(officeMenuOpenAtom);
             if (open) {
                 globalStore.set(menuSelAtom, 0);
+                const b = globalStore.get(bossAtom);
+                const p = planRef.current;
+                globalStore.set(
+                    menuInRoomAtom,
+                    b != null && p.rooms.some((r) => r.kind === "agents" && r.key === roomAt(p, b.at))
+                );
             }
             globalStore.set(officeMenuOpenAtom, open);
         },
-        // the board is a stop while rows wait; plan.order and plan.asks stay the desks'
+        // the board is a stop while rows wait; plan.order and plan.asks stay the floor's desks'. j k walk this floor; n
+        // goes on to the asks on the other floors, whose walk rides the lift first (goTo)
         order: () => (props.boardRows > 0 ? [...planRef.current.order, BOARD_KEY] : planRef.current.order),
-        asks: () => (props.boardRows > 0 ? [...planRef.current.asks, BOARD_KEY] : planRef.current.asks),
+        asks: () => [
+            ...planRef.current.asks,
+            ...planRef.current.otherAsks.map((a) => a.key),
+            ...(props.boardRows > 0 ? [BOARD_KEY] : []),
+        ],
         pageBoard: (delta) => {
             const at = boardPage(globalStore.get(officeBoardPageAtom), props.boardRows);
             if (at < 0) {
@@ -862,6 +1414,48 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             globalStore.set(selAtom, 0);
         },
         openBoard: () => pickRef.current(BOARD_KEY),
+        openLift: () => pickRef.current(LIFT_KEY),
+        ride: (to) => ride(to),
+        floor: () => planRef.current.floor,
+        floors: () => planRef.current.floors,
+        grab,
+        slot: (dir) => {
+            const c = globalStore.get(officeCarryAtom);
+            if (c && !ridingRef.current && c.target != null) {
+                setTarget(c, carryTarget(c.target, { do: "slot", dir }, carryCtx(c)));
+            }
+        },
+        carryFloor: (delta) => {
+            const c = globalStore.get(officeCarryAtom);
+            if (!c || ridingRef.current || c.target == null) {
+                return;
+            }
+            const target = carryTarget(c.target, { do: "floor", delta }, carryCtx(c));
+            if (sameValues(target, c.target)) {
+                return;
+            }
+            setTarget(c, target);
+            // a floor with a room rides there with it; a new floor builds on the top one and shows nothing new
+            if (target !== "new" && target.floor !== planRef.current.floor) {
+                ride(target.floor);
+            }
+        },
+        drop: dropCarry,
+        cancel: cancelCarry,
+        chipOf: (key) => {
+            const room = planRef.current.rooms.find((r) => r.chip?.key === key);
+            return room ? { room, agents, runs } : undefined;
+        },
+        openChipCard: (id) => {
+            const key = cursorRef.current;
+            if (!key || !cardAt(planRef.current, globalStore.get(bossAtom), key)?.chip || renderCard(id) == null) {
+                return;
+            }
+            globalStore.set(chipCardAtom, { id, kind: agents.some((a) => a.id === id) ? "agent" : "run" });
+            globalStore.set(cardAdjustAtom, false);
+            globalStore.set(officeBigCardAtom, true);
+            globalStore.set(layerAtom, "card");
+        },
     };
 
     // the last row gone while the board's box is up: dialogFor has no page then, so the box is not drawn; the layer goes
@@ -996,21 +1590,31 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         if (moving) {
             return;
         }
+        if (ridingRef.current) {
+            finishRide();
+        }
         const b = globalStore.get(bossAtom);
         if (b && (b.path.length > 1 || b.holding)) {
             globalStore.set(bossAtom, { ...b, at: b.path[b.path.length - 1] ?? b.at, path: [], holding: undefined });
         }
-        const ws = globalStore.get(walkersAtom);
-        if (ws.length > 0) {
-            globalStore.set(walkersAtom, []);
-            globalStore.set(walkingAtom, {});
-            setSettled((s) => ws.reduce((acc, w) => (w.loop ? acc : withAway(acc, w.id, w.to)), s));
-        }
+        settleWalkers();
     }, [moving]);
 
     useEffect(
         () => () => {
             window.clearTimeout(hintTimer.current);
+            rideTimers.current.forEach((t) => window.clearTimeout(t));
+            rideTimers.current = [];
+            ridingRef.current = false;
+            afterWalk.current = null;
+            afterRide.current = null;
+            rideHeld.current = null;
+            globalStore.set(rideAtom, null);
+            globalStore.set(officeFloorAtom, 0);
+            globalStore.set(officeCarryAtom, null);
+            globalStore.set(carryPointerAtom, null);
+            globalStore.set(chipCardAtom, null);
+            globalStore.set(menuInRoomAtom, false);
             globalStore.set(bossAtom, null);
             globalStore.set(walkersAtom, []);
             globalStore.set(walkingAtom, {});
@@ -1026,6 +1630,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             globalStore.set(officeFiveHourAtom, undefined);
             setOfficeRoot(null);
             lastPlan = null;
+            lastRoot = null;
             lastWalking = new Set();
         },
         []
@@ -1051,11 +1656,14 @@ export function CockpitOffice(props: CockpitOfficeProps) {
     // the cheer as a desk turns done: the plan's coarse clock would miss a 1.5 s pose, so the office times it here,
     // where the frame clock can count it; the desks already done when the office opens do not cheer
     const doneWas = useRef<Set<string> | null>(null);
+    const doneFloor = useRef(plan.floor);
     const cheerTimers = useRef<number[]>([]);
     const [cheering, setCheering] = useState<ReadonlySet<string>>(() => new Set());
     useEffect(() => {
         const done = new Set(plan.desks.filter((d) => d.word === "done").map((d) => d.key));
-        const was = doneWas.current;
+        // the desks already done on a floor just ridden to are not news either
+        const was = doneFloor.current === plan.floor ? doneWas.current : null;
+        doneFloor.current = plan.floor;
         doneWas.current = done;
         const fresh = was ? [...done].filter((k) => !was.has(k)) : [];
         if (fresh.length === 0) {
@@ -1078,6 +1686,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
 
     useEffect(() => {
         setOfficeRoot(rootRef.current);
+        lastRoot = rootRef.current;
         lastWalking = walkingIds;
         const people = peopleDrawn(plan, walkingIds, true);
         const prev = globalStore.get(officeMeterAtom);
@@ -1087,7 +1696,6 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         Object.assign(probe, {
             desks: plan.desks.length,
             seats: plan.seats.length,
-            rooms: plan.rooms.length,
             dark: plan.rooms.filter((r) => !r.lit).map((r) => r.key),
             night,
             phase,
@@ -1145,14 +1753,15 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                         ))}
                         {plan.rooms.map((r) => (r.table ? <Table key={r.key} room={r} onPick={onPick} /> : null))}
                         {plan.seats.map((s) => {
-                            const room = plan.rooms.find((r) => r.key === s.room);
+                            // a seat is in its project's room, at the table of a zone: the zone's lights and table
+                            const zone = plan.rooms.find((r) => r.key === s.zone);
                             return (
                                 <SeatView
                                     key={s.key}
                                     s={s}
                                     phase={phase}
-                                    lit={room?.lit ?? true}
-                                    near={room?.table != null && s.bottom > room.table.y + 20}
+                                    lit={zone?.lit ?? true}
+                                    near={zone?.table != null && s.bottom > zone.table.y + 20}
                                     onPick={onPick}
                                 />
                             );
@@ -1170,8 +1779,17 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                             phase={phase}
                             z={2}
                         />
-                        <Labels plan={plan} walking={walkingIds} night={night} phase={phase} />
+                        <Labels
+                            plan={plan}
+                            walking={walkingIds}
+                            night={night}
+                            phase={phase}
+                            cursorId={cursorId}
+                            onPick={onPick}
+                            onGrab={onGrab}
+                        />
                         <NoticeBoard box={plan.board.box} rows={props.boardRows} phase={phase} onPick={onPick} />
+                        <LiftDoors doors={plan.lift.doors} onPick={onPick} />
                         <WalkersView phase={phase} />
                         <BossView plan={plan} phase={phase} />
                         <PathDots />
@@ -1182,6 +1800,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                             boardRows={props.boardRows}
                             onTalk={() => handleRef.current?.talk()}
                         />
+                        <CarryLayer plan={plan} />
                         {dev?.sheet ? <PoseSheet phase={phase} /> : null}
                     </div>
                 ) : null}
@@ -1213,6 +1832,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                     handleRef.current?.activate();
                 }}
             />
+            <RideDoors phase={phase} />
         </div>
     );
 }
@@ -1592,22 +2212,41 @@ const NoticeBoard = memo(function NoticeBoard(p: {
 // in work hours the floor is light, so a label sits on a plate; after hours it is dark enough without
 const plate = (night: boolean) => (night ? "" : "rounded-[3px] bg-office-plate px-[5px]");
 
+// a table's caption under it: the run's title and how many of its tasks are done (its zone's sub reads `run · 2 of 7 done`)
+const captionOf = (zone: Room) => `${zone.title} · ${zone.sub.replace(/^run · /, "").replace(/ done$/, "")}`;
+// where the lift's amber lines start, right of its call button, and the foot they stand over
+const LIFT_LINE_DX = 98; // from the doors' left edge
+const LIFT_LINE_H = 18;
+const LIFT_LINES_UP_FOOT = 84; // the nearest line above the shown floor, over the hall's foot
+const LIFT_LINES_DOWN_FOOT = 24; // the nearest line below it, the same
+
 function Labels({
     plan,
     walking,
     night,
     phase,
+    cursorId,
+    onPick,
+    onGrab,
 }: {
     plan: Plan;
     walking: Set<string>;
     night: boolean;
     phase: OfficePhase;
+    cursorId?: string;
+    onPick: (key: string) => void;
+    onGrab: (roomKey: string, e: ReactPointerEvent) => void;
 }) {
     const mark = night ? undefined : "";
+    const { doors, dial } = plan.lift;
+    const foot = doors.y + doors.h;
+    const lines = liftAskLines(plan.floors, plan.floor);
+    const ups = lines.filter((l) => l.up);
+    const downs = lines.filter((l) => !l.up);
     return (
         <>
             {plan.rooms
-                .filter((r) => r.kind !== "lounge")
+                .filter((r) => r.kind === "agents" || r.kind === "empty")
                 .map((r) => (
                     <span
                         key={r.key}
@@ -1618,16 +2257,94 @@ function Labels({
                         style={{ left: r.box.x + 14, top: r.box.y + 10 }}
                     >
                         <span
+                            data-office-room-title={r.key}
                             data-office-plate={mark}
-                            className={cn("text-[13px] font-bold text-primary", plate(night))}
+                            // a project room is moved by its title: a press and a drag (a click still walks the boss there)
+                            title={r.kind === "agents" ? "Drag to move this room (g)" : undefined}
+                            onPointerDown={r.kind === "agents" ? (e) => onGrab(r.key, e) : undefined}
+                            className={cn(
+                                "text-[13px] font-bold",
+                                r.kind === "empty" ? TONE.muted : "text-primary",
+                                r.kind === "agents" && "pointer-events-auto cursor-grab",
+                                plate(night)
+                            )}
                         >
                             {r.title}
                         </span>
-                        <span data-office-plate={mark} className={cn("text-[11px] text-secondary", plate(night))}>
+                        <span
+                            data-office-plate={mark}
+                            className={cn(
+                                "text-[11px]",
+                                r.kind === "empty" ? TONE.muted : "text-secondary",
+                                plate(night)
+                            )}
+                        >
                             {r.sub}
                         </span>
                     </span>
                 ))}
+            {plan.rooms
+                .filter((r) => r.kind === "meeting")
+                .map((z) => (
+                    <span
+                        key={z.key}
+                        data-office-table-caption={z.key}
+                        data-office-plate={mark}
+                        className={cn(
+                            "pointer-events-none absolute z-[6] max-w-[176px] truncate text-[11px] leading-[14px] text-muted",
+                            plate(night)
+                        )}
+                        style={{ left: z.box.x + 12, top: z.box.y + 106 }}
+                    >
+                        {captionOf(z)}
+                    </span>
+                ))}
+            {plan.rooms.map((r) =>
+                r.chip ? (
+                    <button
+                        key={r.chip.key}
+                        type="button"
+                        data-office-chip={r.key}
+                        title={`${r.chip.text} (Enter shows who they are)`}
+                        aria-label={`${r.title}: ${r.chip.text}${r.chip.ask ? ", someone needs you" : ""}`}
+                        onClick={() => onPick(r.chip!.key)}
+                        // over the boss, who stands right under it (its spot is 22 px under the chip): the words stay readable
+                        className={cn(
+                            "absolute z-[8] box-border flex cursor-pointer items-center justify-center whitespace-nowrap rounded-[3px] border p-0 text-[11px] leading-[16px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            r.chip.ask
+                                ? "border-asking bg-office-plate font-semibold text-asking"
+                                : cn("border-transparent text-muted", plate(night)),
+                            cursorId === r.chip.key && "ring-2 ring-secondary"
+                        )}
+                        style={box(r.chip.box)}
+                    >
+                        {r.chip.ask ? `! ${r.chip.text}` : r.chip.text}
+                    </button>
+                ) : null
+            )}
+            <span
+                data-office-lift-label=""
+                className="pointer-events-none absolute z-[6] -translate-x-1/2 whitespace-nowrap rounded-[3px] bg-office-plate px-[5px] text-[10px] font-extrabold leading-4 text-office-lamp"
+                style={{ left: dial.x + dial.w / 2, top: dial.y - 18 }}
+            >
+                Floor {floorLabel(plan.floor)}
+            </span>
+            {[...ups, ...downs].map((l) => {
+                const group = l.up ? ups : downs;
+                // the nearest floor stands over the foot, the farther ones above it: the list reads top floor first
+                const below = group.length - 1 - group.indexOf(l);
+                const y = foot - (l.up ? LIFT_LINES_UP_FOOT : LIFT_LINES_DOWN_FOOT) - below * LIFT_LINE_H;
+                return (
+                    <span
+                        key={l.floor}
+                        data-office-lift-ask={l.floor}
+                        className="pointer-events-none absolute z-[6] whitespace-nowrap rounded-[3px] bg-office-plate px-[5px] text-[10.5px] font-bold leading-4 text-asking"
+                        style={{ left: doors.x + LIFT_LINE_DX, top: y }}
+                    >
+                        {l.text}
+                    </span>
+                );
+            })}
             {plan.desks.map((d) => (
                 <Fragment key={d.key}>
                     <span
@@ -1792,11 +2509,10 @@ function BossView({ plan, phase }: { plan: Plan; phase: OfficePhase }) {
     if (!look) {
         return null;
     }
-    const sprite: PlanSprite = look.moving
-        ? walkSprite(look.dir, frame)
-        : look.rest && deskAt(plan, look.rest)
-          ? "boss"
-          : "stand";
+    // at a desk or a chip the boss shows its back, looking up at it; at the lift it faces the doors below it, so it stands
+    // turned to you
+    const at = look.moving || !look.rest ? undefined : deskAt(plan, look.rest);
+    const sprite: PlanSprite = look.moving ? walkSprite(look.dir, frame) : at && at !== LIFT_KEY ? "boss" : "stand";
     return (
         <>
             <img
@@ -1856,8 +2572,14 @@ function PathDots() {
     );
 }
 
+// the lift's panel stands right of the doors' call button (the doors' right edge + 28, as the LiftPanel board has it) and
+// 60 px over the hall's foot
+const LIFT_PANEL_DX = 28;
+const LIFT_PANEL_FOOT = 60;
+
 // the dialog box of the desk at the boss, at the foot of the office's view, or at its head when the boss stands low in
-// it; it shows only while the boss stands still at the cursor's desk, as the card does
+// it; it shows only while the boss stands still at the cursor's desk, as the card does. The lift's panel is the one
+// exception: it is drawn in the floor, beside the lift
 function OfficeDialogLayer({
     plan,
     cursorId,
@@ -1899,8 +2621,29 @@ function OfficeDialogLayer({
         return () => el.removeEventListener("scroll", onScroll);
     }, [shown, scrollRef]);
     const el = scrollRef.current;
+    // the lift's panel is a steel plate beside its doors, on the floor, not a box on the view's edge
+    const root = rootRef.current;
+    if (vm?.kind === "lift") {
+        probe.edge = "";
+        shownRef.current = root != null;
+        return root
+            ? createPortal(
+                  <div
+                      data-office-lift-panel=""
+                      className="pointer-events-none absolute z-[8]"
+                      style={{
+                          left: plan.lift.doors.x + plan.lift.doors.w + LIFT_PANEL_DX,
+                          bottom: plan.height - (plan.lift.doors.y + plan.lift.doors.h) + LIFT_PANEL_FOOT,
+                      }}
+                  >
+                      <OfficeDialogBox vm={vm} sel={sel} onPick={onPick} />
+                  </div>,
+                  root
+              )
+            : null;
+    }
     // the boss's feet in px from the view's top; at a desk it stands as the "boss" sprite, spriteH("boss") tall
-    const foot = look?.rest && el ? (rootRef.current?.offsetTop ?? 0) + look.rest.y - el.scrollTop : undefined;
+    const foot = look?.rest && el ? (root?.offsetTop ?? 0) + look.rest.y - el.scrollTop : undefined;
     const edge = vm && el && foot != null ? dialogEdge(foot - spriteH("boss"), foot, el.clientHeight) : undefined;
     probe.edge = edge ?? "";
     shownRef.current = vm != null && edge != null;
@@ -1935,6 +2678,84 @@ function OfficeMenuLayer({ items, onPick }: { items: OfficeMenuItem[]; onPick: (
     );
 }
 
+// the lift's doors are on the canvas (scenery.ts): this is their button, a click walks the boss to them and opens the
+// lift's panel there, as a click on the notice board opens its box
+function LiftDoors({ doors, onPick }: { doors: Box; onPick: (key: string) => void }) {
+    return (
+        <button
+            type="button"
+            data-office-lift=""
+            title="Lift (Enter at the doors)"
+            aria-label="Lift: ride to another floor"
+            onClick={() => onPick(LIFT_KEY)}
+            className="absolute z-[3] cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            style={box(doors)}
+        />
+    );
+}
+
+const EASE_FLUID = `cubic-bezier(${MOTION.easeFluid.join(", ")})`;
+
+// a ride (Ride board): two steel doors over the whole office, closing from the sides and opening again, and a dial over
+// them that reads the floor. The doors start open on mount and close a beat later, so the transition has somewhere to
+// come from
+function RideDoors({ phase }: { phase: OfficePhase }) {
+    const ride = useAtomValue(rideAtom);
+    const on = ride != null;
+    const [armed, setArmed] = useState(false);
+    useEffect(() => {
+        if (!on) {
+            setArmed(false);
+            return;
+        }
+        const t = window.setTimeout(() => setArmed(true), 30);
+        return () => window.clearTimeout(t);
+    }, [on]);
+    if (!ride) {
+        return null;
+    }
+    const shut = ride.closed && armed;
+    const steel =
+        phase === "after"
+            ? "border-office-after-ink bg-office-after-metal"
+            : "border-office-day-ink bg-office-day-metal";
+    const door = (side: "left" | "right") => (
+        <div
+            data-office-ride-door={side}
+            className={cn(
+                "absolute inset-y-0 box-border w-1/2 border-2",
+                steel,
+                side === "left" ? "left-0" : "right-0"
+            )}
+            style={{
+                transform: shut ? "translateX(0)" : `translateX(${side === "left" ? "-100%" : "100%"})`,
+                transition: `transform ${ride.ms}ms ${EASE_FLUID}`,
+            }}
+        />
+    );
+    return (
+        <div
+            data-office-ride=""
+            data-office-ride-shut={shut ? "" : undefined}
+            className="pointer-events-auto absolute inset-0 z-[12] overflow-hidden"
+        >
+            {door("left")}
+            {door("right")}
+            <div
+                className={cn(
+                    "absolute left-1/2 top-4 box-border flex h-10 min-w-[150px] -translate-x-1/2 items-center justify-center gap-1.5 rounded-t-[26px] border-2 px-6 text-[13px] font-extrabold text-office-lamp",
+                    phase === "after"
+                        ? "border-office-after-ink bg-office-after-screen"
+                        : "border-office-day-ink bg-office-day-screen"
+                )}
+            >
+                <span data-office-ride-arrow="">{ride.arrow}</span>
+                <span data-office-ride-label="">Floor {ride.label}</span>
+            </div>
+        </div>
+    );
+}
+
 function OfficePopup({
     plan,
     cursorId,
@@ -1955,16 +2776,24 @@ function OfficePopup({
     const open = layer === "card";
     const [big, setBig] = useAtom(officeBigCardAtom);
     const boxRef = useRef<HTMLDivElement>(null);
+    const chipCard = useAtomValue(chipCardAtom);
     const found = cardAt(plan, look?.rest ? { at: look.rest, path: [] } : null, cursorId);
-    // the notice board has no card and no "↵ Talk" prompt: its dialog box is OfficeDialogLayer's
-    const at = found?.board ? undefined : found;
-    const card = at != null && cursorId != null ? renderCard(cursorId, { adjust }) : null;
-    const kind = at?.desk ? "agent" : "run";
+    // the notice board, the lift and a room's chip have no card and no "↵ Talk" prompt: their dialog boxes are
+    // OfficeDialogLayer's. A chip's dialog opens the card of one of the agents or runs it lists, beside the chip
+    const at = found?.board || found?.lift || found?.chip ? undefined : found;
+    const chip = open && found?.chip && chipCard ? found : undefined;
+    const card =
+        at != null && cursorId != null
+            ? renderCard(cursorId, { adjust })
+            : chip && chipCard
+              ? renderCard(chipCard.id, { adjust })
+              : null;
+    const kind = at ? (at.desk ? "agent" : "run") : (chipCard?.kind ?? "run");
     // the board offers "↵ Read" while the boss stands still at it and rows wait
     const readBoard = found?.board === true && boardRows > 0 && layer === "walk";
     probe.popup = card && open ? kind : "";
     // the ↵ prompt shows only while walking: the dialog box hides it
-    probe.prompt = readBoard ? "board" : card && layer === "walk" ? kind : "";
+    probe.prompt = readBoard ? "board" : at && card && layer === "walk" ? kind : "";
     probe.big = !!card && open && big;
     const shown = card != null && open;
     // a card grown past the office's view scrolls into it
@@ -1984,10 +2813,13 @@ function OfficePopup({
             />
         );
     }
-    if (!card || !at || layer === "dialog") {
+    if (!card || (!at && !chip) || layer === "dialog" || layer === "carry") {
         return null;
     }
     if (!open) {
+        if (!at) {
+            return null;
+        }
         // like a game's "press E": over the person's head, clear of their bubble
         const over = at.desk
             ? { x: at.desk.x + 40, y: at.desk.y - 50 }
@@ -2001,9 +2833,14 @@ function OfficePopup({
             />
         );
     }
-    const anchor = at.desk ? { x: at.desk.x, y: at.desk.y } : { x: at.seat!.x, y: at.seat!.bottom - 40 };
-    // beside the desk, over the hall; the card fills the box's height and scrolls, as in its grid column
-    const { box, right, pointerTop } = popupBox(plan, anchor, at.room, big);
+    const cb = chip?.room?.chip?.box;
+    const anchor = at
+        ? at.desk
+            ? { x: at.desk.x, y: at.desk.y }
+            : { x: at.seat!.x, y: at.seat!.bottom - 40 }
+        : { x: cb!.x, y: cb!.y + 40 };
+    // beside the desk (or the chip), over the hall; the card fills the box's height and scrolls, as in its grid column
+    const { box, right, pointerTop } = popupBox(plan, anchor, (at ?? chip)!.room!, big);
     return (
         <div
             ref={boxRef}
@@ -2035,6 +2872,112 @@ function OfficePopup({
                 {big ? <Minimize2 size={12} aria-hidden /> : <Maximize2 size={12} aria-hidden />}
             </button>
         </div>
+    );
+}
+
+const CARRY_CARD_W = 300;
+const CARRY_CARD_GAP = 16; // the pointer's card stands this far from it
+
+// A room carried (Drag board): the slot it came from dimmed with a dashed edge, the slot its target is on grey with a
+// dashed edge (selection in grey, never the accent), the card of what a drop does there, and the lift's panel open as the
+// map of the floors. By keyboard the card sits in the target slot (on the lounge for a new floor); by pointer it follows
+// the pointer.
+function CarryLayer({ plan }: { plan: Plan }) {
+    const carry = useAtomValue(officeCarryAtom);
+    const pointer = useAtomValue(carryPointerAtom);
+    if (!carry) {
+        return null;
+    }
+    const slotRoom = (slot: number) =>
+        plan.rooms.find((r) => (r.kind === "agents" || r.kind === "empty") && r.slot === slot);
+    const t = carry.target;
+    const origin = carry.from.floor === plan.floor ? slotRoom(carry.from.slot) : undefined;
+    const targetRoom = t != null && t !== "new" && t.floor === plan.floor ? slotRoom(t.slot) : undefined;
+    const { over, other } = carryOver(t, carry.from, plan.floor, plan.rooms, carry.project);
+    const words = carryWords({
+        project: carry.project,
+        by: carry.by,
+        over,
+        other,
+        floor: t != null && t !== "new" ? (t.floor === 0 ? "Ground" : `Floor ${floorLabel(t.floor)}`) : undefined,
+        counts: plan.rooms.find((r) => r.key === `room:${carry.project}`)?.sub,
+    });
+    const map = liftDialog(plan.floors, plan.floor, { project: carry.project });
+    const sel =
+        t == null ? -1 : map.items.findIndex((it) => it.id === (t === "new" ? "floor:new" : `floor:${t.floor}`));
+    const wide = Math.min(CARRY_CARD_W, plan.width - 8);
+    // where the card stands: following the pointer; else in the target slot; else on the lounge
+    const card: Box =
+        carry.by === "pointer" && pointer
+            ? {
+                  x: Math.max(4, Math.min(plan.width - wide - 4, pointer.x + CARRY_CARD_GAP)),
+                  y: Math.max(4, Math.min(plan.height - 120, pointer.y + CARRY_CARD_GAP)),
+                  w: wide,
+                  h: 0,
+              }
+            : targetRoom
+              ? {
+                    x: targetRoom.box.x + Math.max(8, (targetRoom.box.w - CARRY_CARD_W) / 2),
+                    y: targetRoom.box.y + 110,
+                    w: Math.min(CARRY_CARD_W, targetRoom.box.w - 16),
+                    h: 0,
+                }
+              : { x: plan.hall.x + 8, y: plan.lounge.y + 12, w: plan.hall.w - 16, h: 0 };
+    const doors = plan.lift.doors;
+    return (
+        <>
+            {origin ? (
+                <div
+                    data-office-carry-origin={origin.key}
+                    className="pointer-events-none absolute z-[5] box-border border-[3px] border-dashed border-ink-mid bg-background/45"
+                    style={box(origin.box)}
+                />
+            ) : null}
+            {targetRoom ? (
+                <div
+                    data-office-carry-target={targetRoom.key}
+                    className="pointer-events-none absolute z-[5] box-border border-[3px] border-dashed border-ink-hi bg-ink-hi/10"
+                    style={box(targetRoom.box)}
+                />
+            ) : null}
+            <div
+                data-office-lift-panel=""
+                data-office-carry-panel=""
+                className="pointer-events-none absolute z-[8]"
+                style={{
+                    left: doors.x + doors.w + LIFT_PANEL_DX,
+                    bottom: plan.height - (doors.y + doors.h) + LIFT_PANEL_FOOT,
+                }}
+            >
+                <OfficeDialogBox
+                    vm={{
+                        kind: "lift",
+                        label: map.title,
+                        plate: null,
+                        body: null,
+                        items: map.items,
+                        run: () => undefined,
+                    }}
+                    sel={sel}
+                    onPick={() => undefined}
+                />
+            </div>
+            <div
+                data-office-carry-card={carry.by}
+                data-office-carry-over={over}
+                className="pointer-events-none absolute z-[9] box-border flex flex-col gap-1 rounded-md border border-edge-mid bg-surface-raised px-3 py-2.5 shadow-popover"
+                style={{ left: card.x, top: card.y, width: card.w }}
+            >
+                <span data-office-carry-head="" className="truncate text-[12.5px] font-bold text-primary">
+                    {words.head}
+                </span>
+                {words.sub ? <span className="truncate text-[11px] text-muted">{words.sub}</span> : null}
+                <span data-office-carry-line="" className="text-[11px] text-secondary">
+                    {words.line}
+                </span>
+                {words.keys ? <span className="text-[10.5px] text-ink-faint">{words.keys}</span> : null}
+            </div>
+        </>
     );
 }
 

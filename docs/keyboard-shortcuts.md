@@ -215,11 +215,13 @@ A link inside an item view does a full open, even with `Mod` held.
 | `o` | Switch the Cockpit between Cards and Office |
 | `←` `↑` `↓` `→` (Office) | Walk the boss; walls stop it, doors let it through. In the dialog box `↑` `↓` move the ▶ and `←` `→` switch the question (or, at the notice board, the page) |
 | `j` / `k` (Office) | The boss walks to the next / previous desk or seat, the notice board last while something waits on you |
-| `n` (Office) | Show the way to the next Needs you for a second, then walk there; the notice board comes after the asking desks |
-| `Enter` (Office) | At a desk or the notice board, open its dialog box; in the box, do what the ▶ points at (an answer, then Send); on the full card, Enter works as above |
+| `n` (Office) | Show the way to the next Needs you for a second, then walk there, riding the lift first when it is on another floor; the notice board comes after the asking desks |
+| `Enter` (Office) | At a desk, the notice board, the lift or a room's `+N` chip (the agents and runs that did not fit a desk or a table; `Enter` on one opens its card beside the chip), open its dialog box; in the box, do what the ▶ points at (an answer, then Send); on the full card, Enter works as above |
 | `f` (Office) | Open the desk's full card big; on the card, grow or shrink it (the size stays for the next card) |
+| `PageUp` / `PageDown` (Office) | Ride the lift a floor up / down; `Enter` at the lift opens its panel (`↑` `↓` choose a floor, `Enter` rides, `Esc` stays) |
+| `g` (Office) | Pick up the room the boss stands in to move it: `←` `↑` `↓` `→` pick a slot of the floor, `PageUp` / `PageDown` ride the lift with the room (past the top floor, a new floor), `Enter` puts it down (swapping with the room in the slot), `Esc` or `g` puts it back. Dragging a room by its title does the same with the mouse |
 | `Esc` (Office) | One step back: the full card to the dialog box, the box to walking; walking, hide the Events rail the menu showed |
-| `m` (Office) | The office menu: next Needs you, Notice board (walks to it and opens it), next or previous desk, Events, Cards view, all keys |
+| `m` (Office) | The office menu: next Needs you, Notice board and Lift (walk to them and open them), Move this room, Arrange automatically (rooms by name again, Home first), next or previous desk, Events, Cards view, all keys |
 
 ### Agent
 

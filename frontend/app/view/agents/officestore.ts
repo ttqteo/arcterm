@@ -8,6 +8,7 @@
 import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { DEFAULT_HOURS, type WorkHours } from "./officebehavior";
+import { EMPTY_LAYOUT, type OfficeLayout, type RoomPlace } from "./officelayout";
 
 export type CockpitView = "cards" | "office";
 export const DEFAULT_COCKPIT_VIEW: CockpitView = "cards";
@@ -31,6 +32,14 @@ export const officeAnimationAtom = atomWithStorage<boolean>(
     { getOnInit: true }
 ) as PrimitiveAtom<boolean>;
 
+// the rooms' arrangement over the floors, per viewer (office floors spec, "The arrangement"). atomWithStorage hands back
+// whatever JSON was stored: read it through parseLayout
+export const officeLayoutAtom = atomWithStorage<OfficeLayout>("cockpit.office.layout", EMPTY_LAYOUT, undefined, {
+    getOnInit: true,
+}) as PrimitiveAtom<OfficeLayout>;
+// the floor the office shows; not kept: the office opens on G
+export const officeFloorAtom = atom(0) as PrimitiveAtom<number>;
+
 export function cockpitView(v: unknown): CockpitView {
     return v === "office" ? "office" : "cards";
 }
@@ -50,3 +59,15 @@ export const officeMenuOpenAtom = atom(false) as PrimitiveAtom<boolean>;
 // open: shut again whenever the page changes. Not kept: the office opens on the first page
 export const officeBoardPageAtom = atom(0) as PrimitiveAtom<number>;
 export const officeBoardWhyAtom = atom(false) as PrimitiveAtom<boolean>;
+
+/** A room picked up to move (office floors spec, "Arranging rooms"): by keyboard (g) or by dragging its title. The target
+ *  is where a drop puts it: a slot of some floor, `"new"` for the floor above the top one, and by pointer null while the
+ *  pointer is over no slot and no floor that can take it. */
+export interface Carry {
+    project: string;
+    from: RoomPlace;
+    target: RoomPlace | "new" | null;
+    by: "key" | "pointer";
+}
+// the room being carried; null while none is. Not kept: a reload puts it back
+export const officeCarryAtom = atom<Carry | null>(null) as PrimitiveAtom<Carry | null>;

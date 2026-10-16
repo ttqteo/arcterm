@@ -80,8 +80,18 @@ import {
     officeBoardPageAtom,
     officeBoardWhyAtom,
     officeEventsOpenAtom,
+    officeLayoutAtom,
 } from "./officestore";
-import { dialogItems, questionTabs, type DeskKind, type DialogInput, type DialogItemId } from "./officedialogmodel";
+import { EMPTY_LAYOUT } from "./officelayout";
+import {
+    chipDialog,
+    dialogItems,
+    liftDialog,
+    questionTabs,
+    type DeskKind,
+    type DialogInput,
+    type DialogItemId,
+} from "./officedialogmodel";
 import { boardCall, boardItems, boardPage, boardTabs, boardWords } from "./officeboardmodel";
 import { BOARD_KEY, LIFT_KEY } from "./officeplanmodel";
 import { useNeedsYou } from "./needsyou";
@@ -91,6 +101,8 @@ import {
     AgentPlate,
     BoardDialogBody,
     BoardPlate,
+    ChipBody,
+    ChipPlate,
     RunDialogBody,
     RunPlate,
     WorkerDialogBody,
@@ -502,6 +514,26 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                 }
             },
             pageBoard: (d) => officeRef.current?.pageBoard(d),
+            // PageUp / PageDown: the next floor that holds a room, up or down; at either end nothing. With a room
+            // carried it rides with the room, and past the top the room's target is a new floor
+            floor: (d) => {
+                const o = officeRef.current;
+                if (o?.layer() === "carry") {
+                    o.carryFloor(d);
+                    return;
+                }
+                const floors = o?.floors() ?? [];
+                const to = floors[floors.findIndex((f) => f.floor === o?.floor()) + d];
+                if (o && to) {
+                    o.ride(to.floor);
+                }
+            },
+            grab: () => {
+                officeRef.current?.grab();
+            },
+            slot: (d) => officeRef.current?.slot(d),
+            drop: () => officeRef.current?.drop(),
+            cancel: () => officeRef.current?.cancel(),
         }),
         []
     );
@@ -527,6 +559,17 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                 return;
             case "needsYou":
                 officeRef.current?.openBoard();
+                return;
+            case "lift":
+                officeRef.current?.openLift();
+                return;
+            case "move":
+                // as g: the room the boss stands in (the item is disabled anywhere else)
+                officeRef.current?.grab();
+                return;
+            case "arrange":
+                // the next build of the floor arranges the rooms by name again, Home first, and saves it
+                globalStore.set(officeLayoutAtom, EMPTY_LAYOUT);
                 return;
             case "nextDesk":
                 officeKeys.desk(1);
@@ -637,10 +680,59 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         };
     };
 
+    // the lift's panel: a round button per floor, ↵ rides to the one the ▶ is on
+    const liftPanel = (): OfficeDialogVM | null => {
+        const o = officeRef.current;
+        if (!o) {
+            return null;
+        }
+        const d = liftDialog(o.floors(), o.floor());
+        return {
+            kind: d.kind,
+            label: d.title,
+            items: d.items,
+            plate: null,
+            body: null,
+            run: (id) => {
+                if (id.startsWith("floor:")) {
+                    o.ride(Number(id.slice("floor:".length)));
+                }
+            },
+        };
+    };
+
+    // a room's chip: the agents and runs that did not fit it, ↵ on one opens its card beside the chip
+    const chipPanel = (key: string): OfficeDialogVM | null => {
+        const o = officeRef.current;
+        const chip = o?.chipOf(key);
+        if (!o || !chip) {
+            return null;
+        }
+        const d = chipDialog(chip.room, chip.agents, chip.runs);
+        return {
+            kind: d.kind,
+            label: d.title,
+            items: d.items,
+            plate: <ChipPlate title={d.title} ask={chip.room.chip?.ask ?? false} />,
+            body: <ChipBody text={chip.room.chip?.text ?? ""} />,
+            run: (id) => {
+                if (id.startsWith("hidden:")) {
+                    o.openChipCard(id.slice("hidden:".length));
+                }
+            },
+        };
+    };
+
     // the dialog box of the desk at the boss (office controls canvas): the same card lookup as renderOfficeCard
     const dialogFor = (key: string): OfficeDialogVM | null => {
         if (key === BOARD_KEY) {
             return boardDialog();
+        }
+        if (key === LIFT_KEY) {
+            return liftPanel();
+        }
+        if (key.startsWith("chip:")) {
+            return chipPanel(key);
         }
         const c = cards.find((x) =>
             x.kind === "agent"

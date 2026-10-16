@@ -976,6 +976,16 @@ export function buildCockpitBindings(): Binding[] {
         ),
         doc("cockpit:office-big", "f", "Office: the desk's full card; on the card, bigger or smaller"),
         doc(
+            "cockpit:office-floor",
+            "PageUp",
+            "Office: ride the lift a floor up (PageDown: down); ↵ at the lift opens its panel"
+        ),
+        doc(
+            "cockpit:office-move",
+            "g",
+            "Office: pick up the room you are in to move it (← ↑ ↓ → a slot, PgUp PgDn a floor, ↵ put down, Esc cancel)"
+        ),
+        doc(
             "cockpit:office-menu",
             "m",
             "Office: the office menu (next Needs you, desks, Events, Cards view, all keys)"

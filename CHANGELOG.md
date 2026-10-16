@@ -59,6 +59,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **The Office is now a building of floors**: you ride a lift between them. Each project is one room, its runs are
+  meeting tables in it, and you arrange the rooms with g or by dragging.
 - **The office lives in the Cockpit only**: Jarvis's Runs list no longer has an **office** chip, and Jarvis stays on
   the footer instead of taking a desk under the runs.
 - **The Office plays like a pixel game**: ↵ at a desk opens a dialog box at the edge of the office with what the agent

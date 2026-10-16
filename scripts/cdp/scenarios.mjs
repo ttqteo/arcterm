@@ -39575,7 +39575,10 @@ const whatsNew = {
     },
 };
 
-const { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench } = makeCockpitOfficeScenarios({ arrangeFixtureRun, teardownFixtureRun });
+const { cockpitOffice, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeFloors } = makeCockpitOfficeScenarios({
+    arrangeFixtureRun,
+    teardownFixtureRun,
+});
 
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
@@ -44435,6 +44438,7 @@ export const SCENARIOS = [
     cockpitOffice,
     cockpitOfficeControls,
     cockpitOfficeNeedsYouBoard,
+    cockpitOfficeFloors,
     cockpitOfficeBench,
     runQueueScenario,
     runOriginScenario,

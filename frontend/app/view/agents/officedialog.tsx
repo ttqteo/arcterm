@@ -10,7 +10,7 @@ import { TONE_TEXT } from "@/app/view/jarvis/briefstyle";
 import { cn } from "@/util/util";
 import { useAtomValue, type Atom } from "jotai";
 import { Check, Workflow } from "lucide-react";
-import { Fragment, type HTMLAttributes, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, type HTMLAttributes, type ReactNode } from "react";
 import { entriesToShow } from "./agentrowmodel";
 import { displayAgeMs, formatAgeShort, recentActions, type AgentVM } from "./agentsviewmodel";
 import { cleanLabel } from "./answerbar";
@@ -32,6 +32,7 @@ import {
     type DialogItemId,
     type QuestionTabs,
 } from "./officedialogmodel";
+import { floorLabel } from "./officelayout";
 import type { RunInfo } from "./runlineage";
 import { SubLabel } from "./sectionlabel";
 import { ActivityLine, StatusLine } from "./statusline";
@@ -91,15 +92,24 @@ export function PickList({
     onPick,
     label,
     keys,
+    follow,
 }: {
     rows: PickRow[];
     sel: number;
     onPick: (i: number) => void;
     label: string;
     keys: "selected" | "all";
+    // inside a box that scrolls: the row under the ▶ stays in view
+    follow?: boolean;
 }) {
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (follow) {
+            ref.current?.querySelector("[aria-current]")?.scrollIntoView({ block: "nearest" });
+        }
+    }, [follow, sel]);
     return (
-        <div role="menu" aria-label={label} className="flex flex-col gap-px">
+        <div ref={ref} role="menu" aria-label={label} className="flex flex-col gap-px">
             {rows.map((r, i) => (
                 <Fragment key={i}>
                     {r.rule ? <span className="mx-1.5 my-1 h-px shrink-0 bg-edge-mid" /> : null}
@@ -146,8 +156,123 @@ export function PickList({
     );
 }
 
+/** The lift's panel (LiftPanel board): `LIFT` and the floor shown, then a round button per floor from the top down, the
+ *  shown floor's lit, each with its name, an amber `! N` while that floor has asks, and its projects under. The ▶ rests
+ *  on the floor ↵ rides to; the floor shown is drawn but cannot be picked. While a room is carried it is the map of the
+ *  floors (Drag board): a dashed `+ New floor` button on top, the ▶ on the floor the room's target is on, and a floor with
+ *  no slot left for it says `Floor full`. */
+function LiftPanel({ vm, sel, onPick }: { vm: OfficeDialogVM; sel: number; onPick: (i: number) => void }) {
+    const shown = vm.items.find((it) => it.current);
+    const carrying = vm.items.some((it) => it.id === "floor:new");
+    const nameOf = (id: string) => (id === "floor:new" ? "+" : floorLabel(Number(id.slice("floor:".length))));
+    return (
+        <PixelFrame
+            role="dialog"
+            aria-label={vm.label}
+            data-office-dialog="lift"
+            className="pointer-events-auto relative w-[216px]"
+            innerClassName="flex flex-col gap-2.5 px-3.5 py-3"
+        >
+            <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold tracking-[2px] text-primary">LIFT</span>
+                <span
+                    data-office-lift-shown=""
+                    className="h-4 min-w-[34px] box-border border-2 border-office-day-ink bg-office-day-screen px-1 text-center text-[10px] font-bold leading-3 text-office-lamp"
+                >
+                    {shown ? nameOf(shown.id) : ""}
+                </span>
+            </div>
+            <div role="menu" aria-label={vm.label} className="flex flex-col gap-2">
+                {vm.items.map((it, i) => (
+                    <button
+                        key={it.id}
+                        type="button"
+                        role="menuitem"
+                        data-office-pick={i}
+                        data-office-floor={it.id.slice("floor:".length)}
+                        data-office-floor-full={it.full ? "" : undefined}
+                        aria-current={i === sel || undefined}
+                        aria-disabled={it.dim || undefined}
+                        title={it.sub}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (!it.dim) {
+                                onPick(i);
+                            }
+                        }}
+                        className={cn(
+                            "flex shrink-0 items-center gap-2 border-0 bg-transparent p-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            it.dim ? "cursor-default" : "cursor-pointer"
+                        )}
+                    >
+                        <span className="flex w-2.5 shrink-0 justify-center text-primary">
+                            {i === sel ? <PixelArrow /> : null}
+                        </span>
+                        <span
+                            className={cn(
+                                "flex size-[34px] shrink-0 items-center justify-center rounded-full border-[3px] text-[13px] font-extrabold",
+                                it.id === "floor:new"
+                                    ? "border-dashed border-ink-mid text-[16px] text-ink-mid"
+                                    : it.current
+                                      ? "border-office-day-ink bg-office-lamp text-office-day-ink"
+                                      : "border-office-day-ink bg-office-day-face text-office-day-ink",
+                                (it.full || (it.id === "floor:new" && it.dim)) && "opacity-50"
+                            )}
+                        >
+                            {nameOf(it.id)}
+                        </span>
+                        <span className="flex min-w-0 flex-col gap-px">
+                            <span className="flex items-center gap-1.5">
+                                <span
+                                    className={cn(
+                                        "text-[11.5px] font-bold",
+                                        i === sel ? "text-primary" : it.full ? "text-ink-faint" : "text-secondary"
+                                    )}
+                                >
+                                    {it.label}
+                                </span>
+                                {it.count ? (
+                                    <span
+                                        data-office-floor-asks=""
+                                        className="border-2 border-office-day-ink bg-asking px-1 text-[10px] font-extrabold leading-[13px] text-office-day-ink"
+                                    >
+                                        ! {it.count}
+                                    </span>
+                                ) : null}
+                            </span>
+                            <span className="max-w-[140px] truncate text-[10px] text-muted">{it.sub}</span>
+                        </span>
+                    </button>
+                ))}
+            </div>
+            <span className="mt-1 text-[10px] text-muted">
+                {carrying ? (
+                    <>
+                        <LiftKey>PgUp</LiftKey> <LiftKey>PgDn</LiftKey> floor · <LiftKey>Esc</LiftKey> put back
+                    </>
+                ) : (
+                    <>
+                        <LiftKey>↑ ↓</LiftKey> choose · <LiftKey>↵</LiftKey> ride · <LiftKey>Esc</LiftKey> stay
+                    </>
+                )}
+            </span>
+        </PixelFrame>
+    );
+}
+
+function LiftKey({ children }: { children: ReactNode }) {
+    return (
+        <kbd className="rounded border border-edge-mid bg-surface-code px-1 font-mono text-[10px] text-secondary">
+            {children}
+        </kbd>
+    );
+}
+
 /** The dialog box: the plate on its top edge, the words and numbers on the left, the ▶ menu in its own frame. */
 export function OfficeDialogBox({ vm, sel, onPick }: { vm: OfficeDialogVM; sel: number; onPick: (i: number) => void }) {
+    if (vm.kind === "lift") {
+        return <LiftPanel vm={vm} sel={sel} onPick={onPick} />;
+    }
     const runBoard = vm.kind === "lead" || vm.kind === "leadless";
     return (
         <PixelFrame
@@ -166,16 +291,32 @@ export function OfficeDialogBox({ vm, sel, onPick }: { vm: OfficeDialogVM; sel: 
                 innerClassName="px-3 py-2.5"
             >
                 {vm.tabs ? <QuestionTabsHead tabs={vm.tabs} /> : null}
-                <PickList
-                    label={vm.label}
-                    keys="selected"
-                    sel={sel}
-                    onPick={onPick}
-                    rows={vm.items.map((it) => ({
-                        ...it,
-                        label: it.id.startsWith("opt:") ? cleanLabel(it.label) : it.label,
-                    }))}
-                />
+                {/* a chip's list can run long: it scrolls in its frame, the ▶ kept in view */}
+                <div className={cn(vm.kind === "chip" && "max-h-[196px] overflow-y-auto")}>
+                    <PickList
+                        label={vm.label}
+                        keys="selected"
+                        sel={sel}
+                        onPick={onPick}
+                        follow={vm.kind === "chip"}
+                        rows={vm.items.map((it) => ({
+                            ...it,
+                            label: it.id.startsWith("opt:") ? cleanLabel(it.label) : it.label,
+                            // a hidden card's state word, in the asking tone while it asks
+                            count: it.word ? (
+                                <span
+                                    data-office-hidden-word=""
+                                    className={cn(
+                                        "ml-auto shrink-0 text-[11.5px]",
+                                        it.ask ? "font-semibold text-asking" : "font-normal text-muted"
+                                    )}
+                                >
+                                    {it.word}
+                                </span>
+                            ) : undefined,
+                        }))}
+                    />
+                </div>
             </PixelFrame>
         </PixelFrame>
     );
@@ -383,6 +524,29 @@ export function BoardPlate({ count }: { count: number }) {
     );
 }
 
+/** A room's chip plate: its name and that some of the people it holds are not at a desk, and Needs you while one asks. */
+export function ChipPlate({ title, ask }: { title: string; ask: boolean }) {
+    return (
+        <>
+            <span aria-hidden className={cn("size-[7px] shrink-0 rounded-full", ask ? "bg-asking" : "bg-ink-faint")} />
+            <b className="min-w-0 truncate text-[13.5px] font-semibold text-primary">{title}</b>
+            {ask ? <span className="shrink-0 text-[11.5px] font-semibold text-warning">Needs you</span> : null}
+        </>
+    );
+}
+
+/** What a room's chip says: how many did not fit, and what ↵ does on one. */
+export function ChipBody({ text }: { text: string }) {
+    return (
+        <>
+            <p className="m-0 text-[17px] font-semibold leading-6 text-primary">{text}</p>
+            <p className="m-0 text-[14.5px] leading-[22px] text-secondary">
+                No desk or table is left for them in this room. ↵ opens one's card beside the chip.
+            </p>
+        </>
+    );
+}
+
 /** One page of the notice board: the row's title line in its tone, its text at the agent box's main size, its why, the
  *  words that raised a learned rule once Why is open, and how long it has waited. */
 export function BoardDialogBody({ words, row, now }: { words: BoardWords; row: StripRow; now: number }) {
@@ -438,6 +602,7 @@ export function OfficeMenuBox({
                     label: it.label,
                     key: it.key,
                     rule: it.rule,
+                    dim: it.disabled,
                     count: it.count ? (
                         <span
                             className={cn(

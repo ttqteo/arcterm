@@ -7,6 +7,7 @@
 // ▶ steps, and which edge the dialog box takes. No React, no Wave runtime imports.
 
 import type { Dir } from "./officeboss";
+import { newFloor, stepSlot, type Placements, type RoomPlace } from "./officelayout";
 
 /** What is up over the office: nothing (the boss walks), the desk's dialog box, the desk's full card, or a room the boss
  *  carries (g), which takes every key until it is dropped or put back. */
@@ -193,14 +194,18 @@ export interface OfficeMenuItem {
     count?: string;
     ask?: boolean;
     rule?: boolean;
+    // drawn dimmed: the ▶ passes over it and ↵ does nothing
+    disabled?: boolean;
 }
 
-/** Pure: the office menu (m), START's list. It names each item's own key, so it is where the keys are learnt. */
+/** Pure: the office menu (m), START's list. It names each item's own key, so it is where the keys are learnt. `inRoom`
+ *  is whether the boss stands in a project room: Move this room picks that room up, so it is disabled anywhere else. */
 export function officeMenuItems(
     asks: number,
     newEvents: number,
     eventsOpen: boolean,
-    boardRows: number
+    boardRows: number,
+    inRoom: boolean
 ): OfficeMenuItem[] {
     return [
         { id: "nextAsk", label: "Next Needs you", key: "n", count: asks > 0 ? String(asks) : undefined, ask: true },
@@ -213,7 +218,7 @@ export function officeMenuItems(
         { id: "nextDesk", label: "Next desk", key: "j" },
         { id: "prevDesk", label: "Previous desk", key: "k" },
         { id: "lift", label: "Lift", key: "PgUp PgDn" },
-        { id: "move", label: "Move this room", key: "g" },
+        { id: "move", label: "Move this room", key: "g", ...(inRoom ? {} : { disabled: true }) },
         { id: "arrange", label: "Arrange automatically" },
         {
             id: "events",
@@ -224,4 +229,45 @@ export function officeMenuItems(
         { id: "cards", label: "Cards view", key: "o" },
         { id: "keys", label: "All keys", key: "?" },
     ];
+}
+
+/** The floors a carried room can go to, as the lift's summaries give them. */
+export interface CarryFloor {
+    floor: number;
+    rooms: readonly string[];
+}
+
+/** Pure: whether the carried room may build a new floor above the top one: only while the top floor holds another room,
+ *  since the room carried alone off its own top floor would only empty it. */
+export function canBuildFloor(floors: readonly CarryFloor[], project: string): boolean {
+    const top = floors.reduce<CarryFloor | undefined>((t, f) => (t == null || f.floor > t.floor ? f : t), undefined);
+    return top != null && top.rooms.some((r) => r !== project);
+}
+
+/** Pure: where the carried room's target goes for an arrow (a neighbouring slot of the floor shown; none on a new floor)
+ *  or PageUp / PageDown (the next floor that holds a room, in the same slot; past the top, a new floor; and back from a
+ *  new floor, the top floor in the slot the room came from). At an end it stays put. */
+export function carryTarget(
+    target: RoomPlace | "new",
+    act: { do: "slot"; dir: Dir } | { do: "floor"; delta: -1 | 1 },
+    ctx: { floors: readonly CarryFloor[]; project: string; fromSlot: number }
+): RoomPlace | "new" {
+    const shown = ctx.floors.map((f) => f.floor).sort((a, b) => a - b);
+    if (act.do === "slot") {
+        return target === "new" ? target : { floor: target.floor, slot: stepSlot(target.slot, act.dir) };
+    }
+    if (target === "new") {
+        return act.delta < 0 && shown.length > 0 ? { floor: shown[shown.length - 1], slot: ctx.fromSlot } : target;
+    }
+    const next =
+        act.delta > 0 ? shown.find((f) => f > target.floor) : [...shown].reverse().find((f) => f < target.floor);
+    if (next != null) {
+        return { floor: next, slot: target.slot };
+    }
+    return act.delta > 0 && canBuildFloor(ctx.floors, ctx.project) ? "new" : target;
+}
+
+/** Pure: the place a drop puts the room: its target, or for a new floor the first slot of the floor above the top one. */
+export function carryPlace(target: RoomPlace | "new", at: Placements): RoomPlace {
+    return target === "new" ? { floor: newFloor(at), slot: 0 } : target;
 }
