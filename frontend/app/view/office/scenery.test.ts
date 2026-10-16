@@ -378,13 +378,13 @@ describe("a floor's rooms", () => {
         expect(Math.abs(left - right)).toBeLessThanOrEqual(1);
     });
 
-    it("plants a pot at each room's plant and in the lounge, and nowhere else", () => {
+    it("plants a pot at each of a room's plants and in the lounge, and nowhere else", () => {
         for (const p of [plan(), plan(1600, { height: 1000 }), onFloor(2)]) {
             const s = scenery(p, "day", false);
             const lounge = artOf(p.lounge);
             const want = [
                 [lounge.x + art(200) + 3, lounge.y + art(172) + 10],
-                ...p.rooms.filter((r) => r.plant).map((r) => [art(r.plant!.x) + 3, art(r.plant!.y) + 10]),
+                ...p.rooms.flatMap((r) => (r.plants ?? []).map((q) => [art(q.x) + 3, art(q.y) + 10])),
             ].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
             const got = rects(s.under, "potHi")
                 .map((r) => [r.x, r.y])
@@ -392,7 +392,9 @@ describe("a floor's rooms", () => {
             expect(got).toEqual(want);
         }
         // the plant is real: at least one room of the default floor has one
-        expect(plan().rooms.some((r) => r.plant)).toBe(true);
+        expect(plan().rooms.some((r) => r.plants?.length)).toBe(true);
+        // and a room can hold two
+        expect(plan().rooms.some((r) => (r.plants?.length ?? 0) === 2)).toBe(true);
     });
 });
 

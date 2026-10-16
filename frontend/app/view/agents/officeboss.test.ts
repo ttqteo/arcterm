@@ -236,25 +236,28 @@ describe("officeboss", () => {
         expect(canWalk(plan, { x: l.x + 100, y: l.y + 130 })).toBe(false); // someone sitting on it
         expect(canWalk(plan, { x: l.x + 184, y: l.y + 130 })).toBe(false); // the coffee machine
         expect(canWalk(plan, { x: l.x + 217, y: l.y + 205 })).toBe(false); // the plant's pot
-        const pl = room("room:alpha").plant!;
-        expect(canWalk(plan, { x: pl.x + 17, y: pl.y + 35 })).toBe(false); // the room's plant: its pot
+        const pls = room("room:alpha").plants!;
+        expect(pls.length).toBeGreaterThan(0);
+        for (const pl of pls) {
+            expect(canWalk(plan, { x: pl.x + 17, y: pl.y + 35 })).toBe(false); // the room's plants: each pot
+        }
         expect(canWalk(plan, { x: l.x + 100, y: l.y + 100 })).toBe(true); // the rug, facing the sofa
         expect(canWalk(plan, { x: l.x + 100, y: l.y + 200 })).toBe(true); // behind it
         expect(stepToward(plan, { x: l.x + 100, y: l.y + 210 }, "up", 200).y).toBeGreaterThan(l.y + 188);
     });
 
-    it("puts a pot wherever a room has its plant, and nowhere else", () => {
-        const withPlant = [...plan.rooms, ...full.rooms].filter((r) => r.plant);
+    it("puts a pot wherever a room has a plant, and nowhere else", () => {
+        const withPlant = [...plan.rooms, ...full.rooms].filter((r) => r.plants?.length);
         expect(withPlant.length).toBeGreaterThan(0);
         for (const r of full.rooms.filter((x) => x.kind === "agents")) {
             // the old bottom-right plant is gone from every room
             expect(canWalk(full, { x: r.box.x + r.box.w - 27, y: r.box.y + r.box.h - 28 }), r.key).toBe(true);
-            if (r.plant) {
-                expect(canWalk(full, { x: r.plant.x + 17, y: r.plant.y + 35 }), r.key).toBe(false);
+            for (const p of r.plants ?? []) {
+                expect(canWalk(full, { x: p.x + 17, y: p.y + 35 }), r.key).toBe(false);
             }
         }
         // a room with no plant (its first row full, a table in its strip) has no pot either
-        const bare = full.rooms.filter((r) => r.kind === "agents" && !r.plant);
+        const bare = full.rooms.filter((r) => r.kind === "agents" && !r.plants?.length);
         expect(bare.length).toBeGreaterThan(0);
     });
 

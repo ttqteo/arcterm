@@ -461,25 +461,34 @@ describe("officeplanmodel", () => {
         it("has no table at all, and a plant", () => {
             const p = plan([ag("a")]);
             expect(zones(p)).toHaveLength(0);
-            expect(room(p).plant).toBeDefined();
+            expect(room(p).plants?.length).toBeGreaterThan(0);
             expect(p.seats).toHaveLength(0);
         });
 
-        it("puts one plant top right while the first desk row is not full", () => {
-            const p = plan([ag("a")], [run("r")]);
-            const r = room(p);
-            expect(r.plant).toEqual({ x: r.box.x + r.box.w - 44, y: r.box.y + 64 });
+        it("has both plants when the first desk row has a place free and there is no run", () => {
+            const r = room(plan([ag("a")]));
+            expect(r.plants).toEqual([
+                { x: r.box.x + r.box.w - 44, y: r.box.y + 64 },
+                { x: r.box.x + 16, y: r.box.y + r.box.h - MEET_H + 50 },
+            ]);
         });
 
-        it("puts it in the meeting strip's left when the first row is full and there is no run", () => {
+        it("has the strip's plant only when the first row is full and there is no run", () => {
             const p = plan(seven, []);
             const r = room(p);
             expect(p.desks).toHaveLength(3);
-            expect(r.plant).toEqual({ x: r.box.x + 16, y: r.box.y + r.box.h - MEET_H + 50 });
+            expect(r.plants).toEqual([{ x: r.box.x + 16, y: r.box.y + r.box.h - MEET_H + 50 }]);
+        });
+
+        it("has the top-right plant only when a run sits at a table and the first row has a place free", () => {
+            const p = plan([ag("a")], [run("r")]);
+            const r = room(p);
+            expect(zones(p)).toHaveLength(1);
+            expect(r.plants).toEqual([{ x: r.box.x + r.box.w - 44, y: r.box.y + 64 }]);
         });
 
         it("has no plant when the first row is full and a table fills the strip", () => {
-            expect(room(plan(seven, three)).plant).toBeUndefined();
+            expect(room(plan(seven, three)).plants).toBeUndefined();
         });
     });
 

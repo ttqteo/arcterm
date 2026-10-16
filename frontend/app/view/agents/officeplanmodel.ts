@@ -95,7 +95,7 @@ export interface Room {
     screen?: ScreenCell[];
     parent?: string; // a table zone's project room
     chip?: RoomChip;
-    plant?: Point;
+    plants?: Point[]; // absent when the room has none
 }
 export type Tone = "plain" | "asking" | "done" | "muted";
 export type Light = "working" | "asking" | "off";
@@ -747,12 +747,12 @@ export function buildPlan(input: PlanInput): Plan {
                 ...fill.chip,
             };
         }
-        // one plant: top right while the first desk row has a place free, else in the strip's left when no table is there
-        if (fill.seated.length < cap.perRow) {
-            project.plant = { x: x + colW - 44, y: y + 64 };
-        } else if (fill.tabled.length === 0) {
-            project.plant = { x: x + 16, y: zy + 50 };
-        }
+        // two plants, each on its own rule: top right while the first desk row has a place free, and in the strip's
+        // left when no table is there (a room with no run: its strip is carpet with a plant)
+        const plants: Point[] = [];
+        if (fill.seated.length < cap.perRow) plants.push({ x: x + colW - 44, y: y + 64 });
+        if (fill.tabled.length === 0) plants.push({ x: x + 16, y: zy + 50 });
+        if (plants.length) project.plants = plants;
         order.push(...fill.order);
         asks.push(...fill.askKeys);
     }

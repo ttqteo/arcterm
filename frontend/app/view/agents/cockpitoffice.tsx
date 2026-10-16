@@ -384,7 +384,7 @@ export function readOfficeProbe() {
     return {
         ...probe,
         // the floor shown, the floors' labels from G up, and each room of this floor by slot (a project's or an empty one):
-        // how many desks and tables it drew, whether it has a plant, its chip, its title label's box
+        // how many desks and tables it drew, whether it has a plant and where each stands, its chip, its title label's box
         floor: lastPlan?.floor ?? 0,
         floors: lastPlan?.floors.map((f) => f.label) ?? [],
         rooms: lastPlan
@@ -400,7 +400,8 @@ export function readOfficeProbe() {
                       chip: r.chip ? { text: r.chip.text, ask: r.chip.ask, box: r.chip.box } : null,
                       desks: lastPlan!.desks.filter((d) => d.room === r.key).length,
                       tables: lastPlan!.rooms.filter((z) => z.parent === r.key).length,
-                      plant: r.plant != null,
+                      plant: (r.plants?.length ?? 0) > 0,
+                      plants: r.plants ?? [],
                   }))
             : [],
         // the lift: its doors and where the boss stands at them, the amber lines drawn beside it, and whether a ride is on

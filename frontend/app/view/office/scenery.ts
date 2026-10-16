@@ -255,10 +255,10 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
         under.rect(x + 3, y + 14, 7, 1, "shadow");
     };
     plant(...L(200, 172));
-    // a project room's plant: where the plan left a place free, by the desks or on the bare strip
+    // a project room's plants: one where the plan left a desk place free, one on the strip with no table in it
     for (const r of plan.rooms) {
-        if (r.plant) {
-            plant(art(r.plant.x), art(r.plant.y));
+        for (const p of r.plants ?? []) {
+            plant(art(p.x), art(p.y));
         }
     }
 
@@ -637,7 +637,7 @@ export function sceneryKey(plan: Plan, phase: OfficePhase, tired: boolean, theme
             r.door ?? 0,
             r.table ?? 0,
             r.screen ?? 0,
-            r.plant ?? 0,
+            r.plants ?? 0,
             r.chip?.text ?? 0,
         ]),
         plan.desks.map((d) => [d.x, d.y, d.light]),

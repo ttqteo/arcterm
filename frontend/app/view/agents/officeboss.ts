@@ -56,7 +56,7 @@ const pot = (x: number, y: number): Box => ({ x: x + 6, y: y + 26, w: 22, h: 18 
 
 /** What the boss's feet stay off: each desk with the person at it and its name, each meeting table with its chairs,
  *  and what scenery.ts draws on the floor: the lounge's sofa with the people on it, its coffee machine, and the
- *  plants (each room's, where it has one), and the Needs you notice board and the lift in the hall. A desk's spot and a
+ *  plants (each room's, where it has them), and the Needs you notice board and the lift in the hall. A desk's spot and a
  *  table's stay clear, so the boss stands in front of a desk, never on it; so do the board's and the lift's, above
  *  the lift's dial and the strip over it that holds `Floor n`. */
 function furniture(plan: Plan): Box[] {
@@ -75,7 +75,7 @@ function furniture(plan: Plan): Box[] {
             { x: l.x + 34, y: l.y + 122, w: 162, h: 66 },
             { x: l.x + 166, y: l.y + 93, w: 36, h: 60 },
             pot(l.x + 200, l.y + 172),
-            ...plan.rooms.flatMap((r) => (r.plant ? [pot(r.plant.x, r.plant.y)] : [])),
+            ...plan.rooms.flatMap((r) => (r.plants ?? []).map((p) => pot(p.x, p.y))),
         ];
         furnitureCache.set(plan, boxes);
     }

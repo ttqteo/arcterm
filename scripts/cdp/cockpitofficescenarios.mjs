@@ -2517,7 +2517,7 @@ export function makeCockpitOfficeScenarios(fx) {
             );
 
             // 10. The full room: arcterm's 4 desks, 2 tables with their screens and the chip; mit-thesis, with no run, has
-            // no table and a plant in the strip's left
+            // no table and a plant in the strip's left (plus the top-right one while its first desk row has a place free)
             // the boss waits in the hall, off the desks and their ↵ prompt
             p = await probe(h);
             await clickFloor(p.hall.x + p.hall.w / 2, p.hall.y + 330);
@@ -2540,8 +2540,11 @@ export function makeCockpitOfficeScenarios(fx) {
                     desks: [...document.querySelectorAll("[data-office-desk]")].filter(inside).length,
                 };
             })()`);
+            // a plant stands in the strip when its y is inside the room's bottom MEET_H (124) px
+            const MEET_H = 124;
+            const stripPlants = (r) => (r?.plants ?? []).filter((q) => q.y >= r.box.y + r.box.h - MEET_H && q.y < r.box.y + r.box.h);
             rec(
-                "10. arcterm's room holds 4 desks, 2 tables with their captions and the chip; mit-thesis's, with no run, has no table and a plant",
+                "10. arcterm's room holds 4 desks, 2 tables with their captions and the chip; mit-thesis's, with no run, has no table and a plant in its strip",
                 arc10?.desks === 4 &&
                     arc10.tables === 2 &&
                     arc10.chip?.text === "+3 agents · +1 run" &&
@@ -2550,8 +2553,10 @@ export function makeCockpitOfficeScenarios(fx) {
                     JSON.stringify(inRoom.captions) === JSON.stringify(["Land queue · 2 of 7", "Canvas gallery · 1 of 3"]) &&
                     mit10?.tables === 0 &&
                     mit10.plant === true &&
+                    stripPlants(mit10).length === 1 &&
+                    stripPlants(arc10).length === 0 &&
                     mit10.desks === 1,
-                JSON.stringify({ arcterm: { desks: arc10?.desks, tables: arc10?.tables, chip: arc10?.chip?.text }, inRoom, mit: { tables: mit10?.tables, plant: mit10?.plant, desks: mit10?.desks } })
+                JSON.stringify({ arcterm: { desks: arc10?.desks, tables: arc10?.tables, chip: arc10?.chip?.text, plants: arc10?.plants }, inRoom, mit: { tables: mit10?.tables, plant: mit10?.plant, plants: mit10?.plants, box: mit10?.box, desks: mit10?.desks } })
             );
 
             // 11. The chip: n stops at it (it asks), ↵ lists what has no desk or table, the asking one first; a click on the
