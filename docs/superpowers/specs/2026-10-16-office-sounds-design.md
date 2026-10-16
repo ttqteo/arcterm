@@ -44,7 +44,7 @@ channel). None is taken from Pokémon or any other game.
 ## Music
 
 Two loops: one for work hours, one for after hours and weekends, chosen by `officeHoursAtom` as the office's day and
-night are. While a jingle plays the music ducks and comes back after. Losing focus stops the music; focus starts its loop again from the top (a loop is four bars, 8–11 s).
+night are. While a jingle plays the music ducks and comes back after. Losing focus stops the music; focus starts its loop again from the top (a loop is four bars: about 8.6 s by day, 11.4 s at night).
 
 ## Controls
 
