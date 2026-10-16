@@ -42,8 +42,8 @@ export interface LaunchAgentOpts {
     // starts on Wake or a message (asleepLaunchMeta). Its process never starts here.
     asleep?: AsleepLaunch;
     toolId?: string; // a terminal opened from the tool library (block meta tool:id); startupCommand is its command line
-    // take the Agent surface's focus on launch, as an agent does. A plain Terminal launch leaves it in the background
-    // (see below); a tool opened into the centre sets this.
+    // false leaves a terminal in the background (a tool opened into the panel under the agent). Every other launch, a
+    // plain terminal's too, takes the Agent surface's focus (see below).
     focus?: boolean;
 }
 
@@ -64,7 +64,7 @@ export async function createTermTab(tabName: string): Promise<{ tabId: string; b
 }
 
 // Launch a runtime as its OWN session tab. Agent runtimes get a pending roster row; terminals only
-// open in the Agent surface focus pane. We do NOT setActiveTab — the cockpit stays on the
+// open in the Agent surface's centre. We do NOT setActiveTab — the cockpit stays on the
 // Agents tab; the agent's process starts when its terminal mounts in the focus pane. The new tab's
 // default term block is reconfigured via SetMeta before it renders, so meta is honored at controller
 // start (the backend starts controllers lazily on the first terminal-view resync).
@@ -144,11 +144,10 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
         };
         globalStore.set(model.pendingLaunchesAtom, [...globalStore.get(model.pendingLaunchesAtom), pending]);
     }
-    // Terminals launch in the background: leave the user where they are (no focus/surface change). The
-    // terminal appears in the details rail's Terminals section and starts when first opened. Agents
-    // foreground into the Agent surface so their booting terminal mounts (which starts the process), and so
-    // does a terminal asked to take the focus (a tool opened into the centre).
-    if (!isTerminal || opts.focus) {
+    // A launch foregrounds into the Agent surface so its booting terminal mounts (which starts the process): an
+    // agent, and a plain terminal too, a peer of the agents in its project's folder that takes the centre as they do.
+    // Only a terminal launched with focus: false (a tool opened into the panel) leaves the user where they are.
+    if (!isTerminal || opts.focus !== false) {
         globalStore.set(model.focusIdAtom, tabId);
         globalStore.set(model.surfaceAtom, "agent");
         // a resumed session opens its new tab over the transcript it was resumed from

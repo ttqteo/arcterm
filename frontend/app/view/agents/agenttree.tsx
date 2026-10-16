@@ -1942,7 +1942,7 @@ function FolderRow({
 }
 
 // Opens a plain terminal in a registered project, the New launcher's Terminal pick without the dialog. Like the
-// launcher's, it starts in the background and lands in its project's folder. The Diff panel's sync failure opens one
+// launcher's, it takes the centre and lands in its project's folder. The Diff panel's sync failure opens one
 // in its worktree with it.
 export function quickTerminal(model: AgentsViewModel, project: string, path: string) {
     fireAndForget(() =>

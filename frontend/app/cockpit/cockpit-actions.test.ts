@@ -88,7 +88,7 @@ describe("launchAgent", () => {
         expect(globalStore.get(model.typingFollowsAtom)).toBe("tab-1");
     });
 
-    it("leaves a plain terminal in the background: no focus, no surface change", async () => {
+    it("opens a plain terminal on the Agent surface with the keyboard, as an agent", async () => {
         const model = fakeModel();
         await launchAgent(model, {
             runtime: "terminal",
@@ -97,12 +97,12 @@ describe("launchAgent", () => {
             projectPath: "C:/proj",
             projectName: "proj",
         });
-        expect(globalStore.get(model.focusIdAtom)).toBeUndefined();
-        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
-        expect(globalStore.get(model.typingFollowsAtom)).toBeNull();
+        expect(globalStore.get(model.focusIdAtom)).toBe("tab-1");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(model.typingFollowsAtom)).toBe("tab-1");
     });
 
-    it("a terminal asked to focus (a tool opened into the centre) takes the Agent surface and the keyboard", async () => {
+    it("leaves a terminal asked not to focus (a tool opened into the panel) in the background", async () => {
         const model = fakeModel();
         await launchAgent(model, {
             runtime: "terminal",
@@ -111,11 +111,11 @@ describe("launchAgent", () => {
             projectPath: "C:/proj",
             projectName: "proj",
             toolId: "lazygit",
-            focus: true,
+            focus: false,
         });
-        expect(globalStore.get(model.focusIdAtom)).toBe("tab-1");
-        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
-        expect(globalStore.get(model.typingFollowsAtom)).toBe("tab-1");
+        expect(globalStore.get(model.focusIdAtom)).toBeUndefined();
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+        expect(globalStore.get(model.typingFollowsAtom)).toBeNull();
     });
 
     it("records the tool on a terminal's block, with its command line to type at the first prompt", async () => {

@@ -22253,7 +22253,7 @@ const launcherScenario = {
         if (s == null) return steps;
 
         // a real launch: a task and the worktree switch go into the draft on an agent row, then Terminal's Enter starts a
-        // terminal in the background (no agent), and the launch must empty both
+        // terminal (no agent) that takes the centre and the keyboard, and the launch must empty both
         const agentPick = s.startRows.includes("claude") ? "claude" : s.startRows[0];
         await h.ev(focusColumn("start"));
         await launcherPress(h, String(s.startRows.indexOf(agentPick) + 1));
@@ -22266,6 +22266,7 @@ const launcherScenario = {
         await polishNap(250);
         const switchOn = await h.ev(`${LAUNCHER}?.querySelector('button[role="switch"]')?.getAttribute('aria-checked') ?? null`);
         const blocksBefore = await launcherBlockIds(h);
+        const tabsBefore = (await caTabIds(h)).tabIds;
         await h.ev(focusColumn("start"));
         await launcherPress(h, String(s.startRows.indexOf("terminal") + 1));
         await launcherPress(h, "Enter");
@@ -22282,6 +22283,18 @@ const launcherScenario = {
             "23. Open terminal with a task and the worktree switch set closes the dialog and opens one terminal block",
             switchOn === "true" && launchClosed && added.length === 1 && blocksAfter.length === blocksBefore.length + 1,
             JSON.stringify({ switchOn, launchClosed, before: blocksBefore.length, after: blocksAfter.length, added })
+        );
+        // the new terminal is a peer of the agents: it takes the Agent surface's centre and its xterm the keyboard
+        const newTab = (await caTabIds(h)).tabIds.find((t) => !tabsBefore.includes(t));
+        const typingIn = `document.activeElement?.closest('[data-agent-terminal]')?.dataset.agentTerminal ?? null`;
+        const tookKeyboard =
+            newTab != null && (await polishWaitFor(h, `${typingIn} === ${JSON.stringify(newTab)}`, 8000));
+        const surfaceAfterLaunch = await h.activeSurfaceLabel();
+        await h.shot("cdp-shots/launcher-11b-terminal-centre.png");
+        rec(
+            "23b. the new terminal opens on the Agent surface with the keyboard in its xterm",
+            tookKeyboard && surfaceAfterLaunch === SURFACE_LABEL.agent,
+            JSON.stringify({ newTab, typingIn: await h.ev(typingIn), surface: surfaceAfterLaunch })
         );
 
         await h.ev(OPEN_NEW_AGENT);

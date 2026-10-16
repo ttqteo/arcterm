@@ -58,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A new terminal (New → Terminal, or the Diff panel's Open a terminal here) opens in the centre with the cursor in it,
+  as a new agent does, instead of waiting in the sidebar to be clicked.
 - The Office opens straight onto the office when no agent is running: no grey card placeholders while it loads, and
   no "No agents running" panel over the rooms. The Cards view keeps both.
 - Highlighted sentences in Claude's replies now show on Team accounts too. Claude Code's security plugin there kept
