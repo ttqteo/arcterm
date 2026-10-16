@@ -56,6 +56,7 @@ describe("officeinputs", () => {
                 project: "p",
                 createdTs: 7,
                 done: false,
+                landed: false,
                 leadAsking: false,
                 tasks: [
                     { id: "t1", label: "Model", state: "running", asking: true, key: "row:t1", workerId: "w1" },
