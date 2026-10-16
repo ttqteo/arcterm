@@ -715,13 +715,14 @@ func scheduleLocked(ctx context.Context, dagID string, stalled *[]stalledTask) e
 				failDispatch(ctx, g, taskID, FailureKindWorktree, werr, &afterCommit)
 				continue
 			}
-			// not "created by this call": a failed add or a server that died during Setup leaves a clean tree the retry reuses
-			if g.Setup != "" && !treeSetUp(spawnCtx, wt) {
+			// not "created by this call": a failed add or a server that died during Setup leaves a clean tree the retry reuses.
+			// With no Setup the default link step runs on a reused tree too: it is idempotent and takes milliseconds
+			if g.Setup == "" || !treeSetUp(spawnCtx, wt) {
 				setupStart := time.Now()
 				// no progress sink: Setup runs under the dag mutation lock, so nothing can read a
 				// partial tail while it holds the lock anyway
 				setupCtx := jobqueue.WithSource(context.WithoutCancel(ctx), jobqueue.Source{RunId: owner.ID, Label: taskStepLabel("Setup", g, taskID)})
-				_, serr := runPlanCommand(withRunCmdOwner(setupCtx, owner.ID, PlanCmd_Setup, ""), wt, g.Setup, nil, SetupTimeout, nil)
+				_, _, serr := PrepareTree(withRunCmdOwner(setupCtx, owner.ID, PlanCmd_Setup, ""), wt, g.Setup)
 				setupMs = time.Since(setupStart).Milliseconds()
 				if serr != nil {
 					// only a new tree is set up, so a retry must not reuse this half-prepared one. The branch

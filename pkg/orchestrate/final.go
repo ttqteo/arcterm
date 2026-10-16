@@ -783,11 +783,9 @@ func finalTree(ctx context.Context, g *waveobj.TaskGroup, owner *waveobj.Run) (s
 			log.Printf("dag %s: removing the final tree: %v", g.OID, err)
 		}
 	}
-	if g.Setup != "" {
-		if _, err := runPlanCommand(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Setup · final tree"}), owner.ID, PlanCmd_Setup, ""), wt, g.Setup, nil, SetupTimeout, nil); err != nil {
-			cleanup()
-			return "", nil, fmt.Errorf("Setup failed in the final tree: %s", failureDetail(err))
-		}
+	if _, _, err := PrepareTree(withRunCmdOwner(jobqueue.WithSource(ctx, jobqueue.Source{RunId: owner.ID, Label: "Setup · final tree"}), owner.ID, PlanCmd_Setup, ""), wt, g.Setup); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("Setup failed in the final tree: %s", failureDetail(err))
 	}
 	return wt, cleanup, nil
 }

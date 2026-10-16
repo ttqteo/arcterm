@@ -200,6 +200,12 @@ func configureAndStartWorker(ctx context.Context, tabID, blockID string, meta wa
     return nil
 }
 
+// EngineToolEnv is set on every agent a run starts and every plan command the engine runs. Before `pnpm exec` and
+// `pnpm run`, pnpm 11 checks the installed dependencies, and its install purges a node_modules laid out for another
+// path: in a tree whose node_modules links into the main checkout, main's. pnpm 11 reads this setting from the
+// environment, never from a project's .npmrc.
+var EngineToolEnv = map[string]string{"pnpm_config_verify_deps_before_run": "false"}
+
 // makeWorkerBlockMeta builds the block meta for a run worker. keepOnExit is true for
 // orchestrator leads, whose tab must outlive the lead process while DAG children run.
 func makeWorkerBlockMeta(spec RunWorkerSpec, cwd string, keepOnExit bool) waveobj.MetaMapType {
@@ -208,7 +214,12 @@ func makeWorkerBlockMeta(spec RunWorkerSpec, cwd string, keepOnExit bool) waveob
 	if baseArgs == nil {
 		baseArgs = []string{}
 	}
+	env := make(map[string]any, len(EngineToolEnv))
+	for k, v := range EngineToolEnv {
+		env[k] = v
+	}
 	m := waveobj.MetaMapType{
+		waveobj.MetaKey_CmdEnv:     env,
 		waveobj.MetaKey_View:       "term",
 		waveobj.MetaKey_Controller: "cmd",
 		waveobj.MetaKey_Cmd:        spec.Bin,

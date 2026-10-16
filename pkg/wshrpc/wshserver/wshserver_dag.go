@@ -348,11 +348,11 @@ func (ws *WshServer) DagSubmitCommand(ctx context.Context, data wshrpc.CommandDa
 	// the landing tree is where Verify runs, and the plan's Setup line is first known here. A run that
 	// already has a dag is a resubmit, whose merges may be running in that tree. Setup is bounded by its own
 	// timeout, not the caller's RPC deadline, and once it has run the submit finishes even if the caller
-	// stopped waiting, so the prepared tree gets its dag.
-	if run.LandPath != "" && run.DagORef == "" && plan.Setup != "" {
+	// stopped waiting, so the prepared tree gets its dag. With no Setup the tree gets the default links.
+	if run.LandPath != "" && run.DagORef == "" {
 		ctx = context.WithoutCancel(ctx)
 		setupCtx := jobobject.WithOwner(ctx, jobobject.Owner{Kind: jobobject.OwnerKind_RunCmd, Id: run.ID, Cmd: orchestrate.PlanCmd_Setup})
-		if tail, err := orchestrate.RunSetup(setupCtx, run.LandPath, plan.Setup); err != nil {
+		if tail, _, err := orchestrate.PrepareTree(setupCtx, run.LandPath, plan.Setup); err != nil {
 			return nil, &setupFailedError{landPath: run.LandPath, command: plan.Setup, tail: tail, err: err}
 		}
 	}

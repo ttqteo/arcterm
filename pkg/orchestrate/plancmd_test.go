@@ -369,3 +369,14 @@ func TestPlanCommandFailureKeepsTheFailingTest(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// a plan command in a tree whose node_modules links into the main checkout must not let pnpm reinstall it
+func TestExecPlanCommandTurnsOffPnpmsInstallBeforeRun(t *testing.T) {
+	out, err := execPlanCommandEnv(context.Background(), t.TempDir(), `echo "[$pnpm_config_verify_deps_before_run]"`, nil, time.Minute, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "[false]" {
+		t.Fatalf("pnpm_config_verify_deps_before_run = %s, want [false]", out)
+	}
+}

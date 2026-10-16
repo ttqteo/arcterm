@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
@@ -180,11 +181,6 @@ func withRunCmdOwner(ctx context.Context, runID, cmd, task string) context.Conte
 // Verify without running anything; a stub calls progress itself to script mid-run output.
 var runPlanCommand = execPlanCommandEnv
 
-// RunSetup runs a plan's Setup command in dir under SetupTimeout and returns its output tail.
-func RunSetup(ctx context.Context, dir, command string) (string, error) {
-	return runPlanCommand(ctx, dir, command, nil, SetupTimeout, nil)
-}
-
 // ProjectSetupFile is where a project checks in its default Setup: the command every tree the engine makes runs
 // when the plan names none, so a lead that leaves Setup out still gets prepared trees.
 const ProjectSetupFile = ".arc/setup"
@@ -299,12 +295,13 @@ func execPlanCommandEnv(ctx context.Context, dir, command string, env []string, 
 		return "", err
 	}
 	c.Dir = dir
-	if len(env) > 0 {
-		if c.Env == nil {
-			c.Env = os.Environ()
-		}
-		c.Env = append(c.Env, env...)
+	if c.Env == nil {
+		c.Env = os.Environ()
 	}
+	for k, v := range jarvis.EngineToolEnv {
+		c.Env = append(c.Env, k+"="+v)
+	}
+	c.Env = append(c.Env, env...)
 	c.WaitDelay = planCommandWaitDelay
 	out := &tailBuffer{max: MaxPlanOutputLen, publish: progress, publishEvery: VerifyProgressInterval}
 	c.Stdout, c.Stderr = out, out
