@@ -40223,6 +40223,11 @@ const briefRunQueueScenario = {
             // ends on Jarvis) leaves it mounted on a read that predates the fill run: so it leaves and comes back
             await h.goto("cockpit");
             await h.goto("jarvis");
+            // brief-surface leaves a briefing fixture on, which hides the live runs, and only a reload clears it
+            const fixtureOn = await h.ev(
+                `[...document.querySelectorAll('[data-briefing-fixture]')].some((b) => b.className.includes('bg-accentbg'))`
+            );
+            if (fixtureOn) await polishReload(h);
             const up = await polishWaitFor(
                 h,
                 `(() => {
