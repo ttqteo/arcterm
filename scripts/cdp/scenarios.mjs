@@ -62,6 +62,7 @@ const PEEK_KEY = ON_MAC
     ? { key: "Meta", code: "MetaLeft", windowsVirtualKeyCode: 91 }
     : { key: "Control", code: "ControlLeft", windowsVirtualKeyCode: 17 };
 const PEEK_GLYPH = `space · ${ON_MAC ? "⌘-click" : "ctrl+click"}`;
+import { SCENARIOS as COCKPIT_FIXTURES } from "../cockpit-fixtures/scenarios.mjs";
 
 // A step this profile cannot run: no scan report to cite, no pi session focused. Neither a pass nor a
 // failure — report.mjs tallies it apart and exitCode ignores it. The detail must name what to seed, so a
@@ -47820,6 +47821,720 @@ const setupMemory = {
     assert: setupMemoryAssert,
     teardown: setupMemoryTeardown,
 };
+
+// --- component looks: one scenario per component last deliberately designed in Jul-Aug 2026 --------------------
+// Each shows one component in a populated state, for its polish to be verified against (effort cca9c053). A state
+// the app reaches through a real path (a palette action, a hover, a seeded record) is reached that way; one that only
+// arises from live data (a toast, a modal push, a menu) is set through the app's own module, imported from the URL
+// the app loaded it from so the import is the app's instance. graphgutter is shown by git-history.
+const LOOK_LIB = `
+    const mod = async (path) => {
+        const names = performance.getEntriesByType("resource").map((e) => e.name.split("?")[0]);
+        const hit = names.filter((n) => n.endsWith("/" + path)).pop();
+        const base = names.find((n) => n.endsWith("/app/store/jotaiStore.ts"));
+        if (hit == null && base == null) throw new Error("no app module url for " + path);
+        return import(hit ?? base.replace("app/store/jotaiStore.ts", path));
+    };
+    const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+    const until = async (fn, ms = 8000) => {
+        for (const t0 = Date.now(); Date.now() - t0 < ms; await nap(150)) if (fn()) return true;
+        return !!fn();
+    };
+    const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
+    const button = (from, re) => [...(from?.querySelectorAll("button") ?? [])].find((b) => re.test(flat(b)));
+    // the topmost: a sheet is a modal dialog too, and a confirm opens over it
+    const dialog = () => [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].pop() ?? null;
+`;
+const lookEval = (h, body) => h.ev(`(async () => { ${LOOK_LIB} ${body} })()`);
+const lookShot = (name) => `cdp-shots/look-${name}.png`;
+
+async function lookOpen(h, surface) {
+    await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+    await h.goto(surface);
+}
+
+// a real pointer move, so floating-ui's hover and React's mouseenter see what a user's pointer does
+async function lookHover(h, x, y) {
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+}
+
+const lookClosePopModals = (h) =>
+    lookEval(h, `
+        const { modalsModel } = await mod("app/store/modalmodel.ts");
+        while (modalsModel.hasOpenModals()) modalsModel.popModal();
+    `);
+
+const cockpitEmptyState = {
+    name: "cockpit-empty-state",
+    surface: "cockpit",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        await lookOpen(h, "cockpit");
+        const s = await lookEval(h, `
+            const heading = () => [...document.querySelectorAll("h2")].find((x) => flat(x) === "No agents running");
+            await until(() => heading() != null, 4000);
+            return { heading: heading() != null, cta: button(document, /New terminal agent/) != null };
+        `);
+        if (!s.heading) {
+            return [skipStep("an empty roster shows the cockpit's empty state", "agents are live in this profile - run it on a fresh store (final-verify.mjs)")];
+        }
+        await polishNap(600); // the entrance
+        await h.shot(lookShot("cockpit-empty-state"));
+        return [{ step: "an empty roster shows No agents running with its New terminal agent CTA", ok: s.cta, detail: JSON.stringify(s) }];
+    },
+    async teardown() {},
+};
+
+const agentLaunchHero = {
+    name: "agent-launch-hero",
+    surface: "agent",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        await lookOpen(h, "agent");
+        const s = await lookEval(h, `
+            const title = () => [...document.querySelectorAll("div")].find((d) => d.children.length === 0 && flat(d) === "No terminal running");
+            await until(() => title() != null, 4000);
+            // the recent sessions load after mount
+            await until(() => /Recent sessions/.test(flat(document.body)), 3000);
+            const list = [...document.querySelectorAll("span")].find((x) => flat(x) === "Recent sessions")?.closest(".rounded-lg");
+            return {
+                hero: title() != null,
+                cta: button(document, /^Launch new terminal$/) != null,
+                sessions: list ? list.querySelectorAll("button").length : 0,
+            };
+        `);
+        if (!s.hero) {
+            return [skipStep("the Agent surface with nothing focused shows the launch hero", "an agent is focused in this profile - run it on a fresh store (final-verify.mjs)")];
+        }
+        await h.shot(lookShot("agent-launch-hero"));
+        return [
+            {
+                step: "the Agent surface with nothing focused shows No terminal running, its launch CTA and the recent sessions to resume",
+                ok: s.cta,
+                detail: JSON.stringify(s),
+            },
+        ];
+    },
+    async teardown() {},
+};
+
+const newProjectModal = {
+    name: "new-project-modal",
+    surface: "cockpit",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        const steps = [];
+        await lookOpen(h, "cockpit");
+        const opened = await openPalette(h);
+        await h.ev(setInputExpr(PALETTE_INPUT, "New project"));
+        await polishNap(300);
+        const picked = await h.ev(`(() => {
+            const b = [...(${PALETTE}?.querySelectorAll('button[data-idx]') ?? [])].find((x) => /^New project/.test((x.textContent || '').trim()));
+            b?.click();
+            return b != null;
+        })()`);
+        const empty = await lookEval(h, `
+            await until(() => /New project/.test(flat(dialog())) && dialog()?.querySelector("input") != null, 3000);
+            await nap(400);
+            const create = button(dialog(), /^Create project/);
+            return { open: dialog() != null, createDisabled: create?.disabled ?? null, cancel: button(dialog(), /^Cancel/) != null };
+        `);
+        await h.shot(lookShot("new-project-modal"));
+        steps.push({
+            step: "palette New project opens the modal with Create project disabled until both fields are filled",
+            ok: opened && picked && empty.open && empty.createDisabled === true && empty.cancel,
+            detail: JSON.stringify({ opened, picked, ...empty }),
+        });
+        await h.ev(setInputExpr(`document.querySelector('[role="dialog"] input[placeholder="my-service"]')`, "billing-api"));
+        await h.ev(setInputExpr(`document.querySelector('[role="dialog"] input[placeholder="~/code/my-service"]')`, "~/code/billing-api"));
+        const filled = await lookEval(h, `
+            await nap(200);
+            return { createDisabled: button(dialog(), /^Create project/)?.disabled ?? null };
+        `);
+        await h.shot(lookShot("new-project-modal-filled"));
+        steps.push({ step: "with a name and a path, Create project is enabled", ok: filled.createDisabled === false, detail: JSON.stringify(filled) });
+        return steps;
+    },
+    async teardown(h) {
+        await lookEval(h, `button(dialog(), /^Cancel/)?.click();`);
+    },
+};
+
+const LOOK_TOOL_COMMAND = "npm test -- --run frontend/app/view/agents";
+const LOOK_TOOL_ACTION = {
+    kind: "action",
+    verb: "ran",
+    target: LOOK_TOOL_COMMAND,
+    outcome: "fail",
+    durationMs: 48_200,
+    detail: {
+        kind: "bash",
+        command: LOOK_TOOL_COMMAND,
+        exit: 1,
+        output: [
+            "> waveterm@0.14.22 test",
+            "> vitest --run frontend/app/view/agents",
+            "",
+            " ✓ frontend/app/view/agents/agentsviewmodel.test.ts (212 tests) 410ms",
+            " ✓ frontend/app/view/agents/cardgridlayout.test.ts (48 tests) 61ms",
+            " ✓ frontend/app/view/agents/difflayout.test.ts (37 tests) 44ms",
+            " ✓ frontend/app/view/agents/navrailwidth.test.ts (6 tests) 9ms",
+            " ❯ frontend/app/view/agents/runmodel.test.ts (91 tests | 1 failed) 133ms",
+            "   × steerTarget > picks the current phase's lead 12ms",
+            "",
+            " FAIL  frontend/app/view/agents/runmodel.test.ts > steerTarget > picks the current phase's lead",
+            "AssertionError: expected undefined to deeply equal { id: 'w-1', name: 'lane 1' }",
+            "",
+            " ❯ frontend/app/view/agents/runmodel.test.ts:418:37",
+            "    416|     const run = runWith({ status: \"running\", phases: [phase(\"w-1\")] });",
+            "    417|     const agents = [agent(\"w-1\")];",
+            "    418|     expect(steerTarget(run, agents)).toEqual({ id: \"w-1\", name: \"lane 1\" });",
+            "       |                                     ^",
+            "",
+            " Test Files  1 failed | 23 passed (24)",
+            "      Tests  1 failed | 1180 passed (1181)",
+            "   Duration  47.91s",
+        ].join("\n"),
+    },
+};
+
+const toolDetailModal = {
+    name: "tool-detail-modal",
+    surface: "cockpit",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        await lookOpen(h, "cockpit");
+        const s = await lookEval(h, `
+            const { modalsModel } = await mod("app/store/modalmodel.ts");
+            modalsModel.pushModal("AgentToolDetailModal", { action: ${JSON.stringify(LOOK_TOOL_ACTION)} });
+            await until(() => /steerTarget/.test(flat(dialog())), 3000);
+            await nap(400);
+            const text = flat(dialog());
+            return { open: dialog() != null, failMark: text.startsWith("✗"), target: text.includes(${JSON.stringify(LOOK_TOOL_COMMAND)}), duration: /48(\\.\\d)?s/.test(text), head: text.slice(0, 80) };
+        `);
+        await h.shot(lookShot("tool-detail-modal"));
+        return [
+            {
+                step: "a failed tool call over the inline budget opens the full-detail modal: fail mark, verb, target, duration and output",
+                ok: s.open && s.failMark && s.target,
+                detail: JSON.stringify(s),
+            },
+        ];
+    },
+    async teardown(h) {
+        await lookClosePopModals(h);
+    },
+};
+
+const LOOK_MESSAGE = "The vault sync finished. 3 notes were pulled from the remote.";
+
+const messageModal = {
+    name: "message-modal",
+    surface: "cockpit",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        await lookOpen(h, "cockpit");
+        const shown = await lookEval(h, `
+            const { modalsModel } = await mod("app/store/modalmodel.ts");
+            modalsModel.pushModal("MessageModal", { children: ${JSON.stringify(LOOK_MESSAGE)} });
+            await until(() => flat(dialog()).includes(${JSON.stringify(LOOK_MESSAGE)}), 3000);
+            await nap(400);
+            return { open: dialog() != null, ok: button(dialog(), /^OK/) != null };
+        `);
+        await h.shot(lookShot("message-modal"));
+        const closed = await lookEval(h, `
+            button(dialog(), /^OK/)?.click();
+            return until(() => dialog() == null, 2000);
+        `);
+        return [
+            { step: "a pushed MessageModal shows its message with one OK button", ok: shown.open && shown.ok, detail: JSON.stringify(shown) },
+            { step: "OK closes it", ok: closed === true, detail: `closed=${closed}` },
+        ];
+    },
+    async teardown(h) {
+        await lookClosePopModals(h);
+    },
+};
+
+const LOOK_TOASTS = [
+    { title: "Kill shell task", message: "Not killed: the task had already exited.", level: "error" },
+    { title: "Not a design canvas board: docs/notes.html", message: "", level: "warn" },
+    { title: "release scribe: opened the Diff surface", message: "", level: "info" },
+];
+
+const notificationToasts = {
+    name: "notification-toasts",
+    surface: "cockpit",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        await lookOpen(h, "cockpit");
+        const shown = await lookEval(h, `
+            const { pushToast } = await mod("app/cockpit/notificationstore.ts");
+            for (const t of ${JSON.stringify(LOOK_TOASTS)}) pushToast(t);
+            const toasts = () => [...document.querySelectorAll("[data-notification-toast]")];
+            await until(() => toasts().length === ${LOOK_TOASTS.length}, 2000);
+            await nap(500); // the entrance, inside the 6s the toasts live
+            return toasts().map(flat);
+        `);
+        await h.shot(lookShot("notification-toasts"));
+        const dismissed = await lookEval(h, `
+            for (const t of [...document.querySelectorAll("[data-notification-toast]")]) t.click();
+            return until(() => document.querySelector("[data-notification-toast]") == null, 2000);
+        `);
+        return [
+            {
+                step: "error, warn and info toasts stack in the corner, each with its title",
+                ok: shown.length === LOOK_TOASTS.length && LOOK_TOASTS.every((t) => shown.some((s) => s.startsWith(t.title))),
+                detail: JSON.stringify(shown),
+            },
+            { step: "a click dismisses a toast", ok: dismissed === true, detail: `dismissed=${dismissed}` },
+        ];
+    },
+    async teardown() {},
+};
+
+// every row kind the menu draws: header, accelerator, sublabel, checkbox, radio (in the submenu), separator,
+// disabled and danger
+const LOOK_MENU_ITEMS = [
+    { type: "header", label: "auth refactor" },
+    { label: "Open terminal", accel: "Enter" },
+    { label: "Rename…", accel: "F2" },
+    { label: "Pin to top", type: "checkbox", checked: true },
+    { type: "separator" },
+    {
+        label: "Sort by",
+        submenu: [
+            { label: "Last activity", type: "radio", checked: true },
+            { label: "Name", type: "radio", checked: false },
+            { label: "Project", type: "radio", checked: false },
+        ],
+    },
+    { label: "Copy session id", sublabel: "8f3a2c1e" },
+    { label: "Resume", enabled: false },
+    { type: "separator" },
+    { label: "Kill agent", danger: true, accel: "Delete" },
+];
+const LOOK_MENU_AT = { x: 640, y: 240 };
+const LOOK_MENU_ROW = (label) =>
+    `[...document.querySelectorAll("span.whitespace-nowrap")].find((s) => s.textContent === ${JSON.stringify(label)})?.parentElement`;
+
+const contextMenu = {
+    name: "context-menu",
+    surface: "cockpit",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        await lookOpen(h, "cockpit");
+        const opened = await lookEval(h, `
+            const { globalStore } = await mod("app/store/jotaiStore.ts");
+            const { contextMenuAtom } = await mod("app/store/contextmenu.ts");
+            const items = ${JSON.stringify(LOOK_MENU_ITEMS)}.map((i) => ({ ...i, click: () => {} }));
+            globalStore.set(contextMenuAtom, { items, x: ${LOOK_MENU_AT.x}, y: ${LOOK_MENU_AT.y} });
+            await until(() => ${LOOK_MENU_ROW("Sort by")} != null, 2000);
+            const r = ${LOOK_MENU_ROW("Sort by")}.getBoundingClientRect();
+            return { x: Math.round(r.left + 40), y: Math.round(r.top + r.height / 2) };
+        `);
+        await lookHover(h, opened.x, opened.y);
+        const sub = await lookEval(h, `
+            await until(() => ${LOOK_MENU_ROW("Last activity")} != null, 2000);
+            return { submenu: ${LOOK_MENU_ROW("Last activity")} != null, danger: ${LOOK_MENU_ROW("Kill agent")} != null };
+        `);
+        await h.shot(lookShot("context-menu"));
+        return [
+            {
+                step: "a menu with every row kind draws them all, and hovering Sort by opens its submenu",
+                ok: sub.submenu && sub.danger,
+                detail: JSON.stringify({ opened, ...sub }),
+            },
+        ];
+    },
+    async teardown(h) {
+        await lookEval(h, `(await mod("app/store/contextmenu.ts")).closeContextMenu();`);
+        await lookHover(h, 1, 1);
+    },
+};
+
+// the Events rail's collapsed glyph is the Tooltip primitive's live use on a surface every profile has
+const LOOK_EVENTS_RAIL = `document.querySelector('aside[aria-label="Events"]')`;
+
+const cockpitRailTooltip = {
+    name: "cockpit-rail-tooltip",
+    surface: "cockpit",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        await lookOpen(h, "cockpit");
+        const glyph = await lookEval(h, `
+            const rail = () => ${LOOK_EVENTS_RAIL};
+            rail()?.querySelector('button[aria-label="Collapse panel"]')?.click();
+            const strip = () => rail()?.querySelector('button[aria-label="Events"]');
+            await until(() => strip() != null, 3000);
+            await nap(500); // the rail's width slide
+            const r = strip()?.getBoundingClientRect();
+            return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null;
+        `);
+        if (glyph == null) {
+            return [{ step: "collapsing the Events rail leaves its glyph", ok: false, detail: "no collapsed Events glyph" }];
+        }
+        await lookHover(h, glyph.x, glyph.y);
+        const tip = await lookEval(h, `
+            const tip = () => [...document.body.querySelectorAll("div")].find(
+                (d) => flat(d) === "Events" && d.style.opacity === "1" && !${LOOK_EVENTS_RAIL}?.contains(d)
+            );
+            await until(() => tip() != null, 2000);
+            await nap(200);
+            return { shown: tip() != null };
+        `);
+        await h.shot(lookShot("cockpit-rail-tooltip"));
+        return [{ step: "hovering the collapsed Events glyph shows its Events tooltip", ok: tip.shown, detail: JSON.stringify({ glyph, ...tip }) }];
+    },
+    async teardown(h) {
+        await lookHover(h, 1, 1);
+        await lookEval(h, `${LOOK_EVENTS_RAIL}?.querySelector('button[aria-label="Events"]')?.click();`);
+    },
+};
+
+// a shell terminal of the page's own workspace, focused on the Agent surface
+const LOOK_TERM_LABEL = "look term";
+const LOOK_TERM_URL = "https://example.com/arc/look-term-link";
+const LOOK_TERM_WAIT_MS = 15_000;
+
+const termLinkTooltip = {
+    name: "term-link-tooltip",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            ctx.tabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, LOOK_TERM_LABEL, false]);
+            const tab = await waveService(h, "object", "GetObject", [`tab:${ctx.tabId}`]);
+            ctx.blockId = tab?.blockids?.[0];
+            if (!ctx.blockId) throw new Error("the new tab has no block");
+            await h.rpc("setmeta", { oref: `block:${ctx.blockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": "~" } });
+        } catch (e) {
+            ctx.launchError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const step = "hovering a URL the terminal printed shows the open-link tooltip";
+        if (ctx.launchError != null) return [skipStep(step, `could not verify: the terminal launch failed: ${ctx.launchError}`)];
+        await lookOpen(h, "agent");
+        const row = `document.querySelector('[data-tree-terminal="${ctx.tabId}"]')`;
+        await polishWaitFor(h, `!!${row}`, LOOK_TERM_WAIT_MS);
+        await h.ev(`${row}?.click()`);
+        const screenVisible = `[...document.querySelectorAll(".xterm-screen")].find((x) => x.checkVisibility())`;
+        const ready = await polishWaitFor(h, `!!${screenVisible}`, LOOK_TERM_WAIT_MS);
+        // the shell's banner and first prompt land before the cls, so the URL prints at the top
+        await polishNap(2500);
+        const typed = `cls; echo ${LOOK_TERM_URL}\r`;
+        await h.rpc("controllerinput", { blockid: ctx.blockId, inputdata64: Buffer.from(typed).toString("base64") });
+        await polishNap(2000);
+        const rect = await h.ev(`(() => { const r = ${screenVisible}?.getBoundingClientRect(); return r ? { left: r.left, top: r.top } : null; })()`);
+        // the URL's row is found by the pointer the link layer sets over it: the prompt's row holds it too, past
+        // where the pointer runs, so the first pointer row is the echo's
+        let at = null;
+        for (let dy = 4; rect && dy < 240 && at == null; dy += 4) {
+            const p = { x: Math.round(rect.left + 60), y: Math.round(rect.top + dy) };
+            await lookHover(h, p.x, p.y);
+            await polishNap(60);
+            if (await h.ev(`${screenVisible}?.classList.contains("xterm-cursor-pointer") ?? false`)) at = p;
+        }
+        const shown = at != null && (await polishWaitFor(h, `/click to open link/.test(document.body.innerText)`, 2000));
+        await h.shot(lookShot("term-link-tooltip"));
+        return [{ step, ok: ready && shown === true, detail: JSON.stringify({ ready, rect, at, shown }) }];
+    },
+    async teardown(h, ctx) {
+        await lookHover(h, 1, 1);
+        if (ctx.tabId) {
+            try {
+                await waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.tabId, false]);
+            } catch (e) {
+                console.error(`term-link-tooltip teardown: closing ${ctx.tabId} failed: ${e?.message ?? e}`);
+            }
+        }
+        await h.goto("cockpit");
+    },
+};
+
+// TaskDetail and its DecisionLog, in the run sheet's record band: a run with one attributed record that has
+// decisions. The record is named by the goal's slug and lives in the vault across runs, so its decisions are
+// appended once.
+const LOOK_RECORD_GOAL = "verify task-detail: a record with decisions, do nothing";
+// the goal's slug, cut at jarvisdossier's maxSlugLen (48)
+const LOOK_RECORD = "verify-task-detail-a-record-with-decisions-do-no";
+const LOOK_DECISIONS = [
+    {
+        summary: "keep-the-band-collapsed",
+        rationale:
+            "The band opens on e. Opening it by default pushed the thread a screenful down on every run switch, and the record is read far less often than the thread.",
+    },
+    {
+        summary: "status-before-fields",
+        rationale: "Status is the one field scanned before anything else is read, so it carries the only colour on the record.",
+    },
+];
+const LOOK_BAND = `document.querySelector("[data-jarvis-record-band]")`;
+
+const taskDetail = {
+    name: "task-detail",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-task-detail-")) };
+        try {
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name: "verify-task-detail", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: LOOK_RECORD_GOAL,
+                runtime: "claude",
+                mode: "quick",
+                deferstart: true,
+            });
+            ctx.runId = created.run.id;
+            ctx.runORef = `run:${ctx.runId}`;
+            await h.rpc("acceptdossieredge", { dossierid: LOOK_RECORD, runoref: ctx.runORef });
+            const have = ((await h.rpc("getdossier", { dossierid: LOOK_RECORD }))?.decisions ?? []).map((d) => d.rationale);
+            for (const d of LOOK_DECISIONS.filter((d) => !have.includes(d.rationale))) {
+                await h.rpc("appenddossierdecision", { dossierid: LOOK_RECORD, ...d });
+            }
+            // the Brief reads a boot-primed snapshot, so the RPC-created channel needs a reload
+            await h.reload();
+            await h.goto("jarvis");
+            ctx.opened = await lookEval(h, `
+                await until(() => typeof window.__openAddress === "function", 5000);
+                return window.__openAddress(${JSON.stringify(ctx.runORef)});
+            `);
+            // the ambient re-read behind the band sweeps every record, hence the long wait (as record-band-detach-restore)
+            ctx.expanded = await lookEval(h, `
+                const toggle = () => ${LOOK_BAND}?.querySelector("[data-jarvis-band-toggle]");
+                await until(() => toggle() != null, 25000);
+                if (toggle()?.getAttribute("aria-expanded") !== "true") toggle()?.click();
+                return until(() => /Machine-maintained/.test(flat(${LOOK_BAND})) && /No decisions yet|Add decision/.test(flat(${LOOK_BAND})), 8000);
+            `);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+        rec(
+            "0. the run's record band opens onto the record",
+            ctx.arrangeError == null && ctx.opened?.ok === true && ctx.expanded === true,
+            ctx.arrangeError ?? JSON.stringify({ runId: ctx.runId, opened: ctx.opened, expanded: ctx.expanded })
+        );
+        if (!ctx.expanded) return steps;
+        await polishNap(500); // the disclosure's reveal
+        const top = await lookEval(h, `
+            const text = flat(${LOOK_BAND});
+            return { status: ${LOOK_BAND}.querySelector("[data-record-status]")?.textContent ?? null, transitions: [...${LOOK_BAND}.querySelectorAll("button")].map(flat).filter((t) => t.startsWith("→")) };
+        `);
+        await h.shot(lookShot("task-detail"));
+        rec("1. the record shows its status, its transitions and the machine-maintained fields", top.status != null && top.transitions.length > 0, JSON.stringify(top));
+
+        const decisions = await lookEval(h, `
+            const scroller = ${LOOK_BAND}.querySelector('[class*="max-h-[420px]"]');
+            if (scroller) scroller.scrollTop = scroller.scrollHeight;
+            await nap(300);
+            const text = flat(${LOOK_BAND});
+            return { cards: ${JSON.stringify(LOOK_DECISIONS.map((d) => d.rationale.slice(0, 30)))}.filter((r) => text.includes(r)).length };
+        `);
+        await h.shot(lookShot("task-detail-decisions"));
+        rec("2. the decision log lists the record's decisions", decisions.cards === LOOK_DECISIONS.length, JSON.stringify(decisions));
+
+        const form = await lookEval(h, `
+            button(${LOOK_BAND}, /^\\+ Add decision$/)?.click();
+            const ok = await until(() => ${LOOK_BAND}.querySelector('input[placeholder="Short summary (filename)"]') != null, 2000);
+            const scroller = ${LOOK_BAND}.querySelector('[class*="max-h-[420px]"]');
+            if (scroller) scroller.scrollTop = scroller.scrollHeight;
+            await nap(300);
+            return { ok, addDisabled: button(${LOOK_BAND}, /^Add decision$/)?.disabled ?? null };
+        `);
+        await h.shot(lookShot("task-detail-add-decision"));
+        await lookEval(h, `button(${LOOK_BAND}, /^Cancel$/)?.click();`);
+        rec("3. + Add decision opens the append form, its Add decision disabled while empty", form.ok && form.addDisabled === true, JSON.stringify(form));
+
+        const confirm = await lookEval(h, `
+            const scroller = ${LOOK_BAND}.querySelector('[class*="max-h-[420px]"]');
+            if (scroller) scroller.scrollTop = 0;
+            button(${LOOK_BAND}, /^→ archived$/)?.click();
+            const ok = await until(() => /Mark this task archived\\?/.test(flat(dialog())), 2000);
+            await nap(400);
+            return { ok, confirm: button(dialog(), /^Yes, archived/) != null };
+        `);
+        await h.shot(lookShot("task-detail-archive-confirm"));
+        const cancelled = await lookEval(h, `
+            button(dialog(), /^Cancel/)?.click();
+            return until(() => !/Mark this task archived\\?/.test(flat(dialog())), 2000);
+        `);
+        const status = (await h.rpc("getdossier", { dossierid: LOOK_RECORD }))?.status ?? null;
+        rec(
+            "4. → archived asks first with a danger confirm, and Cancel leaves the record as it was",
+            confirm.ok && confirm.confirm && cancelled === true && status === top.status,
+            JSON.stringify({ ...confirm, cancelled, status })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // detached, so the record keeps one run ref across runs rather than growing one per run
+        await teardownFixtureRun(h, ctx, "task-detail", {
+            what: "detach the run from the record",
+            fn: () => (ctx.runORef ? h.rpc("detachdossieredge", { dossierid: LOOK_RECORD, runoref: ctx.runORef }) : null),
+        });
+    },
+};
+
+// AmbientTags and RelevantDecisions on a Radar finding: radardevmock's investigated finding "c" inherits the
+// attribution of its run, which a stub of the app's own ResolveAmbientCommand supplies at each confidence step
+const LOOK_AMBIENT_FINDING = "c";
+const LOOK_AMBIENT_RUN = "run:7c1e02aa";
+// over the 30s budget ambientstore gives a real read
+const LOOK_AMBIENT_WAIT_MS = 40_000;
+const LOOK_AMBIENT = {
+    tasks: [
+        { id: "look-modal-escape", label: "modal-escape" },
+        { id: "look-keyboard-ops", label: "keyboard-ops" },
+        { id: "look-radar-polish", label: "radar-polish" },
+    ],
+    edges: [
+        { oref: LOOK_AMBIENT_RUN, dossierid: "look-modal-escape", provenance: "engine", bucket: "strong", state: "confirmed" },
+        { oref: LOOK_AMBIENT_RUN, dossierid: "look-keyboard-ops", provenance: "engine", bucket: "medium", state: "informing" },
+        { oref: LOOK_AMBIENT_RUN, dossierid: "look-radar-polish", provenance: "engine", bucket: "weak", state: "informing" },
+    ],
+    decisions: [
+        { dossierid: "look-modal-escape", id: "look-d1", title: "Back-home stays off under any open ModalShell", ageMs: 3 * 24 * 3600_000 },
+        { dossierid: "look-keyboard-ops", id: "look-d2", title: "Escape closes the innermost popover first", ageMs: 5 * 3600_000 },
+    ],
+};
+
+const ambientTags = {
+    name: "ambient-tags",
+    surface: "radar",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        const step = "a finding whose run is attributed shows its task tags by confidence and the relevant past decisions";
+        await lookOpen(h, "radar");
+        if (!(await radarOpen(h))) return [{ step, ok: false, detail: "no radar dev fixtures hook" }];
+        const shown = await radarMock(h, "results", "report");
+        await lookEval(h, `
+            const { RpcApi } = await mod("app/store/wshclientapi.ts");
+            const data = ${JSON.stringify(LOOK_AMBIENT)};
+            const now = Date.now();
+            RpcApi.ResolveAmbientCommand = async () => ({ ...data, decisions: data.decisions.map(({ ageMs, ...d }) => ({ ...d, created: now - ageMs })) });
+            document.querySelector('[data-radar-finding-row="${LOOK_AMBIENT_FINDING}"]')?.click();
+        `);
+        // a reload asks for the real read, and a re-read asked for while one is in flight is dropped, so it is asked
+        // again until the stub's answer is the one drawn
+        const detail = `document.querySelector('[data-radar-finding-detail="${LOOK_AMBIENT_FINDING}"]')`;
+        let ok = false;
+        for (const t0 = Date.now(); !ok && Date.now() - t0 < LOOK_AMBIENT_WAIT_MS; ) {
+            ok = await lookEval(h, `
+                (await mod("app/view/agents/ambientstore.ts")).reloadAmbient();
+                return until(() => /Relevant past decisions/.test(flat(${detail})), 1000);
+            `);
+        }
+        await polishNap(400);
+        const patched = await lookEval(h, `
+            const text = flat(${detail}).toLowerCase();
+            return { ok: ${ok}, tags: ${JSON.stringify(LOOK_AMBIENT.tasks.map((t) => t.label))}.filter((l) => text.includes(l)) };
+        `);
+        await h.shot(lookShot("ambient-tags"));
+        return [{ step, ok: shown && patched.ok && patched.tags.length === LOOK_AMBIENT.tasks.length, detail: JSON.stringify({ shown, ...patched }) }];
+    },
+    async teardown(h) {
+        await lookEval(h, `
+            const { RpcApi } = await mod("app/store/wshclientapi.ts");
+            delete RpcApi.ResolveAmbientCommand;
+            (await mod("app/view/agents/ambientstore.ts")).reloadAmbient();
+            window.__setRadarScenario?.("live");
+        `);
+        await h.goto("cockpit");
+    },
+};
+
+// AgentComposer on the mixed fixture roster: the parked idle list's row composer (janitor), and a working card's
+// composer expanded from its slim row (waveterm)
+const LOOK_COMPOSER_IDLE = "janitor";
+const LOOK_COMPOSER_CARD = "waveterm";
+const lookComposer = (name) => `document.querySelector('textarea[placeholder="message ${name}…"]')`;
+
+const agentComposer = {
+    name: "agent-composer",
+    surface: "cockpit",
+    async arrange(h) {
+        mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+        writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(COCKPIT_FIXTURES.mixed(Date.now()), null, 2));
+        // the fixture roster is read once at boot
+        await h.reload();
+        return { wroteFixture: true };
+    },
+    async assert(h) {
+        const steps = [];
+        await lookOpen(h, "cockpit");
+        const idle = await lookEval(h, `
+            const header = () => [...document.querySelectorAll("div.cursor-pointer")].find((el) => /^Idle\\s*\\d+$/i.test(flat(el)));
+            await until(() => header() != null, 8000);
+            header()?.click();
+            const ok = await until(() => ${lookComposer(LOOK_COMPOSER_IDLE)} != null, 3000);
+            ${lookComposer(LOOK_COMPOSER_IDLE)}?.scrollIntoView({ block: "center" });
+            await nap(500);
+            return { header: header() != null, ok };
+        `);
+        await h.shot(lookShot("agent-composer-idle"));
+        steps.push({ step: "the opened Idle list gives each parked idle agent a message composer", ok: idle.ok, detail: JSON.stringify(idle) });
+        const card = await lookEval(h, `
+            const slim = [...document.querySelectorAll("div.cursor-text")].find((el) => flat(el).startsWith("message ${LOOK_COMPOSER_CARD}…"));
+            slim?.scrollIntoView({ block: "center" });
+            slim?.click();
+            const ta = () => ${lookComposer(LOOK_COMPOSER_CARD)};
+            const ok = await until(() => ta() != null, 3000);
+            if (ok) {
+                const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+                set.call(ta(), "keep the old session cookie name for one release");
+                ta().dispatchEvent(new Event("input", { bubbles: true }));
+            }
+            await nap(500);
+            return { slim: slim != null, ok, sendEnabled: ok ? button(ta().parentElement, /^Send$/)?.disabled === false : null };
+        `);
+        await h.shot(lookShot("agent-composer-card"));
+        steps.push({
+            step: "a working card's composer expands from its slim row and enables Send once it holds a message",
+            ok: card.ok && card.sendEnabled === true,
+            detail: JSON.stringify(card),
+        });
+        return steps;
+    },
+    async teardown(h, ctx) {
+        if (ctx.wroteFixture) rmSync(TREE_RAIL_FIXTURE, { force: true });
+        await h.reload();
+        await h.goto("cockpit");
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -48000,4 +48715,18 @@ export const SCENARIOS = [
     trayWindows,
     trayActions,
     traySettingsRow,
+    setupMemory,
+    cockpitEmptyState,
+    agentLaunchHero,
+    newProjectModal,
+    toolDetailModal,
+    messageModal,
+    notificationToasts,
+    contextMenu,
+    cockpitRailTooltip,
+    termLinkTooltip,
+    taskDetail,
+    ambientTags,
+    // last: its fixture roster stands in for the live one until its teardown reloads
+    agentComposer,
 ];
