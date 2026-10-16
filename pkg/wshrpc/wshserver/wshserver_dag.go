@@ -546,6 +546,35 @@ func dagDigestRetained(ctx context.Context, channelId, runId string) []waveobj.R
 	return ev
 }
 
+// sessionRunEndTimeout bounds ending a judging session's run, which outlives the caller's RPC deadline on purpose:
+// the store can be busy behind an engine tick for longer than that deadline.
+const sessionRunEndTimeout = 30 * time.Second
+
+// endSessionRun completes a judging session's own run once its verdict is recorded, in the same call. wsh used to
+// send it as a second RPC, and a verdict that outlasted wsh's budget still landed, so wsh never sent it and the
+// retry was refused as no longer judging: the run read executing for good. A failure is logged, not returned: the
+// verdict is in, and an error would only send the session to retry one the dag now refuses.
+func endSessionRun(ctx context.Context, channelId, runId string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sessionRunEndTimeout)
+	defer cancel()
+	run, err := wstore.GetRun(ctx, channelId, runId)
+	if err != nil {
+		log.Printf("dag verdict: loading session run %s: %v", runId, err)
+		return
+	}
+	idx := jarvis.RunningPhaseIndex(*run)
+	if idx < 0 {
+		return
+	}
+	sealDue, err := advanceRun(ctx, wshrpc.CommandAdvanceRunData{ChannelId: channelId, RunId: runId, PhaseIdx: idx, Action: jarvis.RunAction_Complete})
+	if sealDue {
+		sealAsync(func() { sealThenLand(channelId, runId, false) })
+	}
+	if err != nil {
+		log.Printf("dag verdict: ending session run %s: %v", runId, err)
+	}
+}
+
 func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDagActionData) error {
 	if data.ChannelId == "" || data.RunId == "" || data.Action == "" {
 		return fmt.Errorf("channelid, runid and action are required")
@@ -574,6 +603,7 @@ func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDa
 		if err := orchestrate.RecordReviewVerdict(ctx, run.DagORef, data.RunId, verdict, data.Notes, data.Downstream, data.Unverified, data.DownstreamFor); err != nil {
 			return err
 		}
+		endSessionRun(ctx, data.ChannelId, data.RunId)
 		// the verdict is durable; the tick that applies it can spawn a worker, which outlasts the reviewer's RPC budget
 		scheduleDag(run.DagORef)
 		return nil
@@ -591,6 +621,9 @@ func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDa
 		if err != nil {
 			return err
 		}
+		if data.Action != "planreview-accept" {
+			endSessionRun(ctx, data.ChannelId, data.RunId)
+		}
 		// the verdict is durable; the tick it clears dispatches the first layer, which outlasts the caller's RPC budget
 		scheduleDag(run.DagORef)
 		return nil
@@ -599,6 +632,7 @@ func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDa
 		if err := orchestrate.RecordFinalVerdict(ctx, run.DagORef, data.RunId, strings.TrimPrefix(data.Action, "final-"), data.Notes, data.Unverified); err != nil {
 			return err
 		}
+		endSessionRun(ctx, data.ChannelId, data.RunId)
 		// the tick announces the dag done, which totals the run's usage from every transcript
 		scheduleDag(run.DagORef)
 		return nil

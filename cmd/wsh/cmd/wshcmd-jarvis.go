@@ -134,19 +134,9 @@ func readReportFile(path string) (string, error) {
 	return report, nil
 }
 
-// runPhaseTimeoutMs bounds a hold or a complete that makes no land. The server's write is cancelled with the
-// client's budget, and the store can be busy behind an engine tick for longer than the 5s default; a lost complete
-// leaves the task running with nobody told.
-const runPhaseTimeoutMs = 30_000
-
 // completeTimeoutMs bounds `wsh jarvis complete`: a lead's complete seals the run's evidence (wshserver's
 // evidenceSealTimeout, 30s) and then lands its branch before it returns.
 const completeTimeoutMs = runsLandTimeoutMs + 30_000
-
-func reportRunPhase(data wshrpc.CommandReportRunPhaseData) error {
-	_, err := sendRunPhase(data, runPhaseTimeoutMs)
-	return err
-}
 
 func sendRunPhase(data wshrpc.CommandReportRunPhaseData, timeoutMs int64) (*wshrpc.CommandReportRunPhaseRtnData, error) {
 	tabId := getTabIdFromEnv()

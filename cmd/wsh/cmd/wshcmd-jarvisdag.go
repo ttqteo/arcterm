@@ -940,8 +940,9 @@ var dagReviewCmd = &cobra.Command{
 		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
 			return err
 		}
+		// the server ended this session's run with the verdict
 		fmt.Println(dagDoneLine(data.Action, ""))
-		return reportRunPhase(wshrpc.CommandReportRunPhaseData{Action: "complete"})
+		return nil
 	},
 }
 
@@ -1005,11 +1006,9 @@ var dagPlanReviewCmd = &cobra.Command{
 		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
 			return err
 		}
+		// the server ended a reviewer's run with its verdict
 		fmt.Println(dagDoneLine(data.Action, ""))
-		if data.Action == "planreview-accept" {
-			return nil
-		}
-		return reportRunPhase(wshrpc.CommandReportRunPhaseData{Action: "complete"})
+		return nil
 	},
 }
 
@@ -1041,8 +1040,9 @@ var dagFinalCmd = &cobra.Command{
 		if err := wshclient.DagActionCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs}); err != nil {
 			return err
 		}
+		// the server ended this session's run with the verdict
 		fmt.Println(dagDoneLine(data.Action, ""))
-		return reportRunPhase(wshrpc.CommandReportRunPhaseData{Action: "complete"})
+		return nil
 	},
 }
 

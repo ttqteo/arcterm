@@ -354,3 +354,44 @@ func TestDagSubmitCarriesLightReviewerRoute(t *testing.T) {
 		t.Fatalf("the route survives a resubmit, got round %d route %+v", g2.PlanReview.Round, stored.LightReviewerRoute)
 	}
 }
+
+// A judging session's verdict ends its own run in the same call. wsh used to end it with a second RPC, so a
+// verdict that outlasted wsh's budget still landed, the second call was never sent, and the run read executing
+// for good.
+func TestVerdictEndsTheSessionsOwnRun(t *testing.T) {
+	ctx := context.Background()
+	stubDagSpawns(t)
+	origSchedule, origSeal := scheduleDag, sealAsync
+	scheduleDag, sealAsync = func(string) {}, func(func()) {}
+	t.Cleanup(func() { scheduleDag, sealAsync = origSchedule, origSeal })
+	ws := &WshServer{}
+
+	ch, err := wstore.CreateChannel(ctx, "dag-verdict-ends-run", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lead := jarvis.NewRun("ship coupons", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	lead.Status = jarvis.RunStatus_Planning
+	if err := wstore.AppendRun(ctx, ch.OID, lead); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "plan.md")
+	if err := os.WriteFile(path, []byte("# Coupons\n\n### Task 1: input\nadd the field\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g, err := ws.DagSubmitCommand(ctx, wshrpc.CommandDagSubmitData{ChannelId: ch.OID, RunId: lead.ID, PlanPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewer := reviewerRunIDs(g)[0]
+	if err := ws.DagActionCommand(ctx, wshrpc.CommandDagActionData{ChannelId: ch.OID, RunId: reviewer, Action: "planreview-pass", Notes: "fine"}); err != nil {
+		t.Fatal(err)
+	}
+	run, err := wstore.GetRun(ctx, ch.OID, reviewer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != jarvis.RunStatus_Done {
+		t.Fatalf("the reviewer's run after its verdict = %q, want %q", run.Status, jarvis.RunStatus_Done)
+	}
+}
