@@ -135,7 +135,8 @@ func devTelegramAPIBase() string {
 
 // startTelebot builds the Telegram bot (pkg/telebot): it sends a pending ask to the paired chat and delivers the
 // answer a tap or a reply gives, through the same agentask.DeliverAnswer the cockpit uses. It idles until
-// telegram:enabled is on and a token is stored; ConfigHook and SetSecretsCommand poke it when either changes.
+// telegram:enabled is on and a token is stored, and then connects only inside the time telegram:mode allows and while
+// a question is open; ConfigHook and SetSecretsCommand poke it when either changes.
 // Built before ConfigHook is set, so the hook never sees telebot.Default change; runTelebot starts it.
 func startTelebot() {
 	telebot.Default = telebot.New(telebot.Deps{
@@ -160,7 +161,11 @@ func startTelebot() {
 		Settings: func() telebot.Settings {
 			s := wconfig.GetWatcher().GetFullConfig().Settings
 			id, _ := strconv.ParseInt(s.TelegramChatID, 10, 64)
-			return telebot.Settings{Enabled: s.TelegramEnabled != nil && *s.TelegramEnabled, ChatID: id}
+			when, err := telebot.NewWhen(s.TelegramMode, s.TelegramSchedule, s.TelegramOnUntil)
+			if err != nil {
+				logBadTelegramSchedule(err)
+			}
+			return telebot.Settings{Enabled: s.TelegramEnabled != nil && *s.TelegramEnabled, ChatID: id, When: when}
 		},
 		Token: func() string {
 			v, ok, err := secretstore.GetSecret(telebot.TokenSecretName)
@@ -177,6 +182,22 @@ func startTelebot() {
 		APIBase: devTelegramAPIBase(),
 		Tick:    2 * time.Second,
 	})
+}
+
+var (
+	badTelegramScheduleMu  sync.Mutex
+	badTelegramScheduleErr string
+)
+
+// logBadTelegramSchedule logs a telegram:schedule that does not parse once per value: the settings are read on every
+// tick, and the bot reads the bad one as office hours.
+func logBadTelegramSchedule(err error) {
+	badTelegramScheduleMu.Lock()
+	defer badTelegramScheduleMu.Unlock()
+	if msg := err.Error(); msg != badTelegramScheduleErr {
+		badTelegramScheduleErr = msg
+		log.Printf("telegram: %v; reading it as office hours\n", err)
+	}
 }
 
 // runTelebot starts the bot's loop. Its first pass reads telegram:* from the config, so it runs after the config

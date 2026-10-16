@@ -35284,20 +35284,37 @@ const settingsKeepAwake = {
 // The dev app talks to a fake Bot API on 127.0.0.1:18765, so it must have been started with
 // ARC_TELEGRAM_API_BASE=http://127.0.0.1:18765 (the Final line sets it, and wavesrv reads it only under
 // ARC_DEV_NO_GLOBAL_INSTALL). The fake answers /bot<token>/<method>: getMe is held until the scenario releases it,
-// getUpdates hands out the queued updates or an empty page after up to a second, the sends are recorded, and a switch
-// makes every call answer 401. The person's own telegram:* settings are put back in teardown; a token already stored
-// fails arrange rather than being replaced, and then teardown never runs, so it is never deleted.
+// getUpdates hands out the queued updates or an empty page after up to a second (counted in fake.updates, not recorded
+// in fake.calls), the sends are recorded, and a switch makes every call answer 401. The bot connects only when it must,
+// so fake.updates is how the scenario sees a session: it stays put with nothing to do and grows while one is up. The
+// person's own telegram:* settings are put back in teardown; a token already stored fails arrange rather than being
+// replaced, and then teardown never runs, so it is never deleted.
 const TG_PORT = 18765;
 const TG_BASE = `http://127.0.0.1:${TG_PORT}`;
 const TG_TOKEN = "123456:verify-telegram-token";
 const TG_SECRET = "telegram_bottoken";
-const TG_KEYS = ["telegram:enabled", "telegram:chatid", "telegram:chatname"];
+const TG_KEYS = [
+    "telegram:enabled",
+    "telegram:chatid",
+    "telegram:chatname",
+    "telegram:mode",
+    "telegram:schedule",
+    "telegram:onuntil",
+];
+const TG_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const TG_OFFICE_HOURS = "mon,tue,wed,thu,fri 08:00-17:30";
+const TG_ASK = {
+    header: "Verify",
+    question: "Telegram verify: ship the change?",
+    options: [{ label: "Ship" }, { label: "Hold" }],
+};
+const TG_HOUR_MS = 3_600_000;
 const TG_CHAT = { id: 4242, title: "Verify chat" };
 const TG_ROW = `document.querySelector('[data-setting-row="notifications.telegram"]')`;
 const TG_STATUS = `${TG_ROW}?.querySelector('[data-testid="telegram-status"]')`;
 
 async function tgStartFake() {
-    const fake = { calls: [], queue: [], updateId: 500, messageId: 1000, sawGetMe: false, reject: false };
+    const fake = { calls: [], queue: [], updates: 0, updateId: 500, messageId: 1000, sawGetMe: false, reject: false };
     let release;
     const gate = new Promise((r) => (release = r));
     fake.releaseGetMe = release;
@@ -35324,7 +35341,8 @@ async function tgStartFake() {
         } catch {
             // a body that is not JSON reads as no params
         }
-        if (method !== "getUpdates") fake.calls.push({ method, token: m[1], body });
+        if (method === "getUpdates") fake.updates++;
+        else fake.calls.push({ method, token: m[1], body });
         if (fake.reject) return send(res, 401, fail(401, "Unauthorized"));
         switch (method) {
             case "getMe":
@@ -35383,14 +35401,28 @@ const tgState = (h) =>
         return { kind: s?.getAttribute("data-telegram-status") ?? null, text: s?.innerText.replace(/\\s+/g, " ").trim() ?? null };
     })()`);
 
-// the status line once it reads `kind`, or whatever it read when `ms` ran out. The row polls every 2 s.
-async function tgWaitKind(h, kind, ms = 8000) {
+// the status line once `ok` holds of it, or whatever it read when `ms` ran out. The row polls every 2 s.
+async function tgWaitState(h, ok, ms = 8000) {
     let st = await tgState(h);
-    for (let waited = 0; st.kind !== kind && waited < ms; waited += 250) {
+    for (let waited = 0; !ok(st) && waited < ms; waited += 250) {
         await polishNap(250);
         st = await tgState(h);
     }
     return st;
+}
+
+// the status line once it reads `kind`, or whatever it read when `ms` ran out
+const tgWaitKind = (h, kind, ms = 8000) => tgWaitState(h, (st) => st.kind === kind, ms);
+
+// the bot's status (TelegramStatusCommand) once `ok` holds of it, or as it was when `ms` ran out. The wire omits
+// connected and allowed while false, so test them for truth, never against false.
+async function tgWaitStatus(h, ok, ms = 8000) {
+    let status = await h.rpc("telegramstatus", null);
+    for (let waited = 0; !ok(status) && waited < ms; waited += 250) {
+        await polishNap(250);
+        status = await h.rpc("telegramstatus", null);
+    }
+    return status;
 }
 
 // the stored settings once `ok` holds of them, or as they were when `ms` ran out
@@ -35408,6 +35440,55 @@ async function tgShot(h, n) {
     await h.ev(`${TG_ROW}?.scrollIntoView({ block: "center" })`);
     await polishNap(200);
     await h.shot(`cdp-shots/settings-telegram-${n}.png`);
+}
+
+// an element of the row by its data-testid, as an expression
+const tgEl = (id) => `${TG_ROW}?.querySelector('[data-testid="${id}"]')`;
+const tgClick = (h, id) => spClick(h, tgEl(id));
+
+// a value put into the row's React-controlled input as the platform does it: the native setter, then input and change
+const tgSetInput = (h, id, value) =>
+    h.ev(`(() => {
+        const el = ${tgEl(id)};
+        if (!el) return false;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, ${JSON.stringify(value)});
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+    })()`);
+
+// a moment as the local HH:MM a time field takes
+const tgClock = (ms) => {
+    const d = new Date(ms);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
+// the stored telegram:onuntil lies within a minute of `at`
+const tgOnUntilNear = (s, at) => typeof s["telegram:onuntil"] === "number" && Math.abs(s["telegram:onuntil"] - at) < 60_000;
+
+// the schedule controls as drawn: each day chip's aria-pressed and the two time fields
+const tgScheduleControls = (h) =>
+    h.ev(`(() => {
+        const at = (id) => ${TG_ROW}?.querySelector('[data-testid="' + id + '"]');
+        return {
+            pressed: Object.fromEntries(${JSON.stringify(TG_DAYS)}.map((d) => [d, at("telegram-day-" + d)?.getAttribute("aria-pressed") ?? null])),
+            from: at("telegram-from")?.value ?? null,
+            to: at("telegram-to")?.value ?? null,
+        };
+    })()`);
+
+// A block with a live shell to hang a question on: the page's own tab's first block, else the first block of a throwaway
+// tab in the same workspace (closed in teardown). It is no run's lead, so the bot sends its question.
+async function tgAskBlock(h, ctx) {
+    const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+    const boot = await waveService(h, "object", "GetObject", [`tab:${bootTab}`]);
+    if (boot?.blockids?.[0]) return boot.blockids[0];
+    const wslist = await h.rpc("workspacelist", null);
+    const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+    ctx.workspaceId = ws.workspacedata.oid;
+    ctx.askTabId = await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, "verify-telegram-ask", false]);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${ctx.askTabId}`]);
+    return tab?.blockids?.[0] ?? null;
 }
 
 const settingsTelegram = {
@@ -35474,7 +35555,7 @@ const settingsTelegram = {
             JSON.stringify({ typed, ...st2, hastoken: status2?.hastoken, ...row2 })
         );
 
-        // 3. the switch on: stored, and the bot is connecting while the fake holds getMe
+        // 3. the switch on: stored, and the row is checking the token while the fake holds the one getMe it makes
         await spClick(h, SWITCH);
         const stored3 = await tgWaitSettings(h, (s) => s["telegram:enabled"] === true);
         let sawGetMe = false;
@@ -35482,34 +35563,39 @@ const settingsTelegram = {
         if (!sawGetMe) {
             await tgShot(h, 3);
             rec(
-                "3. the switch stores telegram:enabled true and the status reads connecting while getMe is held",
+                "3. the switch stores telegram:enabled true and the row reads checking while getMe is held",
                 false,
                 `the dev app was not started with ARC_TELEGRAM_API_BASE=${TG_BASE}: the fake Bot API saw no getMe in 10 s (stored telegram:enabled=${stored3["telegram:enabled"]})`
             );
             return steps;
         }
-        const st3 = await tgWaitKind(h, "connecting");
+        const st3 = await tgWaitKind(h, "checking");
         await tgShot(h, 3);
         rec(
-            "3. the switch stores telegram:enabled true and the status reads connecting while getMe is held",
-            stored3["telegram:enabled"] === true && st3.kind === "connecting",
+            "3. the switch stores telegram:enabled true and the row reads checking while getMe is held",
+            stored3["telegram:enabled"] === true && st3.kind === "checking" && st3.text?.includes("Checking the token"),
             JSON.stringify({ enabled: stored3["telegram:enabled"], ...st3 })
         );
 
-        // 4. getMe answered: connected, not paired, with the Pair button
+        // 4. getMe answered: not paired, with the Pair button, and no session: Manual with nothing on never polls
         fake.releaseGetMe();
         const st4 = await tgWaitKind(h, "unpaired");
         const pairBtn = await h.ev(`${TG_ROW}?.querySelector('[data-testid="telegram-pair"]')?.innerText.trim() ?? null`);
         await tgShot(h, 4);
         rec(
-            "4. once getMe answers the row reads connected as @arc_test_bot, not paired, with a Pair button",
-            st4.kind === "unpaired" && st4.text?.includes("Connected as @arc_test_bot") && pairBtn === "Pair",
-            JSON.stringify({ ...st4, pairBtn })
+            "4. once getMe answers the row reads @arc_test_bot · not paired with a Pair button, and Telegram saw no getUpdates",
+            st4.kind === "unpaired" &&
+                st4.text?.includes("@arc_test_bot · not paired") &&
+                pairBtn === "Pair" &&
+                fake.updates === 0,
+            JSON.stringify({ ...st4, pairBtn, updates: fake.updates })
         );
 
-        // 5. Pair: the code large, with what to send
+        // 5. Pair: the code large, with what to send; in Manual the code is what connects
+        const updates4 = fake.updates;
         await spClick(h, `${TG_ROW}?.querySelector('[data-testid="telegram-pair"]')`);
         const st5 = await tgWaitKind(h, "pairing");
+        for (let waited = 0; waited < 10_000 && fake.updates === updates4; waited += 250) await polishNap(250);
         const code = await h.ev(`${TG_ROW}?.querySelector('[data-testid="telegram-pair-code"]')?.innerText.trim() ?? null`);
         const codeStyle = await h.ev(`(() => {
             const el = ${TG_ROW}?.querySelector('[data-testid="telegram-pair-code"]');
@@ -35526,65 +35612,268 @@ const settingsTelegram = {
                 code === status5?.paircode &&
                 codeStyle?.px >= 18 &&
                 codeStyle?.mono === true &&
-                st5.text?.includes(`Send /start ${code} to @arc_test_bot`),
-            JSON.stringify({ code, serverCode: status5?.paircode, codeStyle, ...st5 })
+                st5.text?.includes(`Send /start ${code} to @arc_test_bot`) &&
+                fake.updates > updates4,
+            JSON.stringify({ code, serverCode: status5?.paircode, codeStyle, updates: [updates4, fake.updates], ...st5 })
         );
 
-        // 6. /start <code> from chat 4242: paired, answered, stored
+        // 6. /start <code> from chat 4242: paired, answered, stored; Manual with nothing on, so the row is asleep
         fake.queueMessage(TG_CHAT, `/start ${code}`);
-        const st6 = await tgWaitKind(h, "paired");
+        const st6 = await tgWaitKind(h, "asleep");
         const stored6 = await tgWaitSettings(h, (s) => s["telegram:chatid"] === String(TG_CHAT.id));
         for (let waited = 0; waited < 3000 && fake.sent(TG_CHAT.id).length === 0; waited += 250) await polishNap(250);
         const paired = fake.sent(TG_CHAT.id).find((c) => String(c.body.text).startsWith("Paired."));
+        const unpairBtn6 = await h.ev(`${tgEl("telegram-unpair")}?.innerText.trim() ?? null`);
         await tgShot(h, 6);
         rec(
-            "6. /start <code> from chat 4242 pairs it: the row reads Paired with Verify chat, the bot replied Paired., chatid is stored",
-            st6.kind === "paired" &&
-                st6.text?.includes(`Paired with ${TG_CHAT.title}`) &&
+            "6. /start <code> from chat 4242 pairs it: the bot replied Paired., chatid is stored, and the row is asleep: Paired with Verify chat · Off — turn it on for a while, with Unpair",
+            st6.kind === "asleep" &&
+                st6.text?.includes(`Paired with ${TG_CHAT.title} · Off — turn it on for a while`) &&
+                unpairBtn6 === "Unpair" &&
                 paired != null &&
                 stored6["telegram:chatid"] === String(TG_CHAT.id),
-            JSON.stringify({ ...st6, reply: paired?.body.text ?? null, chatid: stored6["telegram:chatid"] })
+            JSON.stringify({ ...st6, unpair: unpairBtn6, reply: paired?.body.text ?? null, chatid: stored6["telegram:chatid"] })
         );
 
-        // 7. Unpair
-        await spClick(h, `${TG_ROW}?.querySelector('[data-testid="telegram-unpair"]')`);
-        const st7 = await tgWaitKind(h, "unpaired");
-        const stored7 = await tgWaitSettings(
+        // 7. On for 1h: stored, the row says until when, the Pair session winds down (it lingers 30 s) and the bot stays quiet
+        const t7 = Date.now();
+        await tgClick(h, "telegram-on-1h");
+        const stored7 = await tgWaitSettings(h, (s) => tgOnUntilNear(s, t7 + TG_HOUR_MS));
+        const untilShown7 = await polishWaitFor(h, `${tgEl("telegram-on-until")} != null`, 5000);
+        const untilText7 = await h.ev(`${tgEl("telegram-on-until")}?.innerText.trim() ?? null`);
+        const status7 = await tgWaitStatus(h, (s) => !s?.connected, 35_000);
+        const updates7 = fake.updates;
+        await polishNap(4000);
+        const st7 = await tgWaitKind(h, "idle");
+        await tgShot(h, 7);
+        rec(
+            "7. On for 1h stores telegram:onuntil an hour ahead and reads On until; once the Pair session ends no getUpdates follows for 4 s, and the row reads idle",
+            tgOnUntilNear(stored7, t7 + TG_HOUR_MS) &&
+                untilShown7 &&
+                untilText7?.startsWith("On until") &&
+                !status7?.connected &&
+                fake.updates === updates7 &&
+                st7.kind === "idle" &&
+                st7.text?.includes("connects only when an agent asks"),
+            JSON.stringify({
+                onuntil: stored7["telegram:onuntil"] ?? null,
+                untilText: untilText7,
+                connected: status7?.connected ?? false,
+                updates: [updates7, fake.updates],
+                ...st7,
+            })
+        );
+
+        // 8. a question raised on a live block: the allowed time and an open question connect the bot, which sends it
+        const askBlock = await tgAskBlock(h, ctx);
+        if (askBlock == null) {
+            rec("8. a question raised on a live block is sent to chat 4242", false, "no block to raise a question on");
+            return steps;
+        }
+        ctx.askOref = `block:${askBlock}`;
+        await h.rpc("ask", { oref: ctx.askOref, questions: [TG_ASK] });
+        ctx.askRaised = true;
+        const askedAt = Date.now();
+        const isAsk = (c) =>
+            c.method === "sendMessage" &&
+            String(c.body.chat_id) === String(TG_CHAT.id) &&
+            String(c.body.text).includes(TG_ASK.question);
+        for (let waited = 0; waited < 15_000 && !fake.calls.some(isAsk); waited += 250) await polishNap(250);
+        const sentAsk = fake.calls.find(isAsk) ?? null;
+        const sentAfter = sentAsk == null ? null : Date.now() - askedAt;
+        const st8 = await tgWaitState(h, (st) => st.kind === "connected" && /1 question open/.test(st.text ?? ""), 8000);
+        await tgShot(h, 8);
+        rec(
+            "8. a question raised on a live block is sent to chat 4242 within 15 s, and the row reads Connected · 1 question open",
+            sentAsk != null && st8.kind === "connected" && st8.text?.includes("Connected · 1 question open"),
+            JSON.stringify({ sentAfterMs: sentAfter, ...st8 })
+        );
+
+        // 9. the question answered elsewhere: its message is edited and the count goes
+        await h.rpc("agentaskclear", ctx.askOref);
+        ctx.askRaised = false;
+        const isAnswered = (c) =>
+            c.method === "editMessageText" &&
+            String(c.body.chat_id) === String(TG_CHAT.id) &&
+            c.body.text === "✓ Answered in arcterm";
+        for (let waited = 0; waited < 10_000 && !fake.calls.some(isAnswered); waited += 250) await polishNap(250);
+        const edited9 = fake.calls.find(isAnswered) ?? null;
+        const st9 = await tgWaitState(
+            h,
+            (st) => (st.kind === "connected" || st.kind === "idle") && !/question/.test(st.text ?? ""),
+            8000
+        );
+        await tgShot(h, 9);
+        rec(
+            "9. clearing the question edits its message to ✓ Answered in arcterm, and the row reads connected or idle with no question count",
+            edited9 != null && (st9.kind === "connected" || st9.kind === "idle") && !/question/.test(st9.text ?? ""),
+            JSON.stringify({ edit: edited9?.body.text ?? null, ...st9 })
+        );
+
+        // 10. On for 2h, then 4h: each press moves telegram:onuntil
+        const t10 = Date.now();
+        await tgClick(h, "telegram-on-2h");
+        const stored10a = await tgWaitSettings(h, (s) => tgOnUntilNear(s, t10 + 2 * TG_HOUR_MS));
+        await tgClick(h, "telegram-on-4h");
+        const stored10b = await tgWaitSettings(h, (s) => tgOnUntilNear(s, t10 + 4 * TG_HOUR_MS));
+        await tgShot(h, 10);
+        rec(
+            "10. On for 2h, then 4h, store telegram:onuntil two hours, then four, ahead",
+            tgOnUntilNear(stored10a, t10 + 2 * TG_HOUR_MS) && tgOnUntilNear(stored10b, t10 + 4 * TG_HOUR_MS),
+            JSON.stringify({ after2h: stored10a["telegram:onuntil"] ?? null, after4h: stored10b["telegram:onuntil"] ?? null })
+        );
+
+        // 11. Turn off now: the stored time goes and the row is asleep again
+        await tgClick(h, "telegram-turn-off");
+        const stored11 = await tgWaitSettings(h, (s) => !s["telegram:onuntil"]);
+        const st11 = await tgWaitKind(h, "asleep");
+        const gone11 = await h.ev(`${tgEl("telegram-on-until")} == null`);
+        await tgShot(h, 11);
+        rec(
+            "11. Turn off now clears telegram:onuntil, drops On until, and the row reads asleep",
+            !stored11["telegram:onuntil"] && gone11 === true && st11.kind === "asleep",
+            JSON.stringify({ onuntil: stored11["telegram:onuntil"] ?? null, onUntilGone: gone11, ...st11 })
+        );
+
+        // 12. Always: no On-for controls, no end to the allowed time; the bot is idle once the last session winds down
+        await tgClick(h, "telegram-mode-always");
+        const stored12 = await tgWaitSettings(h, (s) => s["telegram:mode"] === "always");
+        const st12 = await tgWaitKind(h, "idle", 35_000);
+        const status12 = await h.rpc("telegramstatus", null);
+        const onForGone12 = await h.ev(`${tgEl("telegram-on-1h")} == null && ${tgEl("telegram-on-custom")} == null`);
+        await tgShot(h, 12);
+        rec(
+            "12. Always stores telegram:mode always, takes away the On-for controls, and the row reads idle with no end to the allowed time",
+            stored12["telegram:mode"] === "always" &&
+                onForGone12 === true &&
+                st12.kind === "idle" &&
+                (status12?.alloweduntil ?? 0) === 0,
+            JSON.stringify({ mode: stored12["telegram:mode"] ?? null, onForGone: onForGone12, alloweduntil: status12?.alloweduntil ?? 0, ...st12 })
+        );
+
+        // 13. Schedule: the unset schedule reads as office hours, and Office hours stores it
+        await tgClick(h, "telegram-mode-schedule");
+        await polishWaitFor(h, `${tgEl("telegram-from")} != null`, 5000);
+        const controls13 = await tgScheduleControls(h);
+        await tgClick(h, "telegram-office-hours");
+        const stored13 = await tgWaitSettings(h, (s) => s["telegram:schedule"] === TG_OFFICE_HOURS);
+        await tgShot(h, 13);
+        rec(
+            "13. Schedule shows Mon–Fri pressed, Sat and Sun not, from 08:00 to 17:30, and Office hours stores the office-hours schedule",
+            TG_DAYS.every((d) => controls13.pressed[d] === (["sat", "sun"].includes(d) ? "false" : "true")) &&
+                controls13.from === "08:00" &&
+                controls13.to === "17:30" &&
+                stored13["telegram:schedule"] === TG_OFFICE_HOURS,
+            JSON.stringify({ ...controls13, stored: stored13["telegram:schedule"] ?? null })
+        );
+
+        // 14. a day chip toggles the day in the stored schedule, and back
+        await tgClick(h, "telegram-day-sat");
+        const stored14a = await tgWaitSettings(h, (s) => String(s["telegram:schedule"] ?? "").includes("sat"));
+        await tgClick(h, "telegram-day-sat");
+        const stored14b = await tgWaitSettings(h, (s) => s["telegram:schedule"] === TG_OFFICE_HOURS);
+        await tgShot(h, 14);
+        rec(
+            "14. the Sat chip adds sat to the stored schedule, and pressing it again takes sat out",
+            String(stored14a["telegram:schedule"] ?? "").includes("sat") && stored14b["telegram:schedule"] === TG_OFFICE_HOURS,
+            JSON.stringify({ pressed: stored14a["telegram:schedule"] ?? null, back: stored14b["telegram:schedule"] ?? null })
+        );
+
+        // 15. a window past midnight, set through the time fields
+        await tgSetInput(h, "telegram-from", "22:00");
+        await tgWaitSettings(h, (s) => String(s["telegram:schedule"] ?? "").endsWith(" 22:00-17:30"));
+        await tgSetInput(h, "telegram-to", "06:00");
+        const stored15 = await tgWaitSettings(h, (s) => s["telegram:schedule"] === "mon,tue,wed,thu,fri 22:00-06:00");
+        const past15 = await polishWaitFor(h, `${tgEl("telegram-past-midnight")} != null`, 3000);
+        await tgShot(h, 15);
+        rec(
+            "15. from 22:00 to 06:00 stores a window past midnight and shows Runs past midnight",
+            stored15["telegram:schedule"] === "mon,tue,wed,thu,fri 22:00-06:00" && past15,
+            JSON.stringify({ stored: stored15["telegram:schedule"] ?? null, pastMidnightShown: past15 })
+        );
+
+        // 16. a window that excludes now (every day, from two hours ahead to three): asleep until it opens
+        for (const day of ["sat", "sun"]) {
+            await tgClick(h, `telegram-day-${day}`);
+            await tgWaitSettings(h, (s) => String(s["telegram:schedule"] ?? "").split(" ")[0].split(",").includes(day));
+        }
+        const from16 = tgClock(Date.now() + 2 * TG_HOUR_MS);
+        const to16 = tgClock(Date.now() + 3 * TG_HOUR_MS);
+        await tgSetInput(h, "telegram-from", from16);
+        await tgWaitSettings(h, (s) => String(s["telegram:schedule"] ?? "").includes(` ${from16}-`));
+        await tgSetInput(h, "telegram-to", to16);
+        const stored16 = await tgWaitSettings(h, (s) => s["telegram:schedule"] === `${TG_DAYS.join(",")} ${from16}-${to16}`);
+        const st16 = await tgWaitKind(h, "asleep");
+        const status16 = await tgWaitStatus(h, (s) => (s?.nextallowed ?? 0) > Date.now());
+        await tgShot(h, 16);
+        rec(
+            "16. a window two to three hours ahead on every day leaves the row asleep, Off until its start, with nextallowed in the future",
+            stored16["telegram:schedule"] === `${TG_DAYS.join(",")} ${from16}-${to16}` &&
+                st16.kind === "asleep" &&
+                st16.text?.includes("Off until ") &&
+                (status16?.nextallowed ?? 0) > Date.now(),
+            JSON.stringify({ stored: stored16["telegram:schedule"] ?? null, nextallowed: status16?.nextallowed ?? 0, ...st16 })
+        );
+
+        // 17. Manual: a custom number of hours, typed and started
+        await tgClick(h, "telegram-mode-manual");
+        await polishWaitFor(h, `${tgEl("telegram-on-custom")} != null`, 5000);
+        const typed17 = await ideasType(h, `[data-setting-row="notifications.telegram"] [data-testid="telegram-on-custom"]`, "1.5", true);
+        const startOn17 = await h.ev(`${tgEl("telegram-on-start")}?.disabled === false`);
+        const t17 = Date.now();
+        await tgClick(h, "telegram-on-start");
+        const stored17 = await tgWaitSettings(h, (s) => tgOnUntilNear(s, t17 + 1.5 * TG_HOUR_MS));
+        await tgShot(h, 17);
+        rec(
+            "17. Manual with 1.5 typed in the custom field and Start pressed stores telegram:onuntil an hour and a half ahead",
+            typed17 && startOn17 === true && tgOnUntilNear(stored17, t17 + 1.5 * TG_HOUR_MS),
+            JSON.stringify({ typed: typed17, startEnabled: startOn17, onuntil: stored17["telegram:onuntil"] ?? null })
+        );
+
+        // 18. Unpair
+        await tgClick(h, "telegram-unpair");
+        const st18 = await tgWaitKind(h, "unpaired");
+        const stored18 = await tgWaitSettings(
             h,
             (s) => (s["telegram:chatid"] ?? "") === "" && (s["telegram:chatname"] ?? "") === ""
         );
-        await tgShot(h, 7);
+        await tgShot(h, 18);
         rec(
-            "7. Unpair returns the row to unpaired and clears telegram:chatid and telegram:chatname",
-            st7.kind === "unpaired" &&
-                (stored7["telegram:chatid"] ?? "") === "" &&
-                (stored7["telegram:chatname"] ?? "") === "",
-            JSON.stringify({ ...st7, chatid: stored7["telegram:chatid"] ?? null, chatname: stored7["telegram:chatname"] ?? null })
+            "18. Unpair returns the row to unpaired and clears telegram:chatid and telegram:chatname",
+            st18.kind === "unpaired" &&
+                (stored18["telegram:chatid"] ?? "") === "" &&
+                (stored18["telegram:chatname"] ?? "") === "",
+            JSON.stringify({ ...st18, chatid: stored18["telegram:chatid"] ?? null, chatname: stored18["telegram:chatname"] ?? null })
         );
 
-        // 8. Telegram rejects the token
+        // 19. Telegram rejects the token: Pair is what connects, and the one call it makes answers 401
         fake.reject = true;
-        const st8 = await tgWaitKind(h, "error");
-        await tgShot(h, 8);
+        await tgClick(h, "telegram-pair");
+        const st19 = await tgWaitKind(h, "error");
+        await tgShot(h, 19);
         rec(
-            "8. a 401 from Telegram reads Token rejected by Telegram",
-            st8.kind === "error" && st8.text?.includes("Token rejected by Telegram"),
-            JSON.stringify(st8)
+            "19. a 401 from Telegram, after Pair, reads Token rejected by Telegram",
+            st19.kind === "error" && st19.text?.includes("Token rejected by Telegram"),
+            JSON.stringify(st19)
         );
 
-        // 9. Remove token
-        await spClick(h, `${TG_ROW}?.querySelector('[data-testid="telegram-remove-token"]')`);
-        const st9 = await tgWaitKind(h, "no-token");
-        const status9 = await h.rpc("telegramstatus", null);
-        await tgShot(h, 9);
+        // 20. Remove token
+        await tgClick(h, "telegram-remove-token");
+        const st20 = await tgWaitKind(h, "no-token");
+        const status20 = await h.rpc("telegramstatus", null);
+        await tgShot(h, 20);
         rec(
-            "9. Remove token returns the row to the no-token status, with hastoken false",
-            st9.kind === "no-token" && status9?.hastoken === false,
-            JSON.stringify({ ...st9, hastoken: status9?.hastoken })
+            "20. Remove token returns the row to the no-token status, with hastoken false",
+            st20.kind === "no-token" && status20?.hastoken === false,
+            JSON.stringify({ ...st20, hastoken: status20?.hastoken })
         );
         return steps;
     },
     async teardown(h, ctx) {
+        if (ctx.askRaised) await h.rpc("agentaskclear", ctx.askOref).catch(() => {});
+        if (ctx.askTabId) {
+            await waveService(h, "workspace", "CloseTab", [ctx.workspaceId, ctx.askTabId, false]).catch(() => {});
+        }
         await h.rpc("setsecrets", { [TG_SECRET]: null });
         await h.rpc("setconfig", ctx.prev);
         await ctx.fake.close();

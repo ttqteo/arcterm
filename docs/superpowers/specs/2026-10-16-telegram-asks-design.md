@@ -207,10 +207,22 @@ allowed. Effort chunk "Decide: when Telegram may connect" holds the decision.
   hours). A live `telegram:onuntil` also allows it outside the schedule.
 - `always`: whenever it is switched on.
 
+`telegram:mode`, `telegram:schedule` and `telegram:onuntil` are machine-local like the other `telegram:*` keys
+(`machineLocalKeys`): a personal machine's `always` or "on for 4h" synced to a work machine with its own token would
+let that one connect around the clock, the thing this section prevents.
+
+**Pairing is its own allowance.** Pressing **Pair** lets the bot connect for the code's 10 minutes in every mode, also
+outside the allowed time: the person just asked for it, and in the default (`manual`, nothing turned on) first setup
+could not pair otherwise.
+
 **Connect on demand.** Inside an allowed time the bot holds a session (getMe, backlog drop, long poll) only while it
-has something to do: a question waiting past the grace or still open in Telegram, or a live pairing code. With
+has something to do: a question waiting past the grace or still open in Telegram. A live pairing code holds one in
+any mode (above). With
 neither, it disconnects after 30 s, and no request leaves the machine until the next question. Switching it on or
-storing a new token makes one `getMe`, to show the bot's name and catch a wrong token, and nothing more. The
+storing a new token makes one `getMe`, to show the bot's name and catch a wrong token, and nothing more; it runs in
+every mode, also outside the allowed time, since the person just acted. One that fails on the network (no answer
+from Telegram) is tried again at the next settings change or Pair, or else after 1 min, doubling to 30 min. A rejected token (401, from that `getMe` or a
+session's) starts no session until the token changes or the settings do (as today). The
 tracker of sent questions lives on the bot, not the session, so a reconnect does not resend them. The 2 s tick that
 decides all this reads only the local ask registry and the clock.
 
@@ -219,8 +231,9 @@ decides all this reads only the local ask registry and the clock.
 forgotten, and the bot disconnects. If the question is still waiting when the time comes back, it is sent again.
 
 **Status** adds `allowed`, `alloweduntil` (UnixMilli, 0 = no end), `nextallowed` (UnixMilli, 0 = none), `connected` and
-`open` (questions open in Telegram). The row says: `Off until Mon 08:00`, `On until 15:40 · Turn off`, `Paired with
-<chat> · connects only when an agent asks`, or `Connected · 1 question open`.
+`open` (questions open in Telegram). Once paired, the row's status line starts `Paired with <chat> · ` and goes on
+`Off until Mon 08:00`, `connects only when an agent asks`, or `Connected · 1 question open`; the manual allowance
+shows beside it as `On until 15:40 · Turn off now`.
 
 ## Out of scope
 

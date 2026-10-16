@@ -59,9 +59,29 @@ Trang **General**, thẻ **Notifications**, hàng **Telegram**. Khi một agent 
 
 1. Trong Telegram, nhắn `@BotFather`, gửi `/newbot` và làm theo; BotFather trả một token.
 2. Dán token vào ô **Bot token from @BotFather** rồi Enter. Token nằm trong kho bí mật của hệ điều hành, không bao giờ hiện lại; hàng chỉ ghi có token hay chưa, và có liên kết **Remove token** để xóa.
-3. Bật công tắc. Dòng trạng thái đi từ `Connecting to Telegram…` tới `Connected as @<bot>. Not paired with a chat yet.`
-4. Bấm **Pair**. Hàng hiện một mã 6 số, dùng được khoảng 10 phút.
-5. Trong Telegram, gửi `/start <mã>` cho bot. Hàng đổi thành `Paired with <tên chat>` và bot trả lời "Paired. Agent questions will arrive here.". Chỉ chat đã ghép được trả lời; tin nhắn của chat khác bị bỏ qua.
+3. Bật công tắc. arcterm hỏi Telegram đúng một lần xem token có dùng được không: dòng trạng thái đi từ `Checking the token…` tới `@<bot> · not paired`. Token sai thì dòng đó đổi thành `Token rejected by Telegram`. Nếu mạng lỗi (Telegram không trả lời), dòng hiện lỗi đó và arcterm hỏi lại khi bạn đổi một cài đặt hay bấm Pair, nếu không thì sau 1 phút, rồi giãn dần tới 30 phút.
+4. Bấm **Pair**. Hàng hiện một mã 6 số, dùng được khoảng 10 phút. Trong 10 phút đó arcterm kết nối với Telegram dù đang ở chế độ nào, để nhận `/start`.
+5. Trong Telegram, gửi `/start <mã>` cho bot. Hàng đổi thành `Paired with <tên chat> · …` và bot trả lời "Paired. Agent questions will arrive here.". Chỉ chat đã ghép được trả lời; tin nhắn của chat khác bị bỏ qua.
+
+#### Khi nào arcterm kết nối
+
+arcterm **không** hỏi Telegram liên tục. Nó chỉ kết nối khi cả hai điều sau cùng đúng: đang trong **khoảng thời gian bạn cho phép**, và **có một câu hỏi đang mở** (chờ quá 8 giây). Hết câu hỏi, hoặc hết khoảng thời gian cho phép, nó ngắt; không có gì để làm thì không gửi một yêu cầu nào tới Telegram. Ngoại lệ là hai việc nó tự làm trong mọi chế độ: một lần kiểm tra token (khi bật công tắc hoặc đổi token) và kết nối trong lúc mã ghép cặp còn hiệu lực.
+
+Khi đã có token và công tắc bật, hàng có thêm mục **Connect** với ba chế độ:
+
+- **Manual** (mặc định): chỉ cho phép khi bạn bật tạm. Ở dòng **On for**, bấm `1h`, `2h` hoặc `4h`, hoặc gõ số giờ riêng (0,25 đến 24) rồi bấm **Start**. Dòng hiện `On until <giờ>` cùng nút **Turn off now**. Hết giờ hoặc bấm **Turn off now** thì dòng trạng thái là `Off — turn it on for a while`.
+- **Schedule**: cho phép theo lịch hằng tuần, theo giờ máy. Chọn các ngày (Mon…Sun) và giờ **từ** / **đến**; nút **Office hours** đặt Thứ Hai đến Thứ Sáu, 08:00–17:30. Giờ **đến** không sau giờ **từ** thì khoảng đó chạy qua nửa đêm (`Runs past midnight`). Ngoài lịch, dòng trạng thái là `Off until <giờ>`; **On for** vẫn dùng được để bật thêm ngoài lịch.
+- **Always**: lúc nào cũng cho phép; **On for** không còn.
+
+Câu hỏi đã gửi mà khoảng thời gian cho phép kết thúc trước khi bạn trả lời: tin nhắn được sửa thành `— Telegram is off until <giờ>` (hoặc `— Telegram is off; answer in arcterm` nếu không có gì sẽ bật lại), và câu hỏi được gửi lại khi tới giờ cho phép nếu nó vẫn còn mở.
+
+Dòng trạng thái cho biết arcterm đang ở đâu:
+
+| Dòng trạng thái | Nghĩa |
+|---|---|
+| `Paired with <chat> · Off until Mon 08:00` / `Off — turn it on for a while` | Đã ghép, nhưng ngoài thời gian cho phép: không kết nối. |
+| `Paired with <chat> · connects only when an agent asks` | Trong thời gian cho phép, đang chờ một câu hỏi. |
+| `Paired with <chat> · Connected · 1 question open` | Đang kết nối, `n` câu hỏi đang chờ trả lời ở Telegram. |
 
 Sau đó, mỗi câu hỏi tới như một tin nhắn có tên agent, nội dung câu hỏi và các lựa chọn là nút:
 
@@ -73,7 +93,7 @@ Sau đó, mỗi câu hỏi tới như một tin nhắn có tên agent, nội dun
 
 Chỉ **nội dung câu hỏi** được gửi: không có transcript, không có nội dung file, không có đầu vào của công cụ. Telegram **không** làm được gì khác: không gửi prompt, không bắt đầu hay dừng agent hay run, không đọc transcript. Nó chỉ trả lời những câu hỏi đang chờ.
 
-**Unpair** (hiện ở dòng trạng thái khi đã ghép) xóa chat đã ghép; bot ngừng gửi cho tới khi bạn ghép lại. Tắt công tắc cũng ngừng gửi. Trạng thái bật/tắt và chat đã ghép chỉ lưu trên máy này, không đồng bộ qua vault.
+**Unpair** (hiện ở dòng trạng thái khi đã ghép) xóa chat đã ghép; bot ngừng gửi cho tới khi bạn ghép lại. Tắt công tắc cũng ngừng gửi. Trạng thái bật/tắt, chat đã ghép và thời gian cho phép (chế độ, lịch, **On for**) chỉ lưu trên máy này, không đồng bộ qua vault.
 
 ### Cho AI nền chạy
 

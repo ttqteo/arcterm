@@ -326,13 +326,13 @@ export function Toggle({ on, onToggle, label }: { on: boolean; onToggle: () => v
 }
 
 // Pick-one group. The selected option is a grey fill, never an accent tint. `fontFamily` draws an option in
-// its own face (the font rows).
+// its own face (the font rows); `testId` is the option's data-testid.
 export function Segmented<T extends string>({
     options,
     value,
     onChange,
 }: {
-    options: { id: T; label: string; fontFamily?: CSSProperties["fontFamily"] }[];
+    options: { id: T; label: string; fontFamily?: CSSProperties["fontFamily"]; testId?: string }[];
     value: T;
     onChange: (id: T) => void;
 }) {
@@ -342,6 +342,7 @@ export function Segmented<T extends string>({
                 <button
                     key={o.id}
                     type="button"
+                    data-testid={o.testId}
                     onClick={() => onChange(o.id)}
                     style={o.fontFamily != null ? { fontFamily: o.fontFamily } : undefined}
                     className={cn(

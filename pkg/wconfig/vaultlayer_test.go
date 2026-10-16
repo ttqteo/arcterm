@@ -104,6 +104,7 @@ func TestVaultLayerIgnoresMachineLocalKeys(t *testing.T) {
 		ConfigKey_MemoryVaultPath, ConfigKey_JarvisVaultPath, ConfigKey_TermGitBashPath,
 		ConfigKey_TermLocalShellPath, ConfigKey_TermLocalShellOpts, ConfigKey_ClaudeActiveAccount,
 		ConfigKey_TelegramEnabled, ConfigKey_TelegramChatID, ConfigKey_TelegramChatName,
+		ConfigKey_TelegramMode, ConfigKey_TelegramSchedule, ConfigKey_TelegramOnUntil,
 	} {
 		if !IsMachineLocalKey(key) {
 			t.Errorf("IsMachineLocalKey(%q) = false, want true", key)
