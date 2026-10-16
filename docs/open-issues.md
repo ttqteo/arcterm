@@ -47,6 +47,16 @@ does not, say what you saw and it becomes a bug row under Actionable.
   chip per reviewer in the DAG view; a round-2 resubmit shows one `Round-2 follow-up`. `agenttree.tsx`.
 - [ ] (arcterm) Settings → Background AI → Radar: a **Commit classifier** row under Radar audit, its placeholder
   `haiku` on claude and `pi default` on pi. `settingspages/backgroundai.tsx`.
+- [ ] (arcterm) A Claude agent's background command (`run_in_background`) that redirects stdout to a file is refused
+  with the "Claude Code already saves…" reason; `2>&1`, `> $null` and a foreground redirect pass. `guard-core.ts`.
+- [ ] (arcterm) Settings → Storage → Run worktrees lists the trees under `%LOCALAPPDATA%rc-wt` with their project and
+  run status; one whose run the dev app's store lacks shows guarded, and Clean all leaves it. `pkg/storage/worktrees.go`.
+- [ ] (arcterm) Agent rail → Background tasks: a running command has a red Stop; two clicks end it (the row reads
+  stopped, the process is gone from Task Manager), a task already ended toasts "had already ended". Windows only.
+  `agentdetailsrail.tsx`, `pkg/resmon/shelltask.go`.
+- [ ] (arcterm) Jarvis Brief → Initiatives: with initiatives in two or more projects, the head shows `all · <project>…`
+  chips; picking one narrows the rows, the paused count and "Show N archived"; a project with none shows No match.
+  `briefsurface.tsx`.
 - [ ] (arcterm) A terminal after a GPU reset (or a WebGL context loss): it goes on drawing with the DOM renderer at
   once, no white sad-face canvas, and WebGL comes back about 2 s later. `termwrap.ts`.
 

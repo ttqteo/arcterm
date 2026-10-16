@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Initiatives by project**: the Brief's Initiatives head has a project filter (all, each project, no project) when
+  the initiatives name more than one; it narrows before the list is cut, and the paused count and archived ones follow
+  it.
 - **Stop a background command**: a Claude agent's running background command (a hung build, a dev server it left
   behind) has a Stop beside it in the agent rail's Background tasks; two clicks end it and what it started. Windows.
 - **Memory hygiene**: Setup → Memory checks each project's Claude Code memory every week, or when you ask, and

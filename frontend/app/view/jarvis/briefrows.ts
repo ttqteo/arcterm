@@ -488,6 +488,17 @@ export function runKindLegs(
     return { activeRuns: legs.activeRuns.filter((r) => keepsRunKind(filter, r.mode)), directAgents: [] };
 }
 
+// The Initiatives filter: null is every project, and "" picks the initiatives that name none. The options
+// sort by name rather than by count, so a chip does not move while you reach for it.
+export function initiativeProjects(cards: { project?: string }[]): string[] {
+    const names = [...new Set(cards.map((c) => c.project ?? ""))];
+    return names.sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
+}
+
+export function keepsProject(filter: string | null, project: string | undefined): boolean {
+    return filter == null || (project ?? "") === filter;
+}
+
 const CHUNK_EVENTS = new Set(["effort-note", "chunk-status", "chunk-done", "chunk-added"]);
 const EFFORT_EVENTS = new Set([...CHUNK_EVENTS, "effort-created", "effort-status"]);
 
