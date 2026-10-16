@@ -3559,6 +3559,7 @@ declare global {
         taskid?: string;
         role?: string;
         stagerunid?: string;
+        projectroot?: string;
     };
 
     // wshrpc.SessionEvent

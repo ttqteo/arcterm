@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -129,5 +130,42 @@ func TestLinkSessionsToRunsFallsBackToTheTranscript(t *testing.T) {
 		if s.RunId != w.run || s.ChannelId != w.channel || s.TaskId != w.task || s.Role != w.role {
 			t.Errorf("session %d: run %q channel %q task %q role %q; want %+v", i, s.RunId, s.ChannelId, s.TaskId, s.Role, w)
 		}
+	}
+}
+
+// A run session in one of the engine's trees files under its run's project: the tree's path names only a key.
+func TestLinkSessionsToRunsGivesEngineTreeSessionsTheirProject(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	defer orchestrate.UseWorktreeRootForTest(root)()
+	project := t.TempDir()
+	ch, err := wstore.CreateChannel(ctx, "tree-root", project)
+	if err != nil {
+		t.Fatalf("CreateChannel: %v", err)
+	}
+	lead := jarvis.NewRun("ship it", "ws-id", project, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	lead.SessionId = uuid.NewString()
+	if err := wstore.AppendRun(ctx, ch.OID, lead); err != nil {
+		t.Fatalf("AppendRun: %v", err)
+	}
+	shared := filepath.Join(root, lead.ID+"-t-2")
+	sessions := []wshrpc.SessionActivity{
+		// the lead, landing in the shared root: linked by the store, so its channel gives the project
+		{ID: lead.SessionId, ProjectPath: filepath.Join(root, lead.ID)},
+		// a worker its transcript places: no channel, so the run gives it
+		{ID: uuid.NewString(), ProjectPath: shared, Task: "Your instructions are in the file x.md"},
+		// a session in the project itself needs nothing
+		{ID: uuid.NewString(), ProjectPath: project, Task: "how to build this"},
+	}
+	if err := linkSessionsToRuns(ctx, sessions); err != nil {
+		t.Fatalf("linkSessionsToRuns: %v", err)
+	}
+	for i, want := range []string{project, project, ""} {
+		if got := sessions[i].ProjectRoot; got != want {
+			t.Errorf("session %d: ProjectRoot %q, want %q (%+v)", i, got, want, sessions[i])
+		}
+	}
+	if sessions[1].RunId != lead.ID {
+		t.Fatalf("the worker must link to the run by its tree: %+v", sessions[1])
 	}
 }
