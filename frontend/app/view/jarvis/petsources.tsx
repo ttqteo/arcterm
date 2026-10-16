@@ -170,8 +170,9 @@ export function PetSources({ model }: { model: AgentsViewModel }) {
                 }
             },
         });
-        // the machine slept: news only when agents were working through it. A status from before the sleep is still the
-        // roster's when this lands, so "working" is what they were doing when it fell asleep.
+        // the machine slept: news only when agents were working through it. This lands two minutes after the wake
+        // (sleepwatch.Settle); an agent working when the machine fell asleep picks its turn back up on waking, so
+        // "working" still counts it unless it finished within those two minutes.
         const unsubSlept = waveEventSubscribeSingle({
             eventType: "system:slept",
             handler: (event) => {

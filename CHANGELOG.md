@@ -84,6 +84,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- **"The Mac slept for…" counts the whole sleep**: it counts from when the Mac fell asleep, not from the last few
+  seconds macOS woke it in the night for maintenance, so a night's sleep no longer reads as nine minutes. The pet now
+  says it two minutes after the Mac wakes.
 - **The boss walks around the lounge's furniture**: in the Office the boss no longer walks onto the sofa, the coffee
   machine or a plant; it stops in front of them, as it does at a desk.
 - **The Office fills the Cockpit's height**: a quiet office no longer stops partway down with an empty strip below
