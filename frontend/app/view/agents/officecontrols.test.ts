@@ -66,9 +66,61 @@ describe("officeKey", () => {
         expect(officeKey("walk", true, "Enter")).toEqual({ do: "activate" });
         expect(officeKey("card", true, "Escape")).toEqual({ do: "menu" });
         expect(officeKey("walk", true, "m")).toEqual({ do: "menu" });
-        for (const k of ["ArrowLeft", "ArrowRight", "1", "j", "f", "t"]) {
+        for (const k of ["ArrowLeft", "ArrowRight", "1", "j", "f", "t", "g", "PageUp", "PageDown"]) {
             expect(officeKey("walk", true, k)).toEqual({ do: "none" });
         }
+    });
+
+    it("rides the lift on PageUp and PageDown, and carries a room on g, while walking", () => {
+        expect(officeKey("walk", false, "PageUp")).toEqual({ do: "floor", delta: 1 });
+        expect(officeKey("walk", false, "PageDown")).toEqual({ do: "floor", delta: -1 });
+        expect(officeKey("walk", false, "g")).toEqual({ do: "grab" });
+    });
+
+    it("leaves PageUp, PageDown and g alone over the dialog box and the full card", () => {
+        for (const layer of ["dialog", "card"] as const) {
+            for (const k of ["PageUp", "PageDown", "g"]) {
+                expect(officeKey(layer, false, k)).toEqual({ do: "pass" });
+            }
+        }
+    });
+
+    it("lets a chord through on the lift and carry keys", () => {
+        expect(officeKey("walk", false, "PageUp", { ctrl: true })).toEqual({ do: "pass" });
+        expect(officeKey("walk", false, "g", { meta: true })).toEqual({ do: "pass" });
+        expect(officeKey("carry", false, "Enter", { alt: true })).toEqual({ do: "pass" });
+        expect(officeKey("carry", false, "ArrowLeft", { ctrl: true })).toEqual({ do: "pass" });
+    });
+});
+
+describe("officeKey while a room is carried", () => {
+    it("moves the room to a neighbouring slot on the arrows", () => {
+        expect(officeKey("carry", false, "ArrowUp")).toEqual({ do: "slot", dir: "up" });
+        expect(officeKey("carry", false, "ArrowDown")).toEqual({ do: "slot", dir: "down" });
+        expect(officeKey("carry", false, "ArrowLeft")).toEqual({ do: "slot", dir: "left" });
+        expect(officeKey("carry", false, "ArrowRight")).toEqual({ do: "slot", dir: "right" });
+    });
+
+    it("rides the lift with the room on PageUp and PageDown", () => {
+        expect(officeKey("carry", false, "PageUp")).toEqual({ do: "floor", delta: 1 });
+        expect(officeKey("carry", false, "PageDown")).toEqual({ do: "floor", delta: -1 });
+    });
+
+    it("drops the room on Enter and cancels on Esc and g", () => {
+        expect(officeKey("carry", false, "Enter")).toEqual({ do: "drop" });
+        expect(officeKey("carry", false, "Escape")).toEqual({ do: "cancel" });
+        expect(officeKey("carry", false, "g")).toEqual({ do: "cancel" });
+    });
+
+    it("does nothing on any other key, the office's own and the Cockpit's included", () => {
+        for (const k of ["m", "j", "k", "n", "f", "h", "l", "1", "t", "r", " "]) {
+            expect(officeKey("carry", false, k)).toEqual({ do: "none" });
+        }
+    });
+
+    it("takes its keys before the menu, which cannot be open over a carried room", () => {
+        expect(officeKey("carry", true, "Enter")).toEqual({ do: "drop" });
+        expect(officeKey("carry", true, "m")).toEqual({ do: "none" });
     });
 });
 
@@ -77,6 +129,10 @@ describe("backFrom", () => {
         expect(backFrom("card")).toBe("dialog");
         expect(backFrom("dialog")).toBe("walk");
         expect(backFrom("walk")).toBe("walk");
+    });
+
+    it("sets a carried room down and walks on", () => {
+        expect(backFrom("carry")).toBe("walk");
     });
 });
 
@@ -89,6 +145,7 @@ describe("boxLayer", () => {
         expect(boxLayer("dialog", true)).toBe("dialog");
         expect(boxLayer("card", false)).toBe("card");
         expect(boxLayer("walk", true)).toBe("walk");
+        expect(boxLayer("carry", false)).toBe("carry");
     });
 });
 
@@ -145,22 +202,44 @@ describe("officeMenuItems", () => {
             "Notice board",
             "Next desk",
             "Previous desk",
+            "Lift",
+            "Move this room",
+            "Arrange automatically",
             "Events",
             "Cards view",
             "All keys",
         ]);
-        expect(items.map((i) => i.key)).toEqual(["n", undefined, "j", "k", undefined, "o", "?"]);
+        expect(items.map((i) => i.key)).toEqual([
+            "n",
+            undefined,
+            "j",
+            "k",
+            "PgUp PgDn",
+            "g",
+            undefined,
+            undefined,
+            "o",
+            "?",
+        ]);
         expect(items[0]).toMatchObject({ count: "2", ask: true });
         expect(items[1]).toEqual({ id: "needsYou", label: "Notice board", count: "3", ask: true });
-        expect(items[4]).toMatchObject({ count: "3 new", rule: true });
+        expect(items[7]).toMatchObject({ count: "3 new", rule: true });
+    });
+
+    it("puts the lift, the room carry and the automatic arrangement after the desk items", () => {
+        const items = officeMenuItems(0, 0, false, 0);
+        expect(items.slice(2, 7).map((i) => i.id)).toEqual(["nextDesk", "prevDesk", "lift", "move", "arrange"]);
+        expect(items[4]).toEqual({ id: "lift", label: "Lift", key: "PgUp PgDn" });
+        expect(items[5]).toEqual({ id: "move", label: "Move this room", key: "g" });
+        expect(items[6]).toEqual({ id: "arrange", label: "Arrange automatically" });
     });
 
     it("drops a zero count, and names Events Hide events while the rail is open", () => {
         const items = officeMenuItems(0, 0, false, 0);
         expect(items[0].count).toBeUndefined();
         expect(items[1]).toMatchObject({ id: "needsYou", count: undefined });
-        expect(items[4].count).toBeUndefined();
+        expect(items[7].count).toBeUndefined();
         const open = officeMenuItems(1, 4, true, 1);
-        expect(open[4]).toMatchObject({ id: "events", label: "Hide events", count: undefined });
+        expect(open[7]).toMatchObject({ id: "events", label: "Hide events", count: undefined });
     });
 });
