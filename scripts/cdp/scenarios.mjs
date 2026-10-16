@@ -39743,10 +39743,10 @@ const runQueueScenario = {
         const rows1 = await ours();
         await h.shot("cdp-shots/run-queue-1-rows.png");
         rec(
-            "1. A, B, C and D are rows in queue order: A Queued #1, B After A's title, C Queued #3 (B holds place 2), D Blocked ·",
+            "1. A, B, C and D are rows in queue order: A Queued #1, B Queued · after A's title, C Queued #3 (B holds place 2), D Blocked ·",
             JSON.stringify(order(rows1)) === JSON.stringify(mine) &&
                 metaOf(rows1, a) === "Queued #1" &&
-                metaOf(rows1, b) === `After ${RQ_TITLES.a}` &&
+                metaOf(rows1, b) === `Queued · after ${RQ_TITLES.a}` &&
                 metaOf(rows1, c) === "Queued #3" &&
                 metaOf(rows1, d).startsWith("Blocked ·"),
             JSON.stringify(rows1)
