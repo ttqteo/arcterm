@@ -53,6 +53,28 @@ Trang **General**, thẻ **Vault & sync**.
 
 Cũng làm được bằng lệnh: `wsh vault remote [url]`, `wsh vault sync`, `wsh vault status`.
 
+### Trả lời câu hỏi của agent từ Telegram
+
+Trang **General**, thẻ **Notifications**, hàng **Telegram**. Khi một agent dừng ở một câu hỏi (ask), arcterm gửi câu hỏi đó tới chat Telegram bạn đã ghép; bạn bấm một lựa chọn hoặc trả lời bằng vài chữ, agent chạy tiếp. Telegram đi qua cùng đường trả lời mà bảng hỏi trong cockpit dùng.
+
+1. Trong Telegram, nhắn `@BotFather`, gửi `/newbot` và làm theo; BotFather trả một token.
+2. Dán token vào ô **Bot token from @BotFather** rồi Enter. Token nằm trong kho bí mật của hệ điều hành, không bao giờ hiện lại; hàng chỉ ghi có token hay chưa, và có liên kết **Remove token** để xóa.
+3. Bật công tắc. Dòng trạng thái đi từ `Connecting to Telegram…` tới `Connected as @<bot>. Not paired with a chat yet.`
+4. Bấm **Pair**. Hàng hiện một mã 6 số, dùng được khoảng 10 phút.
+5. Trong Telegram, gửi `/start <mã>` cho bot. Hàng đổi thành `Paired with <tên chat>` và bot trả lời "Paired. Agent questions will arrive here.". Chỉ chat đã ghép được trả lời; tin nhắn của chat khác bị bỏ qua.
+
+Sau đó, mỗi câu hỏi tới như một tin nhắn có tên agent, nội dung câu hỏi và các lựa chọn là nút:
+
+- **Bấm một nút** để trả lời ngay; tin nhắn đổi thành `✓ <lựa chọn>` và mất nút. Câu hỏi chọn nhiều lựa chọn hiện nút bật/tắt và nút **Send**.
+- **Reply** (trả lời có trích dẫn) vào tin nhắn để trả lời bằng chữ của bạn.
+- Một ask có nhiều câu hỏi được gửi từng câu một, và các câu trả lời chỉ gửi đi cùng lúc sau câu cuối, như bảng hỏi trong cockpit.
+- Câu đã được trả lời ở nơi khác (trong app, bởi Gatekeeper, bởi lead của run, hoặc agent đã đi tiếp) thì tin nhắn đổi thành `✓ Answered in arcterm`.
+- Một ask chờ chưa tới 8 giây thì chưa gửi, để câu mà Gatekeeper trả lời trong vài giây không tới điện thoại bạn.
+
+Chỉ **nội dung câu hỏi** được gửi: không có transcript, không có nội dung file, không có đầu vào của công cụ. Telegram **không** làm được gì khác: không gửi prompt, không bắt đầu hay dừng agent hay run, không đọc transcript. Nó chỉ trả lời những câu hỏi đang chờ.
+
+**Unpair** (hiện ở dòng trạng thái khi đã ghép) xóa chat đã ghép; bot ngừng gửi cho tới khi bạn ghép lại. Tắt công tắc cũng ngừng gửi. Trạng thái bật/tắt và chat đã ghép chỉ lưu trên máy này, không đồng bộ qua vault.
+
 ### Cho AI nền chạy
 
 Một số tính năng của arcterm tự gọi model nền (phân loại session, tóm tắt liên tục, "volunteer judge", đặt tên session pi). Chúng cần một runtime ở trang **Background AI**:
@@ -76,12 +98,13 @@ Trang **About**, thẻ **Coding agents** liệt kê mỗi harness đã cài vớ
 | **Notifications** | **OS notifications** (`notify:os`) | Thông báo hệ thống khi arcterm ở nền; bấm vào mở agent. |
 | | **In-app toasts** (`notify:toast`) | Toast khi arcterm ở trước, trừ khi bạn đang nhìn đúng agent đó. |
 | | **When an agent finishes** (`notify:reply`) | Báo cả khi agent xong một lượt, không chỉ khi nó cần bạn. Worker của run không bao giờ báo. |
+| | **Telegram** (`telegram:enabled`) | Gửi câu hỏi đang chờ của agent tới Telegram của bạn để trả lời ngay ở đó. Xem [Trả lời câu hỏi của agent từ Telegram](#trả-lời-câu-hỏi-của-agent-từ-telegram). Mặc định tắt. |
 | **Window** | **Minimize** (`window:minimize`) | Nút minimize (cả nút vàng và `⌘M` trên macOS) thu cửa sổ vào Sprout (`sprout`, mặc định) hay đưa xuống Dock hoặc taskbar (`dock`). Nút **Sprout** trên app bar luôn thu vào Sprout. |
 | **Window** | **Fold to** | Góc màn hình Sprout thu vào: trên trái, trên phải, dưới trái hay dưới phải (mặc định). Kéo Sprout đi chỗ khác thì lần thu sau về đúng chỗ đó (hiện *Where you dragged it*) cho đến khi bạn chọn lại một góc. Lưu theo máy, không đồng bộ. Cũng có ở chuột phải nút **Sprout** trên app bar → **Fold to**. |
 | **Window** | **Fold when you leave** (`window:autosprout`) | Chuyển sang một app đang maximize hay fullscreen trên cùng màn hình với arcterm và ở đó khoảng 3 giây thì cửa sổ Full tự thu vào Sprout, nổi trên app đó; cửa sổ to nhưng không maximize, hộp thoại hay popup, app nằm cạnh, ở màn hình khác, chụp màn hình hay khoá máy thì không thu (trên macOS: một cửa sổ che từ 80% arcterm). Quay lại arcterm bằng cách nào cũng được (Alt+Tab, taskbar, bấm vào cửa sổ) thì cửa sổ tự mở ra. Mặc định tắt. Không thu khi đang ở Float, khi cửa sổ đang minimize, hay khi hộp thoại của arcterm (chọn file…) đang mở. Chuột phải nút **Sprout** trên app bar để bật/tắt nhanh. |
 | **Vault & sync** | **Vault path**, **Sync remote** | Xem trên. |
 
-Cả ba công tắc thông báo mặc định bật.
+Ba công tắc thông báo đầu mặc định bật; **Telegram** mặc định tắt.
 
 ### Appearance
 

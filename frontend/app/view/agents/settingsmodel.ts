@@ -160,6 +160,11 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             scope: "synced",
                             config: true,
                         },
+                        {
+                            id: "notifications.telegram",
+                            title: "Telegram",
+                            desc: "Send an agent's question to your Telegram and answer it there: tap an option or reply in your own words.",
+                        },
                     ],
                 },
                 {

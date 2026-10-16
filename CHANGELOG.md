@@ -26,6 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Answer an agent's question from Telegram: pair a bot in Settings → General → Notifications, then tap an option or reply in your own words. <!-- big -->
 - In the Cockpit's Office your pet is the boss you walk around: Sprout, the Minion, or Spider-Man, who swings in
   through a window and turns into Peter Parker in a shirt and tie. Its speech bubble and the condition panel open over
   it, and the footer pet comes back when you leave. <!-- big -->

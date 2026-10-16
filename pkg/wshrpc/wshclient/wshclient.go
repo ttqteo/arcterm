@@ -1391,6 +1391,24 @@ func StreamDataAckCommand(w *wshutil.WshRpc, data wshrpc.CommandStreamAckData, o
 	return err
 }
 
+// command "telegrampair", wshserver.TelegramPairCommand
+func TelegramPairCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (wshrpc.TelegramPairData, error) {
+	resp, err := sendRpcRequestCallHelper[wshrpc.TelegramPairData](w, "telegrampair", nil, opts)
+	return resp, err
+}
+
+// command "telegramstatus", wshserver.TelegramStatusCommand
+func TelegramStatusCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (wshrpc.TelegramStatusData, error) {
+	resp, err := sendRpcRequestCallHelper[wshrpc.TelegramStatusData](w, "telegramstatus", nil, opts)
+	return resp, err
+}
+
+// command "telegramunpair", wshserver.TelegramUnpairCommand
+func TelegramUnpairCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "telegramunpair", nil, opts)
+	return err
+}
+
 // command "termgetscrollbacklines", wshserver.TermGetScrollbackLinesCommand
 func TermGetScrollbackLinesCommand(w *wshutil.WshRpc, data wshrpc.CommandTermGetScrollbackLinesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandTermGetScrollbackLinesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandTermGetScrollbackLinesRtnData](w, "termgetscrollbacklines", data, opts)

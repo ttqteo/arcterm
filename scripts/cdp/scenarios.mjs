@@ -21,6 +21,7 @@ import {
     utimesSync,
     writeFileSync,
 } from "node:fs";
+import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35279,6 +35280,316 @@ const settingsKeepAwake = {
     },
 };
 
+// --- settings-telegram: the Telegram row on Settings > General's Notifications card ----------------------------------
+// The dev app talks to a fake Bot API on 127.0.0.1:18765, so it must have been started with
+// ARC_TELEGRAM_API_BASE=http://127.0.0.1:18765 (the Final line sets it, and wavesrv reads it only under
+// ARC_DEV_NO_GLOBAL_INSTALL). The fake answers /bot<token>/<method>: getMe is held until the scenario releases it,
+// getUpdates hands out the queued updates or an empty page after up to a second, the sends are recorded, and a switch
+// makes every call answer 401. The person's own telegram:* settings are put back in teardown; a token already stored
+// fails arrange rather than being replaced, and then teardown never runs, so it is never deleted.
+const TG_PORT = 18765;
+const TG_BASE = `http://127.0.0.1:${TG_PORT}`;
+const TG_TOKEN = "123456:verify-telegram-token";
+const TG_SECRET = "telegram_bottoken";
+const TG_KEYS = ["telegram:enabled", "telegram:chatid", "telegram:chatname"];
+const TG_CHAT = { id: 4242, title: "Verify chat" };
+const TG_ROW = `document.querySelector('[data-setting-row="notifications.telegram"]')`;
+const TG_STATUS = `${TG_ROW}?.querySelector('[data-testid="telegram-status"]')`;
+
+async function tgStartFake() {
+    const fake = { calls: [], queue: [], updateId: 500, messageId: 1000, sawGetMe: false, reject: false };
+    let release;
+    const gate = new Promise((r) => (release = r));
+    fake.releaseGetMe = release;
+    const send = (res, status, json) => {
+        if (res.writableEnded || res.destroyed) return;
+        res.writeHead(status, { "content-type": "application/json" });
+        res.end(JSON.stringify(json));
+    };
+    const fail = (code, description) => ({ ok: false, error_code: code, description });
+    // a message from `chat` the bot sees on its next poll
+    fake.queueMessage = (chat, text) =>
+        fake.queue.push({
+            update_id: ++fake.updateId,
+            message: { message_id: ++fake.messageId, chat: { id: chat.id, title: chat.title, type: "group" }, text },
+        });
+    fake.sent = (chatId) => fake.calls.filter((c) => c.method === "sendMessage" && String(c.body.chat_id) === String(chatId));
+    const handle = async (req, res, raw) => {
+        const m = /^\/bot([^/]+)\/(\w+)$/.exec(req.url ?? "");
+        if (!m) return send(res, 404, fail(404, "Not Found"));
+        const method = m[2];
+        let body = {};
+        try {
+            body = raw ? JSON.parse(raw) : {};
+        } catch {
+            // a body that is not JSON reads as no params
+        }
+        if (method !== "getUpdates") fake.calls.push({ method, token: m[1], body });
+        if (fake.reject) return send(res, 401, fail(401, "Unauthorized"));
+        switch (method) {
+            case "getMe":
+                fake.sawGetMe = true;
+                await gate;
+                return send(res, 200, { ok: true, result: { id: 777, is_bot: true, username: "arc_test_bot" } });
+            case "getUpdates": {
+                const offset = body.offset ?? 0;
+                if (offset > 0) fake.queue = fake.queue.filter((u) => u.update_id >= offset);
+                // offset -1 asks for the last update only
+                const page = () => (offset === -1 ? fake.queue.slice(-1) : fake.queue);
+                let aborted = false;
+                res.on("close", () => (aborted = true));
+                const until = Date.now() + (body.timeout > 0 ? 1000 : 0);
+                while (page().length === 0 && Date.now() < until && !aborted && !fake.reject) await polishNap(50);
+                if (fake.reject) return send(res, 401, fail(401, "Unauthorized"));
+                return send(res, 200, { ok: true, result: page() });
+            }
+            case "sendMessage":
+                return send(res, 200, {
+                    ok: true,
+                    result: { message_id: ++fake.messageId, chat: { id: body.chat_id }, text: body.text },
+                });
+            case "editMessageText":
+                return send(res, 200, {
+                    ok: true,
+                    result: { message_id: body.message_id, chat: { id: body.chat_id }, text: body.text },
+                });
+            case "answerCallbackQuery":
+                return send(res, 200, { ok: true, result: true });
+            default:
+                return send(res, 404, fail(404, "Not Found"));
+        }
+    };
+    const server = createServer((req, res) => {
+        let raw = "";
+        req.on("data", (c) => (raw += c));
+        req.on("end", () => void handle(req, res, raw));
+    });
+    await new Promise((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(TG_PORT, "127.0.0.1", resolve);
+    });
+    fake.close = async () => {
+        fake.releaseGetMe();
+        server.closeAllConnections();
+        await new Promise((r) => server.close(r));
+    };
+    return fake;
+}
+
+// what the row's status line says: the kind telegramView chose (data-telegram-status) and its text
+const tgState = (h) =>
+    h.ev(`(() => {
+        const s = ${TG_STATUS};
+        return { kind: s?.getAttribute("data-telegram-status") ?? null, text: s?.innerText.replace(/\\s+/g, " ").trim() ?? null };
+    })()`);
+
+// the status line once it reads `kind`, or whatever it read when `ms` ran out. The row polls every 2 s.
+async function tgWaitKind(h, kind, ms = 8000) {
+    let st = await tgState(h);
+    for (let waited = 0; st.kind !== kind && waited < ms; waited += 250) {
+        await polishNap(250);
+        st = await tgState(h);
+    }
+    return st;
+}
+
+// the stored settings once `ok` holds of them, or as they were when `ms` ran out
+async function tgWaitSettings(h, ok, ms = 5000) {
+    let settings = {};
+    for (let waited = 0; waited < ms; waited += 250) {
+        settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        if (ok(settings)) break;
+        await polishNap(250);
+    }
+    return settings;
+}
+
+async function tgShot(h, n) {
+    await h.ev(`${TG_ROW}?.scrollIntoView({ block: "center" })`);
+    await polishNap(200);
+    await h.shot(`cdp-shots/settings-telegram-${n}.png`);
+}
+
+const settingsTelegram = {
+    name: "settings-telegram",
+    surface: "settings",
+    async arrange(h) {
+        const status = await h.rpc("telegramstatus", null);
+        if (status?.hastoken) {
+            throw new Error(
+                "a Telegram bot token is already stored: this scenario would replace it. Remove it under Settings > General > Notifications > Telegram first"
+            );
+        }
+        const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
+        const prev = Object.fromEntries(TG_KEYS.map((k) => [k, settings[k] ?? null]));
+        const fake = await tgStartFake();
+        await h.rpc("setconfig", Object.fromEntries(TG_KEYS.map((k) => [k, null])));
+        return { prev, fake };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const { fake } = ctx;
+        const SWITCH = `${TG_ROW}?.querySelector('[role="switch"]')`;
+
+        // 1. the row with no token
+        await h.goto("settings");
+        const pageOpen = await spOpen(h, "general");
+        const rowUp = await polishWaitFor(h, `${TG_ROW} != null`, 5000);
+        const st1 = await tgWaitKind(h, "no-token");
+        const field = await h.ev(
+            `(() => { const i = ${TG_ROW}?.querySelector('input[type="password"]'); return i ? { placeholder: i.placeholder } : null; })()`
+        );
+        const off1 = await h.ev(`${SWITCH}?.getAttribute("aria-checked") ?? null`);
+        await tgShot(h, 1);
+        rec(
+            "1. Settings > General's Telegram row shows the token field, the switch off, and the no-token status",
+            pageOpen &&
+                rowUp &&
+                field?.placeholder === "Bot token from @BotFather" &&
+                off1 === "false" &&
+                st1.kind === "no-token" &&
+                st1.text?.includes("No bot token yet"),
+            JSON.stringify({ pageOpen, rowUp, field, switch: off1, ...st1 })
+        );
+
+        // 2. a token typed into the field and saved with Enter
+        const typed = await ideasType(h, `[data-setting-row="notifications.telegram"] input[type="password"]`, TG_TOKEN);
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+        }
+        const st2 = await tgWaitKind(h, "off");
+        const status2 = await h.rpc("telegramstatus", null);
+        const row2 = await h.ev(`({
+            cleared: ${TG_ROW}?.querySelector('input[type="password"]')?.value === "",
+            leaked: (${TG_ROW}?.innerText ?? "").includes(${JSON.stringify(TG_TOKEN)}),
+            remove: ${TG_ROW}?.querySelector('[data-testid="telegram-remove-token"]') != null,
+        })`);
+        await tgShot(h, 2);
+        rec(
+            "2. a token saved from the row reads off, with hastoken true, the field cleared and Remove token offered",
+            typed && st2.kind === "off" && status2?.hastoken === true && row2.cleared && !row2.leaked && row2.remove,
+            JSON.stringify({ typed, ...st2, hastoken: status2?.hastoken, ...row2 })
+        );
+
+        // 3. the switch on: stored, and the bot is connecting while the fake holds getMe
+        await spClick(h, SWITCH);
+        const stored3 = await tgWaitSettings(h, (s) => s["telegram:enabled"] === true);
+        let sawGetMe = false;
+        for (let waited = 0; waited < 10_000 && !(sawGetMe = fake.sawGetMe); waited += 250) await polishNap(250);
+        if (!sawGetMe) {
+            await tgShot(h, 3);
+            rec(
+                "3. the switch stores telegram:enabled true and the status reads connecting while getMe is held",
+                false,
+                `the dev app was not started with ARC_TELEGRAM_API_BASE=${TG_BASE}: the fake Bot API saw no getMe in 10 s (stored telegram:enabled=${stored3["telegram:enabled"]})`
+            );
+            return steps;
+        }
+        const st3 = await tgWaitKind(h, "connecting");
+        await tgShot(h, 3);
+        rec(
+            "3. the switch stores telegram:enabled true and the status reads connecting while getMe is held",
+            stored3["telegram:enabled"] === true && st3.kind === "connecting",
+            JSON.stringify({ enabled: stored3["telegram:enabled"], ...st3 })
+        );
+
+        // 4. getMe answered: connected, not paired, with the Pair button
+        fake.releaseGetMe();
+        const st4 = await tgWaitKind(h, "unpaired");
+        const pairBtn = await h.ev(`${TG_ROW}?.querySelector('[data-testid="telegram-pair"]')?.innerText.trim() ?? null`);
+        await tgShot(h, 4);
+        rec(
+            "4. once getMe answers the row reads connected as @arc_test_bot, not paired, with a Pair button",
+            st4.kind === "unpaired" && st4.text?.includes("Connected as @arc_test_bot") && pairBtn === "Pair",
+            JSON.stringify({ ...st4, pairBtn })
+        );
+
+        // 5. Pair: the code large, with what to send
+        await spClick(h, `${TG_ROW}?.querySelector('[data-testid="telegram-pair"]')`);
+        const st5 = await tgWaitKind(h, "pairing");
+        const code = await h.ev(`${TG_ROW}?.querySelector('[data-testid="telegram-pair-code"]')?.innerText.trim() ?? null`);
+        const codeStyle = await h.ev(`(() => {
+            const el = ${TG_ROW}?.querySelector('[data-testid="telegram-pair-code"]');
+            if (!el) return null;
+            const cs = getComputedStyle(el);
+            return { px: parseFloat(cs.fontSize), mono: /mono/i.test(cs.fontFamily) };
+        })()`);
+        const status5 = await h.rpc("telegramstatus", null);
+        await tgShot(h, 5);
+        rec(
+            "5. Pair shows the six-digit code large in mono, with Send /start <code> to @arc_test_bot",
+            st5.kind === "pairing" &&
+                /^\d{6}$/.test(code ?? "") &&
+                code === status5?.paircode &&
+                codeStyle?.px >= 18 &&
+                codeStyle?.mono === true &&
+                st5.text?.includes(`Send /start ${code} to @arc_test_bot`),
+            JSON.stringify({ code, serverCode: status5?.paircode, codeStyle, ...st5 })
+        );
+
+        // 6. /start <code> from chat 4242: paired, answered, stored
+        fake.queueMessage(TG_CHAT, `/start ${code}`);
+        const st6 = await tgWaitKind(h, "paired");
+        const stored6 = await tgWaitSettings(h, (s) => s["telegram:chatid"] === String(TG_CHAT.id));
+        for (let waited = 0; waited < 3000 && fake.sent(TG_CHAT.id).length === 0; waited += 250) await polishNap(250);
+        const paired = fake.sent(TG_CHAT.id).find((c) => String(c.body.text).startsWith("Paired."));
+        await tgShot(h, 6);
+        rec(
+            "6. /start <code> from chat 4242 pairs it: the row reads Paired with Verify chat, the bot replied Paired., chatid is stored",
+            st6.kind === "paired" &&
+                st6.text?.includes(`Paired with ${TG_CHAT.title}`) &&
+                paired != null &&
+                stored6["telegram:chatid"] === String(TG_CHAT.id),
+            JSON.stringify({ ...st6, reply: paired?.body.text ?? null, chatid: stored6["telegram:chatid"] })
+        );
+
+        // 7. Unpair
+        await spClick(h, `${TG_ROW}?.querySelector('[data-testid="telegram-unpair"]')`);
+        const st7 = await tgWaitKind(h, "unpaired");
+        const stored7 = await tgWaitSettings(
+            h,
+            (s) => (s["telegram:chatid"] ?? "") === "" && (s["telegram:chatname"] ?? "") === ""
+        );
+        await tgShot(h, 7);
+        rec(
+            "7. Unpair returns the row to unpaired and clears telegram:chatid and telegram:chatname",
+            st7.kind === "unpaired" &&
+                (stored7["telegram:chatid"] ?? "") === "" &&
+                (stored7["telegram:chatname"] ?? "") === "",
+            JSON.stringify({ ...st7, chatid: stored7["telegram:chatid"] ?? null, chatname: stored7["telegram:chatname"] ?? null })
+        );
+
+        // 8. Telegram rejects the token
+        fake.reject = true;
+        const st8 = await tgWaitKind(h, "error");
+        await tgShot(h, 8);
+        rec(
+            "8. a 401 from Telegram reads Token rejected by Telegram",
+            st8.kind === "error" && st8.text?.includes("Token rejected by Telegram"),
+            JSON.stringify(st8)
+        );
+
+        // 9. Remove token
+        await spClick(h, `${TG_ROW}?.querySelector('[data-testid="telegram-remove-token"]')`);
+        const st9 = await tgWaitKind(h, "no-token");
+        const status9 = await h.rpc("telegramstatus", null);
+        await tgShot(h, 9);
+        rec(
+            "9. Remove token returns the row to the no-token status, with hastoken false",
+            st9.kind === "no-token" && status9?.hastoken === false,
+            JSON.stringify({ ...st9, hastoken: status9?.hastoken })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.rpc("setsecrets", { [TG_SECRET]: null });
+        await h.rpc("setconfig", ctx.prev);
+        await ctx.fake.close();
+        await h.goto("cockpit");
+    },
+};
+
 // --- settings-vault-sync: the Sync now button on Settings > General's Vault & sync card ---------------------
 // The dev app is pointed at a throwaway vault (wavevault opens the configured root on every call), first with
 // no remote, then with a bare temp remote, then with a remote that does not exist. The configured vault is
@@ -44923,6 +45234,7 @@ export const SCENARIOS = [
     routePickerRefused,
     settingsRadarAudit,
     settingsKeepAwake,
+    settingsTelegram,
     settingsVaultSync,
     settingsPages,
     jarvisMotion,

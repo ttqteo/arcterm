@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"runtime"
 	"sync"
@@ -32,9 +33,11 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
 	"github.com/wavetermdev/waveterm/pkg/reporadar"
+	"github.com/wavetermdev/waveterm/pkg/secretstore"
 	"github.com/wavetermdev/waveterm/pkg/service"
 	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 	"github.com/wavetermdev/waveterm/pkg/sleepwatch"
+	"github.com/wavetermdev/waveterm/pkg/telebot"
 	"github.com/wavetermdev/waveterm/pkg/util/envutil"
 	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 	"github.com/wavetermdev/waveterm/pkg/util/sigutil"
@@ -114,6 +117,77 @@ func startConfigWatcher() error {
 	}
 	watcher.Start()
 	return nil
+}
+
+// devTelegramAPIBase is the Bot API address the CDP scenario's fake server answers on. Only the test harnesses'
+// dev app (ARC_DEV_NO_GLOBAL_INSTALL) reads ARC_TELEGRAM_API_BASE: a packaged build never does, so a stray variable
+// cannot send an ask, or the bot token, anywhere but Telegram.
+func devTelegramAPIBase() string {
+	if !wavebase.NoGlobalInstall() {
+		return ""
+	}
+	base := os.Getenv("ARC_TELEGRAM_API_BASE")
+	if base != "" {
+		log.Printf("telegram: Bot API base is %s (ARC_TELEGRAM_API_BASE)\n", base)
+	}
+	return base
+}
+
+// startTelebot builds the Telegram bot (pkg/telebot): it sends a pending ask to the paired chat and delivers the
+// answer a tap or a reply gives, through the same agentask.DeliverAnswer the cockpit uses. It idles until
+// telegram:enabled is on and a token is stored; ConfigHook and SetSecretsCommand poke it when either changes.
+// Built before ConfigHook is set, so the hook never sees telebot.Default change; runTelebot starts it.
+func startTelebot() {
+	telebot.Default = telebot.New(telebot.Deps{
+		Pending: func(ctx context.Context) map[string]agentask.PendingAsk {
+			p, err := jarvis.LivePendingAsks(ctx)
+			if err != nil {
+				return nil
+			}
+			return p
+		},
+		Deliver: agentask.DeliverAnswer,
+		Who: func(ctx context.Context, oref string) string {
+			ch, _, source := jarvis.ResolveAskOwner(ctx, jarvis.ChannelOwnerORef(ctx, oref))
+			if source == "" { // a standalone agent: no channel dispatched it
+				source = "agent"
+			}
+			if ch != nil && ch.Name != "" {
+				return source + " · " + ch.Name
+			}
+			return source
+		},
+		Settings: func() telebot.Settings {
+			s := wconfig.GetWatcher().GetFullConfig().Settings
+			id, _ := strconv.ParseInt(s.TelegramChatID, 10, 64)
+			return telebot.Settings{Enabled: s.TelegramEnabled != nil && *s.TelegramEnabled, ChatID: id}
+		},
+		Token: func() string {
+			v, ok, err := secretstore.GetSecret(telebot.TokenSecretName)
+			if err != nil || !ok {
+				return ""
+			}
+			return v
+		},
+		SavePair: func(chatID int64, name string) error {
+			return wconfig.SetBaseConfigValue(waveobj.MetaMapType{
+				"telegram:chatid": strconv.FormatInt(chatID, 10), "telegram:chatname": name,
+			})
+		},
+		APIBase: devTelegramAPIBase(),
+		Tick:    2 * time.Second,
+	})
+}
+
+// runTelebot starts the bot's loop. Its first pass reads telegram:* from the config, so it runs after the config
+// watcher has loaded it.
+func runTelebot() {
+	go func() {
+		defer func() {
+			panichandler.PanicHandler("telebot.Run", recover())
+		}()
+		telebot.Default.Run(context.Background())
+	}()
 }
 
 // sweeps stale channel-composer attachment temp dirs, canvas feedback pictures, final-stage screenshots, finished
@@ -383,6 +457,7 @@ func main() {
 		log.Printf("error fixing up wave zsh history: %v\n", err)
 	}
 	startJobQueue()
+	startTelebot()
 	createMainWshClient()
 	retryCleanupDebtAtStartup()
 	sigutil.InstallShutdownSignalHandlers(doShutdown)
@@ -395,12 +470,16 @@ func main() {
 		claudeaccount.ApplyEnv(fc.Settings.ClaudeActiveAccount)
 		jobqueue.Poke()          // a changed jobs:* setting is effective at once, not at the queue's next tick
 		wshserver.PokeRunQueue() // so is a changed runs:maxactive
+		if telebot.Default != nil {
+			telebot.Default.Poke() // telegram:enabled and telegram:chatid
+		}
 	}
 	err = startConfigWatcher()
 	if err != nil {
 		log.Printf("error starting config watcher: %v\n", err)
 		return
 	}
+	runTelebot()
 	// after the config watcher: each run resolves the vault path from config
 	wavevault.StartSyncLoop(context.Background(), publishNotice)
 	harnessupdate.StartLoop(context.Background(), harnessUpdateCheckEnabled, publishNotice)

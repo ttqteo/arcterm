@@ -16,6 +16,10 @@ const (
 	ConfigKey_NotifyToast                    = "notify:toast"
 	ConfigKey_NotifyReply                    = "notify:reply"
 
+	ConfigKey_TelegramEnabled                = "telegram:enabled"
+	ConfigKey_TelegramChatID                 = "telegram:chatid"
+	ConfigKey_TelegramChatName               = "telegram:chatname"
+
 	ConfigKey_StorageClear                   = "storage:*"
 	ConfigKey_StorageAutoClean               = "storage:autoclean"
 	ConfigKey_StorageNudgeGb                 = "storage:nudgegb"

@@ -29,6 +29,15 @@
         "notify:reply": {
           "type": "boolean"
         },
+        "telegram:enabled": {
+          "type": "boolean"
+        },
+        "telegram:chatid": {
+          "type": "string"
+        },
+        "telegram:chatname": {
+          "type": "string"
+        },
         "storage:*": {
           "type": "boolean"
         },

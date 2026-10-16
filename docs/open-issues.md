@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+**2026-10-16 (Telegram asks)**
+
+- [ ] (arcterm) Telegram asks: pair a real bot, answer by button, by reply, and in the app (message edits)
+
 **2026-10-16 (the Office's pet boss)**
 
 - [ ] (arcterm) In the installed app: Cockpit → Office with Spider-Man picked. He swings in through a window, unmasks
@@ -911,6 +915,7 @@ Tracked in their own initiatives, not here:
   which drew in 76 ms: the same noise as the pixel-art entry's miss, so re-measure the open on a production build or a
   quiet machine. The bench's roster check (step 0) now asks for a full floor of about 30 people and a second floor,
   not 75 people.
+- (arcterm) telebot (2026-10-16): one long-poll goroutine + 2 s ticker; measure wavesrv RSS on/off.
 - **Cockpit office pet boss** (2026-10-16, `cockpit-office-bench`, one run through `final-verify.mjs` in the Windows dev
   app (WebView2), the same 31 people on two floors as the floors entry above, which is the before: it was measured on
   this run's base commit, where the boss was still the chibi `<img>`; the Cards baseline read 28 %, as in that entry's

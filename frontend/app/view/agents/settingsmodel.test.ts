@@ -316,6 +316,7 @@ describe("settings pages", () => {
             "notifications.os",
             "notifications.toast",
             "notifications.reply",
+            "notifications.telegram",
         ]);
         expect(cards["general/window"]).toEqual([
             "window.minimize",
@@ -373,7 +374,7 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(54 + RUNTIME_FLAGS.claude.length);
+        expect(ids).toHaveLength(55 + RUNTIME_FLAGS.claude.length);
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {

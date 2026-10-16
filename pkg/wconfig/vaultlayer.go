@@ -39,6 +39,12 @@ var machineLocalKeys = map[string]bool{
 	ConfigKey_TermLocalShellOpts: true,
 	// the token it names lives only in this machine's secretstore
 	ConfigKey_ClaudeActiveAccount: true,
+	// the bot token they go with lives only in this machine's secretstore (as claude:activeaccount's does); a second
+	// machine that synced enabled + chatid through the vault would poll the same bot with no token, or with its own
+	// (a 409 loop between the two pollers)
+	ConfigKey_TelegramEnabled:  true,
+	ConfigKey_TelegramChatID:   true,
+	ConfigKey_TelegramChatName: true,
 }
 
 func IsMachineLocalKey(key string) bool {

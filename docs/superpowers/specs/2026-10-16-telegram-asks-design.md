@@ -50,8 +50,9 @@ Reply to this message to answer in your own words.
 - An ask with several questions is sent one question per message, in order; the answers are delivered together after
   the last one, exactly as the cockpit's panel delivers them.
 - Answered in the app, by the Gatekeeper, by a dag lead, or the agent moved on: the message becomes
-  `✓ Answered in arcterm` (or `— No longer waiting`) with no buttons.
-- A tap or reply on a message whose ask is gone gets the same edit and a short toast ("Already answered").
+  `✓ Answered in arcterm` with no buttons. The bot cannot tell these apart, so there is one wording for all of them.
+- A tap on a message whose ask is gone edits that message the same way and shows the toast "Already answered". A
+  reply to one gets the bot's reply "Already answered." (Telegram has no toast for a reply).
 
 ## Architecture
 
@@ -67,7 +68,16 @@ A thin HTTP client over `https://api.telegram.org/bot<token>/`: `getMe`, `getUpd
 until the token changes. The token is never logged; errors are logged with it redacted.
 
 On start it calls `getUpdates` with `offset=-1` once, to drop a backlog from while arcterm was closed (old taps refer
-to asks this process never sent, and would only answer "Already answered").
+to asks this process never sent, and would only answer "Already answered"). That call returns the last update; polling
+then starts at its `update_id + 1`, so the last one is dropped too.
+
+A 401 stops polling whether `getMe` or `getUpdates` returns it. A 409 on `getUpdates` keeps backing off and reports
+"Another app is polling this bot".
+
+The API base (`https://api.telegram.org`) can be overridden by the env var `ARC_TELEGRAM_API_BASE`, read only when
+`wavebase.NoGlobalInstall()` is true (the test harnesses' dev app: `final-verify.mjs` and `browser-app.mjs` set
+`ARC_DEV_NO_GLOBAL_INSTALL`, a packaged build never does), so the CDP scenario can run a fake Bot API. A packaged build
+ignores it.
 
 ### Pairing (`pkg/telebot/pair.go`)
 
@@ -75,9 +85,13 @@ to asks this process never sent, and would only answer "Already answered").
 chat with the right code writes that chat's id and title to settings (`telegram:chatid`, `telegram:chatname`) through
 `wconfig.SetBaseConfigValue`, and clears the code. Every other message or callback from a chat that is not the paired
 one is ignored without a reply. A paired chat's message that is neither `/start` nor a reply to an open ask message
-gets one fixed reply: "I only answer agent questions. Reply to a question message to answer it."
+gets one fixed reply: "I only answer agent questions. Reply to a question message to answer it." A reply to a
+message whose ask is gone gets "Already answered." instead.
 
-### Reconcile loop (`pkg/telebot/sync.go`)
+After 5 wrong `/start <code>` messages inside a minute, every `/start` is ignored until the minute clears, which caps
+guesses at about 50 per code against a space of 10^6.
+
+### Reconcile loop (`pkg/telebot/state.go`, run by `bot.go`)
 
 Every 2 s it compares the registry with what it has sent (the 8 s grace below makes an event-driven trigger buy
 nothing):
@@ -90,27 +104,32 @@ nothing):
   reaches the phone.
 - **New:** send the first question's message; remember `askId → {oref, chat, message ids, question index, partial
   answers, multi-select picks}` in memory.
-- **Gone or replaced** (oref missing, or a different `AskId`): edit every message of the old ask to "Answered in
-  arcterm" / "No longer waiting" and forget it.
+- **Gone or replaced** (oref missing, or a different `AskId`): edit every message of the old ask to "✓ Answered in
+  arcterm" and forget it. An ask the bot itself delivered is forgotten when it delivers, so its `✓ <label>` stays.
 
 State is memory only. After a restart the still-pending asks are sent again as new messages; that is acceptable for v1.
 
-### Answering (`pkg/telebot/answer.go`)
+### Answering (`pkg/telebot/state.go`, delivered by `bot.go`)
 
 Callback data is short (`a:<n>:<q>:<o>`, `t:<n>:<q>:<o>` toggle, `s:<n>:<q>` send), where `<n>` is a per-process
-counter mapped to the ask id, because Telegram caps callback data at 64 bytes.
+counter mapped to the ask id, because Telegram caps callback data at 64 bytes. The counter starts at the Unix time,
+so a tap on a button sent before a restart matches no ask and reads "Already answered" instead of answering a new ask
+that took the same number.
 
 When the last question is answered, it calls `agentask.DeliverAnswer(oref, askId, answers)` with
 `[]baseds.AgentAnswerItem` (`SelectedIndexes` for buttons, `Text` for a reply). Passing the ask id makes a stale
 answer to a replaced ask fail instead of answering the new one. It is the same claim-then-deliver path the cockpit,
 the Gatekeeper and the dag lead use (`pkg/agentask/deliver.go:52`), so the answer hook records the lifecycle row and
 publishes the clear; a dag child's ask that went back to the lead is no longer counted, and `DeliverAnswer` refuses
-a claimed one. A delivery error edits the message to "Could not answer — open arcterm" and keeps the buttons off.
+a claimed one. A delivery error edits the message to "Could not answer — open arcterm" and keeps the buttons off, except a refusal
+wrapping `agentask.ErrNoPendingAsk` (answered elsewhere between the tap and the delivery), which edits it to
+"✓ Answered in arcterm".
 
 ### Message text
 
-- Header: the agent's display name from `jarvis.ResolveAskOwner(ctx, jarvis.ChannelOwnerORef(ctx, oref))`
-  (the same name the Needs you row shows, `attention.go:933`), then the project name when there is one.
+- Header: the agent's display name, the source from `jarvis.ResolveAskOwner(ctx, jarvis.ChannelOwnerORef(ctx, oref))`
+  (the same name the Needs you row shows, `attention.go:933`; `agent` when it is empty, as for a standalone agent), then
+  ` · ` and the name of the channel that owns it, when one does.
 - Body: the question's `Header` and `Question`, collapsed to plain text, capped at 1,000 characters. Option previews
   and descriptions are not sent. Sent as plain text (no `parse_mode`), so nothing in a question is interpreted.
 - No transcript, no file contents, no tool input. A held command's card (`Hold`) shows its question text only, which
@@ -118,8 +137,13 @@ a claimed one. A delivery error edits the message to "Could not answer — open 
 
 ### Settings and RPC
 
-New settings in `pkg/wconfig/settingsconfig.go`: `telegram:enabled` (bool), `telegram:chatid` (int64),
-`telegram:chatname` (string). Secret name `telegram_bottoken`.
+New settings in `pkg/wconfig/settingsconfig.go`: `telegram:enabled` (bool), `telegram:chatid` (string: a chat id can
+pass 2^53, which a JSON number does not hold exactly), `telegram:chatname` (string). Secret name `telegram_bottoken`.
+
+All three `telegram:*` keys are machine-local (`machineLocalKeys` in `pkg/wconfig/vaultlayer.go`): never written to the
+vault layer and ignored if found there. The token they go with lives only in this machine's secret store, so a second
+machine that synced `enabled` and `chatid` would poll the same bot without it (or with its own token: a 409 loop between
+the two pollers).
 
 New wshrpc commands (`pkg/wshrpc/wshrpctypes_telegram.go`, then `task generate`):
 
@@ -144,16 +168,21 @@ to "Paired" without a reload.
 | Bad token (401) | Polling stops; row shows "Token rejected by Telegram". |
 | Network down | Backoff to 60 s; row shows the last error; asks are sent once it is back if still pending. |
 | Two arcterm installs on one token | Telegram returns 409 on `getUpdates`; row shows "Another app is polling this bot". |
-| Tap on an answered ask | Edit to "Answered in arcterm", toast "Already answered". |
+| Tap on an answered ask | Edit to "✓ Answered in arcterm", toast "Already answered". |
+| Reply to an answered ask | Bot replies "Already answered." |
 | Delivery fails | Edit to "Could not answer — open arcterm"; the ask stays in the cockpit. |
 
 ## Testing
 
 - Go unit tests with an `httptest` server standing in for the Bot API: pairing, ignoring other chats, grace, send →
   answer → `DeliverAnswer` called with the right items, multi-select, multi-question, gone ask edits, stale callback,
-  401 / 409 handling, token redaction in logs.
+  401 (from `getMe` and from `getUpdates`) / 409 handling, the backlog drop, a plain message's fixed reply, token
+  redaction in logs.
 - vitest for `telegrammodel.ts`.
-- A CDP scenario that opens Settings → General and shows the Telegram row (unpaired state).
+- A CDP scenario that opens Settings → General and walks the Telegram row through every state against a fake Bot API
+  (node, started by the scenario; the Final starts the dev app with `ARC_TELEGRAM_API_BASE` pointing at it): no token,
+  token saved (off), switched on (connecting, then unpaired), Pair (code shown), `/start <code>` through the fake
+  (paired), Unpair, and a 401 (error), with a screenshot of each.
 - Hand check with a real bot: pair, answer by button, answer by reply, answer in the app and see the edit.
 
 ## Cost

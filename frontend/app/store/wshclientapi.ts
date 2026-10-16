@@ -1398,6 +1398,24 @@ export class RpcApiType {
         return client.wshRpcCall("streamdataack", data, opts);
     }
 
+    // command "telegrampair" [call]
+    TelegramPairCommand(client: WshClient, opts?: RpcOpts): Promise<TelegramPairData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "telegrampair", null, opts);
+        return client.wshRpcCall("telegrampair", null, opts);
+    }
+
+    // command "telegramstatus" [call]
+    TelegramStatusCommand(client: WshClient, opts?: RpcOpts): Promise<TelegramStatusData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "telegramstatus", null, opts);
+        return client.wshRpcCall("telegramstatus", null, opts);
+    }
+
+    // command "telegramunpair" [call]
+    TelegramUnpairCommand(client: WshClient, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "telegramunpair", null, opts);
+        return client.wshRpcCall("telegramunpair", null, opts);
+    }
+
     // command "termgetscrollbacklines" [call]
     TermGetScrollbackLinesCommand(client: WshClient, data: CommandTermGetScrollbackLinesData, opts?: RpcOpts): Promise<CommandTermGetScrollbackLinesRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "termgetscrollbacklines", data, opts);
