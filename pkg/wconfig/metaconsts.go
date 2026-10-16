@@ -83,6 +83,7 @@ const (
 
 	ConfigKey_RadarAuditRuntime              = "radar:auditruntime"
 	ConfigKey_RadarAuditModel                = "radar:auditmodel"
+	ConfigKey_RadarClassifyModel             = "radar:classifymodel"
 
 	ConfigKey_UsageInsightsLang              = "usage:insightslang"
 

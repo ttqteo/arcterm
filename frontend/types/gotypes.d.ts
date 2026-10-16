@@ -624,6 +624,11 @@ declare global {
         runid: string;
     };
 
+    // wshrpc.CommandCheckMemoryHygieneData
+    type CommandCheckMemoryHygieneData = {
+        project: string;
+    };
+
     // wshrpc.CommandClaudeAccountAddData
     type CommandClaudeAccountAddData = {
         label: string;
@@ -681,14 +686,6 @@ declare global {
         itemids: string[];
         olderthandays?: number;
         allowguarded?: boolean;
-    // wshrpc.CommandCheckMemoryHygieneData
-    type CommandCheckMemoryHygieneData = {
-        project: string;
-    };
-
-    // wshrpc.CommandClaudeAccountData
-    type CommandClaudeAccountData = {
-        accountuuid: string;
     };
 
     // wshrpc.CommandConsultData
@@ -863,14 +860,16 @@ declare global {
         round?: boolean;
     };
 
-    // wshrpc.CommandDeleteAgentSessionData
-    type CommandDeleteAgentSessionData = {
-        transcriptpath: string;
     // wshrpc.CommandDecideMemoryChangeData
     type CommandDecideMemoryChangeData = {
         project: string;
         changeid: string;
         verdict: string;
+    };
+
+    // wshrpc.CommandDeleteAgentSessionData
+    type CommandDeleteAgentSessionData = {
+        transcriptpath: string;
     };
 
     // wshrpc.CommandDeleteBlockData
@@ -2750,9 +2749,6 @@ declare global {
         diskfree: number;
     };
 
-    // wshrpc.MemoryPressureData
-    type MemoryPressureData = {
-        level: string;
     // wshrpc.MemChange
     type MemChange = {
         id: string;
@@ -2852,6 +2848,11 @@ declare global {
         settingspath: string;
         settingsvalue: string;
         stripharvester: boolean;
+    };
+
+    // wshrpc.MemoryPressureData
+    type MemoryPressureData = {
+        level: string;
     };
 
     // waveobj.MetaTSType
@@ -3644,6 +3645,7 @@ declare global {
         "agents:sleepaftermin"?: number;
         "radar:auditruntime"?: string;
         "radar:auditmodel"?: string;
+        "radar:classifymodel"?: string;
         "usage:insightslang"?: string;
         "tokengate:*"?: boolean;
         "tokengate:enabled"?: boolean;
@@ -3659,7 +3661,6 @@ declare global {
         "runs:wakeorigin"?: boolean;
         "power:*"?: boolean;
         "power:keepawake"?: boolean;
-        "radar:classifymodel"?: string;
     };
 
     // wshrpc.ShippedItem

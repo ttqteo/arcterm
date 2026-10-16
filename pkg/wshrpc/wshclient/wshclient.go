@@ -213,6 +213,12 @@ func CanvasServeCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (s
 	return resp, err
 }
 
+// command "checkmemoryhygiene", wshserver.CheckMemoryHygieneCommand
+func CheckMemoryHygieneCommand(w *wshutil.WshRpc, data wshrpc.CommandCheckMemoryHygieneData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "checkmemoryhygiene", data, opts)
+	return err
+}
+
 // command "claudeaccountadd", wshserver.ClaudeAccountAddCommand
 func ClaudeAccountAddCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAccountAddData, opts *wshrpc.RpcOpts) (*wshrpc.ClaudeAccountData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.ClaudeAccountData](w, "claudeaccountadd", data, opts)
@@ -223,10 +229,6 @@ func ClaudeAccountAddCommand(w *wshutil.WshRpc, data wshrpc.CommandClaudeAccount
 func ClaudeAccountListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandClaudeAccountListRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandClaudeAccountListRtnData](w, "claudeaccountlist", nil, opts)
 	return resp, err
-// command "checkmemoryhygiene", wshserver.CheckMemoryHygieneCommand
-func CheckMemoryHygieneCommand(w *wshutil.WshRpc, data wshrpc.CommandCheckMemoryHygieneData, opts *wshrpc.RpcOpts) error {
-	_, err := sendRpcRequestCallHelper[any](w, "checkmemoryhygiene", data, opts)
-	return err
 }
 
 // command "claudeaccountremove", wshserver.ClaudeAccountRemoveCommand
@@ -378,14 +380,16 @@ func DagSubmitCommand(w *wshutil.WshRpc, data wshrpc.CommandDagSubmitData, opts 
 	return resp, err
 }
 
-// command "deleteagentsession", wshserver.DeleteAgentSessionCommand
-func DeleteAgentSessionCommand(w *wshutil.WshRpc, data wshrpc.CommandDeleteAgentSessionData, opts *wshrpc.RpcOpts) error {
-	_, err := sendRpcRequestCallHelper[any](w, "deleteagentsession", data, opts)
-	return err
 // command "decidememorychange", wshserver.DecideMemoryChangeCommand
 func DecideMemoryChangeCommand(w *wshutil.WshRpc, data wshrpc.CommandDecideMemoryChangeData, opts *wshrpc.RpcOpts) (*wshrpc.MemHygieneProject, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.MemHygieneProject](w, "decidememorychange", data, opts)
 	return resp, err
+}
+
+// command "deleteagentsession", wshserver.DeleteAgentSessionCommand
+func DeleteAgentSessionCommand(w *wshutil.WshRpc, data wshrpc.CommandDeleteAgentSessionData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "deleteagentsession", data, opts)
+	return err
 }
 
 // command "deleteblock", wshserver.DeleteBlockCommand
