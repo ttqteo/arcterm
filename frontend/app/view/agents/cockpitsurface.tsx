@@ -97,7 +97,7 @@ import {
     type DialogInput,
     type DialogItemId,
 } from "./officedialogmodel";
-import { boardCall, boardItems, boardPage, boardTabs, boardWords } from "./officeboardmodel";
+import { boardCall, boardEmptyItems, boardItems, boardPage, boardTabs, boardWords } from "./officeboardmodel";
 import { BOARD_KEY, LIFT_KEY } from "./officeplanmodel";
 import { useNeedsYou } from "./needsyou";
 import type { StripRow } from "./needsyoustripmodel";
@@ -105,6 +105,7 @@ import {
     AgentDialogBody,
     AgentPlate,
     BoardDialogBody,
+    BoardEmptyBody,
     BoardPlate,
     ChipBody,
     ChipPlate,
@@ -660,10 +661,18 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         };
     };
 
-    // what a ▶ item does on the notice board: boardCall says which of the strip's handlers (useNeedsYou) it runs
-    const runBoardItem = (row: StripRow, id: DialogItemId) => {
+    // what a ▶ item does on the notice board: boardCall says which of the strip's handlers (useNeedsYou) it runs; the
+    // empty board has no row, and its OK goes back to walking
+    const runBoardItem = (row: StripRow | undefined, id: DialogItemId) => {
         const call = boardCall(row, id);
         if (!call) {
+            return;
+        }
+        if (call.kind === "close") {
+            officeRef.current?.back();
+            return;
+        }
+        if (!row) {
             return;
         }
         switch (call.kind) {
@@ -682,11 +691,18 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         }
     };
 
-    // the notice board's box: the page in view of the Needs you rows (none left: no box)
-    const boardDialog = (): OfficeDialogVM | null => {
+    // the notice board's box: the page in view of the Needs you rows, or with none a page that says so
+    const boardDialog = (): OfficeDialogVM => {
         const page = boardPage(boardPageAt, ny.rows.length);
         if (page < 0) {
-            return null;
+            return {
+                kind: "board",
+                label: "Notice board",
+                items: boardEmptyItems(),
+                plate: <BoardPlate count={0} />,
+                body: <BoardEmptyBody />,
+                run: (id) => runBoardItem(undefined, id),
+            };
         }
         const row = ny.rows[page];
         const words = boardWords(row, boardWhyOpen);

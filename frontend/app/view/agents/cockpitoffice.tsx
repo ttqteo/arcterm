@@ -1642,10 +1642,14 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         },
     });
 
-    // the last row gone while the board's box is up: dialogFor has no page then, so the box is not drawn; the layer goes
-    // back to walking so the next ↵ is a fresh talk
-    useEffect(() => {
-        if (props.boardRows === 0 && cursorId === BOARD_KEY && globalStore.get(layerAtom) === "dialog") {
+    // the last row gone while the board's box is up: the box closes rather than turning to the empty board's page, and
+    // the layer goes back to walking so the next ↵ is a fresh talk. Only as the count falls to 0: the empty board opened
+    // on purpose stays open. Before paint, so that page never shows for a frame
+    const boardRowsWas = useRef(props.boardRows);
+    useLayoutEffect(() => {
+        const was = boardRowsWas.current;
+        boardRowsWas.current = props.boardRows;
+        if (was > 0 && props.boardRows === 0 && cursorId === BOARD_KEY && globalStore.get(layerAtom) === "dialog") {
             globalStore.set(layerAtom, "walk");
         }
     }, [props.boardRows, cursorId]);
@@ -2019,7 +2023,6 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                             plan={plan}
                             cursorId={cursorId}
                             renderCard={renderCard}
-                            boardRows={props.boardRows}
                             onTalk={() => handleRef.current?.talk()}
                         />
                         <CarryLayer plan={plan} />
@@ -2391,7 +2394,7 @@ const NoticeBoard = memo(function NoticeBoard(p: {
             <button
                 type="button"
                 data-office-board=""
-                title={rows > 0 ? `${label} (Space reads it)` : label}
+                title={`${label} (Space reads it)`}
                 aria-label={label}
                 onClick={() => onPick(BOARD_KEY)}
                 className="absolute z-[3] cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -3365,13 +3368,11 @@ function OfficePopup({
     plan,
     cursorId,
     renderCard,
-    boardRows,
     onTalk,
 }: {
     plan: Plan;
     cursorId?: string;
     renderCard: (key: string, opts?: { adjust?: boolean }) => ReactNode;
-    boardRows: number;
     onTalk: () => void;
 }) {
     // the boss's look, not its spot: a walk step does not re-render the card
@@ -3394,8 +3395,8 @@ function OfficePopup({
               ? renderCard(chipCard.id, { adjust })
               : null;
     const kind = at ? (at.desk ? "agent" : "run") : (chipCard?.kind ?? "run");
-    // the board offers "Space Read" while the boss stands still at it and rows wait
-    const readBoard = found?.board === true && boardRows > 0 && layer === "walk";
+    // the board offers "Space Read" while the boss stands still at it, with rows waiting or none
+    const readBoard = found?.board === true && layer === "walk";
     probe.popup = card && open ? kind : "";
     // the Space prompt shows only while walking: the dialog box hides it
     probe.prompt = readBoard ? "board" : at && card && layer === "walk" ? kind : "";

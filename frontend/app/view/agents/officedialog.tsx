@@ -513,13 +513,34 @@ export function WorkerDialogBody({
     );
 }
 
-/** The notice board's plate: the asking dot, its name and how many rows wait on the person. */
+/** The notice board's plate: the asking dot, its name and how many rows wait on the person; with none, a quiet dot. */
 export function BoardPlate({ count }: { count: number }) {
     return (
         <>
-            <span aria-hidden className="size-[7px] shrink-0 rounded-full bg-asking" />
+            <span
+                aria-hidden
+                className={cn("size-[7px] shrink-0 rounded-full", count > 0 ? "bg-asking" : "bg-ink-faint")}
+            />
             <b className="min-w-0 truncate text-[13.5px] font-semibold text-primary">Notice board</b>
-            <span className="shrink-0 text-[11.5px] font-semibold tabular-nums text-warning">Needs you · {count}</span>
+            {count > 0 ? (
+                <span className="shrink-0 text-[11.5px] font-semibold tabular-nums text-warning">
+                    Needs you · {count}
+                </span>
+            ) : null}
+        </>
+    );
+}
+
+/** The notice board with nothing on it: that nothing waits, and what it holds when something does. */
+export function BoardEmptyBody() {
+    return (
+        <>
+            <p data-office-board-empty="" className="m-0 text-[17px] font-semibold leading-6 text-primary">
+                Nothing is waiting on you.
+            </p>
+            <p className="m-0 text-[14.5px] leading-[22px] text-secondary">
+                Plans to review, runs to land, due chunks and learned rules are pinned here when they come.
+            </p>
         </>
     );
 }

@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { AttentionRunRow } from "@/app/view/jarvis/attentionrun";
 import type { StripRow } from "./needsyoustripmodel";
-import { boardCall, boardItems, boardPage, boardTabs, boardWords } from "./officeboardmodel";
+import { boardCall, boardEmptyItems, boardItems, boardPage, boardTabs, boardWords } from "./officeboardmodel";
 
 const row = (over: Partial<StripRow> = {}): StripRow => ({
     key: "k1",
@@ -58,6 +58,12 @@ describe("boardItems", () => {
     });
 });
 
+describe("boardEmptyItems", () => {
+    it("is OK alone, for the board with nothing on it", () => {
+        expect(boardEmptyItems().map((i) => [i.id, i.label])).toEqual([["board:ok", "OK"]]);
+    });
+});
+
 describe("boardPage", () => {
     it("clamps the page to the rows there are", () => {
         expect(boardPage(5, 3)).toBe(2);
@@ -108,5 +114,11 @@ describe("boardCall", () => {
     it("is null for a second act the row lacks and for another desk's item", () => {
         expect(boardCall(row({}), "board:act2")).toBeNull();
         expect(boardCall(row({}), "reply")).toBeNull();
+    });
+    it("closes the box on OK, with a row or none; with none every row's item is null", () => {
+        expect(boardCall(row({}), "board:ok")).toEqual({ kind: "close" });
+        expect(boardCall(undefined, "board:ok")).toEqual({ kind: "close" });
+        expect(boardCall(undefined, "board:act")).toBeNull();
+        expect(boardCall(undefined, "board:accept")).toBeNull();
     });
 });

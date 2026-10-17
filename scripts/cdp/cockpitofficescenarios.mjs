@@ -2256,7 +2256,8 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ back7, open8: open8?.dialog, dialog: p?.dialog, layer: p?.layer, cursor: p?.cursor, boss: p?.boss, spot: p?.board?.spot, empty, bubbles: [bubblesWaiting, await bubbles()] })
             );
 
-            // 8b. with no rows the boss still walks up to the quiet board and the cursor stays on it: no jump to a desk
+            // 8b. with no rows the boss still walks up to the quiet board and the cursor stays on it, Space Read offered: no
+            // jump to a desk
             await clickDesk("fx-office-quill");
             const spot = (await probe(h))?.board?.spot;
             if (spot) await clickFloor(spot.x, spot.y);
@@ -2265,7 +2266,7 @@ export function makeCockpitOfficeScenarios(fx) {
             const still = await probe(h);
             await h.shot("cdp-shots/office-needs-you-board-8b-quiet.png");
             rec(
-                "8b. with no rows waiting the boss walks up to the board and the cursor stays on it, the boss where it stopped: no jump to a desk, nothing offered",
+                "8b. with no rows waiting the boss walks up to the board and the cursor stays on it, the boss where it stopped: no jump to a desk, Space Read offered",
                 spot != null &&
                     atSpot(p) &&
                     p.cursor === BOARD_KEY &&
@@ -2273,9 +2274,43 @@ export function makeCockpitOfficeScenarios(fx) {
                     still.boss.x === p.boss.x &&
                     still.boss.y === p.boss.y &&
                     still.cursor === BOARD_KEY &&
-                    still.prompt === "" &&
+                    still.prompt === "board" &&
                     still.dialog === "",
                 JSON.stringify({ spot, stopped: [p?.cursor, p?.boss], later: [still?.cursor, still?.boss, still?.prompt, still?.dialog] })
+            );
+
+            // 8b2. ↵ at the empty board opens its one page: Nothing is waiting on you, OK alone, no count on the plate; ↵ on
+            // OK walks again. The office menu's Notice board opens it too
+            p = await press("Enter");
+            const emptyPage = {
+                dialog: p?.dialog,
+                items: p?.items,
+                words: await read('[data-office-dialog="board"] [data-office-board-empty]'),
+                box: await read('[data-office-dialog="board"]'),
+            };
+            await h.shot("cdp-shots/office-needs-you-board-8b-empty.png");
+            p = await press("Enter");
+            const okShut = { dialog: p?.dialog, layer: p?.layer, prompt: p?.prompt };
+            await clickDesk("fx-office-quill");
+            await press("m");
+            await press("ArrowDown");
+            await press("Enter");
+            p = await settleBoss(h);
+            const viaMenu = { dialog: p?.dialog, items: p?.items, spot: atSpot(p) };
+            await press("Escape");
+            rec(
+                "8b2. ↵ at the empty board opens its page, Nothing is waiting on you with OK alone and no Needs you count; ↵ on OK walks again; the office menu's Notice board opens it as well",
+                emptyPage.dialog === "board" &&
+                    JSON.stringify(emptyPage.items) === JSON.stringify(["OK"]) &&
+                    emptyPage.words.includes("Nothing is waiting on you") &&
+                    !emptyPage.box.includes("Needs you") &&
+                    okShut.dialog === "" &&
+                    okShut.layer === "walk" &&
+                    okShut.prompt === "board" &&
+                    viaMenu.dialog === "board" &&
+                    JSON.stringify(viaMenu.items) === JSON.stringify(["OK"]) &&
+                    viaMenu.spot,
+                JSON.stringify({ emptyPage, okShut, viaMenu })
             );
 
             // 8c. four rows: three slips at most, the count says four, and the box has four pages

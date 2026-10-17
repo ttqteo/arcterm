@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Office's notice board, as the dialog box shows it (spec docs/superpowers/specs/2026-10-16-office-needs-you-board-
-// design.md; canvas .superpowers/design/office-needs-you-board: Dialog). One page per Needs you row: this turns a
-// StripRow into the ▶ menu's items, the box's words and the page tabs, and says which of the strip's handlers each
-// item runs. Pure: no React, no Wave runtime imports. cockpitsurface.tsx only switches on boardCall.
+// design.md; canvas .superpowers/design/office-needs-you-board: Dialog). One page per Needs you row, and with none a
+// page that says so: this turns a StripRow into the ▶ menu's items, the box's words and the page tabs, and says which of
+// the strip's handlers each item runs. Pure: no React, no Wave runtime imports. cockpitsurface.tsx only switches on
+// boardCall.
 
 import type { AttentionAct } from "@/app/view/jarvis/attentionact";
 import type { StripRow } from "./needsyoustripmodel";
 import type { DialogItem, DialogItemId, QuestionTabs } from "./officedialogmodel";
 
-export type BoardAct = "act" | "act2" | "open" | "accept" | "dismiss" | "why";
+export type BoardAct = "act" | "act2" | "open" | "accept" | "dismiss" | "why" | "ok";
 
 /** Pure: the ▶ menu of one page: the strip's buttons for its row, in their order. A learned rule is Accept, Dismiss
  *  and Why (its words) behind a rule; Edit needs typing, which the box has no place for, so it stays in Cards. */
@@ -34,6 +35,11 @@ export function boardItems(row: StripRow, whyOpen: boolean, busy = false): Dialo
         }
     }
     return busy ? items.map((it) => ({ ...it, dim: true })) : items;
+}
+
+/** Pure: the ▶ menu of the board with no row on it: OK, which goes back to walking. */
+export function boardEmptyItems(): DialogItem[] {
+    return [{ id: "board:ok", label: "OK" }];
 }
 
 /** Pure: the page in range, -1 with no rows. */
@@ -70,11 +76,19 @@ export type BoardCall =
     | { kind: "act"; act: AttentionAct }
     | { kind: "open" }
     | { kind: "learn"; accept: boolean }
-    | { kind: "why" };
+    | { kind: "why" }
+    | { kind: "close" };
 
 /** Pure: which strip handler a ▶ item runs; null for an item that is not the board's, or a second act the row lacks.
- *  The Cockpit surface only switches on it, so what each item does is pinned here. */
-export function boardCall(row: StripRow, id: DialogItemId): BoardCall | null {
+ *  The empty board has no row: only its OK runs then. The Cockpit surface only switches on it, so what each item does is
+ *  pinned here. */
+export function boardCall(row: StripRow | undefined, id: DialogItemId): BoardCall | null {
+    if (id === "board:ok") {
+        return { kind: "close" };
+    }
+    if (row == null) {
+        return null;
+    }
     switch (id) {
         case "board:act":
             return { kind: "act", act: row.act };
