@@ -64,6 +64,9 @@ const (
 	PressureCritical                 // nothing starts: the machine is about to stall
 )
 
+// the log's word for each Pressure
+var pressureNames = [...]string{PressureUnknown: "unknown", PressureNormal: "normal", PressureWarn: "warn", PressureCritical: "critical"}
+
 // the reasons a queued job waits on the pressure, as the cockpit shows them
 const (
 	ReasonPressureHigh     = "memory pressure high, one at a time"
@@ -375,6 +378,8 @@ func (q *Queue) evaluate(ctx context.Context) {
 				e.Position = 0
 				e.Reason = ""
 				close(e.admitted)
+				log.Printf("[jobqueue] started %s (%s, block %q run %q), mode %s, pressure %s, %s free", e.Id, e.Name,
+					e.Source.BlockId, e.Source.RunId, mode, pressureNames[pressure], memgate.FormatGB(available))
 			}
 		}
 	}

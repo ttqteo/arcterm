@@ -74,6 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A Claude agent's heavy commands (a build, the typecheck, a whole test suite) wait their turn in the job queue
+  again, so two agents no longer run the typecheck at once and push a small Mac deep into swap.
 - The menu bar popover opens at once instead of after a half-second to two-second wait: it loads while the pointer
   reaches the icon and stays ready between opens. At critical memory pressure it gives its memory back and loads
   again on the next open.

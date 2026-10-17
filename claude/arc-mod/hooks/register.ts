@@ -445,12 +445,12 @@ export const register: Register = (on) => {
     // refused in code: a prompt's rule is one the model can talk itself out of
     on("tool.call", { tool: "Bash" }, async ($, e, next) => {
         const why = await refusal($, e.command, e.run_in_background);
-        return why === null ? next(e) : { deny: why };
+        return why === null ? withJobSlot($, e.command, () => next(e)) : { deny: why };
     });
 
     on("tool.call", { tool: "PowerShell" }, async ($, e, next) => {
         const why = await refusal($, e.command, e.run_in_background);
-        return why === null ? next(e) : { deny: why };
+        return why === null ? withJobSlot($, e.command, () => next(e)) : { deny: why };
     });
 
     // a costly spawn waits on the person's card; refused in code, as the shell is. always runs outside arcterm
