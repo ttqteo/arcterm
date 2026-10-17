@@ -442,12 +442,16 @@ func getTermSize(bdata *waveobj.Block) waveobj.TermSize {
 	}
 }
 
+// HandleAppendBlockFile stores data and publishes it to the block's live subscribers. The publish happens even
+// when the store append fails (a slow sqlite reload can outlast DefaultTimeout under load): the chunk is then
+// missing from the scrollback, but dropping it from the live terminal too would lose it everywhere. The store
+// error is still returned, so a non-nil error does not mean nothing was published.
 func HandleAppendBlockFile(blockId string, blockFile string, data []byte) error {
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancelFn()
-	err := filestore.WFS.AppendData(ctx, blockId, blockFile, data)
-	if err != nil {
-		return fmt.Errorf("error appending to blockfile: %w", err)
+	var rtnErr error
+	if err := filestore.WFS.AppendData(ctx, blockId, blockFile, data); err != nil {
+		rtnErr = fmt.Errorf("error appending to blockfile %s:%s (chunk published, not stored): %w", blockId, blockFile, err)
 	}
 	if blockFile == wavebase.BlockFile_Term {
 		recordAndMaybePublishOutput(blockId, time.Now().UnixMilli())
@@ -464,7 +468,7 @@ func HandleAppendBlockFile(blockId string, blockFile string, data []byte) error 
 			Data64:   base64.StdEncoding.EncodeToString(data),
 		},
 	})
-	return nil
+	return rtnErr
 }
 
 func HandleTruncateBlockFile(blockId string) error {

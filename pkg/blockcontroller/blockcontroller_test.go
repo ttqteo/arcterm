@@ -4,11 +4,16 @@
 package blockcontroller
 
 import (
+	"encoding/base64"
 	"errors"
+	"os"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/filestore"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 )
@@ -238,5 +243,76 @@ func TestAResizeToTheStartSizeIsNotResent(t *testing.T) {
 	sc.attachInputCh(ch, size)
 	if len(ch) != 0 {
 		t.Errorf("a process started at the held size was resized again: %+v", <-ch)
+	}
+}
+
+type captureClient struct {
+	mu     sync.Mutex
+	events []wps.WaveEvent
+}
+
+func (c *captureClient) SendEvent(_ string, event wps.WaveEvent) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.events = append(c.events, event)
+}
+
+// A store append can fail under load (the filestore's reload from sqlite outlasts DefaultTimeout). The chunk must
+// still reach the live terminal, and the store error must still reach the caller.
+func TestFailedAppendStillPublishesChunk(t *testing.T) {
+	dir, err := os.MkdirTemp("", "blockcontroller-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedDataHome := wavebase.DataHome_VarCache
+	wavebase.DataHome_VarCache = dir
+	t.Cleanup(func() {
+		wavebase.DataHome_VarCache = savedDataHome
+		// the filestore keeps its db open for the process, so windows refuses to delete it here
+		if err := os.RemoveAll(dir); err != nil {
+			t.Logf("leaving temp dir %s: %v", dir, err)
+		}
+	})
+	if err := wavebase.EnsureWaveDBDir(); err != nil {
+		t.Fatal(err)
+	}
+	if err := filestore.InitFilestore(); err != nil {
+		t.Fatal(err)
+	}
+
+	cc := &captureClient{}
+	prevClient := wps.Broker.GetClient()
+	wps.Broker.SetClient(cc)
+	t.Cleanup(func() { wps.Broker.SetClient(prevClient) })
+	const subscriber = "failed-append-publish"
+	wps.Broker.Subscribe(subscriber, wps.SubscriptionRequest{Event: wps.Event_BlockFile, AllScopes: true})
+	t.Cleanup(func() { wps.Broker.Unsubscribe(subscriber, wps.Event_BlockFile) })
+
+	// no term file was ever made for this block, so the store append fails
+	const blockId = "failed-append-block"
+	chunk := []byte("output the store could not keep\r\n")
+	err = HandleAppendBlockFile(blockId, wavebase.BlockFile_Term, chunk)
+	if err == nil {
+		t.Fatal("an append to a missing file must return the store error")
+	}
+
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	if len(cc.events) != 1 {
+		t.Fatalf("published %d events, want 1", len(cc.events))
+	}
+	ev := cc.events[0]
+	if !ev.HasScope(waveobj.MakeORef(waveobj.OType_Block, blockId).String()) {
+		t.Errorf("scopes = %v, want the block's oref", ev.Scopes)
+	}
+	data, ok := ev.Data.(*wps.WSFileEventData)
+	if !ok {
+		t.Fatalf("data type = %T, want *wps.WSFileEventData", ev.Data)
+	}
+	if data.FileOp != wps.FileOp_Append || data.FileName != wavebase.BlockFile_Term || data.ZoneId != blockId {
+		t.Errorf("data = %#v, want an append to the block's term file", data)
+	}
+	if data.Data64 != base64.StdEncoding.EncodeToString(chunk) {
+		t.Errorf("published data64 = %q, want the chunk", data.Data64)
 	}
 }
