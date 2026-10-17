@@ -2753,6 +2753,8 @@ declare global {
         memavailable: number;
         pressure: string;
         cpupct?: number;
+        swaptotal: number;
+        swapused: number;
         diskname: string;
         disktotal: number;
         diskfree: number;

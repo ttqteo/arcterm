@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoCleanLine, cpuLoad, fmtDisk, fmtSize, levelWord, pageState, split } from "./trayformat";
+import { autoCleanLine, cpuLoad, fmtDisk, fmtSize, levelWord, pageState, split, swapUsed } from "./trayformat";
 
 const MIB = 1024 * 1024;
 const GIB = 1024 * MIB;
@@ -33,6 +33,14 @@ describe("the memory card's words", () => {
         expect(levelWord("high")).toBe("High");
         expect(levelWord("critical")).toBe("Critical");
         expect(levelWord("unknown")).toBeNull();
+    });
+});
+
+describe("swapUsed", () => {
+    it("reads the swap in use, and none with no swap file", () => {
+        expect(swapUsed(6.3 * GIB, 7 * GIB)).toBe("6.3 GB");
+        expect(swapUsed(0, 2 * GIB)).toBe("0 MB");
+        expect(swapUsed(0, 0)).toBe("none");
     });
 });
 

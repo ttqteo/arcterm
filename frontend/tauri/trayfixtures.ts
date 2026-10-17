@@ -23,6 +23,8 @@ const main: TraySnapshot = {
         memAvailable: 1.2 * GB,
         pressure: "high",
         cpuPct: 38,
+        swapTotal: 4 * GB,
+        swapUsed: 2.6 * GB,
         diskName: "Macintosh HD",
         diskTotal: 245 * GB,
         diskFree: 127 * GB,
@@ -155,6 +157,8 @@ const quiet: TraySnapshot = {
         pressure: "normal",
         memAvailable: 9.4 * GB,
         cpuPct: 6,
+        swapTotal: 0,
+        swapUsed: 0,
         diskFree: 131 * GB,
     },
     storage: { ...main.storage!, arcBytes: 12.1 * GB, cleanableBytes: 0.3 * GB },
@@ -221,6 +225,9 @@ const windows: TraySnapshot = {
         // what a 32 GB PC reports: the figure that once ran past the Memory card's edge
         memTotal: 31.8 * GB,
         memAvailable: 12.4 * GB,
+        // the widest swap figure the line beside Free up must hold whole
+        swapTotal: 19 * GB,
+        swapUsed: 12.4 * GB,
         diskName: "Local Disk (C:)",
         diskTotal: 476 * GB,
         diskFree: 312 * GB,

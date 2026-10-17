@@ -88,6 +88,8 @@ type Stats struct {
 	MemAvailable uint64
 	Pressure     string
 	CpuPct       *float64 // the last second's busy percent, nil before RunCPU's first reading
+	SwapTotal    uint64   // the swap files' size on macOS, the paging file's on Windows; never in MemTotal
+	SwapUsed     uint64
 	DiskName     string
 	DiskTotal    uint64
 	DiskFree     uint64
@@ -107,6 +109,10 @@ func Read(ctx context.Context) (Stats, error) {
 	}
 	if v, ok := cpuLatest.Get(); ok {
 		st.CpuPct = &v
+	}
+	// on macOS one sysctl (vm.swapusage)
+	if sw, err := mem.SwapMemoryWithContext(ctx); err == nil {
+		st.SwapTotal, st.SwapUsed = sw.Total, sw.Used
 	}
 	if du, err := disk.UsageWithContext(ctx, systemRoot()); err == nil {
 		st.DiskTotal, st.DiskFree = du.Total, du.Free

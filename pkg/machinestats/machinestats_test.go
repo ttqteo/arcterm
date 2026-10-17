@@ -117,6 +117,10 @@ func TestReadReturnsMemoryAndDisk(t *testing.T) {
 	if st.MemTotal == 0 || st.MemAvailable == 0 || st.MemAvailable > st.MemTotal {
 		t.Fatalf("memory %d of %d", st.MemAvailable, st.MemTotal)
 	}
+	// a Mac with no swap file yet has none of either
+	if st.SwapUsed > st.SwapTotal {
+		t.Fatalf("swap %d used of %d", st.SwapUsed, st.SwapTotal)
+	}
 	if st.DiskTotal == 0 || st.DiskFree > st.DiskTotal {
 		t.Fatalf("disk %d of %d", st.DiskFree, st.DiskTotal)
 	}

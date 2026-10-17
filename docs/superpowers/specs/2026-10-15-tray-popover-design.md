@@ -118,6 +118,8 @@ So it is the popover's only source:
   - the memory pressure level (`jobqueue.ReadPressure`: Activity Monitor's on macOS, the commit charge on Windows;
     unknown elsewhere);
   - the CPU's load over the last second, none before wavesrv's first reading;
+  - swap total and used (gopsutil `mem.SwapMemory`: `vm.swapusage` on macOS, the paging file on Windows), never
+    counted in the memory total;
   - the system volume's total and free bytes, and its name. The name is read once: the root volume's name on macOS
     (Macintosh HD unless renamed), `Local Disk (C:)` or the drive's label on Windows.
   - CPU is read once a second from wavesrv's start (`machinestats.RunCPU`). **Changed 2026-10-17:** it was sampled
@@ -164,6 +166,9 @@ Copy and order follow the boards. The rules behind them:
     no reading there is no word.
   - One line under it: "1.2 GB free of 16 GB". **Changed 2026-10-17:** the big figure, the bar and the queue's
     caption went, for the one-line cards of a system menu bar app; Heavy jobs already says why a job waits.
+  - Beside Free up: "Swap: 6.3 GB" in use, or "Swap: none" before a Mac's first swap file (added 2026-10-17); a
+    "used" after it is cut short in the half card. On a full
+    Mac the swap, not the free figure, is what makes everything slow.
   - **Free up** opens the subpage.
 - **CPU card:** one line, "Load: 38%", the last second's. The minute's line went with the memory card's bar
   (2026-10-17); Activity Monitor has the history.

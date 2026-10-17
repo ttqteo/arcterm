@@ -24,6 +24,8 @@ func (ws *WshServer) GetMachineStatsCommand(ctx context.Context) (*wshrpc.Machin
 		MemAvailable: st.MemAvailable,
 		Pressure:     st.Pressure,
 		CpuPct:       st.CpuPct,
+		SwapTotal:    st.SwapTotal,
+		SwapUsed:     st.SwapUsed,
 		DiskName:     st.DiskName,
 		DiskTotal:    st.DiskTotal,
 		DiskFree:     st.DiskFree,

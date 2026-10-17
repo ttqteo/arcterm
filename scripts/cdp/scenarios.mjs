@@ -45004,7 +45004,10 @@ async function onTrayPage(h, fixture, fn) {
 const TRAY_READ = `(() => {
     const p = document.querySelector('[data-tray-page]');
     const spill = [...document.querySelectorAll('[data-tray-card]')].filter((c) => c.scrollWidth > c.clientWidth).map((c) => c.getAttribute('data-tray-card'));
-    return { page: p?.getAttribute('data-tray-page') ?? null, width: p ? Math.round(p.getBoundingClientRect().width) : 0, text: p?.innerText ?? '', spill };
+    // innerText keeps a truncated line whole, so the swap line beside Free up is measured itself
+    const swap = document.querySelector('[data-tray-swap]');
+    const swapCut = swap != null && swap.scrollWidth > swap.clientWidth;
+    return { page: p?.getAttribute('data-tray-page') ?? null, width: p ? Math.round(p.getBoundingClientRect().width) : 0, text: p?.innerText ?? '', spill, swapCut };
 })()`;
 
 function trayScenario(name, fixture, page, checks) {
@@ -45020,9 +45023,10 @@ function trayScenario(name, fixture, page, checks) {
                 const steps = [
                     { step: `1. tray.html?fixture=${fixture} draws its ${page} page, 360 px wide`, ok: r.page === page && r.width === 360, detail: `page=${r.page} width=${r.width}` },
                     { step: "2. no card's text runs past its edge", ok: r.spill.length === 0, detail: `spill=${r.spill.join(",") || "none"}` },
+                    { step: "3. the swap line beside Free up is not cut short", ok: !r.swapCut, detail: r.swapCut ? "truncated" : "whole" },
                 ];
                 checks.forEach(([label, want], i) =>
-                    steps.push({ step: `${i + 3}. ${label}`, ok: r.text.includes(want), detail: want })
+                    steps.push({ step: `${i + 4}. ${label}`, ok: r.text.includes(want), detail: want })
                 );
                 await h.shot(`cdp-shots/${name}-popover.png`);
                 return steps;
@@ -45036,6 +45040,7 @@ const trayMain = trayScenario("tray-main", "main", "main", [
     ["memory pressure reads High", "High"],
     ["memory reads its free figure on one line", "1.2 GB free of 16 GB"],
     ["the CPU card reads its load on one line", "Load: 38%"],
+    ["memory shows the swap in use", "Swap: 2.6 GB"],
     ["the queued job offers Run now and Skip", "Run now"],
     ["Storage names the disk", "Macintosh HD"],
     ["four items wait on you", "Waiting on you"],
@@ -45056,6 +45061,7 @@ const trayStorage = trayScenario("tray-storage", "storage", "storage", [
 ]);
 const trayQuiet = trayScenario("tray-quiet", "quiet", "main", [
     ["memory pressure reads Normal", "Normal"],
+    ["a Mac with no swap file reads none", "Swap: none"],
     ["no heavy jobs", "No heavy jobs running."],
     ["nothing waits", "Nothing is waiting on you."],
 ]);
@@ -45078,6 +45084,7 @@ const trayOffline = trayScenario("tray-offline", "offline", "offline", [
 const trayWindows = trayScenario("tray-windows", "windows", "main", [
     ["the disk is Local Disk (C:)", "Local Disk (C:)"],
     ["memory is out of 31.8 GB, a total wider than the half card", "free of 31.8 GB"],
+    ["the widest swap figure shows", "Swap: 12.4 GB"],
 ]);
 
 const trayActions = {

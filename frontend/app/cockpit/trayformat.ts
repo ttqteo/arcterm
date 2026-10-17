@@ -43,6 +43,11 @@ export function levelWord(level: TrayLevel): string | null {
     }
 }
 
+/** The memory card's swap in use, in memory's units; "none" with no swap file (a Mac before its first swap). */
+export function swapUsed(used: number, total: number): string {
+    return total <= 0 ? "none" : fmtSize(used);
+}
+
 /** The CPU card's load: the last second's, whole-machine, a dash before wavesrv's first reading. */
 export function cpuLoad(pct: number | null): string {
     return pct == null ? "—" : `${Math.round(pct)}%`;

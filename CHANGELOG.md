@@ -40,8 +40,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
-- The menu bar popover's Memory and CPU cards are one line each ("1.2 GB free of 16 GB", "Load: 38%"). CPU shows
-  the right load the moment it opens, instead of 0% or the figure from the last time you opened it.
+- The menu bar popover's Memory and CPU cards are one line each ("1.2 GB free of 16 GB", "Load: 38%"), and Memory
+  shows the swap in use. CPU shows the right load the moment it opens, instead of 0% or the figure from the last
+  time you opened it.
 - On a Mac, a float's title bar ends in a − button in place of the pet's: it hides the window and leaves the agent
   running, and the Dock icon brings it back. `Cmd`+`M` and the yellow button still fold it into your pet.
 - Folded into the bottom-right corner, your pet sits higher, clear of the chat or help button a page keeps there
@@ -60,6 +61,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - `Space` is the Office's action key: it talks at a desk, picks the ▶ item in a dialog box, rides the lift and puts a
   carried room down. `Enter` still works.
 - The Office's boss is as tall as the people working there; it was drawn smaller than them.
+- The Office's notice board opens when nothing waits on you too: walk up and press `Space`, click it, or pick Notice
+  board in the office menu, and it says nothing is waiting.
 - The Office's sounds are softer: the shrill top of the chiptune is filtered off and the whole mix is a little quieter.
 - An Office dialog box's menu drops Terminal, which did what Open does, offers Diff to open the agent's changed files
   while its box shows them, and calls Background "Send to background".
@@ -89,6 +92,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   no "No agents running" panel over the rooms. The Cards view keeps both.
 - The Office's boss stops with its whole body against a wall, instead of walking half through it into the next room or
   with its head over the top of the building.
+- In the Office the coffee machine, the plants and the notice board hide the boss and anyone walking behind them,
+  instead of the boss being drawn on top of them.
 - A click in the Office, or a jump to a desk, walks the boss round the desks, tables and the sofa instead of through
   them, and so do the people walking to the lounge.
 - The plant in an Office room no longer stands in its doorway, where it stopped the boss walking in: it now stands at

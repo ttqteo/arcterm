@@ -17,6 +17,7 @@ import {
     LEVEL_TEXT,
     levelWord,
     split,
+    swapUsed,
     USAGE_BAR,
     USAGE_TEXT,
 } from "./trayformat";
@@ -96,7 +97,24 @@ function MemoryCard({ s, onFreeUp }: { s: TraySnapshot; onFreeUp: () => void }) 
                     "—"
                 )}
             </span>
-            <div className="mt-auto flex justify-end">
+            <div className="mt-auto flex items-center gap-1.5">
+                {/* swap is apart from the RAM above: on a full Mac it is what makes everything slow */}
+                <span
+                    data-tray-swap
+                    title={
+                        s.platform === "win"
+                            ? "Memory Windows has moved out to its paging file; it is not in the figure above"
+                            : "Memory macOS has moved out to disk; it is not in the figure above"
+                    }
+                    className="min-w-0 flex-1 truncate text-[11px] tabular-nums text-muted"
+                >
+                    {/* no "used": beside Free up, "Swap: 12.4 GB used" is cut short in the half card */}
+                    {m ? (
+                        <>
+                            Swap: <span className="text-secondary">{swapUsed(m.swapUsed, m.swapTotal)}</span>
+                        </>
+                    ) : null}
+                </span>
                 <button
                     type="button"
                     data-tray-freeup

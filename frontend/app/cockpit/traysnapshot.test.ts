@@ -19,6 +19,8 @@ function input(over: Partial<TraySnapshotInput> = {}): TraySnapshotInput {
             memavailable: 1.2 * GB,
             pressure: "high",
             cpupct: 38,
+            swaptotal: 7 * GB,
+            swapused: 6.3 * GB,
             diskname: "Macintosh HD",
             disktotal: 245 * GB,
             diskfree: 127 * GB,
@@ -78,6 +80,7 @@ describe("traySnapshot", () => {
         const s = traySnapshot(input());
         expect(s.machine?.pressure).toBe("high");
         expect(s.machine?.cpuPct).toBe(38);
+        expect(s.machine).toMatchObject({ swapTotal: 7 * GB, swapUsed: 6.3 * GB });
         expect(s.heardAt).toBe(NOW - 3_000);
         expect(s.jobs.map((j) => j.id)).toEqual(["j1", "j2"]);
         expect(s.jobs[0]).toMatchObject({ running: true, elapsedMs: 72_000, source: "tray-popover", reason: "" });

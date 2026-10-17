@@ -15,6 +15,8 @@ export interface TrayMachine {
     memAvailable: number;
     pressure: TrayLevel;
     cpuPct: number | null; // the last second's whole-machine load, 0-100; null before wavesrv's first reading
+    swapTotal: number; // not in memTotal; 0 with no swap file
+    swapUsed: number;
     diskName: string;
     diskTotal: number;
     diskFree: number;

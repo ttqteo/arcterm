@@ -144,6 +144,8 @@ export function traySnapshot(i: TraySnapshotInput): TraySnapshot {
                       memAvailable: m.memavailable,
                       pressure: level(m.pressure),
                       cpuPct: m.cpupct ?? null,
+                      swapTotal: m.swaptotal ?? 0,
+                      swapUsed: m.swapused ?? 0,
                       diskName: m.diskname,
                       diskTotal: m.disktotal,
                       diskFree: m.diskfree,
