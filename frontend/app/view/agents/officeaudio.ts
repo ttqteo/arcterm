@@ -2,12 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The office's sound player (office sounds spec, "Architecture"): one AudioContext made on the first sound, a short-
-// lived oscillator per note (pulse waves from their harmonics, a triangle, a shared noise buffer), a master gain for
-// the volume through a low-pass that takes the pulse waves' glare off, and a music bus that ducks under a jingle. With
-// the office off nothing here exists. The DEV log sink stands in for it in the CDP scenarios (cockpitofficedevhooks.ts).
+// lived oscillator per note (pulse waves from their harmonics, a triangle, a shared noise buffer) through a low-pass
+// that takes the pulse waves' glare off, a master gain for the volume, and a music bus that ducks under a jingle. A
+// music file the person puts at MUSIC_FILE plays on that bus in place of the tunes, through the GBA worklet
+// (officegba.worklet.js). With the office off nothing here exists. The DEV log sink stands in for it in the CDP
+// scenarios (cockpitofficedevhooks.ts).
 
 // no import of @/app/store/global here: officeaudio.test.ts loads this module under vitest
 import { globalStore } from "@/app/store/jotaiStore";
+import { localFileUrl } from "@/app/view/jarvis/localimage";
+import { getWebServerEndpoint } from "@/util/endpoints";
+import { fetch } from "@/util/fetchutil";
 import {
     CUE_IDS,
     SCORES,
@@ -46,6 +51,26 @@ const RELEASE_S = 0.03;
 const FADE_S = 0.4;
 const HARMONICS = 32;
 const DUCKING: ReadonlySet<string> = new Set<string>(CUE_IDS);
+// a music file here plays in place of the day and night tunes (wavesrv expands the ~). It is read once per office
+// open: a file put there or changed plays from the office's next open
+export const MUSIC_FILE = "~/.arc/office-music.mp3";
+// the music file as a GBA plays it: the rate Pokémon's GBA games mixed at (Hz), in 8-bit samples
+const GBA_RATE = 13379;
+const GBA_BITS = 8;
+
+interface Song {
+    el: HTMLAudioElement;
+    // where the file comes out: the GBA worklet, or the plain source when the worklet cannot load
+    out: AudioNode;
+    url: string;
+}
+
+function dropSong(s: Song): void {
+    s.el.pause();
+    s.el.removeAttribute("src");
+    s.el.load();
+    URL.revokeObjectURL(s.url);
+}
 
 export interface OfficeSink {
     play(id: CueId | UiCue): void;
@@ -79,24 +104,29 @@ function fadeOut(ctx: AudioContext | null, gain: AudioParam, done: () => void): 
 class ChipPlayer implements OfficeSink {
     private ctx: AudioContext | null = null;
     private master: GainNode | null = null;
+    // the low-pass in front of the master: every note goes in here, the music file around it
+    private chip: BiquadFilterNode | null = null;
     private musicBus: GainNode | null = null;
     private track: Track | null = null;
     private timer: ReturnType<typeof setTimeout> | null = null;
     private waves = new Map<Duty, PeriodicWave>();
     private noise: AudioBuffer | null = null;
     private vol: number = DEFAULT_SOUND.volume;
+    // the music file, read on the office's first music; null when there is none
+    private song: Promise<Song | null> | null = null;
+    private songOn: { song: Song; bus: GainNode } | null = null;
 
     private context(): AudioContext {
         if (!this.ctx) {
             this.ctx = new AudioContext();
             this.master = this.ctx.createGain();
             this.master.gain.value = this.vol * MASTER;
-            const lowpass = this.ctx.createBiquadFilter();
-            lowpass.type = "lowpass";
-            lowpass.frequency.value = LOWPASS_HZ;
-            lowpass.Q.value = 0.5;
-            this.master.connect(lowpass);
-            lowpass.connect(this.ctx.destination);
+            this.chip = this.ctx.createBiquadFilter();
+            this.chip.type = "lowpass";
+            this.chip.frequency.value = LOWPASS_HZ;
+            this.chip.Q.value = 0.5;
+            this.chip.connect(this.master);
+            this.master.connect(this.ctx.destination);
         }
         if (this.ctx.state === "suspended") {
             // a context made before the person's first key or click starts suspended; it resumes on the next sound
@@ -166,7 +196,7 @@ class ChipPlayer implements OfficeSink {
         const ctx = this.context();
         const score = SCORES[id];
         const t = ctx.currentTime;
-        this.schedule(ctx, score, t + 0.02, this.master!);
+        this.schedule(ctx, score, t + 0.02, this.chip!);
         if (this.musicBus && DUCKING.has(id)) {
             const g = this.musicBus.gain;
             const back = t + scoreSeconds(score);
@@ -189,9 +219,22 @@ class ChipPlayer implements OfficeSink {
         this.track = track;
         const ctx = this.context();
         const bus = ctx.createGain();
-        bus.connect(this.master!);
         this.musicBus = bus;
-        const score = SCORES[track];
+        this.song ??= this.loadSong(ctx);
+        void this.song.then((song) => {
+            if (this.musicBus !== bus) {
+                return;
+            }
+            if (song) {
+                this.playSong(song, bus);
+            } else {
+                bus.connect(this.chip!);
+                this.loopScore(ctx, SCORES[track], bus);
+            }
+        });
+    }
+
+    private loopScore(ctx: AudioContext, score: Score, bus: GainNode): void {
         const len = scoreSeconds(score);
         let t0 = ctx.currentTime + 0.05;
         const loop = () => {
@@ -205,15 +248,83 @@ class ChipPlayer implements OfficeSink {
         loop();
     }
 
+    // fetched whole (a few MB) and played from a blob: the webview's fetch carries the auth header wavesrv wants, a
+    // media element's src cannot
+    private async loadSong(ctx: AudioContext): Promise<Song | null> {
+        let url: string | null = null;
+        try {
+            const resp = await fetch(localFileUrl(getWebServerEndpoint(), MUSIC_FILE));
+            if (!resp.ok) {
+                return null;
+            }
+            url = URL.createObjectURL(await resp.blob());
+            const el = new Audio();
+            el.loop = true;
+            el.preload = "auto";
+            // a file the webview cannot decode errors here, and the tunes play instead
+            await new Promise<void>((resolve, reject) => {
+                el.onloadedmetadata = () => resolve();
+                el.onerror = () => reject(el.error);
+                el.src = url;
+            });
+            el.onloadedmetadata = null;
+            el.onerror = null;
+            const src = ctx.createMediaElementSource(el);
+            let out: AudioNode = src;
+            try {
+                await ctx.audioWorklet.addModule(new URL("./officegba.worklet.js", import.meta.url).href);
+                const gba = new AudioWorkletNode(ctx, "office-gba", {
+                    processorOptions: { rate: GBA_RATE, bits: GBA_BITS },
+                });
+                src.connect(gba);
+                out = gba;
+            } catch (e) {
+                console.error("office music: no GBA worklet, the file plays as it is", e);
+            }
+            return { el, out, url };
+        } catch (e) {
+            console.error("office music: cannot play", MUSIC_FILE, e);
+            if (url != null) {
+                URL.revokeObjectURL(url);
+            }
+            return null;
+        }
+    }
+
+    // the file goes on where it stopped (a tune starts from the top), past the low-pass: its crunch is the point
+    private playSong(song: Song, bus: GainNode): void {
+        bus.connect(this.master!);
+        song.out.disconnect();
+        song.out.connect(bus);
+        this.songOn = { song, bus };
+        const start = () => {
+            if (this.songOn?.bus === bus) {
+                void song.el.play().catch(() => {});
+            }
+        };
+        song.el.play().catch(() => {
+            // a play before the person's first key or click is refused: it starts on the next one
+            window.addEventListener("pointerdown", start, { once: true, capture: true });
+            window.addEventListener("keydown", start, { once: true, capture: true });
+        });
+    }
+
     private stopMusic(): void {
         if (this.timer) {
             clearTimeout(this.timer);
             this.timer = null;
         }
-        // the bus fades out, then is cut: the notes already scheduled on it play on into nothing and end
+        // the bus fades out, then is cut: the notes already scheduled on it play on into nothing and end, and the
+        // file pauses unless the music started again meanwhile and took it to a new bus
         const bus = this.musicBus;
         if (bus) {
-            fadeOut(this.ctx, bus.gain, () => bus.disconnect());
+            fadeOut(this.ctx, bus.gain, () => {
+                bus.disconnect();
+                if (this.songOn?.bus === bus) {
+                    this.songOn.song.el.pause();
+                    this.songOn = null;
+                }
+            });
         }
         this.musicBus = null;
         this.track = null;
@@ -228,13 +339,20 @@ class ChipPlayer implements OfficeSink {
 
     close(): void {
         this.stopMusic();
-        // a jingle still sounding fades with the music, and the context closes once both are silent
+        // a jingle still sounding fades with the music, and the context closes once both are silent, the file with it
         const ctx = this.ctx;
+        const song = this.song;
         if (ctx && this.master) {
-            fadeOut(ctx, this.master.gain, () => void ctx.close().catch(() => {}));
+            fadeOut(ctx, this.master.gain, () => {
+                void ctx.close().catch(() => {});
+                void song?.then((s) => s && dropSong(s));
+            });
         }
         this.ctx = null;
         this.master = null;
+        this.chip = null;
+        this.song = null;
+        this.songOn = null;
         this.waves.clear();
         this.noise = null;
     }

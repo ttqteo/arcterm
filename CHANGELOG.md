@@ -24,6 +24,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Office music from your own file: put one at `~/.arc/office-music.mp3` and the Office plays it in place of its day
+  and night tunes, crunched as a Game Boy Advance would play it, picking up where it stopped when you come back.
+
 ### Changed
 
 - **Work on** an initiative that has no project asks which project to start the agent in, and the initiative keeps
