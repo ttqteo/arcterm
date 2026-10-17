@@ -58,7 +58,7 @@ func TestBuiltinFieldsValid(t *testing.T) {
 }
 
 func TestBuiltinOrder(t *testing.T) {
-	want := []string{"lazygit", "gitui", "yazi", "broot", "btop", "lazydocker", "k9s", "glow", "visidata"}
+	want := []string{"lazygit", "gitui", "yazi", "broot", "btop", "lazydocker", "k9s", "glow", "visidata", "trans"}
 	got := Builtin()
 	if len(got) != len(want) {
 		t.Fatalf("got %d built-ins, want %d", len(got), len(want))
@@ -74,6 +74,10 @@ func TestBuiltinOrder(t *testing.T) {
 		}
 		if tool.Id == "visidata" && tool.Command != "vd" {
 			t.Errorf("visidata's command is vd, got %q", tool.Command)
+		}
+		if tool.Id == "trans" && (tool.Command != "trans" || tool.Args != "-shell -theme ~/.arc/translate-shell/arc.trans :en+vi" ||
+			tool.OpensIn != "home" || tool.Install.Darwin != "brew install translate-shell rlwrap" || tool.Install.Windows != "") {
+			t.Errorf("trans: %+v", tool)
 		}
 	}
 }

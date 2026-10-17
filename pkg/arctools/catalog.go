@@ -42,7 +42,8 @@ const (
 
 // Builtin is the catalog arcterm ships, in the order the library lists it. The winget ids were checked against the
 // winget source on 2026-10-13 (`winget show --id <id> --exact`; the btop4win command alias from its manifest). visidata
-// is a Python tool with no winget package, so it has no Windows line; every other tool has a Windows and a Mac line.
+// and translate-shell are the Mac-only tools, with no Windows line: neither has a winget package. Every other tool has
+// a Windows and a Mac line.
 // An entry's Command is the executable the status check looks up on PATH.
 func Builtin() []Tool {
 	return []Tool{
@@ -90,6 +91,14 @@ func Builtin() []Tool {
 			Id: "visidata", Name: "visidata", Category: "Docs and data", Purpose: "Data: explore CSV, JSON and SQLite tables",
 			Command: "vd", OpensIn: OpensInAgent, Shows: ShowsCentre,
 			Install: Install{Darwin: "brew install visidata"},
+		},
+		{
+			Id: "trans", Name: "translate-shell", Category: "Docs and data", Purpose: "Translate: a word with its dictionary entry, or whole sentences",
+			Command: "trans", OpensIn: OpensInHome, Shows: ShowsCentre,
+			// the theme is cmd/wsh/cmd/trans-theme.trans, which installTransTheme writes there on every launch; rlwrap
+			// gives the shell its history, and trans uses it on its own when it is on PATH
+			Args:    "-shell -theme ~/.arc/translate-shell/arc.trans :en+vi",
+			Install: Install{Darwin: "brew install translate-shell rlwrap"},
 		},
 	}
 }
