@@ -144,7 +144,7 @@ export function PlanReviewSection({ agent }: { agent: AgentVM }) {
                             <div
                                 key={r.label}
                                 data-plan-row={r.state}
-                                className="flex min-h-[40px] items-center gap-[9px] border-t border-edge-faint py-[5px]"
+                                className="group/plan flex min-h-[40px] items-center gap-[9px] border-t border-edge-faint py-[5px]"
                             >
                                 <span
                                     aria-hidden
@@ -189,7 +189,13 @@ export function PlanReviewSection({ agent }: { agent: AgentVM }) {
                                     ) : null}
                                 </div>
                                 {open ? (
-                                    <>
+                                    // folded to no width until the pointer is over the row or a key focuses into it, so
+                                    // a plan of eight is not 24 buttons and each title keeps the rail's width; gone while
+                                    // the row is renamed, so the input keeps it too
+                                    <span
+                                        hidden={renaming?.label === r.label}
+                                        className="-ml-[9px] flex w-0 flex-none items-center overflow-hidden group-focus-within/plan:ml-0 group-focus-within/plan:w-auto group-hover/plan:ml-0 group-hover/plan:w-auto"
+                                    >
                                         <button
                                             type="button"
                                             aria-label="Accept"
@@ -220,7 +226,7 @@ export function PlanReviewSection({ agent }: { agent: AgentVM }) {
                                         >
                                             <X size={12} strokeWidth={2.2} aria-hidden />
                                         </button>
-                                    </>
+                                    </span>
                                 ) : (
                                     <button
                                         type="button"
