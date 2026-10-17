@@ -40,6 +40,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- On a Mac, a float's title bar has a − button in place of the pet's: it hides the window and leaves the agent
+  running, and the Dock icon brings it back. `Cmd`+`M` and the yellow button still fold it into your pet.
 - Telegram connects only while an agent's question is open, and only when you allow it: for a while (1h, 2h, 4h or
   your own), on a schedule such as office hours, or always.
 - **Background tucked away in the Office**: the Backgrounded and Background lists no longer sit under the building,

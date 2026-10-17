@@ -62,6 +62,7 @@ const current = {
     },
     onMoved: async () => () => {},
     close: ok,
+    hide: ok,
     minimize: ok,
     unminimize: ok,
     maximize: ok,

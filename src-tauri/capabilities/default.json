@@ -25,6 +25,7 @@
     "core:window:allow-unmaximize",
     "core:window:allow-request-user-attention",
     "core:window:allow-show",
+    "core:window:allow-hide",
     "core:window:allow-set-focus",
     "core:window:allow-unminimize",
     "core:webview:allow-set-webview-zoom",

@@ -39,16 +39,16 @@ import { versionInfoAtom } from "./versioninfo";
 // Window dragging: a bare data-tauri-drag-region only fires on a press directly on its own element,
 // so every non-interactive piece carries one. Not "deep" on the bar: the switchers' click-away
 // backdrops and dropdowns render inside it and would start a drag instead of closing.
-// the creature sitting, on the buttons that fold the window into it (here and the float bar)
-export const FOLD_SPRITE = {
+// the creature sitting, on the button that folds the window into it
+const FOLD_SPRITE = {
     sprout: spriteFor("sit", [], null, "sprout"),
     minion: spriteFor("sit", [], null, "minion"),
     // standing, in the suit: his sitting pose is a crouch, which does not read as the one the window folds into
     spidey: spriteFor("stand", [], null, "spidey"),
 };
 
-// The fold buttons' tooltip, here and on the float bar: on a Mac, ⌘M folds too while window:minimize says Sprout
-export function useFoldTitle(): string {
+// The fold button's tooltip: on a Mac, ⌘M folds too while window:minimize says Sprout
+function useFoldTitle(): string {
     const character = petCharacter(useAtomValue(petCharacterAtom));
     const choice = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize")));
     const title = `Fold into ${PET_CHARACTER_NAME[character]}`;

@@ -7,17 +7,15 @@ import { CTX_TEXT, ICON_BTN, ICON_BTN_ON, STATE_COLOR, STATE_LABEL } from "@/app
 import { contextLevel, contextTokens } from "@/app/view/agents/agentrailmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel } from "@/app/view/agents/agentsviewmodel";
-import { exitFloat, floatPinnedAtom, foldToSprout, setFloatPinned } from "@/app/view/agents/floatstore";
+import { exitFloat, floatPinnedAtom, setFloatPinned } from "@/app/view/agents/floatstore";
 import { StatusDot } from "@/app/view/agents/statusdot";
-import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
-import { petCharacterAtom } from "@/app/view/jarvis/petstore";
-import { SproutSvg } from "@/app/view/jarvis/sproutsvg";
 import { formatChordString } from "@/util/keysym";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAtomValue } from "jotai";
-import { PictureInPicture2, Pin, X } from "lucide-react";
-import { FOLD_SPRITE, useFoldTitle, WindowControls } from "./app-bar";
+import { Minus, PictureInPicture2, Pin, X } from "lucide-react";
+import { WindowControls } from "./app-bar";
 
 // The app bar's place in float mode (floatstore.ts): the window is the focused agent's terminal, so the bar is what
 // you drag it by, whose terminal it is and what it is doing (the agent header steps out, so this is the one header),
@@ -28,8 +26,6 @@ import { FOLD_SPRITE, useFoldTitle, WindowControls } from "./app-bar";
 export function FloatBar({ model }: { model: AgentsViewModel }) {
     const mac = isMacOS();
     const pinned = useAtomValue(floatPinnedAtom);
-    const character = petCharacter(useAtomValue(petCharacterAtom));
-    const foldTitle = useFoldTitle();
     const focusId = useAtomValue(model.focusIdAtom);
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
@@ -80,17 +76,22 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                     </span>
                 ) : null}
             </div>
-            <button
-                type="button"
-                data-float-minimize
-                aria-label={`Fold into ${PET_CHARACTER_NAME[character]}`}
-                title={foldTitle}
-                onClick={() => fireAndForget(foldToSprout)}
-                className={cn(ICON_BTN, "gap-[5px] pr-2 text-[11px] font-semibold")}
-            >
-                <SproutSvg sprite={FOLD_SPRITE[character]} cellPx={1} />
-                {PET_CHARACTER_NAME[character]}
-            </button>
+            {/* hides the window, as its red button does with the menu bar icon on: the agent keeps running and the Dock
+                icon brings the float back (src-tauri main.rs, Reopen), where X ends the agent; ⌘M and the yellow button
+                still fold it into the pet. A Mac's alone: elsewhere a hidden window has no Dock icon to come back from,
+                and WindowControls holds the window's own buttons */}
+            {mac ? (
+                <button
+                    type="button"
+                    data-float-hide
+                    aria-label="Hide window"
+                    title="Hide — the agent keeps running; the Dock icon brings it back"
+                    onClick={() => fireAndForget(() => getCurrentWindow().hide())}
+                    className={ICON_BTN}
+                >
+                    <Minus size={15} strokeWidth={1.9} />
+                </button>
+            ) : null}
             <button
                 type="button"
                 data-float-pin
