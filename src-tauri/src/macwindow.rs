@@ -10,9 +10,10 @@
 // a folded arcterm that comes to the front with no key window makes its window key itself (takes_key).
 //
 // Folded over a full-screen app, Sprout sits in that app's Space. Growing back gives the window its own collection
-// behavior again, which a full-screen Space does not take, so AppKit moves it to its desktop and the screen stays on the
-// full-screen app: the Dock icon "showed nothing". A moment after the fold ends, a window no longer on the active Space
-// is brought to the front, which takes the screen to its Space (brings_to_front).
+// behavior again, which a full-screen Space does not take, and the screen stayed on the full-screen app: the Dock icon
+// "showed nothing". The window is then ordered out and in again, which lands it on a desktop and takes the screen there
+// (takes_to_desktop). A moment later, a window still off the Space on screen is brought to the front, which takes the
+// screen to its Space (brings_to_front); both log what AppKit gave.
 
 use tauri::WebviewWindow;
 
@@ -33,6 +34,27 @@ struct Arrival {
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn takes_key(a: Arrival) -> bool {
     a.active && a.folded && !a.has_key && a.visible && !a.minimized
+}
+
+// The window as it gets its own collection behavior back at the end of a restore.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Clone, Copy, Debug)]
+struct GrownBack {
+    // the fold followed onto a full-screen app's Space, on every Space
+    followed: bool,
+    // the Space on screen is a desktop, not a full-screen app's (foreground.rs desktop_on_screen)
+    desktop_on_screen: bool,
+    on_active_space: bool,
+    visible: bool,
+    minimized: bool,
+}
+
+// Whether the window grown back from over a full-screen app is ordered out and in again, so it lands on a desktop: the
+// screen is still on the full-screen app, or the window has left the Space on screen. One grown back on a desktop stays
+// there, and a minimized or hidden one stays where the person put it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn takes_to_desktop(g: GrownBack) -> bool {
+    g.followed && g.visible && !g.minimized && (!g.desktop_on_screen || !g.on_active_space)
 }
 
 // The window just grown back from the fold, a moment later.
@@ -72,15 +94,15 @@ mod imp {
     use objc2_foundation::{ns_string, NSMutableAttributedString, NSNotificationCenter, NSRange, NSString};
     use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
-    use super::{brings_to_front, takes_key, Arrival, Unfolded};
+    use super::{brings_to_front, takes_key, takes_to_desktop, Arrival, GrownBack, Unfolded};
     use crate::applog;
 
     static APP: OnceLock<AppHandle> = OnceLock::new();
 
     // AppKit may hand the key back after it posts that the app became active, so the window is looked at a moment later
     const ARRIVAL_CHECK_DELAY_S: f64 = 0.15;
-    // AppKit moves a window off a full-screen Space some time after its collection behavior changes
-    const UNFOLD_SPACE_CHECK_DELAY_S: f64 = 0.3;
+    // where the window grown back from over a full-screen app ended up is looked at once the Space slide is done
+    const UNFOLD_SPACE_CHECK_DELAY_S: f64 = 1.0;
 
     define_class!(
         // SAFETY: NSObject has no subclassing requirements, and this class does not implement Drop.
@@ -160,6 +182,8 @@ mod imp {
         static UNFOLDED_BEHAVIOR: Cell<Option<NSWindowCollectionBehavior>> = const { Cell::new(None) };
         // set_folded_chrome's last word, for the arrival check
         static FOLDED: Cell<bool> = const { Cell::new(false) };
+        // the fold followed onto a full-screen app's Space, for the way back
+        static FOLLOWED: Cell<bool> = const { Cell::new(false) };
         // the notification center holds its observer weakly
         static ARRIVAL_OBSERVER: RefCell<Option<Retained<ArrivalObserver>>> = const { RefCell::new(None) };
     }
@@ -636,25 +660,59 @@ mod imp {
             let was = ns.collectionBehavior();
             UNFOLDED_BEHAVIOR.with(|cell| cell.set(Some(cell.get().unwrap_or(was))));
             // off the Space on screen while it folds: a full-screen app's took it (foreground.rs folds for no other)
-            ns.setCollectionBehavior(folded_behavior(was, !ns.isOnActiveSpace()));
+            let follows = !ns.isOnActiveSpace();
+            ns.setCollectionBehavior(folded_behavior(was, follows));
+            if follows && !FOLLOWED.with(|cell| cell.replace(true)) {
+                applog::log_line("[tauri] [fold] folded over a full-screen app: Sprout on every Space");
+            }
         } else if let Some(was) = UNFOLDED_BEHAVIOR.with(|cell| cell.take()) {
             ns.setCollectionBehavior(was);
             let _ = APP.set(window.app_handle().clone());
-            ARRIVAL_OBSERVER.with(|cell| {
-                if let Some(observer) = cell.borrow().as_ref() {
-                    // SAFETY: checkUnfoldSpace: is the observer's own method, taking one object it ignores
-                    unsafe {
-                        let _: () = msg_send![
-                            &**observer,
-                            performSelector: sel!(checkUnfoldSpace:),
-                            withObject: None::<&AnyObject>,
-                            afterDelay: UNFOLD_SPACE_CHECK_DELAY_S
-                        ];
-                    }
-                }
-            });
+            let grown = GrownBack {
+                followed: FOLLOWED.with(|cell| cell.replace(false)),
+                desktop_on_screen: crate::foreground::desktop_on_screen(),
+                on_active_space: ns.isOnActiveSpace(),
+                visible: ns.isVisible(),
+                minimized: ns.isMiniaturized(),
+            };
+            if grown.followed {
+                take_to_desktop(ns, mtm, grown);
+            }
         }
         Ok(())
+    }
+
+    // The window grown back from over a full-screen app. Activating arcterm did not take the screen to it: the window
+    // still counted as on the full-screen Space, so the screen stayed on that app (2026-10-17, the delayed check below
+    // never fired). Ordered out and in again with its own collection behavior, it lands on a desktop, which the screen
+    // goes to. Where it ended up is logged once the slide is done.
+    fn take_to_desktop(ns: &NSWindow, mtm: MainThreadMarker, g: GrownBack) {
+        let mut line = format!(
+            "[tauri] [fold] grown back from over a full-screen app: desktop on screen {}, on the active Space {}, \
+             visible {}, minimized {}",
+            g.desktop_on_screen, g.on_active_space, g.visible, g.minimized
+        );
+        if takes_to_desktop(g) {
+            ns.orderOut(None);
+            #[allow(deprecated)]
+            NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+            ns.makeKeyAndOrderFront(None);
+            line.push_str("; ordered it out and in again");
+        }
+        applog::log_line(&line);
+        ARRIVAL_OBSERVER.with(|cell| {
+            if let Some(observer) = cell.borrow().as_ref() {
+                // SAFETY: checkUnfoldSpace: is the observer's own method, taking one object it ignores
+                unsafe {
+                    let _: () = msg_send![
+                        &**observer,
+                        performSelector: sel!(checkUnfoldSpace:),
+                        withObject: None::<&AnyObject>,
+                        afterDelay: UNFOLD_SPACE_CHECK_DELAY_S
+                    ];
+                }
+            }
+        });
     }
 
     pub fn watch_arrivals(app: &AppHandle) {
@@ -731,18 +789,23 @@ mod imp {
             visible: ns.isVisible(),
             minimized: ns.isMiniaturized(),
         };
-        if !brings_to_front(unfolded) {
-            return;
+        let mut line = format!(
+            "[tauri] [fold] {UNFOLD_SPACE_CHECK_DELAY_S} s later: desktop on screen {}, on the active Space {}, key {}",
+            crate::foreground::desktop_on_screen(),
+            unfolded.on_active_space,
+            ns.isKeyWindow()
+        );
+        if brings_to_front(unfolded) {
+            // activating arcterm takes the screen to a Space holding its window, and the window to the front there
+            #[allow(deprecated)]
+            NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+            ns.makeKeyAndOrderFront(None);
+            line.push_str(&format!(
+                "; still off it: brought it to the front, on the active Space now {}",
+                ns.isOnActiveSpace()
+            ));
         }
-        // activating arcterm takes the screen to a Space holding its window, and the window to the front there
-        #[allow(deprecated)]
-        NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
-        ns.makeKeyAndOrderFront(None);
-        applog::log_line(&format!(
-            "[tauri] [fold] grown back off the Space on screen (a full-screen app's): brought it to the front, on the \
-             active Space now {}",
-            ns.isOnActiveSpace()
-        ));
+        applog::log_line(&line);
     }
 
     pub fn redirect_minimize(window: &WebviewWindow, on: bool) -> Result<(), String> {
@@ -966,6 +1029,37 @@ mod tests {
 
     fn grown_back_off_screen() -> Unfolded {
         Unfolded { folded: false, on_active_space: false, visible: true, minimized: false }
+    }
+
+    fn grown_back_over_full_screen() -> GrownBack {
+        GrownBack { followed: true, desktop_on_screen: false, on_active_space: true, visible: true, minimized: false }
+    }
+
+    #[test]
+    fn grown_back_with_the_screen_still_on_a_full_screen_app_it_goes_to_a_desktop() {
+        assert!(takes_to_desktop(grown_back_over_full_screen()));
+    }
+
+    #[test]
+    fn grown_back_off_the_space_on_screen_it_goes_to_a_desktop() {
+        let left = GrownBack { desktop_on_screen: true, on_active_space: false, ..grown_back_over_full_screen() };
+        assert!(takes_to_desktop(left));
+    }
+
+    #[test]
+    fn grown_back_on_a_desktop_it_stays() {
+        assert!(!takes_to_desktop(GrownBack { desktop_on_screen: true, ..grown_back_over_full_screen() }));
+    }
+
+    #[test]
+    fn a_fold_that_never_followed_stays() {
+        assert!(!takes_to_desktop(GrownBack { followed: false, ..grown_back_over_full_screen() }));
+    }
+
+    #[test]
+    fn a_minimized_or_hidden_window_grown_back_stays() {
+        assert!(!takes_to_desktop(GrownBack { minimized: true, ..grown_back_over_full_screen() }));
+        assert!(!takes_to_desktop(GrownBack { visible: false, ..grown_back_over_full_screen() }));
     }
 
     #[test]

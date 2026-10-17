@@ -35,6 +35,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Office, each pet (Sprout, Minion, Spider-Man) and the VN shirt: walk with the arrows; the boss shows its
   back going up, its side going left / right (mirrored for left), its front going down, and stays turned standing.
   Judge Peter's side head (the spec once dropped one as a long face). 2026-10-16.
+- [ ] (arcterm, Mac) Put an app in full screen, let arcterm fold into Sprout over it (or `⌘M`), click arcterm's Dock
+  icon: the window grows back and the screen slides to arcterm's desktop, with arcterm in front. `waveapp.log`:
+  `[fold] folded over a full-screen app`, then `[fold] grown back from over a full-screen app: desktop on screen false
+  ... ordered it out and in again`, then `[fold] 1 s later: desktop on screen true, on the active Space true`. Same
+  with `⌘Tab` and a double-click on Sprout; a fold on a desktop logs none of it. If the screen still stays on the
+  full-screen app, send those lines: the fallback is a fold that no longer follows onto a full-screen Space.
+  `macwindow.rs` `take_to_desktop`, `check_unfold_space`. 2026-10-17.
 
 **2026-10-16 (the Office's sounds)**
 
@@ -400,10 +407,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   with the cursor moved off it; a click on a row floats on it. Click Sprout again, press Esc, or click another app:
   the card closes and does not pop back while the cursor still rests on Sprout. A double-click restores.
   `sprout-mini.tsx`, `miniclickthrough.ts`.
-- [ ] (Mac) Put an app in full screen, fold arcterm into Sprout over it, click arcterm's Dock icon: the window grows
-  back and the screen slides to arcterm's desktop, with arcterm in front. `waveapp.log` says `[fold] grown back off
-  the Space on screen ... on the active Space now true`. Same with ⌘Tab and a double-click on Sprout; on a plain
-  desktop nothing changes. `macwindow.rs` `check_unfold_space`.
 
 **2026-10-13 (Jarvis popup: folded chat closes on a click away, no Ask while folded, compact composer)**
 

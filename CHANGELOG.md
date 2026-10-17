@@ -81,6 +81,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- On a Mac, arcterm folded into Sprout over a full-screen app comes back where you can see it: the Dock icon, `⌘Tab` or
+  a double-click on Sprout takes the screen to arcterm's desktop instead of leaving it on the full-screen app.
 - A conversation no longer ends up open in two tabs after arcterm restarts: resuming it right after a restart goes to
   the tab already running it, a restart brings back one tab per conversation, and a sleeping copy says which tab has
   it open instead of waking beside it.

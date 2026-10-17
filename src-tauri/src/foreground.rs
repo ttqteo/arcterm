@@ -238,7 +238,7 @@ fn foreground(_window: &WebviewWindow) -> Foreground {
 // window server's own calls (CGSSpaceGetType: 0 a desktop, 4 a full-screen app's Space), looked up at run time: a macOS
 // without them reads as no desktop, the fold's answer from before, instead of keeping arcterm from launching.
 #[cfg(target_os = "macos")]
-fn desktop_on_screen() -> bool {
+pub(crate) fn desktop_on_screen() -> bool {
     use std::ffi::{c_char, c_void, CStr};
     use std::sync::OnceLock;
 
