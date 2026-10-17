@@ -10,6 +10,7 @@ import {
     carryTarget,
     dialogEdge,
     firstSel,
+    isMenuShortcut,
     officeKey,
     officeKeyName,
     officeMenuItems,
@@ -274,6 +275,21 @@ describe("officeMenuItems", () => {
         expect(items[7].count).toBeUndefined();
         const open = officeMenuItems(1, 4, true, 1, true);
         expect(open[7]).toMatchObject({ id: "events", label: "Hide events", count: undefined });
+    });
+});
+
+describe("isMenuShortcut", () => {
+    it("is each key the office menu names beside an item, as KeyboardEvent.key spells it", () => {
+        for (const k of ["n", "j", "k", "PageUp", "PageDown", "g", "s", "o", "?"]) {
+            expect(isMenuShortcut(k)).toBe(true);
+        }
+    });
+    it("is no key the menu leaves unnamed, and no chord", () => {
+        for (const k of ["f", "t", "1", "h", "ArrowLeft", "Enter", "m", "Escape", "PgUp"]) {
+            expect(isMenuShortcut(k)).toBe(false);
+        }
+        expect(isMenuShortcut("s", { meta: true })).toBe(false);
+        expect(isMenuShortcut("j", { ctrl: true })).toBe(false);
     });
 });
 

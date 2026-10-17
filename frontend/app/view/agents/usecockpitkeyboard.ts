@@ -12,7 +12,7 @@ import { answerDigitTarget, canSubmitAsk, hasAnswerableAsk, moveCursor, nextAskI
 import { askerAt, columnJump, type RowTarget } from "./cardgridlayout";
 import { isRowKey, rowCardId } from "./leadcardmodel";
 import type { Dir } from "./officeboss";
-import { officeKey, officeKeyName, type OfficeLayer } from "./officecontrols";
+import { isMenuShortcut, officeKey, officeKeyName, type OfficeLayer } from "./officecontrols";
 import { toggleOfficeMute } from "./officestore";
 import { BOARD_KEY, LIFT_KEY } from "./officeplanmodel";
 
@@ -103,6 +103,10 @@ export function useCockpitKeyboard(deps: CockpitKeyDeps): (e: KeyboardEvent) => 
         }
         // in Office, Space is the A button: it does what Enter does, the Cockpit's own Enter below too
         const key = office ? officeKeyName(e.key) : e.key;
+        // a key the open office menu names beside an item shuts the menu, then does what it does with the menu shut
+        if (office?.menuOpen() && isMenuShortcut(key, { meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey })) {
+            office.toggleMenu();
+        }
         // a room carried takes every key until it is put down (officecontrols.ts), the view switch too
         if (key === "o" && !e.metaKey && !e.ctrlKey && !e.altKey && toggleView && office?.layer() !== "carry") {
             e.preventDefault();

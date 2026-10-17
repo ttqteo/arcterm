@@ -66,6 +66,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A new terminal (New → Terminal, or the Diff panel's Open a terminal here) opens in the centre with the cursor in it,
   as a new agent does, instead of waiting in the sidebar to be clicked.
+- The keys the Office menu (`m`) shows beside its items, such as `s` or `j`, now work while the menu is open: the
+  menu shuts and the key does its job. Before, only ↑ ↓ and `Space` did anything there.
 - The Office opens straight onto the office when no agent is running: no grey card placeholders while it loads, and
   no "No agents running" panel over the rooms. The Cards view keeps both.
 - The Office's boss stops with its whole body against a wall, instead of walking half through it into the next room or

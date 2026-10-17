@@ -178,7 +178,8 @@ A person away from the desk walks back when the agent is working or asking again
 - **The full card** (Full card or `f`) is the grid's own `AgentRow` or `LeadCard` beside the desk, as before; Adjust
   opens a run's card with its Adjust panel. No card is rewritten for the office.
 - **The office menu** (`m`, or the footer's `m menu`, whose chip lights while it is open) lists Next Needs you, Next
-  desk, Previous desk, Events, Cards view and All keys, each with its key.
+  desk, Previous desk, Events, Cards view and All keys, each with its key. A key it names works with the menu open
+  too: it shuts the menu and does what it does with the menu shut (`isMenuShortcut`).
 - **The office fills the Cockpit**: no title; the counts that filter, Cards | Office, the project switcher and Live only
   sit in a HUD bar inside the view, after the clock and energy. The footer holds `m menu` and the newest event; the
   Events rail is hidden in Office until the menu's Events shows it (Esc while walking hides it). The Needs-you strip,

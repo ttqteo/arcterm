@@ -221,7 +221,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `PageUp` / `PageDown` (Office) | Ride the lift a floor up / down; `Space` at the lift opens its panel (`↑` `↓` choose a floor, `Space` rides, `Esc` stays) |
 | `g` (Office) | Pick up the room the boss stands in to move it: `←` `↑` `↓` `→` pick a slot of the floor, `PageUp` / `PageDown` ride the lift with the room (past the top floor, a new floor), `Space` puts it down (swapping with the room in the slot), `Esc` or `g` puts it back. Dragging a room by its title does the same with the mouse |
 | `Esc` (Office) | One step back: the full card to the dialog box, the box to walking; walking, hide the Events rail the menu showed. It never takes the window out of full screen |
-| `m` (Office) | The office menu: next Needs you, Notice board and Lift (walk to them and open them), Move this room, Arrange automatically (rooms by name again, Home first), next or previous desk, Events, Background (shows the Backgrounded and Background sections, hidden in Office, while it has agents), Mute sound, Cards view, all keys |
+| `m` (Office) | The office menu: next Needs you, Notice board and Lift (walk to them and open them), Move this room, Arrange automatically (rooms by name again, Home first), next or previous desk, Events, Background (shows the Backgrounded and Background sections, hidden in Office, while it has agents), Mute sound, Cards view, all keys. The key beside an item works with the menu open: it shuts the menu and does that |
 | `s` (Office) | Mute or unmute the Office's sound; what plays is set in Settings → Appearance → Office |
 
 ### Agent

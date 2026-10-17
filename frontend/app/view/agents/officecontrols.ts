@@ -49,8 +49,8 @@ export function officeKeyName(key: string): string {
 
 /** Pure: what a key does in the office. A chord (Cmd, Ctrl or Alt held) is never the office's; then a carried room
  *  takes every key (arrows to a neighbouring slot, PageUp / PageDown to another floor, ↵ drops, Esc and g put it back,
- *  nothing else acts); then the open menu takes every key; then the layer decides. "pass" leaves the key to the
- *  Cockpit's own (1–9, t, r, b, Space, and Enter on the full card). */
+ *  nothing else acts); then the open menu takes every key (one it names shuts it first: isMenuShortcut); then the layer
+ *  decides. "pass" leaves the key to the Cockpit's own (1–9, t, r, b, Space, and Enter on the full card). */
 export function officeKey(layer: OfficeLayer, menuOpen: boolean, key: string, mods: KeyMods = {}): OfficeKeyAction {
     if (mods.meta || mods.ctrl || mods.alt) {
         return { do: "pass" };
@@ -257,6 +257,20 @@ export function officeMenuItems(
         { id: "cards", label: "Cards view", key: "o" },
         { id: "keys", label: "All keys", key: "?" },
     ];
+}
+
+// the menu's key column, spelt as KeyboardEvent.key spells each key
+const MENU_KEY_NAMES: Record<string, string> = { PgUp: "PageUp", PgDn: "PageDown" };
+const MENU_KEYS = new Set(
+    officeMenuItems(0, 0, false, 0, true)
+        .flatMap((it) => it.key?.split(" ") ?? [])
+        .map((k) => MENU_KEY_NAMES[k] ?? k)
+);
+
+/** Pure: whether a key is one the office menu names beside an item (n j k PgUp PgDn g s o ?). Pressed while the menu is
+ *  open, it shuts the menu and does what it does with the menu shut: the keys the menu shows work from it too. */
+export function isMenuShortcut(key: string, mods: KeyMods = {}): boolean {
+    return !mods.meta && !mods.ctrl && !mods.alt && MENU_KEYS.has(key);
 }
 
 /** The floors a carried room can go to, as the lift's summaries give them. */
