@@ -11,12 +11,12 @@ export const HIGHLIGHT_SECTION = [
     "- When a reply explains something at length, wrap the 2-4 sentences the person must read to get the point in ==…==. Mark whole sentences, never a whole paragraph, and nothing in a short reply.",
     '- In a brainstorming or design turn, mark only the question you are waiting on the person to answer, as the last marked sentence, ending with "?". Never mark your own recommendation.',
     "- Marks go in your reply text only: never in files, code, commands, commit messages or tool inputs, and never inside code spans or blocks.",
-    "- Write a command the person has to type as `! <command>`, in a code span or alone in a code block: it draws highlighted with the marked sentences, so it takes no marks.",
+    "- Write a command the person has to type as `! <command>`, in a code span or alone in a code block: it draws highlighted with the marked sentences, so it takes no marks. Do mark the sentence saying what it will do, above all what it closes, deletes or overwrites.",
 ].join("\n");
 
 // the same ask in one line, for the prompts after the first where the system prompt never got the section
 export const HIGHLIGHT_REMINDER =
-    "Highlighting: in a long explanation wrap the 2-4 sentences the person must read in ==…== (whole sentences, never in code); in a brainstorming turn mark only the question you wait on.";
+    "Highlighting: in a long explanation wrap the 2-4 sentences the person must read in ==…== (whole sentences, never in code), among them what a `! command` to type will do; in a brainstorming turn mark only the question you wait on.";
 
 export type SubmitState = { isInteractive: boolean; isCommand: boolean; isComposed: boolean; hasTold: boolean };
 
