@@ -551,6 +551,13 @@ svg [aria-label="tip"] g path {
 ::highlight(doc-review-pending) {
     background-color: color-mix(in srgb, var(--color-accent) 32%, transparent);
 }
+/* Find in the File tab's Preview (docfindbar.tsx): every match, and the current one in the accent. */
+::highlight(doc-find) {
+    background-color: color-mix(in srgb, var(--color-warning) 28%, transparent);
+}
+::highlight(doc-find-current) {
+    background-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
 /* The finding in focus in the review dialog: the document blocks it names stay, the rest dims. */
 [data-doc-focusing] > * {
     transition: opacity 150ms ease;

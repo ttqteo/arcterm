@@ -35,6 +35,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   open over it, and the footer pet comes back when you leave. <!-- big --> <!-- shot: 0.15.15-office-boss.webp -->
 - The memory free shows beside arcterm's menu bar icon on a Mac (`4 · 1.1 GB`), and in the tray icon's tooltip on
   Windows. Settings → General → Window turns it off.
+- Find in a file the agent panel opens: `Cmd`+`F` in a markdown Preview opens a find bar that marks every match and
+  steps through them with `Enter`; in Source and Diff it opens the editor's find from anywhere in the tab.
 
 ### Changed
 

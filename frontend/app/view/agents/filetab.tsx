@@ -29,6 +29,7 @@ import {
 import { currentFileView, fileLabel, filePinTarget, fileViews, type FileHistory } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
+import { DocFindBar } from "./docfindbar";
 import { OUTLINE_SELECTOR, OutlineButton } from "./docoutlineview";
 import { savedScroll, saveScroll } from "./filescroll";
 import { FileTabDiff } from "./filetabdiff";
@@ -90,6 +91,11 @@ export function FileTab({
     const stampRef = useRef<string | undefined>(undefined);
     stampRef.current = state.kind === "text" ? state.stamp : undefined;
     const editorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null);
+    const diffEditorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null);
+    // Mod+F in a markdown Preview; the query stays for the next one. findKey asks the open bar for the caret again.
+    const [findOpen, setFindOpen] = useState(false);
+    const [findQuery, setFindQuery] = useState("");
+    const [findKey, setFindKey] = useState(0);
     // the ref open now: reopening the file on screen keeps its editor, whose scroll is then that open's to keep
     const refNow = useRef(ref);
     refNow.current = ref;
@@ -143,6 +149,8 @@ export function FileTab({
             clearInterval(timer);
         };
     }, [ref?.abs, following]);
+    // the bar finds in one file's Preview: another file or view closes it
+    useEffect(() => setFindOpen(false), [ref?.abs, mdMode, diffOn]);
     if (ref == null) {
         return null;
     }
@@ -164,6 +172,38 @@ export function FileTab({
         globalStore.set(model.focusIdAtom, agentId);
         openDiff(model, agentDiffScope(agentId, agent.name), rel);
     };
+    const findable = markdown && preview && state.kind === "text";
+    const finding = findOpen && findable;
+    const mdDoc = () => bodyRef.current?.querySelector<HTMLElement>("[data-md-doc]") ?? null;
+    const closeFind = () => {
+        setFindOpen(false);
+        // the caret was in the bar, which is gone now
+        mdDoc()?.focus({ preventScroll: true });
+    };
+    // Mod+F: the find bar over a Preview, holding the words selected in it; in Source and Diff, Monaco's own find,
+    // which the editor opens by itself when it has the caret
+    const openFind = (e: KeyboardEvent<HTMLDivElement>) => {
+        if (findable) {
+            e.preventDefault();
+            e.stopPropagation();
+            const sel = window.getSelection();
+            const picked = sel?.toString().trim() ?? "";
+            if (picked !== "" && !picked.includes("\n") && mdDoc()?.contains(sel?.anchorNode ?? null)) {
+                setFindQuery(picked);
+            }
+            setFindOpen(true);
+            setFindKey((k) => k + 1);
+            return;
+        }
+        const editor = view === "diff" ? diffEditorRef.current : editorRef.current;
+        if (editor == null || (e.target instanceof Element && e.target.closest(".monaco-editor") != null)) {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        editor.focus();
+        void editor.getAction("actions.find")?.run();
+    };
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
         if (e.key === "Escape") {
             e.stopPropagation();
@@ -173,7 +213,15 @@ export function FileTab({
                 e.currentTarget.querySelector<HTMLElement>("[data-md-doc]")?.focus({ preventScroll: true });
                 return;
             }
+            if (finding) {
+                closeFind();
+                return;
+            }
             closeRailFile(agentId);
+            return;
+        }
+        if ((e.key === "f" || e.key === "F") && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+            openFind(e);
             return;
         }
         // Ctrl+Enter sends from anywhere in the tab but a comment box, which takes it to add the comment. Not every
@@ -212,6 +260,7 @@ export function FileTab({
                 modified={state.kind === "text" ? state.text : ""}
                 reread={ref.reread}
                 wrap={wrap}
+                editorRef={diffEditorRef}
             />
         );
     } else if (state.kind === "pdf") {
@@ -507,9 +556,19 @@ export function FileTab({
             </div>
             <div
                 ref={bodyRef}
-                className={cn("flex min-h-0 flex-1 flex-col", preview ? "bg-background" : "bg-surface-code")}
+                className={cn("relative flex min-h-0 flex-1 flex-col", preview ? "bg-background" : "bg-surface-code")}
             >
                 {body}
+                {finding ? (
+                    <DocFindBar
+                        docRef={bodyRef}
+                        query={findQuery}
+                        onQuery={setFindQuery}
+                        textKey={state.kind === "text" ? state.text : ""}
+                        focusKey={findKey}
+                        onClose={closeFind}
+                    />
+                ) : null}
             </div>
             {markdown || drafts.comments.length > 0 || drafts.lastSend != null || drafts.box != null ? (
                 <MdCommentTray model={model} agent={agent} shownAbs={ref.abs} />

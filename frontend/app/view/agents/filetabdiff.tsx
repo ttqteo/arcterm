@@ -42,6 +42,7 @@ export function FileTabDiff({
     modified,
     reread,
     wrap,
+    editorRef,
 }: {
     fileRef: FileRef; // whose place in the diff is kept (filescroll.ts)
     abs: string;
@@ -51,6 +52,8 @@ export function FileTabDiff({
     modified: string; // "" for a file deleted from the working tree
     reread?: number;
     wrap: boolean;
+    // the working copy's editor while it is mounted, for the tab's Mod+F
+    editorRef?: { current: MonacoTypes.editor.IStandaloneCodeEditor | null };
 }) {
     const [orig, setOrig] = useState<Base>({ kind: "loading" });
     // the ref open now: reopening the file on screen keeps its editor, whose scroll is then that open's to keep
@@ -113,6 +116,9 @@ export function FileTabDiff({
                         // back where the reader left it, once the diff is computed too: its folded regions and
                         // removed lines change the height under the first restore
                         const ed = diff.getModifiedEditor();
+                        if (editorRef != null) {
+                            editorRef.current = ed;
+                        }
                         const place = savedScroll(fileRef, "diff");
                         const restore = () => place != null && ed.setScrollTop(place);
                         restore();
@@ -129,6 +135,9 @@ export function FileTabDiff({
                         return () => {
                             computed.dispose();
                             scrolled.dispose();
+                            if (editorRef?.current === ed) {
+                                editorRef.current = null;
+                            }
                         };
                     }}
                 />

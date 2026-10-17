@@ -28584,7 +28584,7 @@ const agentRailTabs = {
 const MDC_AGENT = "fx-md-comments";
 const MDC_BLOCK = "fx-blk-md-comments";
 const MDC_PROJECT = "verify-md-comments";
-const MDC_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth", "agent.rail.mdMode"];
+const MDC_KEYS = [RAIL_VISIBLE_KEY, RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth", "agent.rail.mdMode", "cockpit.view"];
 const MDC_ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
 const MDC_CARD = `document.querySelector('[data-cockpit-surface] [data-agent-id="${MDC_AGENT}"]')`;
 const MDC_DOC = `${MDC_ASIDE}?.querySelector("[data-md-doc]")`;
@@ -28687,9 +28687,10 @@ function mdcRoster(ctx, state, terminal = true) {
 }
 
 // clicks the Cockpit card's inline `docs/guide.md:9` (its data-path-link is the path alone), which opens the File tab
-// at line 9
+// at line 9. The card is in Cards, not the Office a store may have left on (cockpit.view, restored by the teardown).
 async function mdcOpenGuide(h) {
     await h.goto("cockpit");
+    await h.ev(`[...document.querySelectorAll("[data-cockpit-view-toggle] button")].find((b) => b.textContent === "Cards" && b.getAttribute("aria-pressed") !== "true")?.click()`);
     const found = await polishWaitFor(
         h,
         `[...(${MDC_CARD}?.querySelectorAll("[data-path-link]") ?? [])].some((b) => b.dataset.pathLink.endsWith("guide.md"))`,
@@ -29077,6 +29078,105 @@ const mdComments = {
         await step("reload onto the restored roster", () => ahReload(h));
         await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true }));
     },
+};
+
+// doc-find: Mod+F in the File tab (docfindbar.tsx), on md-comments' fixture. guide.md says "paragraph" 43 times (twice
+// in its first paragraph, once in its second, once in each of the 40 fillers), and "close the guide" only below the fold.
+const DF_BAR = `${MDC_ASIDE}?.querySelector("[data-doc-find]")`;
+const dfCount = `(${DF_BAR}?.querySelector("[data-doc-find-count]")?.textContent ?? "")`;
+const dfPainted = `(() => {
+    const a = CSS.highlights.get("doc-find"), c = CSS.highlights.get("doc-find-current");
+    return { all: a?.size ?? null, current: c?.size ?? null, text: c ? ([...c][0]?.toString() ?? null) : null };
+})()`;
+// the current match lies inside the Preview's view
+const dfInView = `(() => {
+    const c = CSS.highlights.get("doc-find-current"), r = c && [...c][0], d = ${MDC_DOC};
+    if (!r || !d) return false;
+    const b = r.getBoundingClientRect(), v = d.getBoundingClientRect();
+    return b.top >= v.top && b.bottom <= v.bottom;
+})()`;
+
+// replaces the bar's query with `text`, as typing over a selected query does
+async function dfType(h, text) {
+    await h.ev(`(() => { const i = ${DF_BAR}?.querySelector("[data-doc-find-input]"); i?.focus(); i?.select(); return !!i; })()`);
+    await h.cdp("Input.insertText", { text });
+    await railTabsNap(300);
+}
+
+const docFind = {
+    name: "doc-find",
+    surface: "agent",
+    arrange: (h) => mdComments.arrange(h),
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null || ctx.inRoster !== true) {
+            rec("0. the fixture agent is in the roster", false, ctx.arrangeError ?? "not in the roster");
+            return steps;
+        }
+
+        // 1. Mod+F in the Preview opens the bar with the caret in it
+        const opened = await mdcOpenGuide(h);
+        await h.ev(`${MDC_DOC}?.focus()`);
+        await railTabsKey(h, "f", "KeyF", 70, 2);
+        const caret1 = await polishWaitFor(h, `document.activeElement?.matches?.("[data-doc-find-input]") === true`, 3000);
+        rec("1. Mod+F in guide.md's Preview opens the find bar with the caret in it", opened && caret1, JSON.stringify({ opened, caret1 }));
+
+        // 2. every match is painted and counted, the current one apart
+        await dfType(h, "paragraph");
+        const count2 = await h.ev(dfCount);
+        const painted2 = await h.ev(dfPainted);
+        await h.shot("cdp-shots/doc-find-matches.png");
+        rec("2. 'paragraph' counts 43 and paints 42 matches plus the current one", /^\d+\/43$/.test(count2) && painted2.all === 42 && painted2.current === 1 && /^paragraph$/i.test(painted2.text ?? ""), JSON.stringify({ count2, painted2 }));
+
+        // 3. Enter steps on and Shift+Enter back
+        const at = Number.parseInt(count2, 10);
+        await railTabsKey(h, "Enter", "Enter", 13);
+        const count3 = await h.ev(dfCount);
+        await railTabsKey(h, "Enter", "Enter", 13, 8);
+        const back3 = await h.ev(dfCount);
+        rec("3. Enter steps to the next match, Shift+Enter back to it", count3 === `${(at % 43) + 1}/43` && back3 === count2, JSON.stringify({ count2, count3, back3 }));
+
+        // 4. a match below the fold is scrolled into view
+        await dfType(h, "close the guide");
+        const count4 = await h.ev(dfCount);
+        const inView4 = await polishWaitFor(h, dfInView, 3000);
+        await h.shot("cdp-shots/doc-find-scrolled.png");
+        rec("4. 'close the guide' reads 1/1 and the Preview scrolls it into view", count4 === "1/1" && inView4, JSON.stringify({ count4, inView4 }));
+
+        // 5. a query never matches from one block into the next: the heading Guide, then the paragraph First
+        await dfType(h, "Guide First");
+        const count5 = await h.ev(dfCount);
+        const painted5 = await h.ev(dfPainted);
+        const stepsOff5 = await h.ev(`[...(${DF_BAR}?.querySelectorAll("button[aria-label$='match']") ?? [])].every((b) => b.disabled)`);
+        rec("5. 'Guide First' spans two blocks: No results, nothing painted, the arrows disabled", count5 === "No results" && painted5.all === 0 && painted5.current === 0 && stepsOff5, JSON.stringify({ count5, painted5, stepsOff5 }));
+
+        // 6. Esc closes the bar only
+        await railTabsKey(h, "Escape", "Escape", 27);
+        const gone6 = await polishWaitFor(h, `!${DF_BAR}`, 2000);
+        const painted6 = await h.ev(dfPainted);
+        const doc6 = await h.ev(`!!${MDC_DOC} && document.activeElement === ${MDC_DOC}`);
+        rec("6. Esc closes the bar and clears the marks; the file stays open with the caret in it", gone6 && painted6.all === null && painted6.current === null && doc6, JSON.stringify({ gone6, painted6, doc6 }));
+
+        // 7. Mod+F over a selection finds the selected words
+        await mdcSelect(h, "the one the link names");
+        await railTabsKey(h, "f", "KeyF", 70, 2);
+        const picked7 = await polishWaitFor(h, `${DF_BAR}?.querySelector("[data-doc-find-input]")?.value === "the one the link names"`, 3000);
+        const count7 = await h.ev(dfCount);
+        rec("7. Mod+F with words selected in the document opens the bar finding them", picked7 && count7 === "1/1", JSON.stringify({ picked7, count7 }));
+        await railTabsKey(h, "Escape", "Escape", 27);
+
+        // 8. Source: Mod+F from the header opens the editor's own find
+        await h.ev(`${MDC_ASIDE}?.querySelector('[data-file-view="source"]')?.click()`);
+        const editor8 = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-rail-file] .monaco-editor")`, 10000);
+        await h.ev(`${MDC_ASIDE}?.querySelector("[data-file-head]")?.focus()`);
+        await railTabsKey(h, "f", "KeyF", 70, 2);
+        const widget8 = await polishWaitFor(h, `!!${MDC_ASIDE}?.querySelector("[data-rail-file] .find-widget.visible")`, 3000);
+        await h.shot("cdp-shots/doc-find-source.png");
+        rec("8. in Source, Mod+F with the caret on the header opens Monaco's find", editor8 && widget8, JSON.stringify({ editor8, widget8 }));
+        return steps;
+    },
+    teardown: (h, ctx) => mdComments.teardown(h, ctx),
 };
 
 // The Cockpit's j/k/n/Enter are the container's own onKeyDown (usecockpitkeyboard.ts), so they work only
@@ -45614,6 +45714,7 @@ export const SCENARIOS = [
     agentRailTabs,
     agentRailWorktreeFiles,
     mdComments,
+    docFind,
     workerCapacity,
     consumersPopover,
     consumersClosePicked,
