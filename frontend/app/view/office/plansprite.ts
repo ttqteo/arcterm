@@ -616,8 +616,13 @@ function tinted(c: Rgb | undefined, tints: (Rgb | undefined)[]): Rgb | undefined
 }
 
 /** The sprite in the outfit and the phase, drawn once; a near-side seat in a dark room or after hours is shaded. */
+/** The grid a person in this outfit is drawn from: its look's hair and build. */
+export function outfitGrid(s: PlanSprite, o: PlanOutfit): string[] {
+    return planGrid(s, clampLook(o.look) as PlanLook);
+}
+
 export function planSpriteUrl(s: PlanSprite, o: PlanOutfit, phase: OfficePhase = "day", shade: Shade = ""): string {
-    const grid = planGrid(s, clampLook(o.look) as PlanLook);
+    const grid = outfitGrid(s, o);
     const tints = shade === "both" ? [DARK, NIGHT] : shade === "dark" ? [DARK] : shade === "night" ? [NIGHT] : [];
     const key = `${s}|${o.shirt}|${o.look}|${phase}|${shade}`;
     return cachedSprite(

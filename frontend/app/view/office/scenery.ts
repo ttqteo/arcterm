@@ -28,11 +28,26 @@ export type Op =
     | { k: "fill"; x: number; y: number; w: number; h: number; material: Material; oy?: number }
     | { k: "grid"; x: number; y: number; rows: string[]; roles: Record<string, OfficeRole> }
     | { k: "pool"; cx: number; cy: number; rx: number; ry: number };
+/** A thing on the floor that stands before whoever is behind it (the coffee machine, a plant, the notice board): its box
+ *  and the row under its foot in art px, its ops, which the canvas under the people draws too, and where they end in
+ *  that list (what comes after them there draws over it, the sofa's arm over the machine's counter). cockpitoffice.tsx
+ *  draws it again over a body whose feet are behind its foot, on that body's own cells. */
+export interface Prop {
+    kind: "coffee" | "plant" | "board";
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    foot: number;
+    ops: Op[];
+    after: number;
+}
 export interface Scenery {
     width: number;
     height: number;
     under: Op[];
     over: Op[];
+    props: Prop[];
 }
 export const CHAIR_ROLES: Record<string, OfficeRole> = { O: "ink", R: "chair", r: "chairShade" };
 
@@ -219,6 +234,14 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
     const under = new Ops();
     const over = new Ops();
     const top = new Ops(); // wall caps and the sign: the over canvas's last ops, which no tint covers
+    const props: Prop[] = [];
+    // a prop's own pixels, in their place among the ops under the people; its shadow stays on the floor, drawn apart
+    const prop = (kind: Prop["kind"], x: number, y: number, w: number, h: number, draw: (o: Ops) => void) => {
+        const o = new Ops();
+        draw(o);
+        under.list.push(...o.list);
+        props.push({ kind, x, y, w, h, foot: y + h, ops: o.list, after: under.list.length });
+    };
 
     // floors
     const body = artBox(plan.body);
@@ -250,13 +273,15 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
     }
     {
         const [cx, cy] = L(166, 104);
-        under.box(cx, cy + 6, 12, 10, "deskFace");
-        under.box(cx, cy + 4, 12, 5, "desk");
-        under.box(cx + 2, cy - 4, 8, 10, "metal");
-        under.rect(cx + 3, cy - 3, 6, 1, "metalHi");
-        under.rect(cx + 4, cy + 1, 4, 2, "screen");
-        under.px(cx + 8, cy - 2, "error");
-        under.box(cx + 5, cy + 3, 3, 3, "cup");
+        prop("coffee", cx, cy - 4, 12, 20, (o) => {
+            o.box(cx, cy + 6, 12, 10, "deskFace");
+            o.box(cx, cy + 4, 12, 5, "desk");
+            o.box(cx + 2, cy - 4, 8, 10, "metal");
+            o.rect(cx + 3, cy - 3, 6, 1, "metalHi");
+            o.rect(cx + 4, cy + 1, 4, 2, "screen");
+            o.px(cx + 8, cy - 2, "error");
+            o.box(cx + 5, cy + 3, 3, 3, "cup");
+        });
         under.shadow(cx, cy - 4, 12, 20);
     }
     // the sofa faces the TV: its seat and arms under the people on it, its back over them
@@ -275,9 +300,11 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
         under.rect(sx + 1, by + 9, sw, 1, "shadow");
     }
     const plant = (x: number, y: number) => {
-        under.box(x + 2, y + 9, 7, 5, "pot");
-        under.rect(x + 3, y + 10, 5, 1, "potHi");
-        under.grid(LEAF, x + 1, y + 1, LEAF_ROLES);
+        prop("plant", x + 1, y + 1, 9, 13, (o) => {
+            o.box(x + 2, y + 9, 7, 5, "pot");
+            o.rect(x + 3, y + 10, 5, 1, "potHi");
+            o.grid(LEAF, x + 1, y + 1, LEAF_ROLES);
+        });
         under.rect(x + 9, y + 3, 1, 11, "shadow");
         under.rect(x + 3, y + 14, 7, 1, "shadow");
     };
@@ -295,16 +322,18 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
         const { frame: f, cork: c, legs } = boardArt(plan.board.box);
         const foot = legs[0].y + legs[0].h;
         under.rect(f.x + 3, foot, f.w - 6, 1, "shadow");
-        for (const leg of legs) {
-            under.box(leg.x, leg.y, leg.w, leg.h, "deskFace");
-        }
-        under.box(f.x, f.y, f.w, f.h, "trim");
-        under.rect(c.x, c.y, c.w, c.h, "desk");
-        for (let j = 0; j < 3; j++) {
-            for (let i = 0; i < 5; i++) {
-                under.px(c.x + 1 + i * 4 + (j % 2) * 2, c.y + 2 + j * 4, "seam");
+        prop("board", f.x, f.y, f.w, foot - f.y, (o) => {
+            for (const leg of legs) {
+                o.box(leg.x, leg.y, leg.w, leg.h, "deskFace");
             }
-        }
+            o.box(f.x, f.y, f.w, f.h, "trim");
+            o.rect(c.x, c.y, c.w, c.h, "desk");
+            for (let j = 0; j < 3; j++) {
+                for (let i = 0; i < 5; i++) {
+                    o.px(c.x + 1 + i * 4 + (j % 2) * 2, c.y + 2 + j * 4, "seam");
+                }
+            }
+        });
         under.shadow(f.x, f.y, f.w, f.h);
     }
 
@@ -556,13 +585,20 @@ export function scenery(plan: Plan, phase: OfficePhase, tired: boolean): Scenery
         }
     }
 
-    return { width: W, height: H, under: under.list, over: [...over.list, ...top.list] };
+    return { width: W, height: H, under: under.list, over: [...over.list, ...top.list], props };
 }
 
-/** RGBA bytes for a list of ops on a w × h canvas; a role with no colour leaves its pixels as they were. */
-export function rasterise(ops: Op[], w: number, h: number, colors: OfficeColors): Uint8ClampedArray {
+/** RGBA bytes for a list of ops on a w × h canvas; a role with no colour leaves its pixels as they were. With an
+ *  offset it is the window of the whole canvas at (ox, oy): the ops keep the whole canvas's coordinates. */
+export function rasterise(ops: Op[], w: number, h: number, colors: OfficeColors, ox = 0, oy = 0): Uint8ClampedArray {
     const d = new Uint8ClampedArray(w * h * 4);
-    const put = (x: number, y: number, c: Rgb | undefined, alpha = 1) => {
+    const x0 = ox;
+    const y0 = oy;
+    const x1 = ox + w;
+    const y1 = oy + h;
+    const put = (gx: number, gy: number, c: Rgb | undefined, alpha = 1) => {
+        const x = gx - ox;
+        const y = gy - oy;
         if (c == null || x < 0 || y < 0 || x >= w || y >= h) {
             return;
         }
@@ -589,16 +625,16 @@ export function rasterise(ops: Op[], w: number, h: number, colors: OfficeColors)
         switch (op.k) {
             case "rect": {
                 const c = colors[op.role];
-                for (let y = Math.max(0, op.y); y < Math.min(h, op.y + op.h); y++) {
-                    for (let x = Math.max(0, op.x); x < Math.min(w, op.x + op.w); x++) {
+                for (let y = Math.max(y0, op.y); y < Math.min(y1, op.y + op.h); y++) {
+                    for (let x = Math.max(x0, op.x); x < Math.min(x1, op.x + op.w); x++) {
                         put(x, y, c, op.alpha);
                     }
                 }
                 break;
             }
             case "fill":
-                for (let y = Math.max(0, op.y); y < Math.min(h, op.y + op.h); y++) {
-                    for (let x = Math.max(0, op.x); x < Math.min(w, op.x + op.w); x++) {
+                for (let y = Math.max(y0, op.y); y < Math.min(y1, op.y + op.h); y++) {
+                    for (let x = Math.max(x0, op.x); x < Math.min(x1, op.x + op.w); x++) {
                         put(x, y, colors[materialAt(op.material, x, y, op.oy)]);
                     }
                 }
@@ -630,6 +666,28 @@ export function rasterise(ops: Op[], w: number, h: number, colors: OfficeColors)
         }
     }
     return d;
+}
+
+/** RGBA bytes of a prop on a canvas of its own box, as the two canvases show it there: its ops, what the canvas under the
+ *  people draws after them and what the one over them draws (a dark room, the night, a lamp's pool), on its own pixels
+ *  only, the rest clear. */
+export function rasteriseProp(
+    prop: Prop,
+    scene: Pick<Scenery, "under" | "over">,
+    colors: OfficeColors
+): Uint8ClampedArray {
+    const own = rasterise(prop.ops, prop.w, prop.h, colors, prop.x, prop.y);
+    const ops = [...prop.ops, ...scene.under.slice(prop.after), ...scene.over];
+    const shown = rasterise(ops, prop.w, prop.h, colors, prop.x, prop.y);
+    for (let i = 3; i < own.length; i += 4) {
+        if (own[i] === 0) {
+            shown[i - 3] = 0;
+            shown[i - 2] = 0;
+            shown[i - 1] = 0;
+            shown[i] = 0;
+        }
+    }
+    return shown;
 }
 
 /**

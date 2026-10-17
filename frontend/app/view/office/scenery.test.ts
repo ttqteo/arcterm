@@ -5,7 +5,19 @@ import { buildPlan, MEET_H, type Box, type Plan, type PlanInput } from "@/app/vi
 import { describe, expect, it } from "vitest";
 import { NEAR_CHAIR } from "./officegrids";
 import type { OfficeColors } from "./officepalette";
-import { art, boardArt, CELL, materialAt, outerWindows, rasterise, scenery, sceneryKey, type Op } from "./scenery";
+import {
+    art,
+    boardArt,
+    CELL,
+    materialAt,
+    outerWindows,
+    rasterise,
+    rasteriseProp,
+    scenery,
+    sceneryKey,
+    type Op,
+    type Prop,
+} from "./scenery";
 
 const NOW = Date.parse("2026-10-15T14:20:00");
 function input(width = 1050, over: Partial<PlanInput> = {}): PlanInput {
@@ -599,6 +611,118 @@ describe("rasterise", () => {
             colors
         );
         expect(Array.from(px)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+    });
+
+    it("draws a window of the canvas from its offset, in the canvas's coordinates", () => {
+        const ops: Op[] = [
+            { k: "rect", x: 0, y: 0, w: 4, h: 3, role: "wood" },
+            { k: "rect", x: 2, y: 1, w: 1, h: 1, role: "ink" },
+        ];
+        const all = rasterise(ops, 4, 3, colors);
+        const win = rasterise(ops, 2, 2, colors, 1, 1);
+        for (let y = 0; y < 2; y++) {
+            for (let x = 0; x < 2; x++) {
+                const i = (y * 2 + x) * 4;
+                const j = ((y + 1) * 4 + x + 1) * 4;
+                expect(Array.from(win.slice(i, i + 4))).toEqual(Array.from(all.slice(j, j + 4)));
+            }
+        }
+    });
+});
+
+describe("props", () => {
+    // whether `part` is in `all` in its order, each op the same: a prop is drawn on the canvas under the people too
+    const inOrder = (part: Op[], all: Op[]) => {
+        const keys = all.map((o) => JSON.stringify(o));
+        let at = 0;
+        for (const o of part) {
+            at = keys.indexOf(JSON.stringify(o), at);
+            if (at < 0) {
+                return false;
+            }
+            at++;
+        }
+        return true;
+    };
+
+    it("keeps the coffee machine, every plant and the notice board as props, each drawn under the people too", () => {
+        const p = plan();
+        const s = scenery(p, "day", false);
+        const roomPlants = p.rooms.reduce((n, r) => n + (r.plants?.length ?? 0), 0);
+        // the machine, the lounge's plant, the rooms' plants, the board
+        expect(s.props).toHaveLength(3 + roomPlants);
+        for (const prop of s.props) {
+            expect(prop.ops.length).toBeGreaterThan(0);
+            expect(prop.foot).toBe(prop.y + prop.h);
+            expect(inOrder(prop.ops, s.under)).toBe(true);
+            expect(s.under.slice(prop.after - prop.ops.length, prop.after)).toEqual(prop.ops);
+            // a prop is its own pixels: its shadow stays on the floor, under a body in front of it
+            expect(prop.ops.some((o) => o.k === "rect" && o.role === "shadow")).toBe(false);
+        }
+        const l = artOf(p.lounge);
+        expect(s.props[0]).toMatchObject({ kind: "coffee", x: l.x + art(166), y: l.y + art(104) - 4, w: 12, h: 20 });
+        expect(s.props.slice(1, -1).every((x) => x.kind === "plant")).toBe(true);
+        const { frame, legs } = boardArt(p.board.box);
+        expect(s.props.at(-1)).toMatchObject({ kind: "board", x: frame.x, y: frame.y, foot: legs[0].y + legs[0].h });
+    });
+
+    it("draws each prop's ops inside its box", () => {
+        const s = scenery(plan(), "day", false);
+        for (const prop of s.props) {
+            for (const o of prop.ops) {
+                if (o.k === "rect") {
+                    expect(within(o, prop)).toBe(true);
+                }
+            }
+        }
+    });
+});
+
+describe("rasteriseProp", () => {
+    const colors: OfficeColors = { ink: [0, 0, 0], wood: [200, 100, 0], dark: [0, 0, 0, 0.5] };
+    const wood: Op = { k: "rect", x: 11, y: 20, w: 2, h: 2, role: "wood" };
+    const prop: Prop = { kind: "plant", x: 10, y: 20, w: 3, h: 2, foot: 22, ops: [wood], after: 1 };
+
+    it("is the prop as the two canvases show it, on its own pixels and clear round them", () => {
+        // a dark room's tint over all of it: the wood takes it, the clear pixel at the prop's left stays clear
+        const dark: Op = { k: "rect", x: 0, y: 0, w: 100, h: 100, role: "dark" };
+        const px = rasteriseProp(prop, { under: [wood], over: [dark] }, colors);
+        expect(px.length).toBe(3 * 2 * 4);
+        expect(Array.from(px.slice(0, 4))).toEqual([0, 0, 0, 0]);
+        expect(Array.from(px.slice(4, 8))).toEqual([100, 50, 0, 255]);
+        expect(Array.from(px.slice(12, 16))).toEqual([0, 0, 0, 0]);
+        expect(Array.from(px.slice(20, 24))).toEqual([100, 50, 0, 255]);
+    });
+
+    it("takes what the canvas under the people draws after it, on its own pixels", () => {
+        const arm: Op = { k: "rect", x: 0, y: 21, w: 12, h: 1, role: "ink" };
+        const px = rasteriseProp(prop, { under: [wood, arm], over: [] }, colors);
+        expect(Array.from(px.slice(4, 8))).toEqual([200, 100, 0, 255]);
+        expect(Array.from(px.slice(16, 20))).toEqual([0, 0, 0, 255]);
+        // the arm passes under the clear pixel too, which stays clear
+        expect(Array.from(px.slice(12, 16))).toEqual([0, 0, 0, 0]);
+    });
+
+    it("matches the full canvases' pixels at the prop", () => {
+        const s = scenery(plan(1050, { night: true }), "after", false);
+        const full: OfficeColors = { ...colors, metal: [90, 90, 90], deskFace: [120, 80, 40], night: [0, 0, 40, 0.4] };
+        const under = rasterise([...s.under, ...s.over], s.width, s.height, full);
+        const m = s.props[0];
+        const own = rasteriseProp(m, s, full);
+        let mismatches = 0;
+        for (let y = 0; y < m.h; y++) {
+            for (let x = 0; x < m.w; x++) {
+                const i = (y * m.w + x) * 4;
+                const j = ((m.y + y) * s.width + m.x + x) * 4;
+                if (
+                    own[i + 3] > 0 &&
+                    Array.from(own.slice(i, i + 4)).join() !== Array.from(under.slice(j, j + 4)).join()
+                ) {
+                    mismatches++;
+                }
+            }
+        }
+        expect(mismatches).toBe(0);
     });
 });
 

@@ -51,12 +51,14 @@ import {
     useFrameClock,
     useWalkLoop,
 } from "@/app/view/office/officeclock";
-import { OFFICE_TOKENS, officeColors, type OfficePhase } from "@/app/view/office/officepalette";
+import { cellsClip, gridCells, inFront } from "@/app/view/office/officedepth";
+import { OFFICE_TOKENS, officeColors, type OfficeColors, type OfficePhase } from "@/app/view/office/officepalette";
 import {
     LANE_SHIRTS,
     LEAD_SHIRT,
     markUrl,
     mirrorOf,
+    outfitGrid,
     PLAN_CELL,
     PLAN_SPRITES,
     PLAN_TOKENS,
@@ -74,7 +76,18 @@ import {
     type SeatPose,
     type Shade,
 } from "@/app/view/office/plansprite";
-import { art, boardArt, outerWindows, rasterise, scenery, sceneryKey, type Op } from "@/app/view/office/scenery";
+import {
+    art,
+    boardArt,
+    outerWindows,
+    rasterise,
+    rasteriseProp,
+    scenery,
+    sceneryKey,
+    type Op,
+    type Prop,
+    type Scenery,
+} from "@/app/view/office/scenery";
 import { clearSprites, clearTokenColors, spriteCacheStats, tokenRgb } from "@/app/view/office/spritecache";
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
@@ -406,6 +419,12 @@ function withInput(handle: OfficeHandle): OfficeHandle {
     return out as unknown as OfficeHandle;
 }
 const dotsAtom = atom<Point[]>([]) as PrimitiveAtom<Point[]>;
+// office depth: the floor's props as the canvases show them, one image each, drawn again over a body behind them (InFront)
+interface PropLook {
+    prop: Prop;
+    url: string;
+}
+const propLooksAtom = atom<PropLook[]>([]) as PrimitiveAtom<PropLook[]>;
 // what is up over the office (officecontrols.ts): the desk's dialog box (↵, or a click on the desk), its full card (f,
 // or the box's Full card), or nothing; any walk shuts both. The office menu (m, officeMenuOpenAtom in officestore.ts,
 // which the footer's m chip reads) opens over any of them
@@ -650,6 +669,22 @@ function useThemeEpoch(): string {
     return epoch;
 }
 
+// a prop as the two canvases show it, at art resolution as a PNG; "" when the page cannot draw. A software canvas, as the
+// sprite cache's: toDataURL is far slower on a GPU-backed one
+function propUrl(prop: Prop, scene: Scenery, colors: OfficeColors): string {
+    const canvas = document.createElement("canvas");
+    canvas.width = prop.w;
+    canvas.height = prop.h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (ctx == null) {
+        return "";
+    }
+    const image = ctx.createImageData(prop.w, prop.h);
+    image.data.set(rasteriseProp(prop, scene, colors));
+    ctx.putImageData(image, 0, 0);
+    return canvas.toDataURL("image/png");
+}
+
 // scenes drawn since the page loaded, for the probe: one per sceneryKey, counted in CockpitOffice, not per canvas
 let sceneryDraws = 0;
 
@@ -805,6 +840,14 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         sceneryDraws++;
         probe.sceneryDraws = sceneryDraws;
     }, [scene]);
+    // the props' images, once per scene and after the theme's vars are on <html>, as the canvases' first draw is
+    useEffect(() => {
+        const colors = officeColors(phase);
+        globalStore.set(
+            propLooksAtom,
+            scene.props.map((prop) => ({ prop, url: propUrl(prop, scene, colors) }))
+        );
+    }, [scene, phase]);
 
     const planRef = useRef(plan);
     planRef.current = plan;
@@ -2680,6 +2723,91 @@ function useDomTransform(
     useLayoutEffect(() => globalStore.sub(on, place), [on, place]);
 }
 
+// office depth (officedepth.ts): the props that stand before a body, drawn again over it inside its own cells, so the
+// coffee machine hides the boss behind it while a label over the machine stays where it is. It moves with the body's
+// element, as useDomTransform moves that, so a step renders nothing, and shows only the props in front of it then
+function InFront(p: {
+    who: string;
+    on: Atom<unknown>;
+    at: () => Point | undefined;
+    // the body's element: its top left for feet at `at`, in whole art cells as its own transform puts it, and its size
+    origin: (at: Point) => Point;
+    w: number;
+    h: number;
+    // the body's filled cells in that element's px (cellsClip), and the box a prop must overlap to stand before it
+    clip: string;
+    reach: Box;
+}) {
+    const looks = useAtomValue(propLooksAtom);
+    const ref = useRef<HTMLDivElement>(null);
+    const worldRef = useRef<HTMLDivElement>(null);
+    const imgs = useRef<(HTMLImageElement | null)[]>([]);
+    const origin = useRef<Point | null>(null);
+    useDomTransform(
+        ref,
+        p.on,
+        () => {
+            const at = p.at();
+            if (!at) {
+                return undefined;
+            }
+            const o = p.origin(at);
+            origin.current = o;
+            return `translate(${o.x}px, ${o.y}px)`;
+        },
+        () => {
+            const at = p.at();
+            const o = origin.current;
+            if (!at || !o || !ref.current || !worldRef.current) {
+                return;
+            }
+            const reach = { x: o.x + p.reach.x, y: o.y + p.reach.y, w: p.reach.w, h: p.reach.h };
+            let any = false;
+            looks.forEach((l, i) => {
+                const shown = inFront(l.prop, at, reach);
+                any ||= shown;
+                const img = imgs.current[i];
+                if (img) {
+                    img.style.display = shown ? "" : "none";
+                }
+            });
+            ref.current.style.display = any ? "" : "none";
+            worldRef.current.style.transform = `translate(${-o.x}px, ${-o.y}px)`;
+        }
+    );
+    return (
+        <div
+            ref={ref}
+            data-office-front={p.who}
+            className="pointer-events-none absolute left-0 top-0 z-[7]"
+            style={{ display: "none", width: p.w, height: p.h, clipPath: p.clip, WebkitClipPath: p.clip }}
+        >
+            <div ref={worldRef} className="absolute left-0 top-0">
+                {looks.map((l, i) => (
+                    <img
+                        key={i}
+                        ref={(el) => {
+                            imgs.current[i] = el;
+                        }}
+                        alt=""
+                        draggable={false}
+                        data-office-prop={l.prop.kind}
+                        src={l.url}
+                        className="absolute [image-rendering:pixelated]"
+                        style={{
+                            display: "none",
+                            left: l.prop.x * PLAN_CELL,
+                            top: l.prop.y * PLAN_CELL,
+                            width: l.prop.w * PLAN_CELL,
+                            height: l.prop.h * PLAN_CELL,
+                        }}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+}
+
 // a person on the move, its feet at the point `at` reads from `on`; on its own layer while it walks, so a step
 // repaints nothing under it
 function Mover(p: {
@@ -2695,26 +2823,47 @@ function Mover(p: {
     const w = spriteWidth(p.sprite) * PLAN_CELL;
     const h = spriteH(p.sprite);
     // whole art cells on both axes: a person never sits between two pixels of the canvases
+    const origin = (at: Point): Point => ({
+        x: Math.round((at.x - w / 2) / PLAN_CELL) * PLAN_CELL,
+        y: Math.round((at.y - h) / PLAN_CELL) * PLAN_CELL,
+    });
     useDomTransform(ref, p.on, () => {
         const at = p.at();
-        return (
-            at &&
-            `translate(${Math.round((at.x - w / 2) / PLAN_CELL) * PLAN_CELL}px, ${Math.round((at.y - h) / PLAN_CELL) * PLAN_CELL}px)${p.mirror ? " scaleX(-1)" : ""}`
-        );
+        if (!at) {
+            return undefined;
+        }
+        const o = origin(at);
+        return `translate(${o.x}px, ${o.y}px)${p.mirror ? " scaleX(-1)" : ""}`;
     });
+    const clip = useMemo(
+        () => cellsClip(gridCells(outfitGrid(p.sprite, p.outfit)), PLAN_CELL, w, p.mirror),
+        [p.sprite, p.outfit, p.mirror, w]
+    );
     return (
-        <img
-            ref={ref}
-            alt=""
-            draggable={false}
-            data-office-sprite={p.sprite}
-            src={planSpriteUrl(p.sprite, p.outfit, p.phase)}
-            className={cn(
-                "pointer-events-none absolute left-0 top-0 z-[7] [image-rendering:pixelated]",
-                p.walking && "will-change-transform"
-            )}
-            style={{ width: w, height: h }}
-        />
+        <>
+            <img
+                ref={ref}
+                alt=""
+                draggable={false}
+                data-office-sprite={p.sprite}
+                src={planSpriteUrl(p.sprite, p.outfit, p.phase)}
+                className={cn(
+                    "pointer-events-none absolute left-0 top-0 z-[7] [image-rendering:pixelated]",
+                    p.walking && "will-change-transform"
+                )}
+                style={{ width: w, height: h }}
+            />
+            <InFront
+                who="walker"
+                on={p.on}
+                at={p.at}
+                origin={origin}
+                w={w}
+                h={h}
+                clip={clip}
+                reach={{ x: 0, y: 0, w, h }}
+            />
+        </>
     );
 }
 
@@ -3105,48 +3254,70 @@ function BossPet({
         );
     }
     return (
-        <button
-            ref={setBtn}
-            type="button"
-            // a click opens the peek; the keys stay the office's: it takes no focus, so ↵ is never its click
-            tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={(e) => {
-                e.stopPropagation();
-                bumpBossInput();
-                if (globalStore.get(petPeekOpenAtom)) {
-                    closePeek();
-                } else {
-                    openPetBubble(model);
-                }
-            }}
-            data-office-boss=""
-            data-office-boss-pet={character}
-            data-office-entrance={entrance ?? undefined}
-            aria-label="Jarvis condition"
-            className={cn(
-                "pointer-events-auto absolute left-0 top-0 z-[7] block cursor-pointer border-0 bg-transparent p-0 outline-none",
-                look.moving && "will-change-transform",
-                // after hours the office's people are shaded; the pet does not glow in a dark room
-                phase === "after" && "[filter:brightness(0.7)]"
-            )}
-            style={{ width: BOSS_PX, height: BOSS_PX }}
-        >
-            <svg
-                width={BOSS_PX}
-                height={BOSS_PX}
-                viewBox={`0 0 ${BOSS_PX} ${BOSS_PX}`}
-                shapeRendering="crispEdges"
-                // the flag in hand rises above the sprite's box, the teleport's ring and sparks and the strand draw past it
-                overflow="visible"
-                aria-hidden="true"
-                className="block"
+        <>
+            <button
+                ref={setBtn}
+                type="button"
+                // a click opens the peek; the keys stay the office's: it takes no focus, so ↵ is never its click
+                tabIndex={-1}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    bumpBossInput();
+                    if (globalStore.get(petPeekOpenAtom)) {
+                        closePeek();
+                    } else {
+                        openPetBubble(model);
+                    }
+                }}
+                data-office-boss=""
+                data-office-boss-pet={character}
+                data-office-entrance={entrance ?? undefined}
+                aria-label="Jarvis condition"
+                className={cn(
+                    "pointer-events-auto absolute left-0 top-0 z-[7] block cursor-pointer border-0 bg-transparent p-0 outline-none",
+                    look.moving && "will-change-transform",
+                    // after hours the office's people are shaded; the pet does not glow in a dark room
+                    phase === "after" && "[filter:brightness(0.7)]"
+                )}
+                style={{ width: BOSS_PX, height: BOSS_PX }}
             >
-                {art}
-            </svg>
-        </button>
+                <svg
+                    width={BOSS_PX}
+                    height={BOSS_PX}
+                    viewBox={`0 0 ${BOSS_PX} ${BOSS_PX}`}
+                    shapeRendering="crispEdges"
+                    // the flag in hand rises above the sprite's box, the teleport's ring and sparks and the strand draw past it
+                    overflow="visible"
+                    aria-hidden="true"
+                    className="block"
+                >
+                    {art}
+                </svg>
+            </button>
+            {entrance == null ? (
+                <InFront
+                    who="boss"
+                    on={bossAtom}
+                    at={bossAt}
+                    origin={bossOrigin}
+                    w={BOSS_PX}
+                    h={BOSS_PX}
+                    clip={cellsClip(sprite.body, BOSS_CELL_PX, BOSS_PX, out.flip, [BOSS_RING_REACH])}
+                    reach={{ x: 0, y: 0, w: BOSS_PX, h: BOSS_RING_REACH.y + BOSS_RING_REACH.h }}
+                />
+            ) : null}
+        </>
     );
 }
+
+// the boss's element for its feet at `at`: its top left, in whole art cells as its transform puts it
+const bossOrigin = (at: Point): Point => ({
+    x: Math.round((at.x - BOSS_PX / 2) / PLAN_CELL) * PLAN_CELL,
+    y: Math.round((at.y - BOSS_PX) / PLAN_CELL) * PLAN_CELL,
+});
+// where the ring under its feet falls in that element, either way the two round to art cells (BossView places it)
+const BOSS_RING_REACH: Box = { x: 18, y: 69, w: 45, h: 18 };
 
 function PathDots() {
     const dots = useAtomValue(dotsAtom);

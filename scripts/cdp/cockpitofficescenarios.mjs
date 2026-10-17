@@ -2355,6 +2355,98 @@ export function makeCockpitOfficeScenarios(fx) {
             return steps;
         },
     };
+    // office depth (frontend/app/view/office/officedepth.ts): the boss beside the lounge's coffee machine, its feet behind
+    // the machine's foot, is hidden where the machine stands before it; in front of the machine it covers the machine as
+    // before. The animation is off so every walk lands at once
+    const cockpitOfficeDepth = {
+        name: "office-depth",
+        surface: "cockpit",
+        async arrange(h) {
+            const ctx = await arrangeOffice(h);
+            if (ctx.missing) {
+                return ctx;
+            }
+            ctx.prevAnimation = await h.ev(`localStorage.getItem(${JSON.stringify(ANIMATION_KEY)})`);
+            await h.ev("window.__cockpitOfficeAnimation(false)");
+            await sleep(300);
+            return ctx;
+        },
+        async teardown(h, ctx) {
+            try {
+                await h.ev(
+                    ctx.prevAnimation == null
+                        ? `localStorage.removeItem(${JSON.stringify(ANIMATION_KEY)})`
+                        : `localStorage.setItem(${JSON.stringify(ANIMATION_KEY)}, ${JSON.stringify(ctx.prevAnimation)})`
+                );
+            } catch (e) {
+                console.error(`office-depth teardown: restore the animation switch failed: ${e?.message ?? e}`);
+            }
+            await cockpitOffice.teardown(h, ctx);
+        },
+        async assert(h, ctx) {
+            const steps = [];
+            const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+            if (ctx.missing) {
+                rec("0. the office loads", false, ctx.missing);
+                return steps;
+            }
+            await settleBoss(h);
+            const lounge = (await probe(h))?.lounge;
+            if (!lounge) {
+                rec("0. the office draws its lounge", false, "the probe has no lounge");
+                return steps;
+            }
+            // a click on the floor at a point of the plan walks the boss there
+            const walkTo = async (x, y) => {
+                await h.ev(`(() => {
+                    const root = document.querySelector("[data-office-root]");
+                    const r = root.getBoundingClientRect();
+                    root.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + ${x}, clientY: r.top + ${y} }));
+                })()`);
+                await sleep(200);
+                const p = await settleBoss(h);
+                await h.ev(`document.querySelector("[data-office-boss]")?.scrollIntoView({ block: "center" })`);
+                await sleep(200);
+                return p;
+            };
+            // what is drawn again over the boss: whether the layer shows, and which props in it
+            const front = () =>
+                h.ev(`(() => {
+                    const el = document.querySelector('[data-office-front="boss"]');
+                    const shown = (n) => !!n && n.style.display !== "none";
+                    return {
+                        shown: shown(el),
+                        props: [...(el?.querySelectorAll("[data-office-prop]") ?? [])].filter(shown).map((n) => n.dataset.officeProp),
+                    };
+                })()`);
+            const near = (p, x, y) => !!p?.boss && Math.abs(p.boss.x - x) <= 6 && Math.abs(p.boss.y - y) <= 6;
+
+            // 1. beside the machine on its left, the feet behind its foot (the machine stands at 165..201 x 93..153 of the
+            // lounge): the machine is drawn again over the boss
+            const bx = lounge.x + 150;
+            const by = lounge.y + 120;
+            let p = await walkTo(bx, by);
+            const behind = await front();
+            await h.shot("cdp-shots/office-depth-1-behind.png");
+            rec(
+                "1. beside the coffee machine with its feet behind the machine's foot, the machine is drawn again over the boss",
+                near(p, bx, by) && behind.shown && JSON.stringify(behind.props) === JSON.stringify(["coffee"]),
+                JSON.stringify({ boss: p?.boss, at: [bx, by], ...behind })
+            );
+
+            // 2. in front of the machine, its feet below the machine's foot: the boss covers it, nothing is drawn over it
+            const fy = lounge.y + 200;
+            p = await walkTo(bx, fy);
+            const before = await front();
+            await h.shot("cdp-shots/office-depth-2-in-front.png");
+            rec(
+                "2. in front of the coffee machine the boss covers it: nothing is drawn over the boss",
+                near(p, bx, fy) && !before.shown && before.props.length === 0,
+                JSON.stringify({ boss: p?.boss, at: [bx, fy], ...before })
+            );
+            return steps;
+        },
+    };
     // the spec's Benchmark: Cards then Office on the office-bench roster plus three fixture runs (48 agents over six projects,
     // of which one floor of four rooms is drawn, about 30 people)
     const cockpitOfficeBench = {
@@ -3570,5 +3662,5 @@ export function makeCockpitOfficeScenarios(fx) {
         },
     };
 
-    return { cockpitOffice, cockpitOfficePet, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeSound, cockpitOfficeFloors, cockpitOfficeBackground };
+    return { cockpitOffice, cockpitOfficePet, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeDepth, cockpitOfficeBench, cockpitOfficeSound, cockpitOfficeFloors, cockpitOfficeBackground };
 }

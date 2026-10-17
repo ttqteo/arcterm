@@ -40297,7 +40297,7 @@ const whatsNew = {
     },
 };
 
-const { cockpitOffice, cockpitOfficePet, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeBench, cockpitOfficeSound, cockpitOfficeFloors, cockpitOfficeBackground } = makeCockpitOfficeScenarios({
+const { cockpitOffice, cockpitOfficePet, cockpitOfficeControls, cockpitOfficeNeedsYouBoard, cockpitOfficeDepth, cockpitOfficeBench, cockpitOfficeSound, cockpitOfficeFloors, cockpitOfficeBackground } = makeCockpitOfficeScenarios({
     arrangeFixtureRun,
     teardownFixtureRun,
     spOpen,
@@ -45759,6 +45759,7 @@ export const SCENARIOS = [
     cockpitOffice,
     cockpitOfficeControls,
     cockpitOfficeNeedsYouBoard,
+    cockpitOfficeDepth,
     cockpitOfficeFloors,
     cockpitOfficeBackground,
     cockpitOfficePet,
