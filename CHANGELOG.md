@@ -42,8 +42,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
-- The t> mark in the Mac menu bar stands as tall as the memory beside it and on the same baseline, instead of hanging
-  below the text, and it is sharp on a non-Retina screen.
+- The t> mark in the Mac menu bar sits level with the memory beside it, its middle on the text's middle, instead of
+  hanging below the text.
 
 ## 0.15.15 — 2026-10-17
 

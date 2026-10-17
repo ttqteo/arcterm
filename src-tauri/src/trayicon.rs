@@ -105,13 +105,15 @@ pub fn glyph(step: u32, color: [u8; 4]) -> Rgba {
     g
 }
 
-/// macOS: the template image, 36 px high so the menu bar shows it 18 pt high. Alone, the mark is 3 px a cell across its
-/// middle: 13.5 pt tall, the size of the icons beside it (4 px a cell filled all 18 pt and stood out). Beside the title
-/// it is 2 px a cell, 9 pt, the height of the title's digits, its foot on their baseline 13 pt down (measured on a 1x
-/// screen, 2026-10-17): at 3 px it hung 3 pt below the text, and its 1.5 px cells blurred on a 1x screen.
+/// macOS: the template image, a 36 px square the menu bar shows 18 pt high, with the mark 3 px a cell: 13.5 pt tall,
+/// the size of the icons beside it (4 px a cell filled all 18 pt and stood out). Alone it sits across the middle. Beside
+/// the title it sits 1 pt higher, its middle on the middle of the title's digits: measured on a 1x screen (2026-10-18),
+/// the digits stand 9-19 pt down the bar and the mark across the middle stood 8-21.5 pt, low beside them. A 9 pt mark
+/// on their baseline read as too small.
 pub fn mac_icon(dim: bool, titled: bool) -> Rgba {
-    let (g, top) = if titled { (glyph(2, BLACK), 8) } else { (glyph(3, BLACK), 4) };
-    let mut out = Rgba::blank(g.width, 36);
+    let g = glyph(3, BLACK);
+    let top = if titled { 2 } else { 4 };
+    let mut out = Rgba::blank(36, 36);
     out.blit(&g, 0, top);
     if dim {
         out.fade(DIM);
@@ -335,15 +337,15 @@ mod tests {
     }
 
     #[test]
-    fn beside_the_title_the_mac_mark_is_2_px_a_cell_on_the_baseline() {
+    fn beside_the_title_the_mac_mark_is_as_big_and_1_pt_higher() {
         let m = mac_icon(false, true);
-        assert_eq!((m.width, m.height), (24, 36));
-        // 18 px of mark between 8 px of air above and 10 below: its foot 13 pt down, where the digits stand
-        assert!((0..24).all(|x| (0..8).chain(26..36).all(|y| alpha(&m, x, y) == 0)));
-        assert_eq!(alpha(&m, 2, 10), 255); // the t's stem, cell (1, 1)
-        assert_eq!(alpha(&m, 23, 16), 255); // the chevron's point, cell (11, 4)
-        assert_eq!(alpha(&m, 15, 25), 255); // the chevron's foot, cell (7, 8)
-        assert_eq!(alpha(&m, 1, 10), 0);
+        assert_eq!((m.width, m.height), (36, 36));
+        // the same 27 px of mark, between 2 px of air above and 7 below
+        assert!((0..36).all(|x| (0..2).chain(29..36).all(|y| alpha(&m, x, y) == 0)));
+        assert_eq!(alpha(&m, 3, 5), 255); // the t's stem, cell (1, 1)
+        assert_eq!(alpha(&m, 35, 14), 255); // the chevron's point, cell (11, 4)
+        assert_eq!(alpha(&m, 21, 28), 255); // the chevron's foot, cell (7, 8)
+        assert_eq!(alpha(&m, 2, 5), 0);
     }
 
     #[test]
