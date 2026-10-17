@@ -506,6 +506,29 @@ export function keepsProject(filter: string | null, project: string | undefined)
     return filter == null || (project ?? "") === filter;
 }
 
+export function projectCounts(cards: { project?: string }[]): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const c of cards) {
+        counts.set(c.project ?? "", (counts.get(c.project ?? "") ?? 0) + 1);
+    }
+    return counts;
+}
+
+// a direct agent is neither kind, so only all counts it
+export function runKindCounts(modes: string[], unkinded = 0): Record<RunKindFilter, number> {
+    const orchestrator = modes.filter((m) => keepsRunKind("orchestrator", m)).length;
+    return { all: modes.length + unkinded, orchestrator, quick: modes.length - orchestrator };
+}
+
+// A region filter's chips get a line of their own under the head while there are few; past this many
+// choices besides all, a line of them runs on and wraps, so the head carries one menu instead.
+export const FILTER_LINE_MAX = 6;
+
+// options counts the all choice, which every filter leads with
+export function filterAsMenu(options: number): boolean {
+    return options - 1 > FILTER_LINE_MAX;
+}
+
 const CHUNK_EVENTS = new Set(["effort-note", "chunk-status", "chunk-done", "chunk-added"]);
 const EFFORT_EVENTS = new Set([...CHUNK_EVENTS, "effort-created", "effort-status"]);
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { anyDialogOpen, anyModalOpen } from "@/app/modals/modalstack";
+import { contextMenuAtom } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { modalsModel } from "@/app/store/modalmodel";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
@@ -142,6 +143,9 @@ export function deriveKeyContext(): KeyContext {
         globalStore.get(floatMiniAtom) ||
         // the Ctrl+Tab switcher over the terminal: its Escape closes it (switcher:cancel), not the surface underneath
         globalStore.get(tabSwitcherAtom) != null ||
+        // a context menu moves its highlight with the arrows and closes on Escape; uncounted, the Brief's
+        // list cursor took the arrows and Escape left the surface under the open menu
+        globalStore.get(contextMenuAtom) != null ||
         globalStore.get(modalsModel.modalsAtom).length > 0 ||
         // and every other ModalShell dialog (the cheat sheet, a confirm, the tool detail): without an atom above, Escape
         // and j/k/d/f acted on the surface behind it. A sheet does not count: its surface's keys stay live.

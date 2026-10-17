@@ -207,11 +207,10 @@ export function ContextMenu({ state }: { state: ContextMenuState }) {
     const dismiss = useDismiss(context);
     const { getFloatingProps } = useInteractions([dismiss]);
 
-    // grab focus so the menu receives keydown immediately
-    const panelRef = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-        panelRef.current?.focus();
-    }, []);
+    // grab focus so the menu receives keydown immediately. On attach rather than in a mount effect:
+    // FloatingPortal mounts its children a render later, so the effect found no panel and the arrows
+    // never reached the menu.
+    const focused = useRef(false);
 
     const descendOrActivate = () => {
         const item = focusedItem(items, active);
@@ -265,13 +264,17 @@ export function ContextMenu({ state }: { state: ContextMenuState }) {
             <div
                 ref={(node) => {
                     refs.setFloating(node);
-                    panelRef.current = node;
+                    if (node != null && !focused.current) {
+                        focused.current = true;
+                        node.focus({ preventScroll: true });
+                    }
                 }}
                 tabIndex={-1}
                 style={floatingStyles}
                 className="z-[1000] outline-none"
-                onKeyDown={onKeyDown}
-                {...getFloatingProps()}
+                // through getFloatingProps, which merges handlers: a plain onKeyDown before its spread was
+                // replaced by useDismiss's own, and the arrows and Enter did nothing
+                {...getFloatingProps({ onKeyDown })}
             >
                 {/* the reveal sits inside: floating-ui positions the outer element with a transform of its own */}
                 <PopoverReveal open origin={revealOrigin(placement)} className={PANEL}>

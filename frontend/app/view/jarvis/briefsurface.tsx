@@ -23,7 +23,7 @@
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { cardVariants, computeEntrances, initialEntranceState, MOTION, paneReveal } from "@/app/element/motiontokens";
-import { ContextMenuModel } from "@/app/store/contextmenu";
+import { contextMenuAtom, ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { buildJarvisBindings } from "@/app/store/keybindings/bindings";
 import { useSurfaceListNav, type ListNavController } from "@/app/store/keybindings/listnav";
@@ -50,6 +50,7 @@ import {
     Archive,
     ArchiveRestore,
     ArrowUpRight,
+    ChevronDown,
     Copy,
     Link2,
     Maximize2,
@@ -107,6 +108,7 @@ import {
     behindGroups,
     filterLines,
     initiativeLine,
+    filterAsMenu,
     initiativeProjects,
     isIdea,
     keepsProject,
@@ -114,9 +116,11 @@ import {
     lineOpenTarget,
     linkedUnder,
     nestInitiatives,
+    projectCounts,
     projectName,
     queueLine,
     RUN_KIND_FILTERS,
+    runKindCounts,
     runKindLegs,
     runRowFace,
     sessionLine,
@@ -327,75 +331,108 @@ function RegionHead({
 const EMPTY_ACT =
     "flex h-[26px] flex-none cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-edge-mid bg-surface-raised px-2.5 text-[11.5px] font-semibold text-ink-hi hover:border-edge-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
-// Which kind of run Runs and Shipped show. Sits beside the region head, not in it.
-function RunKindToggle({ value, onChange }: { value: RunKindFilter; onChange: (v: RunKindFilter) => void }) {
-    return (
-        <div
-            role="group"
-            aria-label="Show runs of kind"
-            data-jarvis-run-kind
-            className="flex flex-none items-center gap-1"
-        >
-            {RUN_KIND_FILTERS.map((k) => (
-                <button
-                    key={k}
-                    type="button"
-                    aria-pressed={value === k}
-                    onClick={() => onChange(k)}
-                    className={cn(
-                        "cursor-pointer rounded-[5px] border px-1.5 py-px text-[10.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                        value === k
-                            ? "border-edge-strong text-ink-hi"
-                            : "border-transparent text-muted hover:text-ink-hi"
-                    )}
-                >
-                    {k}
-                </button>
-            ))}
-        </div>
-    );
+// A region's filter: which kind of run Runs shows, which project Initiatives does. The first option is always all.
+type FilterSpec<T> = {
+    label: string;
+    // what the menu's face calls the choice: "project", "kind"
+    noun: string;
+    // the data attribute a CDP scenario finds the filter by
+    tag: string;
+    options: { value: T; label: string; count?: number }[];
+    value: T;
+    onChange: (v: T) => void;
+};
+
+// A few choices sit as a line of chips under the head, where they never squeeze it; past FILTER_LINE_MAX
+// they become one menu in the head, which a long project list cannot wrap.
+type FilterSlot = { menu: boolean; node: ReactNode };
+
+function filterSlot<T>(spec: FilterSpec<T>): FilterSlot {
+    const menu = filterAsMenu(spec.options.length);
+    return { menu, node: menu ? <FilterMenu {...spec} /> : <FilterLine {...spec} /> };
 }
 
-// Which project Initiatives shows: every one, each project the initiatives name, or none. Beside the region head,
-// like the Runs kind filter; a list as long as the projects wraps rather than squeeze the head.
-function InitiativeProjectToggle({
-    options,
-    value,
-    onChange,
-}: {
-    options: string[];
-    value: string | null;
-    onChange: (v: string | null) => void;
-}) {
-    const items: { value: string | null; label: string }[] = [
-        { value: null, label: "all" },
-        ...options.map((p) => ({ value: p, label: p || "no project" })),
-    ];
+function FilterLine<T>({ label, tag, options, value, onChange }: FilterSpec<T>) {
     return (
-        <div
-            role="group"
-            aria-label="Show initiatives of project"
-            data-jarvis-initiative-project
-            className="flex min-w-0 flex-wrap items-center justify-end gap-1"
-        >
-            {items.map((o) => (
+        <div role="group" aria-label={label} {...{ [tag]: "" }} className="flex flex-wrap items-center gap-1">
+            {options.map((o) => (
                 <button
                     key={o.label}
                     type="button"
                     aria-pressed={value === o.value}
+                    data-filter-option={o.label}
                     onClick={() => onChange(o.value)}
                     className={cn(
-                        "cursor-pointer rounded-[5px] border px-1.5 py-px text-[10.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                        "flex cursor-pointer items-baseline gap-1.5 rounded-[5px] border px-1.5 py-px text-[10.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                         value === o.value
                             ? "border-edge-strong text-ink-hi"
                             : "border-transparent text-muted hover:text-ink-hi"
                     )}
                 >
                     {o.label}
+                    {o.count != null ? (
+                        <span className={cn("tabular-nums", value === o.value ? "text-ink-mid" : "text-muted")}>
+                            {o.count}
+                        </span>
+                    ) : null}
                 </button>
             ))}
         </div>
     );
+}
+
+function FilterMenu<T>({ label, noun, tag, options, value, onChange }: FilterSpec<T>) {
+    // the one context menu may be a row's, so open means it holds this filter's items
+    const shown = useRef<ContextMenuItem[] | null>(null);
+    const open = useAtomValue(contextMenuAtom)?.items === shown.current && shown.current != null;
+    const picked = options.find((o) => o.value === value) ?? options[0];
+    // opened at the face rather than the pointer, so Enter on the face drops it in the same place
+    const show = (e: React.MouseEvent<HTMLButtonElement>) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        shown.current = [
+            { type: "header", label },
+            ...options.map(
+                (o): ContextMenuItem => ({
+                    type: "radio",
+                    label: o.label,
+                    checked: o.value === value,
+                    sublabel: o.count != null ? String(o.count) : undefined,
+                    click: () => onChange(o.value),
+                })
+            ),
+        ];
+        globalStore.set(contextMenuAtom, { x: r.left, y: r.bottom, items: shown.current });
+    };
+    return (
+        <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            aria-label={label}
+            {...{ [tag]: "" }}
+            onClick={show}
+            className="flex flex-none cursor-pointer items-center gap-1.5 rounded-[5px] border border-edge-strong px-[7px] py-px text-[10.5px] text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+            <span className="text-muted">{noun}</span>
+            {picked.label}
+            <ChevronDown size={10} aria-hidden className="text-muted" />
+        </button>
+    );
+}
+
+function runKindFilter(
+    value: RunKindFilter,
+    onChange: (v: RunKindFilter) => void,
+    counts: Record<RunKindFilter, number>
+): FilterSlot {
+    return filterSlot({
+        label: "Show runs of kind",
+        noun: "kind",
+        tag: "data-jarvis-run-kind",
+        options: RUN_KIND_FILTERS.map((k) => ({ value: k, label: k, count: counts[k] })),
+        value,
+        onChange,
+    });
 }
 
 function Region({
@@ -409,6 +446,7 @@ function Region({
     only,
     onOnly,
     tools,
+    filter,
     act,
     after,
     children,
@@ -423,6 +461,8 @@ function Region({
     only: boolean;
     onOnly: () => void;
     tools?: ReactNode;
+    // the region's filter: a line of chips under the head, or a menu in it (filterSlot)
+    filter?: FilterSlot;
     // the control that starts what the empty box says is missing
     act?: ReactNode;
     // drawn whether or not the region is empty (the Runs region's office clock, Jarvis's floor and DEV fixture floors)
@@ -443,7 +483,9 @@ function Region({
                     onOnly={onOnly}
                 />
                 {tools}
+                {filter?.menu ? filter.node : null}
             </div>
+            {filter != null && !filter.menu ? filter.node : null}
             {empty ? (
                 <div className="flex items-center gap-3 rounded-[10px] border border-dashed border-edge-strong bg-surface px-4 py-3">
                     {region.ok ? (
@@ -869,10 +911,12 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     const effortGroups = useMemo(() => splitIdeas(efforts), [efforts]);
     // the project filter narrows before the cap, so a project with older initiatives still fills the window
     const [pickedProject, setPickedProject] = useAtom(briefInitiativeProjectAtom);
-    const projectOptions = useMemo(
-        () => initiativeProjects(showArchived ? [...effortGroups.trackers, ...archivedCards] : effortGroups.trackers),
+    const projectCards = useMemo(
+        () => (showArchived ? [...effortGroups.trackers, ...archivedCards] : effortGroups.trackers),
         [effortGroups, archivedCards, showArchived]
     );
+    const projectOptions = useMemo(() => initiativeProjects(projectCards), [projectCards]);
+    const perProject = useMemo(() => projectCounts(projectCards), [projectCards]);
     // a pick whose last initiative went away reads as every project rather than an empty region
     const project = pickedProject != null && projectOptions.includes(pickedProject) ? pickedProject : null;
     const projectTrackers = useMemo(
@@ -891,6 +935,14 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
     );
     const ideaWindow = useMemo(() => capRegion(effortGroups.ideas, IDEA_CAP, ideasOpen), [effortGroups, ideasOpen]);
     const [runKind, setRunKind] = useAtom(briefRunKindAtom);
+    const runCounts = useMemo(
+        () =>
+            runKindCounts(
+                (model_?.activeRuns ?? []).map((r) => r.mode),
+                model_?.directAgents.length ?? 0
+            ),
+        [model_]
+    );
     const sessions = useMemo(
         () =>
             model_ == null
@@ -2294,7 +2346,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                             meta={`${liveN} live`}
                                             only={only === "sessions"}
                                             onOnly={() => toggleOnly("sessions")}
-                                            tools={<RunKindToggle value={runKind} onChange={setRunKind} />}
+                                            filter={runKindFilter(runKind, setRunKind, runCounts)}
                                             act={
                                                 <button
                                                     type="button"
@@ -2391,15 +2443,27 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                             meta={paused > 0 ? `${paused} paused` : "all moving"}
                                             only={only === "initiatives"}
                                             onOnly={() => toggleOnly("initiatives")}
+                                            filter={
+                                                projectOptions.length > 1 && pass == null
+                                                    ? filterSlot({
+                                                          label: "Show initiatives of project",
+                                                          noun: "project",
+                                                          tag: "data-jarvis-initiative-project",
+                                                          options: [
+                                                              { value: null, label: "all", count: projectCards.length },
+                                                              ...projectOptions.map((p) => ({
+                                                                  value: p,
+                                                                  label: p || "no project",
+                                                                  count: perProject.get(p),
+                                                              })),
+                                                          ],
+                                                          value: project,
+                                                          onChange: setPickedProject,
+                                                      })
+                                                    : undefined
+                                            }
                                             tools={
                                                 <>
-                                                    {projectOptions.length > 1 && pass == null ? (
-                                                        <InitiativeProjectToggle
-                                                            options={projectOptions}
-                                                            value={project}
-                                                            onChange={setPickedProject}
-                                                        />
-                                                    ) : null}
                                                     <ReviewTools
                                                         count={reviewItems.length}
                                                         pass={

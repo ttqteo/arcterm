@@ -13259,7 +13259,7 @@ const briefDesignParity = {
         });
 
         // (h) the Runs kind filter narrows Runs to one badge, then all brings every row back
-        const KIND = (k) => `[...document.querySelectorAll('[data-jarvis-run-kind] button')].find((b) => b.innerText.trim() === '${k}')`;
+        const KIND = (k) => `document.querySelector('[data-jarvis-run-kind] [data-filter-option="${k}"]')`;
         const runBadges = `[...document.querySelectorAll('[data-jarvis-brief-row="session"]')].map((r) => r.querySelector(':scope > div > div > span')?.innerText.trim() ?? null)`;
         const before = await h.ev(runBadges);
         await h.ev(`${KIND("orchestrator")}?.click()`);

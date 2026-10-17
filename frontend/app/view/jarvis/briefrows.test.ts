@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { ActiveWorkRow, DeltaRow, QueueRow, RunRow } from "./briefingmodel";
 import {
     behindGroups,
+    filterAsMenu,
     filterLines,
     initiativeLine,
     initiativeProjects,
@@ -13,8 +14,10 @@ import {
     lineOpenTarget,
     linkedUnder,
     nestInitiatives,
+    projectCounts,
     projectName,
     queueLine,
+    runKindCounts,
     runKindLegs,
     runRowFace,
     sessionLine,
@@ -865,6 +868,33 @@ describe("initiativeProjects", () => {
 
     it("is empty when there are no initiatives", () => {
         expect(initiativeProjects([])).toEqual([]);
+    });
+});
+
+describe("filter counts", () => {
+    it("counts initiatives per project, the unnamed ones under the empty name", () => {
+        const got = projectCounts([{ project: "opal" }, { project: "waveterm" }, { project: "opal" }, {}]);
+        expect([...got]).toEqual([
+            ["opal", 2],
+            ["waveterm", 1],
+            ["", 1],
+        ]);
+    });
+
+    it("counts runs per kind, reading every other mode as quick, and direct agents only under all", () => {
+        expect(runKindCounts(["orchestrator", "quick", "pipeline", ""], 2)).toEqual({
+            all: 6,
+            orchestrator: 1,
+            quick: 3,
+        });
+    });
+});
+
+describe("filterAsMenu", () => {
+    it("keeps a line of chips up to six choices besides all, and a menu past that", () => {
+        expect(filterAsMenu(3)).toBe(false);
+        expect(filterAsMenu(7)).toBe(false);
+        expect(filterAsMenu(8)).toBe(true);
     });
 });
 
