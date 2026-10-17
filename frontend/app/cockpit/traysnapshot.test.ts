@@ -19,7 +19,6 @@ function input(over: Partial<TraySnapshotInput> = {}): TraySnapshotInput {
             memavailable: 1.2 * GB,
             pressure: "high",
             cpupct: 38,
-            cpusamples: [30, 38],
             diskname: "Macintosh HD",
             disktotal: 245 * GB,
             diskfree: 127 * GB,
@@ -78,7 +77,7 @@ describe("traySnapshot", () => {
     it("reads the machine and orders the jobs running first", () => {
         const s = traySnapshot(input());
         expect(s.machine?.pressure).toBe("high");
-        expect(s.machine?.cpuSamples).toEqual([30, 38]);
+        expect(s.machine?.cpuPct).toBe(38);
         expect(s.heardAt).toBe(NOW - 3_000);
         expect(s.jobs.map((j) => j.id)).toEqual(["j1", "j2"]);
         expect(s.jobs[0]).toMatchObject({ running: true, elapsedMs: 72_000, source: "tray-popover", reason: "" });
@@ -214,6 +213,14 @@ describe("trayBadge", () => {
     it("counts what waits and raises the dot only at critical", () => {
         expect(trayBadge([row("a", "ask", "x", "q")], "critical")).toEqual({ count: 1, alert: true });
         expect(trayBadge([], "high")).toEqual({ count: 0, alert: false });
+    });
+});
+
+describe("traySnapshot's CPU", () => {
+    it("has no load before wavesrv's first reading", () => {
+        const m = input().machine!;
+        const { cpupct: _, ...noCpu } = m;
+        expect(traySnapshot(input({ machine: noCpu as any })).machine?.cpuPct).toBeNull();
     });
 });
 

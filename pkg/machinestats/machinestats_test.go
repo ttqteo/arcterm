@@ -26,40 +26,35 @@ func TestPressureWord(t *testing.T) {
 	}
 }
 
-func TestSamplerSamplesWhileAskedThenStops(t *testing.T) {
+func TestWatchCPUDropsTheFirstReading(t *testing.T) {
 	var mu sync.Mutex
 	n := 0.0
-	s := NewSampler(func() float64 { mu.Lock(); defer mu.Unlock(); n++; return n }, 10*time.Millisecond, 60*time.Millisecond)
-	s.Samples()
-	time.Sleep(45 * time.Millisecond)
-	got := s.Samples()
-	if len(got) < 2 {
-		t.Fatalf("after 45ms of asking, %d samples, want at least 2", len(got))
-	}
-	if got[0] >= got[len(got)-1] {
-		t.Fatalf("samples not oldest first: %v", got)
-	}
-	time.Sleep(150 * time.Millisecond)
-	if s.Running() {
-		t.Fatal("the sampler still runs 150ms after the last ask (idle stop is 60ms)")
-	}
-	if got := s.Samples(); len(got) > 1 {
-		t.Fatalf("a restarted sampler kept %d old samples", len(got))
+	read := func() float64 { mu.Lock(); defer mu.Unlock(); n++; return n }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	got := make(chan float64, 10)
+	go WatchCPU(ctx, read, 2*time.Millisecond, func(v float64) { got <- v })
+	for _, want := range []float64{2, 3} {
+		select {
+		case v := <-got:
+			// the first call covers the time since the one before it, not the last interval
+			if v != want {
+				t.Fatalf("stored %v, want %v", v, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("nothing stored, want %v", want)
+		}
 	}
 }
 
-func TestSamplerKeepsTheLastSixty(t *testing.T) {
-	s := NewSampler(func() float64 { return 1 }, time.Millisecond, time.Second)
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(s.Samples()) == MaxSamples {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
+func TestLatestHasNoReadingUntilSet(t *testing.T) {
+	var l Latest
+	if _, ok := l.Get(); ok {
+		t.Fatal("a reading before any was set")
 	}
-	time.Sleep(30 * time.Millisecond)
-	if got := len(s.Samples()); got != MaxSamples {
-		t.Fatalf("len = %d, want %d", got, MaxSamples)
+	l.Set(42)
+	if v, ok := l.Get(); !ok || v != 42 {
+		t.Fatalf("Get() = %v, %v; want 42, true", v, ok)
 	}
 }
 

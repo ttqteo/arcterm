@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The tray popover's display rules (spec 2026-10-15-tray-popover-design.md): sizes, the memory card's words, the
-// bars' widths and the CPU line. traypage.tsx and traysubpages.tsx draw them. No React.
+// bars' widths and the CPU load. traypage.tsx and traysubpages.tsx draw them. No React.
 
 import type { TrayLevel, TrayStorage } from "./traytypes";
 
@@ -43,23 +43,9 @@ export function levelWord(level: TrayLevel): string | null {
     }
 }
 
-/** What the heavy-job queue does at this level (pkg/jobqueue), under the memory figure. */
-export function memoryCaption(level: TrayLevel, paused: boolean): string {
-    if (paused) {
-        return "Queue paused";
-    }
-    if (level === "critical") {
-        return "No heavy job starts";
-    }
-    return level === "high" ? "Jobs run one at a time" : "Jobs start as RAM allows";
-}
-
-/** The whole percent of total in use, 0-100. */
-export function usedPct(total: number, free: number): number {
-    if (total <= 0) {
-        return 0;
-    }
-    return Math.min(100, Math.max(0, Math.round(((total - free) / total) * 100)));
+/** The CPU card's load: the last second's, whole-machine, a dash before wavesrv's first reading. */
+export function cpuLoad(pct: number | null): string {
+    return pct == null ? "—" : `${Math.round(pct)}%`;
 }
 
 /** A split bar: arcterm's share and the rest of what is used, in whole percent of total. */
@@ -70,17 +56,6 @@ export function split(total: number, used: number, arc: number): { arc: number; 
     const arcPct = Math.round((Math.min(used, Math.max(0, arc)) / total) * 100);
     const usedP = Math.min(100, Math.round((used / total) * 100));
     return { arc: arcPct, other: Math.max(0, usedP - arcPct) };
-}
-
-/** The CPU line's points in a w x h box, oldest left, 100 % at the top. */
-export function sparkPoints(samples: number[], w = 140, h = 34): string {
-    if (samples.length === 0) {
-        return "";
-    }
-    const pts = samples.length === 1 ? [samples[0], samples[0]] : samples;
-    const step = w / (pts.length - 1);
-    const r = (n: number) => Math.round(n * 10) / 10;
-    return pts.map((v, i) => `${r(i * step)},${r(h - (Math.min(100, Math.max(0, v)) / 100) * h)}`).join(" ");
 }
 
 function sameDay(a: Date, b: Date): boolean {

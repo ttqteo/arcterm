@@ -24,7 +24,6 @@ func (ws *WshServer) GetMachineStatsCommand(ctx context.Context) (*wshrpc.Machin
 		MemAvailable: st.MemAvailable,
 		Pressure:     st.Pressure,
 		CpuPct:       st.CpuPct,
-		CpuSamples:   st.CpuSamples,
 		DiskName:     st.DiskName,
 		DiskTotal:    st.DiskTotal,
 		DiskFree:     st.DiskFree,
@@ -32,8 +31,14 @@ func (ws *WshServer) GetMachineStatsCommand(ctx context.Context) (*wshrpc.Machin
 }
 
 // StartMachineWatch publishes memorypressure whenever the level or the memory available changes: the tray icon's red
-// dot and free memory while the popover is shut.
+// dot and free memory while the popover is shut. It also keeps the CPU reading the popover shows current.
 func StartMachineWatch(ctx context.Context) {
+	go func() {
+		defer func() {
+			panichandler.PanicHandler("machinestats.RunCPU", recover())
+		}()
+		machinestats.RunCPU(ctx)
+	}()
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("machinestats.WatchMemory", recover())

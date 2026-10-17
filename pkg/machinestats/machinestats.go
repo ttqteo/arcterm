@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package machinestats reads the machine's memory, CPU and system disk for the menu bar / tray popover
-// (spec 2026-10-15-tray-popover-design.md). CPU is sampled once a second only while someone keeps asking, and stops
-// IdleStop after the last ask, as pkg/resmon's sampler does.
+// (spec 2026-10-15-tray-popover-design.md). CPU is read once a second from wavesrv's start (RunCPU): a reading costs
+// about 6 µs, and the popover then has the last second's load the moment it opens, never a 0 while a sampler starts.
 package machinestats
 
 import (
@@ -17,11 +17,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 )
 
-const (
-	SampleInterval = time.Second
-	IdleStop       = 10 * time.Second
-	MaxSamples     = 60 // the popover's line is the last minute
-)
+const CPUInterval = time.Second
 
 // PressureWord is the popover's word for a pressure level; "" when the OS gave no reading.
 func PressureWord(p jobqueue.Pressure) string {
@@ -36,65 +32,47 @@ func PressureWord(p jobqueue.Pressure) string {
 	return ""
 }
 
-// Sampler keeps the last MaxSamples readings of read, sampling every interval while Samples is called at least once
-// per idle.
-type Sampler struct {
-	read     func() float64
-	interval time.Duration
-	idle     time.Duration
-
-	mu       sync.Mutex
-	running  bool
-	lastCall time.Time
-	samples  []float64
+// Latest holds the last CPU reading; none until the first lands.
+type Latest struct {
+	mu sync.Mutex
+	v  float64
+	ok bool
 }
 
-func NewSampler(read func() float64, interval, idle time.Duration) *Sampler {
-	return &Sampler{read: read, interval: interval, idle: idle}
+func (l *Latest) Set(v float64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.v, l.ok = v, true
 }
 
-// Samples returns the readings so far, oldest first, starting the loop when it is not running.
-func (s *Sampler) Samples() []float64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.lastCall = time.Now()
-	if !s.running {
-		s.running = true
-		go s.loop()
-	}
-	return append([]float64(nil), s.samples...)
+func (l *Latest) Get() (float64, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.v, l.ok
 }
 
-func (s *Sampler) Running() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.running
-}
+var cpuLatest Latest
 
-func (s *Sampler) loop() {
-	t := time.NewTicker(s.interval)
+// WatchCPU stores read's value every interval until ctx ends. The first call's value is dropped: read is a busy
+// percent since the call before it, and before the first call that is gopsutil's init.
+func WatchCPU(ctx context.Context, read func() float64, interval time.Duration, store func(float64)) {
+	read()
+	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
-		v := s.read()
-		s.mu.Lock()
-		s.samples = append(s.samples, v)
-		if len(s.samples) > MaxSamples {
-			s.samples = s.samples[len(s.samples)-MaxSamples:]
-		}
-		s.mu.Unlock()
-		<-t.C
-		s.mu.Lock()
-		if time.Since(s.lastCall) > s.idle {
-			// a later ask starts a fresh minute: an old line would draw a gap as if the CPU had idled
-			s.running, s.samples = false, nil
-			s.mu.Unlock()
+		select {
+		case <-ctx.Done():
 			return
+		case <-t.C:
+			store(read())
 		}
-		s.mu.Unlock()
 	}
 }
 
-var cpuSampler = NewSampler(readCPU, SampleInterval, IdleStop)
+// RunCPU keeps the CPU reading Read returns current, once a CPUInterval, until ctx ends.
+func RunCPU(ctx context.Context) {
+	WatchCPU(ctx, readCPU, CPUInterval, cpuLatest.Set)
+}
 
 // readCPU is the whole machine's busy percent since the previous call (0 on the first)
 func readCPU() float64 {
@@ -109,29 +87,26 @@ type Stats struct {
 	MemTotal     uint64
 	MemAvailable uint64
 	Pressure     string
-	CpuPct       float64
-	CpuSamples   []float64
+	CpuPct       *float64 // the last second's busy percent, nil before RunCPU's first reading
 	DiskName     string
 	DiskTotal    uint64
 	DiskFree     uint64
 }
 
-// Read is one reading; it also keeps the CPU sampler going for IdleStop.
+// Read is one reading, with RunCPU's last CPU reading.
 func Read(ctx context.Context) (Stats, error) {
 	vm, err := mem.VirtualMemoryWithContext(ctx)
 	if err != nil {
 		return Stats{}, err
 	}
-	samples := cpuSampler.Samples()
 	st := Stats{
 		MemTotal:     vm.Total,
 		MemAvailable: vm.Available,
 		Pressure:     PressureWord(jobqueue.ReadPressure(ctx)),
-		CpuSamples:   samples,
 		DiskName:     volumeName(),
 	}
-	if n := len(samples); n > 0 {
-		st.CpuPct = samples[n-1]
+	if v, ok := cpuLatest.Get(); ok {
+		st.CpuPct = &v
 	}
 	if du, err := disk.UsageWithContext(ctx, systemRoot()); err == nil {
 		st.DiskTotal, st.DiskFree = du.Total, du.Free

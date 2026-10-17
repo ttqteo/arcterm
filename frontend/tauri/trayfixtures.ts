@@ -16,10 +16,6 @@ export interface TrayFixture {
     lastHeard?: number;
 }
 
-const CPU = [
-    30, 35, 26, 41, 47, 38, 59, 65, 53, 44, 62, 71, 56, 47, 35, 50, 68, 74, 59, 41, 32, 44, 53, 38, 47, 35, 41, 38, 38,
-];
-
 const main: TraySnapshot = {
     platform: "mac",
     machine: {
@@ -27,7 +23,6 @@ const main: TraySnapshot = {
         memAvailable: 1.2 * GB,
         pressure: "high",
         cpuPct: 38,
-        cpuSamples: CPU,
         diskName: "Macintosh HD",
         diskTotal: 245 * GB,
         diskFree: 127 * GB,
@@ -160,7 +155,6 @@ const quiet: TraySnapshot = {
         pressure: "normal",
         memAvailable: 9.4 * GB,
         cpuPct: 6,
-        cpuSamples: Array.from({ length: 29 }, () => 6),
         diskFree: 131 * GB,
     },
     storage: { ...main.storage!, arcBytes: 12.1 * GB, cleanableBytes: 0.3 * GB },

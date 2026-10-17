@@ -185,16 +185,20 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
     const latest = useRef({ peekRows, agents, jobQueue });
     latest.current = { peekRows, agents, jobQueue };
     useEffect(() => {
+        const readMachine = () =>
+            RpcApi.GetMachineStatsCommand(TabRpcClient)
+                .then((m) => {
+                    setMachine(m);
+                    setPressure(m.pressure);
+                    setHeardAt(Date.now());
+                })
+                .catch(() => {});
+        // between tray:shown and tray:closed; a reading that lands after the close must not reopen the feed
+        let shown = false;
         const carryOut = async (step: TrayStep) => {
             switch (step.kind) {
                 case "hello":
-                    await RpcApi.GetMachineStatsCommand(TabRpcClient)
-                        .then((m) => {
-                            setMachine(m);
-                            setPressure(m.pressure);
-                            setHeardAt(Date.now());
-                        })
-                        .catch(() => {});
+                    await readMachine();
                     setFed((n) => n + 1);
                     return;
                 case "page":
@@ -253,10 +257,19 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
         const offs = [
             listen<TrayAct>("tray:act", (e) => onAct(e.payload)),
             listen("tray:shown", () => {
-                setOpen(true);
-                setPage("main");
+                shown = true;
+                // a fresh reading before the first snapshot: the bridge's last one is from the previous open, and the
+                // kept page would show its CPU load as now
+                fireAndForget(async () => {
+                    await readMachine();
+                    if (shown) {
+                        setOpen(true);
+                        setPage("main");
+                    }
+                });
             }),
             listen("tray:closed", () => {
+                shown = false;
                 setOpen(false);
                 setPage("main");
             }),

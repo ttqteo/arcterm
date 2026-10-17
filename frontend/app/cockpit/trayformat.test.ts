@@ -1,15 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-    autoCleanLine,
-    fmtDisk,
-    fmtSize,
-    levelWord,
-    memoryCaption,
-    pageState,
-    sparkPoints,
-    split,
-    usedPct,
-} from "./trayformat";
+import { autoCleanLine, cpuLoad, fmtDisk, fmtSize, levelWord, pageState, split } from "./trayformat";
 
 const MIB = 1024 * 1024;
 const GIB = 1024 * MIB;
@@ -44,35 +34,21 @@ describe("the memory card's words", () => {
         expect(levelWord("critical")).toBe("Critical");
         expect(levelWord("unknown")).toBeNull();
     });
-    it("says what the queue does at that level", () => {
-        expect(memoryCaption("normal", false)).toBe("Jobs start as RAM allows");
-        expect(memoryCaption("unknown", false)).toBe("Jobs start as RAM allows");
-        expect(memoryCaption("high", false)).toBe("Jobs run one at a time");
-        expect(memoryCaption("critical", false)).toBe("No heavy job starts");
-        expect(memoryCaption("critical", true)).toBe("Queue paused");
+});
+
+describe("cpuLoad", () => {
+    it("reads the last second's load whole, and a dash before the first reading", () => {
+        expect(cpuLoad(37.6)).toBe("38%");
+        expect(cpuLoad(0)).toBe("0%");
+        expect(cpuLoad(null)).toBe("—");
     });
 });
 
 describe("bars", () => {
-    it("usedPct is whole and clamped", () => {
-        expect(usedPct(16 * GIB, 1.2 * GIB)).toBe(93);
-        expect(usedPct(0, 0)).toBe(0);
-        expect(usedPct(10, 20)).toBe(0);
-    });
     it("split keeps arcterm's share inside the used part", () => {
         expect(split(245, 118, 16.4)).toEqual({ arc: 7, other: 41 });
         expect(split(100, 50, 80)).toEqual({ arc: 50, other: 0 });
         expect(split(0, 0, 5)).toEqual({ arc: 0, other: 0 });
-    });
-});
-
-describe("sparkPoints", () => {
-    it("draws oldest left, 100% at the top", () => {
-        expect(sparkPoints([0, 100], 140, 34)).toBe("0,34 140,0");
-    });
-    it("draws one sample as a flat line and none as nothing", () => {
-        expect(sparkPoints([50], 140, 34)).toBe("0,17 140,17");
-        expect(sparkPoints([], 140, 34)).toBe("");
     });
 });
 

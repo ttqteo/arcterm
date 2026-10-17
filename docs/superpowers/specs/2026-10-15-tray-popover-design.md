@@ -117,12 +117,14 @@ So it is the popover's only source:
   - memory total and available (gopsutil `mem.VirtualMemory`);
   - the memory pressure level (`jobqueue.ReadPressure`: Activity Monitor's on macOS, the commit charge on Windows;
     unknown elsewhere);
-  - the CPU percent now and its last 60 one-second samples;
+  - the CPU's load over the last second, none before wavesrv's first reading;
   - the system volume's total and free bytes, and its name. The name is read once: the root volume's name on macOS
     (Macintosh HD unless renamed), `Local Disk (C:)` or the drive's label on Windows.
-  - CPU sampling runs only while calls keep coming, and stops 10 s after the last one, as `pkg/resmon`'s sampler
-    does. `TrayBridge` polls once a second while the popover is open. The samples live in Go, so a webview
-    throttling its timers in the background cannot leave holes in the graph.
+  - CPU is read once a second from wavesrv's start (`machinestats.RunCPU`). **Changed 2026-10-17:** it was sampled
+    only while calls kept coming, so each open began with no sample (a 0 %), then the previous open's figure, and
+    a line of a few seconds stretched across the card. A reading costs ~6.5 µs of CPU (0.0006 % of a core once a
+    second) and the last one is all that is kept. `TrayBridge` polls once a second while the popover is open, and
+    reads once before feeding a reopened one.
 - **A `memorypressure` event** published when the level changes. A watcher in wavesrv reads the level every 10 s,
   which on macOS is one `sysctl`. It feeds the icon's red dot while the popover is shut.
 - **The heaviest command per agent, on every OS.** `GetConsumersCommand`'s rows gain the agent's heaviest descendant
@@ -160,11 +162,11 @@ Copy and order follow the boards. The rules behind them:
 - **Memory card:**
   - The status word is Normal, High or Critical (`working`, `asking` and `error` colours, each with its dot). With
     no reading there is no word.
-  - The caption says what the queue does at that level: "Jobs start as RAM allows", "Jobs run one at a time", "No
-    heavy job starts", or "Queue paused" while paused.
-  - The bar fills with what is used, in `muted` at Normal and in the status colour above it.
+  - One line under it: "1.2 GB free of 16 GB". **Changed 2026-10-17:** the big figure, the bar and the queue's
+    caption went, for the one-line cards of a system menu bar app; Heavy jobs already says why a job waits.
   - **Free up** opens the subpage.
-- **CPU card:** the percent now and the last minute's line.
+- **CPU card:** one line, "Load: 38%", the last second's. The minute's line went with the memory card's bar
+  (2026-10-17); Activity Monitor has the history.
 - **Storage card:**
   - Free and total of the system volume, and **Clean up**.
   - A split bar: arcterm's share is the storage report's total plus `storebytes`; everything else is the rest of

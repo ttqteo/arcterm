@@ -40,8 +40,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The menu bar popover's Memory and CPU cards are one line each ("1.2 GB free of 16 GB", "Load: 38%"). CPU shows
+  the right load the moment it opens, instead of 0% or the figure from the last time you opened it.
 - On a Mac, a float's title bar ends in a − button in place of the pet's: it hides the window and leaves the agent
   running, and the Dock icon brings it back. `Cmd`+`M` and the yellow button still fold it into your pet.
+- Folded into the bottom-right corner, your pet sits higher, clear of the chat or help button a page keeps there
+  (Messenger's, for one).
 - Telegram connects only while an agent's question is open, and only when you allow it: for a while (1h, 2h, 4h or
   your own), on a schedule such as office hours, or always.
 - **Background tucked away in the Office**: the Backgrounded and Background lists no longer sit under the building,

@@ -10,18 +10,15 @@ import { ChevronLeft, Cpu, HardDrive, MemoryStick, Pause, Settings } from "lucid
 import type { ReactNode } from "react";
 import { formatElapsed, formatLeft, PACE_CHOICES, PAUSE_CHOICES } from "./jobqueue";
 import {
+    cpuLoad,
     fmtDisk,
     fmtSize,
-    LEVEL_BAR,
     LEVEL_DOT,
     LEVEL_TEXT,
     levelWord,
-    memoryCaption,
-    sparkPoints,
     split,
     USAGE_BAR,
     USAGE_TEXT,
-    usedPct,
 } from "./trayformat";
 import type { TrayAct, TrayJob, TrayLevel, TrayPage, TraySnapshot } from "./traytypes";
 
@@ -76,6 +73,8 @@ export function SubHeader({ title, back, right }: { title: string; back: () => v
     );
 }
 
+// Memory and CPU are one line each, as a system menu bar app draws them: the queue's rules and the CPU's minute are in
+// Heavy jobs and Activity Monitor
 function MemoryCard({ s, onFreeUp }: { s: TraySnapshot; onFreeUp: () => void }) {
     const m = s.machine;
     const level = m?.pressure ?? "unknown";
@@ -87,24 +86,17 @@ function MemoryCard({ s, onFreeUp }: { s: TraySnapshot; onFreeUp: () => void }) 
                 <PressureWord level={level} platform={s.platform} />
             </div>
             {/* wraps: "12.4 GB free of 31.8 GB" is wider than the half-width card */}
-            <div className="flex flex-wrap items-baseline gap-x-1.5">
-                <span className="whitespace-nowrap text-[20px] font-semibold tabular-nums text-primary">
-                    {m ? fmtSize(m.memAvailable) : "—"}
-                </span>
+            <span className="text-[12px] tabular-nums text-muted">
                 {m ? (
-                    <span className="whitespace-nowrap text-[11px] text-muted">free of {fmtSize(m.memTotal)}</span>
-                ) : null}
-            </div>
-            <div className="h-[5px] overflow-hidden rounded-[3px] bg-background">
-                <div
-                    className={cn("h-full", LEVEL_BAR[level])}
-                    style={{ width: `${m ? usedPct(m.memTotal, m.memAvailable) : 0}%` }}
-                />
-            </div>
-            <div className="flex items-center gap-1.5">
-                <span className="min-w-0 flex-1 text-[10.5px] text-muted">
-                    {memoryCaption(level, s.pausedLeftMs != null)}
-                </span>
+                    <>
+                        <span className="font-semibold text-primary">{fmtSize(m.memAvailable)}</span> free of{" "}
+                        {fmtSize(m.memTotal)}
+                    </>
+                ) : (
+                    "—"
+                )}
+            </span>
+            <div className="mt-auto flex justify-end">
                 <button
                     type="button"
                     data-tray-freeup
@@ -120,46 +112,15 @@ function MemoryCard({ s, onFreeUp }: { s: TraySnapshot; onFreeUp: () => void }) 
 }
 
 function CpuCard({ s }: { s: TraySnapshot }) {
-    const m = s.machine;
     return (
         <div data-tray-card="cpu" className={CARD}>
             <div className="flex items-center gap-1.5">
                 <Cpu size={13} className="text-muted" aria-hidden />
                 <span className="flex-1 text-[12px] font-semibold text-secondary">CPU</span>
             </div>
-            <div className="flex items-baseline gap-1.5">
-                <span className="whitespace-nowrap text-[20px] font-semibold tabular-nums text-primary">
-                    {m ? `${Math.round(m.cpuPct)}%` : "—"}
-                </span>
-                <span className="whitespace-nowrap text-[11px] text-muted">busy</span>
-            </div>
-            <svg
-                width="100%"
-                height="30"
-                viewBox="0 0 140 34"
-                preserveAspectRatio="none"
-                aria-label="CPU over the last minute"
-                className="block"
-            >
-                <line
-                    x1="0"
-                    y1="33.5"
-                    x2="140"
-                    y2="33.5"
-                    className="stroke-edge-mid"
-                    strokeWidth="1"
-                    vectorEffect="non-scaling-stroke"
-                />
-                <polyline
-                    points={sparkPoints(m?.cpuSamples ?? [])}
-                    fill="none"
-                    className="stroke-ink-mid"
-                    strokeWidth="1.5"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                />
-            </svg>
-            <span className="text-[10.5px] text-muted">Last minute</span>
+            <span title="The whole machine, over the last second" className="text-[12px] tabular-nums text-muted">
+                Load: <span className="font-semibold text-primary">{cpuLoad(s.machine?.cpuPct ?? null)}</span>
+            </span>
         </div>
     );
 }

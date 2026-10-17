@@ -14,8 +14,7 @@ export interface TrayMachine {
     memTotal: number;
     memAvailable: number;
     pressure: TrayLevel;
-    cpuPct: number;
-    cpuSamples: number[]; // 0-100, oldest first, up to the last minute
+    cpuPct: number | null; // the last second's whole-machine load, 0-100; null before wavesrv's first reading
     diskName: string;
     diskTotal: number;
     diskFree: number;

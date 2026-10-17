@@ -2752,8 +2752,7 @@ declare global {
         memtotal: number;
         memavailable: number;
         pressure: string;
-        cpupct: number;
-        cpusamples: number[];
+        cpupct?: number;
         diskname: string;
         disktotal: number;
         diskfree: number;

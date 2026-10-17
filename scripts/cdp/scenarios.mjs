@@ -45034,6 +45034,8 @@ function trayScenario(name, fixture, page, checks) {
 
 const trayMain = trayScenario("tray-main", "main", "main", [
     ["memory pressure reads High", "High"],
+    ["memory reads its free figure on one line", "1.2 GB free of 16 GB"],
+    ["the CPU card reads its load on one line", "Load: 38%"],
     ["the queued job offers Run now and Skip", "Run now"],
     ["Storage names the disk", "Macintosh HD"],
     ["four items wait on you", "Waiting on you"],
@@ -45049,7 +45051,8 @@ const trayStorage = trayScenario("tray-storage", "storage", "storage", [
     ["the subpage is Clean up storage", "Clean up storage"],
     ["run worktrees clean in place", "Clean all"],
     ["the store is never cleaned", "Never cleaned"],
-    ["the last auto-clean is reported", "auto-clean took 1.1 GB"],
+    // disks read in decimal GB (fmtDisk): the fixture's 1.1 GiB
+    ["the last auto-clean is reported", "auto-clean took 1.2 GB"],
 ]);
 const trayQuiet = trayScenario("tray-quiet", "quiet", "main", [
     ["memory pressure reads Normal", "Normal"],
@@ -45059,7 +45062,7 @@ const trayQuiet = trayScenario("tray-quiet", "quiet", "main", [
 const trayCritical = trayScenario("tray-critical", "critical", "main", [
     ["memory pressure reads Critical", "Critical"],
     ["the free figure reads in GB, not 307 MB", "0.3 GB"],
-    ["no heavy job starts", "No heavy job starts"],
+    ["the CPU card reads its load", "Load: 71%"],
     ["queued jobs say why", "memory pressure critical"],
 ]);
 const trayPaused = trayScenario("tray-paused", "paused", "main", [
@@ -45111,7 +45114,7 @@ const trayActions = {
             await h.shot("cdp-shots/tray-actions-popover.png");
             return [
                 { step: "1. a click sends each act, in order", ok: JSON.stringify(kinds) === JSON.stringify(want), detail: kinds.join(", ") },
-                { step: "2. the first click on Clean all only arms it", ok: armed === "Clean all 4.1 GB?", detail: armed },
+                { step: "2. the first click on Clean all only arms it", ok: armed === "Clean all 4.4 GB?", detail: armed }, // decimal GB, from the fixture's 4.1 GiB
                 { step: "3. Stop names the agent and the pid", ok: acts.includes('"blockId":"b1"') && acts.includes('"pid":4101'), detail: acts },
                 { step: "4. Esc on a subpage goes back to main", ok: afterEsc === "main", detail: `page=${afterEsc}` },
                 { step: "5. Esc on main sends close", ok: kinds[kinds.length - 1] === "close", detail: kinds.slice(-2).join(", ") },
