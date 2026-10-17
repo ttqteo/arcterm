@@ -126,10 +126,9 @@ describe("window stand-in", () => {
     });
     afterEach(() => vi.unstubAllGlobals());
 
-    // every method the frontend calls on getCurrentWindow() (app-bar, chrome, float-bar, floatstore, miniclickthrough, sprout-mini, dockbadgesync)
+    // every method the frontend calls on getCurrentWindow() (app-bar, chrome, floatstore, miniclickthrough, sprout-mini, dockbadgesync)
     const METHODS = [
         "close",
-        "hide",
         "innerPosition",
         "innerSize",
         "isFocused",

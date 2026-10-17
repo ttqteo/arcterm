@@ -37706,10 +37706,7 @@ const floatMini = {
             detail: JSON.stringify({ chosen, floated, before }),
         });
 
-        // the float bar has no fold button (its − hides the window): ⌘M folds, bindings.ts window:fold
-        await h.ev(
-            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', code: 'KeyM', ${MOD_KEY_JS}, bubbles: true }))`
-        );
+        await h.ev(`document.querySelector("[data-float-minimize]")?.click()`);
         const folded = await floatMiniWait(h, `!!document.querySelector("[data-sprout-mini]")`);
         await h.ev("new Promise((r) => setTimeout(r, 800))");
         const rest = await h.ev(`({ w: window.innerWidth, h: window.innerHeight })`);
@@ -37886,10 +37883,7 @@ const jarvisModes = {
         });
 
         // 6. Float folds and restores to Float, the PTY untouched
-        // the float bar has no fold button (its − hides the window): ⌘M folds, bindings.ts window:fold
-        await h.ev(
-            `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', code: 'KeyM', ${MOD_KEY_JS}, bubbles: true }))`
-        );
+        await h.ev(`document.querySelector("[data-float-minimize]")?.click()`);
         const foldedFloat = await wait(`!!document.querySelector("[data-sprout-mini]")`);
         await h.ev("new Promise((r) => setTimeout(r, 900))");
         await h.ev(MINI_CLICK);

@@ -47,8 +47,8 @@ const FOLD_SPRITE = {
     spidey: spriteFor("stand", [], null, "spidey"),
 };
 
-// The fold button's tooltip: on a Mac, ⌘M folds too while window:minimize says Sprout
-function useFoldTitle(): string {
+// The fold buttons' tooltip, here and on the float bar: on a Mac, ⌘M folds too while window:minimize says Sprout
+export function useFoldTitle(): string {
     const character = petCharacter(useAtomValue(petCharacterAtom));
     const choice = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize")));
     const title = `Fold into ${PET_CHARACTER_NAME[character]}`;
