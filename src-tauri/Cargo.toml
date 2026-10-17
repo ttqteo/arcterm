@@ -49,6 +49,9 @@ objc2-core-graphics = { version = "=0.3.2", default-features = false, features =
 # the main dispatch queue, where tao queues a window's size and place (macwindow::after_tao_frame). Pinned to the
 # version already in the tree via tao.
 dispatch2 = "=0.3.1"
+# the cancellation handler the status item takes while the tray popover shows (macwindow::present_from_tray). Pinned
+# to the version already in the tree via objc2-app-kit.
+block2 = "=0.6.2"
 
 # tests only: catch the Objective-C exception a test throws on purpose (macwindow's exception log); a dev-dependency's
 # features stay out of the app's own build

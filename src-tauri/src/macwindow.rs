@@ -59,14 +59,15 @@ mod imp {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::OnceLock;
 
+    use block2::RcBlock;
     use dispatch2::{DispatchQueue, DispatchTime};
     use objc2::rc::{Retained, Weak};
-    use objc2::runtime::{AnyClass, AnyObject, NSObject, Sel};
+    use objc2::runtime::{AnyClass, AnyObject, Bool, NSObject, NSObjectProtocol, Sel};
     use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly, Message};
     use objc2_app_kit::{
         NSApplication, NSApplicationDidBecomeActiveNotification, NSAutoresizingMaskOptions, NSBackingStoreType, NSColor,
-        NSFontAttributeName, NSForegroundColorAttributeName, NSMenuItem, NSPanel, NSView, NSWindow, NSWindowButton,
-        NSWindowCollectionBehavior, NSWindowStyleMask,
+        NSFontAttributeName, NSForegroundColorAttributeName, NSMenuItem, NSPanel, NSStatusItem, NSView, NSWindow,
+        NSWindowButton, NSWindowCollectionBehavior, NSWindowStyleMask,
     };
     use objc2_foundation::{ns_string, NSMutableAttributedString, NSNotificationCenter, NSRange, NSString};
     use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
@@ -250,11 +251,13 @@ mod imp {
 
     static PANEL_BLURRED: OnceLock<fn()> = OnceLock::new();
 
-    // The popover's panel, its webview, and the view in tao's window the webview came from and goes back to
+    // The popover's panel, its webview, the view in tao's window the webview came from and goes back to, and the status
+    // item drawn selected while the panel shows (present_from_tray)
     struct Hosted {
         panel: Retained<ArcTrayPanel>,
         web: Retained<NSView>,
         home: Retained<NSView>,
+        item: Option<Retained<NSStatusItem>>,
     }
 
     thread_local! {
@@ -333,7 +336,7 @@ mod imp {
         panel.orderFrontRegardless();
         panel.makeKeyWindow();
         panel.makeFirstResponder(Some(&web));
-        HOSTED.with(|h| *h.borrow_mut() = Some(Hosted { panel, web, home }));
+        HOSTED.with(|h| *h.borrow_mut() = Some(Hosted { panel, web, home, item: None }));
     }
 
     // Runs from the tray's place, through after_tao_frame, once tao's hidden window has the popover's size and place
@@ -437,6 +440,14 @@ mod imp {
         let Some(hosted) = HOSTED.with(|h| h.borrow_mut().take()) else {
             return;
         };
+        if let Some(item) = &hosted.item {
+            if item.respondsToSelector(sel!(_didPresentContent:)) {
+                // SAFETY: the method's encoding is v@:@, on the main thread, with the panel present_from_tray gave it
+                let _: () = unsafe { msg_send![&**item, _didPresentContent: &*hosted.panel] };
+            } else if let Some(button) = MainThreadMarker::new().and_then(|mtm| item.button(mtm)) {
+                button.highlight(false);
+            }
+        }
         hosted.web.setFrame(hosted.home.bounds());
         hosted.home.addSubview(&hosted.web);
         hosted.panel.orderOut(None);
@@ -505,16 +516,38 @@ mod imp {
         });
     }
 
-    /// Draws the status item's button pressed while the popover shows, as macOS draws a menu's. tray-icon presses it
-    /// on the mouse down and lets it go on the mouse up that opens the popover, so the open presses it again.
-    pub fn press_tray(tray: &tauri::tray::TrayIcon, pressed: bool) {
-        let _ = tray.with_inner_tray_icon(move |inner| {
+    /// Has the menu bar draw the status item selected while the popover's panel shows, as it does for an NSPopover or a
+    /// menu. On macOS 27 the button's own highlight: sets the state and draws nothing (2026-10-17); an NSPopover shown
+    /// from the button tells its item with the private _willPresentContent:cancellationHandler: and, once closed,
+    /// _didPresentContent: (close_panel), found in a message trace of one. A macOS without them gets highlight:.
+    pub fn present_from_tray(tray: &tauri::tray::TrayIcon) {
+        let _ = tray.with_inner_tray_icon(|inner| {
             let (Some(item), Some(mtm)) = (inner.ns_status_item(), MainThreadMarker::new()) else {
                 return;
             };
-            if let Some(button) = item.button(mtm) {
-                button.highlight(pressed);
-            }
+            HOSTED.with(|h| {
+                let mut h = h.borrow_mut();
+                let Some(hosted) = h.as_mut() else {
+                    return;
+                };
+                if item.respondsToSelector(sel!(_willPresentContent:cancellationHandler:)) {
+                    // the menu bar calls it to take the selection away, as for another item's menu: the popover goes
+                    let cancel = RcBlock::new(|_animated: Bool| {
+                        applog::log_line("[tray] the menu bar dismissed the popover");
+                        if let Some(blurred) = PANEL_BLURRED.get() {
+                            blurred();
+                        }
+                    });
+                    // SAFETY: the method's encoding is v@:@@? (a void (^)(BOOL) block), on the main thread; the item
+                    // is told _didPresentContent: with the same panel before close_panel lets the panel go
+                    let _: () = unsafe {
+                        msg_send![&*item, _willPresentContent: &*hosted.panel, cancellationHandler: &*cancel]
+                    };
+                } else if let Some(button) = item.button(mtm) {
+                    button.highlight(true);
+                }
+                hosted.item = Some(item);
+            });
         });
     }
 
@@ -835,10 +868,10 @@ pub fn tint_tray_alert(tray: &tauri::tray::TrayIcon, title: String) {
     imp::tint_tray_alert(tray, title);
 }
 
-// Runs from the tray's open and close, on the main thread.
+// Runs from the tray's open, on the main thread, after show_in_panel.
 #[cfg(target_os = "macos")]
-pub fn press_tray(tray: &tauri::tray::TrayIcon, pressed: bool) {
-    imp::press_tray(tray, pressed);
+pub fn present_from_tray(tray: &tauri::tray::TrayIcon) {
+    imp::present_from_tray(tray);
 }
 
 // Runs from setup, on the main thread.

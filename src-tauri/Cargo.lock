@@ -4291,6 +4291,7 @@ dependencies = [
 name = "wave-tauri"
 version = "0.15.14"
 dependencies = [
+ "block2",
  "chrono",
  "dispatch2",
  "mac-notification-sys",
