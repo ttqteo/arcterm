@@ -48713,6 +48713,283 @@ const agentComposer = {
     },
 };
 
+// --- component looks, round two: what the 2026-10-17 drift scan found on the older idiom -------------------------
+// The run sheet's done face, its cancel, survivor and ask cards, and the Code surface's stale bar had no step that
+// shows them. Each scenario asserts only what the component says today; a polish task adds the step for what it
+// changes. A run's state is written onto a deferred run, the way final-shots seeds one, since no engine reaches it
+// on demand. RunBody's completion page and worker card are not here: only runs stored before slice 5c reach them
+// (sheetRoute).
+
+// writes the run, reads it back, and reloads: UpdateObject publishes nothing, and the Brief reads a boot snapshot
+async function lookSeedRun(h, ctx, patch) {
+    const oref = `run:${ctx.runId}`;
+    const stored = await waveService(h, "object", "GetObject", [oref]);
+    await waveService(h, "object", "UpdateObject", [{ ...stored, otype: "run", ...patch }, false], FINAL_SHOTS_UICTX);
+    const back = await waveService(h, "object", "GetObject", [oref]);
+    if (back?.status !== patch.status) throw new Error(`the run did not keep status ${patch.status}: ${back?.status}`);
+    await reloadApp(h);
+}
+
+async function lookOpenRun(h, ctx) {
+    await lookOpen(h, "jarvis");
+    return lookEval(h, `
+        await until(() => typeof window.__openAddress === "function", 5000);
+        await window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)});
+        return until(() => document.querySelector("[data-jarvis-brief-sheet]") != null, 8000);
+    `);
+}
+
+const LOOK_RUN_GOAL = "Raise the retry budget and add Submit";
+const LOOK_RUN_VERIFS = [
+    { cmd: "go test ./src/retry/...", result: "pass" },
+    { cmd: "go vet ./src/retry/...", result: "pass" },
+    { cmd: "golangci-lint run ./src/retry", result: "fail", detail: "policy.go:4: exported func Budget should have a comment" },
+];
+const LOOK_RUN_FILES = [
+    { path: "src/retry/policy.go", stat: "M", add: 1, del: 1 },
+    { path: "src/retry/submit.go", stat: "A", add: 5, del: 0 },
+    { path: "src/retry/policy_test.go", stat: "M", add: 14, del: 2 },
+];
+
+const runSheetDoneLook = {
+    name: "run-sheet-done",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-run-sheet-done-")) };
+        try {
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name: "verify-run-sheet-done", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: LOOK_RUN_GOAL,
+                runtime: "claude",
+                mode: "orchestrator",
+                deferstart: true,
+            });
+            ctx.runId = created.run.id;
+            const now = Date.now();
+            await lookSeedRun(h, ctx, {
+                status: "done",
+                report: "",
+                phases: [
+                    { kind: "plan", state: "done", startedts: now - 655_000, donets: now - 520_000, artifacts: ["docs/plan.md"] },
+                    { kind: "execute", state: "done", gate: true, startedts: now - 520_000, donets: now - 30_000 },
+                ],
+                evidence: {
+                    capturedts: now,
+                    hash: "",
+                    summary: "Raised the retry budget to 8 and added Submit, with a test for each.",
+                    files: LOOK_RUN_FILES,
+                    addtotal: 20,
+                    deltotal: 3,
+                    verifs: LOOK_RUN_VERIFS,
+                    artifacts: [{ path: "docs/retry.md", kind: "doc", size: 2140 }],
+                    runtimems: 412_000,
+                    durationms: 655_000,
+                },
+            });
+            ctx.runDone = true;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.arrangeError != null) return [{ step: "0. arrange", ok: false, detail: ctx.arrangeError }];
+        const opened = await lookOpenRun(h, ctx);
+        const s = await lookEval(h, `
+            const sheet = () => document.querySelector('[data-run-sheet="done"]');
+            await until(() => /Sealed evidence/i.test(flat(sheet())), 8000);
+            await nap(600); // the evidence card's entrance
+            const text = flat(sheet());
+            return {
+                done: sheet() != null,
+                goal: text.includes(${JSON.stringify(LOOK_RUN_GOAL)}),
+                files: ${JSON.stringify(LOOK_RUN_FILES.map((f) => f.path))}.filter((p) => !text.includes(p)),
+                checks: /2 passed, 1 failed/.test(text),
+                diffLink: button(sheet(), /open the repository diff/) != null,
+            };
+        `);
+        await h.shot(lookShot("run-sheet-done"));
+        return [
+            {
+                step: "a done run with sealed evidence shows its goal, every landed file, the check tally and the diff link",
+                ok: opened === true && s.done && s.goal && s.files.length === 0 && s.checks && s.diffLink,
+                detail: JSON.stringify({ opened, ...s }),
+            },
+        ];
+    },
+    async teardown(h, ctx) {
+        // a done run cannot be cancelled
+        await teardownFixtureRun(h, ctx.runDone ? { ...ctx, runId: null } : ctx, "run-sheet-done");
+    },
+};
+
+const LOOK_LEAD = "look lead";
+const LOOK_LEAD_OREF = `tab:${TREE_RAIL_LEAD_ID}`;
+
+// one deferred run walked through three states of its sheet, each over the same fixture lead: working, cancelled with
+// the lead still alive, and asking
+const runSheetCardsLook = {
+    name: "run-sheet-cards",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-run-sheet-cards-")) };
+        try {
+            await arrangeFixtureRun(h, ctx, "run-sheet-cards", LOOK_LEAD, {});
+            ctx.phases = [{ kind: "execute", state: "running", startedts: Date.now() - 240_000, workerorefs: [LOOK_LEAD_OREF] }];
+            await lookSeedRun(h, ctx, { status: "executing", phases: ctx.phases });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.arrangeError != null) return [{ step: "0. arrange", ok: false, detail: ctx.arrangeError }];
+        const steps = [];
+        const sheetText = (waitFor) =>
+            lookEval(h, `
+                const sheet = () => document.querySelector("[data-jarvis-brief-sheet]");
+                await until(() => ${waitFor}.test(flat(sheet())), 8000);
+                await nap(500);
+                return flat(sheet());
+            `);
+
+        const working = await lookOpenRun(h, ctx);
+        const live = await lookEval(h, `
+            const sheet = () => document.querySelector('[data-run-sheet="executing"]');
+            await until(() => button(sheet(), /^Cancel run$/) != null, 8000);
+            await nap(500);
+            return { cancel: button(sheet(), /^Cancel run$/) != null, openLead: button(sheet(), /^Open lead/) != null };
+        `);
+        await h.shot(lookShot("run-sheet-live"));
+        steps.push({
+            step: "a live run whose lead is working offers Open lead and Cancel run",
+            ok: working === true && live.cancel && live.openLead,
+            detail: JSON.stringify({ working, ...live }),
+        });
+
+        await lookSeedRun(h, ctx, { status: "cancelled", phases: ctx.phases });
+        await lookOpenRun(h, ctx);
+        const survivors = await sheetText(/still running/);
+        await h.shot(lookShot("run-sheet-survivors"));
+        steps.push({
+            step: "a cancelled run whose lead is still alive says so, with the survivors card",
+            ok: /Cancelled · 1 worker still running/.test(survivors),
+            detail: survivors.slice(0, 240),
+        });
+
+        writeFileSync(
+            TREE_RAIL_FIXTURE,
+            JSON.stringify(treeRailRoster(ctx.runId, Date.now(), LOOK_LEAD, { state: "asking", blockedMs: 90_000 }), null, 2)
+        );
+        await lookSeedRun(h, ctx, { status: "executing", phases: ctx.phases });
+        await lookOpenRun(h, ctx);
+        const ask = await sheetText(/Clarifying question/);
+        await h.shot(lookShot("run-sheet-ask"));
+        steps.push({
+            step: "a live run whose lead is asking shows the clarifying-question card",
+            ok: /Clarifying question/.test(ask),
+            detail: ask.slice(0, 240),
+        });
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "run-sheet-cards");
+    },
+};
+
+const LOOK_STALE_FILE = "notes.txt";
+
+// the stale check runs on window focus, which a CDP session does not move, so the scenario calls the same function
+// the focus effect calls
+const lookCheckStale = (h) =>
+    lookEval(h, `
+        const { checkStale } = await mod("app/view/code/codestore.ts");
+        await checkStale();
+    `);
+
+const lookStaleBar = (h) =>
+    lookEval(h, `
+        const bar = () => document.querySelector("[data-code-stale]");
+        await until(() => bar() != null, 4000);
+        await nap(200);
+        return bar() ? { text: flat(bar()), button: flat(bar().querySelector("button")) } : null;
+    `);
+
+const codeStaleBarLook = {
+    name: "code-stale-bar",
+    surface: "code",
+    async arrange() {
+        const dir = mkdtempSync(join(tmpdir(), "verify-code-stale-"));
+        writeFileSync(join(dir, LOOK_STALE_FILE), "first line\n");
+        return { dir };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const file = join(ctx.dir, LOOK_STALE_FILE);
+        await lookOpen(h, "code");
+        const opened = await lookEval(h, `
+            document.querySelector("[data-code-project-picker]")?.click();
+            await until(() => document.querySelector("[data-code-picker-path] input") != null, 4000);
+            const input = document.querySelector("[data-code-picker-path] input");
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, ${JSON.stringify(ctx.dir)});
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            await nap(100); // let React commit the typed value before the submit reads it
+            document.querySelector("[data-code-picker-path]")?.requestSubmit();
+            const row = () => [...document.querySelectorAll('[data-code-tree] [role="treeitem"]')].find((r) => flat(r).includes(${JSON.stringify(LOOK_STALE_FILE)}));
+            await until(() => row() != null, 8000);
+            row()?.click();
+            return until(() => document.querySelector(".monaco-editor") != null, 8000);
+        `);
+
+        writeFileSync(file, "first line\nan agent wrote this\n");
+        await lookCheckStale(h);
+        const clean = await lookStaleBar(h);
+        await h.shot(lookShot("code-stale-bar"));
+        steps.push({
+            step: "a file changed on disk while open shows the stale bar with Reload",
+            ok: opened === true && clean != null && clean.text.includes(`${LOOK_STALE_FILE} changed on disk`) && clean.button === "Reload",
+            detail: JSON.stringify({ opened, clean }),
+        });
+
+        const reloaded = await lookEval(h, `
+            document.querySelector("[data-code-stale] button")?.click();
+            return until(() => document.querySelector("[data-code-stale]") == null, 4000);
+        `);
+        steps.push({ step: "Reload reads the disk copy and clears the bar", ok: reloaded === true, detail: `cleared=${reloaded}` });
+
+        // an unsaved edit, then another write under it. Monaco takes no text a CDP session types, so the edit goes
+        // through editDraft, which the editor's onChange calls.
+        await lookEval(h, `
+            const { editDraft } = await mod("app/view/code/codestore.ts");
+            editDraft("first line\\nan agent wrote this\\nmy edit\\n");
+            await nap(300);
+        `);
+        writeFileSync(file, "first line\nan agent wrote this\nand this\n");
+        await lookCheckStale(h);
+        const dirty = await lookStaleBar(h);
+        await h.shot(lookShot("code-stale-bar-dirty"));
+        steps.push({
+            step: "with an unsaved edit the bar says the edits are still here, and its button says what it destroys",
+            ok: dirty != null && /your unsaved edits are still here/.test(dirty.text) && dirty.button === "Discard my edits and reload",
+            detail: JSON.stringify(dirty),
+        });
+        const discarded = await lookEval(h, `
+            document.querySelector("[data-code-stale] button")?.click();
+            return until(() => document.querySelector("[data-code-stale]") == null, 4000);
+        `);
+        steps.push({ step: "Discard my edits and reload clears the bar", ok: discarded === true, detail: `cleared=${discarded}` });
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.goto("cockpit");
+        if (ctx?.dir) rmSync(ctx.dir, { recursive: true, force: true });
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -48905,6 +49182,9 @@ export const SCENARIOS = [
     termLinkTooltip,
     taskDetail,
     ambientTags,
+    runSheetDoneLook,
+    runSheetCardsLook,
+    codeStaleBarLook,
     // last: its fixture roster stands in for the live one until its teardown reloads
     agentComposer,
 ];
