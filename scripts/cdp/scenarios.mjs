@@ -38166,10 +38166,13 @@ const floatNote = {
         if (ctx.prevNote != null) {
             await step("write the note back", () => h.rpc("notescratchwrite", { body: ctx.prevNote }));
         }
-        if (ctx.workspaceId != null) {
+        // prevTrans is undefined until arrange read tools.json (null: no entry); before that nothing was changed
+        if (ctx.prevTrans !== undefined) {
             await step("restore the trans tool", () =>
                 h.rpc("toolssetuser", ctx.prevTrans != null ? { id: "trans", tool: ctx.prevTrans } : { id: "trans" })
             );
+        }
+        if (ctx.workspaceId != null) {
             await step("close the terminals the scenario made", async () => {
                 for (const t of await floatNoteTabs(h, ctx)) {
                     if (ctx.preexisting.has(t.tabId)) continue;
