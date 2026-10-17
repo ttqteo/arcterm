@@ -3,10 +3,10 @@
 //
 // The office's sound player (office sounds spec, "Architecture"): one AudioContext made on the first sound, a short-
 // lived oscillator per note (pulse waves from their harmonics, a triangle, a shared noise buffer) through a low-pass
-// that takes the pulse waves' glare off, a master gain for the volume, and a music bus that ducks under a jingle. A
-// music file the person puts at MUSIC_FILE plays on that bus in place of the tunes, through the GBA worklet
-// (officegba.worklet.js). With the office off nothing here exists. The DEV log sink stands in for it in the CDP
-// scenarios (cockpitofficedevhooks.ts).
+// that takes the pulse waves' glare off, a master gain for the volume, and a music bus that ducks under a jingle. The
+// song the app ships, or a music file the person puts at MUSIC_FILE, plays on that bus in place of the tunes, through
+// the GBA worklet (officegba.worklet.js). With the office off nothing here exists. The DEV log sink stands in for it in
+// the CDP scenarios (cockpitofficedevhooks.ts).
 
 // no import of @/app/store/global here: officeaudio.test.ts loads this module under vitest
 import { globalStore } from "@/app/store/jotaiStore";
@@ -51,9 +51,11 @@ const RELEASE_S = 0.03;
 const FADE_S = 0.4;
 const HARMONICS = 32;
 const DUCKING: ReadonlySet<string> = new Set<string>(CUE_IDS);
-// a music file here plays in place of the day and night tunes (wavesrv expands the ~). It is read once per office
-// open: a file put there or changed plays from the office's next open
+// a music file here plays in place of the song the app ships (wavesrv expands the ~). It is read once per office open:
+// a file put there or changed plays from the office's next open
 export const MUSIC_FILE = "~/.arc/office-music.mp3";
+// the song the app ships (public/office-music.mp3), which plays in place of the day and night tunes
+const SHIPPED_MUSIC = "/office-music.mp3";
 // the music file as a GBA plays it: the rate Pokémon's GBA games mixed at (Hz), in 8-bit samples
 const GBA_RATE = 13379;
 const GBA_BITS = 8;
@@ -112,7 +114,7 @@ class ChipPlayer implements OfficeSink {
     private waves = new Map<Duty, PeriodicWave>();
     private noise: AudioBuffer | null = null;
     private vol: number = DEFAULT_SOUND.volume;
-    // the music file, read on the office's first music; null when there is none
+    // the song, read on the office's first music; null when there is none
     private song: Promise<Song | null> | null = null;
     private songOn: { song: Song; bus: GainNode } | null = null;
 
@@ -248,12 +250,20 @@ class ChipPlayer implements OfficeSink {
         loop();
     }
 
-    // fetched whole (a few MB) and played from a blob: the webview's fetch carries the auth header wavesrv wants, a
-    // media element's src cannot
+    // the person's own file, read through wavesrv (the webview's fetch carries the auth header it wants, a media
+    // element's src cannot), then the song the app ships; with neither, the tunes
     private async loadSong(ctx: AudioContext): Promise<Song | null> {
+        return (
+            (await this.songFrom(ctx, MUSIC_FILE, () => fetch(localFileUrl(getWebServerEndpoint(), MUSIC_FILE)))) ??
+            (await this.songFrom(ctx, SHIPPED_MUSIC, () => globalThis.fetch(SHIPPED_MUSIC)))
+        );
+    }
+
+    // fetched whole (a few MB) and played from a blob: a media element streams from the Tauri scheme unreliably
+    private async songFrom(ctx: AudioContext, name: string, get: () => Promise<Response>): Promise<Song | null> {
         let url: string | null = null;
         try {
-            const resp = await fetch(localFileUrl(getWebServerEndpoint(), MUSIC_FILE));
+            const resp = await get();
             if (!resp.ok) {
                 return null;
             }
@@ -283,7 +293,7 @@ class ChipPlayer implements OfficeSink {
             }
             return { el, out, url };
         } catch (e) {
-            console.error("office music: cannot play", MUSIC_FILE, e);
+            console.error("office music: cannot play", name, e);
             if (url != null) {
                 URL.revokeObjectURL(url);
             }
