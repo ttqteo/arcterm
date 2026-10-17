@@ -132,9 +132,6 @@
         "headless:openroutercheapmodel": {
           "type": "string"
         },
-        "jarvis:vaultpath": {
-          "type": "string"
-        },
         "editor:minimapenabled": {
           "type": "boolean"
         },
@@ -147,23 +144,8 @@
         "editor:fontsize": {
           "type": "number"
         },
-        "editor:inlinediff": {
-          "type": "boolean"
-        },
         "window:*": {
           "type": "boolean"
-        },
-        "window:reducedmotion": {
-          "type": "boolean"
-        },
-        "window:magnifiedblockopacity": {
-          "type": "number"
-        },
-        "window:magnifiedblocksize": {
-          "type": "number"
-        },
-        "window:magnifiedblockblursecondarypx": {
-          "type": "integer"
         },
         "window:minimize": {
           "type": "string"

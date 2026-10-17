@@ -26,12 +26,37 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- The Office's music is a music-box Spider-Man theme in place of the day and night tunes, crunched as a Game Boy
+  Advance would play it and picking up where it stopped when you come back. A file at `~/.arc/office-music.mp3`
+  plays instead.
+
+### Changed
+
+- **Work on** an initiative that has no project asks which project to start the agent in, and the initiative keeps
+  it, instead of an error telling you to run `wsh effort project`.
+- Plan to review in the agent's details rail shows a row's Accept, Rename and Drop only while the pointer is over it,
+  so each proposed step's title gets the rail's full width.
+- In the Office, **Open** in a desk's dialog box shows the full card in a game-framed panel on the right, and the office
+  slides over when the panel would hide the desk; **Terminal** takes you to the agent's terminal, and `f` opens or shuts
+  the panel.
+
+### Fixed
+
+- The t> mark in the Mac menu bar stands as tall as the memory beside it and on the same baseline, instead of hanging
+  below the text, and it is sharp on a non-Retina screen.
+
+## 0.15.15 — 2026-10-17
+
+### Added
+
 - **Note and Translate in Float**: the strip under a float's terminal has a **Note** tab, one markdown note that saves
   itself as you type (with Preview), and a **Translate** tab that opens translate-shell, its prompt showing the
   language it translates into, with `↑` recalling past lookups. `Cmd`+`Shift`+`N` floats the note.
   <!-- try: float-note --> <!-- big -->
 - Office sounds: chiptune jingles when a task finishes, a run lands or someone needs you, with optional footsteps and
-  day and night music (`s` or the office menu's Mute sound mutes them).
+  day and night music (`s` or the office menu's Mute sound mutes them). Settings → Appearance turns the jingles, the
+  boss's sounds and the music on or off, and sets how loud they play.
+- On a Mac, translate-shell is in the tool library (Setup → Tools), translating into English and Vietnamese.
 - **Answer an agent's question from Telegram**: pair a bot in Settings → General → Notifications, then tap an option
   or reply in your own words. <!-- big --> <!-- shot: 0.15.15-telegram.webp -->
 - **Your pet is the Office's boss**: in the Cockpit's Office you walk around as Sprout, the Minion, or Spider-Man, who
@@ -85,6 +110,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- On a Mac, closing the menu bar popover no longer crashes arcterm.
+- On macOS 27 the menu bar icon looks pressed while its popover is open; it only did on earlier macOS.
+- On a Mac, arcterm folded into Sprout over a full-screen app comes back where you can see it: the Dock icon, `⌘Tab` or
+  a double-click on Sprout takes the screen to arcterm's desktop instead of leaving it on the full-screen app.
 - A conversation no longer ends up open in two tabs after arcterm restarts: resuming it right after a restart goes to
   the tab already running it, a restart brings back one tab per conversation, and a sleeping copy says which tab has
   it open instead of waking beside it.

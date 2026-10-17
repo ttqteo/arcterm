@@ -132,7 +132,7 @@ const TAB_TONE: Record<ChipFilter, { text: string; line: string }> = {
     all: { text: "text-primary", line: "border-primary" },
 };
 
-// the Office popup's card fills the popup's box: no floor, so a card that asks never outgrows it
+// the Office panel's card fills the panel: no floor, so a card that asks never outgrows it
 const POPUP_SHARE: CardShare = { grow: 1, minPx: 0 };
 
 // Bridges a model PrimitiveAtom to a useState-shaped [value, setter] pair so the lifted orchestration
@@ -623,6 +623,9 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                 submitAnswer(a.id);
                 return;
             case "open":
+                officeRef.current?.card();
+                return;
+            case "terminal":
                 openFocus(openId, false);
                 return;
             case "reply":
@@ -635,9 +638,6 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                 return;
             case "background":
                 toggleBackground(a.id);
-                return;
-            case "card":
-                officeRef.current?.card();
                 return;
         }
     };
@@ -790,7 +790,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         const adjustable = runAdjustable(c.run);
         const row = rowsOf(c).find((r) => r.key === key);
         if (row || key !== c.id) {
-            // a worker's seat: its task row (a seat the card shows no row for has only the full card)
+            // a worker's seat: its task row (a seat the card shows no row for has only Open, the full card)
             const worker = row?.worker;
             const actions = row ? rowKeyActions(row) : [];
             const input = worker ? agentInput(worker) : { activeQuestion: 0, selections: {}, texts: {} };
@@ -826,7 +826,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                     }
                     if (worker) {
                         runAgentItem(worker, id, input.activeQuestion, row?.openId ?? worker.id);
-                    } else if (id === "card") {
+                    } else if (id === "open") {
                         officeRef.current?.card();
                     }
                 },
@@ -846,7 +846,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                     officeRef.current?.card({ adjust: true });
                 } else if (lead) {
                     runAgentItem(lead, id, input.activeQuestion);
-                } else if (id === "card") {
+                } else if (id === "open") {
                     officeRef.current?.card();
                 }
             },
@@ -919,9 +919,9 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
         );
     };
 
-    // the card beside the desk the boss stands at: an agent's AgentRow, or for a seat or a meeting room its run's
-    // LeadCard, the very ones the grid draws; an agent of the Idle section gets its row too. The popup's box sets
-    // its height (officeplanmodel.ts popupBox), so it has no floor of its own.
+    // the full card of the desk the boss stands at: an agent's AgentRow, or for a seat or a meeting room its run's
+    // LeadCard, the very ones the grid draws; an agent of the Idle section gets its row too. The office's panel sets
+    // its height (cockpitoffice.tsx OfficeCardPanel), so it has no floor of its own.
     const renderOfficeCard = (key: string, opts?: { adjust?: boolean }): ReactNode => {
         const c = cards.find((x) =>
             x.kind === "agent"

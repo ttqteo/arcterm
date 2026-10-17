@@ -46,6 +46,13 @@ channel). None is taken from Pokémon or any other game.
 Two loops: one for work hours, one for after hours and weekends, chosen by `officeHoursAtom` as the office's day and
 night are. While a jingle plays the music ducks and comes back after. Losing focus fades the music out (0.4 s); focus starts its loop again from the top (a loop is four bars: about 8.6 s by day, 11.4 s at night).
 
+A song plays in place of both loops (added 2026-10-17): the app ships one (`public/office-music.mp3`), and a music
+file at `~/.arc/office-music.mp3`, read through wavesrv, plays instead of it; either is read once per office open. It
+skips the low-pass and goes through a GBA worklet (`officegba.worklet.js`: sampled at 13,379 Hz, held, 8-bit), so it
+crunches like the jingles' era. Losing focus pauses it; focus resumes it where it stopped. A file missing or one the
+webview cannot decode leaves the loops. It costs the compressed file in memory (the shipped one is 2.3 MB) and the
+media element's decode buffers.
+
 ## Controls
 
 | Setting | Key | Default |

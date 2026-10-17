@@ -18,7 +18,6 @@ declare global {
         isFullScreen: jotai.PrimitiveAtom<boolean>;
         zoomFactorAtom: jotai.PrimitiveAtom<number>;
         controlShiftDelayAtom: jotai.PrimitiveAtom<boolean>;
-        prefersReducedMotionAtom: jotai.Atom<boolean>;
         documentHasFocus: jotai.PrimitiveAtom<boolean>;
         modalOpen: jotai.PrimitiveAtom<boolean>;
         reinitVersion: jotai.PrimitiveAtom<number>;

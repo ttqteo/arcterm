@@ -41,7 +41,7 @@ type Vault struct {
 	machineFiles map[string]string
 }
 
-// DefaultVaultRoot resolves the vault path from config (jarvis:vaultpath) + home.
+// DefaultVaultRoot resolves the vault path from config (memory:vaultpath) + home.
 func DefaultVaultRoot() string {
 	return memroots.VaultRoot()
 }

@@ -101,7 +101,7 @@ func TestSettingsLayerOrder(t *testing.T) {
 
 func TestVaultLayerIgnoresMachineLocalKeys(t *testing.T) {
 	for _, key := range []string{
-		ConfigKey_MemoryVaultPath, ConfigKey_JarvisVaultPath, ConfigKey_TermGitBashPath,
+		ConfigKey_MemoryVaultPath, ConfigKey_TermGitBashPath,
 		ConfigKey_TermLocalShellPath, ConfigKey_TermLocalShellOpts, ConfigKey_ClaudeActiveAccount,
 		ConfigKey_TelegramEnabled, ConfigKey_TelegramChatID, ConfigKey_TelegramChatName,
 		ConfigKey_TelegramMode, ConfigKey_TelegramSchedule, ConfigKey_TelegramOnUntil,
@@ -297,16 +297,9 @@ func TestVaultRootFallbacks(t *testing.T) {
 	if got, want := VaultRoot(), filepath.Join(home, ".waveterm", "vault"); got != want {
 		t.Errorf("no setting: VaultRoot() = %q, want %q", got, want)
 	}
-	writeJSONFile(t, filepath.Join(configDir, SettingsFile), map[string]any{ConfigKey_JarvisVaultPath: "~/jv"})
-	if got, want := VaultRoot(), filepath.Join(home, "jv"); got != want {
-		t.Errorf("jarvis fallback: VaultRoot() = %q, want %q", got, want)
-	}
-	writeJSONFile(t, filepath.Join(configDir, SettingsFile), map[string]any{
-		ConfigKey_JarvisVaultPath: "~/jv",
-		ConfigKey_MemoryVaultPath: "~/mv",
-	})
+	writeJSONFile(t, filepath.Join(configDir, SettingsFile), map[string]any{ConfigKey_MemoryVaultPath: "~/mv"})
 	if got, want := VaultRoot(), filepath.Join(home, "mv"); got != want {
-		t.Errorf("memory wins: VaultRoot() = %q, want %q", got, want)
+		t.Errorf("memory:vaultpath: VaultRoot() = %q, want %q", got, want)
 	}
 }
 

@@ -104,7 +104,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 
 fn icon_image(app: &AppHandle, st: &State) -> Image<'static> {
     let img = if cfg!(target_os = "macos") {
-        trayicon::mac_icon(st.offline)
+        trayicon::mac_icon(st.offline, !trayicon::mac_title(st.count, st.alert, st.offline, st.mem).is_empty())
     } else {
         let scale = app.primary_monitor().ok().flatten().map(|m| m.scale_factor()).unwrap_or(1.0);
         trayicon::win_icon(trayicon::win_icon_size(scale), st.count, st.alert, st.offline)

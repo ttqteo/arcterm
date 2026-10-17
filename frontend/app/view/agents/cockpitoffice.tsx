@@ -4,14 +4,14 @@
 // The Cockpit office (docs/superpowers/specs/2026-10-15-cockpit-office-design.md): the Cockpit's cards drawn as a
 // floor plan seen from above, the boss you walk around, and the card of the desk you stand at. Thin by design: the
 // plan is officeplanmodel.ts, who goes where officebehavior.ts, how the boss moves officeboss.ts, the pixels
-// plansprite.ts, the clocks officeclock.ts. This file owns the DOM, the walk state and the popup.
+// plansprite.ts, the clocks officeclock.ts. This file owns the DOM, the walk state and the card's panel.
 //
 // Cost is the point of most choices (the spec's Benchmark): the static building is two canvases (scenery.ts), drawn at
 // art resolution only when sceneryKey changes; a person is one <img> from a cache; a walk step renders nothing: it
 // moves the boss's and the walkers' <img> on the DOM, and React draws them again only when they turn, set off, stop or
 // flip their walking frame; only animated people read the frame clock; no clock runs while nothing moves.
 
-import { MOTION } from "@/app/element/motiontokens";
+import { MOTION, sheetPanel } from "@/app/element/motiontokens";
 import { globalStore } from "@/app/store/jotaiStore";
 import { closePeek } from "@/app/view/jarvis/peekstore";
 import { petCharacter } from "@/app/view/jarvis/petcharacter";
@@ -92,8 +92,8 @@ import { clearSprites, clearTokenColors, spriteCacheStats, tokenRgb } from "@/ap
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
 import { selectAtom } from "jotai/utils";
-import { Maximize2, Minimize2, Moon, Sun, Zap } from "lucide-react";
-import { useReducedMotion } from "motion/react";
+import { ChevronsLeft, ChevronsRight, Moon, Sun, Zap } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
     Fragment,
     memo,
@@ -161,12 +161,15 @@ import {
     dialogEdge,
     HUD_SPACE_PX,
     officeMenuItems,
+    PANEL_EDGE_PX,
+    panelPan,
+    panelWidth,
     stepSel,
     type OfficeLayer,
     type OfficeMenuId,
     type OfficeMenuItem,
 } from "./officecontrols";
-import { OfficeDialogBox, OfficeHudBar, OfficeMenuBox, type OfficeDialogVM } from "./officedialog";
+import { OfficeDialogBox, OfficeHudBar, OfficeMenuBox, PixelFrame, type OfficeDialogVM } from "./officedialog";
 import {
     carryOver,
     carryWords,
@@ -193,7 +196,6 @@ import {
     buildPlan,
     LIFT_KEY,
     peopleDrawn,
-    popupBox,
     projectsOf,
     type Box,
     type Desk,
@@ -266,8 +268,8 @@ export interface OfficeHandle {
     menuOpen(): boolean;
     /** ↵ at the desk the boss stands at: opens its dialog box; false when the boss stands at no desk. */
     talk(): boolean;
-    /** f and the box's Full card: opens the desk's full card big, or grows or shrinks the open one; Adjust opens a
-     *  run's card with its Adjust panel. False when the boss stands at no desk. */
+    /** The box's Open, and f: opens the desk's full card in the panel on the office's right, or (f) shuts the open one;
+     *  Adjust opens a run's card with its Adjust panel. False when the boss stands at no desk. */
     card(opts?: { adjust?: boolean }): boolean;
     /** ↑ ↓ in the dialog box or the office menu. */
     move(delta: -1 | 1): void;
@@ -425,8 +427,8 @@ interface PropLook {
     url: string;
 }
 const propLooksAtom = atom<PropLook[]>([]) as PrimitiveAtom<PropLook[]>;
-// what is up over the office (officecontrols.ts): the desk's dialog box (↵, or a click on the desk), its full card (f,
-// or the box's Full card), or nothing; any walk shuts both. The office menu (m, officeMenuOpenAtom in officestore.ts,
+// what is up over the office (officecontrols.ts): the desk's dialog box (↵, or a click on the desk), its full card in
+// the panel on the right (the box's Open, or f), or nothing; any walk shuts both. The office menu (m, officeMenuOpenAtom in officestore.ts,
 // which the footer's m chip reads) opens over any of them
 const layerAtom = atom<OfficeLayer>("walk") as PrimitiveAtom<OfficeLayer>;
 const selAtom = atom(0) as PrimitiveAtom<number>;
@@ -474,6 +476,8 @@ const probe = {
     popup: "" as "" | "agent" | "run",
     prompt: "" as "" | "agent" | "run" | "board",
     big: false,
+    // how far the office slid left under the full card's panel
+    pan: 0,
     layer: "walk" as OfficeLayer,
     dialog: "" as "" | DeskKind,
     items: [] as string[],
@@ -1536,6 +1540,26 @@ export function CockpitOffice(props: CockpitOfficeProps) {
         vm.run(it.id);
         globalStore.set(selAtom, selAfterActivate(vm.items, sel));
     };
+    // Esc, and f on the open panel: one step back
+    const stepBack = (): boolean => {
+        if (globalStore.get(officeMenuOpenAtom)) {
+            globalStore.set(officeMenuOpenAtom, false);
+            return true;
+        }
+        const raw = globalStore.get(layerAtom);
+        if (boxLayer(raw, boxShownRef.current) === "walk") {
+            // a dialog layer with no box drawn is walking: shut it, so the box does not appear when the boss arrives
+            if (raw !== "walk") {
+                globalStore.set(layerAtom, "walk");
+            }
+            return false;
+        }
+        const key = cursorRef.current;
+        const next = backFrom(raw);
+        // a desk whose dialog is gone (the agent left) goes straight back to walking
+        globalStore.set(layerAtom, next === "dialog" && !(key && dialogRef.current(key)) ? "walk" : next);
+        return true;
+    };
     handleRef.current = withInput({
         walk,
         release,
@@ -1548,16 +1572,15 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             return key != null && openDialog(key);
         },
         card: (opts) => {
+            // f on the open panel shuts it, a step back as Esc (from a room's chip too, which has no card of its own)
+            if (globalStore.get(layerAtom) === "card" && !opts?.adjust) {
+                return stepBack();
+            }
             const key = deskAtBoss();
             if (!key || renderCard(key) == null) {
                 return false;
             }
-            if (globalStore.get(layerAtom) === "card" && !opts?.adjust) {
-                globalStore.set(officeBigCardAtom, !globalStore.get(officeBigCardAtom));
-                return true;
-            }
             globalStore.set(cardAdjustAtom, !!opts?.adjust);
-            globalStore.set(officeBigCardAtom, true);
             globalStore.set(layerAtom, "card");
             return true;
         },
@@ -1587,25 +1610,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             }
             activateDialog();
         },
-        back: () => {
-            if (globalStore.get(officeMenuOpenAtom)) {
-                globalStore.set(officeMenuOpenAtom, false);
-                return true;
-            }
-            const raw = globalStore.get(layerAtom);
-            if (boxLayer(raw, boxShownRef.current) === "walk") {
-                // a dialog layer with no box drawn is walking: shut it, so the box does not appear when the boss arrives
-                if (raw !== "walk") {
-                    globalStore.set(layerAtom, "walk");
-                }
-                return false;
-            }
-            const key = cursorRef.current;
-            const next = backFrom(raw);
-            // a desk whose dialog is gone (the agent left) goes straight back to walking
-            globalStore.set(layerAtom, next === "dialog" && !(key && dialogRef.current(key)) ? "walk" : next);
-            return true;
-        },
+        back: stepBack,
         toggleMenu: () => {
             // a carried room takes every key, and the menu waits for it to be put down
             if (carrying()) {
@@ -1680,7 +1685,6 @@ export function CockpitOffice(props: CockpitOfficeProps) {
             }
             globalStore.set(chipCardAtom, { id, kind: agents.some((a) => a.id === id) ? "agent" : "run" });
             globalStore.set(cardAdjustAtom, false);
-            globalStore.set(officeBigCardAtom, true);
             globalStore.set(layerAtom, "card");
         },
     });
@@ -1985,8 +1989,8 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                         className="relative isolate"
                         style={{ width: plan.width, height: plan.height }}
                         onClick={(e) => {
-                            // desks, seats, tables and the card beside the desk handle their own clicks
-                            if ((e.target as HTMLElement).closest("button, [data-office-popup]")) {
+                            // desks, seats and tables handle their own clicks
+                            if ((e.target as HTMLElement).closest("button")) {
                                 return;
                             }
                             bumpBossInput();
@@ -2062,7 +2066,7 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                             still={!moving}
                         />
                         <PathDots />
-                        <OfficePopup
+                        <OfficeTalkPrompt
                             plan={plan}
                             cursorId={cursorId}
                             renderCard={renderCard}
@@ -2079,6 +2083,14 @@ export function CockpitOffice(props: CockpitOfficeProps) {
                     {props.hud}
                 </OfficeHudBar>
             </div>
+            <OfficeCardPanel
+                plan={plan}
+                cursorId={cursorId}
+                renderCard={renderCard}
+                scrollRef={scrollRef}
+                rootRef={rootRef}
+                moving={moving}
+            />
             <OfficeDialogLayer
                 plan={plan}
                 cursorId={cursorId}
@@ -3535,7 +3547,9 @@ function RideDoors({ phase }: { phase: OfficePhase }) {
     );
 }
 
-function OfficePopup({
+// the "Space Talk" prompt over the desk at the boss while it walks ("Space Answer" while it asks), and "Space Read" at the
+// notice board
+function OfficeTalkPrompt({
     plan,
     cursorId,
     renderCard,
@@ -3546,39 +3560,19 @@ function OfficePopup({
     renderCard: (key: string, opts?: { adjust?: boolean }) => ReactNode;
     onTalk: () => void;
 }) {
-    // the boss's look, not its spot: a walk step does not re-render the card
+    // the boss's look, not its spot: a walk step does not re-render the prompt
     const look = useAtomValue(bossLookAtom);
     const layer = useAtomValue(layerAtom);
-    const adjust = useAtomValue(cardAdjustAtom);
-    const open = layer === "card";
-    const [big, setBig] = useAtom(officeBigCardAtom);
-    const boxRef = useRef<HTMLDivElement>(null);
-    const chipCard = useAtomValue(chipCardAtom);
     const found = cardAt(plan, look?.rest ? { at: look.rest, path: [] } : null, cursorId);
     // the notice board, the lift and a room's chip have no card and no "Space Talk" prompt: their dialog boxes are
-    // OfficeDialogLayer's. A chip's dialog opens the card of one of the agents or runs it lists, beside the chip
+    // OfficeDialogLayer's
     const at = found?.board || found?.lift || found?.chip ? undefined : found;
-    const chip = open && found?.chip && chipCard ? found : undefined;
-    const card =
-        at != null && cursorId != null
-            ? renderCard(cursorId, { adjust })
-            : chip && chipCard
-              ? renderCard(chipCard.id, { adjust })
-              : null;
-    const kind = at ? (at.desk ? "agent" : "run") : (chipCard?.kind ?? "run");
+    const kind = at?.desk ? "agent" : "run";
     // the board offers "Space Read" while the boss stands still at it, with rows waiting or none
     const readBoard = found?.board === true && layer === "walk";
-    probe.popup = card && open ? kind : "";
-    // the Space prompt shows only while walking: the dialog box hides it
-    probe.prompt = readBoard ? "board" : at && card && layer === "walk" ? kind : "";
-    probe.big = !!card && open && big;
-    const shown = card != null && open;
-    // a card grown past the office's view scrolls into it
-    useEffect(() => {
-        if (shown && big) {
-            boxRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
-        }
-    }, [shown, big, cursorId]);
+    // the Space prompt shows only while walking: the dialog box and the panel hide it
+    const card = at != null && cursorId != null && layer === "walk" ? renderCard(cursorId) : null;
+    probe.prompt = readBoard ? "board" : at && card ? kind : "";
     if (readBoard && look?.rest) {
         // over the boss's head, as at a desk
         return (
@@ -3590,65 +3584,102 @@ function OfficePopup({
             />
         );
     }
-    if (!card || (!at && !chip) || layer === "dialog" || layer === "carry") {
+    if (!at || !card) {
         return null;
     }
-    if (!open) {
-        if (!at) {
-            return null;
-        }
-        // like a game's "press E": over the person's head, clear of their bubble
-        const over = at.desk
-            ? { x: at.desk.x + 40, y: at.desk.y - 50 }
-            : { x: at.seat!.x + 18, y: at.seat!.bottom - 62 };
-        return (
-            <OfficePrompt
-                kind={kind}
-                over={over}
-                verb={at.desk?.light === "asking" ? "Answer" : "Talk"}
-                onTalk={onTalk}
-            />
-        );
-    }
-    const cb = chip?.room?.chip?.box;
-    const anchor = at
-        ? at.desk
-            ? { x: at.desk.x, y: at.desk.y }
-            : { x: at.seat!.x, y: at.seat!.bottom - 40 }
-        : { x: cb!.x, y: cb!.y + 40 };
-    // beside the desk (or the chip), over the hall; the card fills the box's height and scrolls, as in its grid column
-    const { box, right, pointerTop } = popupBox(plan, anchor, (at ?? chip)!.room!, big);
+    // like a game's "press E": over the person's head, clear of their bubble
+    const over = at.desk ? { x: at.desk.x + 40, y: at.desk.y - 50 } : { x: at.seat!.x + 18, y: at.seat!.bottom - 62 };
     return (
-        <div
-            ref={boxRef}
-            data-office-popup={kind}
-            data-office-popup-big={big ? "" : undefined}
-            className="absolute z-[8] flex flex-col rounded-md border border-edge-mid bg-surface-raised shadow-popover"
-            style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
-        >
-            <span
-                className={cn(
-                    "absolute size-2.5 rotate-45 border-edge-mid bg-surface-raised",
-                    right ? "-left-[6px] border-b border-l" : "-right-[6px] border-r border-t"
-                )}
-                style={{ top: pointerTop }}
-            />
-            {card}
-            {/* on the corner away from the pointer, clear of the card's own header buttons */}
-            <button
-                type="button"
-                data-office-popup-size
-                onClick={() => setBig(!big)}
-                title={big ? "Smaller card (F)" : "Bigger card (F)"}
-                aria-label={big ? "Smaller card" : "Bigger card"}
-                className={cn(
-                    "absolute -top-3 z-[1] flex size-6 cursor-pointer items-center justify-center rounded-full border border-edge-mid bg-surface-raised text-secondary shadow-popover hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                    right ? "-right-3" : "-left-3"
-                )}
-            >
-                {big ? <Minimize2 size={12} aria-hidden /> : <Maximize2 size={12} aria-hidden />}
-            </button>
-        </div>
+        <OfficePrompt kind={kind} over={over} verb={at.desk?.light === "asking" ? "Answer" : "Talk"} onTalk={onTalk} />
+    );
+}
+
+// the full card (the box's Open, f, Reply, Adjust, or a pick in a room's chip): the grid's own AgentRow or LeadCard in a
+// panel on the office's right, in the game boxes' frame, full height under the HUD bar. It covers the office rather than
+// narrowing it, so the floor is not laid out again; while the desk at the boss would sit behind it, the office slides
+// left just enough to keep the desk in view, as a game's camera follows its player (panelPan), and back as it shuts
+function OfficeCardPanel({
+    plan,
+    cursorId,
+    renderCard,
+    scrollRef,
+    rootRef,
+    moving,
+}: {
+    plan: Plan;
+    cursorId?: string;
+    renderCard: (key: string, opts?: { adjust?: boolean }) => ReactNode;
+    scrollRef: RefObject<HTMLDivElement | null>;
+    rootRef: RefObject<HTMLDivElement | null>;
+    moving: boolean;
+}) {
+    const look = useAtomValue(bossLookAtom);
+    const layer = useAtomValue(layerAtom);
+    const adjust = useAtomValue(cardAdjustAtom);
+    const [big, setBig] = useAtom(officeBigCardAtom);
+    const chipCard = useAtomValue(chipCardAtom);
+    const found =
+        layer === "card" ? cardAt(plan, look?.rest ? { at: look.rest, path: [] } : null, cursorId) : undefined;
+    const at = found?.board || found?.lift || found?.chip ? undefined : found;
+    // a room's chip opens the card of one of the agents or runs it lists
+    const chipId = found?.chip ? chipCard?.id : undefined;
+    const card =
+        at != null && cursorId != null
+            ? renderCard(cursorId, { adjust })
+            : chipId != null
+              ? renderCard(chipId, { adjust })
+              : null;
+    const kind = at ? (at.desk ? "agent" : "run") : (chipCard?.kind ?? "run");
+    const el = scrollRef.current;
+    const viewW = el?.clientWidth ?? 0;
+    const w = panelWidth(viewW, big);
+    const shown = card != null && el != null;
+    // the boss's spot in px from the view's left, as the office stands unslid
+    const focusX = shown && look?.rest ? (rootRef.current?.offsetLeft ?? 0) + look.rest.x - el.scrollLeft : undefined;
+    const pan = focusX != null ? panelPan(focusX, viewW, w) : 0;
+    probe.popup = shown ? kind : "";
+    probe.big = shown && big;
+    probe.pan = pan;
+    // before paint, so a shut panel never leaves the office slid for a frame
+    useLayoutEffect(() => {
+        const root = rootRef.current;
+        if (!root) {
+            return;
+        }
+        root.style.transition = moving ? `transform ${MOTION.durMacro}s ${EASE_FLUID}` : "";
+        root.style.transform = pan > 0 ? `translateX(${-pan}px)` : "";
+    }, [pan, moving, rootRef]);
+    return (
+        <AnimatePresence>
+            {shown ? (
+                <motion.div
+                    key="panel"
+                    data-office-popup={kind}
+                    data-office-popup-big={big ? "" : undefined}
+                    variants={moving ? sheetPanel : undefined}
+                    initial={moving ? "initial" : false}
+                    animate="animate"
+                    exit="exit"
+                    className="absolute z-[9]"
+                    style={{ top: HUD_SPACE_PX, bottom: PANEL_EDGE_PX, right: PANEL_EDGE_PX, width: w }}
+                >
+                    <PixelFrame className="h-full" innerClassName="flex min-h-0 flex-col p-1.5">
+                        {card}
+                    </PixelFrame>
+                    {/* on the corner over the office, clear of the card's own header buttons */}
+                    <button
+                        type="button"
+                        data-office-popup-size
+                        onClick={() => setBig(!big)}
+                        title={big ? "Narrower card" : "Wider card"}
+                        aria-label={big ? "Narrower card" : "Wider card"}
+                        className="absolute -left-2.5 -top-2.5 z-[1] flex size-6 cursor-pointer items-center justify-center rounded-[3px] border-2 border-edge-strong bg-surface-raised text-secondary shadow-popover hover:border-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        {big ? <ChevronsRight size={13} aria-hidden /> : <ChevronsLeft size={13} aria-hidden />}
+                    </button>
+                </motion.div>
+            ) : null}
+        </AnimatePresence>
     );
 }
 

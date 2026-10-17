@@ -25,6 +25,7 @@ import { LauncherModal } from "@/app/view/agents/launchermodal";
 import { floatNoteOpenAtom } from "@/app/view/agents/floatnotestore";
 import { floatMiniAtom, floatModeAtom, setupFloatMode } from "@/app/view/agents/floatstore";
 import { NewInitiativeHost } from "@/app/view/jarvis/newinitiativecontrol";
+import { InitiativeProjectPicker } from "@/app/view/jarvis/initiativeprojectpicker";
 import { NewProjectModal } from "@/app/view/agents/newprojectmodal";
 import { trackRecentTabs } from "@/app/view/agents/tabswitcherstore";
 import { TabSwitcher } from "@/app/view/agents/tabswitcherview";
@@ -222,6 +223,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 <NewProjectModal model={model} />
                 <LauncherModal model={model} />
                 <NewInitiativeHost model={model} />
+                {/* Work on an initiative with no project asks for one here, from whichever surface started it */}
+                <InitiativeProjectPicker model={model} />
                 <CommandPalette model={model} />
                 <ShortcutsCheatSheet model={model} />
                 <WhatsNewSheet model={model} />

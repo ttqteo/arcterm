@@ -28,7 +28,7 @@ export type DialogItemId =
     | "diff"
     | "background"
     | "adjust"
-    | "card"
+    | "terminal"
     | "send"
     | `opt:${number}`
     | `row:${number}`
@@ -83,7 +83,8 @@ export function rowActionLabel(id: string): string {
 }
 
 /** Pure: the ▶ menu of the desk at the boss: the answers first when someone asks (and a task row's own actions), then
- *  what else the desk offers, then the full card. A line parts the answers from the rest, or the rest from the card. */
+ *  Open, the desk's full card in the panel on the office's right, and what else the desk offers. A line parts the
+ *  answers from the rest. */
 export function dialogItems(input: DialogInput): DialogItem[] {
     const { kind, agent } = input;
     const qs = agent?.state === "asking" ? (agent.ask?.questions ?? []) : [];
@@ -116,13 +117,14 @@ export function dialogItems(input: DialogInput): DialogItem[] {
             answers.push({ id: `row:${i}`, label: rowActionLabel(a), key: qs.length > 0 ? undefined : String(i + 1) });
         }
     });
-    const acts: DialogItem[] = [];
+    // Space sends an answer while one is asked, so Open is f then, the office's key for the full card
+    const acts: DialogItem[] = [{ id: "open", label: "Open", key: qs.length === 0 ? "Space" : "f" }];
     if (agent && (kind !== "worker" || input.canOpen)) {
-        // Space sends an answer while one is asked, so Open is t then, the cockpit's key for the agent's terminal
-        acts.push({ id: "open", label: kind === "lead" ? "Open lead" : "Open", key: qs.length === 0 ? "Space" : "t" });
         if (qs.length === 0 && kind !== "worker") {
             acts.push({ id: "reply", label: "Reply", key: "r" });
         }
+        // the agent's terminal on the Agent surface: the lead's at a run, the worker's tab at a seat
+        acts.push({ id: "terminal", label: "Terminal", key: "t" });
         if (input.hasDiff) {
             acts.push({ id: "diff", label: "Diff" });
         }
@@ -133,11 +135,7 @@ export function dialogItems(input: DialogInput): DialogItem[] {
     if ((kind === "lead" || kind === "leadless") && input.adjustable) {
         acts.push({ id: "adjust", label: "Adjust" });
     }
-    const card: DialogItem = { id: "card", label: "Full card", key: "f" };
-    if (answers.length > 0) {
-        return [...answers, ...[...acts, card].map((it, i) => (i === 0 ? { ...it, rule: true } : it))];
-    }
-    return acts.length > 0 ? [...acts, { ...card, rule: true }] : [card];
+    return answers.length > 0 ? [...answers, { ...acts[0], rule: true }, ...acts.slice(1)] : acts;
 }
 
 /** Pure: which items the ▶ can rest on. */

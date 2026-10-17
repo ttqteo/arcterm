@@ -63,24 +63,25 @@ const base = (over: Partial<DialogInput>): DialogInput => ({
 const labels = (input: DialogInput) => dialogItems(input).map((i) => i.label);
 
 describe("dialogItems", () => {
-    it("gives an agent at work Open, Reply, Send to background, then the full card under a line", () => {
+    it("gives an agent at work Open (the full card), Reply, Terminal and Send to background", () => {
         const items = dialogItems(base({ agent: agent() }));
-        expect(items.map((i) => i.label)).toEqual(["Open", "Reply", "Send to background", "Full card"]);
-        expect(items.map((i) => i.key)).toEqual(["Space", "r", "b", "f"]);
-        expect(items.map((i) => !!i.rule)).toEqual([false, false, false, true]);
+        expect(items.map((i) => i.label)).toEqual(["Open", "Reply", "Terminal", "Send to background"]);
+        expect(items.map((i) => i.id)).toEqual(["open", "reply", "terminal", "background"]);
+        expect(items.map((i) => i.key)).toEqual(["Space", "r", "t", "b"]);
+        expect(items.some((i) => i.rule)).toBe(false);
     });
 
-    it("offers Diff, after Reply, to an agent whose box shows changed files", () => {
+    it("offers Diff, after Terminal, to an agent whose box shows changed files", () => {
         expect(labels(base({ agent: agent(), hasDiff: true }))).toEqual([
             "Open",
             "Reply",
+            "Terminal",
             "Diff",
             "Send to background",
-            "Full card",
         ]);
     });
 
-    it("gives an asking agent its answers and Send, dim until something is picked, then Open on t under a line", () => {
+    it("gives an asking agent its answers and Send, dim until something is picked, then Open on f under a line", () => {
         const items = dialogItems(base({ agent: quill }));
         expect(items.map((i) => i.label)).toEqual([
             "Merge it",
@@ -88,9 +89,9 @@ describe("dialogItems", () => {
             "Not yet",
             "Send",
             "Open",
-            "Full card",
+            "Terminal",
         ]);
-        expect(items.map((i) => i.key)).toEqual(["1", "2", "3", "Space", "t", "f"]);
+        expect(items.map((i) => i.key)).toEqual(["1", "2", "3", "Space", "f", "t"]);
         expect(items[3].dim).toBe(true);
         expect(items[4].rule).toBe(true);
         expect(items[5].rule).toBeFalsy();
@@ -110,22 +111,22 @@ describe("dialogItems", () => {
         expect(items[2]).toMatchObject({ id: "send", dim: true });
     });
 
-    it("gives an agent asking in its terminal Open and Reply, and no Send to background", () => {
-        expect(labels(base({ agent: agent({ state: "asking" }) }))).toEqual(["Open", "Reply", "Full card"]);
+    it("gives an agent asking in its terminal Open, Reply and Terminal, and no Send to background", () => {
+        expect(labels(base({ agent: agent({ state: "asking" }) }))).toEqual(["Open", "Reply", "Terminal"]);
     });
 
-    it("gives a run's lead Open lead, Reply and Adjust when the run takes it", () => {
+    it("gives a run's lead Open (the run's card), Reply, Terminal and Adjust when the run takes it", () => {
         const lead = agent({ id: "l1", state: "idle" });
         expect(labels(base({ kind: "lead", agent: lead, adjustable: true }))).toEqual([
-            "Open lead",
+            "Open",
             "Reply",
+            "Terminal",
             "Adjust",
-            "Full card",
         ]);
-        expect(labels(base({ kind: "lead", agent: lead }))).toEqual(["Open lead", "Reply", "Full card"]);
+        expect(labels(base({ kind: "lead", agent: lead }))).toEqual(["Open", "Reply", "Terminal"]);
     });
 
-    it("leads a worker's seat with its row's own actions, numbered, then Open under a line", () => {
+    it("leads a worker's seat with its row's own actions, numbered, then Open and Terminal under a line", () => {
         const items = dialogItems(
             base({
                 kind: "worker",
@@ -134,7 +135,7 @@ describe("dialogItems", () => {
                 canOpen: true,
             })
         );
-        expect(items.map((i) => i.label)).toEqual(["Approve", "Send back", "Retry", "Skip", "Open", "Full card"]);
+        expect(items.map((i) => i.label)).toEqual(["Approve", "Send back", "Retry", "Skip", "Open", "Terminal"]);
         expect(items.slice(0, 4).map((i) => i.key)).toEqual(["1", "2", "3", "4"]);
         expect(items[4].rule).toBe(true);
     });
@@ -148,24 +149,26 @@ describe("dialogItems", () => {
             "Send",
             "Take over",
             "Open",
-            "Full card",
+            "Terminal",
         ]);
         expect(items[4].key).toBeUndefined();
-        expect(items[5].key).toBe("t");
+        expect(items[5]).toMatchObject({ key: "f", rule: true });
+        expect(items[6].key).toBe("t");
     });
 
-    it("leaves Tell to the full card, whose input takes the words: a worker at work offers Open", () => {
+    it("leaves Tell to the full card, whose input takes the words: a worker at work offers Open and Terminal", () => {
         const items = dialogItems(
             base({ kind: "worker", agent: agent({ id: "w1" }), rowActions: ["tell"], canOpen: true })
         );
-        expect(items.map((i) => i.label)).toEqual(["Open", "Full card"]);
-        expect(items[1].rule).toBe(true);
+        expect(items.map((i) => i.label)).toEqual(["Open", "Terminal"]);
+        expect(items.some((i) => i.rule)).toBe(false);
     });
 
-    it("gives a seat with no worker, and a leadless run, only what they have", () => {
-        expect(labels(base({ kind: "worker" }))).toEqual(["Full card"]);
-        expect(labels(base({ kind: "leadless", adjustable: true }))).toEqual(["Adjust", "Full card"]);
-        expect(labels(base({ kind: "leadless" }))).toEqual(["Full card"]);
+    it("gives a seat with no worker or no tab, and a leadless run, only the full card and what they have", () => {
+        expect(labels(base({ kind: "worker" }))).toEqual(["Open"]);
+        expect(labels(base({ kind: "worker", agent: agent({ id: "w1" }) }))).toEqual(["Open"]);
+        expect(labels(base({ kind: "leadless", adjustable: true }))).toEqual(["Open", "Adjust"]);
+        expect(labels(base({ kind: "leadless" }))).toEqual(["Open"]);
     });
 });
 

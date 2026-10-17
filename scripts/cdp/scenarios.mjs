@@ -44546,6 +44546,22 @@ const prRows = (h) =>
 const prRow = (label) =>
     `[...(${INIT_RAIL}?.querySelectorAll("[data-plan-row]") ?? [])].find((r) => ${PR_LABEL}(r) === ${JSON.stringify(label)})`;
 const prButton = (label, name) => `(${prRow(label)})?.querySelector('button[aria-label="${name}"]')`;
+// a proposed row's Accept, Rename and Drop are folded to no width until the pointer is over the row: hover it, then click
+async function prAct(h, label, name) {
+    const at = await h.ev(`(() => {
+        const r = ${prRow(label)};
+        if (!r) return null;
+        r.scrollIntoView({ block: "center", behavior: "instant" });
+        const b = r.getBoundingClientRect();
+        return { x: Math.round(b.x + 24), y: Math.round(b.y + b.height / 2) };
+    })()`);
+    if (at == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    await polishNap(120);
+    return initClick(h, prButton(label, name));
+}
+// the width a row's action shows, 0 while it is folded (its wrapper clips it: the button keeps its own width)
+const prActWidth = (h, label, name) => h.ev(`Math.round((${prButton(label, name)})?.parentElement.getBoundingClientRect().width ?? -1)`);
 // the section's footer buttons are found by their text
 const prFoot = (text) =>
     `[...(${INIT_RAIL}?.querySelectorAll('[data-rail-section="plan"] button') ?? [])].find((b) => b.innerText.trim() === ${JSON.stringify(text)})`;
@@ -44686,8 +44702,25 @@ const initiativePlanReview = {
             );
             await h.goto("agent");
 
+            // --- 3b. a row's actions are folded until the pointer is over it ----------------------------------------------
+            await polishWaitFor(h, `!!(${prRow(PR_P4)})`, INIT_WAIT_MS);
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
+            await polishNap(150);
+            const folded = await prActWidth(h, PR_P4, "Accept");
+            const titleFolded = await h.ev(`Math.round((${prRow(PR_P4)})?.querySelector(":scope > div")?.getBoundingClientRect().width ?? 0)`);
+            const atRow = await h.ev(`(() => { const b = (${prRow(PR_P4)})?.getBoundingClientRect(); return b ? { x: Math.round(b.x + 24), y: Math.round(b.y + b.height / 2) } : null; })()`);
+            if (atRow) await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: atRow.x, y: atRow.y });
+            await polishNap(150);
+            const shown = await Promise.all(["Accept", "Rename", "Drop"].map((n) => prActWidth(h, PR_P4, n)));
+            await h.shot("cdp-shots/initiative-plan-review-1b-row-hover.png");
+            rec(
+                "3b. a proposed row shows no Accept, Rename or Drop until the pointer is over it, and its title takes that width",
+                folded === 0 && shown.every((w) => w > 0) && titleFolded > 0,
+                { folded, shown, titleFolded }
+            );
+
             // --- 4. Rename: the row and the initiative's chunk carry the new label ---------------------------------------
-            await initClick(h, prButton(PR_P4, "Rename"));
+            await prAct(h, PR_P4, "Rename");
             const input = `${INIT_RAIL}?.querySelector('input[aria-label="Rename ${PR_P4}"]')`;
             const inputUp = await polishWaitFor(h, `!!${input}`, 3000);
             await initFill(h, input, PR_P4_NEW);
@@ -44701,7 +44734,7 @@ const initiativePlanReview = {
             );
 
             // a rename to a label the plan already holds is refused, with the error under the buttons in the error colour
-            await initClick(h, prButton(PR_P3, "Rename"));
+            await prAct(h, PR_P3, "Rename");
             await initFill(h, `${INIT_RAIL}?.querySelector('input[aria-label="Rename ${PR_P3}"]')`, PR_DONE);
             await initPress(h, "Enter");
             const dup = await polishWaitFor(h, `!!${INIT_RAIL}?.querySelector('[data-rail-section="plan"] [role="alert"]')`, 5000);
@@ -44721,7 +44754,7 @@ const initiativePlanReview = {
             const stillP3 = await stateOf(PR_P3);
 
             // --- 5. Accept, Undo, Accept again ---------------------------------------------------------------------------
-            await initClick(h, prButton(PR_P1, "Accept"));
+            await prAct(h, PR_P1, "Accept");
             const accepted = await polishWaitFor(h, `${INIT_RAIL}?.querySelector('[data-plan-row="accepted"]')?.innerText.includes("accepted · now pending") === true`, INIT_WAIT_MS);
             const afterAccept = await stateOf(PR_P1);
             // the row shows the decision as soon as it is held, while the call is still going and its buttons are disabled
@@ -44729,7 +44762,7 @@ const initiativePlanReview = {
             await initClick(h, `(${prRow(PR_P1)})?.querySelector("button")`);
             const undone = await polishWaitFor(h, `!!(${prRow(PR_P1)}) && ${prRow(PR_P1)}.dataset.planRow === "proposed"`, INIT_WAIT_MS);
             const afterUndo = await stateOf(PR_P1);
-            await initClick(h, prButton(PR_P1, "Accept"));
+            await prAct(h, PR_P1, "Accept");
             await waitRows(2, "proposed");
             const afterAgain = await stateOf(PR_P1);
             rec(
@@ -44739,7 +44772,7 @@ const initiativePlanReview = {
             );
 
             // --- 6. Drop, and Undo brings it back where it was, with its stage ----------------------------------------------
-            await initClick(h, prButton(PR_P2, "Drop"));
+            await prAct(h, PR_P2, "Drop");
             const dropped = await polishWaitFor(h, `${INIT_RAIL}?.querySelector('[data-plan-row="dropped"]')?.innerText.includes("dropped") === true`, INIT_WAIT_MS);
             const afterDrop = await stateOf(PR_P2);
             rec('6. Drop reads "dropped" and the chunk is gone from the initiative', dropped === true && afterDrop === "gone", { dropped, afterDrop });
@@ -44753,7 +44786,7 @@ const initiativePlanReview = {
                 restored === true && back2?.status === "proposed" && back2.stage === PR_P2_STAGE && order.indexOf(PR_P2) === order.indexOf(PR_P1) + 1,
                 { restored, status: back2?.status, stage: back2?.stage, order }
             );
-            await initClick(h, prButton(PR_P2, "Drop"));
+            await prAct(h, PR_P2, "Drop");
             await polishWaitFor(h, `${INIT_RAIL}?.querySelector('[data-plan-row="dropped"]')?.innerText.includes("dropped") === true`, INIT_WAIT_MS);
             rec("6c. dropping it again removes it", (await stateOf(PR_P2)) === "gone", { status: await stateOf(PR_P2) });
 
