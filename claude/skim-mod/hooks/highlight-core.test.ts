@@ -173,6 +173,49 @@ describe("layout", () => {
         const text = "```\nKey\n```\n| Key | x |";
         expect(layout(text, ["Key"], false)).toEqual([{ kind: "markdown", text, isDim: false }]);
     });
+
+    it("draws a fence of commands for the person to type highlighted, without its fence lines", () => {
+        const text = "Built it.\n\nInstall it:\n\n```\n! task install\n```\n\nThat closes arcterm. Key one.";
+        expect(layout(text, ["Key one."], true)).toEqual([
+            { kind: "markdown", text: "Built it.\n\nInstall it:", isDim: true },
+            { kind: "gap" },
+            {
+                kind: "line",
+                prefix: "",
+                runs: [{ text: "! task install", isCode: true, isMarked: true }],
+                isHeading: false,
+            },
+            { kind: "gap" },
+            {
+                kind: "line",
+                prefix: "",
+                runs: [{ text: "That closes arcterm. " }, { text: "Key one.", isMarked: true }],
+                isHeading: false,
+            },
+        ]);
+    });
+
+    it("highlights a command in a code span, but not other code", () => {
+        const [line] = layout("Type `! task install` when `a != b` holds.", ["holds."], false);
+        expect(line).toEqual({
+            kind: "line",
+            prefix: "",
+            runs: [
+                { text: "Type " },
+                { text: "! task install", isCode: true, isMarked: true },
+                { text: " when " },
+                { text: "a != b", isCode: true },
+                { text: " " },
+                { text: "holds.", isMarked: true },
+            ],
+            isHeading: false,
+        });
+    });
+
+    it("leaves a fence alone when any line in it is not a command", () => {
+        const text = "```\n! task install\nls\n```\n```\n```";
+        expect(layout(text, [], false)).toEqual([{ kind: "markdown", text, isDim: false }]);
+    });
 });
 
 describe("rowsFromAsk and isAskInView", () => {

@@ -11,6 +11,7 @@ export const HIGHLIGHT_SECTION = [
     "- When a reply explains something at length, wrap the 2-4 sentences the person must read to get the point in ==…==. Mark whole sentences, never a whole paragraph, and nothing in a short reply.",
     '- In a brainstorming or design turn, mark only the question you are waiting on the person to answer, as the last marked sentence, ending with "?". Never mark your own recommendation.',
     "- Marks go in your reply text only: never in files, code, commands, commit messages or tool inputs, and never inside code spans or blocks.",
+    "- Write a command the person has to type as `! <command>`, in a code span or alone in a code block: it draws highlighted with the marked sentences, so it takes no marks.",
 ].join("\n");
 
 // the same ask in one line, for the prompts after the first where the system prompt never got the section
@@ -219,8 +220,29 @@ export function inlineRuns(line: string, marked: readonly [number, number][]): R
     return runs;
 }
 
-// the stored reply cut into what the engine draws as markdown and the lines holding a mark. under skim a
-// heading is its own undimmed block, so the reply keeps its outline while the rest fades.
+// a command for the person to type at the prompt, `! task install`: as much a must-read as a marked sentence, so it
+// draws highlighted with the marks. a space after the ! keeps `!=` and `!important` out
+const RUN_COMMAND = /^!\s+\S/;
+
+// the code spans of a line holding a command for the person to type, backticks included
+function commandSpans(line: string): [number, number][] {
+    return [...line.matchAll(/`([^`]+)`/g)]
+        .filter((m) => RUN_COMMAND.test(m[1] ?? ""))
+        .map((m) => [m.index, m.index + m[0].length] as [number, number]);
+}
+
+// the closing line of the fence opening at `from` when every line it holds is a command, -1 for any other fence
+function commandFenceEnd(lines: readonly string[], from: number): number {
+    let at = from + 1;
+    while (at < lines.length && !FENCE.test(lines[at] ?? "")) {
+        if (!RUN_COMMAND.test((lines[at] ?? "").trim())) return -1;
+        at++;
+    }
+    return at < lines.length && at > from + 1 ? at : -1;
+}
+
+// the stored reply cut into what the engine draws as markdown and the lines holding a mark or a command. under
+// skim a heading is its own undimmed block, so the reply keeps its outline while the rest fades.
 export function layout(clean: string, marks: readonly string[], isSkim: boolean): Segment[] {
     const segments: Segment[] = [];
     let chunk: string[] = [];
@@ -236,8 +258,21 @@ export function layout(clean: string, marks: readonly string[], isSkim: boolean)
         chunk = [];
     };
     const pending = [...marks];
+    const lines = clean.split("\n");
     let inFence = false;
-    for (const line of clean.split("\n")) {
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i] ?? "";
+        // a fence of commands for the person to type draws them highlighted, without its fence lines
+        const fenceEnd = !inFence && FENCE.test(line) ? commandFenceEnd(lines, i) : -1;
+        if (fenceEnd >= 0) {
+            flush(false);
+            for (const command of lines.slice(i + 1, fenceEnd)) {
+                const runs: Run[] = [{ text: command.trim(), isCode: true, isMarked: true }];
+                segments.push({ kind: "line", prefix: "", runs, isHeading: false });
+            }
+            i = fenceEnd;
+            continue;
+        }
         if (FENCE.test(line)) {
             inFence = !inFence;
         }
@@ -252,6 +287,7 @@ export function layout(clean: string, marks: readonly string[], isSkim: boolean)
                 from = at + want.length;
                 pending.shift();
             }
+            ranges.push(...commandSpans(line));
         }
         const isHeading = !inFence && HEADING.test(line);
         if (ranges.length === 0 && !(isSkim && isHeading)) {
