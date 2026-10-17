@@ -1,9 +1,18 @@
+/* The window is the app, not a page: the document never scrolls, and a trackpad fling never bounces it (macOS). */
+html,
+body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+/* clip, not hidden: a hidden box is still a scroll container, so focus or scrollIntoView reaching past its edge
+   scrolls it, sliding the whole cockpit up with nothing on screen to scroll it back */
 .cockpit-shell {
     display: flex;
     flex-direction: column;
     height: 100vh;
     width: 100vw;
-    overflow: hidden;
+    overflow: clip;
     background: var(--color-background);
     color: var(--color-foreground);
 }

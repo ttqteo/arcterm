@@ -139,6 +139,17 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
         window.addEventListener("contextmenu", onContextMenu);
         return () => window.removeEventListener("contextmenu", onContextMenu);
     }, []);
+    // The document can still be scrolled from code (focus or scrollIntoView reaching a popover that overhangs the
+    // window's bottom edge), which slides the whole cockpit up: put it straight back.
+    useEffect(() => {
+        const onScroll = () => {
+            if (window.scrollX !== 0 || window.scrollY !== 0) {
+                window.scrollTo(0, 0);
+            }
+        };
+        window.addEventListener("scroll", onScroll);
+        return () => window.removeEventListener("scroll", onScroll);
+    }, []);
     // capture phase: a focused xterm stops key events from bubbling to the window
     useEffect(() => {
         let hint = NO_DIGIT_HINT;

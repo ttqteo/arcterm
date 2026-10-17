@@ -68,6 +68,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The app no longer scrolls as a whole: the window stays put instead of sliding up out of view, or bouncing under a
+  trackpad fling on macOS.
 - A new terminal (New → Terminal, or the Diff panel's Open a terminal here) opens in the centre with the cursor in it,
   as a new agent does, instead of waiting in the sidebar to be clicked.
 - The keys the Office menu (`m`) shows beside its items, such as `s` or `j`, now work while the menu is open: the
