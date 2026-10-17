@@ -35,6 +35,7 @@ import { parseDocReview } from "@/app/view/agents/docreview";
 import { focusedDocReview, openReview, stepDocReviewTab } from "@/app/view/agents/docreviewstore";
 import { doneSuggestion } from "@/app/view/agents/donesuggest";
 import { filesStateAtom, reloadChanges } from "@/app/view/agents/filesstore";
+import { toggleFloatNote } from "@/app/view/agents/floatnotestore";
 import { minimizeRequested, toggleFloat } from "@/app/view/agents/floatstore";
 import {
     clearHistoryFilters,
@@ -416,6 +417,17 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "New run",
             when: (ctx) => !ctx.modalOpen,
             run: () => openLauncher(model, "run"),
+        },
+        {
+            // The Float ledge's Note tab: from outside Float or from a terminal it floats straight onto the note, from the
+            // note it goes back to the terminal (floatnotestore.ts). A chord, so it works from a focused terminal, and
+            // never a bare key, which would type into the note.
+            id: "float-note",
+            keys: "Mod:Shift:n",
+            group: "Global",
+            label: "Float the note",
+            when: (ctx) => !ctx.modalOpen,
+            run: () => void toggleFloatNote(model),
         },
         {
             // Open a tool (lazygit, yazi, btop…) in the focused agent's folder, from a focused terminal too. Not bare

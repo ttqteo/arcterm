@@ -13,7 +13,13 @@ vi.mock("./floatstore", async () => {
 });
 vi.mock("./toolsstore", async () => {
     const { atom } = await import("jotai");
-    return { toolsStatusAtom: atom(null), loadTools: vi.fn(), openTool: vi.fn(), installTool: vi.fn() };
+    return {
+        toolsStatusAtom: atom(null),
+        loadTools: vi.fn(),
+        openTool: vi.fn(),
+        installTool: vi.fn(),
+        showInstall: vi.fn(),
+    };
 });
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -35,7 +41,7 @@ import {
     toggleFloatNote,
 } from "./floatnotestore";
 import { enterFloat, floatModeAtom } from "./floatstore";
-import { installTool, loadTools, openTool, toolsStatusAtom } from "./toolsstore";
+import { installTool, loadTools, openTool, showInstall, toolsStatusAtom } from "./toolsstore";
 
 const read = vi.mocked(RpcApi.NoteScratchReadCommand);
 const write = vi.mocked(RpcApi.NoteScratchWriteCommand);
@@ -248,6 +254,14 @@ describe("showTranslate", () => {
         await showTranslate(mm);
         expect(installTool).toHaveBeenCalledWith(mm, trans(false));
         expect(mm.openTerminal).toHaveBeenCalledWith("inst");
+    });
+    it("shows an install already running or failed instead of starting another", async () => {
+        globalStore.set(toolsStatusAtom, [trans(false)]);
+        vi.mocked(showInstall).mockReturnValue(true);
+        const mm = m([]);
+        await showTranslate(mm);
+        expect(showInstall).toHaveBeenCalledWith(mm, "trans");
+        expect(installTool).not.toHaveBeenCalled();
     });
     it("reads the catalog first when it is unread", async () => {
         globalStore.set(toolsStatusAtom, null);

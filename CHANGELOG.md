@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Note and Translate in Float**: the strip under a float's terminal has a **Note** tab, one markdown note that saves
+  itself as you type (with Preview), and a **Translate** tab that opens translate-shell, its prompt showing the
+  language it translates into, with `↑` recalling past lookups. `Cmd`+`Shift`+`N` floats the note.
+  <!-- try: float-note --> <!-- big -->
 - Office sounds: chiptune jingles when a task finishes, a run lands or someone needs you, with optional footsteps and
   day and night music (`s` or the office menu's Mute sound mutes them).
 - **Answer an agent's question from Telegram**: pair a bot in Settings → General → Notifications, then tap an option

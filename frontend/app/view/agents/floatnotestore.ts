@@ -13,7 +13,7 @@ import { atom, type PrimitiveAtom } from "jotai";
 import type { AgentsViewModel } from "./agents";
 import { SCRATCH_SAVE_MS, scratchErrorLine, translateStep } from "./floatnote";
 import { enterFloat, floatModeAtom } from "./floatstore";
-import { installTool, loadTools, openTool, toolsStatusAtom } from "./toolsstore";
+import { installTool, loadTools, openTool, showInstall, toolsStatusAtom } from "./toolsstore";
 
 // whether FloatNote covers the terminal area; Float ending or any focus change closes it, so re-entering shows the terminal
 export const floatNoteOpenAtom = atom(false) as PrimitiveAtom<boolean>;
@@ -153,6 +153,11 @@ export async function showTranslate(model: AgentsViewModel): Promise<void> {
             return;
         }
         case "install":
+            // an install already running, or one that failed and was kept, is what the tab shows: a second would refuse
+            // (already installing) or leave the failed terminal open
+            if (showInstall(model, step.tool.id)) {
+                return;
+            }
             try {
                 const res = await installTool(model, step.tool);
                 if (res.ok === false) {
