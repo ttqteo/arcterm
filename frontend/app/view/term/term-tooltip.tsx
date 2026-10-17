@@ -1,7 +1,9 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { PLATFORM, PlatformMacOS } from "@/util/platformutil";
+import { TOOLTIP_SURFACE } from "@/app/element/tooltip";
+import { isMacOS } from "@/util/platformutil";
+import { cn } from "@/util/util";
 import { FloatingPortal, VirtualElement, flip, offset, shift, useFloating } from "@floating-ui/react";
 import * as React from "react";
 import type { TermWrap } from "./termwrap";
@@ -55,7 +57,8 @@ export const TermTooltip = React.memo(function TermTooltip({ mousePos, content }
             <div
                 ref={refs.setFloating}
                 style={floatingStyles}
-                className="bg-surface-raised rounded-md px-2 py-1 text-xs text-secondary shadow-xl z-50 pointer-events-none select-none"
+                data-tooltip=""
+                className={cn(TOOLTIP_SURFACE, "pointer-events-none select-none")}
             >
                 {content}
             </div>
@@ -75,7 +78,6 @@ function clearTimeoutRef(ref: React.RefObject<number | null>) {
 
 const HoverDelayMs = 600;
 const MaxHoverTimeMs = 2200;
-const modKey = PLATFORM === PlatformMacOS ? "Cmd" : "Ctrl";
 
 interface TermLinkTooltipProps {
     /**
@@ -132,5 +134,7 @@ export const TermLinkTooltip = React.memo(function TermLinkTooltip({ termWrap }:
         };
     }, [termWrap]);
 
+    // read per render: at module load setPlatform has not run yet, so the platform still reads as macOS
+    const modKey = isMacOS() ? "Cmd" : "Ctrl";
     return <TermTooltip mousePos={mousePos} content={<span>{modKey}-click to {hint ?? "open link"}</span>} />;
 });

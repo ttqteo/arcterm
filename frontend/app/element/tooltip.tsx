@@ -1,7 +1,6 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { cn } from "@/util/util";
 import {
     autoUpdate,
     flip,
@@ -14,6 +13,11 @@ import {
 } from "@floating-ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { easeFluidCss, MOTION } from "./motiontokens";
+
+// the one tooltip look: floating chrome, so the strong edge and the popover shadow scale. the terminal's
+// link tooltip wears it too.
+export const TOOLTIP_SURFACE =
+    "z-50 rounded-md border border-edge-strong bg-surface-raised px-2 py-1 text-[11.5px] leading-snug text-foreground shadow-popover-sm";
 
 interface TooltipProps {
     children: React.ReactNode;
@@ -161,9 +165,8 @@ function TooltipInner({
                             transition: `opacity ${MOTION.durMicro}s ${easeFluidCss}`,
                         }}
                         {...getFloatingProps()}
-                        className={cn(
-                            "bg-surface-raised border border-border rounded-md px-2 py-1 text-xs text-foreground shadow-xl z-50"
-                        )}
+                        data-tooltip=""
+                        className={TOOLTIP_SURFACE}
                     >
                         {content}
                     </div>

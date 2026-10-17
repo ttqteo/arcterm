@@ -48170,6 +48170,15 @@ const contextMenu = {
 // the Events rail's collapsed glyph is the Tooltip primitive's live use on a surface every profile has
 const LOOK_EVENTS_RAIL = `document.querySelector('aside[aria-label="Events"]')`;
 
+// the shown tooltip's look: both tooltips share one, a bordered floating surface on the popover shadow scale
+const LOOK_TOOLTIP_STYLE = `(() => {
+    const t = [...document.querySelectorAll("[data-tooltip]")].find((d) => d.style.opacity !== "0");
+    if (t == null) return null;
+    const cs = getComputedStyle(t);
+    return { text: t.innerText, border: cs.borderTopWidth, size: cs.fontSize, shadow: cs.boxShadow !== "none" };
+})()`;
+const tooltipLookOk = (look) => look?.border === "1px" && look?.size === "11.5px" && look?.shadow === true;
+
 const cockpitRailTooltip = {
     name: "cockpit-rail-tooltip",
     surface: "cockpit",
@@ -48199,8 +48208,12 @@ const cockpitRailTooltip = {
             await nap(200);
             return { shown: tip() != null };
         `);
+        const look = await h.ev(LOOK_TOOLTIP_STYLE);
         await h.shot(lookShot("cockpit-rail-tooltip"));
-        return [{ step: "hovering the collapsed Events glyph shows its Events tooltip", ok: tip.shown, detail: JSON.stringify({ glyph, ...tip }) }];
+        return [
+            { step: "hovering the collapsed Events glyph shows its Events tooltip", ok: tip.shown, detail: JSON.stringify({ glyph, ...tip }) },
+            { step: "the tooltip is a bordered 11.5px surface with a popover shadow", ok: tooltipLookOk(look), detail: JSON.stringify(look) },
+        ];
     },
     async teardown(h) {
         await lookHover(h, 1, 1);
@@ -48258,8 +48271,14 @@ const termLinkTooltip = {
             if (await h.ev(`${screenVisible}?.classList.contains("xterm-cursor-pointer") ?? false`)) at = p;
         }
         const shown = at != null && (await polishWaitFor(h, `/click to open link/.test(document.body.innerText)`, 2000));
+        const look = shown === true ? await h.ev(LOOK_TOOLTIP_STYLE) : null;
         await h.shot(lookShot("term-link-tooltip"));
-        return [{ step, ok: ready && shown === true, detail: JSON.stringify({ ready, rect, at, shown }) }];
+        const modKey = process.platform === "darwin" ? "Cmd" : "Ctrl";
+        return [
+            { step, ok: ready && shown === true, detail: JSON.stringify({ ready, rect, at, shown }) },
+            { step: `the tooltip names this platform's modifier (${modKey}-click)`, ok: look?.text === `${modKey}-click to open link`, detail: JSON.stringify(look) },
+            { step: "it wears the shared tooltip look", ok: tooltipLookOk(look), detail: JSON.stringify(look) },
+        ];
     },
     async teardown(h, ctx) {
         await lookHover(h, 1, 1);
