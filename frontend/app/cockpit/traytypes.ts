@@ -98,7 +98,8 @@ export interface TraySnapshot {
 }
 
 export type TrayAct =
-    | { kind: "hello" }
+    | { kind: "hello" } // the page has loaded, maybe still hidden (src-tauri/src/tray.rs builds it on a hover)
+    | { kind: "shown" } // the page is on screen: the host logs the open's time
     | { kind: "page"; page: TrayPage }
     | { kind: "close" }
     | { kind: "open-arcterm" }

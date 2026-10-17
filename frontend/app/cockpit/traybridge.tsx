@@ -3,7 +3,9 @@
 //
 // The cockpit's side of the menu bar / tray popover (spec 2026-10-15-tray-popover-design.md): it keeps the icon's
 // count, red dot and memory free current (set_tray_status), and while the popover is open it sends it a TraySnapshot built from
-// the cockpit's own stores and carries out what trayActPlan decides for each TrayAct it sends back. The host
+// the cockpit's own stores and carries out what trayActPlan decides for each TrayAct it sends back. The host keeps the
+// popover's page between opens and loads it on a hover, so the page's hello (loaded) and tray:shown (on screen) differ:
+// a hello gets one reading and one snapshot, so the page shows filled at the click. The host
 // (src-tauri/src/tray.rs) handles close, restart, quit, show log and the OS's monitor itself. Mounted once in the
 // cockpit shell, which lives as long as arcterm does, folded into Sprout or not.
 
@@ -89,6 +91,8 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
     const [pressure, setPressure] = useState("");
     const [memAvailable, setMemAvailable] = useState(0);
     const [open, setOpen] = useState(false);
+    // bumped once the reading a page's hello asked for is in: that snapshot goes to the page, shown or not
+    const [fed, setFed] = useState(0);
     const [page, setPage] = useState<TrayPage>("main");
     const [machine, setMachine] = useState<MachineStatsData | null>(null);
     // when wavesrv last answered (the heartbeat, the machine poll or a memory-pressure event): the popover's offline
@@ -169,11 +173,13 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
         () => traySnapshot({ platform, machine, jobQueue, agents, peekRows, donuts, storage, consumers, heardAt, now }),
         [platform, machine, jobQueue, agents, peekRows, donuts, storage, consumers, heardAt, now]
     );
+    const sentFed = useRef(0);
     useEffect(() => {
-        if (open) {
+        if (open || fed !== sentFed.current) {
+            sentFed.current = fed;
             void emit("tray:snapshot", snapshot).catch(() => {});
         }
-    }, [open, snapshot]);
+    }, [open, fed, snapshot]);
 
     // the act handler reads the latest rows, jobs and report through a ref, so the listener is registered once
     const latest = useRef({ peekRows, agents, jobQueue });
@@ -182,8 +188,14 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
         const carryOut = async (step: TrayStep) => {
             switch (step.kind) {
                 case "hello":
-                    setOpen(true);
-                    setPage("main");
+                    await RpcApi.GetMachineStatsCommand(TabRpcClient)
+                        .then((m) => {
+                            setMachine(m);
+                            setPressure(m.pressure);
+                            setHeardAt(Date.now());
+                        })
+                        .catch(() => {});
+                    setFed((n) => n + 1);
                     return;
                 case "page":
                     setPage(step.page);
@@ -240,7 +252,14 @@ export function TrayBridge({ model }: { model: AgentsViewModel }) {
         };
         const offs = [
             listen<TrayAct>("tray:act", (e) => onAct(e.payload)),
-            listen("tray:closed", () => setOpen(false)),
+            listen("tray:shown", () => {
+                setOpen(true);
+                setPage("main");
+            }),
+            listen("tray:closed", () => {
+                setOpen(false);
+                setPage("main");
+            }),
         ];
         return () => offs.forEach((p) => void p.then((off) => off()));
     }, [model]);

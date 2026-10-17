@@ -61,6 +61,11 @@ is a state the built popover reaches:
     for an occasional glance is the wrong trade.
   - The cost is a cold open of about 0.3–0.5 s. If it measures past 0.5 s on the Mac, keep the window hidden after
     its first open instead; that is the one fallback.
+  - **Taken 2026-10-17:** on the 8 GB Mac the cold open measured 0.5–1.8 s (most near 0.65 s; 0.15–0.25 s only
+    within ~3 s of a close). The window is now built on the pointer's first hover over the icon (or the click) and
+    kept hidden between opens; a kept panel fades in natively, the page's reveal plays on its first show only. It is
+    dropped at critical memory pressure and with the icon off (`trayicon::keeps_popover`). `tray.rs` logs each open
+    as `popover shown N ms after the click (cold | still loading | warmed | kept)`.
 - **It closes** on a click outside it (blur), Esc on the main page, a second click on the icon, and any action that
   opens the cockpit. Esc on a subpage goes back to the main page.
 - **Size and place:**

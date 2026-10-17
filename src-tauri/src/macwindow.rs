@@ -288,7 +288,8 @@ mod imp {
     // Runs from the tray's open, on the main thread: the popover's webview moves out of tao's window, which stays
     // hidden, into a fresh ArcTrayPanel, which shows and takes the key without Tauri's show or set_focus, which would
     // activate arcterm. Tao's window keeps its class: swapping it for a panel class once the webview was in lost the
-    // observers KVO keeps on it, so the destroy threw NSRangeException and aborted the app (2026-10-16).
+    // observers KVO keeps on it, so the destroy threw NSRangeException and aborted the app (2026-10-16). A popover kept
+    // from an earlier open (hide_panel) shows its own panel again, fading in.
     pub fn show_in_panel(window: &WebviewWindow, blurred: fn()) {
         let Some(mtm) = MainThreadMarker::new() else {
             return;
@@ -297,6 +298,16 @@ mod imp {
             return;
         };
         let _ = PANEL_BLURRED.set(blurred);
+        let kept = HOSTED.with(|h| h.borrow().as_ref().map(|hosted| (hosted.panel.clone(), hosted.web.clone())));
+        if let Some((panel, web)) = kept {
+            panel.setFrame_display(ns.frame(), true);
+            panel.setAlphaValue(0.0);
+            panel.orderFrontRegardless();
+            panel.makeKeyWindow();
+            panel.makeFirstResponder(Some(&web));
+            fade_in(&panel);
+            return;
+        }
         let Some(home) = ns.contentView() else {
             return;
         };
@@ -337,6 +348,23 @@ mod imp {
         panel.makeKeyWindow();
         panel.makeFirstResponder(Some(&web));
         HOSTED.with(|h| *h.borrow_mut() = Some(Hosted { panel, web, home, item: None }));
+    }
+
+    // The kept panel's page last painted as it was at the hide, and paints again only once on screen: the fade covers
+    // that frame. The popover's own reveal plays only on its first show.
+    const KEPT_FADE_SECS: f64 = 0.14;
+
+    fn fade_in(panel: &ArcTrayPanel) {
+        // SAFETY: NSAnimationContext's class methods and NSWindow's animator proxy, on the main thread; CGFloat is f64
+        unsafe {
+            let context = objc2::class!(NSAnimationContext);
+            let _: () = msg_send![context, beginGrouping];
+            let current: Retained<AnyObject> = msg_send![context, currentContext];
+            let _: () = msg_send![&*current, setDuration: KEPT_FADE_SECS];
+            let animator: Retained<AnyObject> = msg_send![panel, animator];
+            let _: () = msg_send![&*animator, setAlphaValue: 1.0f64];
+            let _: () = msg_send![context, endGrouping];
+        }
     }
 
     // Runs from the tray's place, through after_tao_frame, once tao's hidden window has the popover's size and place
@@ -433,7 +461,30 @@ mod imp {
         }
     }
 
-    // Runs from the tray's close before the destroy, and at exit, on the main thread: the webview goes back into tao's
+    // The status item is no longer drawn selected: the counterpart of present_from_tray
+    fn let_item_go(item: &NSStatusItem, panel: &ArcTrayPanel) {
+        if item.respondsToSelector(sel!(_didPresentContent:)) {
+            // SAFETY: the method's encoding is v@:@, on the main thread, with the panel present_from_tray gave it
+            let _: () = unsafe { msg_send![item, _didPresentContent: panel] };
+        } else if let Some(button) = MainThreadMarker::new().and_then(|mtm| item.button(mtm)) {
+            button.highlight(false);
+        }
+    }
+
+    // Runs from the tray's hide, on the main thread: the panel goes off screen with the webview in it, kept for the next
+    // open, and lets the status item go. Its resignKeyWindow on the way out finds the popover already hidden.
+    pub fn hide_panel() {
+        let taken = HOSTED.with(|h| h.borrow_mut().as_mut().map(|hosted| (hosted.item.take(), hosted.panel.clone())));
+        let Some((item, panel)) = taken else {
+            return;
+        };
+        if let Some(item) = item {
+            let_item_go(&item, &panel);
+        }
+        panel.orderOut(None);
+    }
+
+    // Runs from the tray's drop before the destroy, and at exit, on the main thread: the webview goes back into tao's
     // window, where wry takes it out on destroy, and the panel goes. The panel's resignKeyWindow on the way out finds
     // the popover already closing.
     pub fn close_panel() {
@@ -441,12 +492,7 @@ mod imp {
             return;
         };
         if let Some(item) = &hosted.item {
-            if item.respondsToSelector(sel!(_didPresentContent:)) {
-                // SAFETY: the method's encoding is v@:@, on the main thread, with the panel present_from_tray gave it
-                let _: () = unsafe { msg_send![&**item, _didPresentContent: &*hosted.panel] };
-            } else if let Some(button) = MainThreadMarker::new().and_then(|mtm| item.button(mtm)) {
-                button.highlight(false);
-            }
+            let_item_go(item, &hosted.panel);
         }
         hosted.web.setFrame(hosted.home.bounds());
         hosted.home.addSubview(&hosted.web);
@@ -539,7 +585,7 @@ mod imp {
                         }
                     });
                     // SAFETY: the method's encoding is v@:@@? (a void (^)(BOOL) block), on the main thread; the item
-                    // is told _didPresentContent: with the same panel before close_panel lets the panel go
+                    // is told _didPresentContent: with the same panel before hide_panel or close_panel lets the panel go
                     let _: () = unsafe {
                         msg_send![&*item, _willPresentContent: &*hosted.panel, cancellationHandler: &*cancel]
                     };
@@ -848,7 +894,7 @@ pub fn panel_follow(window: &WebviewWindow) {
     let _ = window;
 }
 
-// Runs from the tray's close, on the main thread, just before the destroy.
+// Runs from the tray's drop, on the main thread, just before the destroy.
 pub fn free_when_destroyed(window: &WebviewWindow) {
     #[cfg(target_os = "macos")]
     imp::free_when_destroyed(window);
@@ -856,7 +902,13 @@ pub fn free_when_destroyed(window: &WebviewWindow) {
     let _ = window;
 }
 
-// Runs from the tray's close before the destroy, and at exit, on the main thread.
+// Runs from the tray's hide, on the main thread.
+pub fn hide_panel() {
+    #[cfg(target_os = "macos")]
+    imp::hide_panel();
+}
+
+// Runs from the tray's drop before the destroy, and at exit, on the main thread.
 pub fn close_panel() {
     #[cfg(target_os = "macos")]
     imp::close_panel();

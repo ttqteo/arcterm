@@ -143,7 +143,7 @@ describe("trayActPlan", () => {
         });
     });
     it("leaves what only the host can do to the host", () => {
-        for (const kind of ["close", "restart", "quit", "showlog", "open-monitor"] as const) {
+        for (const kind of ["close", "restart", "quit", "showlog", "open-monitor", "shown"] as const) {
             expect(plan({ kind })).toBeNull();
         }
     });

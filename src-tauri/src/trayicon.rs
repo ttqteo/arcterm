@@ -1,6 +1,9 @@
 //! The menu bar / tray icon's pixels and the popover's place (spec 2026-10-15-tray-popover-design.md), pure so they
 //! test without a window. The glyph is the "t>" mark's 12x9 cell grid, mirrored from scripts/gen-app-icon.mjs CELLS;
-//! drawing it here lets the count badge, the red dot and the dimming compose onto it with no PNG per state.
+//! drawing it here lets the count badge, the red dot and the dimming compose onto it with no PNG per state. The
+//! popover's keep and click rules are here too.
+
+use std::time::Duration;
 
 // [cx, cy, cw, ch] runs of cells: the t (stem, crossbar, hook, base), then the chevron's nine blocks
 const CELLS: [(u32, u32, u32, u32); 13] = [
@@ -268,6 +271,32 @@ pub fn popover_origin(icon: R, size: (f64, f64), work: R) -> (f64, f64) {
     (x, y)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Click {
+    Show,
+    Hide,
+    Ignore,
+}
+
+/// What a click on the icon does: it hides a shown popover and shows a hidden one, except the click that blurred the
+/// popover shut, which lands `guard` or less after the hide.
+pub fn click_action(shown: bool, since_hidden: Option<Duration>, guard: Duration) -> Click {
+    if shown {
+        Click::Hide
+    } else if since_hidden.is_some_and(|d| d < guard) {
+        Click::Ignore
+    } else {
+        Click::Show
+    }
+}
+
+/// Whether the hidden popover's window is kept for the next open. A fresh webview took 0.5-1.8 s an open on an 8 GB
+/// Mac (waveapp.log, 2026-10-17), so it stays, except at critical memory pressure, when its 50-100 MB go back, and
+/// with the icon off.
+pub fn keeps_popover(alert: bool, visible: bool) -> bool {
+    visible && !alert
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,6 +395,23 @@ mod tests {
         assert_eq!(tooltip(0, false, false, free), "arcterm: 1.1 GB free");
         assert_eq!(tooltip(4, true, false, free), "arcterm: memory pressure critical, 1.1 GB free, 4 waiting on you");
         assert_eq!(tooltip(4, false, true, free), "arcterm: its server is not answering");
+    }
+
+    #[test]
+    fn a_click_hides_a_shown_popover_and_shows_a_hidden_one() {
+        let guard = Duration::from_millis(250);
+        assert_eq!(click_action(true, None, guard), Click::Hide);
+        assert_eq!(click_action(false, None, guard), Click::Show);
+        assert_eq!(click_action(false, Some(Duration::from_secs(3)), guard), Click::Show);
+        // the click on the icon that blurred it shut
+        assert_eq!(click_action(false, Some(Duration::from_millis(40)), guard), Click::Ignore);
+    }
+
+    #[test]
+    fn the_popover_is_kept_unless_memory_is_critical_or_the_icon_is_off() {
+        assert!(keeps_popover(false, true));
+        assert!(!keeps_popover(true, true));
+        assert!(!keeps_popover(false, false));
     }
 
     #[test]

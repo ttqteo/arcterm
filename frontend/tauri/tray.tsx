@@ -3,7 +3,8 @@
 //
 // The tray popover's own page (src-tauri/src/tray.rs opens it in the "tray" window): it shows the TraySnapshot the
 // cockpit emits as tray:snapshot, the offline page on tray:offline, and emits each click as tray:act. It never boots
-// the cockpit, the wsh client or WOS. ?fixture=<name> (trayfixtures.ts) draws a canned snapshot and records the acts
+// the cockpit, the wsh client or WOS. The host loads it on a hover over the icon and keeps it between opens: it is on
+// screen from tray:shown to tray:closed. ?fixture=<name> (trayfixtures.ts) draws a canned snapshot and records the acts
 // in window.__trayActs, for the CDP scenarios.
 
 import { pageState } from "@/app/cockpit/trayformat";
@@ -51,6 +52,9 @@ function TrayRoot() {
     const lastHeard = snap?.heardAt ?? fixture?.lastHeard ?? null;
     const [page, setPageState] = useState<TrayPage>(fixture?.page ?? "main");
     const [waited, setWaited] = useState(false);
+    // the reveal plays on the first show only: a kept page painted last as it was at the hide, so a replay would flash
+    // it, then nothing, then the reveal; the host fades the kept panel in instead
+    const [everShown, setEverShown] = useState(fixtureName != null);
     const rootRef = useRef<HTMLDivElement>(null);
     const setPage = (p: TrayPage) => {
         setPageState(p);
@@ -64,6 +68,13 @@ function TrayRoot() {
         const unlisten = [
             listen<TraySnapshot>("tray:snapshot", (e) => setSnap(e.payload)),
             listen("tray:offline", () => setOffline(true)),
+            listen("tray:shown", () => {
+                setEverShown(true);
+                // after the frame that draws it: the host logs the open's time
+                requestAnimationFrame(() => send({ kind: "shown" }));
+            }),
+            // the next open starts on the main page, already drawn when the kept panel comes back
+            listen("tray:closed", () => setPageState("main")),
         ];
         send({ kind: "hello" });
         const timer = setTimeout(() => setWaited(true), LOADING_SHOWS_MS);
@@ -119,7 +130,7 @@ function TrayRoot() {
                 It waits for the first snapshot, or LOADING_SHOWS_MS: revealed at once, it played on the loading card,
                 and the real page then came in with no motion at all. */}
             <PopoverReveal
-                open={state !== "loading" || waited}
+                open={everShown && (state !== "loading" || waited)}
                 origin={snap?.platform === "win" ? "bottom center" : "top center"}
                 className={cn("bg-surface p-2.5 font-sans", !osFrame && "rounded-lg border border-edge-strong")}
             >

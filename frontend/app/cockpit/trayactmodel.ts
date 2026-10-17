@@ -23,7 +23,7 @@ export interface TrayActContext {
 }
 
 export type TrayStep =
-    | { kind: "hello" } // the popover is up: start feeding it
+    | { kind: "hello" } // the popover's page has loaded, maybe still hidden: send it a snapshot
     | { kind: "page"; page: TrayPage }
     | { kind: "nothing" } // only the raise
     | { kind: "settings"; section: string }
@@ -112,6 +112,6 @@ export function trayActPlan(act: TrayAct, ctx: TrayActContext): TrayPlan | null 
                 olderthandays: act.category === "sessions" ? Number(DEFAULT_SESSION_DAYS) : undefined,
             });
         default:
-            return null; // close, restart, quit, showlog, open-monitor: the host's
+            return null; // close, restart, quit, showlog, open-monitor, shown: the host's
     }
 }

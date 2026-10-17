@@ -1,8 +1,10 @@
 //! The menu bar / tray icon and its popover (spec 2026-10-15-tray-popover-design.md). The icon shows what waits on
 //! you, from the cockpit (set_tray_status); a left click, and on a Mac a right click too, opens the popover, a second
-//! webview window ("tray", tray.html) that lives only while open, since a webview costs 50-100 MB and the popover is an
-//! occasional glance; on Windows a right click opens Open / Quit. wavesrv's exit dims the icon here, since then no
-//! frontend can.
+//! webview window ("tray", tray.html); on Windows a right click opens Open / Quit. The popover's window is built on the
+//! pointer's first hover over the icon, or the click, and kept hidden between opens: a fresh one each open took
+//! 0.5-1.8 s on an 8 GB Mac, past the spec's 0.5 s line. It is dropped, and its 50-100 MB go back, at critical memory
+//! pressure and with the icon off (trayicon::keeps_popover). wavesrv's exit dims the icon here, since then no frontend
+//! can.
 
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -16,7 +18,7 @@ use tauri::{
 };
 
 use crate::applog::log_line;
-use crate::trayicon::{self, R};
+use crate::trayicon::{self, Click, R};
 
 pub const TRAY_LABEL: &str = "tray";
 const TRAY_ID: &str = "arc";
@@ -35,9 +37,15 @@ struct State {
     offline: bool,
     icon: Option<R>,
     height: Option<f64>,
+    // the popover is on screen; its window may be there hidden, kept for the next open
+    shown: bool,
     closed_at: Option<Instant>,
-    // the click that opened the popover, until its page says hello: the cold open's cost, logged
-    opened_at: Option<Instant>,
+    // the kept window's page has said hello, and has shown at least once
+    loaded: bool,
+    shown_once: bool,
+    // the window's build, until its page says hello, and the click, until the page says it shows: both logged
+    built_at: Option<Instant>,
+    opened_at: Option<(Instant, &'static str)>,
 }
 
 fn state() -> &'static Mutex<State> {
@@ -71,13 +79,16 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     // Quit on a right click.
     let builder = if cfg!(target_os = "macos") { builder } else { builder.menu(&menu) };
     let tray = builder
-        .on_tray_icon_event(|tray, ev| {
-            if let TrayIconEvent::Click { button, button_state: MouseButtonState::Up, rect, .. } = ev {
+        .on_tray_icon_event(|tray, ev| match ev {
+            TrayIconEvent::Click { button, button_state: MouseButtonState::Up, rect, .. } => {
                 let opens = button == MouseButton::Left || (cfg!(target_os = "macos") && button == MouseButton::Right);
                 if opens {
                     toggle(tray.app_handle(), rect);
                 }
             }
+            // the page loads while the pointer travels to the click
+            TrayIconEvent::Enter { .. } => warm_on_hover(tray.app_handle()),
+            _ => {}
         })
         .build(app)?;
     // hidden until the cockpit reports its first status: app:tray may be off
@@ -133,8 +144,9 @@ pub fn set_tray_status(app: AppHandle, count: u32, alert: bool, mem_free: Option
     };
     apply(&app, &st);
     if !visible {
-        close(&app, "the icon is off");
+        hide(&app, "the icon is off");
     }
+    drop_unkept(&app);
 }
 
 #[tauri::command]
@@ -163,27 +175,52 @@ pub fn wavesrv_gone() {
 }
 
 fn toggle(app: &AppHandle, rect: Rect) {
-    if app.get_webview_window(TRAY_LABEL).is_some() {
-        close(app, "a second click on the icon");
-        return;
-    }
+    let built = app.get_webview_window(TRAY_LABEL).is_some();
     {
         let mut s = state().lock().unwrap();
-        if s.closed_at.is_some_and(|t| t.elapsed() < REOPEN_GUARD) {
-            return;
+        match trayicon::click_action(s.shown, s.closed_at.map(|t| t.elapsed()), REOPEN_GUARD) {
+            Click::Hide => {
+                drop(s);
+                hide(app, "a second click on the icon");
+                return;
+            }
+            Click::Ignore => return,
+            Click::Show => {}
         }
         let scale = app.primary_monitor().ok().flatten().map(|m| m.scale_factor()).unwrap_or(1.0);
         let p = rect.position.to_physical::<f64>(scale);
         let z = rect.size.to_physical::<f64>(scale);
         s.icon = Some(R { x: p.x, y: p.y, w: z.width, h: z.height });
-        s.opened_at = Some(Instant::now());
+        let how = match (built, s.loaded, s.shown_once) {
+            (false, _, _) => "cold",
+            (true, false, _) => "still loading",
+            (true, true, false) => "warmed",
+            (true, true, true) => "kept",
+        };
+        s.opened_at = Some((Instant::now(), how));
     }
     if let Err(e) = open(app) {
         log_line(&format!("[tray] opening the popover failed: {e}"));
     }
 }
 
-fn open(app: &AppHandle) -> tauri::Result<()> {
+fn warm_on_hover(app: &AppHandle) {
+    let keeps = {
+        let s = state().lock().unwrap();
+        trayicon::keeps_popover(s.alert, s.visible)
+    };
+    if keeps && app.get_webview_window(TRAY_LABEL).is_none() {
+        if let Err(e) = window(app, "the pointer is over the icon") {
+            log_line(&format!("[tray] building the popover failed: {e}"));
+        }
+    }
+}
+
+// The popover's window, built hidden if there is none
+fn window(app: &AppHandle, why: &str) -> tauri::Result<WebviewWindow> {
+    if let Some(win) = app.get_webview_window(TRAY_LABEL) {
+        return Ok(win);
+    }
     let win = WebviewWindowBuilder::new(app, TRAY_LABEL, WebviewUrl::App("tray.html".into()))
         .title("arcterm")
         .inner_size(WIDTH, FIRST_HEIGHT)
@@ -197,16 +234,28 @@ fn open(app: &AppHandle) -> tauri::Result<()> {
         .visible(false)
         .focused(false)
         .build()?;
-    place(app, &win);
+    log_line(&format!("[tray] built the popover's window: {why}"));
+    state().lock().unwrap().built_at = Some(Instant::now());
     let handle = app.clone();
     win.on_window_event(move |ev| {
         if let WindowEvent::Focused(false) = ev {
             log_line("[tray] the popover lost focus");
             let app = handle.clone();
-            // not inside the window's own event: destroying it there tears down what is dispatching
-            let _ = handle.run_on_main_thread(move || close(&app, "it lost focus"));
+            // not inside the window's own event: a drop there tears down what is dispatching
+            let _ = handle.run_on_main_thread(move || hide(&app, "it lost focus"));
         }
     });
+    Ok(win)
+}
+
+fn open(app: &AppHandle) -> tauri::Result<()> {
+    let win = window(app, "a click on the icon")?;
+    {
+        let mut s = state().lock().unwrap();
+        s.shown = true;
+        s.shown_once = true;
+    }
+    place(app, &win);
     if cfg!(target_os = "macos") {
         // the window stays hidden and its webview shows in a panel, whose losing the key is the blur; the panel takes
         // the frame place gave the window, which tao sets after this returns
@@ -214,7 +263,7 @@ fn open(app: &AppHandle) -> tauri::Result<()> {
         let app2 = app.clone();
         crate::macwindow::after_tao_frame(move || {
             crate::macwindow::show_in_panel(&w, panel_blurred);
-            // the icon draws selected while the panel shows; close_panel lets it go
+            // the icon draws selected while the panel shows; hide_panel lets it go
             #[cfg(target_os = "macos")]
             if let Some(tray) = app2.tray_by_id(TRAY_ID) {
                 crate::macwindow::present_from_tray(&tray);
@@ -226,6 +275,8 @@ fn open(app: &AppHandle) -> tauri::Result<()> {
         win.show()?;
         win.set_focus()?;
     }
+    // the cockpit starts feeding it; a page still loading misses this and hears it at its hello
+    let _ = app.emit("tray:shown", ());
     Ok(())
 }
 
@@ -235,8 +286,8 @@ fn panel_blurred() {
     };
     log_line("[tray] the popover lost focus");
     let app2 = app.clone();
-    // not inside AppKit's resignKeyWindow: destroying the panel there tears down what is dispatching
-    let _ = app.run_on_main_thread(move || close(&app2, "it lost focus"));
+    // not inside AppKit's resignKeyWindow: hiding or dropping the panel there tears down what is dispatching
+    let _ = app.run_on_main_thread(move || hide(&app2, "it lost focus"));
 }
 
 fn place(app: &AppHandle, win: &WebviewWindow) {
@@ -271,19 +322,58 @@ fn place(app: &AppHandle, win: &WebviewWindow) {
     crate::macwindow::after_tao_frame(move || crate::macwindow::panel_follow(&w));
 }
 
-// `why` is logged on either side of the destroy, which on the Mac once aborted the app (macwindow::show_in_panel)
-fn close(app: &AppHandle, why: &str) {
-    if let Some(win) = app.get_webview_window(TRAY_LABEL) {
-        log_line(&format!("[tray] closing the popover: {why}"));
-        // on the Mac the webview goes back into its own window first, where wry takes it out on destroy, and the
-        // window and delegate tao would leave behind are freed a moment after
-        crate::macwindow::close_panel();
-        crate::macwindow::free_when_destroyed(&win);
-        let _ = win.destroy();
-        log_line("[tray] popover closed");
-        state().lock().unwrap().closed_at = Some(Instant::now());
-        let _ = app.emit("tray:closed", ());
+// The popover goes off screen and its window stays for the next open, unless keeps_popover says otherwise
+fn hide(app: &AppHandle, why: &str) {
+    let Some(win) = app.get_webview_window(TRAY_LABEL) else {
+        return;
+    };
+    {
+        let mut s = state().lock().unwrap();
+        if !s.shown {
+            return;
+        }
+        s.shown = false;
+        s.closed_at = Some(Instant::now());
     }
+    log_line(&format!("[tray] hiding the popover: {why}"));
+    if cfg!(target_os = "macos") {
+        crate::macwindow::hide_panel();
+    } else {
+        let _ = win.hide();
+    }
+    let _ = app.emit("tray:closed", ());
+    drop_unkept(app);
+}
+
+fn drop_unkept(app: &AppHandle) {
+    let why = {
+        let s = state().lock().unwrap();
+        if s.shown || trayicon::keeps_popover(s.alert, s.visible) {
+            return;
+        }
+        if s.visible {
+            "memory pressure is critical"
+        } else {
+            "the icon is off"
+        }
+    };
+    let Some(win) = app.get_webview_window(TRAY_LABEL) else {
+        return;
+    };
+    // `why` is logged on either side of the destroy, which on the Mac once aborted the app (macwindow::show_in_panel)
+    log_line(&format!("[tray] dropping the hidden popover: {why}"));
+    // on the Mac the webview goes back into its own window first, where wry takes it out on destroy, and the window
+    // and delegate tao would leave behind are freed a moment after
+    crate::macwindow::close_panel();
+    crate::macwindow::free_when_destroyed(&win);
+    let _ = win.destroy();
+    {
+        let mut s = state().lock().unwrap();
+        s.loaded = false;
+        s.shown_once = false;
+        s.built_at = None;
+    }
+    log_line("[tray] popover dropped");
 }
 
 /// The icon shows (`app:tray` on), so closing the main window hides it and arcterm keeps running from the icon,
@@ -293,8 +383,8 @@ pub fn keeps_app_open(app: &AppHandle) -> bool {
     app.tray_by_id(TRAY_ID).is_some() && state().lock().unwrap().visible
 }
 
-/// The app is exiting with the popover open (⌘Q): its webview goes back into its own window, as close puts it, before
-/// Tauri drops the windows.
+/// The app is exiting with the popover's window there, shown or kept (⌘Q): its webview goes back into its own window,
+/// as a drop puts it, before Tauri drops the windows.
 pub fn before_exit(app: &AppHandle) {
     if app.get_webview_window(TRAY_LABEL).is_some() {
         crate::macwindow::close_panel();
@@ -308,26 +398,40 @@ fn on_act(app: &AppHandle, payload: &str) {
     let kind = v.get("kind").and_then(|k| k.as_str()).unwrap_or("");
     match kind {
         "hello" => {
-            // the spec keeps the window hidden after its first open instead, if this is past 0.5 s on the Mac
-            let opened = state().lock().unwrap().opened_at.take();
-            if let Some(t) = opened {
-                log_line(&format!("[tray] popover ready {} ms after the click", t.elapsed().as_millis()));
+            let (built, shown, offline) = {
+                let mut s = state().lock().unwrap();
+                s.loaded = true;
+                (s.built_at.take(), s.shown, s.offline)
+            };
+            if let Some(t) = built {
+                log_line(&format!("[tray] popover page loaded {} ms after its window was built", t.elapsed().as_millis()));
             }
-            if state().lock().unwrap().offline {
+            // a click while it loaded: its tray:shown went out before the page listened
+            if shown {
+                let _ = app.emit_to(TRAY_LABEL, "tray:shown", ());
+            }
+            if offline {
                 let _ = app.emit_to(TRAY_LABEL, "tray:offline", serde_json::json!({}));
             }
         }
-        "close" => close(app, "the page asked"),
+        "shown" => {
+            // the spec's 0.5 s line for an open; a kept or warmed popover should be a frame or two
+            let opened = state().lock().unwrap().opened_at.take();
+            if let Some((t, how)) = opened {
+                log_line(&format!("[tray] popover shown {} ms after the click ({how})", t.elapsed().as_millis()));
+            }
+        }
+        "close" => hide(app, "the page asked"),
         "restart" => {
-            close(app, "Restart arcterm");
+            hide(app, "Restart arcterm");
             app.restart();
         }
         "quit" => {
-            close(app, "Quit arcterm");
+            hide(app, "Quit arcterm");
             app.exit(0);
         }
         "showlog" => {
-            close(app, "Show log");
+            hide(app, "Show log");
             if let Some(path) = crate::applog::log_path() {
                 if let Err(e) = open::that(&path) {
                     log_line(&format!("[tray] opening {path:?} failed: {e}"));
@@ -335,7 +439,7 @@ fn on_act(app: &AppHandle, payload: &str) {
             }
         }
         "open-monitor" => {
-            close(app, "the OS monitor");
+            hide(app, "the OS monitor");
             let spawned = if cfg!(target_os = "macos") {
                 std::process::Command::new("open").args(["-a", "Activity Monitor"]).spawn()
             } else {
@@ -345,7 +449,7 @@ fn on_act(app: &AppHandle, payload: &str) {
                 log_line(&format!("[tray] opening the OS's monitor failed: {e}"));
             }
         }
-        k if k.starts_with("open-") => close(app, k),
+        k if k.starts_with("open-") => hide(app, k),
         _ => {}
     }
 }

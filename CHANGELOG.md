@@ -68,6 +68,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The menu bar popover opens at once instead of after a half-second to two-second wait: it loads while the pointer
+  reaches the icon and stays ready between opens. At critical memory pressure it gives its memory back and loads
+  again on the next open.
 - The app no longer scrolls as a whole: the window stays put instead of sliding up out of view, or bouncing under a
   trackpad fling on macOS.
 - A new terminal (New → Terminal, or the Diff panel's Open a terminal here) opens in the centre with the cursor in it,
