@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { RpcApi } from "@/app/store/wshclientapi";
 import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LauncherKind } from "./launcher";
@@ -14,24 +15,30 @@ import {
     closeLauncher,
     endLauncherDraft,
     endLauncherLaunch,
+    findLauncherSessions,
     launcherBranchAtom,
     launcherBranchListAtom,
     launcherBusyAtom,
     launcherCommandAtom,
     launcherFlagMenuAtom,
+    launcherFoundAtom,
     launcherGoalAtom,
     launcherImagesAtom,
     launcherKindAtom,
     launcherLaunchAbandoned,
     launcherLaunchTicket,
+    launcherPageAtom,
     launcherPrefillAtom,
     launcherProjectAtom,
     launcherPrototypeAtom,
     launcherRestoredAtom,
     launcherResumeAtom,
     launcherRuntimeAtom,
+    launcherSessionsAtom,
     launcherTaskAtom,
     launcherWorktreeAtom,
+    loadLauncherSessions,
+    loadMoreLauncherSessions,
     openLauncher,
     pickLauncherProject,
     pickLauncherRuntime,
@@ -40,6 +47,9 @@ import {
     RESUME_PICK_KEEP_MS,
 } from "./launcherstore";
 import { planPathAtom, resetRunConfig, runShapeAtom, setRunShape, startAtom } from "./runconfigstore";
+
+vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: { GetRecentSessionsCommand: vi.fn() } }));
+const recent = vi.mocked(RpcApi.GetRecentSessionsCommand);
 
 const mocks = vi.hoisted(() => ({ blob: vi.fn(), file: vi.fn() }));
 vi.mock("@/app/view/term/termutil", () => ({
@@ -389,5 +399,152 @@ describe("task images", () => {
         land("/tmp/late.png");
         await flush();
         expect(globalStore.get(launcherImagesAtom)).toEqual([]);
+    });
+});
+
+describe("the Resume list's pages", () => {
+    const sess = (id: string): SessionInfo => ({
+        id,
+        runtime: "claude",
+        projectpath: "/p/a",
+        projectname: "a",
+        branch: "",
+        task: id,
+        model: "",
+        tokenstotal: 0,
+        lastactivets: 1,
+        resumecommand: "",
+        transcriptpath: "",
+    });
+    const lastArgs = () => recent.mock.calls.at(-1)?.[1];
+    const ids = () => (globalStore.get(launcherSessionsAtom) ?? []).map((x) => x.id);
+    const deferred = () => {
+        let resolve!: (v: CommandGetRecentSessionsRtnData) => void;
+        const promise = new Promise<CommandGetRecentSessionsRtnData>((r) => (resolve = r));
+        return { promise, resolve };
+    };
+
+    beforeEach(async () => {
+        recent.mockReset();
+        recent.mockResolvedValue({ sessions: [] });
+        await loadLauncherSessions("terminal", "");
+        globalStore.set(launcherSessionsAtom, null);
+        recent.mockClear();
+    });
+
+    it("loads the first page for the runtime and project", async () => {
+        recent.mockResolvedValueOnce({ sessions: [sess("a")], nextcursor: "c1" });
+        await loadLauncherSessions("claude", "/p/a");
+        expect(lastArgs()).toEqual({ runtime: "claude", projectpath: "/p/a", limit: 30 });
+        expect(ids()).toEqual(["a"]);
+        expect(globalStore.get(launcherPageAtom)).toMatchObject({ cursor: "c1", loading: false });
+    });
+
+    it("sends the answer's cursor for the next page and appends it", async () => {
+        recent.mockResolvedValueOnce({ sessions: [sess("a")], nextcursor: "c1" });
+        await loadLauncherSessions("claude", "/p/a");
+        recent.mockResolvedValueOnce({ sessions: [sess("a"), sess("b")], nextcursor: "c2" });
+        await loadMoreLauncherSessions();
+        expect(lastArgs()).toEqual({
+            runtime: "claude",
+            projectpath: "/p/a",
+            limit: 30,
+            cursor: "c1",
+        });
+        expect(ids()).toEqual(["a", "b"]);
+        expect(globalStore.get(launcherPageAtom).cursor).toBe("c2");
+    });
+
+    it("sends one request at a time", async () => {
+        recent.mockResolvedValueOnce({ sessions: [sess("a")], nextcursor: "c1" });
+        await loadLauncherSessions("claude", "/p/a");
+        const d = deferred();
+        recent.mockReturnValueOnce(d.promise);
+        const first = loadMoreLauncherSessions();
+        await loadMoreLauncherSessions();
+        expect(recent).toHaveBeenCalledTimes(2);
+        d.resolve({ sessions: [sess("b")] });
+        await first;
+        expect(ids()).toEqual(["a", "b"]);
+    });
+
+    it("sends nothing once an answer has no cursor", async () => {
+        recent.mockResolvedValueOnce({ sessions: [sess("a")] });
+        await loadLauncherSessions("claude", "/p/a");
+        await loadMoreLauncherSessions();
+        expect(recent).toHaveBeenCalledTimes(1);
+        expect(globalStore.get(launcherPageAtom).cursor).toBe("");
+    });
+
+    it("ends the loading on an empty page and on a failed one", async () => {
+        recent.mockResolvedValueOnce({ sessions: [sess("a")], nextcursor: "c1" });
+        await loadLauncherSessions("claude", "/p/a");
+        recent.mockRejectedValueOnce(new Error("boom"));
+        await loadMoreLauncherSessions();
+        expect(globalStore.get(launcherPageAtom)).toMatchObject({ cursor: "", loading: false });
+        await loadMoreLauncherSessions();
+        expect(recent).toHaveBeenCalledTimes(2);
+    });
+
+    it("drops the first page of a project the list has moved off", async () => {
+        const a = deferred();
+        recent.mockReturnValueOnce(a.promise);
+        const loadA = loadLauncherSessions("claude", "/p/a");
+        recent.mockResolvedValueOnce({ sessions: [sess("b1")], nextcursor: "cb" });
+        await loadLauncherSessions("claude", "/p/b");
+        a.resolve({ sessions: [sess("a1")], nextcursor: "ca" });
+        await loadA;
+        expect(ids()).toEqual(["b1"]);
+        expect(globalStore.get(launcherPageAtom)).toMatchObject({ cursor: "cb", loading: false });
+    });
+
+    it("drops a later page of a project the list has moved off", async () => {
+        recent.mockResolvedValueOnce({ sessions: [sess("a1")], nextcursor: "ca" });
+        await loadLauncherSessions("claude", "/p/a");
+        const a2 = deferred();
+        recent.mockReturnValueOnce(a2.promise);
+        const more = loadMoreLauncherSessions();
+        recent.mockResolvedValueOnce({ sessions: [sess("b1")] });
+        await loadLauncherSessions("claude", "/p/b");
+        a2.resolve({ sessions: [sess("a2")], nextcursor: "ca2" });
+        await more;
+        expect(ids()).toEqual(["b1"]);
+        expect(globalStore.get(launcherPageAtom).cursor).toBe("");
+    });
+
+    it("asks nothing for a terminal or no project", async () => {
+        await loadLauncherSessions("terminal", "/p/a");
+        await loadLauncherSessions("claude", "");
+        expect(recent).not.toHaveBeenCalled();
+    });
+
+    it("searches the backend and keeps the answer for its scope", async () => {
+        recent.mockResolvedValueOnce({ sessions: [sess("a")], nextcursor: "c1" });
+        await loadLauncherSessions("claude", "/p/a");
+        recent.mockResolvedValueOnce({ sessions: [sess("old")] });
+        await findLauncherSessions("old");
+        expect(lastArgs()).toEqual({
+            runtime: "claude",
+            projectpath: "/p/a",
+            limit: 30,
+            query: "old",
+        });
+        expect(globalStore.get(launcherFoundAtom)).toMatchObject({ query: "old", sessions: [{ id: "old" }] });
+        recent.mockResolvedValueOnce({ sessions: [] });
+        await loadLauncherSessions("claude", "/p/b");
+        expect(globalStore.get(launcherFoundAtom)).toBeNull();
+    });
+
+    it("drops an answer for a query that has been typed past", async () => {
+        recent.mockResolvedValueOnce({ sessions: [sess("a")] });
+        await loadLauncherSessions("claude", "/p/a");
+        const ol = deferred();
+        recent.mockReturnValueOnce(ol.promise);
+        const first = findLauncherSessions("ol");
+        recent.mockResolvedValueOnce({ sessions: [sess("old")] });
+        await findLauncherSessions("old");
+        ol.resolve({ sessions: [sess("olive")] });
+        await first;
+        expect(globalStore.get(launcherFoundAtom)).toMatchObject({ query: "old" });
     });
 });
