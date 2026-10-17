@@ -14498,7 +14498,7 @@ const ahList = (h) =>
         r.hasAttribute("data-agent-folder")
             ? "folder:" + r.getAttribute("data-agent-folder")
             : r.hasAttribute("data-agent-sessions-more")
-              ? "more:" + r.getAttribute("data-agent-sessions-more") + ":" + (r.textContent.match(/\d+/)?.[0] ?? "")
+              ? "more:" + r.getAttribute("data-agent-sessions-more") + ":" + (r.textContent.match(/\\d+/)?.[0] ?? "")
               : r.hasAttribute("data-agent-run-conversation")
                 ? "run:" + r.getAttribute("data-agent-run-conversation")
                 : r.getAttribute("data-agent-session-row")
@@ -14506,6 +14506,25 @@ const ahList = (h) =>
 const ahKeys = (n, from = 1) => Array.from({ length: n }, (_, i) => `claude:ah-${i + from}`);
 
 const ahMockCalls = (h) => h.ev(`window.${AH_MOCK_KEY}?.state.calls ?? -1`);
+
+// variant="bar" is the app-bar trigger; the cockpit header renders a SECOND switcher over the same
+// atom, so the variant has to be named or the wrong popover opens.
+const setBarProject = async (h, name) => {
+    const opened = await h.ev(`(() => {
+        const t = document.querySelector('[data-project-switcher="bar"]');
+        if (!t) return false;
+        t.click();
+        return true;
+    })()`);
+    if (opened !== true) return false;
+    await ahNap(200);
+    return h.ev(`(() => {
+        const row = document.querySelector('[data-project-option=${JSON.stringify(name)}]');
+        if (!row) return false;
+        row.click();
+        return true;
+    })()`);
+};
 
 const agentHistory = {
     name: "agent-history",
@@ -14625,24 +14644,25 @@ const agentHistory = {
                 JSON.stringify(first)
             );
 
-            // no recency headings: each row reads its own age; a session's second line is its runtime, branch and tokens, a
-            // run's its task progress
+            // no recency headings: each row reads its own age. Conversations are one line since 3d2c74b6e: a session's line holds
+            // its title, tokens and age, and a second line comes only for a branch other than the default (the seeds' "main" is
+            // not shown) or a title another row shares; a run's second line is its task progress, ahead of its segment bar
             const rich = await h.ev(`(() => {
                 const convo = document.querySelector("[data-agent-conversations]");
                 const row = convo?.querySelector('[data-agent-session-row="claude:ah-1"]');
                 const run = convo?.querySelector('[data-agent-run-conversation="ah-run-1"]');
                 return {
                     headings: [...(convo?.querySelectorAll("[data-agent-recency]") ?? [])].map((e) => e.getAttribute("data-agent-recency")),
-                    meta: row?.lastElementChild?.textContent?.replace(/\s+/g, " ").trim() ?? null,
-                    run: run?.lastElementChild?.textContent?.replace(/\s+/g, " ").trim() ?? null,
+                    meta: row?.lastElementChild?.textContent?.replace(/\\s+/g, " ").trim() ?? null,
+                    run: run?.children[1]?.textContent?.replace(/\\s+/g, " ").trim() ?? null,
                 };
             })()`);
             await h.shot("cdp-shots/agent-history-rows.png");
             rec(
-                "3b. no recency heading splits a folder, and a row's second line reads its branch and tokens, a run's its progress",
+                "3b. no recency heading splits a folder, and a row's line reads its tokens and age without the default branch, a run's second line its progress",
                 rich.headings.length === 0 &&
-                    /main/.test(rich.meta ?? "") &&
-                    /1k tok/.test(rich.meta ?? "") &&
+                    !/main/.test(rich.meta ?? "") &&
+                    /1k10m$/.test(rich.meta ?? "") &&
                     /landed|no tasks|complete/.test(rich.run ?? ""),
                 JSON.stringify(rich)
             );
@@ -14748,31 +14768,35 @@ const agentHistory = {
                 JSON.stringify({ lessShown, lessGone, last: folded1[folded1.length - 1] })
             );
 
-            // a folder folds to its row, keeping its count; a section folds to its header. Each click is undone at once
+            // a folder folds to its row, keeping its count; a section folds to its header. Each click is undone at once.
+            // A fold slides shut (7725cc8da, foldReveal's 0.28 s exit) and its rows stay in the page until it ends, so each
+            // step waits for the rows to go or come back rather than napping
+            const sessionRows = `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length`;
             const folderBtn = `document.querySelector('[data-agent-folder-section="conversations"][data-agent-folder="${AH_PROJECT}"]')`;
             await h.ev(`${folderBtn}?.click()`);
-            await ahNap(200);
+            await ahWait(h, `${sessionRows} === 1`, 4000);
             const folded = await ahList(h);
             const foldedCount = await h.ev(`${folderBtn}?.textContent?.trim() ?? null`);
             await h.ev(`${folderBtn}?.click()`);
-            await ahNap(200);
+            await ahWait(h, `${sessionRows} === ${AH_SEEDS + 1}`, 4000);
             const conversationsToggle = `document.querySelector('[data-agent-section-toggle="conversations"]')`;
             await h.ev(`${conversationsToggle}?.click()`);
-            await ahNap(200);
+            await ahWait(h, `document.querySelectorAll("[data-agent-conversations] [data-agent-folder]").length === 0`, 4000);
             const noConversations = await h.ev(`document.querySelectorAll("[data-agent-conversations] [data-agent-folder]").length === 0`);
             await h.ev(`${conversationsToggle}?.click()`);
-            await ahNap(200);
+            await ahWait(h, `${sessionRows} === ${AH_SEEDS + 1}`, 4000);
             // the project tree has no section header: its project's folder folds to its row, taking the agent with it
             const activeToggle = `document.querySelector('[data-project-folder="${AH_PROJECT}"]')`;
+            const activeRow = `document.querySelector('[data-agent-active-rows] [data-agent-row="${AH_LIVE_ID}"]')`;
             await h.ev(`${activeToggle}?.click()`);
-            await ahNap(300);
+            await ahWait(h, `!${activeRow}`, 4000);
             const activeFolded = await h.ev(`(() => ({
-                rows: !!document.querySelector('[data-agent-active-rows] [data-agent-row="${AH_LIVE_ID}"]'),
+                rows: !!${activeRow},
                 expanded: ${activeToggle}?.getAttribute("aria-expanded") ?? null,
             }))()`);
             await h.ev(`${activeToggle}?.click()`);
-            await ahNap(300);
-            const restored = await h.ev(`!!document.querySelector('[data-agent-active-rows] [data-agent-row="${AH_LIVE_ID}"]')`);
+            await ahWait(h, activeRow, 4000);
+            const restored = await h.ev(`!!${activeRow}`);
             rec(
                 "6b. a Conversations folder folds to its row and count, the Conversations section folds to its header and back, and a project folder of the tree folds to its row and back",
                 JSON.stringify(folded) ===
@@ -22905,6 +22929,8 @@ const launcherResumeOlder = {
         const ctx = { dirs: [], projects: [] };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
+            // the scenario before this one ends in a reload, and createproject needs window.TabRpcClient
+            await waitForAppBoot(h);
             for (const name of [LAUNCHER_OLDER_PROJECT, LAUNCHER_OLDER_PROJECT_B]) {
                 // not under the temp dir: the session scan drops a session whose project sits there (parseCandidates)
                 const dir = mkdtempSync(join(homedir(), `.${name}-`));
@@ -23221,7 +23247,8 @@ const historyOlder = {
             const older = seedOlderSession(ctx.transcriptDir, cwd, ctx.olderTitle, 10 * 86_400_000);
             ctx.olderId = older.id;
             ctx.olderFile = older.file;
-            // the archive's page 1 is read over the seeds
+            // the archive's page 1 is read over the seeds; the RPC client exists only once the app has booted
+            await waitForAppBoot(h);
             await historyOlderReload(h);
             ctx.ready = true;
         } catch (e) {
