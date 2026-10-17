@@ -234,6 +234,12 @@ export function sessionIdFromTranscript(path: string | undefined): string | unde
     return stem || undefined;
 }
 
+// Whether the flag at args[i] has its value after it. A bare `claude --resume` opens claude's own picker, and what
+// follows it is the next flag, not a session (blockcontroller's hasFlagValue).
+function hasFlagValue(args: string[], i: number): boolean {
+    return i + 1 < args.length && !args[i + 1].startsWith("-");
+}
+
 // Recompose a Claude launch as a resume: `claude --resume <id> <baseArgs>`. baseArgs are the original
 // launch flags only (never the task prompt — resume reattaches, it must not replay the prompt). Any
 // prior --resume/--continue in baseArgs is stripped so resuming repeatedly can't stack conflicting
@@ -243,7 +249,9 @@ export function resumeArgsForClaude(sessionId: string, baseArgs: string[]): stri
     for (let i = 0; i < baseArgs.length; i++) {
         const a = baseArgs[i];
         if (a === "--resume") {
-            i++; // also skip its id value
+            if (hasFlagValue(baseArgs, i)) {
+                i++; // also skip its id value
+            }
             continue;
         }
         if (a === "--continue") {
@@ -262,7 +270,9 @@ export function resumeArgsForOpencode(sessionId: string, baseArgs: string[]): st
     for (let i = 0; i < baseArgs.length; i++) {
         const a = baseArgs[i];
         if (a === "-s" || a === "--session") {
-            i++; // also skip its id value
+            if (hasFlagValue(baseArgs, i)) {
+                i++; // also skip its id value
+            }
             continue;
         }
         if (a === "-c" || a === "--continue") {
@@ -281,7 +291,9 @@ export function resumeArgsForAgy(sessionId: string, baseArgs: string[]): string[
     for (let i = 0; i < baseArgs.length; i++) {
         const a = baseArgs[i];
         if (a === "--conversation") {
-            i++; // also skip its id value
+            if (hasFlagValue(baseArgs, i)) {
+                i++; // also skip its id value
+            }
             continue;
         }
         if (a === "-c" || a === "--continue") {
@@ -301,7 +313,9 @@ export function resumeArgsForCodex(sessionId: string, baseArgs: string[]): strin
     for (let i = 0; i < baseArgs.length; i++) {
         const a = baseArgs[i];
         if (a === "resume") {
-            i++; // also skip its id value
+            if (hasFlagValue(baseArgs, i)) {
+                i++; // also skip its id value
+            }
             continue;
         }
         if (a === "--last") {
@@ -319,7 +333,9 @@ export function resumeArgsForPi(transcriptPath: string, baseArgs: string[] = [])
     const kept: string[] = [];
     for (let i = 0; i < baseArgs.length; i++) {
         if (baseArgs[i] === "--session") {
-            i++; // also skip its path value
+            if (hasFlagValue(baseArgs, i)) {
+                i++; // also skip its path value
+            }
             continue;
         }
         kept.push(baseArgs[i]);

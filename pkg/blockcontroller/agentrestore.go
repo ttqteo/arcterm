@@ -8,6 +8,7 @@ import (
 	"log"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,13 +86,21 @@ func StripSessionArgs(harness string, args []string) []string {
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case stale.withValue[a]:
-			i++ // its value too
+			if hasFlagValue(args, i) {
+				i++ // its value too
+			}
 		case stale.bare[a]:
 		default:
 			kept = append(kept, a)
 		}
 	}
 	return kept
+}
+
+// hasFlagValue reports whether the flag at args[i] has its value after it. A bare `claude --resume` opens claude's own
+// picker, and what follows it is the next flag, not a session.
+func hasFlagValue(args []string, i int) bool {
+	return i+1 < len(args) && !strings.HasPrefix(args[i+1], "-")
 }
 
 // agentAsleep reports whether a block's agent was put to sleep: its controller is gone on purpose, and a server
@@ -115,9 +124,18 @@ func shouldRestoreAgent(meta waveobj.MetaMapType) bool {
 	if meta.GetString(MetaKey_AgentLive, "") == "" || !tracksAgentLive(meta) {
 		return false
 	}
+	return restoreSession(meta) != ""
+}
+
+// Pure: the session a block's cmd:args resume, after its harness's resume flag; "" for none, a bare --resume among
+// them (claude's picker, which names no session).
+func restoreSession(meta waveobj.MetaMapType) string {
 	args := meta.GetStringList(waveobj.MetaKey_CmdArgs)
 	flag := agentResumeFlags[meta.GetString(waveobj.MetaKey_Cmd, "")]
-	return len(args) >= 2 && args[0] == flag && args[1] != ""
+	if len(args) < 2 || args[0] != flag || !hasFlagValue(args, 0) {
+		return ""
+	}
+	return args[1]
 }
 
 // Pure: whether an exited process clears its block's live mark. Not while the server is quitting, which kills
@@ -284,6 +302,28 @@ func shouldNudgeRestore(meta waveobj.MetaMapType) bool {
 type restoreAgent struct {
 	blockId string
 	nudge   bool
+	session string // the harness and the session its cmd:args resume
+	started int64  // when the last server started its process: its live mark
+}
+
+// Pure: one block to restore per session, and the rest. Two tabs on one conversation would run two processes writing
+// one transcript: the one cut off mid-turn comes back, else the one started last. Order is kept.
+func onePerSession(rs []restoreAgent) (keep, extra []restoreAgent) {
+	best := map[string]restoreAgent{}
+	for _, r := range rs {
+		cur, ok := best[r.session]
+		if !ok || r.nudge && !cur.nudge || r.nudge == cur.nudge && r.started > cur.started {
+			best[r.session] = r
+		}
+	}
+	for _, r := range rs {
+		if best[r.session].blockId == r.blockId {
+			keep = append(keep, r)
+		} else {
+			extra = append(extra, r)
+		}
+	}
+	return keep, extra
 }
 
 // RestoreLiveAgents relaunches, one at a time, every agent the last server left running, nudging those it left
@@ -306,17 +346,33 @@ func RestoreLiveAgents(ctx context.Context) {
 			log.Printf("clearing agent block %s live mark: %v\n", block.OID, err)
 		}
 		if shouldRestoreAgent(block.Meta) {
-			r := restoreAgent{blockId: block.OID, nudge: shouldNudgeRestore(block.Meta)}
-			if r.nudge {
-				nudged++
-			}
-			restore = append(restore, r)
+			started, _ := strconv.ParseInt(block.Meta.GetString(MetaKey_AgentLive, ""), 10, 64)
+			restore = append(restore, restoreAgent{
+				blockId: block.OID,
+				nudge:   shouldNudgeRestore(block.Meta),
+				session: block.Meta.GetString(waveobj.MetaKey_Cmd, "") + " " + restoreSession(block.Meta),
+				started: started,
+			})
+		}
+	}
+	restore, extra := onePerSession(restore)
+	for _, r := range extra {
+		// asleep, so its pane mounting does not start it either; a Wake finds its session running in the other tab
+		oref := waveobj.MakeORef(waveobj.OType_Block, r.blockId)
+		asleep := waveobj.MetaMapType{waveobj.MetaKey_AgentSleeping: time.Now().UnixMilli()}
+		if _, err := wstore.UpdateObjectMeta(ctx, oref, asleep, false); err != nil {
+			log.Printf("putting agent block %s to sleep beside another on its session: %v\n", r.blockId, err)
+		}
+	}
+	for _, r := range restore {
+		if r.nudge {
+			nudged++
 		}
 	}
 	if len(restore) == 0 {
 		return
 	}
-	log.Printf("restoring %d agents left running by the last server, nudging %d it left mid-turn\n", len(restore), nudged)
+	log.Printf("restoring %d agents left running by the last server, nudging %d it left mid-turn, %d asleep for a session another runs\n", len(restore), nudged, len(extra))
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("blockcontroller:restore-live-agents", recover())

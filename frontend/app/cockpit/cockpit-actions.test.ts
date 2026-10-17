@@ -15,7 +15,14 @@ const agentSyncApply = vi.fn().mockResolvedValue({ actions: [] });
 const wake = vi.fn().mockResolvedValue(undefined);
 const controllerInput = vi.fn().mockResolvedValue(undefined);
 
-vi.mock("@/app/store/services", () => ({ WorkspaceService: { CreateTab: (...a: any[]) => createTab(...a) } }));
+const controllerStatus = vi.fn().mockResolvedValue(null);
+// the store's tabs and blocks by oref, as WOS has them cached
+let stored: Record<string, any> = {};
+
+vi.mock("@/app/store/services", () => ({
+    WorkspaceService: { CreateTab: (...a: any[]) => createTab(...a) },
+    BlockService: { GetControllerStatus: (...a: any[]) => controllerStatus(...a) },
+}));
 vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: {
         SetMetaCommand: (...a: any[]) => setMeta(...a),
@@ -27,13 +34,18 @@ vi.mock("@/app/store/wshclientapi", () => ({
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 vi.mock("@/app/view/agents/agents", () => ({ AgentsViewModel: class {} }));
-vi.mock("@/app/store/global-atoms", () => ({ atoms: { workspace: atom({ oid: "ws1", tabids: [] }) } }));
+vi.mock("@/app/store/global-atoms", async () => {
+    const { atom } = await import("jotai");
+    return { atoms: { workspace: atom({ oid: "ws1", tabids: [] as string[] }) } };
+});
 vi.mock("@/app/store/wos", () => ({
     makeORef: (otype: string, oid: string) => `${otype}:${oid}`,
     getWaveObjectAtom: () => atom({ blockids: ["blk-1"] }),
     reloadWaveObject: (...a: any[]) => reloadWaveObject(...a),
+    getObjectValue: (oref: string) => stored[oref],
 }));
 
+import { atoms } from "@/app/store/global-atoms";
 import { launchAgent } from "./cockpit-actions";
 
 function fakeModel(agents: any[] = []) {
@@ -54,6 +66,9 @@ afterEach(() => {
     fileInfo.mockReset().mockResolvedValue({});
     wake.mockClear();
     controllerInput.mockClear();
+    controllerStatus.mockReset().mockResolvedValue(null);
+    stored = {};
+    globalStore.set(atoms.workspace as any, { oid: "ws1", tabids: [] });
 });
 
 describe("launchAgent", () => {
@@ -213,6 +228,40 @@ describe("launchAgent", () => {
             await resume(model, "next step");
             expect(controllerInput.mock.calls[0][1]).toEqual({ blockid: "blk-held", inputdata64: btoa("next step\r") });
             expect(globalStore.get(model.typingFollowsAtom)).toBe("tab-held");
+        });
+
+        // an agent the server brought back after a restart runs its session before it reports in, so the roster does
+        // not list it yet: the store's meta names the session it resumes
+        const storeHolds = (meta: Record<string, unknown>) => {
+            globalStore.set(atoms.workspace as any, { oid: "ws1", tabids: ["tab-held"] });
+            stored = {
+                "tab:tab-held": { oid: "tab-held", name: "arcterm", blockids: ["blk-held"] },
+                "block:blk-held": { oid: "blk-held", meta: { controller: "cmd", cmd: "claude", ...meta } },
+            };
+        };
+
+        it("goes to a tab the store says runs the session, before the roster lists it", async () => {
+            storeHolds({ "cmd:args": ["--resume", "s1"] });
+            controllerStatus.mockResolvedValue({ shellprocstatus: "running" });
+            const model = fakeModel();
+            expect(await resume(model)).toBe("tab-held");
+            expect(createTab).not.toHaveBeenCalled();
+            expect(controllerStatus).toHaveBeenCalledWith("blk-held");
+            expect(globalStore.get(model.focusIdAtom)).toBe("tab-held");
+        });
+
+        it("goes to a tab the store says holds the session asleep", async () => {
+            storeHolds({ "cmd:args": ["--resume", "s1"], "agent:sleeping": 5 });
+            const model = fakeModel();
+            expect(await resume(model)).toBe("tab-held");
+            expect(createTab).not.toHaveBeenCalled();
+        });
+
+        it("opens a new tab when the tab that resumed the session has no process left", async () => {
+            storeHolds({ "cmd:args": ["--resume", "s1"] });
+            controllerStatus.mockResolvedValue({ shellprocstatus: "done" });
+            expect(await resume(fakeModel())).toBe("tab-1");
+            expect(createTab).toHaveBeenCalled();
         });
 
         it("still opens a new tab for a session no tab holds", async () => {

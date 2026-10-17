@@ -518,6 +518,34 @@ func TestWakeCommandRefusesAnAwakeAgent(t *testing.T) {
 	}
 }
 
+// a sleeping tab whose conversation another tab runs: waking it would run a second process on one transcript
+func TestWakeRefusesAConversationAnotherTabRuns(t *testing.T) {
+	w := newSleepWorld(t, sleepingMeta(time.Now()))
+	other := agentFacts(agentsTabB, "lead", agentsBlockB, "claude", baseds.AgentState_Idle)
+	other.Status.TranscriptPath = filepath.Join("elsewhere", "abc.jsonl")
+	w.install(&agentRosterFacts{Tabs: []agentTabFacts{sleepingClaude(time.Now()), other}})
+	w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+
+	err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA})
+	if err == nil || !strings.Contains(err.Error(), "already open") || !strings.Contains(err.Error(), agentsTabB) {
+		t.Fatalf("err = %v, want it refused, naming the tab that runs the conversation", err)
+	}
+	_, err = (&WshServer{}).AgentsSendCommand(context.Background(), wshrpc.CommandAgentsSendData{Tab: agentsTabA, Text: "hi", FromORef: blockORef(agentsBlockB)})
+	if err == nil || !strings.Contains(err.Error(), "already open") {
+		t.Fatalf("send err = %v, want it refused", err)
+	}
+	if w.resyncs != 0 {
+		t.Fatal("the sleeping tab was started beside the one running its conversation")
+	}
+	// Start fresh opens a new conversation, which no other tab runs
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Fresh: true}); err != nil {
+		t.Fatal(err)
+	}
+	if w.resyncs != 1 {
+		t.Errorf("restarts = %d, want Start fresh to wake it", w.resyncs)
+	}
+}
+
 func installSleeping(w *sleepWorld) {
 	w.install(&agentRosterFacts{Tabs: []agentTabFacts{sleepingClaude(time.Now())}})
 }

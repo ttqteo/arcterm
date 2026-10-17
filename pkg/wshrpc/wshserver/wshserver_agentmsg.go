@@ -294,7 +294,8 @@ func (ws *WshServer) AgentsSendCommand(ctx context.Context, data wshrpc.CommandA
 	if err != nil {
 		return nil, err
 	}
-	target, err := resolveAgentTab(buildAgentRoster(facts), data.Tab)
+	rows := buildAgentRoster(facts)
+	target, err := resolveAgentTab(rows, data.Tab)
 	if err != nil {
 		return nil, err
 	}
@@ -320,6 +321,9 @@ func (ws *WshServer) AgentsSendCommand(ctx context.Context, data wshrpc.CommandA
 	envelope := agentmsg.Envelope(senderName, sender.OID, text)
 	if target.State == wshrpc.AgentsState_Sleeping {
 		// the one path wsh agents send and Jarvis take: a message wakes the agent and is delivered once it reports in
+		if err := heldElsewhere(rows, target); err != nil {
+			return nil, err
+		}
 		if err := wakeAgent(ctx, target, envelope, false); err != nil {
 			return nil, err
 		}

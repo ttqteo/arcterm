@@ -337,6 +337,15 @@ describe("resumeArgsForClaude", () => {
     it("drops --continue to avoid a conflicting double-resume", () => {
         expect(resumeArgsForClaude("s1", ["--continue"])).toEqual(["--resume", "s1"]);
     });
+    it("drops a bare --resume (claude's own picker) without the flag after it", () => {
+        expect(resumeArgsForClaude("s1", ["--resume", "--settings", ".arc/claude-ask.json"])).toEqual([
+            "--resume",
+            "s1",
+            "--settings",
+            ".arc/claude-ask.json",
+        ]);
+        expect(resumeArgsForClaude("s1", ["--verbose", "--resume"])).toEqual(["--resume", "s1", "--verbose"]);
+    });
     it("handles empty base args", () => {
         expect(resumeArgsForClaude("s1", [])).toEqual(["--resume", "s1"]);
     });

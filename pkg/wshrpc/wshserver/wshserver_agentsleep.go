@@ -418,14 +418,40 @@ func (ws *WshServer) AgentsWakeCommand(ctx context.Context, data wshrpc.CommandA
 	if err != nil {
 		return err
 	}
-	target, err := resolveAgentTab(buildAgentRoster(facts), data.Tab)
+	rows := buildAgentRoster(facts)
+	target, err := resolveAgentTab(rows, data.Tab)
 	if err != nil {
 		return err
 	}
 	if target.State != wshrpc.AgentsState_Sleeping {
 		return fmt.Errorf("agent %q is not asleep", target.Name)
 	}
+	if !data.Fresh {
+		if err := heldElsewhere(rows, target); err != nil {
+			return err
+		}
+	}
 	return wakeAgent(ctx, target, strings.TrimSpace(data.Message), data.Fresh)
+}
+
+// heldElsewhere refuses to wake a sleeping agent whose conversation another tab runs awake: the wake would start a
+// second process writing the same transcript. The two came from before a resume looked for the tab holding its
+// session; the person closes one.
+func heldElsewhere(rows []agentRow, target *agentRow) error {
+	want := sessionKey(target.Harness, target.status.TranscriptPath, target.status.SessionID)
+	if want == "" {
+		return nil
+	}
+	for i := range rows {
+		row := &rows[i]
+		if row.TabId == target.TabId || row.State == wshrpc.AgentsState_Sleeping || row.Harness != target.Harness {
+			continue
+		}
+		if sessionKey(row.Harness, row.status.TranscriptPath, row.status.SessionID) == want {
+			return fmt.Errorf("agent %q: its conversation is already open in %q (tab %s); go to that tab, or close this one", target.Name, row.Name, row.TabId)
+		}
+	}
+	return nil
 }
 
 // the agents the frontend has on screen, as its last push said, and when it said so

@@ -94,6 +94,7 @@ func TestResumeArgs(t *testing.T) {
 		{"claude puts the session first, the launch flags after", "claude", "abc", []string{"--model", "opus"}, []string{"--resume", "abc", "--model", "opus"}, true},
 		{"claude with no launch flags", "claude", "abc", nil, []string{"--resume", "abc"}, true},
 		{"claude drops a resume it already carried", "claude", "new", []string{"--resume", "old", "--continue", "--model", "opus"}, []string{"--resume", "new", "--model", "opus"}, true},
+		{"claude drops a bare resume (its own picker), not the flag after it", "claude", "new", []string{"--resume", "--settings", "ask.json"}, []string{"--resume", "new", "--settings", "ask.json"}, true},
 		{"pi takes the transcript path whole", "pi", `C:\t\s.jsonl`, []string{"--session", "old", "--model", "x"}, []string{"--session", `C:\t\s.jsonl`, "--model", "x"}, true},
 		{"agy", "agy", "c1", []string{"--sandbox", "-c", "--conversation", "old"}, []string{"--conversation", "c1", "--sandbox"}, true},
 		{"opencode", "opencode", "ses_1", []string{"-s", "old", "--continue", "--x"}, []string{"-s", "ses_1", "--x"}, true},
@@ -276,6 +277,75 @@ func TestRestoreLiveAgents(t *testing.T) {
 		if inTurnMark(t, id) {
 			t.Errorf("block %s still marked in turn", id)
 		}
+	}
+}
+
+// two tabs on one conversation would run two processes writing one transcript: the boot brings back one of them, the
+// one cut off mid-turn first, else the one started last, and puts the other to sleep so its pane does not start it
+func TestRestoreLiveAgentsRunsOneBlockPerSession(t *testing.T) {
+	var mu sync.Mutex
+	started := map[string]bool{}
+	done := make(chan struct{}, 8)
+	oldRestart, oldStagger := restartAgentBlock, restoreAgentStagger
+	restartAgentBlock = func(_ context.Context, _, blockId string) error {
+		mu.Lock()
+		started[blockId] = true
+		mu.Unlock()
+		done <- struct{}{}
+		return nil
+	}
+	restoreAgentStagger = time.Millisecond
+	t.Cleanup(func() { restartAgentBlock, restoreAgentStagger = oldRestart, oldStagger })
+
+	live := func(token string, m waveobj.MetaMapType) waveobj.MetaMapType {
+		return withMeta(m, MetaKey_AgentLive, token)
+	}
+	older, _ := insertAgentBlock(t, live("100", agentMeta("claude", "--resume", "dup")))
+	newer, _ := insertAgentBlock(t, live("200", agentMeta("claude", "--resume", "dup", "--model", "opus")))
+	busy, _ := insertAgentBlock(t, withMeta(live("100", agentMeta("claude", "--resume", "dup2")), MetaKey_AgentInTurn, true))
+	idle, _ := insertAgentBlock(t, live("300", agentMeta("claude", "--resume", "dup2")))
+	alone, _ := insertAgentBlock(t, live("100", agentMeta("pi", "--session", "/dup")))
+
+	RestoreLiveAgents(context.Background())
+	for range 3 {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("restored agents did not start")
+		}
+	}
+	select {
+	case <-done:
+		t.Fatal("started a second block on one session")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !started[newer] || !started[busy] || !started[alone] || started[older] || started[idle] {
+		t.Errorf("started %v, want %s (started last), %s (mid-turn) and %s (its own session)", started, newer, busy, alone)
+	}
+	for _, id := range []string{older, idle} {
+		block, err := wstore.DBMustGet[*waveobj.Block](context.Background(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !agentAsleep(block.Meta) {
+			t.Errorf("block %s left awake beside the one restored on its session", id)
+		}
+	}
+	for _, id := range []string{newer, busy, alone} {
+		block, _ := wstore.DBMustGet[*waveobj.Block](context.Background(), id)
+		if agentAsleep(block.Meta) {
+			t.Errorf("restored block %s marked asleep", id)
+		}
+	}
+}
+
+func TestShouldRestoreAgentWantsASession(t *testing.T) {
+	// a bare --resume opens claude's picker, which names no session to bring back
+	if shouldRestoreAgent(withMeta(agentMeta("claude", "--resume", "--settings", "ask.json"), MetaKey_AgentLive, "1")) {
+		t.Error("a bare --resume was restored")
 	}
 }
 

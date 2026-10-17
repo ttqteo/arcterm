@@ -76,6 +76,55 @@ export function sessionHolder<T extends Pick<AgentVM, "transcriptPath">>(
     return roster.find((a) => a.transcriptPath && norm(a.transcriptPath) === want);
 }
 
+/** A block in a tab, with its meta as the store keeps it: what a launch wrote and the hooks stamped, which outlive
+ *  a restart of arcterm. */
+export interface StoredAgentBlock {
+    tabId: string;
+    name: string;
+    blockId: string;
+    meta: Record<string, unknown>;
+}
+
+// the flag each harness's resume key sits behind, first in cmd:args (blockcontroller's agentResumeFlags)
+const RESUME_FLAGS: Record<string, string> = {
+    claude: "--resume",
+    opencode: "-s",
+    pi: "--session",
+    agy: "--conversation",
+    codex: "resume",
+};
+
+/** Pure: the agent blocks whose meta says they hold this transcript: the transcript path their hooks stamped, or the
+ *  session their cmd:args resume (claude's by the transcript's file stem, pi's by the path whole). sessionHolder reads
+ *  the roster, which an agent joins only once it reports in; an agent the server brought back after a restart runs
+ *  its session before that, and only its block says so. Whether its process still runs is the caller's to ask. */
+export function storedSessionHolders(
+    blocks: StoredAgentBlock[],
+    transcriptPath: string | undefined
+): StoredAgentBlock[] {
+    if (!transcriptPath) {
+        return [];
+    }
+    const want = norm(transcriptPath);
+    const stem = want.slice(want.lastIndexOf("/") + 1).replace(/\.jsonl$/, "");
+    return blocks.filter(({ meta }) => {
+        const flag = RESUME_FLAGS[meta["cmd"] as string];
+        if (meta["controller"] !== "cmd" || flag == null) {
+            return false;
+        }
+        const stamped = meta["agent:transcriptpath"];
+        if (typeof stamped === "string" && stamped !== "" && norm(stamped) === want) {
+            return true;
+        }
+        const args = meta["cmd:args"];
+        if (!Array.isArray(args) || args[0] !== flag || typeof args[1] !== "string") {
+            return false;
+        }
+        const key = norm(args[1]);
+        return key === want || key === stem;
+    });
+}
+
 // Overlay the live roster onto the scanned sessions: match on transcript path, strip the synthetic
 // "finished" event for live sessions, and compute needsAttention (live+asking, or ended waiting).
 export function overlayLive(base: SessionActivity[], roster: AgentVM[], _now: number): LiveSession[] {

@@ -15,7 +15,9 @@ import {
     sessionHolder,
     sessionsArchiveAtom,
     sessionsErrorAtom,
+    storedSessionHolders,
     totalEvents,
+    type StoredAgentBlock,
 } from "./sessionsarchivestore";
 
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: { GetSessionsActivityCommand: vi.fn() } }));
@@ -73,6 +75,43 @@ describe("sessionHolder", () => {
         expect(sessionHolder([mkAgent()], "/home/me/.claude/projects/p/y.jsonl")).toBeUndefined();
         expect(sessionHolder([mkAgent({ transcriptPath: undefined })], "")).toBeUndefined();
         expect(sessionHolder([mkAgent()], undefined)).toBeUndefined();
+    });
+});
+
+describe("storedSessionHolders", () => {
+    const path = "/Users/me/.claude/projects/-p/s1.jsonl";
+    const block = (meta: Record<string, unknown>, tabId = "t1"): StoredAgentBlock => ({
+        tabId,
+        name: "p",
+        blockId: `b-${tabId}`,
+        meta: { controller: "cmd", cmd: "claude", ...meta },
+    });
+    it("finds a block by the transcript its hooks stamped, whatever the path's case or separators", () => {
+        const blocks = [
+            block({ "agent:transcriptpath": "/other.jsonl" }),
+            block({ "agent:transcriptpath": path }, "t2"),
+        ];
+        expect(storedSessionHolders(blocks, path.toUpperCase()).map((b) => b.tabId)).toEqual(["t2"]);
+        expect(storedSessionHolders(blocks, path.replace(/\//g, "\\")).map((b) => b.tabId)).toEqual(["t2"]);
+    });
+    it("finds a block by the session its cmd:args resume, before a hook stamped it (an agent brought back at boot)", () => {
+        const blocks = [block({ "cmd:args": ["--resume", "s1", "--model", "opus"] })];
+        expect(storedSessionHolders(blocks, path).map((b) => b.tabId)).toEqual(["t1"]);
+    });
+    it("finds a pi block by the transcript path its --session takes", () => {
+        const pi = "/Users/me/.pi/agent/sessions/x/2026_s1.jsonl";
+        const blocks = [block({ cmd: "pi", "cmd:args": ["--session", pi] })];
+        expect(storedSessionHolders(blocks, pi).map((b) => b.tabId)).toEqual(["t1"]);
+    });
+    it("finds none for a plain terminal, another session, a bare --resume, or no transcript", () => {
+        const blocks = [
+            block({ controller: "shell", "agent:transcriptpath": path }),
+            block({ "cmd:args": ["--resume", "s2"] }, "t2"),
+            block({ "cmd:args": ["--resume", "--settings", "s1"] }, "t3"),
+            block({ cmd: "bash", "cmd:args": ["--resume", "s1"] }, "t4"),
+        ];
+        expect(storedSessionHolders(blocks, path)).toEqual([]);
+        expect(storedSessionHolders([block({ "agent:transcriptpath": path })], undefined)).toEqual([]);
     });
 });
 
