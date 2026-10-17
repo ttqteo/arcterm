@@ -212,7 +212,7 @@ export function RadarFindingDetail({
                         {subsystemLabel(finding.subsystem) ? (
                             <span className="text-[11.5px] text-ink-mid">{finding.subsystem}</span>
                         ) : null}
-                        <AmbientTags {...ambientRefForFinding(finding)} />
+                        <AmbientTags model={model} {...ambientRefForFinding(finding)} />
                     </div>
                     {site ? (
                         <button
@@ -324,7 +324,7 @@ export function RadarFindingDetail({
                             </p>
                         </div>
 
-                        <RelevantDecisions {...ambientRefForFinding(finding)} />
+                        <RelevantDecisions model={model} {...ambientRefForFinding(finding)} />
                     </div>
 
                     <aside className="flex flex-col gap-[22px] @min-[1300px]:sticky @min-[1300px]:top-6 @min-[1300px]:w-[340px] @min-[1300px]:flex-none">

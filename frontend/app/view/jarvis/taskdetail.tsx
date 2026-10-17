@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ConfirmDialog } from "@/app/modals/confirmdialog";
+import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { Lock } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { DecisionLog } from "./decisionlog";
+import { pendingDecisionAnchorAtom } from "./petstore";
 import { setDossierStatus } from "./recordactions";
 import { STAGE_GUTTER } from "./stagemeasure";
-import { allowedTransitions, isTerminalTransition } from "./tasksderive";
+import { allowedTransitions, decisionHeading, isTerminalTransition } from "./tasksderive";
 
 // A machine-maintained region: muted panel + a lock glyph, non-editable. The visible expression of
 // the write-ownership model's inside-Wave tier (spec §4).
@@ -43,12 +45,39 @@ const STATUS_TONE: Record<string, string> = {
     archived: "bg-surface-hover text-muted",
 };
 
+// the mono eyebrow every other band heads its sections with
 function Section({ title, children }: { title: string; children: ReactNode }) {
     return (
         <div className="mb-6">
-            <h2 className="mb-2.5 text-[13px] font-bold uppercase tracking-[0.08em] text-primary">{title}</h2>
+            <h3 className="mb-2.5 font-mono text-[10.5px] font-semibold uppercase tracking-[.1em] text-muted">
+                {title}
+            </h3>
             {children}
         </div>
+    );
+}
+
+// A ref is a decision this record logged (the dossier appends one per decision). It reads as that decision's
+// title and lights its card below; a ref naming nothing on this record stays a plain id.
+function RefChip({ id, decisions, linkable }: { id: string; decisions: DecisionCard[]; linkable: boolean }) {
+    const card = decisions.find((d) => d.id === id);
+    const chip = "rounded bg-surface-hover px-1.5 py-0.5";
+    if (card == null) {
+        return <span className={cn(chip, "font-mono")}>{id}</span>;
+    }
+    const label = decisionHeading(card).title || id;
+    if (!linkable) {
+        return <span className={chip}>{label}</span>;
+    }
+    return (
+        <button
+            type="button"
+            title="Show this decision"
+            onClick={() => globalStore.set(pendingDecisionAnchorAtom, id)}
+            className={cn(chip, "cursor-pointer text-secondary hover:bg-surface-selected hover:text-primary")}
+        >
+            {label}
+        </button>
     );
 }
 
@@ -124,7 +153,8 @@ export function TaskDetail({
                     {/* not capped: a heading is scanned, not read line by line, so the reading measure buys
                         nothing here and costs a wrap — an objective that fits on one line was being broken
                         into two with half the Stage empty beside it. */}
-                    <h1 className="text-[22px] font-bold tracking-[-0.02em] text-primary">{detail.objective}</h1>
+                    {/* it sits inside the run sheet, under the sheet's own title, so it must not outrank it */}
+                    <h2 className="m-0 text-[15px] font-semibold text-primary">{detail.objective}</h2>
                     {detail.ticket ? (
                         <span className="flex-none rounded bg-surface-hover px-2 py-0.5 text-[11px] text-ink-mid">
                             {detail.ticket}
@@ -150,8 +180,11 @@ export function TaskDetail({
                 </div>
             </div>
 
-            <Section title="Machine-maintained">
-                <div className="rounded-xl border border-border bg-surface/50 px-4 py-3.5">
+            <Section title="Where it stands">
+                <div
+                    title="Kept up to date by Arc as the work moves; not editable here"
+                    className="rounded-xl border border-border bg-surface/50 px-4 py-3.5"
+                >
                     {acceptance.length > 0 ? (
                         <MachineField label="Acceptance">
                             <ul className="list-inside list-disc">
@@ -177,11 +210,9 @@ export function TaskDetail({
                     ) : null}
                     {refs.length > 0 ? (
                         <MachineField label="Refs">
-                            <div className="flex flex-wrap gap-1.5 text-[11px]">
+                            <div className="flex flex-wrap gap-1.5 text-[11.5px]">
                                 {refs.map((r) => (
-                                    <span key={r} className="rounded bg-surface-hover px-1.5 py-0.5">
-                                        {r}
-                                    </span>
+                                    <RefChip key={r} id={r} decisions={decisions} linkable={showDecisions} />
                                 ))}
                             </div>
                         </MachineField>

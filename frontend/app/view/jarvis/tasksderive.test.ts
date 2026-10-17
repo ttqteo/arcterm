@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { allowedTransitions, groupDossiers, isTerminalTransition, validateDecisionDraft } from "./tasksderive";
+import {
+    allowedTransitions,
+    decisionHeading,
+    groupDossiers,
+    isTerminalTransition,
+    validateDecisionDraft,
+} from "./tasksderive";
 
 const mk = (id: string, status: string): SpaceSummary => ({
     id,
@@ -49,5 +55,25 @@ describe("validateDecisionDraft", () => {
     });
     it("passes a complete draft", () => {
         expect(validateDecisionDraft("chose b", "b needs no migration")).toBeNull();
+    });
+});
+
+describe("decisionHeading", () => {
+    it("titles a card with the summary it was filed under, keeping the whole rationale as its body", () => {
+        expect(decisionHeading({ summary: "Chose b", rationale: "b needs no migration" })).toEqual({
+            title: "Chose b",
+            body: "b needs no migration",
+        });
+    });
+    it("falls back to the rationale's first line, stripped of markdown, and does not repeat it in the body", () => {
+        expect(
+            decisionHeading({ summary: "", rationale: "\n## drop-oldest on overflow\n\nbecause backpressure" })
+        ).toEqual({
+            title: "drop-oldest on overflow",
+            body: "because backpressure",
+        });
+    });
+    it("gives an empty heading for an empty decision", () => {
+        expect(decisionHeading({ summary: "", rationale: "  " })).toEqual({ title: "", body: "" });
     });
 });

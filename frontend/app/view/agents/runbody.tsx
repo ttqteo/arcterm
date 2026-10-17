@@ -143,6 +143,7 @@ export function CompactStepper({ run, expanded, onToggle }: { run: Run; expanded
 // disabled when there is none (terminal run / no live worker). The merged surface passes hideSteer — its
 // composer Talk face replaces the inline Steer affordance entirely.
 export function RunHeader({
+    model,
     run,
     agents,
     channel,
@@ -153,6 +154,7 @@ export function RunHeader({
     onSteerClose,
     hideSteer,
 }: {
+    model: AgentsViewModel;
     run: Run;
     agents: AgentVM[];
     channel: Channel;
@@ -184,7 +186,7 @@ export function RunHeader({
                             <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
                             {runtimeView.label}
                         </span>
-                        <AmbientTags oref={`run:${run.id}`} />
+                        <AmbientTags model={model} oref={`run:${run.id}`} />
                     </div>
                     {/* the heading takes the width; the rest of the goal opens below it as prose at a reading
                         measure */}
@@ -390,6 +392,7 @@ export function OrchestratorBody({
         <div className={cn(STAGE_BAND_INSET, "sc flex min-h-0 flex-1 flex-col overflow-y-auto")}>
             <div className={cn(STAGE_GUTTER, "flex min-h-0 flex-1 flex-col pb-3 pt-5")}>
                 <RunHeader
+                    model={model}
                     run={run}
                     agents={agents}
                     channel={channel}
@@ -675,6 +678,7 @@ export function RunBody({
             <div ref={stick.scrollRef} onScroll={stick.onScroll} className={cn(STAGE_SCROLLER, "sc min-h-0 flex-1")}>
                 <div className={cn(STAGE_GUTTER, "pb-3 pt-5")}>
                     <RunHeader
+                        model={model}
                         run={run}
                         agents={agents}
                         channel={channel}

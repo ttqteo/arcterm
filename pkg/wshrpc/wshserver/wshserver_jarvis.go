@@ -299,7 +299,7 @@ func dossierDecisions(v *wavevault.Vault, dossierID string) ([]wshrpc.DecisionCa
 		}
 		cards = append(cards, wshrpc.DecisionCard{
 			Id: dec.ID, Created: dec.Created, Actor: dec.Actor, Provenance: dec.Provenance,
-			Status: dec.Status, Links: dec.Links, Rationale: dec.Rationale,
+			Status: dec.Status, Links: dec.Links, Rationale: dec.Rationale, Summary: dec.Summary,
 		})
 	}
 	sort.SliceStable(cards, func(i, j int) bool { return cards[i].Created > cards[j].Created })
@@ -608,7 +608,7 @@ func allDecisions(v *wavevault.Vault) ([]wshrpc.DecisionCard, error) {
 		}
 		cards = append(cards, wshrpc.DecisionCard{
 			Id: dec.ID, Created: dec.Created, Actor: dec.Actor, Provenance: dec.Provenance,
-			Status: dec.Status, Links: dec.Links, Rationale: dec.Rationale,
+			Status: dec.Status, Links: dec.Links, Rationale: dec.Rationale, Summary: dec.Summary,
 		})
 	}
 	return cards, nil

@@ -133,6 +133,7 @@ spacing:
   shadow-popover-soft: "0 20px 50px rgba(0, 0, 0, 0.35)"
   shadow-popover-line: "0 1px 3px rgba(0, 0, 0, 0.4)"
   shadow-inset-highlight: "inset 0 1px 0 rgba(255, 255, 255, 0.28)"
+  shadow-cta: "0 14px 34px color-mix(in srgb, accent 34%, transparent), shadow-inset-highlight"
 rounded:
   sm: 6px
   md: 8px
@@ -405,8 +406,9 @@ Shadows are reserved for floating chrome and come from the tokenized popover
 scale: `shadow-popover` (the default recipe, `0 20px 56px rgba(0,0,0,0.55)`)
 plus `shadow-popover-sm/md/lg/xl/2xl` (lighter popovers), `shadow-popover-soft`
 (diffuse), `shadow-popover-line` (1px micro-shadows), and
-`shadow-inset-highlight` (the white top-edge highlight on filled CTAs). Do
-not hand-roll new shadow recipes in `className`/`style` — reuse the scale.
+`shadow-inset-highlight` (the white top-edge highlight on filled CTAs), and
+`shadow-cta` (an empty state's primary CTA: an accent glow over that
+highlight). Do not hand-roll new shadow recipes in `className`/`style` — reuse the scale.
 
 ## Shapes
 

@@ -258,6 +258,12 @@ export const AgentRow = memo(function AgentRow({
     const liveEntries = useAtomValue(entriesAtomFor(agent.id));
     const entries = entriesToShow(liveEntries, agent.previousInfo);
     const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries);
+    // the composer ends the scroll region, so opening it re-sticks a card scrolled up into its history
+    useEffect(() => {
+        if (composerOpen) {
+            jumpToBottom();
+        }
+    }, [composerOpen]);
     const asking = agent.state === "asking";
     const working = agent.state === "working";
     const idle = agent.state === "idle";

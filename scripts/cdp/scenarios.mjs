@@ -47905,7 +47905,7 @@ const agentLaunchHero = {
             const list = [...document.querySelectorAll("span")].find((x) => flat(x) === "Recent sessions")?.closest(".rounded-lg");
             return {
                 hero: title() != null,
-                cta: button(document, /^Launch new terminal$/) != null,
+                cta: button(document, /^New agent/) != null,
                 sessions: list ? list.querySelectorAll("button").length : 0,
             };
         `);
@@ -47913,12 +47913,20 @@ const agentLaunchHero = {
             return [skipStep("the Agent surface with nothing focused shows the launch hero", "an agent is focused in this profile - run it on a fresh store (final-verify.mjs)")];
         }
         await h.shot(lookShot("agent-launch-hero"));
+        // the CTA's label says what it opens
+        const opened = await lookEval(h, `
+            button(document, /^New agent/)?.click();
+            return until(() => [...document.querySelectorAll('[role="dialog"] h2')].some((x) => flat(x) === "New agent"), 3000);
+        `);
+        // the modal rides newAgentOpenAtom, not modalsModel: its own close button shuts it
+        await lookEval(h, `document.querySelector('[role="dialog"] button[aria-label="Close"]')?.click();`);
         return [
             {
-                step: "the Agent surface with nothing focused shows No terminal running, its launch CTA and the recent sessions to resume",
+                step: "the Agent surface with nothing focused shows No terminal running, its New agent CTA and the recent sessions to resume",
                 ok: s.cta,
                 detail: JSON.stringify(s),
             },
+            { step: "New agent opens the New agent modal", ok: opened === true, detail: `opened=${opened}` },
         ];
     },
     async teardown() {},
@@ -48364,12 +48372,12 @@ const LOOK_RECORD_GOAL = "verify task-detail: a record with decisions, do nothin
 const LOOK_RECORD = "verify-task-detail-a-record-with-decisions-do-no";
 const LOOK_DECISIONS = [
     {
-        summary: "keep-the-band-collapsed",
+        summary: "Keep the band collapsed",
         rationale:
             "The band opens on e. Opening it by default pushed the thread a screenful down on every run switch, and the record is read far less often than the thread.",
     },
     {
-        summary: "status-before-fields",
+        summary: "Status before fields",
         rationale: "Status is the one field scanned before anything else is read, so it carries the only colour on the record.",
     },
 ];
@@ -48399,6 +48407,9 @@ const taskDetail = {
             for (const d of LOOK_DECISIONS.filter((d) => !have.includes(d.rationale))) {
                 await h.rpc("appenddossierdecision", { dossierid: LOOK_RECORD, ...d });
             }
+            // the decisions persist in the vault across runs, so the summaries drawn are the ones it holds
+            const held = (await h.rpc("getdossier", { dossierid: LOOK_RECORD }))?.decisions ?? [];
+            ctx.summaries = LOOK_DECISIONS.map((d) => held.find((x) => x.rationale === d.rationale)?.summary).filter(Boolean);
             // the Brief reads a boot-primed snapshot, so the RPC-created channel needs a reload
             await h.reload();
             await h.goto("jarvis");
@@ -48411,7 +48422,7 @@ const taskDetail = {
                 const toggle = () => ${LOOK_BAND}?.querySelector("[data-jarvis-band-toggle]");
                 await until(() => toggle() != null, 25000);
                 if (toggle()?.getAttribute("aria-expanded") !== "true") toggle()?.click();
-                return until(() => /Machine-maintained/.test(flat(${LOOK_BAND})) && /No decisions yet|Add decision/.test(flat(${LOOK_BAND})), 8000);
+                return until(() => /Where it stands/.test(flat(${LOOK_BAND})) && /No decisions yet|Add decision/.test(flat(${LOOK_BAND})), 8000);
             `);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
@@ -48431,32 +48442,67 @@ const taskDetail = {
         await polishNap(500); // the disclosure's reveal
         const top = await lookEval(h, `
             const text = flat(${LOOK_BAND});
-            return { status: ${LOOK_BAND}.querySelector("[data-record-status]")?.textContent ?? null, transitions: [...${LOOK_BAND}.querySelectorAll("button")].map(flat).filter((t) => t.startsWith("→")) };
+            const heads = [...${LOOK_BAND}.querySelectorAll("h3")];
+            const title = ${LOOK_BAND}.querySelector("h2");
+            return {
+                status: ${LOOK_BAND}.querySelector("[data-record-status]")?.textContent ?? null,
+                transitions: [...${LOOK_BAND}.querySelectorAll("button")].map(flat).filter((t) => t.startsWith("→")),
+                titlePx: title ? parseFloat(getComputedStyle(title).fontSize) : null,
+                heads: heads.map((x) => ({ text: flat(x), mono: /mono/i.test(getComputedStyle(x).fontFamily), px: getComputedStyle(x).fontSize })),
+            };
         `);
         await h.shot(lookShot("task-detail"));
-        rec("1. the record shows its status, its transitions and the machine-maintained fields", top.status != null && top.transitions.length > 0, JSON.stringify(top));
+        rec("1. the record shows its status, its transitions and the fields that say where it stands", top.status != null && top.transitions.length > 0, JSON.stringify(top));
+        rec(
+            "1b. the record's title stays under the sheet's, and its sections are headed by the 10.5px mono eyebrow",
+            top.titlePx != null && top.titlePx <= 15 && top.heads.length > 0 && top.heads.every((x) => x.mono && x.px === "10.5px"),
+            JSON.stringify({ titlePx: top.titlePx, heads: top.heads })
+        );
 
         const decisions = await lookEval(h, `
             const scroller = ${LOOK_BAND}.querySelector('[class*="max-h-[420px]"]');
             if (scroller) scroller.scrollTop = scroller.scrollHeight;
             await nap(300);
             const text = flat(${LOOK_BAND});
-            return { cards: ${JSON.stringify(LOOK_DECISIONS.map((d) => d.rationale.slice(0, 30)))}.filter((r) => text.includes(r)).length };
+            const titles = [...${LOOK_BAND}.querySelectorAll("h4")].map(flat);
+            return {
+                cards: ${JSON.stringify(LOOK_DECISIONS.map((d) => d.rationale.slice(0, 30)))}.filter((r) => text.includes(r)).length,
+                titled: ${JSON.stringify(ctx.summaries ?? [])}.filter((t) => titles.includes(t)).length,
+                isoDates: /\\b\\d{4}-\\d{2}-\\d{2}\\b/.test(text),
+                ages: /(just now|\\d+[mhd] ago)/.test(text),
+            };
         `);
         await h.shot(lookShot("task-detail-decisions"));
         rec("2. the decision log lists the record's decisions", decisions.cards === LOOK_DECISIONS.length, JSON.stringify(decisions));
+        rec(
+            "2b. each decision is titled by its summary and dated by age, not an ISO date",
+            (ctx.summaries ?? []).length === LOOK_DECISIONS.length && decisions.titled === LOOK_DECISIONS.length && decisions.ages && !decisions.isoDates,
+            JSON.stringify(decisions)
+        );
 
         const form = await lookEval(h, `
             button(${LOOK_BAND}, /^\\+ Add decision$/)?.click();
-            const ok = await until(() => ${LOOK_BAND}.querySelector('input[placeholder="Short summary (filename)"]') != null, 2000);
+            const input = () => [...${LOOK_BAND}.querySelectorAll("input")].find((i) => i.labels?.[0] && flat(i.labels[0]) === "Summary");
+            const ok = await until(() => input() != null, 2000);
+            const area = ${LOOK_BAND}.querySelector("textarea");
             const scroller = ${LOOK_BAND}.querySelector('[class*="max-h-[420px]"]');
             if (scroller) scroller.scrollTop = scroller.scrollHeight;
             await nap(300);
-            return { ok, addDisabled: button(${LOOK_BAND}, /^Add decision$/)?.disabled ?? null };
+            return {
+                ok,
+                addDisabled: button(${LOOK_BAND}, /^Add decision$/)?.disabled ?? null,
+                rationaleLabel: area?.labels?.[0] ? flat(area.labels[0]) : null,
+                placeholder: input()?.placeholder ?? null,
+            };
         `);
         await h.shot(lookShot("task-detail-add-decision"));
         await lookEval(h, `button(${LOOK_BAND}, /^Cancel$/)?.click();`);
         rec("3. + Add decision opens the append form, its Add decision disabled while empty", form.ok && form.addDisabled === true, JSON.stringify(form));
+        rec(
+            "3b. the form's fields are labelled Summary and Rationale, and the summary's placeholder does not ask for a filename",
+            form.ok && form.rationaleLabel === "Rationale" && form.placeholder != null && !/filename/i.test(form.placeholder),
+            JSON.stringify(form)
+        );
 
         const confirm = await lookEval(h, `
             const scroller = ${LOOK_BAND}.querySelector('[class*="max-h-[420px]"]');
@@ -48545,7 +48591,30 @@ const ambientTags = {
             return { ok: ${ok}, tags: ${JSON.stringify(LOOK_AMBIENT.tasks.map((t) => t.label))}.filter((l) => text.includes(l)) };
         `);
         await h.shot(lookShot("ambient-tags"));
-        return [{ step, ok: shown && patched.ok && patched.tags.length === LOOK_AMBIENT.tasks.length, detail: JSON.stringify({ shown, ...patched }) }];
+        // a tag is a button into its record: the fixture's dossiers are not in the vault, so the router either
+        // lands or says why in a toast naming the record, and never does nothing
+        const opened = await lookEval(h, `
+            const chips = [...(${detail}?.querySelectorAll("button") ?? [])].filter((b) => /open the record/.test(b.title));
+            const sizes = [...new Set(chips.map((b) => getComputedStyle(b).fontSize))];
+            const eyebrow = [...(${detail}?.querySelectorAll("div") ?? [])].find((d) => flat(d) === "Relevant past decisions");
+            const surface = () =>
+                [...document.querySelectorAll("nav button")].find((x) => (x.className || "").includes("text-accent-soft"))?.getAttribute("aria-label") ?? null;
+            const before = surface();
+            chips[0]?.click();
+            const reacted = await until(
+                () => surface() !== before || [...document.querySelectorAll("[data-notification-toast]")].some((t) => /record/i.test(t.textContent)),
+                3000
+            );
+            return { chips: chips.length, sizes, eyebrow: eyebrow ? getComputedStyle(eyebrow).fontSize : null, reacted };
+        `);
+        return [
+            { step, ok: shown && patched.ok && patched.tags.length === LOOK_AMBIENT.tasks.length, detail: JSON.stringify({ shown, ...patched }) },
+            {
+                step: "tag chips and the eyebrow sit at the 10.5px floor, and a tag opens its record",
+                ok: opened.chips > 0 && opened.sizes.length === 1 && opened.sizes[0] === "10.5px" && opened.eyebrow === "10.5px" && opened.reacted === true,
+                detail: JSON.stringify(opened),
+            },
+        ];
     },
     async teardown(h) {
         await lookEval(h, `
@@ -48588,6 +48657,8 @@ const agentComposer = {
         `);
         await h.shot(lookShot("agent-composer-idle"));
         steps.push({ step: "the opened Idle list gives each parked idle agent a message composer", ok: idle.ok, detail: JSON.stringify(idle) });
+        // :focus never matches while the dev window is behind another one
+        await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
         const card = await lookEval(h, `
             const slim = [...document.querySelectorAll("div.cursor-text")].find((el) => flat(el).startsWith("message ${LOOK_COMPOSER_CARD}…"));
             slim?.scrollIntoView({ block: "center" });
@@ -48600,12 +48671,37 @@ const agentComposer = {
                 ta().dispatchEvent(new Event("input", { bubbles: true }));
             }
             await nap(500);
-            return { slim: slim != null, ok, sendEnabled: ok ? button(ta().parentElement, /^Send$/)?.disabled === false : null };
+            if (!ok) return { slim: slim != null, ok };
+            ta().focus();
+            await nap(100);
+            const send = button(ta().parentElement, /^Send$/);
+            // every clipping ancestor, the card's scroll region included, must show Send and the textarea whole
+            const clips = [];
+            for (let p = ta().parentElement; p; p = p.parentElement) {
+                if (getComputedStyle(p).overflow !== "visible") clips.push(p);
+            }
+            const inside = (el) => clips.every((c) => el.getBoundingClientRect().bottom <= c.getBoundingClientRect().bottom + 0.5);
+            const idleTa = ${lookComposer(LOOK_COMPOSER_IDLE)};
+            return {
+                slim: slim != null,
+                ok,
+                sendEnabled: send?.disabled === false,
+                focusEdge: getComputedStyle(ta()).borderTopColor,
+                restEdge: idleTa ? getComputedStyle(idleTa).borderTopColor : null,
+                unclipped: inside(ta()) && send != null && inside(send),
+                oneLine: ta().offsetHeight <= 34,
+            };
         `);
         await h.shot(lookShot("agent-composer-card"));
+        await h.cdp("Emulation.setFocusEmulationEnabled", { enabled: false });
         steps.push({
             step: "a working card's composer expands from its slim row and enables Send once it holds a message",
             ok: card.ok && card.sendEnabled === true,
+            detail: JSON.stringify(card),
+        });
+        steps.push({
+            step: "the focused composer shows a focus edge, stays one line tall for a one-line message, and its textarea and Send sit inside the card",
+            ok: card.ok && card.restEdge != null && card.focusEdge !== card.restEdge && card.unclipped === true && card.oneLine === true,
             detail: JSON.stringify(card),
         });
         return steps;

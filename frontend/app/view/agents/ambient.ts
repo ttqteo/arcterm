@@ -16,6 +16,7 @@ export interface AmbientTag {
 // AmbientDecisionCard is the render shape (the wire type AmbientDecision is a generated global).
 export interface AmbientDecisionCard {
     id: string;
+    taskId: string; // the dossier the decision belongs to, which is what opening it lands on
     title: string;
     ageMs: number;
 }
@@ -120,7 +121,7 @@ export function makeAmbientProvider(
                 for (const d of decisionsByTask.get(tag.taskId) ?? []) {
                     if (seen.has(d.id)) continue;
                     seen.add(d.id);
-                    out.push({ id: d.id, title: d.title, ageMs: Math.max(0, at - d.created) });
+                    out.push({ id: d.id, taskId: d.dossierid, title: d.title, ageMs: Math.max(0, at - d.created) });
                 }
             }
             return out.slice(0, MAX_DECISIONS);

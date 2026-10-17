@@ -235,6 +235,8 @@ type DecisionCard struct {
 	Status     string   `json:"status"`
 	Links      []string `json:"links"`
 	Rationale  string   `json:"rationale"`
+	// Summary is the subject the decision was filed under; empty on decisions written before it was stamped.
+	Summary string `json:"summary"`
 }
 
 // DossierDetail is a task dossier projected for the Tasks surface. Every field renders read-only

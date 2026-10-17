@@ -85,6 +85,10 @@ func TestAppendDossierDecisionAndStatusRoundTrip(t *testing.T) {
 	if detail.Decisions[0].Actor != "human" || detail.Decisions[0].Provenance != "human-submit" {
 		t.Fatalf("human decision attribution wrong: %+v", detail.Decisions[0])
 	}
+	// the decision log titles a card with the summary it was filed under
+	if detail.Decisions[0].Summary != "chose b" {
+		t.Fatalf("summary = %q, want %q", detail.Decisions[0].Summary, "chose b")
+	}
 	// status transition
 	if err := setDossierStatus(ctx, v, taskID, "completed"); err != nil {
 		t.Fatalf("setDossierStatus: %v", err)

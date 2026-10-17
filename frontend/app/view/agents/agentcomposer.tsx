@@ -8,7 +8,8 @@ import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } fr
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import type { AgentVM } from "./agentsviewmodel";
 
-const ComposerMinH = 64; // ~3 lines at 12px
+// one line at 12px (rows={1}: the default two rows would set the floor instead); it grows as text wraps
+const ComposerMinH = 32;
 const ComposerMaxH = 160; // grows up to here, then the textarea scrolls
 
 /** Pure: a composer can send only with non-empty text AND a live terminal block. Shared by send(), the
@@ -90,6 +91,7 @@ export const AgentComposer = forwardRef<
         >
             <textarea
                 ref={taRef}
+                rows={1}
                 value={text}
                 readOnly={waking}
                 onChange={(e) => setText(e.target.value)}
@@ -104,13 +106,13 @@ export const AgentComposer = forwardRef<
                     }
                 }}
                 placeholder={placeholder}
-                className="min-w-0 flex-1 resize-none overflow-y-auto rounded-sm border border-border bg-transparent px-2.5 py-1.5 text-[12px] leading-[1.4] text-primary outline-none placeholder:text-secondary"
+                className="min-w-0 flex-1 resize-none overflow-y-auto rounded-sm border border-border bg-transparent px-2.5 py-1.5 text-[12px] leading-[1.4] text-primary outline-none placeholder:text-muted focus:border-accent-700"
             />
             <button
                 type="button"
                 onClick={send}
                 disabled={!canSend}
-                className="shrink-0 cursor-pointer rounded-[5px] border border-border px-2.5 py-1 text-[11px] text-secondary hover:bg-white/[0.04] disabled:opacity-40"
+                className="shrink-0 cursor-pointer rounded-[5px] border border-edge-mid px-2.5 py-1 text-[11px] text-secondary hover:border-edge-strong hover:bg-surface-hover hover:text-primary disabled:cursor-default disabled:opacity-40"
             >
                 {waking ? "Waking…" : "Send"}
             </button>

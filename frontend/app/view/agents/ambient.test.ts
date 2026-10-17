@@ -54,6 +54,8 @@ describe("makeAmbientProvider", () => {
         const decisions = provider.decisionsFor({ oref: "run:r1" });
         expect(decisions.map((d) => d.id)).toEqual(["dec-1", "dec-2"]);
         expect(decisions[0].ageMs).toBe(2 * DAY);
+        // a decision card knows its record, so opening it can land there
+        expect(decisions.every((d) => d.taskId === "task-auth" || d.taskId === "task-shell")).toBe(true);
     });
 
     it("reaches decisions through a wikilink too", () => {

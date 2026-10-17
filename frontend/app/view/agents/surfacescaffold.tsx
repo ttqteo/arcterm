@@ -113,20 +113,14 @@ export function SurfaceEmptyState({
                 {action != null || secondaryAction != null ? (
                     <div className="flex items-center gap-2.5">
                         {action != null ? (
-                            <motion.button
+                            <button
                                 type="button"
                                 onClick={action.onClick}
                                 disabled={action.disabled}
-                                whileHover={{ y: -1 }}
-                                whileTap={{ y: 0 }}
-                                style={{
-                                    boxShadow:
-                                        "0 14px 34px color-mix(in srgb, var(--color-accent) 34%, transparent), var(--shadow-inset-highlight)",
-                                }}
-                                className="flex cursor-pointer items-center gap-[11px] rounded-lg bg-accent px-[26px] py-3.5 text-[15px] font-bold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50"
+                                className="flex cursor-pointer items-center gap-[11px] rounded-lg bg-accent px-[26px] py-3.5 text-[15px] font-bold text-background shadow-cta hover:bg-accenthover disabled:cursor-default disabled:opacity-50"
                             >
                                 {action.label}
-                            </motion.button>
+                            </button>
                         ) : null}
                         {secondaryAction != null ? (
                             <button

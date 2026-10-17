@@ -47,11 +47,7 @@ export function CockpitEmptyState({ onNewAgent }: { onNewAgent: () => void }) {
                     onClick={onNewAgent}
                     whileHover={{ y: -1 }}
                     whileTap={{ y: 0 }}
-                    style={{
-                        boxShadow:
-                            "0 14px 34px color-mix(in srgb, var(--color-accent) 34%, transparent), var(--shadow-inset-highlight)",
-                    }}
-                    className="flex cursor-pointer items-center gap-[11px] rounded-lg bg-accent px-[26px] py-3.5 text-[15px] font-bold text-background hover:bg-accenthover"
+                    className="flex cursor-pointer items-center gap-[11px] rounded-lg bg-accent px-[26px] py-3.5 text-[15px] font-bold text-background shadow-cta hover:bg-accenthover"
                 >
                     <span className="flex h-6 w-6 items-center justify-center rounded-[7px] bg-background/15 font-mono text-[12px]">
                         &gt;_

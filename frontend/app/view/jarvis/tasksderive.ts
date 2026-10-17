@@ -47,3 +47,28 @@ export function validateDecisionDraft(summary: string, rationale: string): strin
     if (summary.trim() === "") return "Summary is required.";
     return null;
 }
+
+// decisionHeading splits a decision card into the title it is listed under and the prose beneath it. The
+// summary it was filed under is the title; a decision written before summaries were stamped falls back to
+// its rationale's first line (markdown markers stripped), and that line then leaves the body so it is not
+// read twice.
+export function decisionHeading(card: Pick<DecisionCard, "summary" | "rationale">): { title: string; body: string } {
+    const summary = card.summary?.trim() ?? "";
+    const rationale = card.rationale.trim();
+    if (summary !== "") {
+        return { title: summary, body: rationale };
+    }
+    const lines = rationale.split("\n");
+    const first = lines.findIndex((l) => l.trim() !== "");
+    if (first < 0) {
+        return { title: "", body: "" };
+    }
+    const title = lines[first].trim().replace(/^[#>*+\-\s]+/, "");
+    return {
+        title,
+        body: lines
+            .slice(first + 1)
+            .join("\n")
+            .trim(),
+    };
+}

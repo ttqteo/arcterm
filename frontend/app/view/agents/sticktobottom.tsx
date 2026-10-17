@@ -24,9 +24,22 @@ export function useStickToBottom(entries: unknown[]) {
 
     useLayoutEffect(() => {
         const el = scrollRef.current;
-        if (el && stickRef.current) {
-            el.scrollTop = el.scrollHeight;
+        if (!el) {
+            return;
         }
+        const pin = () => {
+            if (stickRef.current) {
+                el.scrollTop = el.scrollHeight;
+            }
+        };
+        pin();
+        // content that grows without a new entry (an opened composer, a reply that wraps) must not push
+        // the tail of a stuck region out of view
+        const ro = new ResizeObserver(pin);
+        for (const child of el.children) {
+            ro.observe(child);
+        }
+        return () => ro.disconnect();
     }, [entries]);
 
     // after every render, not once: a caller may mount its scroll region after its first render
