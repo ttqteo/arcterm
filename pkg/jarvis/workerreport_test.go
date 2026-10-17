@@ -101,8 +101,12 @@ func TestWorkerReportCRLF(t *testing.T) {
 }
 
 func TestWorkerReportBOM(t *testing.T) {
-	if _, err := ParseWorkerReport("\xef\xbb\xbf" + validReport); err != nil {
+	rep, err := ParseWorkerReport("\xef\xbb\xbf" + validReport)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if rep.Done != "landed it" {
+		t.Fatalf("Done = %q, want the BOM stripped before the first heading", rep.Done)
 	}
 }
 

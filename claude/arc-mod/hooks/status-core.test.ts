@@ -18,8 +18,11 @@ describe("idleArgs", () => {
     });
 
     it("reports idle for a turn an API error or a refusal ended", () => {
-        expect(idleArgs({ reason: "error" }, "/t.jsonl")).not.toBeNull();
-        expect(idleArgs({ reason: "refusal" }, "/t.jsonl")).not.toBeNull();
+        for (const reason of ["error", "refusal"]) {
+            expect(idleArgs({ reason }, "/t.jsonl")).toEqual([
+                "agentstatus", "--state", "idle", "--agent", "claude", "--transcript", "/t.jsonl",
+            ]);
+        }
     });
 
     it("sends no transcript flag before the session has named one", () => {

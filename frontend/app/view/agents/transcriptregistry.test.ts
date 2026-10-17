@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { projectOpencodeTranscript } from "./opencodetranscriptprojection";
 import { projectorFor, resolveAgentIdentity } from "./transcriptregistry";
 
 // A line each format understands; the other format projects it to nothing — so which entries come
@@ -37,7 +38,7 @@ describe("projectorFor", () => {
     });
 
     it("routes by explicit agent: opencode", () => {
-        expect(projectorFor("opencode", "/no/such/path").project).toBeDefined();
+        expect(projectorFor("opencode", "/no/such/path").project).toBe(projectOpencodeTranscript);
     });
 
     it("routes by explicit agent: pi", () => {

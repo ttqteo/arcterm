@@ -61,7 +61,6 @@ describe("reducePrinciplePatch", () => {
         const start: PrinciplePatch = { additions: [{ id: "p1", text: "one" }], disabled: ["a"] };
         const after = reducePrinciplePatch(start, { type: "override", id: "b", text: "B2" });
         expect(after).toEqual({ additions: [{ id: "p1", text: "one" }], replacements: { b: "B2" }, disabled: ["a"] });
-        expect(start.additions).toBe(start.additions); // sanity: start not mutated below
         expect(start).toEqual({ additions: [{ id: "p1", text: "one" }], disabled: ["a"] });
     });
 });
