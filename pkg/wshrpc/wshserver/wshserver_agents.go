@@ -178,12 +178,15 @@ func (ws *WshServer) GetUsageInsightsCommand(ctx context.Context) (*wshrpc.Usage
 }
 
 func (ws *WshServer) GetRecentSessionsCommand(ctx context.Context, data wshrpc.CommandGetRecentSessionsData) (*wshrpc.CommandGetRecentSessionsRtnData, error) {
-	sessions, err := agentsessions.ScanSessions(data.WindowDays, data.Limit)
+	page, err := agentsessions.ScanPage(agentsessions.PageOpts{
+		WindowDays: data.WindowDays, Limit: data.Limit, Cursor: data.Cursor,
+		Runtime: data.Runtime, ProjectPath: data.ProjectPath, Query: data.Query,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("scanning sessions: %w", err)
 	}
-	out := make([]wshrpc.SessionInfo, len(sessions))
-	for i, s := range sessions {
+	out := make([]wshrpc.SessionInfo, len(page.Sessions))
+	for i, s := range page.Sessions {
 		out[i] = wshrpc.SessionInfo{
 			ID: s.ID, Runtime: s.Runtime, ProjectPath: s.ProjectPath, ProjectName: s.ProjectName,
 			Branch: s.Branch, Task: s.Task, Model: s.Model, TokensTotal: s.TokensTotal,
@@ -191,23 +194,23 @@ func (ws *WshServer) GetRecentSessionsCommand(ctx context.Context, data wshrpc.C
 			TranscriptPath: s.TranscriptPath, ResumeArgs: s.ResumeArgs,
 		}
 	}
-	return &wshrpc.CommandGetRecentSessionsRtnData{Sessions: out}, nil
+	return &wshrpc.CommandGetRecentSessionsRtnData{Sessions: out, NextCursor: page.Next}, nil
 }
 
 func (ws *WshServer) GetSessionsActivityCommand(ctx context.Context, data wshrpc.CommandGetSessionsActivityData) (*wshrpc.CommandGetSessionsActivityRtnData, error) {
-	sessions, err := agentsessions.ScanSessions(data.WindowDays, data.Limit)
+	page, err := agentsessions.ScanPage(agentsessions.PageOpts{WindowDays: data.WindowDays, Limit: data.Limit, Cursor: data.Cursor})
 	if err != nil {
 		return nil, fmt.Errorf("scanning sessions: %w", err)
 	}
-	out := make([]wshrpc.SessionActivity, len(sessions))
-	for i, s := range sessions {
+	out := make([]wshrpc.SessionActivity, len(page.Sessions))
+	for i, s := range page.Sessions {
 		out[i] = sessionActivityToWire(s)
 	}
 	// unlinked sessions still list, just not under their run
 	if err := linkSessionsToRuns(ctx, out); err != nil {
 		log.Printf("sessions activity: %v", err)
 	}
-	return &wshrpc.CommandGetSessionsActivityRtnData{Sessions: out}, nil
+	return &wshrpc.CommandGetSessionsActivityRtnData{Sessions: out, NextCursor: page.Next}, nil
 }
 
 // sessionActivityToWire is a scanned session with its events; Events is never nil, which the frontend would read as

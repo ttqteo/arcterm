@@ -71,7 +71,7 @@ import {
 } from "./launcher";
 import { AgentFields, useProjectBranches } from "./launcheragentfields";
 import { composeTaskWithImages, imagesPending } from "./launcherimages";
-import { pickedResume, resumeChoices, resumeLaunchSpec } from "./launcherresume";
+import { appendPage, pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
 import { ColumnLabel, digitOf, FilterLine, Keycap, rowTone } from "./launcherrows";
 import { startLauncherRun } from "./launcherrun";
@@ -89,6 +89,7 @@ import {
     launcherBusyAtom,
     launcherCommandAtom,
     launcherFlagMenuAtom,
+    launcherFoundAtom,
     launcherGoalAtom,
     launcherImagesAtom,
     launcherKindAtom,
@@ -192,6 +193,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const worktreeOn = useAtomValue(launcherWorktreeAtom);
     const branchPick = useAtomValue(launcherBranchAtom);
     const sessions = useAtomValue(launcherSessionsAtom);
+    const found = useAtomValue(launcherFoundAtom);
     const resumeId = useAtomValue(launcherResumeAtom);
     const images = useAtomValue(launcherImagesAtom);
     const commands = useAtomValue(launcherCommandAtom);
@@ -264,7 +266,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const branchNames = branches.map((b) => b.name);
     // the sessions this agent and project offer, and the one picked (a pick no longer on offer launches nothing)
     const choices = resumeChoices(sessions, runtime, projectPath);
-    const resume = isAgent ? pickedResume(choices, resumeId) : null;
+    // a row found by the Resume list's search can be older than every loaded page, and still resumes
+    const scopeKey = resumeScopeKey(runtime, projectPath);
+    const foundHere = found != null && found.key === scopeKey ? found.sessions : [];
+    const resume = isAgent ? pickedResume(appendPage(choices, foundHere), resumeId) : null;
     // a resumed session keeps its own folder, so the worktree option is neither shown nor applied
     const wantsWorktree = isAgent && !atHome && resume == null && worktreeOn && runtimeSupportsWorktree(runtime);
     const chosenBranch = (branchPick ?? currentBranch).trim();
@@ -377,14 +382,16 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
     }, [open]);
 
-    // the Resume list's sessions are read once per open, and the last open's are dropped first so a stale list never
-    // flashes
+    // the Resume list's first page is read once per open and per runtime or project switch, and the last list is dropped
+    // first so a stale one never flashes
     useEffect(() => {
         if (open) {
             globalStore.set(launcherSessionsAtom, null);
-            fireAndForget(loadLauncherSessions);
+            if (scopeKey !== "") {
+                fireAndForget(() => loadLauncherSessions(runtime, projectPath));
+            }
         }
-    }, [open]);
+    }, [open, runtime, projectPath]);
 
     // a prefill can also arrive while the dialog is already open, so it is a dependency too
     useEffect(() => {
@@ -1112,6 +1119,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 ) : thirdList === "resume" ? (
                                     <ResumeList
                                         choices={choices}
+                                        scopeKey={scopeKey}
                                         pickedId={resume?.id ?? null}
                                         onBack={() => projectRef.current?.focus()}
                                     />

@@ -103,6 +103,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - With the menu bar icon on (the tray icon on Windows), closing arcterm's window hides it instead of quitting: your
   agents keep running and the icon keeps showing the memory free. The popover's Open arcterm, or the Dock icon, brings
   the window back; Quit (`⌘Q`) still quits.
+- The Resume list and Conversation History load older sessions as you scroll, instead of stopping at the newest 50 or
+  100. <!-- try: go:history -->
+- Typing in the Resume list finds any session of that project still on disk. <!-- try: new-agent -->
+- Claude Code now keeps conversations 90 days instead of 30, unless you set `cleanupPeriodDays` yourself.
 
 ### Fixed
 

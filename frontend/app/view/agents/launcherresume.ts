@@ -6,8 +6,8 @@
 
 import { composeStartupCommand, type Runtime } from "./launch";
 
-// the Session column scrolls and filters, so it can offer more than fit at once
-export const RESUME_LIST_MAX = 30;
+// one page of the Session column: it scrolls, and asks for the next page when its end comes near
+export const RESUME_PAGE = 30;
 
 export const UNTITLED_SESSION = "(untitled session)";
 
@@ -23,8 +23,35 @@ export function resumeChoices(sessions: SessionInfo[] | null, runtime: Runtime, 
     const want = normPath(projectPath);
     return sessions
         .filter((x) => x.runtime === runtime && normPath(x.projectpath) === want)
-        .sort((a, b) => b.lastactivets - a.lastactivets)
-        .slice(0, RESUME_LIST_MAX);
+        .sort((a, b) => b.lastactivets - a.lastactivets);
+}
+
+// What the Resume list's pages are for: "" when resumeChoices would offer nothing, else the runtime and the project as
+// the comparison reads them. A page answered for another key is not this list's.
+export function resumeScopeKey(runtime: Runtime, projectPath: string): string {
+    return runtime === "terminal" || !projectPath ? "" : `${runtime}:${normPath(projectPath)}`;
+}
+
+// `prev`, then the page's sessions it lacks: a session can sit on two pages when it was written between them.
+export function appendPage(prev: SessionInfo[], page: SessionInfo[]): SessionInfo[] {
+    const have = new Set(prev.map((x) => x.id));
+    const out = prev.slice();
+    for (const x of page) {
+        if (!have.has(x.id)) {
+            have.add(x.id);
+            out.push(x);
+        }
+    }
+    return out;
+}
+
+// The rows under a filter: the loaded sessions that match it and the backend's matches, which reach the pages not
+// loaded yet, each once, newest first.
+export function shownSessions(choices: SessionInfo[], filter: string, found: SessionInfo[] | null): SessionInfo[] {
+    if (filter.trim() === "") {
+        return choices;
+    }
+    return appendPage(filterSessions(choices, filter), found ?? []).sort((a, b) => b.lastactivets - a.lastactivets);
 }
 
 // The store resets the pick on a runtime or project switch; this guard keeps a pick that is no longer on offer (a

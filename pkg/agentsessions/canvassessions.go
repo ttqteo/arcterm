@@ -140,6 +140,7 @@ func designWritesCached(c candidate) map[string]int64 {
 	}
 	writes := designWrites(data)
 	designWritesMu.Lock()
+	// the cap is shared with scanCache: both hold one entry per transcript
 	if len(designWritesCache) >= scanCacheMax {
 		clear(designWritesCache)
 	}

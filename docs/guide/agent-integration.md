@@ -10,7 +10,7 @@ Mỗi lần mở, app chạy `wsh install-agent-hooks`. Lệnh này làm mới c
 
 | Harness | Cài vào đâu | Làm gì |
 |---|---|---|
-| Claude Code | hook trong `~/.claude/settings.json`; mod `~/.arc/claude-mod`, `~/.arc/claude-view-mod` và `~/.arc/claude-skim-mod`, liệt kê trong `env.CLAUDE_CODE_PLUGIN_DIRS` | Trạng thái, tên phiên, usage, câu hỏi trên thẻ, chặn lệnh nguy hiểm, hàng đợi lệnh nặng |
+| Claude Code | hook trong `~/.claude/settings.json`; mod `~/.arc/claude-mod`, `~/.arc/claude-view-mod` và `~/.arc/claude-skim-mod`, liệt kê trong `env.CLAUDE_CODE_PLUGIN_DIRS`; `cleanupPeriodDays` là 90 trong `~/.claude/settings.json` (Claude Code giữ transcript 90 ngày thay vì 30; chỉ ghi khi bạn chưa đặt giá trị riêng) | Trạng thái, tên phiên, usage, câu hỏi trên thẻ, chặn lệnh nguy hiểm, hàng đợi lệnh nặng |
 | pi | extension của pi (và theme `arc`) | Trạng thái, câu hỏi, usage, hàng đợi lệnh nặng |
 | OpenCode | plugin trạng thái | Trạng thái trên rail |
 | Antigravity | khóa `arcterm` trong `~/.gemini/config/hooks.json` | Xem [Antigravity](#antigravity-agy) |

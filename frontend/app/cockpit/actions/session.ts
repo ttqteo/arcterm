@@ -2,7 +2,12 @@ import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { showSession } from "@/app/view/agents/agentcenter";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "@/app/view/agents/sessiondelete";
-import { overlayLive, sessionsArchiveAtom, type LiveSession } from "@/app/view/agents/sessionsarchivestore";
+import {
+    overlayLive,
+    paletteSessions,
+    sessionsArchiveAtom,
+    type LiveSession,
+} from "@/app/view/agents/sessionsarchivestore";
 import { runSessionPrimary } from "@/app/view/agents/sessionsdetail";
 import { sessionPrimary, sessionSelection } from "@/app/view/agents/sessionsruns";
 import { landOn } from "@/app/view/jarvis/returnsurface";
@@ -55,19 +60,17 @@ export const SESSION_KIND: ThingKindDef<SessionThing> = {
             run: (t) => confirmDeleteSession(t.session),
         },
     ],
-    // resumable ones only, as the palette's session rows
+    // resumable ones only, and none of an engine run's workers, reviewers or stages, as the palette's session rows
     entries: (get, model) => {
         const base = get(sessionsArchiveAtom);
         if (base == null) {
             return [];
         }
         const roster = get(model.agentsAtom);
-        return overlayLive(base, roster, Date.now())
-            .filter((s) => s.resumecommand)
-            .map((s) => ({
-                key: `session:${s.runtime}:${s.id}`,
-                title: s.task || "(untitled session)",
-                thing: { session: s, agent: s.liveId != null ? roster.find((a) => a.id === s.liveId) : undefined },
-            }));
+        return paletteSessions(overlayLive(base, roster, Date.now())).map((s) => ({
+            key: `session:${s.runtime}:${s.id}`,
+            title: s.task || "(untitled session)",
+            thing: { session: s, agent: s.liveId != null ? roster.find((a) => a.id === s.liveId) : undefined },
+        }));
     },
 };

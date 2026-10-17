@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const deleteAgentSessionCommand = vi.fn();
 const loadSessionsArchive = vi.fn();
+const dropFromArchive = vi.fn();
 const pushModal = vi.fn();
 const pushToast = vi.fn();
 
@@ -14,7 +15,10 @@ vi.mock("@/app/store/wshclientapi", () => ({
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: { id: "client" } }));
 vi.mock("@/app/store/modalmodel", () => ({ modalsModel: { pushModal: (...args: any[]) => pushModal(...args) } }));
 vi.mock("@/app/cockpit/notificationstore", () => ({ pushToast: (...args: any[]) => pushToast(...args) }));
-vi.mock("./sessionsarchivestore", () => ({ loadSessionsArchive: (...args: any[]) => loadSessionsArchive(...args) }));
+vi.mock("./sessionsarchivestore", () => ({
+    loadSessionsArchive: (...args: any[]) => loadSessionsArchive(...args),
+    dropFromArchive: (...args: any[]) => dropFromArchive(...args),
+}));
 
 import {
     canDeleteSession,
@@ -36,6 +40,7 @@ const session = (over: Partial<DeletableSession> = {}): DeletableSession => ({
 beforeEach(() => {
     deleteAgentSessionCommand.mockReset();
     loadSessionsArchive.mockReset();
+    dropFromArchive.mockReset();
     pushModal.mockReset();
     pushToast.mockReset();
 });
@@ -109,6 +114,20 @@ describe("deleteSession", () => {
         expect(toast.message).toBe("that session is still running: stop it first");
         expect(loadSessionsArchive).not.toHaveBeenCalled();
         expect(onDeleted).not.toHaveBeenCalled();
+    });
+    it("takes the row out before the reload, which re-reads only page 1 and would leave a row from an older page", async () => {
+        deleteAgentSessionCommand.mockResolvedValue(undefined);
+        const order: string[] = [];
+        dropFromArchive.mockImplementation(() => order.push("drop"));
+        loadSessionsArchive.mockImplementation(async () => order.push("reload"));
+        await deleteSession(session());
+        expect(dropFromArchive).toHaveBeenCalledWith("/home/u/.claude/projects/p/abc.jsonl");
+        expect(order).toEqual(["drop", "reload"]);
+    });
+    it("keeps the row when the server refuses", async () => {
+        deleteAgentSessionCommand.mockRejectedValue(new Error("nope"));
+        await deleteSession(session());
+        expect(dropFromArchive).not.toHaveBeenCalled();
     });
     it("does not call the server for a session it should not delete", async () => {
         await deleteSession(session({ runtime: "pi" }));

@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+    appendPage,
     filterSessions,
     pickedResume,
-    RESUME_LIST_MAX,
     resumeChoices,
     resumeLaunchSpec,
     resumeListKey,
+    resumeScopeKey,
+    shownSessions,
 } from "./launcherresume";
 
 function s(over: Partial<SessionInfo>): SessionInfo {
@@ -38,9 +40,9 @@ describe("resumeChoices", () => {
     it("matches a path across separators, case and a trailing slash", () => {
         expect(resumeChoices([s({})], "claude", "d:/x/proj/").map((x) => x.id)).toEqual(["a"]);
     });
-    it("caps the list", () => {
-        const list = Array.from({ length: RESUME_LIST_MAX + 4 }, (_, i) => s({ id: `s${i}`, lastactivets: i }));
-        expect(resumeChoices(list, "claude", "D:\\x\\proj")).toHaveLength(RESUME_LIST_MAX);
+    it("keeps every loaded page", () => {
+        const list = Array.from({ length: 70 }, (_, i) => s({ id: `s${i}`, lastactivets: i }));
+        expect(resumeChoices(list, "claude", "D:\\x\\proj")).toHaveLength(70);
     });
     it("offers nothing for a terminal, no project, or sessions not loaded", () => {
         expect(resumeChoices([s({})], "terminal", "D:\\x\\proj")).toEqual([]);
@@ -121,5 +123,55 @@ describe("resumeListKey", () => {
         expect(resumeListKey(key("v", true), at(3))).toEqual({ kind: "none" });
         expect(resumeListKey(key("Process"), at(3))).toEqual({ kind: "none" });
         expect(resumeListKey(key(" "), at(3))).toEqual({ kind: "none" });
+    });
+});
+
+describe("resumeScopeKey", () => {
+    it("is empty where resumeChoices offers nothing", () => {
+        expect(resumeScopeKey("terminal", "/a/b")).toBe("");
+        expect(resumeScopeKey("claude", "")).toBe("");
+    });
+    it("names the runtime and the normalized path", () => {
+        expect(resumeScopeKey("claude", "/A/b/")).toBe(resumeScopeKey("claude", "/a/b"));
+        expect(resumeScopeKey("claude", "/a/b")).not.toBe(resumeScopeKey("codex", "/a/b"));
+        expect(resumeScopeKey("claude", "/a/b")).not.toBe(resumeScopeKey("claude", "/a/c"));
+    });
+});
+
+describe("appendPage", () => {
+    it("keeps the order and drops the sessions already held", () => {
+        const prev = [s({ id: "a" }), s({ id: "b" })];
+        const page = [s({ id: "b" }), s({ id: "c" }), s({ id: "c" }), s({ id: "d" })];
+        expect(appendPage(prev, page).map((x) => x.id)).toEqual(["a", "b", "c", "d"]);
+        expect(prev.map((x) => x.id)).toEqual(["a", "b"]);
+    });
+});
+
+describe("shownSessions", () => {
+    const choices = [
+        s({ id: "new", task: "fresh", lastactivets: 9 }),
+        s({ id: "mid", task: "old news", lastactivets: 5 }),
+    ];
+    it("is the choices under an empty filter", () => {
+        expect(shownSessions(choices, "", [s({ id: "x", task: "old" })])).toBe(choices);
+    });
+    it("joins the loaded matches and the found ones, each once, newest first", () => {
+        const found = [
+            s({ id: "mid", task: "old news", lastactivets: 5 }),
+            s({ id: "far", task: "old", lastactivets: 1 }),
+        ];
+        expect(shownSessions(choices, "old", found).map((x) => x.id)).toEqual(["mid", "far"]);
+    });
+    it("is the loaded matches while nothing is found yet", () => {
+        expect(shownSessions(choices, "old", null).map((x) => x.id)).toEqual(["mid"]);
+    });
+});
+
+describe("a found session", () => {
+    it("resolves once appended to the choices", () => {
+        const choices = [s({ id: "a" })];
+        const found = [s({ id: "far" })];
+        expect(pickedResume(choices, "far")).toBeNull();
+        expect(pickedResume(appendPage(choices, found), "far")?.id).toBe("far");
     });
 });

@@ -11,7 +11,7 @@ import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
-import { loadSessionsArchive, type LiveSession } from "./sessionsarchivestore";
+import { dropFromArchive, loadSessionsArchive, type LiveSession } from "./sessionsarchivestore";
 
 export const DELETE_SESSION_LABEL = "Delete session";
 
@@ -37,7 +37,8 @@ export function deleteSessionMessage(task: string): string {
     return `Delete session '${taskLabel(task)}'? Its transcript moves to ~/.arc/trash and is purged after 7 days; the session will no longer be in claude --resume.`;
 }
 
-// Move the session to the trash, then reload the archive so its row goes. The server refuses a session that is still
+// Move the session to the trash, take its row out now (the reload below re-reads only the first page, and the row may
+// sit on an older one), then reload the archive. The server refuses a session that is still
 // running (or a path that is not a Claude transcript) and says why; that message is shown as it came. onDeleted runs
 // once it is gone, for a view that was reading it.
 export async function deleteSession(session: DeletableSession, onDeleted?: () => void): Promise<void> {
@@ -55,6 +56,7 @@ export async function deleteSession(session: DeletableSession, onDeleted?: () =>
         return;
     }
     onDeleted?.();
+    dropFromArchive(session.transcriptpath);
     await loadSessionsArchive();
 }
 

@@ -239,7 +239,7 @@ func TestMergeStatusLinePreservesOtherKeys(t *testing.T) {
 
 func TestConfigIsHealthy(t *testing.T) {
 	skipUnlessWindows(t)
-	full := mergeClaudePluginDirs(mergeStatusLine(mergeAgentHooks(map[string]any{}, testWsh), testWsh), testModDir)
+	full := mergeClaudeCleanupPeriod(mergeClaudePluginDirs(mergeStatusLine(mergeAgentHooks(map[string]any{}, testWsh), testWsh), testModDir))
 
 	stable := `C:\Users\u\.arc\bin\wsh.exe`
 
@@ -925,7 +925,7 @@ func TestConfigIsHealthy_requiresThePluginDirsEntry(t *testing.T) {
 	if configIsHealthy(withoutDirs, testWsh, []string{testModDir}, false) {
 		t.Fatal("a config without the mod's plugin dir must not be healthy, or an upgrade never writes it")
 	}
-	if !configIsHealthy(mergeClaudePluginDirs(withoutDirs, testModDir), testWsh, []string{testModDir}, false) {
+	if !configIsHealthy(mergeClaudeCleanupPeriod(mergeClaudePluginDirs(withoutDirs, testModDir)), testWsh, []string{testModDir}, false) {
 		t.Fatal("a config with hooks, statusLine and plugin dir should be healthy")
 	}
 }
@@ -981,7 +981,7 @@ func TestConfigIsHealthy_requiresEveryModsPluginDir(t *testing.T) {
 	if configIsHealthy(mergeClaudePluginDirs(base, testModDir), testWsh, both, false) {
 		t.Fatal("a config listing one of two mods must not be healthy, or an upgrade never adds the second")
 	}
-	merged := mergeClaudePluginDirs(mergeClaudePluginDirs(base, testModDir), both...)
+	merged := mergeClaudeCleanupPeriod(mergeClaudePluginDirs(mergeClaudePluginDirs(base, testModDir), both...))
 	if !configIsHealthy(merged, testWsh, both, false) {
 		t.Fatal("a config listing both mods should be healthy")
 	}
@@ -1277,7 +1277,7 @@ func TestUnwrapStatusLine(t *testing.T) {
 
 func TestConfigIsHealthy_modsSupportedWantsNoWrapper(t *testing.T) {
 	skipUnlessWindows(t)
-	hooks := mergeClaudePluginDirs(mergeAgentHooks(map[string]any{}, testWsh), testModDir)
+	hooks := mergeClaudeCleanupPeriod(mergeClaudePluginDirs(mergeAgentHooks(map[string]any{}, testWsh), testModDir))
 	wrapped := mergeStatusLine(hooks, testWsh)
 	if configIsHealthy(wrapped, testWsh, []string{testModDir}, true) {
 		t.Fatal("a wrapped statusLine must not be healthy once mods are supported, or it is never unwrapped")
@@ -1339,7 +1339,7 @@ func TestPerToolReportsRunInTheBackground(t *testing.T) {
 
 func TestConfigIsHealthy_rewritesAHookWrittenBeforeItRanInTheBackground(t *testing.T) {
 	skipUnlessWindows(t)
-	full := mergeClaudePluginDirs(mergeStatusLine(mergeAgentHooks(map[string]any{}, testWsh), testWsh), testModDir)
+	full := mergeClaudeCleanupPeriod(mergeClaudePluginDirs(mergeStatusLine(mergeAgentHooks(map[string]any{}, testWsh), testWsh), testModDir))
 	delete(managedHookEntries(t, full, "PostToolUse")["|agent-hook"], "async")
 	if configIsHealthy(full, testWsh, []string{testModDir}, false) {
 		t.Fatal("a blocking per-tool hook from an older install should NOT be healthy")
@@ -1633,5 +1633,48 @@ func TestInstallCodexHooks(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(path); string(b) != "[1]" {
 		t.Errorf("a bad hooks.json should be left alone, got %s", b)
+	}
+}
+
+func TestMergeClaudeCleanupPeriod_setsNinetyWhenAbsent(t *testing.T) {
+	got := mergeClaudeCleanupPeriod(map[string]any{"env": map[string]any{"A": "1"}})
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"cleanupPeriodDays":90`) {
+		t.Fatalf("cleanupPeriodDays 90 missing from %s", b)
+	}
+	if !strings.Contains(string(b), `"A":"1"`) {
+		t.Fatalf("the existing env was lost from %s", b)
+	}
+}
+
+func TestMergeClaudeCleanupPeriod_keepsTheUsersValue(t *testing.T) {
+	for _, v := range []float64{7, 0} {
+		got := mergeClaudeCleanupPeriod(map[string]any{"cleanupPeriodDays": v})
+		if got["cleanupPeriodDays"] != v {
+			t.Fatalf("cleanupPeriodDays = %v, want the person's %v", got["cleanupPeriodDays"], v)
+		}
+	}
+}
+
+func TestMergeClaudeCleanupPeriod_doesNotMutateItsInput(t *testing.T) {
+	in := map[string]any{}
+	mergeClaudeCleanupPeriod(in)
+	if _, set := in["cleanupPeriodDays"]; set {
+		t.Fatal("the input map was written to")
+	}
+}
+
+func TestConfigIsHealthy_requiresCleanupPeriod(t *testing.T) {
+	skipUnlessWindows(t)
+	full := mergeClaudeCleanupPeriod(mergeClaudePluginDirs(mergeStatusLine(mergeAgentHooks(map[string]any{}, testWsh), testWsh), testModDir))
+	if !configIsHealthy(full, testWsh, []string{testModDir}, false) {
+		t.Fatal("a config built by the full merge chain should be healthy")
+	}
+	delete(full, "cleanupPeriodDays")
+	if configIsHealthy(full, testWsh, []string{testModDir}, false) {
+		t.Fatal("a config without cleanupPeriodDays must not be healthy, or an upgrade never writes it")
 	}
 }

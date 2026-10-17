@@ -238,22 +238,31 @@ type UsageInsights struct {
 	Lang       string       `json:"lang,omitempty"` // the language code it answered in; "" in one saved before this was kept
 }
 
+// A windowdays of 0 reads every transcript on disk; cursor is the nextcursor of the page before ("" starts at the
+// newest); runtime, projectpath and query filter before the limit counts.
 type CommandGetRecentSessionsData struct {
-	WindowDays int `json:"windowdays,omitempty"`
-	Limit      int `json:"limit,omitempty"`
+	WindowDays  int    `json:"windowdays,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
+	Cursor      string `json:"cursor,omitempty"`
+	Runtime     string `json:"runtime,omitempty"`
+	ProjectPath string `json:"projectpath,omitempty"`
+	Query       string `json:"query,omitempty"`
 }
 
 type CommandGetRecentSessionsRtnData struct {
-	Sessions []SessionInfo `json:"sessions"`
+	Sessions   []SessionInfo `json:"sessions"`
+	NextCursor string        `json:"nextcursor,omitempty"` // "" when no older session is left
 }
 
 type CommandGetSessionsActivityData struct {
-	WindowDays int `json:"windowdays,omitempty"`
-	Limit      int `json:"limit,omitempty"`
+	WindowDays int    `json:"windowdays,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
+	Cursor     string `json:"cursor,omitempty"`
 }
 
 type CommandGetSessionsActivityRtnData struct {
-	Sessions []SessionActivity `json:"sessions"`
+	Sessions   []SessionActivity `json:"sessions"`
+	NextCursor string            `json:"nextcursor,omitempty"` // "" when no older session is left
 }
 
 type CommandGetTranscriptUsageData struct {

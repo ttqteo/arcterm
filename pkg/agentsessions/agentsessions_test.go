@@ -730,7 +730,8 @@ func extractClaudeEvents(lines []string) sessionEvents {
 // scanProvider returns up to limit sessions from one provider's root, newest-first (single-provider
 // form of the scan; ScanSessions merges providers first so the limit applies globally).
 func scanProvider(p provider, windowDays, limit int) []SessionInfo {
-	return parseCandidates(walkCandidates(p, windowDays), limit, "")
+	out, _ := parseCandidates(walkCandidates(p, windowDays), limit, "", nil)
+	return out
 }
 
 // Claude Code writes an assistant message once per content block, each line repeating the message's usage (the last with

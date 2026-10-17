@@ -14498,7 +14498,7 @@ const ahList = (h) =>
         r.hasAttribute("data-agent-folder")
             ? "folder:" + r.getAttribute("data-agent-folder")
             : r.hasAttribute("data-agent-sessions-more")
-              ? "more:" + r.getAttribute("data-agent-sessions-more") + ":" + (r.textContent.match(/\d+/)?.[0] ?? "")
+              ? "more:" + r.getAttribute("data-agent-sessions-more") + ":" + (r.textContent.match(/\\d+/)?.[0] ?? "")
               : r.hasAttribute("data-agent-run-conversation")
                 ? "run:" + r.getAttribute("data-agent-run-conversation")
                 : r.getAttribute("data-agent-session-row")
@@ -14506,6 +14506,25 @@ const ahList = (h) =>
 const ahKeys = (n, from = 1) => Array.from({ length: n }, (_, i) => `claude:ah-${i + from}`);
 
 const ahMockCalls = (h) => h.ev(`window.${AH_MOCK_KEY}?.state.calls ?? -1`);
+
+// variant="bar" is the app-bar trigger; the cockpit header renders a SECOND switcher over the same
+// atom, so the variant has to be named or the wrong popover opens.
+const setBarProject = async (h, name) => {
+    const opened = await h.ev(`(() => {
+        const t = document.querySelector('[data-project-switcher="bar"]');
+        if (!t) return false;
+        t.click();
+        return true;
+    })()`);
+    if (opened !== true) return false;
+    await ahNap(200);
+    return h.ev(`(() => {
+        const row = document.querySelector('[data-project-option=${JSON.stringify(name)}]');
+        if (!row) return false;
+        row.click();
+        return true;
+    })()`);
+};
 
 const agentHistory = {
     name: "agent-history",
@@ -14625,24 +14644,25 @@ const agentHistory = {
                 JSON.stringify(first)
             );
 
-            // no recency headings: each row reads its own age; a session's second line is its runtime, branch and tokens, a
-            // run's its task progress
+            // no recency headings: each row reads its own age. Conversations are one line since 3d2c74b6e: a session's line holds
+            // its title, tokens and age, and a second line comes only for a branch other than the default (the seeds' "main" is
+            // not shown) or a title another row shares; a run's second line is its task progress, ahead of its segment bar
             const rich = await h.ev(`(() => {
                 const convo = document.querySelector("[data-agent-conversations]");
                 const row = convo?.querySelector('[data-agent-session-row="claude:ah-1"]');
                 const run = convo?.querySelector('[data-agent-run-conversation="ah-run-1"]');
                 return {
                     headings: [...(convo?.querySelectorAll("[data-agent-recency]") ?? [])].map((e) => e.getAttribute("data-agent-recency")),
-                    meta: row?.lastElementChild?.textContent?.replace(/\s+/g, " ").trim() ?? null,
-                    run: run?.lastElementChild?.textContent?.replace(/\s+/g, " ").trim() ?? null,
+                    meta: row?.lastElementChild?.textContent?.replace(/\\s+/g, " ").trim() ?? null,
+                    run: run?.children[1]?.textContent?.replace(/\\s+/g, " ").trim() ?? null,
                 };
             })()`);
             await h.shot("cdp-shots/agent-history-rows.png");
             rec(
-                "3b. no recency heading splits a folder, and a row's second line reads its branch and tokens, a run's its progress",
+                "3b. no recency heading splits a folder, and a row's line reads its tokens and age without the default branch, a run's second line its progress",
                 rich.headings.length === 0 &&
-                    /main/.test(rich.meta ?? "") &&
-                    /1k tok/.test(rich.meta ?? "") &&
+                    !/main/.test(rich.meta ?? "") &&
+                    /1k10m$/.test(rich.meta ?? "") &&
                     /landed|no tasks|complete/.test(rich.run ?? ""),
                 JSON.stringify(rich)
             );
@@ -14748,31 +14768,35 @@ const agentHistory = {
                 JSON.stringify({ lessShown, lessGone, last: folded1[folded1.length - 1] })
             );
 
-            // a folder folds to its row, keeping its count; a section folds to its header. Each click is undone at once
+            // a folder folds to its row, keeping its count; a section folds to its header. Each click is undone at once.
+            // A fold slides shut (7725cc8da, foldReveal's 0.28 s exit) and its rows stay in the page until it ends, so each
+            // step waits for the rows to go or come back rather than napping
+            const sessionRows = `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length`;
             const folderBtn = `document.querySelector('[data-agent-folder-section="conversations"][data-agent-folder="${AH_PROJECT}"]')`;
             await h.ev(`${folderBtn}?.click()`);
-            await ahNap(200);
+            await ahWait(h, `${sessionRows} === 1`, 4000);
             const folded = await ahList(h);
             const foldedCount = await h.ev(`${folderBtn}?.textContent?.trim() ?? null`);
             await h.ev(`${folderBtn}?.click()`);
-            await ahNap(200);
+            await ahWait(h, `${sessionRows} === ${AH_SEEDS + 1}`, 4000);
             const conversationsToggle = `document.querySelector('[data-agent-section-toggle="conversations"]')`;
             await h.ev(`${conversationsToggle}?.click()`);
-            await ahNap(200);
+            await ahWait(h, `document.querySelectorAll("[data-agent-conversations] [data-agent-folder]").length === 0`, 4000);
             const noConversations = await h.ev(`document.querySelectorAll("[data-agent-conversations] [data-agent-folder]").length === 0`);
             await h.ev(`${conversationsToggle}?.click()`);
-            await ahNap(200);
+            await ahWait(h, `${sessionRows} === ${AH_SEEDS + 1}`, 4000);
             // the project tree has no section header: its project's folder folds to its row, taking the agent with it
             const activeToggle = `document.querySelector('[data-project-folder="${AH_PROJECT}"]')`;
+            const activeRow = `document.querySelector('[data-agent-active-rows] [data-agent-row="${AH_LIVE_ID}"]')`;
             await h.ev(`${activeToggle}?.click()`);
-            await ahNap(300);
+            await ahWait(h, `!${activeRow}`, 4000);
             const activeFolded = await h.ev(`(() => ({
-                rows: !!document.querySelector('[data-agent-active-rows] [data-agent-row="${AH_LIVE_ID}"]'),
+                rows: !!${activeRow},
                 expanded: ${activeToggle}?.getAttribute("aria-expanded") ?? null,
             }))()`);
             await h.ev(`${activeToggle}?.click()`);
-            await ahNap(300);
-            const restored = await h.ev(`!!document.querySelector('[data-agent-active-rows] [data-agent-row="${AH_LIVE_ID}"]')`);
+            await ahWait(h, activeRow, 4000);
+            const restored = await h.ev(`!!${activeRow}`);
             rec(
                 "6b. a Conversations folder folds to its row and count, the Conversations section folds to its header and back, and a project folder of the tree folds to its row and back",
                 JSON.stringify(folded) ===
@@ -22792,6 +22816,572 @@ const launcherResume = {
         for (const dir of ctx.dirs ?? []) {
             await step("remove a project dir", () => rmSync(dir, { recursive: true, force: true }));
         }
+    },
+};
+
+// --- launcher-resume-older and history-older: the Resume list and Conversation History load older sessions as they
+// scroll (docs/superpowers/plans/2026-10-17-session-lists-lazy-load.md). Both read the real wavesrv over the seeded
+// transcripts, with no data mock: installAhMock answers every call and ignores `cursor` and `limit`, so a copy of it
+// could never page. A warm scan takes ~15 ms, so installCursorDelay holds the answer of each paged call back, which is
+// what puts the loading row on screen to assert. Like agent-history, they never start an agent.
+const CURSOR_DELAY_KEY = "__arcCursorDelay";
+const CURSOR_DELAY_COMMANDS = ["getrecentsessions", "getsessionsactivity"];
+const OLDER_LOADING = "Loading older sessions…";
+
+// Passes every call on to what was there, holds back the answer of a getrecentsessions or getsessionsactivity call whose
+// data has a non-empty `cursor` for `ms`, and counts those calls per command (window[CURSOR_DELAY_KEY].state.calls).
+// apiUrl is found with ahResolveModules. Resolves to "ok", or why it did not install.
+async function installCursorDelay(h, apiUrl, ms) {
+    return h.ev(`(async () => {
+        const mod = await import(${JSON.stringify(apiUrl)});
+        const api = mod.RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${CURSOR_DELAY_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const state = { calls: {} };
+        const mock = {
+            mockWshRpcCall(client, command, data, opts) {
+                const answer = prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+                if (!${JSON.stringify(CURSOR_DELAY_COMMANDS)}.includes(command) || !data?.cursor) return answer;
+                state.calls[command] = (state.calls[command] ?? 0) + 1;
+                return answer.then((r) => new Promise((res) => setTimeout(() => res(r), ${ms})));
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        };
+        window.${CURSOR_DELAY_KEY} = { api, prev, state };
+        api.setMockRpcClient(mock);
+        return "ok";
+    })()`);
+}
+
+const removeCursorDelay = (h) =>
+    h.ev(`(() => {
+        const f = window.${CURSOR_DELAY_KEY};
+        if (!f) return "absent";
+        f.api.setMockRpcClient(f.prev);
+        delete window.${CURSOR_DELAY_KEY};
+        return "restored";
+    })()`);
+
+// how many paged calls of a command the wrapper has seen (-1 when it is not installed)
+const cursorCalls = (h, command) => h.ev(`window.${CURSOR_DELAY_KEY}?.state.calls[${JSON.stringify(command)}] ?? -1`);
+
+// One Claude transcript the backend scan reads as a session: a user prompt with `cwd`, `ageMs` old in both its record
+// and its mtime (the scan orders by the mtime).
+function seedOlderSession(folder, cwd, title, ageMs) {
+    const id = randomUUID();
+    const at = new Date(Date.now() - ageMs);
+    const file = join(folder, `${id}.jsonl`);
+    writeFileSync(
+        file,
+        JSON.stringify({
+            type: "user",
+            cwd,
+            timestamp: at.toISOString(),
+            message: { role: "user", content: title },
+        }) + "\n"
+    );
+    utimesSync(file, at, at);
+    return { id, file };
+}
+
+// the trash entry a Delete session left (<unix-ms>-<id> under ~/.arc/trash)
+function removeTrashedSession(id) {
+    const trash = join(homedir(), ".arc", "trash");
+    if (!existsSync(trash)) return;
+    for (const name of readdirSync(trash)) {
+        if (name.endsWith(`-${id}`)) rmSync(join(trash, name), { recursive: true, force: true });
+    }
+}
+
+const LAUNCHER_OLDER_PROJECT = "verify-launcher-older";
+const LAUNCHER_OLDER_PROJECT_B = "verify-launcher-older-b";
+const LAUNCHER_OLDER_NEW = 40;
+
+// The Session column as the page draws it: its rows, the hint beside its label, whether its last row is the loading row,
+// and the scroll position of the list.
+const launcherOlderState = `(() => {
+    const d = ${LAUNCHER};
+    if (!d) return null;
+    const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const list = d.querySelector('[data-launcher-resume]');
+    const scroller = list?.lastElementChild ?? null;
+    const label = list?.parentElement?.firstElementChild ?? null;
+    const loading = d.querySelector('[data-launcher-session-loading]');
+    return {
+        list: !!list,
+        ids: [...(list?.querySelectorAll('[data-resume-id]') ?? [])].map((r) => r.getAttribute('data-resume-id')),
+        hint: label?.children[1] ? flat(label.children[1]) : null,
+        loading: loading ? flat(loading) : null,
+        loadingLast: !!loading && scroller?.lastElementChild === loading,
+        scrollTop: scroller?.scrollTop ?? null,
+        note: flat(d.querySelector('[data-launcher-session-note]')) || null,
+        picked: list?.querySelector('[data-resume-id][aria-checked="true"]')?.getAttribute('data-resume-id') ?? null,
+    };
+})()`;
+
+const launcherResumeOlder = {
+    name: "launcher-resume-older",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = { dirs: [], projects: [] };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            // the scenario before this one ends in a reload, and createproject needs window.TabRpcClient
+            await waitForAppBoot(h);
+            for (const name of [LAUNCHER_OLDER_PROJECT, LAUNCHER_OLDER_PROJECT_B]) {
+                // not under the temp dir: the session scan drops a session whose project sits there (parseCandidates)
+                const dir = mkdtempSync(join(homedir(), `.${name}-`));
+                ctx.dirs.push(dir);
+                await h.rpc("createproject", { name, path: dir });
+                ctx.projects.push(name);
+                await waitForProjectInConfig(h, name);
+            }
+            // the first project's own folder of transcripts: 40 sessions 1 to 40 hours old, and one 10 days old
+            ctx.transcriptDir = join(homedir(), ".claude", "projects", `verify-lazy-${randomUUID().slice(0, 8)}`);
+            mkdirSync(ctx.transcriptDir, { recursive: true });
+            for (let n = 1; n <= LAUNCHER_OLDER_NEW; n++) {
+                seedOlderSession(ctx.transcriptDir, ctx.dirs[0], `verify lazy ${n}`, n * 3_600_000);
+            }
+            ctx.olderTitle = `verify-older-${randomUUID().slice(0, 8)}`;
+            ctx.olderId = seedOlderSession(ctx.transcriptDir, ctx.dirs[0], ctx.olderTitle, 10 * 86_400_000).id;
+            // recent-first puts the first project on top; put the developer's own list back in teardown
+            ctx.prevRecent = await h.ev(`localStorage.getItem(${JSON.stringify(RECENT_PROJECTS_KEY)})`);
+            const recent = [LAUNCHER_OLDER_PROJECT, LAUNCHER_OLDER_PROJECT_B, ...JSON.parse(ctx.prevRecent ?? "[]")];
+            await h.ev(
+                `localStorage.setItem(${JSON.stringify(RECENT_PROJECTS_KEY)}, ${JSON.stringify(JSON.stringify(recent))})`
+            );
+            // a remembered flag is composed into a resume's command, which step 6 matches exactly
+            ctx.prevFlags = await h.ev(`localStorage.getItem(${JSON.stringify(NA_FLAGS_KEY)})`);
+            await h.ev(`localStorage.setItem(${JSON.stringify(NA_FLAGS_KEY)}, "{}")`);
+            await polishReload(h);
+            ctx.modules = await ahResolveModules(h);
+            ctx.delay = ctx.modules.urls
+                ? await installCursorDelay(h, ctx.modules.urls.api, 800)
+                : `no-module-url (${ctx.modules.error})`;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null || ctx.delay !== "ok") {
+            rec(
+                "0. two projects, 41 Claude transcripts and the paging delay are in place",
+                false,
+                ctx.arrangeError ?? `delay=${ctx.delay}`
+            );
+            return steps;
+        }
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            const state = () => h.ev(launcherOlderState);
+            const resumeState = () => h.ev(launcherResumeState);
+            const rowCount = `${LAUNCHER}?.querySelectorAll('[data-launcher-resume] [data-resume-id]').length`;
+            await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+            await h.goto("cockpit");
+
+            await h.ev(OPEN_NEW_AGENT);
+            await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+            await polishNap(400);
+            let rs = await resumeState();
+            if (rs == null || !rs.startRows.includes("claude")) {
+                rec("0. the dialog opens with Claude offered", false, JSON.stringify(rs));
+                return steps;
+            }
+            const digit = async (id) => String(((await resumeState())?.startRows ?? []).indexOf(id) + 1);
+            await h.ev(focusColumn("start"));
+            await launcherPress(h, await digit("claude"));
+            await polishWaitFor(h, `${rowCount} > 0`, 8000);
+            await polishNap(300);
+            let s = await state();
+            rs = await resumeState();
+            await h.shot("cdp-shots/launcher-resume-older-1-first-page.png");
+            rec(
+                "1. the first project on Claude lists 30 session rows, and the Session column's hint reads 30+ · newest first",
+                rs.project === LAUNCHER_OLDER_PROJECT && s.ids.length === 30 && s.hint === "30+ · newest first",
+                JSON.stringify({ project: rs.project, rows: s.ids.length, hint: s.hint })
+            );
+
+            // 2. the end of the list asks for the next page
+            await h.ev(`(() => {
+                const el = ${LAUNCHER}?.querySelector('[data-launcher-resume]')?.lastElementChild;
+                if (el) el.scrollTop = el.scrollHeight;
+            })()`);
+            const sawLoading = await ahWait(
+                h,
+                `(() => {
+                    const list = ${LAUNCHER}?.querySelector('[data-launcher-resume]');
+                    const row = list?.querySelector('[data-launcher-session-loading]');
+                    return !!row && list.lastElementChild.lastElementChild === row && row.textContent.trim() === ${JSON.stringify(OLDER_LOADING)};
+                })()`,
+                700
+            );
+            await h.shot("cdp-shots/launcher-resume-older-2-loading.png");
+            const landed = await polishWaitFor(h, `${rowCount} === 41`, 6000);
+            await polishNap(300);
+            s = await state();
+            await h.shot("cdp-shots/launcher-resume-older-2-all.png");
+            rec(
+                "2. scrolling to the end shows Loading older sessions… as the last row within 700 ms; then 41 rows, the last the 10-day-old one, no loading row, and the hint reads 41 · newest first",
+                sawLoading === true &&
+                    landed &&
+                    s.ids.length === 41 &&
+                    s.ids.at(-1) === ctx.olderId &&
+                    s.loading === null &&
+                    s.hint === "41 · newest first",
+                JSON.stringify({ sawLoading, rows: s.ids.length, last: s.ids.at(-1), loading: s.loading, hint: s.hint })
+            );
+
+            // 3. a project with no sessions: the column is the note, and nothing is asked for
+            await h.ev(focusColumn("project"));
+            await launcherPress(h, "ArrowDown");
+            await polishWaitFor(
+                h,
+                `!${LAUNCHER}?.querySelector('[data-launcher-resume]') && (${LAUNCHER}?.querySelector('[data-launcher-session-note]')?.textContent ?? '').startsWith('No session')`,
+                5000
+            );
+            const callsBefore = await cursorCalls(h, "getrecentsessions");
+            await polishNap(1000);
+            const callsAfter = await cursorCalls(h, "getrecentsessions");
+            s = await state();
+            rs = await resumeState();
+            await h.shot("cdp-shots/launcher-resume-older-3-empty.png");
+            rec(
+                "3. picking the second project shows no Resume section and no Loading older sessions…, only the no-session note, and no paged getrecentsessions call follows",
+                rs.project === LAUNCHER_OLDER_PROJECT_B &&
+                    !s.list &&
+                    s.loading === null &&
+                    s.note === "No session of this agent here yet: it starts a new one." &&
+                    callsBefore >= 0 &&
+                    callsAfter === callsBefore,
+                JSON.stringify({ project: rs.project, list: s.list, loading: s.loading, note: s.note, callsBefore, callsAfter })
+            );
+
+            // 4. back: page 1 again, each session once
+            await launcherPress(h, "ArrowUp");
+            await polishWaitFor(h, `${rowCount} > 0`, 8000);
+            await polishNap(500);
+            s = await state();
+            rec(
+                "4. back on the first project the list holds 30 rows again: page 1 re-read, no row twice",
+                s.ids.length === 30 && new Set(s.ids).size === 30,
+                JSON.stringify({ rows: s.ids.length, distinct: new Set(s.ids).size })
+            );
+
+            // 5. the keys reach the end too: the 30th row in view loads the next page
+            await h.ev(`${LAUNCHER}?.querySelector('[data-resume-new]')?.focus()`);
+            for (let i = 0; i < 30; i++) {
+                await launcherPress(h, "ArrowDown");
+            }
+            const thirtieth = s.ids[29];
+            await polishWaitFor(h, `${rowCount} === 41`, 6000);
+            await polishNap(300);
+            s = await state();
+            const inView = await h.ev(`(() => {
+                const list = ${LAUNCHER}?.querySelector('[data-launcher-resume]');
+                const row = list?.querySelector('[data-resume-id="${thirtieth}"]');
+                const box = list?.lastElementChild?.getBoundingClientRect();
+                const r = row?.getBoundingClientRect();
+                return !!box && !!r && r.top >= box.top - 1 && r.bottom <= box.bottom + 1;
+            })()`);
+            await h.shot("cdp-shots/launcher-resume-older-5-keys.png");
+            rec(
+                "5. from New session, ArrowDown 30 times moves the pick to the 30th row, scrolls it into view and loads the next page: 41 rows",
+                s.picked === thirtieth && inView === true && s.ids.length === 41,
+                JSON.stringify({ picked: s.picked, thirtieth, inView, rows: s.ids.length })
+            );
+
+            // 6. a row only a search can reach resumes like a loaded one
+            await h.ev(focusColumn("start"));
+            await launcherPress(h, "Escape");
+            const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
+            await h.ev(OPEN_NEW_AGENT);
+            await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+            await polishWaitFor(h, `${rowCount} > 0`, 8000);
+            await polishNap(300);
+            await h.ev(`${LAUNCHER}?.querySelector('[data-resume-new]')?.focus()`);
+            for (const ch of "older") {
+                await launcherPress(h, ch);
+            }
+            const found = await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-resume-id="${ctx.olderId}"]')`, 4000);
+            s = await state();
+            await h.shot("cdp-shots/launcher-resume-older-6-found.png");
+            const beforeClick = { rows: s.ids.length, scrollTop: s.scrollTop };
+            await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.olderId}"]')?.click()`);
+            await polishNap(300);
+            rs = await resumeState();
+            rec(
+                "6. closed and reopened, typing older shows the 10-day-old row before any scroll; clicking it makes the button read Resume agent and the command claude --resume <its id>",
+                closed &&
+                    found &&
+                    beforeClick.scrollTop === 0 &&
+                    beforeClick.rows === 1 &&
+                    rs.picked === ctx.olderId &&
+                    rs.primary?.text.startsWith("Resume agent") &&
+                    rs.cmd === `claude --resume ${ctx.olderId}`,
+                JSON.stringify({ closed, found, ...beforeClick, picked: rs.picked, primary: rs.primary?.text, cmd: rs.cmd })
+            );
+            await h.shot("cdp-shots/launcher-resume-older-6-picked.png");
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(PEEKS_ESC).catch(() => {});
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`launcher-resume-older teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("remove the paging delay", () => removeCursorDelay(h));
+        if (ctx.transcriptDir) {
+            await step("remove the transcripts", () => rmSync(ctx.transcriptDir, { recursive: true, force: true }));
+        }
+        if (ctx.prevFlags !== undefined) {
+            const key = JSON.stringify(NA_FLAGS_KEY);
+            await step("restore the remembered flags", () =>
+                h.ev(
+                    ctx.prevFlags === null
+                        ? `localStorage.removeItem(${key})`
+                        : `localStorage.setItem(${key}, ${JSON.stringify(ctx.prevFlags)})`
+                )
+            );
+        }
+        if (ctx.prevRecent !== undefined) {
+            const key = JSON.stringify(RECENT_PROJECTS_KEY);
+            await step("restore the recent projects", () =>
+                h.ev(
+                    ctx.prevRecent === null
+                        ? `localStorage.removeItem(${key})`
+                        : `localStorage.setItem(${key}, ${JSON.stringify(ctx.prevRecent)})`
+                )
+            );
+        }
+        for (const name of ctx.projects ?? []) {
+            await step(`delete ${name}`, () => h.rpc("deleteproject", { name }));
+        }
+        // deleteproject leaves the channel createproject made, so the channels at the projects' paths go too
+        await step("delete the projects' channels", async () => {
+            const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+            const dirs = (ctx.dirs ?? []).map(norm);
+            const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+            for (const c of channels.filter((c) => dirs.includes(norm(c.projectpath)))) {
+                await h.rpc("deletechannel", { channelid: c.oid });
+            }
+        });
+        // the dialog's draft lives in memory; a reload hands the next scenario a fresh one
+        await step("reload", async () => {
+            await h.ev("location.reload()");
+            await new Promise((r) => setTimeout(r, 2500));
+        });
+        for (const dir of ctx.dirs ?? []) {
+            await step("remove a project dir", () => rmSync(dir, { recursive: true, force: true }));
+        }
+    },
+};
+
+const HISTORY_OLDER_NEW = 110;
+
+// Conversation History's left list (the scroller whose first child is the All activity button) and its session cards:
+// a solo session is a button with a border, a run's card is a div around its own button
+const HISTORY_LIST = `[...document.querySelectorAll('[data-agent-history] .overflow-y-auto')].find((el) => el.querySelector(':scope > button')?.textContent?.includes('All activity'))`;
+const HISTORY_CARDS = `(${HISTORY_LIST})?.querySelectorAll('button.border[class*="rounded-[10px]"]')`;
+const historyHasText = (text) => `!!(${HISTORY_LIST})?.textContent?.includes(${JSON.stringify(text)})`;
+const historyLoadingLast = `(() => {
+    const el = ${HISTORY_LIST};
+    return !!el && el.lastElementChild?.textContent?.trim() === ${JSON.stringify(OLDER_LOADING)};
+})()`;
+const historyLoadingAnywhere = `!!document.querySelector('[data-agent-history]')?.textContent?.includes(${JSON.stringify(OLDER_LOADING)})`;
+const historyScrollToEnd = `(() => {
+    const el = ${HISTORY_LIST};
+    if (el) el.scrollTop = el.scrollHeight;
+    return !!el;
+})()`;
+const historyFilter = (label) =>
+    `[...document.querySelectorAll('[data-agent-history] button[aria-pressed]')].find((b) => b.textContent.trim() === ${JSON.stringify(label)})?.click()`;
+
+// reloads onto the Agent surface with the paging delay installed; the delay is lost with the document
+async function historyOlderReload(h) {
+    if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+    const modules = await ahResolveModules(h);
+    if (!modules.urls) throw new Error(`no-module-url (${modules.error})`);
+    const delay = await installCursorDelay(h, modules.urls.api, 800);
+    if (delay !== "ok") throw new Error(`the paging delay did not install: ${delay}`);
+    await h.goto("agent");
+}
+
+async function historyOlderOpen(h) {
+    await h.ev(`document.querySelector("[data-agent-history-open]")?.click()`);
+    const open = await ahWait(h, `document.querySelector("[data-agent-history]")`, 5000);
+    // page 1 is the list's first rows
+    const rows = await ahWait(h, `(${HISTORY_CARDS})?.length > 0`, 10000);
+    await ahNap(300);
+    return open && rows;
+}
+
+const historyOlder = {
+    name: "history-older",
+    surface: "agent",
+    async arrange(h) {
+        // under the home dir: the scan drops a session whose project sits under the temp dir
+        const cwd = mkdtempSync(join(homedir(), ".verify-history-older-"));
+        const ctx = { cwd };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            // 110 sessions 1 to 110 minutes old: page 1 (100 sessions) holds none older than them, whatever else is on the
+            // machine; and one 10 days old, which only an older page reaches
+            ctx.transcriptDir = join(homedir(), ".claude", "projects", `verify-history-${randomUUID().slice(0, 8)}`);
+            mkdirSync(ctx.transcriptDir, { recursive: true });
+            for (let n = 1; n <= HISTORY_OLDER_NEW; n++) {
+                seedOlderSession(ctx.transcriptDir, cwd, `verify history ${n}`, n * 60_000);
+            }
+            ctx.olderTitle = `verify-history-older-${randomUUID().slice(0, 8)}`;
+            const older = seedOlderSession(ctx.transcriptDir, cwd, ctx.olderTitle, 10 * 86_400_000);
+            ctx.olderId = older.id;
+            ctx.olderFile = older.file;
+            // the archive's page 1 is read over the seeds; the RPC client exists only once the app has booted
+            await waitForAppBoot(h);
+            await historyOlderReload(h);
+            ctx.ready = true;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError != null || !ctx.ready) {
+            rec("0. 111 Claude transcripts and the paging delay are in place", false, ctx.arrangeError ?? "not ready");
+            return steps;
+        }
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+            await h.goto("agent");
+            const opened = await historyOlderOpen(h);
+            const first = await h.ev(`(() => ({
+                rows: (${HISTORY_CARDS})?.length ?? -1,
+                seeded: ${historyHasText("verify history 1")},
+                older: ${historyHasText(ctx.olderTitle)},
+            }))()`);
+            await h.shot("cdp-shots/history-older-1-first.png");
+            rec(
+                "1. the first load lists at most 100 rows, and the seeded old row is not among them",
+                opened && first.rows > 0 && first.rows <= 100 && first.seeded && !first.older,
+                JSON.stringify({ opened, ...first })
+            );
+
+            // 2. the end of the list brings the next page, one scroll at a time
+            let sawLoading = false;
+            let reached = false;
+            let rounds = 0;
+            for (; rounds < 30 && !reached; rounds++) {
+                await h.ev(historyScrollToEnd);
+                const loading = await ahWait(h, historyLoadingLast, 700);
+                if (rounds === 0) {
+                    sawLoading = loading;
+                    await h.shot("cdp-shots/history-older-2-loading.png");
+                }
+                if (loading) {
+                    await ahWait(h, `!(${historyLoadingAnywhere})`, 8000);
+                    await ahNap(150);
+                }
+                reached = await h.ev(historyHasText(ctx.olderTitle));
+                if (!loading && !reached) break;
+            }
+            await h.shot("cdp-shots/history-older-2-older.png");
+            rec(
+                "2. scrolling to the end shows Loading older sessions… as the last row within 700 ms, and scrolling again each time it goes brings up the seeded old row",
+                sawLoading && reached,
+                JSON.stringify({ sawLoading, reached, rounds })
+            );
+
+            // 3. a filter that leaves the list too short to scroll loads on its own
+            await historyOlderReload(h);
+            const reopened = await historyOlderOpen(h);
+            await h.ev(historyFilter("Live"));
+            const shown = await ahWait(h, historyLoadingAnywhere, 2000);
+            // the row goes for good: gone for 1.5 s, since it blinks off between two pages
+            const settled = await h.ev(`(async () => {
+                const t0 = performance.now();
+                let quiet = 0;
+                while (performance.now() - t0 < 60000) {
+                    quiet = ${historyLoadingAnywhere} ? 0 : quiet + 1;
+                    if (quiet >= 10) return true;
+                    await new Promise((r) => setTimeout(r, 150));
+                }
+                return false;
+            })()`);
+            await h.shot("cdp-shots/history-older-3-live.png");
+            await h.ev(historyFilter("All"));
+            const listed = await ahWait(h, historyHasText(ctx.olderTitle), 3000);
+            await h.shot("cdp-shots/history-older-3-all.png");
+            rec(
+                "3. after a reload, picking the Live filter loads older pages with no scroll (the loading row shows within 2 s and later goes for good), and picking All then lists the seeded old row",
+                reopened && shown && settled && listed,
+                JSON.stringify({ reopened, shown, settled, listed })
+            );
+
+            // 4. delete a row that came in on an older page: its row and its file go, the other pages stay
+            const before = await h.ev(`(${HISTORY_CARDS})?.length ?? -1`);
+            await h.ev(`[...(${HISTORY_CARDS}) ?? []].find((b) => b.textContent.includes(${JSON.stringify(ctx.olderTitle)}))?.click()`);
+            const hasDelete = await ahWait(h, `document.querySelector("[data-agent-history] [data-agent-session-delete]")`, 4000);
+            await h.shot("cdp-shots/history-older-4-detail.png");
+            await h.ev(`document.querySelector("[data-agent-history] [data-agent-session-delete]")?.click()`);
+            const confirmUp = await ahWait(
+                h,
+                `[...document.querySelectorAll("button")].some((b) => /^Delete(\\s*⏎)?$/.test(b.textContent.trim()))`,
+                4000
+            );
+            await h.ev(`[...document.querySelectorAll("button")].find((b) => /^Delete(\\s*⏎)?$/.test(b.textContent.trim()))?.click()`);
+            const rowGone = await ahWait(h, `!(${historyHasText(ctx.olderTitle)})`, 8000);
+            let fileGone = false;
+            for (let i = 0; i < 20 && !fileGone; i++) {
+                fileGone = !existsSync(ctx.olderFile);
+                if (!fileGone) await ahNap(250);
+            }
+            // the reload that follows a delete re-reads page 1 only; let it land before counting
+            await ahNap(1500);
+            const after = await h.ev(`(${HISTORY_CARDS})?.length ?? -1`);
+            await h.shot("cdp-shots/history-older-4-deleted.png");
+            rec(
+                "4. deleting the seeded old row removes its row and its transcript file, while the list still holds more than 100 rows",
+                hasDelete && confirmUp && rowGone && fileGone && after > 100,
+                JSON.stringify({ before, hasDelete, confirmUp, rowGone, fileGone, after })
+            );
+        } catch (e) {
+            rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`history-older teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("remove the paging delay", () => removeCursorDelay(h));
+        if (ctx.transcriptDir) {
+            await step("remove the transcripts", () => rmSync(ctx.transcriptDir, { recursive: true, force: true }));
+        }
+        if (ctx.olderId) await step("remove the trashed transcript", () => removeTrashedSession(ctx.olderId));
+        await step("remove the sessions' folder", () => rmSync(ctx.cwd, { recursive: true, force: true }));
+        // a fresh page for the next scenario: the archive's older pages are gone with it
+        await step("reload", async () => {
+            if (!(await ahReload(h))) console.error("history-older teardown: the page did not come back after the reload");
+        });
+        await step("leave on the Cockpit", () => h.goto("cockpit"));
     },
 };
 
@@ -46160,6 +46750,8 @@ export const SCENARIOS = [
     newRunWindow,
     launcherScenario,
     launcherResume,
+    launcherResumeOlder,
+    historyOlder,
     launcherImages,
     paletteActions,
     autonomousRuns,
