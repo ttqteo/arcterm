@@ -412,10 +412,19 @@ mod imp {
     // window and delegate are watched weakly; a second after it, the delegate is taken off the theme notifications it
     // never leaves and released if tao's one reference is all it has, then the window likewise. A tao that frees them
     // itself leaves nothing to release, and any other count is logged and left alone.
+    //
+    // Nothing is released before the window has closed. tao's windowWillClose takes the delegate off the window and is
+    // what tells Tauri the window is gone; a delegate released before it, when the destroy was slow at critical memory
+    // pressure, kept Tauri holding the dead window's label, and the tray icon opened nothing until a restart
+    // (2026-10-17). A window that still has its delegate is checked again a second later, up to LEFT_BEHIND_TRIES times.
     const LEFT_BEHIND_CHECK_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+    const LEFT_BEHIND_TRIES: u32 = 10;
+
+    // the popover's window and its delegate, watched weakly, and how many checks found the window still open
+    type LeftBehind = (Weak<AnyObject>, Weak<AnyObject>, u32);
 
     thread_local! {
-        static LEFT_BEHIND: RefCell<Vec<(Weak<AnyObject>, Weak<AnyObject>)>> = const { RefCell::new(Vec::new()) };
+        static LEFT_BEHIND: RefCell<Vec<LeftBehind>> = const { RefCell::new(Vec::new()) };
     }
 
     pub fn free_when_destroyed(window: &WebviewWindow) {
@@ -431,9 +440,20 @@ mod imp {
             return;
         };
         let as_object: &AnyObject = ns;
-        LEFT_BEHIND.with(|l| l.borrow_mut().push((Weak::from(as_object), Weak::from_retained(&delegate))));
+        LEFT_BEHIND.with(|l| l.borrow_mut().push((Weak::from(as_object), Weak::from_retained(&delegate), 0)));
+        check_left_behind_later();
+    }
+
+    fn check_left_behind_later() {
         let when = DispatchTime::try_from(LEFT_BEHIND_CHECK_DELAY).unwrap_or(DispatchTime::NOW);
         let _ = DispatchQueue::main().after(when, free_left_behind);
+    }
+
+    // tao's windowWillClose has run: it sets the window's delegate to nil on its way to telling Tauri
+    fn closed(window: &AnyObject) -> bool {
+        // SAFETY: NSWindow's delegate getter, on the main thread, with the window held for the call
+        let delegate: Option<Retained<AnyObject>> = unsafe { msg_send![window, delegate] };
+        delegate.is_none()
     }
 
     // The object's retain count, counting the reference load just took, is 2 when tao's leaked one is all that is left
@@ -454,7 +474,22 @@ mod imp {
 
     fn free_left_behind() {
         let left = LEFT_BEHIND.with(|l| std::mem::take(&mut *l.borrow_mut()));
-        for (window, delegate) in left {
+        let mut open = Vec::new();
+        for (window, delegate, tries) in left {
+            let still_open = window.load().is_some_and(|w| !closed(&w));
+            if still_open {
+                if tries == 0 {
+                    applog::log_line("[tray] the dropped popover's window has not closed yet: waiting for it");
+                }
+                if tries + 1 < LEFT_BEHIND_TRIES {
+                    open.push((window, delegate, tries + 1));
+                } else {
+                    applog::log_line(&format!(
+                        "[tray] the dropped popover's window is still open after {LEFT_BEHIND_TRIES} checks: it stays"
+                    ));
+                }
+                continue;
+            }
             if let Some(d) = delegate.load() {
                 if let Err(count) = only_tao_holds(&d) {
                     applog::log_line(&format!("[tray] the closed popover's delegate has {count} references: it stays"));
@@ -482,6 +517,10 @@ mod imp {
                 unsafe { release(ptr) };
                 applog::log_line("[tray] freed the closed popover's window, which tao leaves behind");
             }
+        }
+        if !open.is_empty() {
+            LEFT_BEHIND.with(|l| l.borrow_mut().extend(open));
+            check_left_behind_later();
         }
     }
 

@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - The t> mark in the Mac menu bar sits level with the memory beside it, its middle on the text's middle, instead of
   hanging below the text.
+- The menu bar icon opens its popover again after arcterm let the popover go at critical memory pressure; one such
+  time left every click opening nothing until arcterm restarted.
 
 ## 0.15.15 — 2026-10-17
 

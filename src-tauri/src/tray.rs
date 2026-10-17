@@ -1,10 +1,10 @@
 //! The menu bar / tray icon and its popover (spec 2026-10-15-tray-popover-design.md). The icon shows what waits on
 //! you, from the cockpit (set_tray_status); a left click, and on a Mac a right click too, opens the popover, a second
-//! webview window ("tray", tray.html); on Windows a right click opens Open / Quit. The popover's window is built on the
-//! pointer's first hover over the icon, or the click, and kept hidden between opens: a fresh one each open took
-//! 0.5-1.8 s on an 8 GB Mac, past the spec's 0.5 s line. It is dropped, and its 50-100 MB go back, at critical memory
-//! pressure and with the icon off (trayicon::keeps_popover). wavesrv's exit dims the icon here, since then no frontend
-//! can.
+//! webview window ("tray", tray.html; "tray-2"… after one Tauri never let go of, live_window); on Windows a right click
+//! opens Open / Quit. The popover's window is built on the pointer's first hover over the icon, or the click, and kept
+//! hidden between opens: a fresh one each open took 0.5-1.8 s on an 8 GB Mac, past the spec's 0.5 s line. It is
+//! dropped, and its 50-100 MB go back, at critical memory pressure and with the icon off (trayicon::keeps_popover).
+//! wavesrv's exit dims the icon here, since then no frontend can.
 
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -46,6 +46,8 @@ struct State {
     // the window's build, until its page says hello, and the click, until the page says it shows: both logged
     built_at: Option<Instant>,
     opened_at: Option<(Instant, &'static str)>,
+    // how many popover windows were left dead under their label; the next one is built under popover_label(it)
+    generation: u32,
 }
 
 fn state() -> &'static Mutex<State> {
@@ -54,6 +56,35 @@ fn state() -> &'static Mutex<State> {
 }
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
+
+fn current_label() -> String {
+    trayicon::popover_label(TRAY_LABEL, state().lock().unwrap().generation)
+}
+
+// The popover's window, when there is a live one. A drop whose close never reached Tauri (2026-10-17, at critical memory
+// pressure) left the label registered on a window with nothing under it, which every getter refuses: each click marked
+// the popover shown with nothing on screen, the next one hid it, and so on until a restart. Tauri builds no second window
+// under a label it still holds, so the next one takes a new label.
+fn live_window(app: &AppHandle) -> Option<WebviewWindow> {
+    let label = current_label();
+    let win = app.get_webview_window(&label)?;
+    if win.is_visible().is_ok() {
+        return Some(win);
+    }
+    let next = {
+        let mut s = state().lock().unwrap();
+        s.generation += 1;
+        s.shown = false;
+        s.loaded = false;
+        s.shown_once = false;
+        s.built_at = None;
+        trayicon::popover_label(TRAY_LABEL, s.generation)
+    };
+    log_line(&format!("[tray] the popover's window {label} is gone but still registered: the next one is {next}"));
+    // a panel still holding the dead window's webview would show it again on the next open
+    crate::macwindow::close_panel();
+    None
+}
 
 // only macOS and Windows build the icon (main.rs gates the call), so Linux compiles this without using it
 #[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
@@ -152,7 +183,7 @@ pub fn set_tray_status(app: AppHandle, count: u32, alert: bool, mem_free: Option
 #[tauri::command]
 pub fn tray_popover_size(app: AppHandle, height: f64) {
     state().lock().unwrap().height = Some(height);
-    if let Some(win) = app.get_webview_window(TRAY_LABEL) {
+    if let Some(win) = live_window(&app) {
         place(&app, &win);
     }
 }
@@ -170,12 +201,12 @@ pub fn wavesrv_gone() {
             s.clone()
         };
         apply(&app2, &st);
-        let _ = app2.emit_to(TRAY_LABEL, "tray:offline", serde_json::json!({}));
+        let _ = app2.emit_to(current_label(), "tray:offline", serde_json::json!({}));
     });
 }
 
 fn toggle(app: &AppHandle, rect: Rect) {
-    let built = app.get_webview_window(TRAY_LABEL).is_some();
+    let built = live_window(app).is_some();
     {
         let mut s = state().lock().unwrap();
         match trayicon::click_action(s.shown, s.closed_at.map(|t| t.elapsed()), REOPEN_GUARD) {
@@ -209,7 +240,7 @@ fn warm_on_hover(app: &AppHandle) {
         let s = state().lock().unwrap();
         trayicon::keeps_popover(s.alert, s.visible)
     };
-    if keeps && app.get_webview_window(TRAY_LABEL).is_none() {
+    if keeps && live_window(app).is_none() {
         if let Err(e) = window(app, "the pointer is over the icon") {
             log_line(&format!("[tray] building the popover failed: {e}"));
         }
@@ -218,10 +249,10 @@ fn warm_on_hover(app: &AppHandle) {
 
 // The popover's window, built hidden if there is none
 fn window(app: &AppHandle, why: &str) -> tauri::Result<WebviewWindow> {
-    if let Some(win) = app.get_webview_window(TRAY_LABEL) {
+    if let Some(win) = live_window(app) {
         return Ok(win);
     }
-    let win = WebviewWindowBuilder::new(app, TRAY_LABEL, WebviewUrl::App("tray.html".into()))
+    let win = WebviewWindowBuilder::new(app, current_label(), WebviewUrl::App("tray.html".into()))
         .title("arcterm")
         .inner_size(WIDTH, FIRST_HEIGHT)
         .decorations(false)
@@ -234,7 +265,7 @@ fn window(app: &AppHandle, why: &str) -> tauri::Result<WebviewWindow> {
         .visible(false)
         .focused(false)
         .build()?;
-    log_line(&format!("[tray] built the popover's window: {why}"));
+    log_line(&format!("[tray] built the popover's window {}: {why}", win.label()));
     state().lock().unwrap().built_at = Some(Instant::now());
     let handle = app.clone();
     win.on_window_event(move |ev| {
@@ -324,7 +355,7 @@ fn place(app: &AppHandle, win: &WebviewWindow) {
 
 // The popover goes off screen and its window stays for the next open, unless keeps_popover says otherwise
 fn hide(app: &AppHandle, why: &str) {
-    let Some(win) = app.get_webview_window(TRAY_LABEL) else {
+    let Some(win) = live_window(app) else {
         return;
     };
     {
@@ -357,7 +388,7 @@ fn drop_unkept(app: &AppHandle) {
             "the icon is off"
         }
     };
-    let Some(win) = app.get_webview_window(TRAY_LABEL) else {
+    let Some(win) = live_window(app) else {
         return;
     };
     // `why` is logged on either side of the destroy, which on the Mac once aborted the app (macwindow::show_in_panel)
@@ -386,7 +417,7 @@ pub fn keeps_app_open(app: &AppHandle) -> bool {
 /// The app is exiting with the popover's window there, shown or kept (⌘Q): its webview goes back into its own window,
 /// as a drop puts it, before Tauri drops the windows.
 pub fn before_exit(app: &AppHandle) {
-    if app.get_webview_window(TRAY_LABEL).is_some() {
+    if live_window(app).is_some() {
         crate::macwindow::close_panel();
     }
 }
@@ -408,10 +439,10 @@ fn on_act(app: &AppHandle, payload: &str) {
             }
             // a click while it loaded: its tray:shown went out before the page listened
             if shown {
-                let _ = app.emit_to(TRAY_LABEL, "tray:shown", ());
+                let _ = app.emit_to(current_label(), "tray:shown", ());
             }
             if offline {
-                let _ = app.emit_to(TRAY_LABEL, "tray:offline", serde_json::json!({}));
+                let _ = app.emit_to(current_label(), "tray:offline", serde_json::json!({}));
             }
         }
         "shown" => {

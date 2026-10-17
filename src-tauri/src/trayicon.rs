@@ -301,6 +301,16 @@ pub fn keeps_popover(alert: bool, visible: bool) -> bool {
     visible && !alert
 }
 
+/// The popover window's label: `base` ("tray"), then "tray-2", "tray-3"… after each window Tauri never let go of. The
+/// tray capability (capabilities/tray.json) names `base` and `base-*`, so every one of them gets its events.
+pub fn popover_label(base: &str, generation: u32) -> String {
+    if generation == 0 {
+        base.to_string()
+    } else {
+        format!("{base}-{}", generation + 1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -487,5 +497,15 @@ mod tests {
         assert_eq!(x, 1920.0 - 360.0 - 8.0);
         let tall = popover_origin(icon, (360.0, 5000.0), WIN_WORK);
         assert_eq!(tall.1, 8.0);
+    }
+
+    #[test]
+    fn a_popover_built_after_a_dead_one_takes_a_label_the_capability_names() {
+        assert_eq!(popover_label("tray", 0), "tray");
+        assert_eq!(popover_label("tray", 1), "tray-2");
+        assert_eq!(popover_label("tray", 2), "tray-3");
+        let cap: serde_json::Value = serde_json::from_str(include_str!("../capabilities/tray.json")).unwrap();
+        let windows: Vec<&str> = cap["windows"].as_array().unwrap().iter().filter_map(|w| w.as_str()).collect();
+        assert!(windows.contains(&"tray") && windows.contains(&"tray-*"), "tray.json windows: {windows:?}");
     }
 }
