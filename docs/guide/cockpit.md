@@ -157,8 +157,11 @@ mỗi người nhận ra nhờ kiểu tóc, và sếp (bạn) đội mũ. Phòng
   `n` hiện lối đi chấm chấm tới câu hỏi kế tiếp trong một giây rồi đi tới đó. Đứng ở bàn nào thì trên đầu người đó có
   `↵ Talk` (hay `↵ Answer` nếu đang hỏi): bấm `↵` mở **hộp thoại** ở mép văn phòng, chứa điều agent nói, câu hỏi, các
   bước gần nhất và số liệu của nó, kèm menu ▶ bên phải. `↑` `↓` chọn, `↵` làm, `Esc` lùi một bước: hộp thoại có các
-  câu trả lời rồi **Send**, hay **Open**, **Reply**, **Terminal**, **Background**; ở bàn họp của run là **Open lead**, **Adjust**;
-  ở ghế worker là các nút của task đó. **Full card** (hay `f`) mở thẻ đầy đủ cạnh bàn; `Esc` quay về hộp thoại.
+  câu trả lời rồi **Send**, hay **Open**, **Reply**, **Terminal**, **Diff**, **Send to background**; ở bàn họp của run
+  thêm **Adjust**; ở ghế worker là các nút của task đó. **Open** (hay `f`) mở thẻ đầy đủ trong một panel khung game bên
+  phải văn phòng; nếu panel che bàn đang đứng thì văn phòng trượt sang trái cho thấy bàn. Nút ở góc panel đổi rộng /
+  hẹp; `f` hay `Esc` đóng panel, về hộp thoại. **Terminal** sang surface Agent, mở terminal của agent (ở bàn họp là
+  của lead).
   `1`–`9`, `r`, `t`, `b` vẫn dùng được như trước. Bấm vào bàn, bàn họp hay thang máy cũng mở hộp thoại.
 - **Văn phòng chiếm hết màn**: không còn tiêu đề Cockpit; số đếm (need you, working…), Cards | Office, project và
   **Live only** nằm trong thanh HUD trong văn phòng. Footer chỉ còn `m menu` và event mới nhất; rail Events ẩn trong

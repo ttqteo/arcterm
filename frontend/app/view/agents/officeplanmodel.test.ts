@@ -21,11 +21,6 @@ import {
     MEET_H,
     MIN_W,
     peopleDrawn,
-    POPUP_BIG_H,
-    POPUP_BIG_W,
-    POPUP_H,
-    POPUP_W,
-    popupBox,
     projectsOf,
     ROOM_TOP,
     taskLook,
@@ -1094,71 +1089,6 @@ describe("officeplanmodel", () => {
             expect(peopleDrawn(p, new Set([p.loungers[0].agentId]), true)).toBe(2 + 2 + sofaSpots + 1);
             // an overflow person walking is drawn as a walker
             expect(peopleDrawn(p, new Set([p.loungeOverflow[0]]), true)).toBe(2 + 2 + sofaSpots + 2);
-        });
-    });
-
-    describe("popupBox", () => {
-        const left = { doorSide: "right" as const, box: { x: 0, y: 30, w: 740, h: 380 } };
-        const rightRoom = { doorSide: "left" as const, box: { x: 900, y: 30, w: 300, h: 380 } };
-
-        it("holds the card in a box of its own height, inside the office's box, whatever the card's length", () => {
-            const size = { width: 1200, height: 436 };
-            for (const y of [40, 200, 400]) {
-                const { box } = popupBox(size, { x: 100, y }, left);
-                expect(box.h).toBe(POPUP_H);
-                expect(box.w).toBe(POPUP_W);
-                expect(box.y).toBeGreaterThanOrEqual(0);
-                expect(box.y + box.h).toBeLessThanOrEqual(size.height);
-            }
-        });
-
-        it("shrinks to an office shorter than the card", () => {
-            const { box } = popupBox({ width: 1200, height: 260 }, { x: 100, y: 200 }, left);
-            expect(box).toMatchObject({ y: 0, h: 260 });
-        });
-
-        it("opens right of a left-column room and left of a right-column one, its pointer on the box's edge", () => {
-            const size = { width: 1200, height: 436 };
-            const a = popupBox(size, { x: 100, y: 120 }, left);
-            expect(a.right).toBe(true);
-            expect(a.box.x).toBe(200);
-            const m = popupBox(size, { x: 1000, y: 120 }, rightRoom);
-            expect(m.right).toBe(false);
-            expect(m.box.x).toBe(900 - POPUP_W);
-            for (const y of [0, 120, 436]) {
-                const { box, pointerTop } = popupBox(size, { x: 100, y }, left);
-                expect(pointerTop).toBeGreaterThanOrEqual(8);
-                expect(pointerTop).toBeLessThanOrEqual(box.h - 20);
-            }
-        });
-
-        it("takes its side from the room's door, whatever its kind", () => {
-            const size = { width: 1200, height: 436 };
-            expect(popupBox(size, { x: 100, y: 120 }, left).right).toBe(true);
-            expect(popupBox(size, { x: 1000, y: 120 }, rightRoom).right).toBe(false);
-            // a built floor: the left column's rooms open right, the right column's left
-            const p = plan([ag("a", { project: "a" }), ag("b", { project: "b" })]);
-            const [a, b] = slotRooms(p);
-            expect(popupBox(p, { x: a.box.x + 100, y: 200 }, a).right).toBe(true);
-            expect(popupBox(p, { x: b.box.x + 100, y: 200 }, b).right).toBe(false);
-        });
-
-        it("grows big on the hall's side of the desk, into the room that side has, never under the small card", () => {
-            const size = { width: 1200, height: 700 };
-            expect(popupBox(size, { x: 100, y: 120 }, left, true).box).toMatchObject({
-                x: 200,
-                w: POPUP_BIG_W,
-                h: POPUP_BIG_H,
-            });
-            // a desk near the office's right edge: the card takes what is left on that side
-            expect(popupBox(size, { x: 600, y: 120 }, left, true).box).toMatchObject({ x: 700, w: 500 });
-            expect(popupBox(size, { x: 1000, y: 120 }, rightRoom, true).box).toMatchObject({
-                x: 900 - POPUP_BIG_W,
-                w: POPUP_BIG_W,
-            });
-            const small = popupBox({ width: 600, height: 300 }, { x: 100, y: 120 }, left, true).box;
-            expect(small).toMatchObject({ x: 200, w: 400, y: 0, h: 300 });
-            expect(popupBox({ width: 1200, height: 700 }, { x: 900, y: 120 }, left, true).box.w).toBe(POPUP_W);
         });
     });
 });

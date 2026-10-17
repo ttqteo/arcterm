@@ -36,6 +36,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   it, instead of an error telling you to run `wsh effort project`.
 - Plan to review in the agent's details rail shows a row's Accept, Rename and Drop only while the pointer is over it,
   so each proposed step's title gets the rail's full width.
+- In the Office, **Open** in a desk's dialog box shows the full card in a game-framed panel on the right, and the office
+  slides over when the panel would hide the desk; **Terminal** takes you to the agent's terminal, and `f` opens or shuts
+  the panel.
 
 ### Fixed
 

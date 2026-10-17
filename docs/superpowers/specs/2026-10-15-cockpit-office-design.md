@@ -17,8 +17,9 @@ A second way to look at the Cockpit: **Cards | Office**. Office draws the same a
 the floor plan of an office seen from above: each project is a band with its agents' room on the left and a meeting
 room per run on the right, the hall between them holds the lounge, and the entrance is at the foot. Each agent is a
 person at a desk, facing you; each run's lead and workers sit around its meeting table. You are the boss, a person
-you walk around the plan; the desk you stand at is the selected card, and its card opens beside the desk, so every
-Cockpit action (answer, reply, open terminal, background, review) works from the office with the code it uses today.
+you walk around the plan; the desk you stand at is the selected card, and its card opens in a panel on the office's
+right, so every Cockpit action (answer, reply, open terminal, background, review) works from the office with the code it
+uses today.
 
 It is for fun, and it is a working view: the person asked for an office that feels like a game while it stays the
 Cockpit, and calm enough to look at all day (a denser, scenic draft read as clutter). Only what needs the person
@@ -147,11 +148,11 @@ A person away from the desk walks back when the agent is working or asking again
 - **Keys in Office** (only while the Cockpit owns the keyboard), a Game Boy's: the arrows, `↵` as A, `Esc` as B, `m`
   as START (2026-10-15, canvas `office-controls`; rules in `officecontrols.ts`).
   - Walking: `←` `↑` `↓` `→` walk (held, the boss keeps walking; walls stop it, doors let it through); `↵` at a desk
-    opens its dialog box; `f` its full card, big.
+    opens its dialog box; `f` its full card.
   - Dialog box: `↑` `↓` move the ▶ (over a dim item), `↵` does it, `←` `→` and `h` `l` switch the question of a
     several-part ask, `f` the full card, `Esc` back to walking.
-  - Full card: the arrows walk away (shutting it), `↵` works as on a card, `f` grows or shrinks it, `Esc` back to the
-    dialog box.
+  - Full card: the arrows walk away (shutting it), `↵` works as on a card, `f` or `Esc` back to the dialog box
+    (amended 2026-10-17: `f` grew or shrank it).
   - Everywhere: `j` `k` the next or previous desk in office order, `n` the next Needs you (its dotted path first),
     `m` the office menu (`↑` `↓` `↵`, `Esc` or `m` shut it); `1`–`9`, `r`, `t`, `b`, Space act on the desk at the boss.
     A key with Cmd, Ctrl or Alt is never the office's.
@@ -171,13 +172,21 @@ A person away from the desk walks back when the agent is working or asking again
   model, tokens, context and age; a run's lead's last line, the task bar, the counts and a column of tasks; a seat's
   task row and its worker), the right a ▶ menu: the answers then Send (dim until every question has one; a question in
   several parts under ◀ its header ▶ and "1 of 2"), or the row's own actions (Tell stays on the full card, whose input
-  takes the words), then Open, Reply, Diff (while the box shows a diff line), Send to background (Open lead and Adjust at
-  a run), and Full card. No item shows its key, as on a Game Boy: ↑ ↓ move the ▶ and Space or ↵ runs the item under it
-  (the letter and number keys still work). A box that asks keeps Open under its answers, on `t`, since Space sends the
-  answer there (the States tile leaves it out for room). A run's ▶
+  takes the words), then Open (the full card), Reply, Terminal, Diff (while the box shows a diff line) and Send to
+  background (Adjust at a run). No item shows its key, as on a Game Boy: ↑ ↓ move the ▶ and Space or ↵ runs the item
+  under it (the letter and number keys still work). A box that asks keeps Open under its answers, on `f`, since Space
+  sends the answer there, and Terminal on `t` (the States tile leaves them out for room). Amended 2026-10-17: Open left
+  for the agent's terminal (Open lead at a run) and Full card was the last item; the person read Open as the card, so
+  Open is the card now and Terminal leaves for the Agent surface (the lead's terminal at a run, the worker's tab at a
+  seat). A run's ▶
   menu is 220 px wide, 268 px elsewhere.
-- **The full card** (Full card or `f`) is the grid's own `AgentRow` or `LeadCard` beside the desk, as before; Adjust
-  opens a run's card with its Adjust panel. No card is rewritten for the office.
+- **The full card** (Open or `f`) is the grid's own `AgentRow` or `LeadCard` in a panel on the office's right, in the
+  game boxes' pixel frame, full height under the HUD bar, sliding in from the right; Adjust opens a run's card with its
+  Adjust panel, Reply with its composer focused. No card is rewritten for the office. The panel covers the office
+  rather than narrowing it, so the floor is not laid out again; while the desk at the boss would sit behind it, the
+  office slides left just enough to keep the desk in view and slides back as it shuts, as a game's camera follows its
+  player (`panelPan`). It is 380 px, or up to 720 px with its corner button (`panelWidth`), and the width is kept for the
+  next card. Amended 2026-10-17: it was a popover beside the desk, with a pointer to it, that `f` grew to 720 px.
 - **The office menu** (`m`, or the footer's `m menu`, whose chip lights while it is open) lists Next Needs you, Next
   desk, Previous desk, Events, Cards view and All keys, each with its key. A key it names works with the menu open
   too: it shuts the menu and does what it does with the menu shut (`isMenuShortcut`).
@@ -187,7 +196,7 @@ A person away from the desk walks back when the agent is working or asking again
   the Backgrounded section and the background-agents strip stay under the office as in Cards (no board draws them),
   hidden until the office menu's **Background** (with their count; listed only while they have agents) shows them
   (`officeBackgroundOpenAtom`, not kept; amended 2026-10-16).
-- **Open terminal** leaves for the Agent surface through `openTarget`, as the card does today.
+- **Terminal** leaves for the Agent surface through `openTarget`, as the card does today.
 - **Card streams:** Office keeps the grid's streams, one per live agent. Stopping a stream drops that agent's live
   entries, and the Cockpit hides an agent with nothing to show, so streaming only the full card would take agents out
   of the office and the tab counts; trimming streams needs a fix of its own.
@@ -341,7 +350,7 @@ Office  ● animating · 2 walking · 6 typing
 | `view/office/officeclock.ts` (+ test) | the frame and walk clocks, their run/stop rules, the meter counters (`officeMeterAtom`) |
 | `view/jarvis/office*.ts(x)` | import the cache from `view/office/`; nothing else changes in the Run office |
 | `view/agents/officeinputs.ts` (+ test) | the grid's cards and the Idle section's agents → the plan's input |
-| `view/agents/officeplanmodel.ts` (+ test) | cards and runs → bands, rooms, desks, seats, doors, labels, office order, poses, popup side; the lounge's person sizes follow the chibi set |
+| `view/agents/officeplanmodel.ts` (+ test) | cards and runs → bands, rooms, desks, seats, doors, labels, office order, poses; the lounge's person sizes follow the chibi set |
 | `view/agents/officebehavior.ts` (+ test) | idle → coffee and sofa, the 3-walker queue, energy, day and night |
 | `view/agents/officeboss.ts` (+ test) | keys and clicks → boss position; walls and doors; paths through doors; desk at the boss |
 | `view/agents/officestore.ts` | `cockpitViewAtom`, `officeHoursAtom`, `officeAnimationAtom` |

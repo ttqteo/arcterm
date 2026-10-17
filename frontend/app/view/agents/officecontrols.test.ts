@@ -14,6 +14,10 @@ import {
     officeKey,
     officeKeyName,
     officeMenuItems,
+    PANEL_BIG_W,
+    PANEL_W,
+    panelPan,
+    panelWidth,
     stepSel,
 } from "./officecontrols";
 
@@ -223,6 +227,44 @@ describe("dialogEdge", () => {
 
     it("reads a shorter box's own height", () => {
         expect(dialogEdge(500, 569, 800, 150)).toBe("bottom");
+    });
+});
+
+describe("panelWidth", () => {
+    it("is PANEL_W, and grown PANEL_BIG_W where the view has room", () => {
+        expect(panelWidth(1400, false)).toBe(PANEL_W);
+        expect(panelWidth(1400, true)).toBe(PANEL_BIG_W);
+    });
+
+    it("grown in a narrow view, leaves the office 240 px beside it, and never shrinks below PANEL_W", () => {
+        // 1000 - 12 - 240 = 748 leaves room for the whole 720; 900 - 12 - 240 = 648 does not
+        expect(panelWidth(1000, true)).toBe(PANEL_BIG_W);
+        expect(panelWidth(900, true)).toBe(648);
+        expect(panelWidth(600, true)).toBe(PANEL_W);
+    });
+
+    it("never runs past a view narrower than itself", () => {
+        expect(panelWidth(300, false)).toBe(276);
+    });
+});
+
+describe("panelPan", () => {
+    // a 1300 px view with a 380 px panel: the desk is clear while its right edge (the spot + 60) is at or left of
+    // 1300 - 12 - 380 - 24 = 884
+    it("does not move the office while the desk stands clear of the panel", () => {
+        expect(panelPan(300, 1300, 380)).toBe(0);
+        expect(panelPan(824, 1300, 380)).toBe(0);
+    });
+
+    it("slides the office left just far enough to clear the desk", () => {
+        expect(panelPan(825, 1300, 380)).toBe(1);
+        expect(panelPan(1100, 1300, 380)).toBe(276);
+    });
+
+    it("never slides the desk out of the view on the left", () => {
+        // a 720 px panel in a 900 px view: clear is 144, so a spot at 200 could go only 200 - 60 - 24 = 116
+        expect(panelPan(200, 900, 720)).toBe(116);
+        expect(panelPan(50, 900, 720)).toBe(0);
     });
 });
 

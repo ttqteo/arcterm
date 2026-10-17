@@ -220,10 +220,6 @@ export const BOSS_HALF_W = 30;
 export const BOSS_H = 70;
 export const BOSS_HEADROOM = BOSS_H - HWALL; // the nearest its feet come to the wall behind it
 export const LOUNGE_LABEL_H = 14;
-export const POPUP_W = 380; // the card beside the desk
-export const POPUP_H = 320;
-export const POPUP_BIG_W = 720; // the card grown with ⤢ or f
-export const POPUP_BIG_H = 640;
 export const HOME = "Home";
 
 const RUNNING = new Set(["running"]);
@@ -358,27 +354,6 @@ export function screenCell(t: PlanTask): ScreenCell {
 /** A meeting room's lights: on while its lead or a worker asks, or a task runs. */
 export function runLit(r: PlanRun): boolean {
     return r.leadAsking || r.tasks.some((t) => t.asking || RUNNING.has(t.state));
-}
-
-/** Pure: the box of the card beside the desk the boss stands at, kept inside the office's box: on the hall's side of
- *  the desk (right of a left-column room, left of a right-column one: the side its door is on), POPUP_H tall or the
- *  office's height, and where its pointer to the desk sits on the box's edge. The box sets the card's height: a card
- *  fills its box and scrolls, as it fills its share of a column in the grid. Big, it takes the room that side has, up
- *  to POPUP_BIG_W, never less than the small card. */
-export function popupBox(
-    size: { width: number; height: number },
-    anchor: Point,
-    room: Pick<Room, "box" | "doorSide">,
-    big = false
-): { box: Box; right: boolean; pointerTop: number } {
-    const right = room.doorSide !== "left";
-    const h = Math.min(big ? POPUP_BIG_H : POPUP_H, size.height);
-    const side = right ? size.width - (anchor.x + 100) : room.box.x;
-    const w = big ? Math.max(POPUP_W, Math.min(POPUP_BIG_W, side)) : POPUP_W;
-    const x = Math.max(0, Math.min(size.width - w, right ? anchor.x + 100 : room.box.x - w));
-    const y = Math.max(0, Math.min(size.height - h, anchor.y - 60));
-    const pointerTop = Math.max(8, Math.min(h - 20, anchor.y + 4 - y));
-    return { box: { x, y, w, h }, right, pointerTop };
 }
 
 /** A vertical wall with its doors left open. */

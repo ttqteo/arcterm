@@ -183,6 +183,37 @@ export function dialogEdge(
     return (bossTop + bossBottom) / 2 > viewH / 2 ? "top" : "bottom";
 }
 
+/** The full card's panel on the office's right (Open, or f): its width, and grown with its ⤢ (officeBigCardAtom). */
+export const PANEL_W = 380;
+export const PANEL_BIG_W = 720;
+/** The panel stands this far off the view's right edge and foot; its head is under the HUD bar. */
+export const PANEL_EDGE_PX = 12;
+/** The least of the office a grown panel leaves beside it in a narrow view. */
+const PANEL_MIN_OFFICE_PX = 240;
+/** Kept clear of the panel about the boss's spot: the desk it stands at and the name under it. */
+const PANEL_FOCUS_HALF_PX = 60;
+/** The desk stays this far from the panel's edge, and from the view's left. */
+const PANEL_GAP_PX = 24;
+
+/** Pure: the panel's width in a view viewW wide: PANEL_W, or grown up to PANEL_BIG_W while it leaves the office
+ *  PANEL_MIN_OFFICE_PX; never wider than the view leaves. */
+export function panelWidth(viewW: number, big: boolean): number {
+    const want = big ? Math.max(PANEL_W, Math.min(PANEL_BIG_W, viewW - PANEL_EDGE_PX - PANEL_MIN_OFFICE_PX)) : PANEL_W;
+    return Math.max(0, Math.min(want, viewW - 2 * PANEL_EDGE_PX));
+}
+
+/** Pure: how far the office slides left while the panel is up, as a game's camera follows its player: 0 while the desk
+ *  at the boss's spot (focusX, in px from the view's left) stands clear of the panel, else just far enough to clear
+ *  it, but never so far that the desk leaves the view on the left. */
+export function panelPan(focusX: number, viewW: number, panelW: number): number {
+    const clear = viewW - PANEL_EDGE_PX - panelW - PANEL_GAP_PX;
+    const right = focusX + PANEL_FOCUS_HALF_PX;
+    if (right <= clear) {
+        return 0;
+    }
+    return Math.max(0, Math.min(right - clear, focusX - PANEL_FOCUS_HALF_PX - PANEL_GAP_PX));
+}
+
 export type OfficeMenuId =
     | "nextAsk"
     | "needsYou"

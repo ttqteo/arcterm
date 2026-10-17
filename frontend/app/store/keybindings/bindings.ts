@@ -990,7 +990,7 @@ export function buildCockpitBindings(): Binding[] {
             "ArrowRight",
             "Office: walk the boss (← ↑ ↓ →, Shift runs); in the dialog box ↑ ↓ move the ▶; j / k go desk by desk"
         ),
-        doc("cockpit:office-big", "f", "Office: the desk's full card; on the card, bigger or smaller"),
+        doc("cockpit:office-big", "f", "Office: open or shut the desk's full card, in the panel on the right"),
         doc(
             "cockpit:office-floor",
             "PageUp",
