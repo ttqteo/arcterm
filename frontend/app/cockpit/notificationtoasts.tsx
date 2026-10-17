@@ -78,7 +78,12 @@ export function NotificationToasts(): React.JSX.Element {
         // above the pet (z-60) and its bubble (z-61), below its open peek (z-64): a toast is never covered by a sprite
         // passing under it, and data-pet-avoid sends the pet off the stretch of ledge beneath the stack
         <MotionConfig reducedMotion="user">
-            <div data-pet-avoid className="pointer-events-none fixed bottom-4 right-4 z-[62] flex w-80 flex-col gap-2">
+            <div
+                data-pet-avoid
+                role="status"
+                aria-live="polite"
+                className="pointer-events-none fixed bottom-4 right-4 z-[62] flex w-80 flex-col gap-2"
+            >
                 <AnimatePresence mode="popLayout">
                     {toasts.map((t) => (
                         <motion.div
@@ -92,7 +97,7 @@ export function NotificationToasts(): React.JSX.Element {
                             onPointerEnter={() => holdToast(t.id)}
                             onPointerLeave={() => releaseToast(t.id)}
                             className={cn(
-                                "pointer-events-auto flex rounded-lg border bg-surface text-primary shadow-lg",
+                                "pointer-events-auto flex rounded-lg border bg-surface text-primary shadow-popover-md",
                                 t.level === "error"
                                     ? "border-error/40"
                                     : t.level === "warn" || t.eyebrow?.tone === "asking"

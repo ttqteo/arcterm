@@ -47943,13 +47943,27 @@ const newProjectModal = {
             await until(() => /New project/.test(flat(dialog())) && dialog()?.querySelector("input") != null, 3000);
             await nap(400);
             const create = button(dialog(), /^Create project/);
-            return { open: dialog() != null, createDisabled: create?.disabled ?? null, cancel: button(dialog(), /^Cancel/) != null };
+            return {
+                open: dialog() != null,
+                createDisabled: create?.disabled ?? null,
+                cancel: button(dialog(), /^Cancel/) != null,
+                createText: flat(create),
+                heading: flat(dialog()?.querySelector("h2")),
+                closeLabelled: dialog()?.querySelector('button[aria-label="Close"]') != null,
+            };
         `);
         await h.shot(lookShot("new-project-modal"));
         steps.push({
             step: "palette New project opens the modal with Create project disabled until both fields are filled",
             ok: opened && picked && empty.open && empty.createDisabled === true && empty.cancel,
             detail: JSON.stringify({ opened, picked, ...empty }),
+        });
+        // the submit hint is this platform's chord: no ⌘ glyph off macOS
+        const macHint = /⌘/.test(empty.createText ?? "");
+        steps.push({
+            step: "the title is a heading, the close button is labelled, and the submit hint names this platform's key",
+            ok: empty.heading === "New project" && empty.closeLabelled && macHint === (process.platform === "darwin"),
+            detail: JSON.stringify({ heading: empty.heading, closeLabelled: empty.closeLabelled, createText: empty.createText }),
         });
         await h.ev(setInputExpr(`document.querySelector('[role="dialog"] input[placeholder="my-service"]')`, "billing-api"));
         await h.ev(setInputExpr(`document.querySelector('[role="dialog"] input[placeholder="~/code/my-service"]')`, "~/code/billing-api"));
@@ -48018,13 +48032,27 @@ const toolDetailModal = {
             await until(() => /steerTarget/.test(flat(dialog())), 3000);
             await nap(400);
             const text = flat(dialog());
-            return { open: dialog() != null, failMark: text.startsWith("✗"), target: text.includes(${JSON.stringify(LOOK_TOOL_COMMAND)}), duration: /48(\\.\\d)?s/.test(text), head: text.slice(0, 80) };
+            const verb = [...dialog().querySelectorAll("span")].find((s) => s.className.includes("uppercase"));
+            return {
+                open: dialog() != null,
+                failMark: dialog().querySelector('[role="img"][aria-label="Failed"]') != null,
+                closeLabelled: dialog().querySelector('button[aria-label="Close"]') != null,
+                verbPx: verb ? getComputedStyle(verb).fontSize : null,
+                target: text.includes(${JSON.stringify(LOOK_TOOL_COMMAND)}),
+                duration: /48(\\.\\d)?s/.test(text),
+                head: text.slice(0, 80),
+            };
         `);
         await h.shot(lookShot("tool-detail-modal"));
         return [
             {
                 step: "a failed tool call over the inline budget opens the full-detail modal: fail mark, verb, target, duration and output",
                 ok: s.open && s.failMark && s.target,
+                detail: JSON.stringify(s),
+            },
+            {
+                step: "the close button is labelled and the verb is at the 10.5px floor",
+                ok: s.closeLabelled && s.verbPx === "10.5px",
                 detail: JSON.stringify(s),
             },
         ];
@@ -48086,7 +48114,14 @@ const notificationToasts = {
             const toasts = () => [...document.querySelectorAll("[data-notification-toast]")];
             await until(() => toasts().length === ${LOOK_TOASTS.length}, 2000);
             await nap(500); // the entrance, inside the 6s the toasts live
-            return toasts().map(flat);
+            const avatar = document.querySelector('[aria-label="Jarvis condition"]')?.getBoundingClientRect();
+            const overlaps = (r) => avatar != null && r.left < avatar.right && r.right > avatar.left && r.top < avatar.bottom && r.bottom > avatar.top;
+            return {
+                text: toasts().map(flat),
+                levels: toasts().map((t) => t.querySelector("svg[role=img]")?.getAttribute("aria-label") ?? null),
+                live: toasts()[0]?.parentElement?.getAttribute("aria-live") ?? null,
+                underAvatar: toasts().filter((t) => overlaps(t.getBoundingClientRect())).length,
+            };
         `);
         await h.shot(lookShot("notification-toasts"));
         const dismissed = await lookEval(h, `
@@ -48096,9 +48131,15 @@ const notificationToasts = {
         return [
             {
                 step: "error, warn and info toasts stack in the corner, each with its title",
-                ok: shown.length === LOOK_TOASTS.length && LOOK_TOASTS.every((t) => shown.some((s) => s.startsWith(t.title))),
-                detail: JSON.stringify(shown),
+                ok: shown.text.length === LOOK_TOASTS.length && LOOK_TOASTS.every((t) => shown.text.some((s) => s.startsWith(t.title))),
+                detail: JSON.stringify(shown.text),
             },
+            {
+                step: "each toast names its level on an icon, in a polite live region",
+                ok: JSON.stringify([...shown.levels].sort()) === JSON.stringify(["Error", "Info", "Warning"]) && shown.live === "polite",
+                detail: JSON.stringify({ levels: shown.levels, live: shown.live }),
+            },
+            { step: "no toast sits under the Jarvis avatar", ok: shown.underAvatar === 0, detail: `underAvatar=${shown.underAvatar}` },
             { step: "a click dismisses a toast", ok: dismissed === true, detail: `dismissed=${dismissed}` },
         ];
     },
@@ -48152,12 +48193,32 @@ const contextMenu = {
             await until(() => ${LOOK_MENU_ROW("Last activity")} != null, 2000);
             return { submenu: ${LOOK_MENU_ROW("Last activity")} != null, danger: ${LOOK_MENU_ROW("Kill agent")} != null };
         `);
+        const look = await lookEval(h, `
+            const row = ${LOOK_MENU_ROW("Sort by")};
+            // root rows sit directly in the panel: MenuLevel renders a fragment
+            const panel = row?.parentElement;
+            const probe = document.createElement("div");
+            probe.className = "border border-edge-strong";
+            document.body.append(probe);
+            const edge = getComputedStyle(probe).borderTopColor;
+            probe.remove();
+            return {
+                label: getComputedStyle(row.querySelector("span.whitespace-nowrap")).fontFamily,
+                border: panel ? getComputedStyle(panel).borderTopColor : null,
+                edge,
+            };
+        `);
         await h.shot(lookShot("context-menu"));
         return [
             {
                 step: "a menu with every row kind draws them all, and hovering Sort by opens its submenu",
                 ok: sub.submenu && sub.danger,
                 detail: JSON.stringify({ opened, ...sub }),
+            },
+            {
+                step: "row labels are sans and the panel has the strong floating edge",
+                ok: !/mono/i.test(look.label) && look.border === look.edge,
+                detail: JSON.stringify(look),
             },
         ];
     },

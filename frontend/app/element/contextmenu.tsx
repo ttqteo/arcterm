@@ -19,8 +19,9 @@ import { autoUpdate, flip, FloatingPortal, offset, shift, useDismiss, useFloatin
 import { Check, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { KeyCap } from "./keycap";
+import { PopoverReveal } from "./popoverreveal";
 
-const PANEL = "z-[1000] min-w-[200px] rounded-[8px] border border-edge-mid bg-surface-raised p-1 shadow-lg";
+const PANEL = "min-w-[200px] rounded-[8px] border border-edge-strong bg-surface-raised p-1 shadow-popover-md";
 const ITEM =
     "relative flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] text-secondary";
 const ITEM_ACTIVE = "bg-accent/12 text-primary";
@@ -166,10 +167,10 @@ function MenuRow({
             ) : item.accel ? (
                 <KeyCap chord={item.accel} variant="inline" className="ml-auto" />
             ) : item.sublabel ? (
-                <span className="ml-auto text-muted">{item.sublabel}</span>
+                <span className="ml-auto font-mono text-[11.5px] text-muted">{item.sublabel}</span>
             ) : null}
             {submenuOpen ? (
-                <div className={cn(PANEL, "absolute top-[-5px]", flipLeft ? "right-full mr-1" : "left-full ml-1")}>
+                <div className={cn(PANEL, "absolute top-[-5px] z-[1000]", flipLeft ? "right-full mr-1" : "left-full ml-1")}>
                     <MenuLevel items={item.submenu!} basePath={rowPath} active={active} setActive={setActive} />
                 </div>
             ) : null}
@@ -177,10 +178,17 @@ function MenuRow({
     );
 }
 
+// the corner nearest the click, so the panel grows out of the pointer whichever way flip() turned it
+function revealOrigin(placement: string): string {
+    const v = placement.startsWith("top") ? "bottom" : "top";
+    const h = placement.endsWith("-end") ? "right" : "left";
+    return `${v} ${h}`;
+}
+
 export function ContextMenu({ state }: { state: ContextMenuState }) {
     const { items, x, y } = state;
     const [active, setActive] = useState<MenuPath>(() => initialPath(items));
-    const { refs, floatingStyles, context } = useFloating({
+    const { refs, floatingStyles, context, placement } = useFloating({
         open: true,
         onOpenChange: (o) => {
             if (!o) {
@@ -261,11 +269,14 @@ export function ContextMenu({ state }: { state: ContextMenuState }) {
                 }}
                 tabIndex={-1}
                 style={floatingStyles}
-                className={cn(PANEL, "outline-none")}
+                className="z-[1000] outline-none"
                 onKeyDown={onKeyDown}
                 {...getFloatingProps()}
             >
-                <MenuLevel items={items} basePath={[]} active={active} setActive={setActive} />
+                {/* the reveal sits inside: floating-ui positions the outer element with a transform of its own */}
+                <PopoverReveal open origin={revealOrigin(placement)} className={PANEL}>
+                    <MenuLevel items={items} basePath={[]} active={active} setActive={setActive} />
+                </PopoverReveal>
             </div>
         </FloatingPortal>
     );
