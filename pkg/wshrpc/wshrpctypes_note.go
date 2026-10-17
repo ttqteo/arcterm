@@ -16,6 +16,8 @@ type NoteCommands interface {
 	NoteListCommand(ctx context.Context) ([]*waveobj.UserNote, error)
 	NoteUpdateCommand(ctx context.Context, data CommandNoteUpdateData) error
 	NoteDeleteCommand(ctx context.Context, data CommandNoteDeleteData) error
+	NoteScratchReadCommand(ctx context.Context) (string, error)
+	NoteScratchWriteCommand(ctx context.Context, data CommandNoteScratchWriteData) error
 }
 
 type CommandNoteAddData struct {
@@ -31,4 +33,10 @@ type CommandNoteUpdateData struct {
 
 type CommandNoteDeleteData struct {
 	ID string `json:"id"`
+}
+
+// CommandNoteScratchWriteData replaces the one global scratch note; an empty Body clears it, so it has
+// no omitempty.
+type CommandNoteScratchWriteData struct {
+	Body string `json:"body"`
 }

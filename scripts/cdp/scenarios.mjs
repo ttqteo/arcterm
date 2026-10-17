@@ -37767,6 +37767,430 @@ const floatMini = {
     },
 };
 
+// --- Float's Note and Translate tabs ----------------------------------------------------------------------------
+// docs/superpowers/specs/2026-10-17-float-note-translate-design.md. In a float, the ledge's Note tab covers the
+// terminal with the one global markdown note (typing, Preview, a failed save, every way it closes), and its Translate
+// tab opens translate-shell, or its install when the tool is missing. It asserts the DOM and the PTY size only, so the
+// browser app runs it too. Needs translate-shell on the PATH of the app's wavesrv for step 8.
+const FLOAT_NOTE_PROJECT = "verify-float-note";
+const FLOAT_NOTE_INSTALL_TAB = "Install translate-shell";
+const FLOAT_NOTE_THEME = fileURLToPath(new URL("../../cmd/wsh/cmd/trans-theme.trans", import.meta.url));
+
+// a printable key through the real input pipeline: a keyDown with its text, then a keyUp; a capital adds Shift
+async function floatNoteKey(h, key) {
+    const shift = key !== key.toLowerCase();
+    const base = {
+        key,
+        code: /^[0-9]$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`,
+        windowsVirtualKeyCode: key.toUpperCase().charCodeAt(0),
+        modifiers: shift ? 8 : 0,
+    };
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", text: key, ...base });
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+}
+
+async function floatNoteSpecial(h, key, code, keyCode, text) {
+    const base = { key, code, windowsVirtualKeyCode: keyCode };
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...(text != null ? { text } : {}), ...base });
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+}
+
+// Mod+Shift+N: Cmd on a Mac, Ctrl elsewhere
+async function floatNoteChord(h, ctx) {
+    const base = { key: "N", code: "KeyN", windowsVirtualKeyCode: 78, modifiers: ctx.modBit | 8 };
+    await h.cdp("Input.dispatchKeyEvent", { type: "rawKeyDown", ...base });
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+}
+
+// the workspace's tabs the scenario can have made: the trans terminals (block meta tool:id) and the install terminals
+async function floatNoteTabs(h, ctx) {
+    const ws = await waveService(h, "object", "GetObject", [`workspace:${ctx.workspaceId}`]);
+    const found = [];
+    for (const tabId of ws?.tabids ?? []) {
+        const tab = await waveService(h, "object", "GetObject", [`tab:${tabId}`]);
+        const blockId = tab?.blockids?.[0] ?? null;
+        const block = blockId ? await waveService(h, "object", "GetObject", [`block:${blockId}`]) : null;
+        const isTrans = block?.meta?.["tool:id"] === "trans";
+        const isInstall = tab?.meta?.["session:label"] === FLOAT_NOTE_INSTALL_TAB;
+        if (isTrans || isInstall) found.push({ tabId, blockId, isTrans, isInstall });
+    }
+    return found;
+}
+
+// whether a terminal's pane is the one showing
+const floatNoteShowing = (tabId) =>
+    `document.querySelector('[data-agent-terminal="${tabId}"]')?.checkVisibility() === true`;
+
+const floatNote = {
+    name: "float-note",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { terminals: [], preexisting: new Set() };
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            ctx.modBit = (await h.ev("/Mac/i.test(navigator.platform)")) ? 4 : 2;
+            for (const t of await floatNoteTabs(h, ctx)) ctx.preexisting.add(t.tabId);
+            await openRailTerminal(h, ctx, FLOAT_NOTE_PROJECT);
+            ctx.prevNote = await h.rpc("notescratchread", null);
+            ctx.prevTrans = (await h.rpc("getfullconfig", null))?.tools?.trans ?? null;
+            await h.rpc("notescratchwrite", { body: "" });
+            // the app's own notes folder: an app started with ARC_DEV_NO_GLOBAL_INSTALL keeps its vault in its store, not
+            // where notes-wsh.mjs's vaultRoot points, and a folder outside the store is never chmodded
+            ctx.notesDir = join((await h.rpc("waveinfo", null)).datadir, "vault", "notes");
+            ctx.tmp = mkdtempSync(join(tmpdir(), "verify-float-note-"));
+            ctx.theme = join(ctx.tmp, "arc.trans");
+            copyFileSync(FLOAT_NOTE_THEME, ctx.theme);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError) {
+            rec("0. arrange", false, ctx.arrangeError);
+            return steps;
+        }
+        const wait = (expr, ms) => floatMiniWait(h, expr, ms);
+        const click = (sel) => ttMouse(h, sel);
+        const term = ctx.terminals[0];
+        const termSel = `[data-agent-terminal="${term.tabId}"]`;
+        const editorSel = "[data-float-note-editor]";
+        const noteUp = `!!document.querySelector("[data-float-note]")`;
+        const noteGone = `!document.querySelector("[data-float-note]")`;
+        const pressed = (sel) => h.ev(`document.querySelector(${JSON.stringify(sel)})?.getAttribute("aria-pressed") ?? null`);
+        const editorFocused = `document.activeElement === document.querySelector(${JSON.stringify(editorSel)})`;
+        const editorValue = () => h.ev(`document.querySelector(${JSON.stringify(editorSel)})?.value ?? null`);
+
+        // the header's "…" menu floats an agent; a plain terminal with no agent in focus has none (its bar is the dock's),
+        // so there Shift+F, from the nav, as the menu's own row says
+        const floatTerminal = async () => {
+            if (await pickHeaderMenu(h, "Float window")) return;
+            await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
+            await floatNoteKey(h, "F");
+        };
+
+        await h.goto("agent");
+        await wait(`!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
+        await wait(floatNoteShowing(term.tabId), 3000);
+
+        // 1. board Terminal: the fixed tabs are there beside the terminal's own, even with one terminal to float
+        await floatTerminal();
+        const floated = await wait(`!!document.querySelector("[data-float-bar]")`);
+        await wait(`!!document.querySelector('[data-float-fixed="translate"]')`, 3000);
+        const tabs1 = await h.ev(`({
+            note: !!document.querySelector('[data-float-fixed="note"]'),
+            translate: !!document.querySelector('[data-float-fixed="translate"]'),
+            own: document.querySelectorAll('[data-float-tab="${term.tabId}"]').length,
+        })`);
+        await h.ev("new Promise((r) => setTimeout(r, 1000))");
+        await h.shot("cdp-shots/float-note-terminal.png");
+        rec(
+            "1. the float shows Note, Translate and the terminal's own tab",
+            floated && tabs1.note && tabs1.translate && tabs1.own === 1,
+            JSON.stringify({ floated, ...tabs1 })
+        );
+
+        // 2. board NoteEmpty: Note covers the terminal with an empty editor, and no close button
+        const sizeBefore = await floatMiniTermSize(h, term.blockId);
+        await click('[data-float-fixed="note"]');
+        const opened = await wait(`${noteUp} && !!document.querySelector(${JSON.stringify(editorSel)})`, 5000);
+        await wait(editorFocused, 2000);
+        await h.ev("new Promise((r) => setTimeout(r, 600))");
+        const empty = await h.ev(`(() => {
+            const e = document.querySelector(${JSON.stringify(editorSel)});
+            return {
+                value: e?.value ?? null,
+                placeholder: e?.placeholder ?? null,
+                close: !!document.querySelector("[data-float-close]"),
+                title: document.querySelector("[data-float-title]")?.textContent ?? null,
+            };
+        })()`);
+        const sizeNote = await floatMiniTermSize(h, term.blockId);
+        await h.shot("cdp-shots/float-note-empty.png");
+        rec(
+            "2. Note opens an empty editor over the terminal, with no close button, and the PTY size never moves",
+            opened &&
+                empty.value === "" &&
+                empty.placeholder?.startsWith("Write markdown…") === true &&
+                !empty.close &&
+                empty.title === "Note" &&
+                (await pressed('[data-float-fixed="note"]')) === "true" &&
+                JSON.stringify(sizeNote) === JSON.stringify(sizeBefore),
+            JSON.stringify({ opened, ...empty, sizeBefore, sizeNote })
+        );
+
+        // 3. board Main: typing, capitals and single keys included, stays in the note and saves itself
+        await h.cdp("Input.insertText", { text: "## Hôm nay" });
+        await floatNoteSpecial(h, "Enter", "Enter", 13, "\r");
+        await h.cdp("Input.insertText", { text: "- " });
+        await floatNoteKey(h, "F");
+        await floatNoteKey(h, "r");
+        await floatNoteKey(h, "1");
+        const typed = await editorValue();
+        const barStill = await h.ev(`!!document.querySelector("[data-float-bar]")`);
+        await h.ev("new Promise((r) => setTimeout(r, 900))");
+        const saved3 = await h.rpc("notescratchread", null);
+        ctx.saved3 = saved3;
+        await h.shot("cdp-shots/float-note-edit.png");
+        rec(
+            "3. typing F, r and 1 goes into the note, Shift+F does not leave Float, and the text saves itself",
+            typeof typed === "string" && typed.endsWith("- Fr1") && barStill && saved3 === typed,
+            JSON.stringify({ typed, barStill, saved3 })
+        );
+
+        // 4. board NotePreview
+        await click('[data-float-note-view="preview"]');
+        await wait(`!!document.querySelector("[data-float-note-body]")`, 3000);
+        const rendered = await h.ev(`(() => {
+            const b = document.querySelector("[data-float-note-body]");
+            return {
+                h2: b?.querySelector("h2")?.textContent.trim() ?? null,
+                li: [...(b?.querySelectorAll("li") ?? [])].map((l) => l.textContent.trim()),
+                editor: !!document.querySelector(${JSON.stringify(editorSel)}),
+            };
+        })()`);
+        await h.shot("cdp-shots/float-note-preview.png");
+        rec(
+            "4. Preview renders the note: an h2 reading Hôm nay and a list item Fr1",
+            rendered.h2 === "Hôm nay" && rendered.li.includes("Fr1") && !rendered.editor,
+            JSON.stringify(rendered)
+        );
+
+        // 5. board NoteError: a save that fails keeps the text, says so, and the next edit that works clears it
+        await click('[data-float-note-view="edit"]');
+        await wait(`${editorFocused}`, 3000);
+        const notePath = join(ctx.notesDir, "scratch.md");
+        const onDisk = existsSync(notePath) ? readFileSync(notePath, "utf8") : null;
+        if (onDisk == null || onDisk !== ctx.saved3) {
+            rec(
+                "5. a failed save shows its error line, and the next edit that works clears it",
+                false,
+                `refused to lock a folder: ${notePath} is ${onDisk == null ? "missing" : "not the note the app saved"}, so the app's notes folder is somewhere else`
+            );
+        } else {
+            ctx.notesMode = statSync(ctx.notesDir).mode & 0o777;
+            chmodSync(ctx.notesDir, 0o555);
+            await floatNoteKey(h, "a");
+            const failed = await wait(`!!document.querySelector("[data-float-note-error]")`, 2000);
+            const errText = await h.ev(`document.querySelector("[data-float-note-error]")?.textContent.trim() ?? null`);
+            const kept = await editorValue();
+            await h.shot("cdp-shots/float-note-error.png");
+            chmodSync(ctx.notesDir, ctx.notesMode);
+            ctx.notesMode = null;
+            await floatNoteKey(h, "b");
+            const cleared = await wait(`!document.querySelector("[data-float-note-error]")`, 2000);
+            rec(
+                "5. a failed save shows its error line, and the next edit that works clears it",
+                failed && errText?.startsWith("Couldn't save the note:") === true && kept?.endsWith("Fr1a") === true && cleared,
+                JSON.stringify({ failed, errText, kept, cleared })
+            );
+        }
+
+        // 6. toggling: every way in and out
+        await click(`[data-float-tab="${term.tabId}"]`);
+        const tabHides = await wait(noteGone, 3000);
+        rec("6a. the terminal's tab hides the note", tabHides, JSON.stringify({ tabHides }));
+
+        await floatNoteChord(h, ctx);
+        const chordShows = await wait(noteUp, 3000);
+        await wait(editorFocused, 2000);
+        await floatNoteChord(h, ctx);
+        const chordHides = await wait(noteGone, 3000);
+        rec("6b. Mod+Shift+N shows the note, and again hides it", chordShows && chordHides, JSON.stringify({ chordShows, chordHides }));
+
+        await click('[data-float-fixed="note"]');
+        await wait(`${noteUp} && ${editorFocused}`, 3000);
+        await floatNoteKey(h, "z");
+        await floatNoteSpecial(h, "Escape", "Escape", 27);
+        const escAt = Date.now();
+        const escGone = await wait(noteGone, 2000);
+        let flushed = null;
+        let flushedAt = null;
+        while (Date.now() - escAt < 300) {
+            flushed = await h.rpc("notescratchread", null);
+            if (flushed.endsWith("z")) {
+                flushedAt = Date.now() - escAt;
+                break;
+            }
+            await polishNap(30);
+        }
+        await h.ev("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
+        const focusInTerm = await h.ev(`(() => {
+            const a = document.activeElement;
+            return a?.classList.contains("xterm-helper-textarea") === true && a.closest(${JSON.stringify(termSel)}) != null;
+        })()`);
+        rec(
+            "6c. Escape closes the note at once, saves what was typed, and focus goes into the terminal",
+            escGone && flushedAt != null && focusInTerm,
+            JSON.stringify({ escGone, flushedAt, flushed, focusInTerm })
+        );
+
+        await click('[data-float-fixed="note"]');
+        await wait(noteUp, 3000);
+        await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
+        const ended = await wait(`!document.querySelector("[data-float-bar]") && ${noteGone}`, 5000);
+        rec("6d. Float ending with the note open closes both", ended, JSON.stringify({ ended }));
+
+        await floatNoteChord(h, ctx);
+        const fromOutside = await wait(`!!document.querySelector("[data-float-bar]") && ${noteUp}`, 3000);
+        rec("6e. Mod+Shift+N outside Float floats straight onto the note", fromOutside, JSON.stringify({ fromOutside }));
+
+        await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
+        await wait(`!document.querySelector("[data-float-bar]")`, 5000);
+        await wait(floatNoteShowing(term.tabId), 3000);
+        await floatTerminal();
+        const again = await wait(`!!document.querySelector("[data-float-bar]")`, 5000);
+        await h.ev("new Promise((r) => setTimeout(r, 600))");
+        const noteBack = await h.ev(`!!document.querySelector("[data-float-note]")`);
+        rec("6f. floating again shows the terminal, not the note", again && !noteBack, JSON.stringify({ again, noteBack }));
+
+        // 7. board TranslateInstall: with the tool missing, Translate runs its install and shows that terminal
+        await h.rpc("toolssetuser", {
+            id: "trans",
+            tool: {
+                command: "arc-no-such-trans",
+                "install:darwin": "echo Installing translate-shell; sleep 6",
+                "install:windows": "echo Installing translate-shell && ping -n 7 127.0.0.1 > nul",
+            },
+        });
+        let missing = false;
+        for (let i = 0; i < 40 && !missing; i++) {
+            missing = ((await h.rpc("toolsstatus", null))?.tools ?? []).some((t) => t.id === "trans" && t.found === false);
+            if (!missing) await polishNap(250);
+        }
+        await polishNap(1500);
+        await click('[data-float-fixed="translate"]');
+        const installShown = await wait(
+            `[...document.querySelectorAll("[data-float-tab]")].some((b) => b.getAttribute("aria-label") === ${JSON.stringify(FLOAT_NOTE_INSTALL_TAB)} && b.getAttribute("aria-pressed") === "true")`,
+            3000
+        );
+        const install = await h.ev(`({
+            translate: document.querySelector('[data-float-fixed="translate"]')?.getAttribute("aria-pressed") ?? null,
+            title: document.querySelector("[data-float-title]")?.textContent ?? null,
+        })`);
+        await h.shot("cdp-shots/float-note-install.png");
+        rec(
+            "7. Translate with no trans installs it: the install terminal shows, its own tab pressed, Translate not",
+            missing && installShown && install.translate === "false" && install.title === FLOAT_NOTE_INSTALL_TAB,
+            JSON.stringify({ missing, installShown, ...install })
+        );
+
+        // 8. board Translate: the trans terminal, its prompt naming the languages
+        await h.rpc("toolssetuser", {
+            id: "trans",
+            tool: { command: "trans", args: `-shell -no-rlwrap -theme ${ctx.theme} :en+vi` },
+        });
+        let found = false;
+        for (let i = 0; i < 40 && !found; i++) {
+            found = ((await h.rpc("toolsstatus", null))?.tools ?? []).some((t) => t.id === "trans" && t.found === true);
+            if (!found) await polishNap(250);
+        }
+        if (!found) {
+            rec("8. Translate opens translate-shell, its prompt naming the languages", false, "translate-shell is not installed");
+            return steps;
+        }
+        await polishNap(1500);
+        await click('[data-float-fixed="translate"]');
+        let trans = null;
+        for (let i = 0; i < 40 && trans == null; i++) {
+            trans = (await floatNoteTabs(h, ctx)).find((t) => t.isTrans && !ctx.preexisting.has(t.tabId)) ?? null;
+            if (trans == null) await polishNap(250);
+        }
+        if (trans == null) {
+            rec("8. Translate opens translate-shell, its prompt naming the languages", false, "no terminal with tool:id trans appeared");
+            return steps;
+        }
+        ctx.transTab = trans.tabId;
+        await wait(floatNoteShowing(trans.tabId), 5000);
+        const open = await h.ev(`({
+            showing: ${floatNoteShowing(trans.tabId)},
+            pressed: document.querySelector('[data-float-fixed="translate"]')?.getAttribute("aria-pressed") ?? null,
+            tab: !!document.querySelector('[data-float-tab="${trans.tabId}"]'),
+            title: document.querySelector("[data-float-title]")?.textContent ?? null,
+            icon: !!document.querySelector("[data-float-bar] svg.lucide-square-terminal"),
+        })`);
+        await h.ev(
+            `document.querySelector('[data-agent-terminal="${trans.tabId}"] .xterm-helper-textarea')?.focus({ preventScroll: true })`
+        );
+        // trans starts after its shell: typed before its banner the word would reach the shell instead
+        await uploadsTermHas(h, trans.blockId, "(:q to quit)");
+        for (const ch of "deploy") await floatNoteKey(h, ch);
+        await floatNoteSpecial(h, "Enter", "Enter", 13, "\r");
+        await polishNap(4000);
+        const prompt = await uploadsTermHas(h, trans.blockId, "→ English+Tiếng Việt ❯");
+        await h.shot("cdp-shots/float-note-translate.png");
+        rec(
+            "8a. Translate opens the trans terminal: pressed, no tab of its own, named translate-shell, and its prompt names the languages",
+            open.showing && open.pressed === "true" && !open.tab && open.title === "translate-shell" && open.icon && prompt.seen,
+            JSON.stringify({ ...open, prompt })
+        );
+
+        await click('[data-float-fixed="note"]');
+        const overTrans = await wait(noteUp, 3000);
+        const transOff = await pressed('[data-float-fixed="translate"]');
+        rec("8b. Note over Translate shows the note and unpresses Translate", overTrans && transOff === "false", JSON.stringify({ overTrans, transOff }));
+
+        await click('[data-float-fixed="translate"]');
+        const noteClosed = await wait(noteGone, 3000);
+        await polishNap(600);
+        const after = await floatNoteTabs(h, ctx);
+        const transBlocks = after.filter((t) => t.isTrans && !ctx.preexisting.has(t.tabId));
+        const stillShowing = await h.ev(floatNoteShowing(trans.tabId));
+        const transOn = await pressed('[data-float-fixed="translate"]');
+        rec(
+            "8c. Translate again shows the same terminal, and there is still exactly one",
+            noteClosed && stillShowing && transBlocks.length === 1 && transBlocks[0].tabId === trans.tabId && transOn === "true",
+            JSON.stringify({ noteClosed, stillShowing, trans: transBlocks.length, transOn })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`float-note teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        if (ctx.notesMode != null) {
+            await step("restore the notes folder's mode", () => chmodSync(ctx.notesDir, ctx.notesMode));
+        }
+        await step("leave float", () => h.ev(`document.querySelector("[data-float-exit]")?.click()`));
+        await step("settle", () => h.ev("new Promise((r) => setTimeout(r, 1200))"));
+        if (ctx.prevNote != null) {
+            await step("write the note back", () => h.rpc("notescratchwrite", { body: ctx.prevNote }));
+        }
+        // prevTrans is undefined until arrange read tools.json (null: no entry); before that nothing was changed
+        if (ctx.prevTrans !== undefined) {
+            await step("restore the trans tool", () =>
+                h.rpc("toolssetuser", ctx.prevTrans != null ? { id: "trans", tool: ctx.prevTrans } : { id: "trans" })
+            );
+        }
+        if (ctx.workspaceId != null) {
+            await step("close the terminals the scenario made", async () => {
+                for (const t of await floatNoteTabs(h, ctx)) {
+                    if (ctx.preexisting.has(t.tabId)) continue;
+                    await step(`close the tab ${t.tabId}`, () =>
+                        waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+                    );
+                }
+            });
+        }
+        for (const t of ctx.terminals ?? []) {
+            await step(`close the terminal tab ${t.tabId}`, () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+            );
+        }
+        if (ctx.tmp != null) await step("remove the temp folder", () => rmSync(ctx.tmp, { recursive: true, force: true }));
+    },
+};
+
 // --- Jarvis across the window's three sizes ----------------------------------------------------------------------
 // Full folds into Sprout in one click and Restore lands in Full; Float folds and Restore lands in Float; the chat opens
 // from Sprout in all three; the terminal's PTY size never moves across a fold (the shell is hidden before the window
@@ -45736,6 +46160,7 @@ export const SCENARIOS = [
     jobqueueChip,
     jobqueueAgentTag,
     floatMini,
+    floatNote,
     jarvisModes,
     settingsStorage,
     toolsTree,

@@ -4,8 +4,10 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -1152,6 +1154,65 @@ func TestInstallClaudeAskSettings_writesAndRestoresTheLockedRules(t *testing.T) 
 	}
 	if b, _ := os.ReadFile(path); string(b) != claudeAskSettings {
 		t.Fatalf("an edited copy was not restored: %s", b)
+	}
+}
+
+func TestInstallTransTheme_writesTheThemeUnderDotArc(t *testing.T) {
+	home := t.TempDir()
+	if err := installTransTheme(home); err != nil {
+		t.Fatal(err)
+	}
+	path := transThemePath(home)
+	if path != filepath.Join(home, ".arc", "translate-shell", "arc.trans") {
+		t.Fatalf("path = %s; the trans tool's args name ~/.arc/translate-shell/arc.trans", path)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("theme not written: %v", err)
+	}
+	if string(b) != transTheme {
+		t.Fatalf("written theme differs from the embedded file")
+	}
+	for _, want := range []string{`:fmt-prompt "%s → %t ❯ "`, `:sgr-translation "bold"`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("theme lacks %s", want)
+		}
+	}
+	// an edited copy is put back on the next launch
+	if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := installTransTheme(home); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != transTheme {
+		t.Fatalf("an edited copy was not restored: %s", b)
+	}
+}
+
+func TestTransThemeNamesTheTargetLanguage(t *testing.T) {
+	trans, err := exec.LookPath("trans")
+	if err != nil {
+		t.Skip("translate-shell is not installed")
+	}
+	theme := filepath.Join(t.TempDir(), "arc.trans")
+	if err := os.WriteFile(theme, []byte(transTheme), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// with empty stdin the shell prints its prompt once and exits, with no network
+	for _, c := range []struct{ target, want string }{
+		{"en:vi", "English → Tiếng Việt ❯"},
+		{":en+vi", " → English+Tiếng Việt ❯"},
+	} {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		out, err := exec.CommandContext(ctx, trans, "-shell", "-no-rlwrap", "-no-ansi", "-theme", theme, c.target).CombinedOutput()
+		cancel()
+		if err != nil {
+			t.Logf("trans %s exited: %v", c.target, err)
+		}
+		if !strings.Contains(string(out), c.want) {
+			t.Errorf("trans %s printed %q, want it to hold %q", c.target, out, c.want)
+		}
 	}
 }
 

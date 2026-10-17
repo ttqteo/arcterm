@@ -1033,6 +1033,18 @@ func NoteListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]*waveobj.UserNo
 	return resp, err
 }
 
+// command "notescratchread", wshserver.NoteScratchReadCommand
+func NoteScratchReadCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (string, error) {
+	resp, err := sendRpcRequestCallHelper[string](w, "notescratchread", nil, opts)
+	return resp, err
+}
+
+// command "notescratchwrite", wshserver.NoteScratchWriteCommand
+func NoteScratchWriteCommand(w *wshutil.WshRpc, data wshrpc.CommandNoteScratchWriteData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "notescratchwrite", data, opts)
+	return err
+}
+
 // command "noteupdate", wshserver.NoteUpdateCommand
 func NoteUpdateCommand(w *wshutil.WshRpc, data wshrpc.CommandNoteUpdateData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "noteupdate", data, opts)

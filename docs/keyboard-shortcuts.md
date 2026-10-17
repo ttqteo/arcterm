@@ -236,6 +236,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `f` | Toggle terminal fullscreen |
 | `Mod`+`Shift`+`Enter` (or `F11`) | Toggle terminal fullscreen from inside the terminal too. A Mac keyboard has no `F11` of its own, so `Cmd`+`Shift`+`Enter` is the one to use there |
 | `Shift`+`F` | Toggle float: the window shrinks to the focused terminal, and its pin keeps it on top of other apps |
+| `Mod`+`Shift`+`N` | Float the note, from anywhere, even from inside a terminal: the window shrinks to a float showing the Note tab, the one markdown scratch note that saves itself (`Esc` or the same key goes back to the terminal). The float's strip holds the Note and Translate tabs at its left |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
 | `Esc` | Back to where you jumped from, else to Cockpit; exits fullscreen first; from Conversation History, the Canvas gallery grid or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |

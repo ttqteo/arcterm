@@ -26,3 +26,11 @@ func (ws *WshServer) NoteUpdateCommand(ctx context.Context, data wshrpc.CommandN
 func (ws *WshServer) NoteDeleteCommand(ctx context.Context, data wshrpc.CommandNoteDeleteData) error {
 	return notestore.Delete(data.ID)
 }
+
+func (ws *WshServer) NoteScratchReadCommand(ctx context.Context) (string, error) {
+	return notestore.ReadScratch()
+}
+
+func (ws *WshServer) NoteScratchWriteCommand(ctx context.Context, data wshrpc.CommandNoteScratchWriteData) error {
+	return notestore.WriteScratch(data.Body)
+}

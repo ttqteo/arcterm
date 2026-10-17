@@ -3,7 +3,8 @@
 
 // Package notestore keeps the user's notes as <vault>/notes/<id>.md files, so the vault's git sync
 // carries them between machines and they read as plain markdown anywhere. Only wavesrv writes them (wsh
-// goes through RPC), so an in-process lock suffices.
+// goes through RPC), so an in-process lock suffices. The one global scratch note is notes/scratch.md,
+// which List skips.
 package notestore
 
 import (
@@ -29,6 +30,7 @@ const (
 	// NotesDir holds one notes/<id>.md file per note.
 	NotesDir = "notes"
 
+	scratchFile   = "scratch.md"
 	noteExt       = ".md"
 	dayLayout     = "2006-01-02"
 	titlePrefix   = "# "
@@ -72,6 +74,10 @@ func vaultRoot() string {
 
 func notesDir() string {
 	return filepath.Join(vaultRoot(), NotesDir)
+}
+
+func scratchPath() string {
+	return filepath.Join(notesDir(), scratchFile)
 }
 
 func notePath(id string) (string, error) {
@@ -232,6 +238,27 @@ func List() ([]*waveobj.UserNote, error) {
 		notes = append(notes, f.note)
 	}
 	return notes, nil
+}
+
+// ReadScratch returns the scratch note as written, or "" when there is none yet.
+func ReadScratch() (string, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	b, err := os.ReadFile(scratchPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read scratch note: %w", err)
+	}
+	return string(b), nil
+}
+
+// WriteScratch replaces the scratch note with body, byte for byte; an empty body clears it.
+func WriteScratch(body string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	return write(scratchPath(), []byte(body))
 }
 
 // Update rewrites a note's title and body. Its id, and so its day, stay.

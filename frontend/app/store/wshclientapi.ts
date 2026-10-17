@@ -1038,6 +1038,18 @@ export class RpcApiType {
         return client.wshRpcCall("notelist", null, opts);
     }
 
+    // command "notescratchread" [call]
+    NoteScratchReadCommand(client: WshClient, opts?: RpcOpts): Promise<string> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "notescratchread", null, opts);
+        return client.wshRpcCall("notescratchread", null, opts);
+    }
+
+    // command "notescratchwrite" [call]
+    NoteScratchWriteCommand(client: WshClient, data: CommandNoteScratchWriteData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "notescratchwrite", data, opts);
+        return client.wshRpcCall("notescratchwrite", data, opts);
+    }
+
     // command "noteupdate" [call]
     NoteUpdateCommand(client: WshClient, data: CommandNoteUpdateData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "noteupdate", data, opts);
