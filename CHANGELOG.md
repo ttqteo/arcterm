@@ -22,7 +22,7 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 0.15.15 — 2026-10-17
 
 ### Added
 
@@ -31,7 +31,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   language it translates into, with `↑` recalling past lookups. `Cmd`+`Shift`+`N` floats the note.
   <!-- try: float-note --> <!-- big -->
 - Office sounds: chiptune jingles when a task finishes, a run lands or someone needs you, with optional footsteps and
-  day and night music (`s` or the office menu's Mute sound mutes them).
+  day and night music (`s` or the office menu's Mute sound mutes them). Settings → Appearance turns the jingles, the
+  boss's sounds and the music on or off, and sets how loud they play.
+- On a Mac, translate-shell is in the tool library (Setup → Tools), translating into English and Vietnamese.
 - **Answer an agent's question from Telegram**: pair a bot in Settings → General → Notifications, then tap an option
   or reply in your own words. <!-- big --> <!-- shot: 0.15.15-telegram.webp -->
 - **Your pet is the Office's boss**: in the Cockpit's Office you walk around as Sprout, the Minion, or Spider-Man, who
@@ -81,6 +83,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- On a Mac, closing the menu bar popover no longer crashes arcterm.
+- On macOS 27 the menu bar icon looks pressed while its popover is open; it only did on earlier macOS.
 - On a Mac, arcterm folded into Sprout over a full-screen app comes back where you can see it: the Dock icon, `⌘Tab` or
   a double-click on Sprout takes the screen to arcterm's desktop instead of leaving it on the full-screen app.
 - A conversation no longer ends up open in two tabs after arcterm restarts: resuming it right after a restart goes to
