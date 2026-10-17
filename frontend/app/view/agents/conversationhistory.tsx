@@ -15,10 +15,11 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Activity, ArrowLeft, Check, Workflow } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAge, formatAgeShort, formatTokens } from "./agentsviewmodel";
+import { nearListEnd } from "./listend";
 import type { RunInfo } from "./runlineage";
 import { runDigestsAtom, useRunDigests } from "./runlineagestore";
 import { useRunObjects } from "./runobjects";
@@ -26,12 +27,15 @@ import { runtimeMeta } from "./runtimemeta";
 import {
     filterByStatus,
     groupByRecency,
+    loadMoreSessionsArchive,
     loadSessionsArchive,
     mergedFeed,
     overlayLive,
     resolveSelectedSession,
     sessionsArchiveAtom,
+    sessionsCursorAtom,
     sessionsErrorAtom,
+    sessionsLoadingMoreAtom,
     totalEvents,
     type LiveSession,
     type SessionStatusFilter,
@@ -100,6 +104,9 @@ function soloStatus(s: LiveSession, now: number): Status {
 export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     const base = useAtomValue(sessionsArchiveAtom);
     const loadError = useAtomValue(sessionsErrorAtom);
+    const cursor = useAtomValue(sessionsCursorAtom);
+    const loadingMore = useAtomValue(sessionsLoadingMoreAtom);
+    const onSurface = useAtomValue(model.surfaceAtom) === "agent";
     const roster = useAtomValue(model.agentsAtom);
     const now = useAtomValue(model.nowAtom);
     const [sel, setSel] = useAtom(model.sessionsSelAtom);
@@ -110,6 +117,20 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     useEffect(() => {
         fireAndForget(loadSessionsArchive);
     }, []);
+
+    // older pages load as the list scrolls to its end. The same check runs after each page lands and when the status
+    // filter changes: a list that does not fill its container has no scrollbar and so no scroll event, and keeps
+    // loading until it fills or the store's cursor is "" (the store sends one request at a time and none after that).
+    // A hidden History (the Agent surface stays mounted) measures 0 high, which would read as "at the end" and load
+    // every page: it checks only while it has a height, and again when its surface comes back
+    const listRef = useRef<HTMLDivElement>(null);
+    const loadIfAtEnd = useCallback(() => {
+        const el = listRef.current;
+        if (el != null && el.clientHeight > 0 && nearListEnd(el)) {
+            fireAndForget(loadMoreSessionsArchive);
+        }
+    }, []);
+    useEffect(loadIfAtEnd, [loadIfAtEnd, base, cursor, filter, onSurface]);
 
     const live = useMemo(() => (base == null ? [] : overlayLive(base, roster, now)), [base, roster, now]);
     const { runs: runGroups, solos } = useMemo(() => groupRunSessions(live), [live]);
@@ -232,7 +253,6 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
     // The Agent surface stays mounted, hidden, with its centre mode kept, so History can be mounted while another
     // surface is showing. Publish only while this surface is: a hidden History would otherwise take listNavAtom
     // from the visible surface's own list (Radar, Usage, Diff, Brief), whose j/k then go dead.
-    const onSurface = useAtomValue(model.surfaceAtom) === "agent";
     useSurfaceListNav(onSurface ? listNav : null);
 
     const runTitles = Object.fromEntries(runRows.map((r) => [r.run!.group.runId, r.run!.view.title]));
@@ -300,7 +320,11 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                                 ))}
                             </div>
                         </div>
-                        <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-3 pb-10">
+                        <div
+                            ref={listRef}
+                            onScroll={loadIfAtEnd}
+                            className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-3 pb-10"
+                        >
                             <button
                                 type="button"
                                 onClick={() => setSel("all")}
@@ -369,6 +393,9 @@ export function ConversationHistory({ model }: { model: AgentsViewModel }) {
                                     </div>
                                 ))
                             )}
+                            {loadingMore ? (
+                                <div className="flex-none px-1 py-2 text-[11.5px] text-muted">Loading older sessions…</div>
+                            ) : null}
                         </div>
                     </div>
 

@@ -13,18 +13,52 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { AgentVM } from "./agentsviewmodel";
 
-const WINDOW_DAYS = 30;
-const LIMIT = 100;
+// one page of the newest-first scan; the older ones come a page at a time through loadMoreSessionsArchive
+const PAGE = 100;
 
 // null = not loaded yet; [] = loaded-empty.
 export const sessionsArchiveAtom = atom<SessionActivity[] | null>(null) as PrimitiveAtom<SessionActivity[] | null>;
 // true = the last scan failed (so an empty list reads as an error, not "no sessions"). Mirrors usagestore.
 export const sessionsErrorAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+// where the next older page starts; "" = every session on disk is loaded
+export const sessionsCursorAtom = atom<string>("") as PrimitiveAtom<string>;
+// true while an older page is being fetched, for the list's "Loading older sessions…" row
+export const sessionsLoadingMoreAtom = atom<boolean>(false) as PrimitiveAtom<boolean>;
+
+const sessionId = (s: Pick<SessionActivity, "runtime" | "id">) => `${s.runtime}:${s.id}`;
+
+/** Pure: a refreshed first page over the sessions already loaded. The fresh page leads; behind it come the kept
+ *  sessions older than its oldest that it does not list, so the older pages a refresh never re-reads survive it, a
+ *  session that moved up is listed once, and one that is gone from the fresh page's range drops out. The cursor is the
+ *  kept one while such older sessions remain, else the fresh page's own. Identity is runtime + id. */
+export function mergeFreshPage(
+    fresh: SessionActivity[],
+    freshCursor: string,
+    kept: SessionActivity[],
+    keptCursor: string
+): { sessions: SessionActivity[]; cursor: string } {
+    if (fresh.length === 0) {
+        return { sessions: fresh, cursor: freshCursor };
+    }
+    const oldest = Math.min(...fresh.map((s) => s.lastactivets));
+    const listed = new Set(fresh.map(sessionId));
+    const older = kept.filter((s) => !listed.has(sessionId(s)) && s.lastactivets <= oldest);
+    if (older.length === 0) {
+        return { sessions: fresh, cursor: freshCursor };
+    }
+    return { sessions: [...fresh, ...older], cursor: keptCursor };
+}
+
+function appendPage(have: SessionActivity[], page: SessionActivity[]): SessionActivity[] {
+    const listed = new Set(have.map(sessionId));
+    return [...have, ...page.filter((s) => !listed.has(sessionId(s)))];
+}
 
 let loading = false;
 // a refresh asked for while a scan is running (an agent just exited) would be dropped, and the scan under way may have
 // read the transcripts before that session ended: it runs once more when this one finishes
 let again = false;
+let loadingMore = false;
 
 export async function loadSessionsArchive(): Promise<void> {
     if (loading) {
@@ -33,8 +67,16 @@ export async function loadSessionsArchive(): Promise<void> {
     }
     loading = true;
     try {
-        const rtn = await RpcApi.GetSessionsActivityCommand(TabRpcClient, { windowdays: WINDOW_DAYS, limit: LIMIT });
-        globalStore.set(sessionsArchiveAtom, rtn.sessions ?? []);
+        const rtn = await RpcApi.GetSessionsActivityCommand(TabRpcClient, { limit: PAGE });
+        // merged against what is loaded when the answer lands, so a page that arrived meanwhile is not lost
+        const merged = mergeFreshPage(
+            rtn.sessions ?? [],
+            rtn.nextcursor ?? "",
+            globalStore.get(sessionsArchiveAtom) ?? [],
+            globalStore.get(sessionsCursorAtom)
+        );
+        globalStore.set(sessionsArchiveAtom, merged.sessions);
+        globalStore.set(sessionsCursorAtom, merged.cursor);
         globalStore.set(sessionsErrorAtom, false);
     } catch {
         // surface the failure distinctly instead of an indistinguishable empty list. Keep any last-good
@@ -48,6 +90,44 @@ export async function loadSessionsArchive(): Promise<void> {
             void loadSessionsArchive();
         }
     }
+}
+
+/** Append the next older page. One request at a time; nothing once every session is loaded (cursor ""), so a list that
+ *  never fills ends its refill there instead of asking again. A failed page keeps the cursor: a later scroll retries. */
+export async function loadMoreSessionsArchive(): Promise<void> {
+    const cursor = globalStore.get(sessionsCursorAtom);
+    if (loadingMore || cursor === "" || globalStore.get(sessionsArchiveAtom) == null) {
+        return;
+    }
+    loadingMore = true;
+    globalStore.set(sessionsLoadingMoreAtom, true);
+    try {
+        const rtn = await RpcApi.GetSessionsActivityCommand(TabRpcClient, { limit: PAGE, cursor });
+        globalStore.set(sessionsArchiveAtom, (prev) => appendPage(prev ?? [], rtn.sessions ?? []));
+        globalStore.set(sessionsCursorAtom, rtn.nextcursor ?? "");
+    } catch {
+        // the rows already loaded stay as they are
+    } finally {
+        loadingMore = false;
+        globalStore.set(sessionsLoadingMoreAtom, false);
+    }
+}
+
+/** Take a session's row out now: a delete reloads only the first page, which would leave a row from an older page. */
+export function dropFromArchive(transcriptPath: string): void {
+    if (transcriptPath === "") {
+        return;
+    }
+    const gone = norm(transcriptPath);
+    globalStore.set(sessionsArchiveAtom, (prev) =>
+        prev == null ? prev : prev.filter((s) => norm(s.transcriptpath ?? "") !== gone)
+    );
+}
+
+/** Pure: the sessions the command palette lists: resumable ones outside an engine run, or a run's lead. A run's workers,
+ *  reviewers and stage sessions are not conversations to pick from. */
+export function paletteSessions<T extends SessionActivity>(list: T[]): T[] {
+    return list.filter((s) => s.resumecommand && (!s.role || s.role === "lead"));
 }
 
 export type SessionStatusFilter = "all" | "live" | "done" | "needs";

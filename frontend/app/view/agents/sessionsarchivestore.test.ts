@@ -6,15 +6,21 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
+    dropFromArchive,
     filterByStatus,
     groupByRecency,
+    loadMoreSessionsArchive,
     loadSessionsArchive,
     mergedFeed,
+    mergeFreshPage,
     overlayLive,
+    paletteSessions,
     resolveSelectedSession,
     sessionHolder,
     sessionsArchiveAtom,
+    sessionsCursorAtom,
     sessionsErrorAtom,
+    sessionsLoadingMoreAtom,
     storedSessionHolders,
     totalEvents,
     type StoredAgentBlock,
@@ -226,5 +232,145 @@ describe("loadSessionsArchive", () => {
         expect(scan).toHaveBeenCalledTimes(2);
         expect(globalStore.get(sessionsArchiveAtom)).toBe(good);
         expect(globalStore.get(sessionsErrorAtom)).toBe(true);
+    });
+});
+
+const at = (id: string, ts: number, over: Partial<SessionActivity> = {}) =>
+    mk({ id, lastactivets: ts, transcriptpath: `/t/${id}.jsonl`, ...over });
+
+describe("loadSessionsArchive paging", () => {
+    it("asks for one page of 100, with no day window and no cursor", async () => {
+        const scan = vi.mocked(RpcApi.GetSessionsActivityCommand);
+        scan.mockReset();
+        scan.mockResolvedValue({ sessions: [at("a", 5)], nextcursor: "c1" });
+        globalStore.set(sessionsArchiveAtom, null);
+        globalStore.set(sessionsCursorAtom, "");
+        await loadSessionsArchive();
+        expect(scan).toHaveBeenCalledTimes(1);
+        expect(scan.mock.calls[0][1]).toEqual({ limit: 100 });
+        expect(globalStore.get(sessionsCursorAtom)).toBe("c1");
+        expect(globalStore.get(sessionsArchiveAtom)?.map((s) => s.id)).toEqual(["a"]);
+    });
+    it("keeps the older pages a refresh does not re-read", async () => {
+        const scan = vi.mocked(RpcApi.GetSessionsActivityCommand);
+        scan.mockReset();
+        globalStore.set(sessionsArchiveAtom, [at("a", 50), at("b", 40), at("c", 10)]);
+        globalStore.set(sessionsCursorAtom, "deep");
+        scan.mockResolvedValue({ sessions: [at("b", 60), at("a", 50)], nextcursor: "shallow" });
+        await loadSessionsArchive();
+        expect(globalStore.get(sessionsArchiveAtom)?.map((s) => s.id)).toEqual(["b", "a", "c"]);
+        expect(globalStore.get(sessionsCursorAtom)).toBe("deep");
+    });
+});
+
+describe("mergeFreshPage", () => {
+    const ids = (list: SessionActivity[]) => list.map((s) => s.id);
+    it("lists every session once, the one that moved up first, and keeps the deeper cursor", () => {
+        const kept = [at("a", 90), at("b", 80), at("c", 70), at("d", 60), at("e", 50), at("f", 40)];
+        const fresh = [at("e", 100), at("a", 90), at("b", 80)];
+        const merged = mergeFreshPage(fresh, "fresh", kept, "deep");
+        expect(ids(merged.sessions)).toEqual(["e", "a", "b", "c", "d", "f"]);
+        expect(merged.cursor).toBe("deep");
+    });
+    it("takes the fresh cursor when nothing older is kept", () => {
+        const kept = [at("a", 90), at("b", 80)];
+        const fresh = [at("b", 100), at("a", 90), at("n", 85)];
+        const merged = mergeFreshPage(fresh, "fresh", kept, "deep");
+        expect(ids(merged.sessions)).toEqual(["b", "a", "n"]);
+        expect(merged.cursor).toBe("fresh");
+        expect(mergeFreshPage(fresh, "fresh", [], "").cursor).toBe("fresh");
+    });
+    it("drops a kept session newer than the fresh page's oldest that it no longer lists (deleted)", () => {
+        const kept = [at("a", 90), at("gone", 85), at("b", 80), at("c", 70)];
+        const merged = mergeFreshPage([at("a", 90), at("b", 80)], "fresh", kept, "deep");
+        expect(ids(merged.sessions)).toEqual(["a", "b", "c"]);
+    });
+    it("tells sessions of two runtimes with one id apart", () => {
+        const kept = [at("x", 50, { runtime: "pi" })];
+        const merged = mergeFreshPage([at("x", 60)], "fresh", kept, "deep");
+        expect(merged.sessions.map((s) => `${s.runtime}:${s.id}`)).toEqual(["claude:x", "pi:x"]);
+    });
+});
+
+describe("loadMoreSessionsArchive", () => {
+    const scan = vi.mocked(RpcApi.GetSessionsActivityCommand);
+    const reset = (cursor: string) => {
+        scan.mockReset();
+        globalStore.set(sessionsArchiveAtom, [at("a", 90)]);
+        globalStore.set(sessionsCursorAtom, cursor);
+        globalStore.set(sessionsLoadingMoreAtom, false);
+    };
+    it("sends the stored cursor and appends the page, skipping a session already listed", async () => {
+        reset("c1");
+        scan.mockResolvedValue({ sessions: [at("a", 90), at("b", 80)], nextcursor: "c2" });
+        await loadMoreSessionsArchive();
+        expect(scan.mock.calls[0][1]).toEqual({ limit: 100, cursor: "c1" });
+        expect(globalStore.get(sessionsArchiveAtom)?.map((s) => s.id)).toEqual(["a", "b"]);
+        expect(globalStore.get(sessionsCursorAtom)).toBe("c2");
+        expect(globalStore.get(sessionsLoadingMoreAtom)).toBe(false);
+    });
+    it("sends nothing while a page is pending", async () => {
+        reset("c1");
+        let finish!: () => void;
+        scan.mockImplementationOnce(
+            () => new Promise((resolve) => (finish = () => resolve({ sessions: [], nextcursor: "" }))) as ReturnType<typeof scan>
+        );
+        const first = loadMoreSessionsArchive();
+        expect(globalStore.get(sessionsLoadingMoreAtom)).toBe(true);
+        await loadMoreSessionsArchive();
+        await loadMoreSessionsArchive();
+        expect(scan).toHaveBeenCalledTimes(1);
+        finish();
+        await first;
+        expect(globalStore.get(sessionsLoadingMoreAtom)).toBe(false);
+    });
+    it("ends for good on an empty last page with cursor '': the refill asking again sends nothing", async () => {
+        reset("c1");
+        scan.mockResolvedValue({ sessions: [], nextcursor: "" });
+        await loadMoreSessionsArchive();
+        expect(scan).toHaveBeenCalledTimes(1);
+        expect(globalStore.get(sessionsCursorAtom)).toBe("");
+        await loadMoreSessionsArchive();
+        await loadMoreSessionsArchive();
+        expect(scan).toHaveBeenCalledTimes(1);
+    });
+    it("sends nothing before the first page has loaded", async () => {
+        reset("c1");
+        globalStore.set(sessionsArchiveAtom, null);
+        await loadMoreSessionsArchive();
+        expect(scan).not.toHaveBeenCalled();
+    });
+    it("keeps the rows and the cursor when a page fails, so a later scroll retries", async () => {
+        reset("c1");
+        scan.mockRejectedValueOnce(new Error("scan failed"));
+        await loadMoreSessionsArchive();
+        expect(globalStore.get(sessionsArchiveAtom)?.map((s) => s.id)).toEqual(["a"]);
+        expect(globalStore.get(sessionsCursorAtom)).toBe("c1");
+        expect(globalStore.get(sessionsLoadingMoreAtom)).toBe(false);
+    });
+});
+
+describe("dropFromArchive", () => {
+    it("removes the row of that transcript, whatever the path's case or separators", () => {
+        globalStore.set(sessionsArchiveAtom, [at("a", 3), at("b", 2), at("c", 1)]);
+        dropFromArchive("\\T\\B.jsonl");
+        expect(globalStore.get(sessionsArchiveAtom)?.map((s) => s.id)).toEqual(["a", "c"]);
+        dropFromArchive("");
+        expect(globalStore.get(sessionsArchiveAtom)?.map((s) => s.id)).toEqual(["a", "c"]);
+    });
+});
+
+describe("paletteSessions", () => {
+    it("keeps a session with no role and a lead; drops workers, reviewers, stage roles and the unresumable", () => {
+        const list = [
+            at("none", 1),
+            at("lead", 2, { role: "lead" }),
+            at("worker", 3, { role: "worker" }),
+            at("review", 4, { role: "review" }),
+            at("verifier", 5, { role: "verifier" }),
+            at("plan", 6, { role: "plan-reviewer" }),
+            at("norc", 7, { resumecommand: "" }),
+        ];
+        expect(paletteSessions(list).map((s) => s.id)).toEqual(["none", "lead"]);
     });
 });
