@@ -2,34 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import {
-    fmtBytes,
-    fmtDate,
-    fmtDuration,
-    needsEvidenceSeal,
-    phaseHistory,
-    runShortId,
-    verifCmdLabel,
-    verifCounts,
-    verifTone,
-} from "./runcompletion";
+import { fmtBytes, fmtDuration, needsEvidenceSeal, verifCounts } from "./runcompletion";
 
 describe("runcompletion derivations", () => {
-    it("formats a short id", () => {
-        expect(runShortId("a1f9c3de-0000")).toBe("a1f9c3");
-    });
     it("formats duration and bytes", () => {
         expect(fmtDuration(848000)).toBe("14m 08s");
         expect(fmtDuration(9000)).toBe("9s");
         expect(fmtBytes(214 * 1024)).toBe("214 KB");
-        expect(fmtDate(new Date(2026, 7, 16, 9, 30).getTime())).toBe("2026-08-16");
-        expect(fmtDate(0)).toBe("—");
-        expect(fmtDate(NaN)).toBe("—");
     });
-    it("maps verif tone + counts", () => {
-        expect(verifTone("pass").icon).toBe("✓");
-        expect(verifTone("fail").icon).toBe("✕");
-        expect(verifTone("unknown").icon).toBe("?");
+    it("counts verifications by result", () => {
         const counts = verifCounts([
             { cmd: "a", result: "pass" },
             { cmd: "b", result: "fail" },
@@ -37,59 +18,9 @@ describe("runcompletion derivations", () => {
         ] as EvidenceVerif[]);
         expect(counts).toEqual({ pass: 2, fail: 1, unknown: 0 });
     });
-    it("builds phase history with a freshctx boundary node and gate tag", () => {
-        const run = {
-            id: "r",
-            phases: [
-                {
-                    kind: "brainstorm",
-                    skill: "superpowers:brainstorming",
-                    state: "done",
-                    startedts: 1000,
-                    donets: 2000,
-                },
-                { kind: "plan", skill: "superpowers:writing-plans", state: "done", gate: true, donets: 3000 },
-                { kind: "execute", state: "done", freshctx: true, donets: 4000, artifacts: ["merged"] },
-            ],
-        } as unknown as Run;
-        const nodes = phaseHistory(run);
-        // brainstorm, plan(gate), execute(boundary) -> 3 nodes; the execute node is flagged isBoundary
-        expect(nodes.map((n) => n.name)).toEqual(["Brainstorm", "Plan", "Execute"]);
-        expect(nodes[1].isGate).toBe(true);
-        expect(nodes[2].isBoundary).toBe(true);
-        expect(nodes[2].notLast).toBe(false);
-    });
     it("flags a done run without evidence for backfill", () => {
         expect(needsEvidenceSeal({ status: "done" } as Run)).toBe(true);
         expect(needsEvidenceSeal({ status: "done", evidence: {} } as unknown as Run)).toBe(false);
         expect(needsEvidenceSeal({ status: "executing" } as Run)).toBe(false);
-    });
-});
-
-describe("verifCmdLabel", () => {
-    it("drops a leading cd prefix so the test invocation survives truncation", () => {
-        expect(verifCmdLabel('cd "C:/Users/me/.claude/worktrees/g2-auth" && pytest tests/test_auth.py')).toBe(
-            "pytest tests/test_auth.py"
-        );
-    });
-    it("drops a leading env assignment", () => {
-        expect(verifCmdLabel("WT=/tmp/wt && npx vitest run frontend/app/foo.test.ts")).toBe(
-            "npx vitest run frontend/app/foo.test.ts"
-        );
-    });
-    it("drops several leading setup segments", () => {
-        expect(verifCmdLabel("cd /repo && export CI=1 && go test ./pkg/jarvis/")).toBe("go test ./pkg/jarvis/");
-    });
-    it("leaves a bare command untouched", () => {
-        expect(verifCmdLabel("npm test")).toBe("npm test");
-    });
-    it("keeps the pipeline that produced the output", () => {
-        expect(verifCmdLabel("cd /repo && pytest | tail -20")).toBe("pytest | tail -20");
-    });
-    it("returns the original when every segment is setup", () => {
-        expect(verifCmdLabel("cd /repo && export CI=1")).toBe("cd /repo && export CI=1");
-    });
-    it("survives empty input", () => {
-        expect(verifCmdLabel("")).toBe("");
     });
 });

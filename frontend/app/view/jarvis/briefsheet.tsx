@@ -38,7 +38,6 @@ import {
     pendingRunDraftAtom,
     resolvedProfileAtom,
 } from "@/app/view/agents/runactions";
-import { RunBody } from "@/app/view/agents/runbody";
 import { launchBlocker } from "@/app/view/agents/runconfig";
 import {
     autonomousAtom,
@@ -66,7 +65,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QueueSheet } from "./briefqueuesheet";
 import { briefQueueSheetAtom } from "./briefqueuestore";
-import { RunSettingsPanel, SHEET_BTN, SheetShell } from "./briefrunsheet";
+import { SHEET_BTN, SheetShell } from "./briefrunsheet";
 import { sheetFace, type SheetFace } from "./briefsheetmodel";
 import { REGION_LABEL } from "./briefstyle";
 import { briefUndo } from "./briefundo";
@@ -89,7 +88,7 @@ import { recordBandCase } from "./recordband";
 import { RecordBand } from "./recordbandview";
 import { returnToOrigin } from "./returnsurface";
 import { RunSheet } from "./runsheet";
-import { launcherReading, sheetRoute } from "./runsheetmodel";
+import { launcherReading } from "./runsheetmodel";
 
 const FIELD =
     "min-w-0 flex-1 rounded-[7px] border border-border bg-background px-2.5 py-1.5 text-[12.5px] text-ink-hi placeholder:text-ink-faint";
@@ -250,8 +249,6 @@ function ChannelLaunch({ channel }: { channel: Channel }) {
     );
 }
 
-// Runs stored before slice 5c (pipeline, adaptive, parked at a plan gate) keep RunBody, which knows how to
-// draw them; every other run is the sheet. Both share the configuration dock.
 function ChannelRun({
     model,
     channel,
@@ -263,18 +260,7 @@ function ChannelRun({
     run: Run;
     onClose: () => void;
 }) {
-    const agents = useAtomValue(model.agentsAtom);
-    if (sheetRoute(run) === "sheet") {
-        return <RunSheet model={model} channel={channel} run={run} onClose={onClose} />;
-    }
-    return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            <RunBody model={model} channel={channel} agents={agents} run={run} />
-            <div data-jarvis-brief-sheet-face="settings" className="flex-none border-t border-edge-faint bg-surface">
-                <RunSettingsPanel run={run} />
-            </div>
-        </div>
-    );
+    return <RunSheet model={model} channel={channel} run={run} onClose={onClose} />;
 }
 
 // The launcher face's reading, in the slot where a run's verb would be: the two faces keep one layout.

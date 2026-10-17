@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The run sheet as data (docs/prototype/run-sheet.dc.html). The sheet used to carry two authorities on one
-// run: RunHeader's pill read run.status and DagOverview's strip read the digest's health, so a run whose
-// tasks had all finished read EXECUTING above "done · 4/4". Everything the sheet says about where a run
+// run: the removed run header's pill read run.status and the removed DAG overview's strip read the digest's
+// health, so a run whose tasks had all finished read EXECUTING above "done · 4/4". Everything the sheet says about where a run
 // stands — the verb, the meter, the meta line and next: — is derived here from one read, so none of them
 // can disagree with another.
 //
@@ -31,7 +31,6 @@ import type { TaskWorkerView } from "../orchestrate/taskcorrelate";
 import { workerSortKey } from "../orchestrate/workertasksort";
 import {
     routeLabel,
-    runMachine,
     workersLabel,
     type LinkedGroupRead,
     type RunSettingsDraft,
@@ -94,19 +93,6 @@ export type SheetRead = {
     workerAsking: boolean;
     survivors: number;
 };
-
-// Which runs the sheet draws. Slice 5c deleted the plan gate, adaptive orchestration and pipeline mode, but
-// runs stored before it stay readable: they render through RunBody's pipeline rail and orchestrator body as
-// before, rather than through states this sheet no longer has.
-export function sheetRoute(run: Run): "sheet" | "legacy" {
-    if (run.status === "awaiting-review" || run.plangatepending) {
-        return "legacy";
-    }
-    if (run.mode === "orchestrator") {
-        return runMachine(run) === "engine" ? "sheet" : "legacy";
-    }
-    return (run.mode || "quick") === "quick" ? "sheet" : "legacy";
-}
 
 // The task graph a run's status is read from. Only an orchestrator owns one: a task's worker is a quick run
 // that carries its parent's dagoref, and reading the graph there would print the whole plan on one task.

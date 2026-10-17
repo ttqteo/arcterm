@@ -2,7 +2,7 @@
 //
 // The lifecycle rail's rows as data: bursts of one phase of one task, the steps worth showing in each, a
 // one-line snippet, quiet gaps and the activity strip. Attention is ATTENTION_KINDS and titles are
-// runtimeline's, so this rail and the run body's timeline cannot disagree about either.
+// runtimeline's, so this rail and any other timeline cannot disagree about either.
 
 import { detailOf, eventTitle } from "../agents/runtimeline";
 import { ATTENTION_KINDS, taskIdOf, type TimelineFilter } from "./timelinefilter";

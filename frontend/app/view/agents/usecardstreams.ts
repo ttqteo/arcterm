@@ -4,8 +4,7 @@
 // Shared card-stream lifecycle. The transcript streams (livetranscript) and per-card git tracking
 // (cardgitstore) are module-level, idempotent singletons; this hook is the React driver that starts
 // what's wanted, stops what's no longer wanted, and tears everything down on unmount. cockpitsurface
-// drives it with trackGit (transcript + git + debounced-on-activity git reload); runbody drives it
-// transcript-only. The two surfaces never co-mount, so stream ownership never collides.
+// drives it with trackGit (transcript + git + debounced-on-activity git reload).
 
 import { useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";

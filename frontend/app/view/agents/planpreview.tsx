@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The plan document being approved, read from a gated phase's artifact and rendered inline (and
-// editable) so a plan can be reviewed without leaving Runs. Extracted from runbody.tsx — it is a
+// editable) so a plan can be reviewed without leaving Runs. A
 // self-contained load/edit/save component used only by the review-gate card.
 
 import { SkeletonLine } from "@/app/element/skeleton";

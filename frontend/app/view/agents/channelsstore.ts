@@ -60,7 +60,7 @@ async function refreshActiveChannelStreams(channelId: string): Promise<void> {
     globalStore.set(activeChannelMessagesAtom, msgsRtn.messages ?? []);
 }
 
-// per-run live subscription (RunBody reads this for the focused run's phase deltas via the run: WOS object)
+// per-run live subscription to the run: WOS object
 export function runAtom(runId: string) {
     return WOS.getWaveObjectAtom<Run>(WOS.makeORef("run", runId));
 }

@@ -48717,8 +48717,7 @@ const agentComposer = {
 // The run sheet's done face, its cancel, survivor and ask cards, and the Code surface's stale bar had no step that
 // shows them. Each scenario asserts only what the component says today; a polish task adds the step for what it
 // changes. A run's state is written onto a deferred run, the way final-shots seeds one, since no engine reaches it
-// on demand. RunBody's completion page and worker card are not here: only runs stored before slice 5c reach them
-// (sheetRoute).
+// on demand. Every run, the ones stored before slice 5c included, now opens in RunSheet; run-sheet-legacy shows it.
 
 // writes the run, reads it back, and reloads: UpdateObject publishes nothing, and the Brief reads a boot snapshot
 async function lookSeedRun(h, ctx, patch) {
@@ -48898,6 +48897,105 @@ const runSheetCardsLook = {
     },
     async teardown(h, ctx) {
         await teardownFixtureRun(h, ctx, "run-sheet-cards");
+    },
+};
+
+// the shapes the removed legacy route sent to the pipeline rail: a done run with no orchestration stamp, one parked at a
+// plan gate, and a pipeline run. No run created today takes them (createrun stamps orchestration "engine"), so each is
+// written onto a deferred run; every one must open in the run sheet and say its goal
+const runSheetLegacyLook = {
+    name: "run-sheet-legacy",
+    surface: "jarvis",
+    async arrange(h) {
+        const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-run-sheet-legacy-")) };
+        try {
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name: "verify-run-sheet-legacy", projectpath: ctx.cwd });
+            ctx.channelId = ch.oid;
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: LOOK_RUN_GOAL,
+                runtime: "claude",
+                mode: "orchestrator",
+                deferstart: true,
+            });
+            ctx.runId = created.run.id;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.arrangeError != null) return [{ step: "0. arrange", ok: false, detail: ctx.arrangeError }];
+        const steps = [];
+        const sheetRead = (done) =>
+            lookEval(h, `
+                const sheet = () => document.querySelector(${JSON.stringify(done ? '[data-run-sheet="done"]' : "[data-run-sheet]")});
+                await until(() => sheet() != null, 8000);
+                await nap(600);
+                const text = flat(sheet());
+                return {
+                    sheet: sheet() != null,
+                    goal: text.includes(${JSON.stringify(LOOK_RUN_GOAL)}),
+                    files: ${JSON.stringify(LOOK_RUN_FILES.map((f) => f.path))}.filter((p) => !text.includes(p)),
+                };
+            `);
+        const now = Date.now();
+        await lookSeedRun(h, ctx, {
+            status: "done",
+            mode: "orchestrator",
+            orchestration: "",
+            runtime: "claude",
+            report: "",
+            phases: [
+                { kind: "plan", state: "done", startedts: now - 655_000, donets: now - 520_000, artifacts: ["docs/plan.md"] },
+                { kind: "execute", state: "done", gate: true, startedts: now - 520_000, donets: now - 30_000 },
+            ],
+            evidence: {
+                capturedts: now,
+                hash: "",
+                summary: "Raised the retry budget to 8 and added Submit, with a test for each.",
+                files: LOOK_RUN_FILES,
+                addtotal: 20,
+                deltotal: 3,
+                verifs: LOOK_RUN_VERIFS,
+                artifacts: [{ path: "docs/retry.md", kind: "doc", size: 2140 }],
+                runtimems: 412_000,
+                durationms: 655_000,
+            },
+        });
+        let opened = await lookOpenRun(h, ctx);
+        let s = await sheetRead(true);
+        await h.shot(lookShot("run-sheet-legacy-done"));
+        steps.push({
+            step: "a done run stored before slice 5c opens in the run sheet with its goal and landed files",
+            ok: opened === true && s.sheet && s.goal && s.files.length === 0,
+            detail: JSON.stringify({ opened, ...s }),
+        });
+        await lookSeedRun(h, ctx, { status: "awaiting-review", plangatepending: true });
+        opened = await lookOpenRun(h, ctx);
+        s = await sheetRead(false);
+        await h.shot(lookShot("run-sheet-legacy-plan-gate"));
+        steps.push({
+            step: "a run parked at a plan gate opens in the run sheet with its goal",
+            ok: opened === true && s.sheet && s.goal,
+            detail: JSON.stringify({ opened, ...s }),
+        });
+        await lookSeedRun(h, ctx, { status: "executing", plangatepending: false, mode: "pipeline" });
+        opened = await lookOpenRun(h, ctx);
+        s = await sheetRead(false);
+        await h.shot(lookShot("run-sheet-legacy-pipeline"));
+        steps.push({
+            step: "a pipeline run opens in the run sheet with its goal",
+            ok: opened === true && s.sheet && s.goal,
+            detail: JSON.stringify({ opened, ...s }),
+        });
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // the last seeded run is executing, so the ordinary teardown can cancel it
+        await teardownFixtureRun(h, ctx, "run-sheet-legacy");
     },
 };
 
@@ -49183,6 +49281,7 @@ export const SCENARIOS = [
     taskDetail,
     ambientTags,
     runSheetDoneLook,
+    runSheetLegacyLook,
     runSheetCardsLook,
     codeStaleBarLook,
     // last: its fixture roster stands in for the live one until its teardown reloads

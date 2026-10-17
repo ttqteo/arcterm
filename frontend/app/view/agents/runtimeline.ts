@@ -1,99 +1,7 @@
 // Copyright 2026, Command Line Inc.
 //
-// Pure: group a run's lifecycle events into the hybrid timeline — cross-cutting events under a RUN
-// group, phase-scoped events under their phase group — plus a 3-event collapsed preview (newest
-// first). Grouping does not depend on live state; the store in runeventstore.ts feeds it.
+// Pure: how a run's lifecycle events read as rows — title, text, detail payload, time label and tone.
 
-export const RUN_GROUP_ID = "run";
-export const PREVIEW_COUNT = 3;
-
-export interface RunTimelineGroup {
-    id: string; // RUN_GROUP_ID or "phase-<index+1>"
-    title: string; // "RUN" or "PHASE N · <kind>"
-    events: RunEvent[];
-}
-
-// kinds that render under the RUN group — everything not phase-scoped. A kind missing here and
-// carrying no phaseidx renders only in the collapsed preview, so every dag lifecycle kind belongs.
-const RUN_GROUP_KINDS = new Set([
-    "run-created",
-    "triage",
-    "child-created",
-    "child-done",
-    "child-cancelled",
-    "run-cancelled",
-    "evidence-sealed",
-    "task-spawned",
-    "task-first-activity",
-    "task-stalled",
-    "task-suspect",
-    "task-retried",
-    "dag-blocked",
-    "dag-done",
-    "task-done",
-    "task-failed",
-    "dag-cancelled",
-    "dag-gate-open",
-    "child-ask",
-    "child-answered",
-    "child-ask-cleared",
-    "task-merge-started",
-    "task-merge-blocked",
-    "task-merge-failed",
-    "task-merge-continued",
-    "task-merged",
-    "task-cleanup-pending",
-    "task-cleanup-completed",
-    "task-cleanup-failed",
-    "task-forwarded",
-    "lead-woken",
-    "lead-launched",
-    "lead-wake-failed",
-    "lead-revived",
-    "engine-stuck",
-    "lead-exited",
-    "worker-exited",
-    "interrupted",
-    "worker-resumed",
-    "task-told",
-    "task-verify-started",
-    "task-verify-passed",
-    "task-verify-failed",
-    "dag-plan-gated",
-    "dag-plan-approved",
-    "dag-plan-sent-back",
-    "merge-held",
-    "task-review-started",
-    "task-review-passed",
-    "task-review-failed",
-    "review-overruled",
-    "task-amended",
-    "task-lead-told",
-    "queued-start",
-]);
-
-export function buildRunTimeline(run: Run, events: RunEvent[]): { groups: RunTimelineGroup[]; preview: RunEvent[] } {
-    if (events.length === 0) {
-        return { groups: [], preview: [] };
-    }
-    const sorted = [...events].sort((a, b) => b.ts - a.ts);
-    const groups: RunTimelineGroup[] = [];
-    const runEvents = sorted.filter((e) => RUN_GROUP_KINDS.has(e.kind));
-    if (runEvents.length > 0) {
-        groups.push({ id: RUN_GROUP_ID, title: "RUN", events: runEvents });
-    }
-    (run.phases ?? []).forEach((_, i) => {
-        const phaseEvents = sorted.filter((e) => e.phaseidx === i);
-        if (phaseEvents.length > 0) {
-            groups.push({
-                id: `phase-${i + 1}`,
-                title: `PHASE ${i + 1} · ${(run.phases?.[i].kind ?? "").toUpperCase()}`,
-                events: phaseEvents,
-            });
-        }
-    });
-    return { groups, preview: sorted.slice(0, PREVIEW_COUNT) };
-}
 // --- row rendering helpers (pure; the view maps them to DOM) ---
 
 // KIND_TITLE renders each event kind as a human sentence; a kind outside the map (older rows or a
@@ -158,16 +66,12 @@ const KIND_TITLE: Record<string, string> = {
     "task-amended": "Lead amended a task",
     "task-lead-told": "Lead told a worker",
     "land-held": "Land held",
-    "land-queued": "Land in line",
-    "land-resolving": "Resolving conflicts with the base",
     landed: "Run landed",
     "stage-session-started": "Judging session started",
     "plan-reviewed": "Plan reviewed",
-    "queued-start": "Started from the queue",
 };
 
-// KIND_TONE stays inside the EXISTING status/phase tone utilities (the same token classes
-// TONE_CLASS / PHASE_TONE_CLASS in runbody.tsx use). No new colors: success = progress, warning =
+// KIND_TONE stays inside the existing status tone utilities. No new colors: success = progress, warning =
 // attention/stall, asking = review, muted = terminal/informational.
 const KIND_TONE: Record<string, string> = {
     "run-created": "text-success",
@@ -228,8 +132,6 @@ const KIND_TONE: Record<string, string> = {
     "task-told": "text-muted",
     "task-verify-started": "text-muted",
     "land-held": "text-warning",
-    "land-queued": "text-muted",
-    "land-resolving": "text-asking",
     landed: "text-success",
     "stage-session-started": "text-muted",
     "plan-reviewed": "text-muted",
@@ -239,11 +141,10 @@ export function eventKindTitle(kind: string): string {
     return KIND_TITLE[kind] ?? kind;
 }
 
-// a stage session is the plan reviewer, the final verifier or a land resolver, and only its detail says which
+// a stage session is the plan reviewer or the final verifier, and only its detail says which
 const STAGE_ROLE_TITLE: Record<string, string> = {
     "plan-reviewer": "Plan reviewer started",
     verifier: "Final verifier started",
-    "land-resolver": "Conflict resolver started",
 };
 
 // PLAN_REVIEW_LENS_TITLE names each plan reviewer by its lens: the one map the graph, timeline and tree read.
@@ -279,7 +180,6 @@ export function eventText(event: RunEvent): string {
         text?: string;
         held?: number;
         reason?: string;
-        entryid?: string;
     }>(event);
     const task = d?.taskid ?? "";
     switch (event.kind) {
@@ -302,8 +202,6 @@ export function eventText(event: RunEvent): string {
             return [`${eventTitle(event)} · ${task}`, d?.note?.replace(/\s+/g, " ")].filter(Boolean).join(" · ");
         case "merge-held":
             return [`${d?.held ?? 0} merge(s) held`, d?.reason].filter(Boolean).join(" · ");
-        case "queued-start":
-            return [eventTitle(event), d?.entryid].filter(Boolean).join(" · ");
         default:
             return task ? `${eventTitle(event)} · ${task}` : eventTitle(event);
     }
@@ -325,24 +223,6 @@ export function detailOf<T>(event: RunEvent): T | undefined {
     }
 }
 
-export type PlanReviewPick = { taskid: string; model: string; reason: string };
-
-// planReviewPicks reads the model picks a plan review's verdict applied, as its timeline row lists them; a malformed
-// entry is dropped rather than shown half-read.
-export function planReviewPicks(detail: unknown): PlanReviewPick[] {
-    const d = detailOf<{ picks?: unknown }>({ detail } as RunEvent);
-    if (!Array.isArray(d?.picks)) {
-        return [];
-    }
-    const out: PlanReviewPick[] = [];
-    for (const p of d.picks as { taskid?: unknown; model?: unknown; reason?: unknown }[]) {
-        if (typeof p?.taskid === "string" && typeof p.model === "string") {
-            out.push({ taskid: p.taskid, model: p.model, reason: typeof p.reason === "string" ? p.reason : "" });
-        }
-    }
-    return out;
-}
-
 export type PlanReviewReviewerRow = { lens: string; state: string; text: string };
 
 // planReviewReviewers reads each reviewer's verdict from a plan review's timeline row; a malformed entry is dropped
@@ -361,13 +241,6 @@ export function planReviewReviewers(detail: unknown): PlanReviewReviewerRow[] {
     return out;
 }
 
-// artifactsOf extracts the reported artifact list (completed/held detail rows), for the row's
-// inline "open first artifact" link.
-export function artifactsOf(event: RunEvent): string[] {
-    const detail = detailOf<{ artifacts?: string[] }>(event);
-    return Array.isArray(detail?.artifacts) ? detail!.artifacts! : [];
-}
-
 export function tsLabel(ts: number): string {
     const d = new Date(ts);
     const hh = String(d.getHours()).padStart(2, "0");
@@ -377,47 +250,4 @@ export function tsLabel(ts: number): string {
 
 export function toneFor(kind: string): string {
     return KIND_TONE[kind] ?? "text-muted";
-}
-
-// --- click dispatch (pure decision, applied by the view) ---
-
-export type TimelineClick =
-    | { kind: "select-child"; childRunId: string }
-    | { kind: "open-dag"; taskId: string }
-    | { kind: "focus-phase"; phaseIdx: number }
-    | { kind: "open-diff" }
-    | { kind: "none" };
-
-export function clickTargetFor(event: RunEvent): TimelineClick {
-    const detail = detailOf<{ childrunid?: string; taskid?: string }>(event);
-    switch (event.kind) {
-        case "child-done":
-        case "child-cancelled":
-            return detail?.childrunid ? { kind: "select-child", childRunId: detail.childrunid } : { kind: "none" };
-        case "task-stalled":
-        case "task-suspect":
-        case "dag-blocked":
-            return { kind: "open-dag", taskId: detail?.taskid ?? "" };
-        // phase-held, gate-approved and gate-sent-back are rows only a run stored before slice 5c can
-        // carry. They scroll to the phase they name like any other phase row; the verbs that resolved
-        // them are gone.
-        case "phase-started":
-        case "phase-complete":
-        case "phase-held":
-        case "gate-approved":
-        case "gate-sent-back":
-            return event.phaseidx != null ? { kind: "focus-phase", phaseIdx: event.phaseidx } : { kind: "none" };
-        case "evidence-sealed":
-            return { kind: "open-diff" };
-        default:
-            return { kind: "none" };
-    }
-}
-
-// joinWorkspacePath joins the run's project path with a workspace-relative artifact path the worker
-// reported (the completion surface's open verb does the same join — the rule the routes through
-// os.path at the backend too).
-export function joinWorkspacePath(projectPath: string, rel: string): string {
-    const sep = projectPath.includes("\\") ? "\\" : "/";
-    return rel.match(/^([/\\]|[a-zA-Z]:)/) ? rel : `${projectPath}${sep}${rel}`;
 }

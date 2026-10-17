@@ -1,14 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure view derivations for the run-completion (evidence-snapshot) surface: formatting, verification
-// tone/counts, file-stat + artifact-kind color classes, the phase-history node model (elevating a
-// freshctx phase to its own timeline node), and where an evidence click navigates. No React, no jotai —
-// unit-tested in runcompletion.test.ts.
-
-export function runShortId(id: string): string {
-    return (id ?? "").replace(/-/g, "").slice(0, 6);
-}
+// Pure view derivations for a run's evidence: duration, size and clock formatting, verification counts and
+// whether the evidence still needs sealing. No React, no jotai — unit-tested in runcompletion.test.ts.
 
 export function fmtDuration(ms: number): string {
     const s = Math.max(0, Math.round(ms / 1000));
@@ -38,42 +32,6 @@ export function fmtClock(tsMs: number): string {
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-export function fmtDate(tsMs: number): string {
-    if (!tsMs) {
-        return "—";
-    }
-    const d = new Date(tsMs);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-export type VerifTone = { icon: string; labelClass: string; badgeClass: string; borderClass: string };
-
-export function verifTone(result: string): VerifTone {
-    switch (result) {
-        case "pass":
-            return {
-                icon: "✓",
-                labelClass: "text-success",
-                badgeClass: "bg-success/15 text-success",
-                borderClass: "border-success/25",
-            };
-        case "fail":
-            return {
-                icon: "✕",
-                labelClass: "text-error",
-                badgeClass: "bg-error/15 text-error",
-                borderClass: "border-error/30",
-            };
-        default:
-            return {
-                icon: "?",
-                labelClass: "text-warning",
-                badgeClass: "bg-warning/15 text-warning",
-                borderClass: "border-edge-mid",
-            };
-    }
-}
-
 export function verifCounts(v: EvidenceVerif[]): { pass: number; fail: number; unknown: number } {
     const counts = { pass: 0, fail: 0, unknown: 0 };
     for (const item of v ?? []) {
@@ -82,77 +40,6 @@ export function verifCounts(v: EvidenceVerif[]): { pass: number; fail: number; u
         else counts.unknown++;
     }
     return counts;
-}
-
-// A leading setup segment: a directory change or an env assignment. Workers wrap verification as
-// `cd "<worktree path>" && <the real command>`, and the command cell truncates with a trailing ellipsis —
-// so left as-is the cell shows the worktree path and hides what was actually tested.
-const CMD_SETUP_RE = /^(cd\s|export\s+\w+=|\w+=)/;
-
-export function verifCmdLabel(cmd: string): string {
-    const segments = (cmd ?? "").split("&&").map((s) => s.trim());
-    let i = 0;
-    while (i < segments.length && CMD_SETUP_RE.test(segments[i])) {
-        i++;
-    }
-    // all setup and no command: nothing more informative exists, so show it as the worker wrote it
-    return i === segments.length ? cmd : segments.slice(i).join(" && ");
-}
-
-export function statColor(stat: string): string {
-    return stat === "A" ? "text-success" : stat === "D" ? "text-error" : "text-warning";
-}
-
-export function artifactKindClass(kind: string): string {
-    switch (kind) {
-        case "doc":
-            return "text-accent bg-accentbg";
-        case "report":
-            return "text-success bg-success/15";
-        case "image":
-            return "text-accent-soft bg-accentbg";
-        default:
-            return "text-ink-mid bg-surface-hover";
-    }
-}
-
-const PHASE_LABEL: Record<string, string> = {
-    brainstorm: "Brainstorm",
-    plan: "Plan",
-    execute: "Execute",
-    orchestrate: "Orchestrate",
-    custom: "Custom",
-};
-
-export type PhaseNodeVM = {
-    name: string;
-    tag: string;
-    detail: string;
-    artifacts: string[];
-    timeLabel: string;
-    isBoundary: boolean;
-    isGate: boolean;
-    notLast: boolean;
-};
-
-// Phase-history node model. A gate phase carries a "gate" tag; a freshctx phase carries a "fresh ctx"
-// tag and is flagged isBoundary (rendered with a squared node per the design). Detail prefers the skill.
-export function phaseHistory(run: Run): PhaseNodeVM[] {
-    const phases = (run.phases ?? []).filter((p) => p.state !== "skipped");
-    return phases.map((p, i) => {
-        const isGate = !!p.gate;
-        const isBoundary = !!p.freshctx;
-        return {
-            name: PHASE_LABEL[p.kind] ?? p.kind,
-            tag: isGate ? "gate" : isBoundary ? "fresh ctx" : "",
-            detail: p.skill || p.kind,
-            artifacts: p.artifacts ?? [],
-            timeLabel: fmtClock(p.donets ?? p.startedts ?? 0),
-            isBoundary,
-            isGate,
-            notLast: i < phases.length - 1,
-        };
-    });
 }
 
 export function needsEvidenceSeal(run: Run): boolean {

@@ -2,108 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import {
-    artifactsOf,
-    buildRunTimeline,
-    clickTargetFor,
-    eventKindTitle,
-    eventText,
-    eventTitle,
-    joinWorkspacePath,
-    planReviewLensTitle,
-    toneFor,
-} from "./runtimeline";
-
-function ev(kind: string, ts: number, phaseIdx?: number): RunEvent {
-    return {
-        id: "e" + ts,
-        runid: "run-1",
-        channelid: "ch",
-        ts,
-        kind,
-        phaseidx: phaseIdx,
-        detail: undefined,
-    } as RunEvent;
-}
-
-const fakeRun = {
-    id: "run-1",
-    phases: [{ kind: "brainstorm" }, { kind: "plan" }, { kind: "execute" }],
-} as unknown as Run;
-
-describe("buildRunTimeline", () => {
-    it("groups phase events under their phase and cross-cutting events under RUN", () => {
-        const events = [ev("run-created", 1), ev("phase-started", 2, 0), ev("triage", 3), ev("phase-complete", 4, 1)];
-        const { groups } = buildRunTimeline(fakeRun, events);
-        const runGroup = groups.find((g) => g.id === "run");
-        const phase1 = groups.find((g) => g.id === "phase-1");
-        const phase2 = groups.find((g) => g.id === "phase-2");
-        expect(runGroup?.events.map((e) => e.kind)).toEqual(["triage", "run-created"]);
-        expect(phase1?.events.map((e) => e.kind)).toEqual(["phase-started"]);
-        expect(phase2?.events.map((e) => e.kind)).toEqual(["phase-complete"]);
-    });
-
-    it("preview is the last 3 events overall (newest first)", () => {
-        const events = [ev("run-created", 1), ev("phase-started", 2, 0), ev("triage", 3), ev("phase-held", 4, 1)];
-        const { preview } = buildRunTimeline(fakeRun, events);
-        expect(preview.map((e) => e.kind)).toEqual(["phase-held", "triage", "phase-started"]);
-    });
-
-    it("lists what the human told a worker under RUN", () => {
-        const { groups } = buildRunTimeline(fakeRun, [ev("task-told", 1)]);
-        expect(groups.find((g) => g.id === "run")?.events.map((e) => e.kind)).toEqual(["task-told"]);
-    });
-
-    it("lists a worker that may be stuck under RUN", () => {
-        const { groups } = buildRunTimeline(fakeRun, [ev("task-suspect", 1)]);
-        expect(groups.find((g) => g.id === "run")?.events.map((e) => e.kind)).toEqual(["task-suspect"]);
-    });
-
-    it("lists a start from the queue under RUN when it carries no phase", () => {
-        const { groups } = buildRunTimeline(fakeRun, [ev("queued-start", 1)]);
-        expect(groups.map((g) => g.id)).toEqual(["run"]);
-        expect(groups[0].events.map((e) => e.kind)).toEqual(["queued-start"]);
-    });
-
-    it("returns empty groups when there are no events", () => {
-        const { groups, preview } = buildRunTimeline(fakeRun, []);
-        expect(groups).toEqual([]);
-        expect(preview).toEqual([]);
-    });
-});
-
-describe("clickTargetFor", () => {
-    // phase-held is a row only a run stored before slice 5c can carry. It scrolls to the phase it names
-    // like any other phase row — the verb that released a held phase is gone.
-    it("maps phase-held to focus-phase and child events to select-child", () => {
-        expect(clickTargetFor(ev("phase-held", 4, 1))).toEqual({ kind: "focus-phase", phaseIdx: 1 });
-        const childEv = { ...ev("child-done", 5), detail: JSON.stringify({ childrunid: "run-9", goal: "t" }) };
-        expect(clickTargetFor(childEv)).toEqual({ kind: "select-child", childRunId: "run-9" });
-    });
-
-    it("maps stalled/blocked to open-dag and evidence-sealed to open-diff", () => {
-        const stalled = { ...ev("task-stalled", 6), detail: JSON.stringify({ taskid: "t-2" }) };
-        expect(clickTargetFor(stalled)).toEqual({ kind: "open-dag", taskId: "t-2" });
-        const suspect = { ...ev("task-suspect", 6), detail: JSON.stringify({ taskid: "t-3" }) };
-        expect(clickTargetFor(suspect)).toEqual({ kind: "open-dag", taskId: "t-3" });
-        expect(clickTargetFor(ev("evidence-sealed", 7))).toEqual({ kind: "open-diff" });
-    });
-
-    it("returns none for unhandled kinds", () => {
-        expect(clickTargetFor(ev("run-created", 1))).toEqual({ kind: "none" });
-    });
-});
-
-describe("artifactsOf", () => {
-    it("extracts the first artifact from detail", () => {
-        const e = { ...ev("phase-complete", 4, 1), detail: JSON.stringify({ artifacts: ["deliverable.md"] }) };
-        expect(artifactsOf(e)).toEqual(["deliverable.md"]);
-    });
-
-    it("is empty when detail has no artifacts", () => {
-        expect(artifactsOf(ev("phase-complete", 4, 1))).toEqual([]);
-    });
-});
+import { eventKindTitle, eventText, eventTitle, planReviewLensTitle, toneFor } from "./runtimeline";
 
 describe("toneFor", () => {
     it("stays within the existing tone utilities and falls back to muted", () => {
@@ -141,13 +40,9 @@ describe("eventKindTitle", () => {
     });
 
     it("titles every kind the engine writes, never the raw kind", () => {
-        for (const kind of ["land-held", "landed", "stage-session-started", "plan-reviewed", "queued-start"]) {
+        for (const kind of ["land-held", "landed", "stage-session-started", "plan-reviewed"]) {
             expect(eventKindTitle(kind)).not.toBe(kind);
         }
-    });
-
-    it("says a run started from the queue as a sentence", () => {
-        expect(eventKindTitle("queued-start")).toBe("Started from the queue");
     });
 });
 
@@ -204,14 +99,6 @@ describe("eventText", () => {
             eventText(eventWith("6", 1, "task-told", { taskid: "t-3", text: "keep closed-session\nlinks clickable" }))
         ).toBe("you told t-3 · keep closed-session links clickable");
     });
-
-    it("names the queue entry a run started from, or just the title when the detail has none", () => {
-        expect(eventText(eventWith("7", 1, "queued-start", { entryid: "q-ab12" }))).toBe(
-            "Started from the queue · q-ab12"
-        );
-        expect(eventText(eventWith("8", 1, "queued-start"))).toBe("Started from the queue");
-        expect(eventText(eventWith("9", 1, "queued-start", {}))).toBe("Started from the queue");
-    });
 });
 
 describe("verify rows", () => {
@@ -222,41 +109,5 @@ describe("verify rows", () => {
         expect(toneFor("task-verify-started")).toBe("text-muted");
         expect(toneFor("task-verify-passed")).toBe("text-success");
         expect(toneFor("task-verify-failed")).toBe("text-warning");
-    });
-});
-
-describe("land line rows", () => {
-    it("titles the two rows a land in line writes, never by the raw kind", () => {
-        expect(eventKindTitle("land-queued")).toBe("Land in line");
-        expect(eventKindTitle("land-resolving")).toBe("Resolving conflicts with the base");
-    });
-
-    it("tones them inside the existing utilities: neither is a failure", () => {
-        expect(toneFor("land-queued")).toBe("text-muted");
-        expect(toneFor("land-resolving")).toBe("text-asking");
-    });
-
-    it("names a stage session by its role, a land resolver included", () => {
-        const started = (role?: string) =>
-            ({
-                id: "1",
-                ts: 1,
-                kind: "stage-session-started",
-                detail: role ? JSON.stringify({ role }) : undefined,
-            }) as RunEvent;
-        expect(eventTitle(started("land-resolver"))).toBe("Conflict resolver started");
-        expect(eventText(started("land-resolver"))).toBe("Conflict resolver started");
-        expect(eventTitle(started("plan-reviewer"))).toBe("Plan reviewer started");
-        expect(eventTitle(started("verifier"))).toBe("Final verifier started");
-        expect(eventTitle(started())).toBe("Judging session started");
-    });
-});
-
-describe("joinWorkspacePath", () => {
-    it("joins a workspace-relative path onto the project path and passes absolute paths through", () => {
-        expect(joinWorkspacePath("/repo/a", "docs/x.md")).toBe("/repo/a/docs/x.md");
-        expect(joinWorkspacePath("C:\\repo", "docs\\x.md")).toBe("C:\\repo\\docs\\x.md");
-        expect(joinWorkspacePath("/repo", "/abs/x.md")).toBe("/abs/x.md");
-        expect(joinWorkspacePath("/repo", "C:\\abs\\x.md")).toBe("C:\\abs\\x.md");
     });
 });

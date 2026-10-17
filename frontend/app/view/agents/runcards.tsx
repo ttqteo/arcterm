@@ -1,10 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The run body's attention/action card family — the gate/ask/blocked/starting/ship/cancel/triage
-// pieces shared by the pipeline rail (PhaseRail) and the orchestrator body (OrchestratorBody).
-// Extracted from runbody.tsx so RunBody keeps only the run-scoped live machinery. Presentational +
-// action-dispatch only; all derivations come from runmodel.ts.
+// The attention/action card family — the gate/ask/blocked/starting/ship/cancel/triage pieces. The pipeline
+// rail and run body that first shared them were removed. Presentational + action-dispatch only; all
+// derivations come from runmodel.ts.
 
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn, fireAndForget } from "@/util/util";
