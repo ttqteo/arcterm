@@ -29,6 +29,7 @@ import {
     syncCardOrder,
     type AgentVM,
 } from "./agentsviewmodel";
+import { diffStatsByIdAtom } from "./cardgitstore";
 import {
     buildGridCards,
     cardMatchesChip,
@@ -371,6 +372,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     );
     // in Office the two sections stay hidden until the office menu's Background shows them (no room draws them)
     const backgroundOpen = useAtomValue(officeBackgroundOpenAtom);
+    // an agent's box offers Diff while it shows the agent's changed files
+    const diffStats = useAtomValue(diffStatsByIdAtom);
     const showBackground = view !== "office" || backgroundOpen;
     // the office draws the cards and the Idle section's agents (cockpit office spec, "Where it lives"). This
     // surface builds its cards anew on every render, so the office's input is kept by its content: a render that
@@ -626,8 +629,8 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
                 officeRef.current?.card();
                 requestAnimationFrame(() => focusRowComposer(a.id));
                 return;
-            case "terminal":
-                model.openTerminal(openId);
+            case "diff":
+                openDiff(a.id);
                 return;
             case "background":
                 toggleBackground(a.id);
@@ -645,7 +648,7 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
     });
 
     const agentDialog = (a: AgentVM): OfficeDialogVM => {
-        const input = { kind: "agent" as DeskKind, agent: a, ...agentInput(a) };
+        const input = { kind: "agent" as DeskKind, agent: a, hasDiff: diffStats[a.id] != null, ...agentInput(a) };
         return {
             kind: "agent",
             label: a.name,

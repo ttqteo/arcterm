@@ -1627,10 +1627,10 @@ export function makeCockpitOfficeScenarios(fx) {
             let p = await settleBoss(h);
             const words = await h.ev(`document.querySelector('[data-office-dialog="agent"]')?.textContent ?? ""`);
             rec(
-                "1. a click on quill's desk opens its dialog box: the question under what it said, the answers, Send dim, Terminal and Full card",
+                "1. a click on quill's desk opens its dialog box: the question under what it said, the answers, Send dim, Open and Full card",
                 p?.dialog === "agent" &&
                     JSON.stringify(p.items) ===
-                        JSON.stringify(["Merge now", "Wait for the Final shots", "Show me the diff first", "Send", "Terminal", "Full card"]) &&
+                        JSON.stringify(["Merge now", "Wait for the Final shots", "Show me the diff first", "Send", "Open", "Full card"]) &&
                     JSON.stringify(p.dims) === "[3]" &&
                     p.sel === 0 &&
                     words.includes("Merge wave/7c1e into main now") &&
@@ -1643,7 +1643,7 @@ export function makeCockpitOfficeScenarios(fx) {
             const sels = [];
             for (let i = 0; i < 3; i++) sels.push((await press("ArrowDown"))?.sel);
             sels.push((await press("ArrowUp"))?.sel);
-            rec("2. ↓ ↓ ↓ steps the ▶ 1, 2, then over the dim Send to Terminal; ↑ goes back to 2", JSON.stringify(sels) === "[1,2,4,2]", JSON.stringify(sels));
+            rec("2. ↓ ↓ ↓ steps the ▶ 1, 2, then over the dim Send to Open; ↑ goes back to 2", JSON.stringify(sels) === "[1,2,4,2]", JSON.stringify(sels));
 
             // 3. Space, the A button, on an answer picks it and moves the ▶ to Send, which lights (no second Space: it
             // would send)
@@ -1697,8 +1697,9 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ spaced: spaced?.dialog, shut: shutEsc?.dialog, walk: [walkEsc?.dialog, walkEsc?.prompt], prevented: escs })
             );
 
-            // 5. loom at work: ↵ Talk offered once its box is shut; ↵ opens it again: Open, Reply, Terminal,
-            // Background, Full card, and the ▶ stops at the last
+            // 5. loom at work, its box showing changed files: ↵ Talk offered once its box is shut; ↵ opens it again: Open,
+            // Reply, Diff, Send to background, Full card, and the ▶ stops at the last
+            await h.ev(`window.__cockpitOfficeDiff(${JSON.stringify("fx-office-loom")}, { files: 3, adds: 42, dels: 7 })`);
             await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
             await settleBoss(h);
             await press("Escape");
@@ -1706,10 +1707,10 @@ export function makeCockpitOfficeScenarios(fx) {
             await press("Enter");
             p = await press("ArrowDown", 6);
             rec(
-                "5. an agent at work offers ↵ Talk, and its box Open, Reply, Terminal, Background and Full card; the ▶ stops at the last",
+                "5. an agent at work offers ↵ Talk, and its box Open, Reply, Diff, Send to background and Full card; the ▶ stops at the last",
                 talkChip.includes("Talk") &&
                     p?.dialog === "agent" &&
-                    JSON.stringify(p.items) === JSON.stringify(["Open", "Reply", "Terminal", "Background", "Full card"]) &&
+                    JSON.stringify(p.items) === JSON.stringify(["Open", "Reply", "Diff", "Send to background", "Full card"]) &&
                     p.sel === 4,
                 JSON.stringify({ chip: talkChip, items: p?.items, sel: p?.sel })
             );
@@ -1782,15 +1783,15 @@ export function makeCockpitOfficeScenarios(fx) {
             );
             await h.shot("cdp-shots/cockpit-office-dialog-run.png");
 
-            // 6b. t-1's seat, its worker at work: the task's line and its worker's words; Open, Terminal and Full card
+            // 6b. t-1's seat, its worker at work: the task's line and its worker's words; Open and Full card
             await press("Escape");
             await h.ev(`document.querySelector('[data-office-seat$=":t-1"]')?.click()`);
             p = await settleBoss(h);
             const seat = await h.ev(`document.querySelector('[data-office-dialog="worker"]')?.textContent ?? ""`);
             rec(
-                "6b. a worker's seat at work opens its box: the task and its worker, then Open, Terminal and Full card",
+                "6b. a worker's seat at work opens its box: the task and its worker, then Open and Full card",
                 p?.dialog === "worker" &&
-                    JSON.stringify(p.items) === JSON.stringify(["Open", "Terminal", "Full card"]) &&
+                    JSON.stringify(p.items) === JSON.stringify(["Open", "Full card"]) &&
                     seat.includes("Machine stats") &&
                     seat.includes("vole"),
                 JSON.stringify({ dialog: p?.dialog, items: p?.items, seat: seat.slice(0, 200) })
@@ -1915,6 +1916,24 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ opened, closed, line })
             );
             await h.shot("cdp-shots/cockpit-office-footer.png");
+
+            // 11. Diff in loom's box opens its changed files: the Diff surface, scoped to loom. Last, since it leaves
+            // the Cockpit
+            await h.ev(`window.__cockpitOfficeDiff(${JSON.stringify("fx-office-loom")}, { files: 3, adds: 42, dels: 7 })`);
+            await h.ev(`document.querySelector(${JSON.stringify(desk("fx-office-loom"))})?.click()`);
+            await settleBoss(h);
+            p = await press("ArrowDown", 2);
+            const onDiff = p?.items?.[p.sel] ?? null;
+            await press("Enter");
+            await sleep(400);
+            const diffSurface = await h.activeSurfaceLabel();
+            await h.shot("cdp-shots/cockpit-office-dialog-diff.png");
+            rec(
+                "11. ↵ on Diff in loom's box opens the Diff surface",
+                onDiff === "Diff" && diffSurface === "Diff",
+                JSON.stringify({ onDiff, surface: diffSurface })
+            );
+            await h.ev(`window.__cockpitOfficeDiff(${JSON.stringify("fx-office-loom")}, null)`);
 
             return steps;
         },

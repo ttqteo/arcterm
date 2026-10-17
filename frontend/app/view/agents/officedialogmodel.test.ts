@@ -63,21 +63,31 @@ const base = (over: Partial<DialogInput>): DialogInput => ({
 const labels = (input: DialogInput) => dialogItems(input).map((i) => i.label);
 
 describe("dialogItems", () => {
-    it("gives an agent at work Open, Reply, Terminal, Background, then the full card under a line", () => {
+    it("gives an agent at work Open, Reply, Send to background, then the full card under a line", () => {
         const items = dialogItems(base({ agent: agent() }));
-        expect(items.map((i) => i.label)).toEqual(["Open", "Reply", "Terminal", "Background", "Full card"]);
-        expect(items.map((i) => i.key)).toEqual(["Space", "r", "t", "b", "f"]);
-        expect(items.map((i) => !!i.rule)).toEqual([false, false, false, false, true]);
+        expect(items.map((i) => i.label)).toEqual(["Open", "Reply", "Send to background", "Full card"]);
+        expect(items.map((i) => i.key)).toEqual(["Space", "r", "b", "f"]);
+        expect(items.map((i) => !!i.rule)).toEqual([false, false, false, true]);
     });
 
-    it("gives an asking agent its answers and Send, dim until something is picked, then Terminal under a line", () => {
+    it("offers Diff, after Reply, to an agent whose box shows changed files", () => {
+        expect(labels(base({ agent: agent(), hasDiff: true }))).toEqual([
+            "Open",
+            "Reply",
+            "Diff",
+            "Send to background",
+            "Full card",
+        ]);
+    });
+
+    it("gives an asking agent its answers and Send, dim until something is picked, then Open on t under a line", () => {
         const items = dialogItems(base({ agent: quill }));
         expect(items.map((i) => i.label)).toEqual([
             "Merge it",
             "Rebase on main first",
             "Not yet",
             "Send",
-            "Terminal",
+            "Open",
             "Full card",
         ]);
         expect(items.map((i) => i.key)).toEqual(["1", "2", "3", "Space", "t", "f"]);
@@ -100,23 +110,22 @@ describe("dialogItems", () => {
         expect(items[2]).toMatchObject({ id: "send", dim: true });
     });
 
-    it("gives an agent asking in its terminal Open, Reply and Terminal, and no Background", () => {
-        expect(labels(base({ agent: agent({ state: "asking" }) }))).toEqual(["Open", "Reply", "Terminal", "Full card"]);
+    it("gives an agent asking in its terminal Open and Reply, and no Send to background", () => {
+        expect(labels(base({ agent: agent({ state: "asking" }) }))).toEqual(["Open", "Reply", "Full card"]);
     });
 
-    it("gives a run's lead Open lead, Reply, Terminal and Adjust when the run takes it", () => {
+    it("gives a run's lead Open lead, Reply and Adjust when the run takes it", () => {
         const lead = agent({ id: "l1", state: "idle" });
         expect(labels(base({ kind: "lead", agent: lead, adjustable: true }))).toEqual([
             "Open lead",
             "Reply",
-            "Terminal",
             "Adjust",
             "Full card",
         ]);
-        expect(labels(base({ kind: "lead", agent: lead }))).toEqual(["Open lead", "Reply", "Terminal", "Full card"]);
+        expect(labels(base({ kind: "lead", agent: lead }))).toEqual(["Open lead", "Reply", "Full card"]);
     });
 
-    it("leads a worker's seat with its row's own actions, numbered, then Open and Terminal under a line", () => {
+    it("leads a worker's seat with its row's own actions, numbered, then Open under a line", () => {
         const items = dialogItems(
             base({
                 kind: "worker",
@@ -125,15 +134,7 @@ describe("dialogItems", () => {
                 canOpen: true,
             })
         );
-        expect(items.map((i) => i.label)).toEqual([
-            "Approve",
-            "Send back",
-            "Retry",
-            "Skip",
-            "Open",
-            "Terminal",
-            "Full card",
-        ]);
+        expect(items.map((i) => i.label)).toEqual(["Approve", "Send back", "Retry", "Skip", "Open", "Full card"]);
         expect(items.slice(0, 4).map((i) => i.key)).toEqual(["1", "2", "3", "4"]);
         expect(items[4].rule).toBe(true);
     });
@@ -146,18 +147,19 @@ describe("dialogItems", () => {
             "Not yet",
             "Send",
             "Take over",
-            "Terminal",
+            "Open",
             "Full card",
         ]);
         expect(items[4].key).toBeUndefined();
+        expect(items[5].key).toBe("t");
     });
 
-    it("leaves Tell to the full card, whose input takes the words: a worker at work offers Open and Terminal", () => {
+    it("leaves Tell to the full card, whose input takes the words: a worker at work offers Open", () => {
         const items = dialogItems(
             base({ kind: "worker", agent: agent({ id: "w1" }), rowActions: ["tell"], canOpen: true })
         );
-        expect(items.map((i) => i.label)).toEqual(["Open", "Terminal", "Full card"]);
-        expect(items[2].rule).toBe(true);
+        expect(items.map((i) => i.label)).toEqual(["Open", "Full card"]);
+        expect(items[1].rule).toBe(true);
     });
 
     it("gives a seat with no worker, and a leadless run, only what they have", () => {

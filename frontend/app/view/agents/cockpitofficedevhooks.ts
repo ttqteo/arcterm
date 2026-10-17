@@ -10,8 +10,10 @@ import { petCharacter } from "@/app/view/jarvis/petcharacter";
 import { quoteEvent, quotePool } from "@/app/view/jarvis/petquotes";
 import { petBubbleAtom, petCharacterAtom } from "@/app/view/jarvis/petstore";
 import type { AgentsViewModel } from "./agents";
+import type { DiffStats } from "./agentsviewmodel";
 import { attentionFixtureAtom } from "./attentionstore";
 import { backgroundAgentsFixtureAtom } from "./backgroundagentsstore";
+import { diffStatsByIdAtom } from "./cardgitstore";
 import { officeDevAtom, readOfficeProbe, type OfficeDev } from "./cockpitoffice";
 import { officeSoundLog, setOfficeSoundLog } from "./officeaudio";
 import { officeAnimationAtom, officeFloorAtom, officeSoundMusicAtom, officeSoundUiAtom } from "./officestore";
@@ -22,6 +24,7 @@ declare global {
         __cockpitOffice?: (o: OfficeDev | null) => void;
         __cockpitOfficeAttention?: (items: AttentionItem[] | null) => void;
         __cockpitOfficeBackground?: (o: { sessions: BackgroundAgentData[]; backgrounded: string[] } | null) => void;
+        __cockpitOfficeDiff?: (id: string, stats: DiffStats | null) => void;
         __cockpitOfficeProbe?: () => unknown;
         __cockpitOfficeAnimation?: (on: boolean) => void;
         __cockpitOfficeTheme?: (preset: string) => string;
@@ -49,6 +52,16 @@ export function installCockpitOfficeDevHooks(model: AgentsViewModel): void {
     window.__cockpitOfficeBackground = (o) => {
         globalStore.set(backgroundAgentsFixtureAtom, o?.sessions ?? null);
         globalStore.set(model.backgroundedIdsAtom, new Set(o?.backgrounded ?? []));
+    };
+    // the changed files an agent's box shows (and its Diff item), in place of what git found; null drops them
+    window.__cockpitOfficeDiff = (id, stats) => {
+        const next = { ...globalStore.get(diffStatsByIdAtom) };
+        if (stats == null) {
+            delete next[id];
+        } else {
+            next[id] = stats;
+        }
+        globalStore.set(diffStatsByIdAtom, next);
     };
     window.__cockpitOfficeAnimation = (on) => globalStore.set(officeAnimationAtom, on);
     // sets the theme preset and returns the one it replaced (the cockpit-office scenario's theme steps)

@@ -25,7 +25,7 @@ export type DeskKind = "agent" | "lead" | "worker" | "leadless" | "board" | "lif
 export type DialogItemId =
     | "open"
     | "reply"
-    | "terminal"
+    | "diff"
     | "background"
     | "adjust"
     | "card"
@@ -73,6 +73,8 @@ export interface DialogInput {
     canOpen?: boolean;
     // the run takes Adjust (runAdjustable)
     adjustable?: boolean;
+    // the box shows the agent's changed files (diffStatsByIdAtom)
+    hasDiff?: boolean;
 }
 
 /** Pure: a task row action's name, as the card's buttons say it. */
@@ -107,7 +109,7 @@ export function dialogItems(input: DialogInput): DialogItem[] {
         });
     }
     // an asking worker's number keys answer it, so its row's actions take no number then. Tell asks for words, which
-    // the full card's input takes, so the box leaves it out (States: a worker at work offers Open and Terminal); the
+    // the full card's input takes, so the box leaves it out (States: a worker at work offers Open); the
     // others keep their index, the number key that runs them
     (input.rowActions ?? []).forEach((a, i) => {
         if (a !== "tell") {
@@ -116,15 +118,16 @@ export function dialogItems(input: DialogInput): DialogItem[] {
     });
     const acts: DialogItem[] = [];
     if (agent && (kind !== "worker" || input.canOpen)) {
-        if (qs.length === 0) {
-            acts.push({ id: "open", label: kind === "lead" ? "Open lead" : "Open", key: "Space" });
-            if (kind !== "worker") {
-                acts.push({ id: "reply", label: "Reply", key: "r" });
-            }
+        // Space sends an answer while one is asked, so Open is t then, the cockpit's key for the agent's terminal
+        acts.push({ id: "open", label: kind === "lead" ? "Open lead" : "Open", key: qs.length === 0 ? "Space" : "t" });
+        if (qs.length === 0 && kind !== "worker") {
+            acts.push({ id: "reply", label: "Reply", key: "r" });
         }
-        acts.push({ id: "terminal", label: "Terminal", key: "t" });
+        if (input.hasDiff) {
+            acts.push({ id: "diff", label: "Diff" });
+        }
         if (kind === "agent" && agent.state !== "asking") {
-            acts.push({ id: "background", label: "Background", key: "b" });
+            acts.push({ id: "background", label: "Send to background", key: "b" });
         }
     }
     if ((kind === "lead" || kind === "leadless") && input.adjustable) {
