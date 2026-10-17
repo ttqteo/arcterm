@@ -165,6 +165,9 @@ export function detailOps(cur: EffortDetails, next: EffortDetails): EffortOp[] {
     return ops;
 }
 
+export async function setEffortProject(oref: string, project: string): Promise<void> {
+    await mutateEffort(oref, [{ op: "setProject", project: project.trim() }]);
+}
 export async function renameEffort(oref: string, title: string): Promise<void> {
     await mutateEffort(oref, [{ op: "rename", title: title.trim() }]);
 }

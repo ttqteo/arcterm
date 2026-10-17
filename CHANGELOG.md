@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- **Work on** an initiative that has no project asks which project to start the agent in, and the initiative keeps
+  it, instead of an error telling you to run `wsh effort project`.
 - Plan to review in the agent's details rail shows a row's Accept, Rename and Drop only while the pointer is over it,
   so each proposed step's title gets the rail's full width.
 
