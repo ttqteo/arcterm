@@ -2444,6 +2444,18 @@ export function makeCockpitOfficeScenarios(fx) {
                 near(p, bx, fy) && !before.shown && before.props.length === 0,
                 JSON.stringify({ boss: p?.boss, at: [bx, fy], ...before })
             );
+
+            // 3. on the rug before the sofa's right seat, nobody on it: the boss walks up to the arms (142 of the lounge),
+            // its ring just clear of them, not the 20 px short of them a seated head once kept it
+            const sx = lounge.x + 147;
+            const sy = lounge.y + 132;
+            p = await walkTo(sx, sy);
+            await h.shot("cdp-shots/office-depth-3-sofa.png");
+            rec(
+                "3. before an empty seat the boss walks up to the sofa's arms",
+                near(p, sx, sy),
+                JSON.stringify({ boss: p?.boss, at: [sx, sy] })
+            );
             return steps;
         },
     };

@@ -105,7 +105,12 @@ function furniture(plan: Plan): Box[] {
             ...plan.rooms.flatMap((r) =>
                 r.table ? [{ x: r.table.x - 8, y: r.table.y - 20, w: r.table.w + 16, h: r.table.h + 53 }] : []
             ),
-            { x: l.x + 34, y: l.y + 122, w: 162, h: 66 },
+            // the sofa from its arms' top (142) less the 7 px the boss's ring reaches under its feet, so it walks up to
+            // an empty sofa; over a seat someone takes, from their head, a body's half width either side of them
+            { x: l.x + 34, y: l.y + 135, w: 162, h: 53 },
+            ...plan.loungers
+                .filter((p) => p.at === "sofa")
+                .map(({ box: s }) => ({ x: s.x - BOSS_HALF_W, y: s.y - 1, w: s.w + 2 * BOSS_HALF_W, h: s.h + 1 })),
             { x: l.x + 166, y: l.y + 93, w: 36, h: 60 },
             pot(l.x + 200, l.y + 172),
             ...plan.rooms.flatMap((r) => (r.plants ?? []).map((p) => pot(p.x, p.y))),

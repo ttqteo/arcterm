@@ -96,6 +96,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   with its head over the top of the building.
 - In the Office the coffee machine, the plants and the notice board hide the boss and anyone walking behind them,
   instead of the boss being drawn on top of them.
+- In the Office the boss walks right up to an empty seat on the sofa, instead of stopping a step short of it as if
+  someone sat there.
 - A click in the Office, or a jump to a desk, walks the boss round the desks, tables and the sofa instead of through
   them, and so do the people walking to the lounge.
 - The plant in an Office room no longer stands in its doorway, where it stopped the boss walking in: it now stands at

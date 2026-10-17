@@ -335,7 +335,6 @@ describe("officeboss", () => {
         const l = plan.lounge;
         expect(canWalk(plan, { x: l.x + 100, y: l.y + 170 })).toBe(false); // the sofa
         expect(canWalk(plan, { x: l.x + 178, y: l.y + 181 })).toBe(false); // its right end
-        expect(canWalk(plan, { x: l.x + 100, y: l.y + 130 })).toBe(false); // someone sitting on it
         expect(canWalk(plan, { x: l.x + 184, y: l.y + 130 })).toBe(false); // the coffee machine
         expect(canWalk(plan, { x: l.x + 217, y: l.y + 205 })).toBe(false); // the plant's pot
         const pls = room("room:alpha").plants!;
@@ -346,6 +345,30 @@ describe("officeboss", () => {
         expect(canWalk(plan, { x: l.x + 100, y: l.y + 100 })).toBe(true); // the rug, facing the sofa
         expect(canWalk(plan, { x: l.x + 100, y: l.y + 200 })).toBe(true); // behind it
         expect(stepToward(plan, { x: l.x + 100, y: l.y + 210 }, "up", 200).y).toBeGreaterThan(l.y + 188);
+    });
+
+    it("walks the boss up to an empty seat on the sofa, and keeps it off whoever sits there", () => {
+        const l = plan.lounge;
+        // nobody on it: the feet stop with the ring just clear of the arms (142)
+        const up = stepToward(plan, { x: l.x + 100, y: l.y + 60 }, "down", 200).y;
+        expect(up).toBeGreaterThan(l.y + 128);
+        expect(up).toBeLessThan(l.y + 135);
+        const sat = buildPlan({
+            agents: [ag("a1", "alpha"), ag("s1", "alpha", "idle")],
+            runs: [],
+            width: 1050,
+            now: 0,
+            away: { s1: "sofa" },
+            night: false,
+        });
+        const s = sat.loungers.find((x) => x.agentId === "s1")!.box;
+        const m = sat.lounge;
+        // over the seat taken, and a body's half width beside it, no closer than their head
+        expect(canWalk(sat, { x: s.x + s.w / 2, y: s.y + 7 })).toBe(false);
+        expect(canWalk(sat, { x: s.x + s.w + BOSS_HALF_W - 2, y: s.y + 7 })).toBe(false);
+        expect(stepToward(sat, { x: s.x + s.w / 2, y: m.y + 60 }, "down", 200).y).toBeLessThan(s.y);
+        // the seats clear of them stay walkable up to the arms
+        expect(canWalk(sat, { x: m.x + 160, y: m.y + 130 })).toBe(true);
     });
 
     it("puts a pot wherever a room has a plant, and nowhere else", () => {
