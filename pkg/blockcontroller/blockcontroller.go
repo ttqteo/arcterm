@@ -203,7 +203,10 @@ func handleBlockCloseEvent(event *wps.WaveEvent) {
 		log.Printf("[blockclose] invalid event data type")
 		return
 	}
-	go DestroyBlockController(blockId)
+	go func() {
+		DestroyBlockController(blockId)
+		stopLeftovers(blockId)
+	}()
 }
 
 // Public API Functions
