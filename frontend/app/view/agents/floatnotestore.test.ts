@@ -176,6 +176,20 @@ describe("loadScratch", () => {
         await loading;
         expect(globalStore.get(scratchBodyAtom)).toBe("new");
     });
+    it("does not overwrite an edit made while it waited for a write", async () => {
+        let release!: () => void;
+        write.mockReturnValueOnce(new Promise<void>((r) => (release = r)));
+        read.mockResolvedValue("old");
+        editScratch("a");
+        closeFloatNote();
+        const loading = loadScratch();
+        editScratch("typed");
+        // the edit's save has started, so nothing is pending when the read returns
+        await vi.advanceTimersByTimeAsync(SCRATCH_SAVE_MS);
+        release();
+        await loading;
+        expect(globalStore.get(scratchBodyAtom)).toBe("typed");
+    });
     it("sets the body from the read", async () => {
         read.mockResolvedValue("hello");
         await loadScratch();

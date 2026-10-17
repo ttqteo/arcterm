@@ -82,8 +82,9 @@ export function editScratch(body: string): void {
 
 /** Reads the note from the vault, after a write in flight lands, unless an edit was made while the read was out or text still waits to be saved. */
 export async function loadScratch(): Promise<void> {
-    await writing;
+    // taken before the wait: an edit typed while the read waits for the write must keep its text too
     const seq = editSeq;
+    await writing;
     const body = await RpcApi.NoteScratchReadCommand(TabRpcClient);
     // unsaved text (an edit, or a save that failed) beats the disk
     if (seq === editSeq && pending == null) {
