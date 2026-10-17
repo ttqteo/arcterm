@@ -37768,10 +37768,10 @@ const floatMini = {
 };
 
 // --- Float's Note and Translate tabs ----------------------------------------------------------------------------
-// docs/superpowers/plans/2026-10-17-float-note-translate.md. In a float, the ledge's Note tab covers the terminal with the
-// one global markdown note (typing, Preview, a failed save, every way it closes), and its Translate tab opens
-// translate-shell, or its install when the tool is missing. It asserts the DOM and the PTY size only, so the browser app
-// runs it too. Needs translate-shell on the PATH of the app's wavesrv for step 8.
+// docs/superpowers/specs/2026-10-17-float-note-translate-design.md. In a float, the ledge's Note tab covers the
+// terminal with the one global markdown note (typing, Preview, a failed save, every way it closes), and its Translate
+// tab opens translate-shell, or its install when the tool is missing. It asserts the DOM and the PTY size only, so the
+// browser app runs it too. Needs translate-shell on the PATH of the app's wavesrv for step 8.
 const FLOAT_NOTE_PROJECT = "verify-float-note";
 const FLOAT_NOTE_INSTALL_TAB = "Install translate-shell";
 const FLOAT_NOTE_THEME = fileURLToPath(new URL("../../cmd/wsh/cmd/trans-theme.trans", import.meta.url));

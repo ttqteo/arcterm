@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The ledge's two fixed tabs in Float (docs/superpowers/plans/2026-10-17-float-note-translate.md): the pure parts of
-// Note, the one global scratch note, and Translate, the translate-shell terminal. What the Translate tab does with the
-// terminals and the tool catalog, how a failed save reads, and which terminal is the Translate tab's. The state and the
-// actions are floatnotestore.ts.
+// The ledge's two fixed tabs in Float (docs/superpowers/specs/2026-10-17-float-note-translate-design.md): the pure
+// parts of Note, the one global scratch note, and Translate, the translate-shell terminal. What the Translate tab does
+// with the terminals and the tool catalog, how a failed save reads, and which terminal is the Translate tab's. The
+// state and the actions are floatnotestore.ts.
 
 import type { AgentVM } from "./agentsviewmodel";
 

@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The Note tab's body in Float (docs/superpowers/plans/2026-10-17-float-note-translate.md): the one global scratch note,
-// drawn over the terminal area, one tone above the terminal. The terminal stack stays mounted under it, so the terminal
-// never refits or replays. The state, the save and the open/close are floatnotestore.ts; the bar's Edit | Preview
-// switch (float-bar.tsx) writes scratchPreviewAtom.
+// The Note tab's body in Float (docs/superpowers/specs/2026-10-17-float-note-translate-design.md): the one global
+// scratch note, drawn over the terminal area, one tone above the terminal. The terminal stack stays mounted under it,
+// so the terminal never refits or replays. The state, the save and the open/close are floatnotestore.ts; the bar's
+// Edit | Preview switch (float-bar.tsx) writes scratchPreviewAtom.
 
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import {
