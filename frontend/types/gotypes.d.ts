@@ -1149,11 +1149,16 @@ declare global {
     type CommandGetRecentSessionsData = {
         windowdays?: number;
         limit?: number;
+        cursor?: string;
+        runtime?: string;
+        projectpath?: string;
+        query?: string;
     };
 
     // wshrpc.CommandGetRecentSessionsRtnData
     type CommandGetRecentSessionsRtnData = {
         sessions: SessionInfo[];
+        nextcursor?: string;
     };
 
     // wshrpc.CommandGetSessionBurnData
@@ -1203,11 +1208,13 @@ declare global {
     type CommandGetSessionsActivityData = {
         windowdays?: number;
         limit?: number;
+        cursor?: string;
     };
 
     // wshrpc.CommandGetSessionsActivityRtnData
     type CommandGetSessionsActivityRtnData = {
         sessions: SessionActivity[];
+        nextcursor?: string;
     };
 
     // wshrpc.CommandGetSubagentCostsRtnData

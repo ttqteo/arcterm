@@ -1151,7 +1151,7 @@ func walkSince(p provider, cutoff time.Time) []candidate {
 		cands = append(cands, candidate{path: path, stem: strings.TrimSuffix(strings.TrimSuffix(d.Name(), ".jsonl"), ".json"), mtime: info.ModTime(), size: info.Size(), p: p})
 		return nil
 	})
-	sort.Slice(cands, func(i, j int) bool { return cands[i].mtime.After(cands[j].mtime) })
+	sort.Slice(cands, func(i, j int) bool { return candidateLess(cands[i], cands[j]) })
 	return cands
 }
 
@@ -1172,8 +1172,10 @@ var (
 )
 
 // scanCacheMax bounds cache memory; clearing all when full is cheaper than LRU bookkeeping and only
-// costs a re-parse of the hot set.
-const scanCacheMax = 4096
+// costs a re-parse of the hot set. 1500 entries held ~1.2 MB, so the cap is ~26 MB at worst. It is this big because
+// Claude Code's 90-day retention is ~4500 transcript files here: a cache that overflowed would clear itself, and every
+// scan would go cold. designWritesCache (canvassessions.go) holds one entry per transcript too and shares this cap.
+const scanCacheMax = 32768
 
 // scanSessionCached derives one candidate's session, reusing the cache while the file is unchanged.
 func scanSessionCached(c candidate) (*SessionInfo, sessionEvents) {
@@ -1202,11 +1204,14 @@ var parseWorkers = min(runtime.GOMAXPROCS(0), 8)
 // (nil candidates do not count, so the parse set can exceed limit when non-session files interleave).
 // A session whose cwd is under tempDir is a throwaway run (a test, a scratchpad), never history anyone
 // resumes, so it is dropped and does not count either.
+// A session keep (when not nil) rejects is dropped and does not count either. It also returns how many candidates it
+// consumed, the ones a page's cursor skips past.
 // Candidates are parsed in parallel batches, each the size of what the limit still needs, so the files read are the
 // same newest ones a one-at-a-time scan would read.
-func parseCandidates(cands []candidate, limit int, tempDir string) []SessionInfo {
+func parseCandidates(cands []candidate, limit int, tempDir string, keep func(*SessionInfo) bool) ([]SessionInfo, int) {
 	var out []SessionInfo
-	for next := 0; next < len(cands); {
+	next := 0
+	for next < len(cands) {
 		n := len(cands) - next
 		if limit > 0 {
 			if len(out) >= limit {
@@ -1217,12 +1222,12 @@ func parseCandidates(cands []candidate, limit int, tempDir string) []SessionInfo
 		batch := cands[next : next+n]
 		next += n
 		for i, r := range parseBatch(batch) {
-			if s := asSession(batch[i], r); s != nil && !isUnderDir(s.ProjectPath, tempDir) {
+			if s := asSession(batch[i], r); s != nil && !isUnderDir(s.ProjectPath, tempDir) && (keep == nil || keep(s)) {
 				out = append(out, *s)
 			}
 		}
 	}
-	return out
+	return out, next
 }
 
 type parsed struct {
@@ -1392,15 +1397,7 @@ func TranscriptForSession(root, runtime, cwd, sessionId string) string {
 // sessions across runtimes — a provider that writes many files cannot crowd other runtimes' recent
 // sessions out of the parse set by quota alone.
 func scanProviders(providers []provider, windowDays, limit int, tempDir string) []SessionInfo {
-	var cands []candidate
-	for _, p := range providers {
-		if p.beginScan != nil {
-			p.beginScan()
-		}
-		cands = append(cands, walkCandidates(p, windowDays)...)
-	}
-	sort.Slice(cands, func(i, j int) bool { return cands[i].mtime.After(cands[j].mtime) })
-	out := parseCandidates(cands, limit, tempDir)
-	sort.Slice(out, func(i, j int) bool { return out[i].LastActiveTs > out[j].LastActiveTs })
-	return out
+	// no cursor, so no error
+	page, _ := scanPageFrom(providers, PageOpts{WindowDays: windowDays, Limit: limit}, tempDir)
+	return page.Sessions
 }
