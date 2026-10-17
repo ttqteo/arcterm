@@ -76,22 +76,6 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                     </span>
                 ) : null}
             </div>
-            {/* hides the window, as its red button does with the menu bar icon on: the agent keeps running and the Dock
-                icon brings the float back (src-tauri main.rs, Reopen), where X ends the agent; ⌘M and the yellow button
-                still fold it into the pet. A Mac's alone: elsewhere a hidden window has no Dock icon to come back from,
-                and WindowControls holds the window's own buttons */}
-            {mac ? (
-                <button
-                    type="button"
-                    data-float-hide
-                    aria-label="Hide window"
-                    title="Hide — the agent keeps running; the Dock icon brings it back"
-                    onClick={() => fireAndForget(() => getCurrentWindow().hide())}
-                    className={ICON_BTN}
-                >
-                    <Minus size={15} strokeWidth={1.9} />
-                </button>
-            ) : null}
             <button
                 type="button"
                 data-float-pin
@@ -128,6 +112,22 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                     className={cn(ICON_BTN, "hover:bg-error/15 hover:text-error")}
                 >
                     <X size={15} strokeWidth={1.9} />
+                </button>
+            ) : null}
+            {/* last, at the bar's edge: hides the window, as its red button does with the menu bar icon on: the agent
+                keeps running and the Dock icon brings the float back (src-tauri main.rs, Reopen), where X ends the
+                agent; ⌘M and the yellow button still fold it into the pet. A Mac's alone: elsewhere a hidden window has
+                no Dock icon to come back from, and WindowControls holds the window's own buttons */}
+            {mac ? (
+                <button
+                    type="button"
+                    data-float-hide
+                    aria-label="Hide window"
+                    title="Hide — the agent keeps running; the Dock icon brings it back"
+                    onClick={() => fireAndForget(() => getCurrentWindow().hide())}
+                    className={ICON_BTN}
+                >
+                    <Minus size={15} strokeWidth={1.9} />
                 </button>
             ) : null}
             {mac ? null : <WindowControls />}
