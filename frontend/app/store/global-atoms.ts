@@ -62,25 +62,6 @@ function initGlobalAtoms(initOpts: GlobalInitOptions) {
     const staticTabIdAtom: Atom<string> = atom(initOpts.tabId);
     const controlShiftDelayAtom = atom(false);
 
-    const reducedMotionSettingAtom = atom((get) => get(settingsAtom)?.["window:reducedmotion"]);
-    const reducedMotionSystemPreferenceAtom = atom(false);
-
-    // Composite of the prefers-reduced-motion media query and the window:reducedmotion user setting.
-    const prefersReducedMotionAtom = atom((get) => {
-        const reducedMotionSetting = get(reducedMotionSettingAtom);
-        const reducedMotionSystemPreference = get(reducedMotionSystemPreferenceAtom);
-        return reducedMotionSetting || reducedMotionSystemPreference;
-    });
-
-    // Set up a handler for changes to the prefers-reduced-motion media query.
-    if (globalThis.window != null) {
-        const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-        globalStore.set(reducedMotionSystemPreferenceAtom, !reducedMotionQuery || reducedMotionQuery.matches);
-        reducedMotionQuery?.addEventListener("change", () => {
-            globalStore.set(reducedMotionSystemPreferenceAtom, reducedMotionQuery.matches);
-        });
-    }
-
     const documentHasFocusAtom = atom(true) as PrimitiveAtom<boolean>;
     if (globalThis.window != null) {
         globalStore.set(documentHasFocusAtom, document.hasFocus());
@@ -106,7 +87,6 @@ function initGlobalAtoms(initOpts: GlobalInitOptions) {
         isFullScreen: isFullScreenAtom,
         zoomFactorAtom,
         controlShiftDelayAtom,
-        prefersReducedMotionAtom,
         documentHasFocus: documentHasFocusAtom,
         modalOpen,
         reinitVersion,

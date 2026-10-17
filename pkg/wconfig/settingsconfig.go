@@ -85,21 +85,15 @@ type SettingsType struct {
 	MemoryVaultPath              string `json:"memory:vaultpath,omitempty"`
 	HeadlessRuntime              string `json:"headless:runtime,omitempty"`
 	HeadlessOpenRouterCheapModel string `json:"headless:openroutercheapmodel,omitempty"`
-	JarvisVaultPath              string `json:"jarvis:vaultpath,omitempty"`
 
 	EditorMinimapEnabled      bool    `json:"editor:minimapenabled,omitempty"`
 	EditorStickyScrollEnabled bool    `json:"editor:stickyscrollenabled,omitempty"`
 	EditorWordWrap            bool    `json:"editor:wordwrap,omitempty"`
 	EditorFontSize            float64 `json:"editor:fontsize,omitempty"`
-	EditorInlineDiff          bool    `json:"editor:inlinediff,omitempty"`
 
-	WindowClear                         bool     `json:"window:*,omitempty"`
-	WindowReducedMotion                 bool     `json:"window:reducedmotion,omitempty"`
-	WindowMagnifiedBlockOpacity         *float64 `json:"window:magnifiedblockopacity,omitempty"`
-	WindowMagnifiedBlockSize            *float64 `json:"window:magnifiedblocksize,omitempty"`
-	WindowMagnifiedBlockBlurSecondaryPx *int64   `json:"window:magnifiedblockblursecondarypx,omitempty"`
-	WindowMinimize                      string   `json:"window:minimize,omitempty"`   // what minimize does: "sprout" (default) folds the window into Sprout, "dock" sends it to the Dock or taskbar
-	WindowAutoSprout                    bool     `json:"window:autosprout,omitempty"` // fold the full window into Sprout when you switch to another app that hides it
+	WindowClear      bool   `json:"window:*,omitempty"`
+	WindowMinimize   string `json:"window:minimize,omitempty"`   // what minimize does: "sprout" (default) folds the window into Sprout, "dock" sends it to the Dock or taskbar
+	WindowAutoSprout bool   `json:"window:autosprout,omitempty"` // fold the full window into Sprout when you switch to another app that hides it
 	// WindowAutoSproutPauseUntil holds window:autosprout off until then (Unix ms): the folded Sprout's "Don't fold for"; 0 or past is no pause
 	WindowAutoSproutPauseUntil *int64 `json:"window:autosproutpauseuntil,omitempty"`
 

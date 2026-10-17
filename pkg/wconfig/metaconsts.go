@@ -53,19 +53,12 @@ const (
 	ConfigKey_HeadlessRuntime                = "headless:runtime"
 	ConfigKey_HeadlessOpenRouterCheapModel   = "headless:openroutercheapmodel"
 
-	ConfigKey_JarvisVaultPath                = "jarvis:vaultpath"
-
 	ConfigKey_EditorMinimapEnabled           = "editor:minimapenabled"
 	ConfigKey_EditorStickyScrollEnabled      = "editor:stickyscrollenabled"
 	ConfigKey_EditorWordWrap                 = "editor:wordwrap"
 	ConfigKey_EditorFontSize                 = "editor:fontsize"
-	ConfigKey_EditorInlineDiff               = "editor:inlinediff"
 
 	ConfigKey_WindowClear                    = "window:*"
-	ConfigKey_WindowReducedMotion            = "window:reducedmotion"
-	ConfigKey_WindowMagnifiedBlockOpacity    = "window:magnifiedblockopacity"
-	ConfigKey_WindowMagnifiedBlockSize       = "window:magnifiedblocksize"
-	ConfigKey_WindowMagnifiedBlockBlurSecondaryPx = "window:magnifiedblockblursecondarypx"
 	ConfigKey_WindowMinimize                 = "window:minimize"
 	ConfigKey_WindowAutoSprout               = "window:autosprout"
 	ConfigKey_WindowAutoSproutPauseUntil     = "window:autosproutpauseuntil"

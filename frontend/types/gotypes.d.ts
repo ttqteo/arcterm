@@ -3645,17 +3645,11 @@ declare global {
         "memory:vaultpath"?: string;
         "headless:runtime"?: string;
         "headless:openroutercheapmodel"?: string;
-        "jarvis:vaultpath"?: string;
         "editor:minimapenabled"?: boolean;
         "editor:stickyscrollenabled"?: boolean;
         "editor:wordwrap"?: boolean;
         "editor:fontsize"?: number;
-        "editor:inlinediff"?: boolean;
         "window:*"?: boolean;
-        "window:reducedmotion"?: boolean;
-        "window:magnifiedblockopacity"?: number;
-        "window:magnifiedblocksize"?: number;
-        "window:magnifiedblockblursecondarypx"?: number;
         "window:minimize"?: string;
         "window:autosprout"?: boolean;
         "window:autosproutpauseuntil"?: number;

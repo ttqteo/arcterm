@@ -33,7 +33,6 @@ const settingsMigratedMarker = ".settings-vault-migrated"
 // are never written to the vault layer and are ignored if found there.
 var machineLocalKeys = map[string]bool{
 	ConfigKey_MemoryVaultPath:    true,
-	ConfigKey_JarvisVaultPath:    true,
 	ConfigKey_TermGitBashPath:    true,
 	ConfigKey_TermLocalShellPath: true,
 	ConfigKey_TermLocalShellOpts: true,
@@ -65,9 +64,8 @@ func notifyVaultLayerWrite() {
 	}
 }
 
-// VaultRoot resolves the Wave Vault root. memory:vaultpath is the setting Settings > Memory edits;
-// jarvis:vaultpath remains as a legacy fallback; otherwise ~/.waveterm/vault, or the data dir's vault in a dev
-// app with ARC_DEV_NO_GLOBAL_INSTALL. Read from disk on each call so it holds before the config watcher starts.
+// VaultRoot resolves the Wave Vault root. memory:vaultpath is the setting Settings > General > Vault & sync edits;
+// otherwise ~/.waveterm/vault, or the data dir's vault in a dev app with ARC_DEV_NO_GLOBAL_INSTALL. Read from disk on each call so it holds before the config watcher starts.
 func VaultRoot() string {
 	defaults, local, _ := readSettingsBase()
 	return resolveVaultRoot(defaults, local)
@@ -88,13 +86,10 @@ func readSettingsBase() (defaults waveobj.MetaMapType, local waveobj.MetaMapType
 }
 
 // resolveVaultRoot never consults the vault layer, which the vault path itself locates. That is exact, not
-// an approximation: both vault-path keys are machine-local, so the vault layer can never set them.
+// an approximation: memory:vaultpath is machine-local, so the vault layer can never set it.
 func resolveVaultRoot(defaults, local waveobj.MetaMapType) string {
 	merged := waveobj.MergeMeta(defaults, local, true)
 	if p := merged.GetString(ConfigKey_MemoryVaultPath, ""); p != "" {
-		return wavebase.ExpandHomeDirSafe(p)
-	}
-	if p := merged.GetString(ConfigKey_JarvisVaultPath, ""); p != "" {
 		return wavebase.ExpandHomeDirSafe(p)
 	}
 	// its runs' task dossiers and its efforts would otherwise land in the user's vault
