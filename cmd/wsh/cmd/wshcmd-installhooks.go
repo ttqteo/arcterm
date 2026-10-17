@@ -345,6 +345,23 @@ func mergeClaudePluginDirs(existing map[string]any, modDirs ...string) map[strin
 	return out
 }
 
+// claudeCleanupPeriodDays is how long Claude Code keeps a transcript when the person has not chosen their
+// own (its default is 30); the session lists page back through every transcript still on disk.
+const claudeCleanupPeriodDays = 90
+
+// mergeClaudeCleanupPeriod returns a copy of existing with cleanupPeriodDays set to claudeCleanupPeriodDays
+// when the key is absent. A value the person set, 0 included, is kept.
+func mergeClaudeCleanupPeriod(existing map[string]any) map[string]any {
+	out := map[string]any{}
+	if b, err := json.Marshal(existing); err == nil {
+		_ = json.Unmarshal(b, &out)
+	}
+	if _, set := out["cleanupPeriodDays"]; !set {
+		out["cleanupPeriodDays"] = claudeCleanupPeriodDays
+	}
+	return out
+}
+
 func listsPath(paths []string, want string) bool {
 	for _, p := range paths {
 		if samePath(p, want) {
@@ -686,6 +703,9 @@ func configIsHealthy(existing map[string]any, wantExe string, modDirs []string, 
 		return false
 	}
 	if !pluginDirsInclude(existing, modDirs) {
+		return false
+	}
+	if _, set := existing["cleanupPeriodDays"]; !set {
 		return false
 	}
 	sl, _ := existing["statusLine"].(map[string]any)
@@ -1296,6 +1316,7 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 			merged = mergeStatusLine(merged, wsh)
 		}
 		merged = mergeClaudePluginDirs(merged, modDirs...)
+		merged = mergeClaudeCleanupPeriod(merged)
 		out, err := json.MarshalIndent(merged, "", "  ")
 		if err != nil {
 			return fmt.Errorf("encoding settings: %w", err)
