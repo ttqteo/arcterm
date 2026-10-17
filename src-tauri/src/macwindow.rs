@@ -189,7 +189,8 @@ mod imp {
     }
 
     // Tauri's default menu has Close Window (performClose:) on ⌘W, in File and in Window. Closing the window quits
-    // arcterm and every agent in it, so the items keep their place in the menu but lose the key.
+    // arcterm and every agent in it when the menu bar icon is off, so the items keep their place in the menu but lose
+    // the key.
     pub fn free_close_window_key() {
         let Some(mtm) = MainThreadMarker::new() else {
             return;
@@ -501,6 +502,19 @@ mod imp {
                 text.addAttribute_value_range(NSForegroundColorAttributeName, &NSColor::systemRedColor(), dot);
             }
             button.setAttributedTitle(&text);
+        });
+    }
+
+    /// Draws the status item's button pressed while the popover shows, as macOS draws a menu's. tray-icon presses it
+    /// on the mouse down and lets it go on the mouse up that opens the popover, so the open presses it again.
+    pub fn press_tray(tray: &tauri::tray::TrayIcon, pressed: bool) {
+        let _ = tray.with_inner_tray_icon(move |inner| {
+            let (Some(item), Some(mtm)) = (inner.ns_status_item(), MainThreadMarker::new()) else {
+                return;
+            };
+            if let Some(button) = item.button(mtm) {
+                button.highlight(pressed);
+            }
         });
     }
 
@@ -819,6 +833,12 @@ pub fn close_panel() {
 #[cfg(target_os = "macos")]
 pub fn tint_tray_alert(tray: &tauri::tray::TrayIcon, title: String) {
     imp::tint_tray_alert(tray, title);
+}
+
+// Runs from the tray's open and close, on the main thread.
+#[cfg(target_os = "macos")]
+pub fn press_tray(tray: &tauri::tray::TrayIcon, pressed: bool) {
+    imp::press_tray(tray, pressed);
 }
 
 // Runs from setup, on the main thread.

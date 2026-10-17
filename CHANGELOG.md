@@ -58,6 +58,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The agent header no longer shows a bare `i` key beside the initiative; `i` still opens it, and the link's tooltip
   says so.
 - The system notification for an agent that needs you no longer plays a sound; the Dock icon still bounces.
+- With the menu bar icon on (the tray icon on Windows), closing arcterm's window hides it instead of quitting: your
+  agents keep running and the icon keeps showing the memory free. The popover's Open arcterm, or the Dock icon, brings
+  the window back; Quit (`⌘Q`) still quits.
 
 ### Fixed
 
@@ -73,6 +76,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the instructions out of the system prompt, so Claude never marked anything; they now ride with your prompt instead.
 - `Esc` in the Office stays in the Office: it only steps back, and no longer reaches the window behind it, where on a
   Mac it could take arcterm out of full screen.
+- The menu bar icon looks pressed while its popover is open, as a menu's does, and the popover fades in when it opens
+  instead of popping up.
 - On a Mac, clicking arcterm's menu bar icon, with either button, opens the popover with memory, CPU and what waits on
   you, instead of only Open / Quit, and the icon is the size of the icons beside it.
 - Disk sizes read as Finder and System Settings read them: a 245 GB drive shows 245 GB in the menu bar popover and

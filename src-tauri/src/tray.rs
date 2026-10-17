@@ -212,6 +212,7 @@ fn open(app: &AppHandle) -> tauri::Result<()> {
         // the frame place gave the window, which tao sets after this returns
         let w = win.clone();
         crate::macwindow::after_tao_frame(move || crate::macwindow::show_in_panel(&w, panel_blurred));
+        press(app, true);
     } else {
         win.show()?;
         win.set_focus()?;
@@ -268,12 +269,30 @@ fn close(app: &AppHandle, why: &str) {
         // on the Mac the webview goes back into its own window first, where wry takes it out on destroy, and the
         // window and delegate tao would leave behind are freed a moment after
         crate::macwindow::close_panel();
+        press(app, false);
         crate::macwindow::free_when_destroyed(&win);
         let _ = win.destroy();
         log_line("[tray] popover closed");
         state().lock().unwrap().closed_at = Some(Instant::now());
         let _ = app.emit("tray:closed", ());
     }
+}
+
+// The Mac's icon looks pressed while the popover shows; Windows' tray has no pressed look
+fn press(app: &AppHandle, pressed: bool) {
+    #[cfg(target_os = "macos")]
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        crate::macwindow::press_tray(&tray, pressed);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, pressed);
+}
+
+/// The icon shows (`app:tray` on), so closing the main window hides it and arcterm keeps running from the icon,
+/// whose popover's Open arcterm, or the Dock icon, brings it back. With the icon off, or none built (Linux, or a
+/// failed setup), closing it quits.
+pub fn keeps_app_open(app: &AppHandle) -> bool {
+    app.tray_by_id(TRAY_ID).is_some() && state().lock().unwrap().visible
 }
 
 /// The app is exiting with the popover open (⌘Q): its webview goes back into its own window, as close puts it, before

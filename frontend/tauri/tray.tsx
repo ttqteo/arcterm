@@ -32,6 +32,8 @@ const fixture = fixtureName != null ? TRAY_FIXTURES[fixtureName] : undefined;
 // Windows 11 draws the real window's rounded border itself (shadow on an undecorated window); a CSS one inside it
 // shows as a second edge at the corners. The fixture page has no window frame, so it keeps its own.
 const osFrame = fixtureName == null && /Windows/.test(navigator.userAgent);
+// the loading card shows only when the cockpit's first snapshot is this late
+const LOADING_SHOWS_MS = 400;
 
 function send(act: TrayAct): void {
     if (fixtureName != null) {
@@ -48,6 +50,7 @@ function TrayRoot() {
     // not the last snapshot's arrival: the cockpit keeps sending snapshots after wavesrv has gone
     const lastHeard = snap?.heardAt ?? fixture?.lastHeard ?? null;
     const [page, setPageState] = useState<TrayPage>(fixture?.page ?? "main");
+    const [waited, setWaited] = useState(false);
     const rootRef = useRef<HTMLDivElement>(null);
     const setPage = (p: TrayPage) => {
         setPageState(p);
@@ -63,7 +66,11 @@ function TrayRoot() {
             listen("tray:offline", () => setOffline(true)),
         ];
         send({ kind: "hello" });
-        return () => unlisten.forEach((p) => void p.then((off) => off()));
+        const timer = setTimeout(() => setWaited(true), LOADING_SHOWS_MS);
+        return () => {
+            clearTimeout(timer);
+            unlisten.forEach((p) => void p.then((off) => off()));
+        };
     }, []);
 
     useEffect(() => {
@@ -87,8 +94,12 @@ function TrayRoot() {
         if (fixtureName != null || el == null) {
             return;
         }
-        // offsetHeight, not getBoundingClientRect: the reveal's scale must not shrink the window
+        // offsetHeight, not getBoundingClientRect: the reveal's scale must not shrink the window. Nothing shows before
+        // the first snapshot, and the window keeps its first height meanwhile.
         const ro = new ResizeObserver(() => {
+            if (el.offsetHeight === 0) {
+                return;
+            }
             void invoke("tray_popover_size", { height: Math.ceil(el.offsetHeight) }).catch(() => {});
         });
         ro.observe(el);
@@ -104,9 +115,11 @@ function TrayRoot() {
             data-tray-page={state === "ready" ? page : state}
             className="w-[360px]"
         >
-            {/* the shared popover reveal (reduced motion respected), from the icon's side; the shadow is the window's own */}
+            {/* the shared popover reveal (reduced motion respected), from the icon's side; the shadow is the window's own.
+                It waits for the first snapshot, or LOADING_SHOWS_MS: revealed at once, it played on the loading card,
+                and the real page then came in with no motion at all. */}
             <PopoverReveal
-                open
+                open={state !== "loading" || waited}
                 origin={snap?.platform === "win" ? "bottom center" : "top center"}
                 className={cn("bg-surface p-2.5 font-sans", !osFrame && "rounded-lg border border-edge-strong")}
             >

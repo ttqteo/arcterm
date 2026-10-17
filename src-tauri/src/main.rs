@@ -366,6 +366,17 @@ fn main() {
             tray::set_tray_status,
             tray::tray_popover_size
         ])
+        .on_window_event(|window, event| {
+            // the close button only hides the window while the menu bar / tray icon shows, so the agents and the
+            // icon's memory reading keep running; Quit (⌘Q, the popover's, the Dock's) still quits
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == MAIN_WINDOW_LABEL && tray::keeps_app_open(window.app_handle()) {
+                    api.prevent_close();
+                    applog::log_line("[tauri] the window is closed to the menu bar icon; arcterm keeps running");
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(move |app| {
             // the config window already exists here (Tauri builds it before running setup)
             #[cfg(windows)]
@@ -479,6 +490,14 @@ fn main() {
             if let tauri::RunEvent::Reopen { .. } = event {
                 use tauri::Emitter;
                 let _ = app_handle.emit("app-reopen", ());
+                // and shows a window closed to the menu bar icon, which macOS leaves hidden
+                if let Some(win) = app_handle.get_webview_window(MAIN_WINDOW_LABEL) {
+                    let hidden = !win.is_visible().unwrap_or(true) && !win.is_minimized().unwrap_or(true);
+                    if hidden {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                }
             }
         });
 }
