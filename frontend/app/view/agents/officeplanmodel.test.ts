@@ -7,6 +7,8 @@ import { BOSS_PX, canStand, canWalk } from "./officeboss";
 import { EMPTY_LAYOUT, placeRooms, type Placements } from "./officelayout";
 import {
     agentLook,
+    BOSS_H,
+    BOSS_HALF_W,
     BOSS_HEADROOM,
     buildPlan,
     cut,
@@ -25,6 +27,7 @@ import {
     POPUP_W,
     popupBox,
     projectsOf,
+    ROOM_TOP,
     taskLook,
     WALL,
     type Box,
@@ -469,9 +472,30 @@ describe("officeplanmodel", () => {
         it("has both plants when the first desk row has a place free and there is no run", () => {
             const r = room(plan([ag("a")]));
             expect(r.plants).toEqual([
-                { x: r.box.x + r.box.w - 44, y: r.box.y + 64 },
+                { x: r.box.x + r.box.w - 44, y: r.box.y + ROOM_TOP },
                 { x: r.box.x + 16, y: r.box.y + r.box.h - MEET_H + 50 },
             ]);
+        });
+
+        it("keeps its plants out of the doorway and off the desks", () => {
+            // p's door is on its right, by the first desk row's free place; q's on its left
+            const p = plan([ag("a"), ag("b"), ag("c", { project: "q" })]);
+            const rooms = [room(p), room(p, "q")];
+            expect(rooms.map((r) => r.doorSide)).toEqual(["right", "left"]);
+            for (const r of rooms) {
+                const d = r.door!;
+                // the boss's body as it walks through: its feet anywhere in the door, its head BOSS_H above them
+                const way: Box = { x: d.x - BOSS_HALF_W, y: d.y - BOSS_H, w: d.w + 2 * BOSS_HALF_W, h: d.h + BOSS_H };
+                expect(r.plants, r.key).toHaveLength(2);
+                for (const pl of r.plants!) {
+                    const drawn: Box = { x: pl.x, y: pl.y, w: 30, h: 45 }; // scenery.ts's plant, leaves and pot
+                    expect(overlaps(drawn, way), `${r.key} ${JSON.stringify(pl)}`).toBe(false);
+                    for (const k of p.desks.filter((k) => k.room === r.key)) {
+                        const desk: Box = { x: k.x - 8, y: k.y - 20, w: 96, h: 100 }; // officeboss.ts's furniture box
+                        expect(overlaps(drawn, desk), `${r.key} ${k.key}`).toBe(false);
+                    }
+                }
+            }
         });
 
         it("has the strip's plant only when the first row is full and there is no run", () => {
@@ -481,11 +505,11 @@ describe("officeplanmodel", () => {
             expect(r.plants).toEqual([{ x: r.box.x + 16, y: r.box.y + r.box.h - MEET_H + 50 }]);
         });
 
-        it("has the top-right plant only when a run sits at a table and the first row has a place free", () => {
+        it("has the desk row's plant only when a run sits at a table and the first row has a place free", () => {
             const p = plan([ag("a")], [run("r")]);
             const r = room(p);
             expect(zones(p)).toHaveLength(1);
-            expect(r.plants).toEqual([{ x: r.box.x + r.box.w - 44, y: r.box.y + 64 }]);
+            expect(r.plants).toEqual([{ x: r.box.x + r.box.w - 44, y: r.box.y + ROOM_TOP }]);
         });
 
         it("has no plant when the first row is full and a table fills the strip", () => {

@@ -757,10 +757,11 @@ export function buildPlan(input: PlanInput): Plan {
                 ...fill.chip,
             };
         }
-        // two plants, each on its own rule: top right while the first desk row has a place free, and in the strip's
-        // left when no table is there (a room with no run: its strip is carpet with a plant)
+        // two plants, each on its own rule: at the first desk row's right end while it has a place free, and in the
+        // strip's left when no table is there (a room with no run: its strip is carpet with a plant). The first stands
+        // level with the desks, under the door's foot, so a room whose door is on its right keeps its doorway clear
         const plants: Point[] = [];
-        if (fill.seated.length < cap.perRow) plants.push({ x: x + colW - 44, y: y + 64 });
+        if (fill.seated.length < cap.perRow) plants.push({ x: x + colW - 44, y: y + ROOM_TOP });
         if (fill.tabled.length === 0) plants.push({ x: x + 16, y: zy + 50 });
         if (plants.length) project.plants = plants;
         order.push(...fill.order);

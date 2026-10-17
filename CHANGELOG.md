@@ -74,6 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   with its head over the top of the building.
 - A click in the Office, or a jump to a desk, walks the boss round the desks, tables and the sofa instead of through
   them, and so do the people walking to the lounge.
+- The plant in an Office room no longer stands in its doorway, where it stopped the boss walking in: it now stands at
+  the end of the first desk row, under the door.
 - Highlighted sentences in Claude's replies now show on Team accounts too. Claude Code's security plugin there kept
   the instructions out of the system prompt, so Claude never marked anything; they now ride with your prompt instead.
 - `Esc` in the Office stays in the Office: it only steps back, and no longer reaches the window behind it, where on a
