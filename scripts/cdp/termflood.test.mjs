@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLog, percentile, redReasons, summarize, tallyLog } from "./termflood.mjs";
+import { GiB, MEM_CHUNK, MIN_FREE_GB, memCap, memDelta, parseArgs, parseLog, percentile, redReasons, summarize, tallyLog } from "./termflood.mjs";
 
 describe("summarize", () => {
     it("takes percentiles over successful samples only and counts failures", () => {
@@ -50,5 +50,63 @@ describe("redReasons", () => {
         const r = redReasons({ n: 3, failed: 1, max: 2001 }, { ...quiet, appendErrors: 2 });
         expect(r).toHaveLength(3);
         expect(r.join(";")).toMatch(/2001ms.*1 resmon.*2 terminal append/);
+    });
+});
+
+describe("parseArgs", () => {
+    it("defaults to one unseen tab at the incident's rate with no load, and 4 GB left free under load", () => {
+        expect(parseArgs([])).toEqual({ rate: 180, secs: 60, port: 9222, view: 0, tabs: 1, load: 0, free: 4 });
+        expect(parseArgs(["--load", "1", "--free", "6", "--tabs", "12"])).toMatchObject({ load: 1, free: 6, tabs: 12 });
+    });
+
+    it("rejects unknown flags, missing values and a free target under the floor", () => {
+        expect(() => parseArgs(["--loud", "1"])).toThrow(/bad argument/);
+        expect(() => parseArgs(["--load"])).toThrow(/bad argument/);
+        expect(() => parseArgs(["--free", String(MIN_FREE_GB - 0.5)])).toThrow(/never leaves less than 2 GB/);
+        expect(parseArgs(["--free", String(MIN_FREE_GB)]).free).toBe(MIN_FREE_GB);
+    });
+});
+
+describe("memDelta", () => {
+    const cap = 28 * GiB;
+    const target = 4 * GiB;
+    const step = (free, chunks) => memDelta({ free, held: chunks * MEM_CHUNK, cap, target });
+
+    it("takes one chunk at a time while a chunk still fits above the target", () => {
+        expect(step(20 * GiB, 0)).toBe(1);
+        expect(step(target + MEM_CHUNK, 10)).toBe(1);
+    });
+
+    it("holds inside the band between the target and one chunk above it", () => {
+        expect(step(target, 10)).toBe(0);
+        expect(step(target + MEM_CHUNK - 1, 10)).toBe(0);
+    });
+
+    it("releases enough chunks to get back to the target when something else takes memory", () => {
+        expect(step(target - 1, 10)).toBe(-1);
+        expect(step(target - 3 * MEM_CHUNK, 10)).toBe(-3);
+        expect(step(target - 3 * MEM_CHUNK - 1, 10)).toBe(-4);
+    });
+
+    it("never releases more than it holds, and holds nothing back when it holds nothing", () => {
+        expect(step(GiB, 2)).toBe(-2);
+        expect(step(GiB, 0)).toBe(0);
+    });
+
+    it("never holds more than the cap, however much reads as free", () => {
+        const max = cap / MEM_CHUNK;
+        expect(step(20 * GiB, max - 1)).toBe(1);
+        expect(step(20 * GiB, max)).toBe(0);
+    });
+});
+
+describe("memCap", () => {
+    it("leaves the target in RAM when commit has room", () => {
+        expect(memCap({ total: 32 * GiB, target: 4 * GiB, commitFree: 40 * GiB })).toBe(28 * GiB);
+    });
+
+    it("leaves the floor of commit when commit is the tighter limit", () => {
+        expect(memCap({ total: 32 * GiB, target: 4 * GiB, commitFree: 5 * GiB })).toBe((5 - MIN_FREE_GB) * GiB);
+        expect(memCap({ total: 32 * GiB, target: 4 * GiB, commitFree: GiB })).toBe(0);
     });
 });
