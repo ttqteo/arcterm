@@ -1667,14 +1667,16 @@ func TestMergeClaudeCleanupPeriod_doesNotMutateItsInput(t *testing.T) {
 	}
 }
 
+// posix paths, so it runs on every OS: a Windows path is one token to filepath.Base on a Mac, and its drive colon splits
+// a plugin-dirs list there
 func TestConfigIsHealthy_requiresCleanupPeriod(t *testing.T) {
-	skipUnlessWindows(t)
-	full := mergeClaudeCleanupPeriod(mergeClaudePluginDirs(mergeStatusLine(mergeAgentHooks(map[string]any{}, testWsh), testWsh), testModDir))
-	if !configIsHealthy(full, testWsh, []string{testModDir}, false) {
+	const wsh, modDir = "/h/.arc/bin/wsh", "/h/.arc/claude-mod"
+	full := mergeClaudeCleanupPeriod(mergeClaudePluginDirs(mergeStatusLine(mergeAgentHooks(map[string]any{}, wsh), wsh), modDir))
+	if !configIsHealthy(full, wsh, []string{modDir}, false) {
 		t.Fatal("a config built by the full merge chain should be healthy")
 	}
 	delete(full, "cleanupPeriodDays")
-	if configIsHealthy(full, testWsh, []string{testModDir}, false) {
+	if configIsHealthy(full, wsh, []string{modDir}, false) {
 		t.Fatal("a config without cleanupPeriodDays must not be healthy, or an upgrade never writes it")
 	}
 }

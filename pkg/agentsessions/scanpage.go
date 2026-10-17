@@ -84,6 +84,15 @@ func scanPageFrom(providers []provider, opts PageOpts, tempDir string) (Page, er
 		if p.beginScan != nil {
 			p.beginScan()
 		}
+		// a project's own folder holds its sessions, so a project with few of them is not a parse of every transcript
+		// on disk. One with no folder by that name (a slug Claude Code shortened) walks the whole root.
+		if opts.ProjectPath != "" && p.projectDir != nil {
+			if dir := p.projectDir(opts.ProjectPath); dir != "" {
+				if info, err := os.Stat(dir); err == nil && info.IsDir() {
+					p.root = dir
+				}
+			}
+		}
 		cands = append(cands, walkCandidates(p, opts.WindowDays)...)
 	}
 	sort.Slice(cands, func(i, j int) bool { return candidateLess(cands[i], cands[j]) })

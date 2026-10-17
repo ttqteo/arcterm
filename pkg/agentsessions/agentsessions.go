@@ -689,6 +689,9 @@ type provider struct {
 	fused     func(path, stem string, lines []string) (*SessionInfo, sessionEvents)
 	resumeCmd func(s *SessionInfo) string
 	beginScan func() // run once before a scan walks or parses; nil when the provider keeps no per-scan state
+	// projectDir is the folder under root that holds a project's sessions, when the runtime files them by project;
+	// nil when it does not
+	projectDir func(projectPath string) string
 }
 
 func claudeProvider(root string) provider {
@@ -696,6 +699,10 @@ func claudeProvider(root string) provider {
 		runtime: "claude",
 		root:    root,
 		matches: func(name string) bool { return strings.HasSuffix(name, ".jsonl") },
+		// Claude Code files a session under the slug of its cwd
+		projectDir: func(projectPath string) string {
+			return filepath.Join(root, agentobserve.SlugifyCwd(filepath.Clean(projectPath)))
+		},
 		// the Agent tool's <parent>/subagents/agent-<id>.jsonl is part of its parent and never a session of its own
 		// (claudeSessionFrom drops it), yet those files were a third of a cold scan's bytes
 		skipDir: func(name string) bool { return name == "subagents" },

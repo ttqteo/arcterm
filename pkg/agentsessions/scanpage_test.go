@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/agentobserve"
 )
 
 // writeClaudeSession writes one claude transcript with the given cwd and first prompt, its mtime set to mtime.
@@ -150,6 +153,44 @@ func TestScanPage_badCursor(t *testing.T) {
 		if _, err := scanPageFrom([]provider{claudeProvider(t.TempDir())}, PageOpts{Cursor: cur}, ""); err == nil {
 			t.Errorf("cursor %q: want an error", cur)
 		}
+	}
+}
+
+// mkProjectDir makes the folder name under root and returns its path.
+func mkProjectDir(t *testing.T, root, name string) string {
+	t.Helper()
+	dir := filepath.Join(root, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// a session filed in another folder with the project's cwd stands in for every other transcript on disk: the walk
+// never reads it, which is what keeps a project with few sessions from parsing the whole store
+func TestScanPage_projectWalksOnlyItsClaudeFolder(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now()
+	writeClaudeSession(t, mkProjectDir(t, root, agentobserve.SlugifyCwd("/p/a")), "own", "/p/a", "task", now.Add(-time.Hour))
+	writeClaudeSession(t, mkProjectDir(t, root, "elsewhere"), "stray", "/p/a", "task", now.Add(-2*time.Hour))
+	page, err := scanPageFrom([]provider{claudeProvider(root)}, PageOpts{Runtime: "claude", ProjectPath: "/p/a", Limit: 30}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Sessions) != 1 || page.Sessions[0].ID != "own" {
+		t.Errorf("want only the session in the project's own folder, got %+v", page.Sessions)
+	}
+}
+
+func TestScanPage_projectWithNoFolderWalksTheRoot(t *testing.T) {
+	root := t.TempDir()
+	writeClaudeSession(t, mkProjectDir(t, root, "shortened-slug"), "short", "/p/z", "task", time.Now().Add(-time.Hour))
+	page, err := scanPageFrom([]provider{claudeProvider(root)}, PageOpts{Runtime: "claude", ProjectPath: "/p/z", Limit: 30}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Sessions) != 1 || page.Sessions[0].ID != "short" {
+		t.Errorf("a project with no folder of its own walks every folder, got %+v", page.Sessions)
 	}
 }
 
