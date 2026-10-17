@@ -36,8 +36,19 @@ describe("floatTabs", () => {
             "x",
             "y",
         ]));
-    it("shows no tabs for a float with nothing to switch to", () =>
-        expect(floatTabs([a("x", "idle")], [], "x")).toEqual({ shown: [], rest: [] }));
+    it("shows the one agent's tab, the way back from Note and Translate", () =>
+        expect(ids(floatTabs([a("x", "idle")], [], "x").shown)).toEqual(["x"]));
+    it("shows no tabs when nothing floats", () => expect(floatTabs([], [], null)).toEqual({ shown: [], rest: [] }));
+    it("leaves the translate terminal out of the ledge's tabs", () => {
+        const trans = { ...t("tr"), toolId: "trans" } as AgentVM;
+        const tabs = floatTabs([a("x", "idle")], [trans], "x");
+        expect(ids(tabs.shown)).toEqual(["x"]);
+        expect(tabs.rest).toEqual([]);
+    });
+    it("floatTabOrder keeps the translate terminal for the switcher", () => {
+        const trans = { ...t("tr"), toolId: "trans" } as AgentVM;
+        expect(ids(floatTabOrder([a("x", "idle")], [trans], "x", NO_LINEAGE))).toEqual(["x", "tr"]);
+    });
     it("cuts at FLOAT_TAB_MAX and keeps the rest for the +N menu", () => {
         const agents = "abcdefg".split("").map((id) => a(id, "idle"));
         const tabs = floatTabs(agents, [], "a");
