@@ -95,16 +95,16 @@ export function FloatNote({ model }: { model: AgentsViewModel }) {
                     placeholder={PLACEHOLDER}
                     onChange={(e) => editScratch(e.target.value)}
                     onKeyDown={onKeyDown}
-                    className="min-h-0 w-full flex-1 resize-none bg-transparent px-5 py-3.5 font-mono text-[13px] leading-[21px] text-primary caret-primary outline-none placeholder:text-secondary"
+                    className="min-h-0 w-full flex-1 resize-none bg-transparent px-5 py-3.5 font-mono text-[13px] leading-[21px] text-primary caret-primary outline-none placeholder:text-muted"
                 />
             )}
             {error != null ? (
                 <div
                     role="status"
                     data-float-note-error
-                    className="flex flex-none items-center gap-2 border-t border-border px-5 py-2 text-[12px] text-error"
+                    className="flex flex-none items-center gap-2 border-t border-border px-5 py-2 text-[12px] text-error-soft"
                 >
-                    <CircleAlert size={14} strokeWidth={2} className="flex-none" />
+                    <CircleAlert size={14} strokeWidth={2} className="flex-none text-error" />
                     <span>{error}</span>
                 </div>
             ) : null}

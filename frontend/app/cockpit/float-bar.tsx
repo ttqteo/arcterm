@@ -121,7 +121,7 @@ export function FloatBar({ model }: { model: AgentsViewModel }) {
                                     "h-[22px] cursor-pointer rounded-[5px] px-[9px] text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                                     on
                                         ? "bg-surface-hover font-semibold text-primary"
-                                        : "font-medium text-secondary hover:text-primary"
+                                        : "font-medium text-muted hover:text-primary"
                                 )}
                             >
                                 {v === "edit" ? "Edit" : "Preview"}
