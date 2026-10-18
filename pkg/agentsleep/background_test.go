@@ -88,6 +88,9 @@ func TestBackgroundRunningAForegroundCommandThatTimedOutIntoTheBackgroundIsATask
 
 func TestBackgroundRunningAPlainForegroundCommandIsNotATask(t *testing.T) {
 	want(t, []string{bash(t, "t3", m{"command": "ls"}), result(t, "t3", "a\nb", nil)})
+	// its output only quotes a start result (a grep of a transcript, a read of this file)
+	quoted := result(t, "t3", `result(t, "t1", "Command running in background with ID: b1abc", nil),`, nil)
+	want(t, []string{bash(t, "t3", m{"command": "sed -n 1,9p x_test.go"}), quoted})
 }
 
 func TestBackgroundRunningTaskStopAndKillShellStopIt(t *testing.T) {
@@ -147,6 +150,11 @@ func TestBackgroundRunningABackgroundCommandRefusedBeforeItStartedIsNotATask(t *
 		"content": "<tool_use_error>Refused by arcterm: drop the stdout redirect</tool_use_error>",
 	}}}})
 	want(t, []string{bash(t, "t11", m{"command": "make > out.log", "run_in_background": true}), refused})
+	// Claude Code (2.1.299+) writes the request it sent as an api-request-blob, which repeats the tool_use
+	copy := line(t, m{"type": "api-request-blob", "hash": "h", "message": m{"role": "assistant", "content": []any{
+		toolUse("t11", "Bash", m{"command": "make > out.log", "run_in_background": true}),
+	}}})
+	want(t, []string{bash(t, "t11", m{"command": "make > out.log", "run_in_background": true}), refused, copy})
 }
 
 func TestBackgroundRunningAStartWhoseResultIsNotInTheTailStaysRunning(t *testing.T) {

@@ -9,6 +9,13 @@ import { answerAsk, askQuestions, buildEditDiff, parseGrep, sliceRead, toolResul
 
 const READ_MODAL_MAX_LINES = 400; // bound stored Read body (modal view); inline uses the per-kind budget
 
+// Claude Code (2.1.299+) also writes each message it sent the API as an api-request-blob record, a copy that repeats
+// tool_use and tool_result blocks already in the transcript: a reader that does not check a record's type reads them
+// again, and a tool_use read after its result starts over
+function isRequestCopy(rec: any): boolean {
+    return rec?.type === "api-request-blob";
+}
+
 const VERB_BY_TOOL: Record<string, string> = {
     Read: "read",
     Edit: "edited",
@@ -389,7 +396,7 @@ export function extractSubagentSpawns(lines: string[]): SubagentSpawn[] {
             continue;
         }
         const content = rec?.message?.content;
-        if (!Array.isArray(content)) {
+        if (!Array.isArray(content) || isRequestCopy(rec)) {
             continue;
         }
         for (const block of content) {
@@ -443,7 +450,8 @@ export function runningBackgroundTasks(tasks: BackgroundTask[] | undefined): Bac
 // the shell tools that take run_in_background (PowerShell is Claude Code's Windows shell tool)
 const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
 
-const BG_ID_TEXT = /running in background with ID: ([A-Za-z0-9_-]+)/;
+// a start result opens with it; a foreground command whose output only quotes one (a grep of a transcript) is no task
+const BG_ID_TEXT = /^\s*Command running in background with ID: ([A-Za-z0-9_-]+)/;
 // a Monitor's start result: "Monitor started (task <id>, expires in 30m…"
 const MONITOR_ID_TEXT = /Monitor started \(task ([A-Za-z0-9_-]+)/;
 // a Monitor's expiry comes as one of its events, which name only its task id and carry no status
@@ -516,6 +524,9 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
         try {
             rec = JSON.parse(line);
         } catch {
+            continue;
+        }
+        if (isRequestCopy(rec)) {
             continue;
         }
         const ts = typeof rec?.timestamp === "string" ? Date.parse(rec.timestamp) : NaN;

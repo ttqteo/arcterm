@@ -73,6 +73,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent whose turn ended no longer reads as working with nothing running in the background: a background command
+  arcterm refused before it started, or a command whose output only quoted one, kept the row's dot green and held its
+  Close back.
 - On a Mac, **Fold when you leave** folds behind any app that covers arcterm, not only Chrome: under an app whose window
   hid arcterm completely, the fold waited until you came back and then folded the window as you returned, so the Dock
   icon or `⌘Tab` showed Sprout instead of the cockpit.

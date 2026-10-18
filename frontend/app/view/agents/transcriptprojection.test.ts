@@ -410,6 +410,23 @@ describe("extractSubagentSpawns", () => {
         ]);
     });
 
+    it("does not take the copy of a request (api-request-blob) for a new spawn", () => {
+        const spawn = {
+            type: "tool_use",
+            id: "t1",
+            name: "Task",
+            input: { subagent_type: "Explore", prompt: "look at X" },
+        };
+        const lines = [
+            asst([spawn]),
+            usr([{ type: "tool_result", tool_use_id: "t1", is_error: false }]),
+            JSON.stringify({ type: "api-request-blob", hash: "h", message: { role: "assistant", content: [spawn] } }),
+        ];
+        expect(extractSubagentSpawns(lines)).toEqual([
+            { toolUseId: "t1", subagentType: "Explore", prompt: "look at X", done: true, failed: false },
+        ]);
+    });
+
     it("does not take a background agent's launch receipt for its result", () => {
         const lines = [
             asst([{ type: "tool_use", id: "bg", name: "Agent", input: { subagent_type: "Explore", prompt: "map it" } }]),
@@ -528,6 +545,9 @@ describe("extractBackgroundTasks", () => {
 
     it("a plain foreground command is not a task", () => {
         expect(extractBackgroundTasks([bash("t3", { command: "ls" }), result("t3", "a\nb")])).toEqual([]);
+        // its output only quotes a start result (a grep of a transcript, a read of this file)
+        const quoted = result("t3", 'result("t1", "Command running in background with ID: b1abc"),');
+        expect(extractBackgroundTasks([bash("t3", { command: "sed -n 1,9p x.test.ts" }), quoted])).toEqual([]);
     });
 
     it("TaskStop on its id stops it", () => {
@@ -601,6 +621,23 @@ describe("extractBackgroundTasks", () => {
         });
         const lines = [bash("t11", { command: "make > out.log", run_in_background: true }), refused];
         expect(extractBackgroundTasks(lines)).toEqual([]);
+        // Claude Code (2.1.299+) writes the request it sent as an api-request-blob, which repeats the tool_use
+        const copy = JSON.stringify({
+            type: "api-request-blob",
+            hash: "h",
+            message: {
+                role: "assistant",
+                content: [
+                    {
+                        type: "tool_use",
+                        id: "t11",
+                        name: "Bash",
+                        input: { command: "make > out.log", run_in_background: true },
+                    },
+                ],
+            },
+        });
+        expect(extractBackgroundTasks([...lines, copy])).toEqual([]);
     });
 
     it("a start whose result is not in the tail stays running with no task id", () => {

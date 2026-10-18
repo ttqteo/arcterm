@@ -21,7 +21,8 @@ import (
 var shellTools = map[string]bool{"Bash": true, "PowerShell": true}
 
 var (
-	bgIDText = regexp.MustCompile(`running in background with ID: ([A-Za-z0-9_-]+)`)
+	// a start result opens with it; a foreground command whose output only quotes one (a grep of a transcript) is no task
+	bgIDText = regexp.MustCompile(`^\s*Command running in background with ID: ([A-Za-z0-9_-]+)`)
 	// a Monitor's start result: "Monitor started (task <id>, expires in 30m…"
 	monitorIDText = regexp.MustCompile(`Monitor started \(task ([A-Za-z0-9_-]+)`)
 	// a Monitor's expiry comes as one of its events, which name only its task id and carry no status
@@ -76,7 +77,9 @@ func BackgroundRunning(lines []string) []string {
 	}
 	for _, line := range lines {
 		var rec any
-		if json.Unmarshal([]byte(line), &rec) != nil {
+		// Claude Code (2.1.299+) also writes each message it sent the API as an api-request-blob, a copy that repeats
+		// tool_use and tool_result blocks already read
+		if json.Unmarshal([]byte(line), &rec) != nil || dig(rec, "type") == "api-request-blob" {
 			continue
 		}
 		content, _ := dig(rec, "message", "content").([]any)
