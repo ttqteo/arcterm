@@ -57,6 +57,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An HTML page in Code or the agent panel's File tab opens where you left it after you switch to another surface or
   file and come back, or an agent rewrites it, instead of jumping back to the top.
 - Resting the pointer on an HTML or PDF preview no longer hangs a chip with the file's path over the path bar.
+- A tooltip holding a long path wraps it inside its box instead of running the path out past the edge.
 - In the agent panel's File tab only the path itself is the copy button: the empty space beside it no longer turns
   grey or pops the full path up over the top of the document.
 - An image opened in Code or the File tab now shows in the installed app, instead of "Cannot show this image".

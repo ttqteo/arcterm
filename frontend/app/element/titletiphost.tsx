@@ -194,7 +194,8 @@ export function TitleTipHost() {
                     style={{ transformOrigin: shown?.origin }}
                     className="flex items-baseline gap-2.5 rounded-[6px] border border-edge-mid bg-surface-raised px-2 py-[5px] text-[12px] leading-[1.4] text-primary shadow-popover"
                 >
-                    <span className="whitespace-pre-line">{label}</span>
+                    {/* a path has no space to wrap at: it breaks anywhere rather than run out of the chip */}
+                    <span className="min-w-0 whitespace-pre-line [overflow-wrap:anywhere]">{label}</span>
                     {keys ? <span className="flex-none whitespace-nowrap text-[11.5px] text-muted">{keys}</span> : null}
                 </motion.div>
             </MotionConfig>
