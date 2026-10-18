@@ -38781,6 +38781,108 @@ const floatNote = {
     },
 };
 
+// --- Float's ledge with more tabs than room ------------------------------------------------------------------------
+// Six terminals in a float narrowed to a width the tabs do not fit, down to the float's least (floatwindow.ts
+// FLOAT_MIN_SIZE): the Note and Translate tabs keep their room, a press on a fixed tab's right edge reaches that tab, and
+// every tab and "+N" ends before the floor Sprout walks and the usage. It asserts the DOM only, so the browser app runs
+// it too.
+const FLOAT_LEDGE_PROJECT = "verify-float-ledge";
+const FLOAT_LEDGE_WIDTHS = [640, 480];
+
+const floatLedgeTabs = {
+    name: "float-ledge-tabs",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { terminals: [] };
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            for (let i = 0; i < 6; i++) await openRailTerminal(h, ctx, FLOAT_LEDGE_PROJECT);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError) {
+            rec("0. arrange", false, ctx.arrangeError);
+            return steps;
+        }
+        const wait = (expr, ms) => floatMiniWait(h, expr, ms);
+        const term = ctx.terminals[0];
+        await h.goto("agent");
+        await wait(`!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
+        await wait(floatNoteShowing(term.tabId), 3000);
+        if (!(await pickHeaderMenu(h, "Float window"))) {
+            await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
+            await floatNoteKey(h, "F");
+        }
+        const floated =
+            (await wait(`!!document.querySelector("[data-float-bar]")`)) &&
+            (await wait(`document.querySelectorAll("[data-float-tab]").length >= 5`, 5000));
+        rec("1. the scenario's terminal floats with five tabs on its ledge", floated, JSON.stringify({ floated }));
+        if (!floated) return steps;
+
+        for (const [i, width] of FLOAT_LEDGE_WIDTHS.entries()) {
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width, height: 600, deviceScaleFactor: 2, mobile: false });
+            await h.ev("new Promise((r) => setTimeout(r, 500))");
+            // a press on each fixed tab's right edge, and where the tabs start and end against their neighbours
+            const probe = await h.ev(`(() => {
+                const box = (el) => { const r = el?.getBoundingClientRect(); return r ? { l: r.left, r: r.right, y: r.top + r.height / 2 } : null; };
+                const fixed = [...document.querySelectorAll("[data-float-fixed]")];
+                const fixedHit = fixed.length === 2 && fixed.every((el) => { const b = box(el); return el.contains(document.elementFromPoint(b.r - 2, b.y)); });
+                const tabs = [...document.querySelectorAll("[data-float-tab], [data-float-tabs-more]")].map(box);
+                const floor = box(document.querySelector("[data-pet-ledge]"));
+                const usage = box(document.querySelector("[data-float-usage]"));
+                return {
+                    fixedHit,
+                    transRight: box(document.querySelector('[data-float-fixed="translate"]')).r,
+                    tabsLeft: Math.min(...tabs.map((b) => b.l)),
+                    tabsRight: Math.max(...tabs.map((b) => b.r)),
+                    tabs: document.querySelectorAll("[data-float-tab]").length,
+                    more: document.querySelector("[data-float-tabs-more]")?.textContent ?? null,
+                    floorLeft: floor?.l ?? null,
+                    usageLeft: usage?.l ?? null,
+                };
+            })()`);
+            await h.shot(`cdp-shots/float-ledge-tabs-${width}.png`);
+            rec(
+                `${i + 2}. at ${width}px the fixed tabs keep their room and every tab ends before the floor and the usage`,
+                probe.fixedHit &&
+                    probe.tabsLeft >= probe.transRight &&
+                    probe.more != null &&
+                    probe.floorLeft != null &&
+                    probe.tabsRight <= probe.floorLeft + 0.5 &&
+                    (probe.usageLeft == null || probe.tabsRight <= probe.usageLeft),
+                JSON.stringify(probe)
+            );
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`float-ledge-tabs teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("restore the viewport", () => h.cdp("Emulation.clearDeviceMetricsOverride", {}));
+        await step("leave float", () => h.ev(`document.querySelector("[data-float-exit]")?.click()`));
+        await step("settle", () => h.ev("new Promise((r) => setTimeout(r, 1200))"));
+        for (const t of ctx.terminals ?? []) {
+            await step(`close the terminal tab ${t.tabId}`, () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+            );
+        }
+    },
+};
+
 // --- Jarvis across the window's three sizes ----------------------------------------------------------------------
 // Full folds into Sprout in one click and Restore lands in Full; Float folds and Restore lands in Float; the chat opens
 // from Sprout in all three; the terminal's PTY size never moves across a fold (the shell is hidden before the window
@@ -46786,6 +46888,7 @@ export const SCENARIOS = [
     jobqueueAgentTag,
     floatMini,
     floatNote,
+    floatLedgeTabs,
     jarvisModes,
     settingsStorage,
     toolsTree,

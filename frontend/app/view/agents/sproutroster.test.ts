@@ -74,6 +74,25 @@ describe("floatTabs", () => {
     });
     it("does not bring a hidden worker back as a terminal", () =>
         expect(ids(floatTabs(runAgents, [a("w1", "idle", "terminal")], "x", run).shown)).toEqual(["x", "lead"]));
+    describe("in the room the ledge has", () => {
+        const six = "abcdef".split("").map((id) => a(id, "idle"));
+        // 4px inset, then 44px per tab and 4px between; "+N" takes 4px and 32px more
+        it("shows every tab that fits", () =>
+            expect(ids(floatTabs(six.slice(0, 3), [], "a", NO_LINEAGE, 4 + 3 * 44 + 2 * 4).shown)).toEqual([
+                "a",
+                "b",
+                "c",
+            ]));
+        it("cuts to what fits beside +N and keeps the rest for its menu", () => {
+            const tabs = floatTabs(six.slice(0, 3), [], "a", NO_LINEAGE, 4 + 3 * 44 + 2 * 4 - 1);
+            expect(ids(tabs.shown)).toEqual(["a", "b"]);
+            expect(ids(tabs.rest)).toEqual(["c"]);
+        });
+        it("never shows more than FLOAT_TAB_MAX, however wide", () =>
+            expect(floatTabs(six, [], "a", NO_LINEAGE, 2000).shown).toHaveLength(FLOAT_TAB_MAX));
+        it("keeps the one in view when only one fits", () =>
+            expect(ids(floatTabs(six, [], "e", NO_LINEAGE, 10).shown)).toEqual(["e"]));
+    });
 });
 
 describe("floatTabOrder", () => {

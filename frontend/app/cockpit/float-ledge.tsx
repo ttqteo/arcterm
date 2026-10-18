@@ -7,9 +7,12 @@
 // terminal), a divider, then the tabs Float can switch to, plain terminals included and a run as its lead
 // (sproutroster.ts floatTabs), their dots pulsing while that agent works or asks; the fixed tabs are always there, so
 // even one agent shows its tab, the way back from the note. On its right, the plan usage (usagemeters.tsx FloatUsage),
-// since Float has no app bar. What lies between is the floor Sprout walks. A press on the strip, away from a tab,
-// drags the window like the float bar.
+// since Float has no app bar. What lies between is the floor Sprout walks. The fixed tabs and the usage keep their
+// width; the tabs take what is left past the floor's least, so a narrow float shows fewer and puts the rest under "+N"
+// instead of painting them over their neighbours. A press on the strip, away from a tab, drags the window like the
+// float bar.
 
+import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { useBindingKeys } from "@/app/store/keybindings/store";
 import { STATE_LABEL } from "@/app/view/agents/agentheader";
@@ -33,6 +36,9 @@ function tabLabel(a: AgentVM): string {
     return `${a.name} · ${a.state === "asking" ? askingLabel(a) : STATE_LABEL[a.state]}`;
 }
 
+// the floor's least width: the sprite and a step (its min-w-[64px])
+const FLOOR_MIN = 64;
+
 // a fixed tab: icon only, 30px wide; pressed as an agent tab is
 function fixedTabClass(on: boolean): string {
     return cn(
@@ -51,9 +57,12 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
     const lineage = useAtomValue(model.lineageAtom);
+    // the tabs and the floor share what the fixed tabs and the usage leave
+    const [roomRef, , roomRect] = useDimensionsWithCallbackRef<HTMLDivElement>(null);
+    const room = roomRect == null ? undefined : roomRect.width - FLOOR_MIN;
     const tabs = useMemo(
-        () => floatTabs(agents, terminals, focusId ?? null, lineage),
-        [agents, terminals, focusId, lineage]
+        () => floatTabs(agents, terminals, focusId ?? null, lineage, room),
+        [agents, terminals, focusId, lineage, room]
     );
     const focused = agents.find((a) => a.id === focusId) ?? terminals.find((a) => a.id === focusId);
     // a tab shows that agent's or terminal's terminal: Float shows the focused one; it closes the note first
@@ -68,7 +77,7 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
         );
     return (
         <div data-tauri-drag-region className="flex h-[52px] shrink-0 select-none border-t border-border bg-surface">
-            <div data-tauri-drag-region className="flex min-w-0 items-center gap-1 pl-2">
+            <div data-tauri-drag-region className="flex flex-none items-center gap-1 pl-2">
                 <button
                     type="button"
                     data-float-fixed="note"
@@ -93,50 +102,52 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                 </button>
                 <span className="mx-1 h-4 w-px flex-none bg-edge-mid" aria-hidden />
             </div>
-            {tabs.shown.length > 0 ? (
-                <div data-float-tabs data-tauri-drag-region className="flex min-w-0 items-center gap-1 pl-1">
-                    {tabs.shown.map((a) => {
-                        const on = a.id === focusId && !noteOpen;
-                        return (
+            <div ref={roomRef} data-tauri-drag-region className="flex min-w-0 flex-1">
+                {tabs.shown.length > 0 ? (
+                    <div data-float-tabs data-tauri-drag-region className="flex min-w-0 items-center gap-1 pl-1">
+                        {tabs.shown.map((a) => {
+                            const on = a.id === focusId && !noteOpen;
+                            return (
+                                <button
+                                    key={a.id}
+                                    type="button"
+                                    data-float-tab={a.id}
+                                    aria-label={tabLabel(a)}
+                                    aria-pressed={on}
+                                    title={tabLabel(a)}
+                                    onClick={() => show(a.id)}
+                                    className={cn(
+                                        "flex h-[26px] min-w-[44px] max-w-[120px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                        on
+                                            ? "bg-surface-hover font-semibold text-primary ring-1 ring-edge-mid"
+                                            : "text-secondary hover:bg-surface-hover hover:text-primary"
+                                    )}
+                                >
+                                    {a.kind === "terminal" ? (
+                                        <SquareTerminal size={12} strokeWidth={2} className="flex-none text-muted" />
+                                    ) : (
+                                        <StatusDot state={a.state} pulse={a.state !== "idle"} />
+                                    )}
+                                    <span className="min-w-0 truncate">{a.name}</span>
+                                </button>
+                            );
+                        })}
+                        {tabs.rest.length > 0 ? (
                             <button
-                                key={a.id}
                                 type="button"
-                                data-float-tab={a.id}
-                                aria-label={tabLabel(a)}
-                                aria-pressed={on}
-                                title={tabLabel(a)}
-                                onClick={() => show(a.id)}
-                                className={cn(
-                                    "flex h-[26px] min-w-[44px] max-w-[120px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                                    on
-                                        ? "bg-surface-hover font-semibold text-primary ring-1 ring-edge-mid"
-                                        : "text-secondary hover:bg-surface-hover hover:text-primary"
-                                )}
+                                data-float-tabs-more
+                                aria-label={`${tabs.rest.length} more`}
+                                onClick={showRest}
+                                className="flex h-[26px] flex-none cursor-pointer items-center rounded-[7px] px-1.5 text-[11px] text-muted tabular-nums hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                             >
-                                {a.kind === "terminal" ? (
-                                    <SquareTerminal size={12} strokeWidth={2} className="flex-none text-muted" />
-                                ) : (
-                                    <StatusDot state={a.state} pulse={a.state !== "idle"} />
-                                )}
-                                <span className="min-w-0 truncate">{a.name}</span>
+                                +{tabs.rest.length}
                             </button>
-                        );
-                    })}
-                    {tabs.rest.length > 0 ? (
-                        <button
-                            type="button"
-                            data-float-tabs-more
-                            aria-label={`${tabs.rest.length} more`}
-                            onClick={showRest}
-                            className="flex h-[26px] flex-none cursor-pointer items-center rounded-[7px] px-1.5 text-[11px] text-muted tabular-nums hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                            +{tabs.rest.length}
-                        </button>
-                    ) : null}
-                </div>
-            ) : null}
-            {/* the floor Sprout walks: what the tabs and the usage leave, never less than the sprite and a step */}
-            <div data-pet-ledge data-pet-ledge-holds data-tauri-drag-region className="min-w-[64px] flex-1" />
+                        ) : null}
+                    </div>
+                ) : null}
+                {/* the floor Sprout walks: what the tabs and the usage leave, never less than the sprite and a step */}
+                <div data-pet-ledge data-pet-ledge-holds data-tauri-drag-region className="min-w-[64px] flex-1" />
+            </div>
             <FloatUsage model={model} />
         </div>
     );

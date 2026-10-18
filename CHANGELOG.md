@@ -46,6 +46,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   hanging below the text.
 - The menu bar icon opens its popover again after arcterm let the popover go at critical memory pressure; one such
   time left every click opening nothing until arcterm restarted.
+- In a float, the agent tabs no longer slide over the Translate button or under the usage: a narrow float shows as many
+  tabs as fit and puts the rest under "+N".
 
 ## 0.15.15 — 2026-10-17
 

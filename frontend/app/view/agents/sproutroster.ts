@@ -16,6 +16,12 @@ export interface RosterCut {
 
 // tabs, not dots: past five the names get too short to read in a float
 export const FLOAT_TAB_MAX = 5;
+// a tab's least width, the gap between tabs and the tabs' inset on the ledge (float-ledge.tsx: min-w-[44px], gap-1,
+// pl-1), and the most "+N" takes
+const FLOAT_TAB_MIN = 44;
+const FLOAT_TAB_GAP = 4;
+const FLOAT_TAB_INSET = 4;
+const FLOAT_TAB_MORE = 32;
 export const FOLDED_LIST_MAX = 4;
 
 // a run's workers and stage sessions, which the Agent tree nests under the run's lead (agenttreemodel.ts buildAgentTree)
@@ -74,22 +80,36 @@ export function floatTabOrder(
     return [...topLevel(agents, lineage, focusId), ...terminals.filter((t) => !seen.has(t.id))];
 }
 
-/** The float's tabs: what Float can switch to, the plain terminals included and a run as its lead, cut at
- *  FLOAT_TAB_MAX with the one in view always among those shown. The Translate terminal is left out, its tab is the
- *  ledge's fixed Translate; the ledge's Note and Translate tabs are always there, so even one agent shows its tab, the
- *  way back. None only when nothing at all floats. */
+// how many of count tabs the ledge holds in room px: all of them when they fit, else as many as fit beside "+N", never
+// more than FLOAT_TAB_MAX and never fewer than one, the one in view
+function tabsThatFit(room: number, count: number): number {
+    const width = (n: number) => FLOAT_TAB_INSET + n * FLOAT_TAB_MIN + (n - 1) * FLOAT_TAB_GAP;
+    if (count <= FLOAT_TAB_MAX && width(count) <= room) {
+        return count;
+    }
+    let n = Math.min(count, FLOAT_TAB_MAX);
+    while (n > 1 && width(n) + FLOAT_TAB_GAP + FLOAT_TAB_MORE > room) {
+        n--;
+    }
+    return n;
+}
+
+/** The float's tabs: what Float can switch to, the plain terminals included and a run as its lead, cut at what fits in
+ *  room (the px the ledge leaves them; unmeasured, FLOAT_TAB_MAX) with the one in view always among those shown. The
+ *  Translate terminal is left out, its tab is the ledge's fixed Translate; the ledge's Note and Translate tabs are
+ *  always there, so even one agent shows its tab, the way back. None only when nothing at all floats. */
 export function floatTabs(
     agents: readonly AgentVM[],
     terminals: readonly AgentVM[],
     focusId: string | null,
     lineage: Lineage = NO_LINEAGE,
-    max = FLOAT_TAB_MAX
+    room = Infinity
 ): FloatTabs {
     const order = floatTabOrder(agents, terminals, focusId, lineage).filter((x) => !isTranslateTerminal(x));
     if (order.length < 1) {
         return { shown: [], rest: [] };
     }
-    const { shown } = cut(order, max, focusId);
+    const { shown } = cut(order, tabsThatFit(room, order.length), focusId);
     const kept = new Set(shown.map((x) => x.id));
     return { shown, rest: order.filter((x) => !kept.has(x.id)) };
 }
