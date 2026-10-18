@@ -147,3 +147,58 @@ func TestBuildOutputWithTrackedFilesNeverQualifies(t *testing.T) {
 		t.Fatal("the tracked file must stay")
 	}
 }
+
+func TestBuildOutputReachesTheReposAgentsWorkedIn(t *testing.T) {
+	ctx := context.Background()
+	project := buildRepo(t) // in config
+	other := buildRepo(t)   // only agents worked here, in a subfolder
+	plain := t.TempDir()    // not a repo
+	writeFile(t, filepath.Join(plain, "node_modules", "p.js"), 4)
+	wt := filepath.Join(t.TempDir(), "wt")
+	if out, err := gitOut(ctx, other, "worktree", "add", "-q", wt); err != nil {
+		t.Fatalf("git worktree add: %v\n%s", err, out)
+	}
+	writeFile(t, filepath.Join(wt, "node_modules", "w.js"), 4)
+	env := buildEnv(project, nil)
+	env.AgentProjects = func() []AgentProject {
+		return []AgentProject{
+			{Path: filepath.Join(other, "frontend"), LastActiveTs: 300},
+			{Path: wt, LastActiveTs: 250},
+			{Path: filepath.Join(project, "src-tauri"), LastActiveTs: 200},
+			{Path: plain, LastActiveTs: 150},
+			{Path: other, LastActiveTs: 100},
+		}
+	}
+	rep := buildOutput{}.measure(ctx, env)
+	theirs := itemByID(rep.Items, filepath.Join(other, "frontend", "node_modules"))
+	if theirs.ID == "" || theirs.Detail != other || theirs.ModTs != 300 || !theirs.Cleanable {
+		t.Fatalf("an agent's repo is listed at its top level, with its newest session: %+v", theirs)
+	}
+	if mine := itemByID(rep.Items, filepath.Join(project, "src-tauri", "target")); mine.ModTs != 200 {
+		t.Fatalf("a project in config takes when an agent last worked in it: %+v", mine)
+	}
+	for _, it := range rep.Items {
+		if isInside(it.Path, plain) || isInside(it.Path, wt) {
+			t.Fatalf("a folder outside a repo and a linked worktree are never listed: %+v", it)
+		}
+	}
+	if len(rep.Items) != 4 {
+		t.Fatalf("got %v, want each repo's node_modules and target once", itemIDs(rep.Items))
+	}
+	nm := filepath.Join(other, "frontend", "node_modules")
+	if res := (buildOutput{}).clean(ctx, env, []string{nm}, CleanOpts{}); len(res.Cleaned) != 1 || fileExists(nm) {
+		t.Fatalf("an agent repo's build output is removed like a project's: %+v", res)
+	}
+	if res := (buildOutput{}).clean(ctx, env, []string{filepath.Join(plain, "node_modules")}, CleanOpts{}); len(res.Cleaned) != 0 {
+		t.Fatal("a folder outside every repo must never be removed")
+	}
+}
+
+func TestAnAgentInASubfolderKeepsTheProjectBusy(t *testing.T) {
+	repo := buildRepo(t)
+	env := buildEnv(repo, map[string]string{filepath.Join(repo, "frontend"): "agent working in this project"})
+	nm := filepath.Join(repo, "frontend", "node_modules")
+	if it := itemByID(buildOutput{}.measure(context.Background(), env).Items, nm); it.Cleanable {
+		t.Fatalf("an agent working in a folder of the project keeps its output: %+v", it)
+	}
+}

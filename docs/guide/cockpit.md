@@ -279,7 +279,7 @@ Chip RAM và thanh quota chỉ hiện khi đã có số liệu.
 - Trên các surface khác (Jarvis, Radar, Diff, Code): `Default · <project>`, là project mặc định; surface giữ target bạn chọn rõ ràng.
 - Trên Usage, Setup, Settings: cũng `Default · …`, nhưng surface không lọc theo project.
 
-Danh sách thả xuống ("Switch project") có *All projects* kèm tổng số agent, rồi từng project với chấm vàng nếu có agent đang hỏi, số agent đang hỏi và số agent. Rê chuột vào một dòng thì hiện biểu tượng thùng rác; bấm rồi xác nhận `Remove?` sẽ bỏ project khỏi arcterm (file và run của project không bị đụng tới). Dưới cùng là **New project**: tìm trong danh sách thư mục Claude Code đã từng làm việc, hoặc **Choose a folder…** để nhập tên và đường dẫn (**Browse…** mở hộp chọn thư mục), rồi **Create project**.
+Danh sách thả xuống ("Switch project") có *All projects* kèm tổng số agent, rồi từng project với chấm vàng nếu có agent đang hỏi, số agent đang hỏi và số agent. Rê chuột vào một dòng thì hiện biểu tượng thùng rác; bấm rồi xác nhận `Remove?` sẽ bỏ project khỏi arcterm (file và run của project không bị đụng tới). Dưới cùng là **New project**: tìm trong danh sách project Claude Code đã từng làm việc (chỉ thư mục là project: có `.git` hoặc file như `package.json`, `pom.xml`, `pyproject.toml`; session mở ở thư mục con được tính cho repo chứa nó). Khi gõ, mục **Found on disk** bên dưới còn tìm các project trên ổ đĩa quanh những thư mục chứa project của bạn, cho folder Claude Code chưa từng mở. Hoặc bấm **Choose a folder…** để nhập tên và đường dẫn (**Browse…** mở hộp chọn thư mục), rồi **Create project**.
 
 ### Thanh quota
 

@@ -29,12 +29,19 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Office's music is a music-box Spider-Man theme in place of the day and night tunes, crunched as a Game Boy
   Advance would play it and picking up where it stopped when you come back. A file at `~/.arc/office-music.mp3`
   plays instead.
+- **New project** finds folders Claude Code never ran in: type, and under the Claude Code list a **Found on disk**
+  section shows the projects (a git repo, or a folder with a `package.json`, `pom.xml`, `pyproject.toml`…) in and near
+  the folders your projects sit in, each with what it is and when it last changed.
+- Settings → Storage has a **Package caches** card: what npm, Go, Cargo, Homebrew and the like downloaded or built
+  once, each with its own Remove, which the next install or build fetches again.
 
 ### Changed
 
 - Settings is sorted by what each setting changes: a Runs & limits page holds the run route, how many runs and heavy
   jobs go at once, keeping the Mac awake and when a costly spawn asks first; the pet's folding sits with Jarvis & Office;
   the vault with Storage & sync; About at the foot of the list. <!-- try: settings -->
+- Settings → Storage's Build output also lists the repos agents worked in, not only your projects, says when an agent
+  last worked in each and puts the longest unused first; a project's row opens onto each folder with its own Remove.
 - **Work on** an initiative that has no project asks which project to start the agent in, and the initiative keeps
   it, instead of an error telling you to run `wsh effort project`.
 - Plan to review in the agent's details rail shows a row's Accept, Rename and Drop only while the pointer is over it,
@@ -47,12 +54,19 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- In the agent panel's File tab only the path itself is the copy button: the empty space beside it no longer turns
+  grey or pops the full path up over the top of the document.
+- An image opened in Code or the File tab now shows in the installed app, instead of "Cannot show this image".
+- The output of a run's Verify, Check and Final steps no longer shows boxes and stray `[24m` codes where a tool
+  printed colors: the color codes are dropped, so the text reads as plain lines.
 - The t> mark in the Mac menu bar sits level with the memory beside it, its middle on the text's middle, instead of
   hanging below the text.
 - The menu bar icon opens its popover again after arcterm let the popover go at critical memory pressure; one such
   time left every click opening nothing until arcterm restarted.
 - In a float, the agent tabs no longer slide over the Translate button or under the usage: a narrow float shows as many
   tabs as fit and puts the rest under "+N".
+- **New project**'s Claude Code list shows only projects: `/`, your home folder and the orchestrator's run worktrees
+  are gone, and a session begun in a repo's subfolder counts for the repo.
 
 ## 0.15.15 — 2026-10-17
 

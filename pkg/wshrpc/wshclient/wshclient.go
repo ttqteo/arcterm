@@ -536,6 +536,12 @@ func FileWriteCommand(w *wshutil.WshRpc, data wshrpc.FileData, opts *wshrpc.RpcO
 	return err
 }
 
+// command "findprojectfolders", wshserver.FindProjectFoldersCommand
+func FindProjectFoldersCommand(w *wshutil.WshRpc, data wshrpc.CommandFindProjectFoldersData, opts *wshrpc.RpcOpts) (*wshrpc.CommandFindProjectFoldersRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandFindProjectFoldersRtnData](w, "findprojectfolders", data, opts)
+	return resp, err
+}
+
 // command "getagenttranscript", wshserver.GetAgentTranscriptCommand
 func GetAgentTranscriptCommand(w *wshutil.WshRpc, data wshrpc.CommandGetAgentTranscriptData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetAgentTranscriptRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetAgentTranscriptRtnData](w, "getagenttranscript", data, opts)

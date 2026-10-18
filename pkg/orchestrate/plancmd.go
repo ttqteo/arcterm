@@ -19,6 +19,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
+	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 )
 
@@ -393,6 +394,7 @@ func (b *tailBuffer) appendPartial(p []byte) {
 }
 
 func (b *tailBuffer) scanLine(line string) {
+	line = utilfn.StripANSI(line)
 	trimmed := strings.TrimSpace(line)
 	switch {
 	case b.panicLeft > 0:
@@ -454,7 +456,8 @@ func (b *tailBuffer) maybePublish(now time.Time) {
 	}
 }
 
-// String drops a multi-byte character the cut went through rather than rendering half of it.
+// String drops a multi-byte character the cut went through rather than rendering half of it, and the color codes a
+// tool prints even into a pipe: the cockpit shows the text as it is, and the lead reads it.
 func (b *tailBuffer) String() string {
-	return strings.TrimSpace(strings.ToValidUTF8(string(b.buf), ""))
+	return strings.TrimSpace(utilfn.StripANSI(strings.ToValidUTF8(string(b.buf), "")))
 }

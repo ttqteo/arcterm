@@ -324,7 +324,7 @@ describe("settings pages", () => {
             "headless/runtime", "headless/openrouter", "headless/radar",
             "jarvis/jarvis", "jarvis/folding", "jarvis/office",
             "storage/vault", "storage/runworktrees", "storage/sessions", "storage/housekeeping", "storage/buildoutput",
-            "storage/canvases", "storage/autoclean",
+            "storage/packagecaches", "storage/canvases", "storage/autoclean",
             "about/versions", "about/agents",
         ]);
         expect(cards["general/startup"]).toEqual(["general.startup", "general.rail"]);
@@ -363,7 +363,7 @@ describe("settings pages", () => {
             "appearance.officesoundui", "appearance.officesoundmusic", "appearance.officesoundvolume",
         ]);
         expect(cards["storage/vault"]).toEqual(["memory.vaultpath", "memory.remote"]);
-        for (const cat of ["runworktrees", "sessions", "housekeeping", "buildoutput", "canvases"]) {
+        for (const cat of ["runworktrees", "sessions", "housekeeping", "buildoutput", "packagecaches", "canvases"]) {
             expect(cards[`storage/${cat}`]).toEqual([]);
         }
         expect(cards["storage/autoclean"]).toEqual(["storage.autoclean", "storage.nudge", "storage.canvasonship"]);

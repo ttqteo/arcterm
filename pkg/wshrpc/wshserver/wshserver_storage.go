@@ -6,6 +6,7 @@ package wshserver
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 	"github.com/wavetermdev/waveterm/pkg/storage"
@@ -43,6 +45,7 @@ func StartStorage(ctx context.Context) {
 	env := &storage.Env{
 		Now:              time.Now,
 		ProjectPaths:     configProjectPaths,
+		AgentProjects:    storageAgentProjects,
 		RunOfWorktree:    orchestrate.RunOfWorktree,
 		RunState:         storageRunState,
 		BusyProjects:     storageBusyProjects,
@@ -54,6 +57,8 @@ func StartStorage(ctx context.Context) {
 		AttachmentsDir:   keptAttachmentsDir(),
 		SessionDirs:      sessiontrash.ProjectsDirs(),
 		WebviewCacheDirs: webviewCacheDirsFor(runtime.GOOS, wavebase.IsDevMode(), wavebase.GetHomeDir(), dataDir),
+		PackageCaches:    storage.PackageCacheDirs(runtime.GOOS, wavebase.GetHomeDir(), os.Getenv),
+		BusyCaches:       storageBusyCaches,
 	}
 	storageScanner = storage.NewScanner(env, publishStorageScan)
 	storageScanner.StartLoop(ctx, storageAutoCleanOn, storage.AutoCleanDelay, storage.AutoCleanEvery)
@@ -87,6 +92,29 @@ func configProjectPaths() []string {
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+// storageAgentProjects is every folder Claude Code has worked in, newest first, also one whose transcripts are gone:
+// build output is looked for in the repos agents worked in, not only in the projects in config.
+func storageAgentProjects() []storage.AgentProject {
+	var out []storage.AgentProject
+	for _, p := range agentsessions.ClaudeProjectFolders() {
+		out = append(out, storage.AgentProject{Path: p.Path, LastActiveTs: p.LastActiveTs})
+	}
+	return out
+}
+
+// storageBusyCaches is why no package cache may go now: a build or an install holding a job slot may be reading one.
+func storageBusyCaches() string {
+	if jobqueue.Default == nil {
+		return ""
+	}
+	for _, j := range jobqueue.Default.Snapshot().Jobs {
+		if j.Running {
+			return "a build or install is running"
+		}
+	}
+	return ""
 }
 
 func storageRunState(ctx context.Context, runID string) (storage.RunState, error) {

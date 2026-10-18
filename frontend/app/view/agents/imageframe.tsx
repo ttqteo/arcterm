@@ -1,9 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// An image on disk, streamed from /wave/stream-file as PdfFrame streams a PDF: fitted to the pane, a click shows it at
-// its own size. One view for the Code surface, its side column and the Agent panel's File tab.
+// An image on disk, streamed from /wave/stream-file as PdfFrame streams a PDF and drawn from a blob: URL (useBlobSrc,
+// since the packaged app's CSP keeps an <img> off wavesrv): fitted to the pane, a click shows it at its own size. One
+// view for the Code surface, its side column and the Agent panel's File tab.
 
+import { useBlobSrc } from "@/app/view/jarvis/localimage";
 import { cn } from "@/util/util";
 import { useState } from "react";
 import { formatSize } from "./filetabload";
@@ -29,8 +31,9 @@ export function ImageFrame({
     const [dims, setDims] = useState<{ src: string; w: number; h: number } | null>(null);
     const [failedSrc, setFailedSrc] = useState<string | null>(null);
     const src = streamFileUrl(path, version);
+    const blob = useBlobSrc(src);
     const shown = dims?.src === src ? dims : null;
-    if (failedSrc === src) {
+    if (blob.failed || failedSrc === src) {
         return (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-10 text-center">
                 <div className="text-[13px] font-semibold text-ink-hi">Cannot show this image</div>
@@ -46,19 +49,25 @@ export function ImageFrame({
                     actual ? "items-start justify-start" : "items-center justify-center"
                 )}
             >
-                <img
-                    key={src}
-                    src={src}
-                    alt={title}
-                    draggable={false}
-                    title={actual ? "Fit to the pane" : "Show at its own size"}
-                    onClick={() => setActual(!actual)}
-                    onLoad={(e) => setDims({ src, w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
-                    onError={() => setFailedSrc(src)}
-                    className={
-                        actual ? "max-w-none cursor-zoom-out" : "max-h-full max-w-full cursor-zoom-in object-contain"
-                    }
-                />
+                {blob.src != null && (
+                    <img
+                        key={blob.src}
+                        src={blob.src}
+                        alt={title}
+                        draggable={false}
+                        title={actual ? "Fit to the pane" : "Show at its own size"}
+                        onClick={() => setActual(!actual)}
+                        onLoad={(e) =>
+                            setDims({ src, w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
+                        }
+                        onError={() => setFailedSrc(src)}
+                        className={
+                            actual
+                                ? "max-w-none cursor-zoom-out"
+                                : "max-h-full max-w-full cursor-zoom-in object-contain"
+                        }
+                    />
+                )}
             </div>
             <div className="flex-none truncate border-t border-border px-3 py-1 text-[11px] text-muted">
                 {shown != null ? `${shown.w} × ${shown.h} · ` : ""}

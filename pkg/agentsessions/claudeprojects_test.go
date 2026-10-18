@@ -137,3 +137,52 @@ func TestScanClaudeProjectsMissingStore(t *testing.T) {
 		t.Fatalf("want nil for a missing store, got %+v", got)
 	}
 }
+
+func TestMatchSlugFindsTheFolderAWholeNameSlugsTo(t *testing.T) {
+	work := t.TempDir()
+	app := mkdirAll(t, work, "my-app", "web")
+	mkdirAll(t, work, "my", "other") // "my" is a prefix of "my-app"'s slug: a dead end, tried and left
+	dotted := mkdirAll(t, work, "notes.v2", ".cfg")
+	dirs := map[string][]string{}
+	if got, ok := matchSlug(work, "my-app-web", dirs); !ok || got != app {
+		t.Fatalf("my-app-web = %q, %v; want %q", got, ok, app)
+	}
+	if got, ok := matchSlug(work, "notes-v2--cfg", dirs); !ok || got != dotted {
+		t.Fatalf("notes-v2--cfg = %q, %v; want %q", got, ok, dotted)
+	}
+	if _, ok := matchSlug(work, "my-app-gone", dirs); ok {
+		t.Fatal("a folder that is gone matches nothing")
+	}
+}
+
+func TestClaudeProjectFoldersKeepsAStoreFolderWithNoTranscripts(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("store names here are Unix slugs")
+	}
+	root := t.TempDir()
+	work := t.TempDir()
+	now := time.Now().Truncate(time.Second)
+	live := mkdirAll(t, work, "live")
+	old := mkdirAll(t, work, "old-app")
+	writeProjectTranscript(t, root, agentobserve.SlugifyCwd(live), "a.jsonl", live, now)
+	// the old project's transcripts are gone; its memory is left
+	memory := filepath.Join(root, agentobserve.SlugifyCwd(old), "memory", "MEMORY.md")
+	mkdirAll(t, filepath.Dir(memory))
+	if err := os.WriteFile(memory, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(memory, now.Add(-90*24*time.Hour), now.Add(-90*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	mkdirAll(t, root, agentobserve.SlugifyCwd(filepath.Join(work, "gone")))
+	got := claudeProjectFolders(root, "", t.TempDir(), runtime.GOOS)
+	if len(got) != 2 || got[0].Path != live || got[1].Path != old {
+		t.Fatalf("got %+v, want live then old-app, the gone folder left out", got)
+	}
+	if got[1].LastActiveTs != now.Add(-90*24*time.Hour).UnixMilli() || got[1].Sessions != 0 {
+		t.Fatalf("old-app: %+v, want its memory's time and no sessions", got[1])
+	}
+	if picker := scanClaudeProjects(root, "", t.TempDir()); len(picker) != 1 {
+		t.Fatalf("the New project picker still lists only folders with sessions: %+v", picker)
+	}
+}

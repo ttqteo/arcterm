@@ -28,7 +28,7 @@ type Scanner struct {
 
 // defaultProviders is every category in the order the Settings section shows them.
 func defaultProviders() []provider {
-	return []provider{runWorktrees{}, oldSessions{}, housekeeping{}, buildOutput{}, canvases{}}
+	return []provider{runWorktrees{}, oldSessions{}, housekeeping{}, buildOutput{}, packageCaches{}, canvases{}}
 }
 
 func NewScanner(env *Env, publish func(StorageReport)) *Scanner {

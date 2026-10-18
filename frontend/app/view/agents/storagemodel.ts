@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Pure: Settings → Storage as data. Orders the categories pkg/storage reports into cards, applies the sessions
-// card's age, joins the reasons a clean skipped onto their rows, words the confirms and the toasts, and decides when
-// the nudge shows. settingspages/storage.tsx draws it; storagenudge.tsx toasts it. No React, no store.
+// card's age, folds build output into projects (the longest unused first), joins the reasons a clean skipped onto
+// their rows, words the confirms and the toasts, and decides when the nudge shows. settingspages/storage.tsx draws
+// it; storagenudge.tsx toasts it. No React, no store.
 
 export const SESSION_DAYS = ["7", "30", "90"] as const;
 export type SessionDays = (typeof SESSION_DAYS)[number];
@@ -17,7 +18,17 @@ const KB = 1000;
 const MB = 1000 * KB;
 const GB = 1000 * MB;
 
-export const CARD_ORDER = ["runworktrees", "sessions", "housekeeping", "buildoutput", "canvases"] as const;
+export const CARD_ORDER = [
+    "runworktrees",
+    "sessions",
+    "housekeeping",
+    "buildoutput",
+    "packagecaches",
+    "canvases",
+] as const;
+
+/** The cards for what the whole machine shares, not arcterm: the head's totals, the nudge and the tray leave them out. */
+export const SHARED_CATEGORIES: ReadonlySet<string> = new Set(["packagecaches"]);
 
 export const CARD_COPY: Record<(typeof CARD_ORDER)[number], { title: string; blurb: string; action: string | null }> = {
     runworktrees: {
@@ -37,7 +48,12 @@ export const CARD_COPY: Record<(typeof CARD_ORDER)[number], { title: string; blu
     },
     buildoutput: {
         title: "Build output",
-        blurb: "node_modules, target, dist and the like that git ignores in your projects. The next build recreates them.",
+        blurb: "node_modules, target, dist and the like that git ignores in your projects and in the repos agents worked in, the longest unused first. The next build or install recreates them.",
+        action: null,
+    },
+    packagecaches: {
+        title: "Package caches",
+        blurb: "What npm, Go, Cargo, Homebrew and the like downloaded or built once, shared by every project on this machine, so the total above leaves them out. The next install or build fetches what it needs again.",
         action: null,
     },
     canvases: {
@@ -107,13 +123,15 @@ export function cleanAllIds(card: StorageCard): string[] {
     return card.rows.filter(isCleanAll).map((r) => r.id);
 }
 
-/** Build output's rows: one per project, holding its folders; its one button cleans `ids`. */
+/** Build output's rows: one per project, holding its folders; its one button cleans `ids`, and opened it lists `folders`. */
 export type BuildProjectRow = {
     project: string;
     name: string;
     dirs: string[];
+    folders: StorageRow[]; // the largest first
     bytes: number;
     ids: string[]; // the folders a clean may take now; empty while something runs in the project
+    lastUsed: number; // unix ms an agent last worked in it, 0 when none did
     reason?: string;
     skipped?: string;
 };
@@ -129,27 +147,51 @@ export function buildProjectRows(card: StorageCard): BuildProjectRow[] {
         const key = r.detail ?? "";
         byProject.set(key, [...(byProject.get(key) ?? []), r]);
     }
-    return [...byProject].map(([project, rows]) => ({
+    const out: BuildProjectRow[] = [...byProject].map(([project, rows]) => ({
         project,
         name: projectName(project),
         dirs: rows.map((r) => r.label),
+        folders: [...rows].sort((a, b) => b.bytes - a.bytes),
         bytes: sum(rows.map((r) => r.bytes)),
         ids: rows.filter((r) => r.cleanable).map((r) => r.id),
+        lastUsed: Math.max(0, ...rows.map((r) => r.modts ?? 0)),
         reason: rows.find((r) => r.reason)?.reason,
         skipped: rows.find((r) => r.skipped)?.skipped,
     }));
+    // the longest unused first, where what to clean usually is; then the largest
+    return out.sort((a, b) => a.lastUsed - b.lastUsed || b.bytes - a.bytes);
+}
+
+/** When an agent last worked in a build output project, for its row. */
+export function lastUsedText(lastUsed: number, nowMs: number): string {
+    if (lastUsed <= 0) {
+        return "no agent session";
+    }
+    const days = Math.floor((nowMs - lastUsed) / DAY_MS);
+    if (days < 1) {
+        return "used today";
+    }
+    if (days < 60) {
+        return `used ${days} day${days === 1 ? "" : "s"} ago`;
+    }
+    return `used ${Math.round(days / 30)} months ago`;
 }
 
 export function cleanableTotal(report: StorageReport | null, days: SessionDays, nowMs: number): number {
-    return sum(storageCards(report, days, nowMs, {}).map((c) => c.cleanableBytes));
+    return sum(
+        storageCards(report, days, nowMs, {})
+            .filter((c) => !SHARED_CATEGORIES.has(c.category))
+            .map((c) => c.cleanableBytes)
+    );
 }
 
-/** Everything the scan saw, arcterm's store included. */
+/** Everything the scan saw but the shared caches, arcterm's store included. */
 export function usedTotal(report: StorageReport | null): number {
     if (report == null) {
         return 0;
     }
-    return sum((report.categories ?? []).map((c) => c.bytes)) + (report.storebytes ?? 0);
+    const own = (report.categories ?? []).filter((c) => !SHARED_CATEGORIES.has(c.category));
+    return sum(own.map((c) => c.bytes)) + (report.storebytes ?? 0);
 }
 
 export function shouldNudge(cleanableBytes: number, nudgeGb: number, lastDay: string | null, today: string): boolean {
@@ -230,6 +272,12 @@ export function confirmFor(
                 title: "Clean logs, cache and trash",
                 message: `Remove rolled logs, empty the session trash for good and remove the images sent at launch (${size})? Their transcripts no longer show those images. The interface cache clears when arcterm next opens.`,
                 confirmLabel: "Clean",
+            };
+        case "packagecaches":
+            return {
+                title: "Remove package cache",
+                message: `Remove the ${rows[0]?.label ?? "cache"} (${size})? Every project on this machine shares it: the next install or build fetches or rebuilds what it needs, slower that once.`,
+                confirmLabel: "Remove",
             };
         default:
             return {

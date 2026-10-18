@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -34,6 +35,117 @@ const cwdProbeLines = 40
 // ScanClaudeProjects lists the folders Claude Code has sessions for, newest first.
 func ScanClaudeProjects() []ClaudeProject {
 	return scanClaudeProjects(filepath.Join(wavebase.GetHomeDir(), ".claude", "projects"), agentobserve.HeadlessAgentSlug(), os.TempDir())
+}
+
+// ClaudeProjectFolders is every folder Claude Code keeps a store folder for, with transcripts or without, newest first:
+// where Settings → Storage looks for build output. A store folder whose transcripts are all gone (cleanupPeriodDays,
+// arcterm's session trash) keeps its memory and still names its folder: the name is matched against the disk, and the
+// store folder's newest file dates it.
+func ClaudeProjectFolders() []ClaudeProject {
+	return claudeProjectFolders(filepath.Join(wavebase.GetHomeDir(), ".claude", "projects"), agentobserve.HeadlessAgentSlug(), os.TempDir(), runtime.GOOS)
+}
+
+func claudeProjectFolders(root, headlessSlug, tempDir, goos string) []ClaudeProject {
+	out := scanClaudeProjects(root, headlessSlug, tempDir)
+	seen := map[string]bool{}
+	named := map[string]bool{}
+	for _, p := range out {
+		seen[pathKey(p.Path)] = true
+		named[agentobserve.SlugifyCwd(p.Path)] = true
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return out
+	}
+	dirs := map[string][]string{}
+	for _, d := range entries {
+		if !d.IsDir() || named[d.Name()] || (headlessSlug != "" && d.Name() == headlessSlug) {
+			continue
+		}
+		path, ok := pathOfSlug(d.Name(), goos, dirs)
+		if !ok || seen[pathKey(path)] || !isProjectCandidate(path, tempDir) {
+			continue
+		}
+		seen[pathKey(path)] = true
+		out = append(out, ClaudeProject{Path: path, Name: filepath.Base(path), LastActiveTs: newestFileMs(filepath.Join(root, d.Name()))})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].LastActiveTs > out[j].LastActiveTs })
+	return out
+}
+
+// pathOfSlug finds the folder a store folder's name was made from. SlugifyCwd turns every character but a letter or
+// a digit into '-', which cannot be undone, so the name is matched against the disk one directory at a time from the
+// root down: the first folder whose whole path slugs to the name wins. dirs caches each directory's subfolders.
+func pathOfSlug(slug, goos string, dirs map[string][]string) (string, bool) {
+	if goos == "windows" {
+		if len(slug) < 3 || slug[1:3] != "--" {
+			return "", false
+		}
+		return matchSlug(slug[:1]+`:\`, slug[3:], dirs)
+	}
+	if !strings.HasPrefix(slug, "-") {
+		return "", false
+	}
+	return matchSlug("/", slug[1:], dirs)
+}
+
+// matchSlug finds the folder under dir whose path below dir slugs to rest.
+func matchSlug(dir, rest string, dirs map[string][]string) (string, bool) {
+	names, ok := dirs[dir]
+	if !ok {
+		names = subdirNames(dir)
+		dirs[dir] = names
+	}
+	for _, n := range names {
+		s := agentobserve.SlugifyCwd(n)
+		if s == rest {
+			return filepath.Join(dir, n), true
+		}
+		if strings.HasPrefix(rest, s+"-") {
+			if p, ok := matchSlug(filepath.Join(dir, n), rest[len(s)+1:], dirs); ok {
+				return p, true
+			}
+		}
+	}
+	return "", false
+}
+
+// subdirNames is the folders in dir, a link to a folder counted (a cwd may run through one, as /var does on a Mac).
+func subdirNames(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		} else if e.Type()&fs.ModeSymlink != 0 {
+			if info, err := os.Stat(filepath.Join(dir, e.Name())); err == nil && info.IsDir() {
+				names = append(names, e.Name())
+			}
+		}
+	}
+	return names
+}
+
+// newestFileMs is the newest file's mtime under dir, UnixMilli, or dir's own when it holds no file.
+func newestFileMs(dir string) int64 {
+	var newest int64
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if info, ierr := d.Info(); ierr == nil {
+				newest = max(newest, info.ModTime().UnixMilli())
+			}
+		}
+		return nil
+	})
+	if newest == 0 {
+		if info, err := os.Stat(dir); err == nil {
+			newest = info.ModTime().UnixMilli()
+		}
+	}
+	return newest
 }
 
 // The store's folder names are slugs (every separator becomes '-'), which cannot be turned back into a

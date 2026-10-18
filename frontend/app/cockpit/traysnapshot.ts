@@ -8,7 +8,7 @@
 import { usageLevel, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { formatResetShort, providerLabel, windowElapsed } from "@/app/view/agents/cockpitrailmodel";
 import type { ProviderDonuts } from "@/app/view/agents/ratelimitstore";
-import { CARD_COPY, CARD_ORDER } from "@/app/view/agents/storagemodel";
+import { CARD_COPY, CARD_ORDER, SHARED_CATEGORIES } from "@/app/view/agents/storagemodel";
 import { kindWord } from "@/app/view/jarvis/briefingmodel";
 import type { PeekRow } from "@/app/view/jarvis/petpeekmodel";
 import { openTargetFor, ordered, paceValue, pauseLeft, sourceLabel } from "./jobqueue";
@@ -81,8 +81,9 @@ export function traySnapshot(i: TraySnapshotInput): TraySnapshot {
               };
     let storage: TraySnapshot["storage"] = null;
     if (i.storage != null && i.storage.scannedts > 0) {
-        const cats = i.storage.categories ?? [];
-        const rows: TrayStorageRow[] = CARD_ORDER.map((c) => {
+        // the caches the whole machine shares are not arcterm's: Settings shows them, the tray does not
+        const cats = (i.storage.categories ?? []).filter((c) => !SHARED_CATEGORIES.has(c.category));
+        const rows: TrayStorageRow[] = CARD_ORDER.filter((c) => !SHARED_CATEGORIES.has(c)).map((c) => {
             const cat = cats.find((x) => x.category === c);
             const inPlace = IN_PLACE.has(c);
             return {

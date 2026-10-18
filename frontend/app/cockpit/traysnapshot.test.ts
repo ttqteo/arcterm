@@ -145,6 +145,17 @@ describe("traySnapshot", () => {
             go: "settings",
         });
         expect(traySnapshot(input({ storage: null })).storage).toBeNull();
+        const base = input().storage as StorageReport;
+        const caches = {
+            ...base,
+            categories: [
+                ...(base.categories ?? []),
+                { category: "packagecaches", bytes: 5 * GB, cleanablebytes: 5 * GB, items: [] },
+            ],
+        };
+        const shared = traySnapshot(input({ storage: caches })).storage;
+        expect(shared?.arcBytes).toBeCloseTo(14.3 * GB, -3);
+        expect(shared?.rows.some((r) => r.category === "packagecaches")).toBe(false);
     });
     it("carries the last automatic clean, and null without one", () => {
         const storage = {

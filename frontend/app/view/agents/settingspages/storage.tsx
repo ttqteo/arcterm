@@ -4,13 +4,15 @@
 // Settings > Storage: what arcterm and its agents leave on disk, per category, and cleaning it. storagemodel.ts
 // decides what each card holds and says; pkg/storage measures and cleans, re-checking every rule at removal. The
 // head and the category cards read the storage report (Design canvases is a summary with no rows: they are cleaned
-// in the gallery); the Auto-clean card's rows are settings.json (storage:*).
+// in the gallery; a build output project's row opens onto its folders); the Auto-clean card's rows are settings.json
+// (storage:*).
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { modalsModel } from "@/app/store/modalmodel";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
+import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { showCanvases } from "../agentcenter";
 import type { AgentsViewModel } from "../agents";
@@ -27,6 +29,7 @@ import {
     DEFAULT_NUDGE_GB,
     DEFAULT_SESSION_DAYS,
     formatSize,
+    lastUsedText,
     NUDGE_GB_CHOICES,
     SESSION_DAYS,
     storageCards,
@@ -49,16 +52,18 @@ const COUNT_NOUN: Partial<Record<Category, [string, string]>> = {
     canvases: ["canvas", "canvases"],
 };
 
-// one line of a card: an item, or for build output a project
+// one line of a card: an item, or for build output a project, which opens onto its folders
 type Entry = {
     id: string;
     label: string;
     title?: string;
     detail?: string;
+    detailTitle?: string;
     bytes: number;
     why?: string;
     warn: boolean;
     onRemove?: () => void;
+    folders?: Entry[];
 };
 
 function runClean(card: StorageCard, rows: StorageRow[], days: SessionDays, guarded: boolean) {
@@ -91,18 +96,20 @@ function runClean(card: StorageCard, rows: StorageRow[], days: SessionDays, guar
     });
 }
 
-function entriesOf(category: Category, card: StorageCard | null, days: SessionDays): Entry[] {
+function entriesOf(category: Category, card: StorageCard | null, days: SessionDays, now: number): Entry[] {
     // canvases are listed and cleaned in the gallery; here they are a size and a count
     if (card == null || category === "canvases") {
         return [];
     }
     if (category === "buildoutput") {
-        // cleaned per project (spec 4.4): one row and one button each; a busy project's row says why it stays
+        // cleaned per project (spec 4.4): one row and one button each, the row opening onto each folder and its own
+        // button; a busy project's row says why it stays
         return buildProjectRows(card).map((p) => ({
             id: p.project,
             label: p.name,
             title: p.project,
-            detail: p.dirs.join(", "),
+            detail: lastUsedText(p.lastUsed, now),
+            detailTitle: p.dirs.join(", "),
             bytes: p.bytes,
             why: p.reason ?? p.skipped,
             warn: false,
@@ -116,6 +123,15 @@ function entriesOf(category: Category, card: StorageCard | null, days: SessionDa
                               false
                           )
                     : undefined,
+            folders: p.folders.map((r) => ({
+                id: r.id,
+                label: r.label,
+                title: r.path,
+                bytes: r.bytes,
+                why: r.skipped,
+                warn: r.skipped != null,
+                onRemove: r.cleanable ? () => runClean(card, [r], days, false) : undefined,
+            })),
         }));
     }
     return card.rows.map((r) => ({
@@ -125,40 +141,73 @@ function entriesOf(category: Category, card: StorageCard | null, days: SessionDa
         bytes: r.bytes,
         why: r.reason ?? r.skipped,
         warn: !!r.guarded || r.skipped != null,
-        // a run worktree has its own button; a guarded one's confirm says what is lost
+        // a run worktree and a package cache have their own button; a guarded tree's confirm says what is lost
         onRemove:
-            category === "runworktrees" && (r.cleanable || r.guarded)
+            (category === "runworktrees" && (r.cleanable || r.guarded)) || (category === "packagecaches" && r.cleanable)
                 ? () => runClean(card, [r], days, !!r.guarded)
                 : undefined,
     }));
 }
 
-function EntryRow({ e }: { e: Entry }) {
+function EntryRow({ e, nested }: { e: Entry; nested?: boolean }) {
+    const [open, setOpen] = useState(false);
+    const opens = e.folders != null && e.folders.length > 0;
     return (
-        <div
-            data-storage-row={e.id}
-            className="flex min-w-0 items-center gap-3 border-t border-edge-mid px-4 py-2 text-[12px]"
-        >
-            <span title={e.title ?? e.label} className="min-w-0 flex-1 truncate text-primary">
-                {e.label}
-            </span>
-            {e.detail ? (
-                <span title={e.detail} className="min-w-0 max-w-[220px] shrink truncate text-muted">
-                    {e.detail}
-                </span>
-            ) : null}
-            <span className="w-[64px] flex-none text-right tabular-nums text-muted">{formatSize(e.bytes)}</span>
-            {e.why ? (
-                <span data-storage-reason className={cn("flex-none", e.warn ? "text-warning" : "text-muted")}>
-                    {e.why}
-                </span>
-            ) : null}
-            {e.onRemove ? (
-                <button type="button" data-storage-remove className={BUTTON} onClick={e.onRemove}>
-                    Remove
-                </button>
-            ) : null}
-        </div>
+        <>
+            <div
+                data-storage-row={e.id}
+                data-storage-folder={nested ? "" : undefined}
+                className={cn(
+                    "flex min-w-0 items-center gap-3 border-t border-edge-mid py-2 text-[12px]",
+                    nested ? "pr-4 pl-10" : "px-4"
+                )}
+            >
+                {opens ? (
+                    <button
+                        type="button"
+                        data-storage-open={open ? "" : undefined}
+                        title={e.title ?? e.label}
+                        aria-expanded={open}
+                        onClick={() => setOpen(!open)}
+                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-primary"
+                    >
+                        <ChevronRight
+                            size={12}
+                            aria-hidden
+                            className={cn("flex-none text-ink-faint transition-transform", open && "rotate-90")}
+                        />
+                        <span className="min-w-0 truncate">{e.label}</span>
+                    </button>
+                ) : (
+                    <span
+                        title={e.title ?? e.label}
+                        className={cn("min-w-0 flex-1 truncate", nested ? "text-secondary" : "text-primary")}
+                    >
+                        {e.label}
+                    </span>
+                )}
+                {e.detail ? (
+                    <span
+                        title={e.detailTitle ?? e.detail}
+                        className="min-w-0 max-w-[220px] shrink truncate text-muted"
+                    >
+                        {e.detail}
+                    </span>
+                ) : null}
+                <span className="w-[64px] flex-none text-right tabular-nums text-muted">{formatSize(e.bytes)}</span>
+                {e.why ? (
+                    <span data-storage-reason className={cn("flex-none", e.warn ? "text-warning" : "text-muted")}>
+                        {e.why}
+                    </span>
+                ) : null}
+                {e.onRemove ? (
+                    <button type="button" data-storage-remove className={BUTTON} onClick={e.onRemove}>
+                        Remove
+                    </button>
+                ) : null}
+            </div>
+            {open ? e.folders?.map((f) => <EntryRow key={f.id} e={f} nested />) : null}
+        </>
     );
 }
 
@@ -168,17 +217,19 @@ function CategoryCard({
     days,
     onDays,
     model,
+    now,
 }: {
     category: Category;
     card: StorageCard | null;
     days: SessionDays;
     onDays: (d: SessionDays) => void;
     model: AgentsViewModel;
+    now: number;
 }) {
     const [open, setOpen] = useState(false);
     const copy = CARD_COPY[category];
     const noun = COUNT_NOUN[category];
-    const entries = entriesOf(category, card, days);
+    const entries = entriesOf(category, card, days, now);
     const shown = open ? entries : entries.slice(0, ROWS_SHOWN);
     const ids = card != null ? cleanAllIds(card) : [];
     return (
@@ -311,6 +362,7 @@ export function StoragePage({ model }: { model: AgentsViewModel }) {
                     days={days}
                     onDays={setDays}
                     model={model}
+                    now={now}
                 />
             ))}
             <SettingCard

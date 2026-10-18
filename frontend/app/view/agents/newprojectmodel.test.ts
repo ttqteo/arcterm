@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { filterProjects, moveCursor, projectPathKey, uniqueProjectName, unregisteredProjects } from "./newprojectmodel";
+import {
+    filterProjects,
+    moveCursor,
+    onDiskProjects,
+    projectPathKey,
+    uniqueProjectName,
+    unregisteredProjects,
+} from "./newprojectmodel";
 
 const p = (name: string, path: string): ClaudeProjectData => ({ name, path, lastactivets: 0, sessions: 1 });
 
@@ -11,6 +18,27 @@ describe("unregisteredProjects", () => {
         const scanned = [p("arcterm", "D:\\projects\\arcterm"), p("website", "d:\\Workspace\\website")];
         const got = unregisteredProjects(scanned, [{ path: "d:/projects/arcterm/" }]);
         expect(got.map((x) => x.name)).toEqual(["website"]);
+    });
+});
+
+describe("onDiskProjects", () => {
+    const d = (name: string, path: string): ProjectFolderData => ({ name, path, kind: "git", modts: 0 });
+    const found = [
+        d("oki_backend", "/ws/vcyber/oki_backend"),
+        d("oki_backend_vip", "/ws/vcyber/oki_backend_vip"),
+        d("oki_admin", "/ws/vcyber/oki_admin"),
+        d("lingua", "/ws/dev/lingua"),
+    ];
+
+    it("shows nothing until the person types", () => {
+        expect(onDiskProjects(found, [], [], " ")).toEqual([]);
+    });
+
+    it("matches the name or the path, leaving out what Claude Code lists and what is registered", () => {
+        const claude = [p("oki_backend", "/ws/vcyber/oki_backend/")];
+        const got = onDiskProjects(found, claude, [{ path: "/WS/vcyber/oki_admin" }], "OKI");
+        expect(got.map((x) => x.name)).toEqual(["oki_backend_vip"]);
+        expect(onDiskProjects(found, [], [], "dev/").map((x) => x.name)).toEqual(["lingua"]);
     });
 });
 

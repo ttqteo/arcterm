@@ -28,6 +28,38 @@ export function imageStatus(httpStatus: number): Exclude<LocalImageStatus, "load
     return httpStatus >= 200 && httpStatus < 300 ? "ok" : "error";
 }
 
+// a file wavesrv serves, as a blob: URL for an <img>, null while its bytes come. The packaged app's CSP lets an <img>
+// load 'self', data: and blob: only (the dev app applies none), so one pointed at wavesrv draws nothing there
+export function useBlobSrc(url: string | null): { src: string | null; failed: boolean } {
+    const [blob, setBlob] = useState<{ from: string; src: string | null; failed: boolean } | null>(null);
+    useEffect(() => {
+        if (url == null) {
+            return;
+        }
+        let live = true;
+        let made: string | null = null;
+        fetch(url)
+            .then((resp) => (resp.ok ? resp.blob() : Promise.reject(new Error(`HTTP ${resp.status}`))))
+            .then((b) => {
+                made = URL.createObjectURL(b);
+                if (live) {
+                    setBlob({ from: url, src: made, failed: false });
+                } else {
+                    URL.revokeObjectURL(made);
+                }
+            })
+            .catch(() => live && setBlob({ from: url, src: null, failed: true }));
+        return () => {
+            live = false;
+            if (made != null) {
+                URL.revokeObjectURL(made);
+            }
+        };
+    }, [url]);
+    // the previous url's blob is revoked by now: it reads as still loading
+    return blob?.from === url ? { src: blob.src, failed: blob.failed } : { src: null, failed: false };
+}
+
 export function useLocalImage(path: string): LocalImage {
     const [image, setImage] = useState<LocalImage>({ url: null, status: "loading" });
     useEffect(() => {
