@@ -6,6 +6,7 @@ import type { EngineInterface, Register } from "claude-code";
 import type { Ask } from "../types";
 import {
     askOf,
+    canSkim,
     hashText,
     HIGHLIGHT_SECTION,
     isAskInView,
@@ -179,8 +180,9 @@ export const register: Register = (on) => {
         if (e.surface !== "terminal" || e.props.isSummary || marks.length === 0) {
             return written.length > 0 ? next({ ...e, props: { ...e.props, text: clean } }) : next(e);
         }
-        // a brainstorm turn, its last mark the question waiting on the person, draws in full: its options are to be read
-        const isSkim = askOf(all) === null && !(await read($, isSkimOff));
+        // a brainstorm turn, its last mark the question waiting on the person, draws in full: its options are to be
+        // read. so does a reply marked through most of its length
+        const isSkim = askOf(all) === null && canSkim(clean, marks) && !(await read($, isSkimOff));
         return drawHighlighted($.ui.resolve(e), layout(clean, marks, isSkim), isSkim, palette, e.props.isFirstOfReply);
     });
 

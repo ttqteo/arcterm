@@ -10,12 +10,13 @@ export const HIGHLIGHT_SECTION = [
     "Highlighting in replies: the person reads your replies in a terminal that draws text wrapped in ==double equals== highlighted, and strips the marks everywhere else (copies, the saved transcript).",
     "- When a reply explains something at length, wrap the 2-4 sentences the person must read to get the point in ==…==. Mark whole sentences, never a whole paragraph, and nothing in a short reply.",
     '- In a brainstorming or design turn, mark only the question you are waiting on the person to answer, as the last marked sentence, ending with "?". Never mark your own recommendation.',
-    "- Marks go in your reply text only: never in files, code, commands, commit messages or tool inputs, and never inside code spans or blocks.",
+    "- Marks go in your reply text only: never in files, code, commands, commit messages or tool inputs, and never inside code spans or blocks. The one exception: when the person asks you to highlight a markdown file, write the ==…== into that file itself, not a copy, and don't repeat the file in your reply.",
+    "- Write a command the person has to type as `! <command>`, in a code span or alone in a code block: it draws highlighted with the marked sentences, so it takes no marks. Do mark the sentence saying what it will do, above all what it closes, deletes or overwrites.",
 ].join("\n");
 
 // the same ask in one line, for the prompts after the first where the system prompt never got the section
 export const HIGHLIGHT_REMINDER =
-    "Highlighting: in a long explanation wrap the 2-4 sentences the person must read in ==…== (whole sentences, never in code); in a brainstorming turn mark only the question you wait on.";
+    "Highlighting: in a long explanation wrap the 2-4 sentences the person must read in ==…== (whole sentences, never in code), among them what a `! command` to type will do; in a brainstorming turn mark only the question you wait on.";
 
 export type SubmitState = { isInteractive: boolean; isCommand: boolean; isComposed: boolean; hasTold: boolean };
 
@@ -29,9 +30,9 @@ export function submitContext(s: SubmitState): string | null {
     return s.hasTold ? HIGHLIGHT_REMINDER : HIGHLIGHT_SECTION;
 }
 
-// past these a mark is still stripped but drawn as plain text: a highlight that covers everything shows nothing
-export const MAX_MARKS = 4;
-export const MAX_MARK_LENGTH = 300;
+// past this share of the reply its marks still draw highlighted but nothing dims: dimming around a highlight that
+// covers most of a reply hides little and reads as broken. a marked sentence is never drawn as plain or dim text
+export const MAX_MARKED_SHARE = 1 / 3;
 
 const FENCE = /^\s*(```|~~~)/;
 const HEADING = /^\s*(#{1,6}\s|\*\*[^*]+\*\*:?\s*$)/;
@@ -113,9 +114,14 @@ export function parseMarks(reply: string): { clean: string; marks: string[] } {
     return { clean: lines.join("\n"), marks };
 }
 
-// the marks that are drawn: the first few short enough to read as a sentence
+// the marks that are drawn: every one that marks something
 export function shownMarks(marks: readonly string[]): string[] {
-    return marks.filter((m) => m.trim() !== "" && m.length <= MAX_MARK_LENGTH).slice(0, MAX_MARKS);
+    return marks.filter((m) => m.trim() !== "");
+}
+
+// whether the rest of the reply may dim around its marks
+export function canSkim(clean: string, marks: readonly string[]): boolean {
+    return marks.reduce((n, m) => n + m.length, 0) <= clean.length * MAX_MARKED_SHARE;
 }
 
 // the question waiting on the person: the last mark, when it asks one
@@ -219,8 +225,29 @@ export function inlineRuns(line: string, marked: readonly [number, number][]): R
     return runs;
 }
 
-// the stored reply cut into what the engine draws as markdown and the lines holding a mark. under skim a
-// heading is its own undimmed block, so the reply keeps its outline while the rest fades.
+// a command for the person to type at the prompt, `! task install`: as much a must-read as a marked sentence, so it
+// draws highlighted with the marks. a space after the ! keeps `!=` and `!important` out
+const RUN_COMMAND = /^!\s+\S/;
+
+// the code spans of a line holding a command for the person to type, backticks included
+function commandSpans(line: string): [number, number][] {
+    return [...line.matchAll(/`([^`]+)`/g)]
+        .filter((m) => RUN_COMMAND.test(m[1] ?? ""))
+        .map((m) => [m.index, m.index + m[0].length] as [number, number]);
+}
+
+// the closing line of the fence opening at `from` when every line it holds is a command, -1 for any other fence
+function commandFenceEnd(lines: readonly string[], from: number): number {
+    let at = from + 1;
+    while (at < lines.length && !FENCE.test(lines[at] ?? "")) {
+        if (!RUN_COMMAND.test((lines[at] ?? "").trim())) return -1;
+        at++;
+    }
+    return at < lines.length && at > from + 1 ? at : -1;
+}
+
+// the stored reply cut into what the engine draws as markdown and the lines holding a mark or a command. under
+// skim a heading is its own undimmed block, so the reply keeps its outline while the rest fades.
 export function layout(clean: string, marks: readonly string[], isSkim: boolean): Segment[] {
     const segments: Segment[] = [];
     let chunk: string[] = [];
@@ -236,8 +263,21 @@ export function layout(clean: string, marks: readonly string[], isSkim: boolean)
         chunk = [];
     };
     const pending = [...marks];
+    const lines = clean.split("\n");
     let inFence = false;
-    for (const line of clean.split("\n")) {
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i] ?? "";
+        // a fence of commands for the person to type draws them highlighted, without its fence lines
+        const fenceEnd = !inFence && FENCE.test(line) ? commandFenceEnd(lines, i) : -1;
+        if (fenceEnd >= 0) {
+            flush(false);
+            for (const command of lines.slice(i + 1, fenceEnd)) {
+                const runs: Run[] = [{ text: command.trim(), isCode: true, isMarked: true }];
+                segments.push({ kind: "line", prefix: "", runs, isHeading: false });
+            }
+            i = fenceEnd;
+            continue;
+        }
         if (FENCE.test(line)) {
             inFence = !inFence;
         }
@@ -252,6 +292,7 @@ export function layout(clean: string, marks: readonly string[], isSkim: boolean)
                 from = at + want.length;
                 pending.shift();
             }
+            ranges.push(...commandSpans(line));
         }
         const isHeading = !inFence && HEADING.test(line);
         if (ranges.length === 0 && !(isSkim && isHeading)) {
