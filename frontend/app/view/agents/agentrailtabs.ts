@@ -282,10 +282,14 @@ export function nextTab<T>(tabs: T[], current: T, key: "ArrowLeft" | "ArrowRight
     return tabs[(i + step + tabs.length) % tabs.length];
 }
 
+// the path the header shows: relative to the folder the file was opened against, null for a file outside it
+export function fileRel(ref: FileRef): string | null {
+    return ref.root != null && isUnderRoot(ref.root, ref.abs) ? toRel(ref.root, ref.abs) : null;
+}
+
 // how the header names a file: its directory and name, relative to the root when it is under it
 export function fileLabel(ref: FileRef): { dir: string; name: string } {
-    const shown =
-        ref.root != null && isUnderRoot(ref.root, ref.abs) ? toRel(ref.root, ref.abs) : ref.abs.replace(/\\/g, "/");
+    const shown = fileRel(ref) ?? ref.abs.replace(/\\/g, "/");
     const i = shown.lastIndexOf("/");
     return i < 0 ? { dir: "", name: shown } : { dir: shown.slice(0, i + 1), name: shown.slice(i + 1) };
 }

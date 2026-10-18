@@ -356,6 +356,7 @@ fn main() {
             init::fe_log,
             commands::set_window_init_status,
             commands::open_external,
+            commands::reveal_path,
             canvas::capture_webview,
             notify::notify_os,
             macwindow::set_folded_chrome,

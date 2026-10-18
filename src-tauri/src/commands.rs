@@ -53,6 +53,57 @@ pub fn open_external(url: String) {
     }
 }
 
+// Only an absolute path is handed to the file manager: a relative one would resolve against the host's cwd, and on
+// macOS one starting with "-" would read as a flag to `open`.
+fn is_revealable(path: &str) -> bool {
+    std::path::Path::new(path).is_absolute()
+}
+
+// Shows a file or folder selected in Finder / Explorer (the tree and path menus' Reveal in Finder). It waits on a
+// thread of its own, so the opener never blocks the main thread and its exit is reaped.
+#[tauri::command]
+pub fn reveal_path(path: String) {
+    if !is_revealable(&path) {
+        log_line(&format!(
+            "[reveal-path] rejected non-absolute path: {}",
+            path
+        ));
+        return;
+    }
+    std::thread::spawn(move || {
+        #[cfg(target_os = "macos")]
+        let result = std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .status()
+            .and_then(|s| {
+                if s.success() {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::other(format!("open -R exited {}", s)))
+                }
+            });
+        // explorer wants the quotes inside its one /select, argument, and exits 1 even when it showed the file; a
+        // forward slash (a path git or the frontend wrote) makes it open Documents instead, so it gets backslashes
+        #[cfg(target_os = "windows")]
+        let result = {
+            use std::os::windows::process::CommandExt;
+            std::process::Command::new("explorer")
+                .raw_arg(format!("/select,\"{}\"", path.replace('/', "\\")))
+                .status()
+                .map(|_| ())
+        };
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let result = match std::path::Path::new(&path).parent() {
+            Some(dir) => open::that(dir),
+            None => open::that(&path),
+        };
+        if let Err(e) = result {
+            log_line(&format!("[reveal-path] failed to reveal {}: {}", path, e));
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,5 +132,16 @@ mod tests {
         assert!(!is_allowed_external_url("\\\\.\\pipe\\x"));
         assert!(!is_allowed_external_url("example.com/page"));
         assert!(!is_allowed_external_url(""));
+    }
+
+    #[test]
+    fn reveals_only_absolute_paths() {
+        assert!(!is_revealable(""));
+        assert!(!is_revealable("src/main.rs"));
+        assert!(!is_revealable("-a"));
+        #[cfg(unix)]
+        assert!(is_revealable("/Users/me/repo/src/main.rs"));
+        #[cfg(windows)]
+        assert!(is_revealable("C:\\repo\\src\\main.rs"));
     }
 }

@@ -11,6 +11,7 @@ import {
     fileKey,
     fileLabel,
     filePinTarget,
+    fileRel,
     fileTabLabel,
     fileViews,
     followFile,
@@ -219,6 +220,12 @@ describe("the File tab", () => {
 
     it("names a file at the root by its name alone, so the File tab's header is never empty", () => {
         expect(fileLabel({ abs: "D:/repo/AGENTS.md", root: "D:/repo" })).toEqual({ dir: "", name: "AGENTS.md" });
+    });
+
+    it("gives the path to copy relative to the root, and none for a file outside it or with no root", () => {
+        expect(fileRel(a)).toBe("src/a.ts");
+        expect(fileRel({ abs: "C:/elsewhere/x.go", root: "D:/repo" })).toBeNull();
+        expect(fileRel({ abs: "C:/tmp/tasks/x.output", root: null })).toBeNull();
     });
 });
 

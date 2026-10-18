@@ -7,11 +7,13 @@
 // Editing is the Code surface's job, one click away; the one edit here is ticking a task box in a markdown Preview.
 
 import { SkeletonLine } from "@/app/element/skeleton";
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { isHtmlPath, isMarkdownPath, languageForPath } from "@/app/view/code/codeclassify";
 import { isPinned } from "@/app/view/code/codepins";
 import { codePinsAtom, toggleCodePinIn } from "@/app/view/code/codestore";
 import { toggleWrap, useWrap } from "@/app/view/code/codewrap";
+import { pathMenuItems } from "@/app/view/code/pathmenu";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check, ChevronLeft, ChevronRight, FileCode2, GitCompare, Pin, WrapText } from "lucide-react";
@@ -26,7 +28,7 @@ import {
     railFileForward,
     railMdModeAtom,
 } from "./agentrailstore";
-import { currentFileView, fileLabel, filePinTarget, fileViews, type FileHistory } from "./agentrailtabs";
+import { currentFileView, fileLabel, filePinTarget, fileRel, fileViews, type FileHistory } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { DocFindBar } from "./docfindbar";
@@ -432,6 +434,9 @@ export function FileTab({
                             setCopied(true);
                             window.setTimeout(() => setCopied(false), COPIED_MS);
                         }}
+                        onContextMenu={(ev) =>
+                            ContextMenuModel.getInstance().showContextMenu(pathMenuItems(ref.abs, fileRel(ref)), ev)
+                        }
                         className="flex min-w-0 cursor-pointer items-center gap-1 rounded-[4px] border-0 bg-transparent px-1 py-[2px] text-left text-[11.5px] hover:bg-surface-hover"
                     >
                         <span className="min-w-0 truncate">

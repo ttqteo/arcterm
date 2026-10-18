@@ -4,7 +4,9 @@
 // The Agent panel's tab strip (icons, plus an editor-style tab per open file), the counts beside it, and the
 // grip that sizes the wide tabs. The panel itself is AgentDetailsRail, through CollapsibleRail's tabs/body/width props.
 
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
+import { pathMenuItems } from "@/app/view/code/pathmenu";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import {
@@ -28,6 +30,7 @@ import {
     activeFile,
     clampWideWidth,
     fileKey,
+    fileRel,
     fileTabLabel,
     nextTab,
     RAIL_WIDTHS,
@@ -180,6 +183,12 @@ function RailFileTab({
                     closeRailFile(agentId, id);
                 }
             }}
+            // the folded tab that stands for several files has no one path to copy
+            onContextMenu={
+                folded == null || folded === 1
+                    ? (e) => ContextMenuModel.getInstance().showContextMenu(pathMenuItems(file.abs, fileRel(file)), e)
+                    : undefined
+            }
             className={cn(
                 "ml-0.5 flex min-w-0 items-center border-b-2",
                 folded == null && "max-w-[200px]",

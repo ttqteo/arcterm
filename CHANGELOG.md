@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Markdown draws `==text==` highlighted, as Obsidian does: in a file's Preview in the agent panel and on Code, and in
   its Source view, where the `==` marks stay but fade. Ask Claude to highlight a markdown file and it writes the marks
   into that file instead of printing the file in its reply.
+- Right-click a file or folder in Code's tree or the agent panel's Files, an open file's path or its tab, for **Copy
+  Relative Path**, **Copy Absolute Path** and **Reveal in Finder** (Show in Explorer on Windows).
 
 ### Changed
 

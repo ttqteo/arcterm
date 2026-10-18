@@ -9,6 +9,7 @@
 // Save status stays in SurfaceHeader. Splitting identity from save state is a real cost, but moving
 // working controls for tidiness is churn.
 
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
@@ -34,6 +35,7 @@ import {
     toggleCodePin,
 } from "./codestore";
 import { toggleWrap, useWrap } from "./codewrap";
+import { pathMenuItems } from "./pathmenu";
 
 // Wrap and Pin are icons, and the path itself copies on click, as in the Agent panel's File tab (filetab.tsx); an on
 // toggle takes the accent
@@ -71,6 +73,9 @@ export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
                     setCopied(true);
                     window.setTimeout(() => setCopied(false), 1200);
                 }}
+                onContextMenu={(ev) =>
+                    ContextMenuModel.getInstance().showContextMenu(pathMenuItems(abs, file.path), ev)
+                }
                 className="flex min-w-0 cursor-pointer items-center gap-1 rounded-[4px] border-0 bg-transparent px-1 py-[2px] text-left text-[11.5px] text-secondary hover:bg-surface-hover"
             >
                 <span className="min-w-0 truncate">{file.path}</span>

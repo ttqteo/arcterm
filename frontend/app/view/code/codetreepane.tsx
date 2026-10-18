@@ -69,6 +69,7 @@ import {
 } from "./codestore";
 import type { TreeRow } from "./codetree";
 import { codeLocateAtom, collapseAllDirs, locateOpenFile } from "./codetreeactions";
+import { pathMenuItems } from "./pathmenu";
 import { revealInList } from "./treescroll";
 
 export function CodeTreePane({ model }: { model: AgentsViewModel }) {
@@ -214,15 +215,12 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                             accel: "Delete",
                             click: () => confirmDelete(row.path, row.kind === "dir"),
                         },
-                        { type: "separator" },
-                        {
-                            label: "Copy Path",
-                            click: () => {
-                                if (project != null) {
-                                    void navigator.clipboard?.writeText(joinRepoPath(project.path, row.path));
-                                }
-                            },
-                        },
+                        ...(project == null
+                            ? []
+                            : [
+                                  { type: "separator" as const },
+                                  ...pathMenuItems(joinRepoPath(project.path, row.path), row.path),
+                              ]),
                     ],
                     ev
                 );
@@ -305,7 +303,9 @@ export function CodeTreePane({ model }: { model: AgentsViewModel }) {
                     File list truncated — showing the first 20,000 files only.
                 </div>
             ) : null}
-            {pinned.length > 0 ? <PinnedFiles pinned={pinned} openFile={openFile} /> : null}
+            {pinned.length > 0 && project != null ? (
+                <PinnedFiles root={project.path} pinned={pinned} openFile={openFile} />
+            ) : null}
             <div
                 ref={treeRef}
                 role="tree"
@@ -377,7 +377,7 @@ export function CodeTreeTools() {
 
 // Files pinned from the tree or the path bar, above the tree so they never scroll away. Opening one also reveals it in
 // the tree, which is the answer to "where did that file live".
-function PinnedFiles({ pinned, openFile }: { pinned: readonly string[]; openFile: string | null }) {
+function PinnedFiles({ root, pinned, openFile }: { root: string; pinned: readonly string[]; openFile: string | null }) {
     return (
         <div data-code-pinned className="flex max-h-[40%] flex-none flex-col border-b border-border">
             <div className="flex-none px-3 pb-1 pt-2 text-[10.5px] text-muted">Pinned</div>
@@ -409,6 +409,8 @@ function PinnedFiles({ pinned, openFile }: { pinned: readonly string[]; openFile
                                             icon: <PinOff size={13} strokeWidth={1.8} />,
                                             click: () => toggleCodePin(rel),
                                         },
+                                        { type: "separator" },
+                                        ...pathMenuItems(joinRepoPath(root, rel), rel),
                                     ],
                                     ev
                                 )

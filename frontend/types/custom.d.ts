@@ -76,6 +76,7 @@ declare global {
         getHostName: () => string;
         getZoomFactor: () => number;
         openExternal: (url: string) => void;
+        revealPath: (path: string) => void; // selects a file or folder in Finder / Explorer
         onFullScreenChange: (callback: (isFullScreen: boolean) => void) => void;
         onZoomFactorChange: (callback: (zoomFactor: number) => void) => void;
         onControlShiftStateUpdate: (callback: (state: boolean) => void) => void;

@@ -12,6 +12,7 @@ declare const __ARC_BROWSER_INIT__: Omit<InitData, "wsEndpoint" | "webEndpoint">
 const NO_OPS = [
     "fe_log",
     "open_external",
+    "reveal_path", // a page has no file manager to open
     "notify_os",
     "hold_window_frame",
     "redirect_minimize",

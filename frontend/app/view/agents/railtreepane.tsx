@@ -17,6 +17,7 @@ import { pinsFor } from "@/app/view/code/codepins";
 import { codePinsAtom, toggleCodePinIn } from "@/app/view/code/codestore";
 import { visibleRows, type TreeRow } from "@/app/view/code/codetree";
 import { treeKeyAction, type TreeKey } from "@/app/view/code/codetreekeys";
+import { pathMenuItems } from "@/app/view/code/pathmenu";
 import { revealInList } from "@/app/view/code/treescroll";
 import { joinRepoPath, repoBasename } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
@@ -195,17 +196,25 @@ export function RailTreePane({
                 }}
                 onDragEnd={() => setDraggedPathsCount(0)}
                 onContextMenu={(ev) => {
-                    if (row.kind !== "file") {
-                        return;
-                    }
+                    // a folder has only the path items: pins are files
                     const on = pinned.includes(row.path);
                     ContextMenuModel.getInstance().showContextMenu(
                         [
-                            {
-                                label: on ? "Unpin" : "Pin",
-                                icon: on ? <PinOff size={13} strokeWidth={1.8} /> : <Pin size={13} strokeWidth={1.8} />,
-                                click: () => toggleCodePinIn(cwd, row.path),
-                            },
+                            ...(row.kind === "file"
+                                ? [
+                                      {
+                                          label: on ? "Unpin" : "Pin",
+                                          icon: on ? (
+                                              <PinOff size={13} strokeWidth={1.8} />
+                                          ) : (
+                                              <Pin size={13} strokeWidth={1.8} />
+                                          ),
+                                          click: () => toggleCodePinIn(cwd, row.path),
+                                      },
+                                      { type: "separator" as const },
+                                  ]
+                                : []),
+                            ...pathMenuItems(joinRepoPath(cwd, row.path), row.path),
                         ],
                         ev
                     );
@@ -401,6 +410,8 @@ function PinnedFiles({
                                             icon: <PinOff size={13} strokeWidth={1.8} />,
                                             click: () => onUnpin(rel),
                                         },
+                                        { type: "separator" },
+                                        ...pathMenuItems(joinRepoPath(cwd, rel), rel),
                                     ],
                                     ev
                                 )
