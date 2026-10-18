@@ -75,7 +75,7 @@ func TestBuiltinOrder(t *testing.T) {
 		if tool.Id == "visidata" && tool.Command != "vd" {
 			t.Errorf("visidata's command is vd, got %q", tool.Command)
 		}
-		if tool.Id == "trans" && (tool.Command != "trans" || tool.Args != "-shell -theme ~/.arc/translate-shell/arc.trans :vi" ||
+		if tool.Id == "trans" && (tool.Command != "trans" || tool.Args != "-shell -theme ~/.arc/translate-shell/arc.trans -show-original n -show-languages n -show-prompt-message n -show-alternatives n :vi" ||
 			tool.OpensIn != "home" || tool.Install.Darwin != "brew install translate-shell rlwrap" || tool.Install.Windows != "") {
 			t.Errorf("trans: %+v", tool)
 		}

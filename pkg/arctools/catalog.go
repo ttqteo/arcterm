@@ -99,8 +99,10 @@ func Builtin() []Tool {
 			// gives the shell its history, and trans uses it on its own when it is on PATH. Into Vietnamese only, as
 			// Google Translate's English → Vietnamese, and :en typed in the shell turns it around: with English among
 			// the targets, trans answers an English word with its whole English dictionary entry first, and no option
-			// turns that off
-			Args:    "-shell -theme ~/.arc/translate-shell/arc.trans :vi",
+			// turns that off. The -show flags keep the translation and its dictionary: the prompt line already holds what
+			// was typed, so the original (and a word's phonetics, which trans prints only with it), the "Definitions of" and
+			// language headers and the alternative translations, which repeat the translation, are left out
+			Args:    "-shell -theme ~/.arc/translate-shell/arc.trans -show-original n -show-languages n -show-prompt-message n -show-alternatives n :vi",
 			Install: Install{Darwin: "brew install translate-shell rlwrap"},
 		},
 	}

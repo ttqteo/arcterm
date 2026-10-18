@@ -66,6 +66,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the panel.
 - **Translate** translates into Vietnamese only, like Google Translate's English → Vietnamese: an English word shows
   its Vietnamese meanings instead of a whole English dictionary entry first. Type `:en` in it to translate into English.
+  It answers with the translation and a word's meanings only, no longer repeating what you typed, the languages or a
+  list of alternative translations.
 
 ### Fixed
 
