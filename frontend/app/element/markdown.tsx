@@ -10,6 +10,7 @@ import {
     transformBlocks,
 } from "@/app/element/markdown-util";
 import { rehypeSrcLines, withSrcLineAttributes } from "@/app/element/rehype-srclines";
+import remarkMark from "@/app/element/remark-mark";
 import remarkMermaidToTag from "@/app/element/remark-mermaid-to-tag";
 import remarkQuoteBreaks from "@/app/element/remark-quote-breaks";
 import { boundNumber, cn, useAtomValueSafe } from "@/util/util";
@@ -563,6 +564,7 @@ const Markdown = memo(function Markdown({
                             "picture",
                             "source",
                             "mermaidblock",
+                            "mark",
                         ],
                     })
                 ),
@@ -573,6 +575,7 @@ const Markdown = memo(function Markdown({
         remarkMermaidToTag,
         remarkGfm,
         remarkQuoteBreaks,
+        remarkMark,
         [RemarkFlexibleToc, { tocRef: tocRef.current }],
         [createContentBlockPlugin, { blocks: contentBlocksMap }],
     ];

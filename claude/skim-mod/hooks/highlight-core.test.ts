@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     askOf,
+    canSkim,
     hashText,
     HIGHLIGHT_REMINDER,
     HIGHLIGHT_SECTION,
@@ -68,9 +69,16 @@ describe("parseMarks", () => {
 });
 
 describe("shownMarks", () => {
-    it("draws at most four, and none past the length cap", () => {
+    it("draws every mark, however many or long, and drops an empty one", () => {
         const long = "x".repeat(301);
-        expect(shownMarks(["a", long, "b", "c", "d", "e"])).toEqual(["a", "b", "c", "d"]);
+        expect(shownMarks(["a", long, " ", "b", "c", "d", "e"])).toEqual(["a", long, "b", "c", "d", "e"]);
+    });
+});
+
+describe("canSkim", () => {
+    it("dims around marks that cover up to a third of the reply", () => {
+        expect(canSkim("x".repeat(30), ["y".repeat(10)])).toBe(true);
+        expect(canSkim("x".repeat(30), ["y".repeat(6), "z".repeat(5)])).toBe(false);
     });
 });
 

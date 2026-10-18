@@ -1,6 +1,7 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { markSpans } from "@/app/monaco/markdownmarks";
 import { loadMonaco } from "@/app/monaco/monaco-env";
 import type * as MonacoTypes from "monaco-editor";
 import * as monaco from "monaco-editor";
@@ -20,6 +21,18 @@ function acquireModel(value: string, path: string, language: string | undefined,
         existing.setValue(value);
     }
     return existing;
+}
+
+// a markdown model's ==text== marks: the text tinted, the marks faint (tailwindsetup.css)
+function markDecorations(model: MonacoTypes.editor.ITextModel): MonacoTypes.editor.IModelDeltaDecoration[] {
+    if (model.getLanguageId() !== "markdown") {
+        return [];
+    }
+    return markSpans(model.getValue()).flatMap(({ line, open, close }) => [
+        { range: new monaco.Range(line, open, line, open + 2), options: { inlineClassName: "md-mark-delim" } },
+        { range: new monaco.Range(line, open + 2, line, close), options: { inlineClassName: "md-mark" } },
+        { range: new monaco.Range(line, close, line, close + 2), options: { inlineClassName: "md-mark-delim" } },
+    ]);
 }
 
 type CodeEditorProps = {
@@ -70,12 +83,18 @@ export function MonacoCodeEditor({
             onChange?.(model.getValue());
         });
 
+        const marks = editor.createDecorationsCollection(markDecorations(model));
+        const repaintMarks = debounce(150, () => marks.set(markDecorations(model)));
+        const marksSubs = [model.onDidChangeContent(repaintMarks), model.onDidChangeLanguage(repaintMarks)];
+
         if (onMount) {
             onUnmountRef.current = onMount(editor, monaco);
         }
 
         return () => {
             sub.dispose();
+            marksSubs.forEach((s) => s.dispose());
+            repaintMarks.cancel();
             if (onUnmountRef.current) onUnmountRef.current();
             editor.setModel(null);
             editor.dispose();

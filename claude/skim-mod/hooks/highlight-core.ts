@@ -10,7 +10,7 @@ export const HIGHLIGHT_SECTION = [
     "Highlighting in replies: the person reads your replies in a terminal that draws text wrapped in ==double equals== highlighted, and strips the marks everywhere else (copies, the saved transcript).",
     "- When a reply explains something at length, wrap the 2-4 sentences the person must read to get the point in ==…==. Mark whole sentences, never a whole paragraph, and nothing in a short reply.",
     '- In a brainstorming or design turn, mark only the question you are waiting on the person to answer, as the last marked sentence, ending with "?". Never mark your own recommendation.',
-    "- Marks go in your reply text only: never in files, code, commands, commit messages or tool inputs, and never inside code spans or blocks.",
+    "- Marks go in your reply text only: never in files, code, commands, commit messages or tool inputs, and never inside code spans or blocks. The one exception: when the person asks you to highlight a markdown file, write the ==…== into that file itself, not a copy, and don't repeat the file in your reply.",
     "- Write a command the person has to type as `! <command>`, in a code span or alone in a code block: it draws highlighted with the marked sentences, so it takes no marks. Do mark the sentence saying what it will do, above all what it closes, deletes or overwrites.",
 ].join("\n");
 
@@ -30,9 +30,9 @@ export function submitContext(s: SubmitState): string | null {
     return s.hasTold ? HIGHLIGHT_REMINDER : HIGHLIGHT_SECTION;
 }
 
-// past these a mark is still stripped but drawn as plain text: a highlight that covers everything shows nothing
-export const MAX_MARKS = 4;
-export const MAX_MARK_LENGTH = 300;
+// past this share of the reply its marks still draw highlighted but nothing dims: dimming around a highlight that
+// covers most of a reply hides little and reads as broken. a marked sentence is never drawn as plain or dim text
+export const MAX_MARKED_SHARE = 1 / 3;
 
 const FENCE = /^\s*(```|~~~)/;
 const HEADING = /^\s*(#{1,6}\s|\*\*[^*]+\*\*:?\s*$)/;
@@ -114,9 +114,14 @@ export function parseMarks(reply: string): { clean: string; marks: string[] } {
     return { clean: lines.join("\n"), marks };
 }
 
-// the marks that are drawn: the first few short enough to read as a sentence
+// the marks that are drawn: every one that marks something
 export function shownMarks(marks: readonly string[]): string[] {
-    return marks.filter((m) => m.trim() !== "" && m.length <= MAX_MARK_LENGTH).slice(0, MAX_MARKS);
+    return marks.filter((m) => m.trim() !== "");
+}
+
+// whether the rest of the reply may dim around its marks
+export function canSkim(clean: string, marks: readonly string[]): boolean {
+    return marks.reduce((n, m) => n + m.length, 0) <= clean.length * MAX_MARKED_SHARE;
 }
 
 // the question waiting on the person: the last mark, when it asks one

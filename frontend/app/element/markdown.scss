@@ -87,6 +87,14 @@
             color: var(--color-foreground);
         }
 
+        // ==text== (remark-mark.ts): the accent tint the terminal draws a skim highlight in, not a find match's
+        mark {
+            color: inherit;
+            background-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
+            border-radius: 2px;
+            padding: 0 1px;
+        }
+
         a {
             color: var(--color-accent);
         }

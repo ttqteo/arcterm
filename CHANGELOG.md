@@ -37,6 +37,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the folders your projects sit in, each with what it is and when it last changed.
 - Settings → Storage has a **Package caches** card: what npm, Go, Cargo, Homebrew and the like downloaded or built
   once, each with its own Remove, which the next install or build fetches again.
+- Markdown draws `==text==` highlighted, as Obsidian does: in a file's Preview in the agent panel and on Code, and in
+  its Source view, where the `==` marks stay but fade. Ask Claude to highlight a markdown file and it writes the marks
+  into that file instead of printing the file in its reply.
 
 ### Changed
 
@@ -60,6 +63,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Skim highlights every sentence Claude marks in a reply, not only the first four: the fifth on no longer draws as
+  plain text, nor dims with the rest. A reply marked through most of its length draws in full instead of dimmed.
 - A Claude agent watching something with a Monitor counts as having background work: its details list the Monitor,
   and it is neither put to sleep nor offered Close until the Monitor ends. A background command that never started
   (refused by a hook) no longer keeps an agent awake as if it were still running.

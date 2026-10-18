@@ -452,6 +452,15 @@ svg [aria-label="tip"] g path {
     background: rgba(255, 255, 255, 0.6);
 }
 
+/* ==text== in a markdown source (monaco-react.tsx): the text tinted as the Preview's <mark>, the marks faint. */
+.monaco-editor .md-mark {
+    background-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
+    border-radius: 2px;
+}
+.monaco-editor .md-mark-delim {
+    opacity: 0.4;
+}
+
 .ellipsis {
     display: block;
     white-space: nowrap;
