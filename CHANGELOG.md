@@ -44,6 +44,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An image opened in Code or the File tab now shows in the installed app, instead of "Cannot show this image".
 - The t> mark in the Mac menu bar sits level with the memory beside it, its middle on the text's middle, instead of
   hanging below the text.
 - The menu bar icon opens its popover again after arcterm let the popover go at critical memory pressure; one such

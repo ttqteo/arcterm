@@ -12,7 +12,7 @@ import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
-import { fetch } from "@/util/fetchutil";
+import { useBlobSrc } from "@/app/view/jarvis/localimage";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ArrowLeft, Check, LayoutGrid, Search } from "lucide-react";
@@ -520,45 +520,12 @@ function CleanupCard({
     );
 }
 
-// a preview's bytes as a blob: URL, null while they come. The packaged app's CSP lets an <img> load 'self', data: and
-// blob: only (the dev app applies none), so one pointed at the canvas server draws nothing there; fetchutil's fetch
-// goes through the host, as useLocalImage's does
-function useThumbSrc(url: string | null): { src: string | null; failed: boolean } {
-    const [thumb, setThumb] = useState<{ src: string | null; failed: boolean }>({ src: null, failed: false });
-    useEffect(() => {
-        setThumb({ src: null, failed: false });
-        if (url == null) {
-            return;
-        }
-        let live = true;
-        let made: string | null = null;
-        fetch(url)
-            .then((resp) => (resp.ok ? resp.blob() : Promise.reject(new Error(`HTTP ${resp.status}`))))
-            .then((blob) => {
-                made = URL.createObjectURL(blob);
-                if (live) {
-                    setThumb({ src: made, failed: false });
-                } else {
-                    URL.revokeObjectURL(made);
-                }
-            })
-            .catch(() => live && setThumb({ src: null, failed: true }));
-        return () => {
-            live = false;
-            if (made != null) {
-                URL.revokeObjectURL(made);
-            }
-        };
-    }, [url]);
-    return thumb;
-}
-
 // the cached preview, else the board names and when it gets taken. A preview that fails to load (the file went with a
 // clean) is the same card
 function CardPreview({ canvas: c, base }: { canvas: GalleryCanvas; base: string | undefined }) {
     const url =
         c.thumbts > 0 && base != null ? `${base}/${encodeURIComponent(c.topic)}/thumb.png?v=${c.thumbts}` : null;
-    const thumb = useThumbSrc(url);
+    const thumb = useBlobSrc(url);
     const [broken, setBroken] = useState(false);
     useEffect(() => {
         setBroken(false);
