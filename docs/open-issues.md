@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Settings, in the installed app on the Mac (the run's Final checked headless Chrome only): the index
+  lists General, Appearance, Agents, Runs & limits, Terminal, Background AI, Jarvis & Office, Storage & sync, then
+  About under a line. Runs & limits → Heavy jobs: pick 2, open the Jobs popover, it reads 2; pick Auto there, the row
+  reads Auto with no changed dot. Token burn: turn the gate off, the five thresholds dim; revert one changed threshold,
+  its dot goes. Search "fold" finds Minimize on Jarvis & Office, "vault" finds Vault path on Storage & sync. Run
+  d09b9dd1, ff28cea67. 2026-10-18.
+
 - [ ] (arcterm) Code, and an agent's File tab: open an HTML file in Preview, scroll halfway, switch to another surface
   and back, then to another file and back: the page opens where you left it each time, not at the top. Rest the
   pointer on the page, then on a PDF: no chip with the file's path appears over the path bar. Needs a wavesrv built
@@ -864,6 +871,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
+| (arcterm) Scenario steps that fail in a Final on a Mac and are not the settings reorganization's (its workers saw them fail on the base too): `jarvis-pet` step 8 (the right-half drop's peek), `route-picker-flat` (the picker's model rows do not scroll: scrollHeight equals clientHeight), `agy-harness` steps 2, 5, 6, 7, 9 (the agy row glyph, the worker and lead pickers do not open, no agy bars), `settings-telegram` step 3 (`final-verify.mjs` does not start the dev app with `ARC_TELEGRAM_API_BASE`), `settings-pages` agents-detail (the Final's store has no active Claude account), `settings-storage` step 11 (reads the switch's `aria-checked` right after the config write lands, before React redraws) | verification gap | M | run d09b9dd1 Final, `data/final-shots/f983b4e3-ff58-410d-9457-f3007b0cb39e/1/shots.json`; `scripts/cdp/scenarios.mjs` |
 | (arcterm) Engine worktrees moved to `%LOCALAPPDATA%\arc-wt\<8 of run id>` with the kaeltran16 sync (2026-10-13), but our own path readers still look only under `<project>/.waveterm/worktrees`: the sidebar's grouping of engine conversations under their project (`agentsidebarmodel.ts` `ENGINE_WORKTREES`), Claude project mapping (`pkg/agentsessions/claudeprojects.go`), Settings → Storage's engine-tree cleanup (`pkg/storage/worktrees.go`) and Usage's "engine run" project label (`pkg/usagestats/sessions.go` `projectOf`). `orchestrate.runOfWorktree` already reads both | bug | M | `pkg/orchestrate/worktreeroot.go`, `launchorigin.go` `runOfShortTree` |
 | (arcterm) Not ported from the kaeltran16 sync (2026-10-13): Usage's **By work** lens (spend by project, run and session; `usageattribution.ts` and the backend's session directory are in, our tabbed Usage surface does not draw it), the New run goal's file-pick button (it lived in the fork's `newruncontrol.tsx`, which our New dialog replaced), and the fork's `docs/orchestrator-guide.md` changes (short worktree root, cleanup round, final stage row) into `docs/guide/orchestrator.md` | feature | M | merge of `kael/main` 713f11140; dropped scenarios `usage-work`, `new-run-attachments`, `run-sheet-carry` |
 | (arcterm) Final on a Mac checks Chromium, not WKWebView: `task dev:browser` runs the scenarios in headless Chrome, so WebKit-only behaviour (the File tab Source view's Ctrl+Enter, IME, scrolling) and the scenarios marked `host: true` (notify-toast, float-mini, jarvis-modes) still need a hand check in the real app or a Windows run | verification gap | S | `scripts/cdp/browser-app.mjs`, `scripts/cdp/final-verify.mjs` (`hostOnlyScenarios`); AGENTS.md "Visual verification"; run 915dc28d (2026-10-12) |
