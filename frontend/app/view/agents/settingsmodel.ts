@@ -46,15 +46,18 @@ export type SettingSectionDef = {
     name: string;
     blurb: string;
     cards: SettingCardDef[];
+    // Drawn apart at the index's foot, under a rule (About).
+    foot?: boolean;
 };
 
-// Ids of the eleven pages the six replaced, for a deep link written before the merge.
+// Ids of the pages that were merged or split since, for a deep link written before: each names the page that
+// now holds the card.
 const RETIRED_SECTIONS: Record<string, string> = {
     fonts: "appearance",
     notifications: "general",
-    memory: "general",
+    memory: "storage",
     newagent: "agents",
-    run: "agents",
+    run: "runs",
     claudeaccount: "agents",
 };
 
@@ -95,6 +98,21 @@ export function stepSleepAfter(current: number, dir: -1 | 1): number {
     return Math.min(SLEEP_AFTER_MIN.max, Math.max(SLEEP_AFTER_MIN.min, current + dir * SLEEP_AFTER_MIN.step));
 }
 
+// A stepper's bounds: it moves by `step` and stays inside [min, max].
+export type StepBounds = { step: number; min: number; max: number };
+
+export function stepWithin(current: number, dir: -1 | 1, b: StepBounds): number {
+    return Math.min(b.max, Math.max(b.min, current + dir * b.step));
+}
+
+// runs:maxactive, the active runs before a queued start waits (0 is no cap), and the tokengate:* checks, each of
+// which 0 turns off. The defaults are the ones Go falls back to when the key is unset, shipped in
+// pkg/wconfig/defaultconfig/settings.json so an unset row shows no changed dot.
+export const RUNS_MAX_ACTIVE = { step: 1, min: 0, max: 10, default: 3 };
+export const TOKENGATE_PCT = { step: 5, min: 0, max: 100 };
+export const TOKENGATE_AGENTS = { step: 1, min: 0, max: 10 };
+export const TOKENGATE_DEFAULTS = { sharepct: 10, windowpct: 70, agents: 3, weekpct: 80, sessionpct: 25 };
+
 // What an unset radar:classifymodel runs on the audit runtime; pi takes no bare model id, so it keeps its own.
 export function radarClassifyDefault(runtime: string): string {
     return (runtime || RADAR_AUDIT_DEFAULT_RUNTIME) === RADAR_AUDIT_DEFAULT_RUNTIME ? "haiku" : "pi default";
@@ -110,7 +128,7 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
         {
             id: "general",
             name: "General",
-            blurb: "What opens at launch, when arcterm tells you about an agent, and where Jarvis keeps its vault.",
+            blurb: "What opens at launch, arcterm in the menu bar, and when it tells you about an agent.",
             cards: [
                 {
                     id: "startup",
@@ -129,6 +147,30 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             desc: "The per-agent rail on the Agent surface: changed files, artifacts, uploads and terminals. On unless you turn it off.",
                             key: "agent.rail.visible",
                             scope: "local",
+                        },
+                    ],
+                },
+                {
+                    id: "menubar",
+                    label: "Menu bar",
+                    rows: [
+                        {
+                            id: "app.tray",
+                            title: "Menu bar icon",
+                            desc: "arcterm's icon beside the clock: what waits on you, memory, CPU and disk, a click away.",
+                            key: "app:tray",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "app.traymemory",
+                            title: "Free memory beside the icon",
+                            desc: isMacOS()
+                                ? "The memory free, as the popover's Memory card reads it, beside arcterm's icon in the menu bar. It follows within 10 seconds."
+                                : "The memory free, as the popover's Memory card reads it, in the tray icon's tooltip. It follows within 10 seconds.",
+                            key: "app:traymemory",
+                            scope: "synced",
+                            config: true,
                         },
                     ],
                 },
@@ -167,81 +209,12 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         },
                     ],
                 },
-                {
-                    id: "window",
-                    label: "Window",
-                    rows: [
-                        {
-                            id: "window.minimize",
-                            title: "Minimize",
-                            desc: "What minimize does, the yellow button and ⌘M on macOS included: fold the window into Sprout, which floats over every app, or send it to the Dock or taskbar. The Sprout button folds either way.",
-                            key: "window:minimize",
-                            scope: "synced",
-                            config: true,
-                        },
-                        {
-                            id: "window.sproutcorner",
-                            title: "Fold to",
-                            desc: "The corner of the screen Sprout folds into. Dragging Sprout elsewhere keeps that spot for the next fold until you pick a corner again. Also on the Sprout button's right-click.",
-                            key: "arc.float.sproutSpot",
-                            scope: "local",
-                        },
-                        {
-                            id: "window.autosprout",
-                            title: "Fold when you leave",
-                            // foreground.rs decides "covered" differently on each OS, so each reads its own rule
-                            desc: isMacOS()
-                                ? "Once you switch to another app whose window covers most of arcterm (a big window over it, or a full-screen app) for about 3 seconds, the full window folds into Sprout; a smaller window beside it, one on another screen, a screenshot or the lock screen leave it be. Coming back to arcterm, whichever way, grows it back. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it."
-                                : "Once you switch to another app whose window is maximized or full screen on arcterm's screen for about 3 seconds, the full window folds into Sprout; a window that is not maximized, however big, a dialog or popup, one on another screen, a screenshot or the lock screen leave it be. Coming back to arcterm, whichever way, grows it back. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it.",
-                            key: "window:autosprout",
-                            scope: "synced",
-                            config: true,
-                        },
-                        {
-                            id: "app.tray",
-                            title: "Menu bar icon",
-                            desc: "arcterm's icon beside the clock: what waits on you, memory, CPU and disk, a click away.",
-                            key: "app:tray",
-                            scope: "synced",
-                            config: true,
-                        },
-                        {
-                            id: "app.traymemory",
-                            title: "Free memory beside the icon",
-                            desc: isMacOS()
-                                ? "The memory free, as the popover's Memory card reads it, beside arcterm's icon in the menu bar. It follows within 10 seconds."
-                                : "The memory free, as the popover's Memory card reads it, in the tray icon's tooltip. It follows within 10 seconds.",
-                            key: "app:traymemory",
-                            scope: "synced",
-                            config: true,
-                        },
-                    ],
-                },
-                {
-                    id: "vault",
-                    label: "Vault & sync",
-                    rows: [
-                        {
-                            id: "memory.vaultpath",
-                            title: "Vault path",
-                            desc: "Validated on change — the folder must exist. Empty falls back to the default vault.",
-                            key: "memory:vaultpath",
-                            scope: "local",
-                            config: true,
-                        },
-                        {
-                            id: "memory.remote",
-                            title: "Sync remote",
-                            desc: "A private git remote that keeps the vault, initiatives and portable settings the same on every machine. Empty turns sync off.",
-                        },
-                    ],
-                },
             ],
         },
         {
             id: "appearance",
             name: "Appearance",
-            blurb: "The palette every surface derives from, its role colors, the faces the app is set in, and what an agent row in the sidebar shows.",
+            blurb: "Theme, colors and fonts, and what an agent row in the sidebar shows.",
             cards: [
                 {
                     id: "theme",
@@ -311,81 +284,6 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                     ],
                 },
                 {
-                    id: "jarvis",
-                    label: "Jarvis",
-                    rows: [
-                        {
-                            id: "appearance.petcharacter",
-                            title: "Character",
-                            desc: "Who walks the footer as Jarvis. The marks and the outfit work the same for each.",
-                            key: "jarvis.pet.character",
-                            scope: "local",
-                        },
-                        {
-                            id: "appearance.petoutfit",
-                            title: "Jarvis in Vietnam's colours",
-                            desc: "The flag shirt, or the flag in its hand. On 30/4, 1/5 and 2/9 it wears the shirt even when this is off.",
-                            key: "jarvis.pet.outfit",
-                            scope: "local",
-                        },
-                        {
-                            id: "appearance.petquotes",
-                            title: "Jarvis quotes",
-                            desc: "Now and then, when nothing waits on you, Jarvis says a well-known line about programming. Spider-Man has a few of his own.",
-                            key: "jarvis.pet.quotes",
-                            scope: "local",
-                        },
-                    ],
-                },
-                {
-                    id: "office",
-                    label: "Office",
-                    rows: [
-                        {
-                            id: "appearance.officeanimation",
-                            title: "Office animation",
-                            desc: "People in the Cockpit's Office type, walk and wave. Off, everyone holds still and the boss moves at once; the RAM panel's Office line shows what it costs.",
-                            key: "cockpit.office.animation",
-                            scope: "local",
-                        },
-                        {
-                            id: "appearance.officehours",
-                            title: "Work hours",
-                            desc: "Outside them, and all weekend, the office dims, idle people go home and desk lamps come on.",
-                            key: "cockpit.office.hours",
-                            scope: "local",
-                        },
-                        {
-                            id: "appearance.officesoundevents",
-                            title: "Office jingles",
-                            desc: "A short chiptune when a task finishes, a run lands, something needs you or a task fails, while the Office is in view and arcterm has focus. s in the Office mutes all its sound.",
-                            key: "cockpit.office.sound.events",
-                            scope: "local",
-                        },
-                        {
-                            id: "appearance.officesoundui",
-                            title: "Boss sounds",
-                            desc: "Footsteps as the arrows walk the boss, a bump at a wall, a blip when a box, a card or the menu opens.",
-                            key: "cockpit.office.sound.ui",
-                            scope: "local",
-                        },
-                        {
-                            id: "appearance.officesoundmusic",
-                            title: "Office music",
-                            desc: "A chiptune loop while the Office is in view, one for work hours and one for after. It stops when arcterm loses focus and starts again on focus.",
-                            key: "cockpit.office.sound.music",
-                            scope: "local",
-                        },
-                        {
-                            id: "appearance.officesoundvolume",
-                            title: "Office volume",
-                            desc: "How loud the Office's jingles, sounds and music play.",
-                            key: "cockpit.office.sound.volume",
-                            scope: "local",
-                        },
-                    ],
-                },
-                {
                     id: "agentrows",
                     label: "Agent sidebar",
                     rows: ROW_FIELD_ROWS.map((r) => ({
@@ -395,6 +293,178 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                         key: "agent.row.fields",
                         scope: "local" as const,
                     })),
+                },
+            ],
+        },
+        {
+            id: "agents",
+            name: "Agents",
+            blurb: "The Claude subscription new agents run on, when an idle agent sleeps, and the flags every launch starts with.",
+            cards: [
+                // The account list lives behind its own RPCs, not in settings, so the card has no rows for the
+                // index to count or search; ClaudeAccountSection renders it whole.
+                { id: "claudeaccount", label: "Claude account", rows: [] },
+                {
+                    id: "sleep",
+                    label: "Sleep idle agents",
+                    rows: [
+                        {
+                            id: "agents.sleepidle",
+                            title: "Sleep idle agents",
+                            desc: "End an idle agent's process to free RAM; Wake or a message resumes it.",
+                            key: "agents:sleepidle",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "agents.sleepaftermin",
+                            title: "After idle for",
+                            desc: "Minutes an agent stays idle before it sleeps.",
+                            key: "agents:sleepaftermin",
+                            scope: "synced",
+                            config: true,
+                        },
+                    ],
+                },
+                {
+                    id: "flags",
+                    label: "Launch flags",
+                    rows: [
+                        {
+                            id: "newagent.remember",
+                            title: "Remember flags",
+                            desc: "Reuse the enabled flags for every new agent instead of clearing after launch.",
+                            key: "agent.launch.remember",
+                            scope: "local",
+                        },
+                        {
+                            id: "newagent.runtime",
+                            title: "Runtime",
+                            desc: "Which runtime's flag set you're editing.",
+                            key: LAUNCH_FLAGS_KEY,
+                            scope: "local",
+                        },
+                        ...RUNTIME_FLAGS[flagRuntime].map((f) => ({
+                            id: flagRowId(flagRuntime, f.id),
+                            title: f.flag,
+                            desc: f.desc,
+                            key: LAUNCH_FLAGS_KEY,
+                            scope: "local" as const,
+                        })),
+                    ],
+                },
+            ],
+        },
+        {
+            id: "runs",
+            name: "Runs & limits",
+            blurb: "The route new runs take, how much runs at once, and when a costly spawn asks you first.",
+            cards: [
+                {
+                    id: "runs",
+                    label: "Runs",
+                    rows: [
+                        {
+                            id: "run.route",
+                            title: "Run route",
+                            desc: "Harness and resolved model for new runs.",
+                            key: "harness.preference",
+                            scope: "synced",
+                        },
+                        {
+                            id: "runs.maxactive",
+                            title: "Active runs at once",
+                            desc: "A queued run waits while this many are active. 0 is no cap.",
+                            key: "runs:maxactive",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "runs.wakeorigin",
+                            title: "Tell the session that started a run",
+                            desc: "Message it when the run lands, so it can pick up the result.",
+                            key: "runs:wakeorigin",
+                            scope: "synced",
+                            config: true,
+                        },
+                    ],
+                },
+                {
+                    id: "whilework",
+                    label: "While work runs",
+                    rows: [
+                        {
+                            id: "runs.keepawake",
+                            title: "Keep the Mac awake",
+                            desc: "While an agent works, a run is going or a heavy job runs, the Mac does not sleep when idle. The display still turns off; on battery it lets go under 20%.",
+                            key: "power:keepawake",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "runs.heavyjobs",
+                            title: "Heavy jobs",
+                            desc: "Builds, the typecheck and whole test suites wait their turn. Auto starts one when its RAM fits; a number caps how many run at once; Off never waits. The Jobs popover sets the same thing.",
+                            // jobs:mode only: picking Auto leaves jobs:slots behind, and keying it too would keep the changed dot on
+                            key: "jobs:mode",
+                            scope: "synced",
+                            config: true,
+                        },
+                    ],
+                },
+                {
+                    id: "tokenburn",
+                    label: "Token burn",
+                    rows: [
+                        {
+                            id: "tokengate.enabled",
+                            title: "Ask before a costly spawn",
+                            desc: "An Agent, Task or Workflow call that trips a check below waits on a Token burn card for your yes.",
+                            key: "tokengate:enabled",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "tokengate.sharepct",
+                            title: "A spawn's share of the 5-hour window",
+                            desc: "Ask when one spawn would take this much of it.",
+                            key: "tokengate:sharepct",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "tokengate.windowpct",
+                            title: "5-hour window used",
+                            desc: "Ask once this much of the window is gone.",
+                            key: "tokengate:windowpct",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "tokengate.agents",
+                            title: "Agents started together",
+                            desc: "Ask when one call starts this many agents.",
+                            key: "tokengate:agents",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "tokengate.weekpct",
+                            title: "Week used",
+                            desc: "Ask once this much of the weekly window is gone.",
+                            key: "tokengate:weekpct",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "tokengate.sessionpct",
+                            title: "The asking session's share",
+                            desc: "Ask when the session asking has used this much of the 5-hour window.",
+                            key: "tokengate:sessionpct",
+                            scope: "synced",
+                            config: true,
+                        },
+                    ],
                 },
             ],
         },
@@ -480,126 +550,6 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
             ],
         },
         {
-            id: "agents",
-            name: "Agents",
-            blurb: "The Claude subscription new agents run on, when an idle agent sleeps, the route new runs take, whether the Mac stays awake for them, and the flags every launch starts with.",
-            cards: [
-                // The account list lives behind its own RPCs, not in settings, so the card has no rows for the
-                // index to count or search; ClaudeAccountSection renders it whole.
-                { id: "claudeaccount", label: "Claude account", rows: [] },
-                {
-                    id: "sleep",
-                    label: "Sleep idle agents",
-                    rows: [
-                        {
-                            id: "agents.sleepidle",
-                            title: "Sleep idle agents",
-                            desc: "End an idle agent's process to free RAM; Wake or a message resumes it.",
-                            key: "agents:sleepidle",
-                            scope: "synced",
-                            config: true,
-                        },
-                        {
-                            id: "agents.sleepaftermin",
-                            title: "After idle for",
-                            desc: "Minutes an agent stays idle before it sleeps.",
-                            key: "agents:sleepaftermin",
-                            scope: "synced",
-                            config: true,
-                        },
-                    ],
-                },
-                {
-                    id: "runs",
-                    label: "Runs",
-                    rows: [
-                        {
-                            id: "run.route",
-                            title: "Run route",
-                            desc: "Harness and resolved model for new runs.",
-                            key: "harness.preference",
-                            scope: "synced",
-                        },
-                        {
-                            id: "runs.keepawake",
-                            title: "Keep the Mac awake",
-                            desc: "While an agent works, a run is going or a heavy job runs, the Mac does not sleep when idle. The display still turns off; on battery it lets go under 20%.",
-                            key: "power:keepawake",
-                            scope: "synced",
-                            config: true,
-                        },
-                    ],
-                },
-                {
-                    id: "flags",
-                    label: "Launch flags",
-                    rows: [
-                        {
-                            id: "newagent.remember",
-                            title: "Remember flags",
-                            desc: "Reuse the enabled flags for every new agent instead of clearing after launch.",
-                            key: "agent.launch.remember",
-                            scope: "local",
-                        },
-                        {
-                            id: "newagent.runtime",
-                            title: "Runtime",
-                            desc: "Which runtime's flag set you're editing.",
-                            key: LAUNCH_FLAGS_KEY,
-                            scope: "local",
-                        },
-                        ...RUNTIME_FLAGS[flagRuntime].map((f) => ({
-                            id: flagRowId(flagRuntime, f.id),
-                            title: f.flag,
-                            desc: f.desc,
-                            key: LAUNCH_FLAGS_KEY,
-                            scope: "local" as const,
-                        })),
-                    ],
-                },
-            ],
-        },
-        {
-            id: "storage",
-            name: "Storage",
-            blurb: "What arcterm and its agents leave on disk, and cleaning it. Nothing in use is ever removed.",
-            cards: [
-                // Each category's items live behind the storage RPCs, not in settings, so its card has no rows for
-                // the index to count or search, only its label; settingspages/storage.tsx draws them from the report.
-                ...CARD_ORDER.map((cat) => ({ id: cat, label: CARD_COPY[cat].title, rows: [] })),
-                {
-                    id: "autoclean",
-                    label: "Auto-clean",
-                    rows: [
-                        {
-                            id: "storage.autoclean",
-                            title: "Clean the safe parts daily",
-                            desc: "Finished run worktrees with no uncommitted changes, and rolled logs older than 7 days. Sessions, build output, canvases and the cache wait for you.",
-                            key: "storage:autoclean",
-                            scope: "synced",
-                            config: true,
-                        },
-                        {
-                            id: "storage.nudge",
-                            title: "Remind me above",
-                            desc: "A toast, at most once a day, when more than this can be cleaned.",
-                            key: "storage:nudgegb",
-                            scope: "synced",
-                            config: true,
-                        },
-                        {
-                            id: "storage.canvasonship",
-                            title: "Agents delete a canvas when its feature ships",
-                            desc: "Off: agents keep every canvas, and list the shipped ones when you ask them to tidy up.",
-                            key: "storage:canvasonship",
-                            scope: "synced",
-                            config: true,
-                        },
-                    ],
-                },
-            ],
-        },
-        {
             id: "headless",
             name: "Background AI",
             blurb: "The runtime behind session classify, continuity, the volunteer judge and pi titles, and the route Radar audits run on.",
@@ -665,8 +615,182 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
             ],
         },
         {
+            id: "jarvis",
+            name: "Jarvis & Office",
+            blurb: "Who Jarvis is, when the window folds into it, and how the Office looks and sounds.",
+            cards: [
+                {
+                    id: "jarvis",
+                    label: "Jarvis",
+                    rows: [
+                        {
+                            id: "appearance.petcharacter",
+                            title: "Character",
+                            desc: "Who walks the footer as Jarvis. The marks and the outfit work the same for each.",
+                            key: "jarvis.pet.character",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.petoutfit",
+                            title: "Jarvis in Vietnam's colours",
+                            desc: "The flag shirt, or the flag in its hand. On 30/4, 1/5 and 2/9 it wears the shirt even when this is off.",
+                            key: "jarvis.pet.outfit",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.petquotes",
+                            title: "Jarvis quotes",
+                            desc: "Now and then, when nothing waits on you, Jarvis says a well-known line about programming. Spider-Man has a few of his own.",
+                            key: "jarvis.pet.quotes",
+                            scope: "local",
+                        },
+                    ],
+                },
+                {
+                    id: "folding",
+                    label: "Folding",
+                    rows: [
+                        {
+                            id: "window.minimize",
+                            title: "Minimize",
+                            desc: "What minimize does, the yellow button and ⌘M on macOS included: fold the window into Sprout, which floats over every app, or send it to the Dock or taskbar. The Sprout button folds either way.",
+                            key: "window:minimize",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "window.sproutcorner",
+                            title: "Fold to",
+                            desc: "The corner of the screen Sprout folds into. Dragging Sprout elsewhere keeps that spot for the next fold until you pick a corner again. Also on the Sprout button's right-click.",
+                            key: "arc.float.sproutSpot",
+                            scope: "local",
+                        },
+                        {
+                            id: "window.autosprout",
+                            title: "Fold when you leave",
+                            // foreground.rs decides "covered" differently on each OS, so each reads its own rule
+                            desc: isMacOS()
+                                ? "Once you switch to another app whose window covers most of arcterm (a big window over it, or a full-screen app) for about 3 seconds, the full window folds into Sprout; a smaller window beside it, one on another screen, a screenshot or the lock screen leave it be. Coming back to arcterm, whichever way, grows it back. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it."
+                                : "Once you switch to another app whose window is maximized or full screen on arcterm's screen for about 3 seconds, the full window folds into Sprout; a window that is not maximized, however big, a dialog or popup, one on another screen, a screenshot or the lock screen leave it be. Coming back to arcterm, whichever way, grows it back. Off keeps the cockpit as it is, say on a second screen. Right-click the Sprout button to switch it.",
+                            key: "window:autosprout",
+                            scope: "synced",
+                            config: true,
+                        },
+                    ],
+                },
+                {
+                    id: "office",
+                    label: "Office",
+                    rows: [
+                        {
+                            id: "appearance.officeanimation",
+                            title: "Office animation",
+                            desc: "People in the Cockpit's Office type, walk and wave. Off, everyone holds still and the boss moves at once; the RAM panel's Office line shows what it costs.",
+                            key: "cockpit.office.animation",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.officehours",
+                            title: "Work hours",
+                            desc: "Outside them, and all weekend, the office dims, idle people go home and desk lamps come on.",
+                            key: "cockpit.office.hours",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.officesoundevents",
+                            title: "Office jingles",
+                            desc: "A short chiptune when a task finishes, a run lands, something needs you or a task fails, while the Office is in view and arcterm has focus. s in the Office mutes all its sound.",
+                            key: "cockpit.office.sound.events",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.officesoundui",
+                            title: "Boss sounds",
+                            desc: "Footsteps as the arrows walk the boss, a bump at a wall, a blip when a box, a card or the menu opens.",
+                            key: "cockpit.office.sound.ui",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.officesoundmusic",
+                            title: "Office music",
+                            desc: "A chiptune loop while the Office is in view, one for work hours and one for after. It stops when arcterm loses focus and starts again on focus.",
+                            key: "cockpit.office.sound.music",
+                            scope: "local",
+                        },
+                        {
+                            id: "appearance.officesoundvolume",
+                            title: "Office volume",
+                            desc: "How loud the Office's jingles, sounds and music play.",
+                            key: "cockpit.office.sound.volume",
+                            scope: "local",
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            id: "storage",
+            name: "Storage & sync",
+            blurb: "Where your vault lives and syncs to, what arcterm and its agents leave on disk, and cleaning it. Nothing in use is ever removed.",
+            cards: [
+                {
+                    id: "vault",
+                    label: "Vault & sync",
+                    rows: [
+                        {
+                            id: "memory.vaultpath",
+                            title: "Vault path",
+                            desc: "Validated on change — the folder must exist. Empty falls back to the default vault.",
+                            key: "memory:vaultpath",
+                            scope: "local",
+                            config: true,
+                        },
+                        {
+                            id: "memory.remote",
+                            title: "Sync remote",
+                            desc: "A private git remote that keeps the vault, initiatives and portable settings the same on every machine. Empty turns sync off.",
+                        },
+                    ],
+                },
+                // Each category's items live behind the storage RPCs, not in settings, so its card has no rows for
+                // the index to count or search, only its label; settingspages/storage.tsx draws them from the report.
+                ...CARD_ORDER.map((cat) => ({ id: cat, label: CARD_COPY[cat].title, rows: [] })),
+                {
+                    id: "autoclean",
+                    label: "Auto-clean",
+                    rows: [
+                        {
+                            id: "storage.autoclean",
+                            title: "Clean the safe parts daily",
+                            desc: "Finished run worktrees with no uncommitted changes, and rolled logs older than 7 days. Sessions, build output, canvases and the cache wait for you.",
+                            key: "storage:autoclean",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "storage.nudge",
+                            title: "Remind me above",
+                            desc: "A toast, at most once a day, when more than this can be cleaned.",
+                            key: "storage:nudgegb",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "storage.canvasonship",
+                            title: "Agents delete a canvas when its feature ships",
+                            desc: "Off: agents keep every canvas, and list the shipped ones when you ask them to tidy up.",
+                            key: "storage:canvasonship",
+                            scope: "synced",
+                            config: true,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
             id: "about",
             name: "About",
+            foot: true,
             blurb: "Versions of the shell, the backend it spawned, and the coding agents on this machine.",
             cards: [
                 {
@@ -718,7 +842,6 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
         },
     ];
 }
-
 // Row id for one runtime's launch flag. Runtime-qualified: the same flag id ("skip-permissions") is a
 // different row on claude than on codex, and the changed-count has to tell them apart.
 export function flagRowId(runtime: Runtime, flagId: string): string {

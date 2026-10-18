@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { RUNTIME_FLAGS } from "./launch";
 import {
@@ -16,10 +17,14 @@ import {
     resolveSelection,
     rowKeys,
     rowMatches,
+    RUNS_MAX_ACTIVE,
     sectionRows,
     settingsSections,
     SLEEP_AFTER_MIN,
     stepSleepAfter,
+    stepWithin,
+    TOKENGATE_AGENTS,
+    TOKENGATE_PCT,
     vaultStatusLine,
     vaultSyncButton,
     vaultSyncFailureNote,
@@ -54,12 +59,12 @@ describe("sleep idle agents rows", () => {
 
 describe("vault sync rows", () => {
     it("treats the vault path as machine-local", () => {
-        const row = rowsOf("general").find((r) => r.id === "memory.vaultpath")!;
+        const row = rowsOf("storage").find((r) => r.id === "memory.vaultpath")!;
         expect(row.scope).toBe("local");
     });
 
     it("offers a sync remote row that stores no setting", () => {
-        const row = rowsOf("general").find((r) => r.id === "memory.remote")!;
+        const row = rowsOf("storage").find((r) => r.id === "memory.remote")!;
         expect(row.key).toBeUndefined();
         expect(row.config).toBeUndefined();
     });
@@ -199,14 +204,23 @@ describe("settingsSections", () => {
         const rows = sections().flatMap(sectionRows);
         const config = rows.filter((r) => r.config).flatMap(rowKeys);
         expect(config).toEqual([
+            "app:tray",
+            "app:traymemory",
             "notify:os",
             "notify:toast",
             "notify:reply",
-            "window:minimize",
-            "window:autosprout",
-            "app:tray",
-            "app:traymemory",
-            "memory:vaultpath",
+            "agents:sleepidle",
+            "agents:sleepaftermin",
+            "runs:maxactive",
+            "runs:wakeorigin",
+            "power:keepawake",
+            "jobs:mode",
+            "tokengate:enabled",
+            "tokengate:sharepct",
+            "tokengate:windowpct",
+            "tokengate:agents",
+            "tokengate:weekpct",
+            "tokengate:sessionpct",
             "term:fontfamily",
             "term:fontsize",
             "term:cursor",
@@ -214,17 +228,17 @@ describe("settingsSections", () => {
             "term:scrollback",
             "term:copyonselect",
             "term:rightclickpaste",
-            "agents:sleepidle",
-            "agents:sleepaftermin",
-            "power:keepawake",
-            "storage:autoclean",
-            "storage:nudgegb",
-            "storage:canvasonship",
             "headless:runtime",
             "headless:openroutercheapmodel",
             "radar:auditruntime",
             "radar:auditmodel",
             "radar:classifymodel",
+            "window:minimize",
+            "window:autosprout",
+            "memory:vaultpath",
+            "storage:autoclean",
+            "storage:nudgegb",
+            "storage:canvasonship",
             "harness:updatecheck",
         ]);
     });
@@ -287,93 +301,72 @@ describe("radarAuditRoute", () => {
 });
 
 describe("settings pages", () => {
-    it("has seven pages in order", () => {
+    it("has nine pages in order, About last and at the foot", () => {
         expect(sections().map((s) => s.id)).toEqual([
-            "general",
-            "appearance",
-            "terminal",
-            "agents",
-            "storage",
-            "headless",
-            "about",
+            "general", "appearance", "agents", "runs", "terminal", "headless", "jarvis", "storage", "about",
         ]);
         expect(sections().map((s) => s.name)).toEqual([
-            "General",
-            "Appearance",
-            "Terminal",
-            "Agents",
-            "Storage",
-            "Background AI",
-            "About",
+            "General", "Appearance", "Agents", "Runs & limits", "Terminal", "Background AI", "Jarvis & Office", "Storage & sync", "About",
         ]);
+        expect(sections().filter((s) => s.foot).map((s) => s.id)).toEqual(["about"]);
     });
 
-    it("puts each row in the card the spec names", () => {
+    it("puts each card on its page and each row in the card the spec names", () => {
         const cards = Object.fromEntries(
             sections().flatMap((s) => s.cards.map((c) => [`${s.id}/${c.id}`, c.rows.map((r) => r.id)]))
         );
+        expect(Object.keys(cards)).toEqual([
+            "general/startup", "general/menubar", "general/notifications",
+            "appearance/theme", "appearance/colors", "appearance/fonts", "appearance/agentrows",
+            "agents/claudeaccount", "agents/sleep", "agents/flags",
+            "runs/runs", "runs/whilework", "runs/tokenburn",
+            "terminal/text", "terminal/cursor", "terminal/behavior",
+            "headless/runtime", "headless/openrouter", "headless/radar",
+            "jarvis/jarvis", "jarvis/folding", "jarvis/office",
+            "storage/vault", "storage/runworktrees", "storage/sessions", "storage/housekeeping", "storage/buildoutput",
+            "storage/canvases", "storage/autoclean",
+            "about/versions", "about/agents",
+        ]);
         expect(cards["general/startup"]).toEqual(["general.startup", "general.rail"]);
+        expect(cards["general/menubar"]).toEqual(["app.tray", "app.traymemory"]);
         expect(cards["general/notifications"]).toEqual([
-            "notifications.os",
-            "notifications.toast",
-            "notifications.reply",
-            "notifications.telegram",
+            "notifications.os", "notifications.toast", "notifications.reply", "notifications.telegram",
         ]);
-        expect(cards["general/window"]).toEqual([
-            "window.minimize",
-            "window.sproutcorner",
-            "window.autosprout",
-            "app.tray",
-            "app.traymemory",
-        ]);
-        expect(cards["general/vault"]).toEqual(["memory.vaultpath", "memory.remote"]);
         expect(cards["appearance/theme"]).toEqual(["appearance.theme"]);
         expect(cards["appearance/colors"]).toEqual([
-            "appearance.accent",
-            "appearance.success",
-            "appearance.warning",
-            "appearance.error",
+            "appearance.accent", "appearance.success", "appearance.warning", "appearance.error",
         ]);
         expect(cards["appearance/fonts"]).toEqual(["fonts.sans", "fonts.mono"]);
-        expect(cards["appearance/jarvis"]).toEqual([
-            "appearance.petcharacter",
-            "appearance.petoutfit",
-            "appearance.petquotes",
-        ]);
-        expect(cards["appearance/office"]).toEqual([
-            "appearance.officeanimation",
-            "appearance.officehours",
-            "appearance.officesoundevents",
-            "appearance.officesoundui",
-            "appearance.officesoundmusic",
-            "appearance.officesoundvolume",
-        ]);
         expect(cards["appearance/agentrows"]).toEqual([
-            "appearance.rowmodel",
-            "appearance.rowbranch",
-            "appearance.rowtokens",
-            "appearance.rowage",
+            "appearance.rowmodel", "appearance.rowbranch", "appearance.rowtokens", "appearance.rowage",
+        ]);
+        expect(cards["agents/claudeaccount"]).toEqual([]);
+        expect(cards["agents/sleep"]).toEqual(["agents.sleepidle", "agents.sleepaftermin"]);
+        expect(cards["agents/flags"].slice(0, 2)).toEqual(["newagent.remember", "newagent.runtime"]);
+        expect(cards["runs/runs"]).toEqual(["run.route", "runs.maxactive", "runs.wakeorigin"]);
+        expect(cards["runs/whilework"]).toEqual(["runs.keepawake", "runs.heavyjobs"]);
+        expect(cards["runs/tokenburn"]).toEqual([
+            "tokengate.enabled", "tokengate.sharepct", "tokengate.windowpct", "tokengate.agents", "tokengate.weekpct", "tokengate.sessionpct",
         ]);
         expect(cards["terminal/text"]).toEqual(["fonts.term", "terminal.fontsize"]);
         expect(cards["terminal/cursor"]).toEqual(["terminal.cursor", "terminal.cursorblink"]);
         expect(cards["terminal/behavior"]).toEqual([
-            "terminal.scrollback",
-            "terminal.copyonselect",
-            "terminal.rightclickpaste",
+            "terminal.scrollback", "terminal.copyonselect", "terminal.rightclickpaste",
         ]);
-        expect(cards["agents/claudeaccount"]).toEqual([]);
-        expect(cards["agents/sleep"]).toEqual(["agents.sleepidle", "agents.sleepaftermin"]);
-        expect(cards["agents/runs"]).toEqual(["run.route", "runs.keepawake"]);
-        expect(cards["agents/flags"].slice(0, 2)).toEqual(["newagent.remember", "newagent.runtime"]);
-        expect(cards["storage/runworktrees"]).toEqual([]);
-        expect(cards["storage/sessions"]).toEqual([]);
-        expect(cards["storage/housekeeping"]).toEqual([]);
-        expect(cards["storage/buildoutput"]).toEqual([]);
-        expect(cards["storage/canvases"]).toEqual([]);
-        expect(cards["storage/autoclean"]).toEqual(["storage.autoclean", "storage.nudge", "storage.canvasonship"]);
         expect(cards["headless/runtime"]).toEqual(["headless.runtime"]);
         expect(cards["headless/openrouter"]).toEqual(["headless.apikey", "headless.cheap"]);
         expect(cards["headless/radar"]).toEqual(["headless.radaraudit", "headless.radarclassify"]);
+        expect(cards["jarvis/jarvis"]).toEqual(["appearance.petcharacter", "appearance.petoutfit", "appearance.petquotes"]);
+        expect(cards["jarvis/folding"]).toEqual(["window.minimize", "window.sproutcorner", "window.autosprout"]);
+        expect(cards["jarvis/office"]).toEqual([
+            "appearance.officeanimation", "appearance.officehours", "appearance.officesoundevents",
+            "appearance.officesoundui", "appearance.officesoundmusic", "appearance.officesoundvolume",
+        ]);
+        expect(cards["storage/vault"]).toEqual(["memory.vaultpath", "memory.remote"]);
+        for (const cat of ["runworktrees", "sessions", "housekeeping", "buildoutput", "canvases"]) {
+            expect(cards[`storage/${cat}`]).toEqual([]);
+        }
+        expect(cards["storage/autoclean"]).toEqual(["storage.autoclean", "storage.nudge", "storage.canvasonship"]);
         expect(cards["about/versions"]).toEqual(["about.app", "about.server", "about.buildtime", "about.platform"]);
         expect(cards["about/agents"]).toEqual(["about.harnesses", "about.updatecheck"]);
     });
@@ -383,7 +376,24 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toHaveLength(60 + RUNTIME_FLAGS.claude.length);
+        // today's 60 plus the nine new rows
+        expect(ids).toHaveLength(69 + RUNTIME_FLAGS.claude.length);
+    });
+
+    it("finds moved rows by search", () => {
+        expect(filterSections(sections(), "fold").map((s) => s.id)).toContain("jarvis");
+        expect(filterSections(sections(), "vault").map((s) => s.id)).toContain("storage");
+    });
+
+    it("ships a default for every new config key", () => {
+        const shipped = JSON.parse(
+            readFileSync(new URL("../../../../pkg/wconfig/defaultconfig/settings.json", import.meta.url), "utf8")
+        );
+        expect(shipped).toMatchObject({
+            "runs:maxactive": 3, "runs:wakeorigin": true, "jobs:mode": "auto", "tokengate:enabled": true,
+            "tokengate:sharepct": 10, "tokengate:windowpct": 70, "tokengate:agents": 3, "tokengate:weekpct": 80,
+            "tokengate:sessionpct": 25,
+        });
     });
 
     it("leaves the backend-authoritative run route off the config path", () => {
@@ -395,13 +405,25 @@ describe("settings pages", () => {
     });
 });
 
+describe("stepWithin", () => {
+    it("moves by the step and stops at the bounds", () => {
+        expect(stepWithin(0, -1, RUNS_MAX_ACTIVE)).toBe(0);
+        expect(stepWithin(3, 1, RUNS_MAX_ACTIVE)).toBe(4);
+        expect(stepWithin(10, 1, RUNS_MAX_ACTIVE)).toBe(10);
+        expect(stepWithin(100, 1, TOKENGATE_PCT)).toBe(100);
+        expect(stepWithin(5, -1, TOKENGATE_PCT)).toBe(0);
+        expect(stepWithin(0, -1, TOKENGATE_PCT)).toBe(0);
+        expect(stepWithin(10, 1, TOKENGATE_AGENTS)).toBe(10);
+    });
+});
+
 describe("resolveSectionId", () => {
     it("sends a retired id to the page that holds its rows", () => {
         expect(resolveSectionId("fonts")).toBe("appearance");
         expect(resolveSectionId("notifications")).toBe("general");
-        expect(resolveSectionId("memory")).toBe("general");
+        expect(resolveSectionId("memory")).toBe("storage");
         expect(resolveSectionId("newagent")).toBe("agents");
-        expect(resolveSectionId("run")).toBe("agents");
+        expect(resolveSectionId("run")).toBe("runs");
         expect(resolveSectionId("claudeaccount")).toBe("agents");
     });
 

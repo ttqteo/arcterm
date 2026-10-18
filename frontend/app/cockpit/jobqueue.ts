@@ -67,6 +67,18 @@ export function paceValue(d: JobQueueData | null): string {
     return d.mode === "auto" || d.mode === "off" ? d.mode : String(d.slots);
 }
 
+/** The picker's value as settings.json holds it: Auto unless the mode is off or slots; a slot count clamped to 1-4 the
+ * way pkg/jobqueue's clampSlots reads it (unset or below 1 is 1). */
+export function paceOfSettings(mode: string | undefined, slots: number | undefined): string {
+    if (mode === "off") {
+        return "off";
+    }
+    if (mode === "slots") {
+        return String(Math.min(4, Math.max(1, slots ?? 1)));
+    }
+    return "auto";
+}
+
 /** The settings a picked value writes. A slot count writes the slots mode with it, so picking 2 after Auto counts
  * slots again. */
 export function pacePatch(value: string): SettingsType {
