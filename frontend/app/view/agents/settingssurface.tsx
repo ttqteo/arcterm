@@ -59,6 +59,8 @@ import { AgentsPage } from "./settingspages/agents";
 import { AppearancePage } from "./settingspages/appearance";
 import { BackgroundAIPage } from "./settingspages/backgroundai";
 import { GeneralPage } from "./settingspages/general";
+import { JarvisPage } from "./settingspages/jarvis";
+import { RunsPage } from "./settingspages/runs";
 import { StoragePage } from "./settingspages/storage";
 import { TerminalPage } from "./settingspages/terminal";
 import { pendingSettingsSectionAtom, takePendingSettingsSection } from "./settingsstore";
@@ -337,6 +339,8 @@ function SectionIndex({
     onQuery: (q: string) => void;
     changed: ReadonlySet<string>;
 }) {
+    const main = sections.filter((s) => !s.foot);
+    const foot = sections.filter((s) => s.foot);
     return (
         <div className="flex w-[240px] flex-none flex-col gap-3.5 border-r border-border px-3 py-4">
             <div className="flex h-[30px] flex-none items-center gap-2 rounded-sm border border-edge-mid bg-surface px-2.5">
@@ -350,36 +354,64 @@ function SectionIndex({
                     className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-primary outline-none placeholder:text-muted"
                 />
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto">
-                {sections.map((s) => {
-                    const on = s.id === selected;
-                    const n = changedCount(s, changed);
-                    return (
-                        <button
-                            key={s.id}
-                            type="button"
-                            data-section={s.id}
-                            onClick={() => onSelect(s.id)}
-                            className={cn(
-                                "flex h-8 w-full flex-none cursor-pointer items-center gap-2 rounded-sm px-2.5 text-left text-[13px] font-medium transition-colors",
-                                on ? "bg-surface-selected text-primary" : "text-ink-mid hover:bg-surface-hover"
-                            )}
-                        >
-                            <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                            {n > 0 ? (
-                                <span
-                                    data-section-changed={n}
-                                    className="flex flex-none items-center gap-[5px] text-[11px] font-semibold tabular-nums text-muted"
-                                >
-                                    <span className="h-[5px] w-[5px] rounded-full bg-accent" />
-                                    {n}
-                                </span>
-                            ) : null}
-                        </button>
-                    );
-                })}
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                <div className="flex flex-col gap-px">
+                    {main.map((s) => (
+                        <IndexItem key={s.id} section={s} selected={selected} onSelect={onSelect} changed={changed} />
+                    ))}
+                </div>
+                {foot.length > 0 ? (
+                    <div data-settings-foot className="mt-2.5 flex flex-col gap-px border-t border-border pt-px">
+                        {foot.map((s) => (
+                            <IndexItem
+                                key={s.id}
+                                section={s}
+                                selected={selected}
+                                onSelect={onSelect}
+                                changed={changed}
+                            />
+                        ))}
+                    </div>
+                ) : null}
             </div>
         </div>
+    );
+}
+
+function IndexItem({
+    section: s,
+    selected,
+    onSelect,
+    changed,
+}: {
+    section: SettingSectionDef;
+    selected: string | null;
+    onSelect: (id: string) => void;
+    changed: ReadonlySet<string>;
+}) {
+    const on = s.id === selected;
+    const n = changedCount(s, changed);
+    return (
+        <button
+            type="button"
+            data-section={s.id}
+            onClick={() => onSelect(s.id)}
+            className={cn(
+                "flex h-8 w-full flex-none cursor-pointer items-center gap-2 rounded-sm px-2.5 text-left text-[13px] font-medium transition-colors",
+                on ? "bg-surface-selected text-primary" : "text-ink-mid hover:bg-surface-hover"
+            )}
+        >
+            <span className="min-w-0 flex-1 truncate">{s.name}</span>
+            {n > 0 ? (
+                <span
+                    data-section-changed={n}
+                    className="flex flex-none items-center gap-[5px] text-[11px] font-semibold tabular-nums text-muted"
+                >
+                    <span className="h-[5px] w-[5px] rounded-full bg-accent" />
+                    {n}
+                </span>
+            ) : null}
+        </button>
     );
 }
 
@@ -403,6 +435,10 @@ function SectionBody({
             return <TerminalPage />;
         case "agents":
             return <AgentsPage model={model} runtime={runtime} onRuntime={onRuntime} />;
+        case "runs":
+            return <RunsPage />;
+        case "jarvis":
+            return <JarvisPage />;
         case "storage":
             return <StoragePage model={model} />;
         case "headless":

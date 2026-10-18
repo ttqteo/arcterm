@@ -1,7 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Settings > General: what opens at launch, when arcterm notifies, and where Jarvis keeps its vault.
+// Settings > General: what opens at launch, the menu bar icon, and when arcterm notifies. The vault card lives here
+// but is drawn on Storage & sync.
 
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -12,8 +13,6 @@ import { useAtom, useAtomValue } from "jotai";
 import { Folder, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { startupMenuEntries, startupSurfaceAtom, vaultPathError } from "../cockpitprefsstore";
-import { setSproutCorner, sproutSpotAtom } from "../floatstore";
-import { spotCorner, SPROUT_CORNER_LABEL, SPROUT_CORNERS } from "../floatwindow";
 import { railVisibleAtom } from "../railstore";
 import { vaultStatusLine, vaultSyncButton, vaultSyncFailureNote } from "../settingsmodel";
 import {
@@ -28,7 +27,6 @@ import {
     writeConfig,
 } from "../settingsui";
 import { TelegramRow } from "../telegramrow";
-import { autoSproutOn, minimizeChoice } from "../windowsize";
 
 export function GeneralPage() {
     return (
@@ -36,13 +34,12 @@ export function GeneralPage() {
             <SettingCard id="startup" label="Startup">
                 <StartupRows />
             </SettingCard>
+            <SettingCard id="menubar" label="Menu bar">
+                <MenuBarRows />
+            </SettingCard>
             <SettingCard id="notifications" label="Notifications">
                 <NotificationRows />
             </SettingCard>
-            <SettingCard id="window" label="Window">
-                <WindowRows />
-            </SettingCard>
-            <VaultCard />
         </>
     );
 }
@@ -101,55 +98,11 @@ function NotificationRows() {
     );
 }
 
-function WindowRows() {
-    const choice = minimizeChoice(useAtomValue(getSettingsKeyAtom("window:minimize")));
-    const autoSprout = autoSproutOn(useAtomValue(getSettingsKeyAtom("window:autosprout")));
+function MenuBarRows() {
     const trayOn = (useAtomValue(getSettingsKeyAtom("app:tray")) as boolean | undefined) ?? true;
     const trayMemory = (useAtomValue(getSettingsKeyAtom("app:traymemory")) as boolean | undefined) ?? true;
-    const corner = spotCorner(useAtomValue(sproutSpotAtom));
-    const cornerItems: ContextMenuItem[] = SPROUT_CORNERS.map((c) => ({
-        label: SPROUT_CORNER_LABEL[c],
-        type: "radio",
-        checked: corner === c,
-        click: () => fireAndForget(() => setSproutCorner(c)),
-    }));
-    const dock = isMacOS() ? "Dock" : "Taskbar";
-    const items: ContextMenuItem[] = [
-        {
-            label: "Sprout",
-            type: "radio",
-            checked: choice === "sprout",
-            sublabel: "Fold the window into Sprout, over every app",
-            click: () => writeConfig({ "window:minimize": "sprout" }),
-        },
-        {
-            label: dock,
-            type: "radio",
-            checked: choice === "dock",
-            sublabel: `Send the window to the ${dock.toLowerCase()}`,
-            click: () => writeConfig({ "window:minimize": "dock" }),
-        },
-    ];
     return (
         <>
-            <SettingRow id="window.minimize">
-                <Select value={choice} label={choice === "dock" ? dock : "Sprout"} items={items} ariaLabel="Minimize" />
-            </SettingRow>
-            <SettingRow id="window.sproutcorner">
-                <Select
-                    value={corner ?? "dragged"}
-                    label={corner == null ? "Where you dragged it" : SPROUT_CORNER_LABEL[corner]}
-                    items={cornerItems}
-                    ariaLabel="Fold to"
-                />
-            </SettingRow>
-            <SettingRow id="window.autosprout">
-                <Toggle
-                    on={autoSprout}
-                    onToggle={() => writeConfig({ "window:autosprout": !autoSprout })}
-                    label="Fold when you leave"
-                />
-            </SettingRow>
             <SettingRow id="app.tray">
                 <Toggle
                     on={trayOn}
@@ -171,7 +124,7 @@ function WindowRows() {
 // a waited sync runs a pull and a push; the 5 s default rpc timeout would give up on it mid-run
 const VAULT_SYNC_TIMEOUT_MS = 120_000;
 
-function VaultCard() {
+export function VaultCard() {
     const stored = (useAtomValue(getSettingsKeyAtom("memory:vaultpath")) as string) ?? "";
     const [error, setError] = useState<string | null>(null);
     const [status, setStatus] = useState<VaultStatusRtnData | null>(null);

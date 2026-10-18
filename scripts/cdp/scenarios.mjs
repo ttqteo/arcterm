@@ -9215,7 +9215,7 @@ const jarvisPet = {
             }
         );
 
-        // 23. the Spider theme: Claude's palette (its background kept) with a Spider-Man red accent
+        // 23. the Spider theme: Claude's palette (its background kept) with the suit's blue accent
         await h.goto("settings");
         const opened23 = await spOpen(h, "appearance");
         const picked23 =
@@ -9226,7 +9226,7 @@ const jarvisPet = {
             ));
         const themed23 = await polishWaitFor(
             h,
-            `getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim() === "#f05252"`,
+            `getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim() === "#7a9ce6"`,
             5000
         );
         const theme23 = await h.ev(`(() => {
@@ -9240,10 +9240,10 @@ const jarvisPet = {
         })()`);
         await h.shot("cdp-shots/jarvis-pet-23-spider-theme.png");
         rec(
-            "23. picking Spider in Settings → Appearance → Theme sets --color-accent to #f05252 and keeps --color-background at Claude's #1f1e1d",
+            "23. picking Spider in Settings → Appearance → Theme sets --color-accent to #7a9ce6 and keeps --color-background at Claude's #1f1e1d",
             picked23 === true &&
                 themed23 === true &&
-                theme23.accent === "#f05252" &&
+                theme23.accent === "#7a9ce6" &&
                 theme23.background === "#1f1e1d" &&
                 theme23.pressed === "true",
             { opened: opened23, picked: picked23, themed: themed23, ...theme23 }
@@ -37164,7 +37164,7 @@ const settingsPages = {
             `menu=${JSON.stringify(menu)} closed=${menuGone}`
         );
 
-        // appearance-detail: seven theme chips with one selected; each font option drawn in its own face
+        // appearance-detail: nine theme chips with one selected; each font option drawn in its own face
         await spOpen(h, "appearance");
         await polishWaitFor(h, `${spRow("fonts.mono")} != null`, 5000);
         const chips = await h.ev(`(() => {
@@ -37177,8 +37177,8 @@ const settingsPages = {
         await polishNap(200);
         await h.shot("cdp-shots/settings-pages-appearance-detail.png");
         rec(
-            "appearance-detail: seven theme chips, one selected; Fonts options each in their own face",
-            chips.count === 7 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
+            "appearance-detail: nine theme chips, one selected; Fonts options each in their own face",
+            chips.count === 9 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
             `chips=${JSON.stringify(chips)} sans=${JSON.stringify(sansFaces)} mono=${JSON.stringify(monoFaces)}`
         );
 
