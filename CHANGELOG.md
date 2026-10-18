@@ -57,6 +57,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A Claude agent watching something with a Monitor counts as having background work: its details list the Monitor,
+  and it is neither put to sleep nor offered Close until the Monitor ends. A background command that never started
+  (refused by a hook) no longer keeps an agent awake as if it were still running.
 - An HTML page in Code or the agent panel's File tab opens where you left it after you switch to another surface or
   file and come back, or an agent rewrites it, instead of jumping back to the top.
 - Resting the pointer on an HTML or PDF preview no longer hangs a chip with the file's path over the path bar.

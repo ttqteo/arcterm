@@ -37,7 +37,7 @@ type Candidate struct {
 	RunOwned                bool      // the lead or a worker of a run: the engine owns it
 	SessionKnown            bool      // --resume has a session to reopen
 	Viewing                 bool      // the focused agent, or a pane showing in the Agent grid
-	BackgroundRunning       bool      // a Claude background shell task is alive under it
+	BackgroundRunning       bool      // a Claude background shell task or Monitor is alive under it
 	SubagentsRunning        bool      // a subagent is alive under it
 	CPUIdle                 bool      // CPURing.Idle over CPUWindow
 }

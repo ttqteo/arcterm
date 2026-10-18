@@ -21,10 +21,14 @@ import (
 var shellTools = map[string]bool{"Bash": true, "PowerShell": true}
 
 var (
-	bgIDText     = regexp.MustCompile(`running in background with ID: ([A-Za-z0-9_-]+)`)
-	toolUseIDTag = regexp.MustCompile(`<tool-use-id>([^<]+)</tool-use-id>`)
-	statusTag    = regexp.MustCompile(`<status>([^<]+)</status>`)
-	taskIDTag    = regexp.MustCompile(`<task-id>([^<]+)</task-id>`)
+	bgIDText = regexp.MustCompile(`running in background with ID: ([A-Za-z0-9_-]+)`)
+	// a Monitor's start result: "Monitor started (task <id>, expires in 30m…"
+	monitorIDText = regexp.MustCompile(`Monitor started \(task ([A-Za-z0-9_-]+)`)
+	// a Monitor's expiry comes as one of its events, which name only its task id and carry no status
+	monitorExpired = regexp.MustCompile(`<event>\s*\[Monitor expired\b`)
+	toolUseIDTag   = regexp.MustCompile(`<tool-use-id>([^<]+)</tool-use-id>`)
+	statusTag      = regexp.MustCompile(`<status>([^<]+)</status>`)
+	taskIDTag      = regexp.MustCompile(`<task-id>([^<]+)</task-id>`)
 )
 
 const (
@@ -46,13 +50,14 @@ type bgTask struct {
 	status string
 }
 
-// BackgroundRunning returns the labels of the background shell tasks a Claude transcript started that have
-// not finished, in first-seen order. lines are the transcript's JSONL records (a tail is enough); a line that
-// does not parse is skipped. A task counts as running until its <task-notification> (joined by tool-use-id,
-// or by task id for a resumed session's orphan summary) or a later TaskStop/KillShell says otherwise.
-// Background subagents are not shell tasks; the caller lists those separately.
+// BackgroundRunning returns the labels of the background shell tasks and Monitors a Claude transcript started
+// that have not finished, in first-seen order. lines are the transcript's JSONL records (a tail is enough); a
+// line that does not parse is skipped. A task counts as running until its <task-notification> (joined by
+// tool-use-id, or by task id for a resumed session's orphan summary), a Monitor's expiry notice or a later
+// TaskStop/KillShell says otherwise. Background subagents are not shell tasks; the caller lists those separately.
 func BackgroundRunning(lines []string) []string {
-	calls := map[string]string{} // tool-use id -> label, for every shell call
+	calls := map[string]string{} // tool-use id -> label, for every shell and Monitor call
+	monitors := map[string]bool{}
 	tasks := map[string]*bgTask{}
 	var order []*bgTask
 	byTaskId := map[string]*bgTask{}
@@ -86,8 +91,10 @@ func BackgroundRunning(lines []string) []string {
 				name, _ := block["name"].(string)
 				input, _ := block["input"].(map[string]any)
 				switch {
-				case shellTools[name]:
+				case shellTools[name] || name == "Monitor":
+					// a Monitor always runs in the background, but is a task only once its result names its id
 					calls[id] = callLabel(input)
+					monitors[id] = name == "Monitor"
 					if background, _ := input["run_in_background"].(bool); background {
 						startTask(id)
 					}
@@ -108,19 +115,29 @@ func BackgroundRunning(lines []string) []string {
 				if _, isShell := calls[useId]; !isShell {
 					continue
 				}
-				taskId, fromRecord := dig(rec, "toolUseResult", "backgroundTaskId").(string)
+				idField, idText := "backgroundTaskId", bgIDText
+				if monitors[useId] {
+					idField, idText = "taskId", monitorIDText
+				}
+				taskId, fromRecord := dig(rec, "toolUseResult", idField).(string)
 				if !fromRecord {
-					if m := bgIDText.FindStringSubmatch(toolResultText(block["content"])); m != nil {
+					if m := idText.FindStringSubmatch(toolResultText(block["content"])); m != nil {
 						taskId = m[1]
 					}
 				}
 				if taskId != "" {
 					byTaskId[taskId] = startTask(useId)
+				} else if isError, _ := block["is_error"].(bool); isError && tasks[useId] != nil {
+					// refused before it started (a hook's deny, a bad input): it never ran
+					tasks[useId].status = bgDone
 				}
 			}
 		}
 		for _, text := range notificationTexts(rec) {
 			status := notifiedStatus[match1(statusTag, text)]
+			if status == "" && monitorExpired.MatchString(text) {
+				status = bgDone
+			}
 			if status == "" {
 				continue
 			}

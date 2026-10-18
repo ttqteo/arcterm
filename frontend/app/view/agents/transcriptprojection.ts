@@ -443,6 +443,10 @@ export function runningBackgroundTasks(tasks: BackgroundTask[] | undefined): Bac
 const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
 
 const BG_ID_TEXT = /running in background with ID: ([A-Za-z0-9_-]+)/;
+// a Monitor's start result: "Monitor started (task <id>, expires in 30m…"
+const MONITOR_ID_TEXT = /Monitor started \(task ([A-Za-z0-9_-]+)/;
+// a Monitor's expiry comes as one of its events, which name only its task id and carry no status
+const MONITOR_EXPIRED = /<event>\s*\[Monitor expired\b/;
 // the start result's "Output is being written to: <path>. You will be notified…"; the path runs to the sentence's end
 const BG_OUTPUT_TEXT = /Output is being written to: (.+?)\.(?:\s|$)/;
 
@@ -479,12 +483,12 @@ function notificationTexts(rec: any): string[] {
 
 /** Pure: the shell (Bash/PowerShell) commands a Claude transcript ran in the background — started with
  *  run_in_background, or a foreground command auto-backgrounded at its timeout (its result carries a
- *  backgroundTaskId) — each with the
- *  status its <task-notification> (joined by tool-use-id) or a later TaskStop/KillShell gave it. Unresolved
- *  tasks stay "running"; the caller decides what that means for a session that is no longer live. First-seen
- *  order. Background subagents are left to extractSubagentSpawns. */
+ *  backgroundTaskId) — and the Monitors it armed (a task once its result names the task id), each with the
+ *  status its <task-notification> (joined by tool-use-id), a Monitor's expiry notice or a later TaskStop/KillShell
+ *  gave it. Unresolved tasks stay "running"; the caller decides what that means for a session that is no longer
+ *  live. First-seen order. Background subagents are left to extractSubagentSpawns. */
 export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
-    const calls = new Map<string, { label: string; command?: string; ts: number }>();
+    const calls = new Map<string, { label: string; command?: string; ts: number; monitor: boolean }>();
     const tasks = new Map<string, BackgroundTask>();
     const byTaskId = new Map<string, BackgroundTask>();
     const startTask = (toolUseId: string): BackgroundTask | undefined => {
@@ -516,10 +520,11 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
             for (const block of content) {
                 if (block?.type === "tool_use" && typeof block.id === "string") {
                     const input = block.input ?? {};
-                    if (SHELL_TOOLS.has(block.name)) {
+                    if (SHELL_TOOLS.has(block.name) || block.name === "Monitor") {
                         const command = typeof input.command === "string" ? input.command : undefined;
                         const desc = typeof input.description === "string" ? input.description.trim() : "";
-                        calls.set(block.id, { label: desc || command || "background command", command, ts });
+                        const monitor = block.name === "Monitor";
+                        calls.set(block.id, { label: desc || command || "background command", command, ts, monitor });
                         if (input.run_in_background === true) {
                             startTask(block.id);
                         }
@@ -531,14 +536,15 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
                         }
                     }
                 } else if (block?.type === "tool_result" && typeof block.tool_use_id === "string") {
-                    if (!calls.has(block.tool_use_id)) {
+                    const call = calls.get(block.tool_use_id);
+                    if (!call) {
                         continue;
                     }
-                    const fromRecord = rec?.toolUseResult?.backgroundTaskId;
+                    const fromRecord = call.monitor ? rec?.toolUseResult?.taskId : rec?.toolUseResult?.backgroundTaskId;
                     const taskId =
                         typeof fromRecord === "string"
                             ? fromRecord
-                            : BG_ID_TEXT.exec(toolResultText(block.content))?.[1];
+                            : (call.monitor ? MONITOR_ID_TEXT : BG_ID_TEXT).exec(toolResultText(block.content))?.[1];
                     if (taskId) {
                         const t = startTask(block.tool_use_id)!;
                         t.taskId = taskId;
@@ -547,6 +553,9 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
                         if (outputFile) {
                             t.outputFile = outputFile;
                         }
+                    } else if (block.is_error === true) {
+                        // refused before it started (a hook's deny, a bad input): it never ran
+                        tasks.delete(block.tool_use_id);
                     }
                 }
             }
@@ -554,7 +563,9 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
         if (line.includes("<task-notification>")) {
             for (const text of notificationTexts(rec)) {
                 const toolUseId = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(text)?.[1]?.trim();
-                const status = NOTIFIED_STATUS[/<status>([^<]+)<\/status>/.exec(text)?.[1]?.trim() ?? ""];
+                const status =
+                    NOTIFIED_STATUS[/<status>([^<]+)<\/status>/.exec(text)?.[1]?.trim() ?? ""] ??
+                    (MONITOR_EXPIRED.test(text) ? "stopped" : undefined);
                 const outputFile = /<output-file>([^<]+)<\/output-file>/.exec(text)?.[1]?.trim();
                 // a resumed session's orphan summary carries no tool-use-id, only one <task-id> per unfinished task
                 const targets = toolUseId

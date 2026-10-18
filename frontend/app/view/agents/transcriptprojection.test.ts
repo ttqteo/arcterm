@@ -585,10 +585,77 @@ describe("extractBackgroundTasks", () => {
         ]);
     });
 
+    it("a background command refused before it started is not a task", () => {
+        const refused = JSON.stringify({
+            type: "user",
+            message: {
+                content: [
+                    {
+                        type: "tool_result",
+                        tool_use_id: "t11",
+                        content: "<tool_use_error>Refused by arcterm: drop the stdout redirect</tool_use_error>",
+                        is_error: true,
+                    },
+                ],
+            },
+        });
+        const lines = [bash("t11", { command: "make > out.log", run_in_background: true }), refused];
+        expect(extractBackgroundTasks(lines)).toEqual([]);
+    });
+
     it("a start whose result is not in the tail stays running with no task id", () => {
         expect(extractBackgroundTasks([bash("t6", { command: "sleep 99", run_in_background: true })])).toEqual([
             { toolUseId: "t6", label: "sleep 99", command: "sleep 99", status: "running" },
         ]);
+    });
+
+    const monitor = (id: string) =>
+        asst([
+            {
+                type: "tool_use",
+                id,
+                name: "Monitor",
+                input: { description: "Fit progress", command: "tail -f fit.log", timeout_ms: 1800000 },
+            },
+        ]);
+    // an event notification names only the task id and carries no status; the expiry notice is one of them
+    const monitorEvent = (taskId: string, event: string) =>
+        JSON.stringify({
+            type: "user",
+            message: {
+                content: `<task-notification>\n<task-id>${taskId}</task-id>\n<summary>Monitor event: "Fit progress"</summary>\n<event>${event}</event>\n</task-notification>`,
+            },
+        });
+
+    it("a Monitor is a task from its start result until its stream ends, through its events", () => {
+        const start = [
+            monitor("m1"),
+            result("m1", "Monitor started (task bm1, expires in 30m unless the source ends first).", {
+                toolUseResult: { taskId: "bm1", timeoutMs: 1800000, persistent: false },
+            }),
+            monitorEvent("bm1", "epoch 3/30"),
+        ];
+        expect(extractBackgroundTasks(start)).toEqual([
+            { toolUseId: "m1", taskId: "bm1", label: "Fit progress", command: "tail -f fit.log", status: "running" },
+        ]);
+        expect(extractBackgroundTasks([...start, notify("m1", "completed")])[0].status).toBe("completed");
+        expect(extractBackgroundTasks([...start, notify("m1", "killed")])[0].status).toBe("stopped");
+    });
+
+    it("a Monitor's expiry notice stops it", () => {
+        const lines = [
+            monitor("m2"),
+            result("m2", "Monitor started (task bm2, expires in 30m unless the source ends first)."),
+            monitorEvent(
+                "bm2",
+                "[Monitor expired after 30m with no events delivered. Re-arm it if you still need the watch.]"
+            ),
+        ];
+        expect(extractBackgroundTasks(lines)[0]).toMatchObject({ taskId: "bm2", status: "stopped" });
+    });
+
+    it("a Monitor whose start was refused is not a task", () => {
+        expect(extractBackgroundTasks([monitor("m3"), result("m3", "Monitor is not available")])).toEqual([]);
     });
 });
 

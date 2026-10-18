@@ -141,6 +141,14 @@ func TestBackgroundRunningAPowerShellBackgroundCommandIsATaskToo(t *testing.T) {
 	want(t, lines, "npm run dev")
 }
 
+func TestBackgroundRunningABackgroundCommandRefusedBeforeItStartedIsNotATask(t *testing.T) {
+	refused := line(t, m{"type": "user", "message": m{"content": []any{m{
+		"type": "tool_result", "tool_use_id": "t11", "is_error": true,
+		"content": "<tool_use_error>Refused by arcterm: drop the stdout redirect</tool_use_error>",
+	}}}})
+	want(t, []string{bash(t, "t11", m{"command": "make > out.log", "run_in_background": true}), refused})
+}
+
 func TestBackgroundRunningAStartWhoseResultIsNotInTheTailStaysRunning(t *testing.T) {
 	want(t, []string{bash(t, "t6", m{"command": "sleep 99", "run_in_background": true})}, "sleep 99")
 }
@@ -152,6 +160,44 @@ func TestBackgroundRunningLabelsFallBackToTheCommandThenAGenericName(t *testing.
 		bash(t, "c", m{"run_in_background": true}),
 	}
 	want(t, lines, "Wait a second", "sleep 2", "background command")
+}
+
+func monitor(t *testing.T, id string) string {
+	return asst(t, toolUse(id, "Monitor", m{"description": "Fit progress", "command": "tail -f fit.log", "timeout_ms": 1800000}))
+}
+
+// monitorEvent names only the task id and carries no status; the expiry notice is one of them.
+func monitorEvent(t *testing.T, taskID, event string) string {
+	return line(t, m{"type": "user", "message": m{
+		"content": "<task-notification>\n<task-id>" + taskID + "</task-id>\n<summary>Monitor event: \"Fit progress\"</summary>\n<event>" + event + "</event>\n</task-notification>",
+	}})
+}
+
+func TestBackgroundRunningAMonitorIsATaskFromItsStartResultUntilItsStreamEnds(t *testing.T) {
+	start := []string{
+		monitor(t, "m1"),
+		result(t, "m1", "Monitor started (task bm1, expires in 30m unless the source ends first).",
+			m{"toolUseResult": m{"taskId": "bm1", "timeoutMs": 1800000, "persistent": false}}),
+		monitorEvent(t, "bm1", "epoch 3/30"),
+	}
+	want(t, start, "Fit progress")
+	want(t, append(append([]string{}, start...), notify(t, "m1", "completed")))
+	want(t, append(append([]string{}, start...), notify(t, "m1", "killed")))
+	want(t, append(append([]string{}, start...), asst(t, toolUse("s1", "TaskStop", m{"task_id": "bm1"}))))
+}
+
+func TestBackgroundRunningAMonitorsExpiryNoticeStopsIt(t *testing.T) {
+	lines := []string{
+		monitor(t, "m2"),
+		result(t, "m2", "Monitor started (task bm2, expires in 30m unless the source ends first).", nil),
+		monitorEvent(t, "bm2", "[Monitor expired after 30m with no events delivered. Re-arm it if you still need the watch.]"),
+	}
+	want(t, lines)
+	want(t, lines[:2], "Fit progress") // the id came from the text, so the expiry found the task
+}
+
+func TestBackgroundRunningAMonitorWhoseStartWasRefusedIsNotATask(t *testing.T) {
+	want(t, []string{monitor(t, "m3"), result(t, "m3", "Monitor is not available", nil)})
 }
 
 func TestBackgroundRunningKeepsFirstSeenOrder(t *testing.T) {
