@@ -67,6 +67,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Settings → Storage shows a clean as it happens: Remove reads Removing… with a spinner until the folder is
+  gone, the card's own button reads Cleaning…, and the row leaves as soon as the clean ends instead of after the rescan.
 - Skim highlights every sentence Claude marks in a reply, not only the first four: the fifth on no longer draws as
   plain text, nor dims with the rest. A reply marked through most of its length draws in full instead of dimmed.
 - A Claude agent watching something with a Monitor counts as having background work: its details list the Monitor,

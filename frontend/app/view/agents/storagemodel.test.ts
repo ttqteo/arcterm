@@ -13,6 +13,7 @@ import {
     skippedOf,
     storageCards,
     usedTotal,
+    withoutCleaned,
 } from "./storagemodel";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -315,5 +316,27 @@ describe("lastUsedText", () => {
 describe("sessionRows", () => {
     it("treats a missing time as old", () => {
         expect(sessionRows([item("x", { kind: "session" })], "90", NOW).map((r) => r.id)).toEqual(["x"]);
+    });
+});
+
+describe("withoutCleaned", () => {
+    it("drops what a clean took, takes its bytes off its category and says a scan is under way", () => {
+        const after = withoutCleaned(report, ["a", "/p/target"]);
+        expect(after.scanning).toBe(true);
+        const build = after.categories.find((c) => c.category === "buildoutput");
+        expect(build?.items).toEqual([]);
+        expect(build?.bytes).toBe(0);
+        expect(build?.cleanablebytes).toBe(0);
+        const trees = after.categories.find((c) => c.category === "runworktrees");
+        expect(trees?.items.map((i) => i.id)).toEqual(["b", "c"]);
+        expect(trees?.bytes).toBe(20 * MB);
+        expect(trees?.cleanablebytes).toBe(0);
+        expect(usedTotal(after)).toBe(usedTotal(report) - 3 * GB - 10 * MB);
+    });
+    it("leaves a category the clean did not touch as it was", () => {
+        const after = withoutCleaned(report, ["a"]);
+        expect(after.categories.find((c) => c.category === "sessions")).toBe(
+            report.categories.find((c) => c.category === "sessions")
+        );
     });
 });

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Storage report the page and the nudge share: one atom, loaded on mount and replaced by every storage:scan
-// event, and the reasons the last clean skipped items, by item id.
+// event, the reasons the last clean skipped items, by item id, and the items a clean is removing now.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
@@ -11,11 +11,13 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { useEffect } from "react";
-import { skippedOf } from "./storagemodel";
+import { skippedOf, withoutCleaned } from "./storagemodel";
 
 export const storageReportAtom = atom<StorageReport | null>(null) as PrimitiveAtom<StorageReport | null>;
 // a skip reason lasts until the next clean or Rescan, so the map neither grows nor goes stale
 export const storageSkippedAtom = atom<Record<string, string>>({}) as PrimitiveAtom<Record<string, string>>;
+// the ids a clean has in hand, so their buttons say Removing… until the RPC returns
+export const storageCleaningAtom = atom<Record<string, true>>({}) as PrimitiveAtom<Record<string, true>>;
 
 // removing a cargo target or node_modules can take a while: the RPC must outlast it
 const CLEAN_TIMEOUT_MS = 10 * 60_000;
@@ -56,13 +58,27 @@ export async function cleanStorage(
     itemids: string[],
     opts: { olderthandays?: number; allowguarded?: boolean } = {}
 ): Promise<StorageCleanResult> {
-    const result = await RpcApi.CleanStorageCommand(
-        TabRpcClient,
-        { category, itemids, ...opts },
-        { timeout: CLEAN_TIMEOUT_MS }
-    );
-    globalStore.set(storageSkippedAtom, skippedOf(result));
-    return result;
+    const scannedBefore = globalStore.get(storageReportAtom)?.scannedts;
+    globalStore.set(storageCleaningAtom, (m) => ({ ...m, ...Object.fromEntries(itemids.map((id) => [id, true])) }));
+    try {
+        const result = await RpcApi.CleanStorageCommand(
+            TabRpcClient,
+            { category, itemids, ...opts },
+            { timeout: CLEAN_TIMEOUT_MS }
+        );
+        globalStore.set(storageSkippedAtom, skippedOf(result));
+        // the server rescans after a clean, which takes seconds: drop what went now, unless that scan already landed
+        globalStore.set(storageReportAtom, (r) =>
+            r == null || r.scannedts !== scannedBefore ? r : withoutCleaned(r, result.cleaned ?? [])
+        );
+        return result;
+    } finally {
+        globalStore.set(storageCleaningAtom, (m) => {
+            const next = { ...m };
+            itemids.forEach((id) => delete next[id]);
+            return next;
+        });
+    }
 }
 
 /** Starts a scan. The head says Scanning… at once, set before the RPC goes out: the server publishes only when a

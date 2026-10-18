@@ -12,7 +12,7 @@ import { getSettingsKeyAtom } from "@/app/store/global";
 import { modalsModel } from "@/app/store/modalmodel";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { showCanvases } from "../agentcenter";
 import type { AgentsViewModel } from "../agents";
@@ -38,13 +38,19 @@ import {
     type StorageCard,
     type StorageRow,
 } from "../storagemodel";
-import { cleanStorage, rescanStorage, storageSkippedAtom, useStorageReport } from "../storagestore";
+import {
+    cleanStorage,
+    rescanStorage,
+    storageCleaningAtom,
+    storageSkippedAtom,
+    useStorageReport,
+} from "../storagestore";
 import { VaultCard } from "./general";
 
 type Category = (typeof CARD_ORDER)[number];
 
 const BUTTON =
-    "flex-none cursor-pointer rounded-sm border border-edge-mid px-2.5 py-1 text-[12px] font-semibold text-ink-mid transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-default disabled:opacity-50";
+    "inline-flex flex-none cursor-pointer items-center gap-1.5 rounded-sm border border-edge-mid px-2.5 py-1 text-[12px] font-semibold text-ink-mid transition-colors hover:bg-surface-hover hover:text-primary disabled:cursor-default disabled:opacity-50";
 const ROWS_SHOWN = 5;
 // the cards whose head counts their rows, in the singular and the plural
 const COUNT_NOUN: Partial<Record<Category, [string, string]>> = {
@@ -63,6 +69,7 @@ type Entry = {
     why?: string;
     warn: boolean;
     onRemove?: () => void;
+    busy: boolean; // a clean is removing it now
     folders?: Entry[];
 };
 
@@ -96,7 +103,13 @@ function runClean(card: StorageCard, rows: StorageRow[], days: SessionDays, guar
     });
 }
 
-function entriesOf(category: Category, card: StorageCard | null, days: SessionDays, now: number): Entry[] {
+function entriesOf(
+    category: Category,
+    card: StorageCard | null,
+    days: SessionDays,
+    now: number,
+    cleaning: Record<string, true>
+): Entry[] {
     // canvases are listed and cleaned in the gallery; here they are a size and a count
     if (card == null || category === "canvases") {
         return [];
@@ -113,6 +126,7 @@ function entriesOf(category: Category, card: StorageCard | null, days: SessionDa
             bytes: p.bytes,
             why: p.reason ?? p.skipped,
             warn: false,
+            busy: p.ids.some((id) => cleaning[id]),
             onRemove:
                 p.ids.length > 0
                     ? () =>
@@ -130,6 +144,7 @@ function entriesOf(category: Category, card: StorageCard | null, days: SessionDa
                 bytes: r.bytes,
                 why: r.skipped,
                 warn: r.skipped != null,
+                busy: !!cleaning[r.id],
                 onRemove: r.cleanable ? () => runClean(card, [r], days, false) : undefined,
             })),
         }));
@@ -141,12 +156,22 @@ function entriesOf(category: Category, card: StorageCard | null, days: SessionDa
         bytes: r.bytes,
         why: r.reason ?? r.skipped,
         warn: !!r.guarded || r.skipped != null,
+        busy: !!cleaning[r.id],
         // a run worktree and a package cache have their own button; a guarded tree's confirm says what is lost
         onRemove:
             (category === "runworktrees" && (r.cleanable || r.guarded)) || (category === "packagecaches" && r.cleanable)
                 ? () => runClean(card, [r], days, !!r.guarded)
                 : undefined,
     }));
+}
+
+function Busy({ label }: { label: string }) {
+    return (
+        <>
+            <Loader2 size={12} aria-hidden className="animate-spin motion-reduce:animate-none" />
+            {label}
+        </>
+    );
 }
 
 function EntryRow({ e, nested }: { e: Entry; nested?: boolean }) {
@@ -201,8 +226,15 @@ function EntryRow({ e, nested }: { e: Entry; nested?: boolean }) {
                     </span>
                 ) : null}
                 {e.onRemove ? (
-                    <button type="button" data-storage-remove className={BUTTON} onClick={e.onRemove}>
-                        Remove
+                    <button
+                        type="button"
+                        data-storage-remove
+                        data-storage-busy={e.busy ? "" : undefined}
+                        className={BUTTON}
+                        disabled={e.busy}
+                        onClick={e.onRemove}
+                    >
+                        {e.busy ? <Busy label="Removing…" /> : "Remove"}
                     </button>
                 ) : null}
             </div>
@@ -229,9 +261,11 @@ function CategoryCard({
     const [open, setOpen] = useState(false);
     const copy = CARD_COPY[category];
     const noun = COUNT_NOUN[category];
-    const entries = entriesOf(category, card, days, now);
+    const cleaning = useAtomValue(storageCleaningAtom);
+    const entries = entriesOf(category, card, days, now, cleaning);
     const shown = open ? entries : entries.slice(0, ROWS_SHOWN);
     const ids = card != null ? cleanAllIds(card) : [];
+    const cleaningAll = ids.some((id) => cleaning[id]);
     return (
         <SettingCard
             id={category}
@@ -283,8 +317,9 @@ function CategoryCard({
                         <button
                             type="button"
                             data-storage-clean={category}
+                            data-storage-busy={cleaningAll ? "" : undefined}
                             className={BUTTON}
-                            disabled={ids.length === 0}
+                            disabled={ids.length === 0 || cleaningAll}
                             onClick={() =>
                                 runClean(
                                     card,
@@ -294,8 +329,14 @@ function CategoryCard({
                                 )
                             }
                         >
-                            {copy.action}
-                            {ids.length > 0 ? ` · ${formatSize(card.cleanableBytes)}` : ""}
+                            {cleaningAll ? (
+                                <Busy label="Cleaning…" />
+                            ) : (
+                                <>
+                                    {copy.action}
+                                    {ids.length > 0 ? ` · ${formatSize(card.cleanableBytes)}` : ""}
+                                </>
+                            )}
                         </button>
                     ) : null}
                 </div>

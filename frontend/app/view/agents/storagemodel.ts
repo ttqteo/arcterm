@@ -194,6 +194,29 @@ export function usedTotal(report: StorageReport | null): number {
     return sum(own.map((c) => c.bytes)) + (report.storebytes ?? 0);
 }
 
+/** The report once a clean has taken `cleaned`: those items gone, their bytes off their category, and a scan under
+ *  way, which pkg/storage starts after every clean and whose report replaces this one. */
+export function withoutCleaned(report: StorageReport, cleaned: string[]): StorageReport {
+    const gone = new Set(cleaned);
+    return {
+        ...report,
+        scanning: true,
+        categories: (report.categories ?? []).map((c) => {
+            const taken = (c.items ?? []).filter((i) => gone.has(i.id));
+            if (taken.length === 0) {
+                return c;
+            }
+            const cleanable = taken.filter((i) => i.cleanable);
+            return {
+                ...c,
+                bytes: Math.max(0, c.bytes - sum(taken.map((i) => i.bytes))),
+                cleanablebytes: Math.max(0, c.cleanablebytes - sum(cleanable.map((i) => i.bytes))),
+                items: c.items.filter((i) => !gone.has(i.id)),
+            };
+        }),
+    };
+}
+
 export function shouldNudge(cleanableBytes: number, nudgeGb: number, lastDay: string | null, today: string): boolean {
     return nudgeGb > 0 && cleanableBytes > nudgeGb * GB && lastDay !== today;
 }
