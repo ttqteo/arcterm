@@ -173,7 +173,7 @@ mỗi người nhận ra nhờ kiểu tóc, và sếp (bạn) đội mũ. Phòng
   còn làm có đèn bàn. Quota 5 giờ từ 70 % thì có người ngáp, từ 90 % thì có cà phê trên bàn; quota reset thì mọi
   người vươn vai. `⚡` trên thanh HUD là năng lượng còn lại: 100 % trừ phần quota đã dùng (dùng 4 % thì hiện
   `⚡ 96 %`), còn 10 % trở xuống thì chuyển màu vàng.
-- **Settings → Appearance → Office** tắt animation và đổi giờ làm. Văn phòng tốn bao nhiêu thì xem ở **panel
+- **Settings → Jarvis & Office → Office** tắt animation và đổi giờ làm. Văn phòng tốn bao nhiêu thì xem ở **panel
   Consumers** (bấm chip RAM): dòng **Office** cho biết JS của văn phòng, số người, ảnh sprite và DOM node, kèm nút tắt
   animation.
 
@@ -431,16 +431,16 @@ Một con vật pixel nhỏ đi dọc mép trên của footer trên mọi surfac
   chat đang thu hiện thành bong bóng cạnh nó, nhường chỗ cho thẻ khi bạn rê chuột lên. Bấm icon arcterm trên taskbar
   (Dock trên macOS), hay rời sang app khác rồi Alt+Tab (`⌘Tab`) về arcterm, cũng đưa cửa sổ về, kể cả khi không thấy
   con vật đâu: trên Windows nó mở Full, maximized, dù đã thu từ cỡ nào; trên macOS nó về đúng cỡ lúc thu.
-  Muốn nút minimize về Dock (taskbar trên Windows) như thường: **Settings → General → Window → Minimize**.
+  Muốn nút minimize về Dock (taskbar trên Windows) như thường: **Settings → Jarvis & Office → Folding → Minimize**.
   Sprout thu về góc dưới phải màn hình, hoặc về chỗ bạn kéo nó tới lần trước. Muốn chọn góc khác (trên trái, trên
-  phải, dưới trái, dưới phải): chuột phải nút **Sprout** trên app bar → **Fold to**, hoặc **Settings → General →
-  Window → Fold to**; đang thu thì Sprout chuyển sang góc đó ngay.
+  phải, dưới trái, dưới phải): chuột phải nút **Sprout** trên app bar → **Fold to**, hoặc **Settings → Jarvis & Office →
+  Folding → Fold to**; đang thu thì Sprout chuyển sang góc đó ngay.
   Muốn cửa sổ tự thu vào Sprout khi bạn chuyển sang một app che gần hết arcterm (từ 80% trở lên: maximize, fullscreen
   hay một cửa sổ to đè lên; app nằm cạnh, ở màn hình khác, chụp màn hình hay khoá máy thì không thu) và tự mở ra khi
   bạn quay lại arcterm (Alt+Tab, taskbar, bấm vào cửa sổ): chuột phải nút **Sprout** trên app bar → **Fold when you
-  leave arcterm**, hoặc **Settings → General → Window**.
+  leave arcterm**, hoặc **Settings → Jarvis & Office → Folding**.
 - Popup cũng là nơi **peek** hiển thị: `Space` trên một thẻ/hàng, hoặc giữ `Ctrl` rồi bấm một liên kết (`Cmd`+bấm trên macOS), mở run, agent, record hay initiative trong popup mà không đổi lựa chọn ở surface bên dưới. `Backspace` về màn đầu của popup, `Enter` mở mục đó đúng chỗ của nó.
-- Đổi nhân vật (Sprout hoặc Minion một mắt) và trang phục (áo cờ, cầm cờ hoặc tắt) ở **Settings → Appearance**.
+- Đổi nhân vật (Sprout hoặc Minion một mắt) và trang phục (áo cờ, cầm cờ hoặc tắt) ở **Settings → Jarvis & Office**.
 
 Chi tiết các hành động và cách con vật "nói" nằm ở [Jarvis](jarvis.md).
 

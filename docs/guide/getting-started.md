@@ -106,7 +106,7 @@ Hỏi đường dẫn thật ngay trong terminal của arcterm: `wsh wavepath da
 
 - **Log**: host Tauri ghi stderr của `wavesrv` (kể cả stack khi panic), các dòng `fe-log` của frontend và các dòng `[tauri]` của chính nó, có timestamp, vào `waveapp.log` trong `data\`. Quá 10 MB thì chuyển thành `waveapp.1.log` (giữ một bản). Dòng `[tauri] wavesrv stderr closed` đánh dấu lúc backend thoát.
 - **Xóa dữ liệu dev**: dừng app dev rồi chạy `task dev:cleardata` (kho dữ liệu) hoặc `task dev:clearconfig` (cấu hình). Thư mục `EBWebView` xóa tay.
-- **Ngoài hai thư mục trên**: `~/.arc/` (wsh, mod Claude, `trash/` cho session đã xóa, giữ 7 ngày) và vault, mặc định `~/.waveterm/vault` (đổi ở **Settings → General → Vault & sync**).
+- **Ngoài hai thư mục trên**: `~/.arc/` (wsh, mod Claude, `trash/` cho session đã xóa, giữ 7 ngày) và vault, mặc định `~/.waveterm/vault` (đổi ở **Settings → Storage & sync → Vault & sync**).
 
 Khi dev, đừng dừng app bằng tên tiến trình: bản dev và bản đã cài dùng chung tên `wave-tauri.exe` và `wavesrv.x64.exe`, nên `taskkill /IM` giết luôn arcterm bạn đang dùng. Dừng theo PID của tiến trình nằm trong thư mục repo (`src-tauri\target`, `dist\bin`). Agent chạy trong arcterm còn bị chặn không cho làm việc này (xem [Tích hợp agent](agent-integration.md#mod-claude)).
 

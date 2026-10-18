@@ -55,7 +55,7 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | `Mod`+`Shift`+`W` | Close the agent or terminal in focus, as a terminal app closes its tab: the pane you are typing in, else the selected agent. Works from inside the terminal and asks first. It has no plain `Mod`+`W` form: on Windows `Ctrl`+`W` deletes a word in the terminal, and a Mac uses the same shape |
 | `Cmd`+`K` (macOS) | Clear the focused terminal's screen |
 | `Mod`+`=` / `Mod`+`-` / `Mod`+`0` | Zoom the window in / out / back to 100% (`Cmd` on macOS) |
-| `Mod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal; folded, the same key brings the window back. Settings → General → Window → Minimize: Dock sends it to the Dock or taskbar instead |
+| `Mod`+`M` | Fold the window into Sprout, from the cockpit or a float, even from inside a terminal; folded, the same key brings the window back. Settings → Jarvis & Office → Folding → Minimize: Dock sends it to the Dock or taskbar instead |
 
 Setup and Settings have no `Mod`+number slot — the positions are bound to `SURFACE_ORDER`
 (`frontend/app/view/agents/agents.tsx`), which excludes them. Reach Setup with `Mod`+`G` `.` and Settings with `Mod`+`,` or `Mod`+`G` `,`.
@@ -222,7 +222,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `g` (Office) | Pick up the room the boss stands in to move it: `←` `↑` `↓` `→` pick a slot of the floor, `PageUp` / `PageDown` ride the lift with the room (past the top floor, a new floor), `Space` puts it down (swapping with the room in the slot), `Esc` or `g` puts it back. Dragging a room by its title does the same with the mouse |
 | `Esc` (Office) | One step back: the full card to the dialog box, the box to walking; walking, hide the Events rail the menu showed. It never takes the window out of full screen |
 | `m` (Office) | The office menu: next Needs you, Notice board and Lift (walk to them and open them), Move this room, Arrange automatically (rooms by name again, Home first), next or previous desk, Events, Background (shows the Backgrounded and Background sections, hidden in Office, while it has agents), Mute sound, Cards view, all keys. The key beside an item works with the menu open: it shuts the menu and does that |
-| `s` (Office) | Mute or unmute the Office's sound; what plays is set in Settings → Appearance → Office |
+| `s` (Office) | Mute or unmute the Office's sound; what plays is set in Settings → Jarvis & Office → Office |
 
 ### Agent
 
