@@ -15,7 +15,7 @@ Mở bằng nav rail (nút **Setup** ở đáy) hoặc `Ctrl+G` rồi `.`. Instr
 
 ## Vault là gì
 
-Vault là một thư mục arcterm quản lý, mặc định `~/.waveterm/vault` (đổi ở **Settings → General → Vault & sync → Vault path**, xem [Settings](settings.md#general)). Setup dùng hai phần của nó:
+Vault là một thư mục arcterm quản lý, mặc định `~/.waveterm/vault` (đổi ở **Settings → Storage & sync → Vault & sync → Vault path**, xem [Settings](settings.md#storage--sync)). Setup dùng hai phần của nó:
 
 | Đường dẫn trong vault | Nội dung |
 |---|---|

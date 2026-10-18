@@ -8534,10 +8534,10 @@ const jarvisPet = {
             }
         );
 
-        // 14. the Minion: picked with a real click in Settings → Appearance → Jarvis → Character, the creature on the
+        // 14. the Minion: picked with a real click in Settings → Jarvis & Office → Jarvis → Character, the creature on the
         // ledge is drawn in the Minion's own tokens, each still a var(--color-…), and still stands on the ledge
         await h.goto("settings");
-        const opened14 = await spOpen(h, "appearance");
+        const opened14 = await spOpen(h, "jarvis");
         const picked14 =
             opened14 &&
             (await spClick(
@@ -8588,7 +8588,7 @@ const jarvisPet = {
         // 15. Spider-Man: picked with a real click, drawn in his own tokens (never the accent), standing on the ledge, and the
         // app bar's fold button wears him too
         await h.goto("settings");
-        const opened15 = await spOpen(h, "appearance");
+        const opened15 = await spOpen(h, "jarvis");
         const picked15 =
             opened15 &&
             (await spClick(
@@ -9215,7 +9215,7 @@ const jarvisPet = {
             }
         );
 
-        // 23. the Spider theme: Claude's palette (its background kept) with a Spider-Man red accent
+        // 23. the Spider theme: Claude's palette (its background kept) with the suit's blue accent
         await h.goto("settings");
         const opened23 = await spOpen(h, "appearance");
         const picked23 =
@@ -9226,7 +9226,7 @@ const jarvisPet = {
             ));
         const themed23 = await polishWaitFor(
             h,
-            `getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim() === "#f05252"`,
+            `getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim() === "#7a9ce6"`,
             5000
         );
         const theme23 = await h.ev(`(() => {
@@ -9240,10 +9240,10 @@ const jarvisPet = {
         })()`);
         await h.shot("cdp-shots/jarvis-pet-23-spider-theme.png");
         rec(
-            "23. picking Spider in Settings → Appearance → Theme sets --color-accent to #f05252 and keeps --color-background at Claude's #1f1e1d",
+            "23. picking Spider in Settings → Appearance → Theme sets --color-accent to #7a9ce6 and keeps --color-background at Claude's #1f1e1d",
             picked23 === true &&
                 themed23 === true &&
-                theme23.accent === "#f05252" &&
+                theme23.accent === "#7a9ce6" &&
                 theme23.background === "#1f1e1d" &&
                 theme23.pressed === "true",
             { opened: opened23, picked: picked23, themed: themed23, ...theme23 }
@@ -11948,9 +11948,9 @@ const routePickerFlat = {
             await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode });
         };
         await h.goto("settings");
-        // the two-pane Settings surface renders one page at a time; the run route picker lives on Agents
+        // the two-pane Settings surface renders one page at a time; the run route picker lives on Runs & limits
         await h.ev(
-            `(() => { const b = document.querySelector('[data-section="agents"]'); if (b) b.click(); return true; })()`
+            `(() => { const b = document.querySelector('[data-section="runs"]'); if (b) b.click(); return true; })()`
         );
         await settle(200);
         const pickerPresent = await h.ev(`(() => !!document.querySelector('[data-testid="route-picker"]'))()`);
@@ -12093,7 +12093,7 @@ const routePickerRefused = {
         const settle = (ms) => h.ev(`new Promise((r) => setTimeout(r, ${ms}))`);
         const row = `document.querySelector('[data-testid=${JSON.stringify(`route-option-${ctx.runtime}-${ctx.model}`)}]')`;
         await h.goto("settings");
-        await h.ev(`(() => { document.querySelector('[data-section="run"]')?.click(); return true; })()`);
+        await h.ev(`(() => { document.querySelector('[data-section="runs"]')?.click(); return true; })()`);
         await settle(200);
         await h.ev(`(() => {
             const b = document.querySelector('[data-testid="route-picker"]');
@@ -35881,13 +35881,13 @@ const settingsRadarAudit = {
     },
 };
 
-// --- settings-keepawake: the Keep the Mac awake toggle on Settings > Agents' Runs card, and the hold itself ------
+// --- settings-keepawake: the Keep the Mac awake toggle on Settings > Runs & limits' While work runs card, and the hold itself ------
 // Unset reads as on; the toggle writes power:keepawake. On a Mac, a deferred run (planning, no lead, no worker) makes
 // the app's wavesrv hold `caffeinate -i -w <its pid>` and cancelling it lets go: wavesrv checks every 30 s. The
 // installed arcterm's wavesrv runs from /Applications, so a hold of its own is never taken for this one. The person's
 // own value is put back in teardown.
 const KA_KEY = "power:keepawake";
-const KA_SWITCH = `document.querySelector('[data-setting-card="runs"] [data-setting-row="runs.keepawake"] [role="switch"]')`;
+const KA_SWITCH = `document.querySelector('[data-setting-card="whilework"] [data-setting-row="runs.keepawake"] [role="switch"]')`;
 const KA_WAIT_MS = 45_000;
 
 // the pids of the repo-built wavesrvs (dist/bin) a caffeinate holds the Mac awake for
@@ -35922,15 +35922,15 @@ const settingsKeepAwake = {
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
 
         await h.goto("settings");
-        const pageOpen = await spOpen(h, "agents");
+        const pageOpen = await spOpen(h, "runs");
         const row = await polishWaitFor(h, `${KA_SWITCH} != null`, 5000);
         const unset = await h.ev(`({ label: ${KA_SWITCH}?.getAttribute("aria-label") ?? null, checked: ${KA_SWITCH}?.getAttribute("aria-checked") ?? null })`);
         rec(
-            "1. Settings > Agents' Runs card has Keep the Mac awake, on while the key is unset",
+            "1. Settings > Runs & limits' While work runs card has Keep the Mac awake, on while the key is unset",
             pageOpen && row && unset.label === "Keep the Mac awake" && unset.checked === "true",
             JSON.stringify({ pageOpen, row, ...unset })
         );
-        await h.ev(`document.querySelector('[data-setting-card="runs"]')?.scrollIntoView({ block: "center" })`);
+        await h.ev(`document.querySelector('[data-setting-card="whilework"]')?.scrollIntoView({ block: "center" })`);
         await polishNap(200);
         await h.shot("cdp-shots/settings-keepawake.png");
 
@@ -35979,6 +35979,230 @@ const settingsKeepAwake = {
         if (ctx.runId) await h.rpc("cancelrun", { channelid: ctx.channelId, runid: ctx.runId }).catch(() => {});
         if (ctx.channelId) await h.rpc("deletechannel", { channelid: ctx.channelId }).catch(() => {});
         if (ctx.cwd) rmSync(ctx.cwd, { recursive: true, force: true });
+        await h.goto("cockpit");
+    },
+};
+
+// --- settings-runs: Settings > Runs & limits' nine new rows, against the shipped defaults ----------------------------
+// docs/superpowers/specs/2026-10-18-settings-reorg-design.md. Arrange unsets the ten keys the page writes (the nine rows'
+// keys plus jobs:slots, which Heavy jobs writes beside jobs:mode), keeping the person's value only where it differs from
+// the shipped default (getfullconfig's settings merge the defaults, so an unset key reads as its default); teardown writes
+// the kept values back and unsets the rest, so no explicit default lands in settings.json. Retried three times, like
+// spRestoreFontSize: the vault's settings.json is shared with the packaged app.
+const SR_KEYS = [
+    "runs:maxactive",
+    "runs:wakeorigin",
+    "jobs:mode",
+    "jobs:slots",
+    "tokengate:enabled",
+    "tokengate:sharepct",
+    "tokengate:windowpct",
+    "tokengate:agents",
+    "tokengate:weekpct",
+    "tokengate:sessionpct",
+];
+const SR_THRESHOLDS = ["sharepct", "windowpct", "agents", "weekpct", "sessionpct"].map((k) => `tokengate.${k}`);
+const SR_NEW_ROWS = ["runs.maxactive", "runs.wakeorigin", "runs.heavyjobs", "tokengate.enabled", ...SR_THRESHOLDS];
+const srNull = () => Object.fromEntries(SR_KEYS.map((k) => [k, null]));
+const srSet = async (h, patch) => {
+    let last = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            await h.rpc("setconfig", patch);
+            return;
+        } catch (e) {
+            last = e;
+            await polishNap(300);
+        }
+    }
+    throw last;
+};
+const srStored = async (h) => (await h.rpc("getfullconfig", null))?.settings ?? {};
+// polls the stored settings until test(settings) holds
+const srWaitStored = async (h, test, ms = 5000) => {
+    let stored = {};
+    for (let waited = 0; waited < ms; waited += 250) {
+        stored = await srStored(h);
+        if (test(stored)) return { ok: true, stored };
+        await polishNap(250);
+    }
+    return { ok: false, stored };
+};
+const srValue = (id) => `parseInt(${spRow(id)}?.querySelector(".tabular-nums")?.textContent ?? "", 10)`;
+const srSwitch = (id) => `${spRow(id)}?.querySelector('[role="switch"]')`;
+const srDot = (id) => `(${spRow(id)}?.querySelector('[title="Changed from the default"]') != null)`;
+const srButton = (id, label) =>
+    `[...(${spRow(id)}?.querySelectorAll("button:not([aria-label])") ?? [])].find((b) => b.textContent.trim() === ${JSON.stringify(label)})`;
+const srSelected = (id) =>
+    `[...(${spRow(id)}?.querySelectorAll("button:not([aria-label])") ?? [])].filter((b) => b.classList.contains("bg-surface-selected")).map((b) => b.textContent.trim())`;
+const srStep = (id, dir) => `${spRow(id)}?.querySelector('button[aria-label^="${dir}"]')`;
+const srScroll = (h, card) =>
+    h.ev(`document.querySelector('[data-setting-card="${card}"]')?.scrollIntoView({ block: "center" })`);
+// unset every key and wait for the page to read the defaults back
+const srClear = async (h) => {
+    await srSet(h, srNull());
+    await polishWaitFor(h, `${srValue("runs.maxactive")} === 3 && ${srDot("runs.maxactive")} === false`, 5000);
+};
+
+const settingsRuns = {
+    name: "settings-runs",
+    surface: "settings",
+    async arrange(h) {
+        const cfg = await h.rpc("getfullconfig", null);
+        const settings = cfg?.settings ?? {};
+        const defaults = cfg?.defaultsettings ?? {};
+        const prev = {};
+        for (const k of SR_KEYS) {
+            if (settings[k] !== undefined && JSON.stringify(settings[k]) !== JSON.stringify(defaults[k])) {
+                prev[k] = settings[k];
+            }
+        }
+        await srSet(h, srNull());
+        return { prev };
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+
+        await h.goto("settings");
+        const pageOpen = await spOpen(h, "runs");
+        await polishWaitFor(h, `${spRow("tokengate.sessionpct")} != null`, 5000);
+        const first = await h.ev(`(() => {
+            const pane = ${spPane("runs")};
+            const val = (id) => {
+                const row = document.querySelector('[data-setting-row="' + id + '"]');
+                const n = parseInt(row?.querySelector(".tabular-nums")?.textContent ?? "", 10);
+                return { n, pct: (row?.textContent ?? "").includes("%") };
+            };
+            const on = (id) =>
+                document.querySelector('[data-setting-row="' + id + '"] [role="switch"]')?.getAttribute("aria-checked");
+            return {
+                cards: [...pane.querySelectorAll("[data-setting-card]")].map((c) => c.getAttribute("data-setting-card")),
+                maxactive: val("runs.maxactive").n,
+                wakeorigin: on("runs.wakeorigin"),
+                pace: ${srSelected("runs.heavyjobs")},
+                gate: on("tokengate.enabled"),
+                thresholds: ${JSON.stringify(SR_THRESHOLDS)}.map(val),
+                dots: ${JSON.stringify(SR_NEW_ROWS)}.filter(
+                    (id) => document.querySelector('[data-setting-row="' + id + '"] [title="Changed from the default"]') != null
+                ),
+                burn: document.querySelector('[data-setting-card="tokenburn"]')?.textContent ?? "",
+            };
+        })()`);
+        await srScroll(h, "tokenburn");
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-runs-1-defaults.png");
+        rec(
+            "1. Runs & limits holds Runs, While work runs and Token burn; unset, the nine new rows read their defaults with no changed dot",
+            pageOpen &&
+                JSON.stringify(first.cards) === JSON.stringify(["runs", "whilework", "tokenburn"]) &&
+                first.maxactive === 3 &&
+                first.wakeorigin === "true" &&
+                JSON.stringify(first.pace) === JSON.stringify(["Auto"]) &&
+                first.gate === "true" &&
+                JSON.stringify(first.thresholds.map((t) => t.n)) === JSON.stringify([10, 70, 3, 80, 25]) &&
+                JSON.stringify(first.thresholds.map((t) => t.pct)) === JSON.stringify([true, true, false, true, true]) &&
+                first.dots.length === 0 &&
+                first.burn.includes("0 turns a check off."),
+            JSON.stringify({ ...first, burn: first.burn.slice(-60) })
+        );
+
+        // 2. Heavy jobs writes what the Jobs popover writes
+        await srClear(h);
+        await h.ev(`${srButton("runs.heavyjobs", "2")}?.click()`);
+        const two = await srWaitStored(h, (s) => s["jobs:mode"] === "slots" && s["jobs:slots"] === 2);
+        const dotOn = await polishWaitFor(h, `${srDot("runs.heavyjobs")}`, 3000);
+        await srScroll(h, "whilework");
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-runs-2-heavy-2.png");
+        await h.ev(`${srButton("runs.heavyjobs", "Auto")}?.click()`);
+        const auto = await srWaitStored(h, (s) => s["jobs:mode"] === "auto");
+        const dotOff = await polishWaitFor(h, `${srDot("runs.heavyjobs")} === false`, 3000);
+        await h.ev(`${srButton("runs.heavyjobs", "3")}?.click()`);
+        const three = await srWaitStored(h, (s) => s["jobs:mode"] === "slots" && s["jobs:slots"] === 3);
+        await polishWaitFor(h, `${srDot("runs.heavyjobs")}`, 3000);
+        await h.ev(`${spRow("runs.heavyjobs")}?.querySelector('button[aria-label="Revert to default"]')?.click()`);
+        const reverted = await srWaitStored(h, (s) => (s["jobs:mode"] ?? "auto") === "auto");
+        const backOnAuto = await polishWaitFor(
+            h,
+            `JSON.stringify(${srSelected("runs.heavyjobs")}) === '["Auto"]' && ${srDot("runs.heavyjobs")} === false`,
+            3000
+        );
+        await h.shot("cdp-shots/settings-runs-2-heavy-reverted.png");
+        rec(
+            "2. Heavy jobs writes what the Jobs popover writes: 2 stores slots and 2 with the dot, Auto stores auto and the dot goes, Revert puts Auto back",
+            two.ok && dotOn && auto.ok && dotOff && three.ok && reverted.ok && backOnAuto,
+            JSON.stringify({
+                two: [two.stored["jobs:mode"], two.stored["jobs:slots"]],
+                dotOn,
+                auto: auto.stored["jobs:mode"],
+                dotOff,
+                three: [three.stored["jobs:mode"], three.stored["jobs:slots"]],
+                reverted: reverted.stored["jobs:mode"] ?? null,
+                backOnAuto,
+            })
+        );
+
+        // 3. Active runs stops at its bounds
+        await srSet(h, { "runs:maxactive": 0 });
+        await polishWaitFor(h, `${srValue("runs.maxactive")} === 0`, 5000);
+        await h.ev(`${srStep("runs.maxactive", "Decrease")}?.click()`);
+        await polishNap(600);
+        const floor = (await srStored(h))["runs:maxactive"];
+        const shownFloor = await h.ev(srValue("runs.maxactive"));
+        await srSet(h, { "runs:maxactive": 10 });
+        await polishWaitFor(h, `${srValue("runs.maxactive")} === 10`, 5000);
+        await h.ev(`${srStep("runs.maxactive", "Increase")}?.click()`);
+        await polishNap(600);
+        const ceiling = (await srStored(h))["runs:maxactive"];
+        const shownCeiling = await h.ev(srValue("runs.maxactive"));
+        await srScroll(h, "runs");
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-runs-3-bounds.png");
+        rec(
+            "3. Active runs stops at its bounds: Decrease at 0 leaves 0, Increase at 10 leaves 10",
+            floor === 0 && shownFloor === 0 && ceiling === 10 && shownCeiling === 10,
+            JSON.stringify({ floor, shownFloor, ceiling, shownCeiling })
+        );
+
+        // 4. Ask before a costly spawn: off stores false and dims the five thresholds, on stores true and undims them
+        await srClear(h);
+        const dimmed = `${JSON.stringify(SR_THRESHOLDS)}.map((id) => document.querySelector('[data-setting-row="' + id + '"] .opacity-50') != null)`;
+        await h.ev(`${srSwitch("tokengate.enabled")}?.click()`);
+        const offStored = await srWaitStored(h, (s) => s["tokengate:enabled"] === false);
+        await polishWaitFor(h, `${dimmed}.every(Boolean)`, 3000);
+        const offDim = await h.ev(dimmed);
+        await srScroll(h, "tokenburn");
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-runs-4-gate-off.png");
+        await h.ev(`${srSwitch("tokengate.enabled")}?.click()`);
+        const onStored = await srWaitStored(h, (s) => s["tokengate:enabled"] === true);
+        await polishWaitFor(h, `${dimmed}.every((d) => !d)`, 3000);
+        const onDim = await h.ev(dimmed);
+        rec(
+            "4. Turning off Ask before a costly spawn stores tokengate:enabled false and dims the five thresholds; on again stores true and none is dimmed",
+            offStored.ok && offDim.every(Boolean) && onStored.ok && onDim.every((d) => !d),
+            JSON.stringify({ off: offStored.stored["tokengate:enabled"], offDim, on: onStored.stored["tokengate:enabled"], onDim })
+        );
+
+        // 5. a percentage steps by 5
+        await srClear(h);
+        await h.ev(`${srStep("tokengate.sharepct", "Increase")}?.click()`);
+        const stepped = await srWaitStored(h, (s) => s["tokengate:sharepct"] === 15);
+        await srScroll(h, "tokenburn");
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-runs-5-step.png");
+        rec(
+            "5. A percentage steps by 5: Increase on a spawn's share of the 5-hour window stores 15",
+            stepped.ok,
+            `sharepct=${stepped.stored["tokengate:sharepct"]}`
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const back = srNull();
+        for (const k of Object.keys(ctx.prev)) back[k] = ctx.prev[k];
+        await srSet(h, back);
         await h.goto("cockpit");
     },
 };
@@ -36611,7 +36835,7 @@ const vaultSyncState = (h) =>
 async function openVaultSection(h) {
     await h.goto("cockpit");
     await h.goto("settings");
-    await h.ev(`document.querySelector('[data-section="general"]')?.click()`);
+    await h.ev(`document.querySelector('[data-section="storage"]')?.click()`);
     return polishWaitFor(h, `${VAULT_ROW} != null && ${VAULT_SYNC_STATUS} != null`, 5000);
 }
 
@@ -36740,22 +36964,29 @@ const settingsVaultSync = {
     },
 };
 
-// --- settings-pages: seven pages of cards, the key pill on hover, a changed row end to end ----------------
-// docs/superpowers/specs/2026-10-08-settings-redesign-design.md. One step per page (the index lists the seven in order;
-// the page's card ids in order; a shot), then one detail step per page that draws something the card ids do not show
-// (the Startup surface menu, the theme chips and fonts in their own face, the Claude account and flag tabs, the runtime
+// --- settings-pages: nine pages of cards, the key pill on hover, a changed row end to end ----------------
+// docs/superpowers/specs/2026-10-08-settings-redesign-design.md, regrouped by docs/superpowers/specs/2026-10-18-settings-reorg-design.md.
+// One step per page (the index lists the nine in order, About alone at the foot; the page's card ids in order; a shot),
+// then one detail step per page that draws something the card ids do not show
+// (the Startup surface menu, the theme chips and fonts in their own face, the Claude account and flag tabs, the Runs &
+// limits rows and the Heavy jobs segments, the Folding and Office rows, the runtime
 // list and the OpenRouter warning band, the right-aligned versions), then the key pill on Terminal (hidden at rest,
 // visible and titled on hover, pressing it leaves the row's control focused) and its absence on About's build info, then
 // term:fontsize set off its default to see the changed dot, the revert button, the index count and Reset section. The
 // scenario restores term:fontsize in a finally and again in teardown, each retried: the packaged app and a final-verify
 // app share the vault's settings.json, and a write can lose a rename race with the other's.
 const SP_PAGES = [
-    { id: "general", cards: ["startup", "notifications", "window", "vault"] },
-    { id: "appearance", cards: ["theme", "colors", "fonts", "jarvis"] },
+    { id: "general", cards: ["startup", "menubar", "notifications"] },
+    { id: "appearance", cards: ["theme", "colors", "fonts", "agentrows"] },
+    { id: "agents", cards: ["claudeaccount", "sleep", "flags"] },
+    { id: "runs", cards: ["runs", "whilework", "tokenburn"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
-    { id: "agents", cards: ["claudeaccount", "sleep", "runs", "flags"] },
-    { id: "storage", cards: ["runworktrees", "sessions", "housekeeping", "buildoutput", "packagecaches", "canvases", "autoclean"] },
     { id: "headless", cards: ["runtime", "openrouter", "radar"] },
+    { id: "jarvis", cards: ["jarvis", "folding", "office"] },
+    {
+        id: "storage",
+        cards: ["vault", "runworktrees", "sessions", "housekeeping", "buildoutput", "packagecaches", "canvases", "autoclean"],
+    },
     { id: "about", cards: ["versions", "agents"] },
 ];
 const SP_FONTSIZE_KEY = "term:fontsize";
@@ -36859,10 +37090,26 @@ const settingsPages = {
         await h.goto("settings");
         await polishWaitFor(h, `document.querySelector('button[data-section]') != null`, 5000);
         const index = await h.ev(`[...document.querySelectorAll('button[data-section]')].map((b) => b.getAttribute("data-section"))`);
+        // the foot: a wrapper holding About alone, a 1px rule above it and a 10px gap before it
+        const foot = await h.ev(`(() => {
+            const el = document.querySelector("[data-settings-foot]");
+            if (!el) return null;
+            const cs = getComputedStyle(el);
+            return {
+                sections: [...el.querySelectorAll("button[data-section]")].map((b) => b.getAttribute("data-section")),
+                borderTop: cs.borderTopWidth,
+                marginTop: cs.marginTop,
+            };
+        })()`);
+        await h.shot("cdp-shots/settings-pages-index.png");
         rec(
-            "index: one flat list of seven pages in order",
-            JSON.stringify(index) === JSON.stringify(SP_PAGES.map((p) => p.id)),
-            `index=${JSON.stringify(index)}`
+            "index: one flat list of nine pages in order, About alone at the foot under a 1px rule and a 10px gap",
+            JSON.stringify(index) === JSON.stringify(SP_PAGES.map((p) => p.id)) &&
+                foot != null &&
+                JSON.stringify(foot.sections) === JSON.stringify(["about"]) &&
+                foot.borderTop === "1px" &&
+                foot.marginTop === "10px",
+            `index=${JSON.stringify(index)} foot=${JSON.stringify(foot)}`
         );
 
         for (const page of SP_PAGES) {
@@ -36917,7 +37164,7 @@ const settingsPages = {
             `menu=${JSON.stringify(menu)} closed=${menuGone}`
         );
 
-        // appearance-detail: seven theme chips with one selected; each font option drawn in its own face
+        // appearance-detail: nine theme chips with one selected; each font option drawn in its own face
         await spOpen(h, "appearance");
         await polishWaitFor(h, `${spRow("fonts.mono")} != null`, 5000);
         const chips = await h.ev(`(() => {
@@ -36930,8 +37177,8 @@ const settingsPages = {
         await polishNap(200);
         await h.shot("cdp-shots/settings-pages-appearance-detail.png");
         rec(
-            "appearance-detail: seven theme chips, one selected; Fonts options each in their own face",
-            chips.count === 7 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
+            "appearance-detail: nine theme chips, one selected; Fonts options each in their own face",
+            chips.count === 9 && chips.selected === 1 && spOwnFaces(sansFaces) && spOwnFaces(monoFaces),
             `chips=${JSON.stringify(chips)} sans=${JSON.stringify(sansFaces)} mono=${JSON.stringify(monoFaces)}`
         );
 
@@ -36974,6 +37221,62 @@ const settingsPages = {
                 agentsDetail.flagHeights.length > 0 &&
                 agentsDetail.flagHeights.every((px) => px < 44),
             JSON.stringify(agentsDetail)
+        );
+
+        // runs-detail: the run limits, the heavy-jobs pace and the six token-gate rows sit on Runs & limits
+        await spOpen(h, "runs");
+        await polishWaitFor(h, `${spRow("tokengate.sessionpct")} != null`, 5000);
+        const runsDetail = await h.ev(`(() => {
+            const rowIds = ["runs.maxactive", "runs.wakeorigin", "runs.heavyjobs"].concat(
+                ["enabled", "sharepct", "windowpct", "agents", "weekpct", "sessionpct"].map((k) => "tokengate." + k)
+            );
+            return {
+                present: rowIds.filter((id) => document.querySelector('[data-setting-row="' + id + '"]') != null),
+                expected: rowIds.length,
+                pace: [...(${spRow("runs.heavyjobs")}?.querySelectorAll("button:not([aria-label])") ?? [])].map((b) =>
+                    b.textContent.trim()
+                ),
+                burn: document.querySelector('[data-setting-card="tokenburn"]')?.textContent ?? "",
+            };
+        })()`);
+        await h.ev(`document.querySelector('[data-setting-card="tokenburn"]')?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-runs-detail.png");
+        rec(
+            "runs-detail: Active runs, Tell the session, Heavy jobs (Auto 1 2 3 4 Off) and the six token-gate rows; Token burn says what 0 does",
+            runsDetail.present.length === runsDetail.expected &&
+                JSON.stringify(runsDetail.pace) === JSON.stringify(["Auto", "1", "2", "3", "4", "Off"]) &&
+                runsDetail.burn.includes("0 turns a check off."),
+            JSON.stringify({ ...runsDetail, burn: runsDetail.burn.slice(0, 160) })
+        );
+
+        // jarvis-detail: Folding and Office on Jarvis & Office; the Menu bar card keeps only the tray rows on General
+        await spOpen(h, "jarvis");
+        await polishWaitFor(h, `${spRow("window.autosprout")} != null`, 5000);
+        const cardRows = (card) =>
+            `[...(document.querySelector('[data-setting-card="${card}"]')?.querySelectorAll("[data-setting-row]") ?? [])].map((r) => r.getAttribute("data-setting-row"))`;
+        const folding = await h.ev(cardRows("folding"));
+        const office = await h.ev(cardRows("office"));
+        await h.ev(`document.querySelector('[data-setting-card="folding"]')?.scrollIntoView({ block: "center" })`);
+        await polishNap(200);
+        await h.shot("cdp-shots/settings-pages-jarvis-detail.png");
+        await spOpen(h, "general");
+        await polishWaitFor(h, `${spRow("app.tray")} != null`, 5000);
+        const menubar = await h.ev(cardRows("menubar"));
+        rec(
+            "jarvis-detail: Folding holds the three window rows, Office its six, and General's Menu bar only the tray rows",
+            JSON.stringify(folding) === JSON.stringify(["window.minimize", "window.sproutcorner", "window.autosprout"]) &&
+                JSON.stringify(office) ===
+                    JSON.stringify([
+                        "appearance.officeanimation",
+                        "appearance.officehours",
+                        "appearance.officesoundevents",
+                        "appearance.officesoundui",
+                        "appearance.officesoundmusic",
+                        "appearance.officesoundvolume",
+                    ]) &&
+                JSON.stringify(menubar) === JSON.stringify(["app.tray", "app.traymemory"]),
+            JSON.stringify({ folding, office, menubar })
         );
 
         // headless-detail: six runtimes, one chosen; the OpenRouter card opens on its warning band while no key is stored
@@ -37629,7 +37932,7 @@ const agyHarness = {
             );
 
             // 11. Settings' run route picker (done here while Settings is up; the numbering follows the plan)
-            await h.ev(`document.querySelector('[data-section="agents"]')?.click()`);
+            await h.ev(`document.querySelector('[data-section="runs"]')?.click()`);
             await polishNap(300);
             const runRoute = await agyReadPicker(h, `document.querySelector('[data-testid="route-picker"]')`, null);
             await shot("11-settings-run-route");
@@ -39050,7 +39353,7 @@ const SS_RUN_CLEAN = "5a0c0de0-0000-4000-8000-000000000001";
 const SS_RUN_DIRTY = "5a0c0de0-0000-4000-8000-000000000002";
 const SS_NUDGE_DAY_KEY = "storage.nudge.lastday"; // storagenudge.tsx
 const SS_DAY_MS = 24 * 60 * 60 * 1000;
-const SS_CARDS = ["runworktrees", "sessions", "housekeeping", "buildoutput", "packagecaches", "canvases", "autoclean"];
+const SS_CARDS = ["vault", "runworktrees", "sessions", "housekeeping", "buildoutput", "packagecaches", "canvases", "autoclean"];
 const ssCard = (cat) => `document.querySelector('[data-settings-section="storage"] [data-setting-card="${cat}"]')`;
 // a row is found by the end of its id: a session's id is its path, a project's row its project's path
 const ssRowIds = (cat) =>
@@ -39226,9 +39529,9 @@ const settingsStorage = {
         await polishNap(350);
         await h.shot("cdp-shots/settings-storage-1-page.png");
         rec(
-            "1. Storage sits after Agents in the index; its page holds the six category cards (Package caches after build output, Design canvases among them), then Auto-clean; run worktrees, sessions and logs have a clean button, build output, package caches and canvases none",
+            "1. Storage & sync follows Jarvis & Office in the index; its page holds Vault & sync, then the six category cards (Package caches after build output, Design canvases among them), then Auto-clean; run worktrees, sessions and logs have a clean button, build output, package caches and canvases none",
             up &&
-                index.indexOf("storage") === index.indexOf("agents") + 1 &&
+                index.indexOf("storage") === index.indexOf("jarvis") + 1 &&
                 JSON.stringify(cards) === JSON.stringify(SS_CARDS) &&
                 JSON.stringify(cleans) === JSON.stringify(["runworktrees", "sessions", "housekeeping"]),
             `index=${JSON.stringify(index)} cards=${JSON.stringify(cards)} cleans=${JSON.stringify(cleans)}`
@@ -46848,6 +47151,7 @@ export const SCENARIOS = [
     routePickerRefused,
     settingsRadarAudit,
     settingsKeepAwake,
+    settingsRuns,
     settingsTelegram,
     settingsVaultSync,
     settingsPages,

@@ -52,7 +52,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
 **2026-10-16 (the Office's sounds)**
 
 - [ ] (arcterm) In the real app: Cockpit → Office with real agents and a run. Are the jingles pleasant and the default
-  volume right; does the music (Settings → Appearance → Office music) duck under a jingle and stop when arcterm loses
+  volume right; does the music (Settings → Jarvis & Office → Office music) duck under a jingle and stop when arcterm loses
   focus; do the footsteps and the wall bump feel right with Boss sounds on. The `office-sound` scenario logged the cues
   only and played no sound. `officeaudio.ts`, `officescores.ts`, `officesound.tsx`.
 
@@ -384,8 +384,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 **2026-10-14 (fold corner)**
 
 - [ ] Right-click the Sprout button → Fold to → Top left, then fold: Sprout lands in the top-left corner, 24px in, and
-  its card opens down and right. Folded, Settings can't be reached, so restore, pick Bottom left in Settings → General
-  → Window → Fold to, fold again: bottom left. Drag Sprout mid-screen, restore: the Fold to row reads "Where you
+  its card opens down and right. Folded, Settings can't be reached, so restore, pick Bottom left in Settings → Jarvis & Office
+  → Folding → Fold to, fold again: bottom left. Drag Sprout mid-screen, restore: the Fold to row reads "Where you
   dragged it" and the menu has no corner ticked.
 
 **2026-10-13 (kaeltran16 sync: cherry-picked fixes and features)**
@@ -828,7 +828,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   terminal; it opens the cheat sheet. `cc7a43629`
 - [ ] (arcterm) **VS Code keys.** `Mod`+`,` opens Settings; on Code, `Mod`+`Shift`+`E` focuses the file tree.
   `cc7a43629`
-- [ ] (arcterm) **Auto fold, Windows** (Settings → General → Window → Fold when you leave, on): a maximized or full-screen
+- [ ] (arcterm) **Auto fold, Windows** (Settings → Jarvis & Office → Folding → Fold when you leave, on): a maximized or full-screen
   app on arcterm's screen folds it after ~1 s; a small window, a half-screen snap, the Start menu or a window on the
   other screen leaves it be. `d80e14b74`
 - [ ] (arcterm) **Auto fold, Mac.** `foreground.rs`'s macOS branch now reads the window list (`CGWindowListCopyWindowInfo`)

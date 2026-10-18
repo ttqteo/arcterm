@@ -39,6 +39,7 @@ import {
     type StorageRow,
 } from "../storagemodel";
 import { cleanStorage, rescanStorage, storageSkippedAtom, useStorageReport } from "../storagestore";
+import { VaultCard } from "./general";
 
 type Category = (typeof CARD_ORDER)[number];
 
@@ -352,6 +353,7 @@ export function StoragePage({ model }: { model: AgentsViewModel }) {
                     Rescan
                 </button>
             </div>
+            <VaultCard />
             {CARD_ORDER.map((cat) => (
                 <CategoryCard
                     key={cat}

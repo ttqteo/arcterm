@@ -1199,10 +1199,10 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ line, offLine, clock: stopped?.clock })
             );
 
-            // 17. Settings → Appearance → Office: the office's animation switch and the work hours, and the switch is
+            // 17. Settings → Jarvis & Office → Office: the office's animation switch and the work hours, and the switch is
             // the one the office reads (last: it leaves the Cockpit)
             await h.goto("settings");
-            await h.ev(`document.querySelector('button[data-section="appearance"]')?.click()`);
+            await h.ev(`document.querySelector('button[data-section="jarvis"]')?.click()`);
             await h.ev(`(async () => {
                 for (let i = 0; i < 50 && !document.querySelector('[data-setting-card="office"]'); i++) await new Promise((r) => setTimeout(r, 100));
             })()`);
@@ -1225,7 +1225,7 @@ export function makeCockpitOfficeScenarios(fx) {
             await sleep(300);
             const restored = await h.ev(`localStorage.getItem("cockpit.office.animation")`);
             rec(
-                "17. Settings → Appearance → Office holds the animation switch and the work hours (09:00 to 18:00), and the switch sets the office's animation",
+                "17. Settings → Jarvis & Office → Office holds the animation switch and the work hours (09:00 to 18:00), and the switch sets the office's animation",
                 card.found &&
                     card.on === "true" &&
                     card.hours.includes("09:00") &&
@@ -2861,9 +2861,9 @@ export function makeCockpitOfficeScenarios(fx) {
                 JSON.stringify({ unmuted, items, menuKey })
             );
 
-            // 7. Settings → Appearance: the four rows, the music switch and the volume write their keys
+            // 7. Settings → Jarvis & Office: the four rows, the music switch and the volume write their keys
             await h.goto("settings");
-            const up = await fx.spOpen(h, "appearance");
+            const up = await fx.spOpen(h, "jarvis");
             await h.ev(`${fx.spRow("appearance.officesoundevents")}?.scrollIntoView({ block: "center" })`);
             await sleep(200);
             const rows = [];
@@ -2889,7 +2889,7 @@ export function makeCockpitOfficeScenarios(fx) {
             await sleep(200);
             await h.shot("cdp-shots/office-sound-settings.png");
             rec(
-                "7. Appearance has Office jingles, Boss sounds, Office music and Office volume; the music switch writes true then false, the volume 75 % writes 0.75",
+                "7. Jarvis & Office has Office jingles, Boss sounds, Office music and Office volume; the music switch writes true then false, the volume 75 % writes 0.75",
                 up && rows.every(Boolean) && musicOn === "true" && musicOff === "false" && opened && picked && volume === "0.75",
                 JSON.stringify({ up, rows, musicOn, musicOff, opened, picked, volume })
             );

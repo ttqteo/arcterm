@@ -18,5 +18,14 @@
     "term:trimtrailingwhitespace": true,
     "harness:updatecheck": true,
     "agents:sleepidle": true,
-    "agents:sleepaftermin": 30
+    "agents:sleepaftermin": 30,
+    "runs:maxactive": 3,
+    "runs:wakeorigin": true,
+    "jobs:mode": "auto",
+    "tokengate:enabled": true,
+    "tokengate:sharepct": 10,
+    "tokengate:windowpct": 70,
+    "tokengate:agents": 3,
+    "tokengate:weekpct": 80,
+    "tokengate:sessionpct": 25
 }

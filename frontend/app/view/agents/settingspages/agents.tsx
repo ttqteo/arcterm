@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Settings > Agents: the Claude subscription new agents run on, when an idle agent sleeps, the route new runs
-// take, whether the Mac stays awake for them, and the flags every launch starts with.
+// Settings > Agents: the Claude subscription new agents run on, when an idle agent sleeps, and the flags every
+// launch starts with.
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { getSettingsKeyAtom } from "@/app/store/global";
@@ -24,7 +24,6 @@ import {
     rowQuota,
     type RowQuota,
 } from "../claudeaccount";
-import { harnessPreferenceAtom, leadRuntimesAtom, setPreferredRoute } from "../harnessstore";
 import { RUNTIME_FLAGS, type Runtime } from "../launch";
 import { naFlagsAtom, naRememberFlagsAtom } from "../naflagsstore";
 import {
@@ -34,7 +33,6 @@ import {
     savedRateLimitsAtom,
     setClaudeIdentity,
 } from "../ratelimitstore";
-import { RoutePicker } from "../routepicker";
 import { flagRowId, SLEEP_AFTER_MIN, stepSleepAfter } from "../settingsmodel";
 import {
     CardFooter,
@@ -62,10 +60,6 @@ export function AgentsPage({
             <ClaudeAccountCard model={model} />
             <SettingCard id="sleep" label="Sleep idle agents">
                 <SleepRows />
-            </SettingCard>
-            <SettingCard id="runs" label="Runs">
-                <RunRouteRow />
-                <KeepAwakeRow />
             </SettingCard>
             <SettingCard id="flags" label="Launch flags" header={<FlagTabs runtime={runtime} onRuntime={onRuntime} />}>
                 <LaunchFlagRows runtime={runtime} />
@@ -166,38 +160,6 @@ function SleepRows() {
                 </div>
             </SettingRow>
         </>
-    );
-}
-
-function RunRouteRow() {
-    const preference = useAtomValue(harnessPreferenceAtom);
-    const leadRuntimes = useAtomValue(leadRuntimesAtom);
-    return (
-        <>
-            <SettingRow id="run.route">
-                <RoutePicker
-                    value={preference.route}
-                    canInherit={false}
-                    runtimes={leadRuntimes}
-                    size="select"
-                    onChange={(route) => route && setPreferredRoute(route)}
-                />
-            </SettingRow>
-            {preference.error ? (
-                <div className="px-4 pb-3">
-                    <Note tone="error">{preference.error}</Note>
-                </div>
-            ) : null}
-        </>
-    );
-}
-
-function KeepAwakeRow() {
-    const on = (useAtomValue(getSettingsKeyAtom("power:keepawake")) as boolean | undefined) ?? true;
-    return (
-        <SettingRow id="runs.keepawake">
-            <Toggle on={on} onToggle={() => writeConfig({ "power:keepawake": !on })} label="Keep the Mac awake" />
-        </SettingRow>
     );
 }
 

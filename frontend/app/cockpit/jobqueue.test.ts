@@ -12,6 +12,7 @@ import {
     longWait,
     openTargetFor,
     ordered,
+    paceOfSettings,
     pacePatch,
     paceValue,
     pauseLeft,
@@ -186,6 +187,15 @@ describe("jobqueue", () => {
         expect(pacePatch("3")).toEqual({ "jobs:mode": "slots", "jobs:slots": 3 });
         expect(pacePatch("auto")).toEqual({ "jobs:mode": "auto" });
         expect(pacePatch("off")).toEqual({ "jobs:mode": "off" });
+    });
+    it("reads the pace from settings like the server does", () => {
+        expect(paceOfSettings(undefined, undefined)).toBe("auto");
+        expect(paceOfSettings("auto", 3)).toBe("auto");
+        expect(paceOfSettings("off", 2)).toBe("off");
+        expect(paceOfSettings("slots", 3)).toBe("3");
+        expect(paceOfSettings("slots", undefined)).toBe("1");
+        expect(paceOfSettings("slots", 0)).toBe("1");
+        expect(paceOfSettings("slots", 9)).toBe("4");
     });
     it("reads a pause's time left, and none once it has ended", () => {
         const d = { slots: 1, mode: "auto", pauseduntil: 10_000, jobs: [] };
