@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- In the agent panel's File tab only the path itself is the copy button: the empty space beside it no longer turns
+  grey or pops the full path up over the top of the document.
 - An image opened in Code or the File tab now shows in the installed app, instead of "Cannot show this image".
 - The t> mark in the Mac menu bar sits level with the memory beside it, its middle on the text's middle, instead of
   hanging below the text.

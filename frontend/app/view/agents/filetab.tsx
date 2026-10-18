@@ -419,28 +419,31 @@ export function FileTab({
                         </button>
                     </>
                 ) : null}
-                {/* the path is the copy button: a click copies the absolute path */}
-                <button
-                    type="button"
-                    data-file-head
-                    aria-label={copied ? "Copied" : `Copy path: ${ref.abs}`}
-                    title={copied ? "Copied" : `${ref.abs}\nClick to copy`}
-                    onClick={() => {
-                        void navigator.clipboard?.writeText(ref.abs);
-                        setCopied(true);
-                        window.setTimeout(() => setCopied(false), COPIED_MS);
-                    }}
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-[4px] border-0 bg-transparent py-[2px] pl-1 text-left text-[11.5px] hover:bg-surface-hover"
-                >
-                    <span className="min-w-0 truncate">
-                        <span className="text-muted">{dir}</span>
-                        <span className="text-ink-hi">{name}</span>
-                        {ref.line != null ? <span className="text-muted">:{ref.line}</span> : null}
-                    </span>
-                    {copied ? (
-                        <Check size={12} strokeWidth={2} aria-hidden className="flex-none text-accent-soft" />
-                    ) : null}
-                </button>
+                {/* the path is the copy button: a click copies the absolute path. It hugs the path, as in Code's
+                    path bar, so the empty strip up to the controls neither fills grey nor raises the path's tip */}
+                <div className="flex min-w-0 flex-1">
+                    <button
+                        type="button"
+                        data-file-head
+                        aria-label={copied ? "Copied" : `Copy path: ${ref.abs}`}
+                        title={copied ? "Copied" : `${ref.abs}\nClick to copy`}
+                        onClick={() => {
+                            void navigator.clipboard?.writeText(ref.abs);
+                            setCopied(true);
+                            window.setTimeout(() => setCopied(false), COPIED_MS);
+                        }}
+                        className="flex min-w-0 cursor-pointer items-center gap-1 rounded-[4px] border-0 bg-transparent px-1 py-[2px] text-left text-[11.5px] hover:bg-surface-hover"
+                    >
+                        <span className="min-w-0 truncate">
+                            <span className="text-muted">{dir}</span>
+                            <span className="text-ink-hi">{name}</span>
+                            {ref.line != null ? <span className="text-muted">:{ref.line}</span> : null}
+                        </span>
+                        {copied ? (
+                            <Check size={12} strokeWidth={2} aria-hidden className="flex-none text-accent-soft" />
+                        ) : null}
+                    </button>
+                </div>
                 {views.length > 0 ? (
                     <div
                         role="group"
