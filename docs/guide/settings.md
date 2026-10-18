@@ -1,6 +1,6 @@
 # Settings
 
-**Settings** gom mọi tùy chọn của arcterm vào bảy trang: **General**, **Appearance**, **Terminal**, **Agents**, **Storage**, **Background AI** và **About**. Trang này chỉ cách làm những việc thường gặp (đổi tài khoản Claude, chọn model cho run, bật cờ khởi chạy, đổi theme, cấu hình AI nền) rồi liệt kê từng trang.
+**Settings** gom mọi tùy chọn của arcterm vào chín trang, xếp theo thứ họ thay đổi: **General**, **Appearance**, **Agents**, **Runs & limits**, **Terminal**, **Background AI**, **Jarvis & Office**, **Storage & sync**, và **About** nằm riêng ở chân danh sách. Trang này chỉ cách làm những việc thường gặp (đổi tài khoản Claude, chọn model cho run, giới hạn số run và lệnh nặng chạy cùng lúc, bật cờ khởi chạy, đổi theme, cấu hình AI nền) rồi liệt kê từng trang.
 
 Mở bằng nút **Settings** ở đáy nav rail, hoặc `Ctrl+G` rồi `,`. Settings không có phím số `Ctrl+1`…`Ctrl+7` và không lọc theo project.
 
@@ -12,7 +12,7 @@ Mở bằng nút **Settings** ở đáy nav rail, hoặc `Ctrl+G` rồi `,`. Set
 - **Tìm kiếm.** Ô **Search settings** ở đầu cột trái lọc theo tiêu đề, mô tả và khóa cấu hình, trên mọi trang; chỉ những trang còn kết quả mới hiện.
 - Cấu hình dạng `synced` nằm trong `settings.json` ở thư mục `config` (xem [Bắt đầu](getting-started.md#dữ-liệu-cấu-hình-và-log)); `Revert` xóa khóa đó để mặc định của app có hiệu lực lại.
 
-<!-- shot: settings-agents.png | Trang Agents: thẻ Claude account (hàng Default với tag /login và hai thanh 5h/Week, một hàng tài khoản token với menu ⋯), thẻ Runs với Run route, thẻ Launch flags với tab runtime | Mở Settings (`Ctrl+G` `,`), bấm `[data-section="agents"]`. Tài khoản token cần thêm thật qua **+ Add account**; thẻ Launch flags là `[data-flag-tabs]`. Scenario CDP `settings-pages` đi qua cả sáu trang -->
+<!-- shot: settings-agents.png | Trang Agents: thẻ Claude account (hàng Default với tag /login và hai thanh 5h/Week, một hàng tài khoản token với menu ⋯), thẻ Sleep idle agents, thẻ Launch flags với tab runtime | Mở Settings (`Ctrl+G` `,`), bấm `[data-section="agents"]`. Tài khoản token cần thêm thật qua **+ Add account**; thẻ Launch flags là `[data-flag-tabs]`. Scenario CDP `settings-pages` đi qua cả chín trang -->
 
 ## Làm thế nào
 
@@ -30,7 +30,7 @@ Quota Claude là của tài khoản đang chọn. Tài khoản thêm bằng toke
 
 ### Chọn model cho run mới
 
-Trang **Agents**, thẻ **Runs**, mục **Run route** ("Harness and resolved model for new runs"). Bấm bộ chọn, chọn harness (chỉ những harness làm được lead của run: Claude Code và pi) và model. Chọn lại đúng harness đang dùng giữ nguyên model; đổi harness thì bỏ model vì model thuộc về harness. Đây là route mặc định: một project có thể có route riêng, và hộp thoại **New** cho chọn lại từng lần.
+Trang **Runs & limits**, thẻ **Runs**, mục **Run route** ("Harness and resolved model for new runs"). Bấm bộ chọn, chọn harness (chỉ những harness làm được lead của run: Claude Code và pi) và model. Chọn lại đúng harness đang dùng giữ nguyên model; đổi harness thì bỏ model vì model thuộc về harness. Đây là route mặc định: một project có thể có route riêng, và hộp thoại **New** cho chọn lại từng lần.
 
 Muốn xem lead và worker của một run mới sẽ dùng model nào, hoặc đặt mặc định cho worker, dùng `wsh runs route` (xem [Tích hợp agent](agent-integration.md#điều-khiển-run-và-agent-khác)).
 
@@ -46,7 +46,7 @@ Trang **Appearance**: bấm một preset trong thẻ **Theme**; các màu khác 
 
 ### Đổi nơi đặt vault hoặc bật đồng bộ vault
 
-Trang **General**, thẻ **Vault & sync**.
+Trang **Storage & sync**, thẻ **Vault & sync** (thẻ đầu trang).
 
 1. **Vault path**: nhập đường dẫn hoặc bấm biểu tượng thư mục để chọn. Thư mục phải tồn tại; để trống thì dùng vault mặc định (`~/.waveterm/vault`). Đường dẫn không hợp lệ bị từ chối với thông báo lỗi.
 2. **Sync remote**: nhập một git remote riêng tư (`git@host:you/vault.git`) để vault, initiative và các cài đặt di động giống nhau trên mọi máy. Để trống thì tắt đồng bộ. Dòng trạng thái ở chân thẻ cho biết `Sync off — git not found`, `Sync off — no remote`, `Syncing…`, `Last synced 3m ago`, `Sync failed: …`, kèm số bản xung đột (`conflict copies`) và effort lỗi.
@@ -115,14 +115,12 @@ Trang **About**, thẻ **Coding agents** liệt kê mỗi harness đã cài vớ
 |---|---|---|
 | **Startup** | **Startup surface** | Surface mở khi khởi động. **Last opened** (mặc định) mở lại surface bạn rời; hoặc Cockpit, Jarvis, Usage, Code, Diff, Radar. |
 | | **Show details rail by default** | Rail chi tiết của từng agent trên Agent (file đổi, artifact, upload, terminal). |
+| **Menu bar** | **Menu bar icon** (`app:tray`) | Biểu tượng của arcterm cạnh đồng hồ: việc đang chờ bạn, bộ nhớ, CPU và đĩa, một cú bấm là mở. |
+| | **Free memory beside the icon** (`app:traymemory`) | Dung lượng RAM còn trống, như thẻ Memory của popover đọc, cạnh biểu tượng (trên macOS), hoặc trong tooltip của biểu tượng khay (nơi khác). Theo kịp trong 10 giây. |
 | **Notifications** | **OS notifications** (`notify:os`) | Thông báo hệ thống khi arcterm ở nền; bấm vào mở agent. |
 | | **In-app toasts** (`notify:toast`) | Toast khi arcterm ở trước, trừ khi bạn đang nhìn đúng agent đó. |
 | | **When an agent finishes** (`notify:reply`) | Báo cả khi agent xong một lượt, không chỉ khi nó cần bạn. Worker của run không bao giờ báo. |
 | | **Telegram** (`telegram:enabled`) | Gửi câu hỏi đang chờ của agent tới Telegram của bạn để trả lời ngay ở đó. Xem [Trả lời câu hỏi của agent từ Telegram](#trả-lời-câu-hỏi-của-agent-từ-telegram). Mặc định tắt. |
-| **Window** | **Minimize** (`window:minimize`) | Nút minimize (cả nút vàng và `⌘M` trên macOS) thu cửa sổ vào Sprout (`sprout`, mặc định) hay đưa xuống Dock hoặc taskbar (`dock`). Nút **Sprout** trên app bar luôn thu vào Sprout. |
-| **Window** | **Fold to** | Góc màn hình Sprout thu vào: trên trái, trên phải, dưới trái hay dưới phải (mặc định). Kéo Sprout đi chỗ khác thì lần thu sau về đúng chỗ đó (hiện *Where you dragged it*) cho đến khi bạn chọn lại một góc. Lưu theo máy, không đồng bộ. Cũng có ở chuột phải nút **Sprout** trên app bar → **Fold to**. |
-| **Window** | **Fold when you leave** (`window:autosprout`) | Chuyển sang một app đang maximize hay fullscreen trên cùng màn hình với arcterm và ở đó khoảng 3 giây thì cửa sổ Full tự thu vào Sprout, nổi trên app đó; cửa sổ to nhưng không maximize, hộp thoại hay popup, app nằm cạnh, ở màn hình khác, chụp màn hình hay khoá máy thì không thu (trên macOS: một cửa sổ che từ 80% arcterm). Quay lại arcterm bằng cách nào cũng được (Alt+Tab, taskbar, bấm vào cửa sổ) thì cửa sổ tự mở ra. Mặc định tắt. Không thu khi đang ở Float, khi cửa sổ đang minimize, hay khi hộp thoại của arcterm (chọn file…) đang mở. Chuột phải nút **Sprout** trên app bar để bật/tắt nhanh. |
-| **Vault & sync** | **Vault path**, **Sync remote** | Xem trên. |
 
 Ba công tắc thông báo đầu mặc định bật; **Telegram** mặc định tắt.
 
@@ -134,10 +132,33 @@ Ba công tắc thông báo đầu mặc định bật; **Telegram** mặc địn
 | **Colors** | **Accent**, **Working / accept**, **Asking / attention**, **Blocked / reject** | Ghi đè màu vai trò; Accent có bảng màu sẵn và ô hex tùy ý. |
 | **Fonts** | **Interface font** | Inter (mặc định), Hanken Grotesk, System UI. |
 | | **Code font** | JetBrains Mono (mặc định), Hack, Fira Code. |
-| **Jarvis** | **Character** | **Sprout** (mặc định), **Minion** hoặc **Spider-Man**: con vật đi trên footer, con Sprout thu nhỏ của Float và dấu trên thanh Float đều vẽ theo nhân vật này. Dấu và trang phục giống nhau cho cả ba. Spider-Man mặc bộ Homecoming khi làm việc và là Peter Parker khi rảnh; đi nghiêng trên footer, bắn tơ khi nói, treo trên tơ khi bị kéo, thỉnh thoảng bò ngược và treo dưới app bar (rê chuột vào là xuống), và ngồi trên nóc nhà khi gập cửa sổ. |
-| **Jarvis** | Trang phục | **Flag shirt**, **Holds the flag** hoặc **Off**. Vào 30/4, 1/5 và 2/9 Jarvis mặc áo cờ kể cả khi tắt. |
-| **Jarvis** | **Jarvis quotes** | Bật (mặc định): thỉnh thoảng, khi không có gì chờ bạn, Jarvis nói một câu danh ngôn về lập trình. |
 | **Agent sidebar** | **Model**, **Branch**, **Tokens**, **Age** | Những gì dòng thứ hai của một agent trong sidebar hiện; mặc định bật hết. Tắt một mục chỉ ẩn nó khỏi hàng, rail vẫn có. Lưu trên máy này. |
+
+### Agents
+
+Gồm ba thẻ: **Claude account**, **Sleep idle agents** và **Launch flags**. Cách dùng ở phần "Làm thế nào" bên trên.
+
+**Sleep idle agents** (bật sẵn, 30 phút): agent rảnh quá số phút này thì ngủ, tức tiến trình dừng để trả RAM nhưng hàng và hội thoại vẫn còn; **Wake**, hoặc một tin gửi tới nó, cho nó làm tiếp từ chỗ cũ. Khi RAM thiếu, agent rảnh lâu nhất ngủ sớm hơn. Không bao giờ ngủ: agent bạn đang xem, agent của run, agent còn việc chạy nền.
+
+### Runs & limits
+
+Route mà run mới đi, bao nhiêu thứ chạy cùng lúc, và khi nào một lần spawn tốn kém phải hỏi bạn trước. Các mục có mặc định riêng, nên để trống thì không có chấm thay đổi; cột Mặc định là giá trị arcterm dùng khi bạn chưa đặt.
+
+| Thẻ | Mục | Mặc định | Ghi chú |
+|---|---|---|---|
+| **Runs** | **Run route** | | Harness và model cho run mới. Xem "Chọn model cho run mới". |
+| | **Active runs at once** (`runs:maxactive`) | 3 | Run xếp hàng chờ khi đã có từng này run đang chạy. 0 là không giới hạn. Bước 1, từ 0 đến 10. |
+| | **Tell the session that started a run** (`runs:wakeorigin`) | Bật | Nhắn session đã bắt đầu run khi run land, để nó nhận kết quả. |
+| **While work runs** | **Keep the Mac awake** (`power:keepawake`) | Bật | Khi một agent đang làm, một run đang chạy hay một lệnh nặng đang chạy, máy không ngủ lúc rảnh. Màn hình vẫn tắt; khi dùng pin thì buông dưới 20%. |
+| | **Heavy jobs** (`jobs:mode` + `jobs:slots`) | Auto | Build, typecheck và cả bộ test xếp hàng chờ lượt. **Auto** cho một lệnh chạy khi RAM còn đủ; **1**–**4** giới hạn số lệnh chạy cùng lúc; **Off** không bao giờ chờ. Ghi đúng những gì popover **Jobs** ghi: Auto → `jobs:mode: "auto"`, Off → `"off"`, một số → `jobs:mode: "slots"` kèm `jobs:slots`. |
+| **Token burn** | **Ask before a costly spawn** (`tokengate:enabled`) | Bật | Một lần gọi `Agent`, `Task` hay `Workflow` mà vượt một kiểm tra bên dưới thì chờ thẻ **Token burn** cho bạn đồng ý. Tắt thì năm ngưỡng dưới mờ đi. |
+| | **A spawn's share of the 5-hour window** (`tokengate:sharepct`) | 10% | Hỏi khi một lần spawn tốn chừng này cửa sổ 5 giờ. Bước 5%. |
+| | **5-hour window used** (`tokengate:windowpct`) | 70% | Hỏi khi cửa sổ 5 giờ đã dùng chừng này. Bước 5%. |
+| | **Agents started together** (`tokengate:agents`) | 3 | Hỏi khi một lần gọi khởi chạy chừng này agent. |
+| | **Week used** (`tokengate:weekpct`) | 80% | Hỏi khi cửa sổ tuần đã dùng chừng này. Bước 5%. |
+| | **The asking session's share** (`tokengate:sessionpct`) | 25% | Hỏi khi session đang hỏi đã dùng chừng này cửa sổ 5 giờ. Bước 5%. |
+
+Chân thẻ **Token burn** ghi "0 turns a check off.": đặt một ngưỡng là 0 thì kiểm tra đó tắt. Chi tiết các kiểm tra ở cuối trang này.
 
 ### Terminal
 
@@ -152,15 +173,32 @@ Ba công tắc thông báo đầu mặc định bật; **Telegram** mặc địn
 | **Behavior** | **Scrollback** (số dòng lịch sử mỗi terminal, bước 250) | 1000 nếu chưa đặt |
 | | **Copy on select** (bôi đen là copy luôn) | Tắt: bôi đen chỉ để đánh dấu chỗ đang đọc; copy bằng `Ctrl+C` khi đang có vùng bôi đen (`⌘C` trên Mac), không có vùng bôi đen thì `Ctrl+C` vẫn là interrupt |
 
-### Agents
+### Background AI
 
-Gồm bốn thẻ: **Claude account**, **Sleep idle agents**, **Runs** (**Run route**) và **Launch flags**. Cách dùng ở phần "Làm thế nào" bên trên.
+| Thẻ | Mục | Ghi chú |
+|---|---|---|
+| **Runtime** | Chọn runtime | OpenRouter hoặc harness đã cài. Để trống là OpenRouter. |
+| **OpenRouter** | **OpenRouter API key**, **Cheap model** | Khóa lưu trong kho bí mật của hệ điều hành. Ô **Cheap model** gợi ý ví dụ `deepseek/deepseek-v4-flash`; bị khóa khi runtime không phải OpenRouter. |
+| **Radar** | **Radar audit** | Route của các session audit của [Radar](radar.md). Mỗi lần quét chạy một session chỉ-đọc cho mỗi commit sửa lỗi trên route này. Chỉ Claude và pi (cần có công cụ để đọc repo); OpenRouter không dùng được. Trống là Claude với Sonnet. |
 
-**Sleep idle agents** (bật sẵn, 30 phút): agent rảnh quá số phút này thì ngủ, tức tiến trình dừng để trả RAM nhưng hàng và hội thoại vẫn còn; **Wake**, hoặc một tin gửi tới nó, cho nó làm tiếp từ chỗ cũ. Khi RAM thiếu, agent rảnh lâu nhất ngủ sớm hơn. Không bao giờ ngủ: agent bạn đang xem, agent của run, agent còn việc chạy nền.
+### Jarvis & Office
 
-### Storage
+Ba thẻ: **Jarvis**, **Folding** và **Office**.
 
-Những gì arcterm và các agent để lại trên đĩa, và nút dọn từng phần. Đầu trang ghi tổng dung lượng và phần dọn được, nút **Rescan** và giờ quét gần nhất. Lần dọn nào cũng hỏi xác nhận trước, nói rõ cái gì đi và lấy lại bao nhiêu. Thứ đang dùng không bao giờ bị xóa: mục bị bỏ qua vẫn nằm trong danh sách, lý do ghi bên cạnh.
+| Thẻ | Mục | Ghi chú |
+|---|---|---|
+| **Jarvis** | **Character** | **Sprout** (mặc định), **Minion** hoặc **Spider-Man**: con vật đi trên footer, con Sprout thu nhỏ của Float và dấu trên thanh Float đều vẽ theo nhân vật này. Dấu và trang phục giống nhau cho cả ba. Spider-Man mặc bộ Homecoming khi làm việc và là Peter Parker khi rảnh; đi nghiêng trên footer, bắn tơ khi nói, treo trên tơ khi bị kéo, thỉnh thoảng bò ngược và treo dưới app bar (rê chuột vào là xuống), và ngồi trên nóc nhà khi gập cửa sổ. |
+| | Trang phục | **Flag shirt**, **Holds the flag** hoặc **Off**. Vào 30/4, 1/5 và 2/9 Jarvis mặc áo cờ kể cả khi tắt. |
+| | **Jarvis quotes** | Bật (mặc định): thỉnh thoảng, khi không có gì chờ bạn, Jarvis nói một câu danh ngôn về lập trình. |
+| **Folding** | **Minimize** (`window:minimize`) | Nút minimize (cả nút vàng và `⌘M` trên macOS) thu cửa sổ vào Sprout (`sprout`, mặc định) hay đưa xuống Dock hoặc taskbar (`dock`). Nút **Sprout** trên app bar luôn thu vào Sprout. |
+| | **Fold to** | Góc màn hình Sprout thu vào: trên trái, trên phải, dưới trái hay dưới phải (mặc định). Kéo Sprout đi chỗ khác thì lần thu sau về đúng chỗ đó (hiện *Where you dragged it*) cho đến khi bạn chọn lại một góc. Lưu theo máy, không đồng bộ. Cũng có ở chuột phải nút **Sprout** trên app bar → **Fold to**. |
+| | **Fold when you leave** (`window:autosprout`) | Chuyển sang một app đang maximize hay fullscreen trên cùng màn hình với arcterm và ở đó khoảng 3 giây thì cửa sổ Full tự thu vào Sprout, nổi trên app đó; cửa sổ to nhưng không maximize, hộp thoại hay popup, app nằm cạnh, ở màn hình khác, chụp màn hình hay khoá máy thì không thu (trên macOS: một cửa sổ che từ 80% arcterm). Quay lại arcterm bằng cách nào cũng được (Alt+Tab, taskbar, bấm vào cửa sổ) thì cửa sổ tự mở ra. Mặc định tắt. Không thu khi đang ở Float, khi cửa sổ đang minimize, hay khi hộp thoại của arcterm (chọn file…) đang mở. Chuột phải nút **Sprout** trên app bar để bật/tắt nhanh. |
+| **Office** | **Office animation**, **Work hours** | Người trong Office của Cockpit gõ phím, đi lại và vẫy tay; tắt thì mọi người đứng yên và sếp di chuyển ngay. Ngoài giờ làm việc và cả cuối tuần, Office tối đi, người rảnh về nhà và đèn bàn bật. Lưu trên máy này. |
+| | **Office jingles**, **Boss sounds**, **Office music**, **Office volume** | Âm thanh của Office khi nó đang hiện và arcterm có focus: nhạc chiptune ngắn khi task xong, run land, có việc cần bạn hay task lỗi; tiếng bước chân và tiếng bump của sếp; một vòng nhạc cho giờ làm việc và một cho ngoài giờ; âm lượng chung. Phím `s` trong Office tắt mọi âm thanh. Lưu trên máy này. |
+
+### Storage & sync
+
+Thẻ đầu trang là **Vault & sync** (**Vault path**, **Sync remote** và dòng trạng thái đồng bộ; xem "Đổi nơi đặt vault hoặc bật đồng bộ vault"). Phần còn lại là những gì arcterm và các agent để lại trên đĩa, và nút dọn từng phần. Dưới thẻ Vault, đầu trang ghi tổng dung lượng và phần dọn được, nút **Rescan** và giờ quét gần nhất. Lần dọn nào cũng hỏi xác nhận trước, nói rõ cái gì đi và lấy lại bao nhiêu. Thứ đang dùng không bao giờ bị xóa: mục bị bỏ qua vẫn nằm trong danh sách, lý do ghi bên cạnh.
 
 | Thẻ | Dọn gì | Ghi chú |
 |---|---|---|
@@ -170,14 +208,6 @@ Những gì arcterm và các agent để lại trên đĩa, và nút dọn từn
 | **Build output** | `node_modules`, `target`, `dist`, `build`, `.next`, `__pycache__` mà git bỏ qua trong các project của bạn. | Mỗi project một nút **Remove**, không có Clean all. Thư mục có file git đang theo dõi không bao giờ bị xóa. Project có agent đang làm hoặc run đang chạy bị từ chối. |
 | **Design canvases** | Các canvas `.dc.html` mà agent vẽ bằng design-local, trong `.superpowers/design` của từng project. | Thẻ chỉ ghi dung lượng, số canvas và nút **Open the gallery** (mở Agent → Canvas gallery), không liệt kê từng cái và không có Clean all. Canvas ở lại cho đến khi bạn dọn trong thư viện bằng **Clean up**, nơi bạn xem từng cái trước khi nó vào `~/.arc/trash`, nằm đó 7 ngày rồi mới xóa hẳn. |
 | **Auto-clean** | **Clean the safe parts daily** (`storage:autoclean`, bật sẵn), **Remind me above** (`storage:nudgegb`, 2 GB), **Agents delete a canvas when its feature ships** (`storage:canvasonship`, tắt sẵn) | Mỗi ngày (lần đầu 2 phút sau khi mở app), dọn worktree của run đã xong không có thay đổi và log cuộn cũ hơn 7 ngày. Session, build output, canvas và cache chờ bạn. Khi dọn được nhiều hơn ngưỡng, một toast mở trang này, mỗi ngày tối đa một lần. Công tắc canvas không dọn gì theo lịch: agent đọc nó qua `wsh canvas policy`. Tắt thì agent giữ mọi canvas và chỉ liệt kê những cái đã ship khi bạn nhờ dọn; bật thì agent xóa canvas khi tính năng của nó đã ship. |
-
-### Background AI
-
-| Thẻ | Mục | Ghi chú |
-|---|---|---|
-| **Runtime** | Chọn runtime | OpenRouter hoặc harness đã cài. Để trống là OpenRouter. |
-| **OpenRouter** | **OpenRouter API key**, **Cheap model** | Khóa lưu trong kho bí mật của hệ điều hành. Ô **Cheap model** gợi ý ví dụ `deepseek/deepseek-v4-flash`; bị khóa khi runtime không phải OpenRouter. |
-| **Radar** | **Radar audit** | Route của các session audit của [Radar](radar.md). Mỗi lần quét chạy một session chỉ-đọc cho mỗi commit sửa lỗi trên route này. Chỉ Claude và pi (cần có công cụ để đọc repo); OpenRouter không dùng được. Trống là Claude với Sonnet. |
 
 ### About
 
@@ -192,5 +222,5 @@ Những gì arcterm và các agent để lại trên đĩa, và nút dọn từn
 - **Instructions và skills** dùng chung cho các harness: [Setup](setup.md).
 - **Thư viện tool** (lazygit, yazi, btop…) nằm ở Setup → Tools, không ở Settings: các tool bạn thêm được lưu trong `tools.json` ở thư mục `config`, cạnh `settings.json` (arcterm đọc lại khi file đổi). Danh sách tool ghim trong Open a tool chỉ lưu trên máy này. Cách dùng: [Agent → Tools](agent.md#tools).
 - **Giới hạn và tiêu thụ quota**: [Usage](usage.md).
-- **Cách chạy lệnh nặng** (`jobs:mode`, `jobs:slots`): lệnh nặng (build, typecheck, cả bộ test) của mọi agent và run xếp chung một hàng đợi. `jobs:mode` = `auto` (mặc định) cho chạy bao nhiêu cũng được miễn RAM còn đủ; `slots` giới hạn thêm ở `jobs:slots` lệnh cùng lúc (1–4, mặc định 1); `off` tắt hàng đợi, mọi lệnh chạy ngay. `jobs:pauseuntil` (Unix ms) tắt hàng đợi đến giờ đó, do nút **Pause 1h / 4h** ghi. Trên macOS, "RAM đủ" đọc theo memory pressure của hệ điều hành; trên Windows, theo commit charge so với RAM thật. Không có thẻ trong Settings: ghi bằng bộ chọn **Slots** ở popover của chip **Jobs** trên app bar, xem [Usage → Hàng đợi lệnh nặng](usage.md#hàng-đợi-lệnh-nặng).
-- **Thẻ Token burn** (`tokengate:enabled`, `tokengate:sharepct`, `tokengate:windowpct`, `tokengate:agents`, `tokengate:weekpct`, `tokengate:sessionpct`): trước khi một agent Claude chạy `Agent`, `Task` hay `Workflow`, arcterm hiện thẻ **Token burn** trên terminal của nó khi lần spawn sẽ tốn từ `tokengate:sharepct` % cửa sổ 5 giờ (mặc định 10), khi cửa sổ đã dùng từ `tokengate:windowpct` % (mặc định 70), khi cửa sổ tuần đã dùng từ `tokengate:weekpct` % (mặc định 80), khi chính session đó, tính cả subagent của nó, đã dùng từ `tokengate:sessionpct` % cửa sổ 5 giờ (mặc định 25), khi nhóm khởi chạy từ `tokengate:agents` agent cùng lúc (mặc định 3), hoặc khi đó là một Workflow. Chi phí mỗi agent lấy từ các subagent cùng loại đã chạy xong (thẻ **Subagent cost** trong [Usage](usage.md)). Đặt một ngưỡng là `0` để tắt quy tắc đó; `tokengate:enabled` = `false` tắt hẳn thẻ. Không có thẻ trong Settings: ghi vào `settings.json`.
+- **Cách chạy lệnh nặng** (`jobs:mode`, `jobs:slots`): lệnh nặng (build, typecheck, cả bộ test) của mọi agent và run xếp chung một hàng đợi. `jobs:mode` = `auto` (mặc định) cho chạy bao nhiêu cũng được miễn RAM còn đủ; `slots` giới hạn thêm ở `jobs:slots` lệnh cùng lúc (1–4, mặc định 1); `off` tắt hàng đợi, mọi lệnh chạy ngay. `jobs:pauseuntil` (Unix ms) tắt hàng đợi đến giờ đó, do nút **Pause 1h / 4h** ghi. Trên macOS, "RAM đủ" đọc theo memory pressure của hệ điều hành; trên Windows, theo commit charge so với RAM thật. Mục **Heavy jobs** ở trang **Runs & limits** ghi đúng hai khóa này; bộ chọn **Slots** ở popover của chip **Jobs** trên app bar ghi cùng chúng (kèm **Pause 1h / 4h**, không có mục trong Settings), xem [Usage → Hàng đợi lệnh nặng](usage.md#hàng-đợi-lệnh-nặng).
+- **Thẻ Token burn** (`tokengate:enabled`, `tokengate:sharepct`, `tokengate:windowpct`, `tokengate:agents`, `tokengate:weekpct`, `tokengate:sessionpct`): trước khi một agent Claude chạy `Agent`, `Task` hay `Workflow`, arcterm hiện thẻ **Token burn** trên terminal của nó khi lần spawn sẽ tốn từ `tokengate:sharepct` % cửa sổ 5 giờ (mặc định 10), khi cửa sổ đã dùng từ `tokengate:windowpct` % (mặc định 70), khi cửa sổ tuần đã dùng từ `tokengate:weekpct` % (mặc định 80), khi chính session đó, tính cả subagent của nó, đã dùng từ `tokengate:sessionpct` % cửa sổ 5 giờ (mặc định 25), khi nhóm khởi chạy từ `tokengate:agents` agent cùng lúc (mặc định 3), hoặc khi đó là một Workflow. Chi phí mỗi agent lấy từ các subagent cùng loại đã chạy xong (thẻ **Subagent cost** trong [Usage](usage.md)). Đặt một ngưỡng là `0` để tắt quy tắc đó; `tokengate:enabled` = `false` tắt hẳn thẻ. Sáu khóa này là thẻ **Token burn** của trang **Runs & limits**.

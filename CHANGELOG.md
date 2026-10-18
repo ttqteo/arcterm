@@ -32,6 +32,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Settings is sorted by what each setting changes: a Runs & limits page holds the run route, how many runs and heavy
+  jobs go at once, keeping the Mac awake and when a costly spawn asks first; the pet's folding sits with Jarvis & Office;
+  the vault with Storage & sync; About at the foot of the list. <!-- try: settings -->
 - **Work on** an initiative that has no project asks which project to start the agent in, and the initiative keeps
   it, instead of an error telling you to run `wsh effort project`.
 - Plan to review in the agent's details rail shows a row's Accept, Rename and Drop only while the pointer is over it,
