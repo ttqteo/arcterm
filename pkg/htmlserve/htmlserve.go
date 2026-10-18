@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -45,8 +46,7 @@ func validateHTMLFile(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("reading %s: %w", path, err)
 	}
-	ext := strings.ToLower(filepath.Ext(clean))
-	if ext != ".html" && ext != ".htm" {
+	if !isHTMLName(clean) {
 		return "", fmt.Errorf("%s is not an HTML file", path)
 	}
 	info, err := os.Stat(clean)
@@ -129,6 +129,89 @@ func Handler() http.Handler {
 		}
 		// a page is edited between loads, so every load revalidates against the file's Last-Modified
 		w.Header().Set("Cache-Control", "no-cache")
-		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
+		if !isHTMLName(info.Name()) {
+			http.ServeContent(w, r, info.Name(), info.ModTime(), f)
+			return
+		}
+		// streamed from the file with the script after it, never read whole: an exported deck can run to tens of MB
+		page := withSuffix{f: f, size: info.Size(), suffix: []byte(scrollScript)}
+		http.ServeContent(w, r, info.Name(), info.ModTime(), io.NewSectionReader(page, 0, page.len()))
 	})
+}
+
+func isHTMLName(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	return ext == ".html" || ext == ".htm"
+}
+
+// scrollScript goes after every page served, so a preview left for another file or surface reopens where the reader
+// was. The page runs at this listener's origin, which arcterm's window cannot reach into, so the page reports its own
+// scroll to the frame's parent and takes a kept one back (frontend htmlframe.tsx). After </html> the parser still runs
+// it, as part of the body. A restore waits for the page to grow tall enough (images, fonts) for about half a second,
+// and gives way to the reader's first wheel, key or click. A page whose own Content-Security-Policy refuses inline
+// scripts simply opens at the top.
+const scrollScript = `<script>(function () {
+  var p = window.parent;
+  if (p === window) return;
+  var raf = 0;
+  addEventListener("scroll", function () {
+    if (raf) return;
+    raf = requestAnimationFrame(function () {
+      raf = 0;
+      p.postMessage({ type: "arc-html-scroll", y: Math.round(scrollY) }, "*");
+    });
+  }, { passive: true });
+  addEventListener("message", function (e) {
+    var d = e.data;
+    if (e.source !== p || !d || d.type !== "arc-html-restore" || !(d.y > 0)) return;
+    var n = 0, stop = false;
+    var halt = function () { stop = true; };
+    addEventListener("wheel", halt, { once: true, passive: true });
+    addEventListener("keydown", halt, { once: true });
+    addEventListener("pointerdown", halt, { once: true });
+    (function step() {
+      if (stop) return;
+      var el = document.scrollingElement || document.documentElement;
+      if (el.scrollHeight - innerHeight >= d.y || ++n >= 30) { scrollTo(0, d.y); return; }
+      requestAnimationFrame(step);
+    })();
+  });
+})();</script>
+`
+
+// withSuffix reads as a file followed by a few bytes, for http.ServeContent's ranges and length
+type withSuffix struct {
+	f      io.ReaderAt
+	size   int64
+	suffix []byte
+}
+
+func (s withSuffix) len() int64 {
+	return s.size + int64(len(s.suffix))
+}
+
+func (s withSuffix) ReadAt(p []byte, off int64) (int, error) {
+	n := 0
+	if off < s.size {
+		k := min(int64(len(p)), s.size-off)
+		m, err := s.f.ReadAt(p[:k], off)
+		n = m
+		if int64(m) < k {
+			// the file shrank under the read
+			if err == nil || err == io.EOF {
+				err = io.ErrUnexpectedEOF
+			}
+			return n, err
+		}
+	}
+	if n < len(p) {
+		i := off + int64(n) - s.size
+		if i < int64(len(s.suffix)) {
+			n += copy(p[n:], s.suffix[i:])
+		}
+	}
+	if n < len(p) {
+		return n, io.EOF
+	}
+	return n, nil
 }

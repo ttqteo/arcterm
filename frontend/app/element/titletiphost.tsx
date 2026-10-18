@@ -11,6 +11,8 @@
 // when its prop changes, so a title removed for good would never return. If React rewrites the title
 // while it is lifted, the observer lifts the new text.
 //
+// An embedded page (iframe, embed, object) raises none: its title names it for a screen reader.
+//
 // Placement: below the element, beside it in the nav rail, or whatever the nearest data-tip-placement says.
 //
 // Reveal: once placed, the chip fades and scales in from the side facing its anchor (motiontokens.tooltipReveal,
@@ -21,7 +23,7 @@ import { autoUpdate, computePosition, flip, offset, shift, type Placement } from
 import { MotionConfig, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { tooltipReveal } from "./motiontokens";
-import { keyDismissesTip, splitTitle, tooltipOrigin } from "./titletip";
+import { isFrameTag, keyDismissesTip, splitTitle, tooltipOrigin } from "./titletip";
 
 const STASH = "data-arc-title";
 
@@ -82,6 +84,11 @@ export function TitleTipHost() {
         };
         const onOver = (e: PointerEvent) => {
             const target = e.target instanceof Element ? e.target : null;
+            // a frame raises no tip, neither its own title nor one from around it (titletip.ts isFrameTag)
+            if (target != null && isFrameTag(target.tagName)) {
+                release();
+                return;
+            }
             const el = target?.closest<HTMLElement>(`[title], [${STASH}]`) ?? null;
             if (el === currentRef.current) {
                 return;

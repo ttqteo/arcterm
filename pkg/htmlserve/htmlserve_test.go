@@ -99,7 +99,7 @@ func TestHandlerServesThePageAndWhatSitsBesideIt(t *testing.T) {
 	}
 	res := get(t, http.MethodGet, page)
 	body, _ := io.ReadAll(res.Body)
-	if res.StatusCode != http.StatusOK || string(body) != pageBody {
+	if res.StatusCode != http.StatusOK || string(body) != pageBody+scrollScript {
 		t.Fatalf("GET page: status %d body %q", res.StatusCode, body)
 	}
 	if !strings.HasPrefix(res.Header.Get("Content-Type"), "text/html") {
@@ -139,5 +139,60 @@ func TestHandlerRefusesWhatWasNotRegistered(t *testing.T) {
 		if res := get(t, tc.method, tc.path); res.StatusCode != tc.want {
 			t.Errorf("%s: status %d, want %d", name, res.StatusCode, tc.want)
 		}
+	}
+}
+
+func TestHandlerAddsTheScrollScriptToPagesOnly(t *testing.T) {
+	dir := pageDir(t)
+	b := base(t, filepath.Join(dir, "index.html"))
+	res := get(t, http.MethodGet, b+"/index.html")
+	body, _ := io.ReadAll(res.Body)
+	if string(body) != "<p>index</p>"+scrollScript {
+		t.Errorf("GET index.html: body %q", body)
+	}
+	if res.ContentLength != int64(len(body)) {
+		t.Errorf("Content-Length %d for a %d-byte body", res.ContentLength, len(body))
+	}
+	for rel, want := range map[string]string{"/notes.txt": "notes", "/img/a.png": "png"} {
+		body, _ := io.ReadAll(get(t, http.MethodGet, b+rel).Body)
+		if string(body) != want {
+			t.Errorf("GET %s: body %q, want %q", rel, body, want)
+		}
+	}
+	// a range across the end of the file reads on into the script
+	req := httptest.NewRequest(http.MethodGet, b+"/index.html", nil)
+	req.Header.Set("Range", "bytes=8-20")
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, req)
+	full := "<p>index</p>" + scrollScript
+	if rec.Code != http.StatusPartialContent || rec.Body.String() != full[8:21] {
+		t.Errorf("range: status %d body %q, want %q", rec.Code, rec.Body.String(), full[8:21])
+	}
+}
+
+func TestWithSuffixReadsTheFileThenTheSuffix(t *testing.T) {
+	s := withSuffix{f: strings.NewReader("abcdef"), size: 6, suffix: []byte("XYZ")}
+	for _, tc := range []struct {
+		off     int64
+		n       int
+		want    string
+		wantEOF bool
+	}{
+		{0, 9, "abcdefXYZ", false},
+		{0, 4, "abcd", false},
+		{4, 4, "efXY", false},
+		{6, 3, "XYZ", false},
+		{7, 5, "YZ", true},
+		{9, 2, "", true},
+	} {
+		p := make([]byte, tc.n)
+		n, err := s.ReadAt(p, tc.off)
+		if string(p[:n]) != tc.want || (err == io.EOF) != tc.wantEOF || (err != nil && err != io.EOF) {
+			t.Errorf("ReadAt(%d bytes at %d) = %q, %v; want %q (EOF %v)", tc.n, tc.off, p[:n], err, tc.want, tc.wantEOF)
+		}
+	}
+	short := withSuffix{f: strings.NewReader("abc"), size: 6, suffix: []byte("XYZ")}
+	if _, err := short.ReadAt(make([]byte, 9), 0); err != io.ErrUnexpectedEOF {
+		t.Errorf("a file shorter than its size: err %v, want io.ErrUnexpectedEOF", err)
 	}
 }

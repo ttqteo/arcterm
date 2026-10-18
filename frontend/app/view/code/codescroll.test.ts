@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { applyScroll, clearKeptScrolls, keepScroll, keptScroll, scrollKey } from "./codescroll";
+import { applyScroll, clearKeptScrolls, keepScroll, keptScroll, pageScrollReport, scrollKey } from "./codescroll";
 
 describe("kept preview scroll", () => {
     beforeEach(clearKeptScrolls);
@@ -38,5 +38,21 @@ describe("applyScroll", () => {
         el.scrollHeight = 2000;
         expect(applyScroll(el, 500)).toBe(true);
         expect(el.scrollTop).toBe(500);
+    });
+});
+
+describe("an HTML page's scroll report", () => {
+    it("reads the offset the page's script sends", () => {
+        expect(pageScrollReport({ type: "arc-html-scroll", y: 1240 })).toBe(1240);
+        expect(pageScrollReport({ type: "arc-html-scroll", y: 0 })).toBe(0);
+    });
+
+    it("ignores anything else a page posts", () => {
+        expect(pageScrollReport(null)).toBeNull();
+        expect(pageScrollReport("arc-html-scroll")).toBeNull();
+        expect(pageScrollReport({ type: "slide", y: 3 })).toBeNull();
+        expect(pageScrollReport({ type: "arc-html-scroll", y: "12" })).toBeNull();
+        expect(pageScrollReport({ type: "arc-html-scroll", y: -5 })).toBeNull();
+        expect(pageScrollReport({ type: "arc-html-scroll", y: Number.NaN })).toBeNull();
     });
 });
