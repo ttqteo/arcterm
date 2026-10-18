@@ -49,6 +49,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Setup → Memory shows a change in a rail as wide as Skills' one, growing with the window, so its diff no longer
+  wraps every few words.
 - An agent whose turn ended while work it started still runs in the background no longer reads idle: its header and
   sidebar row say working while a command is at work, and waiting, on a slower pulse, while it only watches (a Monitor,
   a loop that checks and sleeps). A dev server it left running keeps it idle.

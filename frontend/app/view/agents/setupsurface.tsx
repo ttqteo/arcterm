@@ -74,7 +74,15 @@ import {
     typeSkill,
     type SetupTab,
 } from "./setupstore";
-import { BTN_PRIMARY, BTN_SECONDARY, FADE_IN, INPUT, SECTION_HEAD } from "./setupstyles";
+import {
+    BTN_PRIMARY,
+    BTN_SECONDARY,
+    DETAIL_RAIL_EDIT_WIDTH,
+    DETAIL_RAIL_WIDTH,
+    FADE_IN,
+    INPUT,
+    SECTION_HEAD,
+} from "./setupstyles";
 import {
     additionsChip,
     adoptCount,
@@ -97,11 +105,6 @@ import {
 } from "./skillsmatrix";
 import { ToolsHeader, ToolsLibrary } from "./toolslibrary";
 import { fileTextOf, useFileText } from "./usefiletext";
-
-// The skill rail grows with the window so a SKILL.md reads at a comfortable measure, and wider again while editing; the
-// matrix keeps the rest (its harness columns are fixed, so the floor of either width still leaves the names room).
-const RAIL_WIDTH = "w-[clamp(480px,45%,820px)]";
-const RAIL_EDIT_WIDTH = "w-[clamp(600px,55%,1000px)]";
 
 const TONE_DOT: Record<Tone, string> = { ok: "bg-success", warn: "bg-warning", none: "bg-ink-faint" };
 const TONE_TEXT: Record<Tone, string> = { ok: "text-ink-mid", warn: "text-warning-soft", none: "text-muted" };
@@ -843,7 +846,7 @@ function SkillRail({
             data-skill-rail={row.name}
             className={cn(
                 "flex flex-none flex-col border-l border-border bg-surface",
-                ed != null ? RAIL_EDIT_WIDTH : RAIL_WIDTH
+                ed != null ? DETAIL_RAIL_EDIT_WIDTH : DETAIL_RAIL_WIDTH
             )}
         >
             {ed != null ? (
@@ -999,7 +1002,7 @@ function NewSkillRail({ taken }: { taken: string[] }) {
             {...FADE_IN}
             aria-label="New skill"
             data-new-skill-form
-            className={cn("flex flex-none flex-col border-l border-border bg-surface", RAIL_WIDTH)}
+            className={cn("flex flex-none flex-col border-l border-border bg-surface", DETAIL_RAIL_WIDTH)}
         >
             <form
                 className="flex min-h-0 flex-1 flex-col"

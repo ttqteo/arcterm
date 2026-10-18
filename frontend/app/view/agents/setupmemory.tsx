@@ -43,6 +43,7 @@ import {
 } from "./memorystore";
 import { fmtClock } from "./runcompletion";
 import type { Tone } from "./setupmodel";
+import { DETAIL_RAIL_WIDTH } from "./setupstyles";
 
 const SECTION_HEAD = cn(REGION_LABEL, "text-muted");
 const BTN_SECONDARY =
@@ -434,7 +435,10 @@ function ChangeDetail({ p, change }: { p: MemHygieneProject; change: MemChange }
         <aside
             aria-label="Change detail"
             data-memory-detail
-            className="flex w-[400px] flex-none flex-col gap-3.5 overflow-y-auto border-l border-border bg-surface p-4"
+            className={cn(
+                "flex flex-none flex-col gap-3.5 overflow-y-auto border-l border-border bg-surface p-4",
+                DETAIL_RAIL_WIDTH
+            )}
         >
             <div className="flex flex-col gap-1.5">
                 <span>
