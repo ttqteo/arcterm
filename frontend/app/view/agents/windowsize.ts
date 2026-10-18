@@ -154,6 +154,26 @@ export const FOLD_FADE_FROM = 0.6;
 // the content starts to shrink this far into the pet's departure (petteleport.ts), while its beam still stands
 export const FOLD_DEPART_LEAD_MS = 260;
 
+// The longest a fold waits on the page's drawing (a frame, its motion's end). macOS takes a window behind another app's
+// as covered, and WKWebView then draws the page nothing until it shows again; the page reads hidden, sometimes only a
+// while later. A fold made after you left, waiting on a frame, ended only when you came back: it folded as you returned.
+export const FRAME_WAIT_MS = 100;
+
+/** Whichever comes first: the wait, or `ms` on the timer. A failed wait counts as ended. */
+export function settleWithin(
+    wait: Promise<unknown>,
+    ms: number,
+    timer: (cb: () => void, ms: number) => unknown
+): Promise<"done" | "timeout"> {
+    return new Promise((resolve) => {
+        timer(() => resolve("timeout"), ms);
+        wait.then(
+            () => resolve("done"),
+            () => resolve("done")
+        );
+    });
+}
+
 export interface FoldFade {
     opacity: number[];
     // each keyframe's place in the fold, 0 to 1

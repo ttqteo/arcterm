@@ -78,11 +78,13 @@ import {
     FOLD_MS,
     FOLD_SCALE,
     foldFade,
+    FRAME_WAIT_MS,
     minimizeAction,
     minimizeChoice,
     move,
     onReopen,
     onSurfaceChange,
+    settleWithin,
     sizeState,
     sproutCenter,
     windowSize,
@@ -332,8 +334,19 @@ let sprout: WinRect | null = null;
 // interleaving left the window at the wrong size and the terminal refit to it.
 const miniOps = serialQueue();
 
-function nextFrame(): Promise<void> {
-    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+// A page the OS hides draws nothing: a window covered by another app's on macOS (windowsize.ts FRAME_WAIT_MS)
+function pageHidden(): boolean {
+    return document.visibilityState === "hidden";
+}
+
+const wait = (cb: () => void, ms: number) => setTimeout(cb, ms);
+
+// the next frame; none in a hidden page, and none past FRAME_WAIT_MS in a page that has yet to read hidden
+async function nextFrame(): Promise<void> {
+    if (pageHidden()) {
+        return;
+    }
+    await settleWithin(new Promise((resolve) => requestAnimationFrame(resolve)), FRAME_WAIT_MS, wait);
 }
 
 async function spaceFrame(win: Window): Promise<WinRect> {
@@ -463,20 +476,25 @@ function landPet(motion: boolean): void {
 }
 
 // Scale the content into Sprout's spot and fade it (a fold), or grow it out of the spot (a restore): the scale on the
-// motion tokens' easing, the fade held to the fold's end (windowsize.ts foldFade). Reduced motion skips it.
+// motion tokens' easing, the fade held to the fold's end (windowsize.ts foldFade). Reduced motion skips it, and so does
+// a hidden page, where nobody sees it and it would not end.
 async function scaleContent(at: Pt, to: "sprout" | "window"): Promise<void> {
     const el = content();
-    if (el == null || reducedMotion()) {
+    if (el == null || reducedMotion() || pageHidden()) {
         return;
     }
     el.style.transformOrigin = `${at.x}px ${at.y}px`;
     const duration = FOLD_MS / 1000;
     const fade = foldFade(to);
-    await animate(
+    const run = animate(
         el,
         { scale: to === "sprout" ? [1, FOLD_SCALE] : [FOLD_SCALE, 1], opacity: fade.opacity },
         { duration, ease: MOTION.easeFluid, opacity: { duration, ease: "linear", times: fade.times } }
-    ).finished;
+    );
+    if ((await settleWithin(run.finished, FOLD_MS + FRAME_WAIT_MS, wait)) === "timeout") {
+        // the frames stopped mid-motion: left running, it would draw the content folded once they came back
+        run.stop();
+    }
 }
 
 // Before the shell shows again: drawn as small and clear as the fold left it, so its first frame is not full size.
@@ -537,7 +555,8 @@ export function foldToSprout(): Promise<void> {
                 screen.area,
                 screen.scale
             );
-            const motion = !reducedMotion();
+            // none in a hidden page: the fold that follows you out of arcterm runs behind the app you went to
+            const motion = !reducedMotion() && !pageHidden();
             closePeek();
             globalStore.set(foldOriginAtom, origin);
             if (motion) {
@@ -900,7 +919,13 @@ function setupAutoSprout(model: AgentsViewModel): () => void {
             chatAtLeave = false;
             // the host, not the window's focus: the fold's own window changes report the window focused while the
             // other app stays in front
-            armed = (await invoke<Foreground>("app_foreground").catch((): Foreground => "beside")) !== "ours";
+            const foreground = await invoke<Foreground>("app_foreground").catch((): Foreground => "beside");
+            armed = true;
+            if (foreground === "ours") {
+                // you came back while it folded, and that focus found it unarmed
+                foldLog("back in arcterm before the fold ended");
+                arrive();
+            }
         }
     };
     const arrive = () => {

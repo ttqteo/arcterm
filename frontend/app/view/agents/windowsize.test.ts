@@ -15,6 +15,7 @@ import {
     move,
     onReopen,
     onSurfaceChange,
+    settleWithin,
     sizeState,
     sproutCenter,
     windowSize,
@@ -221,4 +222,27 @@ describe("sproutCenter", () => {
             x: 800,
             y: 500,
         }));
+});
+
+describe("settleWithin", () => {
+    // a timer that fires only when the test says so
+    function manualTimer() {
+        const pending: Array<() => void> = [];
+        return { timer: (cb: () => void) => void pending.push(cb), fire: () => pending.forEach((cb) => cb()) };
+    }
+    it("ends with the wait when it ends first", async () => {
+        const t = manualTimer();
+        await expect(settleWithin(Promise.resolve(), 100, t.timer)).resolves.toBe("done");
+    });
+    // a covered window on a Mac: the page draws no frame and ends no motion until it shows again
+    it("gives up on a wait that never ends once its time is out", async () => {
+        const t = manualTimer();
+        const settled = settleWithin(new Promise(() => {}), 100, t.timer);
+        t.fire();
+        await expect(settled).resolves.toBe("timeout");
+    });
+    it("ends a failed wait as done", async () => {
+        const t = manualTimer();
+        await expect(settleWithin(Promise.reject(new Error("gone")), 100, t.timer)).resolves.toBe("done");
+    });
 });
