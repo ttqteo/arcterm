@@ -29,6 +29,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Office's music is a music-box Spider-Man theme in place of the day and night tunes, crunched as a Game Boy
   Advance would play it and picking up where it stopped when you come back. A file at `~/.arc/office-music.mp3`
   plays instead.
+- **New project** finds folders Claude Code never ran in: type, and under the Claude Code list a **Found on disk**
+  section shows the projects (a git repo, or a folder with a `package.json`, `pom.xml`, `pyproject.toml`…) in and near
+  the folders your projects sit in, each with what it is and when it last changed.
 - Settings → Storage has a **Package caches** card: what npm, Go, Cargo, Homebrew and the like downloaded or built
   once, each with its own Remove, which the next install or build fetches again.
 
@@ -57,6 +60,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   time left every click opening nothing until arcterm restarted.
 - In a float, the agent tabs no longer slide over the Translate button or under the usage: a narrow float shows as many
   tabs as fit and puts the rest under "+N".
+- **New project**'s Claude Code list shows only projects: `/`, your home folder and the orchestrator's run worktrees
+  are gone, and a session begun in a repo's subfolder counts for the repo.
 
 ## 0.15.15 — 2026-10-17
 

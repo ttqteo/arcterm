@@ -118,7 +118,7 @@ arcterm làm việc theo project: một thư mục (thường là repo git) đã
 
 1. Trên app bar, bấm nút project sau chữ `arcterm /` (hiện **All projects**).
 2. Cuối danh sách bấm **New project**.
-3. Chọn một thư mục trong mục **From Claude Code** (các thư mục Claude Code đã có session; gõ để lọc, `↑`/`↓` để di chuyển), hoặc bấm **Choose a folder…** để nhập **Name** và **Local path** (có nút **Browse…**).
+3. Chọn một thư mục trong mục **From Claude Code** (các project Claude Code đã có session; gõ để lọc, `↑`/`↓` để di chuyển). Khi gõ, mục **Found on disk** hiện thêm các project trên ổ đĩa quanh những thư mục chứa project của bạn, kể cả folder Claude Code chưa từng mở. Hoặc bấm **Choose a folder…** để nhập **Name** và **Local path** (có nút **Browse…**).
 4. Bấm **Create project** (hoặc `Ctrl+Enter`).
 
 Project mới được chọn làm bộ lọc hiện tại. Nếu chưa có project nào, cột Project của hộp thoại **New** cũng có nút **Register a project** dẫn tới cùng hộp thoại. Chọn project khác, hoặc xóa một project (biểu tượng thùng rác hiện khi rê chuột vào hàng, rồi xác nhận **Remove?**), ở cùng menu **Switch project**. Xóa project chỉ bỏ nó khỏi danh sách của arcterm; file và run của nó không bị động đến.

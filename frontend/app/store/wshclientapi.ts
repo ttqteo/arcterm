@@ -540,6 +540,12 @@ export class RpcApiType {
         return client.wshRpcCall("filewrite", data, opts);
     }
 
+    // command "findprojectfolders" [call]
+    FindProjectFoldersCommand(client: WshClient, data: CommandFindProjectFoldersData, opts?: RpcOpts): Promise<CommandFindProjectFoldersRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "findprojectfolders", data, opts);
+        return client.wshRpcCall("findprojectfolders", data, opts);
+    }
+
     // command "getagenttranscript" [call]
     GetAgentTranscriptCommand(client: WshClient, data: CommandGetAgentTranscriptData, opts?: RpcOpts): Promise<CommandGetAgentTranscriptRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getagenttranscript", data, opts);

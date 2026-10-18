@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -15,7 +16,9 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/bgagents"
 	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
 	"github.com/wavetermdev/waveterm/pkg/claudequota"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/projectscan"
 	"github.com/wavetermdev/waveterm/pkg/tokengate"
 	"github.com/wavetermdev/waveterm/pkg/usageinsights"
 	"github.com/wavetermdev/waveterm/pkg/usagestats"
@@ -346,12 +349,28 @@ func (ws *WshServer) ReviewTokenEstimatesCommand(ctx context.Context, data wshrp
 }
 
 func (ws *WshServer) ScanClaudeProjectsCommand(ctx context.Context) (*wshrpc.CommandScanClaudeProjectsRtnData, error) {
-	found := agentsessions.ScanClaudeProjects()
+	found := agentsessions.PickerProjects(agentsessions.ScanClaudeProjects(), wavebase.GetHomeDir(), []string{orchestrate.WorktreeRoot()})
 	projects := make([]wshrpc.ClaudeProjectData, 0, len(found))
 	for _, p := range found {
 		projects = append(projects, wshrpc.ClaudeProjectData{Path: p.Path, Name: p.Name, LastActiveTs: p.LastActiveTs, Sessions: p.Sessions})
 	}
 	return &wshrpc.CommandScanClaudeProjectsRtnData{Projects: projects}, nil
+}
+
+// FindProjectFoldersCommand searches the disk near the projects the picker knows, for the folders Claude Code never
+// ran in. The engine's worktrees and the temp dir are left out.
+func (ws *WshServer) FindProjectFoldersCommand(ctx context.Context, data wshrpc.CommandFindProjectFoldersData) (*wshrpc.CommandFindProjectFoldersRtnData, error) {
+	near := make([]string, 0, len(data.Near))
+	for _, n := range data.Near {
+		near = append(near, wavebase.ExpandHomeDirSafe(n))
+	}
+	roots := projectscan.SearchRoots(near, wavebase.GetHomeDir())
+	found := projectscan.Find(roots, []string{orchestrate.WorktreeRoot(), os.TempDir()})
+	folders := make([]wshrpc.ProjectFolderData, 0, len(found))
+	for _, f := range found {
+		folders = append(folders, wshrpc.ProjectFolderData{Path: f.Path, Name: f.Name, Kind: f.Kind, ModTs: f.ModTs})
+	}
+	return &wshrpc.CommandFindProjectFoldersRtnData{Folders: folders}, nil
 }
 
 func (ws *WshServer) GetClaudeQuotaCommand(ctx context.Context) (*wshrpc.CommandGetClaudeQuotaRtnData, error) {

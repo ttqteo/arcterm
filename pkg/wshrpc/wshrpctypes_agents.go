@@ -26,6 +26,8 @@ type AgentCommands interface {
 	GetBackgroundAgentsCommand(ctx context.Context, data CommandGetBackgroundAgentsData) (*CommandGetBackgroundAgentsRtnData, error)
 	// the folders Claude Code has sessions in, for the New project picker
 	ScanClaudeProjectsCommand(ctx context.Context) (*CommandScanClaudeProjectsRtnData, error)
+	// the project folders on disk near the given ones, for the New project picker's search
+	FindProjectFoldersCommand(ctx context.Context, data CommandFindProjectFoldersData) (*CommandFindProjectFoldersRtnData, error)
 	RemoveBackgroundAgentCommand(ctx context.Context, data CommandRemoveBackgroundAgentData) error                                        // dismiss a background agent: delete its ~/.claude/jobs record (transcript kept)
 	StreamAgentTranscriptCommand(ctx context.Context, data CommandStreamAgentTranscriptData) chan RespOrErrorUnion[AgentTranscriptUpdate] // stream the transcript tail; new lines pushed as appended
 	AgentControlCommand(ctx context.Context, data CommandAgentControlData) chan RespOrErrorUnion[AgentControlMsg]                         // stream the cockpit's prompts for a block's agent session to its harness mod
@@ -396,13 +398,32 @@ type CommandScanClaudeProjectsRtnData struct {
 	Projects []ClaudeProjectData `json:"projects"`
 }
 
-// ClaudeProjectData is one folder from ~/.claude/projects, read back from its transcripts' cwd. Run and
-// agent worktrees, temp folders and folders that no longer exist are already left out.
+// ClaudeProjectData is one project Claude Code has sessions in, read back from its transcripts' cwd: a session begun
+// in a repo's subfolder counts for the repo. Run and agent worktrees, temp folders, folders that no longer exist, home,
+// the filesystem root and folders with no project marker (a .git, a package.json…) are already left out.
 type ClaudeProjectData struct {
 	Path         string `json:"path"`
 	Name         string `json:"name"`
 	LastActiveTs int64  `json:"lastactivets"` // newest transcript's mtime, epoch ms
 	Sessions     int    `json:"sessions"`
+}
+
+// CommandFindProjectFoldersData names the folders to search near: the search looks in each one's parent and
+// grandparent ("~" expanded), never in home itself.
+type CommandFindProjectFoldersData struct {
+	Near []string `json:"near"`
+}
+
+type CommandFindProjectFoldersRtnData struct {
+	Folders []ProjectFolderData `json:"folders"`
+}
+
+// ProjectFolderData is a project folder found on disk, newest first.
+type ProjectFolderData struct {
+	Path  string `json:"path"`
+	Name  string `json:"name"`
+	Kind  string `json:"kind"`  // what its marker says: "Node", "Maven", "Python"… or "git" for a bare repo
+	ModTs int64  `json:"modts"` // its .git's mtime, else its own, epoch ms
 }
 
 type CommandGetBackgroundAgentsData struct{}

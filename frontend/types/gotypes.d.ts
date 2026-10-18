@@ -1006,6 +1006,16 @@ declare global {
         opts?: FileCopyOpts;
     };
 
+    // wshrpc.CommandFindProjectFoldersData
+    type CommandFindProjectFoldersData = {
+        near: string[];
+    };
+
+    // wshrpc.CommandFindProjectFoldersRtnData
+    type CommandFindProjectFoldersRtnData = {
+        folders: ProjectFolderData[];
+    };
+
     // wshrpc.CommandGetAgentTranscriptData
     type CommandGetAgentTranscriptData = {
         path: string;
@@ -3095,6 +3105,14 @@ declare global {
         lightreviewerroute?: RoutePin;
         landing?: string;
         autonomous?: boolean;
+    };
+
+    // wshrpc.ProjectFolderData
+    type ProjectFolderData = {
+        path: string;
+        name: string;
+        kind: string;
+        modts: number;
     };
 
     // wconfig.ProjectKeywords
