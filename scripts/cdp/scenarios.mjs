@@ -38674,7 +38674,7 @@ const floatNote = {
         // 8. board Translate: the trans terminal, its prompt naming the languages
         await h.rpc("toolssetuser", {
             id: "trans",
-            tool: { command: "trans", args: `-shell -no-rlwrap -theme ${ctx.theme} :en+vi` },
+            tool: { command: "trans", args: `-shell -no-rlwrap -theme ${ctx.theme} :vi` },
         });
         let found = false;
         for (let i = 0; i < 40 && !found; i++) {
@@ -38713,7 +38713,7 @@ const floatNote = {
         for (const ch of "deploy") await floatNoteKey(h, ch);
         await floatNoteSpecial(h, "Enter", "Enter", 13, "\r");
         await polishNap(4000);
-        const prompt = await uploadsTermHas(h, trans.blockId, "→ English+Tiếng Việt ❯");
+        const prompt = await uploadsTermHas(h, trans.blockId, "→ Tiếng Việt ❯");
         await h.shot("cdp-shots/float-note-translate.png");
         rec(
             "8a. Translate opens the trans terminal: pressed, no tab of its own, named translate-shell, and its prompt names the languages",

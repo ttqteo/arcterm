@@ -96,8 +96,11 @@ func Builtin() []Tool {
 			Id: "trans", Name: "translate-shell", Category: "Docs and data", Purpose: "Translate: a word with its dictionary entry, or whole sentences",
 			Command: "trans", OpensIn: OpensInHome, Shows: ShowsCentre,
 			// the theme is cmd/wsh/cmd/trans-theme.trans, which installTransTheme writes there on every launch; rlwrap
-			// gives the shell its history, and trans uses it on its own when it is on PATH
-			Args:    "-shell -theme ~/.arc/translate-shell/arc.trans :en+vi",
+			// gives the shell its history, and trans uses it on its own when it is on PATH. Into Vietnamese only, as
+			// Google Translate's English → Vietnamese, and :en typed in the shell turns it around: with English among
+			// the targets, trans answers an English word with its whole English dictionary entry first, and no option
+			// turns that off
+			Args:    "-shell -theme ~/.arc/translate-shell/arc.trans :vi",
 			Install: Install{Darwin: "brew install translate-shell rlwrap"},
 		},
 	}

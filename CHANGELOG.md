@@ -39,6 +39,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In the Office, **Open** in a desk's dialog box shows the full card in a game-framed panel on the right, and the office
   slides over when the panel would hide the desk; **Terminal** takes you to the agent's terminal, and `f` opens or shuts
   the panel.
+- **Translate** translates into Vietnamese only, like Google Translate's English → Vietnamese: an English word shows
+  its Vietnamese meanings instead of a whole English dictionary entry first. Type `:en` in it to translate into English.
 
 ### Fixed
 

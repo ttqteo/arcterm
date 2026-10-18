@@ -1202,7 +1202,7 @@ func TestTransThemeNamesTheTargetLanguage(t *testing.T) {
 	// with empty stdin the shell prints its prompt once and exits, with no network
 	for _, c := range []struct{ target, want string }{
 		{"en:vi", "English → Tiếng Việt ❯"},
-		{":en+vi", " → English+Tiếng Việt ❯"},
+		{":vi", " → Tiếng Việt ❯"},
 	} {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		out, err := exec.CommandContext(ctx, trans, "-shell", "-no-rlwrap", "-no-ansi", "-theme", theme, c.target).CombinedOutput()
