@@ -71,10 +71,12 @@ import { mentionToken } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
 import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
 import { setAgentView } from "./agentview";
+import { backgroundActivity, shownState, type ShownState } from "./bgactivity";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { laterFirst, laterSince, laterTitle, type LaterMarks } from "./latermodel";
 import { laterMarksAtom, setLater } from "./laterstore";
+import { machineServersReadingAtom } from "./machineserversstore";
 import { RenameBox, startRowRename } from "./rowrename";
 import { dockedTerminalAtom } from "./railstore";
 import { renamingRowAtom } from "./rowrenameatom";
@@ -137,7 +139,6 @@ import {
     displayAgeMs,
     formatAgeShort,
     formatTokens,
-    type AgentState,
     type AgentVM,
 } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
@@ -804,9 +805,12 @@ function ParentRow({
     // the plans it queued with `wsh runs start --queue` hold Close back while they wait to start; wavesrv's queue is
     // also where the `→ Queued #2` line reads them
     const queue = useAtomValue(runQueueAtom);
-    // the shell commands it left running in the background (a build, a dev server): the row draws no mark for them
-    // (Servers and the rail's Background tasks list them), but Close waits for them, since closing the agent would end them
-    const background = runningBackgroundTasks(useAtomValue(backgroundTasksByIdAtom)[agent.id]);
+    // the shell commands and Monitors it left running in the background (a build, a dev server): Close waits for them,
+    // since closing the agent would end them, and once its turn ends its glyph reads working, or waiting when they only
+    // watch (bgactivity.ts); Servers and the rail's Background tasks list them
+    const bgTasks = useAtomValue(backgroundTasksByIdAtom)[agent.id];
+    const background = runningBackgroundTasks(bgTasks);
+    const shown = shownState(agent.state, backgroundActivity(bgTasks, useAtomValue(machineServersReadingAtom).servers));
     const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length, queue);
     // where the runs and queued plans it started stand: one chip at the head of its meta line
     const originRuns = useOriginRuns(agent, lineageRuns);
@@ -816,7 +820,7 @@ function ParentRow({
     // holding unread turns brings its name back
     const dim = agent.sleeping != null && !selected;
     // m4: one-shot settle when this agent reaches idle (working/asking -> idle)
-    const settling = useSettle(agent.state === "idle");
+    const settling = useSettle(shown === "idle");
 
     const renaming = useAtomValue(renamingRowAtom) === agent.id;
     const digit = useHeldDigit(navDigit);
@@ -1007,7 +1011,7 @@ function ParentRow({
                             ) : agent.sleeping ? (
                                 <SleepGlyph id={agent.id} runtime={agent.agent} />
                             ) : (
-                                <RuntimeGlyph runtime={agent.agent} state={agent.state} />
+                                <RuntimeGlyph runtime={agent.agent} state={shown} />
                             )}
                         </DigitHint>
                         <span
@@ -1552,16 +1556,16 @@ const UNDER_GLYPH = "pl-[18px]";
 // the runtime's glyph at the head of a row, in a slot as wide as the run icon so titles line up. On an agent's row it
 // also carries the agent's state, where a dot used to: working pulses in the working green, asking in the warning colour, and
 // an idle one goes muted, so the rows doing something stand out
-function RuntimeGlyph({ runtime, state }: { runtime: string; state?: AgentState }) {
+function RuntimeGlyph({ runtime, state }: { runtime: string; state?: ShownState }) {
     const rt = runtimeMeta(runtime);
-    const busy = state === "working" || state === "asking";
+    const busy = state === "working" || state === "asking" || state === "waiting";
     return (
         <span
             data-agent-glyph-state={state}
             className={cn(
                 "min-w-[12px] flex-none text-center text-[12px] transition-colors duration-200",
                 state == null ? rt.text : GLYPH_COLOR[state],
-                busy && PULSE
+                busy && (state === "waiting" ? "pulse-dot-slow" : PULSE)
             )}
             title={state == null ? rt.label : `${rt.label} · ${state}`}
         >
@@ -1581,7 +1585,12 @@ function SleepGlyph({ id, runtime }: { id: string; runtime: string }) {
     );
 }
 
-const GLYPH_COLOR: Record<AgentState, string> = { working: "text-working", asking: "text-warning", idle: "text-muted" };
+const GLYPH_COLOR: Record<ShownState, string> = {
+    working: "text-working",
+    waiting: "text-working",
+    asking: "text-warning",
+    idle: "text-muted",
+};
 
 function BranchLabel({ branch }: { branch: string }) {
     return (

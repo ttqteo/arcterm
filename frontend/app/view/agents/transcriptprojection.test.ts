@@ -636,7 +636,14 @@ describe("extractBackgroundTasks", () => {
             monitorEvent("bm1", "epoch 3/30"),
         ];
         expect(extractBackgroundTasks(start)).toEqual([
-            { toolUseId: "m1", taskId: "bm1", label: "Fit progress", command: "tail -f fit.log", status: "running" },
+            {
+                toolUseId: "m1",
+                taskId: "bm1",
+                label: "Fit progress",
+                command: "tail -f fit.log",
+                status: "running",
+                monitor: true,
+            },
         ]);
         expect(extractBackgroundTasks([...start, notify("m1", "completed")])[0].status).toBe("completed");
         expect(extractBackgroundTasks([...start, notify("m1", "killed")])[0].status).toBe("stopped");

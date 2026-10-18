@@ -40,6 +40,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- An agent whose turn ended while work it started still runs in the background no longer reads idle: its header and
+  sidebar row say working while a command is at work, and waiting, on a slower pulse, while it only watches (a Monitor,
+  a loop that checks and sleeps). A dev server it left running keeps it idle.
 - Settings is sorted by what each setting changes: a Runs & limits page holds the run route, how many runs and heavy
   jobs go at once, keeping the Mac awake and when a costly spawn asks first; the pet's folding sits with Jarvis & Office;
   the vault with Storage & sync; About at the foot of the list. <!-- try: settings -->

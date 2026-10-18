@@ -53,6 +53,7 @@ import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
 import { askingLabel, askSentKey, formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
 import { setAgentView, type AgentView } from "./agentview";
+import { backgroundActivity, shownState, type ShownState } from "./bgactivity";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
@@ -63,6 +64,7 @@ import { agentGridAtom, currentGrid, eligibleIds, openInSplit, removeFromGrid } 
 import { InitiativePopover, initiativePopoverAtom } from "./initiativepopover";
 import { liveTokensAtom } from "./livetokensstore";
 import { rosterSeededAtom } from "./liveagents";
+import { machineServersReadingAtom } from "./machineserversstore";
 import { isFinalStageId } from "./finalstage";
 import { planEditChunks } from "./planreviewmodel";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
@@ -82,12 +84,18 @@ import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { openLauncher } from "./launcherstore";
 
-export const STATE_COLOR: Record<AgentVM["state"], string> = {
+export const STATE_COLOR: Record<ShownState, string> = {
     asking: "var(--color-warning)",
     working: "var(--color-working)",
+    waiting: "var(--color-working)",
     idle: "var(--color-muted)",
 };
-export const STATE_LABEL: Record<AgentVM["state"], string> = { asking: "asking", working: "working", idle: "idle" };
+export const STATE_LABEL: Record<ShownState, string> = {
+    asking: "asking",
+    working: "working",
+    waiting: "waiting",
+    idle: "idle",
+};
 
 // header context chip color by context level (mirrors the rail gauge, as text not fill)
 export const CTX_TEXT: Record<"ok" | "warn" | "hot", string> = {
@@ -348,14 +356,22 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // a plain session can be linked to an initiative from here; a run's worker has its task, a terminal no session
     const canLink =
         agent.blockId != null && agent.kind !== "terminal" && !ended && !stage && lineage?.kind !== "worker";
-    const liveText = agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[agent.state];
+    // its turn ended but background work it started still runs: working, or waiting when that work only watches
+    const shown = shownState(
+        agent.state,
+        backgroundActivity(
+            useAtomValue(backgroundTasksByIdAtom)[agent.id],
+            useAtomValue(machineServersReadingAtom).servers
+        )
+    );
+    const liveText = agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[shown];
     const stateText = ended ? (landed ? "landed" : "done") : liveText;
-    const stateColor = ended ? "var(--color-success)" : STATE_COLOR[agent.state];
+    const stateColor = ended ? "var(--color-success)" : STATE_COLOR[shown];
     // a working agent whose heavy command waits its turn in the job queue reads as its place there, not as working
     const queuedJob = queuedJobFor(useAtomValue(jobQueueAtom), blockId);
     const queued = !ended && agent.state === "working" ? queuedJob : null;
     // m4: one-shot settle on the state pill when the focused agent reaches idle
-    const settling = useSettle(!ended && agent.state === "idle");
+    const settling = useSettle(!ended && shown === "idle");
     const review = parseDocReview(agent.ask);
     const dialogOpen = useAtomValue(docReviewAtom) != null;
     const docReview = useAtomValue(docReviewStateAtom(agent.id));
@@ -521,7 +537,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
             {stage ? null : ended ? (
                 <span className="h-[8px] w-[8px] shrink-0 rounded-full" style={{ background: stateColor }} />
             ) : (
-                <StatusDot state={agent.state} pulse={agent.state !== "idle"} className="!h-[8px] !w-[8px]" />
+                <StatusDot state={shown} pulse={shown !== "idle"} className="!h-[8px] !w-[8px]" />
             )}
             {/* one row: the name first (it is the header's first line of text), then what it is and where it works,
                 the project and its lineage truncating first when the pane is narrow */}

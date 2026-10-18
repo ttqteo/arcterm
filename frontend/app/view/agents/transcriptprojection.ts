@@ -430,6 +430,7 @@ export interface BackgroundTask {
     command?: string;
     status: BackgroundTaskStatus;
     outputFile?: string; // where Claude Code writes the command's output, from its start result or its notification
+    monitor?: true; // a Monitor, which only watches, not a shell command
     startMs?: number; // when the agent ran the command: its tool_use record's timestamp
     endMs?: number; // when it ended: the first notification that gave it an end status
 }
@@ -503,6 +504,9 @@ export function extractBackgroundTasks(lines: string[]): BackgroundTask[] {
         }
         if (!Number.isNaN(call.ts)) {
             t.startMs = call.ts;
+        }
+        if (call.monitor) {
+            t.monitor = true;
         }
         tasks.set(toolUseId, t);
         return t;
