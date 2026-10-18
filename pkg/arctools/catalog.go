@@ -21,10 +21,11 @@ type Tool struct {
 	Name     string  `json:"name"`
 	Category string  `json:"category"` // "Git", "Files", "System", "Containers", "Docs and data", "Yours"
 	Purpose  string  `json:"purpose"`
-	Command  string  `json:"command"`        // the program, e.g. "lazygit"
-	Args     string  `json:"args,omitempty"` // appended to Command as typed
-	OpensIn  string  `json:"opensin"`        // "agent" (the focused agent's folder), "root" (project root), "home"
-	Shows    string  `json:"shows"`          // "centre" or "panel"
+	Command  string  `json:"command"`         // the program, e.g. "lazygit"
+	Args     string  `json:"args,omitempty"`  // appended to Command as typed
+	Needs    string  `json:"needs,omitempty"` // the program the status check looks up in Command's place, for a tool wsh runs
+	OpensIn  string  `json:"opensin"`         // "agent" (the focused agent's folder), "root" (project root), "home"
+	Shows    string  `json:"shows"`           // "centre" or "panel"
 	Install  Install `json:"install"`
 	User     bool    `json:"user,omitempty"`
 }
@@ -44,7 +45,8 @@ const (
 // winget source on 2026-10-13 (`winget show --id <id> --exact`; the btop4win command alias from its manifest). visidata
 // and translate-shell are the Mac-only tools, with no Windows line: neither has a winget package. Every other tool has
 // a Windows and a Mac line.
-// An entry's Command is the executable the status check looks up on PATH.
+// An entry's Command is the executable the status check looks up on PATH, or its Needs when it has one: wsh is on the
+// terminal's PATH but not wavesrv's, and what a tool run through wsh needs installed is another program.
 func Builtin() []Tool {
 	return []Tool{
 		{
@@ -94,15 +96,12 @@ func Builtin() []Tool {
 		},
 		{
 			Id: "trans", Name: "translate-shell", Category: "Docs and data", Purpose: "Translate: a word with its dictionary entry, or whole sentences",
-			Command: "trans", OpensIn: OpensInHome, Shows: ShowsCentre,
-			// the theme is cmd/wsh/cmd/trans-theme.trans, which installTransTheme writes there on every launch; rlwrap
-			// gives the shell its history, and trans uses it on its own when it is on PATH. Into Vietnamese only, as
-			// Google Translate's English → Vietnamese, and :en typed in the shell turns it around: with English among
-			// the targets, trans answers an English word with its whole English dictionary entry first, and no option
-			// turns that off. The -show flags keep the translation and its dictionary: the prompt line already holds what
-			// was typed, so the original (and a word's phonetics, which trans prints only with it), the "Definitions of" and
-			// language headers and the alternative translations, which repeat the translation, are left out
-			Args:    "-shell -theme ~/.arc/translate-shell/arc.trans -show-original n -show-languages n -show-prompt-message n -show-alternatives n :vi",
+			Command: "wsh", Needs: "trans", OpensIn: OpensInHome, Shows: ShowsCentre,
+			// wsh trans (cmd/wsh/cmd/wshcmd-trans.go) hands each line to translate-shell and prints the answer short;
+			// trans's own shell prints a word's whole dictionary entry, each meaning on two lines. It runs itself under
+			// rlwrap for history. Into Vietnamese only, as Google Translate's English → Vietnamese, and :en typed at its
+			// prompt turns it around
+			Args:    "trans :vi",
 			Install: Install{Darwin: "brew install translate-shell rlwrap"},
 		},
 	}
@@ -150,8 +149,10 @@ func override(base Tool, u wconfig.ToolKeywords) Tool {
 	if u.Name != "" {
 		base.Name = u.Name
 	}
+	// a command of the user's own needs only itself: the built-in's Needs went with the built-in's command
 	if u.Command != "" {
 		base.Command = u.Command
+		base.Needs = ""
 	}
 	if u.Args != "" {
 		base.Args = u.Args

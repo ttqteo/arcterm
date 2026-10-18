@@ -220,20 +220,6 @@ func installClaudeAskSettings(home string) error {
 	return writeFileIfChanged(claudeAskSettingsPath(home), claudeAskSettings)
 }
 
-//go:embed trans-theme.trans
-var transTheme string
-
-// transThemePath is the theme file the trans tool (pkg/arctools) passes with -theme: translate-shell's default theme
-// with a prompt that names the target language.
-func transThemePath(home string) string {
-	return filepath.Join(home, ".arc", "translate-shell", "arc.trans")
-}
-
-// installTransTheme rewrites the theme on every launch, so the prompt is there whether or not an edit changed it.
-func installTransTheme(home string) error {
-	return writeFileIfChanged(transThemePath(home), transTheme)
-}
-
 // claudeModManifest lists, one slash path per line, the files the last install wrote into a mod folder.
 const claudeModManifest = ".arc-installed"
 
@@ -1292,9 +1278,6 @@ func installAgentHooksRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if err := installClaudeAskSettings(home); err != nil {
-		return err
-	}
-	if err := installTransTheme(home); err != nil {
 		return err
 	}
 

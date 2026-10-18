@@ -36,7 +36,7 @@ func TestStatusFoundAndMissing(t *testing.T) {
 	}
 }
 
-// visidata is the one built-in whose id and command differ: the status looks up the command.
+// visidata's id and command differ: the status looks up the command.
 func TestStatusLooksUpTheCommand(t *testing.T) {
 	var asked []string
 	lookPath := func(name string) (string, error) {
@@ -53,5 +53,21 @@ func TestStatusEmpty(t *testing.T) {
 	got := Status(nil, func(string) (string, error) { return "", errors.New("x") })
 	if got == nil || len(got) != 0 {
 		t.Errorf("Status(nil) = %#v, want an empty non-nil slice so the RPC returns [] and not null", got)
+	}
+}
+
+// the Translate tool runs as wsh trans, and wsh is not on wavesrv's PATH: the status looks up translate-shell instead
+func TestStatusLooksUpNeedsInTheCommandsPlace(t *testing.T) {
+	var asked []string
+	lookPath := func(name string) (string, error) {
+		asked = append(asked, name)
+		return "/opt/homebrew/bin/" + name, nil
+	}
+	got := Status([]Tool{{Id: "trans", Command: "wsh", Args: "trans :vi", Needs: "trans"}}, lookPath)
+	if len(asked) != 1 || asked[0] != "trans" {
+		t.Errorf("lookPath was asked for %v, want [trans]", asked)
+	}
+	if !got[0].Found || got[0].Path != "/opt/homebrew/bin/trans" {
+		t.Errorf("got %+v", got[0])
 	}
 }

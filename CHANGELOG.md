@@ -66,11 +66,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the panel.
 - **Translate** translates into Vietnamese only, like Google Translate's English → Vietnamese: an English word shows
   its Vietnamese meanings instead of a whole English dictionary entry first. Type `:en` in it to translate into English.
-  It answers with the translation and a word's meanings only, no longer repeating what you typed, the languages or a
-  list of alternative translations.
+  It answers short: the translation with a word's phonetics, then one line of meanings per word class (noun, verb…),
+  where it used to print each meaning on two lines under headers and repeat what you typed.
 
 ### Fixed
 
+- On a Mac, **Fold when you leave** folds behind any app that covers arcterm, not only Chrome: under an app whose window
+  hid arcterm completely, the fold waited until you came back and then folded the window as you returned, so the Dock
+  icon or `⌘Tab` showed Sprout instead of the cockpit.
 - Settings → Storage shows a clean as it happens: Remove reads Removing… with a spinner until the folder is
   gone, the card's own button reads Cleaning…, and the row leaves as soon as the clean ends instead of after the rescan.
 - Skim highlights every sentence Claude marks in a reply, not only the first four: the fifth on no longer draws as

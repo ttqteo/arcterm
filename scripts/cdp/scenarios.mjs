@@ -38670,11 +38670,11 @@ const floatMini = {
 // --- Float's Note and Translate tabs ----------------------------------------------------------------------------
 // docs/superpowers/specs/2026-10-17-float-note-translate-design.md. In a float, the ledge's Note tab covers the
 // terminal with the one global markdown note (typing, Preview, a failed save, every way it closes), and its Translate
-// tab opens translate-shell, or its install when the tool is missing. It asserts the DOM and the PTY size only, so the
-// browser app runs it too. Needs translate-shell on the PATH of the app's wavesrv for step 8.
+// tab opens wsh trans (translate-shell, answered short), or its install when the tool is missing. It asserts the DOM
+// and the PTY size only, so the browser app runs it too. Needs translate-shell on the PATH of the app's wavesrv for
+// step 8.
 const FLOAT_NOTE_PROJECT = "verify-float-note";
 const FLOAT_NOTE_INSTALL_TAB = "Install translate-shell";
-const FLOAT_NOTE_THEME = fileURLToPath(new URL("../../cmd/wsh/cmd/trans-theme.trans", import.meta.url));
 
 // a printable key through the real input pipeline: a keyDown with its text, then a keyUp; a capital adds Shift
 async function floatNoteKey(h, key) {
@@ -38740,9 +38740,6 @@ const floatNote = {
             // the app's own notes folder: an app started with ARC_DEV_NO_GLOBAL_INSTALL keeps its vault in its store, not
             // where notes-wsh.mjs's vaultRoot points, and a folder outside the store is never chmodded
             ctx.notesDir = join((await h.rpc("waveinfo", null)).datadir, "vault", "notes");
-            ctx.tmp = mkdtempSync(join(tmpdir(), "verify-float-note-"));
-            ctx.theme = join(ctx.tmp, "arc.trans");
-            copyFileSync(FLOAT_NOTE_THEME, ctx.theme);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -38981,11 +38978,9 @@ const floatNote = {
             JSON.stringify({ missing, installShown, ...install })
         );
 
-        // 8. board Translate: the trans terminal, its prompt naming the languages
-        await h.rpc("toolssetuser", {
-            id: "trans",
-            tool: { command: "trans", args: `-shell -no-rlwrap -theme ${ctx.theme} :vi` },
-        });
+        // 8. board Translate: the trans terminal, its prompt naming the languages; with step 7's entry gone it is the
+        // built-in, wsh trans :vi
+        await h.rpc("toolssetuser", { id: "trans" });
         let found = false;
         for (let i = 0; i < 40 && !found; i++) {
             found = ((await h.rpc("toolsstatus", null))?.tools ?? []).some((t) => t.id === "trans" && t.found === true);
@@ -39019,7 +39014,7 @@ const floatNote = {
             `document.querySelector('[data-agent-terminal="${trans.tabId}"] .xterm-helper-textarea')?.focus({ preventScroll: true })`
         );
         // trans starts after its shell: typed before its banner the word would reach the shell instead
-        await uploadsTermHas(h, trans.blockId, "(:q to quit)");
+        await uploadsTermHas(h, trans.blockId, "(:q quits");
         for (const ch of "deploy") await floatNoteKey(h, ch);
         await floatNoteSpecial(h, "Enter", "Enter", 13, "\r");
         await polishNap(4000);
@@ -39087,7 +39082,6 @@ const floatNote = {
                 waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
             );
         }
-        if (ctx.tmp != null) await step("remove the temp folder", () => rmSync(ctx.tmp, { recursive: true, force: true }));
     },
 };
 

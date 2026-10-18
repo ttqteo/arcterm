@@ -4046,6 +4046,7 @@ declare global {
         purpose: string;
         command: string;
         args?: string;
+        needs?: string;
         opensin: string;
         shows: string;
         install: Install;

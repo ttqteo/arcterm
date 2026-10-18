@@ -75,7 +75,7 @@ func TestBuiltinOrder(t *testing.T) {
 		if tool.Id == "visidata" && tool.Command != "vd" {
 			t.Errorf("visidata's command is vd, got %q", tool.Command)
 		}
-		if tool.Id == "trans" && (tool.Command != "trans" || tool.Args != "-shell -theme ~/.arc/translate-shell/arc.trans -show-original n -show-languages n -show-prompt-message n -show-alternatives n :vi" ||
+		if tool.Id == "trans" && (tool.Command != "wsh" || tool.Args != "trans :vi" || tool.Needs != "trans" ||
 			tool.OpensIn != "home" || tool.Install.Darwin != "brew install translate-shell rlwrap" || tool.Install.Windows != "") {
 			t.Errorf("trans: %+v", tool)
 		}
@@ -128,6 +128,28 @@ func TestMergeUserTools(t *testing.T) {
 	}
 	if gh.Install.Windows != "winget install --id GitHub.cli -e" || gh.Install.Darwin != "brew install gh" {
 		t.Errorf("ghdash install lines = %+v, want the entry's install:windows and install:darwin", gh.Install)
+	}
+}
+
+// the Translate tool's Needs (translate-shell) holds while its entry only changes the args, and goes with a command of
+// the user's own, which the status then looks up
+func TestMergeKeepsNeedsUntilTheCommandChanges(t *testing.T) {
+	find := func(tools []Tool) Tool {
+		for _, tool := range tools {
+			if tool.Id == "trans" {
+				return tool
+			}
+		}
+		t.Fatal("no trans tool")
+		return Tool{}
+	}
+	args := find(Merge(Builtin(), map[string]wconfig.ToolKeywords{"trans": {Args: "trans :en"}}))
+	if args.Command != "wsh" || args.Args != "trans :en" || args.Needs != "trans" {
+		t.Errorf("args only: %+v", args)
+	}
+	own := find(Merge(Builtin(), map[string]wconfig.ToolKeywords{"trans": {Command: "trans", Args: "-shell :vi"}}))
+	if own.Command != "trans" || own.Needs != "" {
+		t.Errorf("own command: %+v", own)
 	}
 }
 
