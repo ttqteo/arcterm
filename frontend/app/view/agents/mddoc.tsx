@@ -82,7 +82,7 @@ export function revealMdBox(model: AgentsViewModel, agentId: string, shownAbs: s
     const wasPreview = globalStore.get(railMdModeAtom) === "preview";
     globalStore.set(railMdModeAtom, "preview");
     if (box.file !== shownAbs) {
-        openFileInPanel(model, agentId, { abs: box.file, root: box.root, line: box.startLine });
+        openFileInPanel(model, agentId, { abs: box.file, root: box.root, line: box.startLine }, true);
     } else if (wasPreview) {
         document.querySelector<HTMLTextAreaElement>("[data-rail-file] [data-md-box] textarea")?.focus();
     }
@@ -379,7 +379,7 @@ export function MdDoc({
             const abs = fileRef.abs.includes("\\") ? t.abs.replace(/\//g, "\\") : t.abs;
             const ref: FileRef = { abs, root: fileRef.root, ...(t.line != null ? { line: t.line } : {}) };
             if (t.markdown) {
-                openFileInPanel(model, agentId, ref);
+                openFileInPanel(model, agentId, ref, true);
             } else {
                 fireAndForget(() => openRefInCode(model, ref));
             }

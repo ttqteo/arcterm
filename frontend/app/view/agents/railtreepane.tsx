@@ -24,6 +24,7 @@ import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, ChevronsDownUp, LocateFixed, Pin, PinOff, RefreshCw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { openFileInPanel, railPanelsAtom } from "./agentrailstore";
+import { activeFile } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import { encodePathsDrag, setDraggedPathsCount } from "./pathdrop";
 import {
@@ -81,7 +82,8 @@ export function RailTreePane({
     const state = useAtomValue(stateAtom);
     const pinned = pinsFor(useAtomValue(codePinsAtom), cwd);
     // the file the File tab holds, when it is in this tree: what Locate finds
-    const shownFile = useAtomValue(railPanelsAtom)[agentId]?.file.current;
+    const shownPanel = useAtomValue(railPanelsAtom)[agentId];
+    const shownFile = shownPanel != null ? activeFile(shownPanel)?.current : null;
     const shownRel = shownFile != null && isUnderRoot(cwd, shownFile.abs) ? toRel(cwd, shownFile.abs) : null;
     // bumped by Locate, so the tree scrolls to the file even when its cursor was on it already
     const [locate, setLocate] = useState(0);

@@ -318,14 +318,14 @@ Cây mở tới đâu và vùng chọn được giữ riêng cho từng agent kh
 
 ### Tab File
 
-Mở khi bạn bấm một file trong **Files changed**, một output trong **Background tasks**/**Servers**, hoặc một đường dẫn trong terminal. Tab có nút Back/Forward qua các file đã mở, nút **×** đóng file, và công cụ tùy loại file:
+Mở khi bạn bấm một file trong **Files changed**, một output trong **Background tasks**/**Servers**, một file ở tab Files, hoặc một đường dẫn trong terminal. Mỗi file mở thành một tab riêng trên thanh tab của rail, tối đa 5 tab (mở file thứ sáu thì tab mở lâu nhất đóng lại); mở lại một file đã có tab thì tab đó hiện lên. Bấm một link tới file markdown khác ngay trong file đang xem thì đi tiếp trong chính tab đó, và nút Back/Forward của tab đưa bạn quay lại. Nút **×** (hoặc bấm chuột giữa) đóng một tab; đóng tab đang xem thì tab bên phải (không có thì bên trái) hiện lên. Ở Overview hay Files, các tab file gộp lại thành một biểu tượng kèm số file đang mở. Mỗi tab có công cụ tùy loại file:
 
 - File HTML: **Preview** (chính trang đó, kèm ảnh và CSS cạnh nó) / **Source**.
 - File markdown: **Preview** / **Source**. Bôi chọn chữ rồi nhấn `c` (hoặc bấm `+` cạnh một khối) để viết comment; khay comment gửi tất cả cho agent trong một tin nhắn (`Ctrl+Enter`) hoặc sao chép.
 - File mở từ **Files changed**: thêm **Diff**, và nút **Open in Diff**.
 - **Live** (output của task nền: bám theo đuôi khi nó dài ra), và các nút icon: **Outline** (mục lục của file markdown), **Wrap** (bật/tắt xuống dòng), **Pin** (ghim file vào mục **Pinned** của tab Files và của Code; chỉ có khi file nằm trong thư mục của agent; ghim rồi thì icon tô đặc màu accent), **Open in Code**.
 
-Tab File rộng hơn Overview; kéo mép của rail (**Resize panel**) để đổi độ rộng. `Esc` đóng file (hoặc hủy comment đang viết). Phím `←`/`→`/`Home`/`End` chuyển tab khi thanh tab đang focus.
+Tab File rộng hơn Overview; kéo mép của rail (**Resize panel**) để đổi độ rộng. `Esc` đóng tab của file đang xem (hoặc hủy comment đang viết). Phím `←`/`→`/`Home`/`End` chuyển tab, kể cả giữa các tab file, khi thanh tab đang focus.
 
 ## Initiative của agent
 

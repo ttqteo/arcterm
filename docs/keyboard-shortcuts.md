@@ -243,7 +243,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Ctrl`+`C` | In a terminal on Windows: copy while text is selected (the selection goes with it), else the interrupt as always. `Cmd`+`C` copies on a Mac. `Ctrl`+`Shift`+`C` copies too |
 | `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, Files, File) while its tab strip has focus; the agent keys stand down there |
 | `↑` / `↓`, `←` / `→`, `Enter` | In the panel's Files tab: move the cursor, collapse / expand a folder, open a folder or open a file in the File tab |
-| `Esc` | In the panel's File tab: cancel the comment being written, else close the find bar, else close the file |
+| `Esc` | In the panel's File tab: cancel the comment being written, else close the find bar, else close the file's tab |
 | `Mod`+`F` | In the File tab: find in the file. In a markdown Preview a find bar opens with the selected words; `Enter` / `Shift`+`Enter` step to the next / previous match and `Esc` closes it. In Source and Diff, the editor's own find |
 | `c` | In the File tab's Preview of a markdown file, comment on the selected text |
 | `Mod`+`Enter` | In the File tab: add the comment being written; outside a comment box, send the comments to the agent |

@@ -3,13 +3,17 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    activeFile,
     clampWideWidth,
     closeFile,
     currentFileView,
+    FILE_TABS_MAX,
+    fileKey,
     fileLabel,
     filePinTarget,
     fileTabLabel,
     fileViews,
+    followFile,
     goBack,
     goForward,
     nextTab,
@@ -19,8 +23,12 @@ import {
     RAIL_TREE_MIN_PX,
     RAIL_WIDE_DEFAULT_PX,
     RAIL_WIDE_MIN_PX,
+    selectFile,
+    selectKey,
     selectTab,
+    shownKey,
     shownTab,
+    stripKeys,
     visibleTabs,
     wideWidthMax,
     type RailTab,
@@ -28,6 +36,7 @@ import {
 
 const a = { abs: "D:/repo/src/a.ts", root: "D:/repo", line: 4 };
 const b = { abs: "D:/repo/src/b.ts", root: "D:/repo" };
+const c = { abs: "D:/repo/src/c.ts", root: "D:/repo" };
 
 describe("panelFor", () => {
     it("starts an unseen agent on the default tab, never on File or Files", () => {
@@ -80,7 +89,7 @@ describe("the File tab", () => {
     it("opens a file on the File tab and remembers the tab it came from", () => {
         const p = openFile(panelFor({}, "x", "overview"), a);
         expect(p).toMatchObject({ tab: "file", prevTab: "overview" });
-        expect(p.file.current).toEqual(a);
+        expect(activeFile(p)?.current).toEqual(a);
         expect(visibleTabs(p, false)).toEqual(["overview", "file"]);
     });
 
@@ -91,27 +100,100 @@ describe("the File tab", () => {
         expect(closeFile(opened).tab).toBe("tree");
     });
 
-    it("pushes the open file onto Back and clears Forward when another opens", () => {
-        let p = openFile(openFile(panelFor({}, "x", "overview"), a), b);
-        expect(p.file.back).toEqual([a]);
+    it("opens each file in a tab of its own, the new one on show", () => {
+        const p = openFile(openFile(panelFor({}, "x", "overview"), a), b);
+        expect(p.files.map((f) => f.current)).toEqual([a, b]);
+        expect(activeFile(p)?.current).toEqual(b);
+        expect(p.files.map((f) => f.back)).toEqual([[], []]);
+        expect(new Set(p.files.map((f) => f.id)).size).toBe(2);
+    });
+
+    it("brings back the tab a file is already open in, at the new line, without a second tab", () => {
+        const p = openFile(openFile(openFile(panelFor({}, "x", "overview"), a), b), {
+            ...a,
+            abs: "d:\\repo\\src\\a.ts",
+            line: 9,
+        });
+        expect(p.files).toHaveLength(2);
+        expect(p.active).toBe(0);
+        expect(activeFile(p)?.current?.line).toBe(9);
+        expect(activeFile(p)?.back).toEqual([]);
+    });
+
+    it("closes the oldest tab past the cap", () => {
+        let p = panelFor({}, "x", "overview");
+        for (let i = 0; i <= FILE_TABS_MAX; i++) {
+            p = openFile(p, { abs: `D:/repo/${i}.ts`, root: "D:/repo" });
+        }
+        expect(p.files).toHaveLength(FILE_TABS_MAX);
+        expect(p.files[0].current?.abs).toBe("D:/repo/1.ts");
+        expect(activeFile(p)?.current?.abs).toBe(`D:/repo/${FILE_TABS_MAX}.ts`);
+    });
+
+    it("follows a link in the same tab, with Back and Forward there only", () => {
+        let p = followFile(openFile(openFile(panelFor({}, "x", "overview"), c), a), b);
+        expect(p.files.map((f) => f.current)).toEqual([c, b]);
+        expect(activeFile(p)?.back).toEqual([a]);
         p = goBack(p);
-        expect(p.file.current).toEqual(a);
-        expect(p.file.forward).toEqual([b]);
+        expect(activeFile(p)?.current).toEqual(a);
+        expect(activeFile(p)?.forward).toEqual([b]);
+        expect(p.files[0]).toEqual({ id: p.files[0].id, back: [], current: c, forward: [] });
         p = goForward(p);
-        expect(p.file.current).toEqual(b);
-        expect(openFile(goBack(p), b).file.forward).toEqual([]);
+        expect(activeFile(p)?.current).toEqual(b);
+        expect(activeFile(followFile(goBack(p), b))?.forward).toEqual([]);
+    });
+
+    it("follows a link to a file another tab shows by bringing that tab forward", () => {
+        const p = followFile(openFile(openFile(panelFor({}, "x", "overview"), b), a), b);
+        expect(p.files).toHaveLength(2);
+        expect(p.active).toBe(0);
+        expect(p.files[1].back).toEqual([]);
+    });
+
+    it("follows a link into a new tab when no file is open", () => {
+        const p = followFile(panelFor({}, "x", "overview"), a);
+        expect(p.files.map((f) => f.current)).toEqual([a]);
+        expect(p.tab).toBe("file");
     });
 
     it("moves to a new line in the same file without a Back entry", () => {
-        const p = openFile(openFile(panelFor({}, "x", "overview"), a), { ...a, abs: "d:\\repo\\src\\a.ts", line: 9 });
-        expect(p.file.back).toEqual([]);
-        expect(p.file.current?.line).toBe(9);
+        const p = followFile(openFile(panelFor({}, "x", "overview"), a), { ...a, abs: "d:\\repo\\src\\a.ts", line: 9 });
+        expect(activeFile(p)?.back).toEqual([]);
+        expect(activeFile(p)?.current?.line).toBe(9);
     });
 
-    it("closes back to the tab it came from and forgets the history", () => {
+    it("selects another file's tab and keeps where File was opened from", () => {
+        const onTree = selectTab(panelFor({}, "x", "overview"), "tree", true);
+        const p = openFile(openFile(onTree, a), b);
+        const back = selectFile(p, p.files[0].id);
+        expect(back).toMatchObject({ tab: "file", prevTab: "tree", active: 0 });
+        expect(selectFile(back, back.files[0].id)).toBe(back);
+        expect(selectFile(back, 999)).toBe(back);
+        const fromOverview = selectFile(selectTab(p, "overview", true), p.files[0].id);
+        expect(fromOverview).toMatchObject({ tab: "file", prevTab: "overview", active: 0 });
+    });
+
+    it("closing the tab on show hands File to its right neighbour, else its left", () => {
+        const p = openFile(openFile(openFile(panelFor({}, "x", "overview"), a), b), c);
+        const middle = selectFile(p, p.files[1].id);
+        expect(activeFile(closeFile(middle))?.current).toEqual(c);
+        expect(activeFile(closeFile(p))?.current).toEqual(b);
+        expect(closeFile(p).tab).toBe("file");
+    });
+
+    it("closing another tab keeps the file on show", () => {
+        const p = openFile(openFile(openFile(panelFor({}, "x", "overview"), a), b), c);
+        const closed = closeFile(p, p.files[0].id);
+        expect(closed.files.map((f) => f.current)).toEqual([b, c]);
+        expect(activeFile(closed)?.current).toEqual(c);
+        expect(closeFile(p, 999)).toBe(p);
+    });
+
+    it("closes the last file back to the tab it came from", () => {
         const p = closeFile(openFile(panelFor({}, "x", "overview"), a));
         expect(p.tab).toBe("overview");
-        expect(p.file).toEqual({ back: [], current: null, forward: [] });
+        expect(p.files).toEqual([]);
+        expect(activeFile(p)).toBeNull();
         expect(visibleTabs(p, false)).toEqual(["overview"]);
     });
 
@@ -217,5 +299,25 @@ describe("the File tab's views", () => {
     it("never shows a diff it has no base for", () => {
         expect(currentFileView(false, false, "preview", true)).toBe("source");
         expect(currentFileView(true, false, "source", true)).toBe("source");
+    });
+});
+
+describe("the strip's keys", () => {
+    it("lists every file on File, and folds them into the one on show elsewhere", () => {
+        const p = openFile(openFile(panelFor({}, "x", "overview"), a), b);
+        const [ka, kb] = p.files.map((f) => fileKey(f.id));
+        expect(stripKeys(p, true)).toEqual(["overview", "tree", ka, kb]);
+        expect(shownKey(p, true)).toBe(kb);
+        const onTree = selectTab(p, "tree", true);
+        expect(stripKeys(onTree, true)).toEqual(["overview", "tree", kb]);
+        expect(shownKey(onTree, true)).toBe("tree");
+        expect(stripKeys(panelFor({}, "x", "overview"), false)).toEqual(["overview"]);
+    });
+
+    it("selects a tab or a file by its key", () => {
+        const p = openFile(openFile(panelFor({}, "x", "overview"), a), b);
+        expect(activeFile(selectKey(p, fileKey(p.files[0].id), true))?.current).toEqual(a);
+        expect(selectKey(p, "overview", true).tab).toBe("overview");
+        expect(nextTab(stripKeys(p, true), shownKey(p, true), "ArrowLeft")).toBe(fileKey(p.files[0].id));
     });
 });

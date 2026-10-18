@@ -49,7 +49,7 @@ import {
     type BgTaskLabel,
 } from "./agentrailsections";
 import { openFileInPanel, railPanelsAtom, railTabDefaultAtom, selectRailTab } from "./agentrailstore";
-import { fileTabLabel, panelFor, RAIL_OVERVIEW_PX, shownTab } from "./agentrailtabs";
+import { activeFile, fileTabLabel, panelFor, RAIL_OVERVIEW_PX, shownTab } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, recentActions, summarizeActions, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
@@ -599,7 +599,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const shown = shownTab(panel, hasTree);
     // File and Files each keep their own dragged width; Overview's is fixed
     const wide = useWideWidth(shown === "tree" ? "tree" : "file");
-    const fileRef = panel.file.current;
+    const openTab = activeFile(panel);
+    const fileRef = openTab?.current ?? null;
     const railVisible = useAtomValue(railVisibleAtom);
     const showRail = () => globalStore.set(railVisibleAtom, true);
     // a subagent's interior and an ended session have no project of their own to read: nothing polls for them
@@ -1131,8 +1132,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 </>
             }
             body={
-                shown === "file" && fileRef != null ? (
-                    <FileTab model={model} agent={agent} file={panel.file} cwd={railState?.cwd ?? null} />
+                shown === "file" && openTab != null && fileRef != null ? (
+                    <FileTab model={model} agent={agent} file={openTab} cwd={railState?.cwd ?? null} />
                 ) : shown === "tree" && treeCwd != null ? (
                     // keyed by agent and cwd: the pane's reload bookkeeping (railtreepane.tsx) belongs to one of each
                     <RailTreePane

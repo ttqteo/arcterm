@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Agent panel: open three files from Files (or Files changed): three tabs, the newest on show; click the
+  first, it shows again; `×` on the middle one closes it and the one on show stays. Open six: five tabs, the oldest
+  gone. With many open on a narrow panel the names shorten and the strip scrolls, the file on show in sight. In a
+  markdown file follow a link to another: same tab, Back returns. On Overview the files are one icon with their
+  count. 2026-10-18.
 - [ ] (arcterm) Settings, in the installed app on the Mac (the run's Final checked headless Chrome only): the index
   lists General, Appearance, Agents, Runs & limits, Terminal, Background AI, Jarvis & Office, Storage & sync, then
   About under a line. Runs & limits → Heavy jobs: pick 2, open the Jobs popover, it reads 2; pick Auto there, the row

@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Agent panel's tab strip (icons, plus an editor-style tab while a file is open), the counts beside it, and the
+// The Agent panel's tab strip (icons, plus an editor-style tab per open file), the counts beside it, and the
 // grip that sizes the wide tabs. The panel itself is AgentDetailsRail, through CollapsibleRail's tabs/body/width props.
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -23,15 +23,19 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { railStatAction, type AgentRailStat, type AgentRailStatId } from "./agentrailsections";
-import { closeRailFile, railWideDragAtom, railWidthAtoms, selectRailTab } from "./agentrailstore";
+import { closeRailFile, railWideDragAtom, railWidthAtoms, selectRailKey } from "./agentrailstore";
 import {
+    activeFile,
     clampWideWidth,
+    fileKey,
     fileTabLabel,
     nextTab,
     RAIL_WIDTHS,
+    shownKey,
     shownTab,
-    visibleTabs,
+    stripKeys,
     wideWidthMax,
+    type FileRef,
     type PanelState,
     type RailTab,
     type ResizableTab,
@@ -43,28 +47,59 @@ const TAB =
 const TAB_ON = "border-primary text-primary";
 const TAB_OFF = "border-transparent text-muted hover:text-secondary";
 
+interface TabProps {
+    role: "tab";
+    "aria-selected": boolean;
+    tabIndex: number;
+    "data-rail-tab": RailTab;
+    "data-rail-key": string;
+    onClick: () => void;
+}
+
 export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; panel: PanelState; hasTree: boolean }) {
-    const tabs = visibleTabs(panel, hasTree);
+    const keys = stripKeys(panel, hasTree);
     const shown = shownTab(panel, hasTree);
+    const current = shownKey(panel, hasTree);
     const ref = useRef<HTMLDivElement>(null);
+    // The file on show stays in sight when more tabs are open than the strip has room for. Only the strip scrolls:
+    // scrollIntoView would also scroll the panel's clipping boxes while it slides open.
+    useEffect(() => {
+        const strip = ref.current;
+        const button = strip?.querySelector<HTMLElement>(`[data-rail-key="${current}"]`);
+        if (strip == null || button == null) {
+            return;
+        }
+        const tab = (button.parentElement === strip ? button : button.parentElement)!.getBoundingClientRect();
+        const box = strip.getBoundingClientRect();
+        if (tab.left < box.left) {
+            strip.scrollLeft -= box.left - tab.left;
+        } else if (tab.right > box.right) {
+            strip.scrollLeft += tab.right - box.right;
+        }
+    }, [current, panel.files.length]);
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
         if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home" && e.key !== "End") {
             return;
         }
         e.preventDefault();
         e.stopPropagation();
-        const next = nextTab(tabs, shown, e.key);
-        selectRailTab(agentId, next, hasTree);
-        requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>(`[data-rail-tab="${next}"]`)?.focus());
+        const next = nextTab(keys, current, e.key);
+        selectRailKey(agentId, next, hasTree);
+        requestAnimationFrame(() =>
+            ref.current?.querySelector<HTMLElement>(`[data-rail-key="${next}"]`)?.focus({ preventScroll: true })
+        );
     };
-    const tabProps = (tab: RailTab) => ({
-        role: "tab" as const,
-        "aria-selected": shown === tab,
-        tabIndex: shown === tab ? 0 : -1,
+    const tabProps = (tab: RailTab, key: string = tab): TabProps => ({
+        role: "tab",
+        "aria-selected": current === key,
+        tabIndex: current === key ? 0 : -1,
         "data-rail-tab": tab,
-        onClick: () => selectRailTab(agentId, tab, hasTree),
+        "data-rail-key": key,
+        onClick: () => selectRailKey(agentId, key, hasTree),
     });
-    const file = panel.file.current;
+    const active = activeFile(panel);
+    // on File every open file is a tab; elsewhere they fold into the one on show, with how many are open
+    const fileTabs = active == null ? [] : shown === "file" ? panel.files : [active];
     return (
         <div
             ref={ref}
@@ -72,16 +107,19 @@ export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; pan
             aria-label="Agent panel"
             data-owns-keys
             onKeyDown={onKeyDown}
-            // on File the tab is as wide as its name, and the strip gives way only when the panel runs out of room
-            // (RailStats holds its width there), cutting the name rather than the counts
-            className={cn("flex items-stretch", shown === "file" && "min-w-0")}
+            // on File the file tabs are as wide as their names, and the strip gives way only when the panel runs out of
+            // room (RailStats holds its width there), cutting the names rather than the counts, then scrolling
+            className={cn(
+                "flex items-stretch",
+                shown === "file" && "min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            )}
         >
             <button
                 type="button"
                 {...tabProps("overview")}
                 aria-label="Overview"
                 title="Overview"
-                className={cn(TAB, shown === "overview" ? TAB_ON : TAB_OFF)}
+                className={cn(TAB, current === "overview" ? TAB_ON : TAB_OFF)}
             >
                 <LayoutList size={16} strokeWidth={1.8} aria-hidden />
             </button>
@@ -91,45 +129,91 @@ export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; pan
                     {...tabProps("tree")}
                     aria-label="Files"
                     title="Files"
-                    className={cn(TAB, shown === "tree" ? TAB_ON : TAB_OFF)}
+                    className={cn(TAB, current === "tree" ? TAB_ON : TAB_OFF)}
                 >
                     <FolderTree size={16} strokeWidth={1.8} aria-hidden />
                 </button>
             ) : null}
-            {file != null ? (
-                // a middle click closes it, as an editor's tab; the mousedown keeps Windows' autoscroll from starting
-                <div
-                    onMouseDown={(e) => e.button === 1 && e.preventDefault()}
-                    onAuxClick={(e) => {
-                        if (e.button === 1) {
-                            e.preventDefault();
-                            closeRailFile(agentId);
-                        }
-                    }}
-                    className={cn("ml-0.5 flex min-w-0 items-center border-b-2", shown === "file" ? TAB_ON : TAB_OFF)}
+            {fileTabs.map((f) =>
+                f.current == null ? null : (
+                    <RailFileTab
+                        key={f.id}
+                        agentId={agentId}
+                        id={f.id}
+                        file={f.current}
+                        on={current === fileKey(f.id)}
+                        folded={shown === "file" ? null : panel.files.length}
+                        tabProps={tabProps("file", fileKey(f.id))}
+                    />
+                )
+            )}
+        </div>
+    );
+}
+
+// One open file's tab, or with `folded` (how many are open) the one that stands for them all off File: its icon, the
+// count when there are more, and a close button only when it is the one file.
+function RailFileTab({
+    agentId,
+    id,
+    file,
+    on,
+    folded,
+    tabProps,
+}: {
+    agentId: string;
+    id: number;
+    file: FileRef;
+    on: boolean;
+    folded: number | null;
+    tabProps: TabProps;
+}) {
+    const label = fileTabLabel(file);
+    const closable = folded == null || folded === 1;
+    return (
+        // a middle click closes it, as an editor's tab; the mousedown keeps Windows' autoscroll from starting
+        <div
+            onMouseDown={(e) => e.button === 1 && e.preventDefault()}
+            onAuxClick={(e) => {
+                if (e.button === 1 && closable) {
+                    e.preventDefault();
+                    closeRailFile(agentId, id);
+                }
+            }}
+            className={cn(
+                "ml-0.5 flex min-w-0 items-center border-b-2",
+                folded == null && "max-w-[200px]",
+                on ? TAB_ON : TAB_OFF
+            )}
+        >
+            <button
+                type="button"
+                {...tabProps}
+                aria-label={`File ${label}`}
+                title={folded != null && folded > 1 ? `${folded} files open` : file.abs}
+                className={cn(
+                    "flex min-w-0 cursor-pointer items-center gap-[7px] border-0 bg-transparent py-0 pl-2.5 text-inherit outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                    closable ? "pr-1" : "pr-2.5"
+                )}
+            >
+                <FileText size={15} strokeWidth={1.8} aria-hidden className="shrink-0" />
+                {/* on Overview's 300px the tab is its icon (and count), so the counts beside it keep their room */}
+                {folded == null ? (
+                    <span className="min-w-0 truncate text-[11.5px]">{label}</span>
+                ) : folded > 1 ? (
+                    <span className="text-[11px] font-medium tabular-nums">{folded}</span>
+                ) : null}
+            </button>
+            {closable ? (
+                <button
+                    type="button"
+                    aria-label={`Close ${label}`}
+                    data-rail-file-close={label}
+                    onClick={() => closeRailFile(agentId, id)}
+                    className="mr-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-secondary"
                 >
-                    <button
-                        type="button"
-                        {...tabProps("file")}
-                        aria-label={`File ${fileTabLabel(file)}`}
-                        title={file.abs}
-                        className="flex min-w-0 cursor-pointer items-center gap-[7px] border-0 bg-transparent py-0 pl-2.5 pr-1 text-inherit outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
-                    >
-                        <FileText size={15} strokeWidth={1.8} aria-hidden className="shrink-0" />
-                        {/* on Overview's 300px the tab is its icon, so the counts beside it keep their room */}
-                        <span className={cn("min-w-0 truncate text-[11.5px]", shown !== "file" && "hidden")}>
-                            {fileTabLabel(file)}
-                        </span>
-                    </button>
-                    <button
-                        type="button"
-                        aria-label="Close file"
-                        onClick={() => closeRailFile(agentId)}
-                        className="mr-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-secondary"
-                    >
-                        <X size={12} strokeWidth={2} aria-hidden />
-                    </button>
-                </div>
+                    <X size={12} strokeWidth={2} aria-hidden />
+                </button>
             ) : null}
         </div>
     );

@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- The agent panel opens several files at once, each in a tab of its own (up to 5): the files you open from Files,
+  Files changed or a path no longer replace each other, and a link followed inside a file keeps Back and Forward in
+  its tab. On Overview and Files the tabs fold into one icon with how many are open.
 - The Office's music is a music-box Spider-Man theme in place of the day and night tunes, crunched as a Game Boy
   Advance would play it and picking up where it stopped when you come back. A file at `~/.arc/office-music.mp3`
   plays instead.

@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Agent panel's state: per agent and in memory (the selected tab, the open file with its history), plus the three
+// The Agent panel's state: per agent and in memory (the selected tab, the open files with their history), plus the three
 // persisted preferences (the tab an unseen agent opens on, the File and Files tabs' widths, how a markdown file shows).
 
 import { isUnderRoot, toRel } from "@/app/cockpit/openfileroute";
@@ -12,12 +12,14 @@ import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import {
     closeFile,
+    followFile,
     goBack,
     goForward,
     openFile,
     panelFor,
     RAIL_OVERVIEW_PX,
     RAIL_WIDE_DEFAULT_PX,
+    selectKey,
     selectTab,
     type FileRef,
     type PanelState,
@@ -76,9 +78,18 @@ export function selectRailTab(agentId: string, tab: RailTab, hasTree: boolean): 
     }
 }
 
-// shows the agent on the Agent surface with its panel open on the file
-export function openFileInPanel(model: AgentsViewModel, agentId: string, ref: FileRef): void {
-    update(agentId, (p) => openFile(p, ref));
+// a strip key (agentrailtabs.ts stripKeys): Overview, Files, or one open file's tab
+export function selectRailKey(agentId: string, key: string, hasTree: boolean): void {
+    update(agentId, (p) => selectKey(p, key, hasTree));
+    if (key === "overview") {
+        globalStore.set(railTabDefaultAtom, key);
+    }
+}
+
+// Shows the agent on the Agent surface with its panel open on the file, in a tab of its own. `follow`: a link followed
+// from the file on show, which moves that tab to it, with Back to return.
+export function openFileInPanel(model: AgentsViewModel, agentId: string, ref: FileRef, follow = false): void {
+    update(agentId, (p) => (follow ? followFile(p, ref) : openFile(p, ref)));
     if (ref.diff != null) {
         globalStore.set(railDiffOnAtom, true);
     }
@@ -86,7 +97,8 @@ export function openFileInPanel(model: AgentsViewModel, agentId: string, ref: Fi
     jumpToAgent(model, agentId);
 }
 
-export const closeRailFile = (agentId: string) => update(agentId, closeFile);
+// closes a file's tab, the one on show when no id is given
+export const closeRailFile = (agentId: string, id?: number) => update(agentId, (p) => closeFile(p, id));
 export const railFileBack = (agentId: string) => update(agentId, goBack);
 export const railFileForward = (agentId: string) => update(agentId, goForward);
 

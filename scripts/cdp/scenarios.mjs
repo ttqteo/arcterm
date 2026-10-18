@@ -28971,7 +28971,7 @@ const agentRailTabs = {
             diff1b && surface1b === "Agent" && JSON.stringify(views1b) === JSON.stringify(["source", "diff*"]) && openDiff1b && source1b,
             JSON.stringify({ diff1b, surface1b, views1b, openDiff1b, source1b })
         );
-        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('button[aria-label="Close file"]')?.click()`);
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file-close]")?.click()`);
         await railTabsNap(300);
 
         // 2. a tool row's link
@@ -28994,21 +28994,28 @@ const agentRailTabs = {
         const atLine3 = clicked3 && (await polishWaitFor(h, `${railTabsFileText}.includes("a.txt:3") && !!${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] .monaco-editor .border-accent")`, 8000));
         rec("3. `a.txt:3` in the agent's message opens a.txt at line 3", atLine3, JSON.stringify({ clicked3, text: await h.ev(railTabsFileText) }));
 
-        // 4. the File tab's states, and Back/Forward
+        // 4. the File tab's states, each file in a tab of its own
         const big = (await railTabsClickLink(h, `(p) => p.endsWith("big.txt")`)) && (await polishWaitFor(h, `${railTabsFileText}.includes("Large file, 3.0 MB")`, 8000));
         const blob = (await railTabsClickLink(h, `(p) => p.endsWith("blob.bin")`)) && (await polishWaitFor(h, `${railTabsFileText}.includes("Binary file")`, 8000));
         const cOpen = (await railTabsClickLink(h, `(p) => p.endsWith("c.txt")`)) && (await polishWaitFor(h, `!!${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] .monaco-editor")`, 8000));
         rmSync(join(ctx.files, "c.txt"), { force: true });
-        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-file] button[aria-label="Back"]')?.click()`);
+        const tabs4 = await h.ev(railTabLabels);
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[role="tab"][aria-label="File blob.bin"]')?.click()`);
         const back = await polishWaitFor(h, `${railTabsFileText}.includes("Binary file")`, 8000);
-        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-file] button[aria-label="Forward"]')?.click()`);
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[role="tab"][aria-label="File c.txt"]')?.click()`);
         const gone = await polishWaitFor(h, `${railTabsFileText}.includes("This file no longer exists")`, 8000);
         await h.shot("cdp-shots/agent-rail-tabs-file-states.png");
         rec(
-            "4. a 3 MB file says Large file, a binary says Binary file, Back returns, and a file deleted since it opened says so",
-            big && blob && cOpen && back && gone,
-            JSON.stringify({ big, blob, cOpen, back, gone })
+            "4. a 3 MB file says Large file, a binary says Binary file, each in a tab of its own beside a.txt's; blob.bin's tab shows it again, and a file deleted since it opened says so",
+            big && blob && cOpen && back && gone &&
+                tabs4.includes("File a.txt") && tabs4.includes("File big.txt") && tabs4.includes("File blob.bin") && tabs4.includes("File c.txt*"),
+            JSON.stringify({ big, blob, cOpen, tabs4, back, gone })
         );
+        // a.txt alone again, for the steps that follow
+        for (const name of ["big.txt", "blob.bin", "c.txt"]) {
+            await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('[data-rail-file-close="${name}"]')?.click()`);
+            await railTabsNap(150);
+        }
 
         // 5. the tab keys and Esc, which the panel owns while it has focus
         await railTabsClickLink(h, `(p) => p !== "a.txt" && p.endsWith("a.txt")`);
@@ -29077,7 +29084,7 @@ const agentRailTabs = {
         // 8. the palette: a file of the focused agent's repo opens in its panel. On the Agent surface the palette
         // opens on All, which lists no files, so the query starts with the Files prefix the way a user narrows it
         // (palette-scope.ts typeQuery)
-        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('button[aria-label="Close file"]')?.click()`);
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file-close]")?.click()`);
         await h.ev(`document.activeElement?.blur?.()`);
         await railTabsKey(h, "p", "KeyP", 80, MOD_BIT);
         const paletteUp = await polishWaitFor(h, `document.activeElement?.tagName === "INPUT"`, 5000);
