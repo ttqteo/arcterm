@@ -7,6 +7,7 @@ import {
     confirmFor,
     dayKey,
     formatSize,
+    lastUsedText,
     sessionRows,
     shouldNudge,
     skippedOf,
@@ -149,6 +150,29 @@ describe("totals", () => {
     it("counts everything arcterm uses, the store included", () => {
         expect(usedTotal(report)).toBe(3 * GB + 30 * MB + 30 * MB + 43 * MB);
     });
+    it("leaves the package caches the whole machine shares out of both, and shows their card after build output", () => {
+        const caches: StorageReport = {
+            ...report,
+            categories: [
+                ...(report.categories ?? []),
+                {
+                    category: "packagecaches",
+                    bytes: 4 * GB,
+                    cleanablebytes: 4 * GB,
+                    items: [item("go-build", { kind: "cache", label: "Go build cache", bytes: 4 * GB })],
+                },
+            ],
+        };
+        expect(usedTotal(caches)).toBe(usedTotal(report));
+        expect(cleanableTotal(caches, "30", NOW)).toBe(cleanableTotal(report, "30", NOW));
+        expect(storageCards(caches, "30", NOW, {}).map((c) => c.category)).toEqual([
+            "runworktrees",
+            "sessions",
+            "housekeeping",
+            "buildoutput",
+            "packagecaches",
+        ]);
+    });
 });
 
 describe("shouldNudge", () => {
@@ -207,6 +231,10 @@ describe("confirmFor", () => {
         expect(build).toContain("build output of p");
         expect(build).toContain("target");
         expect(build).toContain("recreates it");
+        const cache = { ...cards[0], category: "packagecaches" };
+        const goBuild = item("go-build", { kind: "cache", label: "Go build cache", bytes: 4 * GB });
+        expect(confirmFor(cache, [goBuild], "30", false).message).toContain("Remove the Go build cache (4 GB)?");
+        expect(confirmFor(cache, [goBuild], "30", false).message).toContain("fetches or rebuilds");
     });
 });
 
@@ -251,11 +279,36 @@ describe("buildProjectRows", () => {
         });
         expect(rows[1]).toMatchObject({ ids: [], reason: "agent working in this project" });
     });
+    it("puts the longest unused project first, its folders largest first", () => {
+        const b = (id: string, project: string, bytes: number, modts?: number) =>
+            item(id, { kind: "build", label: id.slice(project.length + 1), detail: project, bytes, modts });
+        const rows = buildProjectRows(
+            build([
+                b("/new/node_modules", "/new", 9 * MB, NOW - DAY),
+                b("/old/dist", "/old", MB, NOW - 180 * DAY),
+                b("/old/node_modules", "/old", 2 * MB, NOW - 180 * DAY),
+                b("/none/target", "/none", MB),
+            ])
+        );
+        expect(rows.map((r) => r.name)).toEqual(["none", "old", "new"]);
+        expect(rows[1].lastUsed).toBe(NOW - 180 * DAY);
+        expect(rows[1].folders.map((f) => f.label)).toEqual(["node_modules", "dist"]);
+    });
     it("names a Windows project by its last segment", () => {
         const rows = buildProjectRows(
             build([item("C:\\work\\app\\dist", { kind: "build", label: "dist", detail: "C:\\work\\app\\" })])
         );
         expect(rows[0].name).toBe("app");
+    });
+});
+
+describe("lastUsedText", () => {
+    it("says when an agent last worked in the project", () => {
+        expect(lastUsedText(0, NOW)).toBe("no agent session");
+        expect(lastUsedText(NOW - 3 * 60 * 60 * 1000, NOW)).toBe("used today");
+        expect(lastUsedText(NOW - DAY, NOW)).toBe("used 1 day ago");
+        expect(lastUsedText(NOW - 19 * DAY, NOW)).toBe("used 19 days ago");
+        expect(lastUsedText(NOW - 180 * DAY, NOW)).toBe("used 6 months ago");
     });
 });
 

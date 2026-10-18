@@ -29,9 +29,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Office's music is a music-box Spider-Man theme in place of the day and night tunes, crunched as a Game Boy
   Advance would play it and picking up where it stopped when you come back. A file at `~/.arc/office-music.mp3`
   plays instead.
+- Settings → Storage has a **Package caches** card: what npm, Go, Cargo, Homebrew and the like downloaded or built
+  once, each with its own Remove, which the next install or build fetches again.
 
 ### Changed
 
+- Settings → Storage's Build output also lists the repos agents worked in, not only your projects, says when an agent
+  last worked in each and puts the longest unused first; a project's row opens onto each folder with its own Remove.
 - **Work on** an initiative that has no project asks which project to start the agent in, and the initiative keeps
   it, instead of an error telling you to run `wsh effort project`.
 - Plan to review in the agent's details rail shows a row's Accept, Rename and Drop only while the pointer is over it,

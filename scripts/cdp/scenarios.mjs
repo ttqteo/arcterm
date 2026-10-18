@@ -36754,7 +36754,7 @@ const SP_PAGES = [
     { id: "appearance", cards: ["theme", "colors", "fonts", "jarvis"] },
     { id: "terminal", cards: ["text", "cursor", "behavior"] },
     { id: "agents", cards: ["claudeaccount", "sleep", "runs", "flags"] },
-    { id: "storage", cards: ["runworktrees", "sessions", "housekeeping", "buildoutput", "canvases", "autoclean"] },
+    { id: "storage", cards: ["runworktrees", "sessions", "housekeeping", "buildoutput", "packagecaches", "canvases", "autoclean"] },
     { id: "headless", cards: ["runtime", "openrouter", "radar"] },
     { id: "about", cards: ["versions", "agents"] },
 ];
@@ -39050,7 +39050,7 @@ const SS_RUN_CLEAN = "5a0c0de0-0000-4000-8000-000000000001";
 const SS_RUN_DIRTY = "5a0c0de0-0000-4000-8000-000000000002";
 const SS_NUDGE_DAY_KEY = "storage.nudge.lastday"; // storagenudge.tsx
 const SS_DAY_MS = 24 * 60 * 60 * 1000;
-const SS_CARDS = ["runworktrees", "sessions", "housekeeping", "buildoutput", "canvases", "autoclean"];
+const SS_CARDS = ["runworktrees", "sessions", "housekeeping", "buildoutput", "packagecaches", "canvases", "autoclean"];
 const ssCard = (cat) => `document.querySelector('[data-settings-section="storage"] [data-setting-card="${cat}"]')`;
 // a row is found by the end of its id: a session's id is its path, a project's row its project's path
 const ssRowIds = (cat) =>
@@ -39226,7 +39226,7 @@ const settingsStorage = {
         await polishNap(350);
         await h.shot("cdp-shots/settings-storage-1-page.png");
         rec(
-            "1. Storage sits after Agents in the index; its page holds the five category cards (Design canvases among them), then Auto-clean; run worktrees, sessions and logs have a clean button, build output and canvases none",
+            "1. Storage sits after Agents in the index; its page holds the six category cards (Package caches after build output, Design canvases among them), then Auto-clean; run worktrees, sessions and logs have a clean button, build output, package caches and canvases none",
             up &&
                 index.indexOf("storage") === index.indexOf("agents") + 1 &&
                 JSON.stringify(cards) === JSON.stringify(SS_CARDS) &&
@@ -39355,15 +39355,51 @@ const settingsStorage = {
         );
         await sessionsAt(30);
 
-        // 7. build output: one row per project with one button
+        // 7. build output: one row per project with one button, saying when an agent last worked there; it opens onto
+        // its folders, each with its own Remove
         await ssExpand(h, "buildoutput");
         const projectRow = await h.ev(ssRowState("buildoutput", repoName));
         const noCleanAll = await h.ev(`${ssCard("buildoutput")}?.querySelector('[data-storage-clean]') == null`);
+        await h.ev(`${ssRow("buildoutput", repoName)}?.querySelector('button[aria-expanded]')?.click()`);
+        await polishNap(150);
+        const projectOpen = await h.ev(`${ssRow("buildoutput", repoName)}?.querySelector('[data-storage-open]') != null`);
+        const folderRow = await h.ev(ssRowState("buildoutput", "node_modules"));
+        const isFolder = await h.ev(`!!(${ssRow("buildoutput", "node_modules")})?.hasAttribute('data-storage-folder')`);
         await h.shot("cdp-shots/settings-storage-7-build.png");
         rec(
-            "7. build output: the fixture project is one row listing node_modules with its own Remove, and the card has no Clean all",
-            projectRow != null && projectRow.text.includes("node_modules") && projectRow.remove && noCleanAll === true,
-            JSON.stringify({ projectRow, noCleanAll })
+            "7. build output: the fixture project is one row reading no agent session with its own Remove, and the card has no Clean all; opened, it lists node_modules as a folder row with its own Remove",
+            projectRow != null &&
+                projectRow.text.includes("no agent session") &&
+                projectRow.remove &&
+                noCleanAll === true &&
+                projectOpen &&
+                folderRow != null &&
+                folderRow.remove &&
+                isFolder,
+            JSON.stringify({ projectRow, noCleanAll, projectOpen, folderRow, isFolder })
+        );
+
+        // 7b. package caches: their own card, each cache a row with its own Remove or why it stays, no Clean all. No step
+        // presses one: they are the developer's real caches
+        await ssExpand(h, "packagecaches");
+        const caches = await h.ev(`(() => {
+            const card = ${ssCard("packagecaches")};
+            if (!card) return null;
+            const rows = [...card.querySelectorAll('[data-storage-row]')];
+            return {
+                rows: rows.length,
+                everyRowActs: rows.every((r) => r.querySelector('[data-storage-remove]') || r.querySelector('[data-storage-reason]')),
+                cleanAll: card.querySelector('[data-storage-clean]') != null,
+                blurb: card.textContent.includes('shared by every project'),
+            };
+        })()`);
+        await h.ev(`${ssCard("packagecaches")}?.scrollIntoView({ block: "center" })`);
+        await polishNap(150);
+        await h.shot("cdp-shots/settings-storage-7b-caches.png");
+        rec(
+            "7b. package caches: the card says they are shared by every project, has no Clean all, and every cache row has its own Remove or a reason it stays",
+            caches != null && caches.blurb && !caches.cleanAll && caches.everyRowActs,
+            JSON.stringify(caches)
         );
 
         // 8. a clean re-checks at removal: the clean tree changes after the scan, so the server skips it

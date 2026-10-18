@@ -22,9 +22,80 @@ var (
 // frontend/node_modules
 const buildScanDepth = 3
 
-// buildOutput lists each project's build directories that git ignores and removes the one a row asks for. Never
-// all at once, never automatically, and never while an agent works in the project or one of its runs goes.
+// buildOutput lists the build directories git ignores in each project, and in each repo an agent has worked in, and
+// removes the one a row asks for. Never all at once, never automatically, and never while an agent works in the
+// project or one of its runs goes.
 type buildOutput struct{}
+
+// buildProject is a folder build output is looked for in, and when an agent last worked there (0: none did).
+type buildProject struct {
+	path     string
+	lastUsed int64
+}
+
+// buildProjects is every project in config, then each git repo an agent has worked in that no project holds, at its
+// top level. A folder outside a repo has no build output git ignores, a linked worktree (an engine run's, Claude
+// Code's) belongs to the run worktrees card or to Claude Code, and the home dir kept in git, or any repo that holds a
+// project, is a parent folder, so none of them is listed.
+func buildProjects(ctx context.Context, env *Env) []buildProject {
+	var out []buildProject
+	for _, p := range env.ProjectPaths() {
+		out = append(out, buildProject{path: filepath.Clean(p)})
+	}
+	if env.AgentProjects == nil {
+		return out
+	}
+	home, _ := os.UserHomeDir()
+	// bump marks when an agent last worked in a listed project, reporting whether one holds dir
+	bump := func(dir string, ts int64) bool {
+		for i := range out {
+			if isInside(dir, out[i].path) {
+				out[i].lastUsed = max(out[i].lastUsed, ts)
+				return true
+			}
+		}
+		return false
+	}
+	for _, a := range env.AgentProjects() {
+		if bump(a.Path, a.LastActiveTs) {
+			continue
+		}
+		top, ok := repoTop(ctx, a.Path)
+		if !ok || SamePath(top, home) || bump(top, a.LastActiveTs) {
+			continue
+		}
+		holds := false
+		for _, p := range out {
+			holds = holds || isInside(p.path, top)
+		}
+		if !holds {
+			out = append(out, buildProject{path: top, lastUsed: a.LastActiveTs})
+		}
+	}
+	return out
+}
+
+// repoTop is the top level of the git repo dir lies in, in dir's own spelling (links not resolved); ok is false
+// outside a repo and in a linked worktree, whose git dir is not the common one.
+func repoTop(ctx context.Context, dir string) (string, bool) {
+	out, err := gitOut(ctx, dir, "rev-parse", "--show-cdup", "--path-format=absolute", "--git-dir", "--git-common-dir")
+	if err != nil {
+		return "", false
+	}
+	lines := strings.Split(strings.TrimRight(out, "\r\n"), "\n")
+	if len(lines) != 3 || !SamePath(strings.TrimSpace(lines[1]), strings.TrimSpace(lines[2])) {
+		return "", false
+	}
+	return filepath.Join(dir, strings.TrimSpace(lines[0])), true
+}
+
+func projectPaths(projects []buildProject) []string {
+	paths := make([]string, len(projects))
+	for i, p := range projects {
+		paths[i] = p.path
+	}
+	return paths
+}
 
 func (buildOutput) category() StorageCategory { return CategoryBuildOutput }
 
@@ -107,10 +178,10 @@ func hasTrackedFiles(ctx context.Context, project, dir string) bool {
 	return err != nil || strings.TrimSpace(out) != ""
 }
 
-// busyReason is why a project's build output must stay now, "" when nothing runs there.
+// busyReason is why a project's build output must stay now, "" when nothing runs there or in a folder inside it.
 func busyReason(busy map[string]string, project string) string {
 	for p, why := range busy {
-		if SamePath(p, project) {
+		if isInside(p, project) {
 			return why
 		}
 	}
@@ -138,7 +209,10 @@ func isPlainDir(p string) bool {
 func (buildOutput) measure(ctx context.Context, env *Env) StorageCategoryReport {
 	busy, busyErr := env.BusyProjects(ctx)
 	var items []StorageItem
-	for _, project := range env.ProjectPaths() {
+	// a folder two projects reach (a repo nested in another) is listed once, under the first
+	seen := map[string]bool{}
+	for _, bp := range buildProjects(ctx, env) {
+		project := bp.path
 		cands := buildCandidates(project)
 		ignored := gitIgnored(ctx, project, cands)
 		why := busyReason(busy, project)
@@ -146,13 +220,14 @@ func (buildOutput) measure(ctx context.Context, env *Env) StorageCategoryReport 
 			why = "couldn't tell whether anything runs here"
 		}
 		for _, c := range cands {
-			if !ignored[c] || hasTrackedFiles(ctx, project, c) {
+			if seen[c] || !ignored[c] || hasTrackedFiles(ctx, project, c) {
 				continue
 			}
+			seen[c] = true
 			rel, _ := filepath.Rel(project, c)
 			// Detail is the project's path: the Settings card folds a project's folders into one row with one button
 			items = append(items, StorageItem{ID: c, Kind: KindBuild, Label: filepath.ToSlash(rel), Detail: project,
-				Path: c, Bytes: dirSize(c), Cleanable: why == "", Reason: why})
+				Path: c, Bytes: dirSize(c), ModTs: bp.lastUsed, Cleanable: why == "", Reason: why})
 		}
 	}
 	var err error
@@ -177,9 +252,10 @@ func (buildOutput) clean(ctx context.Context, env *Env, ids []string, opts Clean
 		}
 		return res
 	}
+	projects := projectPaths(buildProjects(ctx, env))
 	for _, id := range ids {
 		id = filepath.Clean(id)
-		project := projectOf(env.ProjectPaths(), id)
+		project := projectOf(projects, id)
 		switch {
 		case project == "":
 			skip(&res, id, "not in a project")

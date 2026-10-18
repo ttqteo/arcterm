@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package storage measures what arcterm and its agents leave on disk and cleans it (Settings → Storage):
-// finished runs' worktrees, old Claude sessions, rolled logs with the session trash and the webview cache, and
-// the projects' build output. Each category is a provider, and every rule a clean depends on is checked again at
+// finished runs' worktrees, old Claude sessions, rolled logs with the session trash and the webview cache, the build
+// output of the projects and of the repos agents worked in, and the package managers' caches. Each category is a provider, and every rule a clean depends on is checked again at
 // the moment of removal: a run can restart or a session reopen between a scan and a click. The types carry a
 // Storage prefix because the generated TypeScript names a type by its bare Go name.
 package storage
@@ -30,6 +30,8 @@ const (
 	CategoryHousekeeping StorageCategory = "housekeeping"
 	CategoryBuildOutput  StorageCategory = "buildoutput"
 	CategoryCanvases     StorageCategory = "canvases"
+	// CategoryPackageCaches is shared by the whole machine, not arcterm's: the Settings head leaves it out of its sums
+	CategoryPackageCaches StorageCategory = "packagecaches"
 )
 
 // what an item is, for the row and for auto-clean's pick
@@ -42,10 +44,11 @@ const (
 	KindBuild        = "build"
 	KindAttachments  = "attachments"
 	KindCanvas       = "canvas"
+	KindCache        = "cache"
 )
 
 // StorageItem is one thing a category can clean: a run's worktree, a session, a rolled log, the trash, the
-// webview cache, a build directory.
+// webview cache, a build directory, a package cache.
 type StorageItem struct {
 	ID        string `json:"id"` // what a clean names it by: its path, or "trash" / "webviewcache"
 	Kind      string `json:"kind"`
@@ -53,7 +56,7 @@ type StorageItem struct {
 	Detail    string `json:"detail,omitempty"`
 	Path      string `json:"path,omitempty"`
 	Bytes     int64  `json:"bytes"`
-	ModTs     int64  `json:"modts,omitempty"`   // unix ms of its last change: the sessions card filters by it
+	ModTs     int64  `json:"modts,omitempty"`   // unix ms of its last change, which the sessions card filters by; for build output, when an agent last worked in its project
 	Cleanable bool   `json:"cleanable"`         // a clean may remove it now
 	Guarded   bool   `json:"guarded,omitempty"` // only its own button removes it, after a confirm that says what is lost
 	Reason    string `json:"reason,omitempty"`  // why it stays, or what removing it costs
@@ -112,6 +115,7 @@ type RunState struct {
 type Env struct {
 	Now             func() time.Time
 	ProjectPaths    func() []string                           // the projects in config
+	AgentProjects   func() []AgentProject                     // the folders agents have worked in; nil reads none
 	RunOfWorktree   func(path string) (runID string, ok bool) // the run that owns an engine tree; ok false for a name the engine never makes
 	RunState        func(ctx context.Context, runID string) (RunState, error)
 	BusyProjects    func(ctx context.Context) (map[string]string, error) // project path -> why its build output must stay now
@@ -124,6 +128,14 @@ type Env struct {
 	AttachmentsDir   string // ~/.arc/attachments: the images sent with a new agent's task, which its transcript shows
 	SessionDirs      []string
 	WebviewCacheDirs []string
+	PackageCaches    []PackageCache
+	BusyCaches       func() string // why no package cache may go now ("" when none runs), nil for never
+}
+
+// AgentProject is a folder an agent has worked in, and when it last did.
+type AgentProject struct {
+	Path         string
+	LastActiveTs int64 // unix ms
 }
 
 type provider interface {
