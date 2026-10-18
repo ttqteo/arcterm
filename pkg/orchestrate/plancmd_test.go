@@ -110,6 +110,23 @@ func TestTailBufferKeepsTheEnd(t *testing.T) {
 	}
 }
 
+func TestTailBufferDropsColorCodes(t *testing.T) {
+	b := &tailBuffer{max: MaxPlanOutputLen}
+	writeAll(b, "    at runTest (file:///repo/node_modules/\x1b[4m@vitest\x1b[24m/runner/dist/index.js:1:2)\n")
+	if got := b.String(); got != "at runTest (file:///repo/node_modules/@vitest/runner/dist/index.js:1:2)" {
+		t.Fatalf("color codes kept: %q", got)
+	}
+}
+
+func TestFailureOutputDropsColorCodesFromTheBlocks(t *testing.T) {
+	b := &tailBuffer{max: MaxPlanOutputLen}
+	writeAll(b, "--- FAIL: TestColor (0.00s)\n    color_test.go:3: \x1b[31mwant red\x1b[39m\n", noisyLog(300))
+	out := b.failureOutput()
+	if !strings.Contains(out, "color_test.go:3: want red") || strings.Contains(out, "\x1b") {
+		t.Fatalf("color codes kept: %q", out[:200])
+	}
+}
+
 // laterStages is what a chained Verify prints after an early stage failed: far more than the detail cap.
 func laterStages() string {
 	return strings.Repeat("ok  \tgithub.com/wavetermdev/waveterm/pkg/x\t0.123s\n", 100)
