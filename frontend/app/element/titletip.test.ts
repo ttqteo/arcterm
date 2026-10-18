@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { keyDismissesTip, splitTitle, tooltipOrigin } from "./titletip";
+import { isFrameTag, keyDismissesTip, splitTitle, tooltipOrigin } from "./titletip";
 
 describe("splitTitle", () => {
     it("splits a trailing shortcut off the label", () => {
@@ -72,5 +72,19 @@ describe("tooltipOrigin", () => {
         expect(tooltipOrigin("bottom-end")).toBe("right top");
         expect(tooltipOrigin("right-start")).toBe("left top");
         expect(tooltipOrigin("left-end")).toBe("right bottom");
+    });
+});
+
+describe("isFrameTag", () => {
+    it("names the elements that embed a page", () => {
+        for (const tag of ["IFRAME", "iframe", "EMBED", "OBJECT", "FRAME"]) {
+            expect(isFrameTag(tag)).toBe(true);
+        }
+    });
+
+    it("leaves every other element its tip", () => {
+        for (const tag of ["BUTTON", "SPAN", "IMG", "DIV", "A"]) {
+            expect(isFrameTag(tag)).toBe(false);
+        }
     });
 });

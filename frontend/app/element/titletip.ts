@@ -46,6 +46,15 @@ export function keyDismissesTip(key: string): boolean {
     return !MODIFIER_KEYS.has(key);
 }
 
+// An embedded page (the HTML preview, a PDF) carries a title as its name for a screen reader, not as a hint, and the
+// pointer's moves inside it never reach the app: a chip raised for it would hang over the page the whole time the
+// pointer is on it, its path repeated over the path bar.
+const FRAME_TAGS = new Set(["IFRAME", "FRAME", "EMBED", "OBJECT"]);
+
+export function isFrameTag(tagName: string): boolean {
+    return FRAME_TAGS.has(tagName.toUpperCase());
+}
+
 const OPPOSITE: Record<string, string> = { top: "bottom", bottom: "top", left: "right", right: "left" };
 
 // The CSS transform-origin a tip grows from: the side facing its anchor, at the placement's alignment, so the

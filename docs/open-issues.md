@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Code, and an agent's File tab: open an HTML file in Preview, scroll halfway, switch to another surface
+  and back, then to another file and back: the page opens where you left it each time, not at the top. Rest the
+  pointer on the page, then on a PDF: no chip with the file's path appears over the path bar. Needs a wavesrv built
+  after `pkg/htmlserve`'s scroll script. 2026-10-18.
+- [ ] (arcterm) File tab: rest the pointer on the empty space between a file's path and Preview / Source: no grey fill
+  and no chip; on the path itself: the grey fill and the chip with the full path and "Click to copy". 2026-10-18.
 - [ ] (arcterm) Office, Windows and Mac: hold an arrow, the boss walks faster than before (~240 px/s); hold `Shift`
   with it, it runs at twice that; let go of `Shift` mid-walk, it slows back. With reduced motion on, `Shift`+arrow
   jumps 48 px instead of 24. 2026-10-16.

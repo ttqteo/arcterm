@@ -2,10 +2,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Pure: where a rendered document (a markdown or TeX Preview) was scrolled to, so leaving the file or the surface and
-// coming back lands where the reader left it. The Source editor keeps its own through Monaco's view state
+// Pure: where a rendered document (a markdown, TeX or HTML Preview) was scrolled to, so leaving the file or the surface
+// and coming back lands where the reader left it. The Source editor keeps its own through Monaco's view state
 // (codeviewer.tsx); a preview is plain DOM and unmounts with the surface, so its offset is kept here, keyed by view
-// mode and absolute path.
+// mode and absolute path. An HTML page is out of the app's reach in its frame, so it reports its own scroll and takes
+// a kept one back by message (htmlframe.tsx, pkg/htmlserve's scrollScript).
 
 import { remember } from "./codeeditorcache";
 
@@ -36,6 +37,19 @@ export function applyScroll(
     }
     el.scrollTop = top;
     return true;
+}
+
+// the messages pkg/htmlserve's scrollScript sends and takes
+export const PAGE_SCROLL = "arc-html-scroll";
+export const PAGE_RESTORE = "arc-html-restore";
+
+// the offset an HTML preview reported, or null for any other message a page posts to its parent
+export function pageScrollReport(data: unknown): number | null {
+    if (typeof data !== "object" || data == null) {
+        return null;
+    }
+    const { type, y } = data as { type?: unknown; y?: unknown };
+    return type === PAGE_SCROLL && typeof y === "number" && Number.isFinite(y) && y >= 0 ? y : null;
 }
 
 export function clearKeptScrolls(): void {
