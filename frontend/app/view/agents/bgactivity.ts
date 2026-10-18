@@ -14,9 +14,13 @@ export type ShownState = AgentState | "waiting";
 
 // a shell loop that sleeps between checks: `while …; do …; sleep 20; done`, `until [ -f x ]; do sleep 5; done`
 const WAIT_LOOP = /\b(?:while|until)\b[\s\S]*\bsleep\b/;
+// waiting for another agent to stop working
+const AGENT_WAIT = /\bwsh\s+agents\s+wait\b/;
 
-function onlyWatches(task: BackgroundTask): boolean {
-    return task.monitor === true || WAIT_LOOP.test(task.command ?? "");
+/** Pure: the task only watches: a Monitor, a loop that sleeps between checks, or a `wsh agents wait`. */
+export function onlyWatches(task: BackgroundTask): boolean {
+    const command = task.command ?? "";
+    return task.monitor === true || WAIT_LOOP.test(command) || AGENT_WAIT.test(command);
 }
 
 /** Pure: "working" when a running background task is at work, "waiting" when every one only watches, null when none

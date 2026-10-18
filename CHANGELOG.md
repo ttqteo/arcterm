@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- An agent waiting on another agent sits under it in the sidebar, on a tree guide, and goes back to its place when
+  the wait ends; when the two are in different projects its row says whom it waits on instead. Agents wait with the
+  new `wsh agents wait <tab>`, which returns once that agent stops working; a loop that watches another agent's tab
+  counts too.
 - The agent panel opens several files at once, each in a tab of its own (up to 5): the files you open from Files,
   Files changed or a path no longer replace each other, and a link followed inside a file keeps Back and Forward in
   its tab. On Overview and Files the tabs fold into one icon with how many are open.

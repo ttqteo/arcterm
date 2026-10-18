@@ -1,6 +1,6 @@
 ---
 name: cockpit-runs
-description: Use when you need to start an arcterm run (quick, or orchestrator from a goal or a plan file), check on or cancel a run, or see what is waiting on the user — via `wsh runs`; or message a live agent tab and read its answer — via `wsh agents`.
+description: Use when you need to start an arcterm run (quick, or orchestrator from a goal or a plan file), check on or cancel a run, or see what is waiting on the user — via `wsh runs`; or message a live agent tab, read its answer, or wait until it stops working — via `wsh agents`.
 ---
 
 # arcterm runs from the command line
@@ -32,6 +32,9 @@ Message a live agent (claude or pi) with `wsh agents`:
 - `wsh agents list` shows the live agent tabs, with a tab prefix and each one's state.
 - `wsh agents send <tab> "<text>"` hands the agent a prompt; `--file <path>` reads the text from a file, `--wait` blocks until it has answered.
 - `wsh agents read <tab>` prints the agent's last answer.
+- `wsh agents wait <tab>` blocks until the agent stops working (its turn ends, it asks the user, it sleeps or its tab
+  closes). To carry on once another agent is done, run it as a background command instead of writing a polling loop:
+  you are told when it ends, and the cockpit nests your row under that agent.
 
 Rules:
 - Before every `start`, run `wsh runs route` and tell the user the lead and worker models in one line.

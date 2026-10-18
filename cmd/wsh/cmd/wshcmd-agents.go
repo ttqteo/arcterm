@@ -18,6 +18,7 @@ import (
 const (
 	agentsShortIdLen     = 8
 	agentsWaitPoll       = 2 * time.Second
+	agentsWaitAgentPoll  = 5 * time.Second
 	agentsWaitDefault    = 10 * time.Minute
 	agentsNoRun          = "-"
 	agentsAllProjectsTip = "wsh agents list --all shows every project"
@@ -58,6 +59,20 @@ minute, and gets the message once it has reported in.`,
 	RunE:    agentsSendRun,
 }
 
+var agentsWaitCmd = &cobra.Command{
+	Use:   "wait <tab>",
+	Short: "wait until a live agent stops working",
+	Long: `Wait until a live agent stops working: its turn ends, it asks the user something, it goes to sleep,
+or its tab closes. <tab> is a tab id or a unique prefix of one, as 'wsh agents list' prints it. A target
+that is not working ends the wait at once.
+
+Run it as a background command to carry on when another agent is done: you are told when it ends,
+and the cockpit nests your row under the agent you wait on.`,
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE:    agentsWaitRun,
+}
+
 var agentsReadCmd = &cobra.Command{
 	Use:     "read <tab>",
 	Short:   "print a live agent's last answer",
@@ -73,7 +88,8 @@ func init() {
 	agentsSendCmd.Flags().Bool("wait", false, "wait for the target's answer and print it")
 	agentsSendCmd.Flags().Duration("timeout", agentsWaitDefault, "how long --wait waits")
 	agentsReadCmd.Flags().Bool("json", false, "JSON output")
-	agentsCmd.AddCommand(agentsListCmd, agentsSendCmd, agentsReadCmd)
+	agentsWaitCmd.Flags().Duration("timeout", 0, "give up after this long (0 waits as long as it takes)")
+	agentsCmd.AddCommand(agentsListCmd, agentsSendCmd, agentsReadCmd, agentsWaitCmd)
 	rootCmd.AddCommand(agentsCmd)
 }
 
@@ -250,6 +266,90 @@ func agentsWaitLines(r *wshrpc.CommandAgentsReadRtnData) []string {
 		return []string{fmt.Sprintf("%s is waiting on the user: it has a question open. Once it is answered, run 'wsh agents read %s'", id, id)}
 	}
 	return agentsReadLines(r)
+}
+
+func agentsWaitRun(cmd *cobra.Command, args []string) error {
+	timeout, _ := cmd.Flags().GetDuration("timeout")
+	list := func() ([]wshrpc.AgentInfo, error) {
+		rtn, err := wshclient.AgentsListCommand(RpcClient, &wshrpc.RpcOpts{Timeout: runsReadTimeoutMs})
+		if err != nil {
+			return nil, err
+		}
+		return rtn.Agents, nil
+	}
+	line, err := agentsWaitFor(list, time.Sleep, time.Now, args[0], timeout)
+	if err != nil {
+		return err
+	}
+	fmt.Println(line)
+	return nil
+}
+
+// agentsWaitFor polls list until the agent tab names (a tab id or a unique prefix of one) is no longer working or
+// is gone, and returns the line saying how it ended. A timeout of 0 never gives up. list, sleep and now are parameters
+// so a test scripts them.
+func agentsWaitFor(list func() ([]wshrpc.AgentInfo, error), sleep func(time.Duration), now func() time.Time,
+	tab string, timeout time.Duration) (string, error) {
+	rows, err := list()
+	if err != nil {
+		return "", err
+	}
+	target, err := agentsResolveTab(rows, tab)
+	if err != nil {
+		return "", err
+	}
+	who := fmt.Sprintf("%s (%s)", agentsShort(target.TabId), target.Name)
+	deadline := now().Add(timeout)
+	for {
+		var row *wshrpc.AgentInfo
+		for i := range rows {
+			if rows[i].TabId == target.TabId {
+				row = &rows[i]
+			}
+		}
+		switch {
+		case row == nil:
+			return who + " closed", nil
+		case row.State == wshrpc.AgentsState_Asking:
+			return who + " is waiting on the user: it has a question open", nil
+		case row.State == wshrpc.AgentsState_Sleeping:
+			return who + " is asleep", nil
+		case row.State != wshrpc.AgentsState_Working:
+			return fmt.Sprintf("%s stopped working: it is %s", who, row.State), nil
+		}
+		if timeout > 0 && !now().Before(deadline) {
+			return "", fmt.Errorf("%s is still working after %s", who, timeout)
+		}
+		sleep(agentsWaitAgentPoll)
+		if rows, err = list(); err != nil {
+			return "", err
+		}
+	}
+}
+
+// agentsResolveTab finds the row tab names by its id or a unique prefix of one, as the server resolves a send
+func agentsResolveTab(rows []wshrpc.AgentInfo, tab string) (*wshrpc.AgentInfo, error) {
+	tab = strings.TrimSpace(tab)
+	var matches []*wshrpc.AgentInfo
+	for i := range rows {
+		if rows[i].TabId == tab {
+			return &rows[i], nil
+		}
+		if tab != "" && strings.HasPrefix(rows[i].TabId, tab) {
+			matches = append(matches, &rows[i])
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("tab %q is not a live agent session; wsh agents list --all shows the live agents", tab)
+	case 1:
+		return matches[0], nil
+	}
+	names := make([]string, len(matches))
+	for i, m := range matches {
+		names[i] = fmt.Sprintf("%s (%s)", m.TabId, m.Name)
+	}
+	return nil, fmt.Errorf("tab %q matches several live agents: %s; use more of the id", tab, strings.Join(names, ", "))
 }
 
 func agentsReadRun(cmd *cobra.Command, args []string) error {

@@ -9,9 +9,11 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "./agents";
 import { projectTree, treeNavIds } from "./agentsidebarmodel";
 import { buildAgentTree } from "./agenttreemodel";
+import { waitMap } from "./agentwaits";
 import { collapsedProjectsAtom } from "./projectfoldstore";
 import { projectsAtom } from "./projectsstore";
 import { treeFoldsAtom } from "./runlineagestore";
+import { backgroundTasksByIdAtom } from "./subagentsstore";
 
 export function activeNavOrder(model: AgentsViewModel): string[] {
     const agents = globalStore.get(model.agentsAtom);
@@ -22,7 +24,8 @@ export function activeNavOrder(model: AgentsViewModel): string[] {
         globalStore.get(model.orderAtom),
         globalStore.get(model.lineageAtom),
         globalStore.get(treeFoldsAtom),
-        focusId
+        focusId,
+        waitMap(agents, globalStore.get(backgroundTasksByIdAtom))
     );
     const roots = new Map<string, string>();
     for (const [name, project] of Object.entries(globalStore.get(projectsAtom))) {

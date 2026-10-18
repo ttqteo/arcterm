@@ -22,7 +22,9 @@ export const UNGROUPED_PROJECT = "ungrouped";
 
 export type AgentTreeRow =
     | { kind: "group"; project: string; count: number; attn: number; running: number }
-    | { kind: "parent"; agent: AgentVM; project: string }
+    // a plain agent. `nested`: it waits on the plain agent of its folder just above it, and sits under it; `waitsFor`:
+    // the name of the agent it waits on where it cannot nest (another folder, a lead, one that nests itself)
+    | { kind: "parent"; agent: AgentVM; project: string; nested?: boolean; waitsFor?: string }
     // an orchestrator lead; `live` counts its workers that are not done
     | { kind: "lead"; agent: AgentVM; project: string; run: RunInfo; open: boolean; live: number }
     // a run whose workers are in the roster but whose lead is not: a plan-path run before its first lead
@@ -277,17 +279,24 @@ function runRows(
     return { rows, members: agents, attn, running };
 }
 
+const NO_WAITS: ReadonlyMap<string, string> = new Map();
+
 /** Pure: roster + anchored order -> [group, ...rows] per project. Projects appear in the first-seen order
  *  of `order`; top-level rows within a group follow `order` (ids absent from `order` sort last). A run's
  *  workers follow its lead in plan order, and a run with no lead in the roster takes the place of its first
  *  worker. `count` is the group's visible agents, done workers aside; `attn` is how many wait on the human; `running`
- *  is how many are working now. */
+ *  is how many are working now.
+ *
+ *  `waits` (waiter id -> the id it waits on, agentwaits.ts) nests a plain agent under the plain agent of its folder it
+ *  waits on, after that agent's row, in order; one level deep, so it never nests under one that nests itself: a chain
+ *  nests its head and a cycle nests no one. A waiter that cannot nest keeps its place and names whom it waits on. */
 export function buildAgentTree(
     agents: AgentVM[],
     order: string[],
     lineage: Lineage = NO_LINEAGE,
     folds: TreeFolds = NO_FOLDS,
-    focusId?: string
+    focusId?: string,
+    waits: ReadonlyMap<string, string> = NO_WAITS
 ): AgentTreeRow[] {
     const rank = new Map(order.map((id, i) => [id, i] as const));
     const sorted = [...agents].sort(
@@ -351,18 +360,43 @@ export function buildAgentTree(
         }
     }
 
+    const byId = new Map(agents.map((a) => [a.id, a] as const));
     const rows: AgentTreeRow[] = [];
     for (const g of groups) {
         const body: AgentTreeRow[] = [];
         let count = 0;
         let attn = 0;
         let running = 0;
+        const plain = new Set(g.items.flatMap((i) => (i.kind === "parent" ? [i.agent.id] : [])));
+        const nestsUnder = (id: string): string | undefined => {
+            const target = waits.get(id);
+            if (target == null || !plain.has(target)) {
+                return undefined;
+            }
+            const next = waits.get(target);
+            return next != null && plain.has(next) ? undefined : target;
+        };
+        const waiters = new Map<string, AgentVM[]>();
+        for (const item of g.items) {
+            const target = item.kind === "parent" ? nestsUnder(item.agent.id) : undefined;
+            if (item.kind === "parent" && target != null) {
+                waiters.set(target, [...(waiters.get(target) ?? []), item.agent]);
+            }
+        }
         for (const item of g.items) {
             if (item.kind === "parent") {
-                body.push(item);
                 count++;
                 attn += item.agent.state === "asking" ? 1 : 0;
                 running += item.agent.state === "working" ? 1 : 0;
+                if (nestsUnder(item.agent.id) != null) {
+                    continue;
+                }
+                const target = waits.get(item.agent.id);
+                const waitsFor = target != null ? byId.get(target)?.name : undefined;
+                body.push(waitsFor != null ? { ...item, waitsFor } : item);
+                for (const agent of waiters.get(item.agent.id) ?? []) {
+                    body.push({ kind: "parent", agent, project: item.project, nested: true });
+                }
                 continue;
             }
             const r = runRows(

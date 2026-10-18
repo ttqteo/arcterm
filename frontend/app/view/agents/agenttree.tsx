@@ -47,6 +47,7 @@ import {
     GitBranch,
     Hash,
     History as HistoryIcon,
+    Hourglass,
     LayoutGrid,
     Loader2,
     Moon,
@@ -71,6 +72,7 @@ import { mentionToken } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
 import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
 import { setAgentView } from "./agentview";
+import { waitMap } from "./agentwaits";
 import { backgroundActivity, shownState, type ShownState } from "./bgactivity";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
@@ -766,6 +768,8 @@ function ParentRow({
     lead,
     navDigit,
     inSplit,
+    nested,
+    waitsFor,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
@@ -774,6 +778,8 @@ function ParentRow({
     lead?: { run: RunInfo; open: boolean; live: number };
     navDigit?: number; // its Alt+1..9 digit
     inSplit?: boolean; // a cell of the split on screen: the row stays in its folder and wears SplitMark
+    nested?: boolean; // it waits on the agent just above it, and sits under it on a tree guide
+    waitsFor?: string; // the name of the agent it waits on where it cannot nest under it
 }) {
     // the meta the person chose to see on a row (Settings → Appearance → Agent sidebar)
     const fields = useAtomValue(rowFieldsAtom);
@@ -993,9 +999,11 @@ function ParentRow({
                     "relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms]",
                     // selection is the one filled row; an asking agent says so in words, not in a tint
                     selected ? "bg-surface-selected" : "hover:bg-surface-hover",
-                    settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
+                    settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none",
+                    nested && "pl-[28px]"
                 )}
             >
+                {nested ? <Guides depth={1} /> : null}
                 {renaming ? (
                     <RenameBox tabId={agent.id} shown={agent.name} />
                 ) : (
@@ -1048,6 +1056,12 @@ function ParentRow({
                     // chip and its badges. @container: the subagents chip drops its word when this line is narrow, and
                     // the model truncates
                     <div className={cn(CONVERSATION_META, "@container mt-[3px]", UNDER_GLYPH, dim && "text-ink-faint")}>
+                        {waitsFor ? (
+                            <span className="flex min-w-0 items-center gap-[3px]" title={`Waiting on ${waitsFor}`}>
+                                <Hourglass size={10} aria-hidden className="flex-none" />
+                                <span className="truncate">waiting on {waitsFor}</span>
+                            </span>
+                        ) : null}
                         {originChip}
                         {shownModel ? <span className="min-w-0 truncate">{shownModel}</span> : null}
                         {shownModel && shownBranch ? (
@@ -2348,7 +2362,10 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // project folding to its folder row. The ended conversations are the section under it (ConversationsSection).
     const filter = useAtomValue(model.projectFilterAtom);
     const filtered = filter !== ALL_PROJECTS;
-    const tree = buildAgentTree(agents, order, lineage, folds, focusId);
+    // an agent waiting on another (a `wsh agents wait`, a watch loop naming its tab) nests under it (agentwaits.ts)
+    const bgTasks = useAtomValue(backgroundTasksByIdAtom);
+    const waits = useMemo(() => waitMap(agents, bgTasks), [agents, bgTasks]);
+    const tree = buildAgentTree(agents, order, lineage, folds, focusId, waits);
     // the split the Agent surface shows (the grid as it reconciles it, agents and terminals alike): its cells keep their
     // rows, each marked. The docked terminal is no cell: the surface prunes it.
     const gridState = useAtomValue(agentGridAtom);
@@ -2550,6 +2567,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             tokens={tokens.get(r.agent.id)}
                                             navDigit={digits.get(r.agent.id)}
                                             inSplit={splitIds.has(r.agent.id)}
+                                            nested={r.nested}
+                                            waitsFor={r.waitsFor}
                                         />
                                     );
                                     break;

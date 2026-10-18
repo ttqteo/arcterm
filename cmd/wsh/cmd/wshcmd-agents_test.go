@@ -260,3 +260,95 @@ func TestAgentsReadLines(t *testing.T) {
 		t.Errorf("without an answer: %q", none)
 	}
 }
+
+// agentsWaitForScript runs agentsWaitFor over scripted rosters, one per poll, the last repeating; a nil roster is a
+// failed list. It returns what it printed, how many lists it made, and its error.
+func agentsWaitForScript(t *testing.T, tab string, timeout time.Duration, rosters ...[]wshrpc.AgentInfo) (string, int, error) {
+	t.Helper()
+	clock := time.UnixMilli(agentsTestSentTs)
+	n := 0
+	list := func() ([]wshrpc.AgentInfo, error) {
+		r := rosters[min(n, len(rosters)-1)]
+		n++
+		if r == nil {
+			return nil, errors.New("list failed")
+		}
+		return r, nil
+	}
+	sleep := func(d time.Duration) {
+		if d != agentsWaitAgentPoll {
+			t.Fatalf("slept %s, want the poll interval %s", d, agentsWaitAgentPoll)
+		}
+		clock = clock.Add(d)
+	}
+	line, err := agentsWaitFor(list, sleep, func() time.Time { return clock }, tab, timeout)
+	return line, n, err
+}
+
+// agentsWithState is the test roster with tab's state set to state
+func agentsWithState(tab, state string) []wshrpc.AgentInfo {
+	rows := agentsTestRoster()
+	for i := range rows {
+		if rows[i].TabId == tab {
+			rows[i].State = state
+		}
+	}
+	return rows
+}
+
+func TestAgentsWaitForWaitsUntilTheTargetStopsWorking(t *testing.T) {
+	line, n, err := agentsWaitForScript(t, "bbbbbbbb", 0, agentsTestRoster(), agentsTestRoster(),
+		agentsWithState(agentsTestTabB, wshrpc.AgentsState_Idle))
+	if err != nil || n != 3 {
+		t.Fatalf("lists = %d, err = %v; want 3 lists and no error", n, err)
+	}
+	if line != "bbbbbbbb (scratch) stopped working: it is idle" {
+		t.Errorf("printed %q", line)
+	}
+}
+
+func TestAgentsWaitForEndsAtOnceOnATargetNotWorking(t *testing.T) {
+	line, n, err := agentsWaitForScript(t, agentsTestTabA, 0, agentsTestRoster())
+	if err != nil || n != 1 || !strings.Contains(line, "aaaaaaaa (design lead) stopped working") {
+		t.Fatalf("line = %q, lists = %d, err = %v; want one list and the idle line", line, n, err)
+	}
+	line, _, _ = agentsWaitForScript(t, "cccc", 0, agentsTestRoster())
+	if !strings.Contains(line, "waiting on the user") {
+		t.Errorf("an asking target printed %q, want it to say it waits on the user", line)
+	}
+	line, _, _ = agentsWaitForScript(t, "bbbb", 0, agentsWithState(agentsTestTabB, wshrpc.AgentsState_Sleeping))
+	if !strings.Contains(line, "asleep") {
+		t.Errorf("a sleeping target printed %q, want it to say it is asleep", line)
+	}
+}
+
+func TestAgentsWaitForEndsWhenTheTargetCloses(t *testing.T) {
+	gone := agentsTestRoster()[:1]
+	line, n, err := agentsWaitForScript(t, "bbbbbbbb", 0, agentsTestRoster(), gone)
+	if err != nil || n != 2 || line != "bbbbbbbb (scratch) closed" {
+		t.Fatalf("line = %q, lists = %d, err = %v; want the closed line on the second list", line, n, err)
+	}
+}
+
+func TestAgentsWaitForNamesATabItCannotFind(t *testing.T) {
+	if _, _, err := agentsWaitForScript(t, "ffff", 0, agentsTestRoster()); err == nil || !strings.Contains(err.Error(), "not a live agent") {
+		t.Errorf("err = %v, want it to say the tab is not a live agent", err)
+	}
+	twins := append(agentsTestRoster(), wshrpc.AgentInfo{TabId: "bbbbbbbb-9999", Name: "twin", State: wshrpc.AgentsState_Working})
+	if _, _, err := agentsWaitForScript(t, "bbbb", 0, twins); err == nil || !strings.Contains(err.Error(), "several") {
+		t.Errorf("err = %v, want it to say the prefix matches several agents", err)
+	}
+	if _, _, err := agentsWaitForScript(t, "bbbb", 0, nil); err == nil {
+		t.Error("a failed list returned no error")
+	}
+}
+
+func TestAgentsWaitForTimesOut(t *testing.T) {
+	line, n, err := agentsWaitForScript(t, "bbbbbbbb", 3*agentsWaitAgentPoll, agentsTestRoster())
+	if err == nil || line != "" || !strings.Contains(err.Error(), "still working after") {
+		t.Fatalf("line = %q, err = %v; want a timeout error", line, err)
+	}
+	if n != 4 {
+		t.Errorf("lists = %d, want 4 (one at the start, one per poll until the timeout)", n)
+	}
+}

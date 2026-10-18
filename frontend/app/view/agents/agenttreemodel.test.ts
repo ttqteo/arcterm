@@ -56,6 +56,72 @@ describe("buildAgentTree", () => {
     });
 });
 
+describe("buildAgentTree with agents that wait on others", () => {
+    const parents = (rows: AgentTreeRow[]) =>
+        rows.flatMap((r) =>
+            r.kind === "parent"
+                ? [`${r.nested ? "  " : ""}${r.agent.id}${r.waitsFor ? ` (waits on ${r.waitsFor})` : ""}`]
+                : []
+        );
+
+    it("nests each agent that waits under the agent it waits on, in order, and counts it once", () => {
+        const agents = ["a", "b", "c", "d"].map((id) => vm(id, "idle", WAVE));
+        const rows = buildAgentTree(
+            agents,
+            ["a", "b", "c", "d"],
+            undefined,
+            undefined,
+            undefined,
+            new Map([
+                ["a", "c"],
+                ["d", "c"],
+            ])
+        );
+        expect(parents(rows)).toEqual(["b", "c", "  a", "  d"]);
+        expect(rows[0]).toMatchObject({ kind: "group", count: 4 });
+    });
+
+    it("an agent waiting on one in another project stays in its own and says whom it waits on", () => {
+        const agents = [vm("w", "idle", WAVE), vm("l", "working", LOOM)];
+        const rows = buildAgentTree(agents, ["w", "l"], undefined, undefined, undefined, new Map([["w", "l"]]));
+        expect(parents(rows)).toEqual(["w (waits on l)", "l"]);
+    });
+
+    it("nests one level: the head of a chain nests, the rest name whom they wait on, and a cycle nests no one", () => {
+        const agents = ["a", "b", "c"].map((id) => vm(id, "idle", WAVE));
+        const chain = new Map([
+            ["a", "b"],
+            ["b", "c"],
+        ]);
+        expect(parents(buildAgentTree(agents, ["a", "b", "c"], undefined, undefined, undefined, chain))).toEqual([
+            "a (waits on b)",
+            "c",
+            "  b",
+        ]);
+        const cycle = new Map([
+            ["a", "b"],
+            ["b", "a"],
+        ]);
+        expect(parents(buildAgentTree(agents, ["a", "b", "c"], undefined, undefined, undefined, cycle))).toEqual([
+            "a (waits on b)",
+            "b (waits on a)",
+            "c",
+        ]);
+    });
+
+    it("a wait on an agent gone from the roster changes nothing", () => {
+        const rows = buildAgentTree(
+            [vm("a", "idle", WAVE)],
+            ["a"],
+            undefined,
+            undefined,
+            undefined,
+            new Map([["a", "x"]])
+        );
+        expect(parents(rows)).toEqual(["a"]);
+    });
+});
+
 describe("buildAgentTree with run lineage", () => {
     const task = (id: string, state: string): TaskNode => ({ id, label: id, state }) as TaskNode;
     const run = (runId: string, tasks: TaskNode[], digest?: DagStatusDigest): RunInfo => ({

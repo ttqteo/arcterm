@@ -30,6 +30,7 @@ describe("backgroundActivity", () => {
         expect(backgroundActivity([monitor], null)).toBe("waiting");
         expect(backgroundActivity([waitLoop], null)).toBe("waiting");
         expect(backgroundActivity([task("u", "until [ -f done.flag ]; do sleep 5; done")], null)).toBe("waiting");
+        expect(backgroundActivity([task("a", "~/.arc/bin/wsh agents wait acaf10f7")], null)).toBe("waiting");
     });
 
     it("a loop that does not sleep is work", () => {
