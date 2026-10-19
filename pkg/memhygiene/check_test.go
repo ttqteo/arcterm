@@ -553,3 +553,19 @@ func TestDecideRefusesKeepAndReopenOutOfStatus(t *testing.T) {
 		t.Fatalf("reopen of a kept change left it %q", p.Changes[0].Status)
 	}
 }
+
+// an index over the budget it states opens the hash gate, so the cut weighs memories judged fine before
+func TestCheckOverBudgetJudgesUnchanged(t *testing.T) {
+	env := checkTestSetup(t)
+	folder := checkTestSimple(t, env, "p")
+	checkTestRun(t, env, "p")
+	writeFile(t, filepath.Join(folder, "MEMORY.md"), "Budget: 20 bytes\n- [A](a.md) — alpha\n- [B](b.md) — beta\n")
+	checkTestRun(t, env, "p")
+	prompts := env.judgePrompts()
+	if len(prompts) != 2 {
+		t.Fatalf("want a second judge call over budget, got %d calls", len(prompts))
+	}
+	if last := prompts[1]; !strings.Contains(last, "### a.md") || !strings.Contains(last, "### b.md") {
+		t.Fatalf("over budget, the check should send every memory:\n%s", last)
+	}
+}

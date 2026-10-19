@@ -366,7 +366,8 @@ func applyMerge(p *applyPlan, op wshrpc.MemOp) error {
 	return nil
 }
 
-// applyDocPassage appends the passage after the last non-blank line of the named section.
+// applyDocPassage appends the passage after the last non-blank line of the named section. The doc isn't
+// hash-pinned, so a section that is no longer there once, or a passage already in it, is the conflict.
 func applyDocPassage(p *applyPlan, op wshrpc.MemOp) error {
 	if _, err := os.Stat(op.DocPath); err != nil {
 		return fmt.Errorf("reading %s: %w", op.DocPath, err)
@@ -377,7 +378,10 @@ func applyDocPassage(p *applyPlan, op wshrpc.MemOp) error {
 	}
 	start, end, err := applyFindSection(tf.Lines, op.DocSection)
 	if err != nil {
-		return fmt.Errorf("%s: %w", op.DocPath, err)
+		return applyConflict{op.DocPath}
+	}
+	if strings.Contains(strings.Join(tf.Lines[start:end], "\n"), strings.TrimSpace(applyNormalize(op.DocPassage))) {
+		return applyConflict{op.DocPath}
 	}
 	at := end
 	for at > start+1 && strings.TrimSpace(tf.Lines[at-1]) == "" {

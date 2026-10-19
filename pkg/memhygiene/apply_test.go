@@ -532,3 +532,49 @@ func TestUndoIndexLineGoneIsConflict(t *testing.T) {
 	}
 	applyTestExpect(t, map[string]string{inv.IndexPath: edited, filepath.Join(inv.Folder, "beta.md"): "Beta says one thing.\n"})
 }
+
+// two moves into one doc from one check both land: the first apply must not turn the second into a conflict
+func TestApplyTwoMovesIntoOneDoc(t *testing.T) {
+	inv := judgeTestInventory(t)
+	doc := filepath.Join(t.TempDir(), judgeDocAgents)
+	writeFile(t, doc, "# Repo\n\n## Gotchas\n\n- one\n\n## Rules\n\n- two\n")
+	changes, err := ParseJudge(`{"changes": [
+		{"kind": "move-to-doc", "title": "alpha", "files": ["alpha.md"], "section": "## Gotchas", "passage": "- alpha rule"},
+		{"kind": "move-to-doc", "title": "beta", "files": ["beta.md"], "section": "## Rules", "passage": "- beta rule"}
+	]}`, inv, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupRoot := t.TempDir()
+	applyTestRun(t, changes[0], backupRoot)
+	applyTestRun(t, changes[1], backupRoot)
+	applyTestExpect(t, map[string]string{
+		doc:                                   "# Repo\n\n## Gotchas\n\n- one\n- alpha rule\n\n## Rules\n\n- two\n- beta rule\n",
+		filepath.Join(inv.Folder, "alpha.md"): "",
+		filepath.Join(inv.Folder, "beta.md"):  "",
+	})
+	if data, err := os.ReadFile(inv.IndexPath); err != nil || len(data) != 0 {
+		t.Errorf("index = %q, %v; want both lines removed", data, err)
+	}
+}
+
+func TestApplyMoveToDocSectionGoneOrPassagePresentIsConflict(t *testing.T) {
+	for _, tc := range []struct{ name, doc string }{
+		{"section gone", "# Repo\n\n## Other\n\n- one\n"},
+		{"passage already there", "# Repo\n\n## Gotchas\n\n- one\n- beta rule\n"},
+	} {
+		inv := judgeTestInventory(t)
+		doc := filepath.Join(t.TempDir(), judgeDocAgents)
+		writeFile(t, doc, "# Repo\n\n## Gotchas\n\n- one\n")
+		changes, err := ParseJudge(`{"changes": [{"kind": "move-to-doc", "title": "beta", "files": ["beta.md"], "section": "## Gotchas", "passage": "- beta rule"}]}`, inv, doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, doc, tc.doc)
+		id, conflict, err := Apply(changes[0], t.TempDir(), applyTestNow)
+		if err != nil || id != "" || conflict != doc {
+			t.Errorf("%s: Apply = %q, conflict %q, %v; want conflict %s", tc.name, id, conflict, err, doc)
+		}
+		applyTestExpect(t, map[string]string{doc: tc.doc, filepath.Join(inv.Folder, "beta.md"): "Beta says the same thing.\n"})
+	}
+}

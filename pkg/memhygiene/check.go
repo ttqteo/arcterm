@@ -146,14 +146,16 @@ func checkInventory(folder string, r Resolved, branch string) (*Inventory, error
 }
 
 // checkJudge runs the judge over the memories the hash gate lets through, and records every
-// memory's fingerprint in seen.
+// memory's fingerprint in seen. An index over its budget opens the gate: the cut has to weigh every
+// memory, not only the ones that changed since they were last judged fine.
 func checkJudge(ctx context.Context, prev *State, inv *Inventory, docs map[string]string, docTarget string, seen map[string]string) ([]wshrpc.MemChange, error) {
 	inPlay := checkInPlay(prev.Changes, inv.Folder)
+	open := OverBudget(inv)
 	var todo []Memory
 	for _, m := range inv.Memories {
 		fp := checkFingerprint(m)
 		seen[m.Name] = fp
-		if prev.Seen[m.Name] == fp && !inPlay[m.Path] {
+		if !open && prev.Seen[m.Name] == fp && !inPlay[m.Path] {
 			continue
 		}
 		todo = append(todo, m)

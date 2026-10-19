@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -67,6 +68,56 @@ func DocTarget(projectPath string) string {
 	return filepath.Join(projectPath, judgeDocAgents)
 }
 
+// an index may state a budget of its own below Claude Code's limit, as "Budget: 12,000 bytes"
+var judgeBudgetRe = regexp.MustCompile(`(?i)\bbudget:\s*([\d,]+)\s*bytes\b`)
+
+// IndexBudget is the byte budget the index states outside its memory lines, else Claude Code's limit.
+func IndexBudget(lines []string) int {
+	for _, line := range lines {
+		if len(IndexLinks(line)) > 0 {
+			continue
+		}
+		if m := judgeBudgetRe.FindStringSubmatch(line); m != nil {
+			n, err := strconv.Atoi(strings.ReplaceAll(m[1], ",", ""))
+			if err == nil && n > 0 && n < LimitBytes {
+				return n
+			}
+		}
+	}
+	return LimitBytes
+}
+
+// OverBudget reports whether the index is larger than its budget, which opens the hash gate.
+func OverBudget(inv *Inventory) bool {
+	return inv.Index.Bytes > IndexBudget(inv.IndexLines)
+}
+
+// judgeBudgetBrief tells the judge how far the index is over its budget and gives this batch its share
+// of the cut, by the bytes its memories' index lines take; under budget it keeps the light touch.
+func judgeBudgetBrief(inv *Inventory, batch []Memory, docName string) string {
+	budget := IndexBudget(inv.IndexLines)
+	over := inv.Index.Bytes - budget
+	if over <= 0 {
+		return fmt.Sprintf("The index is %d bytes of its %d-byte budget. Proposing nothing is a fine answer. Keep a rule whose index line does the work even if no session reads its file.", inv.Index.Bytes, budget)
+	}
+	total, mine := 0, 0
+	for _, m := range inv.Memories {
+		if m.IndexLine != "" {
+			total += len(m.IndexLine) + 1
+		}
+	}
+	for _, m := range batch {
+		if m.IndexLine != "" {
+			mine += len(m.IndexLine) + 1
+		}
+	}
+	share := over
+	if total > 0 {
+		share = (over*mine + total - 1) / total
+	}
+	return fmt.Sprintf(`The index is %d bytes, %d over its %d-byte budget, and every session pays for each of its lines. The index lines of the memories below take %d bytes, so propose changes that cut at least %d bytes from the index. In order of preference: delete a memory that is stale, a one-off record, or repeats an instruction doc; merge memories that say one thing; shorten an index line longer than its hook needs (a trim whose "new" equals its "old", with the shorter "index_line"); move a rule the repo should own to %s. While the index is over budget, keep an index line only if a session would make a mistake without it.`, inv.Index.Bytes, over, budget, mine, share, docName)
+}
+
 // JudgePrompt asks the model for changes to one batch. It carries the whole index so the model knows
 // what else exists, the batch's bodies with their evidence, and the instruction docs so it can spot a
 // memory that repeats them. docTarget is the doc a move-to-doc change writes (DocTarget).
@@ -75,7 +126,9 @@ func JudgePrompt(inv *Inventory, batch []Memory, docs map[string]string, docTarg
 	var b strings.Builder
 	b.WriteString(`You review a project's Claude Code auto memory. Sessions load the index, MEMORY.md, and read a topic file only when its index line looks relevant. Claude Code loads only the first ` + strconv.Itoa(LimitLines) + ` lines or ` + strconv.Itoa(LimitBytes) + ` bytes of the index, so the index must stay small and current.
 
-Propose changes only where the evidence supports them. Proposing nothing is a fine answer. Keep a rule whose index line does the work even if no session reads its file. A date's age alone is never a reason to change a memory: tell a one-off note (a past test result, a single verification) from a rule.
+Propose changes only where the evidence supports them. `)
+	b.WriteString(judgeBudgetBrief(inv, batch, docName))
+	b.WriteString(` A date's age alone is never a reason to change a memory: tell a one-off note (a past test result, a single verification) from a rule.
 
 Change kinds:
 - "delete": the memory is stale, wrong, a one-off record, or repeats an instruction doc. Deletes the file and its index line.
@@ -262,12 +315,10 @@ func judgeBuild(jc judgeChange, inv *Inventory, docTarget string, eolLen int) (w
 		}
 	}
 
-	// the index stays out of Files, as for a split: its edit is exact-line, so applying one change in a
-	// folder must not turn every sibling's hash check into a conflict.
+	// the index and the instruction doc stay out of Files, as for a split: the index edit is exact-line
+	// and the doc edit appends to a named section, so applying one change must not turn every sibling's
+	// hash check into a conflict. apply checks each edit itself.
 	var paths []string
-	if op.DocPath != "" {
-		paths = append(paths, op.DocPath)
-	}
 	for _, name := range jc.Files {
 		paths = append(paths, filepath.Join(inv.Folder, name))
 	}

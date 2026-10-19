@@ -4,6 +4,7 @@
 package memhygiene
 
 import (
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -196,8 +197,8 @@ func TestParseJudgeBuildsOpAndHashes(t *testing.T) {
 	}
 
 	move := changes[3]
-	if want := []wshrpc.MemFileRef{{Path: doc, Sha256: hash(doc)}, betaRef}; !reflect.DeepEqual(move.Files, want) {
-		t.Errorf("move files = %+v, want %+v", move.Files, want)
+	if want := []wshrpc.MemFileRef{betaRef}; !reflect.DeepEqual(move.Files, want) {
+		t.Errorf("move files = %+v, want %+v (the doc stays out)", move.Files, want)
 	}
 	if move.Op.DocPath != doc || move.Op.DocSection != "## Gotchas" || move.Op.DocPassage != "- beta rule" || move.ApplyLabel != "Move to AGENTS.md" {
 		t.Errorf("move op = %+v label %q", move.Op, move.ApplyLabel)
@@ -347,5 +348,45 @@ func TestParseSort(t *testing.T) {
 	}
 	if strings.Contains(prompt, "Alpha says") {
 		t.Errorf("sort prompt carries a body")
+	}
+}
+
+func TestIndexBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		lines []string
+		want  int
+	}{
+		{"header budget", []string{"# Memory index", "Budget: 12,000 bytes, checked with wc -c."}, 12000},
+		{"no budget", []string{"# Memory index"}, LimitBytes},
+		{"a memory line naming a budget is not the index's", []string{"- [Cap](cap.md) — budget: 500 bytes per file"}, LimitBytes},
+		{"above claude code's limit", []string{"Budget: 90000 bytes"}, LimitBytes},
+	} {
+		if got := IndexBudget(tc.lines); got != tc.want {
+			t.Errorf("%s: IndexBudget = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// over budget, each batch is asked for its share of the cut, by its memories' index-line bytes
+func TestJudgePromptBudgetShare(t *testing.T) {
+	a, b := "- [A](a.md) — "+strings.Repeat("a", 85), "- [B](b.md) — "+strings.Repeat("b", 285)
+	inv := &Inventory{
+		IndexLines: []string{"Budget: 100 bytes", a, b},
+		Index:      wshrpc.MemIndexStats{Exists: true, Lines: 3, Bytes: 500},
+		Memories:   []Memory{{Name: "a.md", IndexLine: a}, {Name: "b.md", IndexLine: b}},
+	}
+	lineA, lineB := len(a)+1, len(b)+1
+	share := (400*lineA + lineA + lineB - 1) / (lineA + lineB)
+	got := JudgePrompt(inv, inv.Memories[:1], nil, "AGENTS.md")
+	want := fmt.Sprintf("The index is 500 bytes, 400 over its 100-byte budget, and every session pays for each of its lines. The index lines of the memories below take %d bytes, so propose changes that cut at least %d bytes from the index.", lineA, share)
+	if !strings.Contains(got, want) || strings.Contains(got, "Proposing nothing is a fine answer") {
+		t.Fatalf("over-budget prompt lacks %q or still invites no change:\n%s", want, got)
+	}
+
+	inv.Index.Bytes = 90
+	got = JudgePrompt(inv, inv.Memories, nil, "AGENTS.md")
+	if !strings.Contains(got, "The index is 90 bytes of its 100-byte budget. Proposing nothing is a fine answer.") {
+		t.Fatalf("under-budget prompt:\n%s", got)
 	}
 }
