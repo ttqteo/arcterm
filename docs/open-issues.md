@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) On a PC with two drives, open the tray popover: Storage shows one row per drive (here Local Disk (C:)
+  and Data (D:), no Google Drive (G:)), each with its own free figure, and the arcterm part of D:'s bar holds the repos'
+  worktrees and build output while C:'s holds sessions, logs and the store; Clean up's head reads `C: … · D: … free`.
+  Tried only on tray fixtures in a browser, not in the app with live data.
 - [ ] (arcterm) A Claude agent in default permission mode asked to run a slow command (`sleep 30` in Bash): its row
   reads asking at the permission prompt, then working the moment you press Enter or 1, not after the 30 s. Pressing
   Esc there instead ends at idle. `pkg/wshrpc/wshserver/wshserver_promptanswer.go`.

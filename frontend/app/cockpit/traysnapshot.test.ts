@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { trayBadge, trayMemFree, traySnapshot, type TraySnapshotInput } from "./traysnapshot";
+import {
+    arcBytesByDisk,
+    diskIndexOf,
+    trayBadge,
+    trayMemFree,
+    traySnapshot,
+    type TraySnapshotInput,
+} from "./traysnapshot";
 
 const GB = 1024 ** 3;
 const NOW = 1_800_000_000_000;
@@ -21,9 +28,7 @@ function input(over: Partial<TraySnapshotInput> = {}): TraySnapshotInput {
             cpupct: 38,
             swaptotal: 7 * GB,
             swapused: 6.3 * GB,
-            diskname: "Macintosh HD",
-            disktotal: 245 * GB,
-            diskfree: 127 * GB,
+            disks: [{ name: "Macintosh HD", root: "/", total: 245 * GB, free: 127 * GB }],
         } as any,
         jobQueue: {
             slots: 1,
@@ -156,6 +161,40 @@ describe("traySnapshot", () => {
         const shared = traySnapshot(input({ storage: caches })).storage;
         expect(shared?.arcBytes).toBeCloseTo(14.3 * GB, -3);
         expect(shared?.rows.some((r) => r.category === "packagecaches")).toBe(false);
+    });
+    it("places a path on the disk whose root it starts with, the system disk when none", () => {
+        const roots = ["C:\\", "D:\\"];
+        expect(diskIndexOf("D:\\work\\arcterm\\.worktrees\\x", roots)).toBe(1);
+        expect(diskIndexOf("d:/work/arcterm", roots)).toBe(1);
+        expect(diskIndexOf("C:\\Users\\me\\.claude", roots)).toBe(0);
+        expect(diskIndexOf("E:\\elsewhere", roots)).toBe(0);
+        expect(diskIndexOf("/Users/me/code", ["/"])).toBe(0);
+    });
+    it("splits arcterm's bytes by disk: the store and what no item holds go to the system disk", () => {
+        const cats = [
+            {
+                category: "runworktrees",
+                bytes: 5 * GB,
+                cleanablebytes: 0,
+                items: [{ id: "w", kind: "worktree", label: "w", path: "D:\\repo\\.worktrees\\w", bytes: 4 * GB }],
+            },
+            {
+                category: "housekeeping",
+                bytes: 2 * GB,
+                cleanablebytes: 0,
+                items: [{ id: "webviewcache", kind: "webviewcache", label: "cache", bytes: 2 * GB }],
+            },
+        ] as StorageCategoryReport[];
+        const out = arcBytesByDisk(["C:\\", "D:\\"], cats, 1 * GB);
+        expect(out[0]).toBeCloseTo(4 * GB, -3); // store 1 + cache 2 + the worktree category's unplaced 1
+        expect(out[1]).toBeCloseTo(4 * GB, -3);
+        expect(arcBytesByDisk([], cats, GB)).toEqual([]);
+    });
+    it("gives each disk its arcterm share, all of it on a Mac's one disk", () => {
+        const s = traySnapshot(input());
+        expect(s.machine?.disks).toHaveLength(1);
+        expect(s.machine?.disks[0].arcBytes).toBeCloseTo(s.storage!.arcBytes, -3);
+        expect(traySnapshot(input({ storage: null })).machine?.disks[0].arcBytes).toBe(0);
     });
     it("carries the last automatic clean, and null without one", () => {
         const storage = {

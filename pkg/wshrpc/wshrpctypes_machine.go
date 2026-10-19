@@ -7,19 +7,24 @@ import "context"
 
 // MachineCommands back the menu bar / tray popover (spec 2026-10-15-tray-popover-design.md).
 type MachineCommands interface {
-	GetMachineStatsCommand(ctx context.Context) (*MachineStatsData, error) // memory, its pressure, swap, the last second's CPU and the system disk
+	GetMachineStatsCommand(ctx context.Context) (*MachineStatsData, error) // memory, its pressure, swap, the last second's CPU and the disks
 }
 
 type MachineStatsData struct {
-	MemTotal     uint64   `json:"memtotal"`
-	MemAvailable uint64   `json:"memavailable"`
-	Pressure     string   `json:"pressure"`         // "normal", "high", "critical", or "" with no reading
-	CpuPct       *float64 `json:"cpupct,omitempty"` // the last second's busy percent; none before wavesrv's first reading
-	SwapTotal    uint64   `json:"swaptotal"`        // not in MemTotal; 0 with no swap file
-	SwapUsed     uint64   `json:"swapused"`
-	DiskName     string   `json:"diskname"`
-	DiskTotal    uint64   `json:"disktotal"`
-	DiskFree     uint64   `json:"diskfree"`
+	MemTotal     uint64            `json:"memtotal"`
+	MemAvailable uint64            `json:"memavailable"`
+	Pressure     string            `json:"pressure"`         // "normal", "high", "critical", or "" with no reading
+	CpuPct       *float64          `json:"cpupct,omitempty"` // the last second's busy percent; none before wavesrv's first reading
+	SwapTotal    uint64            `json:"swaptotal"`        // not in MemTotal; 0 with no swap file
+	SwapUsed     uint64            `json:"swapused"`
+	Disks        []MachineDiskData `json:"disks"` // the system disk first; on Windows each lettered volume on a disk partition
+}
+
+type MachineDiskData struct {
+	Name  string `json:"name"`
+	Root  string `json:"root"` // where its paths start: `C:\` or "/"
+	Total uint64 `json:"total"`
+	Free  uint64 `json:"free"`
 }
 
 // MemoryPressureData is the memorypressure event: the level's word and the memory available, each time either

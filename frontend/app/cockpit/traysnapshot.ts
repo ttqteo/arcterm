@@ -40,6 +40,50 @@ function firstSentence(s: string): string {
     return i < 0 ? s : s.slice(0, i + 1);
 }
 
+// a path's spelling to compare by: forward slashes, and a drive path without case
+function pathKey(p: string): string {
+    const s = p.replace(/\\/g, "/");
+    return /^[a-z]:/i.test(s) ? s.toLowerCase() : s;
+}
+
+/** The disk a path sits on: the longest root it starts with; the system disk (the first) when none does. */
+export function diskIndexOf(path: string, roots: readonly string[]): number {
+    const k = pathKey(path);
+    let best = 0;
+    let bestLen = -1;
+    roots.forEach((r, i) => {
+        const rk = pathKey(r);
+        if (k.startsWith(rk) && rk.length > bestLen) {
+            best = i;
+            bestLen = rk.length;
+        }
+    });
+    return best;
+}
+
+/** arcterm's bytes on each disk: an item by its path; the store, an item with no path, and what a category counts
+ * past its items, on the system disk, where arcterm's data dir is. */
+export function arcBytesByDisk(
+    roots: readonly string[],
+    cats: readonly StorageCategoryReport[],
+    storeBytes: number
+): number[] {
+    const out = roots.map(() => 0);
+    if (out.length === 0) {
+        return out;
+    }
+    out[0] += storeBytes;
+    for (const c of cats) {
+        let placed = 0;
+        for (const it of c.items ?? []) {
+            out[it.path ? diskIndexOf(it.path, roots) : 0] += it.bytes;
+            placed += it.bytes;
+        }
+        out[0] += Math.max(0, c.bytes - placed);
+    }
+    return out;
+}
+
 export function traySnapshot(i: TraySnapshotInput): TraySnapshot {
     const m = i.machine;
     const jobs = ordered(i.jobQueue?.jobs ?? []).map((j) => ({
@@ -80,9 +124,16 @@ export function traySnapshot(i: TraySnapshotInput): TraySnapshot {
                       (claude.week.pct != null ? ` · week ${Math.round(claude.week.pct)}%` : ""),
               };
     let storage: TraySnapshot["storage"] = null;
+    const disks = m?.disks ?? [];
+    let diskArc = disks.map(() => 0);
     if (i.storage != null && i.storage.scannedts > 0) {
         // the caches the whole machine shares are not arcterm's: Settings shows them, the tray does not
         const cats = (i.storage.categories ?? []).filter((c) => !SHARED_CATEGORIES.has(c.category));
+        diskArc = arcBytesByDisk(
+            disks.map((d) => d.root),
+            cats,
+            i.storage.storebytes ?? 0
+        );
         const rows: TrayStorageRow[] = CARD_ORDER.filter((c) => !SHARED_CATEGORIES.has(c)).map((c) => {
             const cat = cats.find((x) => x.category === c);
             const inPlace = IN_PLACE.has(c);
@@ -147,9 +198,13 @@ export function traySnapshot(i: TraySnapshotInput): TraySnapshot {
                       cpuPct: m.cpupct ?? null,
                       swapTotal: m.swaptotal ?? 0,
                       swapUsed: m.swapused ?? 0,
-                      diskName: m.diskname,
-                      diskTotal: m.disktotal,
-                      diskFree: m.diskfree,
+                      disks: disks.map((d, n) => ({
+                          name: d.name,
+                          root: d.root,
+                          total: d.total,
+                          free: d.free,
+                          arcBytes: diskArc[n],
+                      })),
                   },
         jobs,
         jobsMode: paceValue(i.jobQueue),

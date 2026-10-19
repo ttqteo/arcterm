@@ -25,9 +25,7 @@ const main: TraySnapshot = {
         cpuPct: 38,
         swapTotal: 4 * GB,
         swapUsed: 2.6 * GB,
-        diskName: "Macintosh HD",
-        diskTotal: 245 * GB,
-        diskFree: 127 * GB,
+        disks: [{ name: "Macintosh HD", root: "/", total: 245 * GB, free: 127 * GB, arcBytes: 16.4 * GB }],
     },
     jobs: [
         {
@@ -159,7 +157,7 @@ const quiet: TraySnapshot = {
         cpuPct: 6,
         swapTotal: 0,
         swapUsed: 0,
-        diskFree: 131 * GB,
+        disks: [{ name: "Macintosh HD", root: "/", total: 245 * GB, free: 131 * GB, arcBytes: 12.1 * GB }],
     },
     storage: { ...main.storage!, arcBytes: 12.1 * GB, cleanableBytes: 0.3 * GB },
     jobs: [],
@@ -228,9 +226,12 @@ const windows: TraySnapshot = {
         // the widest swap figure the line beside Free up must hold whole
         swapTotal: 19 * GB,
         swapUsed: 12.4 * GB,
-        diskName: "Local Disk (C:)",
-        diskTotal: 476 * GB,
-        diskFree: 312 * GB,
+        // a second drive holding the repos: the worktrees and build output are arcterm's share of D:, not of C:
+        disks: [
+            { name: "Local Disk (C:)", root: "C:\\", total: 476 * GB, free: 312 * GB, arcBytes: 7.0 * GB },
+            // a 1 TB drive: 931.5 GiB, which the card reads in decimal as 1000 GB
+            { name: "Data (D:)", root: "D:\\", total: 931.5 * GB, free: 416 * GB, arcBytes: 12.0 * GB },
+        ],
     },
     storage: { ...main.storage!, arcBytes: 19.0 * GB, cleanableBytes: 7.4 * GB },
 };

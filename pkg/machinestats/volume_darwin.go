@@ -11,8 +11,6 @@ import (
 	"sync"
 )
 
-func systemRoot() string { return "/" }
-
 var volumeOnce = sync.OnceValue(func() string {
 	// /Volumes holds a link to "/" named after the boot volume (Macintosh HD unless renamed)
 	entries, err := os.ReadDir("/Volumes")
@@ -26,4 +24,5 @@ var volumeOnce = sync.OnceValue(func() string {
 	return "System disk"
 })
 
-func volumeName() string { return volumeOnce() }
+// listDisks is the boot volume alone: other volumes are not counted yet.
+func listDisks() []Disk { return []Disk{{Name: volumeOnce(), Root: "/"}} }

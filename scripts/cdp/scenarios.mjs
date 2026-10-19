@@ -47289,6 +47289,8 @@ const trayOffline = trayScenario("tray-offline", "offline", "offline", [
 ]);
 const trayWindows = trayScenario("tray-windows", "windows", "main", [
     ["the disk is Local Disk (C:)", "Local Disk (C:)"],
+    ["a second drive gets its own row", "Data (D:)"],
+    ["each drive reads its own free figure", "447 GB free of 1000 GB"],
     ["memory is out of 31.8 GB, a total wider than the half card", "free of 31.8 GB"],
     ["the widest swap figure shows", "Swap: 12.4 GB"],
 ]);

@@ -49,6 +49,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The tray's Storage card shows every drive on a PC with more than one, each with its free space and arcterm's share
+  of it (worktrees and build output count on the drive they sit on), and leaves out virtual drives such as Google
+  Drive's.
 - Setup → Memory shows a change in a rail as wide as Skills' one, growing with the window, so its diff no longer
   wraps every few words.
 - An agent whose turn ended while work it started still runs in the background no longer reads idle: its header and

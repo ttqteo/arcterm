@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { autoCleanLine, cpuLoad, fmtDisk, fmtSize, levelWord, pageState, split, swapUsed } from "./trayformat";
+import {
+    autoCleanLine,
+    cpuLoad,
+    disksFree,
+    fmtDisk,
+    fmtSize,
+    levelWord,
+    pageState,
+    split,
+    swapUsed,
+} from "./trayformat";
 
 const MIB = 1024 * 1024;
 const GIB = 1024 * MIB;
@@ -24,6 +34,14 @@ describe("fmtDisk", () => {
         expect(fmtDisk(45.14 * GB)).toBe("45.1 GB");
         expect(fmtDisk(0.3 * GB)).toBe("0.3 GB");
         expect(fmtDisk(51 * MB)).toBe("51 MB");
+    });
+});
+
+describe("disksFree", () => {
+    const disk = (root: string, free: number) => ({ name: root, root, total: 500e9, free, arcBytes: 0 });
+    it("reads one disk's free alone and several by drive", () => {
+        expect(disksFree([disk("/", 127e9)])).toBe("127 GB free");
+        expect(disksFree([disk("C:\\", 48e9), disk("D:\\", 480e9)])).toBe("C: 48 GB · D: 480 GB free");
     });
 });
 

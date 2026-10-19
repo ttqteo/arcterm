@@ -7,7 +7,7 @@
 
 import { cn } from "@/util/util";
 import { useState } from "react";
-import { autoCleanLine, fmtDisk, fmtSize, LEVEL_BAR, split } from "./trayformat";
+import { autoCleanLine, disksFree, fmtDisk, fmtSize, LEVEL_BAR, split } from "./trayformat";
 import { CARD, OPEN_BUTTON, PressureWord, ROW_BUTTON, type Send, SubHeader } from "./traypage";
 import type { TraySnapshot } from "./traytypes";
 
@@ -136,7 +136,9 @@ export function StoragePage({ s, send, back }: { s: TraySnapshot; send: Send; ba
                 title="Clean up storage"
                 back={back}
                 right={
-                    m ? <span className="text-[11px] tabular-nums text-muted">{fmtDisk(m.diskFree)} free</span> : null
+                    m && m.disks.length > 0 ? (
+                        <span className="text-[11px] tabular-nums text-muted">{disksFree(m.disks)}</span>
+                    ) : null
                 }
             />
             {st == null ? (

@@ -19,6 +19,10 @@ func (ws *WshServer) GetMachineStatsCommand(ctx context.Context) (*wshrpc.Machin
 	if err != nil {
 		return nil, fmt.Errorf("reading the machine's memory: %w", err)
 	}
+	disks := make([]wshrpc.MachineDiskData, 0, len(st.Disks))
+	for _, d := range st.Disks {
+		disks = append(disks, wshrpc.MachineDiskData{Name: d.Name, Root: d.Root, Total: d.Total, Free: d.Free})
+	}
 	return &wshrpc.MachineStatsData{
 		MemTotal:     st.MemTotal,
 		MemAvailable: st.MemAvailable,
@@ -26,9 +30,7 @@ func (ws *WshServer) GetMachineStatsCommand(ctx context.Context) (*wshrpc.Machin
 		CpuPct:       st.CpuPct,
 		SwapTotal:    st.SwapTotal,
 		SwapUsed:     st.SwapUsed,
-		DiskName:     st.DiskName,
-		DiskTotal:    st.DiskTotal,
-		DiskFree:     st.DiskFree,
+		Disks:        disks,
 	}, nil
 }
 

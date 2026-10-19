@@ -4,7 +4,7 @@
 // The tray popover's display rules (spec 2026-10-15-tray-popover-design.md): sizes, the memory card's words, the
 // bars' widths and the CPU load. traypage.tsx and traysubpages.tsx draw them. No React.
 
-import type { TrayLevel, TrayStorage } from "./traytypes";
+import type { TrayDisk, TrayLevel, TrayStorage } from "./traytypes";
 
 const MIB = 1024 * 1024;
 const GIB = 1024 * MIB;
@@ -28,6 +28,14 @@ export function fmtSize(bytes: number): string {
 /** Disk, in decimal units as Finder and System Settings count them: a 245 GB drive reads 245 GB, not 228. */
 export function fmtDisk(bytes: number): string {
     return sizeIn(bytes, MB, GB);
+}
+
+/** Clean up's head: "127 GB free" for one disk, "C: 48 GB · D: 480 GB free" for several. */
+export function disksFree(disks: readonly TrayDisk[]): string {
+    if (disks.length === 1) {
+        return `${fmtDisk(disks[0].free)} free`;
+    }
+    return `${disks.map((d) => `${d.root.replace(/[\\/]+$/, "")} ${fmtDisk(d.free)}`).join(" · ")} free`;
 }
 
 export function levelWord(level: TrayLevel): string | null {

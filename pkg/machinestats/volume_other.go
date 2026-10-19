@@ -5,6 +5,4 @@
 
 package machinestats
 
-func systemRoot() string { return "/" }
-
-func volumeName() string { return "System disk" }
+func listDisks() []Disk { return []Disk{{Name: "System disk", Root: "/"}} }

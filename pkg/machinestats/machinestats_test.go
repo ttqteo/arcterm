@@ -121,10 +121,13 @@ func TestReadReturnsMemoryAndDisk(t *testing.T) {
 	if st.SwapUsed > st.SwapTotal {
 		t.Fatalf("swap %d used of %d", st.SwapUsed, st.SwapTotal)
 	}
-	if st.DiskTotal == 0 || st.DiskFree > st.DiskTotal {
-		t.Fatalf("disk %d of %d", st.DiskFree, st.DiskTotal)
+	if len(st.Disks) == 0 {
+		t.Fatal("no disk")
 	}
-	if st.DiskName == "" {
-		t.Fatal("no disk name")
+	for _, d := range st.Disks {
+		if d.Total == 0 || d.Free > d.Total || d.Name == "" || d.Root == "" {
+			t.Fatalf("disk %+v", d)
+		}
+		t.Logf("disk %s at %s: %d free of %d", d.Name, d.Root, d.Free, d.Total)
 	}
 }

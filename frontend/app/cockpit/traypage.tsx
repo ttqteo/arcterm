@@ -21,7 +21,7 @@ import {
     USAGE_BAR,
     USAGE_TEXT,
 } from "./trayformat";
-import type { TrayAct, TrayJob, TrayLevel, TrayPage, TraySnapshot } from "./traytypes";
+import type { TrayAct, TrayDisk, TrayJob, TrayLevel, TrayPage, TraySnapshot } from "./traytypes";
 
 export type Send = (act: TrayAct) => void;
 
@@ -143,24 +143,37 @@ function CpuCard({ s }: { s: TraySnapshot }) {
     );
 }
 
+function DiskRow({ d }: { d: TrayDisk }) {
+    const bar = split(d.total, d.total - d.free, d.arcBytes);
+    return (
+        <div data-tray-disk={d.root} className="flex flex-col gap-1">
+            <div className="flex items-baseline gap-1.5">
+                <span className="min-w-0 flex-1 truncate text-[11.5px] text-secondary">{d.name}</span>
+                <span className="whitespace-nowrap text-[11px] tabular-nums text-muted">
+                    <span className="text-[12.5px] font-semibold text-primary">{fmtDisk(d.free)}</span> free of{" "}
+                    {fmtDisk(d.total)}
+                </span>
+            </div>
+            <div className="flex h-[5px] overflow-hidden rounded-[3px] bg-background">
+                <div
+                    title={`arcterm and its agents: ${fmtDisk(d.arcBytes)}`}
+                    className="h-full bg-secondary"
+                    style={{ width: `${bar.arc}%` }}
+                />
+                <div title="Everything else" className="h-full bg-ink-faint" style={{ width: `${bar.other}%` }} />
+            </div>
+        </div>
+    );
+}
+
 function StorageCard({ s, onCleanUp }: { s: TraySnapshot; onCleanUp: () => void }) {
-    const m = s.machine;
+    const disks = s.machine?.disks ?? [];
     const st = s.storage;
-    const bar = m ? split(m.diskTotal, m.diskTotal - m.diskFree, st?.arcBytes ?? 0) : { arc: 0, other: 0 };
     return (
         <div data-tray-card="storage" className={CARD}>
             <div className="flex items-center gap-1.5">
                 <HardDrive size={13} className="text-muted" aria-hidden />
                 <span className="flex-1 text-[12px] font-semibold text-secondary">Storage</span>
-                <span className="truncate text-[11px] text-muted">{m?.diskName ?? ""}</span>
-            </div>
-            <div className="flex items-baseline gap-1.5">
-                <span className="whitespace-nowrap text-[20px] font-semibold tabular-nums text-primary">
-                    {m ? fmtDisk(m.diskFree) : "—"}
-                </span>
-                <span className="flex-1 whitespace-nowrap text-[11px] text-muted">
-                    {m ? `free of ${fmtDisk(m.diskTotal)}` : ""}
-                </span>
                 <button
                     type="button"
                     data-tray-cleanup
@@ -171,10 +184,11 @@ function StorageCard({ s, onCleanUp }: { s: TraySnapshot; onCleanUp: () => void 
                     Clean up
                 </button>
             </div>
-            <div className="flex h-[5px] overflow-hidden rounded-[3px] bg-background">
-                <div title="arcterm and its agents" className="h-full bg-secondary" style={{ width: `${bar.arc}%` }} />
-                <div title="Everything else" className="h-full bg-ink-faint" style={{ width: `${bar.other}%` }} />
-            </div>
+            {disks.length === 0 ? (
+                <span className="text-[12px] text-muted">—</span>
+            ) : (
+                disks.map((d) => <DiskRow key={d.root} d={d} />)
+            )}
             <span className="flex items-center gap-1 text-[10.5px] tabular-nums text-muted">
                 {st ? (
                     <>

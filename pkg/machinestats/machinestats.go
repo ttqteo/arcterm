@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package machinestats reads the machine's memory, CPU and system disk for the menu bar / tray popover
+// Package machinestats reads the machine's memory, CPU and disks for the menu bar / tray popover
 // (spec 2026-10-15-tray-popover-design.md). CPU is read once a second from wavesrv's start (RunCPU): a reading costs
 // about 6 µs, and the popover then has the last second's load the moment it opens, never a 0 while a sampler starts.
 package machinestats
@@ -90,9 +90,15 @@ type Stats struct {
 	CpuPct       *float64 // the last second's busy percent, nil before RunCPU's first reading
 	SwapTotal    uint64   // the swap files' size on macOS, the paging file's on Windows; never in MemTotal
 	SwapUsed     uint64
-	DiskName     string
-	DiskTotal    uint64
-	DiskFree     uint64
+	Disks        []Disk // the system disk first
+}
+
+// Disk is one volume the popover's Storage card shows.
+type Disk struct {
+	Name  string
+	Root  string // where its paths start: `C:\`, or "/"
+	Total uint64
+	Free  uint64
 }
 
 // Read is one reading, with RunCPU's last CPU reading.
@@ -105,7 +111,6 @@ func Read(ctx context.Context) (Stats, error) {
 		MemTotal:     vm.Total,
 		MemAvailable: vm.Available,
 		Pressure:     PressureWord(jobqueue.ReadPressure(ctx)),
-		DiskName:     volumeName(),
 	}
 	if v, ok := cpuLatest.Get(); ok {
 		st.CpuPct = &v
@@ -114,8 +119,11 @@ func Read(ctx context.Context) (Stats, error) {
 	if sw, err := mem.SwapMemoryWithContext(ctx); err == nil {
 		st.SwapTotal, st.SwapUsed = sw.Total, sw.Used
 	}
-	if du, err := disk.UsageWithContext(ctx, systemRoot()); err == nil {
-		st.DiskTotal, st.DiskFree = du.Total, du.Free
+	for _, d := range listDisks() {
+		if du, err := disk.UsageWithContext(ctx, d.Root); err == nil {
+			d.Total, d.Free = du.Total, du.Free
+			st.Disks = append(st.Disks, d)
+		}
 	}
 	return st, nil
 }

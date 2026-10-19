@@ -2768,6 +2768,14 @@ declare global {
         count: number;
     };
 
+    // wshrpc.MachineDiskData
+    type MachineDiskData = {
+        name: string;
+        root: string;
+        total: number;
+        free: number;
+    };
+
     // wshrpc.MachineStatsData
     type MachineStatsData = {
         memtotal: number;
@@ -2776,9 +2784,7 @@ declare global {
         cpupct?: number;
         swaptotal: number;
         swapused: number;
-        diskname: string;
-        disktotal: number;
-        diskfree: number;
+        disks: MachineDiskData[];
     };
 
     // wshrpc.MemChange
