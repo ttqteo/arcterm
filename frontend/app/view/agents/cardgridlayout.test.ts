@@ -210,6 +210,12 @@ describe("resolveCursor", () => {
         expect(resolveCursor("gone", ["a"], {})).toBe("a");
         expect(resolveCursor("a", [], {})).toBeUndefined();
     });
+    it("takes the first stop when the alias points off the list", () => {
+        expect(resolveCursor("w1", ["a", "b"], { w1: "gone" })).toBe("a");
+    });
+    it("takes the first stop for no cursor, never an alias", () => {
+        expect(resolveCursor(undefined, ["a", "b"], { undefined: "b" })).toBe("a");
+    });
 });
 
 describe("toggleChip", () => {

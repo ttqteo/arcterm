@@ -165,6 +165,36 @@ describe("projectCodexTranscript malformed and mistyped records", () => {
     });
 });
 
+describe("projectCodexTranscript tool outcomes", () => {
+    const outcomeOf = (output: unknown) =>
+        projectCodexTranscript([
+            ri({ type: "function_call", name: "shell_command", arguments: JSON.stringify({ command: "ls" }), call_id: "c" }),
+            ri({ type: "function_call_output", call_id: "c", output }),
+        ]);
+
+    it("settles a ran action ok when its output is not text", () => {
+        expect(outcomeOf({ metadata: { exit_code: 1 } })).toEqual([{ kind: "action", verb: "ran", target: "ls", outcome: "ok" }]);
+    });
+
+    it("fails a ran action on an exit code however the label is spaced", () => {
+        expect(outcomeOf("Exit code:  2\nOutput:\nboom")).toEqual([{ kind: "action", verb: "ran", target: "ls", outcome: "fail" }]);
+        expect(outcomeOf("Exit code:2")).toEqual([{ kind: "action", verb: "ran", target: "ls", outcome: "fail" }]);
+    });
+
+    it("reads every digit of the exit code", () => {
+        expect(outcomeOf("Exit code: 05")).toEqual([{ kind: "action", verb: "ran", target: "ls", outcome: "fail" }]);
+    });
+
+    it("settles ok on a zero exit code in a JSON output, and when the JSON carries no numeric exit code", () => {
+        expect(outcomeOf(JSON.stringify({ metadata: { exit_code: 0 } }))).toEqual([
+            { kind: "action", verb: "ran", target: "ls", outcome: "ok" },
+        ]);
+        expect(outcomeOf(JSON.stringify({ output: "fine", metadata: {} }))).toEqual([
+            { kind: "action", verb: "ran", target: "ls", outcome: "ok" },
+        ]);
+    });
+});
+
 const plan = (steps: Array<{ step?: unknown; status?: unknown }>) =>
     ri({ type: "function_call", name: "update_plan", arguments: JSON.stringify({ plan: steps }), call_id: "p" });
 
@@ -197,6 +227,33 @@ describe("extractCodexTasks", () => {
         expect(extractCodexTasks([plan([{ step: 42, status: "pending" }, { step: "real", status: "pending" }])])).toEqual([
             { text: "real", done: false },
         ]);
+    });
+
+    describe("reads only an update_plan function call", () => {
+        const validPlan = JSON.stringify({ plan: [{ step: "s", status: "completed" }] });
+
+        it("from a response_item record", () => {
+            expect(extractCodexTasks([em({ type: "function_call", name: "update_plan", arguments: validPlan })])).toBeUndefined();
+        });
+
+        it("not from another payload type, another tool or arguments that are not text", () => {
+            expect(extractCodexTasks([ri({ type: "custom_tool_call", name: "update_plan", arguments: validPlan })])).toBeUndefined();
+            expect(extractCodexTasks([ri({ type: "function_call", name: "shell_command", arguments: validPlan })])).toBeUndefined();
+            // an array of one string coerces to that string, so only the type check keeps it out
+            expect(extractCodexTasks([ri({ type: "function_call", name: "update_plan", arguments: [validPlan] })])).toBeUndefined();
+        });
+
+        it("and skips a response_item with no payload", () => {
+            expect(extractCodexTasks([JSON.stringify({ type: "response_item" })])).toBeUndefined();
+        });
+    });
+
+    it("does not count arguments whose plan is not an array", () => {
+        expect(
+            extractCodexTasks([
+                ri({ type: "function_call", name: "update_plan", arguments: JSON.stringify({ plan: "nope" }), call_id: "p" }),
+            ])
+        ).toBeUndefined();
     });
 
     it("ignores malformed arguments (returns undefined if no valid plan seen)", () => {

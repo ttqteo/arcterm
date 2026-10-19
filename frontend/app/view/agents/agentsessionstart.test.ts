@@ -26,4 +26,20 @@ describe("sessionStartTs", () => {
     it("returns null for an empty transcript", () => {
         expect(sessionStartTs([])).toBeNull();
     });
+
+    it("skips a record whose timestamp is not a string", () => {
+        const next = JSON.stringify({ timestamp: "2026-07-08T00:00:03.000Z" });
+        expect(sessionStartTs([JSON.stringify({ timestamp: 2026 }), next])).toBe(sec("2026-07-08T00:00:03.000Z"));
+    });
+
+    it("skips a record whose timestamp string is not a date", () => {
+        const next = JSON.stringify({ timestamp: "2026-07-08T00:00:04.000Z" });
+        expect(sessionStartTs([JSON.stringify({ timestamp: "not a date" }), next])).toBe(
+            sec("2026-07-08T00:00:04.000Z")
+        );
+    });
+
+    it("returns null when every timestamp string is unparseable", () => {
+        expect(sessionStartTs([JSON.stringify({ timestamp: "not a date" })])).toBeNull();
+    });
 });

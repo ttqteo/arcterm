@@ -137,6 +137,53 @@ describe("buildRows", () => {
         expect(rows[2].before).toBe(true);
     });
 
+    it("puts the divider only on the anchor row, and dims only the rows below it", () => {
+        const rows = buildRows([commit("aaa"), commit("bbb"), commit("ccc")], {
+            head: "aaa",
+            dirtyFileCount: 0,
+            anchor: "bbb",
+            anchorLabel: "session start",
+            now: NOW,
+        });
+        expect(rows.map((r) => r.divider)).toStrictEqual([undefined, "session start", undefined]);
+        expect(rows.map((r) => r.before)).toEqual([false, false, true]);
+    });
+
+    it("anchors at the tip: the divider sits on the first row and everything below is dimmed", () => {
+        const rows = buildRows([commit("aaa"), commit("bbb"), commit("ccc")], {
+            head: "aaa",
+            dirtyFileCount: 0,
+            anchor: "aaa",
+            anchorLabel: "run base",
+            now: NOW,
+        });
+        expect(rows.map((r) => r.divider)).toStrictEqual(["run base", undefined, undefined]);
+        expect(rows.map((r) => r.before)).toEqual([false, true, true]);
+    });
+
+    it("draws no divider and dims nothing when the scope has no anchor", () => {
+        const rows = buildRows([commit("aaa"), commit("bbb"), commit("ccc")], {
+            head: "aaa",
+            dirtyFileCount: 0,
+            anchorLabel: "session start",
+            now: NOW,
+        });
+        expect(rows.map((r) => r.divider)).toStrictEqual([undefined, undefined, undefined]);
+        expect(rows.map((r) => r.before)).toEqual([false, false, false]);
+    });
+
+    it("gives the uncommitted row no ref chips and never dims it, even above an anchor", () => {
+        const rows = buildRows([commit("aaa"), commit("bbb")], {
+            head: "aaa",
+            dirtyFileCount: 2,
+            anchor: "aaa",
+            anchorLabel: "run base",
+            now: NOW,
+        });
+        expect(rows[0].refs).toStrictEqual([]);
+        expect(rows[0].before).toBe(false);
+    });
+
     it("leaves every row undimmed when the anchor is not in the page", () => {
         const rows = buildRows([commit("aaa"), commit("bbb")], {
             head: "aaa",

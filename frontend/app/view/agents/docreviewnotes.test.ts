@@ -102,6 +102,21 @@ describe("isPaintable", () => {
         const start = doc.indexOf("Redis");
         expect(isPaintable(at(start, start + "Redis sessions".length, "Postgres sessions"), doc)).toBe(false);
     });
+    it("is true for a note at the very start of the document", () => {
+        expect(isPaintable(at(0, "Sessions".length, "Sessions"), doc)).toBe(true);
+    });
+    it("is true for a note that ends exactly at the end of the document", () => {
+        const start = doc.indexOf("Cookies");
+        expect(isPaintable(at(start, doc.length, "Cookies"), doc)).toBe(true);
+    });
+    // slice clamps a range that runs past the end, so only the bounds check can refuse it
+    it("is false for a range that runs past the end even when the clamped text matches", () => {
+        expect(isPaintable(at(doc.length - 3, doc.length + 4, "es"), doc)).toBe(false);
+    });
+    // slice counts a negative start from the end, so only the bounds check can refuse it
+    it("is false for a range that starts before the document even when the text from the end matches", () => {
+        expect(isPaintable(at(-3, doc.length, "es"), doc)).toBe(false);
+    });
     it("is false when the range is past the end, or empty", () => {
         expect(isPaintable(at(doc.length - 3, doc.length + 4, "ies"), doc)).toBe(false);
         expect(isPaintable(at(4, 4, ""), doc)).toBe(false);

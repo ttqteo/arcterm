@@ -78,4 +78,22 @@ describe("resolveCwd", () => {
         getAgentTranscriptCommand.mockRejectedValueOnce(new Error("unavailable"));
         await expect(resolveCwd("/transcript.jsonl")).resolves.toBeNull();
     });
+
+    it("does not load a block when there is no block id", async () => {
+        getAgentTranscriptCommand.mockResolvedValue({ lines: cwdLines("/tail") });
+
+        await expect(resolveCwd("/transcript.jsonl")).resolves.toBe("/tail");
+        await expect(resolveCwd("/transcript.jsonl", "")).resolves.toBe("/tail");
+
+        expect(loadAndPinWaveObject).not.toHaveBeenCalled();
+    });
+
+    it("ignores a block cmd:cwd that is not a non-empty string", async () => {
+        for (const cwd of [42, true, "", null]) {
+            getAgentTranscriptCommand.mockResolvedValueOnce({ lines: cwdLines("/tail") });
+            loadAndPinWaveObject.mockResolvedValueOnce({ meta: { "cmd:cwd": cwd } });
+
+            await expect(resolveCwd("/transcript.jsonl", "block-1")).resolves.toBe("/tail");
+        }
+    });
 });

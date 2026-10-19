@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
     finalRowFocusId,
+    finalStageActivity,
     finalStageId,
     finalStageRunId,
     finalStageView,
@@ -120,6 +121,7 @@ describe("finalStageView, the States board", () => {
         const v = finalStageView(dag(final), [], NOW);
         expect(v.subline).toBe("verifier reviewing · 4m 02s");
         expect(v.nodeMeta).toBe("round 2 · verifier · 4m 02s");
+        expect(v.headline).toBe("round 2 · verifier reviewing · 4m 02s");
         expect(v.tone).toBe("run");
         expect(tones(v)).toEqual(["pass", "pass", "pass", "pass", "run"]);
         expect(v.running).toBe("verifier");
@@ -429,6 +431,160 @@ describe("finalStageView, the steps", () => {
             expect(v.running).toBeUndefined();
             expect(v.stepIndex).toBe(0);
         }
+        const noList = finalStageView(
+            dag({ state: "checking", round: 1, step: "check" }, { tasks: undefined }),
+            [],
+            NOW
+        );
+        expect(noList.visible).toBe(false);
+        expect(noList.steps).toEqual([]);
+    });
+
+    it("starts the round at startedts when the Verifier is the only step, whatever session it runs in", () => {
+        const final = { state: "verifying", round: 1, verifierrunid: "v-run", startedts: NOW - 60 * S };
+        const v = finalStageView(dag(final, { check: "", verify: "", finalcmd: "" }), [], NOW);
+        expect(v.stageMs).toBe(60 * S);
+    });
+
+    it("reads an unverified stage that gave no reasons as plain unverified, with no reasons listed", () => {
+        const v = finalStageView(dag({ state: "unverified", round: 1 }, { status: "done" }), [], NOW);
+        expect(v.subline).toBe("unverified");
+        expect(v.unverified).toStrictEqual([]);
+        expect(finalStageView(dag(undefined), [], NOW).unverified).toStrictEqual([]);
+    });
+
+    it("names a reviewing verifier that has no start time without a duration", () => {
+        const final = { state: "verifying", round: 2, verifierrunid: "v-run", startedts: 0 };
+        const v = finalStageView(dag(final), [], NOW);
+        expect(v.subline).toBe("verifier reviewing");
+        expect(v.nodeMeta).toBe("round 2 · verifier");
+        expect(v.headline).toBe("round 2 · verifier reviewing");
+    });
+
+    it("between two commands the stage names no step, and the steps with an event have settled", () => {
+        const final = { state: "checking", round: 2, step: "", stepts: NOW };
+        const v = finalStageView(dag(final), [ev("tree", S, true, 2), ev("check", S, true, 2)], NOW);
+        expect(states(v)).toEqual(["passed", "passed", "waiting", "waiting", "waiting"]);
+        expect(v.running).toBeUndefined();
+        expect(v.subline).toBe("starting");
+        expect(v.nodeMeta).toBe("round 2 · starting");
+        expect(v.headline).toBe("round 2 · starting");
+    });
+
+    it("a restarted step runs again, and the steps after it wait whatever their older events say", () => {
+        const events = [ev("tree", 2 * S), ev("check", 3 * S), ev("verify", 4 * S)];
+        const check = { state: "checking", round: 1, step: "check", stepts: NOW - 5 * S };
+        const v = finalStageView(dag(check), events, NOW);
+        expect(states(v)).toEqual(["passed", "running", "waiting", "waiting", "waiting"]);
+        expect(times(v)).toEqual([2 * S, 5 * S, undefined, undefined, undefined]);
+
+        const tree = { state: "checking", round: 1, step: "tree", stepts: NOW - S };
+        expect(states(finalStageView(dag(tree), events, NOW))).toEqual([
+            "running",
+            "waiting",
+            "waiting",
+            "waiting",
+            "waiting",
+        ]);
+    });
+
+    it("with a Final command the Verifier waits for the commands, even once it has a session", () => {
+        const final = { state: "final", round: 1, step: "final", stepts: NOW - S, verifierrunid: "v-run" };
+        expect(states(finalStageView(dag(final), [], NOW))).toEqual([
+            "passed",
+            "passed",
+            "passed",
+            "running",
+            "waiting",
+        ]);
+    });
+
+    it("with no detail, an ended stage stops at the last step that ran when that one is not ok", () => {
+        const events = [ev("tree", S), ev("check", S), ev("verify", S, false)];
+        const v = finalStageView(dag({ state: "failed", round: 1 }), events, NOW);
+        expect(states(v)).toEqual(["passed", "passed", "failed", "notrun", "notrun"]);
+    });
+
+    it("with no detail, an ended stage whose last step was ok is left to the Verifier", () => {
+        const events = [ev("tree", S), ev("check", S), ev("verify", S), ev("final", S)];
+        const v = finalStageView(dag({ state: "failed", round: 1 }), events, NOW);
+        expect(states(v)).toEqual(["passed", "passed", "passed", "passed", "failed"]);
+    });
+
+    it("an unverified stage whose last command could not verify leaves the Verifier unverified too", () => {
+        const events = [ev("tree", S), ev("check", S), ev("verify", S), ev("final", S, false)];
+        const final = { state: "unverified", round: 1, unverified: ["the Final command could not verify"] };
+        const v = finalStageView(dag(final), events, NOW);
+        expect(states(v)).toEqual(["passed", "passed", "passed", "unverified", "unverified"]);
+    });
+
+    it("reads only a detail that opens with a command's name as that command's failure", () => {
+        const events = [ev("tree", S), ev("check", S), ev("verify", S)];
+        const final = { state: "failed", round: 1, detail: "defects: the Check `go build` output is stale" };
+        const v = finalStageView(dag({ ...final, verifierrunid: "v-run" }, { finalcmd: "" }), events, NOW);
+        expect(states(v)).toEqual(["passed", "passed", "passed", "failed"]);
+    });
+
+    it("gives a step the stage ended before, or has not reached, no time of its own", () => {
+        const final = {
+            state: "failed",
+            round: 1,
+            detail: "Check `go build` failed (exit 1):\nx",
+            verifierrunid: "v-run",
+            startedts: NOW - 100 * S,
+        };
+        const events = [ev("tree", S), ev("check", 2 * S, false), ev("verify", 5 * S)];
+        const ended = finalStageView(dag(final, { finalcmd: "" }), events, NOW, { completedts: NOW - 40 * S });
+        expect(states(ended)).toEqual(["passed", "failed", "notrun", "notrun"]);
+        expect(times(ended)).toEqual([S, 2 * S, undefined, undefined]);
+        expect(ended.steps.map((s) => s.text)).toEqual(["passed 1s", "failed 2s", "not run", "not run"]);
+
+        const waiting = { state: "", round: 2, verifierrunid: "v-run", startedts: NOW - 100 * S };
+        const next = finalStageView(dag(waiting), [ev("check", 3 * S, true, 2)], NOW, { completedts: NOW });
+        expect(states(next)).toEqual(["waiting", "waiting", "waiting", "waiting", "waiting"]);
+        expect(times(next)).toEqual([undefined, undefined, undefined, undefined, undefined]);
+    });
+
+    it("reads a stage not started, with every task done, as starting", () => {
+        const v = finalStageView(dag(undefined), [], NOW);
+        expect(v.subline).toBe("starting");
+        expect(v.nodeMeta).toBe("round 1 · starting");
+        expect(v.headline).toBe("round 1 · starting");
+    });
+
+    it("a later round with no task left to fix reads as the round alone", () => {
+        const v = finalStageView(dag({ state: "", round: 2 }), [], NOW);
+        expect(v.subline).toBe("round 2");
+        expect(v.nodeMeta).toBe("round 2");
+        expect(v.headline).toBe("round 2");
+    });
+});
+
+describe("finalStageActivity", () => {
+    const at = (state: string, step?: string, verifierrunid?: string) =>
+        finalStageActivity({ state, round: 1, step, verifierrunid });
+
+    it("says what the running step is doing", () => {
+        expect(at("verifying")).toBe("verifier reviewing");
+        expect(at("checking", "tree")).toBe("preparing the tree");
+        expect(at("checking", "check")).toBe("running Check");
+        expect(at("checking", "verify")).toBe("running Verify");
+        expect(at("final", "final")).toBe("running Final");
+        expect(at("checking", "")).toBe("starting");
+        expect(at("final")).toBe("starting");
+    });
+
+    it("shows the verifier alongside only for a checking stage that has one", () => {
+        expect(at("checking", "check", "v-run")).toBe("running Check · verifier alongside");
+        expect(at("checking", "check")).toBe("running Check");
+        expect(at("final", "final", "v-run")).toBe("running Final");
+    });
+
+    it("is undefined when no step runs", () => {
+        for (const state of ["", "passed", "failed", "unverified"]) {
+            expect(at(state, "check")).toBeUndefined();
+        }
+        expect(finalStageActivity(undefined)).toBeUndefined();
     });
 });
 

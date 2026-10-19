@@ -96,6 +96,38 @@ describe("rpcResponseGenerator (via sendRpcCommand)", () => {
         expect(router.sent.some((m) => m.cancel === true)).toBe(false);
     });
 
+    it("keeps yielding a stream until a chunk without cont ends it", async () => {
+        const openRpcs = new Map<string, ClientRpcEntry>();
+        const gen = sendRpcCommand(openRpcs, { command: "x", reqid: "r7" });
+        const msgFn = openRpcs.get("r7")!.msgFn;
+        msgFn({ resid: "r7", data: "d1", cont: true });
+        msgFn({ resid: "r7", data: "d2", cont: true });
+        msgFn({ resid: "r7", data: "d3" });
+        expect(await gen.next(false)).toStrictEqual({ value: "d1", done: false });
+        expect(await gen.next(false)).toStrictEqual({ value: "d2", done: false });
+        expect(await gen.next(false)).toStrictEqual({ value: "d3", done: false });
+        expect(await gen.next(false)).toStrictEqual({ value: undefined, done: true });
+    });
+
+    it("wakes for a chunk that arrives while the stream is parked", async () => {
+        const openRpcs = new Map<string, ClientRpcEntry>();
+        const gen = sendRpcCommand(openRpcs, { command: "x", reqid: "r8" });
+        const msgFn = openRpcs.get("r8")!.msgFn;
+        msgFn({ resid: "r8", data: "d1", cont: true });
+        await gen.next(false);
+        const parked = gen.next(false); // queue empty: waits for the next chunk
+        msgFn({ resid: "r8", data: "d2", cont: true });
+        const stillParked = new Promise((r) => setTimeout(() => r("still parked"), 50));
+        expect(await Promise.race([parked, stillParked])).toStrictEqual({ value: "d2", done: false });
+    });
+
+    it("ends without yielding on a final message that carries no data", async () => {
+        const openRpcs = new Map<string, ClientRpcEntry>();
+        const gen = sendRpcCommand(openRpcs, { command: "x", reqid: "r9" });
+        openRpcs.get("r9")!.msgFn({ resid: "r9" });
+        expect(await gen.next(false)).toStrictEqual({ value: undefined, done: true });
+    });
+
     describe("timeout path", () => {
         beforeEach(() => vi.useFakeTimers());
         afterEach(() => vi.useRealTimers());
@@ -105,6 +137,23 @@ describe("rpcResponseGenerator (via sendRpcCommand)", () => {
             const gen = sendRpcCommand(openRpcs, { command: "x", reqid: "r4", timeout: 1000 });
             vi.advanceTimersByTime(1000);
             await expect(gen.next(false)).rejects.toThrow(/EC-TIME/);
+        });
+
+        it("sets no timeout when the bound is zero", async () => {
+            const openRpcs = new Map<string, ClientRpcEntry>();
+            const gen = sendRpcCommand(openRpcs, { command: "x", reqid: "r10" }, 0);
+            vi.advanceTimersByTime(1000);
+            openRpcs.get("r10")!.msgFn({ resid: "r10", data: "late" });
+            expect(await gen.next(false)).toStrictEqual({ value: "late", done: false });
+        });
+
+        it("clears its timeout once the response lands", async () => {
+            const openRpcs = new Map<string, ClientRpcEntry>();
+            const gen = sendRpcCommand(openRpcs, { command: "x", reqid: "r11", timeout: 1000 });
+            openRpcs.get("r11")!.msgFn({ resid: "r11", data: "v" });
+            await gen.next(false);
+            expect(await gen.next(false)).toStrictEqual({ value: undefined, done: true });
+            expect(vi.getTimerCount()).toBe(0);
         });
     });
 });

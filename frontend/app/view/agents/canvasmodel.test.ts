@@ -96,6 +96,75 @@ describe("boardsFromCanvasJson", () => {
         ]);
     });
 
+    it("keeps a board's title only when it is a non-empty string", () => {
+        const json = {
+            boards: {
+                "Main.dc.html": { x: 0, y: 0, w: 100, h: 100, title: "" },
+                "A.dc.html": { x: 0, y: 0, w: 100, h: 100, title: 5 },
+                "B.dc.html": null,
+                "C.dc.html": { x: 0, y: 0, w: 100, h: 100, title: "C" },
+            },
+            order: ["Main.dc.html", "A.dc.html", "B.dc.html", "C.dc.html"],
+        };
+        expect(boardsFromCanvasJson(json)).toStrictEqual([
+            { name: "Main.dc.html", x: 0, y: 0, w: 100, h: 100 },
+            { name: "A.dc.html", x: 0, y: 0, w: 100, h: 100 },
+            { name: "B.dc.html", x: 180, y: 0, w: 1440, h: 900 },
+            { name: "C.dc.html", x: 0, y: 0, w: 100, h: 100, title: "C" },
+        ]);
+    });
+
+    it("places a board at its own position, and one with only half a position to the right", () => {
+        const json = {
+            boards: {
+                "Main.dc.html": { x: 300, y: 40, w: 640, h: 400 },
+                "A.dc.html": { x: 7 },
+                "B.dc.html": { y: 9 },
+            },
+            order: ["Main.dc.html", "A.dc.html", "B.dc.html"],
+        };
+        expect(boardsFromCanvasJson(json).map((b) => [b.x, b.y])).toEqual([
+            [300, 40],
+            [1020, 0],
+            [2540, 0],
+        ]);
+    });
+
+    it("drops order entries that are not names of boards that are there", () => {
+        const json = {
+            boards: { "Main.dc.html": {}, "notes.txt": {} },
+            order: [5, "notes.txt", "Gone.dc.html", "Main.dc.html"],
+        };
+        expect(boardsFromCanvasJson(json).map((b) => b.name)).toEqual(["Main.dc.html"]);
+    });
+
+    it("keeps the order as given, without moving Main first", () => {
+        const json = { boards: { "A.dc.html": {}, "Main.dc.html": {} }, order: ["A.dc.html", "Main.dc.html"] };
+        expect(boardsFromCanvasJson(json).map((b) => b.name)).toEqual(["A.dc.html", "Main.dc.html"]);
+    });
+
+    it("ignores keys that are not boards when there is no order", () => {
+        const json = { boards: { "notes.txt": {}, "A.dc.html": {} } };
+        expect(boardsFromCanvasJson(json).map((b) => b.name)).toEqual(["A.dc.html"]);
+    });
+
+    it("puts Main first among the keys wherever it sits, the rest in key order", () => {
+        for (const keys of [
+            ["A.dc.html", "B.dc.html", "Main.dc.html"],
+            ["A.dc.html", "Main.dc.html", "B.dc.html"],
+            ["Main.dc.html", "A.dc.html", "B.dc.html"],
+        ]) {
+            const json = { boards: Object.fromEntries(keys.map((k) => [k, {}])) };
+            expect(boardsFromCanvasJson(json).map((b) => b.name)).toEqual(["Main.dc.html", "A.dc.html", "B.dc.html"]);
+        }
+    });
+
+    it("reads boards that are all unusable as the one Main board", () => {
+        expect(boardsFromCanvasJson({ boards: {} })).toEqual([MAIN]);
+        expect(boardsFromCanvasJson({ boards: { "notes.txt": {} } })).toEqual([MAIN]);
+        expect(boardsFromCanvasJson({ boards: { "notes.txt": {} }, order: ["notes.txt"] })).toEqual([MAIN]);
+    });
+
     it("places a board with no position to the right of those before it", () => {
         const json = {
             boards: { "Main.dc.html": { x: 0, y: 0, w: 640 }, "A.dc.html": { w: 640 }, "B.dc.html": { x: 5 } },

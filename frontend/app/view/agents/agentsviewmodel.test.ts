@@ -4,6 +4,7 @@ import {
     aggregateEditBurst,
     answerHint,
     applyAgentOrder,
+    ASK_STALE_GRACE_MS,
     askingCount,
     asksInTerminal,
     askingLabel,
@@ -589,6 +590,11 @@ describe("isAskStale", () => {
     it("not stale on a newer idle status: the pi prose bridge raises its ask at agent_settled, the same moment the status reporter emits settle-idle, so a same-tick idle must not kill the card", () => {
         expect(isAskStale(1_000, 1_010, "idle")).toBe(false);
         expect(isAskStale(1_000, 2_000, "idle")).toBe(false);
+        expect(isAskStale(1_000, 5_000, "idle")).toBe(false);
+    });
+    it("needs more than the grace: exactly ASK_STALE_GRACE_MS newer is not stale", () => {
+        expect(isAskStale(1_000, 1_000 + ASK_STALE_GRACE_MS, "working")).toBe(false);
+        expect(isAskStale(1_000, 1_000 + ASK_STALE_GRACE_MS + 1, "working")).toBe(true);
     });
     it("not stale while waiting, when status is not newer, or when a ts is missing", () => {
         expect(isAskStale(1_000, 2_000, "waiting")).toBe(false);
@@ -845,6 +851,8 @@ describe("moveCursor", () => {
     it("starts at the first id when current is absent or unknown", () => {
         expect(moveCursor(ids, undefined, 1)).toBe("a");
         expect(moveCursor(ids, "zzz", -1)).toBe("a");
+        expect(moveCursor(ids, "zzz", 2)).toBe("a");
+        expect(moveCursor(ids, undefined, 2)).toBe("a");
     });
     it("is undefined for an empty list", () => {
         expect(moveCursor([], "a", 1)).toBeUndefined();
@@ -861,6 +869,34 @@ describe("groupTimeline", () => {
         const items = groupTimeline(entries);
         expect(items.map((i) => i.kind)).toEqual(["message", "action", "action"]);
         expect(items.some((i) => i.kind === "group")).toBe(false);
+    });
+
+    it("keys each inline action by its own entry index", () => {
+        const entries: AgentEntry[] = [
+            { kind: "message", text: "m" },
+            { kind: "action", verb: "read", target: "a" },
+            { kind: "action", verb: "read", target: "b" },
+        ];
+        expect(groupTimeline(entries)).toEqual([
+            { kind: "message", text: "m", index: 0 },
+            { kind: "action", action: entries[1], index: 1 },
+            { kind: "action", action: entries[2], index: 2 },
+        ]);
+    });
+
+    it("passes a user entry through as a standalone item, flushing the run before it", () => {
+        const entries: AgentEntry[] = [
+            { kind: "action", verb: "read", target: "a" },
+            { kind: "user", text: "do more" },
+        ];
+        expect(groupTimeline(entries)).toEqual([
+            { kind: "action", action: entries[0], index: 0 },
+            { kind: "user", text: "do more", index: 1 },
+        ]);
+    });
+
+    it("adds nothing for a non-action entry when the threshold is 0 and no run is open", () => {
+        expect(groupTimeline([{ kind: "message", text: "m" }], 0)).toEqual([{ kind: "message", text: "m", index: 0 }]);
     });
 
     it("folds a run of three or more actions into one group keyed by first index", () => {
@@ -1309,6 +1345,23 @@ describe("nextUnansweredQuestion", () => {
 
 describe("answerHint with typed text", () => {
     const one = [{ question: "a", options: [{ label: "x" }] }] as AgentAskQuestion[];
+    const two = [
+        { question: "a", options: [{ label: "x" }] },
+        { question: "b", options: [{ label: "y" }] },
+    ] as AgentAskQuestion[];
+    it("counts a question answered by typed text, and says Enter sends when any question has text", () => {
+        expect(answerHint(two, {}, true, { 0: "my own answer" })).toBe("1/2 answered · press Enter to send");
+    });
+    it("counts nothing answered when no question has a selection or text", () => {
+        expect(answerHint(two, {}, true)).toBe("0/2 answered");
+    });
+    it("counts every question with a selection", () => {
+        expect(answerHint(two, { 0: new Set([0]), 1: new Set([0]) }, true)).toBe("2/2 answered");
+    });
+    it("does not count whitespace-only text as an answer or as typed", () => {
+        expect(answerHint(one, {}, true, { 0: "   " })).toBe("Press 1–9 or click to answer");
+        expect(answerHint(two, {}, true, { 0: "   " })).toBe("0/2 answered");
+    });
     it("says Enter sends once an answer is typed", () => {
         expect(answerHint(one, {}, true, { 0: "my own answer" })).toBe("press Enter to send");
         expect(answerHint(one, {}, true, {})).toBe("Press 1–9 or click to answer");
@@ -1381,9 +1434,21 @@ describe("edit-burst grouping", () => {
         const items = groupTimeline([edit("a.ts"), edit("b.ts")]);
         expect(items.map((i) => i.kind)).toEqual(["action", "action"]);
     });
+    it("folds a run into a plain group when only some of its actions are edits", () => {
+        const items = groupTimeline([edit("a.ts"), edit("b.ts"), { kind: "action", verb: "read", target: "c.ts" }]);
+        expect(items.map((i) => i.kind)).toEqual(["group"]);
+    });
     it("isEditAction requires the edit detail", () => {
         expect(isEditAction({ kind: "action", verb: "edited", target: "a.ts" })).toBe(false);
         expect(isEditAction(edit("a.ts"))).toBe(true);
+    });
+    it("isEditAction accepts the edited and wrote verbs only", () => {
+        const withVerb = (verb: string): AgentEntry => ({ ...(edit("a.ts") as AgentActionEntry), verb });
+        expect(isEditAction(withVerb("edited"))).toBe(true);
+        expect(isEditAction(withVerb("wrote"))).toBe(true);
+        expect(isEditAction(withVerb("read"))).toBe(false);
+        expect(isEditAction({ kind: "action", verb: "read", target: "a.ts" })).toBe(false);
+        expect(isEditAction({ kind: "message", text: "edited" })).toBe(false);
     });
     it("aggregateEditBurst sums files across actions", () => {
         const burst = aggregateEditBurst([edit("a.ts"), edit("b.ts")] as AgentActionEntry[], 0);

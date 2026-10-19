@@ -51,6 +51,30 @@ describe("parseDocReview", () => {
         expect(parseDocReview(ask("spec Review ", "`/r/spec.md`\r\n- one"))?.path).toBe("/r/spec.md");
         expect(parseDocReview(ask("  PLAN review", "/r/plan.md"))?.kind).toBe("plan");
     });
+    it("skips blank lines, so the path is the first line with text", () => {
+        const r = parseDocReview(ask("Spec review", "\n\n/r/spec.md\n\nA note.\n\n- one"));
+        expect(r?.path).toBe("/r/spec.md");
+        expect(r?.intro).toEqual(["A note."]);
+        expect(r?.items).toEqual(["one"]);
+    });
+    it("trims each line, so indented text and trailing spaces still read", () => {
+        const r = parseDocReview(ask("Spec review", "  /r/spec.md  \n   Some intro   \n   - one  "));
+        expect(r?.path).toBe("/r/spec.md");
+        expect(r?.intro).toEqual(["Some intro"]);
+        expect(r?.items).toEqual(["one"]);
+    });
+    it("takes the whole text after the dash as the item, without its padding", () => {
+        expect(parseDocReview(ask("Spec review", "/r/spec.md\n-   padded item"))?.items).toEqual(["padded item"]);
+    });
+    it("keeps every intro line when there are no items", () => {
+        expect(parseDocReview(ask("Spec review", "/r/spec.md\nline one\nline two"))?.intro).toEqual([
+            "line one",
+            "line two",
+        ]);
+    });
+    it("strips only the backticks around the path, not one inside it", () => {
+        expect(parseDocReview(ask("Spec review", "`/r/a`b.md`"))?.path).toBe("/r/a`b.md");
+    });
     it("falls back to an ordinary question when the convention is not met", () => {
         expect(parseDocReview(ask("Flake fix", "/r/spec.md"))).toBeNull();
         expect(parseDocReview(ask("Spec review", "Does the spec look right?"))).toBeNull();
@@ -79,6 +103,13 @@ describe("parseDocReview", () => {
         );
         expect(marked?.requestIndex).toBe(1);
         expect(marked?.approveIndex).toBe(0);
+    });
+    it("finds the request option by its leading words, whatever its padding", () => {
+        const r = parseDocReview(
+            ask("Spec review", "/r/s.md", [{ label: "Approve" }, { label: "  Request changes and re-plan " }])
+        );
+        expect(r?.requestIndex).toBe(1);
+        expect(r?.approveIndex).toBe(0);
     });
     it("reports no request option as -1", () => {
         const r = parseDocReview(ask("Spec review", "/r/s.md", [{ label: "Approve" }, { label: "Later" }]));

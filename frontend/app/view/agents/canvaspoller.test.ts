@@ -106,6 +106,42 @@ describe("pollCanvasOnce", () => {
         expect(io.serves).toEqual(["/p/.superpowers/design"]);
     });
 
+    it("is server-down when canvas.json cannot be read, whatever the board files answer", async () => {
+        const io = fakeIO({ files: { "Main.dc.html": 1000 } });
+        const failing: CanvasIO = { ...io, get: async () => ({ status: "error", lastModified: null }) };
+        expect(await pollCanvasOnce(state({ base: BASE }), failing, NOW)).toEqual({
+            base: null,
+            status: "server-down",
+        });
+    });
+
+    it("reads the one Main board when canvas.json is not served, however the server's body reads", async () => {
+        const io = fakeIO({ files: { "Main.dc.html": 1000 }, json: JSON_TWO });
+        expect(await pollCanvasOnce(state({ base: BASE }), io, NOW)).toEqual({
+            base: BASE,
+            status: "ready",
+            boards: [{ name: "Main.dc.html", x: 0, y: 0, w: 1440, h: 900 }],
+            lastModifiedMs: 1000,
+            lastViewedMs: NOW,
+        });
+    });
+
+    it("is server-down when any one board file does not answer", async () => {
+        const io = fakeIO({
+            files: { "Main.dc.html": 1000, "States.dc.html": 3000, "canvas.json": 2000 },
+            json: JSON_TWO,
+        });
+        const oneDown: CanvasIO = {
+            ...io,
+            head: async (url) =>
+                url.endsWith("States.dc.html") ? { status: "error", lastModified: null } : io.head(url),
+        };
+        expect(await pollCanvasOnce(state({ base: BASE }), oneDown, NOW)).toEqual({
+            base: null,
+            status: "server-down",
+        });
+    });
+
     it("leaves lastViewedMs alone in terminal mode", async () => {
         const io = fakeIO({ files: { "Main.dc.html": 1000 } });
         const patch = await pollCanvasOnce(state({ mode: "terminal" }), io, NOW);

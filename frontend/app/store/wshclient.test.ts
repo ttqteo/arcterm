@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sendRpcCommand, sendRpcResponse } from "@/app/store/wshrpcutil-base";
 import { RpcResponseHelper, WshClient } from "./wshclient";
 
@@ -105,6 +105,52 @@ describe("WshClient.handleIncomingCommand dispatch", () => {
     });
 });
 
+describe("WshClient.handleIncomingCommand settling", () => {
+    class SlowClient extends WshClient {
+        async handle_ping() {
+            return "pong";
+        }
+        handle_hang() {
+            return new Promise(() => {});
+        }
+    }
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.useFakeTimers();
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it("answers a handler that never settles with a timeout error", async () => {
+        const client = new SlowClient("tab:me");
+        void client.handleIncomingCommand({ command: "hang", reqid: "r1" });
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(sendRpcResponse).toHaveBeenCalledExactlyOnceWith({
+            error: 'rpc handler for command "hang" timed out',
+            resid: "r1",
+            source: "tab:me",
+        });
+    });
+
+    it("leaves no timeout timer behind once the handler answers", async () => {
+        const client = new SlowClient("tab:me");
+        await client.handleIncomingCommand({ command: "ping", reqid: "r1" });
+        expect(sendRpcResponse).toHaveBeenCalledExactlyOnceWith({ data: "pong", resid: "r1", source: "tab:me" });
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("still closes the rpc with an empty response when both earlier sends fail", async () => {
+        const linkDown = () => {
+            throw new Error("link down");
+        };
+        (sendRpcResponse as any).mockImplementationOnce(linkDown).mockImplementationOnce(linkDown);
+        const client = new SlowClient("tab:me");
+        await expect(client.handleIncomingCommand({ command: "ping", reqid: "r1" })).rejects.toThrow("link down");
+        expect(sendRpcResponse).toHaveBeenCalledTimes(3);
+        expect(sendRpcResponse).toHaveBeenLastCalledWith({ resid: "r1", source: "tab:me" });
+    });
+});
+
 describe("WshClient.recvRpcMessage", () => {
     beforeEach(() => vi.clearAllMocks());
 
@@ -113,6 +159,16 @@ describe("WshClient.recvRpcMessage", () => {
         const spy = vi.spyOn(client, "handleIncomingCommand").mockResolvedValue(undefined);
         client.recvRpcMessage({ command: "x", reqid: "r1" });
         expect(spy).toHaveBeenCalled();
+    });
+
+    it.each([
+        ["a command alone", { command: "x" }],
+        ["a reqid alone", { reqid: "r1" }],
+    ])("treats a message carrying %s as an incoming request", (_what, msg: RpcMessage) => {
+        const client = new WshClient("tab:me");
+        const spy = vi.spyOn(client, "handleIncomingCommand").mockResolvedValue(undefined);
+        client.recvRpcMessage(msg);
+        expect(spy).toHaveBeenCalledExactlyOnceWith(msg);
     });
 
     it("delivers a response to the matching open rpc entry", () => {

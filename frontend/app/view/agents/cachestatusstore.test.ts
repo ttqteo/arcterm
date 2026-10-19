@@ -33,6 +33,51 @@ describe("loadCacheStatusForAgent", () => {
         expect(globalStore.get(agentCacheStatusAtom)).toEqual({ lastWriteTs: 1000, oneHour: false });
     });
 
+    test("asks for the transcript by its path, and not at all without one", async () => {
+        getCacheStatus.mockClear();
+        getCacheStatus.mockResolvedValueOnce({ lastwritets: 1000, onehour: false });
+        await loadCacheStatusForAgent("e", "/e.jsonl");
+        expect(getCacheStatus).toHaveBeenCalledTimes(1);
+        expect(getCacheStatus).toHaveBeenCalledWith(expect.anything(), { path: "/e.jsonl" });
+        await loadCacheStatusForAgent("e", undefined);
+        expect(getCacheStatus).toHaveBeenCalledTimes(1);
+        expect(globalStore.get(agentCacheStatusAtom)).toBeNull();
+    });
+
+    test("a slow load for an agent focus has moved off does not overwrite the newer focus", async () => {
+        let resolveSlow!: (v: unknown) => void;
+        getCacheStatus.mockReturnValueOnce(new Promise((r) => (resolveSlow = r)));
+        const slow = loadCacheStatusForAgent("slow", "/slow.jsonl");
+        getCacheStatus.mockReturnValueOnce(new Promise(() => {}));
+        void loadCacheStatusForAgent("fast", "/fast.jsonl");
+        resolveSlow({ lastwritets: 1000, onehour: true });
+        await slow;
+        expect(globalStore.get(agentCacheStatusAtom)).toBeNull();
+    });
+
+    test("a failed full load clears the status, even over a silent refresh that landed first", async () => {
+        let rejectFirst!: (e: Error) => void;
+        getCacheStatus.mockReturnValueOnce(new Promise((_, r) => (rejectFirst = r)));
+        const first = loadCacheStatusForAgent("g", "/g.jsonl");
+        getCacheStatus.mockResolvedValueOnce({ lastwritets: 3000, onehour: false });
+        await loadCacheStatusForAgent("g", "/g.jsonl", { silent: true });
+        expect(globalStore.get(agentCacheStatusAtom)).toEqual({ lastWriteTs: 3000, oneHour: false });
+        rejectFirst(new Error("rpc down"));
+        await first;
+        expect(globalStore.get(agentCacheStatusAtom)).toBeNull();
+    });
+
+    test("a failed load for an agent focus has moved off leaves the newer focus's status", async () => {
+        let rejectOld!: (e: Error) => void;
+        getCacheStatus.mockReturnValueOnce(new Promise((_, r) => (rejectOld = r)));
+        const old = loadCacheStatusForAgent("old", "/old.jsonl");
+        getCacheStatus.mockResolvedValueOnce({ lastwritets: 4000, onehour: true });
+        await loadCacheStatusForAgent("new", "/new.jsonl", { silent: true });
+        rejectOld(new Error("rpc down"));
+        await old;
+        expect(globalStore.get(agentCacheStatusAtom)).toEqual({ lastWriteTs: 4000, oneHour: true });
+    });
+
     test("a focus change clears the previous agent's status", async () => {
         getCacheStatus.mockResolvedValueOnce({ lastwritets: 1000, onehour: true });
         await loadCacheStatusForAgent("c", "/c.jsonl");
