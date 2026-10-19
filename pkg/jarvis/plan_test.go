@@ -348,7 +348,7 @@ func TestParsePlanFilesOverlap(t *testing.T) {
 		{"only one task lists the file", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** none\nedits pkg/a.go\n"},
 		{"direct Depends", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** Task 1\n**Files:** `pkg/a.go`\n"},
 		{"implicit Depends on the previous task", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Files:** `pkg/a.go`\n"},
-		{"transitive Depends", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** Task 1\n**Files:** `pkg/b.go`\n### Task 3: c\n**Depends on:** Task 2\n**Files:** `pkg/a.go`, `pkg/c.go`\n"},
+		{"transitive Depends", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** Task 1 (calls a)\n**Files:** `pkg/b.go`\n### Task 3: c\n**Depends on:** Task 2 (calls b)\n**Files:** `pkg/a.go`, `pkg/c.go`\n"},
 		{"different files side by side", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** none\n**Files:** `pkg/b.go`\n"},
 	}
 	for _, c := range accepted {
@@ -394,5 +394,49 @@ func TestParsePlanFilesLineStaysInTheTaskText(t *testing.T) {
 	}
 	if !reflect.DeepEqual(p.Tasks[0].Chunks, []string{"#1 x"}) {
 		t.Fatalf("a Chunk line after the Files line is still read, got %v", p.Tasks[0].Chunks)
+	}
+}
+
+func TestParsePlanDependsReasons(t *testing.T) {
+	accepted := []struct{ name, src, want string }{
+		{"shared file and no reason", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** Task 1\n**Files:** `pkg/a.go`, `pkg/b.go`\n", "t-1"},
+		{"no shared file with a reason", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** Task 1 (uses the topOf rows it adds)\n**Files:** `pkg/b.go`\n", "t-1"},
+		{"a reason holding commas and parentheses", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** Task 1 (calls parse(x), then lanes)\n**Files:** `pkg/b.go`\n", "t-1"},
+		{"a mixed list", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** none\n**Files:** `pkg/b.go`\n### Task 3: c\n**Depends on:** Task 1 (uses X), Task 2\n**Files:** `pkg/b.go`, `pkg/c.go`\n", "t-1,t-2"},
+		{"the implicit edge", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Files:** `pkg/b.go`\n", "t-1"},
+		{"the dependent task has no Files line", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** Task 1\n", "t-1"},
+		{"the task it waits on has no Files line", "### Task 1: a\n### Task 2: b\n**Depends on:** Task 1\n**Files:** `pkg/b.go`\n", "t-1"},
+	}
+	for _, c := range accepted {
+		t.Run(c.name, func(t *testing.T) {
+			p := mustParsePlan(t, c.src)
+			if got := strings.Join(p.Tasks[len(p.Tasks)-1].Deps, ","); got != c.want {
+				t.Fatalf("the reason is dropped and the ids stay, got %q, want %q", got, c.want)
+			}
+		})
+	}
+	refused := []struct {
+		name, src string
+		errParts  []string
+	}{
+		{"no shared file and no reason", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: fixtures\n**Depends on:** none\n**Files:** `pkg/b.go`\n### Task 3: evidence\n**Depends on:** Task 2\n**Files:** `pkg/c.go`\n",
+			[]string{"task 3 (evidence)", "task 2 (fixtures)", "share no path", "parentheses", "drop the edge", "scenario"}},
+		{"the bare half of a mixed list", "### Task 1: a\n**Files:** `pkg/a.go`\n### Task 2: b\n**Depends on:** none\n**Files:** `pkg/b.go`\n### Task 3: c\n**Depends on:** Task 1 (uses X), Task 2\n**Files:** `pkg/c.go`\n",
+			[]string{"task 3 (c)", "task 2 (b)"}},
+		{"empty parentheses", "### Task 1: a\n### Task 2: b\n**Depends on:** Task 1 ()\n", []string{"empty", "Task 1"}},
+		{"an unclosed reason", "### Task 1: a\n### Task 2: b\n**Depends on:** Task 1 (uses x\n", []string{"Task 1 (uses x"}},
+	}
+	for _, c := range refused {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := ParsePlan(c.src)
+			if err == nil {
+				t.Fatal("want an error")
+			}
+			for _, part := range c.errParts {
+				if !strings.Contains(err.Error(), part) {
+					t.Fatalf("error %q should name %q", err, part)
+				}
+			}
+		})
 	}
 }

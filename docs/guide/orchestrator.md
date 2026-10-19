@@ -214,6 +214,7 @@ Mỗi reviewer là một session mới trong cây nơi lane đáp xuống. Nó �
 
 - mọi yêu cầu trong spec có một task;
 - không hai task sửa cùng file mà thiếu `Depends` giữa chúng (submit đã chặn các cặp cùng liệt kê `Files`, nên reviewer tìm task không có dòng `Files` hoặc file bị bỏ sót);
+- mỗi lý do một dòng `Depends` đưa ra là đúng: task phụ thuộc thật sự dùng điều nó nêu;
 - kiểu, hàm, cờ có cùng tên trong mọi task nhắc tới chúng;
 - không task nào chờ phần cài đặt dài của task khác khi nó chỉ cần interface: interface đáp trước thành một task nhỏ riêng;
 - mỗi task nêu tiêu chí chấp nhận và các test chứng minh chúng;
@@ -227,7 +228,7 @@ Reviewer cũng báo các lỗ hổng trong spec và chỗ spec với plan mâu t
 | Lens | Kiểm |
 |---|---|
 | **Spec coverage** | mọi yêu cầu có một task; lỗ hổng spec và chỗ spec/plan mâu thuẫn |
-| **Task order and files** | chồng lấn Files/Depends; tên nhất quán giữa các task |
+| **Task order and files** | chồng lấn Files/Depends; lý do của Depends đúng; tên nhất quán giữa các task |
 | **Tests and commands** | tiêu chí chấp nhận và test được nêu; các lệnh được nêu tồn tại |
 | **Final coverage** | mỗi thay đổi UI có một bước scenario Final; có Prototype thì mỗi board có một bước |
 

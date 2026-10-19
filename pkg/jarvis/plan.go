@@ -60,7 +60,12 @@ const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before
 	"continues the list). Submit refuses a plan in which two tasks that can run at the same time list the same path. A task " +
 	"without the line takes no part in that check, so list every task's files. " +
 	"Number tasks 1, 2, 3... in order under `##` or `###` headings. A Depends on line must be the first line under its heading: " +
-	"leave it out to run after the previous task, write `none` for no dependencies, or list earlier tasks (`Task 1, Task 3`).\n" +
+	"leave it out to run after the previous task, write `none` for no dependencies, or list earlier tasks (`Task 1, Task 3`). " +
+	"A listed task whose Files line shares no path with this task's needs a reason in parentheses after it, saying what this " +
+	"task uses from it (`Task 1 (uses the parser it adds), Task 3`): submit refuses it bare, since nothing else makes the two " +
+	"wait for each other. A screenshot or scenario both tasks appear in is not a reason; each task names that scenario step " +
+	"in its acceptance. An edge between tasks that share a file needs no reason, and neither does a task with no Files line " +
+	"or the implicit edge of a task with no Depends line.\n" +
 	"The engine runs tasks at the same time whenever nothing makes them wait, so the Depends on lines are what set a plan's width. " +
 	"Split the work by what can proceed independently, and make a task wait only when it truly builds on another's output — a plan " +
 	"with no Depends on lines is one serial chain and gets none of that. When several tasks build on one interface (a type, a " +
@@ -88,7 +93,7 @@ const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before
 	"**Files:** `<path>`\n" +
 	"<no Depends line: runs after Task 1, so it may list a path Task 1 lists>\n\n" +
 	"### Task 3: <title>\n" +
-	"**Depends on:** Task 1\n" +
+	"**Depends on:** Task 1 (<what it uses from Task 1>)\n" +
 	"**Files:** `<a path Task 2 does not list>`\n" +
 	"<runs beside Task 2>\n"
 
@@ -129,7 +134,7 @@ var (
 	planModelRe       = regexp.MustCompile(`^\*\*Model:\*\*\s*(.*?)\s*$`)
 	planFilesRe       = regexp.MustCompile(`^\*\*Files:\*\*\s*(.*?)\s*$`)
 	planFileListRe    = regexp.MustCompile("^`[^`]+`(\\s*,\\s*`[^`]+`)*$")
-	planTaskRefRe     = regexp.MustCompile(`^Task (\d+)$`)
+	planTaskRefRe     = regexp.MustCompile(`^Task (\d+)(?:\s*\((.*)\))?$`)
 )
 
 func planTaskID(n int) string {
@@ -152,8 +157,10 @@ func ParsePlan(src string) (Plan, error) {
 	var p Plan
 	var body []string
 	var preamble []string
-	// files is each task's **Files:** paths by task index; it lives only for the overlap check below
+	// files is each task's **Files:** paths by task index, and bare each task's written Depends edges that
+	// give no reason, by dependency index; both live only for the checks below
 	files := map[int][]string{}
+	bare := map[int][]int{}
 	fence := ""
 	inTaskHead, dependsAllowed := false, false
 	flush := func() {
@@ -217,11 +224,12 @@ func ParsePlan(src string) (Plan, error) {
 			}
 			task := &p.Tasks[len(p.Tasks)-1]
 			if m := planDependsRe.FindStringSubmatch(line); m != nil && dependsAllowed {
-				deps, err := parsePlanDepends(m[1], len(p.Tasks))
+				deps, unexplained, err := parsePlanDepends(m[1], len(p.Tasks))
 				if err != nil {
 					return Plan{}, err
 				}
 				task.Deps, dependsAllowed = deps, false
+				bare[len(p.Tasks)-1] = unexplained
 				continue
 			}
 			if m := planChunkRe.FindStringSubmatch(line); m != nil {
@@ -276,6 +284,9 @@ func ParsePlan(src string) (Plan, error) {
 		}
 	}
 	if err := checkPlanFileOwners(p.Tasks, files); err != nil {
+		return Plan{}, err
+	}
+	if err := checkPlanDependsReasons(p.Tasks, files, bare); err != nil {
 		return Plan{}, err
 	}
 	p.Preamble = strings.Join(trimBlankLines(preamble), "\n")
@@ -433,30 +444,79 @@ func parsePlanModel(value string, n int) (runtime, model string, err error) {
 	return "", value, nil
 }
 
-func parsePlanDepends(value string, n int) ([]string, error) {
+// parsePlanDepends reads a **Depends on:** value into dependency ids, plus the index of each dependency
+// written without a reason in parentheses ("Task 2 (uses the rows it adds)"). The reason is only checked
+// for presence: the plan reviewer judges whether it holds, reading it in the plan text.
+func parsePlanDepends(value string, n int) ([]string, []int, error) {
 	if strings.EqualFold(value, "none") {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if value == "" {
-		return nil, fmt.Errorf("task %d: **Depends on:** is empty; write none, or list earlier tasks like \"Task 1, Task 2\"", n)
+		return nil, nil, fmt.Errorf("task %d: **Depends on:** is empty; write none, or list earlier tasks like \"Task 1, Task 2\"", n)
 	}
 	var deps []string
-	for _, ref := range strings.Split(value, ",") {
+	var unexplained []int
+	for _, ref := range splitPlanDepends(value) {
 		ref = strings.TrimSpace(ref)
 		m := planTaskRefRe.FindStringSubmatch(ref)
 		if m == nil {
-			return nil, fmt.Errorf("task %d depends on %q; write references like \"Task 1\"", n, ref)
+			return nil, nil, fmt.Errorf("task %d depends on %q; write references like \"Task 1\" or \"Task 1 (uses the parser it adds)\"", n, ref)
 		}
 		dep, _ := strconv.Atoi(m[1])
 		if dep < 1 || dep >= n {
-			return nil, fmt.Errorf("task %d depends on %s, which is not an earlier task", n, ref)
+			return nil, nil, fmt.Errorf("task %d depends on Task %d, which is not an earlier task", n, dep)
 		}
 		if slices.Contains(deps, planTaskID(dep)) {
-			return nil, fmt.Errorf("task %d lists %s twice", n, ref)
+			return nil, nil, fmt.Errorf("task %d lists Task %d twice", n, dep)
+		}
+		if strings.Contains(ref, "(") && strings.TrimSpace(m[2]) == "" {
+			return nil, nil, fmt.Errorf("task %d: the parentheses after Task %d are empty; say what task %d uses from it, or drop them", n, dep, n)
 		}
 		deps = append(deps, planTaskID(dep))
+		if !strings.Contains(ref, "(") {
+			unexplained = append(unexplained, dep-1)
+		}
 	}
-	return deps, nil
+	return deps, unexplained, nil
+}
+
+// splitPlanDepends splits a Depends value on the commas outside parentheses, so a reason may hold commas.
+func splitPlanDepends(value string) []string {
+	var refs []string
+	depth, start := 0, 0
+	for i, r := range value {
+		switch {
+		case r == '(':
+			depth++
+		case r == ')' && depth > 0:
+			depth--
+		case r == ',' && depth == 0:
+			refs = append(refs, value[start:i])
+			start = i + 1
+		}
+	}
+	return append(refs, value[start:])
+}
+
+// checkPlanDependsReasons refuses a written Depends edge with no reason between two tasks whose Files lines
+// share no path: nothing forces their order, so a needless edge only makes one wait for the other's review
+// (run dfba1693). Edges between tasks that share a file are ordered anyway, the implicit edge of a task with
+// no Depends line is the documented serial default and never reaches bare, and a task with no Files line
+// gives nothing to compare.
+func checkPlanDependsReasons(tasks []waveobj.TaskNode, files map[int][]string, bare map[int][]int) error {
+	for i := range tasks {
+		if len(files[i]) == 0 {
+			continue
+		}
+		for _, d := range bare[i] {
+			if len(files[d]) == 0 || slices.ContainsFunc(files[i], func(f string) bool { return slices.Contains(files[d], f) }) {
+				continue
+			}
+			return fmt.Errorf("task %d (%s) depends on task %d (%s), but their **Files:** lines share no path; say what task %d uses from task %d in parentheses after the reference, like \"Task %d (uses the rows it adds)\", or drop the edge so the two run at the same time. A screenshot or scenario both tasks appear in is not a reason: each task names that scenario step in its acceptance",
+				i+1, tasks[i].Label, d+1, tasks[d].Label, i+1, d+1, d+1)
+		}
+	}
+	return nil
 }
 
 // Lanes groups tasks into maximal chains: a task continues its dependency's lane when it has exactly

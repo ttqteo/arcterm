@@ -505,3 +505,13 @@ func TestPlanReviewEventPicksComeFromTheTasks(t *testing.T) {
 		t.Fatalf("no picks, got %+v", got)
 	}
 }
+
+func TestPlanReviewChecksDependsReasons(t *testing.T) {
+	g := &waveobj.TaskGroup{RunID: "run-1", PlanPath: "p.md"}
+	if p := planReviewPrompt(g, "tree"); !strings.Contains(p, "- "+planReviewDependsReasonItem+"\n") {
+		t.Fatalf("the full review checks each Depends reason:\n%s", p)
+	}
+	if p := planLensPrompt(g, "tree", PlanReviewLens_Order); !strings.Contains(p, planReviewDependsReasonItem) {
+		t.Fatalf("the task order lens checks each Depends reason:\n%s", p)
+	}
+}

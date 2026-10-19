@@ -85,6 +85,10 @@ const planReviewBoardItem = "every `.dc.html` board in the folder of %s has a st
 // planReviewManifestItem applies only to a plan on the default task environment: no Setup line and no .arc/setup.
 const planReviewManifestItem = "the plan has no Setup, so each tree the engine makes gets the main checkout's installed `node_modules` linked in wherever its manifests match main's: a task that changes a `package.json` or lockfile needs a Setup line that installs, or the merged trees that Verify and Final run in get main's stale `node_modules`;"
 
+// planReviewDependsReasonItem judges the reasons submit only checks are present (jarvis.checkPlanDependsReasons):
+// run dfba1693's lead linked two tasks only because one scenario's screenshot showed both.
+const planReviewDependsReasonItem = "each reason a Depends line gives in parentheses holds: the dependent task really uses what the reason names from the task it waits on. A reason that does not hold, such as a screenshot or scenario both tasks appear in (that belongs in each task's acceptance as the scenario step), is a finding: the edge only makes one task wait for the other's review, so drop it;"
+
 // planReviewSpecGap closes the checklist as a sentence of its own, not a bullet.
 const planReviewSpecGap = "Also report gaps in the spec, and places where the spec and the plan contradict each other."
 
@@ -95,6 +99,7 @@ var planReviewChecklist = []planReviewItem{
 	{PlanReviewLens_Order, "no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time. Submit already refused any path two such tasks both list on their Files lines, so look for what those lines leave out: a task with no Files line, and a file a task's text edits that its Files line omits;"},
 	{PlanReviewLens_Order, "types, functions and flags have the same names in every task that mentions them;"},
 	{PlanReviewLens_Order, "no task waits for another's long implementation when it needs only that task's interface (a type, a wire field, a table, a function's signature): the interface can land first as its own small task, so the implementation and the tasks that use it run beside each other;"},
+	{PlanReviewLens_Order, planReviewDependsReasonItem},
 	{PlanReviewLens_Tests, "each task states its acceptance criteria and names the tests that prove them;"},
 	{PlanReviewLens_Tests, "the commands the plan names (its Verify, Setup, Check and Final lines, and those in its tasks) exist;"},
 	// SIEM's leads wrapped every vitest call in a fresh worktree plus pnpm install: 109 s a call against vitest's 11 s (run 313fb392)

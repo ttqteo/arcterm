@@ -155,6 +155,7 @@ Một task phụ thuộc task dài chỉ vì interface của nó (một kiểu, 
 - Chỉ tham chiếu ngược (task có số nhỏ hơn). Viết `Task` + số: `Task 1, Task 3`.
 - `none` (không phân biệt hoa thường) là không phụ thuộc. Giá trị rỗng, tham chiếu sai dạng, tham chiếu tới task sau (hoặc chính nó), hoặc liệt kê một task hai lần đều bị từ chối.
 - **Plan không có dòng Depends nào là một chuỗi tuần tự**: mỗi task chờ task trước. Độ rộng thực của plan hoàn toàn do các dòng Depends quyết định, xem [Độ rộng và lane](#độ-rộng-và-lane).
+- **Cạnh giữa hai task không chung file nào phải nói lý do.** Khi task và một task nó liệt kê đều có dòng `Files` mà hai dòng không chung path nào, tham chiếu đó cần lý do trong ngoặc, nói task này dùng gì từ task kia: `**Depends on:** Task 1 (uses the topOf rows it adds), Task 2`. Submit từ chối tham chiếu trần, nêu tên cả hai task: thêm lý do, hoặc bỏ cạnh để hai task chạy cùng lúc. Ngoài cạnh này không gì bắt hai task không chung file phải theo thứ tự, nên một cạnh thừa chỉ bắt task này chờ review của task kia (run dfba1693: một task fixtures và một task Evidence bị nối vì screenshot của một scenario chụp cả hai). Screenshot hay scenario dùng chung không phải lý do; mỗi task ghi bước scenario đó trong tiêu chí chấp nhận của nó. Được miễn: cạnh giữa hai task chung file (phép kiểm tra chồng lấn đã đòi nó), cạnh ngầm của task không có dòng Depends, và cạnh tới hoặc từ task không có dòng `Files`. Lý do có thể chứa dấu phẩy; ngoặc rỗng bị từ chối. Plan reviewer kiểm tra từng lý do có đúng không.
 
 **Model**
 

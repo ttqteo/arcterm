@@ -78,6 +78,7 @@ func TestPlanReviewPromptUnchangedWithoutPicks(t *testing.T) {
 		"- no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time. Submit already refused any path two such tasks both list on their Files lines, so look for what those lines leave out: a task with no Files line, and a file a task's text edits that its Files line omits;\n" +
 		"- types, functions and flags have the same names in every task that mentions them;\n" +
 		"- no task waits for another's long implementation when it needs only that task's interface (a type, a wire field, a table, a function's signature): the interface can land first as its own small task, so the implementation and the tasks that use it run beside each other;\n" +
+		"- " + planReviewDependsReasonItem + "\n" +
 		"- each task states its acceptance criteria and names the tests that prove them;\n" +
 		"- the commands the plan names (its Verify, Setup, Check and Final lines, and those in its tasks) exist;\n" +
 		"- no Verify, Check or Final command, and no task step, rebuilds the environment on every call (a scratch worktree, or a package install per call): the engine already prepares each tree, with the plan's Setup or, with none, the main checkout's linked `node_modules`;\n" +
