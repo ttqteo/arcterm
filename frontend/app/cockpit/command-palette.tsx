@@ -453,6 +453,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
             ...buildExtraItems({
                 openNewProject: () => globalStore.set(model.newProjectOpenAtom, true),
                 openToolPicker: () => openToolPicker(model),
+                reloadWindow: () => window.location.reload(),
             }),
         ];
         const goto: PaletteItem[] = all

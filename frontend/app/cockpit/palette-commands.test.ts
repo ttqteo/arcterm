@@ -105,15 +105,23 @@ describe("buildCommandItems", () => {
 });
 
 describe("buildExtraItems", () => {
-    const deps = () => ({ openNewProject: vi.fn(), openToolPicker: vi.fn() });
+    const deps = () => ({ openNewProject: vi.fn(), openToolPicker: vi.fn(), reloadWindow: vi.fn() });
 
     it("offers the chordless modals and one drill row for themes", () => {
         const items = buildExtraItems(deps());
         expect(items.map((i) => [i.key, i.drill])).toEqual([
             ["cmd:new-project", undefined],
             ["cmd:open-tool", undefined],
+            ["cmd:reload-window", undefined],
             ["cmd:theme", "theme"],
         ]);
+    });
+    it("reloads the window from Reload the window, a row with no chord", () => {
+        const d = deps();
+        buildExtraItems(d)
+            .find((i) => i.key === "cmd:reload-window")
+            ?.run();
+        expect(d.reloadWindow).toHaveBeenCalled();
     });
     it("carries no chord", () => {
         expect(buildExtraItems(deps()).every((i) => i.keys == null)).toBe(true);

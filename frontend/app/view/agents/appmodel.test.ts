@@ -8,6 +8,8 @@ import {
     appCloseTitle,
     appCwd,
     appFailLine,
+    appFrameName,
+    focusedAppTab,
     appHost,
     appProjectName,
     appShows,
@@ -108,5 +110,22 @@ describe("the app's phases", () => {
         expect(appCloseTitle("Hóng", true)).toBe("Stop Hóng");
         expect(appCloseTitle("Hóng", false)).toMatch(/keeps running/);
         expect(appFailLine({ url: URL_OK, owned: false })).toBe("Nothing answers on 127.0.0.1:8386");
+    });
+});
+
+describe("the app frame Reload reaches", () => {
+    const el = (tagName: string, attrs: Record<string, string>) => ({
+        tagName,
+        getAttribute: (name: string) => attrs[name] ?? null,
+    });
+
+    it("names the frame by its terminal tab", () => {
+        expect(appFrameName("t1")).toBe("arc-app-t1");
+    });
+    it("finds the app whose frame holds the focus, and none elsewhere", () => {
+        expect(focusedAppTab(el("IFRAME", { "data-app-frame": "t1" }))).toBe("t1");
+        expect(focusedAppTab(el("IFRAME", {}))).toBeNull(); // a canvas board's frame, not an app's
+        expect(focusedAppTab(el("TEXTAREA", { "data-app-frame": "t1" }))).toBeNull();
+        expect(focusedAppTab(null)).toBeNull();
     });
 });

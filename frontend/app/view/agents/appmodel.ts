@@ -76,9 +76,20 @@ export interface AppState {
     owned: boolean;
     startedMs: number;
     view: AppView;
-    // bumped by Home: the frame is keyed on it, so it loads the app's own url afresh (a cross-origin page cannot be
-    // reloaded where it is, only loaded again)
+    // bumped by Home: the frame is keyed on it, so it loads the app's own url afresh (the cockpit cannot reload a
+    // cross-origin page where it is; Reload asks the host, appstore.ts reloadAppPage)
     reloads: number;
+}
+
+// the app frame's name, by which the host finds it to reload it where it is (pagekeys.rs reload_app_frame)
+export function appFrameName(tabId: string): string {
+    return `arc-app-${tabId}`;
+}
+
+// The terminal tab of the pinned app whose frame holds the focus, else null: a cross-origin frame that holds the
+// focus is the document's activeElement.
+export function focusedAppTab(active: Pick<Element, "tagName" | "getAttribute"> | null): string | null {
+    return active?.tagName === "IFRAME" ? active.getAttribute("data-app-frame") : null;
 }
 
 export function startingApp(toolId: string, url: string, owned: boolean, now: number): AppState {

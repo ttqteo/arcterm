@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A pinned app's page reloads where it is with `Ctrl`+`R` or `F5` pressed in it, or its new Reload button, as in a
+  browser (Windows).
 - Setup → Tools suggests the terminal tools it finds on your computer (htop, ncdu, tig, bottom and about 20 more)
   under **Found on this machine**: **Add** puts one in the library and in Open a tool, the cross hides it. Mole (`mo`),
   the disk cleaner and app uninstaller, joins the library's System tools.
@@ -63,6 +65,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- `Ctrl`+`R` and `F5` never reload the whole arcterm window any more (Windows): outside a terminal `Ctrl`+`R` redraws
+  it, as `Cmd`+`R` does on a Mac, `Ctrl`+`Shift`+`R` redraws from inside one, and in a terminal `Ctrl`+`R` stays the
+  shell's reverse search. **Reload the window** in the command palette reloads arcterm when you mean it.
 - The Brief's Runs kind and Initiatives project filters sit on a line of chips under their head, each with its
   count; past six projects they fold into one menu in the head.
 - Claude Code lists arcterm's own skills as `arc:runs`, `arc:cockpit`, `arc:design`, `arc:initiatives`, `arc:notes`,

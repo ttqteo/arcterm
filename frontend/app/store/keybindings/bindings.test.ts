@@ -1140,7 +1140,7 @@ describe("leader reachability and the fullscreen chord", () => {
         expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
     });
 
-    it("Mod+R redraws the terminal holding the keys, else the focused agent's or terminal's, on a Mac only", () => {
+    it("Mod+R redraws the terminal holding the keys, else the focused agent's or terminal's", () => {
         const m = {
             ...stubModel("t1"),
             agentsAtom: atom([{ id: "a1", blockId: "ba" }]),
@@ -1159,7 +1159,25 @@ describe("leader reachability and the fullscreen chord", () => {
         expect(vi.mocked(redrawTerminal).mock.calls).toEqual([["bt"], ["bp"]]);
         setPlatform("win32");
         try {
-            expect(b.when!(inTerm)).toBe(false); // Ctrl+R stays the shell's reverse search
+            expect(b.when!(inTerm)).toBe(false); // Ctrl+R in the terminal stays the shell's reverse search
+            expect(b.when!({ ...inTerm, editable: false })).toBe(true); // outside one it redraws, not reloads
+        } finally {
+            setPlatform("darwin");
+        }
+    });
+
+    it("Ctrl+Shift+R redraws from inside the terminal too, on Windows only", () => {
+        const m = { ...stubModel("t1"), agentsAtom: atom([]), terminalsAtom: atom([{ id: "t1", blockId: "bt" }]) };
+        const b = buildAgentBindings(m).find((x) => x.id === "agent:redraw-shift")!;
+        expect(b.keys).toBe("Mod:Shift:r");
+        expect(b.when!(inTerm)).toBe(false); // a Mac has ⌘R in the terminal
+        setPlatform("win32");
+        try {
+            expect(b.when!(inTerm)).toBe(true);
+            expect(b.when!({ ...inTerm, modalOpen: true })).toBe(false);
+            vi.mocked(redrawTerminal).mockClear();
+            b.run(inTerm);
+            expect(vi.mocked(redrawTerminal).mock.calls).toEqual([["bt"]]);
         } finally {
             setPlatform("darwin");
         }

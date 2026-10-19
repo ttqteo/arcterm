@@ -3,11 +3,11 @@
 //
 // A pinned app's page, shown on the Agent surface in place of its (still mounted, hidden) terminal: the page in a frame
 // once it answers, a waiting card before. Its header is the terminal's (TerminalPaneHead: Page | Log, Back, Forward,
-// Home, Open in browser, Stop). What it shows is appmodel.ts's; the state is appstore.ts's.
+// Reload, Home, Open in browser, Stop). What it shows is appmodel.ts's; the state is appstore.ts's.
 
 import { useAtomValue } from "jotai";
 import { useEffect, useState } from "react";
-import { appShows, appWaitLine, type AppState } from "./appmodel";
+import { appFrameName, appShows, appWaitLine, type AppState } from "./appmodel";
 import { setAppView } from "./appstore";
 import { toolsStatusAtom } from "./toolsstore";
 
@@ -32,6 +32,7 @@ export function AppPane({ tabId, state }: { tabId: string; state: AppState }) {
             <iframe
                 key={state.reloads}
                 data-app-frame={tabId}
+                name={appFrameName(tabId)}
                 src={state.url}
                 title={name}
                 allow="clipboard-read; clipboard-write"

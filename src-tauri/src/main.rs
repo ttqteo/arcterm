@@ -8,6 +8,7 @@ mod init;
 mod macwindow;
 mod commands;
 mod notify;
+mod pagekeys;
 mod paths;
 mod shellenv;
 mod tray;
@@ -358,6 +359,7 @@ fn main() {
             commands::open_external,
             commands::reveal_path,
             canvas::capture_webview,
+            pagekeys::reload_app_frame,
             notify::notify_os,
             macwindow::set_folded_chrome,
             macwindow::redirect_minimize,
@@ -389,6 +391,7 @@ fn main() {
             if let Some(w) = app.get_webview_window("main") {
                 macwindow::show_in_mission_control(&w);
                 winframe::restore_and_track(&w);
+                pagekeys::watch(&w);
                 #[cfg(windows)]
                 foreground::watch_taskbar(&w);
             }

@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Reload keys (Windows), in the dev app after a restart of `task dev` (the host changed): open a pinned
+  app, move to another page in it, click in it and press `Ctrl`+`R`: the same page reloads, arcterm does not; its
+  header's Reload does the same. In a terminal `Ctrl`+`R` opens the shell's reverse search; on the sidebar it redraws
+  the focused terminal; `Ctrl`+`Shift`+`R` redraws from inside one; `F5` anywhere never reloads arcterm; the palette's
+  **Reload the window** does. `src-tauri/src/pagekeys.rs`, commit "fix(keys): Ctrl+R reloads a pinned app's page".
 - [ ] (arcterm) Found on this machine: after rebuilding wavesrv (`task build:backend:quickdev:windows`, then restart
   the dev app) or the next install, open Setup → Tools: **mole** sits under System reading installed (`mo` from
   `%LOCALAPPDATA%\Programs\mole-cli`), and any of the detected TUIs on PATH (htop, ncdu, tig, btm…) list first under

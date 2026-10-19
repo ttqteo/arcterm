@@ -8,9 +8,13 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import * as WOS from "@/app/store/wos";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { atom, type PrimitiveAtom } from "jotai";
 import {
     afterProbe,
+    appFrameName,
+    focusedAppTab,
     APP_PROBE_INTERVAL_MS,
     APP_START_TIMEOUT_MS,
     startingApp,
@@ -154,6 +158,34 @@ export function setAppView(tabId: string, view: AppView): void {
 // Home: the app's own url, loaded afresh, on its page
 export function homeApp(tabId: string): void {
     update(tabId, (s) => ({ ...s, reloads: s.reloads + 1, view: "page" }));
+}
+
+// Reload: the page where it is, as a browser's reload. The cockpit cannot reach into the cross-origin frame, so the
+// host runs its location.reload() (pagekeys.rs); where it cannot (a Mac, the browser app), Home's start page stands in.
+export async function reloadAppPage(tabId: string): Promise<void> {
+    const reloaded = await invoke<boolean>("reload_app_frame", { name: appFrameName(tabId) }).catch((e) => {
+        console.error("reloading the app's page failed", e);
+        return false;
+    });
+    if (!reloaded) {
+        homeApp(tabId);
+    }
+}
+
+// emitted by the host on Ctrl+R, Ctrl+Shift+R or F5 (pagekeys.rs), which no longer reload the whole cockpit
+export const PAGE_RELOAD_KEY_EVENT = "page-reload-key";
+
+// A pinned app's page is a cross-origin frame, so the keys pressed in it never reach the cockpit's keybindings: the
+// host hears them for it. With the app's frame holding the focus they reload its page; elsewhere the cockpit's own
+// binding answers them (agent:redraw), or the terminal does.
+export function setupPageReloadKey(): () => void {
+    const unlisten = listen(PAGE_RELOAD_KEY_EVENT, () => {
+        const tabId = focusedAppTab(document.activeElement);
+        if (tabId != null) {
+            void reloadAppPage(tabId);
+        }
+    });
+    return () => void unlisten.then((off) => off());
 }
 
 // Back and Forward walk the window's history, which a frame's navigations join. arcterm itself never pushes an entry,

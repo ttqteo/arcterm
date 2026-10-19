@@ -1137,6 +1137,14 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         return clickThrough("[data-doc-review-send]");
     };
     const focusId = () => globalStore.get(model.focusIdAtom);
+    const redrawFocused = () => {
+        const id = focusId();
+        const items = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
+        const blockId = focusedTerminalBlockId() ?? items.find((a) => a.id === id)?.blockId;
+        if (blockId != null) {
+            redrawTerminal(blockId);
+        }
+    };
     return [
         {
             id: "subagent:back",
@@ -1462,22 +1470,25 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             run: () => globalStore.set(terminalDockFoldedAtom, !globalStore.get(terminalDockFoldedAtom)),
         },
         {
-            // The header menu's Redraw on a key, from inside the terminal too: the terminal holding the keys (the
-            // panel's, or the agent's), else the focused agent's. ⌘R on a Mac only: on Windows Mod+R is Ctrl+R, the
-            // shell's reverse search.
+            // The header menu's Redraw on a key: the terminal holding the keys (the panel's, or the agent's), else the
+            // focused agent's. ⌘R from inside the terminal too; on Windows Ctrl+R in a terminal is the shell's reverse
+            // search, so there it redraws only from outside one, and Ctrl+Shift+R (below) from anywhere. In a pinned
+            // app's page Ctrl+R reloads the page instead (pagereload.ts).
             id: "agent:redraw",
             keys: "Mod:r",
             group: "Agent",
             label: "Redraw the terminal",
-            when: (ctx) => isMacOS() && ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
-            run: () => {
-                const id = focusId();
-                const items = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
-                const blockId = focusedTerminalBlockId() ?? items.find((a) => a.id === id)?.blockId;
-                if (blockId != null) {
-                    redrawTerminal(blockId);
-                }
-            },
+            when: (ctx) =>
+                (isMacOS() || !ctx.editable) && ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
+            run: () => redrawFocused(),
+        },
+        {
+            id: "agent:redraw-shift",
+            keys: "Mod:Shift:r",
+            group: "Agent",
+            label: "Redraw the terminal",
+            when: (ctx) => !isMacOS() && ctx.surface === "agent" && !ctx.modalOpen && centerAtRest(),
+            run: () => redrawFocused(),
         },
         {
             id: "agent:return-nav",

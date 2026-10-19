@@ -4,20 +4,32 @@
 // The slim header over a terminal shown in the centre (AgentSurface renders it where an agent has AgentHeader): its icon
 // and name, the folder it runs in, its project, the quick way back to the agent in view before it (Ctrl Tab), and three
 // buttons: open it beside that agent (a split), move it to the panel under the agent, close it. A pinned app's terminal
-// adds Page | Log, Back, Forward, Home and Open in the browser, and its close stops the server arcterm started (appmodel.ts). What it
+// adds Page | Log, Back, Forward, Reload (Windows), Home and Open in the browser, and its close stops the server arcterm started (appmodel.ts). What it
 // says is terminalpanehead.ts's; this only reads the atoms and runs the buttons.
 
 import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
+import { isWindows } from "@/util/platformutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ArrowLeft, ArrowRight, Columns2, ExternalLink, GitBranch, House, PanelBottom, Square, X } from "lucide-react";
+import {
+    ArrowLeft,
+    ArrowRight,
+    Columns2,
+    ExternalLink,
+    GitBranch,
+    House,
+    PanelBottom,
+    RotateCw,
+    Square,
+    X,
+} from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import { appCloseTitle, appFailLine, isAppTool, type AppView } from "./appmodel";
-import { adoptApp, appHistory, appStatesAtom, homeApp, setAppView } from "./appstore";
+import { adoptApp, appHistory, appStatesAtom, homeApp, reloadAppPage, setAppView } from "./appstore";
 import { agentGridAtom, canOpenInSplit, currentGrid, dropAgentOnGrid } from "./gridstore";
 import { projectsAtom } from "./projectsstore";
 import { moveToDock } from "./railstore";
@@ -189,6 +201,20 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
                     >
                         <ArrowRight size={14} aria-hidden />
                     </button>
+                    {isWindows() ? (
+                        // the host reloads the frame where it is (pagekeys.rs), which a Mac's webview cannot yet
+                        <button
+                            type="button"
+                            data-app-reload
+                            aria-label="Reload the page (Ctrl+R in it)"
+                            title="Reload the page (Ctrl+R in it)"
+                            disabled={!onPage}
+                            onClick={() => void reloadAppPage(terminal.id)}
+                            className={BUTTON}
+                        >
+                            <RotateCw size={14} aria-hidden />
+                        </button>
+                    ) : null}
                     <button
                         type="button"
                         data-app-home

@@ -71,14 +71,17 @@ export const GOTO_GROUP = "Go to";
 export interface ExtraDeps {
     openNewProject: () => void;
     openToolPicker: () => void;
+    reloadWindow: () => void;
 }
 
 // The cockpit actions that have no chord to derive from. A drill opens a picker rather than
-// acting, so there is one "Switch theme…" row instead of one row per theme.
+// acting, so there is one "Switch theme…" row instead of one row per theme. Reload the window has no chord on
+// purpose: Ctrl+R and F5 reload a pinned app's page, or redraw, never the whole cockpit (pagekeys.rs).
 export function buildExtraItems(deps: ExtraDeps): CommandItem[] {
     return [
         { key: "cmd:new-project", title: "New project", group: "Global", run: deps.openNewProject },
         { key: "cmd:open-tool", title: "Open a tool…", group: "Global", run: deps.openToolPicker },
+        { key: "cmd:reload-window", title: "Reload the window", group: "Global", run: deps.reloadWindow },
         { key: "cmd:theme", title: "Switch theme…", group: "Appearance", drill: "theme", run: () => {} },
     ];
 }
