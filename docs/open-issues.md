@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A Claude agent in default permission mode asked to run a slow command (`sleep 30` in Bash): its row
+  reads asking at the permission prompt, then working the moment you press Enter or 1, not after the 30 s. Pressing
+  Esc there instead ends at idle. `pkg/wshrpc/wshserver/wshserver_promptanswer.go`.
 - [ ] (arcterm) Agent panel: open three files from Files (or Files changed): three tabs, the newest on show; click the
   first, it shows again; `×` on the middle one closes it and the one on show stays. Open six: five tabs, the oldest
   gone. With many open on a narrow panel the names shorten and the strip scrolls, the file on show in sight. In a

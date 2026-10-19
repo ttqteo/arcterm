@@ -54,7 +54,11 @@ func (ws *WshServer) ControllerInputCommand(ctx context.Context, data wshrpc.Com
 		}
 		inputUnion.InputData = inputBuf[:nw]
 	}
-	return blockcontroller.SendInput(data.BlockId, inputUnion)
+	if err := blockcontroller.SendInput(data.BlockId, inputUnion); err != nil {
+		return err
+	}
+	noteBlockInput(ctx, data.BlockId, inputUnion.InputData)
+	return nil
 }
 
 func (ws *WshServer) ControllerAppendOutputCommand(ctx context.Context, data wshrpc.CommandControllerAppendOutputData) error {

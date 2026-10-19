@@ -73,6 +73,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent you let run a command from its permission prompt reads working again as soon as you answer, instead of
+  asking until the command finished.
 - An agent whose turn ended no longer reads as working with nothing running in the background: a background command
   arcterm refused before it started, or a command whose output only quoted one, kept the row's dot green and held its
   Close back.
