@@ -25,7 +25,14 @@ import {
     buildJarvisTourBindings,
     buildListNavBindings,
 } from "./bindings";
-import { deriveKeyContext, focusClaimed, initKeybindingDispatcher, isEditableTarget, ownsKeys } from "./dispatcher";
+import {
+    controlOwnsKey,
+    deriveKeyContext,
+    focusClaimed,
+    initKeybindingDispatcher,
+    isEditableTarget,
+    ownsKeys,
+} from "./dispatcher";
 import { listNavAtom } from "./listnav";
 import { matchBinding } from "./matcher";
 import { bindingsAtom } from "./store";
@@ -545,5 +552,117 @@ describe("a Vietnamese input method rewriting keys outside a field", () => {
         send("keydown", "đ");
         expect(ran).toEqual([]);
         unbind();
+    });
+});
+
+describe("a control reached with Tab keeps Enter and Space", () => {
+    const button = () => Object.assign(el("BUTTON"), { disabled: false, hasAttribute: () => false });
+    const key = (k: string, mods: Partial<WaveKeyboardEvent> = {}) =>
+        ({ key: k, code: "", type: "keydown", ...mods }) as WaveKeyboardEvent;
+
+    it("is the tabbed-to button's own Enter and Space", () => {
+        const b = button();
+        expect(controlOwnsKey(key("Enter"), b, b)).toBe(true);
+        expect(controlOwnsKey(key(" "), b, b)).toBe(true);
+    });
+
+    it("is not when focus came by a click, with a modifier, for another key, or on a non-control", () => {
+        const b = button();
+        expect(controlOwnsKey(key("Enter"), b, null)).toBe(false);
+        expect(controlOwnsKey(key("Enter", { shift: true }), b, b)).toBe(false);
+        expect(controlOwnsKey(key("j"), b, b)).toBe(false);
+        const div = el("DIV");
+        expect(controlOwnsKey(key("Enter"), div, div)).toBe(false);
+        const off = Object.assign(el("BUTTON"), { disabled: true });
+        expect(controlOwnsKey(key("Enter"), off, off)).toBe(false);
+    });
+
+    // the regression: Tab to a Brief button, press Enter, and list:activate opened the cursor row instead
+    describe("through the dispatcher", () => {
+        afterEach(() => {
+            globalStore.set(listNavAtom, null);
+            globalStore.set(bindingsAtom, []);
+            vi.unstubAllGlobals();
+        });
+
+        function setup() {
+            const listeners = new Map<string, (e: unknown) => void>();
+            vi.stubGlobal("window", {
+                addEventListener: (t: string, f: (e: unknown) => void) => listeners.set(t, f),
+                removeEventListener: () => {},
+            });
+            const doc = { activeElement: null as Element | null };
+            vi.stubGlobal("document", doc);
+            const model = {
+                surfaceAtom: atom<SurfaceKey>("jarvis"),
+                paletteOpenAtom: atom(false),
+                newAgentOpenAtom: atom(false),
+                newRunOpenAtom: atom(false),
+                newInitiativeOpenAtom: atom(false),
+                newProjectOpenAtom: atom(false),
+                launcherAtom: atom<LauncherKind | null>(null),
+                focusIdAtom: atom<string | undefined>(undefined),
+            } as unknown as AgentsViewModel;
+            const activate = vi.fn();
+            globalStore.set(listNavAtom, {
+                surface: "jarvis",
+                navigableIds: ["a"],
+                cursorId: "a",
+                setCursor() {},
+                activate,
+            });
+            globalStore.set(bindingsAtom, buildListNavBindings(model));
+            const unbind = initKeybindingDispatcher(model);
+            const press = (k: string) => {
+                const e = { key: k, code: "", type: "keydown", preventDefault: vi.fn(), stopImmediatePropagation() {} };
+                listeners.get("keydown")!(e);
+                return e.preventDefault.mock.calls.length > 0;
+            };
+            const focus = (target: Element) => {
+                doc.activeElement = target;
+                listeners.get("focusin")!({ target });
+            };
+            const pointer = () => listeners.get("pointerdown")!({});
+            return { press, focus, pointer, activate, unbind };
+        }
+
+        it("leaves Enter to a button focused with Tab", () => {
+            const { press, focus, activate, unbind } = setup();
+            const b = button();
+            press("Tab");
+            focus(b);
+            expect(press("Enter")).toBe(false);
+            expect(activate).not.toHaveBeenCalled();
+            unbind();
+        });
+
+        it("still opens the cursor row when the button was focused by a click", () => {
+            const { press, focus, pointer, activate, unbind } = setup();
+            pointer();
+            focus(button());
+            expect(press("Enter")).toBe(true);
+            expect(activate).toHaveBeenCalledOnce();
+            unbind();
+        });
+
+        it("hands Enter back to the list once the tabbed-to button is clicked", () => {
+            const { press, focus, pointer, activate, unbind } = setup();
+            press("Tab");
+            focus(button());
+            pointer();
+            expect(press("Enter")).toBe(true);
+            expect(activate).toHaveBeenCalledOnce();
+            unbind();
+        });
+
+        it("still opens the cursor row once a key other than Tab moved focus", () => {
+            const { press, focus, activate, unbind } = setup();
+            press("Tab");
+            press("j");
+            focus(button());
+            expect(press("Enter")).toBe(true);
+            expect(activate).toHaveBeenCalledOnce();
+            unbind();
+        });
     });
 });
