@@ -66,9 +66,7 @@ export function runSettingsPanelState(
 
 // The machine a run's lead drives. An empty orchestration predates the control slice 5c deleted, where the
 // runtime decided and only pi led an engine run; pkg/jarvis.IsEngineRun applies this same rule server-side.
-// Both the sheet's receipt and its face read it here, because a receipt saying engine over a face saying
-// adaptive is the run contradicting itself on one screen.
-export function runMachine(run: Run): string {
+function runMachine(run: Run): string {
     return run.orchestration || (run.runtime === "pi" ? "engine" : "adaptive");
 }
 

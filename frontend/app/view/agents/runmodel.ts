@@ -1,9 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Pure derivations for the Channels Runs view: map a Run/RunPhase (backend types, mirrored via WOS)
-// to the view's status pills, phase-node states, the current/gated phase, and the per-channel default
-// view + run selection. No React, no jotai — unit-tested in runmodel.test.ts.
+// Pure derivations for run views: map a Run/RunPhase (backend types, mirrored via WOS) to status
+// pills, the current/gated phase, its workers, and the per-channel run selection.
+// No React, no jotai — unit-tested in runmodel.test.ts.
 
 import type { AgentVM } from "./agentsviewmodel";
 import { finalStageActivity } from "./finalstage";
@@ -134,32 +134,12 @@ export function runRuntimeView(run: Run, harnesses: HarnessInfo[]): RunRuntimeVi
     return { runtime: h.runtime, label: h.label, legacy: false, valid: true };
 }
 
-export type PhaseTone = "pending" | "running" | "blocked" | "done" | "failed" | "skipped";
-
-export function phaseStateView(state: string): { icon: string; label: string; tone: PhaseTone } {
-    switch (state) {
-        case "running":
-            return { icon: "●", label: "running", tone: "running" };
-        case "done":
-            return { icon: "✓", label: "done", tone: "done" };
-        case "blocked":
-            return { icon: "!", label: "blocked", tone: "blocked" };
-        case "failed":
-            return { icon: "✕", label: "failed", tone: "failed" };
-        case "skipped":
-            return { icon: "–", label: "skipped", tone: "skipped" };
-        default:
-            return { icon: "○", label: "pending", tone: "pending" };
-    }
-}
-
 // The gated phase awaiting approval — non-null only when the run is paused at a review gate. The engine
 // halts after a gated phase completes (that phase is `done`, its successor still `pending`).
 //
 // The attention list's copy of this rule moved server-side (pkg/jarvis/attention.go reviewGateIdx). This
-// one stays because the run-detail view needs it per-phase, not per-list: currentPhaseIndex focuses the
-// gated phase and phaseThread draws that phase's gate card. Both take a Run and return view state, so
-// neither can read the polled attention atom.
+// one stays because currentPhaseIndex needs it per-run, not per-list, so it cannot read the polled
+// attention atom.
 export function reviewGate(run: Run): { phaseIdx: number } | null {
     if (run.status !== "awaiting-review") {
         return null;
@@ -211,10 +191,6 @@ const TERMINAL = new Set(["done", "failed", "cancelled"]);
 
 export function isTerminal(status: string): boolean {
     return TERMINAL.has(status);
-}
-
-export function defaultView(runsLen: number): "runs" | "chat" {
-    return runsLen > 0 ? "runs" : "chat";
 }
 
 // Most-recent non-terminal run, so the user lands on live work. Undefined when nothing is live — a
@@ -293,54 +269,6 @@ export function cancelSurvivors(run: Run, agents: AgentVM[]): AgentVM[] {
     return run.status === "cancelled" ? liveWorkers(run, agents) : [];
 }
 
-export interface PhaseThread {
-    showAsk: boolean;
-    askKind: "clarify" | "fork" | null;
-    askAgent?: AgentVM;
-    showBoundary: boolean;
-    showWorkers: boolean;
-    showGate: boolean;
-    showStarting: boolean;
-    showBlocked: boolean;
-    showShip: boolean;
-}
-
-// The recorded worker tab ids for a phase (the "tab:" orefs, unprefixed).
-export function recordedWorkerTabs(phase: RunPhase): string[] {
-    return (phase.workerorefs ?? []).filter((o) => o.startsWith("tab:")).map((o) => o.slice(4));
-}
-
-// Which threaded elements a phase renders. Ask (live worker awaiting the human) is a clarify on a
-// brainstorm phase, a fork otherwise, and it suppresses the plain worker rows. A recorded worker with no
-// status-bearing roster row is either *starting* (its tab still exists — spawned, not yet reported) or
-// *gone* (its tab no longer exists → the "worker exited" blocked card). liveTabIds is the set of tab ids
-// that currently exist as sessions (roster + plain terminals); pass it to make that distinction — without
-// it, a recorded-but-unreported worker reads as gone. Ship = the last phase done on a finished run.
-export function phaseThread(run: Run, idx: number, agents: AgentVM[], liveTabIds?: Set<string>): PhaseThread {
-    const phases = run.phases ?? [];
-    const phase = phases[idx];
-    const workers = phaseWorkers(phase, agents);
-    const asker = workers.find((w) => w.state === "asking");
-    const startedFresh = phase.state !== "pending" && phase.state !== "skipped";
-    const recorded = recordedWorkerTabs(phase);
-    const unreported = recorded.length > 0 && workers.length === 0;
-    const starting = unreported && liveTabIds != null && recorded.some((id) => liveTabIds.has(id));
-    const recordedButGone = unreported && !starting;
-    return {
-        showAsk: !!asker,
-        askKind: asker ? (phase.kind === "brainstorm" ? "clarify" : "fork") : null,
-        askAgent: asker,
-        showBoundary: !!phase.freshctx && startedFresh,
-        showWorkers: phase.state === "running" && workers.length > 0 && !asker,
-        showGate: reviewGate(run)?.phaseIdx === idx,
-        showStarting: phase.state === "running" && starting,
-        // failed: the phase's worker stopped (the app restarted, or its process exited) before completing it
-        showBlocked:
-            phase.state === "blocked" || phase.state === "failed" || (phase.state === "running" && recordedButGone),
-        showShip: idx === phases.length - 1 && phase.state === "done" && run.status === "done",
-    };
-}
-
 // the runtimes whose worker reopens its own session on Resume; an empty runtime is a legacy claude run
 const RESUMABLE_RUNTIMES = ["", "claude", "pi"];
 
@@ -372,17 +300,6 @@ export function resolveActiveRunId(visibleRuns: Run[], current: string | undefin
         return current;
     }
     return defaultRunId(visibleRuns);
-}
-
-// One tone per phase, for a run tab's compact progress dots.
-export function phaseProgressDots(run: Run): PhaseTone[] {
-    return (run.phases ?? []).map((p) => phaseStateView(p.state).tone);
-}
-
-// Stable per-phase ids for the shared no-cascade entrance guard: a newly-appended phase animates in,
-// a run switch/first mount is silent (the guard treats a new scope id as already-present).
-export function phaseRailIds(run: Run): string[] {
-    return (run.phases ?? []).map((_, i) => `p${i}`);
 }
 
 // The lead worker of the run's current phase (orchestrator: the single long-lived lead; pipeline: the

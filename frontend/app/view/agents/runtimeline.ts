@@ -137,7 +137,7 @@ const KIND_TONE: Record<string, string> = {
     "plan-reviewed": "text-muted",
 };
 
-export function eventKindTitle(kind: string): string {
+function eventKindTitle(kind: string): string {
     return KIND_TITLE[kind] ?? kind;
 }
 
@@ -148,7 +148,7 @@ const STAGE_ROLE_TITLE: Record<string, string> = {
 };
 
 // PLAN_REVIEW_LENS_TITLE names each plan reviewer by its lens: the one map the graph, timeline and tree read.
-export const PLAN_REVIEW_LENS_TITLE: Record<string, string> = {
+const PLAN_REVIEW_LENS_TITLE: Record<string, string> = {
     full: "Full review",
     spec: "Spec coverage",
     order: "Task order and files",

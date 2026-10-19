@@ -7,7 +7,6 @@ import {
     draftSeedKey,
     parallelismInvalid,
     runAutonomous,
-    runMachine,
     runSettingsDraft,
     runSettingsPanelState,
     settingsChangePayload,
@@ -75,24 +74,20 @@ describe("sheetFace", () => {
     });
 });
 
-describe("runMachine", () => {
+describe("sheetFace's machine", () => {
+    const adaptive = { kind: "readonly", reason: "an adaptive lead runs its own subagents" };
+
     it("takes a stored orchestration at its word", () => {
-        expect(runMachine(engineRun({ orchestration: "engine" }))).toBe("engine");
-        expect(runMachine(engineRun({ orchestration: "adaptive" }))).toBe("adaptive");
+        expect(sheetFace(engineRun({ orchestration: "engine" }))).toEqual({ kind: "editable" });
+        expect(sheetFace(engineRun({ orchestration: "adaptive" }))).toEqual(adaptive);
     });
 
     // a run launched before slice 5c added the control names no machine; the runtime decided then, and
-    // only pi led an engine run. Defaulting these to engine would label a stored adaptive run as the one
-    // thing it is not, in the same sheet whose settings panel refuses it for being adaptive.
+    // only pi led an engine run. Defaulting these to engine would offer engine settings to a stored
+    // adaptive run.
     it("reads a pre-control run from the runtime that led it", () => {
-        expect(runMachine(engineRun({ orchestration: "", runtime: "pi" }))).toBe("engine");
-        expect(runMachine(engineRun({ orchestration: "", runtime: "claude" }))).toBe("adaptive");
-    });
-
-    it("agrees with the face the same run gets", () => {
-        const stored = engineRun({ orchestration: "", runtime: "claude" });
-        expect(runMachine(stored)).toBe("adaptive");
-        expect(sheetFace(stored)).toEqual({ kind: "readonly", reason: "an adaptive lead runs its own subagents" });
+        expect(sheetFace(engineRun({ orchestration: "", runtime: "pi" }))).toEqual({ kind: "editable" });
+        expect(sheetFace(engineRun({ orchestration: "", runtime: "claude" }))).toEqual(adaptive);
     });
 });
 

@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { eventKindTitle, eventText, eventTitle, planReviewLensTitle, toneFor } from "./runtimeline";
+import { eventText, eventTitle, planReviewLensTitle, toneFor } from "./runtimeline";
+
+const kindTitle = (kind: string) => eventTitle({ id: "1", ts: 1, kind } as RunEvent);
 
 describe("toneFor", () => {
     it("stays within the existing tone utilities and falls back to muted", () => {
@@ -24,24 +26,24 @@ describe("toneFor", () => {
     });
 });
 
-describe("eventKindTitle", () => {
+describe("eventTitle by kind", () => {
     it("names the queue and wake rows", () => {
-        expect(eventKindTitle("task-forwarded")).toBe("Handed to you");
-        expect(eventKindTitle("lead-woken")).toBe("Lead woken");
-        expect(eventKindTitle("lead-launched")).toBe("Lead started");
-        expect(eventKindTitle("lead-wake-failed")).toBe("Lead wake failed");
-        expect(eventKindTitle("lead-revived")).toBe("Lead taking wakes again");
-        expect(eventKindTitle("lead-exited")).toBe("Lead exited");
-        expect(eventKindTitle("worker-exited")).toBe("Worker exited");
-        expect(eventKindTitle("interrupted")).toBe("Interrupted by restart");
-        expect(eventKindTitle("worker-resumed")).toBe("Worker resumed");
-        expect(eventKindTitle("task-told")).toBe("You told a worker");
-        expect(eventKindTitle("task-suspect")).toBe("Task may be stuck");
+        expect(kindTitle("task-forwarded")).toBe("Handed to you");
+        expect(kindTitle("lead-woken")).toBe("Lead woken");
+        expect(kindTitle("lead-launched")).toBe("Lead started");
+        expect(kindTitle("lead-wake-failed")).toBe("Lead wake failed");
+        expect(kindTitle("lead-revived")).toBe("Lead taking wakes again");
+        expect(kindTitle("lead-exited")).toBe("Lead exited");
+        expect(kindTitle("worker-exited")).toBe("Worker exited");
+        expect(kindTitle("interrupted")).toBe("Interrupted by restart");
+        expect(kindTitle("worker-resumed")).toBe("Worker resumed");
+        expect(kindTitle("task-told")).toBe("You told a worker");
+        expect(kindTitle("task-suspect")).toBe("Task may be stuck");
     });
 
     it("titles every kind the engine writes, never the raw kind", () => {
         for (const kind of ["land-held", "landed", "stage-session-started", "plan-reviewed"]) {
-            expect(eventKindTitle(kind)).not.toBe(kind);
+            expect(kindTitle(kind)).not.toBe(kind);
         }
     });
 });
@@ -131,9 +133,9 @@ describe("eventText: rows with an optional tail", () => {
 
 describe("verify rows", () => {
     it("names and tones the merge-point Verify rows", () => {
-        expect(eventKindTitle("task-verify-started")).toBe("Verify started");
-        expect(eventKindTitle("task-verify-passed")).toBe("Verify passed");
-        expect(eventKindTitle("task-verify-failed")).toBe("Verify failed");
+        expect(kindTitle("task-verify-started")).toBe("Verify started");
+        expect(kindTitle("task-verify-passed")).toBe("Verify passed");
+        expect(kindTitle("task-verify-failed")).toBe("Verify failed");
         expect(toneFor("task-verify-started")).toBe("text-muted");
         expect(toneFor("task-verify-passed")).toBe("text-success");
         expect(toneFor("task-verify-failed")).toBe("text-warning");

@@ -7,17 +7,12 @@ import {
     currentPhaseIndex,
     dagProgressLabel,
     defaultRunId,
-    defaultView,
     finishedRunLabel,
     isOrchestrator,
     isTerminal,
     leadAsker,
     leadWorker,
     liveWorkers,
-    phaseStateView,
-    phaseProgressDots,
-    phaseRailIds,
-    phaseThread,
     phaseWorkers,
     planDirty,
     resolveActiveRunId,
@@ -265,15 +260,6 @@ describe("runComplete", () => {
     });
 });
 
-describe("phaseStateView", () => {
-    it("maps running", () => {
-        expect(phaseStateView("running")).toMatchObject({ label: "running", tone: "running" });
-    });
-    it("maps unknown to pending", () => {
-        expect(phaseStateView("zzz").tone).toBe("pending");
-    });
-});
-
 describe("currentPhaseIndex", () => {
     it("returns the first running phase", () => {
         expect(currentPhaseIndex(run({ phases: [phase({ state: "done" }), phase({ state: "running" }), phase()] }))).toBe(1);
@@ -332,14 +318,10 @@ describe("reviewGate edge cases", () => {
     });
 });
 
-describe("isTerminal / defaultView / defaultRunId", () => {
+describe("isTerminal / defaultRunId", () => {
     it("treats done/cancelled/failed as terminal", () => {
         expect(isTerminal("done")).toBe(true);
         expect(isTerminal("executing")).toBe(false);
-    });
-    it("defaultView is runs when there are runs", () => {
-        expect(defaultView(1)).toBe("runs");
-        expect(defaultView(0)).toBe("chat");
     });
     it("defaultRunId prefers the most-recent non-terminal run", () => {
         const runs = [run({ id: "a", createdts: 1, status: "done" }), run({ id: "b", createdts: 2, status: "executing" })];
@@ -380,134 +362,6 @@ describe("phaseWorkers", () => {
     });
 });
 
-describe("phaseThread", () => {
-    const base = (over: Partial<Run>) =>
-        ({ id: "r", goal: "g", workspaceid: "w", projectpath: "/p", status: "executing", phases: [], createdts: 1, ...over }) as Run;
-
-    it("shows an ask (fork on execute) when a worker is asking", () => {
-        const run = base({ phases: [{ kind: "execute", state: "running", workerorefs: ["tab:t1"] }] });
-        const agents = [agent({ id: "t1", state: "asking" })];
-        const t = phaseThread(run, 0, agents);
-        expect(t.showAsk).toBe(true);
-        expect(t.askKind).toBe("fork");
-        expect(t.askAgent?.id).toBe("t1");
-        expect(t.showWorkers).toBe(false); // suppressed while asking
-    });
-    it("labels a brainstorm-phase ask as clarify", () => {
-        const run = base({ phases: [{ kind: "brainstorm", state: "running", workerorefs: ["tab:t1"] }] });
-        const agents = [agent({ id: "t1", state: "asking" })];
-        expect(phaseThread(run, 0, agents).askKind).toBe("clarify");
-    });
-    it("shows execute worker rows when running and not asking", () => {
-        const run = base({ phases: [{ kind: "execute", state: "running", workerorefs: ["tab:t1"] }] });
-        const agents = [agent({ id: "t1", state: "working" })];
-        const t = phaseThread(run, 0, agents);
-        expect(t.showWorkers).toBe(true);
-        expect(t.showAsk).toBe(false);
-    });
-    it("shows the context-clear boundary for a started freshctx phase", () => {
-        const run = base({ phases: [{ kind: "execute", state: "running", freshctx: true, workerorefs: ["tab:t1"] }] });
-        expect(phaseThread(run, 0, [agent({ id: "t1" })]).showBoundary).toBe(true);
-    });
-    it("does not show the boundary for a pending freshctx phase", () => {
-        const run = base({ phases: [{ kind: "execute", state: "pending", freshctx: true }] });
-        expect(phaseThread(run, 0, []).showBoundary).toBe(false);
-    });
-    it("shows blocked when a running phase's recorded worker is gone", () => {
-        const run = base({ phases: [{ kind: "execute", state: "running", workerorefs: ["tab:gone"] }] });
-        expect(phaseThread(run, 0, []).showBlocked).toBe(true);
-    });
-    it("shows blocked for a failed phase: its worker stopped before completing it", () => {
-        const run = base({
-            status: "blocked",
-            phases: [
-                { kind: "execute", state: "failed", workerorefs: ["tab:t1"] },
-                { kind: "execute", state: "pending" },
-            ],
-        });
-        expect(phaseThread(run, 0, [], new Set(["t1"])).showBlocked).toBe(true);
-        expect(currentPhaseIndex(run)).toBe(0);
-    });
-    it("shows starting (not blocked) while a recorded worker's tab exists but has not reported status", () => {
-        const run = base({ phases: [{ kind: "execute", state: "running", workerorefs: ["tab:t1"] }] });
-        // t1 is a live session (spawned tab) but not yet in the status-bearing roster
-        const t = phaseThread(run, 0, [], new Set(["t1"]));
-        expect(t.showStarting).toBe(true);
-        expect(t.showBlocked).toBe(false);
-    });
-    it("shows blocked (not starting) when the recorded worker's tab no longer exists", () => {
-        const run = base({ phases: [{ kind: "execute", state: "running", workerorefs: ["tab:t1"] }] });
-        const t = phaseThread(run, 0, [], new Set());
-        expect(t.showBlocked).toBe(true);
-        expect(t.showStarting).toBe(false);
-    });
-    it("prefers the live worker over starting once it reports status", () => {
-        const run = base({ phases: [{ kind: "execute", state: "running", workerorefs: ["tab:t1"] }] });
-        const t = phaseThread(run, 0, [agent({ id: "t1", state: "working" })], new Set(["t1"]));
-        expect(t.showWorkers).toBe(true);
-        expect(t.showStarting).toBe(false);
-        expect(t.showBlocked).toBe(false);
-    });
-    it("shows the gate card only on the gated phase", () => {
-        const run = base({
-            status: "awaiting-review",
-            phases: [{ kind: "plan", gate: true, state: "done" }, { kind: "execute", state: "pending" }],
-        });
-        expect(phaseThread(run, 0, []).showGate).toBe(true);
-        expect(phaseThread(run, 1, []).showGate).toBe(false);
-    });
-    it("shows ship on the last phase when the run is done", () => {
-        const run = base({ status: "done", phases: [{ kind: "execute", state: "done" }] });
-        expect(phaseThread(run, 0, []).showShip).toBe(true);
-    });
-    it("shows ship only for the last phase, once done, of a done run", () => {
-        const twoDone: RunPhase[] = [
-            { kind: "execute", state: "done" },
-            { kind: "execute", state: "done" },
-        ];
-        expect(phaseThread(base({ status: "done", phases: twoDone }), 0, []).showShip).toBe(false);
-        expect(phaseThread(base({ status: "done", phases: twoDone }), 1, []).showShip).toBe(true);
-        const lastSkipped: RunPhase[] = [{ kind: "execute", state: "done" }, { kind: "execute", state: "skipped" }];
-        expect(phaseThread(base({ status: "done", phases: lastSkipped }), 1, []).showShip).toBe(false);
-        expect(phaseThread(base({ status: "executing", phases: twoDone }), 1, []).showShip).toBe(false);
-    });
-    it("draws no boundary for a skipped freshctx phase", () => {
-        const run = base({ phases: [{ kind: "execute", state: "skipped", freshctx: true }] });
-        expect(phaseThread(run, 0, []).showBoundary).toBe(false);
-    });
-    it("a running phase that recorded no worker is neither blocked nor starting", () => {
-        const run = base({ phases: [{ kind: "execute", state: "running" }] });
-        const t = phaseThread(run, 0, [], new Set(["t1"]));
-        expect(t.showBlocked).toBe(false);
-        expect(t.showStarting).toBe(false);
-        expect(t.showWorkers).toBe(false);
-    });
-    it("is starting when any one of several recorded tabs still exists", () => {
-        const run = base({ phases: [{ kind: "execute", state: "running", workerorefs: ["tab:t1", "tab:t2"] }] });
-        const t = phaseThread(run, 0, [], new Set(["t1"]));
-        expect(t.showStarting).toBe(true);
-        expect(t.showBlocked).toBe(false);
-    });
-    it("shows no worker rows for a phase that is not running", () => {
-        const run = base({ phases: [{ kind: "execute", state: "pending", workerorefs: ["tab:t1"] }] });
-        expect(phaseThread(run, 0, [agent({ id: "t1" })], new Set(["t1"])).showWorkers).toBe(false);
-    });
-    it("a phase that is not running is never starting, and only blocked or failed ones read as blocked", () => {
-        const failed = base({ phases: [{ kind: "execute", state: "failed", workerorefs: ["tab:t1"] }] });
-        const t = phaseThread(failed, 0, [], new Set(["t1"]));
-        expect(t.showStarting).toBe(false);
-        expect(t.showBlocked).toBe(true);
-        for (const state of ["done", "pending"] as const) {
-            const r = base({ phases: [{ kind: "execute", state, workerorefs: ["tab:gone"] }] });
-            expect(phaseThread(r, 0, [], new Set()).showBlocked).toBe(false);
-        }
-    });
-    it("a blocked phase reads as blocked even while a worker is live", () => {
-        const run = base({ phases: [{ kind: "execute", state: "blocked", workerorefs: ["tab:t1"] }] });
-        expect(phaseThread(run, 0, [agent({ id: "t1" })]).showBlocked).toBe(true);
-    });
-});
-
 describe("resolveActiveRunId", () => {
     it("keeps the current id when still visible", () => {
         expect(resolveActiveRunId([run({ id: "a" }), run({ id: "b" })], "b")).toBe("b");
@@ -517,25 +371,6 @@ describe("resolveActiveRunId", () => {
     });
     it("returns undefined when nothing is visible", () => {
         expect(resolveActiveRunId([], "b")).toBeUndefined();
-    });
-});
-
-describe("phaseProgressDots", () => {
-    it("maps each phase to its tone in order", () => {
-        const r = run({ phases: [phase({ state: "done" }), phase({ state: "running" }), phase({ state: "pending" })] });
-        expect(phaseProgressDots(r)).toEqual(["done", "running", "pending"]);
-    });
-    it("is empty for a run with no phases", () => {
-        expect(phaseProgressDots(run({ phases: [] }))).toEqual([]);
-    });
-});
-
-describe("phaseRailIds", () => {
-    it("returns one stable id per phase", () => {
-        expect(phaseRailIds(run({ phases: [phase(), phase(), phase()] }))).toEqual(["p0", "p1", "p2"]);
-    });
-    it("is empty for no phases", () => {
-        expect(phaseRailIds(run({ phases: [] }))).toEqual([]);
     });
 });
 

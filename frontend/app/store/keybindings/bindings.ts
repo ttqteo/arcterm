@@ -669,10 +669,10 @@ export function buildListNavBindings(model: AgentsViewModel): Binding[] {
     ];
 }
 
-// Run-body ask keys: the ask card renders numbered (1-9) answer badges (channelsprimitives AskRow), but
-// the digit handler used to be cockpit-only. These bindings make the badges functional wherever the run
-// body lives — now the merged Jarvis Stage — targeting the selected run's asking worker (published live
-// via askAgentRef). Reuses answerDigitTarget + model.toggleAnswer/submitAnswer — no duplicated logic.
+// Run sheet ask keys: the ask card renders numbered (1-9) answer badges (channelsprimitives AskRow), but
+// the digit handler used to be cockpit-only. These bindings make the badges functional on the Brief's run
+// sheet, targeting the shown run's asking lead (published live via askAgentRef). Reuses answerDigitTarget +
+// model.toggleAnswer/submitAnswer — no duplicated logic.
 export function buildChannelsAskBindings(
     model: AgentsViewModel,
     askAgentRef: MutableRefObject<AgentVM | undefined>

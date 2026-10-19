@@ -350,7 +350,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | `e` | Expand / collapse the record band |
 | `Shift`+`J` / `Shift`+`K` | Next / previous run in this channel |
 | `j` / `k` | With a run sheet open: next / previous run in the list it counts (Runs, or Shipped for a finished run) |
-| `1`…`9` | Answer an ask option on a run body |
+| `1`…`9` | With a run sheet open: pick an option on the lead's question card |
 | `Enter` | Submit the answer |
 | `Esc` | Leave the composer (a second `Esc` closes the sheet) |
 | `→` / `Enter` | While a Jarvis tour shows: next step |
