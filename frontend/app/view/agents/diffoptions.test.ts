@@ -54,13 +54,13 @@ describe("the pane header's layout at a measured width", () => {
 
 describe("the pane's fixed chrome", () => {
     it("stops scrolling at the last line, with no minimap", () => {
-        const o = paneOptions(false, false);
+        const o = paneOptions(false, false, false);
         expect(o.scrollBeyondLastLine).toBe(false);
         expect(o.minimap).toStrictEqual({ enabled: false });
     });
 
     it("scrolls smoothly, with thin scrollbars and no shadows", () => {
-        const o = paneOptions(false, false);
+        const o = paneOptions(false, false, false);
         expect(o.smoothScrolling).toBe(true);
         expect(o.scrollbar).toStrictEqual({ useShadows: false, verticalScrollbarSize: 6, horizontalScrollbarSize: 6 });
     });
