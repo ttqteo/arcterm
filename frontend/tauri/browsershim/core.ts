@@ -26,7 +26,7 @@ export const BROWSER_COMMANDS: readonly string[] = [
     "set_window_init_status",
     "app_foreground",
     "capture_webview",
-    "reload_app_frame",
+    "app_frame_action",
     ...NO_OPS,
 ];
 
@@ -49,8 +49,8 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
             return "ours" as T;
         case "capture_webview":
             throw new Error("window capture needs the Tauri host");
-        case "reload_app_frame":
-            return false as T; // a page cannot reload a cross-origin frame where it is: the app's start page stands in
+        case "app_frame_action":
+            return false as T; // a page cannot reach into a cross-origin frame: Home and the window's history stand in
 
         case "fe_log":
             console.log(`[fe-log] ${String(args?.msg)}`);

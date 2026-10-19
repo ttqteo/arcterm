@@ -109,6 +109,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In the New dialog, a click anywhere in the Command box puts the caret in it, not only a click on the text.
 - Settings → Storage fills each card as soon as its scan is done, instead of reading Scanning… for minutes until
   build output and the package caches have been measured.
+- A pinned app's Back and Forward step through that app's own pages (Windows); they did nothing, or moved a page you
+  could not see.
 - A context menu takes the arrow keys and Enter as soon as it opens, and the Brief's list no longer moves under it.
 - An agent that left a dev server running in the background no longer reads as working once its turn ends, even
   when it started the server with `2>&1` or another redirection: its dot goes idle and a green server glyph beside it

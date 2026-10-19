@@ -2,7 +2,8 @@
 // cockpit, even from inside a pinned app's page, whose keys never reach the cockpit's keybindings (it is a cross-origin
 // frame). Here they lose that browser action but still reach the page, so a terminal keeps Ctrl+R as the shell's reverse
 // search; the frontend hears RELOAD_KEY_EVENT and reloads the app's page when its frame holds the focus (appstore.ts
-// setupPageReloadKey). The frame's own location.reload() runs here too, as the cockpit cannot reach into it.
+// setupPageReloadKey). The frame's own location.reload() runs here too, as the cockpit cannot reach into it, and so do
+// the header's Back and Forward.
 use crate::applog::log_line;
 
 #[cfg(windows)]
@@ -21,7 +22,7 @@ fn is_reload_key(vk: u32, ctrl: bool, alt: bool) -> bool {
 
 #[cfg(windows)]
 thread_local! {
-    // the main document's frames, which reload_app_frame looks up by name; pruned of the destroyed ones as frames come.
+    // the main document's frames, which app_frame_action looks up by name; pruned of the destroyed ones as frames come.
     // WebView2 raises FrameCreated on the main thread, and with_webview runs there too.
     static FRAMES: std::cell::RefCell<Vec<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Frame>> =
         const { std::cell::RefCell::new(Vec::new()) };
@@ -117,30 +118,48 @@ unsafe fn frame_name(frame: &webview2_com::Microsoft::Web::WebView2::Win32::ICor
     Some(webview2_com::take_pwstr(name))
 }
 
-// Reloads the app frame named `name` where it is, as a browser's reload. False when no live frame has that name.
+// What the header's Reload, Back and Forward run inside the app's frame. Back and Forward walk the frame's own entries
+// (the Navigation API): the window's history.back() steps whichever frame moved last, a hidden one as readily as the app.
+#[cfg(any(windows, test))]
+fn frame_script(action: &str) -> Option<&'static str> {
+    match action {
+        "reload" => Some("location.reload()"),
+        "back" => Some(
+            "void (window.navigation ? navigation.canGoBack && navigation.back() : history.back())",
+        ),
+        "forward" => Some(
+            "void (window.navigation ? navigation.canGoForward && navigation.forward() : history.forward())",
+        ),
+        _ => None,
+    }
+}
+
+// Runs `action` (reload, back, forward) in the app frame named `name`, where it is. False when no live frame has that
+// name.
 #[cfg(windows)]
 #[tauri::command]
-pub async fn reload_app_frame(window: tauri::WebviewWindow, name: String) -> Result<bool, String> {
+pub async fn app_frame_action(window: tauri::WebviewWindow, name: String, action: String) -> Result<bool, String> {
+    let script = frame_script(&action).ok_or_else(|| format!("no app frame action {action}"))?;
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<bool, String>>();
     window
         .with_webview(move |_| unsafe {
-            let _ = tx.send(reload_frame(&name));
+            let _ = tx.send(run_in_frame(&name, script));
         })
         .map_err(|e| e.to_string())?;
-    rx.await.map_err(|_| "the reload was dropped".to_string())?
+    rx.await.map_err(|_| "the frame action was dropped".to_string())?
 }
 
 #[cfg(not(windows))]
 #[tauri::command]
-pub async fn reload_app_frame(_window: tauri::WebviewWindow, _name: String) -> Result<bool, String> {
+pub async fn app_frame_action(_window: tauri::WebviewWindow, _name: String, _action: String) -> Result<bool, String> {
     Ok(false)
 }
 
 #[cfg(windows)]
-unsafe fn reload_frame(name: &str) -> Result<bool, String> {
+unsafe fn run_in_frame(name: &str, script: &str) -> Result<bool, String> {
     use webview2_com::ExecuteScriptCompletedHandler;
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Frame2;
-    use windows::core::{w, Interface};
+    use windows::core::{Interface, HSTRING};
 
     let frame = FRAMES.with(|all| {
         all.borrow()
@@ -153,20 +172,20 @@ unsafe fn reload_frame(name: &str) -> Result<bool, String> {
     };
     let done = ExecuteScriptCompletedHandler::create(Box::new(|res, _| {
         if let Err(e) = res {
-            log_line(&format!("[tauri] reloading an app's page failed: {e}"));
+            log_line(&format!("[tauri] running an action in an app's page failed: {e}"));
         }
         Ok(())
     }));
     frame
         .cast::<ICoreWebView2Frame2>()
-        .and_then(|f| f.ExecuteScript(w!("location.reload()"), &done))
+        .and_then(|f| f.ExecuteScript(&HSTRING::from(script), &done))
         .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_reload_key;
+    use super::{frame_script, is_reload_key};
 
     #[test]
     fn reload_keys_are_ctrl_r_and_f5_never_with_alt() {
@@ -177,5 +196,13 @@ mod tests {
         assert!(!is_reload_key(0x52, true, true)); // Ctrl+Alt+R
         assert!(!is_reload_key(0x74, false, true));
         assert!(!is_reload_key(0x41, true, false)); // Ctrl+A
+    }
+
+    #[test]
+    fn frame_actions_are_reload_back_and_forward_only() {
+        assert_eq!(frame_script("reload"), Some("location.reload()"));
+        assert!(frame_script("back").unwrap().contains("navigation.back()"));
+        assert!(frame_script("forward").unwrap().contains("navigation.forward()"));
+        assert_eq!(frame_script("eval"), None);
     }
 }

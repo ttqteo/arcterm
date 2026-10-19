@@ -185,7 +185,7 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
                         aria-label="Back"
                         title="Back"
                         disabled={!onPage}
-                        onClick={() => appHistory(-1)}
+                        onClick={() => void appHistory(terminal.id, -1)}
                         className={BUTTON}
                     >
                         <ArrowLeft size={14} aria-hidden />
@@ -196,7 +196,7 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
                         aria-label="Forward"
                         title="Forward"
                         disabled={!onPage}
-                        onClick={() => appHistory(1)}
+                        onClick={() => void appHistory(terminal.id, 1)}
                         className={BUTTON}
                     >
                         <ArrowRight size={14} aria-hidden />

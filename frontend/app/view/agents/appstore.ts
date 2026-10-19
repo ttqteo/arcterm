@@ -160,14 +160,18 @@ export function homeApp(tabId: string): void {
     update(tabId, (s) => ({ ...s, reloads: s.reloads + 1, view: "page" }));
 }
 
-// Reload: the page where it is, as a browser's reload. The cockpit cannot reach into the cross-origin frame, so the
-// host runs its location.reload() (pagekeys.rs); where it cannot (a Mac, the browser app), Home's start page stands in.
-export async function reloadAppPage(tabId: string): Promise<void> {
-    const reloaded = await invoke<boolean>("reload_app_frame", { name: appFrameName(tabId) }).catch((e) => {
-        console.error("reloading the app's page failed", e);
+// Runs reload, back or forward inside the app's frame, which the cockpit cannot reach into (a cross-origin frame): the
+// host does it (pagekeys.rs). False where it cannot (a Mac, the browser app) or no frame shows.
+function frameAction(tabId: string, action: "reload" | "back" | "forward"): Promise<boolean> {
+    return invoke<boolean>("app_frame_action", { name: appFrameName(tabId), action }).catch((e) => {
+        console.error(`the app's page: ${action} failed`, e);
         return false;
     });
-    if (!reloaded) {
+}
+
+// Reload: the page where it is, as a browser's reload; where the host cannot, Home's start page stands in.
+export async function reloadAppPage(tabId: string): Promise<void> {
+    if (!(await frameAction(tabId, "reload"))) {
         homeApp(tabId);
     }
 }
@@ -188,9 +192,13 @@ export function setupPageReloadKey(): () => void {
     return () => void unlisten.then((off) => off());
 }
 
-// Back and Forward walk the window's history, which a frame's navigations join. arcterm itself never pushes an entry,
-// so what they walk is the app's own pages, a single-page app's included; with nothing to walk they do nothing.
-export function appHistory(step: -1 | 1): void {
+// Back and Forward walk the app frame's own pages, a single-page app's included, and do nothing with none to walk. The
+// window's history would step whichever frame moved last (another app's, a PDF's), so it is only the fallback where
+// the host cannot reach the frame (a Mac, the browser app).
+export async function appHistory(tabId: string, step: -1 | 1): Promise<void> {
+    if (await frameAction(tabId, step < 0 ? "back" : "forward")) {
+        return;
+    }
     if (step < 0) {
         window.history.back();
     } else {

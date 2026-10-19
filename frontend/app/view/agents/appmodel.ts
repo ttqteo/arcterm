@@ -81,7 +81,7 @@ export interface AppState {
     reloads: number;
 }
 
-// the app frame's name, by which the host finds it to reload it where it is (pagekeys.rs reload_app_frame)
+// the app frame's name, by which the host finds it to reload it or step its history (pagekeys.rs app_frame_action)
 export function appFrameName(tabId: string): string {
     return `arc-app-${tabId}`;
 }

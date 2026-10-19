@@ -359,7 +359,7 @@ fn main() {
             commands::open_external,
             commands::reveal_path,
             canvas::capture_webview,
-            pagekeys::reload_app_frame,
+            pagekeys::app_frame_action,
             notify::notify_os,
             macwindow::set_folded_chrome,
             macwindow::redirect_minimize,
