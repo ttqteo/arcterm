@@ -74,15 +74,23 @@ func dossierActiveUntil(d *jarvisdossier.Dossier, ownRuns []*waveobj.Run, now in
 	return end
 }
 
-// windowsOverlap reports whether the run's active window intersects the dossier's, which runs from its
-// creation to dEnd (dossierActiveUntil). A run with no completion extends to now.
-func windowsOverlap(d *jarvisdossier.Dossier, dEnd int64, run *waveobj.Run, now int64) bool {
-	rStart := run.CreatedTs
-	rEnd := run.CompletedTs
-	if rEnd == 0 {
-		rEnd = now
+// runEnd is the run's effective end: its completion, else now while it is still going. CompletedTs is set only
+// when evidence is sealed, which a cancelled run never gets, so a terminal run without one ends at its creation
+// (jarvisbackfill's rule) instead of reading as live forever.
+func runEnd(run *waveobj.Run, now int64) int64 {
+	if run.CompletedTs != 0 {
+		return run.CompletedTs
 	}
-	return rStart <= dEnd && rEnd >= d.Created
+	if run.Status == jarvis.RunStatus_Done || run.Status == jarvis.RunStatus_Cancelled {
+		return run.CreatedTs
+	}
+	return now
+}
+
+// windowsOverlap reports whether the run's active window intersects the dossier's, which runs from its
+// creation to dEnd (dossierActiveUntil).
+func windowsOverlap(d *jarvisdossier.Dossier, dEnd int64, run *waveobj.Run, now int64) bool {
+	return run.CreatedTs <= dEnd && runEnd(run, now) >= d.Created
 }
 
 // pastProbation reports whether an inferred edge is old enough to harden. Age is the age of the Run the
@@ -102,11 +110,7 @@ func extractLayer3(d *jarvisdossier.Dossier, run *waveobj.Run, anchorPaths map[s
 	if !windowsOverlap(d, dEnd, run, now) {
 		return AttributedEdge{}, false
 	}
-	runEnd := run.CompletedTs
-	if runEnd == 0 {
-		runEnd = now
-	}
-	if now-runEnd > timeBoxMs {
+	if now-runEnd(run, now) > timeBoxMs {
 		return AttributedEdge{}, false
 	}
 	// self-correction: a concrete different ticket in the commits contradicts.

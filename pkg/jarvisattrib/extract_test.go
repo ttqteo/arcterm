@@ -226,3 +226,28 @@ func TestAssembleMergesAndOrders(t *testing.T) {
 		}
 	}
 }
+
+// a cancelled run is never sealed, so it carries no CompletedTs; reading that as "still running" made it
+// overlap every later active dossier in its repo and never decay.
+func TestLayer3TerminalRunWithoutCompletionEndsAtCreation(t *testing.T) {
+	const now = int64(1_000_000_000_000)
+	d := &jarvisdossier.Dossier{ID: "task-1", Status: "active", Created: now - 5000}
+	anchor := map[string]bool{"/repo/app": true}
+
+	before := &waveobj.Run{OID: "r1", ProjectPath: "/repo/app", Status: "cancelled", CreatedTs: now - 9000}
+	if _, ok := extractLayer3(d, before, anchor, now, nil, now); ok {
+		t.Fatal("a run cancelled before the dossier existed must not correlate")
+	}
+	old := &waveobj.Run{OID: "r2", ProjectPath: "/repo/app", Status: "cancelled", CreatedTs: now - timeBoxMs - 1000}
+	if _, ok := extractLayer3(d, old, anchor, now, nil, now); ok {
+		t.Fatal("a cancelled run older than the time-box must decay")
+	}
+	during := &waveobj.Run{OID: "r3", ProjectPath: "/repo/app", Status: "cancelled", CreatedTs: now - 3000}
+	if _, ok := extractLayer3(d, during, anchor, now, nil, now); !ok {
+		t.Fatal("a run cancelled within the dossier's window still correlates")
+	}
+	live := &waveobj.Run{OID: "r4", ProjectPath: "/repo/app", Status: "executing", CreatedTs: now - 9000}
+	if _, ok := extractLayer3(d, live, anchor, now, nil, now); !ok {
+		t.Fatal("a still-running run extends to now and correlates")
+	}
+}
