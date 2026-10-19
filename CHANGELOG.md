@@ -49,6 +49,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- An orchestrator run's DAG opens a node's peek beside it on a click: the worker's session, its route, the
+  description and the actions it needs; the final stage's node shows its steps there. The hover peek and the rails
+  under the graph are gone, and every run, finished ones included, opens in the run sheet.
+- Engine runs in a project with no Setup line and no `.arc/setup` link the main checkout's installed `node_modules`
+  into each tree, so a task's tests run without an install.
 - The tray's Storage card shows every drive on a PC with more than one, each with its free space and arcterm's share
   of it (worktrees and build output count on the drive they sit on), and leaves out virtual drives such as Google
   Drive's.
@@ -76,6 +81,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A stalled orchestrator task whose worker starts working again goes back to running, and a plan reviewer that sits
+  at its prompt without a verdict is replaced after the short grace instead of 20 minutes.
+- A button reached with Tab keeps Enter and Space: the Brief no longer opens the row under its cursor instead.
+- A terminal's link tooltip says Ctrl on Windows, not Cmd.
+- A terminal keeps showing its output when saving it to the scrollback store fails under load.
 - An agent you let run a command from its permission prompt reads working again as soon as you answer, instead of
   asking until the command finished.
 - An agent whose turn ended no longer reads as working with nothing running in the background: a background command

@@ -83,7 +83,7 @@ Một run orchestrator có bốn route, chọn ở hộp New (**Lead**, **Worker
 
 Engine tìm route của từng task bằng một quy tắc (`effectiveTaskRoute`, `pkg/orchestrate/modelroute.go`), lấy nấc đầu tiên áp dụng được:
 
-1. Route bạn đặt cho task (công tắc model trong rail chi tiết của DAG), hoặc một lần escalate.
+1. Route bạn đặt cho task (công tắc model trong peek của task trên DAG), hoặc một lần escalate.
 2. Dòng Model của plan hoặc lựa chọn của reviewer, **chỉ khi** run ở Reviewer picks.
 3. Route của workers, nếu run có.
 4. Route của lead.
@@ -257,10 +257,10 @@ Một lần fail cũng mang pick theo cách đó và được để sót task (c
 **Nơi thấy pick.**
 
 - Timeline của run liệt kê chúng dưới dòng **Plan reviewed**, mỗi dòng `t-N · <model> · <lý do>`.
-- Thẻ task có model khác với model workers của run mang tag `<model> · plan`, `· review`, `· you`, `· escalated` hoặc `· pinned`; rail chi tiết của DAG nói nguồn model của worker (`plan's pick`, `reviewer's pick`, `your pick`, `escalated`, `pinned`, `workers route`, `same as lead`).
+- Thẻ task có model khác với model workers của run mang tag `<model> · plan`, `· review`, `· you`, `· escalated` hoặc `· pinned`; peek của task trên DAG nói nguồn model của worker (`plan's pick`, `reviewer's pick`, `your pick`, `escalated`, `pinned`, `workers route`, `same as lead`).
 - Header đồ thị có chip cài đặt workers và route reviewer; đồ thị còn có dòng giai đoạn như `plan review · passed · <model>`.
 
-**Đổi pick.** Khi còn task nào reviewer đưa lên `sonnet` (hoặc bạn đã đổi) chưa bắt đầu, DAG view hiện dải trên đồ thị: "The plan reviewer put N of M tasks on sonnet. Select a task to change its model." cùng nút **Put waiting tasks back on <model lead>** đưa mọi task đang chờ về route lead cùng lúc. Chọn một task rồi dùng công tắc **model** (`sonnet | <lead>`) trong rail chi tiết của nó: kèm lý do của reviewer (`Plan reviewer: …`) và `waiting` hoặc `you changed it`. Task chỉ đổi được **tới trước khi nó bắt đầu**; sau đó rail ghi `running on <model>` và "A task that already started keeps its model. If it fails, retry it on <lead> from here." Thay đổi của bạn thắng plan và reviewer (nấc 1 ở [Chọn route và model](#chọn-route-và-model)), lý do của reviewer vẫn hiện. Dải biến mất khi không còn task nào được liệt kê đang chờ; thẻ và rail vẫn giữ nguồn.
+**Đổi pick.** Khi còn task nào reviewer đưa lên `sonnet` (hoặc bạn đã đổi) chưa bắt đầu, DAG view hiện dải trên đồ thị: "The plan reviewer put N of M tasks on sonnet. Select a task to change its model." cùng nút **Put waiting tasks back on <model lead>** đưa mọi task đang chờ về route lead cùng lúc. Chọn một task rồi dùng công tắc **model** (`sonnet | <lead>`) trong peek của nó: kèm lý do của reviewer (`Plan reviewer: …`) và `waiting` hoặc `you changed it`. Task chỉ đổi được **tới trước khi nó bắt đầu**; sau đó rail ghi `running on <model>` và "A task that already started keeps its model. If it fails, retry it on <lead> from here." Thay đổi của bạn thắng plan và reviewer (nấc 1 ở [Chọn route và model](#chọn-route-và-model)), lý do của reviewer vẫn hiện. Dải biến mất khi không còn task nào được liệt kê đang chờ; thẻ và rail vẫn giữ nguồn.
 
 ![DAG view của một run Reviewer picks: dải "The plan reviewer put N of M tasks on sonnet..." trên đồ thị, và rail chi tiết của task đang chọn có công tắc model sonnet](images/orchestrator-model-picks.png)
 
@@ -275,8 +275,8 @@ Mở một run từ **Waiting on you**, **Runs** hoặc **Shipped** trên [Jarvi
 **Open DAG** (ở dock của sheet) mở hộp **Route DAG**, phủ lên surface đang mở; `Esc` hoặc **Close · Esc** đóng nó.
 
 - **Header** của đồ thị: tiêu đề plan, `parallelism N · done/total done` (kèm token đã dùng), các chip tóm tắt (**need you**, **working**, **done**, **waiting**, **skipped** có số đếm; bấm một chip để nhảy qua các task thuộc nhóm đó), chip route workers và reviewers, một pill trạng thái dag (`running`, `plan review`, `finalizing`, `blocked`, `done`, `cancelled`) và nút **Cancel**. Cancel ở đây hủy dag **ngay**, không hỏi lại.
-- **Đồ thị**: mỗi task là một node, các cạnh là `Depends on`, và một dải nét đứt bao các task cùng lane (các task sẽ merge như một). Rê chuột lên node hiện peek: tiêu đề đầy đủ, đoạn đầu của mô tả (hoặc các file nó chạm), nó đang chờ gì, hoạt động mới nhất, và vì sao nó hỏng. Kéo node để dời (vị trí được nhớ cho run đó tới khi **Reset layout**), kéo nền để cuộn.
-- **Rail chi tiết** ngay dưới đồ thị, cho task đang chọn: id, trạng thái, route worker, dòng review, token, nút **Description**, công tắc model, trạng thái worker (dòng trạng thái và **Open in Agent ↗**, hoặc "Worker session unavailable" với **View child run**), và các nút hành động. Nút chỉ hiện khi node cần một quyết định:
+- **Đồ thị**: mỗi task là một node, các cạnh là `Depends on`, và một dải nét đứt bao các task cùng lane (các task sẽ merge như một). Bấm một node mở **peek** ngay cạnh nó: tiêu đề đầy đủ, session của worker (**Open in Agent ↗**), các dòng route, mô tả, nó đang chờ gì, hoạt động mới nhất, vì sao nó hỏng, và thanh hành động; bấm lần nữa, bấm nền hoặc `Esc` để đóng. Node final stage mở peek với các bước của stage. Kéo node để dời (vị trí được nhớ cho run đó tới khi **Reset layout**), kéo nền để cuộn.
+- **Peek** của task đang chọn: id, trạng thái, route worker, dòng review, token, nút **Description**, công tắc model, trạng thái worker (dòng trạng thái và **Open in Agent ↗**, hoặc "Worker session unavailable" với **View child run**), và các nút hành động. Nút chỉ hiện khi node cần một quyết định:
 
   | Nút | Hiện khi | Làm gì |
   |---|---|---|
