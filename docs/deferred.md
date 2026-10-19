@@ -10,6 +10,20 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > Pruned 2026-10-05: 27 entries whose work shipped, was retired with its subsystem, or was superseded were
 > removed. Recover any of them with `git show c99f2041:docs/deferred.md`.
 
+## (arcterm) Image diff in File mode (deferred 2026-10-19)
+
+The image diff (`docs/superpowers/specs/2026-10-19-image-diff-design.md`, a39a50869) shipped in Diff → Review only.
+
+- **File mode.** Selecting a changed PNG in the file list still shows the "Binary file" empty state.
+  - **Why:** the Diff surface sees little use; Review is where a changed image showed up.
+  - **Plug in:** `diffpane.tsx`'s `empty` branch renders `ImageDiff` (`imagediffview.tsx`) when `empty.kind` is
+    `binary` and `imageMime(path)` knows the type. Give `ImageDiff` a `DiffSelection` in place of `source`/`base`
+    (`loadImageSides` already takes one), and pass the pane's selection.
+- **CDP scenario `image-diff`.** Not written; the feature waits on a hand check in `docs/open-issues.md` instead.
+  - **Plug in:** build the fixture repo the way `line-review` does (`scripts/cdp/scenarios.mjs`), with one PNG
+    changed, one added and one deleted, and assert `[data-image-diff]` holds two `img` on the changed one.
+- **Revive when** a changed image in File mode is wanted, or Review's image diff breaks unnoticed.
+
 ## Memory hygiene: what the first version leaves out (deferred 2026-10-14)
 
 Memory hygiene (`docs/superpowers/specs/2026-10-13-memory-hygiene-design.md`, `pkg/memhygiene`) checks

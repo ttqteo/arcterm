@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Image diff: after rebuilding wavesrv (`task build:backend:quickdev:windows`, then restart the dev app)
+  or the next install, open Diff → Review on a repo with a changed PNG or JPG: in place of "Binary file — no text to
+  show" its section shows Before | After side by side over a checkerboard, each captioned `W×H · size` (the After
+  size in the accent when the pixel size changed); an added image reads "Added" on the left, a deleted one "Deleted"
+  on the right. Before reads "Couldn't read" on an old wavesrv. (a39a50869)
 - [ ] (arcterm) Kael sync: on the Brief, Runs and Initiatives show their filter as a line of chips with counts under
   the head; with more than six projects the Initiatives filter is one "project" menu in the head; right-click a row
   and the arrows move the menu's highlight, Escape closes it without leaving the Brief. (6a225bc59)
@@ -1060,6 +1065,8 @@ Harnesses:
 
 Cockpit and surfaces:
 
+- **(arcterm) Image diff in File mode** (2026-10-19) — the image diff shipped in Diff → Review only; File mode
+  still shows "Binary file", and no CDP scenario covers it. Revive when a changed image in File mode is wanted.
 - **(arcterm) Per-tool shortcuts in the tool library** (2026-10-13) — Setup → Tools has no Shortcut field until the
   `Ctrl`+`G` leader-chord question (a tool as a leader chord beside the go-to letters) is settled. Revive when the
   picker's `Ctrl`+`Shift`+`T` is too slow for one or two tools; notes in `docs/deferred.md`.

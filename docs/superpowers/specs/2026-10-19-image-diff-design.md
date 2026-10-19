@@ -5,6 +5,11 @@ The Diff surface draws every binary file as a sentence: Review mode says "Binary
 (`diffempty.ts:70`). A changed PNG or JPG reads +0 −0 with nothing to look at. This design shows the two
 versions of an image side by side, in both modes.
 
+**Shipped 2026-10-19 (a39a50869), Review mode only.** File mode and the `image-diff` CDP scenario were left out,
+since the Diff surface sees little use: `docs/deferred.md` "(arcterm) Image diff in File mode" says how to add them.
+The view is `imagediffview.tsx`, not `imagediff.tsx` (beside `imagediff.ts`, the import would be ambiguous). Before
+and after show "Added" and "Deleted" for a missing side rather than naming the ref.
+
 ## Scope
 
 - Images whose type `imageMime` knows: png, jpg/jpeg, gif, webp. SVG is text and already diffs as text.
