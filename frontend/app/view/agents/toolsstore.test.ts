@@ -56,6 +56,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         ToolsSetUserCommand: m.toolsSetUser,
         SetMetaCommand: m.setMeta,
         ControllerResyncCommand: m.resync,
+        FileInfoCommand: async () => ({}),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -67,7 +68,7 @@ vi.mock("./railstore", async () => {
     const { atom } = await import("jotai");
     return { dockedTerminalAtom: atom<string | null>(null), railCwdsAtom: atom<Record<string, string>>({}) };
 });
-vi.mock("./pathlinkroute", () => ({ homeDir: async () => "/Users/q" }));
+vi.mock("@/app/view/jarvis/projectpicker", () => ({ homeFromInfo: () => "/Users/q" }));
 vi.mock("./runlineage", () => ({
     agentProject: (_l: unknown, _a: unknown, a: { project?: string }) => a.project ?? "",
 }));
