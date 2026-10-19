@@ -121,6 +121,25 @@ export function appShows(s: AppState | null | undefined): AppShows {
     return s.phase === "open" ? "page" : "waiting";
 }
 
+// how long an open app's page stays loaded, out of sight, after it was last on screen
+export const APP_FRAME_IDLE_MS = 10 * 60_000;
+
+// The apps whose page stays loaded: the one on screen, and each open one seen within the idle limit. A page out of
+// sight keeps its place and its scroll; past the limit it is dropped and loads afresh when next shown (its server keeps
+// running). In the order of `states`, so a frame already loaded never moves in the DOM, which would reload it.
+export function keptAppFrames(
+    states: Record<string, Pick<AppState, "phase">>,
+    shown: string | null,
+    seenMs: Record<string, number>,
+    now: number
+): string[] {
+    return Object.keys(states).filter(
+        (id) =>
+            states[id].phase === "open" &&
+            (id === shown || (seenMs[id] != null && now - seenMs[id] < APP_FRAME_IDLE_MS))
+    );
+}
+
 export function appWaitLine(s: Pick<AppState, "url" | "startedMs">, now: number): string {
     const secs = Math.max(0, Math.floor((now - s.startedMs) / 1000));
     return `Waiting for ${appHost(s.url)} · ${secs} s`;

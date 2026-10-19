@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// A pinned app's state, per terminal tab: waiting for its page, open, or failed, and whether the page or the log is
-// picked. Module-level, as every surface but Agent unmounts on a switch. Opening one is openTool's (toolsstore.ts); the
+// A pinned app's state, per terminal tab: waiting for its page, open, or failed, whether the page or the log is
+// picked, and where its page shows. Module-level, as every surface but Agent unmounts on a switch. Opening one is openTool's (toolsstore.ts); the
 // pure parts are appmodel.ts. Nothing runs while no app is open: the probe loop lives only from a start to its answer.
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -48,6 +48,51 @@ function drop(tabId: string): void {
     const next = { ...all };
     delete next[tabId];
     globalStore.set(appStatesAtom, next);
+    const seen = { ...globalStore.get(appSeenAtom) };
+    delete seen[tabId];
+    globalStore.set(appSeenAtom, seen);
+    lastRects.delete(tabId);
+}
+
+export interface AppRect {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+}
+
+// Where the page of the app in the terminal's place goes on screen (AppPane's slot), the page itself drawn by AppFrames
+// in the shell, which no surface switch hides with display:none: a frame under display:none loses its scroll. The rect
+// is null while the slot is out of sight (another surface, History), the page then hidden where it was.
+export interface AppSlot {
+    tabId: string;
+    rect: AppRect | null;
+}
+
+export const appSlotAtom = atom<AppSlot | null>(null) as PrimitiveAtom<AppSlot | null>;
+// terminal tab id -> when its page was last on screen, for keptAppFrames' idle limit
+export const appSeenAtom = atom<Record<string, number>>({}) as PrimitiveAtom<Record<string, number>>;
+
+export function shownAppTab(slot: AppSlot | null): string | null {
+    return slot?.rect != null ? slot.tabId : null;
+}
+
+// tab -> where its page last showed: a page out of sight stays there, at that size, which keeps its scroll
+const lastRects = new Map<string, AppRect>();
+
+export function lastAppRect(tabId: string): AppRect | null {
+    return lastRects.get(tabId) ?? null;
+}
+
+export function setAppSlot(slot: AppSlot | null): void {
+    if (slot?.rect != null) {
+        lastRects.set(slot.tabId, slot.rect);
+    }
+    const was = shownAppTab(globalStore.get(appSlotAtom));
+    if (was != null && was !== shownAppTab(slot)) {
+        globalStore.set(appSeenAtom, { ...globalStore.get(appSeenAtom), [was]: Date.now() });
+    }
+    globalStore.set(appSlotAtom, slot);
 }
 
 // Whether anything answers at url. An opaque no-cors response is enough: a refused connection rejects, and any answer,

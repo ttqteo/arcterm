@@ -68,6 +68,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - `Ctrl`+`R` and `F5` never reload the whole arcterm window any more (Windows): outside a terminal `Ctrl`+`R` redraws
   it, as `Cmd`+`R` does on a Mac, `Ctrl`+`Shift`+`R` redraws from inside one, and in a terminal `Ctrl`+`R` stays the
   shell's reverse search. **Reload the window** in the command palette reloads arcterm when you mean it.
+- A pinned app's page stays where you left it, scroll and all, when you switch to another agent, its Log or another
+  view and come back. A page out of sight for 10 minutes is let go and loads afresh next time; its server keeps
+  running.
 - The Brief's Runs kind and Initiatives project filters sit on a line of chips under their head, each with its
   count; past six projects they fold into one menu in the head.
 - Claude Code lists arcterm's own skills as `arc:runs`, `arc:cockpit`, `arc:design`, `arc:initiatives`, `arc:notes`,

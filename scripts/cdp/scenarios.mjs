@@ -41973,14 +41973,41 @@ const toolsApp = {
         const wentHome = await waitUntil(() => asked().length >= before + 4, 8000);
         rec("3c. Home loads the app's start page afresh", wentHome && asked().at(-1) === "/", JSON.stringify({ last: asked().at(-1) }));
 
+        // a page of the app's own before leaving it: Log and back, and another surface and back, come back to it unreloaded
+        const beforeTwo = asked().length;
+        await h.ev(`document.querySelector("[data-app-frame]").src = ${JSON.stringify(ctx.url + "/two")}`);
+        await waitUntil(() => asked().length >= beforeTwo + 1, 8000);
+        const onTwo = asked().length;
         await ttClick(h, '[data-terminal-pane-head] [role="tab"]:nth-child(2)');
         await polishNap(800);
         const log = await h.ev(`({
             frame: !!document.querySelector("[data-app-frame]"),
+            shown: !!document.querySelector("[data-app-frame-shown]"),
             gridHidden: document.querySelector("[data-agent-grid]")?.classList.contains("hidden") ?? null,
         })`);
         await h.shot("cdp-shots/tools-app-4-log.png");
-        rec("4. Log shows the app's terminal with its output in the page's place", !log.frame && log.gridHidden === false, JSON.stringify(log));
+        rec(
+            "4. Log shows the app's terminal with its output in the page's place, the page kept loaded out of sight",
+            log.frame && !log.shown && log.gridHidden === false,
+            JSON.stringify(log)
+        );
+        await ttClick(h, '[data-terminal-pane-head] [role="tab"]:nth-child(1)');
+        await polishNap(800);
+        const backFromLog = await h.ev(`!!document.querySelector("[data-app-frame-shown]")`);
+        await h.goto("setup");
+        await polishNap(500);
+        const awayHidden = await h.ev(`!document.querySelector("[data-app-frame-shown]")`);
+        await h.goto("agent");
+        await polishNap(800);
+        const backFromSurface = await h.ev(`!!document.querySelector("[data-app-frame-shown]")`);
+        await h.shot("cdp-shots/tools-app-4b-kept.png");
+        rec(
+            "4b. Page again, and the Agent surface again after Setup, show the page left on /two without loading it again",
+            backFromLog && awayHidden && backFromSurface && asked().length === onTwo,
+            JSON.stringify({ backFromLog, awayHidden, backFromSurface, reloaded: asked().slice(onTwo) })
+        );
+        await ttClick(h, '[data-terminal-pane-head] [role="tab"]:nth-child(2)');
+        await polishNap(500);
         // the last project folder above the app's row, in the tree's order
         const inProject = await h.ev(`(() => {
             let folder = null;

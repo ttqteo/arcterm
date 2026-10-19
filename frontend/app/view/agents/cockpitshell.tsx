@@ -13,6 +13,7 @@ import { useEffect, useRef } from "react";
 import type { AgentsViewModel } from "./agents";
 import { useViewingSync } from "./agentsleep";
 import { AgentSurface } from "./agentsurface";
+import { AppFrames } from "./apppane";
 import { primeChannels } from "./channelsstore";
 import { CockpitSurface } from "./cockpitsurface";
 import { useDockBadge } from "./dockbadgesync";
@@ -170,6 +171,9 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
                         ) : null}
                     </div>
                 ) : null}
+                {/* the pinned apps' pages, over the Agent surface's slot for the one on screen: here, where no surface
+                    switch hides them with display:none, so a page out of sight keeps its place and its scroll */}
+                <AppFrames />
             </div>
             {/* outside the surface switch: a lead's review opens over whichever surface is showing */}
             <DocReviewDialog model={model} />

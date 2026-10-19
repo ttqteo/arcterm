@@ -16,6 +16,8 @@ import {
     appUrlOk,
     appUrlProblem,
     appWaitLine,
+    APP_FRAME_IDLE_MS,
+    keptAppFrames,
     isAppTool,
     startingApp,
 } from "./appmodel";
@@ -127,5 +129,25 @@ describe("the app frame Reload reaches", () => {
         expect(focusedAppTab(el("IFRAME", {}))).toBeNull(); // a canvas board's frame, not an app's
         expect(focusedAppTab(el("TEXTAREA", { "data-app-frame": "t1" }))).toBeNull();
         expect(focusedAppTab(null)).toBeNull();
+    });
+});
+
+describe("the pages kept loaded out of sight", () => {
+    const now = 1_000_000_000;
+    const open = { phase: "open" as const };
+    const states = { a: open, b: open, c: { phase: "starting" as const }, d: { phase: "failed" as const } };
+
+    it("keeps the one on screen and each seen within the idle limit, in the states' order", () => {
+        const seen = { b: now - 60_000, a: now - APP_FRAME_IDLE_MS + 1 };
+        expect(keptAppFrames(states, null, seen, now)).toEqual(["a", "b"]);
+        expect(keptAppFrames(states, "b", {}, now)).toEqual(["b"]);
+    });
+    it("drops one past the limit, unless it is on screen", () => {
+        const seen = { a: now - APP_FRAME_IDLE_MS, b: now - 1 };
+        expect(keptAppFrames(states, null, seen, now)).toEqual(["b"]);
+        expect(keptAppFrames(states, "a", seen, now)).toEqual(["a", "b"]);
+    });
+    it("never keeps a page that is not open", () => {
+        expect(keptAppFrames(states, "c", { c: now, d: now }, now)).toEqual([]);
     });
 });
