@@ -366,6 +366,15 @@ func landRunOnBranch(ctx context.Context, channelId string, run *waveobj.Run) er
 // readCreatedRun reads a just-created run back for the reply. A var so a test can fail the read.
 var readCreatedRun = wstore.GetRun
 
+// cancelUnstartedRun cancels a run CreateRun persisted but could not start. It runs on its own deadline: the step that
+// failed is often the one that spent the caller's (a landing tree under memory pressure), and a cancel on that spent
+// context fails too, which leaves the run "executing" with no lead, dag or worker, so it never shows in the sidebar.
+func (ws *WshServer) cancelUnstartedRun(ctx context.Context, channelId string, runId string) error {
+	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	return ws.CancelRunCommand(cctx, wshrpc.CommandCancelRunData{ChannelId: channelId, RunId: runId})
+}
+
 func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCreateRunData) (*wshrpc.CommandCreateRunRtnData, error) {
 	// a plan start is refused before anything persists: a plan that will not parse, or a shape that cannot
 	// run one, must not leave a run behind
@@ -516,7 +525,7 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 	if engineLaunch && jarvis.EffectiveLanding(data.Landing, resolved.Landing) == jarvis.Landing_Branch && run.BaseCommit != "" {
 		if err := landRunOnBranch(ctx, data.ChannelId, &run); err != nil {
 			// a run that asked for its own branch must not fall back to landing in the checkout
-			if cerr := ws.CancelRunCommand(ctx, wshrpc.CommandCancelRunData{ChannelId: data.ChannelId, RunId: run.ID}); cerr != nil {
+			if cerr := ws.cancelUnstartedRun(ctx, data.ChannelId, run.ID); cerr != nil {
 				log.Printf("CreateRun: cancelling run %s after its landing tree failed: %v", run.ID, cerr)
 			}
 			return nil, fmt.Errorf("creating landing tree: %w", err)
@@ -554,7 +563,7 @@ func (ws *WshServer) CreateRunCommand(ctx context.Context, data wshrpc.CommandCr
 				break
 			}
 			// a run with no dag and no lead would wait in planning forever
-			if cerr := ws.CancelRunCommand(ctx, wshrpc.CommandCancelRunData{ChannelId: data.ChannelId, RunId: run.ID}); cerr != nil {
+			if cerr := ws.cancelUnstartedRun(ctx, data.ChannelId, run.ID); cerr != nil {
 				log.Printf("CreateRun: cancelling run %s after its plan was refused: %v", run.ID, cerr)
 			}
 			// no dag means no lane ever landed there, so the tree holds nothing but Setup's output
