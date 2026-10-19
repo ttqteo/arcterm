@@ -521,3 +521,180 @@ func TestOutOfOrderWithEOF(t *testing.T) {
 		t.Fatalf("Expected EOF, got %v", err)
 	}
 }
+
+func recvAckWithin(t *testing.T, transport *fakeTransport) wshrpc.CommandStreamAckData {
+	t.Helper()
+	select {
+	case ack := <-transport.ackChan:
+		return ack
+	case <-time.After(time.Second):
+		t.Fatal("no ack sent")
+		return wshrpc.CommandStreamAckData{}
+	}
+}
+
+func assertNoAck(t *testing.T, transport *fakeTransport, when string) {
+	t.Helper()
+	select {
+	case ack := <-transport.ackChan:
+		t.Fatalf("%s: unexpected ack %+v", when, ack)
+	default:
+	}
+}
+
+func recvDataWithin(t *testing.T, transport *fakeTransport) wshrpc.CommandStreamData {
+	t.Helper()
+	select {
+	case dataPk := <-transport.dataChan:
+		return dataPk
+	case <-time.After(time.Second):
+		t.Fatal("no data packet sent")
+		return wshrpc.CommandStreamData{}
+	}
+}
+
+func dataPacket(id string, seq int64, data string) wshrpc.CommandStreamData {
+	return wshrpc.CommandStreamData{Id: id, Seq: seq, Data64: base64.StdEncoding.EncodeToString([]byte(data))}
+}
+
+// a partial read acks only once the window it frees reaches a fifth of the read window
+func TestReaderAcksWhenFreedWindowReachesThreshold(t *testing.T) {
+	transport := newFakeTransport()
+	reader := NewReaderWithSeq("1", 100, 0, transport)
+	reader.RecvData(dataPacket("1", 0, string(make([]byte, 50))))
+	if ack := recvAckWithin(t, transport); ack.Seq != 50 || ack.RWnd != 50 {
+		t.Fatalf("recv ack = %+v, want seq 50 rwnd 50", ack)
+	}
+
+	buf := make([]byte, 10)
+	if n, err := reader.Read(buf); n != 10 || err != nil {
+		t.Fatalf("Read = %d, %v", n, err)
+	}
+	assertNoAck(t, transport, "freed 10 of threshold 20")
+
+	if n, err := reader.Read(buf); n != 10 || err != nil {
+		t.Fatalf("Read = %d, %v", n, err)
+	}
+	if ack := recvAckWithin(t, transport); ack.Seq != 50 || ack.RWnd != 70 {
+		t.Fatalf("threshold ack = %+v, want seq 50 rwnd 70", ack)
+	}
+}
+
+// draining the buffer always acks, even when the freed window is below the threshold
+func TestReaderAcksWhenBufferDrained(t *testing.T) {
+	transport := newFakeTransport()
+	reader := NewReaderWithSeq("1", 100, 0, transport)
+	reader.RecvData(dataPacket("1", 0, "0123456789"))
+	if ack := recvAckWithin(t, transport); ack.RWnd != 90 {
+		t.Fatalf("recv ack = %+v, want rwnd 90", ack)
+	}
+
+	buf := make([]byte, 20)
+	if n, err := reader.Read(buf); n != 10 || err != nil {
+		t.Fatalf("Read = %d, %v", n, err)
+	}
+	if ack := recvAckWithin(t, transport); ack.Seq != 10 || ack.RWnd != 100 {
+		t.Fatalf("drain ack = %+v, want seq 10 rwnd 100", ack)
+	}
+}
+
+func TestReaderEmptyReadSendsNoAck(t *testing.T) {
+	transport := newFakeTransport()
+	// a window under 5 makes the ack threshold 0, so only the n > 0 guard holds the ack back
+	reader := NewReaderWithSeq("1", 4, 0, transport)
+	reader.RecvData(dataPacket("1", 0, "ab"))
+	recvAckWithin(t, transport)
+
+	if n, err := reader.Read([]byte{}); n != 0 || err != nil {
+		t.Fatalf("Read = %d, %v; want 0, nil", n, err)
+	}
+	assertNoAck(t, transport, "zero-length read")
+}
+
+// each ack frees exactly the bytes it newly covers, and Write sends no more than the window allows
+func TestWriterSendsWithinAckedWindow(t *testing.T) {
+	transport := newFakeTransport()
+	writer := NewWriter("1", 10, transport)
+
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := writer.Write(make([]byte, 20))
+		writeDone <- err
+	}()
+
+	expectPacket := func(seq int64, size int) {
+		t.Helper()
+		dataPk := recvDataWithin(t, transport)
+		data, _ := base64.StdEncoding.DecodeString(dataPk.Data64)
+		if dataPk.Seq != seq || len(data) != size {
+			t.Fatalf("packet = seq %d, %d bytes; want seq %d, %d bytes", dataPk.Seq, len(data), seq, size)
+		}
+	}
+	expectPacket(0, 10)
+	writer.RecvAck(wshrpc.CommandStreamAckData{Id: "1", Seq: 4, RWnd: 10})
+	expectPacket(10, 4)
+	writer.RecvAck(wshrpc.CommandStreamAckData{Id: "1", Seq: 6, RWnd: 10})
+	expectPacket(14, 2)
+	writer.RecvAck(wshrpc.CommandStreamAckData{Id: "1", Seq: 16, RWnd: 10})
+	expectPacket(16, 4)
+
+	// the last packet fits the window, so Write returns without waiting for another ack
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			t.Fatalf("Write failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Write didn't return after sending all its data")
+	}
+}
+
+func TestWriterIgnoresStaleAcks(t *testing.T) {
+	transport := newFakeTransport()
+	writer := NewWriter("1", 10, transport)
+
+	// (seq 0, rwnd 0) equals the initial acked tuple, so it is a duplicate and leaves the window open
+	writer.RecvAck(wshrpc.CommandStreamAckData{Id: "1", Seq: 0, RWnd: 0})
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := writer.Write([]byte("hello"))
+		writeDone <- err
+	}()
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			t.Fatalf("Write failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Write blocked: the duplicate zero-window ack was applied")
+	}
+
+	writer.RecvAck(wshrpc.CommandStreamAckData{Id: "1", Seq: 5, RWnd: 5})
+	writer.RecvAck(wshrpc.CommandStreamAckData{Id: "1", Seq: 3, RWnd: 100})
+	if maxAckedSeq, _, _ := writer.GetAckState(); maxAckedSeq != 5 {
+		t.Fatalf("maxAckedSeq = %d after a lower-seq ack, want 5", maxAckedSeq)
+	}
+}
+
+func TestWriterCancelAckFailsBlockedWrite(t *testing.T) {
+	transport := newFakeTransport()
+	writer := NewWriter("1", 10, transport)
+
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := writer.Write(make([]byte, 15))
+		writeDone <- err
+	}()
+	// the first 10 bytes fill the window; Write is now waiting for an ack
+	recvDataWithin(t, transport)
+	writer.RecvAck(wshrpc.CommandStreamAckData{Id: "1", Cancel: true})
+
+	select {
+	case err := <-writeDone:
+		if err == nil || err.Error() != "stream cancelled" {
+			t.Fatalf("Write error = %v, want stream cancelled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked Write was not woken by the cancel ack")
+	}
+}

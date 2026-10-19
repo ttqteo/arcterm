@@ -46,6 +46,12 @@ describe("meterSegments", () => {
         expect(meterSegments([], 100)).toEqual([]);
     });
 
+    it("ignores a total that is not positive and sizes against the segments instead", () => {
+        const segs = [{ key: "a", value: 5, fill: "bg-accent" }];
+        expect(meterSegments(segs, 0)).toEqual([{ key: "a", fill: "bg-accent", pct: 100 }]);
+        expect(meterSegments(segs, -5)).toEqual([{ key: "a", fill: "bg-accent", pct: 100 }]);
+    });
+
     it("lets segments under-fill the track when they do not sum to the total", () => {
         const out = meterSegments([{ key: "a", value: 20, fill: "bg-accent" }], 100);
         expect(out[0].pct).toBe(20);

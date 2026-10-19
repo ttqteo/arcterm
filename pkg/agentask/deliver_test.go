@@ -5,6 +5,8 @@ package agentask
 
 import (
 	"errors"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -358,6 +360,100 @@ func TestDeliverAnswer_ProseForADagTaskIsTakenOnce(t *testing.T) {
 	}
 	if GlobalRegistry.TakeTypedAnswer("g1", "t-0", "B", time.Now().UnixMilli()) {
 		t.Fatal("an answer that was never submitted must not hide a prompt")
+	}
+}
+
+// only an answer typed for a known dag task is recorded: without both ids there is no task whose transcript to read
+func TestDeliverAnswer_ProseWithoutDagIsNotTaken(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	stubKeys(t)
+	p := prosePending()
+	p.TaskId = "t-0"
+	GlobalRegistry.Set("block:b1", p)
+	if ok, err := DeliverAnswer("block:b1", "", []baseds.AgentAnswerItem{{Text: "B"}}); !ok || err != nil {
+		t.Fatalf("want (true,nil), got (%v,%v)", ok, err)
+	}
+	if GlobalRegistry.TakeTypedAnswer("", "t-0", "B", time.Now().UnixMilli()) {
+		t.Fatal("an answer for a task with no dag must not be recorded")
+	}
+}
+
+// a picker answer types no prompt, so even for a dag task there is nothing for the engine to skip
+func TestDeliverAnswer_PickerAnswerForADagTaskIsNotTaken(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	stubKeys(t)
+	GlobalRegistry.Set("block:b1", PendingAsk{AskId: "a1", BlockId: "b1", Questions: oneQuestion(), DagOID: "g1", TaskId: "t-0"})
+	if ok, err := DeliverAnswer("block:b1", "", []baseds.AgentAnswerItem{{SelectedIndexes: []int{0}}}); !ok || err != nil {
+		t.Fatalf("want (true,nil), got (%v,%v)", ok, err)
+	}
+	if GlobalRegistry.TakeTypedAnswer("g1", "t-0", "", time.Now().UnixMilli()) {
+		t.Fatal("a picker answer must not be recorded as typed")
+	}
+}
+
+// keystrokes go one per write with KeystrokeDelay between each, and the first goes before any sleep.
+// the sleep has no seam, so the delivering goroutine's stack is watched for it rather than timing the
+// first keystroke: a stalled scheduler can only make the watcher miss a sleep, never invent one.
+func TestDeliverAnswer_SpacesKeystrokes(t *testing.T) {
+	GlobalRegistry = MakeRegistry()
+	GlobalRegistry.Set("tab:t1", PendingAsk{AskId: "a1", BlockId: "b1", Questions: oneQuestion()})
+	var mu sync.Mutex
+	var at []time.Time
+	orig := sendInput
+	sendInput = func(string, []byte) error { mu.Lock(); at = append(at, time.Now()); mu.Unlock(); return nil }
+	defer func() { sendInput = orig }()
+	sent := func() int { mu.Lock(); defer mu.Unlock(); return len(at) }
+
+	type result struct {
+		ok  bool
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		ok, err := DeliverAnswer("tab:t1", "", []baseds.AgentAnswerItem{{SelectedIndexes: []int{1}}})
+		done <- result{ok, err}
+	}()
+	sleptFirst := false
+	var res result
+	returned := false
+	buf := make([]byte, 1<<20)
+	for !returned {
+		// the stack is read before the count, so a sleep seen while nothing was sent came before the first key
+		stacks := string(buf[:runtime.Stack(buf, true)])
+		if sent() > 0 {
+			break
+		}
+		select {
+		case res = <-done:
+			// a return with nothing sent would otherwise spin this loop until go's test timeout
+			if n := sent(); n == 0 {
+				t.Fatalf("DeliverAnswer returned (%v,%v) with %d keystrokes sent", res.ok, res.err, n)
+			}
+			returned = true
+			continue
+		default:
+		}
+		for _, g := range strings.Split(stacks, "\n\n") {
+			if strings.Contains(g, "time.Sleep(") && strings.Contains(g, "agentask.injectAnswer(") {
+				sleptFirst = true
+			}
+		}
+		runtime.Gosched()
+	}
+	if !returned {
+		res = <-done
+	}
+	if !res.ok || res.err != nil {
+		t.Fatalf("want (true,nil), got (%v,%v)", res.ok, res.err)
+	}
+	if sleptFirst {
+		t.Fatal("the first keystroke must not wait, but a sleep ran before it")
+	}
+	if len(at) != 2 {
+		t.Fatalf("want 2 keystrokes for index 1, got %d", len(at))
+	}
+	if gap := at[1].Sub(at[0]); gap < KeystrokeDelay {
+		t.Fatalf("want at least %v between keystrokes, got %v", KeystrokeDelay, gap)
 	}
 }
 

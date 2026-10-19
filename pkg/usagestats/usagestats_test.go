@@ -192,6 +192,41 @@ func TestExtractCodexMaxCumulative(t *testing.T) {
 	}
 }
 
+// the first record with the largest cumulative total wins, wherever it sits in the file
+func TestExtractCodexKeepsFirstLargestTotal(t *testing.T) {
+	big := `{"timestamp":"2026-06-26T03:08:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":5000,"cached_input_tokens":1000,"output_tokens":500,"total_tokens":5500}}}}`
+	small := `{"timestamp":"2026-06-26T03:10:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}`
+	tie := `{"timestamp":"2026-06-26T03:20:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":5400,"output_tokens":100,"total_tokens":5500}}}}`
+	got := extractCodex([]string{big, small, tie})
+	want := Record{TS: time.Date(2026, 6, 26, 3, 8, 0, 0, time.UTC), Harness: "codex", Provider: "openai", Model: "codex", Input: 4000, Output: 500, CacheRead: 1000}
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("got %+v, want [%+v]", got, want)
+	}
+}
+
+// without total_tokens the total is input + output, so the later, larger record still wins
+func TestExtractCodexTotalFallsBackToInputPlusOutput(t *testing.T) {
+	small := `{"timestamp":"2026-06-26T03:08:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":10}}}}`
+	big := `{"timestamp":"2026-06-26T03:20:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":3000,"cached_input_tokens":200,"output_tokens":300}}}}`
+	got := extractCodex([]string{small, big})
+	want := Record{TS: time.Date(2026, 6, 26, 3, 20, 0, 0, time.UTC), Harness: "codex", Provider: "openai", Model: "codex", Input: 2800, Output: 300, CacheRead: 200}
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("got %+v, want [%+v]", got, want)
+	}
+}
+
+// usage counts only from an event_msg whose payload is a token_count
+func TestExtractCodexIgnoresOtherEventShapes(t *testing.T) {
+	counted := `{"timestamp":"2026-06-26T03:08:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":1,"total_tokens":11}}}}`
+	otherPayload := `{"timestamp":"2026-06-26T03:09:00.000Z","type":"event_msg","payload":{"type":"agent_message","info":{"total_token_usage":{"input_tokens":900,"output_tokens":90,"total_tokens":990}}}}`
+	otherType := `{"timestamp":"2026-06-26T03:10:00.000Z","type":"response_item","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":800,"output_tokens":80,"total_tokens":880}}}}`
+	got := extractCodex([]string{counted, otherPayload, otherType})
+	want := Record{TS: time.Date(2026, 6, 26, 3, 8, 0, 0, time.UTC), Harness: "codex", Provider: "openai", Model: "codex", Input: 10, Output: 1}
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("got %+v, want [%+v]", got, want)
+	}
+}
+
 func TestExtractCodexFallbackModelAndJunk(t *testing.T) {
 	count := `{"timestamp":"2026-06-26T03:08:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":1,"total_tokens":11}}}}`
 	if got := extractCodex([]string{count}); got[0].Model != "codex" {

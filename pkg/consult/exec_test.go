@@ -45,6 +45,9 @@ func runFakePiHelper(args []string) {
 	case "blank":
 		fmt.Println(`{"type":"other_event"}`)
 		fmt.Println()
+	case "two-errors":
+		fmt.Println(`{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"first failure"}}`)
+		fmt.Println(`{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"second failure"}}`)
 	}
 }
 
@@ -140,5 +143,64 @@ func TestRunPipe_nonReplyEventsProduceEmptyReply(t *testing.T) {
 	}
 	if full != "" {
 		t.Errorf("full = %q, want empty", full)
+	}
+}
+
+func TestRunPipe_keepsTheFirstParseError(t *testing.T) {
+	os.Setenv(fakePiHelperEnv, "1")
+	t.Cleanup(func() { os.Unsetenv(fakePiHelperEnv) })
+	spec := fakePiSpec("two-errors")
+	_, err := Run(context.Background(), spec, "", "prompt", func(string) {})
+	want := spec.Bin + ": Pi assistant error: first failure"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+}
+
+// without a ParseLine stdout is emitted verbatim, chunk by chunk, and never as an empty chunk
+func TestRunPipe_rawStdoutEmitsNoEmptyChunk(t *testing.T) {
+	os.Setenv(fakePiHelperEnv, "1")
+	t.Cleanup(func() { os.Unsetenv(fakePiHelperEnv) })
+	spec := fakePiSpec("blank")
+	spec.ParseLine = nil
+	var chunks []string
+	full, err := Run(context.Background(), spec, "", "prompt", func(c string) { chunks = append(chunks, c) })
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if want := "{\"type\":\"other_event\"}\n\n"; full != want {
+		t.Fatalf("full = %q, want %q", full, want)
+	}
+	if strings.Join(chunks, "") != full {
+		t.Fatalf("chunks %q do not make up the reply %q", chunks, full)
+	}
+	for i, c := range chunks {
+		if c == "" {
+			t.Fatalf("chunk %d of %q is empty", i, chunks)
+		}
+	}
+}
+
+// the stderr capture file is the run's own: it is closed and removed when the run returns
+func TestRunPipe_removesTheStderrCapture(t *testing.T) {
+	os.Setenv(fakePiHelperEnv, "1")
+	t.Cleanup(func() { os.Unsetenv(fakePiHelperEnv) })
+	tmp := t.TempDir()
+	for _, k := range []string{"TMP", "TEMP", "TMPDIR"} {
+		t.Setenv(k, tmp)
+	}
+	if _, err := Run(context.Background(), fakePiSpec("drain"), "", "prompt", func(string) {}); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	if left != nil {
+		t.Fatalf("temp dir holds %v after the run, want nothing", left)
 	}
 }

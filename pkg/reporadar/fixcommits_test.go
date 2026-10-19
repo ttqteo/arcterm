@@ -148,3 +148,21 @@ func TestIsTestPathNewPatterns(t *testing.T) {
 		}
 	}
 }
+
+func TestClipBoundsBytesWithoutSplittingARune(t *testing.T) {
+	cases := []struct {
+		s    string
+		n    int
+		want string
+	}{
+		{"abc", 3, "abc"},            // exactly n bytes is kept whole
+		{"hello", 3, "hel…"},         // cut at n
+		{"h\u00e9llo", 2, "h…"},      // n falls inside é: back off to its start
+		{"\x80\x80\x80\x80", 2, "…"}, // no rune start before n: nothing is kept
+	}
+	for _, c := range cases {
+		if got := clip(c.s, c.n); got != c.want {
+			t.Errorf("clip(%q, %d) = %q, want %q", c.s, c.n, got, c.want)
+		}
+	}
+}

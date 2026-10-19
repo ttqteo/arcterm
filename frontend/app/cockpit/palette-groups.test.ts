@@ -63,6 +63,15 @@ describe("assembleAllGroups", () => {
         expect(groups[1].items.map((i) => i.key)).toEqual(["surface:cockpit"]);
     });
 
+    it("treats a whitespace-only query as empty", () => {
+        const groups = assembleAllGroups(input({ query: "   ", recent: [radar], goto: [cockpit], launch, asGoalItem }));
+        expect(groups.map((g) => g.label)).toEqual(["Recent", "Go to"]);
+    });
+
+    it("returns nothing when the text names nothing and there is nowhere to start it", () => {
+        expect(assembleAllGroups(input({ query: "add a runs group to the palette", ranked: [juno] }))).toStrictEqual([]);
+    });
+
     it("groups a note row under Notes", () => {
         const note = item("note:2026-10-08-radar", "note", "Radar ideas");
         const groups = assembleAllGroups(input({ query: "radar", ranked: [note] }));
@@ -105,7 +114,7 @@ describe("assembleAllGroups", () => {
         const groups = assembleAllGroups(input({ needs, start: [newRun], recent: [radar], goto: [cockpit] }));
         expect(groups.map((g) => g.key)).toEqual(["needs", "start", "recent", "goto"]);
         expect(groups[0].items.map((i) => i.key)).toEqual(["needs:a", "needs:b", "needs:c"]);
-        expect(groups[0]).toMatchObject({ label: "Needs you · 4", hidden: 1 });
+        expect(groups[0]).toMatchObject({ label: "Needs you · 4", hidden: 1, asking: true });
     });
 
     it("does not repeat a Start row already under Recent", () => {

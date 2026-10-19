@@ -50,6 +50,20 @@ func TestParseFrontmatterEntriesKeepsMultilineValues(t *testing.T) {
 	}
 }
 
+// an indented line holding a colon is part of the value above, and a line before the first key has no entry to join
+func TestParseFrontmatterEntriesIndentedColonsAndLeadingLines(t *testing.T) {
+	block := "# leading note\nname: x\ndescription: |\n  sub: y\n\tdeep: z\ntool: codex\n"
+	got := parseFrontmatterEntries(block)
+	want := []fmEntry{
+		{key: "name", text: "name: x\n"},
+		{key: "description", text: "description: |\n  sub: y\n\tdeep: z\n"},
+		{key: "tool", text: "tool: codex\n"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("entries = %#v, want %#v", got, want)
+	}
+}
+
 func TestMergeFrontmatterReplacesInPlaceAndAppends(t *testing.T) {
 	block := "name: x\ndescription: |\n  keep me\ntool: codex\n"
 	got := mergeFrontmatter(block, parseFrontmatterEntries("tool: opencode\ncategory: orchestration\n"))

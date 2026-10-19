@@ -28,6 +28,13 @@ describe("focusTrapTarget", () => {
         expect(focusTrapTarget([first, second, third], first, true)).toBe(third);
     });
 
+    it("steps to the neighbour of the focused target", () => {
+        expect(focusTrapTarget([first, second, third], first, false)).toBe(second);
+        expect(focusTrapTarget([first, second, third], second, false)).toBe(third);
+        expect(focusTrapTarget([first, second, third], second, true)).toBe(first);
+        expect(focusTrapTarget([first, second, third], third, true)).toBe(second);
+    });
+
     it("chooses the first or last target when focus is outside the list", () => {
         const outside = fakeNode(true);
         expect(focusTrapTarget([first, second], outside, false)).toBe(first);

@@ -38,6 +38,12 @@ describe("deriveVersionInfo", () => {
         expect(deriveVersionInfo("", "0.14.5", 0, "win32").mismatch).toBe(false);
     });
 
+    it("keeps a positive build time and zeroes one that is negative or infinite", () => {
+        expect(deriveVersionInfo("0.14.5", "0.14.5", 202609081530, "win32").buildTime).toBe(202609081530);
+        expect(deriveVersionInfo("0.14.5", "0.14.5", -5, "win32").buildTime).toBe(0);
+        expect(deriveVersionInfo("0.14.5", "0.14.5", Infinity, "win32").buildTime).toBe(0);
+    });
+
     it("normalizes a missing platform and a non-finite build time", () => {
         const info = deriveVersionInfo("0.14.5", "0.14.5", Number.NaN, "");
         expect(info.platform).toBe(UNKNOWN_VERSION);

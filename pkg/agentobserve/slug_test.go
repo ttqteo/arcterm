@@ -16,6 +16,7 @@ func TestSlugifyCwd(t *testing.T) {
 		{"posix path", "/Users/cktra/Projects/waveterm", "-Users-cktra-Projects-waveterm"},
 		{"hyphens preserved", "a-b-c", "a-b-c"},
 		{"already alnum", "abc123", "abc123"},
+		{"range bounds kept", "azAZ09", "azAZ09"},
 		{"empty", "", ""},
 	}
 	for _, c := range cases {

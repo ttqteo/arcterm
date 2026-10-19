@@ -5,7 +5,9 @@ package wshutil
 
 import (
 	"bytes"
+	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -75,5 +77,130 @@ func TestDeadLinkIsNotRetriedForever(t *testing.T) {
 	router.lock.Unlock()
 	if backlog != 0 {
 		t.Fatalf("dead link still holds %d backlogged messages", backlog)
+	}
+}
+
+func (p *panicLog) Contains(s string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return strings.Contains(p.buf.String(), s)
+}
+
+// gatedClient accepts `budget` sends and refuses the rest; a negative budget accepts every send.
+type gatedClient struct {
+	mu     sync.Mutex
+	budget int
+	got    []string
+	done   chan struct{}
+}
+
+func newGatedClient(t *testing.T) *gatedClient {
+	c := &gatedClient{done: make(chan struct{})}
+	t.Cleanup(func() { close(c.done) })
+	return c
+}
+
+func (c *gatedClient) GetPeerInfo() string { return "gated" }
+
+func (c *gatedClient) SendRpcMessage(msg []byte, ingressLinkId baseds.LinkId, debugStr string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.budget == 0 {
+		return false
+	}
+	if c.budget > 0 {
+		c.budget--
+	}
+	c.got = append(c.got, string(msg))
+	return true
+}
+
+func (c *gatedClient) RecvRpcMessage() ([]byte, bool) {
+	<-c.done
+	return nil, false
+}
+
+func (c *gatedClient) setBudget(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.budget = n
+}
+
+func (c *gatedClient) received() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.got)
+}
+
+func waitUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// a live link's backlog keeps what it could not send, delivers it in order once the link accepts, and
+// leaves no backlog state behind
+func TestBacklogDrainsInOrderAcrossPartialSends(t *testing.T) {
+	router := NewWshRouter()
+	client := newGatedClient(t)
+	linkId := router.RegisterUntrustedLink(client)
+
+	router.sendMessageToLink([]byte("m1"), linkId, baseds.NoLinkId)
+	router.sendMessageToLink([]byte("m2"), linkId, baseds.NoLinkId)
+	time.Sleep(120 * time.Millisecond) // two backlog rounds that every send is refused in
+
+	client.setBudget(1)
+	waitUntil(t, "m1 delivered", func() bool { return len(client.received()) == 1 })
+	router.lock.Lock()
+	var pending []string
+	for _, msg := range router.linkMsgBacklog[linkId] {
+		pending = append(pending, string(msg.msgBytes))
+	}
+	client.setBudget(-1)
+	router.lock.Unlock()
+	if !slices.Equal(pending, []string{"m2"}) {
+		t.Fatalf("backlog after a partial send = %v, want [m2]", pending)
+	}
+
+	waitUntil(t, "m2 delivered", func() bool { return len(client.received()) == 2 })
+	if got := client.received(); !slices.Equal(got, []string{"m1", "m2"}) {
+		t.Fatalf("delivered %v, want [m1 m2]", got)
+	}
+	router.lock.Lock()
+	_, hasBacklog := router.linkMsgBacklog[linkId]
+	_, hasHighWater := router.backlogHighWaterMark[linkId]
+	router.lock.Unlock()
+	if hasBacklog || hasHighWater {
+		t.Fatalf("drained link kept backlog state: backlog %v, highwater %v", hasBacklog, hasHighWater)
+	}
+}
+
+func TestBacklogOfUnregisteredLinkIsCleared(t *testing.T) {
+	logs := capturePanicLogs(t)
+	router := NewWshRouter()
+	linkId := router.RegisterUntrustedLink(newGatedClient(t))
+	router.sendMessageToLink([]byte("m1"), linkId, baseds.NoLinkId)
+	router.UnregisterLink(linkId)
+
+	waitUntil(t, "the gone link's backlog to clear", func() bool {
+		router.lock.Lock()
+		defer router.lock.Unlock()
+		_, ok := router.linkMsgBacklog[linkId]
+		return !ok
+	})
+	router.lock.Lock()
+	_, hasHighWater := router.backlogHighWaterMark[linkId]
+	router.lock.Unlock()
+	if hasHighWater {
+		t.Fatal("gone link kept its backlog high-water mark")
+	}
+	want := fmt.Sprintf("backlog for linkid=%d cleared, link gone (highwater mark was 1 messages)", linkId)
+	if !logs.Contains(want) {
+		t.Fatalf("log is missing %q", want)
 	}
 }

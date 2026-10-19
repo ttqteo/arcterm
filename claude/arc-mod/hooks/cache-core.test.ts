@@ -90,6 +90,57 @@ describe("cacheMissNotice", () => {
         expect(cacheMissNotice([...before, { type: "system", subtype: "compact_boundary" }, after])).toBeNull();
     });
 
+    it("starts over only at a system row of the compact_boundary subtype", () => {
+        const first = [prompt(), request("a", 0, 0, 100_000)];
+        const second = request("b", 1, 0, 100_000);
+        expect(cacheMissNotice([...first, { type: "system", subtype: "turn_duration" }, second])).toEqual(
+            "Cache miss: 100k re-billed"
+        );
+        expect(cacheMissNotice([...first, { type: "attachment", subtype: "compact_boundary" }, second])).toEqual(
+            "Cache miss: 100k re-billed"
+        );
+    });
+
+    it("ignores a row that is not an assistant response even when it carries usage", () => {
+        const stray = { ...request("x", 1, 0, 100_000), type: "attachment" };
+        const entries = [prompt(), request("a", 0, 0, 100_000), stray, request("b", 2, 100_000, 500)];
+        expect(cacheMissNotice(entries)).toBeNull();
+    });
+
+    it("skips a request with no tokens rather than comparing the next against it", () => {
+        const empty: TranscriptEntry = {
+            type: "assistant",
+            timestamp: at(1),
+            message: { id: "z", model: OPUS, usage: { input_tokens: 0 } },
+        };
+        const entries = [prompt(), request("a", 0, 0, 100_000), empty, request("b", 2, 0, 100_000)];
+        expect(cacheMissNotice(entries)).toEqual("Cache miss: 100k re-billed");
+    });
+
+    it("measures the miss against the smaller of the two prompts", () => {
+        // a grown prompt that read all of the old one missed nothing
+        const grown = [prompt(), request("a", 0, 0, 100_000), request("b", 1, 100_000, 50_000)];
+        expect(cacheMissNotice(grown)).toBeNull();
+        const shrunk = [prompt(), request("a", 0, 0, 100_000), request("b", 1, 30_000, 20_000)];
+        expect(cacheMissNotice(shrunk)).toEqual("Cache miss: 20k re-billed");
+    });
+
+    it("keeps the hour window across a request that reports no cache write breakdown", () => {
+        const hourWrite = request("a", 0, 0, 100_000);
+        hourWrite.message.usage.cache_creation = { ephemeral_1h_input_tokens: 100_000 };
+        const entries = [hourWrite, request("b", 1, 100_000, 500), request("c", 13, 15_500, 85_000)];
+        expect(cacheMissNotice(entries)).toEqual("Cache miss: 85k re-billed");
+    });
+
+    it("returns the window to five minutes when a 5-minute cache write follows an hour one", () => {
+        const hourWrite = request("a", 0, 0, 100_000);
+        hourWrite.message.usage.cache_creation = { ephemeral_1h_input_tokens: 100_000 };
+        const fiveMinuteWrite = request("b", 1, 100_000, 500);
+        fiveMinuteWrite.message.usage.cache_creation = { ephemeral_5m_input_tokens: 500 };
+        const entries = [hourWrite, fiveMinuteWrite, request("c", 13, 15_500, 85_000)];
+        expect(cacheMissNotice(entries)).toEqual("Cache miss: 85k re-billed, 12m idle");
+    });
+
     it("counts a response written as several lines once", () => {
         const entries = [
             prompt(),

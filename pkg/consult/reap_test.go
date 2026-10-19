@@ -10,7 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -117,6 +119,55 @@ func TestRunPipe_cancelLeaksNoReaper(t *testing.T) {
 	time.Sleep(5 * time.Second)
 	if leak := settledGoroutines(400*time.Millisecond) - baseline; leak < 0 || leak > 1 {
 		t.Fatalf("goroutines after descendant exit: %d above baseline, want ~0", leak)
+	}
+}
+
+// TestRunPipe_cancelEndsReadOfHeldStdout: a grandchild that holds stdout far past the cancel must not keep
+// the read loop waiting for an EOF that only its exit would bring.
+func TestRunPipe_cancelEndsReadOfHeldStdout(t *testing.T) {
+	bin := buildReaperHelper(t)
+	cwd := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pidRe := regexp.MustCompile(`GRANDCHILD (\d+)`)
+	pids := make(chan int, 1)
+	t.Cleanup(func() {
+		select {
+		case pid := <-pids:
+			if p, err := os.FindProcess(pid); err == nil {
+				p.Kill()
+			}
+		default:
+		}
+	})
+	done := make(chan error, 1)
+	go func() {
+		var out strings.Builder
+		_, err := Run(ctx, RuntimeSpec{Bin: bin, BaseArgs: []string{"parent", "60000"}}, cwd, "probe", func(chunk string) {
+			out.WriteString(chunk)
+			if m := pidRe.FindStringSubmatch(out.String()); m != nil {
+				pid, _ := strconv.Atoi(m[1])
+				select {
+				case pids <- pid:
+				default:
+				}
+			}
+		})
+		done <- err
+	}()
+	var pid int
+	select {
+	case pid = <-pids:
+		pids <- pid
+	case <-time.After(10 * time.Second):
+		t.Fatal("grandchild never spawned")
+	}
+	cancel()
+	// the parent exits at once, so whether Wait or the cancel answers first decides the error; only the return counts
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("consult did not return after cancel while the grandchild holds stdout")
 	}
 }
 

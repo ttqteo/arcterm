@@ -6,6 +6,7 @@ package jarvisstate
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
@@ -183,6 +184,84 @@ func TestFetchWorkStateMarksDossiersUnhealthyOnDossierLoadFailure(t *testing.T) 
 	}
 	if !blockerFound {
 		t.Fatalf("state=%+v want the healthy dossier's blocker kept despite the failed load", st)
+	}
+}
+
+func TestFetchWorkStateHealthyLegsReportHealthy(t *testing.T) {
+	ctx := context.Background()
+	v, err := wavevault.OpenVaultAtForTest(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("open vault: %v", err)
+	}
+	id, _, err := jarvisdossier.CreateDossier(v, jarvisdossier.DossierFacts{Objective: "healthy record"})
+	if err != nil {
+		t.Fatalf("create dossier: %v", err)
+	}
+	if _, err := jarvisdossier.AppendDecision(v, jarvisdossier.DecisionFacts{TaskID: id, Summary: "chose sqlite"}); err != nil {
+		t.Fatalf("append decision: %v", err)
+	}
+	seams := emptyLegs()
+	seams.openVault = func(ctx context.Context) (*wavevault.Vault, error) { return v, nil }
+	restore := SetFetchSeamsForTest(seams)
+	defer restore()
+	st, err := FetchWorkState(ctx, "", 0)
+	if err != nil {
+		t.Fatalf("FetchWorkState: %v", err)
+	}
+	want := wshrpc.SourceHealth{Runs: true, Sessions: true, Dossiers: true, Efforts: true, Attention: "volatile"}
+	if st.Sources != want {
+		t.Fatalf("sources = %+v, want %+v", st.Sources, want)
+	}
+}
+
+// projects are keyed by their slash-normalized path, a run with none under "(none)"; a filter keeps only the
+// filtered project's work
+func TestFetchWorkStateKeysAndFiltersProjects(t *testing.T) {
+	ctx := context.Background()
+	sealed := func(oid, project string) *waveobj.Run {
+		return &waveobj.Run{OID: oid, ID: oid, Status: "done", ProjectPath: project, CreatedTs: 100, CompletedTs: 900,
+			Evidence: &waveobj.RunEvidence{Summary: "shipped " + oid}}
+	}
+	seams := emptyLegs()
+	seams.getChannels = func(ctx context.Context) ([]*waveobj.Channel, error) {
+		return []*waveobj.Channel{{OID: "c1"}}, nil
+	}
+	seams.getChannelRuns = func(ctx context.Context, id string) ([]*waveobj.Run, error) {
+		return []*waveobj.Run{sealed("r0", ""), sealed("r1", "/p/one"), sealed("r2", `C:\p\two\`)}, nil
+	}
+	restore := SetFetchSeamsForTest(seams)
+	defer restore()
+	shippedBy := func(st wshrpc.WorkState) map[string][]string {
+		out := map[string][]string{}
+		for _, p := range st.Projects {
+			for _, s := range p.Shipped {
+				out[p.Project] = append(out[p.Project], s.RunOID)
+			}
+		}
+		return out
+	}
+
+	st, err := FetchWorkState(ctx, "", 0)
+	if err != nil {
+		t.Fatalf("FetchWorkState: %v", err)
+	}
+	want := map[string][]string{"(none)": {"r0"}, "/p/one": {"r1"}, "C:/p/two": {"r2"}}
+	if got := shippedBy(st); !reflect.DeepEqual(got, want) {
+		t.Fatalf("shipped by project = %v, want %v", got, want)
+	}
+
+	st, err = FetchWorkState(ctx, `\p\one\`, 0)
+	if err != nil {
+		t.Fatalf("FetchWorkState: %v", err)
+	}
+	want = map[string][]string{"/p/one": {"r1"}}
+	if got := shippedBy(st); !reflect.DeepEqual(got, want) {
+		t.Fatalf("filtered shipped by project = %v, want %v", got, want)
+	}
+	for _, p := range st.Projects {
+		if p.Project != "/p/one" && (len(p.Active)+len(p.Shipped)+len(p.Events)+len(p.Delta)) > 0 {
+			t.Fatalf("filtered state holds work of %q: %+v", p.Project, p)
+		}
 	}
 }
 

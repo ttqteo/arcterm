@@ -47,6 +47,17 @@ describe("typeQuery", () => {
     it("leaves a sigil as text inside a narrowed scope", () => {
         expect(typeQuery(nav({ scope: "files" }), "#")).toMatchObject({ scope: "files", query: "#" });
     });
+    it("leaves a sigil as text while a drill or an action list is open", () => {
+        const thing = { key: "run:1", title: "palette redesign", noun: "Run" };
+        expect(typeQuery(nav({ drill: "theme" }), "@")).toMatchObject({ scope: "all", query: "@" });
+        expect(typeQuery(openActions(nav(), thing, 0), "@")).toMatchObject({ scope: "all", query: "@" });
+    });
+    it("leaves a sigil as text once the query already holds some", () => {
+        expect(typeQuery(nav({ query: "a" }), "@a")).toMatchObject({ scope: "all", query: "@a" });
+    });
+    it("clears a chosen 'as a goal' when a sigil narrows the scope", () => {
+        expect(typeQuery(nav({ asGoal: true }), "@")).toMatchObject({ scope: "agents", asGoal: false });
+    });
     it("drops a chosen 'as a goal' once the text changes", () => {
         expect(typeQuery(nav({ query: "rad", asGoal: true }), "rada").asGoal).toBe(false);
     });
@@ -83,6 +94,12 @@ describe("parseProjectLaunch", () => {
         expect(parseProjectLaunch("back")).toBeNull();
         expect(parseProjectLaunch("backend ")).toBeNull();
     });
+    it("is picker mode for a token followed by only more than one space", () => {
+        expect(parseProjectLaunch("backend  ")).toBeNull();
+    });
+    it("skips leading whitespace before the token", () => {
+        expect(parseProjectLaunch("   backend fix auth")).toEqual({ token: "backend", goal: "fix auth" });
+    });
     it("splits a token and a trimmed goal", () => {
         expect(parseProjectLaunch("backend   fix auth  ")).toEqual({ token: "backend", goal: "fix auth" });
     });
@@ -92,6 +109,15 @@ describe("resolveChannelToken", () => {
     const channels = [{ name: "backend-api" }, { name: "frontend" }, { name: "Payments" }];
     it("matches an exact name case-insensitively", () => {
         expect(resolveChannelToken("payments", channels)).toEqual({ name: "Payments" });
+    });
+    it("takes an exact name over a better-ranked fuzzy match, whatever the case", () => {
+        const both = [{ name: "app-api" }, { name: "app" }];
+        expect(resolveChannelToken("app", both)).toEqual({ name: "app" });
+        expect(resolveChannelToken("APP", both)).toEqual({ name: "app" });
+    });
+    it("takes the highest-scoring fuzzy match, the first of equals", () => {
+        expect(resolveChannelToken("bk", [{ name: "b-k" }, { name: "backend" }])).toEqual({ name: "b-k" });
+        expect(resolveChannelToken("bet", [{ name: "beta1" }, { name: "beta2" }])).toEqual({ name: "beta1" });
     });
     it("falls back to the best fuzzy match", () => {
         expect(resolveChannelToken("backend", channels)).toEqual({ name: "backend-api" });
@@ -118,6 +144,13 @@ describe("scope prefixes", () => {
     it("a colon after other text is text", () => {
         expect(typeQuery({ ...all, query: "fix" }, "fix:").scope).toBe("all");
         expect(typeQuery({ ...all, query: "x" }, "xr:").scope).toBe("all");
+    });
+    it("a prefix narrows only while the query is still its own start", () => {
+        expect(typeQuery({ ...all, query: "x" }, "r:")).toMatchObject({ scope: "all", query: "r:" });
+        expect(typeQuery({ ...all, query: "r:" }, "r:fix")).toMatchObject({ scope: "all", query: "r:fix" });
+    });
+    it("clears a chosen 'as a goal' when a prefix narrows the scope", () => {
+        expect(typeQuery({ ...all, query: "r", asGoal: true }, "r:")).toMatchObject({ scope: "runs", asGoal: false });
     });
     it("sigils still work", () => {
         expect(typeQuery(all, "@juno")).toMatchObject({ scope: "agents", query: "juno" });

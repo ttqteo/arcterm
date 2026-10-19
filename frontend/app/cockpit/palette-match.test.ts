@@ -60,6 +60,23 @@ describe("fuzzyMatch", () => {
     it("returns null when the query is not a subsequence", () => {
         expect(fuzzyMatch("xyz", "New agent")).toBeNull();
     });
+    it("treats a whitespace-only query as empty and ignores whitespace around a real one", () => {
+        expect(fuzzyMatch("   ", "a b c")).toStrictEqual({ score: 0, positions: [] });
+        expect(fuzzyMatch("  nag ", "New agent")!.positions).toEqual([0, 4, 5]);
+    });
+    it("scores a lone character by its match and word start, with no gap to penalize", () => {
+        // 1 for the match; 'a' mid-word earns no boundary bonus and there is no previous match to gap from
+        expect(fuzzyMatch("a", "xxa")!.score).toBe(1);
+        expect(fuzzyMatch("a", "xxa")!.positions).toEqual([2]);
+    });
+    it("penalizes a gap after a match at the very start of the text", () => {
+        // a@0: 1 + 3 (word start); b@2: 1, minus a gap of 1
+        expect(fuzzyScore("ab", "axb")).toBe(4);
+    });
+    it("penalizes a gap by its width up to a cap", () => {
+        // a gap of 5 costs the cap of 3, not 5: 4 + 1 - 3
+        expect(fuzzyScore("ab", "axxxxxb")).toBe(2);
+    });
     it("agrees with fuzzyScore", () => {
         expect(fuzzyMatch("nag", "New agent")!.score).toBe(fuzzyScore("nag", "New agent"));
     });

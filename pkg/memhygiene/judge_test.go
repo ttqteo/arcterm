@@ -259,6 +259,35 @@ func TestJudgePromptCarriesIndexBatchAndDocs(t *testing.T) {
 	}
 }
 
+// everything after the fixed instructions, exactly: the index, each memory with its index line or the lack of
+// one, dead links only when there are some, and the no-doc warning only when the target doc is missing
+func TestJudgePromptSectionsExact(t *testing.T) {
+	line := "- [A](a.md) — hook a"
+	inv := &Inventory{
+		IndexLines: []string{line},
+		Memories:   []Memory{{Name: "a.md", IndexLine: line, Body: "A body"}, {Name: "b.md", Body: "B body"}},
+		Sessions:   3,
+	}
+	doc := filepath.Join(t.TempDir(), judgeDocAgents)
+	memories := "\n## Memories to review\n" +
+		"\n### a.md\n\nIndex line: " + line + "\nRead in 0 of 3 sessions\nBody:\nA body\n" +
+		"\n### b.md\n\nIndex line: none (the index doesn't link it)\nRead in 0 of 3 sessions\nBody:\nB body\n"
+
+	want := "## The whole index (MEMORY.md)\n\n" + line + "\n" + memories +
+		"\n## Instruction docs\n" + "\n### " + doc + "\n\nDOC\n"
+	if got := JudgePrompt(inv, inv.Memories, map[string]string{doc: "DOC"}, doc); !strings.HasSuffix(got, want) {
+		t.Errorf("prompt does not end with\n%s\n---\ngot\n%s", want, got)
+	}
+
+	inv.DeadLinks = []string{"gone.md"}
+	want = "## The whole index (MEMORY.md)\n\n" + line + "\n" +
+		"\nIndex links to files that don't exist: gone.md\n" + memories +
+		"\n## Instruction docs\n" + "\nThe project has no AGENTS.md, so propose no move-to-doc.\n"
+	if got := JudgePrompt(inv, inv.Memories, map[string]string{}, doc); !strings.HasSuffix(got, want) {
+		t.Errorf("prompt does not end with\n%s\n---\ngot\n%s", want, got)
+	}
+}
+
 func TestModelRefusesToolsInInit(t *testing.T) {
 	base, ok := consult.SpecFor("claude")
 	if !ok {

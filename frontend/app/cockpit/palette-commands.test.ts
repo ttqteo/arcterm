@@ -144,6 +144,10 @@ describe("commandGroups", () => {
         const groups = commandGroups([row("Global"), row("Radar")], "usage");
         expect(groups.map((g) => g.label)).toEqual(["Global", "Radar"]);
     });
+    it("lists groups outside the fixed order alphabetically", () => {
+        const groups = commandGroups([row("Zeta"), row("Global"), row("Alpha"), row("Mid")], "usage");
+        expect(groups.map((g) => g.label)).toEqual(["Global", "Alpha", "Mid", "Zeta"]);
+    });
 });
 
 describe("buildThemeItems", () => {

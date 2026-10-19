@@ -62,6 +62,27 @@ func TestReadPastEOF(t *testing.T) {
 	}
 }
 
+func TestReadPastEOFFromOffset(t *testing.T) {
+	initDb(t)
+	defer cleanupDb(t)
+	ctx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelFn()
+	zoneId := uuid.NewString()
+	if err := WFS.MakeFile(ctx, zoneId, "f", nil, wshrpc.FileOpts{}); err != nil {
+		t.Fatalf("make file: %v", err)
+	}
+	if err := WFS.WriteFile(ctx, zoneId, "f", []byte("hello")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	off, data, err := WFS.ReadAt(ctx, zoneId, "f", 2, 100)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if off != 2 || string(data) != "llo" {
+		t.Fatalf("expected clamped read \"llo\" at 2, got %q at %d", string(data), off)
+	}
+}
+
 func TestReadZeroBytes(t *testing.T) {
 	// covers loadDataPartsForRead early-return on an empty part list
 	initDb(t)
@@ -105,6 +126,37 @@ func TestCircularReadBeforeData(t *testing.T) {
 	}
 	if off != 5 || len(data) != 0 {
 		t.Fatalf("expected empty read at adjusted offset 5, got %q at %d", string(data), off)
+	}
+}
+
+func TestCircularReadStraddlingWindowStart(t *testing.T) {
+	// a read that starts before the surviving window loses only the part before it
+	initDb(t)
+	defer cleanupDb(t)
+	ctx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelFn()
+	zoneId := uuid.NewString()
+	if err := WFS.MakeFile(ctx, zoneId, "c", nil, wshrpc.FileOpts{Circular: true, MaxSize: 50}); err != nil {
+		t.Fatalf("make file: %v", err)
+	}
+	text := makeText(55)
+	if err := WFS.WriteFile(ctx, zoneId, "c", []byte(text)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	off, data, err := WFS.ReadAt(ctx, zoneId, "c", 2, 10)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if off != 5 || string(data) != text[5:12] {
+		t.Fatalf("expected %q at 5, got %q at %d", text[5:12], string(data), off)
+	}
+	// a read that ends exactly where the window starts returns no data at all, not an empty slice
+	off, data, err = WFS.ReadAt(ctx, zoneId, "c", 0, 5)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if off != 5 || data != nil {
+		t.Fatalf("expected nil data at 5, got %#v at %d", data, off)
 	}
 }
 

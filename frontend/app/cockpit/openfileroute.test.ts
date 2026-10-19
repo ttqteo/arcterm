@@ -47,6 +47,17 @@ describe("routeOpenFile", () => {
         expect(r.rel).toBe("README.md");
     });
 
+    test("a project root written with a trailing separator still strips only its own segments", () => {
+        const slashed = { name: "app", path: "C:\\work\\app\\" };
+        const r = routeOpenFile("C:\\work\\app\\src\\main.go", false, slashed, []);
+        expect(r.project).toBe(slashed);
+        expect(r.rel).toBe("src/main.go");
+    });
+
+    test("a path ending in a separator leaves no empty segment in rel", () => {
+        expect(routeOpenFile("C:\\Users\\kael02\\IdeaProjects\\waveterm\\pkg\\", false, repo, []).rel).toBe("pkg");
+    });
+
     test("directory becomes the browsed project itself", () => {
         const r = routeOpenFile("D:\\some\\repo", true, repo, []);
         expect(r.project).toEqual({ name: "repo", path: "D:\\some\\repo" });

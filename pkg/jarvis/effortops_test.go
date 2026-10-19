@@ -1,6 +1,7 @@
 package jarvis
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -47,6 +48,40 @@ func TestApplyOpsAddChunkInsertAt(t *testing.T) {
 	}
 	if len(e.Chunks) != 4 || e.Chunks[0].Label != "Phase 0" {
 		t.Fatalf("chunks: %+v", e.Chunks)
+	}
+}
+
+// at = len+1 is the end of the list, and a new chunk is a feed event
+func TestApplyOpsAddChunkAtEndEmitsEvent(t *testing.T) {
+	e := mkEffort()
+	err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "addChunk", Label: "Phase 4", At: intPtr(4)}}, "", effortNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := chunkLabels(e); got != "Phase 1, Phase 2, Phase 3, Phase 4" {
+		t.Fatalf("chunks: %v", got)
+	}
+	want := []waveobj.EffortEvent{{Ts: effortNow, Kind: "chunk-added", Label: "Phase 4"}}
+	if !reflect.DeepEqual(e.Events, want) {
+		t.Fatalf("events: %+v, want %+v", e.Events, want)
+	}
+}
+
+func TestApplyOpsMoveChunkDown(t *testing.T) {
+	e := mkEffort()
+	if err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "moveChunk", Chunk: "Phase 2", At: intPtr(3)}}, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if got := chunkLabels(e); got != "Phase 1, Phase 3, Phase 2" {
+		t.Fatalf("chunks: %v", got)
+	}
+}
+
+func TestApplyOpsMoveChunkIndexBounds(t *testing.T) {
+	for _, at := range []*int{nil, intPtr(0), intPtr(4)} {
+		e := mkEffort()
+		err := ApplyEffortOps(e, []wshrpc.EffortOp{{Op: "moveChunk", Chunk: "Phase 2", At: at}}, "", effortNow)
+		expectErrCode(t, err, "EC-INVALID-INDEX")
 	}
 }
 
@@ -149,6 +184,24 @@ func TestApplyOpsSetChunkStatusEmitsEvents(t *testing.T) {
 	}
 	if len(e.Events) != 1 || e.Events[0].Kind != "chunk-status" || e.Events[0].Label != "Phase 3" {
 		t.Fatalf("events: %+v", e.Events)
+	}
+}
+
+// the trail note carries the status, and the op's note after a separator only when there is one
+func TestApplyOpsSetChunkStatusNoteText(t *testing.T) {
+	e := mkEffort()
+	ops := []wshrpc.EffortOp{
+		{Op: "setChunkStatus", Chunk: "Phase 3", Status: "blocked", Note: "waiting on substrate"},
+		{Op: "setChunkStatus", Chunk: "Phase 2", Status: "done"},
+	}
+	if err := ApplyEffortOps(e, ops, "", effortNow); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.Chunks[2].Notes; len(got) != 1 || got[0].Text != "marked blocked · waiting on substrate" {
+		t.Fatalf("Phase 3 notes: %+v", got)
+	}
+	if got := e.Chunks[1].Notes; len(got) != 1 || got[0].Text != "marked done" {
+		t.Fatalf("Phase 2 notes: %+v", got)
 	}
 }
 
@@ -318,6 +371,10 @@ func TestApplyOpsDetachWork(t *testing.T) {
 	}
 	if len(e.Chunks[1].WorkRefs) != 0 {
 		t.Fatalf("refs remain: %+v", e.Chunks[1].WorkRefs)
+	}
+	notes := e.Chunks[1].Notes
+	if last := notes[len(notes)-1].Text; last != "detached: agent:tab-1" {
+		t.Fatalf("trail ends with %q, want the detach", last)
 	}
 }
 

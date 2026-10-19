@@ -506,6 +506,31 @@ func TestSealEvidenceRecordsRoute(t *testing.T) {
 	}
 }
 
+// RunRoute reads the model from the last worker of the last non-skipped phase whose transcript resolves: a
+// skipped phase's worker never counts, and a torn-down worker tab falls back to the one before it.
+func TestRunRouteReadsTheLastResolvableWorkerModel(t *testing.T) {
+	// a transcript is a session only once it carries a prompt
+	turn := func(model string) []string {
+		return []string{
+			`{"type":"user","message":{"content":"do the task"}}`,
+			`{"type":"assistant","message":{"model":"` + model + `","content":[{"type":"text","text":"done"}]}}`,
+		}
+	}
+	worker := seedWorkerTranscript(t, t.TempDir(), turn("claude-opus-4-8"))
+	skipped := seedWorkerTranscript(t, t.TempDir(), turn("claude-skipped-9"))
+	gone := waveobj.MakeORef(waveobj.OType_Tab, uuid.NewString()).String()
+	run := &waveobj.Run{
+		ID: "r1", Runtime: "claude", Model: "pinned-model",
+		Phases: []waveobj.RunPhase{
+			{Kind: PhaseKind_Execute, State: PhaseState_Done, WorkerOrefs: []string{worker, gone}},
+			{Kind: PhaseKind_Execute, State: PhaseState_Skipped, WorkerOrefs: []string{skipped}},
+		},
+	}
+	if harness, model := RunRoute(run); harness != "claude" || model != "claude-opus-4-8" {
+		t.Fatalf("RunRoute = (%q, %q), want (claude, claude-opus-4-8)", harness, model)
+	}
+}
+
 // The engine closes an orchestrator lead's tab mid-turn on `wsh jarvis complete`, so the lead's own
 // wrap-up text never reaches a transcript SealEvidence can read. The report it sent with --report is the
 // only way that text survives into the sealed summary.

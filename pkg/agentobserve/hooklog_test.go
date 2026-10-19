@@ -40,3 +40,22 @@ func TestParseHookLogEmpty(t *testing.T) {
 		t.Fatal("empty log should yield no blocks")
 	}
 }
+
+func TestParseHookLogSpanAndTies(t *testing.T) {
+	log := `2026-07-12T12:00:10Z published event=PreToolUse state=working oref=block:abc
+2026-07-12T12:00:00Z published event=UserPromptSubmit state=working oref=block:abc
+2026-07-12T12:00:30Z published event=PreToolUse state=working oref=block:abc
+2026-07-12T12:00:30Z published event=Stop state=idle oref=block:abc
+2026-07-12T12:00:40Z skip: no jwt in env event=Notification state=waiting oref=block:abc
+`
+	got := ParseHookLog(log)
+	want := HookState{
+		FirstMs:   parseRFC3339Ms("2026-07-12T12:00:00Z"),
+		LastMs:    parseRFC3339Ms("2026-07-12T12:00:30Z"),
+		LastState: "idle", // the later of two lines at the same time wins
+		Count:     4,      // a skip line never counts, even one naming a block
+	}
+	if len(got) != 1 || got["abc"] != want {
+		t.Fatalf("ParseHookLog = %+v, want only abc = %+v", got, want)
+	}
+}

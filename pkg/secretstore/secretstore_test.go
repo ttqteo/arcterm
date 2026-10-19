@@ -159,3 +159,27 @@ func TestUnreadableSecretsFileFailsLoudly(t *testing.T) {
 		t.Fatal("corrupt secrets file read as an empty store instead of erroring")
 	}
 }
+
+// A failed load is not retried until InitRetryMs has passed: a retry inside the window answers with the
+// failure it already saw, even if the file was fixed meanwhile, and the first call after the window loads.
+func TestFailedLoadRetriesOnlyAfterTheRetryWindow(t *testing.T) {
+	dir := useConfigDir(t)
+	path := filepath.Join(dir, SecretsFileName)
+	if err := os.WriteFile(path, []byte("not a valid blob"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, first := GetSecret("jarvis_embedapikey")
+	if first == nil {
+		t.Fatal("corrupt secrets file read as an empty store instead of erroring")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := GetSecret("jarvis_embedapikey"); err != first {
+		t.Fatalf("retry inside the window: err = %v, want the first failure %v", err, first)
+	}
+	time.Sleep(InitRetryMs*time.Millisecond + 100*time.Millisecond)
+	if _, ok, err := GetSecret("jarvis_embedapikey"); err != nil || ok {
+		t.Fatalf("retry after the window: (ok=%v, err=%v), want an empty store and no error", ok, err)
+	}
+}
