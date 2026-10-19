@@ -27,8 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
-- [ ] (arcterm) New dialog's Command box: pick Terminal, click the empty right part of the box (or its top edge):
-  the caret lands at the end of the command; clicking a flag chip's × still removes it.
+- [ ] (arcterm) Storage scan fills card by card: after rebuilding wavesrv and restarting, open Settings → Storage
+  within the first minute and press Rescan: Run worktrees, Sessions and Housekeeping show their sizes within seconds
+  while Build output and Package caches still read …; `waveapp.log` gets a `storage scan took …` line naming each
+  category's time (which one is slow). Commit `fix(storage): fill Storage card by card`.
 - [ ] (arcterm) Reload keys (Windows), in the dev app after a restart of `task dev` (the host changed): open a pinned
   app, move to another page in it, click in it and press `Ctrl`+`R`: the same page reloads, arcterm does not; its
   header's Reload does the same. In a terminal `Ctrl`+`R` opens the shell's reverse search; on the sidebar it redraws

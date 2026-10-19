@@ -284,22 +284,8 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                     Command
                 </label>
                 <div className="flex items-center gap-3">
-                    {/* The input is only as wide as its text, so a click anywhere on the box's own surface focuses it. */}
-                    <div
-                        onMouseDown={(e) => {
-                            if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset.cmdPrompt) {
-                                return;
-                            }
-                            e.preventDefault();
-                            const input = e.currentTarget.querySelector("input");
-                            input?.focus();
-                            input?.setSelectionRange(input.value.length, input.value.length);
-                        }}
-                        className="flex min-h-[38px] min-w-0 flex-1 cursor-text flex-wrap items-center gap-[6px] rounded-[8px] border border-edge-mid bg-surface py-[5px] pl-3 pr-[6px] focus-within:border-accent-700"
-                    >
-                        <span data-cmd-prompt="1" className="font-mono text-[12.5px] font-semibold text-success">
-                            ›
-                        </span>
+                    <div className="flex min-h-[38px] min-w-0 flex-1 flex-wrap items-center gap-[6px] rounded-[8px] border border-edge-mid bg-surface py-[5px] pl-3 pr-[6px] focus-within:border-accent-700">
+                        <span className="font-mono text-[12.5px] font-semibold text-success">›</span>
                         <input
                             id="launcher-cmd"
                             value={startup}

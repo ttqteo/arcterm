@@ -6,8 +6,12 @@ package storage
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 )
@@ -61,7 +65,7 @@ func (s *Scanner) Rescan(ctx context.Context) {
 			panichandler.PanicHandler("storage.Rescan", recover())
 		}()
 		for {
-			r := s.scan(ctx)
+			r := s.scan(ctx, s.landed)
 			s.mu.Lock()
 			s.report = r
 			again := s.again
@@ -80,18 +84,56 @@ func (s *Scanner) Rescan(ctx context.Context) {
 
 // ScanNow scans in the caller's goroutine and keeps the result.
 func (s *Scanner) ScanNow(ctx context.Context) StorageReport {
-	r := s.scan(ctx)
+	r := s.scan(ctx, nil)
 	s.mu.Lock()
 	s.report = r
 	s.mu.Unlock()
 	return s.Report()
 }
 
-func (s *Scanner) scan(ctx context.Context) StorageReport {
-	r := StorageReport{ScannedTs: s.env.Now().UnixMilli(), StoreBytes: dirSize(filepath.Join(s.env.DataDir, "db"))}
+// landed publishes a scan's categories as each one lands, since build output and the package caches can take minutes
+// and the rest seconds. A category not measured yet keeps the last scan's, and the report keeps the last scan's time
+// until the scan ends, so a head that sums them never reads a half total.
+func (s *Scanner) landed(done []StorageCategoryReport) {
+	s.mu.Lock()
+	cats := make([]StorageCategoryReport, 0, len(s.providers))
 	for _, p := range s.providers {
-		r.Categories = append(r.Categories, p.measure(ctx, s.env))
+		if c, ok := findCategory(done, p.category()); ok {
+			cats = append(cats, c)
+		} else if c, ok := findCategory(s.report.Categories, p.category()); ok {
+			cats = append(cats, c)
+		}
 	}
+	s.report.Categories = cats
+	s.mu.Unlock()
+	if s.publish != nil {
+		s.publish(s.Report())
+	}
+}
+
+func findCategory(cats []StorageCategoryReport, category StorageCategory) (StorageCategoryReport, bool) {
+	for _, c := range cats {
+		if c.Category == category {
+			return c, true
+		}
+	}
+	return StorageCategoryReport{}, false
+}
+
+// scan measures every category, calling landed (when set) after each but the last, and logs how long each took.
+func (s *Scanner) scan(ctx context.Context, landed func([]StorageCategoryReport)) StorageReport {
+	start := time.Now()
+	r := StorageReport{ScannedTs: s.env.Now().UnixMilli(), StoreBytes: dirSize(filepath.Join(s.env.DataDir, "db"))}
+	took := []string{fmt.Sprintf("store %s", time.Since(start).Round(time.Millisecond))}
+	for i, p := range s.providers {
+		pstart := time.Now()
+		r.Categories = append(r.Categories, p.measure(ctx, s.env))
+		took = append(took, fmt.Sprintf("%s %s", p.category(), time.Since(pstart).Round(time.Millisecond)))
+		if landed != nil && i < len(s.providers)-1 {
+			landed(slices.Clone(r.Categories))
+		}
+	}
+	log.Printf("storage scan took %s: %s\n", time.Since(start).Round(time.Millisecond), strings.Join(took, ", "))
 	return r
 }
 

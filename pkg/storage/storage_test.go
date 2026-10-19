@@ -149,6 +149,27 @@ func TestRescanDuringAScanRunsExactlyOneMore(t *testing.T) {
 	}
 }
 
+func TestRescanPublishesEachCategoryAsItLands(t *testing.T) {
+	fast := &fakeProvider{cat: CategoryRunWorktrees, rep: report(CategoryRunWorktrees, []StorageItem{{ID: "x", Bytes: 5}}, nil)}
+	gate := make(chan struct{})
+	slow := &fakeProvider{cat: CategoryBuildOutput, gate: gate, rep: report(CategoryBuildOutput, nil, nil)}
+	got := make(chan StorageReport, 4)
+	s := &Scanner{env: testEnv(t), providers: []provider{fast, slow}, publish: func(r StorageReport) { got <- r }}
+	s.Rescan(context.Background())
+	first := <-got
+	if !first.Scanning || first.ScannedTs != 0 || len(first.Categories) != 1 || first.Categories[0].Category != CategoryRunWorktrees {
+		t.Fatalf("got %+v, want the fast category alone, still scanning and not yet stamped", first)
+	}
+	close(gate)
+	last := <-got
+	if last.Scanning || last.ScannedTs == 0 || len(last.Categories) != 2 {
+		t.Fatalf("got %+v, want both categories, stamped, the scan over", last)
+	}
+	if len(first.Categories) != 1 {
+		t.Fatal("a published report must not change after it went out")
+	}
+}
+
 func TestCleanDispatchesToItsCategoryAndRescans(t *testing.T) {
 	f := &fakeProvider{cat: CategoryHousekeeping}
 	var published atomic.Int32
