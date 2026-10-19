@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Pinned app: in Setup → Tools add a tool with Command `npm run dash`, Page `http://127.0.0.1:8386`,
+  Folder `~/Workspaces/dev/portfolio-journal` (Hóng), then Open it: a waiting card naming 127.0.0.1:8386, then the
+  dashboard in the centre under Page | Log; Log shows the npm output, Stop closes the terminal and the server with it.
+  With Hóng already running, Open shows it at once and closing leaves it up. Also on a Mac (WKWebView frame and fetch
+  to 127.0.0.1). Uncommitted (2026-10-19).
 - [ ] (arcterm) Jarvis → Waiting on you, a "plan" row whose agent is closed (or the Needs you strip, the palette, the
   pet's peek): Open lands on the Brief with that initiative expanded on its Proposed group (Accept all, Drop all),
   even from another surface, past the 6-row cap, under a search or another project's filter. Its activity link and
@@ -1171,4 +1176,5 @@ setting; that call is the person's. Layers are the compact RAM popup's.
 
 | Feature | Commit | Layer | Measured | Date | Verdict |
 |---|---|---|---|---|---|
+| Pinned apps: the page's iframe in the centre, and the app's own dev server | uncommitted | Interface, and the app's process | Not measured. 0 MB until an app is opened (no probe, no frame); open, the frame (no second webview) plus whatever the app's server holds, which is the app's, not arcterm's. The probe loop runs only from a start to its first answer. | 2026-10-19 | pending |
 | Agent → Canvas gallery: the grid of lazy `<img>` previews, and the viewer's one board iframe | `75278d142` | Interface | The page's JS heap after a GC, from Final's `canvas-gallery` steps 1 (grid) and 3 (viewer) on a 3-canvas fixture: 41.6 MB and 41.8 MB (43.4 and 43.4 in an earlier run). Not measured: the WebView2 working set, and the 17-canvas case. The heap figure is the page's own JS and says nothing of the board iframe. Between visits only the list (a row per canvas) and the folder-URL cache stay. | 2026-10-14 | pending |

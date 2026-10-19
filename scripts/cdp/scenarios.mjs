@@ -41748,6 +41748,147 @@ const toolsAdd = {
     },
 };
 
+// --- tools-app: a pinned app, a tool of yours with a page (tools.json url and dir). Opened from Setup → Tools, it runs
+// its command in a terminal of its own, shows a waiting card until the page answers, then the page in the terminal's
+// place under the terminal's header (Page | Log, Reload, Open in the browser, Stop). The fixture app is a node server in
+// a temp folder that starts listening 2.5 s after it runs, on a port free when the scenario arranged.
+const TT_APP_SOURCE = `const port = Number(process.argv[2]);
+console.log("arc-app starting on " + port);
+setTimeout(() => {
+    require("node:http")
+        .createServer((req, res) => {
+            res.setHeader("content-type", "text/html");
+            res.end('<body style="font:16px sans-serif;padding:24px"><h1>ARC-APP-READY</h1></body>');
+        })
+        .listen(port, "127.0.0.1", () => console.log("arc-app listening"));
+}, 2500);
+`;
+
+function ttFreePort() {
+    return new Promise((res, rej) => {
+        const srv = createServer();
+        srv.once("error", rej);
+        srv.listen(0, "127.0.0.1", () => {
+            const { port } = srv.address();
+            srv.close(() => res(port));
+        });
+    });
+}
+
+const toolsApp = {
+    name: "tools-app",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            await ttArrange(h, ctx);
+            // the app's folder is in the fixture project, so its terminal is filed there (and teardown closes it)
+            const appDir = join(ctx.root, "app");
+            mkdirSync(appDir, { recursive: true });
+            writeFileSync(join(appDir, "app.js"), TT_APP_SOURCE);
+            ctx.port = await ttFreePort();
+            ctx.url = `http://127.0.0.1:${ctx.port}`;
+            const app = {
+                name: "arc-app",
+                command: "node",
+                args: `app.js ${ctx.port}`,
+                url: ctx.url,
+                dir: appDir,
+                purpose: "Verification fixture: a local web app.",
+            };
+            await h.rpc("toolssetuser", { id: "arc-app", tool: app });
+            ctx.userTools.push("arc-app");
+            const listed = await polishWaitFor(
+                h,
+                `window.TabRpcClient.wshRpcCall("toolsstatus", null, {}).then((r) => (r.tools ?? []).some((t) => t.id === "arc-app" && t.url === ${JSON.stringify(ctx.url)}))`,
+                10000
+            );
+            if (!listed) throw new Error("the app never reached the tool list");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        rec("0. the fixture agent and the app are arranged", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        if (!arranged) return steps;
+
+        const up = await ttOpenLibrary(h);
+        await ttClick(h, '[data-tools-row="arc-app"]');
+        const detail = await polishWaitFor(h, `!!document.querySelector('[data-tools-detail="arc-app"] [data-tool-page]')`, 4000);
+        await polishNap(300);
+        const page = await h.ev(`${TT_FLAT}(document.querySelector('[data-tools-detail="arc-app"] [data-tool-page]'))`);
+        await h.shot("cdp-shots/tools-app-1-library.png");
+        rec("1. Setup → Tools shows the app's page in its detail", up && detail && page === ctx.url, JSON.stringify({ up, detail, page }));
+
+        await ttClick(h, '[data-tools-detail="arc-app"] [data-tool-open]');
+        const waiting = await polishWaitFor(h, `!!document.querySelector("[data-app-waiting]")`, 8000);
+        const waitText = await h.ev(`${TT_FLAT}(document.querySelector("[data-app-waiting]"))`);
+        const waitHead = await h.ev(`(() => { const el = document.querySelector("[data-app-phase]"); return el ? el.getAttribute("data-app-phase") + "/" + el.getAttribute("data-app-owned") : null; })()`);
+        await h.shot("cdp-shots/tools-app-2-waiting.png");
+        rec(
+            "2. Open runs the command and shows the waiting card on the Agent surface, naming the port",
+            waiting && String(waitText).includes(`127.0.0.1:${ctx.port}`) && waitHead === "starting/true",
+            JSON.stringify({ waiting, waitText, waitHead })
+        );
+
+        const framed = await polishWaitFor(h, `!!document.querySelector("[data-app-frame]")`, 25000);
+        await polishNap(1200);
+        const open = await h.ev(`(() => {
+            const frame = document.querySelector("[data-app-frame]");
+            const head = frame ? document.querySelector('[data-terminal-pane-head="' + frame.getAttribute("data-app-frame") + '"]') : null;
+            return {
+                src: frame?.getAttribute("src") ?? null,
+                tabs: head ? [...head.querySelectorAll('[role="tab"]')].map((t) => t.textContent + (t.getAttribute("aria-selected") === "true" ? "*" : "")) : [],
+                reload: !!head?.querySelector("[data-app-reload]:not([disabled])"),
+                browser: !!head?.querySelector("[data-app-browser]"),
+                stop: head?.querySelector("[data-terminal-close]")?.getAttribute("title") ?? null,
+                dock: !!head?.querySelector("[data-terminal-to-dock]"),
+                gridHidden: document.querySelector("[data-agent-grid]")?.classList.contains("hidden") ?? null,
+            };
+        })()`);
+        await h.shot("cdp-shots/tools-app-3-page.png");
+        rec(
+            "3. once the page answers it shows in the terminal's place, under Page | Log with Reload, Open in the browser and Stop (no move to the panel)",
+            framed &&
+                open.src === ctx.url &&
+                JSON.stringify(open.tabs) === JSON.stringify(["Page*", "Log"]) &&
+                open.reload &&
+                open.browser &&
+                open.stop === "Stop arc-app" &&
+                !open.dock &&
+                open.gridHidden === true,
+            JSON.stringify({ framed, ...open })
+        );
+
+        await ttClick(h, '[data-terminal-pane-head] [role="tab"]:nth-child(2)');
+        await polishNap(800);
+        const log = await h.ev(`({
+            frame: !!document.querySelector("[data-app-frame]"),
+            gridHidden: document.querySelector("[data-agent-grid]")?.classList.contains("hidden") ?? null,
+        })`);
+        await h.shot("cdp-shots/tools-app-4-log.png");
+        rec("4. Log shows the app's terminal with its output in the page's place", !log.frame && log.gridHidden === false, JSON.stringify(log));
+        // the last project folder above the app's row, in the tree's order
+        const inProject = await h.ev(`(() => {
+            let folder = null;
+            for (const el of document.querySelectorAll("[data-project-folder], [data-tree-terminal-row]")) {
+                if (el.hasAttribute("data-project-folder")) folder = el.getAttribute("data-project-folder");
+                else if (${TT_FLAT}(el).includes("arc-app")) return folder;
+            }
+            return null;
+        })()`);
+        rec("5. the app's row is in the project its folder is in", inProject === TT_PROJECT, JSON.stringify({ inProject }));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await ttTeardown(h, ctx, "tools-app");
+    },
+};
+
 // an install terminal's row state in the tree, by the name its row carries
 const TT_INSTALL_STATE = (name) => `(() => {
     const row = [...document.querySelectorAll("[data-tree-terminal-row]")].find((r) => ${TT_FLAT}(r).includes(${JSON.stringify(name)}));
@@ -49230,6 +49371,7 @@ export const SCENARIOS = [
     toolsDockStrip,
     toolsLibrary,
     toolsAdd,
+    toolsApp,
     toolsPicker,
     toolsLauncher,
     toolsWorktreeGone,

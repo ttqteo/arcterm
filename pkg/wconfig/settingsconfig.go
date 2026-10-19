@@ -176,6 +176,8 @@ type ToolKeywords struct {
 	Purpose        string `json:"purpose,omitempty"`
 	InstallWindows string `json:"install:windows,omitempty"`
 	InstallDarwin  string `json:"install:darwin,omitempty"`
+	Url            string `json:"url,omitempty"` // a pinned app: the page its command serves, on 127.0.0.1
+	Dir            string `json:"dir,omitempty"` // the folder it runs in, in place of opensin; ~ is home
 }
 
 type ConnKeywords struct {

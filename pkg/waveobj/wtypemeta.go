@@ -50,7 +50,8 @@ type MetaTSType struct {
 	CmdInitScriptPwsh string            `json:"cmd:initscript.pwsh,omitempty"`
 	CmdInitScriptFish string            `json:"cmd:initscript.fish,omitempty"`
 
-	ToolId string `json:"tool:id,omitempty"` // the library id (pkg/arctools) of a terminal opened as a tool
+	ToolId       string `json:"tool:id,omitempty"`       // the library id (pkg/arctools) of a terminal opened as a tool
+	ToolAppOwned bool   `json:"tool:appowned,omitempty"` // a pinned app's terminal that ran its command: closing it stops the server
 
 	EditorClear               bool    `json:"editor:*,omitempty"`
 	EditorMinimapEnabled      bool    `json:"editor:minimapenabled,omitempty"`

@@ -376,29 +376,35 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
             ) : null}
 
             <div className="flex flex-col rounded border border-edge-mid bg-surface">
-                <SettingRow label="Opens in" sub="Its working folder">
-                    <Options
-                        label="Opens in"
-                        options={OPENS_IN_OPTIONS}
-                        value={opensin}
-                        onChange={(id) => {
-                            setOpensin(id);
-                            fireAndForget(() => change({ opensin: id }));
-                        }}
-                    />
-                    <span className="text-[11.5px] text-muted">A worktree agent gives its worktree.</span>
-                </SettingRow>
-                <SettingRow label="Shows" sub="Where it appears on screen">
-                    <Options
-                        label="Shows"
-                        options={SHOWS_OPTIONS}
-                        value={shows}
-                        onChange={(id) => {
-                            setShows(id);
-                            fireAndForget(() => change({ shows: id }));
-                        }}
-                    />
-                </SettingRow>
+                {/* a folder of its own (a pinned app's) is where it runs: there is no choice left to make */}
+                {tool.dir ? null : (
+                    <SettingRow label="Opens in" sub="Its working folder">
+                        <Options
+                            label="Opens in"
+                            options={OPENS_IN_OPTIONS}
+                            value={opensin}
+                            onChange={(id) => {
+                                setOpensin(id);
+                                fireAndForget(() => change({ opensin: id }));
+                            }}
+                        />
+                        <span className="text-[11.5px] text-muted">A worktree agent gives its worktree.</span>
+                    </SettingRow>
+                )}
+                {/* a pinned app's page always takes the centre */}
+                {tool.url ? null : (
+                    <SettingRow label="Shows" sub="Where it appears on screen">
+                        <Options
+                            label="Shows"
+                            options={SHOWS_OPTIONS}
+                            value={shows}
+                            onChange={(id) => {
+                                setShows(id);
+                                fireAndForget(() => change({ shows: id }));
+                            }}
+                        />
+                    </SettingRow>
+                )}
                 <SettingRow label="In Open a tool" sub="Listed at the top when on">
                     <Toggle
                         on={pinned}
@@ -406,6 +412,21 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
                         label={`Pin ${tool.name} in Open a tool`}
                     />
                 </SettingRow>
+                {tool.url ? (
+                    <SettingRow label="Page" sub="Shown once the command serves it">
+                        <span
+                            data-tool-page
+                            className="min-w-0 flex-1 truncate rounded-[7px] border border-edge-mid bg-surface-code px-2.5 py-1.5 font-mono text-[12px] text-secondary"
+                        >
+                            {tool.url}
+                        </span>
+                        {tool.dir ? (
+                            <span title={tool.dir} className="max-w-[45%] truncate text-[11.5px] text-muted">
+                                in {tool.dir}
+                            </span>
+                        ) : null}
+                    </SettingRow>
+                ) : null}
                 <SettingRow label="Command" sub="What arcterm runs">
                     <span className="min-w-0 flex-1 truncate rounded-[7px] border border-edge-mid bg-surface-code px-2.5 py-1.5 font-mono text-[12px] text-secondary">
                         {toolCommandLine(tool)}
@@ -665,6 +686,45 @@ function ToolFormPane({ form, statuses }: { form: ToolForm; statuses: ToolStatus
                     </div>
                     <div className="pl-[176px] text-[11.5px] text-muted">
                         Optional. Without it, a tool that is missing says so instead of offering Install.
+                    </div>
+                </FormRow>
+                <FormRow>
+                    <div className="flex items-center gap-4">
+                        <label htmlFor="tool-url" className="w-[160px] flex-none text-[13px] text-primary">
+                            Page
+                        </label>
+                        <input
+                            id="tool-url"
+                            data-tool-url
+                            value={form.url}
+                            spellCheck={false}
+                            placeholder="http://127.0.0.1:8386"
+                            onChange={(e) => set({ url: e.target.value })}
+                            className={INPUT_MONO}
+                        />
+                    </div>
+                    <div className="pl-[176px] text-[11.5px] text-muted">
+                        Optional, for a local web app: arcterm runs the command, waits for this page and shows it in
+                        place of the terminal. Only http://127.0.0.1 pages.
+                    </div>
+                </FormRow>
+                <FormRow>
+                    <div className="flex items-center gap-4">
+                        <label htmlFor="tool-dir" className="w-[160px] flex-none text-[13px] text-primary">
+                            Folder
+                        </label>
+                        <input
+                            id="tool-dir"
+                            data-tool-dir
+                            value={form.dir}
+                            spellCheck={false}
+                            placeholder="~/code/my-app"
+                            onChange={(e) => set({ dir: e.target.value })}
+                            className={INPUT_MONO}
+                        />
+                    </div>
+                    <div className="pl-[176px] text-[11.5px] text-muted">
+                        Optional. Where the command runs, in place of Opens in.
                     </div>
                 </FormRow>
             </div>

@@ -169,6 +169,10 @@ describe("validateNewTool", () => {
 
     it("is null when both are there", () => {
         expect(validateNewTool({ name: "PR dashboard", command: "gh dash" })).toBeNull();
+        expect(validateNewTool({ name: "Hong", command: "npm run dash", url: "http://127.0.0.1:8386" })).toBeNull();
+        expect(validateNewTool({ name: "Hong", command: "npm run dash", url: "http://localhost:8386" })).toMatch(
+            /127\.0\.0\.1/
+        );
     });
 });
 
@@ -311,6 +315,8 @@ describe("the add and edit form", () => {
             shows: "centre",
             install: "",
             purpose: "",
+            url: "",
+            dir: "",
         });
     });
 
@@ -333,8 +339,33 @@ describe("the add and edit form", () => {
             shows: "centre",
             install: "winget install gh",
             purpose: "prs",
+            url: "",
+            dir: "",
         });
         expect(formFromTool(mine, "darwin").install).toBe("brew install gh");
+    });
+
+    it("keeps a pinned app's page and folder through an edit and a save", () => {
+        const app = tool("hong", {
+            category: "Yours",
+            user: true,
+            command: "npm",
+            args: "run dash",
+            url: "http://127.0.0.1:8386",
+            dir: "~/dev/hong",
+        });
+        const form = formFromTool(app, "darwin");
+        expect(form).toMatchObject({ url: "http://127.0.0.1:8386", dir: "~/dev/hong" });
+        expect(formKeywords({ ...form, url: " http://127.0.0.1:8386 " }, "darwin", {})).toMatchObject({
+            command: "npm",
+            args: "run dash",
+            url: "http://127.0.0.1:8386",
+            dir: "~/dev/hong",
+        });
+        expect(overrideKeywords(app, undefined, { shows: "panel" })).toMatchObject({
+            url: "http://127.0.0.1:8386",
+            dir: "~/dev/hong",
+        });
     });
 
     it("saves the fields trimmed, leaving out the ones left empty", () => {

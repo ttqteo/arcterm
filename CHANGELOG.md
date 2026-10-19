@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Pinned apps: give a tool of yours a **Page** (`http://127.0.0.1:<port>`) and a **Folder** in Setup → Tools, and
+  opening it runs its command, waits for the page and shows it right in arcterm, in place of its terminal. Page and Log
+  switch between the page and the server's output, with Reload, Open in the browser and Stop beside them; a page
+  already up is shown without starting anything, and closing it then leaves that server running. <!-- big -->
 - An agent waiting on another agent sits under it in the sidebar, on a tree guide, and goes back to its place when
   the wait ends; when the two are in different projects its row says whom it waits on instead. Agents wait with the
   new `wsh agents wait <tab>`, which returns once that agent stops working; a loop that watches another agent's tab

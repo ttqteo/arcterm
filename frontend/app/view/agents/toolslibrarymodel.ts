@@ -5,6 +5,7 @@
 // add / edit form and what a change to a tool writes into tools.json. The status and the open / install actions are
 // toolsmodel.ts and toolsstore.ts; toolslibrary.tsx draws this.
 
+import { appUrlProblem } from "./appmodel";
 import { installCommand, toolCommandLine, toolGroups, type ToolState } from "./toolsmodel";
 
 // the category of a tool that is only in tools.json (arctools.CategoryYours)
@@ -201,17 +202,23 @@ function keywordsFromTool(tool: ToolStatus): ToolKeywords {
     if (tool.install?.darwin) {
         kw["install:darwin"] = tool.install.darwin;
     }
+    if (tool.url) {
+        kw.url = tool.url;
+    }
+    if (tool.dir) {
+        kw.dir = tool.dir;
+    }
     return kw;
 }
 
-export function validateNewTool(form: { name: string; command: string }): string | null {
+export function validateNewTool(form: { name: string; command: string; url?: string }): string | null {
     if (form.name.trim() === "") {
         return "Add a name";
     }
     if (form.command.trim() === "") {
         return "Add a command";
     }
-    return null;
+    return appUrlProblem(form.url ?? "");
 }
 
 // a lowercase slug of the name, the id a tool of yours is kept under in tools.json
@@ -249,10 +256,22 @@ export interface ToolForm {
     shows: string;
     install: string; // this system's install command
     purpose: string;
+    url: string; // a pinned app's page (appmodel.ts); empty for a plain tool
+    dir: string; // the folder a pinned app runs in; empty follows Opens in
 }
 
 export function emptyForm(): ToolForm {
-    return { id: null, name: "", command: "", opensin: "agent", shows: "centre", install: "", purpose: "" };
+    return {
+        id: null,
+        name: "",
+        command: "",
+        opensin: "agent",
+        shows: "centre",
+        install: "",
+        purpose: "",
+        url: "",
+        dir: "",
+    };
 }
 
 export function formFromTool(tool: ToolStatus, platform: string): ToolForm {
@@ -264,6 +283,8 @@ export function formFromTool(tool: ToolStatus, platform: string): ToolForm {
         shows: tool.shows,
         install: installCommand(tool, platform) ?? "",
         purpose: tool.purpose ?? "",
+        url: tool.url ?? "",
+        dir: tool.dir ?? "",
     };
 }
 
@@ -309,6 +330,12 @@ export function formKeywords(form: ToolForm, platform: string, keep: Install): T
     }
     if (darwin) {
         kw["install:darwin"] = darwin;
+    }
+    if (form.url.trim()) {
+        kw.url = form.url.trim();
+    }
+    if (form.dir.trim()) {
+        kw.dir = form.dir.trim();
     }
     return kw;
 }

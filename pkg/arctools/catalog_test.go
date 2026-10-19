@@ -224,3 +224,40 @@ func TestUserToolsFileRoundTrip(t *testing.T) {
 		t.Errorf("removing ghdash dropped the lazygit entry: %+v", got[0])
 	}
 }
+
+func TestAppURL(t *testing.T) {
+	cases := map[string]bool{
+		"http://127.0.0.1:8386":            true,
+		"http://127.0.0.1:8386/dash?x=1":   true,
+		"http://127.0.0.1":                 false, // no port to wait on
+		"http://localhost:8386":            false,
+		"https://127.0.0.1:8386":           false,
+		"http://192.168.1.4:8386":          false,
+		"http://user:pw@127.0.0.1:8386":    false,
+		"127.0.0.1:8386":                   false,
+		"":                                 false,
+		"http://127.0.0.1.example.com:80/": false,
+	}
+	for u, want := range cases {
+		if got := AppURL(u); got != want {
+			t.Errorf("AppURL(%q) = %v, want %v", u, got, want)
+		}
+	}
+}
+
+// a pinned app's url and folder come through; a url arcterm would not embed is dropped, leaving a plain tool
+func TestMergePinnedApp(t *testing.T) {
+	got := Merge(nil, map[string]wconfig.ToolKeywords{
+		"hong":   {Command: "npm", Args: "run dash", Url: "http://127.0.0.1:8386", Dir: "~/dev/portfolio-journal"},
+		"remote": {Command: "npm", Url: "http://example.com:80"},
+	})
+	if len(got) != 2 {
+		t.Fatalf("got %d tools, want 2", len(got))
+	}
+	if got[0].Id != "hong" || got[0].Url != "http://127.0.0.1:8386" || got[0].Dir != "~/dev/portfolio-journal" {
+		t.Errorf("hong = %+v, want its url and dir", got[0])
+	}
+	if got[1].Id != "remote" || got[1].Url != "" {
+		t.Errorf("remote = %+v, want the off-machine url dropped", got[1])
+	}
+}

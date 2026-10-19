@@ -67,10 +67,12 @@ vi.mock("./railstore", async () => {
     const { atom } = await import("jotai");
     return { dockedTerminalAtom: atom<string | null>(null), railCwdsAtom: atom<Record<string, string>>({}) };
 });
+vi.mock("./pathlinkroute", () => ({ homeDir: async () => "/Users/q" }));
 vi.mock("./runlineage", () => ({
     agentProject: (_l: unknown, _a: unknown, a: { project?: string }) => a.project ?? "",
 }));
 
+import { appStatesAtom } from "./appstore";
 import { dockedTerminalAtom, railCwdsAtom } from "./railstore";
 import {
     addUserTool,
@@ -151,6 +153,69 @@ beforeEach(() => {
     globalStore.set(dockedTerminalAtom, null);
     globalStore.set(railCwdsAtom, {});
     globalStore.set(toolPickerAtom, { open: false });
+});
+
+describe("opening a pinned app", () => {
+    const app = (over: Partial<ToolStatus> = {}) =>
+        status("hong", {
+            category: "Yours",
+            command: "npm",
+            args: "run dash",
+            url: "http://127.0.0.1:8386",
+            dir: "~/dev/hong",
+            shows: "panel",
+            ...over,
+        });
+    const fetchMock = vi.fn();
+
+    beforeEach(() => {
+        fetchMock.mockReset();
+        vi.stubGlobal("fetch", fetchMock);
+        globalStore.set(appStatesAtom, {});
+        m.reload.mockResolvedValue({ oid: "tab-new", blockids: ["blk-new"] });
+    });
+
+    it("runs the command in the app's folder, in the centre whatever it shows, and waits for the page", async () => {
+        fetchMock.mockRejectedValue(new TypeError("refused"));
+        const model = fakeModel();
+        const res = await openTool(model, app(), { place: "panel" });
+        expect(res).toEqual({ ok: true, tabId: "tab-new" });
+        expect(m.launchAgent).toHaveBeenCalledWith(model, {
+            runtime: "terminal",
+            startupCommand: "npm run dash",
+            task: "",
+            projectPath: "~/dev/hong",
+            projectName: "Home",
+            toolId: "hong",
+            focus: true,
+        });
+        expect(globalStore.get(appStatesAtom)["tab-new"]).toMatchObject({ phase: "starting", owned: true });
+        expect(m.setMeta).toHaveBeenCalledWith({}, { oref: "block:blk-new", meta: { "tool:appowned": true } });
+        expect(m.resync).toHaveBeenCalledWith({}, expect.objectContaining({ tabid: "tab-new", blockid: "blk-new" }));
+        expect(globalStore.get(dockedTerminalAtom)).toBeNull();
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(m.subs.some((s) => s.eventType === "blockclose" && s.scope === "block:blk-new")).toBe(true);
+    });
+
+    it("shows a page that already answers and runs nothing, so closing leaves its server alone", async () => {
+        fetchMock.mockResolvedValue({ type: "opaque" });
+        await openTool(fakeModel(), app(), { place: "centre" });
+        expect(m.launchAgent.mock.calls[0][1].startupCommand).toBe("");
+        expect(m.setMeta).not.toHaveBeenCalled();
+        expect(globalStore.get(appStatesAtom)["tab-new"]).toMatchObject({ phase: "open", owned: false, view: "page" });
+    });
+
+    it("shows the app already open, on its page, and launches nothing", async () => {
+        const model = fakeModel({ terminals: [{ id: "tab-h", toolId: "hong", blockId: "blk-h" }] });
+        fetchMock.mockResolvedValue({ type: "opaque" });
+        m.blocks["block:blk-h"] = { meta: { "tool:appowned": true } };
+        const res = await openTool(model, app(), { place: "centre" });
+        expect(res).toEqual({ ok: true, tabId: "tab-h" });
+        expect(m.launchAgent).not.toHaveBeenCalled();
+        expect(globalStore.get(model.focusIdAtom)).toBe("tab-h");
+        expect(globalStore.get(appStatesAtom)["tab-h"]).toMatchObject({ owned: true, view: "page" });
+        expect(m.showTerminal).toHaveBeenCalled();
+    });
 });
 
 describe("openTool", () => {

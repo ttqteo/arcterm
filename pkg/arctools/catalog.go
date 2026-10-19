@@ -6,6 +6,7 @@
 package arctools
 
 import (
+	"net/url"
 	"sort"
 
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
@@ -28,6 +29,8 @@ type Tool struct {
 	Shows    string  `json:"shows"`           // "centre" or "panel"
 	Install  Install `json:"install"`
 	User     bool    `json:"user,omitempty"`
+	Url      string  `json:"url,omitempty"` // a pinned app's page (AppURL): opening the tool shows it once the command serves it
+	Dir      string  `json:"dir,omitempty"` // the folder the tool runs in, in place of OpensIn; ~ is home
 }
 
 const (
@@ -115,6 +118,16 @@ func validShows(v string) bool {
 	return v == ShowsCentre || v == ShowsPanel
 }
 
+// AppURL reports whether u is a page a pinned app may show: http on 127.0.0.1 with a port. arcterm embeds only what
+// this machine serves (the CSP's frame-src is http://127.0.0.1:*), so localhost, another host and https are refused.
+func AppURL(u string) bool {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return false
+	}
+	return parsed.Scheme == "http" && parsed.Hostname() == "127.0.0.1" && parsed.Port() != "" && parsed.User == nil
+}
+
 // Merge lays the user's tools.json entries over the built-in catalog and returns a new slice (builtin is not
 // changed). A user entry whose id matches a built-in overrides it in the built-in's slot: the fields the entry sets
 // win, the ones it leaves empty stay the built-in's, and User is true. Entries with no matching built-in follow, sorted
@@ -171,6 +184,13 @@ func override(base Tool, u wconfig.ToolKeywords) Tool {
 	}
 	if u.InstallDarwin != "" {
 		base.Install.Darwin = u.InstallDarwin
+	}
+	// a url arcterm would not embed is dropped, so the tool opens as a plain terminal rather than a page that never loads
+	if AppURL(u.Url) {
+		base.Url = u.Url
+	}
+	if u.Dir != "" {
+		base.Dir = u.Dir
 	}
 	return base
 }

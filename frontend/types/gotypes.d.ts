@@ -2930,6 +2930,7 @@ declare global {
         "cmd:initscript.pwsh"?: string;
         "cmd:initscript.fish"?: string;
         "tool:id"?: string;
+        "tool:appowned"?: boolean;
         "editor:*"?: boolean;
         "editor:minimapenabled"?: boolean;
         "editor:stickyscrollenabled"?: boolean;
@@ -4021,6 +4022,8 @@ declare global {
         purpose?: string;
         "install:windows"?: string;
         "install:darwin"?: string;
+        url?: string;
+        dir?: string;
     };
 
     // arctools.ToolStatus
@@ -4036,6 +4039,8 @@ declare global {
         shows: string;
         install: Install;
         user?: boolean;
+        url?: string;
+        dir?: string;
         found: boolean;
         path?: string;
     };

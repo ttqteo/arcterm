@@ -42,6 +42,9 @@ import { gridEquals, placementStyle, reconcileGrid, visibleCells } from "./agent
 import { AgentHeader } from "./agentheader";
 import { AgentLaunchHero } from "./agentlaunchhero";
 import { AgentTree } from "./agenttree";
+import { appShows } from "./appmodel";
+import { AppPane } from "./apppane";
+import { appStatesAtom } from "./appstore";
 import { ConversationHistory } from "./conversationhistory";
 import { asksInTerminal, projectOf } from "./agentsviewmodel";
 import { CanvasGallery } from "./canvasgalleryview";
@@ -151,8 +154,12 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const showSub = focusSub != null && focusSub.parentId === agent?.id;
     const canvasMode = useAtomValue(canvasStateAtom(agent?.id ?? ""))?.mode === "canvas";
     const reviewMode = useAtomValue(docReviewStateAtom(agent?.id ?? ""))?.mode === "review";
-    // what shows in the terminal's place; the two are exclusive (agentview.ts)
-    const swapped = reviewMode ? "review" : canvasMode ? "canvas" : null;
+    // a pinned app's page or waiting card (apppane.tsx), over its terminal
+    const app = useAtomValue(appStatesAtom)[agent?.kind === "terminal" ? agent.id : ""];
+    const appMode = appShows(app) !== "terminal";
+    // what shows in the terminal's place; the canvas and the review are exclusive (agentview.ts), and an app is a
+    // terminal, which has neither
+    const swapped = reviewMode ? "review" : canvasMode ? "canvas" : appMode ? "app" : null;
     useCanvasPoller(model, agent);
 
     // sync focusId to the defaulted agent so the tree highlights it and ←/→ start from the right place
@@ -774,6 +781,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             <DocReviewPane model={model} agent={agent} />
                         ) : canvasMode ? (
                             <CanvasPane model={model} agent={agent} />
+                        ) : appMode ? (
+                            <AppPane tabId={agent.id} state={app!} />
                         ) : agent.blockId == null ? (
                             <div className="flex flex-1 items-center justify-center text-[13px] text-muted">
                                 No live terminal for this agent.
