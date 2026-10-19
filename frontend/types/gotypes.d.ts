@@ -1396,6 +1396,7 @@ declare global {
         ref: string;
         path: string;
         maxbytes?: number;
+        raw?: boolean;
     };
 
     // wshrpc.CommandGitFileAtRefRtnData
@@ -1406,6 +1407,7 @@ declare global {
         toolarge?: boolean;
         size?: number;
         isrepo: boolean;
+        data64?: string;
     };
 
     // wshrpc.CommandGitGrepData

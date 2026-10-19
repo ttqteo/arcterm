@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Diff → Review shows a changed image (PNG, JPG, GIF, WebP) as its before and after side by side, with each one's
+  pixel size and file size, where it used to say "Binary file — no text to show".
 - Pinned apps: give a tool of yours a **Page** (`http://127.0.0.1:<port>`) and a **Folder** in Setup → Tools, and
   opening it runs its command, waits for the page and shows it right in arcterm, in place of its terminal. Page and Log
   switch between the page and the server's output, with Reload, Open in the browser and Stop beside them. A page

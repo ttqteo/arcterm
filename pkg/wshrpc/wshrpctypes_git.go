@@ -183,6 +183,8 @@ type CommandGitFileAtRefData struct {
 	Path string `json:"path"`
 	// MaxBytes refuses a blob larger than this without reading it. 0 = no cap.
 	MaxBytes int64 `json:"maxbytes,omitempty"`
+	// Raw sends a binary blob's bytes back in Data64 instead of dropping them.
+	Raw bool `json:"raw,omitempty"`
 }
 
 // Mirrors gitinfo.FileContent one field for one field: Binary, Missing and TooLarge are answers the
@@ -194,6 +196,8 @@ type CommandGitFileAtRefRtnData struct {
 	TooLarge bool   `json:"toolarge,omitempty"`
 	Size     int64  `json:"size,omitempty"`
 	IsRepo   bool   `json:"isrepo"`
+	// a Binary blob's bytes, base64, when the request set Raw
+	Data64 string `json:"data64,omitempty"`
 }
 
 type CommandGitReviewPatchData struct {

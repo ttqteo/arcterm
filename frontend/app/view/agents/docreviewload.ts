@@ -18,6 +18,7 @@ import { atomFamily } from "jotai/utils";
 import { ensureSessionStart } from "./agentsessionstore";
 import { pickBaseline, type BaselineFrom } from "./docbaseline";
 import { getDocReview, recordShown, shownContentAtom } from "./docreviewstore";
+import { IMAGE_MAX_BYTES, imageMime } from "./imagemime";
 
 export interface DocReviewLoad {
     askId: string;
@@ -155,23 +156,8 @@ async function runLoad(
 // images
 
 // The app's CSP allows `img-src 'self' data:`, so an <img> pointing at wavesrv is blocked: a note's image is read
-// over RPC and drawn as a data URL, up to this size. Past it, or for a type a data URL can't carry, the view shows
-// the alt text and the path.
-export const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
-
-const MIME: Record<string, string> = {
-    png: "image/png",
-    svg: "image/svg+xml",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    webp: "image/webp",
-};
-
-export function imageMime(path: string): string | null {
-    const ext = /\.([a-z0-9]+)$/i.exec(path)?.[1]?.toLowerCase();
-    return (ext && MIME[ext]) || null;
-}
+// over RPC and drawn as a data URL, up to IMAGE_MAX_BYTES. Past it, or for a type a data URL can't carry, the view
+// shows the alt text and the path.
 
 export type ImageData = { ok: true; url: string } | { ok: false; why: "type" | "read" | "size" };
 

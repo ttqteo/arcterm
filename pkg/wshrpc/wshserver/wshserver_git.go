@@ -6,6 +6,7 @@ package wshserver
 
 import (
 	"context"
+	"encoding/base64"
 
 	"github.com/wavetermdev/waveterm/pkg/gitinfo"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -119,10 +120,14 @@ func (ws *WshServer) GitFileAtRefCommand(ctx context.Context, data wshrpc.Comman
 	if err != nil {
 		return nil, err
 	}
-	return &wshrpc.CommandGitFileAtRefRtnData{
+	rtn := &wshrpc.CommandGitFileAtRefRtnData{
 		Content: fc.Content, Binary: fc.Binary, Missing: fc.Missing,
 		TooLarge: fc.TooLarge, Size: fc.Size, IsRepo: fc.IsRepo,
-	}, nil
+	}
+	if data.Raw && fc.Binary {
+		rtn.Data64 = base64.StdEncoding.EncodeToString(fc.Data)
+	}
+	return rtn, nil
 }
 
 func (ws *WshServer) GitReviewPatchCommand(ctx context.Context, data wshrpc.CommandGitReviewPatchData) (*wshrpc.CommandGitReviewPatchRtnData, error) {

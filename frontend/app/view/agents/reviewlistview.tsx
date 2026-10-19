@@ -16,6 +16,8 @@ import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { MAX_DIFF_BYTES } from "./diffcontentstore";
 import { highlightLine } from "./highlight";
+import { ImageDiff } from "./imagediffview";
+import { imageMime } from "./imagemime";
 import { commentRef, commentSources, orderComments, type LineComment } from "./linecomments";
 import {
     addComment,
@@ -361,7 +363,16 @@ export function ReviewList({
                 return (
                     <section key={section.path} className="border-b border-edge-faint">
                         <FileHeader section={section} collapsed={isCollapsed} onToggle={() => toggle(section.path)} />
-                        {isCollapsed ? null : section.empty ? (
+                        {isCollapsed ? null : section.empty === "binary" && imageMime(section.path) != null ? (
+                            <ImageDiff
+                                cwd={repoKey}
+                                path={section.path}
+                                oldPath={section.oldPath}
+                                source={source}
+                                base={base}
+                                refreshKey={refreshKey}
+                            />
+                        ) : section.empty ? (
                             <div
                                 data-review-empty={section.empty}
                                 className="px-[18px] py-[12px] text-[12px] text-muted"

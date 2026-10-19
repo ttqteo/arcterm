@@ -2,6 +2,7 @@
 package gitinfo
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -1900,6 +1901,9 @@ func TestFileAtRefBinary(t *testing.T) {
 	}
 	if !got.Binary || got.Content != "" {
 		t.Errorf("got %+v, want Binary with no content", got)
+	}
+	if !bytes.Equal(got.Data, []byte{0x00, 0xff, 0xfe, 0x01}) {
+		t.Errorf("Data = %v, want the blob's exact bytes", got.Data)
 	}
 }
 

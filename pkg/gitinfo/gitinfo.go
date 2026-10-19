@@ -1002,6 +1002,8 @@ type FileContent struct {
 	TooLarge bool   `json:"toolarge"`
 	Size     int64  `json:"size"`
 	IsRepo   bool   `json:"isrepo"`
+	// a Binary blob's bytes, for a caller that draws them (the Diff surface's image diff)
+	Data []byte `json:"-"`
 }
 
 // FileAtRef returns one file's full content at a ref. The path is cwd-relative like every other
@@ -1029,12 +1031,13 @@ func FileAtRef(ctx context.Context, cwd, ref, path string, maxBytes int64) (*Fil
 	if maxBytes > 0 && size > maxBytes {
 		return &FileContent{IsRepo: true, TooLarge: true, Size: size}, nil
 	}
-	out, err := run(ctx, cwd, "show", spec)
+	// cat-file applies no filter or textconv, so a binary blob comes back as its exact bytes
+	out, err := run(ctx, cwd, "cat-file", "blob", spec)
 	if err != nil {
 		return nil, err
 	}
 	if !utf8.ValidString(out) {
-		return &FileContent{IsRepo: true, Binary: true, Size: size}, nil
+		return &FileContent{IsRepo: true, Binary: true, Size: size, Data: []byte(out)}, nil
 	}
 	return &FileContent{IsRepo: true, Content: out, Size: size}, nil
 }

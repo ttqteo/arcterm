@@ -6,8 +6,9 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ensureSessionStart } from "./agentsessionstore";
 import type { AgentAsk } from "./agentsviewmodel";
-import { docReviewLoadAtom, IMAGE_MAX_BYTES, imageMime, loadDocReview, loadImage } from "./docreviewload";
+import { docReviewLoadAtom, loadDocReview, loadImage } from "./docreviewload";
 import { recordShown, shownContentAtom, syncDocReview } from "./docreviewstore";
+import { IMAGE_MAX_BYTES, imageMime } from "./imagemime";
 
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 vi.mock("@/app/store/wshclientapi", () => ({
