@@ -22,7 +22,7 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 0.15.16 — 2026-10-19
 
 ### Added
 
@@ -32,7 +32,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   under **Found on this machine**: **Add** puts one in the library and in Open a tool, the cross hides it. Mole (`mo`),
   the disk cleaner and app uninstaller, joins the library's System tools.
 - Diff → Review shows a changed image (PNG, JPG, GIF, WebP) as its before and after side by side, with each one's
-  pixel size and file size, where it used to say "Binary file — no text to show".
+  pixel size and file size, where it used to say "Binary file — no text to show". <!-- big -->
 - Pinned apps: give a tool of yours a **Page** (`http://127.0.0.1:<port>`) and a **Folder** in Setup → Tools, and
   opening it runs its command, waits for the page and shows it right in arcterm, in place of its terminal. Page and Log
   switch between the page and the server's output, with Back, Forward, Home, Open in the browser and Stop beside
@@ -41,7 +41,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   remember the command or the port: pick the folder and the form offers the scripts that run a server, each with the
   port read from its code, or press **Pin as app** on a server already running in the Servers list.
   <!-- try: open-tool -->
-  <!-- big -->
+  <!-- big --> <!-- shot: 0.15.16-pinned-apps.webp -->
 - An agent waiting on another agent sits under it in the sidebar, on a tree guide, and goes back to its place when
   the wait ends; when the two are in different projects its row says whom it waits on instead. Agents wait with the
   new `wsh agents wait <tab>`, which returns once that agent stops working; a loop that watches another agent's tab
