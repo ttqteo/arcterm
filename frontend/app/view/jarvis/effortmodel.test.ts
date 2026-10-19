@@ -94,6 +94,30 @@ describe("buildEffortCard", () => {
         expect(m.countLine).toBe("all skipped");
     });
 
+    it("reads an effort with no chunks as 0 of 0 and 0 percent, not as all skipped", () => {
+        const m = buildEffortCard({ ...base, done: 0, total: 0, activechunk: undefined, chunks: [] } as EffortSummary);
+        expect(m.countLine).toBe("0 of 0");
+        expect(m.progressPct).toBe(0);
+    });
+
+    it("carries the next chunk's tone only when there is a next chunk", () => {
+        expect(buildEffortCard(base).activeTone).toBe("active");
+        expect(buildEffortCard({ ...base, activechunk: undefined }).activeTone).toBeUndefined();
+    });
+
+    it("shortens the oid to its first eight characters, stripping only a leading effort: prefix", () => {
+        expect(buildEffortCard({ ...base, oref: "effort:0123456789abcdef" }).shortId).toBe("01234567");
+        expect(buildEffortCard({ ...base, oref: "x-effort:0123456789" }).shortId).toBe("x-effort");
+    });
+
+    it("maps each chunk's label to its stage, empty when it has none", () => {
+        const chunks = [{ label: "A", status: "done", stage: "S1" }, { label: "B", status: "active" }];
+        expect(buildEffortCard({ ...base, total: 2, chunks } as EffortSummary).chunkStages).toStrictEqual({
+            A: "S1",
+            B: "",
+        });
+    });
+
     it("omits the skipped suffix when nothing is skipped", () => {
         const m = buildEffortCard({
             ...base, chunks: base.chunks.filter((c) => c.status !== "skipped"), total: 7,
@@ -296,6 +320,17 @@ describe("effortFacts", () => {
             ["ticket", "SIEM-1707"],
             ["parent", "Part III"],
         ]);
+    });
+
+    it("leaves the ticket out of the meta line when it is absent or empty", () => {
+        expect(effortFacts(effort({ project: "cad" }), []).meta).toEqual([["project", "cad"]]);
+        expect(effortFacts(effort({ project: "cad", ticket: "" }), []).meta).toEqual([["project", "cad"]]);
+        expect(effortFacts(effort({}), []).meta).toEqual([["project", "none"]]);
+    });
+
+    it("names no parent for an effort that links none, whatever the list holds", () => {
+        const all = [{ oref: "effort:", title: "Stray", status: "active", done: 0, total: 0, updatedts: 0 }] as EffortSummary[];
+        expect(effortFacts(effort({ parentoid: "" }), all).meta).toEqual([["project", "none"]]);
     });
 
     // the row's progress and the stage headers shrink the denominator by skips; the sheet must name the same total

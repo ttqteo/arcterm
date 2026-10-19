@@ -253,6 +253,19 @@ describe("extractAiTitle", () => {
         expect(extractAiTitle([JSON.stringify({ type: "assistant", message: { content: [] } }), "{bad"])).toBeUndefined();
         expect(extractAiTitle([])).toBeUndefined();
     });
+
+    it("ignores records that are not an ai-title, and an ai-title that is blank or not a string", () => {
+        const lines = [
+            JSON.stringify({ type: "ai-title", aiTitle: "Real title" }),
+            JSON.stringify({ type: "summary", aiTitle: "Other record" }),
+            JSON.stringify({ type: "assistant", message: { content: [] } }),
+            JSON.stringify({ type: "ai-title" }),
+            JSON.stringify({ type: "ai-title", aiTitle: 5 }),
+            JSON.stringify({ type: "ai-title", aiTitle: "" }),
+            JSON.stringify({ type: "ai-title", aiTitle: "   " }),
+        ];
+        expect(extractAiTitle(lines)).toBe("Real title");
+    });
 });
 
 describe("extractTasks", () => {
@@ -310,6 +323,36 @@ describe("extractTasks", () => {
             todoUse([{ content: "kept", status: "completed" }, { status: "pending" }, { content: 42, status: "pending" }]),
         ]);
         expect(out).toEqual([{ text: "kept", done: true }]);
+    });
+
+    it("ignores a TodoWrite in a record that is not an assistant message", () => {
+        const user = JSON.stringify({
+            type: "user",
+            message: { content: [{ type: "tool_use", id: "u1", name: "TodoWrite", input: { todos: [{ content: "x" }] } }] },
+        });
+        expect(extractTasks([user])).toBeUndefined();
+    });
+
+    it("skips an assistant record without a content array and still finds a later list", () => {
+        const noContent = JSON.stringify({ type: "assistant", message: {} });
+        const stringContent = JSON.stringify({ type: "assistant", message: { content: "plain" } });
+        const out = extractTasks([noContent, stringContent, todoUse([{ content: "later", status: "pending" }])]);
+        expect(out).toEqual([{ text: "later", done: false }]);
+    });
+
+    it("takes only a tool_use block named TodoWrite whose todos are an array", () => {
+        const block = (b: unknown) => JSON.stringify({ type: "assistant", message: { content: [b] } });
+        const todos = [{ content: "wrong", status: "completed" }];
+        const lines = [
+            block({ type: "text", text: "hello" }),
+            block(null),
+            block({ type: "tool_use", id: "o1", name: "Other", input: { todos } }),
+            block({ type: "text", name: "TodoWrite", input: { todos } }),
+            block({ type: "tool_use", id: "o2", name: "TodoWrite", input: { todos: "not a list" } }),
+            block({ type: "tool_use", id: "o3", name: "TodoWrite" }),
+        ];
+        expect(extractTasks(lines)).toBeUndefined();
+        expect(extractTasks([todoUse([{ content: "kept" }]), ...lines])).toEqual([{ text: "kept", done: false }]);
     });
 });
 
@@ -461,6 +504,47 @@ describe("extractSubagentSpawns", () => {
             asst([{ type: "tool_use", id: "b", name: "Task", input: { subagent_type: "Explore", prompt: "P2" } }]),
         ];
         expect(extractSubagentSpawns(lines).map((s) => s.toolUseId)).toEqual(["a", "b"]);
+    });
+
+    it("lists an Agent tool_use as a spawn like a Task", () => {
+        const lines = [asst([{ type: "tool_use", id: "g1", name: "Agent", input: { subagent_type: "Plan", prompt: "plan it" } }])];
+        expect(extractSubagentSpawns(lines)).toStrictEqual([
+            { toolUseId: "g1", subagentType: "Plan", prompt: "plan it", done: false, failed: false },
+        ]);
+    });
+
+    it("reads a missing or non-string subagent_type and prompt as empty strings", () => {
+        const lines = [
+            asst([{ type: "tool_use", id: "e1", name: "Task", input: { prompt: 5 } }]),
+            asst([{ type: "tool_use", id: "e2", name: "Task", input: { subagent_type: 7 } }]),
+            asst([{ type: "tool_use", id: "e3", name: "Task" }]),
+        ];
+        expect(extractSubagentSpawns(lines)).toStrictEqual([
+            { toolUseId: "e1", subagentType: "", prompt: "", done: false, failed: false },
+            { toolUseId: "e2", subagentType: "", prompt: "", done: false, failed: false },
+            { toolUseId: "e3", subagentType: "", prompt: "", done: false, failed: false },
+        ]);
+    });
+
+    it("ignores records without content, blocks that are not Task tool_use with an id, and results for no spawn", () => {
+        const lines = [
+            JSON.stringify({ type: "system" }),
+            asst([
+                null,
+                { type: "text", name: "Task", id: "x1" },
+                { type: "tool_use", name: "Task", input: { prompt: "no id" } },
+                { type: "tool_use", id: 9, name: "Task", input: { prompt: "numeric id" } },
+                { type: "tool_use", id: "k1", name: "Task", input: { prompt: "real" } },
+            ]),
+            usr([
+                { type: "tool_result", tool_use_id: "unknown", is_error: true },
+                { type: "text", tool_use_id: "k1" },
+                { type: "tool_result" },
+            ]),
+        ];
+        expect(extractSubagentSpawns(lines)).toStrictEqual([
+            { toolUseId: "k1", subagentType: "", prompt: "real", done: false, failed: false },
+        ]);
     });
 });
 

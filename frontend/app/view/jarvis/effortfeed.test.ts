@@ -129,6 +129,46 @@ describe("note text", () => {
         expect(head.endsWith("word…")).toBe(true);
     });
 
+    it("trims the head whether a sentence terminator ended it or not", () => {
+        expect(headline("  Done. More")).toBe("Done.");
+        expect(headline(" fixed it ")).toBe("fixed it");
+    });
+
+    it("keeps a first sentence of exactly the limit whole, and cuts one past it", () => {
+        expect(headline("a".repeat(180))).toBe("a".repeat(180));
+        expect(headline("a".repeat(181))).toBe("a".repeat(180) + "…");
+    });
+
+    it("cuts an overlong head with no space in it at the limit, losing no character", () => {
+        expect(headline("a".repeat(200))).toBe("a".repeat(180) + "…");
+    });
+
+    it("splits an inline list at items numbered past nine too", () => {
+        const flat = paragraphs("(9) nine (10) ten").map((p) => [p.level, p.segs.map((s) => s.text).join("")]);
+        expect(flat).toEqual([
+            [1, "(9) nine"],
+            [1, "(10) ten"],
+        ]);
+    });
+
+    it("drops blank lines and trims what is left, so an indented item still reads as one", () => {
+        const flat = paragraphs("first\n\n  (1) indented \n \n").map((p) => [
+            p.level,
+            p.segs.map((s) => s.text).join(""),
+        ]);
+        expect(flat).toEqual([
+            [0, "first"],
+            [1, "(1) indented"],
+        ]);
+    });
+
+    it("reads an enumerator as a list level only at the start of a paragraph", () => {
+        expect(paragraphs("word(1) tail").map((p) => p.level)).toEqual([0]);
+        expect(paragraphs("word(a) tail").map((p) => p.level)).toEqual([0]);
+        expect(paragraphs("(10) ten").map((p) => p.level)).toEqual([1]);
+        expect(paragraphs("(h) eighth").map((p) => p.level)).toEqual([2]);
+    });
+
     it("puts each inline list item on its own line, sub-items one level deeper", () => {
         const flat = paragraphs("Done: (1) first (a) sub (2) second\nNext line").map((p) => [
             p.level,
@@ -153,6 +193,19 @@ describe("note text", () => {
             { text: "98077bff04", code: true },
             { text: " now", code: false },
         ]);
+    });
+
+    it("adds no empty segment around a code span at either end of the text", () => {
+        expect(codeSegments("`wsh`")).toEqual([{ text: "wsh", code: true }]);
+        expect(codeSegments("run `wsh`")).toEqual([
+            { text: "run ", code: false },
+            { text: "wsh", code: true },
+        ]);
+        expect(codeSegments("`wsh` ran")).toEqual([
+            { text: "wsh", code: true },
+            { text: " ran", code: false },
+        ]);
+        expect(codeSegments("")).toEqual([]);
     });
 
     it("stamps today's entries with the time and older ones with the date", () => {

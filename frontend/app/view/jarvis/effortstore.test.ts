@@ -31,6 +31,24 @@ describe("effortChunkRows", () => {
         expect(rows[2].tone).toBe("blocked");
     });
 
+    it("carries a chunk's stage and work refs, empty when it has none", () => {
+        const rows = effortChunkRows({
+            chunks: [
+                { label: "A", status: "active", stage: "S1", workrefs: [{ oref: "run:r1" }] },
+                { label: "B", status: "pending" },
+            ],
+        } as unknown as Effort);
+        expect(rows.map((r) => [r.stage, r.workrefs])).toStrictEqual([
+            ["S1", [{ oref: "run:r1" }]],
+            ["", []],
+        ]);
+    });
+
+    it("has no latest note for a chunk with no notes", () => {
+        const [row] = effortChunkRows({ chunks: [{ label: "A", status: "pending" }] } as unknown as Effort);
+        expect([row.latestNote, row.trail]).toStrictEqual([undefined, []]);
+    });
+
     // an effort created with no chunks serializes its nil Go slice as null, and expanding it in the Brief
     // threw during render, which took the whole cockpit down
     it("reads an effort whose chunks came over the wire as null as having none", () => {
@@ -69,6 +87,18 @@ describe("detailOps", () => {
     it("sends only what changed", () => {
         expect(detailOps(cur, { ...cur, title: " New " })).toEqual([{ op: "rename", title: "New" }]);
         expect(detailOps(cur, cur)).toEqual([]);
+    });
+    it("trims what it sends for every text field", () => {
+        expect(detailOps(cur, { ...cur, project: " q ", ticket: " K-1 " })).toEqual([
+            { op: "setProject", project: "q" },
+            { op: "setTicket", ticket: "K-1" },
+        ]);
+    });
+    it("reads a field that differs only by surrounding whitespace as unchanged, on either side", () => {
+        const padded = { title: " T ", project: " p ", ticket: " k ", parent: "" };
+        const trimmed = { title: "T", project: "p", ticket: "k", parent: "" };
+        expect(detailOps(padded, trimmed)).toEqual([]);
+        expect(detailOps(trimmed, padded)).toEqual([]);
     });
     it("clears with empty strings and strips the effort: prefix from a parent", () => {
         expect(detailOps(cur, { ...cur, project: "", parent: "effort:abc" })).toEqual([

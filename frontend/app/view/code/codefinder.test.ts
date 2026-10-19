@@ -79,6 +79,36 @@ describe("rankPaths", () => {
     it("drops a path that matches only some of the terms", () => {
         expect(rankPaths("code missing", ["frontend/app/view/code/codestore.ts"], 10)).toEqual([]);
     });
+
+    it("scores a basename that starts with the term at its fuzzy score plus both bonuses", () => {
+        expect(rankPaths("m", ["a/m.ts"], 10)).toEqual([{ path: "a/m.ts", score: 39 }]);
+    });
+
+    it("scores a basename that merely contains the term without the prefix bonus", () => {
+        expect(rankPaths("m", ["docs/xm.ts"], 10)).toEqual([{ path: "docs/xm.ts", score: 21 }]);
+    });
+
+    it("scores an uppercase query as the lowercase one", () => {
+        expect(rankPaths("M", ["a/m.ts"], 10)).toEqual([{ path: "a/m.ts", score: 39 }]);
+    });
+
+    it("keeps the full-path score when it beats the basename score", () => {
+        const path = "abcdefghijkl/axxxbxxxcxxxdxxxexxxfxxxg.ts";
+        expect(rankPaths("abcdefg", [path], 10)).toEqual([{ path, score: 40 }]);
+    });
+
+    it("keeps a path whose only match is in the directories, even at a zero score", () => {
+        const path = "axxxbxxxc/q.ts";
+        expect(rankPaths("abc", [path], 10)).toEqual([{ path, score: 0 }]);
+    });
+
+    it("sums the score of every term", () => {
+        expect(rankPaths("a b", ["a/b.ts"], 10)).toEqual([{ path: "a/b.ts", score: 43 }]);
+    });
+
+    it("lists the index in order for an empty query when no recent files are given", () => {
+        expect(rankPaths("", ["a.ts", "Stryker was here"], 5).map((m) => m.path)).toEqual(["a.ts", "Stryker was here"]);
+    });
 });
 
 describe("parseFinderQuery", () => {

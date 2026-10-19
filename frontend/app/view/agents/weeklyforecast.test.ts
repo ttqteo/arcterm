@@ -124,6 +124,54 @@ describe("projectWeeklyExhaustion", () => {
     });
 });
 
+describe("projectWeeklyExhaustion guards and partial steps", () => {
+    const HOUR_MS = 60 * 60 * 1000;
+    const weekStart = new Date(2026, 0, 1, 0, 0, 0);
+    const uniformDaily = [0, 1, 2, 3].map((i) => {
+        const d = new Date(weekStart);
+        d.setDate(d.getDate() - i - 1);
+        return { day: dayKey(d), tokens: 100 };
+    });
+
+    test("a window already at or past 100% projects nothing", () => {
+        const weekreset = (weekStart.getTime() + 7 * DAY_MS) / 1000;
+        const now = weekStart.getTime() + 40 * HOUR_MS;
+        expect(projectWeeklyExhaustion(uniformDaily, 100, weekreset, now)).toBeNull();
+        expect(projectWeeklyExhaustion(uniformDaily, 120, weekreset, now)).toBeNull();
+    });
+
+    test("an elapsed stretch of zero-weight days projects nothing instead of an infinite pace", () => {
+        // thursday weighs 0 (no tokens on it), the other sampled days weigh above 1; the window opens on a
+        // thursday and now is the moment friday starts, so every elapsed hour weighs 0 and the next weighs more
+        const daily = [
+            { day: "2025-12-25", tokens: 0 }, // thu
+            { day: "2025-12-26", tokens: 100 }, // fri
+            { day: "2025-12-27", tokens: 100 }, // sat
+            { day: "2025-12-28", tokens: 100 }, // sun
+        ];
+        const weekreset = (weekStart.getTime() + 7 * DAY_MS) / 1000;
+        const now = weekStart.getTime() + DAY_MS;
+        expect(weekStart.getDay()).toBe(4);
+        expect(projectWeeklyExhaustion(daily, 50, weekreset, now)).toBeNull();
+    });
+
+    test("the crossing inside the last partial hour is returned as the reset itself", () => {
+        // 10.5h to reset: ten full steps then a half-hour one. 93.9% over 157.5h is a pace of 0.5962/h:
+        // ten steps reach 5.96 of the 6.1 left and the half step carries it over
+        const resetMs = weekStart.getTime() + 7 * DAY_MS;
+        const now = resetMs - 10.5 * HOUR_MS;
+        expect(projectWeeklyExhaustion(uniformDaily, 93.9, resetMs / 1000, now)).toBe(resetMs);
+    });
+
+    test("the last partial hour counts for its length, so a pace that needs the whole hour returns null", () => {
+        // 93.3% over 157.5h: ten steps reach 5.92 of 6.7 left, the half step only 6.22; a full-hour weight
+        // on that last step would have reached 6.52, and a doubled one 7.1
+        const resetMs = weekStart.getTime() + 7 * DAY_MS;
+        const now = resetMs - 10.5 * HOUR_MS;
+        expect(projectWeeklyExhaustion(uniformDaily, 93.3, resetMs / 1000, now)).toBeNull();
+    });
+});
+
 describe("formatProjectedDate", () => {
     test("formats weekday + 12-hour time", () => {
         const d = new Date(2026, 0, 1, 15, 0, 0);

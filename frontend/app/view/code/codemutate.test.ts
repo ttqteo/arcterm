@@ -61,10 +61,13 @@ describe("validateName", () => {
         expect(validateName("util", "src", EXISTING)).toBe("exists");
     });
 
-    it("every error has a message", () => {
-        for (const e of ["empty", "separator", "dots", "illegal-char", "reserved", "exists"] as const) {
-            expect(nameErrorMessage(e).length).toBeGreaterThan(0);
-        }
+    it("words every error", () => {
+        expect(nameErrorMessage("empty")).toBe("Enter a name.");
+        expect(nameErrorMessage("separator")).toBe("A name cannot contain a path separator.");
+        expect(nameErrorMessage("dots")).toBe('"." and ".." are not names.');
+        expect(nameErrorMessage("illegal-char")).toBe('A name cannot contain < > : " | ? * or control characters.');
+        expect(nameErrorMessage("reserved")).toBe("That is a reserved device name on Windows.");
+        expect(nameErrorMessage("exists")).toBe("Something with that name is already here.");
     });
 });
 

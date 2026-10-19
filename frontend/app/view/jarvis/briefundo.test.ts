@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createUndoQueue, type BriefToast } from "./briefundo";
+import { createUndoQueue, UNDO_WINDOW_MS, type BriefToast } from "./briefundo";
 
 function harness() {
     const state = { hidden: new Set<string>(), toast: null as BriefToast | null };
@@ -93,6 +93,52 @@ describe("createUndoQueue", () => {
         const { q, state } = harness();
         q.notify("Moved");
         await vi.advanceTimersByTimeAsync(5000);
+        expect(state.toast).toBeNull();
+    });
+
+    it("waits the default window when none is given", async () => {
+        const state = { toast: null as BriefToast | null };
+        const q = createUndoQueue({ setHidden: () => {}, setToast: (t) => (state.toast = t) });
+        const commit = vi.fn(async () => {});
+        q.schedule(["a"], "x", commit);
+        await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS - 1);
+        expect(commit).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(commit).toHaveBeenCalledOnce();
+    });
+
+    it("waits the window it is given", async () => {
+        const q = createUndoQueue({ setHidden: () => {}, setToast: () => {}, windowMs: 1000 });
+        const commit = vi.fn(async () => {});
+        q.schedule(["a"], "x", commit);
+        await vi.advanceTimersByTimeAsync(999);
+        expect(commit).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(commit).toHaveBeenCalledOnce();
+    });
+
+    it("numbers each toast one past the last", () => {
+        const { q, state } = harness();
+        q.notify("one");
+        const first = state.toast?.id;
+        q.notify("two");
+        expect([first, state.toast?.id]).toEqual([1, 2]);
+    });
+
+    it("a notify with no undo carries none", () => {
+        const { q, state } = harness();
+        q.notify("Moved");
+        expect(state.toast?.undo).toBeUndefined();
+    });
+
+    it("an undo pressed after its delete already committed does nothing but clear the toast", async () => {
+        const { q, state } = harness();
+        const commit = vi.fn(async () => {});
+        q.schedule(["a"], "x", commit);
+        const undo = state.toast?.undo;
+        await q.flushAll();
+        expect(() => undo?.()).not.toThrow();
+        expect(commit).toHaveBeenCalledOnce();
         expect(state.toast).toBeNull();
     });
 });

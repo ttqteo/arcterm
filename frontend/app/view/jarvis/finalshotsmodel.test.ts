@@ -193,6 +193,42 @@ describe("finalCheckEntry: the Main board", () => {
     it("has no caption when no earlier round failed", () => {
         expect(finalCheckEntry(group(stage("failed", 1, boardShots(1))))?.caption).toBeNull();
     });
+
+    it("captions the newest earlier failed round, not an older one", () => {
+        const e = finalCheckEntry(
+            group(stage("passed", 3, boardShots(2)), [stage("failed", 1, boardShots(1)), stage("failed", 2, [], false)])
+        );
+        expect(e?.caption).toBe("Round 2 failed.");
+    });
+
+    it("captions an earlier failed round past a later one that did not fail", () => {
+        const e = finalCheckEntry(
+            group(stage("passed", 3, boardShots(2)), [
+                stage("failed", 1, boardShots(1)),
+                stage("unverified", 2, boardShots(2)),
+            ])
+        );
+        expect(e?.caption).toBe("Round 1 failed on jarvis-peek steps 4 and 5.");
+        const none = finalCheckEntry(
+            group(stage("passed", 3, boardShots(2)), [stage("passed", 1, boardShots(2)), stage("unverified", 2, [])])
+        );
+        expect(none?.caption).toBeNull();
+    });
+
+    it("tallies the shots as a past round's when only past rounds exist, with no round running", () => {
+        const e = finalCheckEntry(group(undefined, [stage("failed", 1, boardShots(1))]));
+        expect([e?.right, e?.latestRound]).toEqual(["16 shots", 1]);
+    });
+
+    it("strips only the scenarios that kept a file, each by its first", () => {
+        const shots = [
+            { name: "empty", files: [], steps: steps("pass") },
+            { name: "b", files: ["b.png", "b2.png"], steps: steps("pass") },
+        ];
+        expect(finalCheckEntry(group(stage("passed", 1, shots)))?.strip).toEqual([
+            { name: "b", file: "b.png", verdict: "pass" },
+        ]);
+    });
 });
 
 describe("finalCheckEntry: when there is none", () => {

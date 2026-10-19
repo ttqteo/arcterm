@@ -9,6 +9,23 @@ describe("cleanPathInput", () => {
     it("strips the quotes Explorer's Copy as path adds", () => {
         expect(cleanPathInput('  "C:\\repos\\alpha"  ')).toBe("C:\\repos\\alpha");
     });
+
+    it("trims the space left inside the quotes", () => {
+        expect(cleanPathInput('"  C:\\repos\\alpha  "')).toBe("C:\\repos\\alpha");
+    });
+
+    it("leaves an unquoted path alone", () => {
+        expect(cleanPathInput("C:\\repos\\alpha")).toBe("C:\\repos\\alpha");
+    });
+
+    it("keeps a quote that does not have a partner on the other end", () => {
+        expect(cleanPathInput('"C:\\repos')).toBe('"C:\\repos');
+        expect(cleanPathInput('C:\\repos"')).toBe('C:\\repos"');
+    });
+
+    it("does not treat one lone quote as a quoted path", () => {
+        expect(cleanPathInput('"')).toBe('"');
+    });
 });
 
 describe("validatePathInput", () => {
