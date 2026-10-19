@@ -46,6 +46,11 @@ export const briefRevealChunkAtom = atom<((effortOref: string, chunk: string) =>
     ((effortOref: string, chunk: string) => void) | null
 >;
 
+// The initiative (its effort oref) the router asked the Brief to open in place: one with a plan to review is
+// decided on its inline tracker's Proposed group, which the Activity sheet does not have. A request the Brief
+// takes and clears rather than a handler it publishes, because the router also runs while the Brief is unmounted.
+export const briefOpenInitiativeAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
 // the Brief's effort titles and chunk stages by oid, for the run sheet's ↳ chunk line (it mounts outside
 // the Brief's snapshot)
 export const briefEffortIndexAtom = atom<EffortIndex>(new Map()) as PrimitiveAtom<EffortIndex>;

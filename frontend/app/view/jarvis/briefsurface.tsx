@@ -203,6 +203,7 @@ import {
 import { IdeaDetail, InitiativeDetail, type TrackerEdits } from "./inlinetrackerview";
 import {
     briefEffortIndexAtom,
+    briefOpenInitiativeAtom,
     briefPeekRecordAtom,
     briefProfileAtom,
     briefRevealChunkAtom,
@@ -212,7 +213,7 @@ import {
     noteChunkAtom,
     readingNoteAtom,
 } from "./jarvisstore";
-import { clearSubject, persistedSubjectAtom, setComposingRun, stageRunAtom } from "./jarvissubjectstore";
+import { clearSubject, persistedSubjectAtom, selectSubject, setComposingRun, stageRunAtom } from "./jarvissubjectstore";
 import { JarvisTour, TourButton, TourOffer } from "./jarvistourview";
 import { NewInitiativeControl } from "./newinitiativecontrol";
 import { radarDraftLanding } from "./newrun";
@@ -509,6 +510,14 @@ type InitiativeManage = {
     // present on a sub-initiative: Unlink from its parent, named by the title
     unlink?: { parentTitle: string; run: () => void };
 };
+
+// The activity link opens the Activity sheet even on an initiative whose plan waits to review, which the router
+// otherwise opens in place (openref.ts selectEffort).
+function openActivity(model: AgentsViewModel, oref: string, e?: React.MouseEvent): void {
+    fireAndForget(() =>
+        openOrPeek(model, { kind: "effort", effortId: oref.replace(/^effort:/, ""), view: "activity" }, e)
+    );
+}
 
 function showInitiativeMenu(
     line: BriefLine,
@@ -1305,7 +1314,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 runMutation(() => addChunkAt(oref, label, stage, runAt != null ? afterRun(runAt) : undefined)),
             onRename: (title) => setRenamingTitle(title),
             onDetails: () => setDetailsOpen(true),
-            onActivity: (e) => fireAndForget(() => openOrPeekAddress(model, oref, e)),
+            onActivity: (e) => openActivity(model, oref, e),
             onTogglePause: () => {
                 const next = status === "paused" ? "active" : "paused";
                 runMutation(() => setEffortStatus(oref, next));
@@ -1821,6 +1830,49 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         },
         [setOpenInitiative, setCursor, setStageOverrides]
     );
+    // An initiative the router opened in place (an initiative with a plan to review, openref.ts selectEffort):
+    // expand it, putting away whatever would keep its row from being drawn: the sheet, another region read
+    // alone, a search, the project filter, the region's cap, the archived fold. One the Brief has no row for
+    // opens its Activity sheet instead.
+    const [openRequest, setOpenRequest] = useAtom(briefOpenInitiativeAtom);
+    useEffect(() => {
+        if (openRequest == null || model_ == null) {
+            return;
+        }
+        setOpenRequest(null);
+        const lineId = "initiatives:" + openRequest;
+        const has = (cards: ReadonlyArray<{ oref: string }>) => cards.some((c) => c.oref === openRequest);
+        const tracker = effortGroups.trackers.find((c) => c.oref === openRequest);
+        const archived = archivedCards.find((c) => c.oref === openRequest);
+        const idea = has(effortGroups.ideas);
+        if (tracker == null && archived == null && !idea) {
+            selectSubject({ kind: "effort", id: openRequest.replace(/^effort:/, "") });
+            globalStore.set(briefSheetOpenAtom, true);
+            return;
+        }
+        globalStore.set(briefSheetOpenAtom, false);
+        clearSubject();
+        forgetOrigin();
+        setOnly(null);
+        setQuery("");
+        const card = tracker ?? archived;
+        if (card != null && !keepsProject(project, card.project)) {
+            setPickedProject(null);
+        }
+        if (archived != null) {
+            setShowArchived(true);
+        }
+        if (tracker != null && !has(effortWindow.rows)) {
+            setExpanded((cur) => ({ ...cur, initiatives: true }));
+        }
+        if (idea && !has(ideaWindow.rows)) {
+            setExpanded((cur) => ({ ...cur, ideas: true }));
+        }
+        setOpenInitiative(lineId);
+        setNoteChunk(null);
+        setReadingNote(new Set());
+        setCursor(lineId);
+    }, [openRequest, model_]);
     // the run sheet's ↳ chunk line reveals through the same handler, published because the sheet mounts
     // outside the Brief
     const setRevealChunk = useSetAtom(briefRevealChunkAtom);
@@ -2446,7 +2498,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                                     showInitiativeMenu(
                                                                                         l,
                                                                                         ev,
-                                                                                        (oref) => openLine({ oref }),
+                                                                                        (oref) =>
+                                                                                            openActivity(model, oref),
                                                                                         manageOf(l)
                                                                                     )
                                                                                 }
@@ -2654,7 +2707,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                 showInitiativeMenu(
                                                                     l,
                                                                     ev,
-                                                                    (oref) => openLine({ oref }),
+                                                                    (oref) => openActivity(model, oref),
                                                                     manageOf(l)
                                                                 )
                                                             }
@@ -2745,7 +2798,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                 })
                             }
                             onClose={closeNotes}
-                            onActivity={(e) => openLine({ oref: selectedChunk.oref }, e)}
+                            onActivity={(e) => openActivity(model, selectedChunk.oref, e)}
                             onAddNote={(text) =>
                                 runMutation(() => appendChunkNote(selectedChunk.oref, selectedChunk.row.label, text))
                             }

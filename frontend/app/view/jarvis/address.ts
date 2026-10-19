@@ -11,7 +11,8 @@ export type OpenTarget =
     | { kind: "run"; runId: string }
     | { kind: "agent"; tabId: string }
     | { kind: "record"; dossierId: string; anchor?: string }
-    | { kind: "effort"; effortId: string }
+    // view "activity" is the initiative's Activity sheet even while a plan waits to review (openref.ts selectEffort)
+    | { kind: "effort"; effortId: string; view?: "activity" }
     | { kind: "radar"; reportId: string; findingId?: string }
     | { kind: "note"; noteId: string }
     | { kind: "canvas"; topic: string; board?: string }

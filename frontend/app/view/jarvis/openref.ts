@@ -29,7 +29,7 @@ import { setupTabAtom } from "../agents/setupstore";
 import { afterOpen } from "../agents/windowsize";
 import { isCanvasSegment, parseAddress, type AddressHint, type OpenTarget } from "./address";
 import { effortDetailAtom, loadEffortDetail } from "./effortstore";
-import { briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
+import { briefOpenInitiativeAtom, briefPeekRecordAtom, briefSheetOpenAtom } from "./jarvisstore";
 import { loadRecordDetail, selectSubject, setActiveRunId } from "./jarvissubjectstore";
 import { clearLoadingPeek, settlePeek, startPeek, type PeekTarget } from "./peekstore";
 import { pendingDecisionAnchorAtom } from "./petstore";
@@ -261,7 +261,9 @@ async function land(
         case "record":
             return select(await loadRecord(target, current), () => selectRecord(model, target));
         case "effort":
-            return select(await loadEffort(target.effortId, current), () => selectEffort(model, target.effortId));
+            return select(await loadEffort(target.effortId, current), (effort) =>
+                selectEffort(model, effort, target.view)
+            );
         case "radar":
             return select(await loadRadar(target, current), (r) => selectRadar(model, r, current));
         case "canvas":
@@ -563,10 +565,22 @@ async function loadEffort(effortId: string, current: () => boolean): Promise<Loa
     return effort != null ? loaded(effort) : unavailable(EFFORT_GONE);
 }
 
-function selectEffort(model: AgentsViewModel, effortId: string): OpenResult {
-    openEffortSheet(effortId);
+// An initiative with a plan to review opens in place in the Brief, where its Proposed group's Accept all and Drop
+// all decide it: a plan-review item whose agent has closed lands here, and the Activity sheet has no such buttons.
+// Any other initiative, and the activity link, open the Activity sheet.
+function selectEffort(model: AgentsViewModel, effort: Effort, view?: "activity"): OpenResult {
+    if (view !== "activity" && hasProposed(effort)) {
+        globalStore.set(briefOpenInitiativeAtom, "effort:" + effort.oid);
+        landOn(model.surfaceAtom, "jarvis");
+        return OK;
+    }
+    openEffortSheet(effort.oid);
     landOn(model.surfaceAtom, "jarvis", "sheet");
     return OK;
+}
+
+function hasProposed(effort: Effort): boolean {
+    return (effort.chunks ?? []).some((c) => c.status === "proposed");
 }
 
 // Any rejected read, a timeout included, reads as gone, as an initiative's does: the server names no cause.

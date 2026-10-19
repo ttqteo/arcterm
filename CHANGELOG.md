@@ -81,6 +81,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Open on a plan to review whose agent has closed opens the initiative in Jarvis's Brief, on the proposed chunks
+  with Accept all and Drop all, instead of its Activity sheet, which had no way to decide them.
 - A stalled orchestrator task whose worker starts working again goes back to running, and a plan reviewer that sits
   at its prompt without a verdict is replaced after the short grace instead of 20 minutes.
 - A button reached with Tab keeps Enter and Space: the Brief no longer opens the row under its cursor instead.

@@ -95,7 +95,13 @@ Nothing was built for these, so there is nothing to recover from git.
   plan reaches argon, do the live check above; if not, remove agy (the files and list entries above, its docs,
   `docs/agents/antigravity.md`, and the `agy as a run lead` entry below).
 
-## (arcterm) Jarvis as graph: a List | Graph view of the Brief (deferred 2026-10-14)
+## (arcterm) Jarvis as graph: a List | Graph view of the Brief (deferred 2026-10-14, DECLINED 2026-10-19)
+
+- **Declined:** superseded by the Office (Cockpit → Office, `docs/superpowers/specs/2026-10-14-run-office-design.md`,
+  `2026-10-15-cockpit-office-design.md`), which grew out of this idea: "what is stuck where" is answered as rooms,
+  desks and a Needs you board on the Cockpit, not as rings one level inside Jarvis. Don't revive the Graph view; a
+  gap in seeing stuck work goes to the Office. The rest of this entry is the original deferral, kept as the record of
+  what was weighed. Its three planning initiatives were archived 2026-10-19.
 
 - **Deferred:** a Graph view of the Jarvis Brief beside List (`Shift+G`, List stays the default, the choice is
   remembered): Sprout at the centre, rings of projects, initiatives and live chunks, the agent or run riding on its
@@ -112,8 +118,8 @@ Nothing was built for these, so there is nothing to recover from git.
   leaf count per project, labels nudged apart in priority order) with a vitest beside it; the view swaps the Brief's
   two columns under the same header. Mockup: `.superpowers/design/jarvis-graph/project/` (gitignored; six boards,
   `Main` interactive), screenshots of the decluttered version reviewed in-session.
-- **Revive when:** five or more initiatives run at once often enough that "what is stuck where" is a question the
-  List's rows do not answer at a glance.
+- **Revive when:** none: superseded by the Office (above). The original condition was five or more initiatives running
+  at once often enough that "what is stuck where" is a question the List's rows do not answer at a glance.
 
 ## (arcterm) Per-tool shortcuts in the tool library (deferred 2026-10-13)
 

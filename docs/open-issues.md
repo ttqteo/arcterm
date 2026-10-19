@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Jarvis → Waiting on you, a "plan" row whose agent is closed (or the Needs you strip, the palette, the
+  pet's peek): Open lands on the Brief with that initiative expanded on its Proposed group (Accept all, Drop all),
+  even from another surface, past the 6-row cap, under a search or another project's filter. Its activity link and
+  right-click Open activity still open the Activity sheet. 2026-10-19 (`openref.ts` selectEffort,
+  `briefsurface.tsx` briefOpenInitiativeAtom).
 - [ ] (arcterm) Kael sync: open a run's DAG and click a task node: a peek opens beside it (session, route rows,
   description, actions); click it again, the background or press Esc to close it; click the final-stage node: its
   steps show in the peek, a finished step's kept output still opens. (ffeb41ae3)
@@ -85,12 +90,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   volume right; does the music (Settings → Jarvis & Office → Office music) duck under a jingle and stop when arcterm loses
   focus; do the footsteps and the wall bump feel right with Boss sounds on. The `office-sound` scenario logged the cues
   only and played no sound. `officeaudio.ts`, `officescores.ts`, `officesound.tsx`.
-
-**2026-10-16 (Telegram asks)**
-
-- [ ] (arcterm) Telegram asks: pair a real bot, answer by button, by reply, and in the app (message edits)
-- [ ] (arcterm) Telegram on demand with a real bot: no requests while no question is open; an ask connects and sends;
-  the end of a schedule window edits the message
 
 **2026-10-16 (the Office's pet boss)**
 
@@ -1130,7 +1129,6 @@ Jarvis (what survived the 2026-09-22/23 memory and recall-arm removals):
 
 - **U2 Tasks:** in-Wave `## Notes` editing; decision supersede UI (backend `SupersedeDecision` exists);
   manual dossier creation; live push.
-- **Jarvis as graph (deferred 2026-10-14):** a List | Graph view of the Brief; see `docs/deferred.md`.
 - **E Continuity:** a cheap model tier for boundary summaries; completed-task prose re-freshness; a
   per-task resume card beyond the pet's newest-narrative peek.
 - **D attribution tuning:** `timeBoxMs` 30d, `weightLayer3` 0.3 (needs a human ground-truth pass),
