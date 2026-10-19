@@ -620,4 +620,11 @@ describe("recordRateLimit + readSavedRateLimits round-trip", () => {
         (globalThis as any).localStorage.setItem("wave:ratelimits", "{not json");
         expect(readSavedRateLimits()).toEqual({});
     });
+
+    it("stored JSON that is not an object reads back as empty", () => {
+        for (const raw of ["null", "5", '"x"', "true"]) {
+            (globalThis as any).localStorage.setItem("wave:ratelimits", raw);
+            expect(readSavedRateLimits()).toEqual({});
+        }
+    });
 });

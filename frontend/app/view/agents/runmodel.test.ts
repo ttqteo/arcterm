@@ -303,6 +303,35 @@ describe("reviewGate", () => {
     });
 });
 
+describe("reviewGate edge cases", () => {
+    const awaiting = (...phases: RunPhase[]) => run({ status: "awaiting-review", phases });
+
+    it("skips a running phase that is not held, and a held phase that is not running", () => {
+        const r = awaiting(
+            phase({ state: "done", held: true }),
+            phase({ state: "running" }),
+            phase({ gate: true, state: "done" }),
+            phase({ state: "pending" })
+        );
+        expect(reviewGate(r)).toEqual({ phaseIdx: 2 });
+    });
+    it("returns a held running phase wherever it sits", () => {
+        expect(reviewGate(awaiting(phase({ state: "done" }), phase({ state: "running", held: true })))).toEqual({ phaseIdx: 1 });
+    });
+    it("is null when no phase is held and no gate has completed", () => {
+        expect(reviewGate(awaiting(phase({ state: "done" })))).toBeNull();
+        expect(reviewGate(awaiting(phase({ state: "done" }), phase({ state: "pending" })))).toBeNull();
+        expect(reviewGate(awaiting(phase({ gate: true, state: "failed" }), phase({ state: "pending" })))).toBeNull();
+        expect(reviewGate(awaiting(phase({ state: "running" }), phase({ state: "pending" })))).toBeNull();
+    });
+    it("a gate whose successor already started is passed, not awaiting", () => {
+        expect(reviewGate(awaiting(phase({ gate: true, state: "done" }), phase({ state: "running" })))).toBeNull();
+    });
+    it("a completed gate with no successor is the gate", () => {
+        expect(reviewGate(awaiting(phase({ gate: true, state: "done" })))).toEqual({ phaseIdx: 0 });
+    });
+});
+
 describe("isTerminal / defaultView / defaultRunId", () => {
     it("treats done/cancelled/failed as terminal", () => {
         expect(isTerminal("done")).toBe(true);
@@ -321,6 +350,14 @@ describe("isTerminal / defaultView / defaultRunId", () => {
     it("defaultRunId is undefined when all runs are terminal", () => {
         const runs = [run({ id: "a", createdts: 1, status: "done" }), run({ id: "b", createdts: 2, status: "cancelled" })];
         expect(defaultRunId(runs)).toBeUndefined();
+    });
+    it("defaultRunId picks the newest of several live runs whatever their order", () => {
+        const a = run({ id: "a", createdts: 1, status: "executing" });
+        const b = run({ id: "b", createdts: 2, status: "executing" });
+        const c = run({ id: "c", createdts: 3, status: "executing" });
+        expect(defaultRunId([a, b, c])).toBe("c");
+        expect(defaultRunId([c, a, b])).toBe("c");
+        expect(defaultRunId([b, c, a])).toBe("c");
     });
     it("defaultRunId is undefined for no runs", () => {
         expect(defaultRunId([])).toBeUndefined();
@@ -422,6 +459,52 @@ describe("phaseThread", () => {
     it("shows ship on the last phase when the run is done", () => {
         const run = base({ status: "done", phases: [{ kind: "execute", state: "done" }] });
         expect(phaseThread(run, 0, []).showShip).toBe(true);
+    });
+    it("shows ship only for the last phase, once done, of a done run", () => {
+        const twoDone: RunPhase[] = [
+            { kind: "execute", state: "done" },
+            { kind: "execute", state: "done" },
+        ];
+        expect(phaseThread(base({ status: "done", phases: twoDone }), 0, []).showShip).toBe(false);
+        expect(phaseThread(base({ status: "done", phases: twoDone }), 1, []).showShip).toBe(true);
+        const lastSkipped: RunPhase[] = [{ kind: "execute", state: "done" }, { kind: "execute", state: "skipped" }];
+        expect(phaseThread(base({ status: "done", phases: lastSkipped }), 1, []).showShip).toBe(false);
+        expect(phaseThread(base({ status: "executing", phases: twoDone }), 1, []).showShip).toBe(false);
+    });
+    it("draws no boundary for a skipped freshctx phase", () => {
+        const run = base({ phases: [{ kind: "execute", state: "skipped", freshctx: true }] });
+        expect(phaseThread(run, 0, []).showBoundary).toBe(false);
+    });
+    it("a running phase that recorded no worker is neither blocked nor starting", () => {
+        const run = base({ phases: [{ kind: "execute", state: "running" }] });
+        const t = phaseThread(run, 0, [], new Set(["t1"]));
+        expect(t.showBlocked).toBe(false);
+        expect(t.showStarting).toBe(false);
+        expect(t.showWorkers).toBe(false);
+    });
+    it("is starting when any one of several recorded tabs still exists", () => {
+        const run = base({ phases: [{ kind: "execute", state: "running", workerorefs: ["tab:t1", "tab:t2"] }] });
+        const t = phaseThread(run, 0, [], new Set(["t1"]));
+        expect(t.showStarting).toBe(true);
+        expect(t.showBlocked).toBe(false);
+    });
+    it("shows no worker rows for a phase that is not running", () => {
+        const run = base({ phases: [{ kind: "execute", state: "pending", workerorefs: ["tab:t1"] }] });
+        expect(phaseThread(run, 0, [agent({ id: "t1" })], new Set(["t1"])).showWorkers).toBe(false);
+    });
+    it("a phase that is not running is never starting, and only blocked or failed ones read as blocked", () => {
+        const failed = base({ phases: [{ kind: "execute", state: "failed", workerorefs: ["tab:t1"] }] });
+        const t = phaseThread(failed, 0, [], new Set(["t1"]));
+        expect(t.showStarting).toBe(false);
+        expect(t.showBlocked).toBe(true);
+        for (const state of ["done", "pending"] as const) {
+            const r = base({ phases: [{ kind: "execute", state, workerorefs: ["tab:gone"] }] });
+            expect(phaseThread(r, 0, [], new Set()).showBlocked).toBe(false);
+        }
+    });
+    it("a blocked phase reads as blocked even while a worker is live", () => {
+        const run = base({ phases: [{ kind: "execute", state: "blocked", workerorefs: ["tab:t1"] }] });
+        expect(phaseThread(run, 0, [agent({ id: "t1" })]).showBlocked).toBe(true);
     });
 });
 

@@ -41,6 +41,57 @@ describe("parseCardData", () => {
     it("returns null when required fields are missing", () => {
         expect(parseCardData({ id: "5", kind: "jarvis-answered", author: "jarvis", text: "", ts: 0, data: "{}" } as ChannelMessage)).toBeNull();
     });
+    it("returns null when any one required field is missing", () => {
+        const full: Record<string, unknown> = { askORef: "block:a", question: "q", options: [{ label: "x" }] };
+        for (const missing of ["askORef", "question", "options"]) {
+            const rest = { ...full };
+            delete rest[missing];
+            expect(parseCardData({ id: "5m", kind: "jarvis-answered", author: "jarvis", text: "", ts: 0, data: JSON.stringify(rest) } as ChannelMessage)).toBeNull();
+        }
+    });
+    it("returns null when options is not an array", () => {
+        const data = JSON.stringify({ askORef: "block:a", question: "q", options: "x" });
+        expect(parseCardData({ id: "5o", kind: "jarvis-answered", author: "jarvis", text: "", ts: 0, data } as ChannelMessage)).toBeNull();
+    });
+    it("reads every field of a full payload", () => {
+        const data = JSON.stringify({
+            askORef: "block:a",
+            askId: "ask1",
+            workerORef: "tab:w",
+            question: "q",
+            options: [{ label: "x", sub: "s" }],
+            choice: 0,
+            humanPick: 1,
+            reason: "because",
+        });
+        expect(parseCardData({ id: "6", kind: "jarvis-answered", author: "jarvis", text: "", ts: 0, data } as ChannelMessage)).toStrictEqual({
+            askORef: "block:a",
+            askId: "ask1",
+            workerORef: "tab:w",
+            question: "q",
+            options: [{ label: "x", sub: "s" }],
+            choice: 0,
+            humanPick: 1,
+            reason: "because",
+        });
+    });
+    it("defaults an absent optional field and drops a wrong-typed one", () => {
+        const base = { askORef: "block:a", question: "q", options: [] };
+        const defaulted = {
+            askORef: "block:a",
+            askId: undefined,
+            workerORef: "",
+            question: "q",
+            options: [],
+            choice: undefined,
+            humanPick: undefined,
+            reason: undefined,
+        };
+        const absent = JSON.stringify(base);
+        expect(parseCardData({ id: "7", kind: "jarvis-answered", author: "jarvis", text: "", ts: 0, data: absent } as ChannelMessage)).toStrictEqual(defaulted);
+        const wrong = JSON.stringify({ ...base, askId: 5, workerORef: 5, choice: "1", humanPick: "1", reason: 5 });
+        expect(parseCardData({ id: "8", kind: "jarvis-answered", author: "jarvis", text: "", ts: 0, data: wrong } as ChannelMessage)).toStrictEqual(defaulted);
+    });
 });
 
 describe("fleetCounts", () => {

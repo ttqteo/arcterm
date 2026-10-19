@@ -109,6 +109,90 @@ describe("buildFleetSnapshot", () => {
         const snap = buildFleetSnapshot(c, []);
         expect(snap[0].outcome).toBeUndefined();
     });
+
+    it("ignores an outcome stamped at the same instant as the latest dispatch", () => {
+        const c = chan([
+            { kind: "dispatch", author: "claude", text: "go", reforef: "tab:t1", ts: 2 },
+            { kind: "outcome", author: "claude", text: "x", reforef: "tab:t1", ts: 2, data: JSON.stringify({ status: "done", summary: "x" }) },
+        ]);
+        expect(buildFleetSnapshot(c, [])[0].outcome).toBeUndefined();
+    });
+
+    it("keeps the newest outcome when an older one arrives later in the list", () => {
+        const c = chan([
+            { kind: "dispatch", author: "claude", text: "go", reforef: "tab:t1", ts: 1 },
+            { kind: "outcome", author: "claude", text: "new", reforef: "tab:t1", ts: 5, data: JSON.stringify({ status: "done", summary: "new" }) },
+            { kind: "outcome", author: "claude", text: "old", reforef: "tab:t1", ts: 3, data: JSON.stringify({ status: "failed", summary: "old" }) },
+        ]);
+        expect(buildFleetSnapshot(c, [])[0].outcome).toEqual({ status: "done", summary: "new" });
+    });
+
+    it("reads status and summary from the outcome payload ahead of the message text", () => {
+        const c = chan([
+            { kind: "dispatch", author: "claude", text: "go", reforef: "tab:t1", ts: 1 },
+            { kind: "outcome", author: "claude", text: "flat text", reforef: "tab:t1", ts: 2, data: JSON.stringify({ status: "failed", summary: "tests red" }) },
+        ]);
+        expect(buildFleetSnapshot(c, [])[0].outcome).toEqual({ status: "failed", summary: "tests red" });
+    });
+
+    it("defaults an outcome with no payload, a bare one or a malformed one to done with the message text", () => {
+        const outcome = (data?: string) =>
+            chan([
+                { kind: "dispatch", author: "claude", text: "go", reforef: "tab:t1", ts: 1 },
+                { kind: "outcome", author: "claude", text: "flat text", reforef: "tab:t1", ts: 2, data },
+            ]);
+        const want = { status: "done", summary: "flat text" };
+        expect(buildFleetSnapshot(outcome(undefined), [])[0].outcome).toEqual(want);
+        expect(buildFleetSnapshot(outcome("{}"), [])[0].outcome).toEqual(want);
+        expect(buildFleetSnapshot(outcome("{oops"), [])[0].outcome).toEqual(want);
+    });
+
+    it("gives an outcome with neither payload summary nor text an empty summary", () => {
+        const c = chan([
+            { kind: "dispatch", author: "claude", text: "go", reforef: "tab:t1", ts: 1 },
+            { kind: "outcome", author: "claude", reforef: "tab:t1", ts: 2 },
+        ]);
+        expect(buildFleetSnapshot(c, [])[0].outcome).toEqual({ status: "done", summary: "" });
+    });
+
+    it("only folds messages whose reforef is a tab", () => {
+        const c = chan([
+            { kind: "dispatch", author: "claude", text: "go", reforef: "block:b1", ts: 1 },
+            { kind: "directive", author: "you", text: "go", reforef: "", ts: 2 },
+            { kind: "dispatch", author: "claude", text: "go", reforef: undefined, ts: 3 },
+        ]);
+        expect(buildFleetSnapshot(c, [])).toEqual([]);
+    });
+
+    it("does not read a message of another kind as an outcome", () => {
+        const c = chan([
+            { kind: "dispatch", author: "claude", text: "go", reforef: "tab:t1", ts: 1 },
+            { kind: "human", author: "you", text: "hi", reforef: "tab:t1", ts: 5 },
+        ]);
+        const agents = [agent({ id: "t1", name: "claude", state: "working" })];
+        expect(buildFleetSnapshot(c, agents)[0].outcome).toBeUndefined();
+    });
+
+    it("matches a dispatched worker to its own roster row, and calls it gone when none matches", () => {
+        const c = chan([
+            { kind: "dispatch", author: "claude", text: "a", reforef: "tab:t1", ts: 1 },
+            { kind: "dispatch", author: "codex", text: "b", reforef: "tab:t2", ts: 2 },
+        ]);
+        const agents = [agent({ id: "t0", name: "other", state: "working" }), agent({ id: "t2", name: "second", state: "idle" })];
+        const snap = buildFleetSnapshot(c, agents);
+        expect(snap.map((w) => [w.oref, w.name, w.state])).toEqual([
+            ["tab:t1", "claude", "gone"],
+            ["tab:t2", "second", "idle"],
+        ]);
+    });
+
+    it("carries an ask only for a worker that is asking", () => {
+        const c = chan([{ kind: "dispatch", author: "claude", text: "go", reforef: "tab:t1", ts: 1 }]);
+        const ask = { oref: "block:t1", askId: "ask1", questions: [{ question: "q?" }] };
+        const working = buildFleetSnapshot(c, [agent({ id: "t1", state: "working", ask })])[0];
+        expect(working.askText).toBeUndefined();
+        expect(working.askId).toBeUndefined();
+    });
 });
 
 // the cockpit's needs-you count: needsHuman over the ask ids answered in any channel's message list

@@ -101,6 +101,34 @@ describe("eventText", () => {
     });
 });
 
+describe("eventText: rows with an optional tail", () => {
+    const ev = (kind: string, detail?: object): RunEvent =>
+        ({ id: "1", ts: 1, kind, detail: detail ? JSON.stringify(detail) : undefined }) as RunEvent;
+
+    it("ends a row at its subject when the note, question or text is missing", () => {
+        expect(eventText(ev("task-forwarded", { taskid: "t-4" }))).toBe("t-4 handed to you");
+        expect(eventText(ev("child-ask", { taskid: "t-4" }))).toBe("t-4 asked");
+        expect(eventText(ev("task-told", { taskid: "t-4" }))).toBe("you told t-4");
+        expect(eventText(ev("task-review-passed", { taskid: "t-4" }))).toBe("Review passed · t-4");
+        expect(eventText(ev("task-review-failed", { taskid: "t-4" }))).toBe("Review failed · t-4");
+    });
+
+    it("folds every run of whitespace in a told text into one space", () => {
+        expect(eventText(ev("task-told", { taskid: "t-3", text: "keep  it\n\n  tidy" }))).toBe(
+            "you told t-3 · keep it tidy"
+        );
+    });
+
+    it("carries a reviewer's note on the review rows, whitespace folded", () => {
+        expect(eventText(ev("task-review-passed", { taskid: "t-2", note: "looks  good\n\nship it" }))).toBe(
+            "Review passed · t-2 · looks good ship it"
+        );
+        expect(eventText(ev("task-review-failed", { taskid: "t-2", note: "missing\n  a test" }))).toBe(
+            "Review failed · t-2 · missing a test"
+        );
+    });
+});
+
 describe("verify rows", () => {
     it("names and tones the merge-point Verify rows", () => {
         expect(eventKindTitle("task-verify-started")).toBe("Verify started");

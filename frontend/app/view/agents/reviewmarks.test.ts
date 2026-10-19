@@ -225,6 +225,25 @@ describe("parseStoredReviews", () => {
         ).toEqual({});
     });
 
+    it("null is a quiet empty start, not a warned one", () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        expect(parseStoredReviews(null)).toEqual({});
+        expect(warn).not.toHaveBeenCalled();
+        warn.mockRestore();
+    });
+
+    it("says why it starts empty: not JSON, or JSON that is not an object", () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        expect(parseStoredReviews("{")).toEqual({});
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0]).toBe("[diff] stored review marks are not JSON; starting empty");
+        warn.mockClear();
+        expect(parseStoredReviews("null")).toEqual({});
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0]).toBe("[diff] stored review marks are not an object; starting empty");
+        warn.mockRestore();
+    });
+
     it("keeps the well-formed entries beside malformed ones", () => {
         const raw = JSON.stringify({
             good: { at: 5, files: { "a.ts": { fp: "M:1:0", h: "abc", stale: true }, "b.ts": { h: "x" } } },

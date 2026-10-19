@@ -400,3 +400,240 @@ describe("sessionSelection", () => {
         expect(sessionSelection(mk({ id: "s9", runtime: "pi" }))).toEqual({ sel: "pi:s9" });
     });
 });
+
+describe("groupRunSessions folding details", () => {
+    it("takes the run's channel from the first session that has one and keeps it", () => {
+        const { runs } = groupRunSessions([
+            mk({ id: "a", runid: "r1", role: "lead" }),
+            mk({ id: "b", runid: "r1", role: "worker", taskid: "t-1", channelid: "ch" }),
+            mk({ id: "c", runid: "r1", role: "worker", taskid: "t-2", channelid: "other" }),
+        ]);
+        expect(runs[0].channelId).toBe("ch");
+    });
+
+    it("leaves a run no session gave a channel on an empty channel id", () => {
+        expect(groupRunSessions([mk({ runid: "r1", role: "lead" })]).runs[0].channelId).toBe("");
+    });
+
+    it("keeps a session with no lead or stage role and no task id out of the task map", () => {
+        const { runs } = groupRunSessions([
+            mk({ id: "lead", runid: "r1", role: "lead" }),
+            mk({ id: "orphan", runid: "r1", role: "worker" }),
+        ]);
+        expect(runs[0].tasks).toEqual({});
+        expect(runs[0].sessions.map((s) => s.id)).toEqual(["lead", "orphan"]);
+    });
+
+    it("lists a run's lead sessions newest first", () => {
+        const { runs } = groupRunSessions([
+            mk({ id: "old", runid: "r1", role: "lead", lastactivets: 1 }),
+            mk({ id: "new", runid: "r1", role: "lead", lastactivets: 9 }),
+            mk({ id: "mid", runid: "r1", role: "lead", lastactivets: 5 }),
+        ]);
+        expect(runs[0].lead.map((s) => s.id)).toEqual(["new", "mid", "old"]);
+    });
+});
+
+describe("runView members", () => {
+    const viewOf = (list: LiveSession[], over: Partial<Parameters<typeof runView>[0]> = {}) =>
+        runView({ group: groupRunSessions(list).runs[0], now: 0, ...over });
+    const lead = (over: Partial<LiveSession> = {}) => mk({ id: "lead", runid: "r1", role: "lead", ...over });
+
+    it("sums each member's tokens and duration over its own sessions", () => {
+        const v = viewOf(
+            [
+                lead({ id: "l1", tokenstotal: 100, durationms: 1000 }),
+                lead({ id: "l2", tokenstotal: 20, durationms: 300 }),
+                mk({ id: "w1", runid: "r1", role: "worker", taskid: "t-1", tokenstotal: 7, durationms: 50 }),
+                mk({ id: "w1b", runid: "r1", role: "worker", taskid: "t-1", tokenstotal: 5, durationms: 40 }),
+                mk({ id: "pr1", runid: "r1", role: "plan-reviewer", tokenstotal: 3, durationms: 11 }),
+                mk({ id: "pr2", runid: "r1", role: "plan-reviewer", tokenstotal: 4, durationms: 22 }),
+            ],
+            { dag: dagOf([task("t-1", "done")]) }
+        );
+        expect(v.members.map((m) => [m.key, m.tokens, m.durationMs])).toEqual([
+            [LEAD_MEMBER, 120, 1300],
+            ["t-1", 12, 90],
+            ["plan-reviewer", 7, 33],
+        ]);
+    });
+
+    it("lists the tasks of a run with no dag in task id order, whatever order its sessions arrived in", () => {
+        const v = viewOf([
+            lead(),
+            mk({ id: "w3", runid: "r1", role: "worker", taskid: "t-3" }),
+            mk({ id: "w1", runid: "r1", role: "worker", taskid: "t-1" }),
+        ]);
+        expect(v.members.map((m) => m.key)).toEqual([LEAD_MEMBER, "t-1", "t-3"]);
+    });
+
+    it("names a task by its label, else by its id", () => {
+        const v = viewOf([lead()], {
+            dag: dagOf([task("t-1", "done", { label: "Port it" }), task("t-2", "done", { label: "" })]),
+        });
+        expect(v.members.map((m) => m.label)).toEqual(["Lead", "Port it", "t-2"]);
+    });
+
+    it("carries a task's child run id, and none when it has none", () => {
+        const v = viewOf([lead()], {
+            dag: dagOf([
+                task("t-1", "done", { runid: "child-1" }),
+                task("t-2", "done", { runid: "" }),
+                task("t-3", "done"),
+            ]),
+        });
+        expect(v.members.map((m) => m.childRunId)).toEqual([undefined, "child-1", undefined, undefined]);
+    });
+
+    it("reads the asking task's summary out of the digest by task id", () => {
+        const digest = {
+            tasks: [
+                { taskid: "t-1", waitreason: "lead-ask", asksummary: "not yours" },
+                { taskid: "t-3", waitreason: "ask", asksummary: "Keep the rail?" },
+            ],
+        } as DagStatusDigest;
+        const v = viewOf([lead()], { dag: dagOf([task("t-1", "running"), task("t-3", "running")]), digest });
+        expect(v.ask).toEqual({ member: "t-3", num: "3", text: "Keep the rail?" });
+    });
+
+    it("has no ask when nothing asks, even with a digest", () => {
+        const digest = { tasks: [{ taskid: "t-1", waitreason: "lead-ask", asksummary: "x" }] } as DagStatusDigest;
+        const v = viewOf([lead()], { dag: dagOf([task("t-1", "running")]), digest });
+        expect(v.ask).toBeUndefined();
+    });
+
+    it("takes the project from the run's path, else the lead's, else nothing", () => {
+        const w = mk({ id: "w", runid: "r1", role: "worker", taskid: "t-1", projectname: "workerproj" });
+        const named = [lead({ projectname: "leadproj" })];
+        expect(viewOf(named, { run: { projectpath: "C:\\code\\arc" } as Run }).project).toBe("arc");
+        expect(viewOf(named, { run: {} as Run }).project).toBe("leadproj");
+        expect(viewOf(named).project).toBe("leadproj");
+        expect(viewOf([w]).project).toBe("");
+    });
+
+    it("takes the runtime from the run, else the lead, else claude", () => {
+        const w = mk({ id: "w", runid: "r1", role: "worker", taskid: "t-1", runtime: "pi" });
+        const codex = [lead({ runtime: "codex" })];
+        expect(viewOf(codex, { run: { runtime: "pi" } as Run }).runtime).toBe("pi");
+        expect(viewOf(codex, { run: {} as Run }).runtime).toBe("codex");
+        expect(viewOf(codex).runtime).toBe("codex");
+        expect(viewOf([w]).runtime).toBe("claude");
+    });
+
+    it("starts a run when its run record was created, else with its earliest session", () => {
+        const list = [
+            lead({ id: "a", startedts: 300, lastactivets: 400 }),
+            mk({ id: "b", runid: "r1", role: "worker", taskid: "t-1", startedts: 0, lastactivets: 150 }),
+            mk({ id: "c", runid: "r1", role: "worker", taskid: "t-2", startedts: 200, lastactivets: 50 }),
+        ];
+        expect(viewOf(list, { run: { createdts: 500 } as Run }).startedts).toBe(500);
+        expect(viewOf(list).startedts).toBe(150);
+    });
+});
+
+describe("runView lead status", () => {
+    const statusOf = (over: Partial<LiveSession>, input: Partial<Parameters<typeof runView>[0]> = {}) =>
+        runView({
+            group: groupRunSessions([mk({ id: "l", runid: "r1", role: "lead", live: true, ...over })]).runs[0],
+            now: 0,
+            ...input,
+        }).members[0].status;
+    const open = dagOf([], { status: "running" });
+
+    it("asks for you when the live lead needs attention, even at its prompt with the dag open", () => {
+        expect(statusOf({ needsAttention: true }, { dag: open, leadAtPrompt: true })).toEqual({
+            key: "asking",
+            text: "asking",
+        });
+    });
+
+    it("waits on the engine only at its prompt with the dag still open", () => {
+        expect(statusOf({}, { dag: open, leadAtPrompt: true })).toEqual({ key: "idle", text: "waiting on engine" });
+        const working = { key: "running", text: "working" };
+        expect(statusOf({}, { dag: open, leadAtPrompt: false })).toEqual(working);
+        expect(statusOf({}, { dag: open })).toEqual(working);
+        expect(statusOf({}, { leadAtPrompt: true })).toEqual(working);
+        expect(statusOf({}, { dag: dagOf([], { status: "done" }), leadAtPrompt: true })).toEqual(working);
+        expect(statusOf({}, { dag: dagOf([], { status: "cancelled" }), leadAtPrompt: true })).toEqual(working);
+    });
+});
+
+describe("runView head status", () => {
+    const headOf = (list: LiveSession[], over: Partial<Parameters<typeof runView>[0]> = {}) =>
+        runView({ group: groupRunSessions(list).runs[0], now: 0, ...over }).head;
+    const lead = (over: Partial<LiveSession> = {}) => mk({ id: "lead", runid: "r1", role: "lead", ...over });
+
+    it("says how many tasks need you, singular or plural", () => {
+        const two = dagOf([task("t-1", "done"), task("t-2", "failed"), task("t-3", "stalled")]);
+        expect(headOf([lead()], { dag: two })).toEqual({ key: "failed", text: "2 need you" });
+        const one = dagOf([task("t-1", "done"), task("t-2", "failed")]);
+        expect(headOf([lead()], { dag: one })).toEqual({ key: "failed", text: "1 needs you" });
+    });
+
+    it("counts a task in review or verifying as running", () => {
+        const dag = dagOf([task("t-1", "done"), task("t-2", "reviewing"), task("t-3", "verifying")]);
+        expect(headOf([lead()], { dag })).toEqual({ key: "running", text: "2 running" });
+    });
+
+    it("counts a task in review alone as running", () => {
+        const dag = dagOf([task("t-1", "done"), task("t-2", "reviewing")]);
+        expect(headOf([lead()], { dag })).toEqual({ key: "running", text: "1 running" });
+    });
+
+    it("reads a cancelled dag as cancelled, even while the lead is live", () => {
+        const dag = dagOf([task("t-1", "done")], { status: "cancelled" });
+        expect(headOf([lead({ live: true })], { dag })).toEqual({ key: "muted", text: "cancelled" });
+    });
+
+    it("reads a live run with nothing running as working, or planning before it has a dag", () => {
+        const dag = dagOf([task("t-1", "done")], { status: "running" });
+        expect(headOf([lead({ live: true })], { dag })).toEqual({ key: "running", text: "working" });
+        expect(headOf([lead({ live: true })])).toEqual({ key: "running", text: "planning" });
+    });
+
+    it("gives an ended run the time since its last activity", () => {
+        const dag = dagOf([task("t-1", "done")], { status: "done" });
+        expect(headOf([lead({ lastactivets: HOUR })], { dag, now: 3 * HOUR })).toEqual({ key: "done", text: "2h" });
+    });
+});
+
+describe("resumeLaunchOpts launch shape", () => {
+    const base = {
+        id: "s1",
+        projectpath: "/p",
+        projectname: "proj",
+        task: "fix it",
+        resumecommand: "claude --resume s1",
+        transcriptpath: "/t.jsonl",
+    };
+
+    it("opens a claude session by its resume command alone, whatever argv the session carries", () => {
+        const s = mk({ ...base, runtime: "claude", resumeargs: ["--session", "/t.jsonl"] });
+        expect(resumeLaunchOpts(s)).toStrictEqual({
+            runtime: "claude",
+            startupCommand: "claude --resume s1",
+            task: "",
+            projectPath: "/p",
+            projectName: "proj",
+            label: "fix it",
+        });
+    });
+
+    it("opens a pi session with no argv, or an empty one, by its command alone", () => {
+        const want = {
+            runtime: "pi",
+            startupCommand: "claude --resume s1",
+            task: "",
+            projectPath: "/p",
+            projectName: "proj",
+            label: "fix it",
+        };
+        expect(resumeLaunchOpts(mk({ ...base, runtime: "pi" }))).toStrictEqual(want);
+        expect(resumeLaunchOpts(mk({ ...base, runtime: "pi", resumeargs: [] }))).toStrictEqual(want);
+    });
+
+    it("names a project-less session's agent 'agent', and keeps a named project's name", () => {
+        expect(resumeLaunchOpts(mk({ ...base, projectname: "" })).projectName).toBe("agent");
+        expect(resumeLaunchOpts(mk({ ...base })).projectName).toBe("proj");
+    });
+});

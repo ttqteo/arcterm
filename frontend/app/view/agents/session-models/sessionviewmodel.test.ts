@@ -39,6 +39,10 @@ describe("cwdToServiceLabel", () => {
         expect(cwdToServiceLabel(undefined)).toBe(NO_CWD_LABEL);
         expect(cwdToServiceLabel("")).toBe(NO_CWD_LABEL);
     });
+    it("ignores a run of trailing separators", () => {
+        expect(cwdToServiceLabel("/a/b//")).toBe("b");
+        expect(cwdToServiceLabel("C:\\a\\b\\\\")).toBe("b");
+    });
     it("falls back for a root path", () => {
         expect(cwdToServiceLabel("/")).toBe(NO_CWD_LABEL);
         expect(cwdToServiceLabel("\\")).toBe(NO_CWD_LABEL);
@@ -344,6 +348,14 @@ describe("buildSessionViewModel — project label (launch default)", () => {
             input({ tabId: "t1", agent: "claude", projectLabel: "waveterm", customLabel: "my name", cwd: "/src/X" }),
         ]);
         expect(vm.groups[0].sessions[0].label).toBe("my name");
+    });
+    it("trims a project label used as the row label", () => {
+        const vm = buildSessionViewModel([input({ tabId: "t1", agent: "claude", projectLabel: "  waveterm  ", cwd: "/src/X" })]);
+        expect(vm.groups[0].sessions[0].label).toBe("waveterm");
+    });
+    it("labels a session with no agent and no tab name as session", () => {
+        const vm = buildSessionViewModel([input({ tabId: "t1", agent: undefined, name: "", cwd: "/src/X" })]);
+        expect(vm.groups[0].sessions[0].label).toBe("session");
     });
     it("ignores a whitespace-only project label", () => {
         const vm = buildSessionViewModel([input({ tabId: "t1", agent: "claude", projectLabel: "   ", cwd: "/src/X" })]);

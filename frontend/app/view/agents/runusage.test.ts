@@ -41,6 +41,27 @@ describe("summarizeUsage", () => {
         expect(s.byModel.map((m) => m.model)).toEqual(["sonnet-5-5", "opus-5-5"]);
     });
 
+    it("orders the models by tokens whatever order their rows came in", () => {
+        const s = summarizeUsage([
+            row({ model: "claude-sonnet-5-5", input: 100_000 }),
+            row({ model: "claude-opus-5-5", input: 300_000 }),
+            row({ model: "claude-haiku-5-5", input: 200_000 }),
+        ])!;
+        expect(s.byModel).toEqual([
+            { model: "opus-5-5", tokens: 300_000 },
+            { model: "haiku-5-5", tokens: 200_000 },
+            { model: "sonnet-5-5", tokens: 100_000 },
+        ]);
+    });
+
+    it("leaves out a model that spent nothing", () => {
+        const s = summarizeUsage([
+            row({ model: "claude-opus-5-5", input: 100_000 }),
+            row({ model: "claude-sonnet-5-5" }),
+        ])!;
+        expect(s.byModel).toEqual([{ model: "opus-5-5", tokens: 100_000 }]);
+    });
+
     it("is null when nothing was spent", () => {
         expect(summarizeUsage(undefined)).toBeNull();
         expect(summarizeUsage(ROWS, "t-2")).toBeNull();

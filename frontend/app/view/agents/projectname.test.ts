@@ -29,4 +29,19 @@ describe("projectNameFromTranscriptPath", () => {
         expect(projectNameFromTranscriptPath("/tmp/foo.jsonl")).toBe("");
         expect(projectNameFromTranscriptPath("")).toBe("");
     });
+    it("returns empty for a missing path", () => {
+        expect(projectNameFromTranscriptPath(undefined as unknown as string)).toBe("");
+    });
+    it("ignores empty path segments", () => {
+        expect(projectNameFromTranscriptPath("/h/.claude/projects//C--a-repo/x.jsonl")).toBe("repo");
+    });
+    it("finds a projects segment at the start of a relative path", () => {
+        expect(projectNameFromTranscriptPath("projects/C--a-repo/x.jsonl")).toBe("repo");
+    });
+    it("returns empty when projects is the last segment", () => {
+        expect(projectNameFromTranscriptPath("/a/projects")).toBe("");
+    });
+    it("ignores a trailing dash in the encoded dir name", () => {
+        expect(projectNameFromTranscriptPath("/h/.claude/projects/C--a-repo-/x.jsonl")).toBe("repo");
+    });
 });

@@ -46,6 +46,29 @@ describe("registeredProjectFor", () => {
         expect(registeredProjectFor("/tmp/scratch", projects)).toBe("");
         expect(registeredProjectFor("", projects)).toBe("");
     });
+    it("keeps the most specific path whatever order the registry lists it in", () => {
+        const specificFirst = {
+            "exp-arc": { path: "C:/Users/k/IdeaProjects/waveterm/.worktrees/exp-arc" },
+            waveterm: { path: "C:\\Users\\k\\IdeaProjects\\waveterm" },
+        };
+        expect(registeredProjectFor("C:/Users/k/IdeaProjects/waveterm/.worktrees/exp-arc/src", specificFirst)).toBe(
+            "exp-arc"
+        );
+    });
+    it("keeps the first of two projects whose paths normalise to the same value", () => {
+        const twins = { first: { path: "/repo/x" }, second: { path: "/REPO/x/" } };
+        expect(registeredProjectFor("/repo/x/sub", twins)).toBe("first");
+    });
+    it("lets a root path register a project that contains every cwd, but not an empty cwd", () => {
+        const root = { root: { path: "/" } };
+        expect(registeredProjectFor("/home/k/x", root)).toBe("root");
+        expect(registeredProjectFor("", root)).toBe("");
+    });
+    it("skips a project with no path", () => {
+        const noPaths = { a: {}, b: null, c: { path: "" } } as unknown as Record<string, { path?: string }>;
+        expect(registeredProjectFor("/home/k/x", noPaths)).toBe("");
+        expect(registeredProjectFor("/home/k/x", { ...noPaths, real: { path: "/home/k" } })).toBe("real");
+    });
 });
 
 const ch = (oid: string, projectpath: string, name = ""): Channel => ({ oid, projectpath, name }) as Channel;
@@ -74,6 +97,22 @@ describe("channelProjectLabel", () => {
 
     it("falls back to the oid when there is no name either", () => {
         expect(channelProjectLabel(ch("c1", "", ""), registry({}))).toBe("c1");
+    });
+
+    it("does not match a channel with no path against a project whose path normalises to empty", () => {
+        expect(channelProjectLabel(ch("c1", "", "legacy"), registry({ root: "/" }))).toBe("legacy");
+        expect(channelProjectLabel({ oid: "c1", name: "legacy" } as Channel, registry({ root: "/" }))).toBe("legacy");
+    });
+
+    it("falls back past registered projects that do not match, and skips one with no path", () => {
+        const projects = {
+            other: { path: "/repo/other" },
+            none: {},
+            gone: null,
+            a: { path: "/repo/a" },
+        } as unknown as Record<string, ProjectKeywords>;
+        expect(channelProjectLabel(ch("c1", "/repo/a"), projects)).toBe("a");
+        expect(channelProjectLabel(ch("c1", "/repo/missing", "legacy"), projects)).toBe("legacy");
     });
 
     it("is empty for no channel", () => {

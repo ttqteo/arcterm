@@ -8,6 +8,16 @@ describe("prettyModel", () => {
         expect(prettyModel("claude-haiku-4-5")).toBe("Haiku 4.5");
         expect(prettyModel("claude-fable-5")).toBe("Fable 5");
     });
+    it("reads the version from the digits after the family word only", () => {
+        expect(prettyModel("v2-opus-4-8")).toBe("Opus 4.8");
+    });
+    it("keeps a two-digit minor", () => {
+        expect(prettyModel("claude-opus-4-10")).toBe("Opus 4.10");
+    });
+    it("names the family alone when no version follows it", () => {
+        expect(prettyModel("claude-opus")).toBe("Opus");
+        expect(prettyModel("claude-sonnet-latest")).toBe("Sonnet");
+    });
     it("drops an 8-digit date suffix (not a minor version)", () => {
         expect(prettyModel("claude-opus-4-20250514")).toBe("Opus 4");
     });

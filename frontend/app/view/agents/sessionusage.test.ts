@@ -87,6 +87,71 @@ describe("aggregateSessionUsage", () => {
         expect(write.spendUsd).toBe(0);
         expect(s.totalTokens).toBe(1_600_000);
     });
+
+    // opus ($/MTok): input 5, output 25, reasoning at the output rate, cacheRead 0.5, cacheWrite5m 6.25
+    it("folds all five classes of one bucket into totals, per-class rows, the model row and the insight", () => {
+        const s = aggregateSessionUsage([
+            bkt({
+                input: 1_000_000,
+                output: 2_000_000,
+                reasoning: 3_000_000,
+                cacheread: 4_000_000,
+                cachecreate: 5_000_000,
+            }),
+        ]);
+        expect(s.totalTokens).toBe(15_000_000);
+        expect(s.totalSpendUsd).toBeCloseTo(5 + 50 + 75 + 2 + 31.25, 5);
+        expect(s.classes.map((c) => [c.cls, c.tokens, Number(c.spendUsd.toFixed(5))])).toEqual([
+            ["cacheRead", 4_000_000, 2],
+            ["reasoning", 3_000_000, 75],
+            ["output", 2_000_000, 50],
+            ["cacheWrite", 5_000_000, 31.25],
+            ["input", 1_000_000, 5],
+        ]);
+        expect(s.models).toHaveLength(1);
+        expect(s.models[0].tokens).toBe(15_000_000);
+        expect(s.models[0].spendUsd).toBeCloseTo(163.25, 5);
+        expect(s.models[0].classes).toEqual({
+            input: 1_000_000,
+            output: 2_000_000,
+            reasoning: 3_000_000,
+            cacheRead: 4_000_000,
+            cacheWrite: 5_000_000,
+        });
+        expect(s.insight!.topCostClass).toBe("reasoning");
+        expect(s.insight!.readTokPct).toBeCloseTo((4 / 15) * 100, 5);
+        expect(s.insight!.readCostPct).toBeCloseTo((2 / 163.25) * 100, 5);
+    });
+
+    it("adds up buckets of the same model into one model row", () => {
+        const s = aggregateSessionUsage([
+            bkt({ input: 1_000_000, reasoning: 1_000_000, cachecreate: 1_000_000 }),
+            bkt({ output: 1_000_000, cacheread: 1_000_000 }),
+        ]);
+        expect(s.models).toHaveLength(1);
+        expect(s.models[0].tokens).toBe(5_000_000);
+        expect(s.models[0].spendUsd).toBeCloseTo(5 + 25 + 6.25 + 25 + 0.5, 5);
+        expect(s.models[0].classes).toEqual({
+            input: 1_000_000,
+            output: 1_000_000,
+            reasoning: 1_000_000,
+            cacheRead: 1_000_000,
+            cacheWrite: 1_000_000,
+        });
+    });
+
+    it("names the earlier class of a spend tie as the top one", () => {
+        // reasoning bills at the output rate, so equal tokens tie; cacheRead..input order puts reasoning first
+        const s = aggregateSessionUsage([bkt({ output: 1_000_000, reasoning: 1_000_000 })]);
+        expect(s.insight!.topCostClass).toBe("reasoning");
+    });
+
+    it("reads a cache-read cost share of 0 when the model is unpriced", () => {
+        const s = aggregateSessionUsage([bkt({ model: "mystery-model", input: 1_000_000, cacheread: 1_000_000 })]);
+        expect(s.totalSpendUsd).toBe(0);
+        expect(s.insight!.readCostPct).toBe(0);
+        expect(s.insight!.readTokPct).toBeCloseTo(50, 5);
+    });
 });
 
 describe("spendHeadline", () => {

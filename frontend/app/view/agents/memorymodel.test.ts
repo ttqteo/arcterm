@@ -185,6 +185,33 @@ describe("railRow", () => {
         expect(r.meter).toBe("Shares team-notes’s memory · 134 lines");
     });
 
+    it("ignores empty segments around the shared folder's path", () => {
+        const r = railRow(splitProject([settings()], { folder: `${SHARED_FOLDER}/` }));
+        expect(r.meter).toBe("Shares SIEM’s memory · 134 lines");
+        const doubled = railRow(splitProject([settings()], { folder: SHARED_FOLDER.replace("/memory", "//memory") }));
+        expect(doubled.meter).toBe("Shares SIEM’s memory · 134 lines");
+    });
+
+    it("names the repo for a project that sits at the repo's root", () => {
+        const r = railRow(splitProject([settings()], { path: "C:\\Users\\me\\src\\SIEM" }));
+        expect(r.meter).toBe("Shares SIEM’s memory · 134 lines");
+    });
+
+    it("strips every trailing separator from the project path before matching", () => {
+        const r = railRow(
+            splitProject([settings()], {
+                path: "C:\\Users\\me\\src\\SIEM\\\\",
+                folder: "C:/Users/me/.claude/projects/C--Users-me-src-SIEM-/memory",
+            })
+        );
+        expect(r.meter).toBe("Shares C--Users-me-src-SIEM-’s memory · 134 lines");
+    });
+
+    it("names an empty folder's repo as empty rather than undefined", () => {
+        const r = railRow(splitProject([settings()], { folder: "" }));
+        expect(r.meter).toBe("Shares ’s memory · 134 lines");
+    });
+
     it("meters the own index once the switch-over is applied", () => {
         const r = railRow(splitProject([settings("applied")], { ownindex: { exists: true, lines: 4, bytes: 600 } }));
         expect(r.meter).toBe("4 lines · 0.6 of 25 KB");

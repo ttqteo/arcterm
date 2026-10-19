@@ -85,6 +85,24 @@ describe("changedLineCount", () => {
         expect(changedLineCount("a\nb\nc", "a\nB\nc")).toBe(1);
         expect(changedLineCount("a\nb\nc", "x\na\nb\nc")).toBe(1);
     });
+
+    it("counts every line a draft adds when it adds more than it drops", () => {
+        expect(changedLineCount("a", "a\nb\nc\nd")).toBe(3);
+    });
+
+    it("counts every line a draft drops when it drops more than it adds", () => {
+        expect(changedLineCount("a\nb\nc\nd", "a")).toBe(3);
+    });
+
+    it("counts a repeated line once per copy added or dropped", () => {
+        expect(changedLineCount("a", "a\na\na")).toBe(2);
+        expect(changedLineCount("a\na\na", "a")).toBe(2);
+    });
+
+    it("takes the larger of the lines added and dropped for a rewrite", () => {
+        expect(changedLineCount("a\nb\nc", "x\ny")).toBe(3);
+        expect(changedLineCount("a\nb", "x\ny\nz")).toBe(3);
+    });
 });
 
 describe("editor conflict transitions", () => {
