@@ -69,7 +69,7 @@ func MaybeCloseOrchestratorLead(ctx context.Context, run *waveobj.Run, dag *wave
 // sessionTurnOver reports a run's session that can no longer be cut off mid-turn: its process is gone, or it has
 // sat at its prompt past TurnEndedGrace since reporting its turn over.
 func sessionTurnOver(ctx context.Context, run *waveobj.Run, now int64) bool {
-	return !leadProcessAlive(runTabID(run)) || turnEndedPast(ctx, run, now)
+	return !leadProcessAlive(runTabID(run)) || idlePastGrace(ctx, run, now)
 }
 
 // CloseOrchestratorLeadOnExit closes a terminal orchestrator run's lead tab from the lead's own exit

@@ -6,7 +6,6 @@ package blockcontroller
 import (
 	"encoding/base64"
 	"errors"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -260,22 +259,8 @@ func (c *captureClient) SendEvent(_ string, event wps.WaveEvent) {
 // A store append can fail under load (the filestore's reload from sqlite outlasts DefaultTimeout). The chunk must
 // still reach the live terminal, and the store error must still reach the caller.
 func TestFailedAppendStillPublishesChunk(t *testing.T) {
-	dir, err := os.MkdirTemp("", "blockcontroller-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	savedDataHome := wavebase.DataHome_VarCache
-	wavebase.DataHome_VarCache = dir
-	t.Cleanup(func() {
-		wavebase.DataHome_VarCache = savedDataHome
-		// the filestore keeps its db open for the process, so windows refuses to delete it here
-		if err := os.RemoveAll(dir); err != nil {
-			t.Logf("leaving temp dir %s: %v", dir, err)
-		}
-	})
-	if err := wavebase.EnsureWaveDBDir(); err != nil {
-		t.Fatal(err)
-	}
+	// TestMain already points the data dir at a temp dir with its db dir made; CacheEnsureDir would not make one
+	// again for a second temp dir, so the filestore opens beside the wstore
 	if err := filestore.InitFilestore(); err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +276,7 @@ func TestFailedAppendStillPublishesChunk(t *testing.T) {
 	// no term file was ever made for this block, so the store append fails
 	const blockId = "failed-append-block"
 	chunk := []byte("output the store could not keep\r\n")
-	err = HandleAppendBlockFile(blockId, wavebase.BlockFile_Term, chunk)
+	err := HandleAppendBlockFile(blockId, wavebase.BlockFile_Term, chunk)
 	if err == nil {
 		t.Fatal("an append to a missing file must return the store error")
 	}
