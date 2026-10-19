@@ -278,7 +278,7 @@ function ClaudeAccountCard({ model }: { model: AgentsViewModel }) {
         setError(null);
         writeConfig({ "claude:activeaccount": id });
         setList((prev) => (prev == null ? prev : { ...prev, active: id }));
-        const candidates = restartCandidates(globalStore.get(model.agentsAtom), id);
+        const candidates = restartCandidates(globalStore.get(model.agentsAtom), id, globalStore.get(model.lineageAtom));
         if (candidates.length > 0) {
             const accountName =
                 id === ""

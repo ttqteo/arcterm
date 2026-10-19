@@ -13,6 +13,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatAgeShort, type AgentState, type AgentVM } from "./agentsviewmodel";
 import { resumeArgsForClaude, sessionIdFromTranscript } from "./launch";
 import { normalizeEmail, savedWindows, type ClaudeIdentity, type SavedSnapshot } from "./ratelimitstore";
+import { agentProject, NO_LINEAGE, type Lineage } from "./runlineage";
 
 export interface RestartCandidate {
     tabId: string;
@@ -21,13 +22,20 @@ export interface RestartCandidate {
     sessionId: string;
     checked: boolean;
     state: AgentState;
+    project?: string; // the folder the dialog files it under: a run's agents take their lead's project
+    run?: { id: string; title: string }; // the orchestrator run it leads or works for (keyed by the lead's run id)
+    role?: string; // its part in that run: "lead", a task id, or a stage role
 }
 
 // Claude agents a switch to `newActive` can move: ones with a block to respawn and a session to resume,
 // not already on that account. Background agents have no block and keep the old account until they end;
 // terminals are not agents. Only idle ones start checked — a restart cuts a working turn short and drops
-// an asking agent's pending question.
-export function restartCandidates(agents: AgentVM[], newActive: string): RestartCandidate[] {
+// an asking agent's pending question. `lineage` files each one under its project and run.
+export function restartCandidates(
+    agents: AgentVM[],
+    newActive: string,
+    lineage: Lineage = NO_LINEAGE
+): RestartCandidate[] {
     const out: RestartCandidate[] = [];
     for (const a of agents) {
         if ((a.agent || "claude") !== "claude" || (a.kind != null && a.kind !== "agent")) {
@@ -37,16 +45,103 @@ export function restartCandidates(agents: AgentVM[], newActive: string): Restart
         if (!a.blockId || !sessionId || (a.usage?.account || "") === newActive) {
             continue;
         }
-        out.push({
+        const c: RestartCandidate = {
             tabId: a.id,
             blockId: a.blockId,
             name: a.name,
             sessionId,
             checked: a.state === "idle",
             state: a.state,
-        });
+        };
+        const project = agentProject(lineage, agents, a);
+        if (project) {
+            c.project = project;
+        }
+        const role = lineage.roles[a.id];
+        const runId = role == null ? undefined : role.kind === "lead" ? role.runId : role.leadRunId;
+        const info = runId ? lineage.runs[runId] : undefined;
+        if (role != null && info != null) {
+            c.run = { id: info.runId, title: info.title || info.runId.slice(0, 8) };
+            c.role = role.kind === "lead" ? "lead" : role.kind === "worker" ? role.taskId : role.stageRole;
+        }
+        out.push(c);
     }
     return out;
+}
+
+export interface RestartRunGroup {
+    id: string;
+    title: string;
+    items: RestartCandidate[]; // its lead first, then the rest in the order given
+}
+
+export interface RestartProjectGroup {
+    project: string; // "" for agents with no project
+    agents: RestartCandidate[]; // the ones that work for no run
+    runs: RestartRunGroup[];
+}
+
+// The restart dialog's tree: a folder per project (by name, the no-project one last), holding its plain agents and
+// then a section per run. A run's agents sit in their lead's project, so a run never splits across two folders.
+export function groupRestartCandidates(candidates: RestartCandidate[]): RestartProjectGroup[] {
+    const groups = new Map<string, RestartProjectGroup>();
+    for (const c of candidates) {
+        const project = c.project ?? "";
+        let g = groups.get(project);
+        if (g == null) {
+            g = { project, agents: [], runs: [] };
+            groups.set(project, g);
+        }
+        const of = c.run;
+        if (of == null) {
+            g.agents.push(c);
+            continue;
+        }
+        let run = g.runs.find((r) => r.id === of.id);
+        if (run == null) {
+            run = { id: of.id, title: of.title, items: [] };
+            g.runs.push(run);
+        }
+        if (c.role === "lead") {
+            run.items.unshift(c);
+        } else {
+            run.items.push(c);
+        }
+    }
+    return [...groups.values()].sort(
+        (a, b) => Number(a.project === "") - Number(b.project === "") || a.project.localeCompare(b.project)
+    );
+}
+
+export type CheckState = "all" | "some" | "none";
+
+// What a group's checkbox shows for the `ids` under it: rows already resumed are left out, as they can no longer be
+// picked; "none" when nothing is left.
+export function groupCheckState(
+    ids: readonly string[],
+    checked: Readonly<Record<string, boolean>>,
+    done: Readonly<Record<string, boolean>>
+): CheckState {
+    const open = ids.filter((id) => !done[id]);
+    const n = open.filter((id) => checked[id]).length;
+    return n === 0 ? "none" : n === open.length ? "all" : "some";
+}
+
+// A group's checkbox clicked: a group with every open row checked clears them, anything else checks them all.
+// Resumed rows keep their value.
+export function toggleGroup(
+    ids: readonly string[],
+    checked: Readonly<Record<string, boolean>>,
+    done: Readonly<Record<string, boolean>>
+): Record<string, boolean> {
+    const value = groupCheckState(ids, checked, done) !== "all";
+    const next = { ...checked };
+    for (const id of ids) {
+        if (!done[id]) {
+            next[id] = value;
+        }
+    }
+    return next;
 }
 
 export interface RowQuota {

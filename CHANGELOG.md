@@ -65,6 +65,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Resume agents on a new Claude account lists them by project, with each run's lead and workers under the run, a
+  checkbox for a whole project or run, and Select all; a long list scrolls instead of running off the screen.
 - `Ctrl`+`R` and `F5` never reload the whole arcterm window any more (Windows): outside a terminal `Ctrl`+`R` redraws
   it, as `Cmd`+`R` does on a Mac, `Ctrl`+`Shift`+`R` redraws from inside one, and in a terminal `Ctrl`+`R` stays the
   shell's reverse search. **Reload the window** in the command palette reloads arcterm when you mean it.

@@ -6,12 +6,17 @@ import type { AgentVM } from "./agentsviewmodel";
 import {
     addAccountStep,
     defaultAccountName,
+    groupCheckState,
+    groupRestartCandidates,
     knownClaudeEmails,
     launchAccountName,
     quotaLine,
     restartCandidates,
     rowQuota,
+    toggleGroup,
+    type RestartCandidate,
 } from "./claudeaccount";
+import type { Lineage, RunInfo } from "./runlineage";
 
 describe("restartCandidates", () => {
     it("lists resumable claude agents not on the new account; idle pre-checked, working and asking not", () => {
@@ -78,6 +83,84 @@ describe("restartCandidates", () => {
         } as AgentVM;
         expect(restartCandidates([a], "")).toEqual([]);
         expect(restartCandidates([a], "a1")).toHaveLength(1);
+    });
+
+    it("files a run's agents under the run and their lead's project", () => {
+        const base = { agent: "claude", task: "", state: "idle", usage: {} };
+        const agents = [
+            {
+                ...base,
+                id: "lead",
+                name: "lead",
+                blockId: "b1",
+                transcriptPath: "/h/.claude/projects/D--x-arcterm/s1.jsonl",
+            },
+            {
+                ...base,
+                id: "w1",
+                name: "w1",
+                blockId: "b2",
+                transcriptPath: "/h/.claude/projects/D--x-other/s2.jsonl",
+            },
+            { ...base, id: "solo", name: "solo", blockId: "b3", project: "notes", transcriptPath: "/p/s3.jsonl" },
+        ] as AgentVM[];
+        const lineage: Lineage = {
+            roles: { lead: { kind: "lead", runId: "r1" }, w1: { kind: "worker", leadRunId: "r1", taskId: "t-2" } },
+            runs: { r1: { runId: "r1", channelId: "c", title: "Land queue", project: "arcterm" } as RunInfo },
+        };
+        const out = restartCandidates(agents, "a1", lineage);
+        expect(out.map((c) => [c.tabId, c.project, c.run?.title, c.role])).toEqual([
+            ["lead", "arcterm", "Land queue", "lead"],
+            ["w1", "arcterm", "Land queue", "t-2"],
+            ["solo", "notes", undefined, undefined],
+        ]);
+    });
+});
+
+describe("groupRestartCandidates", () => {
+    const c = (tabId: string, extra: Partial<RestartCandidate> = {}): RestartCandidate => ({
+        tabId,
+        blockId: `b-${tabId}`,
+        name: tabId,
+        sessionId: `s-${tabId}`,
+        checked: true,
+        state: "idle",
+        ...extra,
+    });
+
+    it("folders by project, the no-project one last; plain agents then runs, each run's lead first", () => {
+        const run = { id: "r1", title: "Run one" };
+        const groups = groupRestartCandidates([
+            c("loose"),
+            c("w1", { project: "zed", run, role: "t-1" }),
+            c("a1", { project: "alpha" }),
+            c("lead", { project: "zed", run, role: "lead" }),
+            c("z1", { project: "zed" }),
+        ]);
+        expect(
+            groups.map((g) => ({
+                project: g.project,
+                agents: g.agents.map((x) => x.tabId),
+                runs: g.runs.map((r) => [r.title, r.items.map((x) => x.tabId)]),
+            }))
+        ).toEqual([
+            { project: "alpha", agents: ["a1"], runs: [] },
+            { project: "zed", agents: ["z1"], runs: [["Run one", ["lead", "w1"]]] },
+            { project: "", agents: ["loose"], runs: [] },
+        ]);
+    });
+});
+
+describe("groupCheckState / toggleGroup", () => {
+    it("ignores resumed rows; a full group clears, anything else fills", () => {
+        const ids = ["a", "b", "c"];
+        const done = { c: true };
+        expect(groupCheckState(ids, { a: true, b: true, c: false }, done)).toBe("all");
+        expect(groupCheckState(ids, { a: true }, done)).toBe("some");
+        expect(groupCheckState(ids, {}, done)).toBe("none");
+        expect(groupCheckState(["c"], { c: true }, done)).toBe("none");
+        expect(toggleGroup(ids, { a: true, c: true }, done)).toEqual({ a: true, b: true, c: true });
+        expect(toggleGroup(ids, { a: true, b: true, c: true }, done)).toEqual({ a: false, b: false, c: true });
     });
 });
 

@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Resume dialog grouped by run: with an orchestrator run live, switch the Claude account in Settings →
+  Agents: the run's lead and workers sit under a "run <title>" section in the lead's project folder, the run's
+  checkbox selects all of them, and Resume selected resumes them (checked in headless Chrome with synthetic rows only,
+  not with real run lineage).
 - [ ] (arcterm) Storage scan fills card by card: after rebuilding wavesrv and restarting, open Settings → Storage
   within the first minute and press Rescan: Run worktrees, Sessions and Housekeeping show their sizes within seconds
   while Build output and Package caches still read …; `waveapp.log` gets a `storage scan took …` line naming each
