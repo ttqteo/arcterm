@@ -27,6 +27,17 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Kael sync: open a run's DAG and click a task node: a peek opens beside it (session, route rows,
+  description, actions); click it again, the background or press Esc to close it; click the final-stage node: its
+  steps show in the peek, a finished step's kept output still opens. (ffeb41ae3)
+- [ ] (arcterm) Kael sync: a terminal still looks the same after its SCSS moved to Tailwind (margins, no overview
+  ruler, transparent viewport); Servers → a server's Log still opens the terminal with its search box. (42fe2f19b)
+- [ ] (arcterm) Kael sync: right-click a terminal: the context menu grows out of the pointer, edged and shadowed like
+  other popovers; a toast still holds while hovered. (d8031c9e1)
+- [ ] (arcterm) Kael sync: on the Brief, Tab to a button and press Enter: the button acts, the row under the cursor
+  does not open; click a chip then press Enter: the cursor row opens. (ee2f9fe44)
+- [ ] (arcterm) Kael sync: an ambient tag chip opens its record (Ctrl peeks it); a decision log card shows its title
+  and age. (607baece3)
 - [ ] (arcterm) On a PC with two drives, open the tray popover: Storage shows one row per drive (here Local Disk (C:)
   and Data (D:), no Google Drive (G:)), each with its own free figure, and the arcterm part of D:'s bar holds the repos'
   worktrees and build output while C:'s holds sessions, logs and the store; Clean up's head reads `C: … · D: … free`.
