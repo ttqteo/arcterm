@@ -102,6 +102,69 @@ describe("projectCodexTranscript", () => {
     });
 });
 
+describe("projectCodexTranscript malformed and mistyped records", () => {
+    const message = (role: string, content: unknown[]) => ri({ type: "message", role, content });
+    const shell = (callId: string) => ri({ type: "function_call", name: "shell_command", arguments: JSON.stringify({ command: "ls" }), call_id: callId });
+
+    it("skips a null line, an event_msg turn and a response_item without a payload", () => {
+        const out = projectCodexTranscript([
+            "null",
+            em({ type: "message", role: "assistant", content: [{ type: "output_text", text: "duplicate" }] }),
+            JSON.stringify({ type: "response_item" }),
+        ]);
+        expect(out).toEqual([]);
+    });
+
+    it("keeps only output_text blocks with text from an assistant turn", () => {
+        const out = projectCodexTranscript([
+            message("assistant", [
+                null,
+                { type: "input_text", text: "leak" },
+                { type: "refusal", text: "leak too" },
+                { type: "output_text" },
+                { type: "output_text", text: "  " },
+                { type: "output_text", text: "kept" },
+            ]),
+        ]);
+        expect(out).toEqual([{ kind: "message", text: "kept" }]);
+    });
+
+    it("keeps only input_text blocks with real text from a user turn", () => {
+        const out = projectCodexTranscript([
+            message("user", [
+                null,
+                { type: "input_image", image_url: "x" },
+                { type: "output_text", text: "leak" },
+                { type: "input_text" },
+                { type: "input_text", text: "  " },
+                { type: "input_text", text: "real" },
+            ]),
+        ]);
+        expect(out).toEqual([{ kind: "user", text: "real" }]);
+    });
+
+    it("skips a function_call without a name", () => {
+        expect(projectCodexTranscript([ri({ type: "function_call", call_id: "n" })])).toEqual([]);
+    });
+
+    it("ignores an output whose call_id matches no action", () => {
+        expect(projectCodexTranscript([ri({ type: "function_call_output", call_id: "nope", output: "Exit code: 0" })])).toEqual([]);
+    });
+
+    it("fails an action whose custom tool output reports a non-zero exit", () => {
+        const out = projectCodexTranscript([
+            ri({ type: "custom_tool_call", name: "apply_patch", call_id: "c", input: "*** Update File: app/foo.py" }),
+            ri({ type: "custom_tool_call_output", call_id: "c", output: JSON.stringify({ metadata: { exit_code: 1 } }) }),
+        ]);
+        expect(out).toEqual([{ kind: "action", verb: "edited", target: "foo.py", outcome: "fail" }]);
+    });
+
+    it("does not settle an action from a payload of another type that shares its call_id", () => {
+        const out = projectCodexTranscript([shell("c1"), ri({ type: "web_search_call", call_id: "c1", output: "Exit code: 0" })]);
+        expect(out).toEqual([{ kind: "action", verb: "ran", target: "ls" }]);
+    });
+});
+
 const plan = (steps: Array<{ step?: unknown; status?: unknown }>) =>
     ri({ type: "function_call", name: "update_plan", arguments: JSON.stringify({ plan: steps }), call_id: "p" });
 

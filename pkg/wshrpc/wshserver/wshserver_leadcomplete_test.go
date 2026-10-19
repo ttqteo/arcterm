@@ -204,6 +204,9 @@ func TestLeadCompleteRefusesALandThatWouldConflict(t *testing.T) {
 		if run, _ := wstore.GetRun(context.Background(), f.channelId, f.owner.ID); run.Status == jarvis.RunStatus_Done {
 			t.Fatal("a refused complete still finished the run")
 		}
+		if f.seal != nil {
+			t.Fatal("a refused complete dispatched a seal and land")
+		}
 	})
 	t.Run("--hold-land completes anyway", func(t *testing.T) {
 		f := setup(t, true)

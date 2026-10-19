@@ -382,3 +382,160 @@ describe("extractPiTitle", () => {
         expect(extractPiTitle(lines)).toBe("stress-test my plan");
     });
 });
+
+describe("projectPiTranscript malformed and mistyped records", () => {
+    const assistant = (content: unknown) =>
+        L({ type: "message", id: "a", parentId: "u", message: { role: "assistant", content } });
+
+    it("skips an assistant record with no content", () => {
+        const lines = [session, user("u", "hi"), L({ type: "message", id: "a", parentId: "u", message: { role: "assistant" } })];
+        expect(projectPiTranscript(lines)).toEqual([{ kind: "user", text: "hi" }]);
+    });
+
+    it("ignores blocks that are not a named tool call", () => {
+        const lines = [
+            session,
+            user("u", "go"),
+            assistant([
+                null,
+                { type: "text", text: "kept", name: "foo" },
+                { type: "toolCall", id: "x" },
+                { type: "toolCall", id: "y", name: "" },
+                { type: "toolCall", id: "z", name: 7 },
+            ]),
+        ];
+        expect(projectPiTranscript(lines)).toEqual([
+            { kind: "user", text: "go" },
+            { kind: "message", text: "kept" },
+        ]);
+    });
+
+    it("projects the older tool_use / toolCallId / args spelling and joins its result", () => {
+        const lines = [
+            session,
+            user("u", "go"),
+            assistant([{ type: "tool_use", toolCallId: "c1", name: "bash", args: { command: "ls" } }]),
+            L({ type: "message", id: "r", parentId: "a", message: { role: "toolResult", toolCallId: "c1", toolName: "bash", content: "file.txt" } }),
+        ];
+        expect(projectPiTranscript(lines)).toEqual([
+            { kind: "user", text: "go" },
+            {
+                kind: "action",
+                verb: "ran",
+                target: "ls",
+                outcome: "ok",
+                detail: { kind: "bash", command: "ls", output: "file.txt", exit: 0 },
+            },
+        ]);
+    });
+
+    it("keeps a call with no usable args as a bare action", () => {
+        const lines = [
+            session,
+            user("u", "go"),
+            assistant([
+                { type: "toolCall", id: "a", name: "TaskList" },
+                { type: "tool_use", id: "b", name: "read", args: null },
+                { type: "tool_use", id: "c", name: "bash", args: null },
+            ]),
+        ];
+        expect(projectPiTranscript(lines)).toStrictEqual([
+            { kind: "user", text: "go" },
+            { kind: "action", verb: "listed tasks", target: "TaskList" },
+            { kind: "action", verb: "read", target: "read" },
+            { kind: "action", verb: "ran", target: "bash" },
+        ]);
+    });
+
+    it("drops a bash command that is not a string from the bash detail", () => {
+        const lines = [session, user("u", "go"), toolCall("b1", "bash", { command: 5 }), toolResult("b1", "bash", "out")];
+        const detail = (projectPiTranscript(lines)[1] as any).detail;
+        expect(detail.command).toBeUndefined();
+        expect(detail).toEqual({ kind: "bash", output: "out", exit: 0 });
+    });
+
+    it("ignores a tool call timestamp that is not a string", () => {
+        const call = L({
+            type: "message",
+            id: "call-b1",
+            parentId: "u",
+            timestamp: 5,
+            message: { role: "assistant", content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "x" } }] },
+        });
+        const lines = [session, user("u", "go"), call, toolResult("b1", "bash", "out")];
+        expect((projectPiTranscript(lines)[1] as any).durationMs).toBeUndefined();
+    });
+});
+
+describe("extractPiTasks edge cases", () => {
+    const created = (id: string, subject: string) => toolResult("c" + id, "TaskCreate", `Task #${id} created successfully: ${subject}`);
+    const update = (args: unknown) => toolCall("t", "TaskUpdate", args);
+    const msg = (message: unknown) => L({ type: "message", message });
+
+    it("skips records that are not messages", () => {
+        const lines = [
+            session,
+            "null",
+            L({ type: "message" }),
+            L({ type: "compaction", message: { role: "toolResult", toolName: "TaskCreate", content: "Task #1 created successfully: Ghost" } }),
+        ];
+        expect(extractPiTasks(lines)).toBeUndefined();
+    });
+
+    it("reads the subject from a padded TaskCreate result and keeps the first of a repeated id", () => {
+        const lines = [
+            toolResult("a", "TaskCreate", "  Task #1 created successfully:   Fix it  \n"),
+            toolResult("b", "TaskCreate", "Failed to create task"),
+            created("1", "Other name"),
+        ];
+        expect(extractPiTasks(lines)).toEqual([{ text: "Fix it", done: false }]);
+    });
+
+    it("ignores task-list text from a tool that is not TaskList", () => {
+        expect(extractPiTasks([toolResult("t", "bash", "#3 [pending] sneaky")])).toBeUndefined();
+    });
+
+    it("reads TaskList lines with stray whitespace and updates a known task in place", () => {
+        const lines = [created("1", "Fix"), toolResult("l", "TaskList", "  #1 [completed] Fix\r\n#2 [pending] Ship\r")];
+        expect(extractPiTasks(lines)).toEqual([
+            { text: "Fix", done: true },
+            { text: "Ship", done: false },
+        ]);
+    });
+
+    it("reopens a task on a status other than completed", () => {
+        const lines = [created("1", "Fix"), update({ taskId: "1", status: "completed" }), update({ taskId: "1", status: "pending" })];
+        expect(extractPiTasks(lines)).toEqual([{ text: "Fix", done: false }]);
+    });
+
+    it("ignores a TaskUpdate for an unknown id, without arguments, or without a status", () => {
+        const lines = [
+            created("1", "Fix"),
+            update({ taskId: "1", status: "completed" }),
+            update({ taskId: "9", status: "completed" }),
+            update(undefined),
+            L({ type: "message", message: { role: "assistant", content: [{ type: "tool_use", name: "TaskUpdate", args: null }] } }),
+            update({ taskId: "1" }),
+        ];
+        expect(extractPiTasks(lines)).toEqual([{ text: "Fix", done: true }]);
+    });
+
+    it("only lets an assistant TaskUpdate tool call change a task", () => {
+        const lines = [
+            created("1", "Fix"),
+            msg({ role: "assistant", content: [{ type: "text", name: "TaskUpdate", arguments: { taskId: "1", status: "completed" } }] }),
+            toolCall("t", "TaskGet", { taskId: "1", status: "completed" }),
+            msg({ role: "user", content: [{ type: "toolCall", name: "TaskUpdate", arguments: { taskId: "1", status: "completed" } }] }),
+            msg({ role: "assistant" }),
+        ];
+        expect(extractPiTasks(lines)).toEqual([{ text: "Fix", done: false }]);
+    });
+
+    it("reads a TaskUpdate in the older tool_use / args spelling", () => {
+        const lines = [
+            created("1", "Fix"),
+            msg({ role: "assistant", content: [{ type: "tool_use", name: "TaskUpdate", args: { taskId: "1", status: "completed" } }] }),
+        ];
+        expect(extractPiTasks(lines)).toEqual([{ text: "Fix", done: true }]);
+    });
+});

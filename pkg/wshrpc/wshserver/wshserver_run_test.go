@@ -566,6 +566,58 @@ func TestAdvanceRun_LegacyRouteNormalizesOnlyForSpawn(t *testing.T) {
 	}
 }
 
+func TestAdvanceRun_RequiresChannelAndRun(t *testing.T) {
+	for _, data := range []wshrpc.CommandAdvanceRunData{
+		{ChannelId: "ch-1", Action: jarvis.RunAction_Complete},
+		{RunId: "run-1", Action: jarvis.RunAction_Complete},
+	} {
+		err := (&WshServer{}).AdvanceRunCommand(context.Background(), data)
+		if err == nil || err.Error() != "channelid and runid are required" {
+			t.Errorf("AdvanceRunCommand(%+v) = %v, want the required-ids error", data, err)
+		}
+	}
+}
+
+// completing a phase that is not the last leaves the run executing: no seal or land falls due, and it
+// enters no rest state, so no continuity capture is dispatched either
+func TestAdvanceRun_MidRunCompleteDispatchesNoSealOrCapture(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "advance-midrun", "/repo")
+	if err != nil {
+		t.Fatalf("CreateChannel: %v", err)
+	}
+	run := jarvis.NewRun("do it", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Pipeline, storedPipelinePhases(), 1)
+	run.Runtime = "claude"
+	if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+		t.Fatalf("AppendRun: %v", err)
+	}
+	oldValidate := validateHarness
+	validateHarness = func(string, harness.Operation) (harness.Spec, error) { return harness.Spec{}, nil }
+	t.Cleanup(func() { validateHarness = oldValidate })
+	oldSpawn := jarvis.SpawnRunWorker
+	jarvis.SpawnRunWorker = func(_ context.Context, _ runroute.Capability, _, _, _, _ string, _ jarvis.RunWorkerOptions) (string, error) {
+		return waveobj.MakeORef(waveobj.OType_Tab, "next-worker").String(), nil
+	}
+	t.Cleanup(func() { jarvis.SpawnRunWorker = oldSpawn })
+	seals, captures := 0, 0
+	oldSeal, oldCapture := sealAsync, captureAsync
+	sealAsync = func(func()) { seals++ }
+	captureAsync = func(func()) { captures++ }
+	t.Cleanup(func() { sealAsync, captureAsync = oldSeal, oldCapture })
+
+	if err := (&WshServer{}).AdvanceRunCommand(ctx, wshrpc.CommandAdvanceRunData{
+		ChannelId: ch.OID, RunId: run.ID, PhaseIdx: 0, Action: jarvis.RunAction_Complete,
+	}); err != nil {
+		t.Fatalf("AdvanceRunCommand: %v", err)
+	}
+	if got, _ := wstore.GetRun(ctx, ch.OID, run.ID); got == nil || got.Status != jarvis.RunStatus_Executing {
+		t.Fatalf("run = %+v, want executing", got)
+	}
+	if seals != 0 || captures != 0 {
+		t.Fatalf("seals = %d captures = %d, want none for a run that is not done", seals, captures)
+	}
+}
+
 // mustKinds collects a run's event kinds newest-first for a presence assertion.
 func mustKinds(t *testing.T, channelId, runID string) []string {
 	t.Helper()

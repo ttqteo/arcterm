@@ -85,6 +85,57 @@ func TestAnalyzeRosterCoverageSeparatesFromHook(t *testing.T) {
 	}
 }
 
+// a session the roster showed is no roster gap, whatever the observer saw; a session it missed counts as
+// closed only when the observer covered it. Here neither is closed: pid 1 was shown, pid 2 went unobserved.
+func TestAnalyzeRosterGapCountsOnlyUnshownSessions(t *testing.T) {
+	shadow := strings.Join([]string{
+		`{"ts":1000,"event":"sweep","pid":1,"blockid":"a","observerstate":"working","hookcount":1,"rosterstate":"working","rosterchecked":true}`,
+		`{"ts":1000,"event":"sweep","pid":2,"blockid":"b","hookcount":1,"rosterchecked":true}`,
+	}, "\n")
+	rep := AnalyzeShadowLog(shadow, "")
+	if rep.RosterSessions != 2 || rep.RosterCoverageGap != 1 || rep.ObserverClosedRoster != 0 {
+		t.Fatalf("roster sessions/gap/closed = %d/%d/%d, want 2/1/0",
+			rep.RosterSessions, rep.RosterCoverageGap, rep.ObserverClosedRoster)
+	}
+}
+
+// only a create-time tiebreak among more than one candidate is ambiguous
+func TestAnalyzeAmbiguityNeedsCreateTimeAmongSeveral(t *testing.T) {
+	shadow := strings.Join([]string{
+		`{"ts":1000,"event":"sweep","pid":1,"blockid":"a","resolvemethod":"mtime","matchcount":3,"hookcount":1}`,
+		`{"ts":1000,"event":"sweep","pid":2,"blockid":"b","resolvemethod":"createtime","matchcount":1,"hookcount":1}`,
+	}, "\n")
+	rep := AnalyzeShadowLog(shadow, "")
+	if rep.AmbiguousSessions != 0 || rep.MaxMatchCount != 3 {
+		t.Fatalf("ambiguity = %d/%d, want 0/3", rep.AmbiguousSessions, rep.MaxMatchCount)
+	}
+}
+
+// a sweep compares only when both tracks are known, and disagrees only when their states differ
+func TestAnalyzeCountsComparableSweepsAndDisagreements(t *testing.T) {
+	shadow := strings.Join([]string{
+		`{"ts":1000,"event":"sweep","pid":1,"blockid":"a","observerstate":"working","hookstate":"working","hookcount":1}`,
+		`{"ts":2000,"event":"sweep","pid":1,"blockid":"a","observerstate":"working","hookstate":"working","hookcount":1}`,
+		`{"ts":3000,"event":"sweep","pid":1,"blockid":"a","observerstate":"idle","hookstate":"working","hookcount":1}`,
+		`{"ts":4000,"event":"sweep","pid":1,"blockid":"a","observerstate":"idle","hookcount":1}`,
+		`{"ts":5000,"event":"sweep","pid":1,"blockid":"a","hookstate":"idle","hookcount":1}`,
+	}, "\n")
+	rep := AnalyzeShadowLog(shadow, "")
+	if rep.ComparableSweeps != 3 || rep.Disagreements != 1 {
+		t.Fatalf("comparable/disagreements = %d/%d, want 3/1", rep.ComparableSweeps, rep.Disagreements)
+	}
+}
+
+// the shadow snapshot can catch HookCount==0 before the hook fires; the hook log still covers the block
+func TestAnalyzeHookLogCoversABlockTheShadowSawUnreported(t *testing.T) {
+	shadow := `{"ts":1000,"event":"sweep","pid":1,"blockid":"a","observerstate":"working","hookcount":0}`
+	hook := "1970-01-01T00:00:02Z published event=UserPromptSubmit state=working oref=block:a\n"
+	rep := AnalyzeShadowLog(shadow, hook)
+	if rep.HookCoverageGap != 0 || rep.ObserverClosedGap != 0 {
+		t.Fatalf("hook gap/closed = %d/%d, want 0/0", rep.HookCoverageGap, rep.ObserverClosedGap)
+	}
+}
+
 func TestVerdictInconclusiveWhenRosterNotMeasured(t *testing.T) {
 	shadow := `{"ts":1000,"event":"sweep","pid":1,"blockid":"a","observerstate":"working","hookcount":0}`
 	v := AnalyzeShadowLog(shadow, "").Verdict()

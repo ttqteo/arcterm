@@ -300,3 +300,178 @@ describe("effortFeed noteAt", () => {
         expect(status?.noteAt).toBeUndefined();
     });
 });
+
+describe("effortFeed locating", () => {
+    const bySeq = (e: Effort) => Object.fromEntries(effortFeed(e).map((x) => [x.seq, x]));
+
+    it("picks among same-instant status notes by the text the event carries, an empty one taking the bare note", () => {
+        const e = effort(
+            [
+                {
+                    label: "A",
+                    status: "done",
+                    notes: [
+                        { ts: T, text: "marked done · alpha", author: "x" },
+                        { ts: T, text: "marked done · beta", author: "y" },
+                        { ts: T, text: "marked done", author: "z" },
+                    ],
+                },
+            ],
+            [
+                { ts: T, kind: "chunk-done", label: "A", text: "beta" },
+                { ts: T, kind: "chunk-done", label: "A", text: "" },
+                { ts: T, kind: "chunk-done", label: "A", text: "alpha" },
+            ]
+        );
+        const feed = bySeq(e);
+        expect([feed[0].author, feed[1].author, feed[2].author]).toEqual(["y", "z", "x"]);
+        expect([feed[0].text, feed[1].text, feed[2].text]).toEqual(["beta", "", "alpha"]);
+    });
+
+    it("leaves a status event unlocated when several notes share its instant and none carries its text", () => {
+        const e = effort(
+            [
+                {
+                    label: "A",
+                    status: "done",
+                    notes: [
+                        { ts: T, text: "marked done · alpha", author: "x" },
+                        { ts: T, text: "marked done · beta", author: "y" },
+                    ],
+                },
+            ],
+            [{ ts: T, kind: "chunk-done", label: "A", text: "gamma" }]
+        );
+        const [entry] = effortFeed(e);
+        expect(entry.author).toBeUndefined();
+        expect([entry.chunk, entry.marked, entry.text]).toEqual(["A", "marked done", "gamma"]);
+    });
+
+    it("gives two identical notes of one instant to two events, never the same note twice", () => {
+        const e = effort(
+            [
+                {
+                    label: "A",
+                    notes: [
+                        { ts: T, text: "x" },
+                        { ts: T, text: "x" },
+                    ],
+                },
+            ],
+            [
+                { ts: T, kind: "effort-note", label: "A", text: "x" },
+                { ts: T, kind: "effort-note", label: "A", text: "x" },
+            ]
+        );
+        const feed = bySeq(e);
+        expect([feed[0].noteAt, feed[1].noteAt]).toEqual([1, 2]);
+    });
+
+    it("locates an effort-note only by a note of the same instant that says the same thing", () => {
+        const e = effort(
+            [
+                {
+                    label: "A",
+                    notes: [
+                        { ts: T + 1, text: "x" },
+                        { ts: T, text: "y" },
+                    ],
+                },
+            ],
+            [{ ts: T, kind: "effort-note", label: "A", text: "x" }]
+        );
+        const [entry] = effortFeed(e);
+        expect(entry).toEqual({
+            seq: 0,
+            ts: T,
+            kind: "effort-note",
+            chunk: "A",
+            status: "pending",
+            marked: "",
+            text: "x",
+        });
+    });
+
+    it("locates a status event only by a status note, not by a free note of the same instant", () => {
+        const e = effort(
+            [{ label: "A", status: "active", notes: [{ ts: T, text: "plain note", author: "z" }] }],
+            [{ ts: T, kind: "chunk-status", label: "A", text: "" }]
+        );
+        const [entry] = effortFeed(e);
+        expect(entry.author).toBeUndefined();
+        expect([entry.marked, entry.text]).toEqual(["status changed", ""]);
+    });
+
+    it("words a status change by the status its note records, and by its kind when no note is found", () => {
+        const e = effort(
+            [{ label: "A", status: "active", notes: [{ ts: T, text: "marked active · started" }] }],
+            [
+                { ts: T, kind: "chunk-status", label: "A", text: "" },
+                { ts: T + 1, kind: "chunk-status", label: "A", text: "" },
+                { ts: T + 2, kind: "chunk-done", label: "A", text: "" },
+            ]
+        );
+        const feed = bySeq(e);
+        expect([feed[0].marked, feed[0].text]).toEqual(["marked active", "started"]);
+        expect([feed[1].marked, feed[1].text]).toEqual(["status changed", ""]);
+        expect([feed[2].marked, feed[2].text]).toEqual(["marked done", ""]);
+    });
+
+    it("never reads a free effort-note as a status change, even when it starts with the same words", () => {
+        const e = effort(
+            [{ label: "A", notes: [{ ts: T, text: "marked done" }] }],
+            [{ ts: T, kind: "effort-note", label: "A", text: "marked done" }]
+        );
+        const [entry] = effortFeed(e);
+        expect([entry.marked, entry.text, entry.noteAt]).toEqual(["", "marked done", 1]);
+    });
+
+    it("leaves a chunk added from taking the note a later status event is waiting for", () => {
+        const e = effort(
+            [{ label: "A", status: "done", notes: [{ ts: T, text: "marked done · landed" }] }],
+            [
+                { ts: T, kind: "chunk-added", label: "A" },
+                { ts: T, kind: "chunk-done", label: "A", text: "" },
+            ]
+        );
+        const feed = bySeq(e);
+        expect([feed[0].marked, feed[0].text]).toEqual(["chunk added", ""]);
+        expect([feed[1].marked, feed[1].text]).toEqual(["marked done", "landed"]);
+    });
+
+    it("reads a chunk added's status off the chunk that still holds its label", () => {
+        const e = effort([{ label: "A", status: "active" }], [{ ts: T, kind: "chunk-added", label: "A" }]);
+        const [entry] = effortFeed(e);
+        expect([entry.chunk, entry.status]).toEqual(["A", "active"]);
+    });
+
+    it("follows only a rename note to a chunk whose label is gone, never another chunk's note", () => {
+        const e = effort(
+            [{ label: "B", notes: [{ ts: T, text: "unrelated" }] }],
+            [{ ts: T, kind: "chunk-added", label: "gone" }]
+        );
+        const [entry] = effortFeed(e);
+        expect([entry.chunk, entry.status]).toEqual(["gone", "removed"]);
+    });
+
+    it("calls a chunk removed only when the event named it by its index alone", () => {
+        const e = effort(
+            [],
+            ["12", "3", "v2", "2nd phase"].map((label, i) => ({ ts: T + i, kind: "effort-note", label }))
+        );
+        expect(effortFeed(e).map((x) => x.chunk)).toEqual(["2nd phase", "v2", "removed chunk", "removed chunk"]);
+    });
+
+    it("orders by time, newest first, whatever order the events were appended in", () => {
+        const e = effort(
+            [],
+            [
+                { ts: T + 2, kind: "effort-note", label: "A", text: "second" },
+                { ts: T, kind: "effort-note", label: "A", text: "first" },
+                { ts: T + 1, kind: "effort-note", label: "A", text: "middle" },
+                { ts: T + 1, kind: "effort-note", label: "A", text: "later in the same instant" },
+            ]
+        );
+        expect(effortFeed(e).map((x) => x.text)).toEqual(["second", "later in the same instant", "middle", "first"]);
+    });
+});
