@@ -380,12 +380,13 @@ type TaskNode struct {
 	Label       string   `json:"label,omitempty"`
 	Description string   `json:"description,omitempty"` // plan context for the child (pins decisions the child must not re-ask)
 	Deps        []string `json:"deps,omitempty"`
-	Chunks      []string `json:"chunks,omitempty"`   // labels of the dag's effort chunks this task closes when it lands
-	Gate        bool     `json:"gate,omitempty"`     // halt the DAG at completion for review
-	State       string   `json:"state"`              // pending|ready|running|stalled|done|failed|cancelled|skipped|blocked-merge|verifying|verify-failed
-	RunID       string   `json:"runid,omitempty"`    // child run once spawned
-	Released    bool     `json:"released,omitempty"` // gate released by human approval
-	Merged      bool     `json:"merged,omitempty"`   // successful squash-merge back into the project branch
+	Chunks      []string `json:"chunks,omitempty"`    // labels of the dag's effort chunks this task closes when it lands
+	Gate        bool     `json:"gate,omitempty"`      // halt the DAG at completion for review
+	State       string   `json:"state"`               // pending|ready|running|stalled|done|failed|cancelled|skipped|blocked-merge|verifying|verify-failed
+	RunID       string   `json:"runid,omitempty"`     // child run once spawned
+	SpawnedTs   int64    `json:"spawnedts,omitempty"` // when RunID's worker was spawned (UnixMilli), restamped each attempt
+	Released    bool     `json:"released,omitempty"`  // gate released by human approval
+	Merged      bool     `json:"merged,omitempty"`    // successful squash-merge back into the project branch
 	RunSpec     RunSpec  `json:"runspec,omitempty"`
 	// ModelSource is who set RunSpec's model: plan | reviewer | owner | escalation (TaskModelSource_*). Empty is
 	// a typed-JSON RunSpec pin, or no pin at all. On a group not on Reviewer picks, a plan or reviewer pin is ignored.

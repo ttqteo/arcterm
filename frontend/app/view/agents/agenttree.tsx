@@ -165,6 +165,7 @@ import {
     runFocusAgent,
     runProgress,
     stageLabel,
+    taskElapsed,
     taskStateLabel,
     unmetDeps,
     workerAsk,
@@ -1245,7 +1246,8 @@ function WorkerRow({
     const sub = workerSubtext({
         taskId: task.id,
         lane,
-        age: agent ? formatAgeShort(displayAgeMs(agent, now)) : "",
+        // a question's age is how long it has waited; otherwise the worker's own elapsed time, not its last activity
+        age: !nested && !ask ? taskElapsed(task, now) : agent ? formatAgeShort(displayAgeMs(agent, now)) : "",
         ask,
         outcome: done ? (task.merged ? "landed" : "done") : undefined,
         waits,

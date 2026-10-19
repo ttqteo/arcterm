@@ -26,6 +26,7 @@ import {
     runTitle,
     stageLabel,
     taskAgentOf,
+    taskElapsed,
     taskStateLabel,
     unmetDeps,
     workerAsk,
@@ -392,6 +393,13 @@ describe("a task past its worker", () => {
         for (const state of ["pending", "ready", "running", "done"]) {
             expect(taskStateLabel({ id: "t", state } as TaskNode, now)).toBeUndefined();
         }
+    });
+
+    it("times a worker from its spawn, and says nothing for a task spawned before the stamp", () => {
+        const now = 1_000_000;
+        expect(taskElapsed({ id: "t", state: "running", spawnedts: now - 9 * 60_000 } as TaskNode, now)).toBe("9m");
+        expect(taskElapsed({ id: "t", state: "running", spawnedts: now - 20_000 } as TaskNode, now)).toBe("<1m");
+        expect(taskElapsed({ id: "t", state: "running" } as TaskNode, now)).toBe("");
     });
 
     it("leads the worker row with its state in place of its age, so truncation drops the lane first", () => {

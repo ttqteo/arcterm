@@ -373,6 +373,17 @@ func TestRetryClearsTheCPUReadings(t *testing.T) {
 	}
 }
 
+func TestRetryRestampsSpawnedTs(t *testing.T) {
+	g := &waveobj.TaskGroup{Tasks: []waveobj.TaskNode{{ID: "t-0", SpawnedTs: 1}}}
+	before := time.Now().UnixMilli()
+	if err := MarkRunning(g, "t-0", "run-2"); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.Tasks[0].SpawnedTs; got < before {
+		t.Fatalf("a new attempt's elapsed runs from its own spawn, got SpawnedTs %d < %d", got, before)
+	}
+}
+
 func TestIdleChildStillStalls(t *testing.T) {
 	ctx, g, _ := seedQuietChild(t, "idle-child")
 	stubChildCPU(t, func(int) (int64, bool) { return 5000, true })

@@ -295,6 +295,11 @@ export function workerSubtext(w: WorkerLine): string {
     return [w.taskId, ...tail].filter(Boolean).join(" · ");
 }
 
+// taskElapsed is how long a task's current worker has run, "" for a task spawned before the engine stamped it.
+export function taskElapsed(task: TaskNode, now: number): string {
+    return task.spawnedts ? formatAgeShort(Math.max(0, now - task.spawnedts)) : "";
+}
+
 // states a worker row already says on its own: queued, running and done
 const PLAIN_STATES = new Set(["pending", "ready", "running", "done"]);
 
