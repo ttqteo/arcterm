@@ -58,7 +58,7 @@ export const CARD_COPY: Record<(typeof CARD_ORDER)[number], { title: string; blu
     },
     canvases: {
         title: "Design canvases",
-        blurb: "Mockups agents drew with design-local, in each project's .superpowers/design. They stay until you clean them up in the gallery, where you see each one before it goes to ~/.arc/trash for 7 days.",
+        blurb: "Mockups agents drew with the arc:design skill, in each project's .superpowers/design. They stay until you clean them up in the gallery, where you see each one before it goes to ~/.arc/trash for 7 days.",
         action: null,
     },
 };

@@ -99,7 +99,8 @@ func piSkillsNote(entries []string, claudeSkills, vaultSkills string) string {
 			expanded = filepath.Join(filepath.Dir(filepath.Dir(claudeSkills)), strings.TrimPrefix(expanded, "~"+string(filepath.Separator)))
 		}
 		if claudeSkills != "" && sameTarget(expanded, claudeSkills) {
-			return "via " + claudeSkills
+			// with the arc mod installed claude loads arcterm's shipped skills from it, so that directory lacks them
+			return "via " + claudeSkills + ", without arcterm's own skills when the arc mod is installed: point pi at the vault for those"
 		}
 		if sameTarget(expanded, vaultSkills) {
 			return "via the vault directly"

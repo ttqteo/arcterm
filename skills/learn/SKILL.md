@@ -9,7 +9,7 @@ When the user corrects how you work, repeats something they told you before, or 
 Arcterm counts notes; when the same point comes up in two sessions it asks the user, in Needs you, whether to make it a
 rule. Nothing changes until they say yes, so note freely but only real corrections, not one-off task details.
 
-1. Pick the target: the vault skill the rule belongs to (`--skill <name>`, e.g. `notes`, `cockpit-runs`), or
+1. Pick the target: the vault skill the rule belongs to (`--skill <name>`, e.g. `notes`, `runs`), or
    `--memory` for a rule about this project that no skill owns.
 2. Reuse a key: `wsh learn list --skill <name>` (or `--memory`). If a listed key means the same thing, use it.
    Otherwise make a short kebab-case key (`notes-in-vietnamese`).

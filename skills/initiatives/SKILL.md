@@ -1,5 +1,5 @@
 ---
-name: effort-tracking
+name: initiatives
 description: Use when a task is too big for one run, when tracking multi-part work, or when brainstorming a large effort — creates and updates Wave effort trackers via `wsh effort`.
 ---
 

@@ -235,7 +235,7 @@ function CanvasGrid({ model }: { model: AgentsViewModel }) {
                     <LayoutGrid size={28} strokeWidth={1.6} className="text-ink-faint" aria-hidden />
                     <span className="text-[13.5px] font-semibold text-primary">No canvases yet</span>
                     <span className="max-w-[380px] text-[12.5px] leading-[1.5] text-muted">
-                        An agent draws one when you ask it for a mockup (the design-local skill). Every canvas in your
+                        An agent draws one when you ask it for a mockup (the arc:design skill). Every canvas in your
                         projects shows up here, and stays until you delete it.
                     </span>
                 </div>

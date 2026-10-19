@@ -511,7 +511,7 @@ UI changes get a validated high-fidelity HTML mockup before implementation — p
 first, always. The mockup is the design proposal; it must be seen and approved before
 code is written.
 
-- Build it with the `design-local` Claude Code skill: a `.dc.html` canvas under the gitignored
+- Build it with the `arc:design` Claude Code skill: a `.dc.html` canvas under the gitignored
   `.superpowers/design/<topic>/`, which arcterm serves and shows on the Agent surface. This file is its design system — every rule
   above applies to the mockup as it will to the code.
 - Token values come from `frontend/tailwindsetup.css` `@theme`, never from memory or an
@@ -519,7 +519,7 @@ code is written.
 - A mockup is scaffolding, never committed: once its feature ships the code is the design, but
   the topic folder stays unless Settings → Storage → Agents delete a canvas when its feature ships
   is on, until the person deletes it or picks it from the list an agent offers when asked to tidy
-  up (`design-local` skill, "Cleaning up"). The canvases already under `docs/prototype/` predate this rule and
+  up (`arc:design` skill, "Cleaning up"). The canvases already under `docs/prototype/` predate this rule and
   stay only because code comments and specs cite them.
 
 ## Architecture & Patterns

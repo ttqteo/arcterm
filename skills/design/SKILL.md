@@ -1,6 +1,6 @@
 ---
-name: design-local
-description: Make a multi-artboard .dc.html design canvas locally, in a gitignored scratch folder, in the Claude Design format. Use when the user asks to /design-local something, or for a UI mockup or prototype of a new screen or a redesign.
+name: design
+description: Make a multi-artboard .dc.html design canvas locally, in a gitignored scratch folder, in the Claude Design format. Use when the user asks to /arc:design (or /design-local) something, or for a UI mockup or prototype of a new screen or a redesign.
 ---
 
 # Design, local

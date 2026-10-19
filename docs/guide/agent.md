@@ -417,7 +417,7 @@ Skill `doc-review` đi kèm arcterm dạy agent khi nào nên xin duyệt một 
 
 ## Canvas
 
-Agent dùng skill design-local có thể đính kèm một **canvas** — các board `.dc.html` — vào chính nó. Khi có canvas, header có nút chuyển **Terminal | Canvas**; `c` chuyển qua lại, `[` / `]` đổi board, `m` đánh dấu các vùng của board, `Ctrl+Enter` gửi các dấu cho agent. Canvas thay terminal nhưng sidebar, header và rail vẫn giữ nguyên. Các board hiện ở mục **Artifacts** của rail.
+Agent dùng skill arc:design có thể đính kèm một **canvas** — các board `.dc.html` — vào chính nó. Khi có canvas, header có nút chuyển **Terminal | Canvas**; `c` chuyển qua lại, `[` / `]` đổi board, `m` đánh dấu các vùng của board, `Ctrl+Enter` gửi các dấu cho agent. Canvas thay terminal nhưng sidebar, header và rail vẫn giữ nguyên. Các board hiện ở mục **Artifacts** của rail.
 
 ### Thư viện canvas
 

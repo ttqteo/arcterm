@@ -1,5 +1,5 @@
 ---
-name: cockpit-ui
+name: cockpit
 description: Use when you want to show the user something in the arcterm cockpit (a run, an agent terminal, a record, a memory note, a radar finding, a surface), read what they're looking at, or run a cockpit action for them — via `wsh ui`.
 ---
 

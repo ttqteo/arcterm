@@ -49,6 +49,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Claude Code lists arcterm's own skills as `arc:runs`, `arc:cockpit`, `arc:design`, `arc:initiatives`, `arc:notes`,
+  `arc:doc-review`, `arc:ideas` and `arc:learn`, from the arc mod, with the rules you approved through `wsh learn`;
+  other harnesses keep the plain names (`runs`, `cockpit`, …), and the old names (`cockpit-runs`, `cockpit-ui`,
+  `design-local`, `effort-tracking`) go, keeping your rules.
 - An orchestrator run's DAG opens a node's peek beside it on a click: the worker's session, its route, the
   description and the actions it needs; the final stage's node shows its steps there. The hover peek and the rails
   under the graph are gone, and every run, finished ones included, opens in the run sheet.

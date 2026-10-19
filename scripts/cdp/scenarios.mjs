@@ -27974,8 +27974,8 @@ const canvasGallery = {
         }))()`);
         await h.shot("cdp-shots/canvas-gallery-empty.png");
         rec(
-            "0. with no canvas anywhere the gallery says No canvases yet and names the design-local skill, with no search and no Clean up",
-            emptyUp && empty.text.includes("No canvases yet") && empty.text.includes("design-local") && !empty.search && !empty.cleanup,
+            "0. with no canvas anywhere the gallery says No canvases yet and names the arc:design skill, with no search and no Clean up",
+            emptyUp && empty.text.includes("No canvases yet") && empty.text.includes("arc:design") && !empty.search && !empty.cleanup,
             JSON.stringify({ emptyUp, ...empty })
         );
 

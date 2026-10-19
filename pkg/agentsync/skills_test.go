@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -465,5 +466,68 @@ func TestApplyWithKeepHarnessesSeedsTheVaultAndWritesNoHarness(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(p.SkillsRoot, "cockpit-runs", skillFile)); err != nil {
 		t.Errorf("the shipped skills were not seeded into its own vault: %v", err)
+	}
+}
+
+// with the arc mod installed, claude gets the shipped skills in the mod (listed as arc:<skill>), additions included,
+// and the copies arcterm wrote in ~/.claude/skills go; a skill of the user's still lands there
+func TestApplyPutsClaudesShippedSkillsInTheArcMod(t *testing.T) {
+	p := testPaths(t, "canonical\n", ".claude")
+	p.Shipped = shippedFS()
+	seedSkill(t, p, "mine")
+	if _, err := Apply(p, false); err != nil {
+		t.Fatal(err)
+	}
+	claudeSkills := filepath.Join(p.Home, ".claude", "skills")
+	if _, err := os.Stat(filepath.Join(claudeSkills, "cockpit-runs", skillFile)); err != nil {
+		t.Fatalf("without the mod the shipped skill goes to ~/.claude/skills: %v", err)
+	}
+
+	mod := filepath.Join(p.Home, ".arc", "claude-mod")
+	writeFile(t, filepath.Join(mod, ".claude-plugin", "plugin.json"), `{"name":"arc"}`)
+	if err := UpsertAddition(p.SkillsRoot, "cockpit-runs", Addition{Key: "k", Text: "always queue", Learned: "2026-10-19", Count: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(p, false); err != nil {
+		t.Fatal(err)
+	}
+	got := readFile(t, filepath.Join(mod, "skills", "cockpit-runs", skillFile))
+	if !strings.Contains(got, "always queue") {
+		t.Errorf("the mod's copy lost the addition: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(claudeSkills, "cockpit-runs")); !os.IsNotExist(err) {
+		t.Errorf("the ~/.claude/skills copy is still there, so claude would list the skill twice: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(claudeSkills, "mine", skillFile)); err != nil {
+		t.Errorf("the user's own skill left ~/.claude/skills: %v", err)
+	}
+	rows, err := SkillRows(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.States["claude"] != stateSynced {
+			t.Errorf("%s claude = %q, want synced", r.Name, r.States["claude"])
+		}
+	}
+}
+
+// a shipped skill renamed keeps the user's .arc delta under its new name; the old vault copy goes
+func TestSeedRetiresARenamedSkillKeepingItsDelta(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "effort-tracking", skillFile), "---\nname: effort-tracking\n---\nold\n")
+	writeFile(t, filepath.Join(root, "effort-tracking", deltaDirName, additionsFile), "learned\n")
+	shipped := fstest.MapFS{"initiatives/SKILL.md": {Data: []byte("---\nname: initiatives\n---\nnew\n")}}
+	if err := seedShippedSkills(root, shipped); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "effort-tracking")); !os.IsNotExist(err) {
+		t.Errorf("the old name is still in the vault: %v", err)
+	}
+	if got := readFile(t, filepath.Join(root, "initiatives", deltaDirName, additionsFile)); got != "learned\n" {
+		t.Errorf("the delta did not move to the new name: %q", got)
+	}
+	if got := readFile(t, filepath.Join(root, "initiatives", skillFile)); got != "---\nname: initiatives\n---\nnew\n" {
+		t.Errorf("initiatives SKILL.md = %q", got)
 	}
 }

@@ -311,8 +311,44 @@ func shippedTree(shipped fs.FS, name string) (map[string][]byte, error) {
 	return out, nil
 }
 
+// renamedShipped maps the names arcterm once shipped skills under to the ones it ships them under now (Claude lists
+// them from the arc mod as arc:<name>). Nothing else marks a vault copy as shipped, so a seed retires the old ones by
+// name, moving the user's .arc delta (their additions, their per-harness overrides) to the new name first; the
+// reconcile then removes the harness copies arcterm wrote under the old names.
+var renamedShipped = map[string]string{
+	"cockpit-runs":    "runs",
+	"cockpit-ui":      "cockpit",
+	"design-local":    "design",
+	"effort-tracking": "initiatives",
+}
+
+// retireRenamedSkill moves an old shipped skill's .arc delta to its new name, unless the new one has a delta of its
+// own already, then deletes the old directory.
+func retireRenamedSkill(skillsRoot, oldName, newName string) error {
+	oldDir := filepath.Join(skillsRoot, oldName)
+	if _, err := os.Stat(oldDir); os.IsNotExist(err) {
+		return nil
+	}
+	oldDelta := filepath.Join(oldDir, deltaDirName)
+	newDelta := filepath.Join(skillsRoot, newName, deltaDirName)
+	if _, err := os.Stat(oldDelta); err == nil {
+		if _, err := os.Stat(newDelta); os.IsNotExist(err) {
+			if err := os.MkdirAll(filepath.Dir(newDelta), 0o755); err != nil {
+				return fmt.Errorf("creating %s: %w", filepath.Dir(newDelta), err)
+			}
+			if err := os.Rename(oldDelta, newDelta); err != nil {
+				return fmt.Errorf("moving %s to %s: %w", oldDelta, newDelta, err)
+			}
+		}
+	}
+	if err := os.RemoveAll(oldDir); err != nil {
+		return fmt.Errorf("removing retired shipped skill %s: %w", oldName, err)
+	}
+	return nil
+}
+
 // seedShippedSkills makes each shipped skill in the vault match what arcterm ships, so the reconcile
-// that follows projects the shipped copy. The .arc delta directory is the user's and survives.
+// that follows projects the shipped copy. The .arc delta directory is the user's and survives, a rename included.
 func seedShippedSkills(skillsRoot string, shipped fs.FS) error {
 	if shipped == nil {
 		return nil
@@ -320,6 +356,14 @@ func seedShippedSkills(skillsRoot string, shipped fs.FS) error {
 	entries, err := fs.ReadDir(shipped, ".")
 	if err != nil {
 		return fmt.Errorf("listing shipped skills: %w", err)
+	}
+	for oldName, newName := range renamedShipped {
+		if st, err := fs.Stat(shipped, oldName); err == nil && st.IsDir() {
+			continue
+		}
+		if err := retireRenamedSkill(skillsRoot, oldName, newName); err != nil {
+			return err
+		}
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -400,9 +444,35 @@ func skillStateFor(dir string, observed map[string]ObservedEntry, name string, w
 	return stateDiffers
 }
 
+// pluginRuntime is the harness that loads arcterm's shipped skills from the arc mod (claude/arc-mod, installed to
+// ~/.arc/claude-mod by `wsh install-agent-hooks`), which lists them as arc:<skill>.
+const pluginRuntime = "claude"
+
+// pluginSkillsDir is where the shipped skills go for pluginRuntime: the installed arc mod's skills folder, when the
+// mod is installed. Empty otherwise, and they go to the harness's own skills directory like any other skill.
+func pluginSkillsDir(p Paths, runtime string) string {
+	if runtime != pluginRuntime || p.Shipped == nil {
+		return ""
+	}
+	mod := filepath.Join(p.Home, ".arc", "claude-mod")
+	if _, err := os.Stat(filepath.Join(mod, ".claude-plugin", "plugin.json")); err != nil {
+		return ""
+	}
+	return filepath.Join(mod, "skills")
+}
+
+// skillTargetDir is the directory a harness gets a canonical skill in: the arc mod's for a shipped skill the harness
+// loads from it, else the harness's skills directory.
+func skillTargetDir(p Paths, dir, runtime, name string) string {
+	if plugin := pluginSkillsDir(p, runtime); plugin != "" && isShipped(p, name) {
+		return plugin
+	}
+	return dir
+}
+
 // reconcileSkills renders every canonical skill into each present harness that scans a fixed skills
-// directory. The skills directory itself is created when missing: that is arcterm's own target, unlike
-// the harness config root, which arcterm never creates.
+// directory; claude gets the shipped ones in the arc mod instead (pluginSkillsDir). The skills directory itself is
+// created when missing: that is arcterm's own target, unlike the harness config root, which arcterm never creates.
 func reconcileSkills(p Paths, dryRun bool) ([]Action, error) {
 	canonical, err := canonicalSkills(p.SkillsRoot)
 	if err != nil {
@@ -414,50 +484,78 @@ func reconcileSkills(p Paths, dryRun bool) ([]Action, error) {
 		if dir == "" || !configRootExists(spec, p.Home) {
 			continue
 		}
-		observed, err := observeSkills(dir)
-		if err != nil {
-			return actions, err
+		// every target dir is swept, the harness's own and the arc mod's, even one no skill goes to any more
+		byDir := map[string][]string{dir: nil}
+		if plugin := pluginSkillsDir(p, spec.Runtime); plugin != "" {
+			byDir[plugin] = nil
 		}
-		byName := make(map[string]ObservedEntry, len(observed))
-		for _, e := range observed {
-			byName[e.Name] = e
-		}
-		wanted := make(map[string]bool, len(canonical))
 		for _, name := range canonical {
-			wanted[name] = true
-			want, err := renderSkill(p.SkillsRoot, name, spec.Runtime)
+			target := skillTargetDir(p, dir, spec.Runtime, name)
+			byDir[target] = append(byDir[target], name)
+		}
+		targets := make([]string, 0, len(byDir))
+		for target := range byDir {
+			targets = append(targets, target)
+		}
+		sort.Strings(targets)
+		for _, target := range targets {
+			acts, err := reconcileSkillsDir(p, target, spec.Runtime, byDir[target], dryRun)
+			actions = append(actions, acts...)
 			if err != nil {
 				return actions, err
 			}
-			target := filepath.Join(dir, name)
-			switch skillStateFor(dir, byName, name, want) {
-			case stateUnmanaged:
-				actions = append(actions, Action{Kind: ActionSkillUnmanaged, Runtime: spec.Runtime, Path: target,
-					Detail: "the user's own directory; adopt it to bring it into the vault"})
-			case stateSynced:
-			default:
-				actions = append(actions, Action{Kind: ActionSkillWrite, Runtime: spec.Runtime, Path: target})
-				if dryRun {
-					continue
-				}
-				if err := writeTree(target, filepath.Join(p.SkillsRoot, name), want); err != nil {
-					return actions, err
-				}
-			}
 		}
-		// a directory arcterm wrote for a skill the vault no longer has. Plain files, so an ordinary
-		// recursive delete — the junction-era reparse-point hazard is gone with the junctions.
-		for _, e := range observed {
-			if wanted[e.Name] || !e.Managed {
-				continue
-			}
-			actions = append(actions, Action{Kind: ActionSkillRemove, Runtime: spec.Runtime, Path: filepath.Join(dir, e.Name)})
+	}
+	return actions, nil
+}
+
+// reconcileSkillsDir makes dir hold the named canonical skills rendered for runtime, and removes the directories
+// arcterm wrote there for any other.
+func reconcileSkillsDir(p Paths, dir, runtime string, names []string, dryRun bool) ([]Action, error) {
+	var actions []Action
+	observed, err := observeSkills(dir)
+	if err != nil {
+		return actions, err
+	}
+	byName := make(map[string]ObservedEntry, len(observed))
+	for _, e := range observed {
+		byName[e.Name] = e
+	}
+	wanted := make(map[string]bool, len(names))
+	for _, name := range names {
+		wanted[name] = true
+		want, err := renderSkill(p.SkillsRoot, name, runtime)
+		if err != nil {
+			return actions, err
+		}
+		target := filepath.Join(dir, name)
+		switch skillStateFor(dir, byName, name, want) {
+		case stateUnmanaged:
+			actions = append(actions, Action{Kind: ActionSkillUnmanaged, Runtime: runtime, Path: target,
+				Detail: "the user's own directory; adopt it to bring it into the vault"})
+		case stateSynced:
+		default:
+			actions = append(actions, Action{Kind: ActionSkillWrite, Runtime: runtime, Path: target})
 			if dryRun {
 				continue
 			}
-			if err := os.RemoveAll(filepath.Join(dir, e.Name)); err != nil {
-				return actions, fmt.Errorf("removing %s: %w", filepath.Join(dir, e.Name), err)
+			if err := writeTree(target, filepath.Join(p.SkillsRoot, name), want); err != nil {
+				return actions, err
 			}
+		}
+	}
+	// a directory arcterm wrote for a skill the vault no longer has, or one that moved to the arc mod. Plain files,
+	// so an ordinary recursive delete — the junction-era reparse-point hazard is gone with the junctions.
+	for _, e := range observed {
+		if wanted[e.Name] || !e.Managed {
+			continue
+		}
+		actions = append(actions, Action{Kind: ActionSkillRemove, Runtime: runtime, Path: filepath.Join(dir, e.Name)})
+		if dryRun {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dir, e.Name)); err != nil {
+			return actions, fmt.Errorf("removing %s: %w", filepath.Join(dir, e.Name), err)
 		}
 	}
 	return actions, nil
@@ -618,20 +716,26 @@ func SkillRows(p Paths) ([]SkillRow, error) {
 			}
 			continue
 		}
-		observed, err := observeSkills(dir)
-		if err != nil {
-			return nil, err
-		}
-		byName := make(map[string]ObservedEntry, len(observed))
-		for _, e := range observed {
-			byName[e.Name] = e
-		}
+		observedIn := map[string]map[string]ObservedEntry{}
 		for i := range rows {
+			target := skillTargetDir(p, dir, spec.Runtime, rows[i].Name)
+			byName, ok := observedIn[target]
+			if !ok {
+				observed, err := observeSkills(target)
+				if err != nil {
+					return nil, err
+				}
+				byName = make(map[string]ObservedEntry, len(observed))
+				for _, e := range observed {
+					byName[e.Name] = e
+				}
+				observedIn[target] = byName
+			}
 			want, err := renderSkill(p.SkillsRoot, rows[i].Name, spec.Runtime)
 			if err != nil {
 				return nil, err
 			}
-			rows[i].States[spec.Runtime] = skillStateFor(dir, byName, rows[i].Name, want)
+			rows[i].States[spec.Runtime] = skillStateFor(target, byName, rows[i].Name, want)
 		}
 	}
 	return rows, nil

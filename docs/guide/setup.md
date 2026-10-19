@@ -134,11 +134,13 @@ arcterm mang theo năm skill, được đưa vào `<vault>/skills/` ở mỗi l�
 
 | Skill | Dùng khi |
 |---|---|
-| `cockpit-runs` | Agent cần bắt đầu, xem hoặc hủy một run (`wsh runs`), hoặc nhắn một agent khác (`wsh agents`). |
-| `cockpit-ui` | Agent cần cho bạn xem một thứ trong cockpit hoặc điều khiển cockpit (`wsh ui`). |
-| `effort-tracking` | Việc quá lớn cho một run; theo dõi initiative nhiều chunk (`wsh effort`). |
-| `doc-review` | Agent vừa sửa xong một bài báo `.tex` hoặc ghi chú Markdown và cần bạn duyệt. |
-| `design-local` | Làm bản mock UI nhiều artboard (`.dc.html`) trong thư mục tạm không commit. |
+| `arc:runs` | Agent cần bắt đầu, xem hoặc hủy một run (`wsh runs`), hoặc nhắn một agent khác (`wsh agents`). |
+| `arc:cockpit` | Agent cần cho bạn xem một thứ trong cockpit hoặc điều khiển cockpit (`wsh ui`). |
+| `arc:initiatives` | Việc quá lớn cho một run; theo dõi initiative nhiều chunk (`wsh effort`). |
+| `arc:doc-review` | Agent vừa sửa xong một bài báo `.tex` hoặc ghi chú Markdown và cần bạn duyệt. |
+| `arc:design` | Làm bản mock UI nhiều artboard (`.dc.html`) trong thư mục tạm không commit. |
+
+Với Claude Code, các skill này nằm trong arc mod (`~/.arc/claude-mod/skills/`, kèm luật bạn đã duyệt qua `wsh learn`) nên hiện tên `arc:<skill>`; harness khác (codex, pi…) đọc chúng từ vault với tên không có prefix (`runs`, `cockpit`, `initiatives`, `doc-review`, `design`, `ideas`, `learn`, `notes`).
 
 Chúng dạy agent cách dùng `wsh` và các quy ước của cockpit; xem [Tích hợp agent](agent-integration.md#skills-đi-kèm).
 
