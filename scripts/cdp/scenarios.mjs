@@ -42008,6 +42008,31 @@ const toolsApp = {
             JSON.stringify({ listed, pinned, ...fromServer })
         );
         await ttClick(h, "[data-tool-add-cancel]");
+
+        // the New dialog's Tool row: an app runs in its own folder, so the Project column reads as not in use and the
+        // footer names the app's folder, not the project picked
+        await h.ev(OPEN_NEW_AGENT);
+        const dialogUp = await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
+        await polishNap(400);
+        const startRows = (await h.ev(launcherState))?.startRows ?? [];
+        const toolDigit = startRows.indexOf("tool") + 1;
+        if (toolDigit > 0) await launcherPress(h, String(toolDigit));
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-tool="arc-app"]')`, 5000);
+        await ttClick(h, '[data-launcher-tool="arc-app"]');
+        await polishNap(300);
+        const inDialog = await h.ev(`({
+            unused: ${TT_FLAT}(${LAUNCHER}?.querySelector("[data-launcher-project-unused]")),
+            footer: ${TT_FLAT}(${LAUNCHER}?.querySelector("[data-launcher-footer]")),
+        })`);
+        await h.shot("cdp-shots/tools-app-8-new-dialog.png");
+        rec(
+            "9. in the New dialog an app's Project column reads Not used and the footer opens it in the app's own folder",
+            dialogUp &&
+                inDialog.unused === "Not used: arc-app runs in its own folder." &&
+                inDialog.footer.toLowerCase().includes(join(ctx.root, "app").toLowerCase()),
+            JSON.stringify({ dialogUp, toolDigit, ...inDialog })
+        );
+        await h.ev(PEEKS_ESC);
         return steps;
     },
     async teardown(h, ctx) {

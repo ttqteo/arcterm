@@ -185,13 +185,23 @@ export function pickedTool<T extends { id: string }>(tools: T[], remembered: str
     return tools.find((t) => t.id === remembered) ?? tools[0] ?? null;
 }
 
-// The folder a picked tool opens in: Home for a tool that lives there (its "opens in"), else the picked project, which is
-// Home when Home was picked. An agent's own folder is not on offer here: nothing is in focus to name one.
+// The folder a picked tool opens in: a pinned app's own folder (its dir) whatever is picked, Home for a tool that lives
+// there (its "opens in"), else the picked project, which is Home when Home was picked. An agent's own folder is not on
+// offer here: nothing is in focus to name one.
 export function toolFolder(
-    tool: Pick<ToolStatus, "opensin"> | null,
+    tool: Pick<ToolStatus, "opensin" | "dir"> | null,
     picked: { name: string; path: string } | null,
     homePath: string
 ): { name: string; path: string } | null {
+    const dir = tool?.dir?.trim();
+    if (dir) {
+        const name =
+            dir
+                .replace(/[\\/]+$/, "")
+                .split(/[\\/]/)
+                .pop() || dir;
+        return { name, path: dir };
+    }
     if (tool?.opensin === "home") {
         return homePath !== "" ? { name: HOME_NAME, path: homePath } : null;
     }
@@ -222,10 +232,15 @@ export function toolBlocker(
     return tool.found ? null : `${tool.name} is not on PATH`;
 }
 
-// The About card's second line: where the tool runs from here, and for one that is not on PATH where to put that right
-export function toolAboutLine(tool: Pick<ToolStatus, "opensin" | "found">, atHome: boolean): string {
+// The About card's second line: where the tool runs from here, and for one that is not on PATH where to put that right.
+// A pinned app runs in its own folder, so the project column picks nothing for it.
+export function toolAboutLine(tool: Pick<ToolStatus, "opensin" | "found" | "dir" | "url">, atHome: boolean): string {
     let where = "Runs in the project's root.";
-    if (atHome || tool.opensin === "home") {
+    if (tool.dir?.trim()) {
+        where = tool.url
+            ? "Runs in its own folder, whatever project is picked, and shows its page once it answers."
+            : "Runs in its own folder, whatever project is picked.";
+    } else if (atHome || tool.opensin === "home") {
         where = "Runs in your home folder.";
     } else if (tool.opensin !== "root") {
         where = `${where} To open it in an agent's worktree, use Tool on that agent.`;

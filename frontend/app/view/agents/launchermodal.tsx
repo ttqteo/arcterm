@@ -256,6 +256,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     // A tool opens in the picked project, or Home when Home is picked or the tool lives there; the others open in the
     // project. `where` is the folder the launch lands in.
     const toolAtHome = atHome || tool?.opensin === "home";
+    // a pinned app runs in its own folder: the Project column picks nothing for it, so it reads as not in use
+    const ownFolder = isTool && !!tool?.dir?.trim();
     const folder = isTool ? toolFolder(tool, project, home) : project;
     const where = isTool ? folder : project;
     const { currentBranch, branches } = useProjectBranches(
@@ -984,7 +986,19 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             className="relative min-w-0 border-r border-border outline-none"
                         >
                             <div className="absolute inset-0 flex flex-col px-2 py-3">
-                                <ColumnLabel label="Project" focused={projectFocused} hint={projectHint} />
+                                <ColumnLabel
+                                    label="Project"
+                                    focused={projectFocused}
+                                    hint={ownFolder ? "" : projectHint}
+                                />
+                                {ownFolder ? (
+                                    <div
+                                        data-launcher-project-unused
+                                        className="px-2 pb-2 text-[11.5px] leading-normal text-muted"
+                                    >
+                                        Not used: {tool!.name} runs in its own folder.
+                                    </div>
+                                ) : null}
                                 {filter !== "" ? (
                                     <FilterLine
                                         query={filter}
@@ -1009,7 +1023,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 ) : null}
                                 {candidates.length > 0 || picks.length > 0 ? (
                                     <>
-                                        <div className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto">
+                                        <div
+                                            className={cn(
+                                                "flex min-h-0 flex-1 flex-col gap-px overflow-y-auto",
+                                                ownFolder && "opacity-40"
+                                            )}
+                                        >
                                             {visible.map((p, i) => {
                                                 const selected = p.name === pickKey;
                                                 return (
@@ -1069,7 +1088,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                                     onClick={() => pickProject(HOME_PICK)}
                                                     className={cn(
                                                         rowTone(atHome, projectFocused),
-                                                        "shrink-0 gap-[10px] py-2"
+                                                        "shrink-0 gap-[10px] py-2",
+                                                        ownFolder && "opacity-40"
                                                     )}
                                                 >
                                                     <Keycap k="0" lit={projectFocused} />

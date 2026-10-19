@@ -503,6 +503,15 @@ describe("the Tool pick", () => {
         expect(toolFolder({ opensin: "home" }, { name: "a", path: "/a" }, "")).toBeNull();
         expect(toolFolder(null, { name: "a", path: "/a" }, "/Users/me")).toEqual({ name: "a", path: "/a" });
     });
+    it("a pinned app opens in its own folder whatever is picked", () => {
+        const app = { opensin: "agent", dir: "/Users/me/dev/portfolio-journal/" };
+        expect(toolFolder(app, { name: "arcterm", path: "/x" }, "/Users/me")).toEqual({
+            name: "portfolio-journal",
+            path: "/Users/me/dev/portfolio-journal/",
+        });
+        expect(toolFolder(app, null, "")?.name).toBe("portfolio-journal");
+        expect(toolFolder({ opensin: "home", dir: "D:\\code\\hong" }, null, "")?.name).toBe("hong");
+    });
 
     it("a row's note is the category, or what is missing", () => {
         expect(toolRowNote({ category: "Git", found: true })).toBe("Git");
@@ -526,6 +535,9 @@ describe("the Tool pick", () => {
         expect(toolAboutLine({ opensin: "root", found: true }, false)).toBe("Runs in the project's root.");
         expect(toolAboutLine({ opensin: "home", found: true }, false)).toBe("Runs in your home folder.");
         expect(toolAboutLine({ opensin: "agent", found: true }, true)).toBe("Runs in your home folder.");
+        expect(
+            toolAboutLine({ opensin: "agent", found: true, dir: "~/hong", url: "http://127.0.0.1:8386" }, true)
+        ).toBe("Runs in its own folder, whatever project is picked, and shows its page once it answers.");
         expect(toolAboutLine({ opensin: "root", found: false }, false)).toBe(
             "Runs in the project's root. Not found on PATH: Setup → Tools can install it or fix its command."
         );
