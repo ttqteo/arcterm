@@ -151,6 +151,17 @@ export function setAppView(tabId: string, view: AppView): void {
     }
 }
 
-export function reloadApp(tabId: string): void {
-    update(tabId, (s) => ({ ...s, reloads: s.reloads + 1 }));
+// Home: the app's own url, loaded afresh, on its page
+export function homeApp(tabId: string): void {
+    update(tabId, (s) => ({ ...s, reloads: s.reloads + 1, view: "page" }));
+}
+
+// Back and Forward walk the window's history, which a frame's navigations join. arcterm itself never pushes an entry,
+// so what they walk is the app's own pages, a single-page app's included; with nothing to walk they do nothing.
+export function appHistory(step: -1 | 1): void {
+    if (step < 0) {
+        window.history.back();
+    } else {
+        window.history.forward();
+    }
 }

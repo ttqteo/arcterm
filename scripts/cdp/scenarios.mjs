@@ -41757,12 +41757,28 @@ console.log("arc-app starting on " + port);
 setTimeout(() => {
     require("node:http")
         .createServer((req, res) => {
+            // every page asked for, in order, for the scenario to read Back and Forward from; no-store, so a step back
+            // is fetched again rather than restored from the cache
+            require("node:fs").appendFileSync("requests.log", req.url + "\\n");
             res.setHeader("content-type", "text/html");
-            res.end('<body style="font:16px sans-serif;padding:24px"><h1>ARC-APP-READY</h1></body>');
+            res.setHeader("cache-control", "no-store");
+            res.end(req.url === "/two"
+                ? '<body style="font:16px sans-serif;padding:24px"><h1>ARC-APP-TWO</h1></body>'
+                : '<body style="font:16px sans-serif;padding:24px"><h1>ARC-APP-READY</h1><a href="/two">two</a></body>');
         })
         .listen(port, "127.0.0.1", () => console.log("arc-app listening"));
 }, 2500);
 `;
+
+// polls a check made in this process (a file the fixture writes) until it holds or the time runs out
+async function waitUntil(check, ms) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+        if (check()) return true;
+        await polishNap(200);
+    }
+    return check();
+}
 
 function ttFreePort() {
     return new Promise((res, rej) => {
@@ -41843,7 +41859,7 @@ const toolsApp = {
             return {
                 src: frame?.getAttribute("src") ?? null,
                 tabs: head ? [...head.querySelectorAll('[role="tab"]')].map((t) => t.textContent + (t.getAttribute("aria-selected") === "true" ? "*" : "")) : [],
-                reload: !!head?.querySelector("[data-app-reload]:not([disabled])"),
+                nav: ["back", "forward", "home"].filter((k) => !!head?.querySelector("[data-app-" + k + "]:not([disabled])")),
                 browser: !!head?.querySelector("[data-app-browser]"),
                 stop: head?.querySelector("[data-terminal-close]")?.getAttribute("title") ?? null,
                 dock: !!head?.querySelector("[data-terminal-to-dock]"),
@@ -41852,17 +41868,38 @@ const toolsApp = {
         })()`);
         await h.shot("cdp-shots/tools-app-3-page.png");
         rec(
-            "3. once the page answers it shows in the terminal's place, under Page | Log with Reload, Open in the browser and Stop (no move to the panel)",
+            "3. once the page answers it shows in the terminal's place, under Page | Log with Back, Forward, Home, Open in the browser and Stop (no move to the panel)",
             framed &&
                 open.src === ctx.url &&
                 JSON.stringify(open.tabs) === JSON.stringify(["Page*", "Log"]) &&
-                open.reload &&
+                JSON.stringify(open.nav) === JSON.stringify(["back", "forward", "home"]) &&
                 open.browser &&
                 open.stop === "Stop arc-app" &&
                 !open.dock &&
                 open.gridHidden === true,
             JSON.stringify({ framed, ...open })
         );
+
+        // a page of the app's own, then Back and Forward: the server sees each page asked for again
+        const reqLog = join(ctx.root, "app", "requests.log");
+        const asked = () => (existsSync(reqLog) ? readFileSync(reqLog, "utf8").trim().split(/\r?\n/) : []);
+        const before = asked().length;
+        await h.ev(`document.querySelector("[data-app-frame]").src = ${JSON.stringify(ctx.url + "/two")}`);
+        const wentTwo = await waitUntil(() => asked().length >= before + 1, 8000);
+        await ttClick(h, "[data-app-back]");
+        const wentBack = await waitUntil(() => asked().length >= before + 2, 8000);
+        await ttClick(h, "[data-app-forward]");
+        const wentForward = await waitUntil(() => asked().length >= before + 3, 8000);
+        const walk = asked().slice(before);
+        await h.shot("cdp-shots/tools-app-3b-forward.png");
+        rec(
+            "3b. Back and Forward walk the app's own pages: /two, back to /, forward to /two",
+            wentTwo && wentBack && wentForward && JSON.stringify(walk) === JSON.stringify(["/two", "/", "/two"]),
+            JSON.stringify({ wentTwo, wentBack, wentForward, walk })
+        );
+        await ttClick(h, "[data-app-home]");
+        const wentHome = await waitUntil(() => asked().length >= before + 4, 8000);
+        rec("3c. Home loads the app's start page afresh", wentHome && asked().at(-1) === "/", JSON.stringify({ last: asked().at(-1) }));
 
         await ttClick(h, '[data-terminal-pane-head] [role="tab"]:nth-child(2)');
         await polishNap(800);

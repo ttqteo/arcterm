@@ -30,11 +30,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   pixel size and file size, where it used to say "Binary file — no text to show".
 - Pinned apps: give a tool of yours a **Page** (`http://127.0.0.1:<port>`) and a **Folder** in Setup → Tools, and
   opening it runs its command, waits for the page and shows it right in arcterm, in place of its terminal. Page and Log
-  switch between the page and the server's output, with Reload, Open in the browser and Stop beside them. A page
-  already up is shown without starting anything, and closing it then leaves that server running. The app sits in the
-  sidebar under the project its folder is in, or Home, and nothing runs until you open it. No need to remember the
-  command or the port: pick the folder and the form offers the scripts that run a server, each with the port read
-  from its code, or press **Pin as app** on a server already running in the Servers list. <!-- try: open-tool -->
+  switch between the page and the server's output, with Back, Forward, Home, Open in the browser and Stop beside
+  them. A page already up is shown without starting anything, and closing it then leaves that server running. The app
+  sits in the sidebar under the project its folder is in, or Home, and nothing runs until you open it. No need to
+  remember the command or the port: pick the folder and the form offers the scripts that run a server, each with the
+  port read from its code, or press **Pin as app** on a server already running in the Servers list.
+  <!-- try: open-tool -->
   <!-- big -->
 - An agent waiting on another agent sits under it in the sidebar, on a tree guide, and goes back to its place when
   the wait ends; when the two are in different projects its row says whom it waits on instead. Agents wait with the

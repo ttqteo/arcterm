@@ -76,7 +76,9 @@ export interface AppState {
     owned: boolean;
     startedMs: number;
     view: AppView;
-    reloads: number; // bumped by Reload: the frame is keyed on it
+    // bumped by Home: the frame is keyed on it, so it loads the app's own url afresh (a cross-origin page cannot be
+    // reloaded where it is, only loaded again)
+    reloads: number;
 }
 
 export function startingApp(toolId: string, url: string, owned: boolean, now: number): AppState {

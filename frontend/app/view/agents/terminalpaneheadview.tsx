@@ -4,20 +4,20 @@
 // The slim header over a terminal shown in the centre (AgentSurface renders it where an agent has AgentHeader): its icon
 // and name, the folder it runs in, its project, the quick way back to the agent in view before it (Ctrl Tab), and three
 // buttons: open it beside that agent (a split), move it to the panel under the agent, close it. A pinned app's terminal
-// adds Page | Log, Reload and Open in the browser, and its close stops the server arcterm started (appmodel.ts). What it
+// adds Page | Log, Back, Forward, Home and Open in the browser, and its close stops the server arcterm started (appmodel.ts). What it
 // says is terminalpanehead.ts's; this only reads the atoms and runs the buttons.
 
 import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Columns2, ExternalLink, GitBranch, PanelBottom, RotateCw, Square, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Columns2, ExternalLink, GitBranch, House, PanelBottom, Square, X } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import { appCloseTitle, appFailLine, isAppTool, type AppView } from "./appmodel";
-import { adoptApp, appStatesAtom, reloadApp, setAppView } from "./appstore";
+import { adoptApp, appHistory, appStatesAtom, homeApp, setAppView } from "./appstore";
 import { agentGridAtom, canOpenInSplit, currentGrid, dropAgentOnGrid } from "./gridstore";
 import { projectsAtom } from "./projectsstore";
 import { moveToDock } from "./railstore";
@@ -54,6 +54,8 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
     const tool = terminal.toolId != null ? tools?.find((t) => t.id === terminal.toolId) : undefined;
     const app = useAtomValue(appStatesAtom)[terminal.id];
     const appTool = tool != null && isAppTool(tool) ? tool : undefined;
+    // Back and Forward only while the page is what shows: from the log they would move a page no one sees
+    const onPage = app != null && app.phase === "open" && app.view === "page";
     useEffect(() => {
         if (appTool != null && terminal.blockId != null && app == null) {
             adoptApp(terminal.id, terminal.blockId, appTool);
@@ -167,17 +169,36 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
                 <>
                     <button
                         type="button"
-                        data-app-reload
-                        aria-label="Reload"
-                        title="Reload"
-                        disabled={app.phase !== "open"}
-                        onClick={() => {
-                            reloadApp(terminal.id);
-                            setAppView(terminal.id, "page");
-                        }}
+                        data-app-back
+                        aria-label="Back"
+                        title="Back"
+                        disabled={!onPage}
+                        onClick={() => appHistory(-1)}
                         className={BUTTON}
                     >
-                        <RotateCw size={14} aria-hidden />
+                        <ArrowLeft size={14} aria-hidden />
+                    </button>
+                    <button
+                        type="button"
+                        data-app-forward
+                        aria-label="Forward"
+                        title="Forward"
+                        disabled={!onPage}
+                        onClick={() => appHistory(1)}
+                        className={BUTTON}
+                    >
+                        <ArrowRight size={14} aria-hidden />
+                    </button>
+                    <button
+                        type="button"
+                        data-app-home
+                        aria-label="Home: the app's start page, loaded afresh"
+                        title="Home: the app's start page, loaded afresh"
+                        disabled={app.phase !== "open"}
+                        onClick={() => homeApp(terminal.id)}
+                        className={BUTTON}
+                    >
+                        <House size={14} aria-hidden />
                     </button>
                     <button
                         type="button"
