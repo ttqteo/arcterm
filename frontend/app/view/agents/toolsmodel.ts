@@ -186,6 +186,22 @@ export function parsePinnedTools(raw: string | null | undefined): string[] {
     }
 }
 
+// A detected tool (arctools.Detected) the user has not added: the status sends one only when its command is found, and
+// it shows only under the library's Found on this machine, never in a picker, until the user adds it.
+export function isSuggestion(tool: Pick<ToolStatus, "detected" | "user">): boolean {
+    return !!tool.detected && !tool.user;
+}
+
+// The hidden suggestion ids as stored (JSON in localStorage): nothing stored or unreadable hides none.
+export function parseHiddenTools(raw: string | null | undefined): string[] {
+    try {
+        const parsed: unknown = raw == null ? [] : JSON.parse(raw);
+        return Array.isArray(parsed) ? [...new Set(parsed.filter((v): v is string => typeof v === "string"))] : [];
+    } catch {
+        return [];
+    }
+}
+
 // the pinned list with `id` pinned or not; a tool already pinned stays where it is
 export function withPinned(pinned: string[], id: string, on: boolean): string[] {
     if (on) {

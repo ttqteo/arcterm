@@ -72,6 +72,13 @@ export function libraryRows(
         .sort((a, b) => categoryRank(a.category) - categoryRank(b.category));
 }
 
+// Found on this machine: the suggestions (toolSuggestionsAtom) not hidden, in catalog order, that the query matches
+// as the library's search does.
+export function foundRows(suggestions: ToolStatus[], hidden: string[], query = ""): ToolStatus[] {
+    const q = query.trim().toLowerCase();
+    return suggestions.filter((t) => !hidden.includes(t.id) && (q === "" || matches(t, q)));
+}
+
 // the detail's title line: the status word as a label
 export function statusLabel(state: ToolState): string {
     const word = STATE_WORD[state];
@@ -100,9 +107,12 @@ const MANAGERS: Record<string, string> = { win32: "winget", darwin: "brew" };
 
 // "4 installed · 9 in the library": the built-in catalog, whether its commands were found. A tool of yours is not part of
 // the library's count (it has its own status word); one a built-in the user overrode still is.
-export function headerSummary(statuses: ToolStatus[], platform?: string): string {
+export function headerSummary(statuses: ToolStatus[], platform?: string, found = 0): string {
     const library = statuses.filter((t) => t.category !== YOURS);
     const parts = [`${library.filter((t) => t.found).length} installed`, `${library.length} in the library`];
+    if (found > 0) {
+        parts.push(`${found} found`);
+    }
     const manager = platform ? MANAGERS[platform] : undefined;
     if (manager) {
         parts.push(`installs with ${manager}`);

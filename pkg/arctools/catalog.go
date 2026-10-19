@@ -13,7 +13,7 @@ import (
 )
 
 type Install struct {
-	Windows string `json:"windows,omitempty"` // a winget command line
+	Windows string `json:"windows,omitempty"` // a winget command line, or scoop for a tool winget lacks
 	Darwin  string `json:"darwin,omitempty"`  // a brew command line
 }
 
@@ -29,8 +29,9 @@ type Tool struct {
 	Shows    string  `json:"shows"`           // "centre" or "panel"
 	Install  Install `json:"install"`
 	User     bool    `json:"user,omitempty"`
-	Url      string  `json:"url,omitempty"` // a pinned app's page (AppURL): opening the tool shows it once the command serves it
-	Dir      string  `json:"dir,omitempty"` // the folder the tool runs in, in place of OpensIn; ~ is home
+	Url      string  `json:"url,omitempty"`      // a pinned app's page (AppURL): opening the tool shows it once the command serves it
+	Dir      string  `json:"dir,omitempty"`      // the folder the tool runs in, in place of OpensIn; ~ is home
+	Detected bool    `json:"detected,omitempty"` // from Detected(): suggested once its command is found, a library tool once added
 }
 
 const (
@@ -47,7 +48,7 @@ const (
 // Builtin is the catalog arcterm ships, in the order the library lists it. The winget ids were checked against the
 // winget source on 2026-10-13 (`winget show --id <id> --exact`; the btop4win command alias from its manifest). visidata
 // and translate-shell are the Mac-only tools, with no Windows line: neither has a winget package. Every other tool has
-// a Windows and a Mac line.
+// a Windows and a Mac line; mole's Windows line is scoop, its only package manager there (its README, 2026-10-19).
 // An entry's Command is the executable the status check looks up on PATH, or its Needs when it has one: wsh is on the
 // terminal's PATH but not wavesrv's, and what a tool run through wsh needs installed is another program.
 func Builtin() []Tool {
@@ -76,6 +77,11 @@ func Builtin() []Tool {
 			Id: "btop", Name: "btop", Category: "System", Purpose: "System: CPU, memory, processes",
 			Command: "btop", OpensIn: OpensInHome, Shows: ShowsCentre,
 			Install: Install{Windows: "winget install --id aristocratos.btop4win -e", Darwin: "brew install btop"},
+		},
+		{
+			Id: "mole", Name: "mole", Category: "System", Purpose: "System: clean caches, uninstall apps, see what fills the disk",
+			Command: "mo", OpensIn: OpensInHome, Shows: ShowsCentre,
+			Install: Install{Windows: "scoop install mole", Darwin: "brew install mole"},
 		},
 		{
 			Id: "lazydocker", Name: "lazydocker", Category: "Containers", Purpose: "Docker: containers, images, logs",
@@ -107,6 +113,41 @@ func Builtin() []Tool {
 			Args:    "trans :vi",
 			Install: Install{Darwin: "brew install translate-shell rlwrap"},
 		},
+	}
+}
+
+// Detected is the wider list of TUIs the library recognises but does not offer: one shows under "Found on this machine"
+// only once its command is found, and joins the library when the user adds it (a tools.json entry of its id, which
+// Merge lays over it like any built-in). Only tools that open usefully with no argument are here, and none carries an
+// install line: the library never offers to install one.
+func Detected() []Tool {
+	tool := func(id, category, purpose, command, opensIn string) Tool {
+		return Tool{Id: id, Name: id, Category: category, Purpose: purpose, Command: command, OpensIn: opensIn, Shows: ShowsCentre, Detected: true}
+	}
+	return []Tool{
+		tool("tig", "Git", "Git: browse the log, blame and staged changes", "tig", OpensInAgent),
+		tool("gitu", "Git", "Git: a Magit-style client for staging and commits", "gitu", OpensInAgent),
+		tool("nnn", "Files", "Files: a tiny, fast file manager", "nnn", OpensInAgent),
+		tool("lf", "Files", "Files: a ranger-style file manager", "lf", OpensInAgent),
+		tool("ranger", "Files", "Files: browse with Vim keys and previews", "ranger", OpensInAgent),
+		tool("xplr", "Files", "Files: a hackable file explorer", "xplr", OpensInAgent),
+		tool("superfile", "Files", "Files: a file manager with panels", "spf", OpensInAgent),
+		tool("serpl", "Files", "Files: search and replace across a project", "serpl", OpensInAgent),
+		tool("termscp", "Files", "Files: copy over SCP, SFTP, FTP and S3", "termscp", OpensInHome),
+		tool("ncdu", "System", "Disk: see what fills a folder", "ncdu", OpensInAgent),
+		tool("gdu", "System", "Disk: a fast disk usage analyser", "gdu", OpensInAgent),
+		{Id: "dua", Name: "dua", Category: "System", Purpose: "Disk: see and delete what fills a folder", Command: "dua", Args: "i",
+			OpensIn: OpensInAgent, Shows: ShowsCentre, Detected: true},
+		tool("bottom", "System", "System: CPU, memory, network and processes", "btm", OpensInHome),
+		tool("htop", "System", "System: processes and their load", "htop", OpensInHome),
+		tool("glances", "System", "System: everything the machine is doing on one screen", "glances", OpensInHome),
+		tool("zenith", "System", "System: processes with charts of their load", "zenith", OpensInHome),
+		tool("ctop", "Containers", "Containers: live metrics of each container", "ctop", OpensInHome),
+		tool("oxker", "Containers", "Docker: containers, logs and stats", "oxker", OpensInHome),
+		tool("podman-tui", "Containers", "Podman: containers, pods and images", "podman-tui", OpensInHome),
+		tool("lazysql", "Docs and data", "Data: query and browse SQL databases", "lazysql", OpensInAgent),
+		tool("harlequin", "Docs and data", "Data: a SQL IDE for DuckDB, SQLite and more", "harlequin", OpensInAgent),
+		tool("posting", "Docs and data", "HTTP: build and send API requests", "posting", OpensInAgent),
 	}
 }
 

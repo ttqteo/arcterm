@@ -90,6 +90,7 @@ import {
     toolPickerAtom,
     toolsErrorAtom,
     toolsStatusAtom,
+    toolSuggestionsAtom,
 } from "./toolsstore";
 
 function status(id: string, over: Partial<ToolStatus> = {}): ToolStatus {
@@ -453,6 +454,19 @@ describe("loadTools", () => {
         await loadTools();
         expect(globalStore.get(toolsErrorAtom)).toBe("backend down");
         expect(globalStore.get(toolsStatusAtom)?.map((t) => t.id)).toEqual(["lazygit"]);
+    });
+
+    it("keeps a suggestion out of the statuses every picker reads, and an added one in them", async () => {
+        m.toolsStatus.mockResolvedValueOnce({
+            tools: [
+                status("lazygit"),
+                status("ncdu", { detected: true }),
+                status("tig", { detected: true, user: true }),
+            ],
+        });
+        await loadTools();
+        expect(globalStore.get(toolsStatusAtom)?.map((t) => t.id)).toEqual(["lazygit", "tig"]);
+        expect(globalStore.get(toolSuggestionsAtom).map((t) => t.id)).toEqual(["ncdu"]);
     });
 
     it("a read asked for while one is under way runs again when it ends", async () => {

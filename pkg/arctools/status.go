@@ -10,7 +10,8 @@ type ToolStatus struct {
 }
 
 // Status resolves each tool's command (its Needs, when it has one) with lookPath (exec.LookPath in production; a fake in tests). The result keeps
-// the order of tools and is never nil, so the RPC returns [] rather than null.
+// the order of tools and is never nil, so the RPC returns [] rather than null. A Detected tool the user has not added
+// is left out unless it is found: the library suggests only what is on this machine.
 func Status(tools []Tool, lookPath func(string) (string, error)) []ToolStatus {
 	out := make([]ToolStatus, 0, len(tools))
 	for _, t := range tools {
@@ -22,6 +23,9 @@ func Status(tools []Tool, lookPath func(string) (string, error)) []ToolStatus {
 		if p, err := lookPath(name); err == nil {
 			st.Found = true
 			st.Path = p
+		}
+		if t.Detected && !t.User && !st.Found {
+			continue
 		}
 		out = append(out, st)
 	}

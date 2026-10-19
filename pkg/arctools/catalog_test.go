@@ -58,7 +58,7 @@ func TestBuiltinFieldsValid(t *testing.T) {
 }
 
 func TestBuiltinOrder(t *testing.T) {
-	want := []string{"lazygit", "gitui", "yazi", "broot", "btop", "lazydocker", "k9s", "glow", "visidata", "trans"}
+	want := []string{"lazygit", "gitui", "yazi", "broot", "btop", "mole", "lazydocker", "k9s", "glow", "visidata", "trans"}
 	got := Builtin()
 	if len(got) != len(want) {
 		t.Fatalf("got %d built-ins, want %d", len(got), len(want))
@@ -71,6 +71,9 @@ func TestBuiltinOrder(t *testing.T) {
 	for _, tool := range got {
 		if tool.Id == "btop" && tool.OpensIn != "home" {
 			t.Errorf("btop watches the machine, not a project: opensin = %q, want home", tool.OpensIn)
+		}
+		if tool.Id == "mole" && (tool.Command != "mo" || tool.OpensIn != "home" || tool.Install.Windows != "scoop install mole") {
+			t.Errorf("mole runs as mo from home and installs with scoop on Windows: %+v", tool)
 		}
 		if tool.Id == "visidata" && tool.Command != "vd" {
 			t.Errorf("visidata's command is vd, got %q", tool.Command)

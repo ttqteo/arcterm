@@ -29,7 +29,9 @@ import {
     installBlockMeta,
     installCommand,
     installOutcome,
+    isSuggestion,
     openToolRefusal,
+    parseHiddenTools,
     parsePinnedTools,
     toolCommandLine,
     toolCwd,
@@ -46,14 +48,21 @@ const INSTALL_TERMSIZE = { rows: 30, cols: 120 };
 
 // ---- status ----
 
-// every tool with whether its command is on PATH; null until the first read
+// every tool with whether its command is on PATH; null until the first read. A suggestion is not in it (isSuggestion)
 export const toolsStatusAtom = atom<ToolStatus[] | null>(null) as PrimitiveAtom<ToolStatus[] | null>;
+// the detected tools found on this machine that the user has not added: only the library's Found on this machine shows them
+export const toolSuggestionsAtom = atom<ToolStatus[]>([]) as PrimitiveAtom<ToolStatus[]>;
 export const toolsErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
 async function fetchTools(): Promise<void> {
     try {
         const rtn = await RpcApi.ToolsStatusCommand(TabRpcClient, { timeout: READ_TIMEOUT_MS });
-        globalStore.set(toolsStatusAtom, rtn.tools ?? []);
+        const tools = rtn.tools ?? [];
+        globalStore.set(toolSuggestionsAtom, tools.filter(isSuggestion));
+        globalStore.set(
+            toolsStatusAtom,
+            tools.filter((t) => !isSuggestion(t))
+        );
         globalStore.set(toolsErrorAtom, null);
     } catch (e) {
         globalStore.set(toolsErrorAtom, e instanceof Error ? e.message : String(e));
@@ -136,6 +145,37 @@ export const pinnedToolsAtom = atom(
 
 export function setToolPinned(id: string, on: boolean): void {
     globalStore.set(pinnedToolsAtom, withPinned(globalStore.get(pinnedToolsAtom), id, on));
+}
+
+// ---- hidden suggestions ----
+
+const HIDDEN_KEY = "tools.hidden";
+
+function readHidden(): string[] {
+    try {
+        return parseHiddenTools(localStorage.getItem(HIDDEN_KEY));
+    } catch {
+        return [];
+    }
+}
+
+// the suggestions the user hid from Found on this machine (localStorage tools.hidden)
+export const hiddenToolsAtom = atom<string[]>(readHidden()) as PrimitiveAtom<string[]>;
+
+export function hideSuggestion(id: string): void {
+    const next = withPinned(globalStore.get(hiddenToolsAtom), id, true);
+    globalStore.set(hiddenToolsAtom, next);
+    try {
+        localStorage.setItem(HIDDEN_KEY, JSON.stringify(next));
+    } catch {
+        // storage unavailable: hidden for this session
+    }
+}
+
+// Adds a suggestion to the library: a tools.json entry of its id, which the catalog lays over the detected tool, so it
+// keeps its category and opens like any library tool.
+export async function addSuggestion(tool: Pick<ToolStatus, "id" | "command">): Promise<void> {
+    await addUserTool(tool.id, { command: tool.command });
 }
 
 // ---- the picker ----

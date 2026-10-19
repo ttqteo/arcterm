@@ -8,6 +8,7 @@ import {
     formFromTool,
     formKeywords,
     foundLine,
+    foundRows,
     headerSummary,
     installPanel,
     libraryRows,
@@ -141,6 +142,30 @@ describe("headerSummary", () => {
 
     it("counts an overridden built-in with the library, not with yours", () => {
         expect(headerSummary([tool("lazygit", { user: true })])).toBe("1 installed · 1 in the library");
+    });
+
+    it("counts the suggestions found on this machine before the package manager", () => {
+        expect(headerSummary(catalog, "win32", 2)).toBe(
+            "3 installed · 6 in the library · 2 found · installs with winget"
+        );
+        expect(headerSummary(catalog, "win32", 0)).toBe("3 installed · 6 in the library · installs with winget");
+    });
+});
+
+describe("foundRows", () => {
+    const suggestions = [
+        tool("ncdu", { category: "System", detected: true, purpose: "Disk: see what fills a folder" }),
+        tool("tig", { detected: true }),
+        tool("htop", { category: "System", detected: true }),
+    ];
+
+    it("keeps the suggestions in catalog order, minus the hidden ones", () => {
+        expect(foundRows(suggestions, ["tig"]).map((t) => t.id)).toEqual(["ncdu", "htop"]);
+    });
+
+    it("matches the query as the library's search does", () => {
+        expect(foundRows(suggestions, [], "disk").map((t) => t.id)).toEqual(["ncdu"]);
+        expect(foundRows(suggestions, [], " SYSTEM ").map((t) => t.id)).toEqual(["ncdu", "htop"]);
     });
 });
 

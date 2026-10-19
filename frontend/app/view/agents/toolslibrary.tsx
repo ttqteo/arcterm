@@ -22,6 +22,7 @@ import {
     Search,
     Terminal,
     Wrench,
+    X,
     type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -37,6 +38,7 @@ import {
     formFromTool,
     formKeywords,
     foundLine,
+    foundRows,
     headerSummary,
     installPanel,
     libraryRows,
@@ -56,8 +58,11 @@ import {
 } from "./toolslibrarymodel";
 import { toolCommandLine, toolIcon, type ToolIconName } from "./toolsmodel";
 import {
+    addSuggestion,
     addUserTool,
     failedAtom,
+    hiddenToolsAtom,
+    hideSuggestion,
     installingAtom,
     installTool,
     loadTools,
@@ -69,6 +74,7 @@ import {
     showInstall,
     toolsErrorAtom,
     toolsStatusAtom,
+    toolSuggestionsAtom,
     type InstallResult,
     type OpenToolResult,
 } from "./toolsstore";
@@ -124,15 +130,24 @@ function StateDot({ tone }: { tone: StateTone }) {
 
 export function ToolsHeader() {
     const statuses = useAtomValue(toolsStatusAtom);
+    const found = foundRows(useAtomValue(toolSuggestionsAtom), useAtomValue(hiddenToolsAtom)).length;
     if (statuses == null) {
         return null;
     }
-    return <span className="text-[12px] text-ink-mid">{headerSummary(statuses, PLATFORM)}</span>;
+    return <span className="text-[12px] text-ink-mid">{headerSummary(statuses, PLATFORM, found)}</span>;
 }
 
 // ---- left list ----
 
-function ToolList({ groups, selected }: { groups: LibraryGroup[]; selected: string | null }) {
+function ToolList({
+    groups,
+    found,
+    selected,
+}: {
+    groups: LibraryGroup[];
+    found: ToolStatus[];
+    selected: string | null;
+}) {
     const query = useAtomValue(toolsSearchAtom);
     return (
         <aside aria-label="Tools" className="flex w-[300px] flex-none flex-col border-r border-border bg-surface">
@@ -150,8 +165,23 @@ function ToolList({ groups, selected }: { groups: LibraryGroup[]; selected: stri
                 </label>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-2.5">
-                {groups.length === 0 ? (
+                {groups.length === 0 && found.length === 0 ? (
                     <div className="px-2 py-3 text-[12.5px] text-muted">No tool matches.</div>
+                ) : null}
+                {found.length > 0 ? (
+                    <div
+                        role="group"
+                        aria-label="Found on this machine"
+                        data-tools-found
+                        className="flex flex-col gap-px"
+                    >
+                        <div className="px-2 pb-1 pt-2.5 text-[11px] font-semibold text-ink-mid">
+                            Found on this machine
+                        </div>
+                        {found.map((t) => (
+                            <FoundRow key={t.id} tool={t} selected={t.id === selected} />
+                        ))}
+                    </div>
                 ) : null}
                 {groups.map((g) => (
                     <div key={g.category} role="group" aria-label={g.category} className="flex flex-col gap-px">
@@ -201,6 +231,53 @@ function ToolRow({ row, selected }: { row: LibraryRow; selected: boolean }) {
                 {row.word}
             </span>
         </button>
+    );
+}
+
+// A suggestion: the name selects it (its detail shows the command and where it was found), Add puts it in the library,
+// the cross hides it from this list.
+function FoundRow({ tool, selected }: { tool: ToolStatus; selected: boolean }) {
+    return (
+        <div
+            data-tools-row={tool.id}
+            className={cn(
+                "flex items-center gap-1 rounded-sm pr-1",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
+        >
+            <button
+                type="button"
+                aria-current={selected ? "true" : undefined}
+                onClick={() => {
+                    globalStore.set(toolFormAtom, null);
+                    globalStore.set(selectedToolAtom, tool.id);
+                }}
+                className={cn(
+                    "min-w-0 flex-1 cursor-pointer truncate border-0 bg-transparent px-2 py-[7px] text-left text-[13px] outline-none focus-visible:ring-1 focus-visible:ring-accent focus-visible:ring-inset",
+                    selected ? "font-medium text-primary" : "text-secondary"
+                )}
+            >
+                {tool.name}
+            </button>
+            <button
+                type="button"
+                data-tool-suggest-add
+                onClick={() => fireAndForget(() => addSuggestion(tool))}
+                className="flex-none cursor-pointer rounded-[4px] border-0 bg-transparent px-1.5 py-0.5 text-[11.5px] font-semibold text-accent-soft hover:bg-surface-raised hover:text-accent"
+            >
+                Add
+            </button>
+            <button
+                type="button"
+                data-tool-suggest-hide
+                aria-label={`Hide ${tool.name}`}
+                title="Hide"
+                onClick={() => hideSuggestion(tool.id)}
+                className="flex flex-none cursor-pointer items-center rounded-[4px] border-0 bg-transparent p-1 text-muted hover:bg-surface-raised hover:text-primary"
+            >
+                <X size={12} strokeWidth={2} />
+            </button>
+        </div>
     );
 }
 
@@ -260,6 +337,67 @@ function showTerminalTab(model: AgentsViewModel, tabId: string): void {
     globalStore.set(model.focusIdAtom, tabId);
     globalStore.set(model.surfaceAtom, "agent");
     showTerminal();
+}
+
+// A suggestion's detail: what it is and what arcterm would run, before the user adds it.
+function SuggestionDetail({ tool }: { tool: ToolStatus }) {
+    const [notice, setNotice] = useState<string | null>(null);
+    const add = async () => {
+        setNotice(null);
+        try {
+            await addSuggestion(tool);
+        } catch (e) {
+            setNotice(errText(e));
+        }
+    };
+    return (
+        <div data-tools-detail={tool.id} className="flex min-w-0 flex-1 flex-col gap-[22px] overflow-y-auto px-8 py-6">
+            <div className="flex items-start gap-3.5">
+                <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[9px] bg-surface-raised text-ink-mid">
+                    <ToolIcon name={toolIcon(tool)} size={20} />
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <div className="flex items-center gap-2.5">
+                        <span className="truncate text-[18px] font-semibold text-primary">{tool.name}</span>
+                        <span className="flex-none text-[12px] text-muted">Found on this machine</span>
+                    </div>
+                    <div className="text-[13px] leading-[19px] text-secondary">{tool.purpose}</div>
+                    <div className="text-[12.5px] text-muted">
+                        arcterm recognises {tool.name} but does not ship it. Add it to open it from Open a tool.
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    data-tool-suggest-hide
+                    onClick={() => hideSuggestion(tool.id)}
+                    className={BTN_SECONDARY}
+                >
+                    Hide
+                </button>
+                <button type="button" data-tool-suggest-add onClick={() => fireAndForget(add)} className={BTN_PRIMARY}>
+                    Add to the library
+                </button>
+            </div>
+            {notice ? (
+                <div
+                    role="alert"
+                    className="rounded border border-error/30 bg-error/10 px-3 py-2 text-[12.5px] text-error-soft"
+                >
+                    {notice}
+                </div>
+            ) : null}
+            <div className="flex flex-col rounded border border-edge-mid bg-surface">
+                <SettingRow label="Command" sub="What arcterm would run">
+                    <span className="min-w-0 flex-1 truncate rounded-[7px] border border-edge-mid bg-surface-code px-2.5 py-1.5 font-mono text-[12px] text-secondary">
+                        {toolCommandLine(tool)}
+                    </span>
+                    <span title={tool.path} className="max-w-[45%] truncate text-[11.5px] text-muted">
+                        {foundLine(tool)}
+                    </span>
+                </SettingRow>
+            </div>
+        </div>
+    );
 }
 
 function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow }) {
@@ -446,14 +584,14 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
             </div>
             {!isYours && tool.user ? (
                 <div className="-mt-3.5 flex items-center gap-2 text-[11.5px] text-muted">
-                    Changed from the built-in.
+                    {tool.detected ? "Added from Found on this machine." : "Changed from the built-in."}
                     <button
                         type="button"
                         data-tool-reset
                         onClick={() => fireAndForget(reset)}
                         className="cursor-pointer border-0 bg-transparent p-0 text-[11.5px] text-accent-soft hover:text-accent"
                     >
-                        Reset to default
+                        {tool.detected ? "Remove from the library" : "Reset to default"}
                     </button>
                 </div>
             ) : null}
@@ -923,6 +1061,8 @@ function ToolFormPane({ form, statuses }: { form: ToolForm; statuses: ToolStatus
 
 export function ToolsLibrary({ model }: { model: AgentsViewModel }) {
     const statuses = useAtomValue(toolsStatusAtom);
+    const suggestions = useAtomValue(toolSuggestionsAtom);
+    const hidden = useAtomValue(hiddenToolsAtom);
     const error = useAtomValue(toolsErrorAtom);
     const installing = useAtomValue(installingAtom);
     const failed = useAtomValue(failedAtom);
@@ -954,16 +1094,24 @@ export function ToolsLibrary({ model }: { model: AgentsViewModel }) {
         );
     }
     const rows = libraryRows(statuses, installing, failed).flatMap((g) => g.rows);
-    const tool = selectedTool(statuses, selectedId);
+    // a selected suggestion shows its own detail; once added it is in the statuses and the same id selects its row
+    const suggestion = foundRows(suggestions, hidden).find((t) => t.id === selectedId) ?? null;
+    const tool = suggestion ? null : selectedTool(statuses, selectedId);
     const row = rows.find((r) => r.tool.id === tool?.id) ?? null;
     return (
         <div data-tools-library className="flex min-w-0 flex-1 flex-col">
             {banner}
             <div className="flex min-h-0 flex-1">
-                <ToolList groups={libraryRows(statuses, installing, failed, query)} selected={row?.tool.id ?? null} />
+                <ToolList
+                    groups={libraryRows(statuses, installing, failed, query)}
+                    found={foundRows(suggestions, hidden, query)}
+                    selected={suggestion?.id ?? row?.tool.id ?? null}
+                />
                 {form != null ? (
                     // keyed so that Add after Edit, or Edit of another tool, starts its own error and busy state
                     <ToolFormPane key={form.id ?? "new"} form={form} statuses={statuses} />
+                ) : suggestion != null ? (
+                    <SuggestionDetail key={suggestion.id} tool={suggestion} />
                 ) : row != null ? (
                     <ToolDetail key={row.tool.id} model={model} row={row} />
                 ) : (

@@ -4043,6 +4043,7 @@ declare global {
         user?: boolean;
         url?: string;
         dir?: string;
+        detected?: boolean;
         found: boolean;
         path?: string;
     };

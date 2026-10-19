@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Found on this machine: after rebuilding wavesrv (`task build:backend:quickdev:windows`, then restart
+  the dev app) or the next install, open Setup → Tools: **mole** sits under System reading installed (`mo` from
+  `%LOCALAPPDATA%\Programs\mole-cli`), and any of the detected TUIs on PATH (htop, ncdu, tig, btm…) list first under
+  Found on this machine, with "· N found" in the header. Add moves one into its category and into Open a tool; its
+  detail's "Remove from the library" sends it back; the cross hides it for good. `task verify:ui -- tools-found`
+  covers the list, detail and Hide with a fixture; Add and the real detection are unverified.
 - [ ] (arcterm) Image diff: after rebuilding wavesrv (`task build:backend:quickdev:windows`, then restart the dev app)
   or the next install, open Diff → Review on a repo with a changed PNG or JPG: in place of "Binary file — no text to
   show" its section shows Before | After side by side over a checkerboard, each captioned `W×H · size` (the After

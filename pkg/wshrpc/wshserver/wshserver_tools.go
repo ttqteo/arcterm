@@ -14,10 +14,10 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
-// ToolsStatusCommand reports the built-in catalog with the user's tools.json laid over it, and whether each tool's
-// command resolves on this machine's PATH.
+// ToolsStatusCommand reports the built-in catalog and the detected tools with the user's tools.json laid over them, and
+// whether each tool's command resolves on this machine's PATH (a detected tool not added only when it does).
 func (ws *WshServer) ToolsStatusCommand(ctx context.Context) (*wshrpc.CommandToolsStatusRtnData, error) {
-	tools := arctools.Merge(arctools.Builtin(), wconfig.GetWatcher().GetFullConfig().Tools)
+	tools := arctools.Merge(append(arctools.Builtin(), arctools.Detected()...), wconfig.GetWatcher().GetFullConfig().Tools)
 	return &wshrpc.CommandToolsStatusRtnData{Tools: arctools.Status(tools, exec.LookPath)}, nil
 }
 

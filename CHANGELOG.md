@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Setup → Tools suggests the terminal tools it finds on your computer (htop, ncdu, tig, bottom and about 20 more)
+  under **Found on this machine**: **Add** puts one in the library and in Open a tool, the cross hides it. Mole (`mo`),
+  the disk cleaner and app uninstaller, joins the library's System tools.
 - Diff → Review shows a changed image (PNG, JPG, GIF, WebP) as its before and after side by side, with each one's
   pixel size and file size, where it used to say "Binary file — no text to show".
 - Pinned apps: give a tool of yours a **Page** (`http://127.0.0.1:<port>`) and a **Folder** in Setup → Tools, and

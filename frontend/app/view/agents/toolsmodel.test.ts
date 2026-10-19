@@ -7,7 +7,9 @@ import {
     installBlockMeta,
     installCommand,
     installOutcome,
+    isSuggestion,
     openToolRefusal,
+    parseHiddenTools,
     parsePinnedTools,
     pickerOrder,
     toolCommandLine,
@@ -264,6 +266,27 @@ describe("installOutcome", () => {
         expect(installOutcome({ shellprocstatus: "done", shellprocexitcode: 0 })).toBe("ok");
         expect(installOutcome({ shellprocstatus: "done", shellprocexitcode: 1 })).toBe("failed");
         expect(installOutcome({ shellprocstatus: "done", shellprocexitcode: -1 })).toBe("failed");
+    });
+});
+
+describe("isSuggestion", () => {
+    it("is a detected tool the user has not added", () => {
+        expect(isSuggestion({ detected: true })).toBe(true);
+        expect(isSuggestion({ detected: true, user: true })).toBe(false);
+        expect(isSuggestion({ user: true })).toBe(false);
+        expect(isSuggestion({})).toBe(false);
+    });
+});
+
+describe("parseHiddenTools", () => {
+    it("hides none when nothing is stored or it is unreadable", () => {
+        expect(parseHiddenTools(null)).toEqual([]);
+        expect(parseHiddenTools("not json")).toEqual([]);
+        expect(parseHiddenTools('{"a":1}')).toEqual([]);
+    });
+
+    it("keeps the stored ids, minus repeats and non-strings", () => {
+        expect(parseHiddenTools('["htop","htop",3,"tig"]')).toEqual(["htop", "tig"]);
     });
 });
 

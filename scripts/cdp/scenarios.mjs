@@ -41675,6 +41675,78 @@ const toolsLibrary = {
     },
 };
 
+// --- tools-found: Found on this machine, the detected tools (arctools.Detected) found but not added. Which TUIs a
+// machine has is not up to the scenario, so the suggestion is set through the store's own module once the library has
+// read the status; Add writes tools.json and is left to the unit tests and the hand check. Hide stores
+// localStorage tools.hidden, which the teardown clears.
+const TT_FOUND_TOOL = {
+    id: "arc-found",
+    name: "arc-found",
+    category: "System",
+    purpose: "Disk: a fixture suggestion",
+    command: "arc-found",
+    opensin: "agent",
+    shows: "centre",
+    install: {},
+    detected: true,
+    found: true,
+    path: "C:\\fixture\\arc-found.exe",
+};
+const toolsFound = {
+    name: "tools-found",
+    surface: "setup",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const up = await ttOpenLibrary(h);
+        const seeded = await lookEval(h, `
+            const { globalStore } = await mod("app/store/jotaiStore.ts");
+            const { toolSuggestionsAtom, hiddenToolsAtom } = await mod("app/view/agents/toolsstore.ts");
+            globalStore.set(hiddenToolsAtom, []);
+            globalStore.set(toolSuggestionsAtom, [${JSON.stringify(TT_FOUND_TOOL)}]);
+            return until(() => document.querySelector('[data-tools-found] [data-tools-row="arc-found"]') != null, 4000);
+        `);
+        await polishNap(300);
+        const list = await h.ev(`({
+            first: document.querySelector('[data-tools-library] aside [role="group"]')?.getAttribute("aria-label") ?? null,
+        })`);
+        await h.shot("cdp-shots/tools-found-1-list.png");
+        rec(
+            "1. a found suggestion lists first, under Found on this machine",
+            up && seeded && list.first === "Found on this machine",
+            JSON.stringify({ up, seeded, ...list })
+        );
+
+        await ttClick(h, '[data-tools-found] [data-tools-row="arc-found"] button');
+        const detail = await polishWaitFor(h, `!!document.querySelector('[data-tools-detail="arc-found"] [data-tool-suggest-add]')`, 4000);
+        await polishNap(300);
+        const where = await h.ev(`${TT_FLAT}(document.querySelector('[data-tools-detail="arc-found"]'))`);
+        await h.shot("cdp-shots/tools-found-2-detail.png");
+        rec(
+            "2. selecting it shows its command, where it was found, Add to the library and Hide",
+            detail && where.includes("arc-found.exe") && where.includes("Add to the library"),
+            where.slice(0, 300)
+        );
+
+        await ttClick(h, '[data-tools-found] [data-tools-row="arc-found"] [data-tool-suggest-hide]');
+        const gone = await polishWaitFor(h, `!document.querySelector('[data-tools-row="arc-found"]')`, 3000);
+        rec("3. Hide takes it off the list", gone, JSON.stringify({ gone }));
+        return steps;
+    },
+    async teardown(h) {
+        await lookEval(h, `
+            const { globalStore } = await mod("app/store/jotaiStore.ts");
+            const { toolSuggestionsAtom, hiddenToolsAtom } = await mod("app/view/agents/toolsstore.ts");
+            globalStore.set(toolSuggestionsAtom, []);
+            globalStore.set(hiddenToolsAtom, []);
+            try { localStorage.removeItem("tools.hidden"); } catch {}
+        `).catch(() => {});
+    },
+};
+
 // --- tools-add: adding a tool of your own (board LibraryAdd). The form, a name and a command, Add tool, and the tool
 // under Yours with its detail; Edit then reads the command's PATH line, which only a saved tool has.
 const toolsAdd = {
@@ -49521,6 +49593,7 @@ export const SCENARIOS = [
     toolsSplit,
     toolsDockStrip,
     toolsLibrary,
+    toolsFound,
     toolsAdd,
     toolsApp,
     toolsPicker,
