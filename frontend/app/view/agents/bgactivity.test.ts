@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { backgroundActivity, shownState } from "./bgactivity";
+import { backgroundActivity, launchedServers, shownState } from "./bgactivity";
 import type { BackgroundTask } from "./transcriptprojection";
 
 describe("backgroundActivity", () => {
@@ -48,6 +48,29 @@ describe("backgroundActivity", () => {
         expect(backgroundActivity([dev, monitor], servers)).toBe("waiting");
         // before the server listens (or the first poll) it reads as work
         expect(backgroundActivity([dev], null)).toBe("working");
+    });
+});
+
+describe("launchedServers", () => {
+    const dev: BackgroundTask = {
+        toolUseId: "d",
+        label: "",
+        command: "pnpm dev --host 2>&1",
+        status: "running",
+        outputFile: "/tmp/d.output",
+    };
+    const mine = { pid: 1, launchercmdline: "sh /c/nvm4w/nodejs/pnpm dev --host" };
+    const other = { pid: 2, launchercmdline: "node vite --port 5174" };
+
+    it("lists the servers its running tasks launched", () => {
+        expect(launchedServers([dev], [mine, other])).toEqual([mine]);
+        expect(backgroundActivity([dev], [mine, other])).toBeNull();
+    });
+
+    it("is empty with no running task or no reading", () => {
+        expect(launchedServers([{ ...dev, status: "completed" }], [mine])).toEqual([]);
+        expect(launchedServers(undefined, [mine])).toEqual([]);
+        expect(launchedServers([dev], null)).toEqual([]);
     });
 });
 

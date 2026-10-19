@@ -390,7 +390,7 @@ const BG_DOT: Record<BgTaskLabel, string> = {
 
 // A background command: what it is for, the command itself under it, and its status. With an output file it opens
 // that file in the panel's File tab with its Live toggle, following the output while the task runs. A running one
-// has a Stop beside it (two clicks), which ends its process and what it started.
+// has a Stop at the end of its card (two clicks), which ends its process and what it started.
 function BackgroundTaskRow({
     task,
     live,
@@ -416,7 +416,12 @@ function BackgroundTaskRow({
             <span className="self-start whitespace-nowrap text-[10.5px] text-muted">{label}</span>
         </>
     );
-    const cls = "flex w-full items-center gap-[10px] rounded-[8px] bg-surface-raised px-[11px] py-[8px] text-left";
+    // A stoppable row draws the card on its wrapper instead, so the Stop sits inside it
+    const card = "rounded-[8px] bg-surface-raised";
+    const cls = cn(
+        "flex w-full items-center gap-[10px] px-[11px] py-[8px] text-left",
+        onStop == null ? card : "rounded-l-[8px] pr-[6px]"
+    );
     const row =
         onOpen == null ? (
             <div title={task.command} data-bg-task={task.toolUseId} className={cls}>
@@ -428,7 +433,7 @@ function BackgroundTaskRow({
                 data-bg-task={task.toolUseId}
                 title={`${task.command ?? task.label}\n\nOpen its output`}
                 onClick={onOpen}
-                className={cn(cls, "cursor-pointer hover:bg-surface-hover")}
+                className={cn(cls, "cursor-pointer", onStop == null && "hover:bg-surface-hover")}
             >
                 {body}
             </button>
@@ -437,7 +442,10 @@ function BackgroundTaskRow({
         return row;
     }
     return (
-        <div data-bg-task-stoppable className="flex items-center gap-[6px]">
+        <div
+            data-bg-task-stoppable
+            className={cn("flex items-center pr-[9px]", card, onOpen != null && "hover:bg-surface-hover")}
+        >
             <div className="min-w-0 flex-1">{row}</div>
             <ServerStopButton confirmLabel="Stop" onStop={onStop} />
         </div>

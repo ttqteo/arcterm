@@ -94,6 +94,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Fixed
 
 - A context menu takes the arrow keys and Enter as soon as it opens, and the Brief's list no longer moves under it.
+- An agent that left a dev server running in the background no longer reads as working once its turn ends, even
+  when it started the server with `2>&1` or another redirection: its dot goes idle and a green server glyph beside it
+  (with the ports, in the agent's header) says the server is still up. In the rail's Servers, such a server now reads
+  `this agent` with its Log, instead of `already running`.
 - Open on a plan to review whose agent has closed opens the initiative in Jarvis's Brief, on the proposed chunks
   with Accept all and Drop all, instead of its Activity sheet, which had no way to decide them.
 - A stalled orchestrator task whose worker starts working again goes back to running, and a plan reviewer that sits

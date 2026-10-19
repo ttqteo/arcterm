@@ -77,10 +77,14 @@ func Select(root string, agentPid int32, procs map[int32]Proc, listeners []Liste
 		}
 		if byAgent {
 			s.LauncherCmdline = launcher
-		} else if o, _ := OwnerOf(pid, procs, alive, holders); o.Kind == OwnerTerminal {
-			// only a terminal gives the rail something to show: an agent's own rows are byAgent, and an app or a
-			// detached chain has no output arcterm holds
+		} else if o, top := OwnerOf(pid, procs, alive, holders); o.Kind == OwnerTerminal {
+			// a terminal gives the rail its pane to show: an agent's own rows are byAgent, and an app has no output
+			// arcterm holds
 			s.Owner = &o
+		} else if o.Kind == OwnerDetached {
+			// a chain broken under the agent (Claude's wrapper, or a Git Bash process between it and pnpm, exited):
+			// its highest live ancestor is what the rail matches to the background task that started it
+			s.LauncherCmdline = top
 		}
 		out = append(out, s)
 	}

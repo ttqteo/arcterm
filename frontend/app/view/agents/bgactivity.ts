@@ -3,7 +3,8 @@
 //
 // What an agent whose turn ended shows while background work it started still runs: a command at work reads as
 // working, one that only watches (a Monitor, a loop that sleeps between checks) as waiting, and a dev server it left
-// listening as nothing, since the agent is done and the server just runs. Only what is drawn changes: agent.state stays
+// listening as nothing, since the agent is done and the server just runs (a green server glyph, statusdot.tsx
+// ServerMark, says it is still up). Only what is drawn changes: agent.state stays
 // the turn's state, which unread, Close and sleep read.
 
 import type { AgentState } from "./agentsviewmodel";
@@ -21,6 +22,18 @@ const AGENT_WAIT = /\bwsh\s+agents\s+wait\b/;
 export function onlyWatches(task: BackgroundTask): boolean {
     const command = task.command ?? "";
     return task.monitor === true || WAIT_LOOP.test(command) || AGENT_WAIT.test(command);
+}
+
+/** Pure: the servers in `servers` (the Servers poll's listening processes) one of the agent's running background
+ *  tasks launched: the dev servers it left listening. */
+export function launchedServers<S extends { launchercmdline?: string }>(
+    tasks: BackgroundTask[] | undefined,
+    servers: S[] | null
+): S[] {
+    const running = runningBackgroundTasks(tasks);
+    return running.length === 0
+        ? []
+        : (servers ?? []).filter((s) => matchLauncherTask(s.launchercmdline, running) != null);
 }
 
 /** Pure: "working" when a running background task is at work, "waiting" when every one only watches, null when none

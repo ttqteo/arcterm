@@ -53,7 +53,7 @@ import { contextLevel, contextTokens } from "./agentrailmodel";
 import type { AgentsViewModel } from "./agents";
 import { askingLabel, askSentKey, formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
 import { setAgentView, type AgentView } from "./agentview";
-import { backgroundActivity, shownState, type ShownState } from "./bgactivity";
+import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
@@ -77,7 +77,7 @@ import { runQueueAtom } from "./runqueuestore";
 import { RuntimeMark } from "./runtimemark";
 import { runtimeMeta } from "./runtimemeta";
 import { splitMenuState } from "./splitmenu";
-import { StatusDot } from "./statusdot";
+import { ServerMark, StatusDot } from "./statusdot";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
 import { openToolPicker } from "./toolsstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
@@ -357,13 +357,11 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const canLink =
         agent.blockId != null && agent.kind !== "terminal" && !ended && !stage && lineage?.kind !== "worker";
     // its turn ended but background work it started still runs: working, or waiting when that work only watches
-    const shown = shownState(
-        agent.state,
-        backgroundActivity(
-            useAtomValue(backgroundTasksByIdAtom)[agent.id],
-            useAtomValue(machineServersReadingAtom).servers
-        )
-    );
+    const bgTasks = useAtomValue(backgroundTasksByIdAtom)[agent.id];
+    const machineServers = useAtomValue(machineServersReadingAtom).servers;
+    const shown = shownState(agent.state, backgroundActivity(bgTasks, machineServers));
+    // the dev servers it left listening, which do not count as work: a green server glyph and their ports
+    const servers = ended ? [] : launchedServers(bgTasks, machineServers);
     const liveText = agent.state === "asking" ? askingLabel(agent) : STATE_LABEL[shown];
     const stateText = ended ? (landed ? "landed" : "done") : liveText;
     const stateColor = ended ? "var(--color-success)" : STATE_COLOR[shown];
@@ -570,6 +568,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 {stateText}
                             </span>
                         )}
+                        <span className="flex-none self-center">
+                            <ServerMark servers={servers} ports />
+                        </span>
                     </>
                 )}
                 {agent.model ? <span className="flex-none text-[11px] text-muted">{agent.model}</span> : null}

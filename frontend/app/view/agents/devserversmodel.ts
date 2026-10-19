@@ -157,6 +157,14 @@ function normalizeCommand(cmd: string): string {
         .trim();
 }
 
+// shell redirections the agent's command carries and a launcher's argv never shows: `2>&1`, `> out.log`,
+// `&>/dev/null`, `< /dev/null`, and a trailing `&`
+const REDIRECT = /\s*(?:&>>?|\d*>>?&?|\d*<)\s*[^\s;&|]+/g;
+
+function stripRedirects(cmd: string): string {
+    return cmd.replace(REDIRECT, "").replace(/\s*&\s*$/, "");
+}
+
 // The running background task whose command a launcher command line holds: the task that started that process, which
 // has an output file to read as its log. Structural on the task so it needs no import from transcriptprojection.ts.
 export function matchLauncherTask<T extends { command?: string; status: string; outputFile?: string }>(
@@ -171,7 +179,7 @@ export function matchLauncherTask<T extends { command?: string; status: string; 
         if (t.status !== "running" || !t.outputFile || !t.command) {
             return false;
         }
-        const cmd = normalizeCommand(t.command);
+        const cmd = normalizeCommand(stripRedirects(t.command));
         return cmd !== "" && launcher.includes(cmd);
     });
 }
@@ -199,15 +207,18 @@ export function matchEndedTask<T extends { status: string; outputFile?: string; 
 }
 
 // The background task that launched this server: the running task whose command its launcher command line holds,
-// or for a server whose launcher exited, the task that ended as it came up (matchEndedTask). A server a terminal holds
-// has none.
+// also for a chain broken under the agent (wavesrv gives such a row its highest live ancestor as launcher), or for a
+// server whose launcher exited, the task that ended as it came up (matchEndedTask). A server a terminal holds has none.
 export function matchLogTask<
     T extends { command?: string; status: string; outputFile?: string; startMs?: number; endMs?: number },
 >(row: DevServerRow, tasks: T[]): T | undefined {
     if (row.byagent) {
         return matchLauncherTask(row.launchercmdline, tasks);
     }
-    return row.owner?.kind === "terminal" ? undefined : matchEndedTask(row.createms, tasks);
+    if (row.owner?.kind === "terminal") {
+        return undefined;
+    }
+    return matchLauncherTask(row.launchercmdline, tasks) ?? matchEndedTask(row.createms, tasks);
 }
 
 // how often the rail asks for listening servers: fast while the rail is on screen, slow enough to keep the strip's

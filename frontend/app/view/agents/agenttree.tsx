@@ -73,7 +73,7 @@ import type { AgentsViewModel } from "./agents";
 import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
 import { setAgentView } from "./agentview";
 import { waitMap } from "./agentwaits";
-import { backgroundActivity, shownState, type ShownState } from "./bgactivity";
+import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { laterFirst, laterSince, laterTitle, type LaterMarks } from "./latermodel";
@@ -191,7 +191,7 @@ import {
 } from "./session-models/agentstatusstore";
 import { subagentExpanded, visibleSubagents, type SubagentState } from "./session-models/sessionviewmodel";
 import { DigitHint } from "./digithint";
-import { StatusDot } from "./statusdot";
+import { ServerMark, StatusDot } from "./statusdot";
 import { backgroundTasksByIdAtom, focusSubagentAtom, subagentsByIdAtom } from "./subagentsstore";
 import { useSubagentTracking } from "./subagenttracking";
 import { rowFieldsAtom } from "./rowfieldsstore";
@@ -816,7 +816,10 @@ function ParentRow({
     // watch (bgactivity.ts); Servers and the rail's Background tasks list them
     const bgTasks = useAtomValue(backgroundTasksByIdAtom)[agent.id];
     const background = runningBackgroundTasks(bgTasks);
-    const shown = shownState(agent.state, backgroundActivity(bgTasks, useAtomValue(machineServersReadingAtom).servers));
+    const machineServers = useAtomValue(machineServersReadingAtom).servers;
+    const shown = shownState(agent.state, backgroundActivity(bgTasks, machineServers));
+    // the dev servers it left listening: not work, so a green server glyph beside the state instead of a working dot
+    const servers = launchedServers(bgTasks, machineServers);
     const done = !agent.sleeping && doneSuggestion(agent, unreadCount, lineageRuns, background.length, queue);
     // where the runs and queued plans it started stand: one chip at the head of its meta line
     const originRuns = useOriginRuns(agent, lineageRuns);
@@ -952,6 +955,7 @@ function ParentRow({
                             <Check size={12} strokeWidth={2.4} aria-hidden />
                         </button>
                     ) : null}
+                    <ServerMark servers={servers} />
                     {fields.tokens && tokens ? (
                         <span className={cn(TOKENS_COL, dim && "text-ink-faint")}>{formatTokens(tokens)}</span>
                     ) : null}

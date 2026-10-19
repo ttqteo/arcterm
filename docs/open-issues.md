@@ -34,6 +34,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   arc:design, arc:initiatives, arc:notes, arc:doc-review, arc:ideas, arc:learn (none twice), ~/.claude/skills no longer
   holds cockpit-runs and the rest, and Setup → Skills shows them in sync; a rule approved through `wsh learn` for
   cockpit-runs now shows under runs. (1cd40ef02)
+- [ ] (arcterm) Background task Stop inside its card: with a running background task, open the Agent rail's Background
+  tasks: the red Stop square sits inside the running row's card, right of "running", and hovering the card lights the
+  whole card, Stop included; a stopped row looks as before (`agentdetailsrail.tsx` `BackgroundTaskRow`).
+- [ ] (arcterm) Dev server glyph: in the installed build, have an agent start `pnpm dev --host 2>&1` (an Astro site)
+  in the background and let its turn end: its sidebar dot goes grey (idle, not working) with a green server glyph
+  beside it, and the header reads `idle` then the glyph and `:4321`; the rail's Servers row says `this agent` and
+  has a Log (not `already running`).
 - [ ] (arcterm) Pinned app: in Setup → Tools add a tool with Command `npm run dash`, Page `http://127.0.0.1:8386`,
   Folder `~/Workspaces/dev/portfolio-journal` (Hóng), then Open it: a waiting card naming 127.0.0.1:8386, then the
   dashboard in the centre under Page | Log; Log shows the npm output, Stop closes the terminal and the server with it.

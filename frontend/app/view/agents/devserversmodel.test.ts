@@ -232,9 +232,18 @@ describe("matchLogTask", () => {
         expect(matchLogTask(row({ createms: 3000, owner }), [ended])).toBeUndefined();
     });
 
-    it("never matches a server the agent did not start", () => {
-        const already = row({ byagent: false, launchercmdline: 'bash -c "pnpm dev --port 4321"' });
-        expect(matchLogTask(already, [task()])).toBeUndefined();
+    it("never matches a running task to a server with no launcher or one a terminal holds", () => {
+        expect(matchLogTask(row({ byagent: false }), [task()])).toBeUndefined();
+        const owner = { kind: "terminal" as const, tabid: "tab", blockid: "blk", name: "api" };
+        const held = row({ byagent: false, launchercmdline: 'bash -c "pnpm dev --port 4321"', owner });
+        expect(matchLogTask(held, [task()])).toBeUndefined();
+    });
+
+    it("matches a chain broken under the agent through its highest live ancestor", () => {
+        const detached = row({ byagent: false, launchercmdline: "sh /c/nvm4w/nodejs/pnpm dev --port 4321" });
+        const t = task({ command: "pnpm dev --port 4321 2>&1" });
+        expect(matchLogTask(detached, [t])).toBe(t);
+        expect(ownerLabel(detached, matchLogTask(detached, [t]))).toBe("this agent");
     });
 
     it("never matches a row with no launcher command line", () => {
@@ -251,6 +260,23 @@ describe("matchLogTask", () => {
         expect(matchLogTask(win, [t])).toBe(t);
         const quoted = task({ command: "cd 'D:\\w\\site' && npm run dev" });
         expect(matchLogTask(win, [quoted])).toBe(quoted);
+    });
+
+    it("matches a command whose redirections the launcher does not show", () => {
+        // the Astro chain past a dead MSYS process: the launcher is the highest live ancestor, `sh pnpm dev --host`
+        const sh = row({
+            byagent: true,
+            launchercmdline: '"C:\\Program Files\\Git\\usr\\bin\\sh.exe" /c/nvm4w/nodejs/pnpm dev --host',
+        });
+        for (const command of [
+            "pnpm dev --host 2>&1",
+            "pnpm dev --host > dev.log 2>&1",
+            "pnpm dev --host &>/dev/null &",
+            "pnpm dev --host < /dev/null",
+        ]) {
+            const t = task({ command });
+            expect(matchLogTask(sh, [t])).toBe(t);
+        }
     });
 
     it("keeps the caller's task type", () => {

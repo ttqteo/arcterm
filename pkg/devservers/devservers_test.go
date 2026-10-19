@@ -213,6 +213,26 @@ func TestSelectOwnerOnlyForATerminal(t *testing.T) {
 	}
 }
 
+// the 2026-10-19 :4321 chain: a Git Bash process between claude and pnpm exited, sh -> pnpm -> cmd -> astro lives on
+func TestSelectGivesADetachedChainItsHighestLiveAncestor(t *testing.T) {
+	sh := `"C:\Program Files\Git\usr\bin\sh.exe" /c/nvm4w/nodejs/pnpm dev --host`
+	procs := procMap(
+		Proc{Pid: 1, Ppid: 0, Name: "explorer.exe"},
+		Proc{Pid: 10, Ppid: 1, Name: "claude.exe"},
+		Proc{Pid: 40, Ppid: 29, Name: "sh.exe", Cmdline: sh, CreateMs: 800},
+		Proc{Pid: 45, Ppid: 40, Name: "node.exe", Cmdline: "node pnpm.js dev --host", CreateMs: 810},
+		Proc{Pid: 50, Ppid: 45, Name: "node.exe", Cmdline: "node astro.mjs dev --host", Cwd: `D:\w\site`, CreateMs: 900},
+		Proc{Pid: 60, Ppid: 1, Name: "node.exe", Cmdline: "node vite", Cwd: `D:\w\site`, CreateMs: 900},
+	)
+	got := Select(`D:\w\site`, 10, procs, []Listener{{Pid: 50, Port: 4321}, {Pid: 60, Port: 5173}}, nil)
+	if len(got) != 2 || got[0].ByAgent || got[0].LauncherCmdline != sh || got[0].Owner != nil {
+		t.Fatalf("got %+v, want the astro row not by-agent, with the sh launcher and no owner", got)
+	}
+	if got[1].LauncherCmdline != "" {
+		t.Fatalf("an app's row has no launcher: %+v", got[1])
+	}
+}
+
 func TestCheckStop(t *testing.T) {
 	if err := CheckStop(123, 123); err != nil {
 		t.Fatalf("equal create times: %v", err)
