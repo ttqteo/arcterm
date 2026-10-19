@@ -53,6 +53,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- The Brief's Runs kind and Initiatives project filters sit on a line of chips under their head, each with its
+  count; past six projects they fold into one menu in the head.
 - Claude Code lists arcterm's own skills as `arc:runs`, `arc:cockpit`, `arc:design`, `arc:initiatives`, `arc:notes`,
   `arc:doc-review`, `arc:ideas` and `arc:learn`, from the arc mod, with the rules you approved through `wsh learn`;
   other harnesses keep the plain names (`runs`, `cockpit`, …), and the old names (`cockpit-runs`, `cockpit-ui`,
@@ -89,6 +91,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A context menu takes the arrow keys and Enter as soon as it opens, and the Brief's list no longer moves under it.
 - Open on a plan to review whose agent has closed opens the initiative in Jarvis's Brief, on the proposed chunks
   with Accept all and Drop all, instead of its Activity sheet, which had no way to decide them.
 - A stalled orchestrator task whose worker starts working again goes back to running, and a plan reviewer that sits

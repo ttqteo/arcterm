@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Kael sync: on the Brief, Runs and Initiatives show their filter as a line of chips with counts under
+  the head; with more than six projects the Initiatives filter is one "project" menu in the head; right-click a row
+  and the arrows move the menu's highlight, Escape closes it without leaving the Brief. (6a225bc59)
+- [ ] (arcterm) Kael sync: after an agent launch, a new Claude session lists the skills as arc:runs, arc:cockpit,
+  arc:design, arc:initiatives, arc:notes, arc:doc-review, arc:ideas, arc:learn (none twice), ~/.claude/skills no longer
+  holds cockpit-runs and the rest, and Setup → Skills shows them in sync; a rule approved through `wsh learn` for
+  cockpit-runs now shows under runs. (1cd40ef02)
 - [ ] (arcterm) Pinned app: in Setup → Tools add a tool with Command `npm run dash`, Page `http://127.0.0.1:8386`,
   Folder `~/Workspaces/dev/portfolio-journal` (Hóng), then Open it: a waiting card naming 127.0.0.1:8386, then the
   dashboard in the centre under Page | Log; Log shows the npm output, Stop closes the terminal and the server with it.
