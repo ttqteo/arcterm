@@ -5,14 +5,15 @@
 // a failed read as one muted line above them. Polled by devserversstore.ts; labels and log matching are
 // devserversmodel.ts. A row opens a port in the browser and, for a server this agent started with a background
 // command, that command's output, or, for one running in an arcterm terminal, that terminal with its search box
-// open (terminallog.ts); it also copies and stops the process.
+// open (terminallog.ts); it also pins it as an app (Setup → Tools, filled from it), copies and stops the process.
 
 import { getApi } from "@/app/store/global";
 import { fireAndForget } from "@/util/util";
-import { Copy, FileText, Square } from "lucide-react";
+import { Copy, FileText, Pin, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { openFileInPanel } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
+import { pinServerAsApp } from "./appsuggeststore";
 import {
     copyText,
     matchLogTask,
@@ -102,6 +103,7 @@ function DevServerItem({
     onOpenLog,
     termLog,
     onOpenTermLog,
+    onPin,
 }: {
     row: DevServerRow;
     now: number;
@@ -109,6 +111,7 @@ function DevServerItem({
     onOpenLog: (task: BackgroundTask, title: string) => void;
     termLog: TerminalLog | null;
     onOpenTermLog: (log: TerminalLog) => void;
+    onPin: (row: DevServerRow) => void;
 }) {
     const [confirming, setConfirming] = useState(false);
     return (
@@ -168,6 +171,16 @@ function DevServerItem({
                         ) : null}
                         <button
                             type="button"
+                            data-dev-server-pin
+                            title="Pin as app"
+                            aria-label="Pin as app"
+                            onClick={() => onPin(row)}
+                            className={ACTION_BTN}
+                        >
+                            <Pin size={12} aria-hidden />
+                        </button>
+                        <button
+                            type="button"
                             data-dev-server-copy
                             title="Copy PID and command"
                             aria-label="Copy PID and command"
@@ -223,6 +236,7 @@ export function ServersSection({
                     onOpenLog={openLog}
                     termLog={terminalLog(row)}
                     onOpenTermLog={(log) => openTerminalLog(model, log)}
+                    onPin={(r) => fireAndForget(() => pinServerAsApp(model, r))}
                 />
             ))}
         </div>

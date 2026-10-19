@@ -41882,6 +41882,95 @@ const toolsApp = {
             return null;
         })()`);
         rec("5. the app's row is in the project its folder is in", inProject === TT_PROJECT, JSON.stringify({ inProject }));
+
+        // the add form reads a folder's package.json: a dashboard whose port is only in its server's code, beside a job
+        const dashDir = join(ctx.root, "dash");
+        mkdirSync(join(dashDir, "live"), { recursive: true });
+        writeFileSync(
+            join(dashDir, "package.json"),
+            JSON.stringify({ scripts: { gold: "node gold.mjs", dash: "node live/server.mjs", lint: "eslint ." } })
+        );
+        writeFileSync(join(dashDir, "gold.mjs"), `console.log("gold");\n`);
+        writeFileSync(
+            join(dashDir, "live", "server.mjs"),
+            `const PORT = Number(process.env.PORT) || 8386;\nrequire("node:http").createServer(() => {}).listen(PORT);\n`
+        );
+        await ttOpenLibrary(h);
+        await ttClick(h, "[data-tool-add]");
+        await polishWaitFor(h, `!!document.querySelector("[data-tool-form]")`, 4000);
+        await h.ev(setFieldExpr(`document.querySelector("[data-tool-dir]")`, dashDir));
+        const chips = await polishWaitFor(h, `!!document.querySelector('[data-tool-suggest="dash"]')`, 8000);
+        await polishNap(300);
+        const offered = await h.ev(`({
+            shown: [...document.querySelectorAll("[data-tool-suggestions] [data-tool-suggest]")].map((b) => ${TT_FLAT}(b)),
+            others: ${TT_FLAT}(document.querySelector("[data-tool-suggest-others]")),
+        })`);
+        await h.shot("cdp-shots/tools-app-5-suggest.png");
+        rec(
+            "6. picking a folder suggests the script that runs a server, with the port read from its code, and folds the rest",
+            chips &&
+                JSON.stringify(offered.shown) === JSON.stringify(["npm run dash· 8386"]) &&
+                offered.others === "Other scripts (2)",
+            JSON.stringify({ chips, ...offered })
+        );
+
+        await ttClick(h, '[data-tool-suggest="dash"]');
+        await polishNap(300);
+        const filled = await h.ev(`({
+            name: document.querySelector("[data-tool-name]")?.value,
+            command: document.querySelector("[data-tool-command]")?.value,
+            url: document.querySelector("[data-tool-url]")?.value,
+            opensIn: !!document.querySelector('[data-tool-form] [aria-label="Opens in"]'),
+            shows: !!document.querySelector('[data-tool-form] [aria-label="Shows"]'),
+        })`);
+        await h.shot("cdp-shots/tools-app-6-filled.png");
+        rec(
+            "7. picking it fills the name, the command and the page, and drops Opens in and Shows",
+            filled.name === "dash" &&
+                filled.command === "npm run dash" &&
+                filled.url === "http://127.0.0.1:8386" &&
+                !filled.opensIn &&
+                !filled.shows,
+            JSON.stringify(filled)
+        );
+        await ttClick(h, "[data-tool-add-cancel]");
+
+        // the app's own server, still running in its terminal, pinned from the footer's Servers popover: its folder has
+        // no package.json, so the command is the process's own line
+        await ttClick(h, "[data-machine-servers-chip]");
+        // a server in a temp folder is in no repo: it sits in the folded Other group
+        const listed = await polishWaitFor(
+            h,
+            `(() => {
+                const other = document.querySelector('[data-machine-servers-other][aria-expanded="false"]');
+                if (other) other.click();
+                return !!document.querySelector('[data-machine-server-port="${ctx.port}"]');
+            })()`,
+            15000
+        );
+        await h.ev(`document.querySelector('[data-machine-server-port="${ctx.port}"]')?.closest("[data-machine-server]")?.querySelector("[data-machine-server-pin]")?.click()`);
+        const pinned = await polishWaitFor(h, `!!document.querySelector("[data-tool-form]")`, 8000);
+        await polishNap(400);
+        const fromServer = await h.ev(`({
+            dir: document.querySelector("[data-tool-dir]")?.value,
+            name: document.querySelector("[data-tool-name]")?.value,
+            command: document.querySelector("[data-tool-command]")?.value,
+            url: document.querySelector("[data-tool-url]")?.value,
+            popover: !!document.querySelector("[data-machine-servers-panel]"),
+        })`);
+        await h.shot("cdp-shots/tools-app-7-pinned.png");
+        rec(
+            "8. Pin as app on a running server opens the add form filled from it: its folder, its port and its command",
+            listed &&
+                pinned &&
+                String(fromServer.dir).replace(/[\\/]+$/, "").toLowerCase() === join(ctx.root, "app").toLowerCase() &&
+                fromServer.name === "app" &&
+                fromServer.command === `node app.js ${ctx.port}` &&
+                fromServer.url === ctx.url &&
+                !fromServer.popover,
+            JSON.stringify({ listed, pinned, ...fromServer })
+        );
+        await ttClick(h, "[data-tool-add-cancel]");
         return steps;
     },
     async teardown(h, ctx) {

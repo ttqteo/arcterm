@@ -27,6 +27,8 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
+import { appUrlFor, folderName, type ScriptSuggestion } from "./appsuggest";
+import { suggestForFolder } from "./appsuggeststore";
 import { Toggle } from "./settingsui";
 import { installEndedAtom, selectedToolAtom, toolFormAtom, toolsSearchAtom, watchInstallEnds } from "./setupstore";
 import {
@@ -550,6 +552,103 @@ function FormRow({ children }: { children: ReactNode }) {
     return <div className="flex flex-col gap-1.5 border-b border-border px-4 py-3.5 last:border-b-0">{children}</div>;
 }
 
+const SUGGEST_DEBOUNCE_MS = 400;
+
+const SUGGEST_CHIP =
+    "flex cursor-pointer items-center gap-1.5 rounded-[7px] border px-2.5 py-1 font-mono text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
+// The folder's scripts under its field: the servers as chips with their port, the rest folded under Other scripts.
+// Nothing for a folder with no package.json, which is any folder that is not a Node project.
+function FolderSuggestions({
+    dir,
+    loading,
+    found,
+    command,
+    onPick,
+}: {
+    dir: string;
+    loading: boolean;
+    found: ScriptSuggestion[];
+    command: string;
+    onPick: (s: ScriptSuggestion) => void;
+}) {
+    const [others, setOthers] = useState(false);
+    if (dir.trim() === "") {
+        return (
+            <div className="pl-[176px] text-[11.5px] text-muted">
+                Optional. Where the command runs, in place of Opens in.
+            </div>
+        );
+    }
+    if (loading && found.length === 0) {
+        return <div className="pl-[176px] text-[11.5px] text-muted">Reading the folder…</div>;
+    }
+    if (found.length === 0) {
+        return (
+            <div className="pl-[176px] text-[11.5px] text-muted">No package.json here, so no scripts to suggest.</div>
+        );
+    }
+    const servers = found.filter((s) => s.server);
+    const rest = found.filter((s) => !s.server);
+    const chip = (s: ScriptSuggestion) => {
+        const on = command.trim() === s.command;
+        return (
+            <button
+                key={s.script}
+                type="button"
+                data-tool-suggest={s.script}
+                aria-pressed={on}
+                title={
+                    s.port == null
+                        ? s.command
+                        : s.port.sure
+                          ? `${s.command}, on port ${s.port.port}`
+                          : `${s.command}, on port ${s.port.port}: a guess, its tool's default`
+                }
+                onClick={() => onPick(s)}
+                className={cn(
+                    SUGGEST_CHIP,
+                    on
+                        ? "border-accent bg-accentbg text-accent"
+                        : "border-edge-mid bg-surface-raised text-secondary hover:border-edge-strong hover:text-primary"
+                )}
+            >
+                {s.command}
+                {s.port != null ? (
+                    <span className="font-sans text-[11px] text-muted">
+                        · {s.port.port}
+                        {s.port.sure ? "" : "?"}
+                    </span>
+                ) : null}
+            </button>
+        );
+    };
+    return (
+        <div data-tool-suggestions className="flex flex-col gap-1.5 pl-[176px]">
+            <div className="text-[11.5px] text-muted">
+                {servers.length > 0
+                    ? "Runs a server: pick one to fill the command and the page."
+                    : "No script here looks like a server. Pick one to fill the command."}
+            </div>
+            <div className="flex flex-wrap gap-1.5">{(servers.length > 0 ? servers : rest).map(chip)}</div>
+            {servers.length > 0 && rest.length > 0 ? (
+                <>
+                    <button
+                        type="button"
+                        data-tool-suggest-others
+                        aria-expanded={others}
+                        onClick={() => setOthers(!others)}
+                        className="w-fit cursor-pointer border-0 bg-transparent p-0 text-[11.5px] text-accent-soft hover:text-accent"
+                    >
+                        {others ? "Hide other scripts" : `Other scripts (${rest.length})`}
+                    </button>
+                    {others ? <div className="flex flex-wrap gap-1.5">{rest.map(chip)}</div> : null}
+                </>
+            ) : null}
+        </div>
+    );
+}
+
 function ToolFormPane({ form, statuses }: { form: ToolForm; statuses: ToolStatus[] }) {
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
@@ -557,6 +656,43 @@ function ToolFormPane({ form, statuses }: { form: ToolForm; statuses: ToolStatus
     const check = commandCheck(form.command, existing);
     const set = (patch: Partial<ToolForm>) => globalStore.set(toolFormAtom, { ...form, ...patch });
     const close = () => globalStore.set(toolFormAtom, null);
+    const projectPaths = Object.entries(useAtomValue(atoms.fullConfigAtom)?.projects ?? {})
+        .filter(([, p]) => !!p?.path)
+        .map(([name, p]) => ({ name, path: p.path! }));
+    // the folder's scripts, read a moment after its path stops changing; a read overtaken by a newer path is dropped
+    const [suggest, setSuggest] = useState<{ dir: string; loading: boolean; list: ScriptSuggestion[] }>({
+        dir: "",
+        loading: false,
+        list: [],
+    });
+    useEffect(() => {
+        const dir = form.dir.trim();
+        if (dir === "") {
+            setSuggest({ dir, loading: false, list: [] });
+            return;
+        }
+        let live = true;
+        setSuggest((cur) => ({ ...cur, dir, loading: true }));
+        const timer = setTimeout(() => {
+            void suggestForFolder(dir).then((list) => {
+                if (live) {
+                    setSuggest({ dir, loading: false, list });
+                }
+            });
+        }, SUGGEST_DEBOUNCE_MS);
+        return () => {
+            live = false;
+            clearTimeout(timer);
+        };
+    }, [form.dir]);
+    // A picked script fills the command and, for a server whose port was read or guessed, the page; a new app with no
+    // name yet takes its folder's. What was typed into the page is kept for a script with no port.
+    const pickSuggestion = (s: ScriptSuggestion) =>
+        set({
+            command: s.command,
+            url: s.port != null ? appUrlFor(s.port.port) : form.url,
+            name: form.name.trim() || folderName(form.dir),
+        });
 
     const save = async () => {
         const invalid = validateNewTool(form);
@@ -605,10 +741,42 @@ function ToolFormPane({ form, statuses }: { form: ToolForm; statuses: ToolStatus
                     {editing ? `Edit ${existing?.name ?? form.name}` : "Add your own tool"}
                 </div>
                 <div className="text-[13px] text-muted">
-                    Any program that runs in a terminal. arcterm keeps it in your settings and lists it under Yours.
+                    Any program that runs in a terminal. arcterm keeps it in your settings and lists it under Yours. For
+                    a project's web app, pick its folder first: arcterm suggests what to run and on which port.
                 </div>
             </div>
             <div className="flex flex-col rounded border border-edge-mid bg-surface">
+                <FormRow>
+                    <div className="flex items-center gap-4">
+                        <label htmlFor="tool-dir" className="w-[160px] flex-none text-[13px] text-primary">
+                            Folder
+                        </label>
+                        <input
+                            id="tool-dir"
+                            data-tool-dir
+                            value={form.dir}
+                            spellCheck={false}
+                            placeholder="~/code/my-app"
+                            list="tool-dir-projects"
+                            onChange={(e) => set({ dir: e.target.value })}
+                            className={INPUT_MONO}
+                        />
+                    </div>
+                    <datalist id="tool-dir-projects">
+                        {projectPaths.map((p) => (
+                            <option key={p.name} value={p.path}>
+                                {p.name}
+                            </option>
+                        ))}
+                    </datalist>
+                    <FolderSuggestions
+                        dir={form.dir}
+                        loading={suggest.loading}
+                        found={suggest.list}
+                        command={form.command}
+                        onPick={pickSuggestion}
+                    />
+                </FormRow>
                 <FormRow>
                     <div className="flex items-center gap-4">
                         <label htmlFor="tool-name" className="w-[160px] flex-none text-[13px] text-primary">
@@ -650,26 +818,51 @@ function ToolFormPane({ form, statuses }: { form: ToolForm; statuses: ToolStatus
                 </FormRow>
                 <FormRow>
                     <div className="flex items-center gap-4">
-                        <span className="w-[160px] flex-none text-[13px] text-primary">Opens in</span>
-                        <Options
-                            label="Opens in"
-                            options={OPENS_IN_OPTIONS}
-                            value={form.opensin}
-                            onChange={(id) => set({ opensin: id })}
+                        <label htmlFor="tool-url" className="w-[160px] flex-none text-[13px] text-primary">
+                            Page
+                        </label>
+                        <input
+                            id="tool-url"
+                            data-tool-url
+                            value={form.url}
+                            spellCheck={false}
+                            placeholder="http://127.0.0.1:3000"
+                            onChange={(e) => set({ url: e.target.value })}
+                            className={INPUT_MONO}
                         />
                     </div>
-                </FormRow>
-                <FormRow>
-                    <div className="flex items-center gap-4">
-                        <span className="w-[160px] flex-none text-[13px] text-primary">Shows</span>
-                        <Options
-                            label="Shows"
-                            options={SHOWS_OPTIONS}
-                            value={form.shows}
-                            onChange={(id) => set({ shows: id })}
-                        />
+                    <div className="pl-[176px] text-[11.5px] text-muted">
+                        Optional, for a local web app: arcterm runs the command, waits for this page and shows it in
+                        place of the terminal. Only http://127.0.0.1 pages.
                     </div>
                 </FormRow>
+                {/* a folder of its own is where it runs, and a page always takes the centre */}
+                {form.dir.trim() ? null : (
+                    <FormRow>
+                        <div className="flex items-center gap-4">
+                            <span className="w-[160px] flex-none text-[13px] text-primary">Opens in</span>
+                            <Options
+                                label="Opens in"
+                                options={OPENS_IN_OPTIONS}
+                                value={form.opensin}
+                                onChange={(id) => set({ opensin: id })}
+                            />
+                        </div>
+                    </FormRow>
+                )}
+                {form.url.trim() ? null : (
+                    <FormRow>
+                        <div className="flex items-center gap-4">
+                            <span className="w-[160px] flex-none text-[13px] text-primary">Shows</span>
+                            <Options
+                                label="Shows"
+                                options={SHOWS_OPTIONS}
+                                value={form.shows}
+                                onChange={(id) => set({ shows: id })}
+                            />
+                        </div>
+                    </FormRow>
+                )}
                 <FormRow>
                     <div className="flex items-center gap-4">
                         <label htmlFor="tool-install" className="w-[160px] flex-none text-[13px] text-primary">
@@ -686,45 +879,6 @@ function ToolFormPane({ form, statuses }: { form: ToolForm; statuses: ToolStatus
                     </div>
                     <div className="pl-[176px] text-[11.5px] text-muted">
                         Optional. Without it, a tool that is missing says so instead of offering Install.
-                    </div>
-                </FormRow>
-                <FormRow>
-                    <div className="flex items-center gap-4">
-                        <label htmlFor="tool-url" className="w-[160px] flex-none text-[13px] text-primary">
-                            Page
-                        </label>
-                        <input
-                            id="tool-url"
-                            data-tool-url
-                            value={form.url}
-                            spellCheck={false}
-                            placeholder="http://127.0.0.1:8386"
-                            onChange={(e) => set({ url: e.target.value })}
-                            className={INPUT_MONO}
-                        />
-                    </div>
-                    <div className="pl-[176px] text-[11.5px] text-muted">
-                        Optional, for a local web app: arcterm runs the command, waits for this page and shows it in
-                        place of the terminal. Only http://127.0.0.1 pages.
-                    </div>
-                </FormRow>
-                <FormRow>
-                    <div className="flex items-center gap-4">
-                        <label htmlFor="tool-dir" className="w-[160px] flex-none text-[13px] text-primary">
-                            Folder
-                        </label>
-                        <input
-                            id="tool-dir"
-                            data-tool-dir
-                            value={form.dir}
-                            spellCheck={false}
-                            placeholder="~/code/my-app"
-                            onChange={(e) => set({ dir: e.target.value })}
-                            className={INPUT_MONO}
-                        />
-                    </div>
-                    <div className="pl-[176px] text-[11.5px] text-muted">
-                        Optional. Where the command runs, in place of Opens in.
                     </div>
                 </FormRow>
             </div>

@@ -16,10 +16,11 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronRight, Copy, FileText } from "lucide-react";
+import { ChevronRight, Copy, FileText, Pin } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { openFileInPanel } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
+import { pinServerAsApp } from "./appsuggeststore";
 import { copyText, portsLabel, serverUrl, uptimeLabel, type TerminalLog } from "./devserversmodel";
 import { buildMachineServers, type MachineBadge, type MachineRow } from "./machineservers";
 import {
@@ -102,7 +103,7 @@ function Badge({ badge, model }: { badge: MachineBadge; model: AgentsViewModel }
 }
 
 // One listening process, laid out like the rail's: ports (each opens in the browser), what it runs and for how long;
-// then its PID, what holds it, and Log / Copy / Stop while the row is hovered or focused. Stop asks twice.
+// then its PID, what holds it, and Log / Pin as app / Copy / Stop while the row is hovered or focused. Stop asks twice.
 function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewModel; now: number }) {
     const [confirming, setConfirming] = useState(false);
     const s = row.server;
@@ -175,6 +176,19 @@ function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewMode
                                 <FileText size={12} aria-hidden />
                             </button>
                         ) : null}
+                        <button
+                            type="button"
+                            data-machine-server-pin
+                            title="Pin as app"
+                            aria-label="Pin as app"
+                            onClick={() => {
+                                fireAndForget(() => pinServerAsApp(model, s));
+                                close();
+                            }}
+                            className={ACTION_BTN}
+                        >
+                            <Pin size={12} aria-hidden />
+                        </button>
                         <button
                             type="button"
                             data-machine-server-copy

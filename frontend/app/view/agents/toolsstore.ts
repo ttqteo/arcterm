@@ -13,13 +13,13 @@ import * as WOS from "@/app/store/wos";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
 import { PLATFORM } from "@/util/platformutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { appCwd, appProjectName, isAppTool } from "./appmodel";
 import { adoptApp, probeApp, setAppView, trackApp, whileLaunching } from "./appstore";
+import { homeDir } from "./appsuggeststore";
 import { HOME_NAME, HOME_PICK } from "./launcher";
 import { closeLauncher, type LauncherModel } from "./launcherstore";
 import { dockedTerminalAtom, railCwdsAtom } from "./railstore";
@@ -232,15 +232,6 @@ export async function openTool(
         globalStore.set(dockedTerminalAtom, tabId);
     }
     return { ok: true, tabId };
-}
-
-// the home folder a ~ in an app's folder names, asked of the server; "" when it cannot say, which files the app in Home
-async function homeDir(): Promise<string> {
-    try {
-        return homeFromInfo(await RpcApi.FileInfoCommand(TabRpcClient, { info: { path: "~" } }));
-    } catch {
-        return "";
-    }
 }
 
 // A pinned app (appmodel.ts) always takes the centre, as its page shows there. One already open is shown again. A page
