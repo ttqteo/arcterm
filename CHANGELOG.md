@@ -106,6 +106,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- In the New dialog, a click anywhere in the Command box puts the caret in it, not only a click on the text.
 - Settings → Storage fills each card as soon as its scan is done, instead of reading Scanning… for minutes until
   build output and the package caches have been measured.
 - A context menu takes the arrow keys and Enter as soon as it opens, and the Brief's list no longer moves under it.
