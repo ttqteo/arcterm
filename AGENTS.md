@@ -36,7 +36,9 @@ The build is orchestrated by [Task](https://taskfile.dev) (`Taskfile.yml`), a `m
 Other useful commands:
 
 - **Single frontend test:** `npx vitest run frontend/app/view/agents/projectname.test.ts`, or filter by name: `npx vitest run -t "handles backslash paths"`.
-- **Go tests:** one test is `go test ./pkg/x -run '^TestName$'`. For a whole package, list your changed paths in a file and run `ARC_VERIFY_CHANGED=<that file> node scripts/verify.mjs ./pkg/x ./pkg/y` (`git diff --name-only main > <file>`): it tests only the packages those paths can break and deals a large package's tests across 4 processes. `pkg/orchestrate` is ~760 tests and ~4,800 git launches: 4 to 7 min as plain `go test`, under 2 min this way. Keep go's default 10-minute timeout: a run that reaches it holds a hung test, and the timeout's goroutine dump names it.
+- **Go tests:** one test is `go test ./pkg/x -run '^TestName$'`; on Windows prefix it with
+  `CGO_ENABLED=1 CC="zig cc -target x86_64-windows-gnu"` (Bash), or every test that opens the sqlite store panics with
+  cgo off (`goTestEnv` in `scripts/verify.mjs` sets the same). For a whole package, list your changed paths in a file and run `ARC_VERIFY_CHANGED=<that file> node scripts/verify.mjs ./pkg/x ./pkg/y` (`git diff --name-only main > <file>`): it tests only the packages those paths can break and deals a large package's tests across 4 processes. `pkg/orchestrate` is ~760 tests and ~4,800 git launches: 4 to 7 min as plain `go test`, under 2 min this way. Keep go's default 10-minute timeout: a run that reaches it holds a hung test, and the timeout's goroutine dump names it.
 - **Rust tests:** `cargo test --manifest-path src-tauri/Cargo.toml`.
 - **Lint / format:** flat ESLint config (`eslint.config.js`) + Prettier (`prettier.config.cjs`), but **no Task/npm wrapper** — run `npx eslint` and `npx prettier --check` directly, **on paths**: `npx eslint .` also walks the worktree copies under `.worktrees/` and `.claude/worktrees/`.
 - **HEAD is not formatter-clean** (`gofmt -l pkg cmd` lists ~50 files; prettier fails in places too). Check only the files you touched; never `--write` the tree. Never run prettier on `scripts/*.mjs` — `.editorconfig` omits `.mjs`, so prettier reindents those hand-formatted 4-space files to 2.
@@ -56,6 +58,10 @@ Other useful commands:
   `public/logos/arcterm.png` and blurs the pixel-art mark at taskbar sizes. Tauri takes the ICO's first
   frame as the window icon, so the host replaces it with the exe's resource icons
   (`use_resource_window_icons` in `src-tauri/src/main.rs`).
+- **Run builds and long scripts through Bash, not PowerShell 5.1.** PowerShell turns a native command's stderr into
+  errors, so a build that logs to stderr reads as failed and stops early, and it strips the quotes from inline JSON
+  arguments. Write files with the Write tool, not a Git Bash heredoc or `cat >`, and edit scripts with Edit, not
+  `sed -i`.
 - **A new registered `waveobj` type needs a SQL migration** in `db/migrations-wstore/NNNNNN.{up,down}.sql`, or it fails at runtime with "no such table".
 - **Stop the dev app by PID, never by image name.** The dev app and the user's packaged arcterm share the
   image names `wave-tauri.exe` and `wavesrv.x64.exe`, so `taskkill /IM wave-tauri.exe` also kills the
@@ -126,6 +132,11 @@ There is no jsdom/render-test harness for the cockpit — verify rendered UI by 
 - **Before deleting a file, grep every import of it**, including `import type` and re-exports: a type-only import still makes it live.
 - **"Housekeeping" or "cleanup" means removing code and files**, not only updating docs.
 - **Monitoring an orchestrator run means observe and log only.** Do not intervene or draft interventions unless asked.
+- **An answer the person gives you for a run or another agent goes to it at once** (`wsh agents send`, or the run's
+  ask), and you confirm it arrived. A Canvas gallery run sat waiting ~25 min on an answer that was never relayed.
+- **Before you tell a lead or another agent about a bug, check the claim in the source.** Read what a field means
+  where it is set: `clockReduced:false` and `clockOff:false` are normal states, and a wrong diagnosis sent a lead
+  after one.
 - **Rewriting `main`'s history (`git filter-branch`) strands every other branch on the old hashes.** Clean up merged
   worktrees and branches first (`task worktree:cleanup`), or rewrite them in the same pass (`-- --branches`). Otherwise
   a merged branch reads as unmerged, `git branch -d` refuses it, and its worktree stays: `feat/graphite-rail` sat
@@ -152,7 +163,10 @@ before working in an area you don't already know.
   their labels: `files` renders as "Diff"; the order is
   `SURFACE_ORDER` in `frontend/app/view/agents/agents.tsx`. Past conversations are not a surface: Conversation History and an
   ended session's transcript are centre modes of Agent (`centerModeAtom`, `view/agents/agentcenter.ts`; open them with
-  `showHistory` / `showSession`, and `showTerminal` whenever a route chooses an agent).
+  `showHistory` / `showSession`, and `showTerminal` whenever a route chooses an agent). The Office (floors, rooms, the
+  notice board) is a view of the Cockpit surface (`cockpitoffice.tsx`), unrelated to Jarvis. The nav badges are
+  disjoint (`navrail.tsx`): Cockpit counts the agents that need you, Jarvis the rest that waits on you (gates, runs
+  to confirm or land, escalations), Radar the projects with untriaged findings, Agent the agents with an unread turn.
 
 Load-bearing rules:
 
@@ -217,7 +231,7 @@ Load-bearing rules:
 - **A decision to re-measure on a date** ("re-measure ~2026-10-20") also goes into an initiative chunk with that due
   day (`wsh effort chunk add <effort> "Re-measure: <what>" --due <date>`, a note saying what decides it), so it comes
   back to the person in Needs you on the day instead of waiting for someone to reread the doc.
-- **`CHANGELOG.md` (repo root):** a change a user would notice adds one line under `Added`, `Changed` or `Fixed` in its top section, in the same commit, written for the user rather than copied from the commit subject. Internals (tests, specs, plans, build scripts) stay out. The top section stays `Unreleased` until its build, when the bump replaces that word with the build date; if the top section already has a date, open a new `## Unreleased` above it. The app shows these lines as What's new; a line about something the user can open ends with `<!-- try: <global binding id> -->` for its Try it button, and a new feature worth opening the app to try with `<!-- big -->`, which makes it one of its release's (at most 5) cards (the file's header says how).
+- **`CHANGELOG.md` (repo root):** a change a user would notice adds one line under `Added`, `Changed` or `Fixed` in its top section, in the same commit, written for the user rather than copied from the commit subject. Internals (tests, specs, plans, build scripts) stay out. The top section stays `Unreleased` until its build, when the bump replaces that word with the build date; if the top section already has a date, open a new `## Unreleased` above it. The app shows these lines as What's new; a line about something the user can open ends with `<!-- try: <global binding id> -->` for its Try it button, and a new feature worth opening the app to try with `<!-- big -->`, which makes it one of its release's (at most 5) cards (the file's header says how). A merge conflict in it keeps both sides' lines.
 - Agent-cockpit integration notes (hooks, ask protocol, usage reporting): `docs/agents/`.
 - **A finished plan offers the engine first.** superpowers' `writing-plans` hands off with only Subagent-driven and
   Inline; here the choices are, in this order: **Arc engine** (`wsh runs start --plan <file>` on the route
