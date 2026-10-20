@@ -32,7 +32,7 @@ type Tool struct {
 	Url       string  `json:"url,omitempty"`       // a pinned app's page (AppURL): opening the tool shows it once the command serves it
 	Dir       string  `json:"dir,omitempty"`       // the folder the tool runs in, in place of OpensIn; ~ is home
 	Port      string  `json:"port,omitempty"`      // PortAuto: arcterm picks the port of a service whose page has no fixed url
-	Autostart bool    `json:"autostart,omitempty"` // a service starts with arcterm (true unless tools.json says false)
+	Autostart bool    `json:"autostart,omitempty"` // Keep running: a service starts with arcterm and never sleeps (false unless tools.json says true)
 	Detected  bool    `json:"detected,omitempty"`  // from Detected(): suggested once its command is found, a library tool once added
 }
 
@@ -247,8 +247,8 @@ func override(base Tool, u wconfig.ToolKeywords) Tool {
 	}
 	if u.Autostart != nil {
 		base.Autostart = *u.Autostart
-	} else if IsService(base) {
-		base.Autostart = true
+	} else {
+		base.Autostart = false
 	}
 	return base
 }

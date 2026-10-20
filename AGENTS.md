@@ -202,7 +202,8 @@ Load-bearing rules:
   state and the open / install actions `toolsstore.ts`, the views `toolslibrary.tsx` (Setup → Tools), `toolpicker.tsx`
   and the New dialog's Tool row. A tool with a page (a localhost url, or `port: "auto"`; `arctools.IsService`) is a
   **service** instead: wavesrv's `pkg/services` holds it as one `cmd`-controller block (`tool:service`) in a tab of its
-  own, starts it, restarts it after a crash and starts it again with arcterm; the cockpit reads its state through
+  own, starts it when it shows, restarts it after a crash and stops it ten minutes after it leaves the screen, unless it
+  is set to Keep running; the cockpit reads its state through
   `view/agents/servicesstore.ts` (the five service commands and the `services:changed` event), and words its tree row,
   page header and app-bar chip from the pure `servicesmodel.ts`.
 - **Opening an item on another surface goes through the one router**, `frontend/app/view/jarvis/openref.ts`

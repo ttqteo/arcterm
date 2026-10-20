@@ -86,7 +86,7 @@ describe("a service as the app pane shows it", () => {
     });
 
     it("fails every other state, which shows the log", () => {
-        for (const state of ["crashed", "porttaken", "nopage", "retrying", "stopped"]) {
+        for (const state of ["crashed", "porttaken", "nopage", "retrying", "stopped", "sleeping"]) {
             const a = serviceAppState(svc(state, { url: undefined, startedms: undefined }), "page", 0);
             expect(a.phase).toBe("failed");
             expect(a.owned).toBe(true);

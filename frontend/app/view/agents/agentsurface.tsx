@@ -70,6 +70,8 @@ import { rosterSeededAtom } from "./liveagents";
 import { agentFocusFallback } from "./modalfocusfallback";
 import { NO_PANES, nextPaneMounts } from "./panemounts";
 import { RunPane } from "./runpane";
+import { shownServices } from "./serviceseen";
+import { reportServicesSeen, serviceByTabAtom } from "./servicesstore";
 import { SessionPane } from "./sessionpane";
 import {
     dockedTerminalAtom,
@@ -302,6 +304,26 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const surface = useAtomValue(model.surfaceAtom);
     // the sidebar's ended sessions: scanned after first paint on arriving here and when an agent exits, never at boot
     useSessionsScan(surface === "agent", agents);
+    // The held services on screen (serviceseen.ts), reported whole to wavesrv, which puts a service to sleep ten minutes
+    // after it leaves the screen and starts it when it comes back. This surface is always mounted, so it reports on
+    // mount too (an empty set included, so a reloaded page does not leave the old one's set standing).
+    const serviceByTab = useAtomValue(serviceByTabAtom);
+    const seenIds = shownServices(
+        {
+            surface,
+            centerHidden: stackHidden,
+            appTab: appMode && agent != null ? agent.id : null,
+            cells: cells.map((cell) => cell.id),
+            docked: docked?.id ?? null,
+            dockFolded,
+            dockMax,
+        },
+        serviceByTab
+    );
+    const seenKey = seenIds.join(",");
+    useEffect(() => {
+        reportServicesSeen(seenKey === "" ? [] : seenKey.split(","));
+    }, [seenKey]);
     const askId = agent?.ask?.askId;
     useEffect(() => {
         const opened = globalStore.get(autoOpenedAskIdsAtom);

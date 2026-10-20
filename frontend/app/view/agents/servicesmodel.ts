@@ -17,12 +17,15 @@ export type ServiceRowWords = {
 };
 
 const STOPPABLE = new Set(["starting", "running", "retrying", "nopage"]);
-const STARTABLE = new Set(["stopped", "crashed", "porttaken", "elsewhere"]);
+const STARTABLE = new Set(["stopped", "crashed", "porttaken", "elsewhere", "sleeping"]);
 const RESTARTABLE = new Set(["starting", "running", "retrying", "nopage", "crashed"]);
 
 export const canStop = (s: ServiceStatus): boolean => STOPPABLE.has(s.state);
-// elsewhere is startable: Start probes the page again, and starts the service once it no longer answers
+// elsewhere is startable: Start probes the page again, and starts the service once it no longer answers. Sleeping is
+// startable for the page header and the menu; its tree row and popover row show no Start (showing the pane starts it).
 export const canStart = (s: ServiceStatus): boolean => STARTABLE.has(s.state);
+// The popover's hover Start: every startable row except a sleeping one, which wakes when its row is opened.
+export const canStartFromPopover = (s: ServiceStatus): boolean => canStart(s) && s.state !== "sleeping";
 export const canRestart = (s: ServiceStatus): boolean => RESTARTABLE.has(s.state);
 
 function retryIn(s: ServiceStatus, nowMs: number): string {
@@ -49,6 +52,8 @@ export function serviceRowWords(s: ServiceStatus, nowMs: number): ServiceRowWord
             return { words: heldBy(s), tone: "warning", dot: "solid" };
         case "nopage":
             return { words: "running, no page after 30s", tone: "warning", dot: "solid" };
+        case "sleeping":
+            return { words: "sleeping", tone: "muted", dot: "hollow" };
         default:
             return { words: "stopped", tone: "muted", dot: "hollow", action: "start" };
     }
@@ -83,6 +88,8 @@ export function serviceHeaderLine(s: ServiceStatus, nowMs: number): string {
             return heldBy(s);
         case "nopage":
             return "Running, no page after 30s";
+        case "sleeping":
+            return "Sleeping · starts when shown";
         default:
             return "Stopped";
     }
@@ -125,18 +132,18 @@ function orderGroup(s: ServiceStatus): number {
     if (isWarning(s)) {
         return 1;
     }
-    return s.state === "stopped" ? 3 : 2;
+    return s.state === "stopped" || s.state === "sleeping" ? 3 : 2;
 }
 
-/** The popover's order: those that need the person first (crashed, then amber), then up, then stopped; by name inside
- * each. Returns a new list. */
+/** The popover's order: those that need the person first (crashed, then amber), then up, then stopped and sleeping; by
+ * name inside each. Returns a new list. */
 export function popoverOrder(list: ServiceStatus[]): ServiceStatus[] {
     return [...list].sort((a, b) => orderGroup(a) - orderGroup(b) || a.name.localeCompare(b.name));
 }
 
-/** The tools.json entry with "Start with arcterm" set: off writes `autostart: false`, on drops the key (on is the
- * default). Every other key is kept as it is. */
+/** The tools.json entry with "Keep running" set: on writes `autostart: true`, off drops the key (off is the default).
+ * Every other key is kept as it is. */
 export function withAutostart(entry: ToolKeywords, on: boolean): ToolKeywords {
     const { autostart: _, ...rest } = entry;
-    return on ? rest : { ...rest, autostart: false };
+    return on ? { ...rest, autostart: true } : rest;
 }

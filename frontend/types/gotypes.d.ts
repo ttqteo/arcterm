@@ -1943,6 +1943,11 @@ declare global {
         id: string;
     };
 
+    // wshrpc.CommandServiceSeenData
+    type CommandServiceSeenData = {
+        ids: string[];
+    };
+
     // wshrpc.CommandSetChannelProfileData
     type CommandSetChannelProfileData = {
         channelid: string;

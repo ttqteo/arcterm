@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
     canRestart,
     canStart,
+    canStartFromPopover,
     canStop,
     popoverOrder,
     serviceHeaderLine,
@@ -30,6 +31,12 @@ function svc(state: string, extra: Partial<ServiceStatus> = {}): ServiceStatus {
 }
 
 describe("serviceRowWords", () => {
+    it("sleeping: a hollow muted dot and no action", () => {
+        const w = serviceRowWords(svc("sleeping"), NOW);
+        expect(w).toEqual({ words: "sleeping", tone: "muted", dot: "hollow" });
+        expect(w).not.toHaveProperty("action");
+    });
+
     it("stopped: a hollow muted dot and Start", () => {
         expect(serviceRowWords(svc("stopped"), NOW)).toEqual({
             words: "stopped",
@@ -145,6 +152,10 @@ describe("serviceHeaderLine", () => {
     it("stopped", () => {
         expect(serviceHeaderLine(svc("stopped"), NOW)).toBe("Stopped");
     });
+
+    it("sleeping", () => {
+        expect(serviceHeaderLine(svc("sleeping"), NOW)).toBe("Sleeping · starts when shown");
+    });
 });
 
 describe("upFor", () => {
@@ -202,6 +213,13 @@ describe("servicesChip", () => {
         expect(chip.tone).toBe("muted");
     });
 
+    it("counts a sleeping service in neither the running count nor the tone", () => {
+        const chip = servicesChip([svc("running", { id: "a" }), svc("running", { id: "b" }), svc("sleeping")]);
+        expect(chip.label).toBe("2");
+        expect(chip.tone).toBe("muted");
+        expect(chip.title).toContain("2 running");
+    });
+
     it("gives a title that sums the states", () => {
         const chip = servicesChip([svc("running"), svc("stopped"), svc("crashed")]);
         expect(chip.title).toContain("1 running");
@@ -225,6 +243,16 @@ describe("popoverOrder", () => {
         expect(popoverOrder(list).map((s) => s.id)).toEqual(["c", "t", "p", "n", "e", "g", "r1", "r2", "s"]);
     });
 
+    it("puts a sleeping service with the stopped ones, by name", () => {
+        const list = [
+            svc("sleeping", { id: "z", name: "zeta" }),
+            svc("stopped", { id: "m", name: "mid" }),
+            svc("sleeping", { id: "a", name: "alpha" }),
+            svc("running", { id: "r", name: "run" }),
+        ];
+        expect(popoverOrder(list).map((s) => s.id)).toEqual(["r", "a", "m", "z"]);
+    });
+
     it("does not change the list it is given", () => {
         const list = [svc("stopped", { id: "s" }), svc("crashed", { id: "c" })];
         popoverOrder(list);
@@ -233,14 +261,30 @@ describe("popoverOrder", () => {
 });
 
 describe("what a state offers", () => {
-    const states = ["stopped", "starting", "running", "elsewhere", "retrying", "crashed", "porttaken", "nopage"];
+    const states = [
+        "stopped",
+        "starting",
+        "running",
+        "elsewhere",
+        "retrying",
+        "crashed",
+        "porttaken",
+        "nopage",
+        "sleeping",
+    ];
 
     it("canStop: running, starting, retrying, nopage", () => {
         expect(states.filter((st) => canStop(svc(st)))).toEqual(["starting", "running", "retrying", "nopage"]);
     });
 
     it("canStart: stopped, crashed, porttaken, elsewhere (Start probes again)", () => {
-        expect(states.filter((st) => canStart(svc(st)))).toEqual(["stopped", "elsewhere", "crashed", "porttaken"]);
+        expect(states.filter((st) => canStart(svc(st)))).toEqual([
+            "stopped",
+            "elsewhere",
+            "crashed",
+            "porttaken",
+            "sleeping",
+        ]);
     });
 
     it("canRestart: running, starting, retrying, nopage, crashed", () => {
@@ -250,6 +294,22 @@ describe("what a state offers", () => {
             "retrying",
             "crashed",
             "nopage",
+        ]);
+    });
+
+    it("sleeping offers Start only (a shown pane starts it); no stop, no restart", () => {
+        const s = svc("sleeping");
+        expect(canStart(s)).toBe(true);
+        expect(canStop(s)).toBe(false);
+        expect(canRestart(s)).toBe(false);
+    });
+
+    it("the popover's hover Start: stopped, crashed, porttaken, elsewhere; none for sleeping", () => {
+        expect(states.filter((st) => canStartFromPopover(svc(st)))).toEqual([
+            "stopped",
+            "elsewhere",
+            "crashed",
+            "porttaken",
         ]);
     });
 
@@ -264,18 +324,18 @@ describe("what a state offers", () => {
 describe("withAutostart", () => {
     const entry: ToolKeywords = { command: "npm", args: "run dev", url: "http://127.0.0.1:8386", dir: "~/proj" };
 
-    it("off writes autostart false and keeps every other key", () => {
-        expect(withAutostart(entry, false)).toEqual({ ...entry, autostart: false });
+    it("on writes autostart true and keeps every other key", () => {
+        expect(withAutostart(entry, true)).toEqual({ ...entry, autostart: true });
     });
 
-    it("on drops the key and keeps every other key", () => {
-        expect(withAutostart({ ...entry, autostart: false }, true)).toEqual(entry);
-        expect(withAutostart(entry, true)).toEqual(entry);
+    it("off drops the key and keeps every other key", () => {
+        expect(withAutostart({ ...entry, autostart: true }, false)).toEqual(entry);
+        expect(withAutostart(entry, false)).toEqual(entry);
     });
 
     it("does not change the entry it is given", () => {
-        const given = { ...entry, autostart: false };
-        withAutostart(given, true);
-        expect(given.autostart).toBe(false);
+        const given = { ...entry, autostart: true };
+        withAutostart(given, false);
+        expect(given.autostart).toBe(true);
     });
 });

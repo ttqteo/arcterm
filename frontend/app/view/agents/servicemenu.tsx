@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // A held service's row menu in the Agent tree (spec 2026-10-20-held-services-design.md): the moves its state allows, the
-// browser, "Start with arcterm", and its entry in Setup → Tools. Start, Stop and Restart wait for wavesrv's
+// browser, "Keep running", and its entry in Setup → Tools. Start, Stop and Restart wait for wavesrv's
 // `services:changed` event to show the result; nothing here writes the row.
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
@@ -45,7 +45,7 @@ export function serviceMenuItems(model: AgentsViewModel, s: ServiceStatus): Cont
               ]
             : []),
         {
-            label: "Start with arcterm",
+            label: "Keep running",
             type: "checkbox",
             checked: s.autostart,
             click: () => fireAndForget(() => setServiceAutostart(s.id, !s.autostart)),

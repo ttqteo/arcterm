@@ -54,3 +54,30 @@ func TestServiceCommandUnknownId(t *testing.T) {
 		t.Fatalf("Status = %#v, want an empty non-nil list", data)
 	}
 }
+
+func TestServiceSeenCommand(t *testing.T) {
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	if err := ws.ServiceSeenCommand(ctx, wshrpc.CommandServiceSeenData{Ids: []string{"nope"}}); err == nil || !strings.Contains(err.Error(), `services are not running yet`) {
+		t.Fatalf("Seen before Init: err = %v, want services are not running yet", err)
+	}
+
+	prev := services.Default
+	services.Default = services.New(services.Deps{State: memState{}})
+	defer func() { services.Default = prev }()
+
+	if err := ws.ServiceSeenCommand(ctx, wshrpc.CommandServiceSeenData{Ids: []string{"nope"}}); err != nil {
+		t.Fatalf("Seen of an unknown id: err = %v, want nil", err)
+	}
+	if err := ws.ServiceSeenCommand(ctx, wshrpc.CommandServiceSeenData{}); err != nil {
+		t.Fatalf("Seen of an empty set: err = %v, want nil", err)
+	}
+	data, err := ws.ServicesStatusCommand(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data == nil || data.Services == nil || len(data.Services) != 0 {
+		t.Fatalf("Status = %#v, want an empty non-nil list", data)
+	}
+}

@@ -13,6 +13,8 @@ type ServicesCommands interface {
 	ServiceStartCommand(ctx context.Context, data CommandServiceData) error
 	ServiceStopCommand(ctx context.Context, data CommandServiceData) error
 	ServiceRestartCommand(ctx context.Context, data CommandServiceData) error
+	// ServiceSeenCommand reports the whole set of services on screen; each report replaces the last.
+	ServiceSeenCommand(ctx context.Context, data CommandServiceSeenData) error
 }
 
 // ServiceStatus is one service as the cockpit shows it. It lives here, not in pkg/services, because wshrpc may not
@@ -41,4 +43,8 @@ type ServicesData struct {
 
 type CommandServiceData struct {
 	Id string `json:"id"`
+}
+
+type CommandServiceSeenData struct {
+	Ids []string `json:"ids"`
 }

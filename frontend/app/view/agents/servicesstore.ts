@@ -44,6 +44,7 @@ export function ensureServicesFeed(): void {
         handler: (e) => {
             heard = true;
             globalStore.set(servicesAtom, (e.data as ServicesData | undefined)?.services ?? []);
+            resendSeenIfRefused();
         },
     });
     RpcApi.ServicesStatusCommand(TabRpcClient)
@@ -51,6 +52,7 @@ export function ensureServicesFeed(): void {
             if (!heard) {
                 globalStore.set(servicesAtom, data?.services ?? []);
             }
+            resendSeenIfRefused();
         })
         .catch(() => {});
 }
@@ -87,8 +89,41 @@ export async function restartService(id: string): Promise<void> {
     await RpcApi.ServiceRestartCommand(TabRpcClient, { id });
 }
 
-/** "Start with arcterm": off writes `autostart: false` into the tool's tools.json entry, on drops the key. It is the
- * person's own click, so it goes through ToolsSetUserCommand like any Setup → Tools edit. */
+let lastSeen: string[] | null = null;
+let seenSerial = 0;
+// the latest report was refused (wavesrv's services are not up yet: a refused report is lost, not recorded)
+let seenRefused = false;
+
+/** Tells wavesrv which services are on screen (serviceseen.ts), the whole set: each report replaces the last. A service
+ * newly on screen starts if it sleeps, and one that left starts its ten minutes. wavesrv runs a wake inside the call, so
+ * this is never awaited by the UI; a failure is logged, and a refused report is sent again at the next services read
+ * or `services:changed` (resendSeenIfRefused). */
+export function reportServicesSeen(ids: string[]): void {
+    const serial = ++seenSerial;
+    lastSeen = ids;
+    RpcApi.ServiceSeenCommand(TabRpcClient, { ids })
+        .then(() => {
+            if (serial === seenSerial) {
+                seenRefused = false;
+            }
+        })
+        .catch((e) => {
+            console.error("ServiceSeenCommand failed", e);
+            if (serial === seenSerial) {
+                seenRefused = true;
+            }
+        });
+}
+
+function resendSeenIfRefused(): void {
+    if (seenRefused && lastSeen != null) {
+        seenRefused = false;
+        reportServicesSeen(lastSeen);
+    }
+}
+
+/** "Keep running": on writes `autostart: true` into the tool's tools.json entry, off drops the key. It is the person's
+ * own click, so it goes through ToolsSetUserCommand like any Setup → Tools edit. */
 export async function setServiceAutostart(id: string, on: boolean): Promise<void> {
     const entry = globalStore.get(atoms.fullConfigAtom)?.tools?.[id];
     if (!entry) {

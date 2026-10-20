@@ -266,17 +266,21 @@ func TestMergePinnedApp(t *testing.T) {
 }
 
 func TestMergeService(t *testing.T) {
-	no := false
+	no, yes := false, true
 	merge := func(k wconfig.ToolKeywords) Tool {
 		return Merge(nil, map[string]wconfig.ToolKeywords{"svc": k})[0]
 	}
 	got := merge(wconfig.ToolKeywords{Command: "npm", Args: "run dash", Url: "http://127.0.0.1:8386/"})
+	if !IsService(got) || got.Autostart {
+		t.Errorf("a url tool = %+v, want a service without Keep running", got)
+	}
+	got = merge(wconfig.ToolKeywords{Command: "npm", Url: "http://127.0.0.1:8386/", Autostart: &yes})
 	if !IsService(got) || !got.Autostart {
-		t.Errorf("a url tool = %+v, want a service that autostarts", got)
+		t.Errorf("autostart true = %+v, want a service with Keep running", got)
 	}
 	got = merge(wconfig.ToolKeywords{Command: "npm", Url: "http://127.0.0.1:8386/", Autostart: &no})
 	if !IsService(got) || got.Autostart {
-		t.Errorf("autostart false = %+v, want a service that does not autostart", got)
+		t.Errorf("autostart false = %+v, want a service without Keep running", got)
 	}
 	got = merge(wconfig.ToolKeywords{Command: "npm", Port: "auto"})
 	if !IsService(got) || got.Port != PortAuto {

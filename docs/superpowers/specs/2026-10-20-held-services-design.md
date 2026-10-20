@@ -1,5 +1,8 @@
 # Held services: arcterm keeps a pinned app's server running
 
+> **Superseded in part 2026-10-20** by `2026-10-20-services-sleep-design.md`: `autostart` now defaults to false and
+> reads "Keep running"; a service without it sleeps ten minutes after it leaves the screen and starts when shown.
+
 A pinned app today is a terminal plus a page (`frontend/app/view/agents/appmodel.ts`): opening the tool types its
 command into a shell (`cmd:firstcommand`), the frontend probes the fixed `url` from `tools.json`, and the page shows in
 the terminal's place. The server lives and dies with that terminal tab, its state is frontend-only (`appStatesAtom` in

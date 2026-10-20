@@ -67,7 +67,8 @@ export function focusedAppTab(active: Pick<Element, "tagName" | "getAttribute"> 
 }
 
 // What a service shows in its terminal's place: running or elsewhere, the page; starting, the waiting card; every other
-// state (stopped, crashed, retrying, porttaken, nopage) fails, which shows the log. `view` and `reloads` are the
+// state (stopped, sleeping, crashed, retrying, porttaken, nopage) fails, which shows the log: a sleeping service has no
+// process, and its frame is dropped like a stopped one's until showing the pane wakes it. `view` and `reloads` are the
 // person's picks (Page | Log, Home), kept per tab by appstore.ts.
 export function serviceAppState(s: ServiceStatus, view: AppView, reloads: number): AppState {
     const phase: AppPhase =
