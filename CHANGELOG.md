@@ -26,7 +26,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
-- arcterm now keeps your pinned apps' servers running: it gives each a port, restarts it when it crashes, starts it again when arcterm opens, and shows them in the Agent tree and the new Services chip. <!-- big -->
+- arcterm now looks after your pinned apps' servers: it gives each a port, starts it when you open the app, restarts it when it crashes, lets it sleep ten minutes after you leave it (it starts again when you come back), and shows them in the Agent tree and the new Services chip. Set an app to Keep running and it starts with arcterm and never sleeps. <!-- big -->
 
 ## 0.15.16 — 2026-10-19
 
