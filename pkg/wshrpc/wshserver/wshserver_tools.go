@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/wavetermdev/waveterm/pkg/arctools"
+	"github.com/wavetermdev/waveterm/pkg/util/envutil"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -18,6 +19,8 @@ import (
 // whether each tool's command resolves on this machine's PATH (a detected tool not added only when it does).
 func (ws *WshServer) ToolsStatusCommand(ctx context.Context) (*wshrpc.CommandToolsStatusRtnData, error) {
 	tools := arctools.Merge(append(arctools.Builtin(), arctools.Detected()...), wconfig.GetWatcher().GetFullConfig().Tools)
+	// a tool installed from the library (winget adds its folder to the user's PATH) reads installed straight away
+	envutil.RefreshPath()
 	return &wshrpc.CommandToolsStatusRtnData{Tools: arctools.Status(tools, exec.LookPath)}, nil
 }
 

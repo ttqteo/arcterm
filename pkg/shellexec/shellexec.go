@@ -19,6 +19,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/util/envutil"
 	"github.com/wavetermdev/waveterm/pkg/util/pamparse"
 	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
@@ -133,6 +134,8 @@ func StartLocalShellProc(logCtx context.Context, termSize waveobj.TermSize, cmdS
 		return nil, fmt.Errorf("SwapToken is required in CommandOptsType")
 	}
 	shellutil.InitCustomShellStartupFiles()
+	// before os.Environ() below and DetectLocalShellPath's LookPath, so a tool installed since launch is on PATH
+	envutil.RefreshPath()
 	var ecmd *exec.Cmd
 	var shellOpts []string
 	shellPath := cmdOpts.ShellPath

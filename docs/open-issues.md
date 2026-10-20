@@ -62,6 +62,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Found on this machine, with "· N found" in the header. Add moves one into its category and into Open a tool; its
   detail's "Remove from the library" sends it back; the cross hides it for good. `task verify:ui -- tools-found`
   covers the list, detail and Hide with a fixture; Add and the real detection are unverified.
+- [ ] (arcterm) Fresh PATH for new terminals (Windows): after the next install, with arcterm open, install a CLI
+  that adds its folder to the user's PATH (mole's installer, or any `winget install` from Setup → Tools), then open a
+  new terminal: the command runs there without restarting arcterm, and the tool's row in Setup → Tools reads
+  installed. `pkg/util/envutil/refreshpath.go`.
 - [ ] (arcterm) Image diff: after rebuilding wavesrv (`task build:backend:quickdev:windows`, then restart the dev app)
   or the next install, open Diff → Review on a repo with a changed PNG or JPG: in place of "Binary file — no text to
   show" its section shows Before | After side by side over a checkerboard, each captioned `W×H · size` (the After

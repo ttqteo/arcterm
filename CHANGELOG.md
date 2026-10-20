@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   loaded, which on a large repository looked as if the click did nothing.
 - A running worker's row in the Agent tree shows how long it has run since it started; it read <1m for as long as
   the worker stayed busy.
+- On Windows, a program you installed while arcterm was open now runs in the next terminal or agent you open, and
+  Setup → Tools shows it installed, without restarting arcterm.
 
 ## 0.15.16 — 2026-10-19
 
