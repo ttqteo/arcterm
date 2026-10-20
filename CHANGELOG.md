@@ -35,6 +35,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A plan's `**Depends on:**` reference between two tasks whose `**Files:**` lines share no path must say why in
   parentheses (`Task 1 (uses the rows it adds)`): submit refuses a bare one, so a needless edge no longer makes a
   task wait for another.
+- A terminal's header no longer spells out "Ctrl Tab back to …": the bar is shorter, and `Ctrl`+`Tab` still goes
+  back to the agent you were on.
 
 ### Fixed
 

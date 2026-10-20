@@ -134,7 +134,7 @@ Một terminal thường hoặc một [tool](#tools) là **ngang hàng với age
 Header của nó là một hàng gọn, thay cho header của agent:
 
 - biểu tượng (của tool, hoặc biểu tượng terminal), **tên** (tên tool khi nó chạy một tool; không thì lệnh gần nhất, hoặc "Terminal 2" nếu chưa chạy lệnh nào), chip thư mục khi terminal không chạy ở gốc project (thường là worktree của một agent), rồi `project`.
-- bên phải: gợi ý `Ctrl Tab back to <agent>` khi tab xem trước đó là một agent; nút **Open beside `<agent>`** (thành một ô cạnh agent đó, ẩn khi agent đã có ô hoặc lưới đầy); nút **Move to the panel** (xuống [panel dưới agent](#panel-terminal), mờ khi không có agent nào đang chạy); nút `×` đóng, có hỏi xác nhận.
+- bên phải: nút **Open beside `<agent>`** (thành một ô cạnh agent xem trước đó, mà `Ctrl`+`Tab` quay lại; ẩn khi agent đã có ô hoặc lưới đầy); nút **Move to the panel** (xuống [panel dưới agent](#panel-terminal), mờ khi không có agent nào đang chạy); nút `×` đóng, có hỏi xác nhận.
 
 `Esc`, mũi tên và các phím `Ctrl` đi thẳng vào tool; các chord của app (`Ctrl+P`, `Ctrl+Tab`, `Ctrl+Shift+O`…) vẫn dùng được từ bên trong như ở mọi terminal. `Shift+Esc` trả focus về sidebar.
 

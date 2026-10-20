@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The slim header over a terminal shown in the centre (AgentSurface renders it where an agent has AgentHeader): its icon
-// and name, the folder it runs in, its project, the quick way back to the agent in view before it (Ctrl Tab), and three
-// buttons: open it beside that agent (a split), move it to the panel under the agent, close it. A pinned app's terminal
+// and name, the folder it runs in, its project, and three buttons: open it beside the agent in view before it (a split),
+// move it to the panel under the agent, close it. A pinned app's terminal
 // adds Page | Log, Back, Forward, Reload (Windows), Home and Open in the browser, then the state line of its service (a
 // dot and servicesmodel.ts's words), Restart, and Stop or Start in place of a close button: a service tab stays, and
 // Stop frees its server. What it says is terminalpanehead.ts's; this only reads the atoms and runs the buttons.
@@ -182,17 +182,6 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
                 </span>
             ) : null}
             <span className="flex-1" />
-            {head.backTo != null ? (
-                <span
-                    data-terminal-back-hint
-                    className="flex min-w-0 items-center gap-[6px] whitespace-nowrap text-[11.5px] text-muted"
-                >
-                    <span className="shrink-0 rounded-[5px] border border-edge-mid px-[6px] py-px font-mono text-[10.5px]">
-                        Ctrl Tab
-                    </span>
-                    <span className="truncate">back to {head.backTo}</span>
-                </span>
-            ) : null}
             {beside != null ? (
                 <button
                     type="button"

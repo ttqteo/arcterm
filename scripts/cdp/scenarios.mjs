@@ -41141,7 +41141,7 @@ const TT_CENTRE = `(() => {
     return head ? "terminal:" + head.getAttribute("data-terminal-pane-head") : document.querySelector("[data-agent-header]") ? "agent" : null;
 })()`;
 
-// --- tools-centre: a picked terminal takes the centre (board Compact). Its slim header says where Ctrl+Tab goes back to;
+// --- tools-centre: a picked terminal takes the centre (board Compact), under its slim header;
 // a quick Ctrl+Tab returns, j and k step through the tree's rows terminals included, the palette lists the terminal
 // and Open a tool…, and the header's close removes its row.
 const toolsCentre = {
@@ -41170,15 +41170,14 @@ const toolsCentre = {
         const head = await h.ev(`(() => {
             const el = document.querySelector('[data-terminal-pane-head="${a.tabId}"]');
             return {
-                back: [...(el?.querySelectorAll("[data-terminal-back-hint] > span") ?? [])].map((x) => ${TT_FLAT}(x)),
                 docked: document.querySelector("[data-agent-grid]")?.getAttribute("data-terminal-docked") ?? null,
                 selected: !!${TT_TERM_ROW(a.tabId)}?.className.includes("bg-surface-selected"),
             };
         })()`);
         await h.shot("cdp-shots/tools-centre-1-terminal.png");
         rec(
-            "1. picking the terminal row gives it the centre, with a pane head that says Ctrl Tab back to the agent",
-            shown && JSON.stringify(head.back) === JSON.stringify(["Ctrl Tab", `back to ${TT_AGENT_NAME}`]) && head.docked == null && head.selected,
+            "1. picking the terminal row gives it the centre, under its pane head",
+            shown && head.docked == null && head.selected,
             JSON.stringify(head)
         );
 
