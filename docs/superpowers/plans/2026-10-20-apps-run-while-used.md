@@ -399,7 +399,7 @@ git commit -m "feat(services): drop the app bar's Services chip and popover; the
 
 ### Task 4: Setup → Tools manages an app
 
-**Depends on:** Task 2
+**Depends on:** none
 **Files:** `frontend/app/view/agents/toolslibrary.tsx`, `frontend/app/view/agents/toolslibrarymodel.ts`, `frontend/app/view/agents/toolslibrarymodel.test.ts`
 
 `toolslibrary.tsx`'s `ToolDetail` is lines 404–630 (`hasPage` at 417, the Keep running row near 588).
@@ -484,7 +484,7 @@ git commit -m "feat(servers): a held service's server reads as the app, and its 
 
 ### Task 6: CDP scenarios follow the new model
 
-**Depends on:** Task 1, Task 2, Task 3, Task 4, Task 5
+**Depends on:** Task 1 (the scenarios assert its single idle state, one-minute sleep and busy postponement), Task 2 (they assert its tree filter, menu and asleep card), Task 3 (it edits the same scenarios file and they assert the chip is gone), Task 4 (they drive its Status row and rail toggle), Task 5 (they assert its app badge and Stop)
 **Files:** `scripts/cdp/scenarios.mjs`
 
 The scenarios to change: `services-states` (near 42374), `services-tree` (near 42506), `services-rail` (near 42854),
