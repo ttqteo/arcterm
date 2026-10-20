@@ -2159,13 +2159,23 @@ function ServiceRow({
                 </Slot>
             </DigitHint>
             <span
+                data-service-name
                 title={service.name}
-                className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
+                className={cn(
+                    "truncate text-[13px]",
+                    // the name keeps its width and the words give way; a row with no words lets the name fill it
+                    w.words !== "" ? "max-w-[60%] flex-none" : "min-w-0 flex-1",
+                    selected ? "text-primary" : "text-secondary"
+                )}
             >
                 {service.name}
             </span>
             {w.words !== "" ? (
-                <span data-service-words className={cn("flex-none whitespace-nowrap text-[11px]", tone.text)}>
+                <span
+                    data-service-words
+                    title={w.words}
+                    className={cn("min-w-0 flex-1 truncate whitespace-nowrap text-[11px]", tone.text)}
+                >
                     {w.words}
                 </span>
             ) : null}

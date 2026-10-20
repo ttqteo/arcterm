@@ -41965,23 +41965,38 @@ const toolsApp = {
         // a page of the app's own, then Back and Forward: the server sees each page asked for again
         const reqLog = join(ctx.root, "app", "requests.log");
         const asked = () => (existsSync(reqLog) ? readFileSync(reqLog, "utf8").trim().split(/\r?\n/) : []);
+        // The browser's own session history: the frame is out of process, so its url is not readable from the page, but
+        // CDP's index says which entry the window (the frame's steps included) stands on. Each step waits for the frame's
+        // load, as a person does: a Forward pressed while Back's page is still loading is dropped by the browser, with
+        // the index unmoved (2 of 5 runs without the wait), whatever the app does.
+        const histIdx = async () => (await h.cdp("Page.getNavigationHistory")).currentIndex;
+        await h.ev(`(() => { window.__loads = 0; document.querySelector("[data-app-frame]").addEventListener("load", () => window.__loads++); })()`);
+        const loaded = (n) => polishWaitFor(h, `window.__loads >= ${n}`, 8000);
         const before = asked().length;
         await h.ev(`document.querySelector("[data-app-frame]").src = ${JSON.stringify(ctx.url + "/two")}`);
         const wentTwo = await waitUntil(() => asked().length >= before + 1, 8000);
+        await loaded(1);
+        const idxTwo = await histIdx();
         await ttClick(h, "[data-app-back]");
         const wentBack = await waitUntil(() => asked().length >= before + 2, 8000);
+        await loaded(2);
+        const idxBack = await histIdx();
         await ttClick(h, "[data-app-forward]");
         const wentForward = await waitUntil(() => asked().length >= before + 3, 8000);
+        await loaded(3);
+        const idxForward = await histIdx();
         const walk = asked().slice(before);
         await h.shot("cdp-shots/tools-app-3b-forward.png");
         rec(
             "3b. Back and Forward walk the app's own pages: /two, back to /, forward to /two",
-            wentTwo && wentBack && wentForward && JSON.stringify(walk) === JSON.stringify(["/two", "/", "/two"]),
-            JSON.stringify({ wentTwo, wentBack, wentForward, walk })
+            wentTwo && wentBack && wentForward && JSON.stringify(walk) === JSON.stringify(["/two", "/", "/two"]) && idxBack === idxTwo - 1 && idxForward === idxTwo,
+            JSON.stringify({ wentTwo, wentBack, wentForward, walk, idx: [idxTwo, idxBack, idxForward] })
         );
+        // Home is judged alone: the page asked for again after its own click
+        const beforeHome = asked().length;
         await ttClick(h, "[data-app-home]");
-        const wentHome = await waitUntil(() => asked().length >= before + 4, 8000);
-        rec("3c. Home loads the app's start page afresh", wentHome && asked().at(-1) === "/", JSON.stringify({ last: asked().at(-1) }));
+        const wentHome = await waitUntil(() => asked().length >= beforeHome + 1, 8000);
+        rec("3c. Home loads the app's start page afresh", wentHome && asked().at(-1) === "/", JSON.stringify({ last: asked().at(-1), asked: asked().slice(beforeHome) }));
 
         // a page of the app's own before leaving it: Log and back, and another surface and back, come back to it unreloaded
         const beforeTwo = asked().length;
@@ -42280,6 +42295,11 @@ const svcRowsExpr = (scope) => `(() => {
         words: txt(el.querySelector("[data-service-words]")),
         port: txt(el.querySelector("[data-service-port]")),
         dot: el.querySelector("[data-service-dot]")?.getAttribute("data-service-dot") ?? null,
+        name: txt(el.querySelector("[data-service-name]")),
+        nameWhole: (() => {
+            const n = el.querySelector("[data-service-name]");
+            return n != null && n.scrollWidth <= n.clientWidth;
+        })(),
     }));
 })()`;
 
@@ -42412,6 +42432,8 @@ const servicesStates = {
             for (const [id, exp] of Object.entries(want)) {
                 const row = rows.find((r) => r.id === id);
                 if (!row || !same(row.words, exp.words) || row.port !== exp.port || row.dot !== exp.dot) bad.push({ id, row });
+                // a name of 9 characters or fewer (every fixture's) shows whole: the words give way, not the name
+                else if (row.name.length <= 9 && !row.nameWhole) bad.push({ id, row, cut: row.name });
             }
             return bad;
         };
