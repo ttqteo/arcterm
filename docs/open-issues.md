@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Kael sync: after rebuilding wavesrv (or the next install), start an orchestrator run and let a
+  worker run past 2 minutes: its row in the Agent tree reads its time since spawn (`3m`, `4m`…), not `<1m` while it
+  stays busy; a retried task starts counting again, and a worker spawned before the rebuild shows no age.
+  `runlineage.ts` `taskElapsed`, `scheduler.go` `MarkRunning` (e5eb5262e).
 - [ ] (arcterm) Resume dialog grouped by run: with an orchestrator run live, switch the Claude account in Settings →
   Agents: the run's lead and workers sit under a "run <title>" section in the lead's project folder, the run's
   checkbox selects all of them, and Resume selected resumes them (checked in headless Chrome with synthetic rows only,
