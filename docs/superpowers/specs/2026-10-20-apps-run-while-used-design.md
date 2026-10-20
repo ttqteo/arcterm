@@ -22,14 +22,16 @@ development they run the server another way), and never to be cut off in the mid
 2. **Leaving it stops it after one minute** (`IdleSleep` 10 min → 1 min), **but never in the middle of work.**
    When the minute is up, the supervisor asks whether the service is busy. Busy, it waits another minute and asks
    again, until it is idle; then it sleeps. A service that comes back on screen meanwhile keeps running.
-3. **Busy** is a process in the service's tree that was not there when its page first answered, and is younger than
+3. **Busy** is a process in the service's tree that started after its page first answered, and is younger than
    30 minutes. That catches what the server starts to do work (the portfolio dashboard's chat `claude -p`, its
    `node scripts/...` runs) and lets go of a helper it keeps for good (a watcher started late), so a service can never
    stay up forever on a false busy. The tree is the block's job object members on Windows (`jobobject.LiveJobs`, owner
-   the service's block) and `memusage.Table.Tree` of the block's root elsewhere. The baseline is taken when the state
-   turns `running`; a service with no baseline (it never answered) is never busy. A read that fails counts as idle.
+   the service's block; `memusage.Table.Tree` of the block's root when the block has no job) and
+   `memusage.Table.Tree` of the block's root elsewhere. The baseline is the time the state turns `running`
+   (`StartedMs`); a service with no baseline (it never answered) is never busy. A read that fails counts as idle.
 4. **Keep running stays, off by default,** for an app with work of its own on a timer (the portfolio dashboard's
-   ~15:05 build-macro). It starts with arcterm and never sleeps, as today. The portfolio entry turns it on.
+   ~15:05 build-macro). It starts with arcterm and never sleeps, as today. The person turns it on for the portfolio
+   entry (their `tools.json`, outside the repo).
 5. **The app frame follows the server:** `APP_FRAME_IDLE_MS` 10 min → 1 min, so a page is not kept loaded over a
    server that went to sleep.
 
@@ -65,12 +67,13 @@ development they run the server another way), and never to be cut off in the mid
 
 - Go (`pkg/services`): the supervisor's sleep tick postpones while `Busy` says true and sleeps once it says false;
   Stop is not remembered (a shown service starts after a Stop when it next shows); the baseline and the 30-minute
-  age rule as a pure function over (baseline pids, current pids with start times, now).
+  age rule as a pure function over (the tree's processes with their start times, the baseline time, now).
 - vitest: the tree's service filter (sleeping hidden, the selected one kept, an emptied folder gone); the footer's
   service badge; the menu and Setup → Tools choices as model functions; `railapps` with no stopped card.
 - CDP: `services-tree` (a sleeping service has no row; a running one does), `services-setup` (Pin, Keep running,
   Stop on a tool's page), `machine-servers` (a service's server reads as the app), `services-rail` (opening a sleeping
-  pin shows the waiting card). Drop `services-chip`.
+  pin shows the waiting card), `services-busy` (a service with work in progress outlives its minute, then sleeps).
+  Drop `services-chip`.
 
 ## Docs
 
