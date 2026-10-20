@@ -16,6 +16,8 @@ func Attach(proc *os.Process) (uintptr, error) {
 
 func KillTree(job uintptr) {}
 
+func KillTreeKeeping(job uintptr) {}
+
 func Close(job uintptr) {}
 
 func Members(job uintptr) ([]int, error) {

@@ -66,7 +66,7 @@ func MakeCmdWrap(cmd *exec.Cmd, cmdPty pty.Pty, isShell bool, blockId string) Cm
 }
 
 func (cw CmdWrap) Kill() {
-	jobobject.KillTree(cw.jobHandle)
+	jobobject.KillTreeKeeping(cw.jobHandle)
 	cw.Cmd.Process.Kill()
 }
 
@@ -74,10 +74,13 @@ func (cw CmdWrap) Wait() error {
 	cw.WaitOnce.Do(func() {
 		cw.WaitErr = cw.Cmd.Wait()
 	})
-	// the direct process exited; close the job handle so KILL_ON_JOB_CLOSE reaps any
-	// descendants that outlived it (terminal-close semantics for the block's tree)
+	// the direct process exited; reap any descendants that outlived it (terminal-close semantics for the
+	// block's tree), except a desktop app the person keeps using, then close the job handle
 	if cw.jobCloseOnce != nil {
-		cw.jobCloseOnce.Do(func() { jobobject.Close(cw.jobHandle) })
+		cw.jobCloseOnce.Do(func() {
+			jobobject.KillTreeKeeping(cw.jobHandle)
+			jobobject.Close(cw.jobHandle)
+		})
 	}
 	return cw.WaitErr
 }
@@ -112,8 +115,8 @@ func (cw CmdWrap) KillGraceful(timeout time.Duration) {
 		return
 	}
 	if runtime.GOOS == "windows" {
-		jobobject.KillTree(cw.jobHandle) // terminates the whole tree when the job is attached
-		cw.Cmd.Process.Kill()            // direct-process fallback if job attach failed
+		jobobject.KillTreeKeeping(cw.jobHandle) // terminates the whole tree when the job is attached, but a kept desktop app
+		cw.Cmd.Process.Kill()                   // direct-process fallback if job attach failed
 		if cw.jobCloseOnce != nil {
 			cw.jobCloseOnce.Do(func() { jobobject.Close(cw.jobHandle) })
 		}

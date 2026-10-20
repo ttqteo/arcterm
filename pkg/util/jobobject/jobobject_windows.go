@@ -8,7 +8,9 @@ package jobobject
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -52,6 +54,87 @@ func KillTree(job uintptr) {
 		return
 	}
 	_ = windows.TerminateJobObject(windows.Handle(job), 1)
+}
+
+// keepRounds bounds KillTreeKeeping's passes: a shell can start a process between a pass's listing and its kills
+const keepRounds = 3
+
+// KillTreeKeeping is KillTree that leaves a kept desktop app (keepImages) and what runs under it running. Once it
+// spares one, the job stops killing on close, so closing its handle afterwards leaves the app running too.
+func KillTreeKeeping(job uintptr) {
+	if job == 0 {
+		return
+	}
+	for round := range keepRounds {
+		members, err := Members(job)
+		if err != nil {
+			KillTree(job)
+			return
+		}
+		var kept map[int]bool
+		if len(members) > 0 {
+			kept = keptMembers(members, processTable(), keepImages)
+		}
+		if len(kept) == 0 {
+			KillTree(job)
+			return
+		}
+		if round == 0 {
+			if err := disarm(job); err != nil {
+				log.Printf("jobobject: keeping %d processes, but the job still kills on close: %v", len(kept), err)
+			}
+		}
+		killed := 0
+		for _, pid := range members {
+			if !kept[pid] && terminateIn(job, pid) {
+				killed++
+			}
+		}
+		if killed == 0 {
+			return
+		}
+	}
+}
+
+// disarm drops KILL_ON_JOB_CLOSE, keeping BREAKAWAY_OK.
+func disarm(job uintptr) error {
+	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
+		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{LimitFlags: windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK},
+	}
+	_, err := windows.SetInformationJobObject(windows.Handle(job), windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)))
+	return err
+}
+
+// terminateIn terminates pid when, on the handle it opens, it is still a running member of job.
+func terminateIn(job uintptr, pid int) bool {
+	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(pid))
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(h)
+	if hasExited(h) {
+		return false
+	}
+	if member, err := isProcessInJob(h, job); err != nil || !member {
+		return false
+	}
+	return windows.TerminateProcess(h, terminateExitCode) == nil
+}
+
+// processTable reads every process's parent and image name; nil when the snapshot fails, which keeps nothing.
+func processTable() map[int]procEntry {
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil
+	}
+	defer windows.CloseHandle(snap)
+	table := map[int]procEntry{}
+	var e windows.ProcessEntry32
+	e.Size = uint32(unsafe.Sizeof(e))
+	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
+		table[int(e.ProcessID)] = procEntry{parent: int(e.ParentProcessID), image: strings.ToLower(windows.UTF16ToString(e.ExeFile[:]))}
+	}
+	return table
 }
 
 // Close unregisters the job, then closes its handle; with KILL_ON_JOB_CLOSE set this also reaps any

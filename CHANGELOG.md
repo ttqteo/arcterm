@@ -49,6 +49,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - An agent you resume on a new Claude account after it stopped mid-turn (at a usage limit, say) carries on with its
   work, as one does after arcterm restarts; it used to wait at its prompt for you to type continue.
+- Docker Desktop started by an agent keeps running when that agent is restarted (such as resuming it on another
+  Claude account) or its tab is closed; it used to quit with the agent.
 - A link that opens a new window (`target="_blank"`, `window.open`) in a pinned app's page or in the cockpit opens in
   your default browser; it did nothing. An app's Open in the browser button opens the page you are on, not its start
   page.

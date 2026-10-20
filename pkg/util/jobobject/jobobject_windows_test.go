@@ -400,3 +400,43 @@ func TestJobObjectKillsDescendants(t *testing.T) {
 	}
 	t.Fatalf("descendant %d still alive after job kill", childPid)
 }
+
+// TestKillTreeKeepingSparesAKeptApp: a kept app in the job (ping stands in for Docker Desktop) outlives the kill and
+// the closing of the job's handle, while the rest of the tree dies; with no kept app the kill takes everything.
+func TestKillTreeKeepingSparesAKeptApp(t *testing.T) {
+	old := keepImages
+	keepImages = map[string]bool{"ping.exe": true}
+	t.Cleanup(func() { keepImages = old })
+
+	root := startSleeper(t)
+	job, err := Attach(root.Process)
+	if err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+	app := exec.Command("ping", "-n", "120", "127.0.0.1")
+	if err := app.Start(); err != nil {
+		t.Fatalf("starting ping: %v", err)
+	}
+	t.Cleanup(func() {
+		app.Process.Kill()
+		app.Wait()
+	})
+	assignToJob(t, job, app.Process.Pid)
+
+	KillTreeKeeping(job)
+	Close(job)
+	waitForExit(t, root.Process.Pid)
+	time.Sleep(300 * time.Millisecond)
+	if !isRunning(app.Process.Pid) {
+		t.Fatal("the kept app died with the job")
+	}
+
+	plain := startSleeper(t)
+	job2, err := Attach(plain.Process)
+	if err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+	defer Close(job2)
+	KillTreeKeeping(job2)
+	waitForExit(t, plain.Process.Pid)
+}
