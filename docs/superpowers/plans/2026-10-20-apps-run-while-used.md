@@ -25,13 +25,11 @@ Spec: `docs/superpowers/specs/2026-10-20-apps-run-while-used-design.md`. Read it
 ### Task 1: Supervisor: one idle state, one minute, never in the middle of work
 
 **Depends on:** none
+**Files:** `pkg/services/model.go`, `pkg/services/model_test.go`, `pkg/services/supervisor.go`, `pkg/services/supervisor_test.go`, `pkg/services/real.go`
 
-**Files:**
-- Modify: `pkg/services/model.go` (states, `IdleSleep`, new `BusyMaxAge`, new pure `Busy`)
-- Modify: `pkg/services/supervisor.go` (`Remembered`, `Deps`, `idleState`, `startsNowLocked`, `startService`,
-  `SetTools`, `sleepTick`, `stop`, `OnExit`, `OnBlockClosed`)
-- Modify: `pkg/services/real.go` (`realDeps`: the real `Procs`)
-- Test: `pkg/services/model_test.go`, `pkg/services/supervisor_test.go`
+What changes where: `model.go` (states, `IdleSleep`, new `BusyMaxAge`, new pure `Busy`); `supervisor.go`
+(`Remembered`, `Deps`, `idleState`, `startsNowLocked`, `startService`, `SetTools`, `sleepTick`, `stop`, `OnExit`,
+`OnBlockClosed`); `real.go` (`realDeps`: the real `Procs`).
 
 **Step 1: Write the failing test for `Busy`** (append to `pkg/services/model_test.go`)
 
@@ -240,14 +238,10 @@ git commit -m "feat(services): a service sleeps a minute after it leaves the scr
 ### Task 2: Frontend model: no stopped state, the tree's services, the menu, the frame
 
 **Depends on:** none
+**Files:** `frontend/app/view/agents/servicesmodel.ts`, `frontend/app/view/agents/servicesmodel.test.ts`, `frontend/app/view/agents/railapps.ts`, `frontend/app/view/agents/railapps.test.ts`, `frontend/app/view/agents/servicemenu.tsx`, `frontend/app/view/agents/appmodel.ts`, `frontend/app/view/agents/appmodel.test.ts`, `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/appsurface.tsx`
 
-**Files:**
-- Modify: `frontend/app/view/agents/servicesmodel.ts` (+ `servicesmodel.test.ts`)
-- Modify: `frontend/app/view/agents/railapps.ts` (+ `railapps.test.ts`)
-- Modify: `frontend/app/view/agents/servicemenu.tsx`
-- Modify: `frontend/app/view/agents/appmodel.ts` (`APP_FRAME_IDLE_MS`, + its test if it pins the value)
-- Modify: `frontend/app/view/agents/agenttree.tsx` (the `services` memo near line 2540)
-- Modify: `frontend/app/view/agents/appsurface.tsx` (the card's Start branch)
+What changes where: `appmodel.ts` (`APP_FRAME_IDLE_MS`, and its test if it pins the value); `agenttree.tsx` (the
+`services` memo near line 2540); `appsurface.tsx` (the card's Start branch).
 
 **Step 1: Failing tests**
 
@@ -315,10 +309,11 @@ git commit -m "feat(services): the tree lists a service only while it is up; no 
 ### Task 3: Remove the app bar's Services chip and popover
 
 **Depends on:** Task 2
+**Files:** `frontend/app/cockpit/serviceschip.tsx`, `frontend/app/cockpit/servicespanel.tsx`, `frontend/app/cockpit/servicespopoverstore.ts`, `frontend/app/cockpit/app-bar.tsx`, `frontend/app/cockpit/cockpit-root.tsx`, `frontend/app/cockpit/jobqueuestore.ts`, `frontend/app/view/agents/consumersstore.ts`, `frontend/app/view/agents/machineserverschip.tsx`, `frontend/app/store/keybindings/dispatcher.ts`, `frontend/app/store/keybindings/dispatcher.test.ts`, `frontend/app/view/agents/servicesmodel.ts`, `frontend/app/view/agents/servicesmodel.test.ts`, `scripts/cdp/scenarios.mjs`
 
-**Files:**
+What changes where:
 - Delete: `frontend/app/cockpit/serviceschip.tsx`, `frontend/app/cockpit/servicespanel.tsx`,
-  `frontend/app/cockpit/servicespopoverstore.ts` (and any `*.test.ts` beside them)
+  `frontend/app/cockpit/servicespopoverstore.ts`
 - Modify: `frontend/app/cockpit/app-bar.tsx` (import line 31, `<ServicesChip />` line 145),
   `frontend/app/cockpit/cockpit-root.tsx` (import line 61, `<ServicesPanel model={model} />` line 225),
   `frontend/app/cockpit/jobqueuestore.ts` (lines 16, 27), `frontend/app/view/agents/consumersstore.ts` (7, 51),
@@ -354,10 +349,9 @@ git commit -m "feat(services): drop the app bar's Services chip and popover; the
 ### Task 4: Setup → Tools manages an app
 
 **Depends on:** Task 3
+**Files:** `frontend/app/view/agents/toolslibrary.tsx`, `frontend/app/view/agents/toolslibrarymodel.ts`, `frontend/app/view/agents/toolslibrarymodel.test.ts`, `scripts/cdp/scenarios.mjs`
 
-**Files:**
-- Modify: `frontend/app/view/agents/toolslibrary.tsx` (`ToolDetail`, lines 404–630)
-- Modify (if a pure part is needed): `frontend/app/view/agents/toolslibrarymodel.ts` + its test
+`toolslibrary.tsx`'s `ToolDetail` is lines 404–630; `toolslibrarymodel.ts` only if a pure part is needed.
 
 **What it does:** On a tool with a page (`hasPage`), the detail page shows the service's state and its controls,
 next to the existing Keep running row:
@@ -397,12 +391,11 @@ git commit -m "feat(tools): Setup → Tools shows an app's state, Stop, Restart 
 
 ### Task 5: The footer's Servers popover names a service's server as the app
 
-**Depends on:** Task 3
+**Depends on:** Task 3, Task 4
+**Files:** `frontend/app/view/agents/machineservers.ts`, `frontend/app/view/agents/machineservers.test.ts`, `frontend/app/view/agents/machineserverspanel.tsx`, `frontend/app/view/agents/machineserverschip.tsx`, `scripts/cdp/scenarios.mjs`
 
-**Files:**
-- Modify: `frontend/app/view/agents/machineservers.ts` (+ `machineservers.test.ts`)
-- Modify: `frontend/app/view/agents/machineserverspanel.tsx` (badge render lines 71–95, `stopServer` near line 56)
-- Modify: `frontend/app/view/agents/machineserverschip.tsx` (pass the services in)
+`machineserverspanel.tsx`: badge render lines 71–95, `stopServer` near line 56. `machineserverschip.tsx` passes the
+services in.
 
 **Step 1: Failing test** in `machineservers.test.ts`: `buildMachineServers` takes a fourth argument, the held
 services (`{ id, name, tabid }[]`). A server whose owner is `terminal` with a `tabid` equal to a service's `tabid`
@@ -438,11 +431,10 @@ git commit -m "feat(servers): a held service's server reads as the app, and its 
 
 ### Task 6: CDP scenarios follow the new model
 
-**Depends on:** Task 1, Task 2, Task 3, Task 4, Task 5
+**Depends on:** Task 1 (the scenarios assert its single idle state and one-minute sleep), Task 2 (they assert its tree filter and cards), Task 5
+**Files:** `scripts/cdp/scenarios.mjs`
 
-**Files:**
-- Modify: `scripts/cdp/scenarios.mjs`: `services-states` (near 42375), `services-tree` (near 42507),
-  `services-rail` (near 42855)
+The scenarios to rewrite: `services-states` (near 42375), `services-tree` (near 42507), `services-rail` (near 42855).
 
 The three scenarios stage services in states that include `stopped` (`"svc-off": "stopped"`, a Stop that stays
 stopped, a stopped card with Start). Rewrite them for the new model, keeping each scenario's other checks:
@@ -473,9 +465,8 @@ git commit -m "test(services): the CDP scenarios follow apps that run while used
 
 ### Task 7: Docs
 
-**Depends on:** Task 6
+**Files:** `AGENTS.md`, `docs/guide/agent.md`, `docs/guide/cockpit.md`, `docs/guide/settings.md`, `CHANGELOG.md`, `docs/open-issues.md`
 
-**Files:**
 - Modify: `AGENTS.md` (the service paragraph, lines ~203–210): "starts it when it shows … and stops it a minute after
   it leaves the screen once nothing it started is still working (`services.Busy`), unless it is set to Keep running";
   the Services chip and popover are gone; Setup → Tools manages apps.
