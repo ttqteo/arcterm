@@ -18,6 +18,7 @@ const jobsSupported = true
 
 // Attach puts proc in a new job object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE so closing the
 // handle (Close) terminates the entire process tree rooted at proc, not just proc itself.
+// BREAKAWAY_OK lets a descendant that asks for it (StartDetached) leave the job; every other one stays in.
 func Attach(proc *os.Process) (uintptr, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
@@ -25,7 +26,7 @@ func Attach(proc *os.Process) (uintptr, error) {
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{
-			LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+			LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK,
 		},
 	}
 	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {

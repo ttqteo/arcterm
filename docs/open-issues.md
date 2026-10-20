@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) `wsh detach`: after installing a build with it, run `wsh detach npm run dev` in a project terminal
+  (or have an agent start its dev server): it prints a pid, a log and a stop command, and no console window opens.
+  Quit and reopen arcterm: the server still answers. Then stop it with the printed `taskkill`. `wshcmd-detach.go`,
+  `jobobject.StartDetached`, `BREAKAWAY_OK` in `src-tauri/src/main.rs` and `jobobject.Attach`.
 - [ ] (arcterm) Services chip: with every service stopped or sleeping, the app bar shows no Services chip (no bare
   `0`); start one and the chip comes back with `1`; a crashed one shows `0 · 1 crashed`. `servicesmodel.ts`
   `servicesChip`, `serviceschip.tsx`.

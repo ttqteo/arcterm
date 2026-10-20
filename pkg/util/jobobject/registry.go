@@ -31,6 +31,8 @@ type LiveJob struct {
 var (
 	ErrNotMember = errors.New("not a member of the job") // includes: no live job for that owner
 	ErrGone      = errors.New("process has already exited")
+	// a job object above the caller does not allow breakaway: an arcterm from before BREAKAWAY_OK, or another app's job
+	ErrBreakawayDenied = errors.New("a job object above this process does not allow breakaway")
 )
 
 type ownerCtxKey struct{}

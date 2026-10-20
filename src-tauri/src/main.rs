@@ -159,7 +159,8 @@ fn spawn_wavesrv(
 // Put a freshly-spawned child in a KILL_ON_JOB_CLOSE job so it dies with wave-tauri no matter how
 // wave-tauri exits (graceful quit, crash, or a hard Ctrl+C that skips RunEvent::Exit). Returns the
 // job handle for the caller to keep alive; None if any step fails (non-fatal — RunEvent::Exit still
-// covers the graceful path).
+// covers the graceful path). BREAKAWAY_OK lets a process started with CREATE_BREAKAWAY_FROM_JOB
+// (`wsh detach`) outlive the app; every other descendant still dies with it.
 #[cfg(windows)]
 fn assign_kill_on_close_job(child: &Child) -> Option<JobHandle> {
     use std::os::windows::io::AsRawHandle;
@@ -167,7 +168,7 @@ fn assign_kill_on_close_job(child: &Child) -> Option<JobHandle> {
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
         SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
 
     unsafe {
@@ -176,7 +177,8 @@ fn assign_kill_on_close_job(child: &Child) -> Option<JobHandle> {
             return None;
         }
         let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        info.BasicLimitInformation.LimitFlags =
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
         let size = std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32;
         if SetInformationJobObject(
             job,

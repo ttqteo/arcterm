@@ -53,6 +53,30 @@ func TestHelperProcess(t *testing.T) {
 		}
 		fmt.Println(child.Process.Pid)
 		os.Exit(0)
+	case "detach":
+		// like spawn, but starts two sleepers, a plain one and a detached one, and prints both pids
+		if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		plain, err := helperCmd("sleep")
+		if err == nil {
+			err = plain.Start()
+		}
+		var detached *exec.Cmd
+		if err == nil {
+			detached, err = helperCmd("sleep")
+		}
+		if err == nil {
+			err = StartDetached(detached)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println(plain.Process.Pid, detached.Process.Pid)
+		time.Sleep(helperLifetime)
+		os.Exit(0)
 	}
 }
 
