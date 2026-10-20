@@ -63,7 +63,7 @@ The handler follows its neighbours: `errServicesNotRunning` when `services.Curre
 - [ ] **Step 1: Write the failing test** `TestServiceSeenCommand` in `wshserver_services_test.go`: before `services.Default` is set, `ServiceSeenCommand(ctx, {Ids: []string{"nope"}})` errors with `services are not running yet`; with `services.New(services.Deps{State: memState{}})` it returns nil for an unknown id and for an empty set, and `ServicesStatusCommand` still returns an empty non-nil list.
 - [ ] **Step 2: Run it to see it fail**: `go test ./pkg/wshrpc/wshserver -run '^TestServiceSeenCommand$'` → FAIL (does not compile).
 - [ ] **Step 3: Implement** the type, the command, the handler, `StateSleeping` and the recording `Seen`.
-- [ ] **Step 4: Regenerate and run**: `task generate && go test ./pkg/wshrpc/... ./pkg/services && go build ./...` → PASS; `frontend/app/store/wshclientapi.ts` has `ServiceSeenCommand` and `frontend/types/gotypes.d.ts` has `CommandServiceSeenData`.
+- [ ] **Step 4: Regenerate and run**: `task generate && go test ./pkg/wshrpc/wshserver -run '^TestServiceSeenCommand$' && go build ./...` → PASS; `frontend/app/store/wshclientapi.ts` has `ServiceSeenCommand` and `frontend/types/gotypes.d.ts` has `CommandServiceSeenData`.
 - [ ] **Step 5: Commit**: `git commit -m "feat(services): ServiceSeenCommand carries the services on screen"`
 
 ### Task 2: Sleeping in the supervisor
@@ -107,7 +107,7 @@ Behaviour (spec "Decisions" and "Wire"):
   - `catalog_test.go` `TestMergeService`: an entry with a url and no `autostart` → `Autostart == false`; `autostart: true` → true.
 - [ ] **Step 2: Run them to see them fail**: `go test ./pkg/services ./pkg/arctools -run 'Sleep|Seen|KeepRunning|Boot|SetToolsStartsShown|ElsewhereNever|Retrying|WakeReuses|TestMergeService'` → FAIL.
 - [ ] **Step 3: Implement** as described; update the existing tests that assumed `autostart` defaults to true or that a service without a process reads `stopped` (they set `Autostart: true` where they test a boot start, and expect `sleeping` where nothing stopped it).
-- [ ] **Step 4: Run**: `go test ./pkg/services ./pkg/arctools ./pkg/wconfig ./pkg/wshrpc/... && go build ./...` → PASS.
+- [ ] **Step 4: Run**: the Step 2 command, the existing tests Step 3 updated by name (`-run`), and `go build ./...` → PASS. Verify runs the whole packages at the merge.
 - [ ] **Step 5: Commit**: `git commit -m "feat(services): a service without Keep running sleeps when off screen"`
 
 ### Task 3: The frontend reports what is on screen and words sleeping
