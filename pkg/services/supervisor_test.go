@@ -638,7 +638,7 @@ func TestNewAutostartServiceStartsAtOnce(t *testing.T) {
 	off := fixedTool("b", "http://127.0.0.1:8002/")
 	off.Autostart = false
 	h.setTools(fixedTool("a", "http://127.0.0.1:8001/"), off)
-	h.wantState("b", StateStopped)
+	h.wantState("b", StateSleeping)
 	if len(h.starts) != 1 {
 		t.Errorf("a service with autostart off was started: %v", h.starts)
 	}
@@ -651,7 +651,7 @@ func TestSetToolsBeforeBootStartsNothing(t *testing.T) {
 	if len(h.starts) != 0 || len(h.ensures) != 0 {
 		t.Errorf("started before Boot: %v", h.starts)
 	}
-	h.wantState("a", StateStopped)
+	h.wantState("a", StateSleeping)
 }
 
 func TestBootSweepsAndStartsAutostart(t *testing.T) {
@@ -747,7 +747,7 @@ func TestOpenMakesTheTabWithoutStarting(t *testing.T) {
 	if len(h.ensures) != 1 || len(h.starts) != 0 {
 		t.Errorf("ensures %d starts %d", len(h.ensures), len(h.starts))
 	}
-	if st.State != StateStopped || st.TabId != "tab-portfolio" || st.BlockId != "blk-portfolio" {
+	if st.State != StateSleeping || st.TabId != "tab-portfolio" || st.BlockId != "blk-portfolio" {
 		t.Errorf("status = %+v", st)
 	}
 	if _, err := h.sup.Open(context.Background(), "nope"); err == nil {
@@ -842,4 +842,275 @@ func (h *harness) exit(blockId string, code int, interrupted bool) {
 		h.up[url] = false
 	}
 	h.sup.OnExit(blockId, code, interrupted)
+}
+
+// demandTool is a service without Keep running: it runs while its page is on screen and sleeps after.
+func demandTool(id, url string) arctools.Tool {
+	t := fixedTool(id, url)
+	t.Autostart = false
+	return t
+}
+
+func (h *harness) seen(ids ...string) { h.sup.Seen(context.Background(), ids) }
+
+// boot records the tools, boots, and lets the staggered boot starts fire.
+func (h *harness) boot(tools ...arctools.Tool) {
+	h.setTools(tools...)
+	h.sup.Boot(context.Background())
+	h.advance(0)
+}
+
+// answer lets a starting service's page answer, so it reads running.
+func (h *harness) answer(id, url string) {
+	h.t.Helper()
+	h.up[url] = true
+	h.advance(ProbeInterval)
+	h.wantState(id, StateRunning)
+}
+
+func TestUnseenServiceSleepsAfterTenMinutes(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.wantState("portfolio", StateSleeping)
+	h.seen("portfolio")
+	h.wantState("portfolio", StateStarting)
+	h.answer("portfolio", dashURL)
+
+	h.seen()
+	h.advance(IdleSleep - time.Second)
+	h.wantState("portfolio", StateRunning)
+	if len(h.stops) != 0 {
+		t.Fatalf("stopped before ten minutes: %v", h.stops)
+	}
+	h.advance(time.Second)
+	h.wantState("portfolio", StateSleeping)
+	if !slices.Equal(h.stops, []string{"blk-portfolio"}) {
+		t.Errorf("stops = %v, want one", h.stops)
+	}
+	if h.state.Get("portfolio").Stopped {
+		t.Error("a sleep is not the person's Stop")
+	}
+}
+
+func TestSeenAgainCancelsSleep(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.seen("portfolio")
+	h.answer("portfolio", dashURL)
+
+	h.seen()
+	h.advance(5 * time.Minute)
+	h.seen("portfolio")
+	h.advance(20 * time.Minute)
+	h.wantState("portfolio", StateRunning)
+	if len(h.stops) != 0 {
+		t.Errorf("stops = %v, want none", h.stops)
+	}
+}
+
+func TestSeenSleepingStarts(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.wantState("portfolio", StateSleeping)
+	if len(h.starts) != 0 {
+		t.Fatalf("started before it was shown: %v", h.starts)
+	}
+	h.seen("portfolio")
+	h.wantState("portfolio", StateStarting)
+	if len(h.ensures) != 1 || len(h.starts) != 1 {
+		t.Errorf("ensures %d starts %d, want one each", len(h.ensures), len(h.starts))
+	}
+	if h.state.Get("portfolio").Stopped {
+		t.Error("a start when shown must not touch the stop flag")
+	}
+}
+
+func TestSeenRunningDoesNothing(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.seen("portfolio")
+	h.answer("portfolio", dashURL)
+	h.seen("portfolio")
+	h.seen("portfolio")
+	h.wantState("portfolio", StateRunning)
+	if len(h.starts) != 1 || len(h.stops) != 0 {
+		t.Errorf("starts %v stops %v: a repeated report restarted it", h.starts, h.stops)
+	}
+}
+
+func TestNewSetArmsTheOnesThatLeft(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("a", "http://127.0.0.1:8001/"), demandTool("b", "http://127.0.0.1:8002/"))
+	h.seen("a", "b")
+	h.up["http://127.0.0.1:8001/"], h.up["http://127.0.0.1:8002/"] = true, true
+	h.advance(ProbeInterval)
+	h.wantState("a", StateRunning)
+	h.wantState("b", StateRunning)
+
+	h.seen("a") // the page was reloaded and shows only a
+	h.advance(IdleSleep)
+	h.wantState("a", StateRunning)
+	h.wantState("b", StateSleeping)
+}
+
+func TestStoppedServiceDoesNotStartWhenSeen(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.run("portfolio", dashURL)
+	if err := h.sup.Stop(context.Background(), "portfolio"); err != nil {
+		t.Fatal(err)
+	}
+	h.seen("portfolio")
+	h.wantState("portfolio", StateStopped)
+	if len(h.starts) != 1 {
+		t.Errorf("starts = %v: showing a service the person stopped started it", h.starts)
+	}
+	if h.pendingTimers() != 0 {
+		t.Errorf("%d timers pending after a Stop", h.pendingTimers())
+	}
+}
+
+func TestStartOffScreenSleeps(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.run("portfolio", dashURL) // the person's Start, from the popover; its page is never shown
+	h.advance(IdleSleep - 2*time.Second - ProbeInterval)
+	h.wantState("portfolio", StateRunning)
+	h.advance(2 * time.Second)
+	h.wantState("portfolio", StateSleeping)
+	if h.state.Get("portfolio").Stopped {
+		t.Error("a sleep is not the person's Stop")
+	}
+}
+
+func TestKeepRunningNeverSleeps(t *testing.T) {
+	h := newHarness(t)
+	h.boot(fixedTool("portfolio", dashURL))
+	h.wantState("portfolio", StateStarting)
+	h.answer("portfolio", dashURL)
+	h.seen()
+	h.advance(30 * time.Minute)
+	h.wantState("portfolio", StateRunning)
+	if len(h.stops) != 0 {
+		t.Errorf("stops = %v", h.stops)
+	}
+}
+
+func TestKeepRunningOffArmsTimer(t *testing.T) {
+	h := newHarness(t)
+	tool := fixedTool("portfolio", dashURL)
+	h.boot(tool)
+	h.answer("portfolio", dashURL)
+	h.seen()
+	h.advance(time.Hour)
+	h.wantState("portfolio", StateRunning)
+
+	tool.Autostart = false
+	h.setTools(tool)
+	h.advance(IdleSleep - time.Second)
+	h.wantState("portfolio", StateRunning)
+	h.advance(time.Second)
+	h.wantState("portfolio", StateSleeping)
+}
+
+func TestKeepRunningOnStartsSleeping(t *testing.T) {
+	h := newHarness(t)
+	tool := demandTool("portfolio", dashURL)
+	h.boot(tool)
+	h.wantState("portfolio", StateSleeping)
+	tool.Autostart = true
+	h.setTools(tool)
+	h.wantState("portfolio", StateStarting)
+}
+
+func TestBootLeavesOnDemandSleeping(t *testing.T) {
+	h := newHarness(t)
+	h.state.m["c"] = Remembered{Stopped: true}
+	h.boot(fixedTool("a", "http://127.0.0.1:8001/"), demandTool("b", "http://127.0.0.1:8002/"), fixedTool("c", "http://127.0.0.1:8003/"))
+	h.wantState("a", StateStarting)
+	h.wantState("b", StateSleeping)
+	h.wantState("c", StateStopped)
+	h.advance(time.Minute)
+	if len(h.starts) != 1 || h.starts[0][1] != "blk-a" {
+		t.Errorf("starts = %v, want only a's", h.starts)
+	}
+}
+
+func TestBootStartsShownOnDemand(t *testing.T) {
+	h := newHarness(t)
+	h.seen("portfolio") // the report lands before the config and Boot
+	h.boot(demandTool("portfolio", dashURL))
+	h.wantState("portfolio", StateStarting)
+}
+
+func TestSetToolsStartsShownNewEntry(t *testing.T) {
+	h := newHarness(t)
+	h.boot()
+	h.seen("portfolio") // not a known service yet
+	h.setTools(demandTool("portfolio", dashURL))
+	h.wantState("portfolio", StateStarting)
+}
+
+func TestElsewhereNeverSleeps(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.up[dashURL] = true // something of the person's already serves the page
+	h.seen("portfolio")
+	h.wantState("portfolio", StateElsewhere)
+	h.seen()
+	h.advance(30 * time.Minute)
+	h.wantState("portfolio", StateElsewhere)
+	if len(h.stops) != 0 {
+		t.Errorf("stops = %v: nothing of arcterm's runs to stop", h.stops)
+	}
+}
+
+func TestRetryingSleepsAndRetriesEnd(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.seen("portfolio")
+	h.answer("portfolio", dashURL)
+
+	h.seen()
+	h.advance(2 * time.Minute)
+	h.exit("blk-portfolio", 1, false)
+	h.wantState("portfolio", StateRetrying)
+	h.advance(time.Second)
+	h.wantState("portfolio", StateStarting) // the retry did not push the ten minutes back
+	h.answer("portfolio", dashURL)
+
+	h.advance(IdleSleep - 2*time.Minute - time.Second - ProbeInterval - 2*time.Second)
+	h.exit("blk-portfolio", 1, false)
+	h.wantState("portfolio", StateRetrying)
+	starts := len(h.starts)
+	h.advance(5 * time.Second)
+	h.wantState("portfolio", StateSleeping)
+	h.advance(time.Minute)
+	h.wantState("portfolio", StateSleeping)
+	if len(h.starts) != starts {
+		t.Errorf("a retry started it after it slept: %v", h.starts)
+	}
+}
+
+func TestWakeReusesRememberedPort(t *testing.T) {
+	h := newHarness(t)
+	tool := autoTool("dev")
+	tool.Autostart = false
+	h.freePort = []int{9100}
+	h.boot(tool)
+	h.seen("dev")
+	h.wantState("dev", StateStarting)
+	h.answer("dev", "http://127.0.0.1:9100/")
+	h.seen()
+	h.advance(IdleSleep)
+	h.wantState("dev", StateSleeping)
+
+	h.seen("dev")
+	h.wantState("dev", StateStarting)
+	if got := h.ensures[len(h.ensures)-1].Port; got != 9100 {
+		t.Errorf("woke on port %d, want the remembered 9100", got)
+	}
+	if h.freeCalls != 1 {
+		t.Errorf("FreePort called %d times, want once", h.freeCalls)
+	}
 }

@@ -179,7 +179,7 @@ type ToolKeywords struct {
 	Url            string `json:"url,omitempty"`       // a pinned app: the page its command serves, on 127.0.0.1
 	Dir            string `json:"dir,omitempty"`       // the folder it runs in, in place of opensin; ~ is home
 	Port           string `json:"port,omitempty"`      // "auto": arcterm picks a free port and passes it to the command as PORT; any other value means nothing
-	Autostart      *bool  `json:"autostart,omitempty"` // a service starts with arcterm; true unless this says false
+	Autostart      *bool  `json:"autostart,omitempty"` // Keep running: a service starts with arcterm and never sleeps; false unless this says true
 }
 
 type ConnKeywords struct {

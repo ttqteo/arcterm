@@ -34,6 +34,7 @@ const (
 	ProbeInterval = 500 * time.Millisecond
 	ProbeTimeout  = 1500 * time.Millisecond
 	BootStagger   = 300 * time.Millisecond // between boot starts, like RestoreLiveAgents
+	IdleSleep     = 10 * time.Minute       // how long a service without Keep running runs with its page off screen, as APP_FRAME_IDLE_MS
 
 	HomeProject = "Home" // the project of a service whose folder is inside no registered project
 )
@@ -96,8 +97,8 @@ func ScanLocalURL(output string) (int, bool) {
 	return port, true
 }
 
-// NeedsRestart reports whether a change from old to cur alters how the service runs. A new name, purpose or autostart
-// does not.
+// NeedsRestart reports whether a change from old to cur alters how the service runs. A new name, purpose or Keep
+// running does not.
 func NeedsRestart(old, cur arctools.Tool) bool {
 	return old.Command != cur.Command || old.Args != cur.Args || old.Dir != cur.Dir || old.Url != cur.Url || old.Port != cur.Port
 }
