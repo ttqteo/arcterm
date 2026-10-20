@@ -4,8 +4,9 @@
 // The slim header over a terminal shown in the centre (AgentSurface renders it where an agent has AgentHeader): its icon
 // and name, the folder it runs in, its project, the quick way back to the agent in view before it (Ctrl Tab), and three
 // buttons: open it beside that agent (a split), move it to the panel under the agent, close it. A pinned app's terminal
-// adds Page | Log, Back, Forward, Reload (Windows), Home and Open in the browser, and its close stops the server arcterm started (appmodel.ts). What it
-// says is terminalpanehead.ts's; this only reads the atoms and runs the buttons.
+// adds Page | Log, Back, Forward, Reload (Windows), Home and Open in the browser, then the state line of its service (a
+// dot and servicesmodel.ts's words), Restart, and Stop or Start in place of a close button: a service tab stays, and
+// Stop frees its server. What it says is terminalpanehead.ts's; this only reads the atoms and runs the buttons.
 
 import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -20,24 +21,52 @@ import {
     GitBranch,
     House,
     PanelBottom,
+    Play,
     RotateCw,
     Square,
     X,
 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
-import { appCloseTitle, appFailLine, isAppTool, type AppView } from "./appmodel";
-import { adoptApp, appHistory, appStatesAtom, homeApp, reloadAppPage, setAppView } from "./appstore";
+import { type AppView } from "./appmodel";
+import { appHistory, appStatesAtom, homeApp, reloadAppPage, setAppView } from "./appstore";
 import { agentGridAtom, canOpenInSplit, currentGrid, dropAgentOnGrid } from "./gridstore";
 import { projectsAtom } from "./projectsstore";
 import { moveToDock } from "./railstore";
+import { canRestart, canStart, canStop, serviceHeaderLine, serviceRowWords } from "./servicesmodel";
+import { restartService, serviceByTabAtom, startService, stopService } from "./servicesstore";
 import { SwapTabs } from "./swapbar";
 import { recentTabsAtom } from "./tabswitcherstore";
 import { previousTab, terminalPaneHead } from "./terminalpanehead";
 import { ToolGlyph } from "./terminalsrail";
 import { loadTools, toolsStatusAtom } from "./toolsstore";
+
+// the header's state line moves once a minute at most while running (up 5m), so a 30 s tick keeps it honest
+const STATE_LINE_TICK_MS = 30_000;
+
+const DOT_TONE = {
+    working: "bg-success border-success",
+    error: "bg-error border-error",
+    warning: "bg-warning border-warning",
+    muted: "bg-ink-faint border-ink-faint",
+} as const;
+
+// a 6 px dot: solid, hollow (a ring) or pulsing, in the tone of the row's own words
+function StateDot({ tone, dot }: { tone: keyof typeof DOT_TONE; dot: "solid" | "hollow" | "pulse" }) {
+    return (
+        <span
+            aria-hidden
+            className={cn(
+                "h-[6px] w-[6px] shrink-0 rounded-full border",
+                DOT_TONE[tone],
+                dot === "hollow" && "bg-transparent",
+                dot === "pulse" && "animate-pulse"
+            )}
+        />
+    );
+}
 
 const APP_VIEWS: { key: AppView; label: string }[] = [
     { key: "page", label: "Page" },
@@ -62,17 +91,25 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
             void loadTools();
         }
     }, [tools]);
-    // a pinned app (appmodel.ts): its page or its log, and a terminal that outlived a reload of the page picks its app up
-    const tool = terminal.toolId != null ? tools?.find((t) => t.id === terminal.toolId) : undefined;
+    // a pinned app (appmodel.ts) is a service's tab: its page or its log, and wavesrv's state of its server. A terminal
+    // opened for an app before services is a plain terminal.
     const app = useAtomValue(appStatesAtom)[terminal.id];
-    const appTool = tool != null && isAppTool(tool) ? tool : undefined;
+    const service = useAtomValue(serviceByTabAtom)[terminal.id];
     // Back and Forward only while the page is what shows: from the log they would move a page no one sees
     const onPage = app != null && app.phase === "open" && app.view === "page";
+    const running = service?.state === "running";
+    // a ticking clock for the state line, only while it has a clock in it (up 5m, retry in 3s)
+    const ticking = service != null && (running || service.state === "retrying");
+    const [now, setNow] = useState(() => Date.now());
     useEffect(() => {
-        if (appTool != null && terminal.blockId != null && app == null) {
-            adoptApp(terminal.id, terminal.blockId, appTool);
+        if (!ticking) {
+            return;
         }
-    }, [appTool, terminal.id, terminal.blockId, app]);
+        setNow(Date.now());
+        const id = setInterval(() => setNow(Date.now()), service?.state === "retrying" ? 1000 : STATE_LINE_TICK_MS);
+        return () => clearInterval(id);
+    }, [ticking, service?.state]);
+    const stateWords = service != null ? serviceRowWords(service, now) : undefined;
     const roots = useMemo(() => {
         const out = new Map<string, string>();
         for (const [name, project] of Object.entries(projects)) {
@@ -110,6 +147,7 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
             data-terminal-pane-head={terminal.id}
             data-app-phase={app?.phase}
             data-app-owned={app != null ? String(app.owned) : undefined}
+            data-service-state={service?.state}
             className="flex h-[34px] shrink-0 items-center gap-[8px] border-b border-border bg-surface pl-[12px] pr-[8px]"
         >
             <ToolGlyph name={head.icon} className="text-muted" />
@@ -135,9 +173,12 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
                     className="mb-[-1px] mt-0 ml-[6px]"
                 />
             ) : null}
-            {app?.phase === "failed" ? (
-                <span data-app-failed className="min-w-0 truncate text-[11.5px] text-warning-soft">
-                    {appFailLine(app)}
+            {service != null && stateWords != null ? (
+                <span data-service-line className="flex min-w-0 items-center gap-[6px]">
+                    <StateDot tone={stateWords.tone} dot={stateWords.dot} />
+                    <span className="min-w-0 truncate text-[11.5px] tabular-nums text-muted">
+                        {serviceHeaderLine(service, now)}
+                    </span>
                 </span>
             ) : null}
             <span className="flex-1" />
@@ -238,25 +279,53 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
                     </button>
                 </>
             ) : null}
-            {app?.owned ? (
-                // a word, not an icon: a square reads as the window's maximize
-                <button
-                    type="button"
-                    data-terminal-close
-                    aria-label={appCloseTitle(head.name, true)}
-                    title={appCloseTitle(head.name, true)}
-                    onClick={() => confirmCloseSession(terminal)}
-                    className={STOP_BUTTON}
-                >
-                    <Square size={10} aria-hidden />
-                    Stop
-                </button>
+            {service != null ? (
+                <>
+                    {canRestart(service) ? (
+                        <button
+                            type="button"
+                            data-service-restart
+                            aria-label={`Restart ${head.name}`}
+                            title={`Restart ${head.name}`}
+                            onClick={() => void restartService(service.id)}
+                            className={BUTTON}
+                        >
+                            <RotateCw size={14} aria-hidden />
+                        </button>
+                    ) : null}
+                    {canStop(service) ? (
+                        // a word, not an icon: a square reads as the window's maximize
+                        <button
+                            type="button"
+                            data-service-stop
+                            aria-label={`Stop ${head.name}`}
+                            title={`Stop ${head.name}`}
+                            onClick={() => void stopService(service.id)}
+                            className={STOP_BUTTON}
+                        >
+                            <Square size={10} aria-hidden />
+                            Stop
+                        </button>
+                    ) : canStart(service) ? (
+                        <button
+                            type="button"
+                            data-service-start
+                            aria-label={`Start ${head.name}`}
+                            title={`Start ${head.name}`}
+                            onClick={() => void startService(service.id)}
+                            className={STOP_BUTTON}
+                        >
+                            <Play size={10} aria-hidden />
+                            Start
+                        </button>
+                    ) : null}
+                </>
             ) : (
                 <button
                     type="button"
                     data-terminal-close
-                    aria-label={app != null ? appCloseTitle(head.name, false) : `Close ${head.name}`}
-                    title={app != null ? appCloseTitle(head.name, false) : `Close ${head.name}`}
+                    aria-label={`Close ${head.name}`}
+                    title={`Close ${head.name}`}
                     onClick={() => confirmCloseSession(terminal)}
                     className={cn(BUTTON, "hover:bg-error/15 hover:text-error")}
                 >

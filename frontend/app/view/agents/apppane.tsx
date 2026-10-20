@@ -3,7 +3,7 @@
 //
 // A pinned app's page, shown on the Agent surface in place of its (still mounted, hidden) terminal: the page once it
 // answers, a waiting card before. Its header is the terminal's (TerminalPaneHead: Page | Log, Back, Forward, Reload,
-// Home, Open in browser, Stop). What it shows is appmodel.ts's; the state is appstore.ts's.
+// Home, Open in browser, state line, Restart, Stop or Start). What it shows is appmodel.ts's; the state is appstore.ts's.
 //
 // The page is not drawn here but by AppFrames in the shell, over the slot AppPane leaves for it: a frame under
 // display:none (the Agent surface off screen, the terminal stack under History) loses its scroll, and one unmounted

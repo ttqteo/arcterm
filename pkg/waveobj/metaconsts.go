@@ -48,7 +48,6 @@ const (
 	MetaKey_CmdInitScriptFish                = "cmd:initscript.fish"
 
 	MetaKey_ToolId                           = "tool:id"
-	MetaKey_ToolAppOwned                     = "tool:appowned"
 	MetaKey_ToolService                      = "tool:service"
 
 	MetaKey_EditorClear                      = "editor:*"

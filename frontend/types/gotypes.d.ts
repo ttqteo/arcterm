@@ -2937,7 +2937,6 @@ declare global {
         "cmd:initscript.pwsh"?: string;
         "cmd:initscript.fish"?: string;
         "tool:id"?: string;
-        "tool:appowned"?: boolean;
         "tool:service"?: boolean;
         "editor:*"?: boolean;
         "editor:minimapenabled"?: boolean;
