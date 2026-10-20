@@ -6,3 +6,9 @@
 pkg/wshrpc/wshclient/wshclient.go   merge=union
 frontend/app/store/wshclientapi.ts  merge=union
 frontend/types/gotypes.d.ts         merge=union
+
+# lists every branch appends to (CHANGELOG under one heading, the hand checks under one section): parallel
+# branches that each add a line at the same spot conflict. union keeps both sides' lines, as AGENTS.md asks of a
+# CHANGELOG conflict. A line one side removed beside one the other added can come back: delete it again by hand.
+CHANGELOG.md                        merge=union
+docs/open-issues.md                 merge=union
