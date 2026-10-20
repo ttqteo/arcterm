@@ -18,6 +18,8 @@ const m = vi.hoisted(() => ({
     toolsStatus: vi.fn(),
     toolsSetUser: vi.fn(),
     reload: vi.fn(),
+    serviceOpen: vi.fn(),
+    serviceStart: vi.fn(),
     closeTab: vi.fn(),
     showTerminal: vi.fn(),
     closeLauncher: vi.fn(),
@@ -56,6 +58,8 @@ vi.mock("@/app/store/wshclientapi", () => ({
         ToolsSetUserCommand: m.toolsSetUser,
         SetMetaCommand: m.setMeta,
         ControllerResyncCommand: m.resync,
+        ServiceOpenCommand: m.serviceOpen,
+        ServiceStartCommand: m.serviceStart,
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -72,8 +76,8 @@ vi.mock("./runlineage", () => ({
     agentProject: (_l: unknown, _a: unknown, a: { project?: string }) => a.project ?? "",
 }));
 
-import { appStatesAtom } from "./appstore";
 import { dockedTerminalAtom, railCwdsAtom } from "./railstore";
+import { servicesAtom } from "./servicesstore";
 import {
     addUserTool,
     failedAtom,
@@ -167,55 +171,83 @@ describe("opening a pinned app", () => {
             shows: "panel",
             ...over,
         });
+    const svc = (state: string): ServiceStatus => ({
+        id: "hong",
+        name: "hong",
+        command: "npm run dash",
+        dir: "~/dev/hong",
+        project: "Home",
+        state,
+        port: 8386,
+        url: "http://127.0.0.1:8386/",
+        tabid: "tab-svc",
+        blockid: "blk-svc",
+        autostart: true,
+    });
     const fetchMock = vi.fn();
 
     beforeEach(() => {
         fetchMock.mockReset();
         vi.stubGlobal("fetch", fetchMock);
-        globalStore.set(appStatesAtom, {});
-        m.reload.mockResolvedValue({ oid: "tab-new", blockids: ["blk-new"] });
+        globalStore.set(servicesAtom, null);
+        m.serviceStart.mockResolvedValue(undefined);
     });
 
-    it("runs the command in the app's folder, in the centre whatever it shows, and waits for the page", async () => {
-        fetchMock.mockRejectedValue(new TypeError("refused"));
+    it("gives a stopped service its tab, starts it, and takes the centre whatever it shows", async () => {
+        m.serviceOpen.mockResolvedValue(svc("stopped"));
         const model = fakeModel();
         const res = await openTool(model, app(), { place: "panel" });
-        expect(res).toEqual({ ok: true, tabId: "tab-new" });
-        expect(m.launchAgent).toHaveBeenCalledWith(model, {
-            runtime: "terminal",
-            startupCommand: "npm run dash",
-            task: "",
-            projectPath: "~/dev/hong",
-            projectName: "Home",
-            toolId: "hong",
-            focus: true,
-        });
-        expect(globalStore.get(appStatesAtom)["tab-new"]).toMatchObject({ phase: "starting", owned: true });
-        expect(m.setMeta).toHaveBeenCalledWith({}, { oref: "block:blk-new", meta: { "tool:appowned": true } });
-        expect(m.resync).toHaveBeenCalledWith({}, expect.objectContaining({ tabid: "tab-new", blockid: "blk-new" }));
-        expect(globalStore.get(dockedTerminalAtom)).toBeNull();
+        expect(res).toEqual({ ok: true, tabId: "tab-svc" });
+        expect(m.serviceOpen).toHaveBeenCalledWith({}, { id: "hong" });
+        expect(m.serviceStart).toHaveBeenCalledWith({}, { id: "hong" });
+        expect(m.serviceOpen.mock.invocationCallOrder[0]).toBeLessThan(m.serviceStart.mock.invocationCallOrder[0]);
+        expect(globalStore.get(model.focusIdAtom)).toBe("tab-svc");
         expect(globalStore.get(model.surfaceAtom)).toBe("agent");
-        expect(m.subs.some((s) => s.eventType === "blockclose" && s.scope === "block:blk-new")).toBe(true);
-    });
-
-    it("shows a page that already answers and runs nothing, so closing leaves its server alone", async () => {
-        fetchMock.mockResolvedValue({ type: "opaque" });
-        await openTool(fakeModel(), app(), { place: "centre" });
-        expect(m.launchAgent.mock.calls[0][1].startupCommand).toBe("");
-        expect(m.setMeta).not.toHaveBeenCalled();
-        expect(globalStore.get(appStatesAtom)["tab-new"]).toMatchObject({ phase: "open", owned: false, view: "page" });
-    });
-
-    it("shows the app already open, on its page, and launches nothing", async () => {
-        const model = fakeModel({ terminals: [{ id: "tab-h", toolId: "hong", blockId: "blk-h" }] });
-        fetchMock.mockResolvedValue({ type: "opaque" });
-        m.blocks["block:blk-h"] = { meta: { "tool:appowned": true } };
-        const res = await openTool(model, app(), { place: "centre" });
-        expect(res).toEqual({ ok: true, tabId: "tab-h" });
-        expect(m.launchAgent).not.toHaveBeenCalled();
-        expect(globalStore.get(model.focusIdAtom)).toBe("tab-h");
-        expect(globalStore.get(appStatesAtom)["tab-h"]).toMatchObject({ owned: true, view: "page" });
         expect(m.showTerminal).toHaveBeenCalled();
+        expect(globalStore.get(dockedTerminalAtom)).toBeNull();
+    });
+
+    it("never launches a terminal, probes the page, or writes block meta itself", async () => {
+        m.serviceOpen.mockResolvedValue(svc("stopped"));
+        await openTool(fakeModel(), app(), { place: "centre" });
+        expect(m.launchAgent).not.toHaveBeenCalled();
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(m.setMeta).not.toHaveBeenCalled();
+        expect(m.resync).not.toHaveBeenCalled();
+    });
+
+    it("shows a running or starting service without starting it again", async () => {
+        for (const state of ["running", "starting"]) {
+            m.serviceStart.mockClear();
+            m.serviceOpen.mockResolvedValue(svc(state));
+            const model = fakeModel();
+            const res = await openTool(model, app(), { place: "centre" });
+            expect(res).toEqual({ ok: true, tabId: "tab-svc" });
+            expect(m.serviceStart).not.toHaveBeenCalled();
+            expect(globalStore.get(model.focusIdAtom)).toBe("tab-svc");
+        }
+    });
+
+    it("starts a service running elsewhere, which probes its page again", async () => {
+        m.serviceOpen.mockResolvedValue(svc("elsewhere"));
+        await openTool(fakeModel(), app(), { place: "centre" });
+        expect(m.serviceStart).toHaveBeenCalledWith({}, { id: "hong" });
+    });
+
+    it("puts the opened service in the list before wavesrv's event arrives", async () => {
+        m.serviceOpen.mockResolvedValue(svc("stopped"));
+        await openTool(fakeModel(), app(), { place: "centre" });
+        expect(globalStore.get(servicesAtom)?.map((s) => s.id)).toEqual(["hong"]);
+    });
+
+    it("says so, and changes nothing, when wavesrv refuses to open it", async () => {
+        m.serviceOpen.mockRejectedValue(new Error("no such service"));
+        const model = fakeModel();
+        const res = await openTool(model, app(), { place: "centre" });
+        expect(res).toEqual({ ok: false, reason: "hong could not be opened as a service" });
+        expect(m.serviceStart).not.toHaveBeenCalled();
+        expect(m.showTerminal).not.toHaveBeenCalled();
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
     });
 });
 

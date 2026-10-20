@@ -24,6 +24,7 @@ import { openTarget, peekTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import {
+    AppWindow,
     ArrowRight,
     ArrowUpRight,
     AtSign,
@@ -199,6 +200,9 @@ import { rowFieldsAtom } from "./rowfieldsstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
+import { showServiceMenu } from "./servicemenu";
+import { canRestart, canStart, serviceRowWords } from "./servicesmodel";
+import { ensureServicesFeed, openService, restartService, servicesAtom, startService } from "./servicesstore";
 import { showTerminalMenu, splitCellMenuItems, SplitMark, ToolGlyph } from "./terminalsrail";
 import { PanelWeb, TreeSpider } from "./themedecorview";
 import { toolIcon, toolTerminalName, type ToolIconName } from "./toolsmodel";
@@ -2092,6 +2096,127 @@ function TerminalRow({
     );
 }
 
+const SERVICE_TONE = {
+    working: { text: "text-working", dot: "bg-working", ring: "border-working" },
+    error: { text: "text-error", dot: "bg-error", ring: "border-error" },
+    warning: { text: "text-warning", dot: "bg-warning", ring: "border-warning" },
+    muted: { text: "text-muted", dot: "bg-muted", ring: "border-muted" },
+} as const;
+
+// The Jobs popover's row button (jobqueuepanel.tsx)
+const SERVICE_BUTTON =
+    "flex-none cursor-pointer rounded border border-edge-mid px-1.5 py-[1px] text-[11px] text-secondary hover:border-edge-strong hover:bg-surface-hover";
+
+// A held service in its project's folder (servicesstore.ts), after the divider: the app-window icon, its name, what its
+// state says (serviceRowWords: words in the tone token, the port, a 6 px dot that is solid, hollow or pulsing; the
+// words carry the state, never the color alone) and, on hover, Start or Restart. A click never starts it: one with a tab takes
+// the centre as any terminal does, and one that never ran is given its tab and block (openService) and takes the centre
+// on its log. Its menu (showServiceMenu) holds the rest.
+function ServiceRow({
+    model,
+    serviceId,
+    navDigit,
+}: {
+    model: AgentsViewModel;
+    serviceId: string;
+    navDigit?: number; // its Alt+1..9 digit
+}) {
+    const service = useAtomValue(servicesAtom)?.find((s) => s.id === serviceId);
+    const now = useAtomValue(model.nowAtom);
+    const selected = useSelectedRowId(model) === (service?.tabid ?? "");
+    const digit = useHeldDigit(navDigit);
+    if (service == null) {
+        return null;
+    }
+    const w = serviceRowWords(service, now);
+    const tone = SERVICE_TONE[w.tone];
+    const select = () => {
+        if (service.tabid) {
+            selectAgentRow(model, service.tabid);
+            return;
+        }
+        fireAndForget(async () => {
+            const opened = await openService(service.id);
+            if (opened?.tabid) {
+                selectAgentRow(model, opened.tabid);
+            }
+        });
+    };
+    const act = w.action ?? null;
+    const actEnabled = act === "restart" ? canRestart(service) : canStart(service);
+    return (
+        <div
+            data-service-row={service.id}
+            data-service-state={service.state}
+            onClick={select}
+            onContextMenu={(e) => showServiceMenu(model, service, e)}
+            className={cn(
+                "group relative flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
+        >
+            <DigitHint digit={digit}>
+                <Slot>
+                    <AppWindow size={13} aria-hidden className="text-muted" />
+                </Slot>
+            </DigitHint>
+            <span
+                data-service-name
+                title={service.name}
+                className={cn(
+                    "truncate text-[13px]",
+                    // the name keeps its width and the words give way; a row with no words lets the name fill it
+                    w.words !== "" ? "max-w-[60%] flex-none" : "min-w-0 flex-1",
+                    selected ? "text-primary" : "text-secondary"
+                )}
+            >
+                {service.name}
+            </span>
+            {w.words !== "" ? (
+                <span
+                    data-service-words
+                    title={w.words}
+                    className={cn("min-w-0 flex-1 truncate whitespace-nowrap text-[11px]", tone.text)}
+                >
+                    {w.words}
+                </span>
+            ) : null}
+            {w.port != null ? (
+                <span data-service-port className="flex-none text-[11px] tabular-nums text-muted">
+                    {w.port}
+                </span>
+            ) : null}
+            {act != null && actEnabled ? (
+                <button
+                    type="button"
+                    data-service-act={act}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        fireAndForget(() =>
+                            act === "restart" ? restartService(service.id) : startService(service.id)
+                        );
+                    }}
+                    className={cn(
+                        SERVICE_BUTTON,
+                        "opacity-0 transition-opacity duration-100 focus-visible:opacity-100 group-hover:opacity-100"
+                    )}
+                >
+                    {act === "restart" ? "Restart" : "Start"}
+                </button>
+            ) : null}
+            <span
+                aria-hidden
+                data-service-dot={w.dot}
+                className={cn(
+                    "h-[6px] w-[6px] flex-none rounded-full",
+                    w.dot === "hollow" ? cn("border bg-transparent", tone.ring) : tone.dot,
+                    w.dot === "pulse" && "pulse-dot"
+                )}
+            />
+        </div>
+    );
+}
+
 // A plan queued to start (the run queue, runqueuestore.ts). It has no session or run yet, so a click selects nothing and
 // shows nothing in the centre; the tooltip carries the plan, its route and its age instead. Hover offers Start now and
 // Remove, and the menu adds Run next (not on the head of the queue, which has nowhere to go). A blocked entry reads in the
@@ -2409,6 +2534,13 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // the plans queued to start (the run queue), each a row in its project's folder under the agents
     useRunQueueFeed();
     const queue = useAtomValue(queuedRowsAtom);
+    // the held services (wavesrv's): a row each in its project's folder, after the divider
+    useEffect(() => ensureServicesFeed(), []);
+    const serviceList = useAtomValue(servicesAtom);
+    const services = useMemo(
+        () => (serviceList ?? []).map((s) => ({ id: s.id, name: s.name, project: s.project, tabId: s.tabid })),
+        [serviceList]
+    );
     const rows = projectTree({
         tree,
         terminals,
@@ -2416,6 +2548,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         collapsed: collapsedList,
         roots,
         queue,
+        services,
     });
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));
@@ -2542,6 +2675,15 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                     return plain(
                                         `queued-entry-${r.entry.id}`,
                                         <QueuedEntryRow model={model} row={r} />
+                                    );
+                                case "service":
+                                    return plain(
+                                        `service-${r.serviceId}`,
+                                        <ServiceRow
+                                            model={model}
+                                            serviceId={r.serviceId}
+                                            navDigit={r.tabId != null ? digits.get(r.tabId) : undefined}
+                                        />
                                     );
                                 case "terminal":
                                     return plain(

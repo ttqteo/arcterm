@@ -28,6 +28,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - `wsh memory` runs a memory check from a shell and applies or keeps what it proposes, as Setup → Memory does;
   while a project's memory index is over the budget it states (`Budget: N bytes`), the check proposes cuts to fit.
+- arcterm now looks after your pinned apps' servers: it gives each a port, starts it when you open the app, restarts it when it crashes, lets it sleep ten minutes after you leave it (it starts again when you come back), and shows them in the Agent tree and the new Services chip. Set an app to Keep running and it starts with arcterm and never sleeps. <!-- big -->
 
 ### Changed
 

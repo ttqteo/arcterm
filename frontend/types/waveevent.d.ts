@@ -34,6 +34,7 @@ declare global {
         | "run:event"
         | "runqueue:changed"
         | "memhygiene:update"
+        | "services:changed"
     ;
 
     type WaveEvent = {
@@ -69,7 +70,8 @@ declare global {
         { event: "dag:task-retried"; data?: string; } | 
         { event: "run:event"; data?: RunEventData; } | 
         { event: "runqueue:changed"; data?: RunQueueChangedData; } | 
-        { event: "memhygiene:update"; data?: null; }
+        { event: "memhygiene:update"; data?: null; } | 
+        { event: "services:changed"; data?: ServicesData; }
     );
 
 }

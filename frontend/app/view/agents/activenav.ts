@@ -13,6 +13,7 @@ import { waitMap } from "./agentwaits";
 import { collapsedProjectsAtom } from "./projectfoldstore";
 import { projectsAtom } from "./projectsstore";
 import { treeFoldsAtom } from "./runlineagestore";
+import { servicesAtom } from "./servicesstore";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
 
 export function activeNavOrder(model: AgentsViewModel): string[] {
@@ -40,6 +41,12 @@ export function activeNavOrder(model: AgentsViewModel): string[] {
             filter: globalStore.get(model.projectFilterAtom),
             collapsed: globalStore.get(collapsedProjectsAtom),
             roots,
+            services: (globalStore.get(servicesAtom) ?? []).map((s) => ({
+                id: s.id,
+                name: s.name,
+                project: s.project,
+                tabId: s.tabid,
+            })),
         })
     );
 }

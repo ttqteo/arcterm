@@ -18,20 +18,22 @@ type Install struct {
 }
 
 type Tool struct {
-	Id       string  `json:"id"`
-	Name     string  `json:"name"`
-	Category string  `json:"category"` // "Git", "Files", "System", "Containers", "Docs and data", "Yours"
-	Purpose  string  `json:"purpose"`
-	Command  string  `json:"command"`         // the program, e.g. "lazygit"
-	Args     string  `json:"args,omitempty"`  // appended to Command as typed
-	Needs    string  `json:"needs,omitempty"` // the program the status check looks up in Command's place, for a tool wsh runs
-	OpensIn  string  `json:"opensin"`         // "agent" (the focused agent's folder), "root" (project root), "home"
-	Shows    string  `json:"shows"`           // "centre" or "panel"
-	Install  Install `json:"install"`
-	User     bool    `json:"user,omitempty"`
-	Url      string  `json:"url,omitempty"`      // a pinned app's page (AppURL): opening the tool shows it once the command serves it
-	Dir      string  `json:"dir,omitempty"`      // the folder the tool runs in, in place of OpensIn; ~ is home
-	Detected bool    `json:"detected,omitempty"` // from Detected(): suggested once its command is found, a library tool once added
+	Id        string  `json:"id"`
+	Name      string  `json:"name"`
+	Category  string  `json:"category"` // "Git", "Files", "System", "Containers", "Docs and data", "Yours"
+	Purpose   string  `json:"purpose"`
+	Command   string  `json:"command"`         // the program, e.g. "lazygit"
+	Args      string  `json:"args,omitempty"`  // appended to Command as typed
+	Needs     string  `json:"needs,omitempty"` // the program the status check looks up in Command's place, for a tool wsh runs
+	OpensIn   string  `json:"opensin"`         // "agent" (the focused agent's folder), "root" (project root), "home"
+	Shows     string  `json:"shows"`           // "centre" or "panel"
+	Install   Install `json:"install"`
+	User      bool    `json:"user,omitempty"`
+	Url       string  `json:"url,omitempty"`       // a pinned app's page (AppURL): opening the tool shows it once the command serves it
+	Dir       string  `json:"dir,omitempty"`       // the folder the tool runs in, in place of OpensIn; ~ is home
+	Port      string  `json:"port,omitempty"`      // PortAuto: arcterm picks the port of a service whose page has no fixed url
+	Autostart bool    `json:"autostart,omitempty"` // Keep running: a service starts with arcterm and never sleeps (false unless tools.json says true)
+	Detected  bool    `json:"detected,omitempty"`  // from Detected(): suggested once its command is found, a library tool once added
 }
 
 const (
@@ -43,7 +45,14 @@ const (
 
 	ShowsCentre = "centre"
 	ShowsPanel  = "panel"
+
+	PortAuto = "auto" // the one Port value that means anything
 )
+
+// IsService reports whether t is a service: a tool with a page, at a fixed url or on a port arcterm picks.
+func IsService(t Tool) bool {
+	return AppURL(t.Url) || t.Port == PortAuto
+}
 
 // Builtin is the catalog arcterm ships, in the order the library lists it. The winget ids were checked against the
 // winget source on 2026-10-13 (`winget show --id <id> --exact`; the btop4win command alias from its manifest). visidata
@@ -232,6 +241,14 @@ func override(base Tool, u wconfig.ToolKeywords) Tool {
 	}
 	if u.Dir != "" {
 		base.Dir = u.Dir
+	}
+	if u.Port == PortAuto {
+		base.Port = PortAuto
+	}
+	if u.Autostart != nil {
+		base.Autostart = *u.Autostart
+	} else {
+		base.Autostart = false
 	}
 	return base
 }

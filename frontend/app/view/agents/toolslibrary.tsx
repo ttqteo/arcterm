@@ -30,6 +30,7 @@ import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { appUrlFor, folderName, type ScriptSuggestion } from "./appsuggest";
 import { suggestForFolder } from "./appsuggeststore";
+import { setServiceAutostart } from "./servicesstore";
 import { Toggle } from "./settingsui";
 import { installEndedAtom, selectedToolAtom, toolFormAtom, toolsSearchAtom, watchInstallEnds } from "./setupstore";
 import {
@@ -413,6 +414,9 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
     const [shows, setShows] = useState(tool.shows);
     useEffect(() => setOpensin(tool.opensin), [tool.opensin]);
     useEffect(() => setShows(tool.shows), [tool.shows]);
+    const hasPage = Boolean(tool.url || tool.port);
+    const [autostart, setAutostart] = useState(tool.autostart ?? false);
+    useEffect(() => setAutostart(tool.autostart ?? false), [tool.autostart]);
 
     const guard = async (fn: () => Promise<string | null>) => {
         setNotice(null);
@@ -446,6 +450,17 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
         } catch (e) {
             setOpensin(tool.opensin);
             setShows(tool.shows);
+            setNotice(errText(e));
+        }
+    };
+    const toggleAutostart = async () => {
+        const next = !autostart;
+        setAutostart(next);
+        setNotice(null);
+        try {
+            await setServiceAutostart(tool.id, next);
+        } catch (e) {
+            setAutostart(tool.autostart ?? false);
             setNotice(errText(e));
         }
     };
@@ -532,7 +547,7 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
                     </SettingRow>
                 )}
                 {/* a pinned app's page always takes the centre */}
-                {tool.url ? null : (
+                {hasPage ? null : (
                     <SettingRow label="Shows" sub="Where it appears on screen">
                         <Options
                             label="Shows"
@@ -552,19 +567,34 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
                         label={`Pin ${tool.name} in Open a tool`}
                     />
                 </SettingRow>
-                {tool.url ? (
+                {hasPage ? (
                     <SettingRow label="Page" sub="Shown once the command serves it">
                         <span
                             data-tool-page
-                            className="min-w-0 flex-1 truncate rounded-[7px] border border-edge-mid bg-surface-code px-2.5 py-1.5 font-mono text-[12px] text-secondary"
+                            className={cn(
+                                "min-w-0 flex-1 truncate rounded-[7px] border border-edge-mid bg-surface-code px-2.5 py-1.5 text-[12px] text-secondary",
+                                tool.url ? "font-mono" : "font-sans"
+                            )}
                         >
-                            {tool.url}
+                            {tool.url || "A free port, picked by arcterm"}
                         </span>
                         {tool.dir ? (
                             <span title={tool.dir} className="max-w-[45%] truncate text-[11.5px] text-muted">
                                 in {tool.dir}
                             </span>
                         ) : null}
+                    </SettingRow>
+                ) : null}
+                {hasPage ? (
+                    <SettingRow
+                        label="Keep running"
+                        sub="Run it even when its page is not on screen, and start it with arcterm"
+                    >
+                        <Toggle
+                            on={autostart}
+                            onToggle={() => fireAndForget(toggleAutostart)}
+                            label={`Keep ${tool.name} running`}
+                        />
                     </SettingRow>
                 ) : null}
                 <SettingRow label="Command" sub="What arcterm runs">
@@ -829,6 +859,7 @@ function ToolFormPane({ form, statuses }: { form: ToolForm; statuses: ToolStatus
         set({
             command: s.command,
             url: s.port != null ? appUrlFor(s.port.port) : form.url,
+            autoPort: s.port != null ? false : form.autoPort,
             name: form.name.trim() || folderName(form.dir),
         });
 
@@ -962,16 +993,31 @@ function ToolFormPane({ form, statuses }: { form: ToolForm; statuses: ToolStatus
                         <input
                             id="tool-url"
                             data-tool-url
-                            value={form.url}
+                            value={form.autoPort ? "" : form.url}
+                            disabled={form.autoPort}
                             spellCheck={false}
-                            placeholder="http://127.0.0.1:3000"
+                            placeholder={form.autoPort ? "arcterm picks the port" : "http://127.0.0.1:3000"}
                             onChange={(e) => set({ url: e.target.value })}
-                            className={INPUT_MONO}
+                            className={cn(INPUT_MONO, form.autoPort && "opacity-50")}
                         />
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <span className="w-[160px] flex-none" />
+                        <label className="flex cursor-pointer items-center gap-2 text-[12.5px] text-secondary">
+                            <input
+                                type="checkbox"
+                                className="m-0 h-[13px] w-[13px] cursor-pointer accent-accent"
+                                data-tool-autoport
+                                checked={form.autoPort}
+                                onChange={(e) => set({ autoPort: e.target.checked, url: "" })}
+                            />
+                            Pick a free port
+                        </label>
                     </div>
                     <div className="pl-[176px] text-[11.5px] text-muted">
                         Optional, for a local web app: arcterm runs the command, waits for this page and shows it in
                         place of the terminal. Only http://127.0.0.1 pages.
+                        {form.autoPort ? " The command gets the port as PORT." : null}
                     </div>
                 </FormRow>
                 {/* a folder of its own is where it runs, and a page always takes the centre */}
@@ -988,7 +1034,7 @@ function ToolFormPane({ form, statuses }: { form: ToolForm; statuses: ToolStatus
                         </div>
                     </FormRow>
                 )}
-                {form.url.trim() ? null : (
+                {form.url.trim() || form.autoPort ? null : (
                     <FormRow>
                         <div className="flex items-center gap-4">
                             <span className="w-[160px] flex-none text-[13px] text-primary">Shows</span>

@@ -35,6 +35,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/reporadar"
 	"github.com/wavetermdev/waveterm/pkg/secretstore"
 	"github.com/wavetermdev/waveterm/pkg/service"
+	"github.com/wavetermdev/waveterm/pkg/services"
 	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 	"github.com/wavetermdev/waveterm/pkg/sleepwatch"
 	"github.com/wavetermdev/waveterm/pkg/telebot"
@@ -491,6 +492,7 @@ func main() {
 		claudeaccount.ApplyEnv(fc.Settings.ClaudeActiveAccount)
 		jobqueue.Poke()          // a changed jobs:* setting is effective at once, not at the queue's next tick
 		wshserver.PokeRunQueue() // so is a changed runs:maxactive
+		services.OnConfig(fc)    // a service added, changed or removed in tools.json
 		if telebot.Default != nil {
 			telebot.Default.Poke() // telegram:enabled and telegram:chatid
 		}
@@ -524,6 +526,7 @@ func main() {
 	blocklogger.InitBlockLogger()
 	blockcontroller.InitBlockController()
 	blockcontroller.RestoreLiveAgents(context.Background()) // an update or a crash kills every agent, and nothing else restarts one
+	go services.Init(context.Background())                  // pinned apps' servers: Boot sweeps leftovers and staggers the starts, so it must not hold up WAVESRV-ESTART
 	// idle agents sleep after a while, or early when RAM runs low
 	wshserver.StartAgentSleepLoop(context.Background(), func(n wshrpc.NotifyCommandData) { publishNotice(n.Title, n.Message, n.Level) })
 	// the Mac stays out of idle sleep while agents, runs or heavy jobs work (power:keepawake)

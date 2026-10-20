@@ -16,12 +16,14 @@ import {
     mkdtempSync,
     readdirSync,
     readFileSync,
+    realpathSync,
     rmSync,
     statSync,
     utimesSync,
     writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
+import { connect as netConnect, createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41820,10 +41822,11 @@ const toolsAdd = {
     },
 };
 
-// --- tools-app: a pinned app, a tool of yours with a page (tools.json url and dir). Opened from Setup → Tools, it runs
-// its command in a terminal of its own, shows a waiting card until the page answers, then the page in the terminal's
-// place under the terminal's header (Page | Log, Reload, Open in the browser, Stop). The fixture app is a node server in
-// a temp folder that starts listening 2.5 s after it runs, on a port free when the scenario arranged.
+// --- tools-app: a pinned app, a tool of yours with a page (tools.json url and dir), which wavesrv holds as a service.
+// Opened from Setup → Tools, it starts (its entry has no Keep running, so it sleeps until shown), shows a waiting
+// card until the page answers, then the page in the service's place under its header (Page | Log, Back, Forward, Home,
+// Open in the browser, Restart, Stop); the tree holds it as a service row. The fixture app is a node server in a temp
+// folder that starts listening 2.5 s after it runs, on a port free when the scenario arranged.
 const TT_APP_SOURCE = `const port = Number(process.argv[2]);
 console.log("arc-app starting on " + port);
 setTimeout(() => {
@@ -41882,6 +41885,8 @@ const toolsApp = {
                 args: `app.js ${ctx.port}`,
                 url: ctx.url,
                 dir: appDir,
+                // no Keep running (the default): the service sleeps until its tab shows, so the Open click is what starts
+                // it and the waiting card is there to read
                 purpose: "Verification fixture: a local web app.",
             };
             await h.rpc("toolssetuser", { id: "arc-app", tool: app });
@@ -41918,7 +41923,7 @@ const toolsApp = {
         const waitHead = await h.ev(`(() => { const el = document.querySelector("[data-app-phase]"); return el ? el.getAttribute("data-app-phase") + "/" + el.getAttribute("data-app-owned") : null; })()`);
         await h.shot("cdp-shots/tools-app-2-waiting.png");
         rec(
-            "2. Open runs the command and shows the waiting card on the Agent surface, naming the port",
+            "2. Open starts the service and shows the waiting card on the Agent surface, naming the port",
             waiting && String(waitText).includes(`127.0.0.1:${ctx.port}`) && waitHead === "starting/true",
             JSON.stringify({ waiting, waitText, waitHead })
         );
@@ -41933,20 +41938,24 @@ const toolsApp = {
                 tabs: head ? [...head.querySelectorAll('[role="tab"]')].map((t) => t.textContent + (t.getAttribute("aria-selected") === "true" ? "*" : "")) : [],
                 nav: ["back", "forward", "home"].filter((k) => !!head?.querySelector("[data-app-" + k + "]:not([disabled])")),
                 browser: !!head?.querySelector("[data-app-browser]"),
-                stop: head?.querySelector("[data-terminal-close]")?.getAttribute("title") ?? null,
+                stop: head?.querySelector("[data-service-stop]")?.getAttribute("title") ?? null,
+                restart: !!head?.querySelector("[data-service-restart]"),
+                close: !!head?.querySelector("[data-terminal-close]"),
                 dock: !!head?.querySelector("[data-terminal-to-dock]"),
                 gridHidden: document.querySelector("[data-agent-grid]")?.classList.contains("hidden") ?? null,
             };
         })()`);
         await h.shot("cdp-shots/tools-app-3-page.png");
         rec(
-            "3. once the page answers it shows in the terminal's place, under Page | Log with Back, Forward, Home, Open in the browser and Stop (no move to the panel)",
+            "3. once the page answers it shows in the service's place, under Page | Log with Back, Forward, Home, Open in the browser, Restart and Stop (no close, no move to the panel)",
             framed &&
                 open.src === ctx.url &&
                 JSON.stringify(open.tabs) === JSON.stringify(["Page*", "Log"]) &&
                 JSON.stringify(open.nav) === JSON.stringify(["back", "forward", "home"]) &&
                 open.browser &&
                 open.stop === "Stop arc-app" &&
+                open.restart &&
+                !open.close &&
                 !open.dock &&
                 open.gridHidden === true,
             JSON.stringify({ framed, ...open })
@@ -41955,23 +41964,38 @@ const toolsApp = {
         // a page of the app's own, then Back and Forward: the server sees each page asked for again
         const reqLog = join(ctx.root, "app", "requests.log");
         const asked = () => (existsSync(reqLog) ? readFileSync(reqLog, "utf8").trim().split(/\r?\n/) : []);
+        // The browser's own session history: the frame is out of process, so its url is not readable from the page, but
+        // CDP's index says which entry the window (the frame's steps included) stands on. Each step waits for the frame's
+        // load, as a person does: a Forward pressed while Back's page is still loading is dropped by the browser, with
+        // the index unmoved (2 of 5 runs without the wait), whatever the app does.
+        const histIdx = async () => (await h.cdp("Page.getNavigationHistory")).currentIndex;
+        await h.ev(`(() => { window.__loads = 0; document.querySelector("[data-app-frame]").addEventListener("load", () => window.__loads++); })()`);
+        const loaded = (n) => polishWaitFor(h, `window.__loads >= ${n}`, 8000);
         const before = asked().length;
         await h.ev(`document.querySelector("[data-app-frame]").src = ${JSON.stringify(ctx.url + "/two")}`);
         const wentTwo = await waitUntil(() => asked().length >= before + 1, 8000);
+        await loaded(1);
+        const idxTwo = await histIdx();
         await ttClick(h, "[data-app-back]");
         const wentBack = await waitUntil(() => asked().length >= before + 2, 8000);
+        await loaded(2);
+        const idxBack = await histIdx();
         await ttClick(h, "[data-app-forward]");
         const wentForward = await waitUntil(() => asked().length >= before + 3, 8000);
+        await loaded(3);
+        const idxForward = await histIdx();
         const walk = asked().slice(before);
         await h.shot("cdp-shots/tools-app-3b-forward.png");
         rec(
             "3b. Back and Forward walk the app's own pages: /two, back to /, forward to /two",
-            wentTwo && wentBack && wentForward && JSON.stringify(walk) === JSON.stringify(["/two", "/", "/two"]),
-            JSON.stringify({ wentTwo, wentBack, wentForward, walk })
+            wentTwo && wentBack && wentForward && JSON.stringify(walk) === JSON.stringify(["/two", "/", "/two"]) && idxBack === idxTwo - 1 && idxForward === idxTwo,
+            JSON.stringify({ wentTwo, wentBack, wentForward, walk, idx: [idxTwo, idxBack, idxForward] })
         );
+        // Home is judged alone: the page asked for again after its own click
+        const beforeHome = asked().length;
         await ttClick(h, "[data-app-home]");
-        const wentHome = await waitUntil(() => asked().length >= before + 4, 8000);
-        rec("3c. Home loads the app's start page afresh", wentHome && asked().at(-1) === "/", JSON.stringify({ last: asked().at(-1) }));
+        const wentHome = await waitUntil(() => asked().length >= beforeHome + 1, 8000);
+        rec("3c. Home loads the app's start page afresh", wentHome && asked().at(-1) === "/", JSON.stringify({ last: asked().at(-1), asked: asked().slice(beforeHome) }));
 
         // a page of the app's own before leaving it: Log and back, and another surface and back, come back to it unreloaded
         const beforeTwo = asked().length;
@@ -42008,16 +42032,14 @@ const toolsApp = {
         );
         await ttClick(h, '[data-terminal-pane-head] [role="tab"]:nth-child(2)');
         await polishNap(500);
-        // the last project folder above the app's row, in the tree's order
-        const inProject = await h.ev(`(() => {
-            let folder = null;
-            for (const el of document.querySelectorAll("[data-project-folder], [data-tree-terminal-row]")) {
-                if (el.hasAttribute("data-project-folder")) folder = el.getAttribute("data-project-folder");
-                else if (${TT_FLAT}(el).includes("arc-app")) return folder;
-            }
-            return null;
-        })()`);
-        rec("5. the app's row is in the project its folder is in", inProject === TT_PROJECT, JSON.stringify({ inProject }));
+        // the app is a service row, in the project its folder is in, and no terminal row of its own
+        const inProject = await h.ev(svcFolderOf("arc-app"));
+        const asTerminal = await h.ev(`[...document.querySelectorAll("[data-tree-terminal-row]")].some((el) => ${TT_FLAT}(el).includes("arc-app"))`);
+        rec(
+            "5. the app's row is a service row in the project its folder is in",
+            inProject === TT_PROJECT && !asTerminal,
+            JSON.stringify({ inProject, asTerminal })
+        );
 
         // the add form reads a folder's package.json: a dashboard whose port is only in its server's code, beside a job
         const dashDir = join(ctx.root, "dash");
@@ -42099,7 +42121,8 @@ const toolsApp = {
             "8. Pin as app on a running server opens the add form filled from it: its folder, its port and its command",
             listed &&
                 pinned &&
-                String(fromServer.dir).replace(/[\\/]+$/, "").toLowerCase() === join(ctx.root, "app").toLowerCase() &&
+                // a Mac's temp folder is /var/..., which the process table names /private/var/...
+                String(fromServer.dir).replace(/[\\/]+$/, "").toLowerCase() === realpathSync(join(ctx.root, "app")).toLowerCase() &&
                 fromServer.name === "app" &&
                 fromServer.command === `node app.js ${ctx.port}` &&
                 fromServer.url === ctx.url &&
@@ -42135,7 +42158,890 @@ const toolsApp = {
         return steps;
     },
     async teardown(h, ctx) {
+        // the entry first: removing it stops the service and closes its tab
+        await h.rpc("toolssetuser", { id: "arc-app" }).catch((e) => console.error(`tools-app teardown: remove arc-app failed: ${e?.message ?? e}`));
         await ttTeardown(h, ctx, "tools-app");
+    },
+};
+
+// --- held services (spec 2026-10-20-held-services-design.md; boards RowStates, Main and AppBarServices). A tool with a
+// page is a service wavesrv holds: with `autostart: true` (Keep running) it starts when its tools.json entry is written
+// and never sleeps; without it, it sleeps until its tab shows on screen and sleeps again ten minutes after it leaves.
+// It takes a free port for `"port": "auto"`, and shows in the Agent tree, the page header and the app bar's chip.
+// Every scenario here writes its services with toolssetuser into a temp project and removes them in teardown, which
+// stops each one and closes its tab; the fixture server is a node script in that folder. This scenario's own polling of
+// servicesstatus is the test's, not arcterm's: arcterm polls nothing while a service runs.
+const SVC_SERVER_SOURCE = `require("http").createServer((q, r) => r.end("<h1>" + process.argv[3] + "</h1>")).listen(+process.env.PORT, process.argv[2] || "127.0.0.1");\n`;
+const SVC_TREE = "[data-agent-tree]";
+const SVC_FOOTER = "A tool with a page is a service. Add one in Setup → Tools.";
+
+const svcStatus = async (h) => (await h.rpc("servicesstatus", null))?.services ?? [];
+
+// resolves true when something accepts a connection on 127.0.0.1:port, false on a refusal or no answer
+const svcPortOpen = (port) =>
+    new Promise((res) => {
+        const sock = netConnect({ port, host: "127.0.0.1" });
+        sock.setTimeout(1500, () => {
+            sock.destroy();
+            res(false);
+        });
+        sock.once("connect", () => {
+            sock.destroy();
+            res(true);
+        });
+        sock.once("error", () => res(false));
+    });
+
+// polls servicesstatus until every named service is where `want` says: a state, a list of states or a function of the
+// status. { ok, services } so a failing step can name what it saw.
+async function svcWait(h, want, ms = 60000) {
+    const end = Date.now() + ms;
+    let services = [];
+    while (true) {
+        services = await svcStatus(h).catch(() => services);
+        const ok = Object.entries(want).every(([id, w]) => {
+            const s = services.find((x) => x.id === id);
+            if (!s) return false;
+            return typeof w === "function" ? w(s) : [].concat(w).includes(s.state);
+        });
+        if (ok || Date.now() >= end) return { ok, services };
+        await polishNap(300);
+    }
+}
+
+// the person's Stop on a service not yet on the roster's lips: wait until the supervisor holds it, then stop it, so it
+// reads `stopped` (remembered) rather than `sleeping`
+async function svcStopByPerson(h, id) {
+    const known = await svcWait(h, { [id]: ["sleeping", "stopped"] }, 15000);
+    if (!known.ok) throw new Error(`${id} never reached the supervisor: ${svcBrief(known.services, [id])}`);
+    await h.rpc("servicestop", { id });
+}
+
+const svcBrief = (services, ids) =>
+    JSON.stringify(
+        services
+            .filter((s) => ids == null || ids.includes(s.id))
+            .map((s) => ({ id: s.id, state: s.state, port: s.port, exit: s.exitcode, tab: s.tabid }))
+    );
+
+// a free port held by a plain HTTP server (a service running elsewhere) or by a TCP listener that never answers (a port
+// taken by something that is no page); both close in teardown
+function svcListen(ctx, kind) {
+    const server =
+        kind === "http"
+            ? createServer((q, r) => r.end("<h1>elsewhere</h1>"))
+            : createNetServer((sock) => {
+                  ctx.sockets.push(sock);
+                  sock.on("error", () => {});
+              });
+    ctx.listeners.push(server);
+    return new Promise((res, rej) => {
+        server.once("error", rej);
+        server.listen(0, "127.0.0.1", () => res(server.address().port));
+    });
+}
+
+// What every services scenario starts from: the tools scenarios' arrange (a registered project at a temp folder, the
+// fixture agent, the terminals asked for), the fixture server in that folder, and each def written as a tools.json entry
+// in that folder. `ctx.svcIds` is what teardown removes.
+async function svcArrange(h, ctx, defs, opts = {}) {
+    ctx.listeners ??= [];
+    ctx.sockets ??= [];
+    ctx.svcIds = [];
+    await ttArrange(h, ctx, opts);
+    writeFileSync(join(ctx.root, "server.js"), SVC_SERVER_SOURCE);
+    for (const [id, def] of Object.entries(defs)) await svcWrite(h, ctx, id, def);
+}
+
+async function svcWrite(h, ctx, id, def) {
+    await h.rpc("toolssetuser", {
+        id,
+        tool: { name: id, dir: ctx.root, purpose: "Verification fixture: a held service.", ...def },
+    });
+    if (!ctx.svcIds.includes(id)) ctx.svcIds.push(id);
+}
+
+// Removing an entry stops its service and closes its tab, so the entries go before the tabs do; then the scenario's own
+// listeners; then every port a service had must refuse a connection. A person's Stop is remembered by the tool's id and
+// outlives its entry, so a service left stopped is started first (which forgets it): the next scenario that writes the
+// same id then finds it asleep, not stopped.
+async function svcTeardown(h, ctx, name) {
+    const ports = new Set();
+    const note = async (what, fn) => {
+        try {
+            await fn();
+        } catch (e) {
+            console.error(`${name} teardown: ${what} failed: ${e?.message ?? e}`);
+        }
+    };
+    await note("forget the person's Stop", async () => {
+        for (const s of await svcStatus(h)) if (ctx.svcIds?.includes(s.id) && s.state === "stopped") await h.rpc("servicestart", { id: s.id });
+    });
+    await note("read the services' ports", async () => {
+        for (const s of await svcStatus(h)) if (ctx.svcIds?.includes(s.id) && s.port) ports.add(s.port);
+    });
+    for (const id of ctx.svcIds ?? []) await note(`remove ${id}`, () => h.rpc("toolssetuser", { id }));
+    for (const sock of ctx.sockets ?? []) sock.destroy();
+    for (const server of ctx.listeners ?? []) {
+        server.closeAllConnections?.();
+        await note("close a listener", () => new Promise((res) => server.close(() => res())));
+    }
+    await ttTeardown(h, ctx, name);
+    const open = [];
+    for (const port of ports) {
+        let up = true;
+        for (let i = 0; i < 20 && up; i++) {
+            up = await svcPortOpen(port);
+            if (up) await polishNap(250);
+        }
+        if (up) open.push(port);
+    }
+    if (open.length > 0) throw new Error(`a service's port still answers after its entry was removed: ${open.join(", ")}`);
+}
+
+// each service row in `scope`, in the DOM's order: its state, the words and port it reads and its dot
+const svcRowsExpr = (scope) => `(() => {
+    const txt = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
+    return [...document.querySelectorAll(${JSON.stringify(scope + " [data-service-row]")})].map((el) => ({
+        id: el.getAttribute("data-service-row"),
+        state: el.getAttribute("data-service-state"),
+        words: txt(el.querySelector("[data-service-words]")),
+        port: txt(el.querySelector("[data-service-port]")),
+        dot: el.querySelector("[data-service-dot]")?.getAttribute("data-service-dot") ?? null,
+        name: txt(el.querySelector("[data-service-name]")),
+        nameWhole: (() => {
+            const n = el.querySelector("[data-service-name]");
+            return n != null && n.scrollWidth <= n.clientWidth;
+        })(),
+    }));
+})()`;
+
+// the row `id` in the tree, as its folder files it
+const svcTreeRow = (id) => `${SVC_TREE} [data-service-row="${id}"]`;
+
+// the project folder a tree row sits under: the last folder header before it
+const svcFolderOf = (id) => `(() => {
+    let folder = null;
+    for (const el of document.querySelectorAll("${SVC_TREE} [data-project-folder], ${SVC_TREE} [data-service-row]")) {
+        if (el.hasAttribute("data-project-folder")) folder = el.getAttribute("data-project-folder");
+        else if (el.getAttribute("data-service-row") === ${JSON.stringify(id)}) return folder;
+    }
+    return null;
+})()`;
+
+// the pane head of a service's tab, the page header: its line, its buttons and whether a close button is there
+const svcHeadExpr = (tabId) => `(() => {
+    const head = document.querySelector('[data-terminal-pane-head="${tabId}"]');
+    if (!head) return null;
+    return {
+        line: (head.querySelector("[data-service-line]")?.textContent ?? "").replace(/\\s+/g, " ").trim(),
+        restart: !!head.querySelector("[data-service-restart]"),
+        stop: !!head.querySelector("[data-service-stop]"),
+        start: !!head.querySelector("[data-service-start]"),
+        close: !!head.querySelector("[data-terminal-close]"),
+    };
+})()`;
+
+// a click on the row, the way a person's reaches it, then the centre showing that tab
+async function svcClickRow(h, id, tabId) {
+    if (!(await ttMouse(h, svcTreeRow(id)))) return false;
+    return polishWaitFor(h, `(${TT_CENTRE}) === "terminal:${tabId}"`, 8000);
+}
+
+// the right click on a row: the contextmenu event at the row's middle, which the tree's menu answers
+async function svcContextMenu(h, sel) {
+    await h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(sel)});
+        const r = el.getBoundingClientRect();
+        el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: Math.round(r.x + r.width / 2), clientY: Math.round(r.y + r.height / 2) }));
+    })()`);
+    return polishWaitFor(h, `!!document.querySelector("[data-menu-item]")`, 3000);
+}
+
+// what the open context menu holds, in order: each label, whether it is dimmed and, for the one checkbox, whether it is
+// ticked (a ticked checkbox draws a check in the leading column; the others draw their icon there)
+const SVC_MENU = `[...document.querySelectorAll("[data-menu-item]")].map((el) => ({
+    label: el.getAttribute("data-menu-item"),
+    disabled: el.className.includes("opacity-50"),
+    checked: el.getAttribute("data-menu-item") === "Keep running" ? !!el.firstElementChild?.querySelector("svg") : null,
+}))`;
+
+const svcEntry = async (h, id) => (await h.rpc("getfullconfig", null))?.tools?.[id];
+
+// --- services-states: every state a service can read, in its row (board RowStates). The scenario serves one port itself
+// (a service running elsewhere) and holds another that never answers (a port taken); the rest of the states come from
+// commands that run, exit or never listen.
+const servicesStates = {
+    name: "services-states",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.listeners = [];
+            ctx.sockets = [];
+            ctx.p1 = await svcListen(ctx, "http");
+            ctx.p2 = await svcListen(ctx, "tcp");
+            await svcArrange(h, ctx, {
+                "svc-ok": { command: "node", args: "server.js 127.0.0.1 ok", port: "auto", autostart: true },
+                "svc-off": { command: "node", args: "server.js 127.0.0.1 ok", port: "auto" },
+                "svc-else": { command: "node", args: "server.js 127.0.0.1 else", url: `http://127.0.0.1:${ctx.p1}/`, autostart: true },
+                "svc-taken": { command: "node", args: "server.js 127.0.0.1 taken", url: `http://127.0.0.1:${ctx.p2}/`, autostart: true },
+                "svc-crash": { command: "sh", args: "-c 'exit 1'", port: "auto", autostart: true },
+                "svc-v6": { command: "node", args: "server.js ::1 v6", port: "auto", autostart: true },
+                // never shown and no Keep running: it sleeps
+                "svc-sleep": { command: "node", args: "server.js 127.0.0.1 sleep", port: "auto" },
+            });
+            // the person's Stop, which a sleeping service keeps apart from asleep
+            await svcStopByPerson(h, "svc-off");
+            // a crash takes the five retries (31 s), no page takes 30 s
+            ctx.settled = await svcWait(h, {
+                "svc-ok": "running",
+                "svc-off": "stopped",
+                "svc-else": "elsewhere",
+                "svc-taken": "porttaken",
+                "svc-crash": "crashed",
+                "svc-v6": "nopage",
+                "svc-sleep": "sleeping",
+            });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true && ctx.settled?.ok === true;
+        rec(
+            "0. the seven services reach their states",
+            arranged,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }) + svcBrief(ctx.settled?.services ?? [])
+        );
+        if (!arranged) return steps;
+
+        // new, with Keep running on: they start at once. The flaky one is caught in a retry window of 3 s or more (its
+        // third or later crash), while the slow one is still inside its 30 s of starting.
+        await svcWrite(h, ctx, "svc-slow", { command: "sh", args: "-c 'sleep 600'", port: "auto", autostart: true });
+        await svcWrite(h, ctx, "svc-flaky", { command: "sh", args: "-c 'sleep 3; exit 1'", port: "auto", autostart: true });
+        const late = await svcWait(
+            h,
+            {
+                "svc-slow": "starting",
+                "svc-flaky": (s) => s.state === "retrying" && (s.retryatms ?? 0) - Date.now() >= 3000,
+            },
+            45000
+        );
+        rec("0b. a service added while arcterm runs starts at once", late.ok, svcBrief(late.services, ["svc-slow", "svc-flaky"]));
+        if (!late.ok) return steps;
+
+        const byId = Object.fromEntries(late.services.map((s) => [s.id, s]));
+        const want = {
+            "svc-ok": { words: "", port: `:${byId["svc-ok"].port}`, dot: "solid" },
+            "svc-off": { words: "stopped", port: "", dot: "hollow" },
+            "svc-sleep": { words: "sleeping", port: "", dot: "hollow" },
+            "svc-else": { words: "not started by arcterm", port: `:${ctx.p1}`, dot: "hollow" },
+            "svc-taken": { words: new RegExp(`^${ctx.p2} is held by \\S+`), port: "", dot: "solid" },
+            "svc-crash": { words: "crashed · exit 1", port: "", dot: "solid" },
+            "svc-slow": { words: "starting…", port: "", dot: "pulse" },
+            "svc-flaky": { words: /^crashed · retry in \d+s$/, port: "", dot: "solid" },
+        };
+        const same = (got, exp) => (exp instanceof RegExp ? exp.test(got) : got === exp);
+        const judge = (rows) => {
+            const bad = [];
+            for (const [id, exp] of Object.entries(want)) {
+                const row = rows.find((r) => r.id === id);
+                if (!row || !same(row.words, exp.words) || row.port !== exp.port || row.dot !== exp.dot) bad.push({ id, row });
+                // a name of 9 characters or fewer (every fixture's) shows whole: the words give way, not the name
+                else if (row.name.length <= 9 && !row.nameWhole) bad.push({ id, row, cut: row.name });
+            }
+            return bad;
+        };
+        let rows = [];
+        let bad = [];
+        for (let i = 0; i < 12; i++) {
+            rows = await h.ev(svcRowsExpr(SVC_TREE));
+            bad = rows.length === 9 ? judge(rows) : [{ rows: rows.length }];
+            if (bad.length === 0) break;
+            await polishNap(250);
+        }
+        const folder = await h.ev(svcFolderOf("svc-ok"));
+        await h.shot("cdp-shots/services-states-1-rows.png");
+        rec(
+            "1. each row reads its state: its words, its port and its dot",
+            bad.length === 0 && folder === TT_PROJECT,
+            JSON.stringify({ folder, bad, rows })
+        );
+
+        // no hover action on a sleeping row: the row shows no Start, as a stopped one does
+        await ttMouse(h, svcTreeRow("svc-sleep"), "hover");
+        const sleepRow = await h.ev(`(() => {
+            const row = document.querySelector(${JSON.stringify(svcTreeRow("svc-sleep"))});
+            return { act: row?.querySelector("[data-service-act]")?.getAttribute("data-service-act") ?? null };
+        })()`);
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 600 });
+        const sleep = rows.find((r) => r.id === "svc-sleep");
+        rec(
+            "1b. svc-sleep reads sleeping: its words, a hollow dot, no hover action",
+            sleep?.state === "sleeping" && sleep.words === "sleeping" && sleep.port === "" && sleep.dot === "hollow" && sleepRow.act === null,
+            JSON.stringify({ sleep, sleepRow })
+        );
+
+        const v6 = rows.find((r) => r.id === "svc-v6");
+        rec(
+            "2. svc-v6 reads no page",
+            v6?.state === "nopage" && v6.words === "running, no page after 30s" && v6.dot === "solid" && byId["svc-v6"].state === "nopage",
+            JSON.stringify({ v6, status: byId["svc-v6"] })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await svcTeardown(h, ctx, "services-states");
+    },
+};
+
+// --- services-tree: a service in the Agent tree and its page header (board Main). Rows in the project's folder after the
+// divider, hover buttons, the page and its header, Stop and Start freeing and taking the port, a crashed or stopped
+// service showing its log without starting it, a sleeping one starting when its row is clicked, the row's menu, and
+// j/k reaching the rows.
+const servicesTree = {
+    name: "services-tree",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            ctx.fixedPort = await ttFreePort();
+            await svcArrange(
+                h,
+                ctx,
+                {
+                    "svc-ok": { command: "node", args: "server.js 127.0.0.1 ok", port: "auto", autostart: true },
+                    // the server is the shell's child, as npm's node is: `& wait` keeps sh from exec'ing it
+                    "svc-fixed": {
+                        command: "sh",
+                        args: "-c 'node server.js 127.0.0.1 fixed & wait'",
+                        url: `http://127.0.0.1:${ctx.fixedPort}/`,
+                        autostart: true,
+                    },
+                    "svc-crash": { command: "sh", args: "-c 'exit 1'", port: "auto", autostart: true },
+                    "svc-off": { command: "node", args: "server.js 127.0.0.1 ok", port: "auto" },
+                    // never shown, no Keep running: it sleeps until its row is clicked
+                    "svc-never": { command: "node", args: "server.js 127.0.0.1 never", port: "auto" },
+                },
+                { terminals: [{ key: "shell", cwd: "root" }] }
+            );
+            // svc-off is the person's Stop; svc-never stays asleep
+            await svcStopByPerson(h, "svc-off");
+            ctx.settled = await svcWait(h, {
+                "svc-ok": "running",
+                "svc-fixed": "running",
+                "svc-crash": "crashed",
+                "svc-off": "stopped",
+                "svc-never": "sleeping",
+            });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true && ctx.settled?.ok === true;
+        rec(
+            "0. the services are arranged",
+            arranged,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }) + svcBrief(ctx.settled?.services ?? [])
+        );
+        if (!arranged) return steps;
+        const status = async () => Object.fromEntries((await svcStatus(h)).map((s) => [s.id, s]));
+        let by = await status();
+
+        const ids = ["svc-ok", "svc-fixed", "svc-crash", "svc-off", "svc-never"];
+        await polishWaitFor(h, `${svcRowsExpr(SVC_TREE)}.length === 5`, 8000);
+        const shapeSel = ["[data-project-folder]", "[data-agent-row]", "[data-project-divider]", "[data-tree-terminal-row]", "[data-service-row]"]
+            .map((s) => `${SVC_TREE} ${s}`)
+            .join(", ");
+        const shape = await h.ev(`(() => {
+            return [...document.querySelectorAll(${JSON.stringify(shapeSel)})].map((el) => {
+                if (el.hasAttribute("data-project-folder")) return "folder:" + el.getAttribute("data-project-folder");
+                if (el.hasAttribute("data-agent-row")) return "agent:" + el.getAttribute("data-agent-row");
+                if (el.hasAttribute("data-project-divider")) return "divider:" + el.getAttribute("data-project-divider");
+                if (el.hasAttribute("data-service-row")) return "service:" + el.getAttribute("data-service-row");
+                return "terminal:" + el.getAttribute("data-tree-terminal-row");
+            });
+        })()`);
+        await h.shot("cdp-shots/services-tree-1-rows.png");
+        const at = shape.indexOf(`divider:${TT_PROJECT}`);
+        const after = shape.slice(at + 1);
+        const held = after.slice(0, 5);
+        rec(
+            "1. rows sit after the divider, before any terminal row",
+            at > 0 &&
+                held.every((r) => r.startsWith("service:")) &&
+                [...held].map((r) => r.slice(8)).sort().join() === [...ids].sort().join() &&
+                after[5]?.startsWith("terminal:"),
+            JSON.stringify(shape)
+        );
+
+        // hover: Start on a stopped service, Restart on a crashed one; the buttons sit at opacity 0 until the row is hovered
+        const act = (id) => `(() => {
+            const b = document.querySelector(${JSON.stringify(svcTreeRow(id) + " [data-service-act]")});
+            return b ? { act: b.getAttribute("data-service-act"), text: b.textContent.trim(), opacity: getComputedStyle(b).opacity } : null;
+        })()`;
+        await ttMouse(h, svcTreeRow("svc-off"), "hover");
+        const offAct = await h.ev(act("svc-off"));
+        await ttMouse(h, svcTreeRow("svc-crash"), "hover");
+        const crashAct = await h.ev(act("svc-crash"));
+        await ttMouse(h, svcTreeRow("svc-never"), "hover");
+        const neverAct = await h.ev(act("svc-never"));
+        await h.shot("cdp-shots/services-tree-2-hover.png");
+        await ttMouse(h, svcTreeRow("svc-crash") + ' [data-service-act="restart"]');
+        const left = await svcWait(h, { "svc-crash": (s) => s.state === "starting" || s.state === "retrying" }, 8000);
+        const gaveUp = await svcWait(h, { "svc-crash": "crashed" }, 60000);
+        rec(
+            "2. hover shows Start on a stopped service and Restart on a crashed one, nothing on a sleeping one; Restart takes it out of crashed",
+            neverAct === null &&
+                offAct?.act === "start" &&
+                offAct.text === "Start" &&
+                offAct.opacity === "1" &&
+                crashAct?.act === "restart" &&
+                crashAct.text === "Restart" &&
+                crashAct.opacity === "1" &&
+                left.ok &&
+                gaveUp.ok,
+            JSON.stringify({ offAct, crashAct, neverAct, left: left.ok, gaveUp: gaveUp.ok })
+        );
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 600 });
+
+        // the page and its header
+        by = await status();
+        const ok = by["svc-ok"];
+        const okUrl = `http://127.0.0.1:${ok.port}/`;
+        const centred = await svcClickRow(h, "svc-ok", ok.tabid);
+        const framed = await polishWaitFor(h, `!!document.querySelector("[data-app-frame-shown]")`, 15000);
+        await polishNap(800);
+        const head = await h.ev(svcHeadExpr(ok.tabid));
+        const frame = await h.ev(`document.querySelector("[data-app-frame]")?.getAttribute("src") ?? null`);
+        const served = await fetch(okUrl).then((r) => r.text()).catch(() => "");
+        await h.shot("cdp-shots/services-tree-3-page.png");
+        rec(
+            "3. the page and its header: ok from the service's own port, Running on it, Restart and Stop, no close button",
+            centred &&
+                framed &&
+                frame?.replace(/\/$/, "") === okUrl.replace(/\/$/, "") &&
+                served.includes("<h1>ok</h1>") &&
+                head?.line.startsWith("Running on 127.0.0.1:") &&
+                head.restart &&
+                head.stop &&
+                !head.close,
+            JSON.stringify({ centred, framed, frame, served, head })
+        );
+
+        // Stop takes the server's child with it: npm → node, here sh → node
+        const fixed = by["svc-fixed"];
+        const openedFixed = await svcClickRow(h, "svc-fixed", fixed.tabid);
+        const heldBefore = await svcPortOpen(fixed.port);
+        await ttClick(h, `[data-terminal-pane-head="${fixed.tabid}"] [data-service-stop]`);
+        const stopped = await svcWait(h, { "svc-fixed": "stopped" }, 15000);
+        let freed = false;
+        for (let i = 0; i < 12 && !freed; i++) {
+            freed = !(await svcPortOpen(fixed.port));
+            if (!freed) await polishNap(250);
+        }
+        const fixedRow = (await h.ev(svcRowsExpr(SVC_TREE))).find((r) => r.id === "svc-fixed");
+        await h.shot("cdp-shots/services-tree-4-stopped.png");
+        rec(
+            "4. Stop frees svc-fixed's port",
+            openedFixed && heldBefore && stopped.ok && freed && fixedRow?.words === "stopped",
+            JSON.stringify({ openedFixed, heldBefore, stopped: stopped.ok, freed, fixedRow })
+        );
+
+        await ttClick(h, `[data-terminal-pane-head="${fixed.tabid}"] [data-service-start]`);
+        const back = await svcWait(h, { "svc-fixed": "running" }, 30000);
+        await polishNap(600);
+        const backRow = (await h.ev(svcRowsExpr(SVC_TREE))).find((r) => r.id === "svc-fixed");
+        rec(
+            "5. Start brings it back",
+            back.ok && backRow?.words === "" && backRow.port === `:${fixed.port}`,
+            JSON.stringify({ back: back.ok, backRow })
+        );
+
+        // Restart from the header: a newer start
+        const centredAgain = await svcClickRow(h, "svc-ok", ok.tabid);
+        const startedBefore = (await status())["svc-ok"].startedms ?? 0;
+        await ttClick(h, `[data-terminal-pane-head="${ok.tabid}"] [data-service-restart]`);
+        const again = await svcWait(h, { "svc-ok": (s) => s.state === "running" && (s.startedms ?? 0) > startedBefore }, 30000);
+        const againRow = (await h.ev(svcRowsExpr(SVC_TREE))).find((r) => r.id === "svc-ok");
+        rec(
+            "6. Restart starts it again: a newer start, running",
+            centredAgain && again.ok && againRow?.state === "running",
+            JSON.stringify({ centredAgain, startedBefore, again: svcBrief(again.services, ["svc-ok"]), againRow })
+        );
+
+        // a crashed service shows its log
+        by = await status();
+        const crash = by["svc-crash"];
+        const openedCrash = await svcClickRow(h, "svc-crash", crash.tabid);
+        await polishNap(600);
+        const crashHead = await h.ev(svcHeadExpr(crash.tabid));
+        const crashFrame = await h.ev(`!!document.querySelector("[data-app-frame-shown]")`);
+        await h.shot("cdp-shots/services-tree-5-crashed.png");
+        rec(
+            "7. a crashed service shows its log",
+            openedCrash && !crashFrame && crashHead?.line === "Crashed · exit 1" && crashHead.start && !crashHead.close,
+            JSON.stringify({ openedCrash, crashFrame, crashHead })
+        );
+
+        // a service the person stopped, never run since, gets its tab and block at the click and stays stopped
+        const hadTab = !!by["svc-off"].tabid;
+        await ttMouse(h, svcTreeRow("svc-off"));
+        const gotTab = await svcWait(h, { "svc-off": (s) => !!s.tabid }, 10000);
+        const offTab = gotTab.services.find((s) => s.id === "svc-off")?.tabid;
+        const offShown = offTab ? await polishWaitFor(h, `(${TT_CENTRE}) === "terminal:${offTab}"`, 8000) : false;
+        await polishNap(600);
+        const offHead = offTab ? await h.ev(svcHeadExpr(offTab)) : null;
+        const offFrame = await h.ev(`!!document.querySelector("[data-app-frame-shown]")`);
+        await h.shot("cdp-shots/services-tree-6-stopped.png");
+        await polishNap(3000);
+        const still = (await status())["svc-off"];
+        rec(
+            "8. a stopped service shows its log, not started",
+            !hadTab && offShown && !offFrame && offHead?.line === "Stopped" && offHead.start && still?.state === "stopped",
+            JSON.stringify({ hadTab, offShown, offFrame, offHead, still: still?.state })
+        );
+
+        // a sleeping service: the click shows its tab, which starts it
+        const neverHadTab = !!by["svc-never"].tabid;
+        await ttMouse(h, svcTreeRow("svc-never"));
+        const neverStarted = await svcWait(h, { "svc-never": ["starting", "running"] }, 15000);
+        const neverTab = neverStarted.services.find((s) => s.id === "svc-never")?.tabid;
+        const neverShown = neverTab ? await polishWaitFor(h, `(${TT_CENTRE}) === "terminal:${neverTab}"`, 8000) : false;
+        const neverUp = await svcWait(h, { "svc-never": "running" }, 30000);
+        const neverUpHead = neverTab
+            ? await polishWaitFor(h, `((${svcHeadExpr(neverTab)})?.line ?? "").startsWith("Running on 127.0.0.1:")`, 8000)
+            : false;
+        await polishNap(600);
+        const neverHead = neverTab ? await h.ev(svcHeadExpr(neverTab)) : null;
+        await h.shot("cdp-shots/services-tree-6b-woken.png");
+        rec(
+            "8b. a sleeping service starts when its row is clicked",
+            !neverHadTab && !!neverTab && neverStarted.ok && neverShown && neverUp.ok && neverUpHead && neverHead?.line.startsWith("Running on 127.0.0.1:"),
+            JSON.stringify({ neverHadTab, neverStarted: svcBrief(neverStarted.services, ["svc-never"]), neverShown, neverUp: neverUp.ok, neverHead })
+        );
+
+        // the row's menu
+        by = await status();
+        const menuUp = await svcContextMenu(h, svcTreeRow("svc-ok"));
+        const items = await h.ev(SVC_MENU);
+        await h.shot("cdp-shots/services-tree-7-menu.png");
+        const labels = items.map((i) => i.label);
+        const item = (l) => items.find((i) => i.label === l);
+        const menuOk =
+            menuUp &&
+            ["Start", "Stop", "Restart", "Open in the browser", "Keep running", "Edit in Setup → Tools"].every((l) => labels.includes(l)) &&
+            item("Start")?.disabled === true &&
+            item("Stop")?.disabled === false &&
+            item("Restart")?.disabled === false &&
+            item("Keep running")?.checked === true;
+        await ttClick(h, '[data-menu-item="Keep running"]');
+        let entry;
+        for (let i = 0; i < 20; i++) {
+            entry = await svcEntry(h, "svc-ok");
+            if (entry != null && !("autostart" in entry)) break;
+            await polishNap(250);
+        }
+        const dropped = entry != null && !("autostart" in entry);
+        await polishNap(400);
+        const menu2 = await svcContextMenu(h, svcTreeRow("svc-ok"));
+        const unticked = menu2 && (await h.ev(SVC_MENU)).find((i) => i.label === "Keep running")?.checked === false;
+        await ttClick(h, '[data-menu-item="Keep running"]');
+        for (let i = 0; i < 20; i++) {
+            entry = await svcEntry(h, "svc-ok");
+            if (entry?.autostart === true) break;
+            await polishNap(250);
+        }
+        const on = entry?.autostart === true;
+        await polishNap(400);
+        await svcContextMenu(h, svcTreeRow("svc-ok"));
+        await ttClick(h, '[data-menu-item="Edit in Setup → Tools"]');
+        const inSetup = await polishWaitFor(h, `!!document.querySelector('[data-tools-detail="svc-ok"]')`, 8000);
+        const surface = await h.activeSurfaceLabel();
+        rec(
+            "9. the row menu: the moves its state allows, Keep running reads checked, a click drops autostart and a second click writes autostart true, Edit lands on Setup → Tools",
+            menuOk && dropped && unticked && on && inSetup && surface === "Setup",
+            JSON.stringify({ items, menuOk, dropped, unticked, on, inSetup, surface, entry })
+        );
+
+        // j reaches the next service row: every row the walk crosses has a tab
+        await h.rpc("serviceopen", { id: "svc-off" });
+        await h.goto("agent");
+        await polishWaitFor(h, `${svcRowsExpr(SVC_TREE)}.length === 5`, 8000);
+        by = await status();
+        const order = (await h.ev(svcRowsExpr(SVC_TREE))).map((r) => r.id);
+        const from = order.indexOf("svc-ok") >= 0 && order.indexOf("svc-ok") < order.length - 1 ? "svc-ok" : order[0];
+        const next = order[order.indexOf(from) + 1];
+        const selectedRow = `(() => {
+            const el = [...document.querySelectorAll(${JSON.stringify(SVC_TREE + " [data-service-row]")})].find((r) => /(^| )bg-surface-selected( |$)/.test(r.className));
+            return el ? el.getAttribute("data-service-row") : null;
+        })()`;
+        const onFrom = await svcClickRow(h, from, by[from].tabid);
+        await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
+        const selBefore = await h.ev(selectedRow);
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key: "j", code: "KeyJ", windowsVirtualKeyCode: 74, ...(type === "keyDown" ? { text: "j" } : {}) });
+        }
+        const moved = await polishWaitFor(h, `(${selectedRow}) === ${JSON.stringify(next)}`, 4000);
+        const centreNow = await h.ev(TT_CENTRE);
+        rec(
+            "10. j reaches the next service row's tab",
+            onFrom && selBefore === from && moved && centreNow === `terminal:${(await status())[next].tabid}`,
+            JSON.stringify({ order, from, next, onFrom, selBefore, moved, centreNow })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await svcTeardown(h, ctx, "services-tree");
+    },
+};
+
+// --- services-chip: the app bar's Services chip and its popover (board AppBarServices). Nothing while no tool is a
+// service; then the running count, with the crashed ones in the error tone, the popover ordered by what needs the person,
+// arrows and Enter into the Agent centre, and the amber tone once nothing has crashed.
+const servicesChip = {
+    name: "services-chip",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            await svcArrange(h, ctx, {});
+            ctx.noChip = await h.ev(`!document.querySelector("[data-services-chip]")`);
+            for (const [id, def] of Object.entries({
+                "svc-ok": { command: "node", args: "server.js 127.0.0.1 ok", port: "auto", autostart: true },
+                "svc-crash": { command: "sh", args: "-c 'exit 1'", port: "auto", autostart: true },
+                "svc-v6": { command: "node", args: "server.js ::1 v6", port: "auto", autostart: true },
+                // no Keep running and never shown: it sleeps
+                "svc-off": { command: "node", args: "server.js 127.0.0.1 ok", port: "auto" },
+            })) {
+                await svcWrite(h, ctx, id, def);
+            }
+            ctx.settled = await svcWait(h, { "svc-ok": "running", "svc-crash": "crashed", "svc-v6": "nopage", "svc-off": "sleeping" });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true && ctx.settled?.ok === true;
+        rec(
+            "0. the four services reach their states, svc-off asleep",
+            arranged,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }) + svcBrief(ctx.settled?.services ?? [])
+        );
+        if (!arranged) return steps;
+        rec("1. no chip without services", ctx.noChip === true, JSON.stringify({ noChip: ctx.noChip }));
+
+        const chip = `(() => { const el = document.querySelector("[data-services-chip]"); return el ? { text: el.textContent.trim(), tone: el.getAttribute("data-tone") } : null; })()`;
+        await polishWaitFor(h, `!!document.querySelector("[data-services-chip]")`, 8000);
+        const red = await h.ev(chip);
+        rec("2. the chip in the error tone", red?.text === "1 · 1 crashed" && red.tone === "error", JSON.stringify(red));
+
+        await ttClick(h, "[data-services-chip]");
+        const open = await polishWaitFor(h, `!!document.querySelector("[data-services-panel]")`, 4000);
+        await polishNap(500);
+        const rowsOf = `[...document.querySelectorAll("[data-services-panel] [data-service-row]")].map((r) => r.getAttribute("data-service-row"))`;
+        const order = await h.ev(rowsOf);
+        const footer = await h.ev(`${TT_FLAT}(document.querySelector("[data-services-footer]"))`);
+        await h.shot("cdp-shots/services-chip-1-popover.png");
+        rec(
+            "3. the popover's order and footer",
+            open && JSON.stringify(order) === JSON.stringify(["svc-crash", "svc-v6", "svc-ok", "svc-off"]) && footer === SVC_FOOTER,
+            JSON.stringify({ open, order, footer })
+        );
+
+        const subtitle = await h.ev(
+            `[...document.querySelectorAll("[data-services-panel] span")].some((el) => ${TT_FLAT}(el) === "held by arcterm")`
+        );
+        const sleepRow = await h.ev(`(() => {
+            const row = document.querySelector('[data-services-panel] [data-service-row="svc-off"]');
+            const txt = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
+            return {
+                state: row?.getAttribute("data-service-state") ?? null,
+                words: txt(row?.querySelector("[data-service-words]")),
+                dot: row?.querySelector("[data-service-dot]")?.getAttribute("data-service-dot") ?? null,
+                start: !!row?.querySelector("[data-service-start]"),
+                restart: !!row?.querySelector("[data-service-restart]"),
+                stop: !!row?.querySelector("[data-service-stop]"),
+            };
+        })()`);
+        rec(
+            "3b. the popover: subtitle held by arcterm, svc-off reads sleeping with no hover Start",
+            subtitle &&
+                sleepRow.state === "sleeping" &&
+                sleepRow.words === "sleeping" &&
+                sleepRow.dot === "hollow" &&
+                !sleepRow.start &&
+                !sleepRow.restart &&
+                !sleepRow.stop,
+            JSON.stringify({ subtitle, sleepRow })
+        );
+
+        // the buttons sit at opacity 0 until a row is hovered or highlighted
+        const buttons = (id) => `(() => {
+            const row = document.querySelector('[data-services-panel] [data-service-row="${id}"]');
+            const at = (sel) => { const b = row?.querySelector(sel); return b ? getComputedStyle(b.parentElement).opacity : null; };
+            return { log: at("[data-service-log]"), restart: at("[data-service-restart]"), start: at("[data-service-start]") };
+        })()`;
+        const idle = await h.ev(buttons("svc-ok"));
+        await ttMouse(h, '[data-services-panel] [data-service-row="svc-crash"]', "hover");
+        const crashButtons = await h.ev(buttons("svc-crash"));
+        rec(
+            "4. hover shows Log and Restart on a crashed row",
+            idle.restart === "0" && crashButtons.log === "1" && crashButtons.restart === "1",
+            JSON.stringify({ idle, crashButtons })
+        );
+
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 20, y: 600 });
+        await uiPress(h, "ArrowDown", "ArrowDown", 40);
+        await uiPress(h, "ArrowDown", "ArrowDown", 40);
+        const lit = await h.ev(`document.querySelector("[data-services-panel] [data-service-row][data-highlighted]")?.getAttribute("data-service-row") ?? null`);
+        const okTab = (await svcStatus(h)).find((s) => s.id === "svc-ok")?.tabid;
+        await uiPress(h, "Enter", "Enter", 13, "\r");
+        const landed = await polishWaitFor(h, `(${TT_CENTRE}) === "terminal:${okTab}"`, 10000);
+        const surface = await h.activeSurfaceLabel();
+        const framed = await polishWaitFor(h, `!!document.querySelector("[data-app-frame-shown]")`, 10000);
+        rec(
+            "5. arrows and Enter open a service in the Agent centre",
+            lit === "svc-ok" && !!okTab && landed && surface === "Agent" && framed,
+            JSON.stringify({ lit, okTab, landed, surface, framed })
+        );
+
+        await h.goto("cockpit");
+        await h.rpc("toolssetuser", { id: "svc-crash" });
+        ctx.svcIds = ctx.svcIds.filter((id) => id !== "svc-crash");
+        const gone = await svcWait(h, { "svc-v6": "nopage" }, 10000);
+        const amber = await polishWaitFor(h, `${chip}?.text === "1" && ${chip}?.tone === "warning"`, 8000);
+        await polishNap(300);
+        await h.shot("cdp-shots/services-chip-2-warning.png");
+        rec("6. the chip in the warning tone", gone.ok && amber, JSON.stringify(await h.ev(chip)));
+
+        await ttClick(h, "[data-services-chip]");
+        const again = await polishWaitFor(h, `!!document.querySelector("[data-services-panel]")`, 4000);
+        await uiPress(h, "Escape", "Escape", 27);
+        const closed = await polishWaitFor(h, `!document.querySelector("[data-services-panel]") && !document.querySelector("[data-services-backdrop]")`, 4000);
+        rec("7. Escape closes it", again && closed, JSON.stringify({ again, closed }));
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await svcTeardown(h, ctx, "services-chip");
+    },
+};
+
+// --- services-setup: Setup → Tools (a free port and Keep running). A tool saved with Pick a free port is a
+// service: no page of its own, a port arcterm picks, asleep until its page shows unless Keep running is switched on.
+const servicesSetup = {
+    name: "services-setup",
+    surface: "setup",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            await svcArrange(h, ctx, {});
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
+        rec("0. the project is arranged", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        if (!arranged) return steps;
+
+        const up = await ttOpenLibrary(h);
+        await ttClick(h, "[data-tool-add]");
+        const form = await polishWaitFor(h, `!!document.querySelector("[data-tool-form]")`, 4000);
+        await ttClick(h, "[data-tool-autoport]");
+        await polishNap(400);
+        const page = await h.ev(`(() => {
+            const url = document.querySelector("[data-tool-url]");
+            return { disabled: url?.disabled ?? null, value: url?.value ?? null, ticked: document.querySelector("[data-tool-autoport]")?.checked ?? null };
+        })()`);
+        await h.shot("cdp-shots/services-setup-1-autoport.png");
+        rec(
+            "1. Pick a free port disables Page",
+            up && form && page.ticked === true && page.disabled === true && page.value === "",
+            JSON.stringify({ up, form, ...page })
+        );
+
+        // a service of the scenario's own: its id is the name's slug, so teardown removes it by that
+        ctx.svcIds.push("svc-new");
+        await h.ev(setFieldExpr(`document.querySelector("[data-tool-dir]")`, ctx.root));
+        await h.ev(setFieldExpr(`document.querySelector("[data-tool-name]")`, "svc-new"));
+        await h.ev(setFieldExpr(`document.querySelector("[data-tool-command]")`, "node server.js 127.0.0.1 new"));
+        await polishNap(400);
+        const filled = await h.ev(`({
+            ticked: document.querySelector("[data-tool-autoport]")?.checked ?? null,
+            url: document.querySelector("[data-tool-url]")?.value ?? null,
+            command: document.querySelector("[data-tool-command]")?.value ?? null,
+        })`);
+        await ttClick(h, "[data-tool-add-save]");
+        const saved = await polishWaitFor(h, `!document.querySelector("[data-tool-form]") && !!document.querySelector('[data-tools-row="svc-new"]')`, 8000);
+        if (!(await h.ev(`!!document.querySelector('[data-tools-detail="svc-new"]')`))) await ttClick(h, '[data-tools-row="svc-new"]');
+        const detailUp = await polishWaitFor(h, `!!document.querySelector('[data-tools-detail="svc-new"] [data-tool-page]')`, 4000);
+        await polishNap(300);
+        const entry = await svcEntry(h, "svc-new");
+        const switchSel = `[data-tools-detail="svc-new"] button[role="switch"][aria-label="Keep svc-new running"]`;
+        const toggle = `(() => { const b = document.querySelector(${JSON.stringify(switchSel)}); return b ? b.getAttribute("aria-checked") : null; })()`;
+        // the row the switch sits in: the nearest ancestor that carries the label and its sub
+        const keepRow = `(() => {
+            let el = document.querySelector(${JSON.stringify(switchSel)});
+            while (el && !(${TT_FLAT}(el).startsWith("Keep running"))) el = el.parentElement;
+            return ${TT_FLAT}(el);
+        })()`;
+        const detail = await h.ev(
+            `({ page: ${TT_FLAT}(document.querySelector('[data-tools-detail="svc-new"] [data-tool-page]')), keep: ${toggle}, row: ${keepRow} })`
+        );
+        // no Keep running and never shown: wavesrv holds it asleep
+        const asleep = await svcWait(h, { "svc-new": "sleeping" }, 15000);
+        await h.shot("cdp-shots/services-setup-2-saved.png");
+        rec(
+            "2. the saved tool is a service: a free port, sleeping until shown, Keep running off",
+            saved &&
+                detailUp &&
+                filled.ticked === true &&
+                filled.url === "" &&
+                entry?.port === "auto" &&
+                !entry.url &&
+                detail.page === "A free port, picked by arcterm" &&
+                detail.keep === "false" &&
+                // the label and its sub are two spans with no text between them
+                detail.row === "Keep runningRun it even when its page is not on screen, and start it with arcterm" &&
+                !entry.autostart &&
+                asleep.ok,
+            JSON.stringify({ saved, detailUp, filled, entry, detail, asleep: svcBrief(asleep.services, ["svc-new"]) })
+        );
+
+        await ttClick(h, switchSel);
+        let after;
+        for (let i = 0; i < 20; i++) {
+            after = await svcEntry(h, "svc-new");
+            if (after?.autostart === true) break;
+            await polishNap(250);
+        }
+        await polishNap(300);
+        const switched = await h.ev(toggle);
+        const woke = await svcWait(h, { "svc-new": (s) => s.state === "starting" || s.state === "running" }, 15000);
+        rec(
+            "3. Keep running turns on",
+            after?.autostart === true && switched === "true" && woke.ok,
+            JSON.stringify({ autostart: after?.autostart, switched, woke: svcBrief(woke.services, ["svc-new"]) })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await svcTeardown(h, ctx, "services-setup");
     },
 };
 
@@ -49623,6 +50529,10 @@ export const SCENARIOS = [
     toolsFound,
     toolsAdd,
     toolsApp,
+    servicesStates,
+    servicesTree,
+    servicesChip,
+    servicesSetup,
     toolsPicker,
     toolsLauncher,
     toolsWorktreeGone,

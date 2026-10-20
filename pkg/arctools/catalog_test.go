@@ -264,3 +264,38 @@ func TestMergePinnedApp(t *testing.T) {
 		t.Errorf("remote = %+v, want the off-machine url dropped", got[1])
 	}
 }
+
+func TestMergeService(t *testing.T) {
+	no, yes := false, true
+	merge := func(k wconfig.ToolKeywords) Tool {
+		return Merge(nil, map[string]wconfig.ToolKeywords{"svc": k})[0]
+	}
+	got := merge(wconfig.ToolKeywords{Command: "npm", Args: "run dash", Url: "http://127.0.0.1:8386/"})
+	if !IsService(got) || got.Autostart {
+		t.Errorf("a url tool = %+v, want a service without Keep running", got)
+	}
+	got = merge(wconfig.ToolKeywords{Command: "npm", Url: "http://127.0.0.1:8386/", Autostart: &yes})
+	if !IsService(got) || !got.Autostart {
+		t.Errorf("autostart true = %+v, want a service with Keep running", got)
+	}
+	got = merge(wconfig.ToolKeywords{Command: "npm", Url: "http://127.0.0.1:8386/", Autostart: &no})
+	if !IsService(got) || got.Autostart {
+		t.Errorf("autostart false = %+v, want a service without Keep running", got)
+	}
+	got = merge(wconfig.ToolKeywords{Command: "npm", Port: "auto"})
+	if !IsService(got) || got.Port != PortAuto {
+		t.Errorf("port auto = %+v, want a service on an auto port", got)
+	}
+	got = merge(wconfig.ToolKeywords{Command: "npm", Port: "8080"})
+	if got.Port != "" || IsService(got) {
+		t.Errorf("port 8080 = %+v, want no port and not a service", got)
+	}
+	if got = merge(wconfig.ToolKeywords{Command: "npm", Url: "http://localhost:8386/"}); IsService(got) {
+		t.Errorf("a localhost url = %+v, want not a service", got)
+	}
+	for _, b := range Merge(Builtin(), nil) {
+		if b.Id == "lazygit" && IsService(b) {
+			t.Errorf("lazygit is a service")
+		}
+	}
+}

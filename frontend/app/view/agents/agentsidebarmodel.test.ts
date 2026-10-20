@@ -746,6 +746,80 @@ describe("projectTree", () => {
         expect(shape(build(agents, [term("t2", "loom")], { filter: "zeta" }))).toEqual([]);
     });
 
+    describe("services", () => {
+        const svc = (id: string, project = "waveterm", tabId?: string) => ({
+            id,
+            name: id,
+            project,
+            ...(tabId != null ? { tabId } : {}),
+        });
+        // the shape above, with a service row as "s:<id>"
+        const shapeS = (rows: ProjectTreeRow[]) =>
+            rows.map((r) => (r.kind === "service" ? `s:${r.serviceId}` : shape([r])[0]));
+
+        it("services after divider", () => {
+            const rows = build([agent("a")], [term("t1")], { services: [svc("web")] });
+            expect(shapeS(rows)).toEqual(["group:waveterm:1a:1t", "a:a", "divider:waveterm", "s:web", "t:t1"]);
+        });
+
+        it("service tab is not a terminal row", () => {
+            const rows = build([agent("a")], [term("tab-web"), term("t1")], {
+                services: [svc("web", "waveterm", "tab-web")],
+            });
+            expect(shapeS(rows)).toEqual(["group:waveterm:1a:1t", "a:a", "divider:waveterm", "s:web", "t:t1"]);
+            expect(rows.find((r) => r.kind === "service")).toMatchObject({ tabId: "tab-web" });
+        });
+
+        it("folder with only a service", () => {
+            const rows = build([], [], { services: [svc("web", "ops")] });
+            expect(rows.map((r) => r.kind)).toEqual(["group", "service"]);
+            expect(rows[0]).toMatchObject({ kind: "group", project: "ops", agents: 0, terminals: 0, open: true });
+        });
+
+        it("service without a tab still has a row", () => {
+            const rows = build([agent("a")], [], { services: [svc("web")] });
+            const row = rows.find((r) => r.kind === "service");
+            expect(row).toMatchObject({ kind: "service", project: "waveterm", serviceId: "web" });
+            expect(row && "tabId" in row ? row.tabId : undefined).toBeUndefined();
+        });
+
+        it("files a service of Home under the Home folder, last", () => {
+            const rows = build([agent("a")], [term("h", null)], { services: [svc("web", "Home")] });
+            expect(shapeS(rows)).toEqual([
+                "group:waveterm:1a:0t",
+                "a:a",
+                `group:${HOME_PROJECT}:0a:1t`,
+                "s:web",
+                "t:h",
+            ]);
+        });
+
+        it("filter matches a service name", () => {
+            // the project filter keeps the filtered project's services, after the divider and before its terminals
+            const services = [svc("web"), svc("api", "loom")];
+            const rows = build([agent("a")], [term("t1")], { services, filter: "waveterm" });
+            expect(shapeS(rows)).toEqual(["a:a", "divider:waveterm", "s:web", "t:t1"]);
+            expect(build([], [], { services, filter: "loom" }).map((r) => r.kind)).toEqual(["service"]);
+            expect(build([], [], { services, filter: "zeta" })).toEqual([]);
+        });
+
+        it("folds a project's services with the rest of its rows", () => {
+            const rows = build([agent("a")], [], { services: [svc("web")], collapsed: ["waveterm"] });
+            expect(rows.map((r) => r.kind)).toEqual(["group"]);
+        });
+
+        it("keeps services in the order given, and adds nothing when there are none", () => {
+            expect(shapeS(build([agent("a")], [], { services: [svc("web"), svc("api")] }))).toEqual([
+                "group:waveterm:1a:0t",
+                "a:a",
+                "divider:waveterm",
+                "s:web",
+                "s:api",
+            ]);
+            expect(shapeS(build([agent("a")], [], { services: [] }))).toEqual(["group:waveterm:1a:0t", "a:a"]);
+        });
+    });
+
     it("names where a terminal runs when it is not at its project's root", () => {
         const roots = new Map([["waveterm", "D:\\code\\waveterm\\"]]);
         const rows = build(
@@ -969,6 +1043,20 @@ describe("treeNavIds", () => {
 
     it("walks agents and terminals the way the tree reads", () => {
         expect(treeNavIds(tree())).toEqual(["a", "b", "t1", "c", "t2"]);
+    });
+    it("reaches a service by its tab id, and skips one with no tab", () => {
+        const rows = projectTree({
+            tree: treeOf(agents),
+            terminals: [...terminals, { ...agent("tab-web"), kind: "terminal" }],
+            filter: ALL_PROJECTS,
+            collapsed: [],
+            roots: new Map(),
+            services: [
+                { id: "web", name: "web", project: "waveterm", tabId: "tab-web" },
+                { id: "idle", name: "idle", project: "waveterm" },
+            ],
+        });
+        expect(treeNavIds(rows)).toEqual(["a", "b", "tab-web", "t1", "c", "t2"]);
     });
     it("skips a folded project's rows", () => {
         const folded = projectTree({
