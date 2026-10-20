@@ -6,6 +6,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import {
+    AppWindow,
     Bot,
     Brain,
     FileCode2,
@@ -42,6 +43,7 @@ const ICON: Record<SurfaceKey, LucideIcon> = {
     code: FileCode2,
     setup: FileCog,
     settings: Settings,
+    app: AppWindow,
 };
 
 // the surfaces used all day, then the tools reached for now and then; Ctrl+1..7 follow this order (SURFACE_ORDER)

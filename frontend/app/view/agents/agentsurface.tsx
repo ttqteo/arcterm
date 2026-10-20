@@ -71,7 +71,9 @@ import { agentFocusFallback } from "./modalfocusfallback";
 import { NO_PANES, nextPaneMounts } from "./panemounts";
 import { RunPane } from "./runpane";
 import { shownServices } from "./serviceseen";
-import { reportServicesSeen, serviceByTabAtom } from "./servicesstore";
+import { appSurfaceService } from "./railapps";
+import { appSurfaceIdAtom, railPinsAtom } from "./railappsstore";
+import { reportServicesSeen, serviceByTabAtom, servicesAtom } from "./servicesstore";
 import { SessionPane } from "./sessionpane";
 import {
     dockedTerminalAtom,
@@ -308,11 +310,16 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     // after it leaves the screen and starts it when it comes back. This surface is always mounted, so it reports on
     // mount too (an empty set included, so a reloaded page does not leave the old one's set standing).
     const serviceByTab = useAtomValue(serviceByTabAtom);
+    const appSurfaceId = useAtomValue(appSurfaceIdAtom);
+    const railPinIds = useAtomValue(railPinsAtom);
+    const allServices = useAtomValue(servicesAtom);
+    const appSurfaceTab = appSurfaceService(appSurfaceId, railPinIds, allServices ?? [])?.tabid ?? null;
     const seenIds = shownServices(
         {
             surface,
             centerHidden: stackHidden,
             appTab: appMode && agent != null ? agent.id : null,
+            appSurfaceTab,
             cells: cells.map((cell) => cell.id),
             docked: docked?.id ?? null,
             dockFolded,
