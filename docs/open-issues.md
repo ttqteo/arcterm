@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Starting app counts up: stop `portfolio`, open it again (after `task dev` or the next install), and
+  the "Waiting for 127.0.0.1:8386 · N s" card counts 1 s, 2 s… until the page shows, instead of staying at 0 s.
+  `startedMs` set at start in `pkg/services/supervisor.go`. Commit c34d80918.
 - [ ] (arcterm) Lead asks are short: start a new orchestrator run (after `task dev` or the next install) and, when
   its lead asks you something, each question holds one decision in at most two lines, several decisions come as
   separate questions in one ask, and the options do not repeat the body. `AskShapeRule` in
