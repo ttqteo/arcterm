@@ -22,6 +22,24 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Added
+
+- `wsh memory` runs a memory check from a shell and applies or keeps what it proposes, as Setup → Memory does;
+  while a project's memory index is over the budget it states (`Budget: N bytes`), the check proposes cuts to fit.
+
+### Changed
+
+- A plan's `**Depends on:**` reference between two tasks whose `**Files:**` lines share no path must say why in
+  parentheses (`Task 1 (uses the rows it adds)`): submit refuses a bare one, so a needless edge no longer makes a
+  task wait for another.
+
+### Fixed
+
+- A running worker's row in the Agent tree shows how long it has run since it started; it read <1m for as long as
+  the worker stayed busy.
+
 ## 0.15.16 — 2026-10-19
 
 ### Added
