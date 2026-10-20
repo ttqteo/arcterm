@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { digitHintAtom } from "@/app/cockpit/digithints";
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
+    AppWindow,
     Bot,
     Brain,
     FileCode2,
@@ -26,6 +28,9 @@ import { channelMessagesAtom } from "./channelsstore";
 import { DigitHint } from "./digithint";
 import { answeredAskIdsAcross } from "./jarvisderive";
 import { navRailCollapsed } from "./navrailwidth";
+import { railDot, railItemTitle, railPins } from "./railapps";
+import { appSurfaceIdAtom, moveRailPin, railPinsAtom, setRailPinned } from "./railappsstore";
+import { ensureServicesFeed, servicesAtom } from "./servicesstore";
 import { focusSubagentAtom } from "./subagentsstore";
 import { PanelWeb } from "./themedecorview";
 import { latestUnreadId, unreadLabel } from "./unreadagents";
@@ -42,6 +47,7 @@ const ICON: Record<SurfaceKey, LucideIcon> = {
     code: FileCode2,
     setup: FileCog,
     settings: Settings,
+    app: AppWindow,
 };
 
 // the surfaces used all day, then the tools reached for now and then; Ctrl+1..7 follow this order (SURFACE_ORDER)
@@ -63,6 +69,82 @@ export const ITEMS = [...CORE_ITEMS, ...TOOL_ITEMS];
 // a badge says the surface wants you (asking); Agent's says something finished that you have not read, which is news
 // rather than a request, so it takes the accent
 const BADGE_FILL: Partial<Record<SurfaceKey, string>> = { agent: "bg-accent" };
+
+// One pinned app. It reads the 1s clock itself (the title says how long a crash has lasted), so the tick re-renders the
+// three pins, not the whole rail.
+function RailAppItem({
+    model,
+    s,
+    at,
+    count,
+    narrow,
+    isActive,
+}: {
+    model: AgentsViewModel;
+    s: ServiceStatus;
+    at: number;
+    count: number;
+    narrow: boolean;
+    isActive: boolean;
+}) {
+    const now = useAtomValue(model.nowAtom);
+    const setAppId = useSetAtom(appSurfaceIdAtom);
+    const setActive = useSetAtom(model.surfaceAtom);
+    const dot = railDot(s);
+    const menu = (e: React.MouseEvent) => {
+        ContextMenuModel.getInstance().showContextMenu(
+            [
+                { label: "Unpin from the rail", click: () => setRailPinned(s.id, false) },
+                { label: "Move up", enabled: at > 0, click: () => moveRailPin(s.id, -1) },
+                {
+                    label: "Move down",
+                    enabled: at >= 0 && at < count - 1,
+                    click: () => moveRailPin(s.id, 1),
+                },
+            ],
+            e
+        );
+    };
+    return (
+        <button
+            type="button"
+            data-nav-app={s.id}
+            onClick={() => {
+                setAppId(s.id);
+                setActive("app");
+            }}
+            onContextMenu={menu}
+            aria-label={s.name}
+            title={railItemTitle(s, now)}
+            className={cn(
+                "relative mx-2 flex cursor-pointer flex-col items-center gap-[5px] rounded-[10px] border-0 bg-transparent py-[8px] text-muted hover:text-muted-foreground",
+                isActive && "text-accent-soft"
+            )}
+        >
+            {isActive ? (
+                <>
+                    <span className="absolute inset-0 rounded-[10px] bg-accent/10" />
+                    <span className="absolute left-[-8px] top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-[3px] bg-accent" />
+                </>
+            ) : null}
+            <span className="relative z-[1]">
+                <AppWindow size={16} strokeWidth={1.8} />
+                {dot ? (
+                    <span
+                        data-nav-app-dot={dot}
+                        className={cn(
+                            "absolute -right-1 -top-1 h-2 w-2 rounded-full ring-2 ring-surface",
+                            dot === "error" ? "bg-error" : "bg-warning"
+                        )}
+                    />
+                ) : null}
+            </span>
+            {narrow ? null : (
+                <span className="relative z-[1] max-w-full truncate px-1 text-[10px] font-semibold">{s.name}</span>
+            )}
+        </button>
+    );
+}
 
 export function NavRail({ model }: { model: AgentsViewModel }) {
     const [active, setActive] = useAtom(model.surfaceAtom);
@@ -99,6 +181,14 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     };
     // while Ctrl is held each surface shows the digit Ctrl+1..7 jumps to (ITEMS is SURFACE_ORDER; digithints.ts)
     const ctrlHeld = useAtomValue(digitHintAtom) === "ctrl";
+    // the apps pinned under Radar: the pins that still name a held service, at most three (railapps.ts)
+    const services = useAtomValue(servicesAtom);
+    const pinIds = useAtomValue(railPinsAtom);
+    const pinned = services == null ? [] : railPins(pinIds, services);
+    const appId = useAtomValue(appSurfaceIdAtom);
+    useEffect(() => {
+        ensureServicesFeed();
+    }, []);
     const [narrow, setNarrow] = useState(() => navRailCollapsed(window.innerWidth));
     useEffect(() => {
         const onResize = () => setNarrow(navRailCollapsed(window.innerWidth));
@@ -177,6 +267,22 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
             {/* a div, not a button: CDP scenarios count the surfaces as `nav button` */}
             <div data-nav-divider aria-hidden="true" className="mx-auto my-1.5 h-px w-8 shrink-0 bg-edge-mid" />
             {TOOL_ITEMS.map(({ key, label }) => renderItem(key, label, badges[key] ?? 0, true))}
+            {pinned.length > 0 ? (
+                <>
+                    <div data-nav-divider aria-hidden="true" className="mx-auto my-1.5 h-px w-8 shrink-0 bg-edge-mid" />
+                    {pinned.map((s, at) => (
+                        <RailAppItem
+                            key={`app:${s.id}`}
+                            model={model}
+                            s={s}
+                            at={at}
+                            count={pinned.length}
+                            narrow={narrow}
+                            isActive={active === "app" && appId === s.id}
+                        />
+                    ))}
+                </>
+            ) : null}
             <div className="flex-1" />
             {renderItem("setup", "Setup")}
             {renderItem("settings", "Settings")}

@@ -342,6 +342,14 @@ Các huy hiệu trên rail:
 
 Trên macOS, tổng huy hiệu Agent và Cockpit cũng hiện trên biểu tượng Dock. Khi cửa sổ hẹp hơn 900 px, rail thu thành cột biểu tượng không có nhãn.
 
+### Ứng dụng ghim trên rail
+
+Dưới **Radar**, sau một vạch chia thứ hai, rail giữ tối đa ba service (tool có trang, như dashboard hay dev server) mà bạn ghim. Bấm vào một cái để mở nó thành surface riêng: header của service ở trên, trang lấp đầy phần còn lại. Đó vẫn là khung trang mà Agent hiện, nên chuyển qua lại không tải lại trang. Service đang ngủ sẽ thức khi surface của nó hiện. Khi service crash, dừng hay không mở được cổng, surface hiện một thẻ với nút chính (**Restart** hoặc **Start**) và **Open its log**. **Log** trên header mở log của nó ở Agent.
+
+- **Ghim / bỏ ghim:** menu chuột phải của hàng service trong cây Agent (**Pin to the rail** / **Unpin from the rail**). Khi rail đã đủ ba, mục ghim bị mờ và giải thích lý do. Nút **Unpin** trên header, hoặc menu chuột phải của chính mục trên rail (**Unpin from the rail**, **Move up**, **Move down**), cũng bỏ ghim được. Bỏ ghim ứng dụng đang mở sẽ đưa bạn về Agent với đúng service đó.
+- **Chấm trên biểu tượng:** đỏ khi service crash hoặc đang thử lại, vàng khi cổng bị chiếm hoặc không có trang. Rê chuột để đọc trạng thái.
+- Ứng dụng ghim không có phím `Ctrl+số`. Danh sách ghim nằm trong trình duyệt của app (localStorage `apps.rail`), không phải trong `tools.json`. Service bị xoá khỏi `tools.json` sẽ biến khỏi rail.
+
 ## Footer
 
 Footer cao 28 px, luôn ở đáy. Hai nửa:

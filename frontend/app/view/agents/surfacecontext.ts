@@ -24,6 +24,7 @@ export const SURFACE_CONTEXT = {
     code: { project: "subject" },
     setup: { project: "unsupported" },
     settings: { project: "unsupported" },
+    app: { project: "unsupported" },
 } satisfies Record<SurfaceKey, SurfaceContextSupport>;
 
 export function projectControlCopy(surface: SurfaceKey, projectLabel: string): { label: string; title: string } {
