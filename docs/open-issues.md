@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Lead asks are short: start a new orchestrator run (after `task dev` or the next install) and, when
+  its lead asks you something, each question holds one decision in at most two lines, several decisions come as
+  separate questions in one ask, and the options do not repeat the body. `AskShapeRule` in
+  `pkg/jarvis/leadprompt.go`. Commit faac27eda.
 - [ ] (arcterm) Service listed once: with the `portfolio` service running and its dashboard writing a report
   (`claude -p`), the Agent tree's portfolio-journal folder shows only the `portfolio :8386` service row, no
   `✳ portfolio` agent row above it. `rosterStatus` in `agentsleep.ts`, read by `liveagents.ts` and
