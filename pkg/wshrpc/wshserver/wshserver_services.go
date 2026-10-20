@@ -7,29 +7,52 @@ import (
 	"context"
 	"errors"
 
+	"github.com/wavetermdev/waveterm/pkg/services"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 var errServicesNotRunning = errors.New("services are not running yet")
 
-// The services commands are stubs until the supervisor is wired in (pkg/services).
-
 func (ws *WshServer) ServicesStatusCommand(ctx context.Context) (*wshrpc.ServicesData, error) {
-	return &wshrpc.ServicesData{Services: []wshrpc.ServiceStatus{}}, nil
+	sup := services.Current()
+	if sup == nil {
+		return nil, errServicesNotRunning
+	}
+	return &wshrpc.ServicesData{Services: sup.Status()}, nil
 }
 
 func (ws *WshServer) ServiceOpenCommand(ctx context.Context, data wshrpc.CommandServiceData) (*wshrpc.ServiceStatus, error) {
-	return nil, errServicesNotRunning
+	sup := services.Current()
+	if sup == nil {
+		return nil, errServicesNotRunning
+	}
+	status, err := sup.Open(ctx, data.Id)
+	if err != nil {
+		return nil, err
+	}
+	return &status, nil
 }
 
 func (ws *WshServer) ServiceStartCommand(ctx context.Context, data wshrpc.CommandServiceData) error {
-	return errServicesNotRunning
+	sup := services.Current()
+	if sup == nil {
+		return errServicesNotRunning
+	}
+	return sup.Start(ctx, data.Id)
 }
 
 func (ws *WshServer) ServiceStopCommand(ctx context.Context, data wshrpc.CommandServiceData) error {
-	return errServicesNotRunning
+	sup := services.Current()
+	if sup == nil {
+		return errServicesNotRunning
+	}
+	return sup.Stop(ctx, data.Id)
 }
 
 func (ws *WshServer) ServiceRestartCommand(ctx context.Context, data wshrpc.CommandServiceData) error {
-	return errServicesNotRunning
+	sup := services.Current()
+	if sup == nil {
+		return errServicesNotRunning
+	}
+	return sup.Restart(ctx, data.Id)
 }
