@@ -1938,6 +1938,11 @@ declare global {
         runid: string;
     };
 
+    // wshrpc.CommandServiceData
+    type CommandServiceData = {
+        id: string;
+    };
+
     // wshrpc.CommandSetChannelProfileData
     type CommandSetChannelProfileData = {
         channelid: string;
@@ -3576,6 +3581,30 @@ declare global {
         tabid?: string;
         name?: string;
         harness?: string;
+    };
+
+    // wshrpc.ServiceStatus
+    type ServiceStatus = {
+        id: string;
+        name: string;
+        command: string;
+        dir: string;
+        project: string;
+        state: string;
+        port?: number;
+        url?: string;
+        tabid?: string;
+        blockid?: string;
+        startedms?: number;
+        exitcode?: number;
+        retryatms?: number;
+        holder?: string;
+        autostart: boolean;
+    };
+
+    // wshrpc.ServicesData
+    type ServicesData = {
+        services: ServiceStatus[];
     };
 
     // wshrpc.SessionActivity

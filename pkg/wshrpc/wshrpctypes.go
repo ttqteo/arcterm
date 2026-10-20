@@ -41,6 +41,7 @@ type WshRpcInterface interface {
 	AgentSyncCommands
 	LearnCommands
 	ToolsCommands
+	ServicesCommands
 	SessionCommands
 	StorageCommands
 	ChannelCommands
