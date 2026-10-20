@@ -10,9 +10,13 @@ initial load when it is opened again.
 ## Decisions
 
 - **A service sleeps when it is not in use.** Ten minutes after its tab left the screen, arcterm stops it. That is not
-  the person's Stop: nothing is remembered, and the service reads `sleeping`. A sleeping service costs 0 MB.
-- **In use** means its tab is the one shown in the Agent centre (page or log) while the Agent surface is the one
-  showing. The frontend tells wavesrv each time that changes. Idle by HTTP traffic is out: it would need a proxy.
+  the person's Stop: nothing is remembered, and the service reads `sleeping`. A sleeping service costs 0 MB. A service
+  started while off screen (Start in the Services popover or the row menu) sleeps ten minutes after that start unless
+  it is shown meanwhile; a start while the timer runs (a retry) does not push its ten minutes back.
+- **In use** means its tab shows on the Agent surface while that surface is the one showing: in the centre (page or
+  log), in a grid cell, or in the panel under the agent when the panel is not folded. History, a session or a
+  subagent's interior in the centre hide every pane, so they count as off screen, as does a folded panel. The frontend
+  tells wavesrv the whole set each time it changes. Idle by HTTP traffic is out: it would need a proxy.
 - **A sleeping service starts when it comes on screen**: a click on its tree row, a row of the Services popover, a
   later rail pin, or the centre showing it when arcterm opens. The person waits for the first load; that is the
   accepted trade-off (a few seconds for the portfolio dashboard, 5–20 s for a Next dev server).
@@ -42,12 +46,18 @@ initial load when it is opened again.
 
 The header of a sleeping service reads `Sleeping · starts when shown` (seen only for the moment before it starts). The
 Services chip counts a sleeping service neither as running nor as needing the person; the popover lists it with the
-stopped ones. `canStart` holds for it, `canStop` does not.
+stopped ones. `canStart` holds for it, `canStop` does not. The popover's subtitle reads `held by arcterm` (no longer
+"started with it"); a sleeping row has no hover action there either, and a click on it opens it in the centre, which
+starts it.
 
 ## Wire
 
-One new wshrpc command, `ServiceSeenCommand(ctx, { id, shown })`. Shown cancels the service's sleep timer and starts it
-if it sleeps; not shown arms the ten-minute timer for a service without Keep running that arcterm owns.
+One new wshrpc command, `ServiceSeenCommand(ctx, { ids })`: the whole set of services on screen, sent each time it
+changes and when the Agent surface mounts (an empty set included), so each report replaces the last and a frontend
+reload heals itself. A service that joins the set has its sleep timer cancelled and starts if it sleeps; one that leaves
+it has the ten-minute timer armed when it is without Keep running and arcterm owns its process (or it is retrying).
+wavesrv keeps the set even for ids it does not know yet: Boot, and `SetTools` adding an entry, start a shown service
+the person did not stop.
 
 ## Not in scope
 
@@ -59,9 +69,11 @@ if it sleeps; not shown arms the ten-minute timer for a service without Keep run
 
 - Go, with the supervisor's fake clock: the timer sleeps an unseen service at ten minutes and not before; showing it
   again cancels the timer; showing a sleeping service starts it; a stopped one stays stopped; Keep running never
-  sleeps; boot leaves non-keep-running services sleeping; elsewhere never sleeps.
-- vitest: the sleeping row words, header, chip and order; the frontend's seen reporting as a pure "what changed"
-  function; `formKeywords` writing `autostart: true` only when Keep running is on.
+  sleeps; boot leaves non-keep-running services sleeping; elsewhere never sleeps; a service started off screen sleeps
+  at ten minutes; a set reported before Boot starts its shown service at Boot; a wake reuses the remembered port.
+- vitest: the sleeping row words, header, chip and order; which services are on screen as a pure function (centre,
+  grid cells, the panel, History, another surface); `formKeywords` writing `autostart: true` only when Keep running is
+  on.
 - CDP: a sleeping service starts when its row is clicked, and Keep running writes `autostart: true`. The ten minutes
   are not waited out in a scenario; the Go test covers them.
 - The canvas board `RowStates` gains the Sleeping row.
