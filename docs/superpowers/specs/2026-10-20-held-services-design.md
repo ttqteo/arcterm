@@ -76,8 +76,8 @@ A new Go package (name left to the builder) supervises services.
 - **The log stays a live terminal**, so a dev server's own keys (Vite's `r`, `o`, `q`) work. An exit the person caused
   there (a Ctrl+C typed in the log, or a clean exit 0) is a Stop, not a crash; how to tell is the builder's (e.g. the
   controller saw `^C` written to the PTY just before the exit). *(Builder check; our call.)*
-- **Environment.** The process gets `PORT=<port>`. Today no Go code reads a block's `cmd:env` (only the connection-level
-  `ConnKeywords.CmdEnv` exists): the `cmd` controller learns to apply the block meta `cmd:env` to the process.
+- **Environment.** The process gets `PORT=<port>` through the block meta `cmd:env`, which the controller already layers
+  into the process environment (`resolveEnvMap`, `pkg/blockcontroller/shellcontroller.go:806`, block meta at :829).
 - **Start** ensures the block and calls `ResyncController` with force, which works with no frontend involved
   (`blockcontroller.go:214`; `RestoreLiveAgents` at `cmd/server/main-server.go:526` is the precedent).
 - **Stop** marks the service stopped by the person, stops the controller gracefully, then runs the same sweep block
