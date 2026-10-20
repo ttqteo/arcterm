@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { servicesOpenAtom } from "@/app/cockpit/servicespopoverstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
@@ -42,6 +43,7 @@ export function MachineServersChip({ model }: { model: AgentsViewModel }) {
             title={view.groups.flatMap((g) => g.rows.map((r) => portsLabel(r.server.ports))).join(" ")}
             onClick={() => {
                 globalStore.set(consumersOpenAtom, null);
+                globalStore.set(servicesOpenAtom, false);
                 globalStore.set(machineServersOpenAtom, (open) => !open);
             }}
             className={cn(
