@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Kael sync: with Code on one project, click a file link in an agent of another, large project: Code
+  shows at once (its file list fills in after), then opens the file at its line. Tab onto the empty-state buttons, a
+  surface error's Retry and Code's view-mode toggle: each shows the accent ring. `codestore.ts` `openInCode`,
+  `surfacescaffold.tsx`, `codepathbar.tsx` (be313d719).
 - [ ] (arcterm) Kael sync: after rebuilding wavesrv (or the next install), start an orchestrator run and let a
   worker run past 2 minutes: its row in the Agent tree reads its time since spawn (`3m`, `4m`…), not `<1m` while it
   stays busy; a retried task starts counting again, and a worker spawned before the rebuild shows no age.

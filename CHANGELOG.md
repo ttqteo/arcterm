@@ -37,6 +37,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A file link in an agent or in Diff switches to Code at once, instead of after the repository's file list has
+  loaded, which on a large repository looked as if the click did nothing.
 - A running worker's row in the Agent tree shows how long it has run since it started; it read <1m for as long as
   the worker stayed busy.
 
