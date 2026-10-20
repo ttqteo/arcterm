@@ -163,6 +163,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   full-screen app, send those lines: the fallback is a fold that no longer follows onto a full-screen Space.
   `macwindow.rs` `take_to_desktop`, `check_unfold_space`. 2026-10-17.
 
+**2026-10-19 (prompts as markdown)**
+
+- [ ] (arcterm) Agent: open an engine worker's session (a task prompt with `## Context` and ```` ```ts ```` blocks): the
+  YOU bubble shows its first six lines fading out and Show more; opened, headings, line breaks and highlighted code
+  blocks. A short typed prompt of a few lines keeps its line breaks. Same in Conversation History's compact
+  transcript. `narrationtimeline.tsx` `PromptText`.
+
 **2026-10-16 (the Office's sounds)**
 
 - [ ] (arcterm) In the real app: Cockpit → Office with real agents and a run. Are the jingles pleasant and the default

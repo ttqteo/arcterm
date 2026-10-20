@@ -33,6 +33,7 @@ import {
     type AgentEntry,
     type EditFile,
 } from "./agentsviewmodel";
+import { userNeedsClamp } from "./compacttimeline";
 import { splitAttachedImages } from "./launcherimages";
 import { MarkdownMessage } from "./markdownmessage";
 import { PathLink } from "./pathlinkcontext";
@@ -384,6 +385,36 @@ export function ToolLine({ action }: { action: AgentActionEntry }) {
 
 // A folded run of consecutive edits (Wave-transcript-feed.dc.html burst). Summary row: "N files
 // +adds −dels"; expands inline when the combined diff fits the edit budget, else opens the modal.
+// a prompt you sent, as markdown (an engine's task prompt is headings and fenced code), its line breaks kept as typed;
+// a long one shows its first six lines fading out, with Show more
+export function PromptText({ text }: { text: string }) {
+    const clamp = userNeedsClamp(text);
+    const [open, setOpen] = useState(false);
+    return (
+        <>
+            <div
+                className={cn(
+                    // six lines of the 1.55 leading, as USER_CLAMP_LINES in compacttimeline.ts says
+                    clamp &&
+                        !open &&
+                        "max-h-[9.3em] overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]"
+                )}
+            >
+                <MarkdownMessage text={text} className="[overflow-wrap:anywhere] [&_p]:whitespace-pre-wrap" />
+            </div>
+            {clamp ? (
+                <button
+                    type="button"
+                    onClick={() => setOpen((v) => !v)}
+                    className="mt-1 cursor-pointer text-[11.5px] text-muted hover:text-secondary"
+                >
+                    {open ? "Show less" : "Show more"}
+                </button>
+            ) : null}
+        </>
+    );
+}
+
 // the images pasted with a prompt, as thumbnails; a click shows one at its full width, another click shrinks it back.
 // `paths` are the images a launch attached by path (splitAttachedImages, launcherimages.ts), read from disk; one whose
 // file is gone (a temp sweep, or Settings → Storage) is named in its place.
@@ -761,7 +792,11 @@ export function NarrationTimeline({
                                 <div className="mb-0.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
                                     You
                                 </div>
-                                {said.text ? <p className="text-[13px] leading-[1.5] text-primary">{said.text}</p> : null}
+                                {said.text ? (
+                                    <div className="text-[13px] leading-[1.55] text-primary">
+                                        <PromptText text={said.text} />
+                                    </div>
+                                ) : null}
                                 {item.images || said.paths.length > 0 ? (
                                     <PromptImages images={item.images} paths={said.paths} />
                                 ) : null}

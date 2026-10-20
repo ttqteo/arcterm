@@ -17,7 +17,6 @@ import {
     filesChangedLabel,
     groupCompact,
     toolCountLabel,
-    userNeedsClamp,
     workedFor,
     type WorkItem,
 } from "./compacttimeline";
@@ -28,6 +27,7 @@ import {
     CompactionDivider,
     InterruptedDivider,
     PromptImages,
+    PromptText,
     TaskNotificationRow,
     ToolDetailBody,
     ToolLine,
@@ -54,8 +54,6 @@ function UserMessage({
 }) {
     // a launch's attached images ride the prompt as paths; they show as pictures, not as the block that names them
     const said = splitAttachedImages(text);
-    const clamp = userNeedsClamp(said.text);
-    const [open, setOpen] = useState(false);
     return (
         <div
             data-compact-user
@@ -63,23 +61,10 @@ function UserMessage({
             onContextMenu={onContextMenu}
             className="mt-4 rounded-[8px] border border-edge-faint bg-surface-raised px-3 py-2"
         >
-            <p
-                className={cn(
-                    "whitespace-pre-wrap text-[13px] leading-[1.55] text-primary [overflow-wrap:anywhere]",
-                    // six lines, as USER_CLAMP_LINES in compacttimeline.ts says (Tailwind needs the literal class)
-                    clamp && !open && "line-clamp-6"
-                )}
-            >
-                {said.text}
-            </p>
-            {clamp ? (
-                <button
-                    type="button"
-                    onClick={() => setOpen((v) => !v)}
-                    className="mt-1 cursor-pointer text-[11.5px] text-muted hover:text-secondary"
-                >
-                    {open ? "Show less" : "Show more"}
-                </button>
+            {said.text ? (
+                <div className="text-[13px] leading-[1.55] text-primary">
+                    <PromptText text={said.text} />
+                </div>
             ) : null}
             {images || said.paths.length > 0 ? <PromptImages images={images} paths={said.paths} /> : null}
         </div>

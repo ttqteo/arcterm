@@ -48,6 +48,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Setup → Tools shows it installed, without restarting arcterm.
 - A path from your home folder or through a dot folder, such as `~/.claude/usage-data/report.html`, is a link in a
   terminal and an agent's transcript: Ctrl+click opens it.
+- A prompt you sent, in the live transcript and a past one, keeps its line breaks and shows its headings and code
+  blocks, so an engine task's long prompt no longer reads as one wall of text; a long prompt shows its first lines,
+  with Show more.
 
 ## 0.15.16 — 2026-10-19
 
