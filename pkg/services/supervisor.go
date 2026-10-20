@@ -166,10 +166,22 @@ type Supervisor struct {
 	mu     sync.Mutex
 	svcs   map[string]*svc
 	booted bool
+	shown  map[string]bool // the services on screen, as the frontend last reported them
 }
 
 func New(d Deps) *Supervisor {
 	return &Supervisor{d: d, svcs: map[string]*svc{}}
+}
+
+// Seen records the whole set of services on screen; each call replaces the last. Ids it does not know are kept.
+func (s *Supervisor) Seen(ctx context.Context, ids []string) {
+	shown := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		shown[id] = true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.shown = shown
 }
 
 // Status is every service, by id. Never nil.

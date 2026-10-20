@@ -23,7 +23,8 @@ const (
 	StateRetrying  = "retrying"
 	StateCrashed   = "crashed" // gave up after MaxCrashes
 	StatePortTaken = "porttaken"
-	StateNoPage    = "nopage" // the process is up but its page never answered within StartTimeout
+	StateNoPage    = "nopage"   // the process is up but its page never answered within StartTimeout
+	StateSleeping  = "sleeping" // stopped by arcterm after its page sat off screen; starts again when shown
 )
 
 const (

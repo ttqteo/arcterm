@@ -1314,6 +1314,12 @@ export class RpcApiType {
         return client.wshRpcCall("servicerestart", data, opts);
     }
 
+    // command "serviceseen" [call]
+    ServiceSeenCommand(client: WshClient, data: CommandServiceSeenData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "serviceseen", data, opts);
+        return client.wshRpcCall("serviceseen", data, opts);
+    }
+
     // command "servicesstatus" [call]
     ServicesStatusCommand(client: WshClient, opts?: RpcOpts): Promise<ServicesData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "servicesstatus", null, opts);

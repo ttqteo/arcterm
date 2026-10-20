@@ -1308,6 +1308,12 @@ func ServiceRestartCommand(w *wshutil.WshRpc, data wshrpc.CommandServiceData, op
 	return err
 }
 
+// command "serviceseen", wshserver.ServiceSeenCommand
+func ServiceSeenCommand(w *wshutil.WshRpc, data wshrpc.CommandServiceSeenData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "serviceseen", data, opts)
+	return err
+}
+
 // command "servicesstatus", wshserver.ServicesStatusCommand
 func ServicesStatusCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.ServicesData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.ServicesData](w, "servicesstatus", nil, opts)

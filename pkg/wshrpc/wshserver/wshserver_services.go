@@ -56,3 +56,12 @@ func (ws *WshServer) ServiceRestartCommand(ctx context.Context, data wshrpc.Comm
 	}
 	return sup.Restart(ctx, data.Id)
 }
+
+func (ws *WshServer) ServiceSeenCommand(ctx context.Context, data wshrpc.CommandServiceSeenData) error {
+	sup := services.Current()
+	if sup == nil {
+		return errServicesNotRunning
+	}
+	sup.Seen(ctx, data.Ids)
+	return nil
+}
