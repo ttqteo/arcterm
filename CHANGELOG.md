@@ -112,7 +112,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   wraps every few words.
 - An agent whose turn ended while work it started still runs in the background no longer reads idle: its header and
   sidebar row say working while a command is at work, and waiting, on a slower pulse, while it only watches (a Monitor,
-  a loop that checks and sleeps). A dev server it left running keeps it idle.
+  a loop that checks and sleeps).
 - Settings is sorted by what each setting changes: a Runs & limits page holds the run route, how many runs and heavy
   jobs go at once, keeping the Mac awake and when a costly spawn asks first; the pet's folding sits with Jarvis & Office;
   the vault with Storage & sync; About at the foot of the list. <!-- try: settings -->
@@ -164,8 +164,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Skim highlights every sentence Claude marks in a reply, not only the first four: the fifth on no longer draws as
   plain text, nor dims with the rest. A reply marked through most of its length draws in full instead of dimmed.
 - A Claude agent watching something with a Monitor counts as having background work: its details list the Monitor,
-  and it is neither put to sleep nor offered Close until the Monitor ends. A background command that never started
-  (refused by a hook) no longer keeps an agent awake as if it were still running.
+  and it is neither put to sleep nor offered Close until the Monitor ends.
 - An HTML page in Code or the agent panel's File tab opens where you left it after you switch to another surface or
   file and come back, or an agent rewrites it, instead of jumping back to the top.
 - Resting the pointer on an HTML or PDF preview no longer hangs a chip with the file's path over the path bar.
