@@ -49,6 +49,7 @@ const (
 
 	MetaKey_ToolId                           = "tool:id"
 	MetaKey_ToolAppOwned                     = "tool:appowned"
+	MetaKey_ToolService                      = "tool:service"
 
 	MetaKey_EditorClear                      = "editor:*"
 	MetaKey_EditorMinimapEnabled             = "editor:minimapenabled"

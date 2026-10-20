@@ -52,6 +52,7 @@ type MetaTSType struct {
 
 	ToolId       string `json:"tool:id,omitempty"`       // the library id (pkg/arctools) of a terminal opened as a tool
 	ToolAppOwned bool   `json:"tool:appowned,omitempty"` // a pinned app's terminal that ran its command: closing it stops the server
+	ToolService  bool   `json:"tool:service,omitempty"`  // the block is a held service's (pkg/services): wavesrv starts and restarts it
 
 	EditorClear               bool    `json:"editor:*,omitempty"`
 	EditorMinimapEnabled      bool    `json:"editor:minimapenabled,omitempty"`

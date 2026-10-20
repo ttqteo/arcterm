@@ -2933,6 +2933,7 @@ declare global {
         "cmd:initscript.fish"?: string;
         "tool:id"?: string;
         "tool:appowned"?: boolean;
+        "tool:service"?: boolean;
         "editor:*"?: boolean;
         "editor:minimapenabled"?: boolean;
         "editor:stickyscrollenabled"?: boolean;
@@ -4026,6 +4027,8 @@ declare global {
         "install:darwin"?: string;
         url?: string;
         dir?: string;
+        port?: string;
+        autostart?: boolean;
     };
 
     // arctools.ToolStatus
@@ -4043,6 +4046,8 @@ declare global {
         user?: boolean;
         url?: string;
         dir?: string;
+        port?: string;
+        autostart?: boolean;
         detected?: boolean;
         found: boolean;
         path?: string;
