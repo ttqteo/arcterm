@@ -38,8 +38,10 @@ describe("appUrlOk", () => {
 });
 
 describe("tools and pages", () => {
-    it("is an app only with a url", () => {
+    it("is an app with a url, or on a port arcterm picks", () => {
         expect(isAppTool({ url: URL_OK })).toBe(true);
+        expect(isAppTool({ port: "auto" })).toBe(true);
+        expect(isAppTool({ port: "8386" })).toBe(false);
         expect(isAppTool({})).toBe(false);
         expect(isAppTool(undefined)).toBe(false);
     });

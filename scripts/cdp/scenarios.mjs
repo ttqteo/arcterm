@@ -33922,6 +33922,23 @@ function machineServersFixture(ctx, now) {
     ];
 }
 
+// The server of the real held service `svc` (a ServiceStatus with its tab): a terminal-owned row whose tab is the
+// service's own, so the popover reads it as the app. It sits in the fx/arcterm group with vite's.
+const MS_SERVICE_PID = 41006;
+function machineServiceRow(svc, now, cwd) {
+    return {
+        pid: MS_SERVICE_PID,
+        createms: now - 90_000,
+        ports: [svc.port],
+        name: "node.exe",
+        cmdline: `node server.js 127.0.0.1 ${svc.id}`,
+        cwd,
+        byagent: false,
+        repo: "D:/fx/arcterm",
+        owner: { kind: "terminal", tabid: svc.tabid, blockid: svc.blockid, name: svc.name },
+    };
+}
+
 // One mock for the whole scenario. `mode` picks listalldevservers' answer: "ok" the fixture without the pids that have
 // gone, "empty" no servers, "fail" an error. stopdevserver is recorded in `stops` (with the number of listings made so
 // far) and ends nothing: the pid is left out of every later listing, since the panel polls every 3s and an answer that held
@@ -34018,7 +34035,16 @@ const machineServers = {
         const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-machine-servers-")) };
         // a throw past this point still returns ctx, so teardown undoes whatever was already done
         try {
+            // read before svcArrange, which switches the rail on
             ctx.prevRail = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_VISIBLE_KEY)})`);
+            // a real held service for the last step, whose server the mock lists as an app's: a demand one (no Keep
+            // running), so it sleeps until the step starts it. No fixture agent here: this scenario writes its own
+            await svcArrange(
+                h,
+                ctx,
+                { "svc-mach": { command: "node", args: "server.js 127.0.0.1 mach", port: "auto" } },
+                { agent: false }
+            );
             // the output file the background command writes to, and the transcript in which the agent ran it with
             // run_in_background and left it running
             ctx.outFile = join(ctx.cwd, "bg-output.log");
@@ -34400,23 +34426,24 @@ const machineServers = {
             JSON.stringify({ revealed, otherShown, reopened3, agentBadgeClick, agentClosed, agentShown, agentPanes })
         );
 
-        // 9b. the terminal badge opens the terminal's tab. With an agent showing, the surface docks a terminal under it, so
-        // the terminal's pane comes on screen beside the agent's
+        // 9b. the terminal badge opens the terminal's tab. A picked terminal takes the focused cell (it is no longer docked
+        // under the agent), so its pane is the one on screen and the agent's goes
         const reopened4 = await openFromChip();
         const termBadgeClick = await railServersMouse(h, msIn(vite.pid, '[data-machine-server-badge="terminal"]'), true);
         const termClosed = await waitClosed();
-        const termShown = await polishWaitFor(h, msPanesAre(MS_AGENT_ID, ctx.termTabId), 8000);
+        const termShown = await polishWaitFor(h, msPanesAre(ctx.termTabId), 8000);
         const termPanes = await h.ev(MS_PANES);
         await h.shot("cdp-shots/machine-servers-terminal-badge.png");
         rec(
-            "9b. the vite row's terminal badge closes the popover and the terminal's own pane comes on screen, docked under the agent",
+            "9b. the vite row's terminal badge closes the popover and the terminal's own pane comes on screen, in the focused cell, the agent's gone",
             ctx.termInRoster === true &&
                 reopened4 &&
                 termBadgeClick &&
                 termClosed &&
                 termShown &&
-                termPanes.some((p) => p.id === ctx.termTabId && p.dock) &&
-                termPanes.some((p) => p.id === MS_AGENT_ID && !p.dock),
+                termPanes.length === 1 &&
+                termPanes[0].id === ctx.termTabId &&
+                !termPanes[0].dock,
             JSON.stringify({ termInRoster: ctx.termInRoster, reopened4, termBadgeClick, termClosed, termShown, termPanes })
         );
 
@@ -34585,6 +34612,69 @@ const machineServers = {
                 closed12,
             JSON.stringify({ reopened7, chip12, chipFacts12, panel12, closed12 })
         );
+
+        // 13. a held service's server reads as the app. svc-mach is a real service (a demand one, started here, so it runs
+        // for the minute this step takes); the mock lists a server owned by its tab. The row is appended now, not in
+        // arrange, because steps 1 and 3 count the rows
+        const svcId = "svc-mach";
+        await h.rpc("servicestart", { id: svcId });
+        const up13 = await svcWait(h, { [svcId]: "running" }, 30000);
+        const svc = up13.services.find((s) => s.id === svcId);
+        const svcRowFix = svc?.tabid ? machineServiceRow(svc, Date.now(), ctx.root) : null;
+        const fixRow = svcRowFix?.pid ?? MS_SERVICE_PID;
+        if (svcRowFix) await setMachineServersMock(h, { mode: "ok", stopMode: "ok", servers: [...ctx.servers, svcRowFix] });
+        const reopened13 = svcRowFix ? await openFromChip() : false;
+        const rowUp13 = svcRowFix ? await polishWaitFor(h, `!!${msRow(fixRow)}`, 8000) : false;
+        const badge13 = await h.ev(`(() => {
+            const b = ${msIn(fixRow, "[data-machine-server-badge]")};
+            return b ? { kind: b.dataset.machineServerBadge, text: b.textContent.replace(/\\s+/g, " ").trim(), tag: b.tagName } : null;
+        })()`);
+        const pin13 = await h.ev(`!!${msIn(fixRow, "[data-machine-server-pin]")}`);
+        await h.shot("cdp-shots/machine-servers-service.png");
+        // the badge opens the service's tab (it was not on screen) and closes the popover
+        const notShown13 = svc?.tabid ? !(await h.ev(`${TT_CENTRE} === "terminal:${svc.tabid}"`)) : false;
+        const badgeClick13 = rowUp13 && (await railServersMouse(h, msIn(fixRow, '[data-machine-server-badge="service"]'), true));
+        const closed13 = await waitClosed();
+        const centred13 = svc?.tabid ? await polishWaitFor(h, `(${TT_CENTRE}) === "terminal:${svc.tabid}"`, 8000) : false;
+        // the Stop asks `Stop svc-mach?`, and confirming goes through wavesrv: the service sleeps, it is not retried
+        const reopened13b = await openFromChip();
+        const rowAgain13 = await polishWaitFor(h, `!!${msRow(fixRow)}`, 8000);
+        const svcStop13 = msIn(fixRow, "[data-dev-server-stop]");
+        await hover(fixRow);
+        const askClick13 = await railServersMouse(h, svcStop13, true);
+        const asked13 = await polishWaitFor(h, `${svcStop13}?.textContent.trim() === "Stop ${svcId}?"`, 2000);
+        const stopClick13 = await railServersMouse(h, svcStop13, true);
+        const slept13 = await svcWait(h, { [svcId]: "sleeping" }, 15000);
+        const rowGone13 = await polishWaitFor(h, `!${msRow(fixRow)}`, 3000);
+        // it stays asleep: its page is on screen, so nothing starts it, and a kill from outside would have read as a crash
+        await polishNap(2500);
+        const after13 = (await svcStatus(h)).find((s) => s.id === svcId)?.state;
+        const mockStops13 = await stops();
+        await h.shot("cdp-shots/machine-servers-service-stopped.png");
+        rec(
+            "13. a held service's server reads `app · svc-mach` (a button that opens its tab, no Pin as app); its Stop asks `Stop svc-mach?` and leaves the service sleeping, not retrying",
+            !!svc?.tabid &&
+                reopened13 &&
+                rowUp13 &&
+                badge13?.kind === "service" &&
+                badge13.text === `app · ${svcId}` &&
+                badge13.tag === "BUTTON" &&
+                !pin13 &&
+                notShown13 &&
+                badgeClick13 &&
+                closed13 &&
+                centred13 &&
+                reopened13b &&
+                rowAgain13 &&
+                askClick13 &&
+                asked13 &&
+                stopClick13 &&
+                slept13.ok &&
+                rowGone13 &&
+                after13 === "sleeping" &&
+                !mockStops13.some((s) => s.pid === fixRow),
+            JSON.stringify({ svc: svc ? svcBrief([svc], [svcId]) : null, reopened13, rowUp13, badge13, pin13, notShown13, badgeClick13, closed13, centred13, reopened13b, rowAgain13, askClick13, asked13, stopClick13, slept13: slept13.ok, rowGone13, after13, mockStops13 })
+        );
         return steps;
     },
     async teardown(h, ctx) {
@@ -34609,6 +34699,8 @@ const machineServers = {
                 return true;
             })()`)
         );
+        // the held service and the tools project arrange made go first: removing the entry stops the service
+        await step("remove the held service and the tools project", () => svcTeardown(h, ctx, "machine-servers"));
         await teardownFixtureRun(h, ctx, "machine-servers", {
             what: "close the throwaway terminal, restore the rail preference and remove the directory",
             fn: async () => {
@@ -39061,6 +39153,9 @@ const jobqueueChip = {
             `document.querySelector("[data-job-queue-chip]")?.hasAttribute("data-job-queue-paused") === true && !!document.querySelector("[data-job-queue-resume]")`,
             3000
         );
+        // the pause is stamped from Date.now() at the click and the popover's clock ticks once a second, so until the next
+        // tick the time left reads a minute over ("1h 1m left"): wait for the tick
+        await polishWaitFor(h, `(document.querySelector("[data-job-queue-paused-left]")?.textContent ?? "").includes("1h left")`, 3000);
         const paused = await h.ev(`(() => ({
             chip: document.querySelector("[data-job-queue-chip]")?.textContent?.trim() ?? null,
             left: document.querySelector("[data-job-queue-paused-left]")?.textContent ?? null,
@@ -42163,10 +42258,11 @@ const toolsApp = {
     },
 };
 
-// --- held services (spec 2026-10-20-held-services-design.md; boards RowStates and Main). A tool with a
+// --- held services (spec 2026-10-20-apps-run-while-used-design.md; boards RowStates and Main). A tool with a
 // page is a service wavesrv holds: with `autostart: true` (Keep running) it starts when its tools.json entry is written
-// and never sleeps; without it, it sleeps until its tab shows on screen and sleeps again ten minutes after it leaves.
-// It takes a free port for `"port": "auto"`, and shows in the Agent tree and the page header.
+// and never sleeps; without it, it sleeps until its tab shows on screen and sleeps again a minute after it leaves, unless
+// it is in the middle of work. It takes a free port for `"port": "auto"`; the Agent tree lists it only while it is up
+// or in trouble (or its tab is the selected row), and Setup → Tools manages it whatever its state.
 // Every scenario here writes its services with toolssetuser into a temp project and removes them in teardown, which
 // stops each one and closes its tab; the fixture server is a node script in that folder. This scenario's own polling of
 // servicesstatus is the test's, not arcterm's: arcterm polls nothing while a service runs.
@@ -42207,12 +42303,14 @@ async function svcWait(h, want, ms = 60000) {
     }
 }
 
-// the person's Stop on a service not yet on the roster's lips: wait until the supervisor holds it, then stop it, so it
-// reads `stopped` (remembered) rather than `sleeping`
+// the person's Stop on a service not yet on the roster's lips: wait until the supervisor holds it (asleep, or up), stop
+// it and wait for `sleeping`. Nothing is remembered: the service starts again the next time it is shown.
 async function svcStopByPerson(h, id) {
-    const known = await svcWait(h, { [id]: ["sleeping", "stopped"] }, 15000);
+    const known = await svcWait(h, { [id]: ["sleeping", "starting", "running", "nopage"] }, 15000);
     if (!known.ok) throw new Error(`${id} never reached the supervisor: ${svcBrief(known.services, [id])}`);
     await h.rpc("servicestop", { id });
+    const asleep = await svcWait(h, { [id]: "sleeping" }, 15000);
+    if (!asleep.ok) throw new Error(`${id} did not sleep after its Stop: ${svcBrief(asleep.services, [id])}`);
 }
 
 const svcBrief = (services, ids) =>
@@ -42260,9 +42358,8 @@ async function svcWrite(h, ctx, id, def) {
 }
 
 // Removing an entry stops its service and closes its tab, so the entries go before the tabs do; then the scenario's own
-// listeners; then every port a service had must refuse a connection. A person's Stop is remembered by the tool's id and
-// outlives its entry, so a service left stopped is started first (which forgets it): the next scenario that writes the
-// same id then finds it asleep, not stopped.
+// listeners; then every port a service had must refuse a connection. Nothing remembers a Stop, so there is nothing to
+// forget first: the next scenario that writes the same id finds it asleep.
 async function svcTeardown(h, ctx, name) {
     const ports = new Set();
     const note = async (what, fn) => {
@@ -42272,9 +42369,6 @@ async function svcTeardown(h, ctx, name) {
             console.error(`${name} teardown: ${what} failed: ${e?.message ?? e}`);
         }
     };
-    await note("forget the person's Stop", async () => {
-        for (const s of await svcStatus(h)) if (ctx.svcIds?.includes(s.id) && s.state === "stopped") await h.rpc("servicestart", { id: s.id });
-    });
     await note("read the services' ports", async () => {
         for (const s of await svcStatus(h)) if (ctx.svcIds?.includes(s.id) && s.port) ports.add(s.port);
     });
@@ -42390,12 +42484,12 @@ const servicesStates = {
                 // never shown and no Keep running: it sleeps
                 "svc-sleep": { command: "node", args: "server.js 127.0.0.1 sleep", port: "auto" },
             });
-            // the person's Stop, which a sleeping service keeps apart from asleep
+            // the person's Stop: nothing remembers it, the service just sleeps
             await svcStopByPerson(h, "svc-off");
             // a crash takes the five retries (31 s), no page takes 30 s
             ctx.settled = await svcWait(h, {
                 "svc-ok": "running",
-                "svc-off": "stopped",
+                "svc-off": "sleeping",
                 "svc-else": "elsewhere",
                 "svc-taken": "porttaken",
                 "svc-crash": "crashed",
@@ -42434,10 +42528,10 @@ const servicesStates = {
         if (!late.ok) return steps;
 
         const byId = Object.fromEntries(late.services.map((s) => [s.id, s]));
+        // the two sleeping services (svc-off, svc-sleep) have no row: the tree lists a service only while it is up or in
+        // trouble, so they are read from their Setup → Tools pages below
         const want = {
             "svc-ok": { words: "", port: `:${byId["svc-ok"].port}`, dot: "solid" },
-            "svc-off": { words: "stopped", port: "", dot: "hollow" },
-            "svc-sleep": { words: "sleeping", port: "", dot: "hollow" },
             "svc-else": { words: "not started by arcterm", port: `:${ctx.p1}`, dot: "hollow" },
             "svc-taken": { words: new RegExp(`^${ctx.p2} is held by \\S+`), port: "", dot: "solid" },
             "svc-crash": { words: "crashed · exit 1", port: "", dot: "solid" },
@@ -42459,30 +42553,16 @@ const servicesStates = {
         let bad = [];
         for (let i = 0; i < 12; i++) {
             rows = await h.ev(svcRowsExpr(SVC_TREE));
-            bad = rows.length === 9 ? judge(rows) : [{ rows: rows.length }];
+            bad = rows.length === 7 ? judge(rows) : [{ rows: rows.length }];
             if (bad.length === 0) break;
             await polishNap(250);
         }
         const folder = await h.ev(svcFolderOf("svc-ok"));
         await h.shot("cdp-shots/services-states-1-rows.png");
         rec(
-            "1. each row reads its state: its words, its port and its dot",
-            bad.length === 0 && folder === TT_PROJECT,
+            "1. each row reads its state: its words, its port and its dot; the two sleeping services have no row",
+            bad.length === 0 && folder === TT_PROJECT && !rows.some((r) => r.id === "svc-off" || r.id === "svc-sleep"),
             JSON.stringify({ folder, bad, rows })
-        );
-
-        // no hover action on a sleeping row: the row shows no Start, as a stopped one does
-        await ttMouse(h, svcTreeRow("svc-sleep"), "hover");
-        const sleepRow = await h.ev(`(() => {
-            const row = document.querySelector(${JSON.stringify(svcTreeRow("svc-sleep"))});
-            return { act: row?.querySelector("[data-service-act]")?.getAttribute("data-service-act") ?? null };
-        })()`);
-        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 600 });
-        const sleep = rows.find((r) => r.id === "svc-sleep");
-        rec(
-            "1b. svc-sleep reads sleeping: its words, a hollow dot, no hover action",
-            sleep?.state === "sleeping" && sleep.words === "sleeping" && sleep.port === "" && sleep.dot === "hollow" && sleepRow.act === null,
-            JSON.stringify({ sleep, sleepRow })
         );
 
         const v6 = rows.find((r) => r.id === "svc-v6");
@@ -42491,6 +42571,42 @@ const servicesStates = {
             v6?.state === "nopage" && v6.words === "running, no page after 30s" && v6.dot === "solid" && byId["svc-v6"].state === "nopage",
             JSON.stringify({ v6, status: byId["svc-v6"] })
         );
+
+        // the Services chip and popover are gone: the app bar holds no chip, the page no panel
+        const gone = await h.ev(`({
+            chip: !!document.querySelector("[data-services-chip]"),
+            panel: !!document.querySelector("[data-services-panel]"),
+            bar: !!document.querySelector("[data-app-bar]"),
+        })`);
+        rec(
+            "3. the app bar has no Services chip and the page no Services panel",
+            gone.bar && !gone.chip && !gone.panel,
+            JSON.stringify(gone)
+        );
+
+        // a sleeping service reads from its Setup → Tools page: its words, and no Stop or Restart to press
+        await ttOpenLibrary(h);
+        const sleepers = {};
+        for (const id of ["svc-sleep", "svc-off"]) {
+            await ttClick(h, `[data-tools-row="${id}"]`);
+            const up = await polishWaitFor(h, `!!document.querySelector('[data-tools-detail="${id}"] [data-tool-service-status]')`, 6000);
+            await polishNap(300);
+            sleepers[id] = await h.ev(`(() => {
+                const d = document.querySelector('[data-tools-detail="${id}"]');
+                return {
+                    words: ${TT_FLAT}(d?.querySelector("[data-tool-service-status]")),
+                    stop: !!d?.querySelector("[data-tool-service-stop]"),
+                    restart: !!d?.querySelector("[data-tool-service-restart]"),
+                };
+            })()`);
+            sleepers[id].up = up;
+            if (id === "svc-off") await h.shot("cdp-shots/services-states-2-sleeping.png");
+        }
+        rec(
+            "4. a sleeping service reads `sleeping · starts when opened` on its Setup → Tools page, with no Stop or Restart",
+            Object.values(sleepers).every((s) => s.up && s.words === "sleeping · starts when opened" && !s.stop && !s.restart),
+            JSON.stringify(sleepers)
+        );
         return steps;
     },
     async teardown(h, ctx) {
@@ -42498,10 +42614,12 @@ const servicesStates = {
     },
 };
 
-// --- services-tree: a service in the Agent tree and its page header (board Main). Rows in the project's folder after the
-// divider, hover buttons, the page and its header, Stop and Start freeing and taking the port, a crashed or stopped
-// service showing its log without starting it, a sleeping one starting when its row is clicked, the row's menu, and
-// j/k reaching the rows.
+// --- services-tree: a service in the Agent tree and its page header (board Main). The tree lists a service only while it
+// is up or in trouble (or its tab is the selected row): rows in the project's folder after the divider, hover buttons,
+// the page and its header, Stop and Start freeing and taking the port, a sleeping service's row going once another row
+// is picked, a crashed service showing its log without starting it, a sleeping one with a project of its own drawing
+// neither row nor folder until its Setup → Tools page opens it, the row's menu, and j/k reaching the rows.
+const SVC_OWN_PROJECT = "verify-svc-own";
 const servicesTree = {
     name: "services-tree",
     surface: "agent",
@@ -42523,18 +42641,26 @@ const servicesTree = {
                     },
                     "svc-crash": { command: "sh", args: "-c 'exit 1'", port: "auto", autostart: true },
                     "svc-off": { command: "node", args: "server.js 127.0.0.1 ok", port: "auto" },
-                    // never shown, no Keep running: it sleeps until its row is clicked
-                    "svc-never": { command: "node", args: "server.js 127.0.0.1 never", port: "auto" },
                 },
                 { terminals: [{ key: "shell", cwd: "root" }] }
             );
-            // svc-off is the person's Stop; svc-never stays asleep
+            // svc-never has a project of its own (not TT_PROJECT, which the shell terminal shares): its folder holds
+            // nothing else, so the tree draws it only while svc-never is listed. Never shown, no Keep running: it sleeps
+            // until its Setup → Tools page opens it.
+            ctx.ownDir = mkdtempSync(join(tmpdir(), "verify-svc-own-"));
+            ctx.dirs.push(ctx.ownDir);
+            writeFileSync(join(ctx.ownDir, "server.js"), SVC_SERVER_SOURCE);
+            await h.rpc("createproject", { name: SVC_OWN_PROJECT, path: ctx.ownDir });
+            ctx.ownProjectMade = true;
+            await waitForProjectInConfig(h, SVC_OWN_PROJECT);
+            await svcWrite(h, ctx, "svc-never", { command: "node", args: "server.js 127.0.0.1 never", port: "auto", dir: ctx.ownDir });
+            // svc-off is the person's Stop (nothing remembers it: it just sleeps); svc-never stays asleep
             await svcStopByPerson(h, "svc-off");
             ctx.settled = await svcWait(h, {
                 "svc-ok": "running",
                 "svc-fixed": "running",
                 "svc-crash": "crashed",
-                "svc-off": "stopped",
+                "svc-off": "sleeping",
                 "svc-never": "sleeping",
             });
         } catch (e) {
@@ -42555,8 +42681,9 @@ const servicesTree = {
         const status = async () => Object.fromEntries((await svcStatus(h)).map((s) => [s.id, s]));
         let by = await status();
 
-        const ids = ["svc-ok", "svc-fixed", "svc-crash", "svc-off", "svc-never"];
-        await polishWaitFor(h, `${svcRowsExpr(SVC_TREE)}.length === 5`, 8000);
+        // svc-off and svc-never sleep, so the tree lists the three that are up or in trouble
+        const ids = ["svc-ok", "svc-fixed", "svc-crash"];
+        await polishWaitFor(h, `${svcRowsExpr(SVC_TREE)}.length === 3`, 8000);
         const shapeSel = ["[data-project-folder]", "[data-agent-row]", "[data-project-divider]", "[data-tree-terminal-row]", "[data-service-row]"]
             .map((s) => `${SVC_TREE} ${s}`)
             .join(", ");
@@ -42572,43 +42699,40 @@ const servicesTree = {
         await h.shot("cdp-shots/services-tree-1-rows.png");
         const at = shape.indexOf(`divider:${TT_PROJECT}`);
         const after = shape.slice(at + 1);
-        const held = after.slice(0, 5);
+        const held = after.slice(0, 3);
         rec(
-            "1. rows sit after the divider, before any terminal row",
+            "1. rows sit after the divider, before any terminal row; the two sleeping services have none",
             at > 0 &&
                 held.every((r) => r.startsWith("service:")) &&
                 [...held].map((r) => r.slice(8)).sort().join() === [...ids].sort().join() &&
-                after[5]?.startsWith("terminal:"),
+                after[3]?.startsWith("terminal:") &&
+                !shape.includes("service:svc-off") &&
+                !shape.includes("service:svc-never"),
             JSON.stringify(shape)
         );
 
-        // hover: Start on a stopped service, Restart on a crashed one; the buttons sit at opacity 0 until the row is hovered
+        // hover: Restart on a crashed service, nothing on a running one; the buttons sit at opacity 0 until the row is hovered
         const act = (id) => `(() => {
             const b = document.querySelector(${JSON.stringify(svcTreeRow(id) + " [data-service-act]")});
             return b ? { act: b.getAttribute("data-service-act"), text: b.textContent.trim(), opacity: getComputedStyle(b).opacity } : null;
         })()`;
-        await ttMouse(h, svcTreeRow("svc-off"), "hover");
-        const offAct = await h.ev(act("svc-off"));
+        await ttMouse(h, svcTreeRow("svc-ok"), "hover");
+        const okAct = await h.ev(act("svc-ok"));
         await ttMouse(h, svcTreeRow("svc-crash"), "hover");
         const crashAct = await h.ev(act("svc-crash"));
-        await ttMouse(h, svcTreeRow("svc-never"), "hover");
-        const neverAct = await h.ev(act("svc-never"));
         await h.shot("cdp-shots/services-tree-2-hover.png");
         await ttMouse(h, svcTreeRow("svc-crash") + ' [data-service-act="restart"]');
         const left = await svcWait(h, { "svc-crash": (s) => s.state === "starting" || s.state === "retrying" }, 8000);
         const gaveUp = await svcWait(h, { "svc-crash": "crashed" }, 60000);
         rec(
-            "2. hover shows Start on a stopped service and Restart on a crashed one, nothing on a sleeping one; Restart takes it out of crashed",
-            neverAct === null &&
-                offAct?.act === "start" &&
-                offAct.text === "Start" &&
-                offAct.opacity === "1" &&
+            "2. hover shows Restart on a crashed service and nothing on a running one; Restart takes it out of crashed",
+            okAct === null &&
                 crashAct?.act === "restart" &&
                 crashAct.text === "Restart" &&
                 crashAct.opacity === "1" &&
                 left.ok &&
                 gaveUp.ok,
-            JSON.stringify({ offAct, crashAct, neverAct, left: left.ok, gaveUp: gaveUp.ok })
+            JSON.stringify({ okAct, crashAct, left: left.ok, gaveUp: gaveUp.ok })
         );
         await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 600 });
 
@@ -42641,28 +42765,54 @@ const servicesTree = {
         const openedFixed = await svcClickRow(h, "svc-fixed", fixed.tabid);
         const heldBefore = await svcPortOpen(fixed.port);
         await ttClick(h, `[data-terminal-pane-head="${fixed.tabid}"] [data-service-stop]`);
-        const stopped = await svcWait(h, { "svc-fixed": "stopped" }, 15000);
+        const stopped = await svcWait(h, { "svc-fixed": "sleeping" }, 15000);
         let freed = false;
         for (let i = 0; i < 12 && !freed; i++) {
             freed = !(await svcPortOpen(fixed.port));
             if (!freed) await polishNap(250);
         }
+        // its page stays on screen, so nothing starts it again; and being the selected row, its row stays drawn
+        await polishNap(2000);
+        const stillAsleep = (await status())["svc-fixed"]?.state === "sleeping";
         const fixedRow = (await h.ev(svcRowsExpr(SVC_TREE))).find((r) => r.id === "svc-fixed");
         await h.shot("cdp-shots/services-tree-4-stopped.png");
         rec(
-            "4. Stop frees svc-fixed's port",
-            openedFixed && heldBefore && stopped.ok && freed && fixedRow?.words === "stopped",
-            JSON.stringify({ openedFixed, heldBefore, stopped: stopped.ok, freed, fixedRow })
+            "4. Stop leaves svc-fixed sleeping and frees its port; its row stays drawn while it is the selected one, and nothing restarts it",
+            openedFixed &&
+                heldBefore &&
+                stopped.ok &&
+                freed &&
+                stillAsleep &&
+                fixedRow?.state === "sleeping" &&
+                fixedRow.words === "sleeping",
+            JSON.stringify({ openedFixed, heldBefore, stopped: stopped.ok, freed, stillAsleep, fixedRow })
         );
 
+        // a sleeping service's page header offers Start (canStart holds for sleeping), which brings it back
+        const startShown = await h.ev(svcHeadExpr(fixed.tabid));
         await ttClick(h, `[data-terminal-pane-head="${fixed.tabid}"] [data-service-start]`);
         const back = await svcWait(h, { "svc-fixed": "running" }, 30000);
         await polishNap(600);
         const backRow = (await h.ev(svcRowsExpr(SVC_TREE))).find((r) => r.id === "svc-fixed");
         rec(
-            "5. Start brings it back",
-            back.ok && backRow?.words === "" && backRow.port === `:${fixed.port}`,
-            JSON.stringify({ back: back.ok, backRow })
+            "5. Start in the page header brings it back",
+            startShown?.start === true && back.ok && backRow?.words === "" && backRow.port === `:${fixed.port}`,
+            JSON.stringify({ startShown, back: back.ok, backRow })
+        );
+
+        // Stop again, then pick another row: a sleeping service's row is drawn only while it is the selected one
+        await ttClick(h, `[data-terminal-pane-head="${fixed.tabid}"] [data-service-stop]`);
+        const slept = await svcWait(h, { "svc-fixed": "sleeping" }, 15000);
+        const okTab = (await status())["svc-ok"].tabid;
+        const movedOn = await svcClickRow(h, "svc-ok", okTab);
+        const rowGone = await polishWaitFor(h, `!document.querySelector(${JSON.stringify(svcTreeRow("svc-fixed"))})`, 6000);
+        await polishNap(1500);
+        const fixedAfter = (await status())["svc-fixed"]?.state;
+        await h.shot("cdp-shots/services-tree-5-gone.png");
+        rec(
+            "5b. picking another row removes the sleeping svc-fixed's row, and it stays asleep",
+            slept.ok && movedOn && rowGone && fixedAfter === "sleeping",
+            JSON.stringify({ slept: slept.ok, movedOn, rowGone, fixedAfter })
         );
 
         // Restart from the header: a newer start
@@ -42691,27 +42841,20 @@ const servicesTree = {
             JSON.stringify({ openedCrash, crashFrame, crashHead })
         );
 
-        // a service the person stopped, never run since, gets its tab and block at the click and stays stopped
-        const hadTab = !!by["svc-off"].tabid;
-        await ttMouse(h, svcTreeRow("svc-off"));
-        const gotTab = await svcWait(h, { "svc-off": (s) => !!s.tabid }, 10000);
-        const offTab = gotTab.services.find((s) => s.id === "svc-off")?.tabid;
-        const offShown = offTab ? await polishWaitFor(h, `(${TT_CENTRE}) === "terminal:${offTab}"`, 8000) : false;
-        await polishNap(600);
-        const offHead = offTab ? await h.ev(svcHeadExpr(offTab)) : null;
-        const offFrame = await h.ev(`!!document.querySelector("[data-app-frame-shown]")`);
-        await h.shot("cdp-shots/services-tree-6-stopped.png");
-        await polishNap(3000);
-        const still = (await status())["svc-off"];
-        rec(
-            "8. a stopped service shows its log, not started",
-            !hadTab && offShown && !offFrame && offHead?.line === "Stopped" && offHead.start && still?.state === "stopped",
-            JSON.stringify({ hadTab, offShown, offFrame, offHead, still: still?.state })
+        // a sleeping service with a project of its own has no row, and its emptied folder is not drawn; Open on its
+        // Setup → Tools page shows it, which starts it, and then its row and folder appear
+        const ownFolder = `${SVC_TREE} [data-project-folder="${SVC_OWN_PROJECT}"]`;
+        const neverSel = (sel) => `!!document.querySelector(${JSON.stringify(sel)})`;
+        const neverHadTab = !!(await status())["svc-never"].tabid;
+        const hiddenBefore = await h.ev(
+            `({ row: ${neverSel(svcTreeRow("svc-never"))}, folder: ${neverSel(ownFolder)}, off: ${neverSel(svcTreeRow("svc-off"))}, fixed: ${neverSel(svcTreeRow("svc-fixed"))} })`
         );
-
-        // a sleeping service: the click shows its tab, which starts it
-        const neverHadTab = !!by["svc-never"].tabid;
-        await ttMouse(h, svcTreeRow("svc-never"));
+        await h.shot("cdp-shots/services-tree-6-sleeping.png");
+        await ttOpenLibrary(h);
+        await ttClick(h, '[data-tools-row="svc-never"]');
+        const detailUp = await polishWaitFor(h, `!!document.querySelector('[data-tools-detail="svc-never"] [data-tool-open]')`, 6000);
+        const neverWords = await h.ev(`${TT_FLAT}(document.querySelector('[data-tools-detail="svc-never"] [data-tool-service-status]'))`);
+        await ttClick(h, '[data-tools-detail="svc-never"] [data-tool-open]');
         const neverStarted = await svcWait(h, { "svc-never": ["starting", "running"] }, 15000);
         const neverTab = neverStarted.services.find((s) => s.id === "svc-never")?.tabid;
         const neverShown = neverTab ? await polishWaitFor(h, `(${TT_CENTRE}) === "terminal:${neverTab}"`, 8000) : false;
@@ -42719,13 +42862,43 @@ const servicesTree = {
         const neverUpHead = neverTab
             ? await polishWaitFor(h, `((${svcHeadExpr(neverTab)})?.line ?? "").startsWith("Running on 127.0.0.1:")`, 8000)
             : false;
+        const neverRow = await polishWaitFor(h, neverSel(svcTreeRow("svc-never")), 6000);
+        const neverFolder = await polishWaitFor(h, neverSel(ownFolder), 6000);
         await polishNap(600);
         const neverHead = neverTab ? await h.ev(svcHeadExpr(neverTab)) : null;
+        const offStill = await h.ev(neverSel(svcTreeRow("svc-off")));
         await h.shot("cdp-shots/services-tree-6b-woken.png");
         rec(
-            "8b. a sleeping service starts when its row is clicked",
-            !neverHadTab && !!neverTab && neverStarted.ok && neverShown && neverUp.ok && neverUpHead && neverHead?.line.startsWith("Running on 127.0.0.1:"),
-            JSON.stringify({ neverHadTab, neverStarted: svcBrief(neverStarted.services, ["svc-never"]), neverShown, neverUp: neverUp.ok, neverHead })
+            "8b. a sleeping service with a project of its own has no row and no folder; Open on its Setup → Tools page starts it, and its row and folder appear",
+            !neverHadTab &&
+                !hiddenBefore.row &&
+                !hiddenBefore.folder &&
+                !hiddenBefore.off &&
+                !hiddenBefore.fixed &&
+                detailUp &&
+                neverWords === "sleeping · starts when opened" &&
+                !!neverTab &&
+                neverStarted.ok &&
+                neverShown &&
+                neverUp.ok &&
+                neverUpHead &&
+                neverRow &&
+                neverFolder &&
+                !offStill &&
+                neverHead?.line.startsWith("Running on 127.0.0.1:"),
+            JSON.stringify({
+                neverHadTab,
+                hiddenBefore,
+                detailUp,
+                neverWords,
+                neverStarted: svcBrief(neverStarted.services, ["svc-never"]),
+                neverShown,
+                neverUp: neverUp.ok,
+                neverRow,
+                neverFolder,
+                offStill,
+                neverHead,
+            })
         );
 
         // the row's menu
@@ -42737,8 +42910,8 @@ const servicesTree = {
         const item = (l) => items.find((i) => i.label === l);
         const menuOk =
             menuUp &&
-            ["Start", "Stop", "Restart", "Open in the browser", "Keep running", "Edit in Setup → Tools"].every((l) => labels.includes(l)) &&
-            item("Start")?.disabled === true &&
+            ["Stop", "Restart", "Open in the browser", "Keep running", "Pin to the rail", "Edit in Setup → Tools"].every((l) => labels.includes(l)) &&
+            !labels.includes("Start") &&
             item("Stop")?.disabled === false &&
             item("Restart")?.disabled === false &&
             item("Keep running")?.checked === true;
@@ -42771,14 +42944,19 @@ const servicesTree = {
             JSON.stringify({ items, menuOk, dropped, unticked, on, inSetup, surface, entry })
         );
 
-        // j reaches the next service row: every row the walk crosses has a tab
-        await h.rpc("serviceopen", { id: "svc-off" });
+        // j reaches the next service row: every row the walk crosses has a tab (a listed service has one; the sleeping
+        // ones that would lack it have no row to cross)
         await h.goto("agent");
-        await polishWaitFor(h, `${svcRowsExpr(SVC_TREE)}.length === 5`, 8000);
+        await polishWaitFor(h, `${svcRowsExpr(SVC_TREE)}.length === 3`, 8000);
         by = await status();
         const order = (await h.ev(svcRowsExpr(SVC_TREE))).map((r) => r.id);
-        const from = order.indexOf("svc-ok") >= 0 && order.indexOf("svc-ok") < order.length - 1 ? "svc-ok" : order[0];
-        const next = order[order.indexOf(from) + 1];
+        // two service rows of one folder are adjacent; the next folder's rows (svc-never has a project of its own) come
+        // after that folder's terminal rows
+        const folderOfRow = [];
+        for (const id of order) folderOfRow.push(await h.ev(svcFolderOf(id)));
+        const pair = order.findIndex((id, i) => i < order.length - 1 && folderOfRow[i] === folderOfRow[i + 1]);
+        const from = order[Math.max(0, pair)];
+        const next = order[Math.max(0, pair) + 1];
         const selectedRow = `(() => {
             const el = [...document.querySelectorAll(${JSON.stringify(SVC_TREE + " [data-service-row]")})].find((r) => /(^| )bg-surface-selected( |$)/.test(r.className));
             return el ? el.getAttribute("data-service-row") : null;
@@ -42799,15 +42977,19 @@ const servicesTree = {
         return steps;
     },
     async teardown(h, ctx) {
+        if (ctx.ownProjectMade) {
+            await h.rpc("deleteproject", { name: SVC_OWN_PROJECT }).catch((e) => console.error(`services-tree teardown: delete ${SVC_OWN_PROJECT} failed: ${e?.message ?? e}`));
+        }
         await svcTeardown(h, ctx, "services-tree");
     },
 };
 
 // --- services-rail: a service pinned to the nav rail opens as the app surface (spec 2026-10-20-rail-apps-design.md;
 // boards RailAppSurface and RailAppCrashed). The page is the same frame Agent shows, moved over the surface's slot and
-// back without a reload; a crashed or stopped service shows the card; the rail holds three, in the person's order, and
-// keeps only the icon on a narrow window. Surface-scoped queries read inside [data-app-surface]: the Agent surface stays
-// mounted under it, with its own header buttons and slot.
+// back without a reload; a crashed service shows the card and a sleeping one (a Stop on screen, or a pin not yet shown) the
+// waiting card, which showing the app ends; the rail holds three, in the person's order, and keeps only the icon on a
+// narrow window. Surface-scoped queries read inside [data-app-surface]: the Agent surface stays mounted under it, with its
+// own header buttons and slot.
 const RAIL_KEY = "apps.rail";
 const RAIL_ITEM = (id) => `[data-nav-app="${id}"]`;
 const RAIL_ORDER = `[...document.querySelectorAll("[data-nav-app]")].map((b) => b.getAttribute("data-nav-app"))`;
@@ -42836,6 +43018,19 @@ async function railPinFromTree(h, id) {
     await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(svcTreeRow(id))})`, 8000);
     if (!(await svcContextMenu(h, svcTreeRow(id)))) return false;
     await ttClick(h, '[data-menu-item="Pin to the rail"]');
+    return polishWaitFor(h, `!!document.querySelector(${JSON.stringify(RAIL_ITEM(id))})`, 5000);
+}
+
+// Pins `id` from its Setup → Tools page, the one place that manages a service whatever its state (a sleeping one has no
+// tree row): true once its item is on the rail.
+async function railPinFromSetup(h, id) {
+    await ttOpenLibrary(h);
+    await ttClick(h, `[data-tools-row="${id}"]`);
+    const toggle = `button[data-tool-rail-pin]`;
+    const sel = `[data-tools-detail="${id}"] ${toggle}`;
+    // the toggle waits (disabled) until wavesrv has a status for the service
+    if (!(await polishWaitFor(h, `(() => { const b = document.querySelector(${JSON.stringify(sel)}); return !!b && !b.disabled; })()`, 8000))) return false;
+    await ttClick(h, sel);
     return polishWaitFor(h, `!!document.querySelector(${JSON.stringify(RAIL_ITEM(id))})`, 5000);
 }
 
@@ -42901,7 +43096,8 @@ const servicesRail = {
         );
         if (!arranged) return steps;
         const status = async () => Object.fromEntries((await svcStatus(h)).map((s) => [s.id, s]));
-        await polishWaitFor(h, `${svcRowsExpr(SVC_TREE)}.length === 5`, 8000);
+        // svc-sleep sleeps, so the tree lists the other four
+        await polishWaitFor(h, `${svcRowsExpr(SVC_TREE)}.length === 4`, 8000);
 
         // 1. pin from the tree: after the second divider, before Setup
         const pinned = await railPinFromTree(h, "svc-ok");
@@ -42992,20 +43188,34 @@ const servicesRail = {
         const logSurface = await h.activeSurfaceLabel();
         rec("3. Log opens Agent with svc-ok's terminal focused in its Log view", logged && inLog && logSurface === "Agent", JSON.stringify({ logged, inLog, logSurface }));
 
-        // 4. Stop reads as the card; Start brings the page back
+        // 4. Stop leaves the app asleep on screen: the waiting card, no stopped card; the header's Start brings the page back
         await ttMouse(h, RAIL_ITEM("svc-ok"));
         await polishWaitFor(h, railSurfaceUp("svc-ok"), 8000);
         const stoppedClick = await ttClick(h, '[data-app-surface="svc-ok"] [data-app-stop]');
-        const cardUp = await polishWaitFor(h, `!!document.querySelector('[data-app-surface="svc-ok"] [data-app-card="stopped"]')`, 15000);
-        const stoppedTitle = await h.ev(railSurfaceText("svc-ok", "[data-app-card]"));
-        const startBtn = await h.ev(`!!document.querySelector('[data-app-surface="svc-ok"] [data-app-card-action="start"]')`);
-        await ttClick(h, '[data-app-surface="svc-ok"] [data-app-card-action="start"]');
+        const asleep4 = await svcWait(h, { "svc-ok": "sleeping" }, 15000);
+        const cardUp = await polishWaitFor(h, `!!document.querySelector('[data-app-surface="svc-ok"] [data-app-waiting]')`, 15000);
+        const waitTitle = await h.ev(railSurfaceText("svc-ok", "[data-app-waiting]"));
+        const noCard = await h.ev(`!document.querySelector('[data-app-surface="svc-ok"] [data-app-card]')`);
+        // its surface stays on screen, so nothing starts it again
+        await polishNap(2000);
+        const stillAsleep4 = (await status())["svc-ok"]?.state === "sleeping";
+        const startBtn = await h.ev(`!!document.querySelector('[data-app-surface="svc-ok"] [data-app-surface-head] [data-app-start]')`);
+        await h.shot("cdp-shots/services-rail-asleep.png");
+        await ttClick(h, '[data-app-surface="svc-ok"] [data-app-surface-head] [data-app-start]');
         const back = await svcWait(h, { "svc-ok": "running" }, 30000);
         const pageBack = await polishWaitFor(h, `(${railFrameExpr(slotSel)}).shown === "true"`, 15000);
         rec(
-            "4. Stop shows `svc-ok is stopped` with Start, and Start brings the page back",
-            stoppedClick && cardUp && stoppedTitle.includes("svc-ok is stopped") && startBtn && back.ok && pageBack,
-            JSON.stringify({ stoppedClick, cardUp, stoppedTitle, startBtn, back: back.ok, pageBack })
+            "4. Stop leaves svc-ok asleep with the waiting card `svc-ok is asleep` and no stopped card, and the header's Start brings the page back",
+            stoppedClick &&
+                asleep4.ok &&
+                cardUp &&
+                waitTitle === "svc-ok is asleep" &&
+                noCard &&
+                stillAsleep4 &&
+                startBtn &&
+                back.ok &&
+                pageBack,
+            JSON.stringify({ stoppedClick, asleep4: asleep4.ok, cardUp, waitTitle, noCard, stillAsleep4, startBtn, back: back.ok, pageBack })
         );
 
         // 5. a crashed pin: the red dot, the card, the log
@@ -43043,9 +43253,11 @@ const servicesRail = {
             JSON.stringify({ pinnedCrash, crashDot, crashTitle, crashUp, crashCard, crashLine, crashHead, crashLog })
         );
 
-        // 6. a sleeping pin wakes when its surface shows: the waiting card, then the page over the surface's slot
+        // 6. a sleeping pin wakes when its surface shows: the waiting card, then the page over the surface's slot. A
+        // sleeping service has no row in the tree, so it is pinned from its Setup → Tools page
         const asleep = (await status())["svc-sleep"]?.state === "sleeping";
-        const pinnedSleep = await railPinFromTree(h, "svc-sleep");
+        const noRow = await h.ev(`!document.querySelector(${JSON.stringify(svcTreeRow("svc-sleep"))})`);
+        const pinnedSleep = await railPinFromSetup(h, "svc-sleep");
         await polishNap(300);
         const sleepDot = await h.ev(`document.querySelector(${JSON.stringify(RAIL_ITEM("svc-sleep") + " [data-nav-app-dot]")})?.getAttribute("data-nav-app-dot") ?? null`);
         const sleepTitle = await h.ev(`document.querySelector(${JSON.stringify(RAIL_ITEM("svc-sleep"))})?.getAttribute("title") ?? ""`);
@@ -43057,9 +43269,9 @@ const servicesRail = {
         await polishNap(500);
         const sleepFrame = await h.ev(railFrameExpr(slotSel));
         rec(
-            "6. a sleeping pin has no dot and reads `sleeping`; opening it shows the waiting card, then the page over the surface's slot",
-            asleep && pinnedSleep && sleepDot === null && sleepTitle === "svc-sleep: sleeping" && stillAsleep && waiting && woke.ok && sleepPage && railOver(sleepFrame),
-            JSON.stringify({ asleep, pinnedSleep, sleepDot, sleepTitle, stillAsleep, waiting, woke: woke.ok, sleepPage, sleepFrame })
+            "6. a sleeping pin (made from its Setup → Tools page, it has no tree row) has no dot and reads `sleeping`; opening it shows the waiting card, then the page over the surface's slot",
+            asleep && noRow && pinnedSleep && sleepDot === null && sleepTitle === "svc-sleep: sleeping" && stillAsleep && waiting && woke.ok && sleepPage && railOver(sleepFrame),
+            JSON.stringify({ asleep, noRow, pinnedSleep, sleepDot, sleepTitle, stillAsleep, waiting, woke: woke.ok, sleepPage, sleepFrame })
         );
 
         // 7. the rail is full: a fourth is refused in the menu
@@ -43187,15 +43399,28 @@ const servicesRail = {
     },
 };
 
-// --- services-setup: Setup → Tools (a free port and Keep running). A tool saved with Pick a free port is a
-// service: no page of its own, a port arcterm picks, asleep until its page shows unless Keep running is switched on.
+// --- services-setup: Setup → Tools manages an app (a free port, Keep running, and a running tool's Status, Restart, Stop
+// and rail pin). A tool saved with Pick a free port is a service: no page of its own, a port arcterm picks, asleep until
+// its page shows unless Keep running is switched on. A tool with a page shows its state in words whatever its state, with
+// Stop and Restart where the state allows them, and an On the rail toggle that the rail's three-app limit disables.
 const servicesSetup = {
     name: "services-setup",
     surface: "setup",
     async arrange(h) {
         const ctx = {};
         try {
-            await svcArrange(h, ctx, {});
+            // the rail starts empty and teardown puts the person's pins back
+            ctx.prevRail = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_KEY)})`);
+            await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_KEY)})`);
+            await svcArrange(h, ctx, {
+                // sh waits two seconds before node listens, so `starting…` holds long enough to be read after a Restart
+                "svc-run": { command: "sh", args: "-c 'sleep 2; node server.js 127.0.0.1 run'", port: "auto", autostart: true },
+                // three more services to fill the rail with: they sleep, and a sleeping app can be pinned
+                "svc-p1": { command: "node", args: "server.js 127.0.0.1 p1", port: "auto" },
+                "svc-p2": { command: "node", args: "server.js 127.0.0.1 p2", port: "auto" },
+                "svc-p3": { command: "node", args: "server.js 127.0.0.1 p3", port: "auto" },
+            });
+            ctx.settled = await svcWait(h, { "svc-run": "running", "svc-p1": "sleeping", "svc-p2": "sleeping", "svc-p3": "sleeping" });
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -43204,8 +43429,12 @@ const servicesSetup = {
     async assert(h, ctx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
-        const arranged = ctx.arrangeError == null && ctx.inRoster === true;
-        rec("0. the project is arranged", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true && ctx.settled?.ok === true;
+        rec(
+            "0. the project and its services are arranged",
+            arranged,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }) + svcBrief(ctx.settled?.services ?? [])
+        );
         if (!arranged) return steps;
 
         const up = await ttOpenLibrary(h);
@@ -43287,10 +43516,283 @@ const servicesSetup = {
             after?.autostart === true && switched === "true" && woke.ok,
             JSON.stringify({ autostart: after?.autostart, switched, woke: svcBrief(woke.services, ["svc-new"]) })
         );
+
+        // a running tool with a page, its detail page: Status, Restart, Stop, Keep running and On the rail
+        const detailSel = (rest) => `[data-tools-detail="svc-run"] ${rest}`;
+        const statusWords = `${TT_FLAT}(document.querySelector(${JSON.stringify(detailSel("[data-tool-service-status]"))}))`;
+        const detailFacts = () =>
+            h.ev(`(() => {
+                const d = document.querySelector('[data-tools-detail="svc-run"]');
+                const pin = d?.querySelector("button[data-tool-rail-pin]");
+                const keep = d?.querySelector('button[role="switch"][aria-label="Keep svc-run running"]');
+                return {
+                    words: ${TT_FLAT}(d?.querySelector("[data-tool-service-status]")),
+                    stop: !!d?.querySelector("[data-tool-service-stop]"),
+                    restart: !!d?.querySelector("[data-tool-service-restart]"),
+                    pin: pin ? { checked: pin.getAttribute("aria-checked"), disabled: pin.disabled, title: pin.getAttribute("title") } : null,
+                    keep: keep ? keep.getAttribute("aria-checked") : null,
+                };
+            })()`);
+        await ttClick(h, '[data-tools-row="svc-run"]');
+        await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(detailSel("[data-tool-service-status]"))})`, 6000);
+        await polishNap(400);
+        const run0 = (await svcStatus(h)).find((s) => s.id === "svc-run");
+        const running = await detailFacts();
+        await h.shot("cdp-shots/services-setup-3-running.png");
+        rec(
+            "4. a running tool's Status row reads its port, with Stop and Restart beside it, Keep running on and the rail toggle off",
+            run0?.state === "running" &&
+                running.words === `:${run0.port}` &&
+                running.stop &&
+                running.restart &&
+                running.keep === "true" &&
+                running.pin?.checked === "false" &&
+                running.pin.disabled === false,
+            JSON.stringify({ run0: run0 ? svcBrief([run0], ["svc-run"]) : null, running })
+        );
+
+        // Restart goes through starting back to running, and the port answers
+        const startedBefore = run0?.startedms ?? 0;
+        await ttClick(h, detailSel("[data-tool-service-restart]"));
+        const sawStarting = await polishWaitFor(h, `${statusWords} === "starting…"`, 6000);
+        const again = await svcWait(h, { "svc-run": (s) => s.state === "running" && (s.startedms ?? 0) > startedBefore }, 30000);
+        const run1 = again.services.find((s) => s.id === "svc-run");
+        const answers = run1?.port ? await svcPortOpen(run1.port) : false;
+        const wordsBack = await polishWaitFor(h, `${statusWords} === ${JSON.stringify(`:${run1?.port}`)}`, 6000);
+        rec(
+            "5. Restart takes svc-run through `starting…` back to running on its port, and the port answers",
+            sawStarting && again.ok && answers && wordsBack,
+            JSON.stringify({ sawStarting, again: svcBrief(again.services, ["svc-run"]), answers, wordsBack })
+        );
+
+        // Stop: sleeping, the row reads sleeping · starts when opened, and no Stop button is left
+        const port1 = run1?.port;
+        await ttClick(h, detailSel("[data-tool-service-stop]"));
+        const slept = await svcWait(h, { "svc-run": "sleeping" }, 15000);
+        const wordsAsleep = await polishWaitFor(h, `${statusWords} === "sleeping · starts when opened"`, 6000);
+        let freed = false;
+        for (let i = 0; i < 12 && !freed && port1; i++) {
+            freed = !(await svcPortOpen(port1));
+            if (!freed) await polishNap(250);
+        }
+        const asleepFacts = await detailFacts();
+        await h.shot("cdp-shots/services-setup-4-asleep.png");
+        rec(
+            "6. Stop leaves svc-run sleeping, frees its port, and the row reads `sleeping · starts when opened` with no Stop button",
+            slept.ok && wordsAsleep && freed && !asleepFacts.stop && !asleepFacts.restart,
+            JSON.stringify({ slept: slept.ok, wordsAsleep, freed, asleepFacts })
+        );
+
+        // Keep running: the tools.json entry loses autostart, then gains it again (which starts the sleeping service)
+        const keepSel = detailSel('button[role="switch"][aria-label="Keep svc-run running"]');
+        const keepIsOn = (await svcEntry(h, "svc-run"))?.autostart === true;
+        await ttClick(h, keepSel);
+        let keepEntry;
+        for (let i = 0; i < 20; i++) {
+            keepEntry = await svcEntry(h, "svc-run");
+            if (keepEntry != null && !("autostart" in keepEntry)) break;
+            await polishNap(250);
+        }
+        const keepDropped = keepEntry != null && !("autostart" in keepEntry);
+        await polishNap(300);
+        const keepOff = (await detailFacts()).keep;
+        await ttClick(h, keepSel);
+        for (let i = 0; i < 20; i++) {
+            keepEntry = await svcEntry(h, "svc-run");
+            if (keepEntry?.autostart === true) break;
+            await polishNap(250);
+        }
+        const keepGained = keepEntry?.autostart === true;
+        await polishNap(300);
+        const keepOn = (await detailFacts()).keep;
+        const restarted = await svcWait(h, { "svc-run": "running" }, 30000);
+        rec(
+            "7. Keep running off drops autostart from the tools.json entry and on writes it back, which starts the sleeping service",
+            keepIsOn && keepDropped && keepOff === "false" && keepGained && keepOn === "true" && restarted.ok,
+            JSON.stringify({ keepIsOn, keepDropped, keepOff, keepGained, keepOn, restarted: svcBrief(restarted.services, ["svc-run"]) })
+        );
+
+        // On the rail: the rail shows the app, and off takes it away
+        const pinSel = detailSel("button[data-tool-rail-pin]");
+        await ttClick(h, pinSel);
+        const onRail = await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(RAIL_ITEM("svc-run"))})`, 5000);
+        await polishNap(300);
+        const pinOn = (await detailFacts()).pin;
+        const stored8 = await h.ev(RAIL_STORED);
+        await ttClick(h, pinSel);
+        const offRail = await polishWaitFor(h, `!document.querySelector(${JSON.stringify(RAIL_ITEM("svc-run"))})`, 5000);
+        await polishNap(300);
+        const pinOff = (await detailFacts()).pin;
+        const stored8b = await h.ev(RAIL_STORED);
+        rec(
+            "8. the On the rail toggle puts svc-run on the rail and takes it off again",
+            onRail &&
+                pinOn?.checked === "true" &&
+                JSON.stringify(stored8) === '["svc-run"]' &&
+                offRail &&
+                pinOff?.checked === "false" &&
+                stored8b.length === 0,
+            JSON.stringify({ onRail, pinOn, stored8, offRail, pinOff, stored8b })
+        );
+
+        // three other apps pinned fill the rail: the toggle is disabled and says why
+        const pinnedOthers = [];
+        for (const id of ["svc-p1", "svc-p2", "svc-p3"]) {
+            pinnedOthers.push(await railPinFromSetup(h, id));
+        }
+        await ttClick(h, '[data-tools-row="svc-run"]');
+        await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(pinSel)})`, 6000);
+        await polishNap(400);
+        const full = (await detailFacts()).pin;
+        const order9 = await h.ev(RAIL_ORDER);
+        await h.shot("cdp-shots/services-setup-5-rail-full.png");
+        rec(
+            "9. with three other apps on the rail, svc-run's On the rail toggle is off and disabled with the rail's own title",
+            pinnedOthers.every(Boolean) &&
+                JSON.stringify(order9) === '["svc-p1","svc-p2","svc-p3"]' &&
+                full?.checked === "false" &&
+                full.disabled === true &&
+                full.title === RAIL_FULL,
+            JSON.stringify({ pinnedOthers, order9, full })
+        );
         return steps;
     },
     async teardown(h, ctx) {
+        try {
+            await h.ev(
+                ctx.prevRail == null
+                    ? `localStorage.removeItem(${JSON.stringify(RAIL_KEY)})`
+                    : `localStorage.setItem(${JSON.stringify(RAIL_KEY)}, ${JSON.stringify(ctx.prevRail)})`
+            );
+        } catch (e) {
+            console.error(`services-setup teardown: restoring ${RAIL_KEY} failed: ${e?.message ?? e}`);
+        }
         await svcTeardown(h, ctx, "services-setup");
+    },
+};
+
+// --- services-busy: a service in the middle of work outlives its minute (spec 2026-10-20-apps-run-while-used-design.md,
+// "The model" 2 and 3). Two demand services are shown and then both leave the screen: the plain one sleeps when its minute
+// is up; the busy one, which started a child process after its page answered and keeps it alive, is asked again every
+// minute and runs on until the child is gone, then sleeps. This scenario waits on the real minute: about 2.5 minutes.
+// The fixture server answers `/` with a page, starts the child on `/work` and kills it on `/done`. The child stays in the
+// server's process tree (not detached, no breakaway), which is the tree wavesrv reads on Windows and elsewhere.
+const SVC_BUSY_SOURCE = `const { spawn } = require("node:child_process");
+let child = null;
+require("node:http").createServer((q, r) => {
+    if (q.url === "/work") {
+        child ??= spawn(process.execPath, ["-e", "setTimeout(() => {}, 600000)"], { stdio: "ignore" });
+        return r.end("work");
+    }
+    if (q.url === "/done") {
+        child?.kill();
+        child = null;
+        return r.end("done");
+    }
+    r.end("<h1>" + process.argv[3] + "</h1>");
+}).listen(+process.env.PORT, process.argv[2] || "127.0.0.1");\n`;
+// wavesrv's services.IdleSleep, which the scenario waits out
+const SVC_IDLE_SLEEP_MS = 60_000;
+
+// Shows `id` the way a person does: its Setup → Tools page, Open. Resolves true once the service is starting or running.
+async function svcOpenFromSetup(h, id) {
+    await ttOpenLibrary(h);
+    await ttClick(h, `[data-tools-row="${id}"]`);
+    if (!(await polishWaitFor(h, `!!document.querySelector('[data-tools-detail="${id}"] [data-tool-open]')`, 6000))) return false;
+    await ttClick(h, `[data-tools-detail="${id}"] [data-tool-open]`);
+    return (await svcWait(h, { [id]: ["starting", "running"] }, 15000)).ok;
+}
+
+const servicesBusy = {
+    name: "services-busy",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {};
+        try {
+            // neither has Keep running: both sleep until shown, and sleep a minute after they leave
+            await svcArrange(h, ctx, {
+                "svc-busy": { command: "node", args: "busy.js 127.0.0.1 busy", port: "auto" },
+                "svc-plain": { command: "node", args: "server.js 127.0.0.1 plain", port: "auto" },
+            });
+            writeFileSync(join(ctx.root, "busy.js"), SVC_BUSY_SOURCE);
+            ctx.settled = await svcWait(h, { "svc-busy": "sleeping", "svc-plain": "sleeping" });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true && ctx.settled?.ok === true;
+        rec(
+            "0. the two services are arranged and asleep",
+            arranged,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }) + svcBrief(ctx.settled?.services ?? [])
+        );
+        if (!arranged) return steps;
+        const status = async () => Object.fromEntries((await svcStatus(h)).map((s) => [s.id, s]));
+        const get = (port, path) => fetch(`http://127.0.0.1:${port}${path}`).then((r) => r.text()).catch(() => "");
+
+        // show svc-busy, let it start its work once its page has answered, then show svc-plain: both run
+        const busyShown = await svcOpenFromSetup(h, "svc-busy");
+        const busyUp = await svcWait(h, { "svc-busy": "running" }, 30000);
+        // a beat after the probe saw the page answer, so the child starts after the baseline wavesrv takes
+        await polishNap(1500);
+        const busyPort = (await status())["svc-busy"]?.port;
+        const worked = busyPort ? await get(busyPort, "/work") : "";
+        const plainShown = await svcOpenFromSetup(h, "svc-plain");
+        const bothUp = await svcWait(h, { "svc-busy": "running", "svc-plain": "running" }, 30000);
+        const plainPort = (await status())["svc-plain"]?.port;
+        const plainPage = plainPort ? await get(plainPort, "/") : "";
+        rec(
+            "1. both services are shown and run; svc-busy has started its child on /work",
+            busyShown &&
+                busyUp.ok &&
+                worked === "work" &&
+                plainShown &&
+                bothUp.ok &&
+                plainPage.includes("<h1>plain</h1>"),
+            JSON.stringify({ busyShown, busyUp: busyUp.ok, worked, plainShown, bothUp: svcBrief(bothUp.services, ["svc-busy", "svc-plain"]), plainPage })
+        );
+        if (!bothUp.ok || worked !== "work") return steps;
+
+        // pick the agent's row: neither service is on screen, so each starts its minute
+        await h.goto("agent");
+        await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${TT_AGENT_ID}"]')`, 8000);
+        await ttMouse(h, `[data-agent-row="${TT_AGENT_ID}"]`);
+        const leftScreen = await polishWaitFor(h, `(${TT_CENTRE}) === "agent"`, 8000);
+        const leftAt = Date.now();
+        await h.shot("cdp-shots/services-busy-1-left.png");
+        rec("2. the agent's row is picked: neither service is on screen", leftScreen, JSON.stringify({ leftScreen }));
+        if (!leftScreen) return steps;
+
+        // IdleSleep + 15 s on: the plain one has slept, the busy one is asked again and still runs
+        const until = leftAt + SVC_IDLE_SLEEP_MS + 15_000;
+        while (Date.now() < until) await polishNap(Math.min(2000, until - Date.now()));
+        const mid = await status();
+        const pageAnswers = busyPort ? (await get(busyPort, "/")).includes("<h1>busy</h1>") : false;
+        await h.shot("cdp-shots/services-busy-2-minute-up.png");
+        rec(
+            "3. a minute on, svc-plain sleeps and svc-busy, in the middle of work, still runs and answers",
+            mid["svc-plain"]?.state === "sleeping" && mid["svc-busy"]?.state === "running" && pageAnswers,
+            JSON.stringify({ afterMs: Date.now() - leftAt, plain: mid["svc-plain"]?.state, busy: mid["svc-busy"]?.state, pageAnswers })
+        );
+
+        // the work ends: within another minute and a bit, svc-busy sleeps
+        const done = busyPort ? await get(busyPort, "/done") : "";
+        const doneAt = Date.now();
+        const slept = await svcWait(h, { "svc-busy": "sleeping" }, SVC_IDLE_SLEEP_MS + 20_000);
+        await h.shot("cdp-shots/services-busy-3-done.png");
+        rec(
+            "4. once the child is gone, svc-busy sleeps at its next check, within a minute and 20 seconds",
+            done === "done" && slept.ok,
+            JSON.stringify({ done, afterMs: Date.now() - doneAt, busy: svcBrief(slept.services, ["svc-busy"]) })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await svcTeardown(h, ctx, "services-busy");
     },
 };
 
@@ -50782,6 +51284,7 @@ export const SCENARIOS = [
     servicesTree,
     servicesRail,
     servicesSetup,
+    servicesBusy,
     toolsPicker,
     toolsLauncher,
     toolsWorktreeGone,

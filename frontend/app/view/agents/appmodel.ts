@@ -6,8 +6,9 @@
 // Agent surface shows in its terminal's place, the page or a waiting card (appstore.ts holds the view, AppPane draws
 // it). arcterm embeds only what this machine serves: http on 127.0.0.1 with a port (arctools.AppURL).
 
-export function isAppTool(tool: Pick<ToolStatus, "url"> | null | undefined): boolean {
-    return !!tool?.url;
+// a tool with a page: at a url, or on a port arcterm picks (arctools.IsService), which has no url until it starts
+export function isAppTool(tool: Pick<ToolStatus, "url" | "port"> | null | undefined): boolean {
+    return !!tool?.url || tool?.port === "auto";
 }
 
 // the frontend's copy of arctools.AppURL, for the add form to say so before saving
