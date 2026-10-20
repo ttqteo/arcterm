@@ -708,6 +708,7 @@ declare global {
         tabid: string;
         blockid: string;
         rtopts?: RuntimeOpts;
+        nudge?: string;
     };
 
     // wshrpc.CommandCreateBlockData

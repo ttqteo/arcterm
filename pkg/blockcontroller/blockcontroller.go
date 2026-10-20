@@ -396,6 +396,12 @@ func exitHook() func(blockId string, exitCode int) {
 	return AgentOutcomeHook
 }
 
+// MarkShuttingDown sets shuttingDown ahead of anything at shutdown that kills an agent's process, so its exit keeps
+// the marks the next boot restores it from.
+func MarkShuttingDown() {
+	shuttingDown.Store(true)
+}
+
 // only call this on shutdown
 func StopAllBlockControllersForShutdown() {
 	shuttingDown.Store(true)

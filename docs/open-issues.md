@@ -27,6 +27,25 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Account switch resumes mid-turn: with an agent working (or stopped at its usage limit), switch the
+  Claude account in Settings, check it in "Resume agents on …?" and Resume selected; it comes back and carries on by
+  itself with the "Claude account was switched" turn. An idle agent comes back at its prompt with no new turn.
+- [ ] (arcterm) Docker Desktop outlives its agent: with Docker Desktop quit, have an agent start it (`docker desktop
+  start`), then resume that agent on another account (or close its tab); Docker Desktop stays up and `docker ps`
+  answers. Then, 10 s on, quit arcterm (tray → Quit) and, once more, let `task install` close it: Docker Desktop
+  stays up both times, no stray claude.exe is left under it (`Get-Process claude`), and waveapp.log says "host job
+  holds a kept app: true".
+- [ ] (arcterm) App links open in the browser: after `task dev` (the host is rebuilt), in a pinned app's page click a
+  link with `target="_blank"` and it opens in the default browser; navigate to another page of the app and press the
+  header's ↗, and the browser opens that page, not the start page. The cockpit window still opens maximized and
+  borderless, now that main.rs builds it in setup (`"create": false`).
+- [ ] (arcterm) Starting app counts up: stop `portfolio`, open it again (after `task dev` or the next install), and
+  the "Waiting for 127.0.0.1:8386 · N s" card counts 1 s, 2 s… until the page shows, instead of staying at 0 s.
+  `startedMs` set at start in `pkg/services/supervisor.go`. Commit c34d80918.
+- [ ] (arcterm) Lead asks are short: start a new orchestrator run (after `task dev` or the next install) and, when
+  its lead asks you something, each question holds one decision in at most two lines, several decisions come as
+  separate questions in one ask, and the options do not repeat the body. `AskShapeRule` in
+  `pkg/jarvis/leadprompt.go`. Commit faac27eda.
 - [ ] (arcterm) Service listed once: with the `portfolio` service running and its dashboard writing a report
   (`claude -p`), the Agent tree's portfolio-journal folder shows only the `portfolio :8386` service row, no
   `✳ portfolio` agent row above it. `rosterStatus` in `agentsleep.ts`, read by `liveagents.ts` and

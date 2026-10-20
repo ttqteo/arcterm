@@ -266,6 +266,9 @@ func (s *Supervisor) sleepTick(id string, tok int) {
 	// reading the tree takes a while: do it without the lock, then look again, since a Seen, a Stop or a crash may
 	// have come in meanwhile (the token tells a Seen)
 	blockId, upMs := v.blockId, v.startedMs
+	if v.state != StateRunning {
+		upMs = 0 // starting also stamps startedMs (the waiting card counts from it); only a page that answered is a baseline
+	}
 	s.mu.Unlock()
 	var procs []Proc
 	if blockId != "" && s.d.Procs != nil {
@@ -596,6 +599,7 @@ func (s *Supervisor) startService(ctx context.Context, id string, byPerson bool)
 			s.cancelLocked(v)
 			v.gen++
 			v.state = StateStarting
+			v.startedMs = s.d.Now().UnixMilli()
 			v.deadline = s.d.Now().Add(StartTimeout)
 			s.armSleepLocked(v)
 			s.scheduleProbeLocked(v, v.gen)
@@ -684,6 +688,7 @@ func (s *Supervisor) startService(ctx context.Context, id string, byPerson bool)
 	v.tabId, v.blockId = tabId, blockId
 	v.state = StateStarting
 	v.procStart = now
+	v.startedMs = now.UnixMilli() // the waiting card counts from it; running resets it to when the page answered
 	v.deadline = now.Add(StartTimeout)
 	s.armSleepLocked(v)
 	s.publishLocked()

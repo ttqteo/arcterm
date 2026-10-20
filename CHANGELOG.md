@@ -36,6 +36,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A run's lead asks shorter questions: one decision per question, two lines at most, with several decisions
+  as separate questions in one ask instead of one long paragraph.
 - A plan's `**Depends on:**` reference between two tasks whose `**Files:**` lines share no path must say why in
   parentheses (`Task 1 (uses the rows it adds)`): submit refuses a bare one, so a needless edge no longer makes a
   task wait for another.
@@ -45,6 +47,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent you resume on a new Claude account after it stopped mid-turn (at a usage limit, say) carries on with its
+  work, as one does after arcterm restarts; it used to wait at its prompt for you to type continue.
+- Docker Desktop started by an agent keeps running when that agent is restarted (such as resuming it on another
+  Claude account), its tab is closed, or arcterm quits or updates; it used to quit with the agent.
+- A link that opens a new window (`target="_blank"`, `window.open`) in a pinned app's page or in the cockpit opens in
+  your default browser; it did nothing. An app's Open in the browser button opens the page you are on, not its start
+  page.
+- An app that is starting counts the seconds it has waited for its page; it read 0 s the whole time.
 - A file link in an agent or in Diff switches to Code at once, instead of after the repository's file list has
   loaded, which on a large repository looked as if the click did nothing.
 - A running worker's row in the Agent tree shows how long it has run since it started; it read <1m for as long as

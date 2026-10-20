@@ -5,6 +5,8 @@ mod canvas;
 mod estart;
 mod foreground;
 mod init;
+#[cfg(windows)]
+mod keptapps;
 mod macwindow;
 mod commands;
 mod notify;
@@ -383,7 +385,17 @@ fn main() {
             }
         })
         .setup(move |app| {
-            // the config window already exists here (Tauri builds it before running setup)
+            // The window is tauri.conf.json's, built here ("create": false) to hear a page's new windows: a link with
+            // target=_blank or a window.open, from a pinned app's page or the cockpit, goes to the default browser.
+            // Nothing else opens a second webview, so none is ever created for it.
+            if let Some(conf) = app.config().app.windows.iter().find(|w| w.label == MAIN_WINDOW_LABEL) {
+                tauri::WebviewWindowBuilder::from_config(app.handle(), conf)?
+                    .on_new_window(|url, _| {
+                        commands::open_external(url.to_string());
+                        tauri::webview::NewWindowResponse::Deny
+                    })
+                    .build()?;
+            }
             #[cfg(windows)]
             if let Some(hwnd) = app.get_webview_window("main").and_then(|w| w.hwnd().ok()) {
                 use_resource_window_icons(hwnd.0 as isize);
@@ -469,6 +481,8 @@ fn main() {
             // ours via a kill-on-close job. Held in state so the handle (and thus the job) survives.
             #[cfg(windows)]
             if let Some(job) = assign_kill_on_close_job(&child) {
+                // but not while it holds a Docker Desktop an agent started: that must outlive the app
+                keptapps::watch(job.0);
                 app.manage(job);
             }
             app.state::<WavesrvChild>().0.lock().unwrap().replace(child);
@@ -487,6 +501,16 @@ fn main() {
                 tray::before_exit(app_handle);
                 winframe::save(app_handle);
                 if let Some(mut child) = app_handle.state::<WavesrvChild>().0.lock().unwrap().take() {
+                    // A job holding a kept app no longer kills on close, so let wavesrv shut down on its own (its
+                    // stdin closing): its shutdown reaps its blocks' trees, all but the kept app, which a kill skips.
+                    #[cfg(windows)]
+                    if keptapps::HOST_JOB_KEEPING.load(std::sync::atomic::Ordering::Relaxed) {
+                        drop(child.stdin.take());
+                        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+                        while std::time::Instant::now() < deadline && matches!(child.try_wait(), Ok(None)) {
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                        }
+                    }
                     let _ = child.kill();
                 }
             }

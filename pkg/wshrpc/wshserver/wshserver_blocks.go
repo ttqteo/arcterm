@@ -38,7 +38,12 @@ func (ws *WshServer) ControllerDestroyCommand(ctx context.Context, blockId strin
 
 func (ws *WshServer) ControllerResyncCommand(ctx context.Context, data wshrpc.CommandControllerResyncData) error {
 	ctx = termCtxWithLogBlockId(ctx, data.BlockId)
-	return blockcontroller.ResyncController(ctx, data.TabId, data.BlockId, data.RtOpts, data.ForceRestart)
+	blockcontroller.QueueStartNudge(data.BlockId, data.Nudge)
+	err := blockcontroller.ResyncController(ctx, data.TabId, data.BlockId, data.RtOpts, data.ForceRestart)
+	if err != nil && data.Nudge != "" {
+		blockcontroller.DropStartNudge(data.BlockId)
+	}
+	return err
 }
 
 func (ws *WshServer) ControllerInputCommand(ctx context.Context, data wshrpc.CommandBlockInputData) error {

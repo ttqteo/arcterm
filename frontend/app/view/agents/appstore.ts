@@ -6,6 +6,7 @@
 // Module-level, as every surface but Agent unmounts on a switch. Opening one is openApp's (toolsstore.ts); the pure parts
 // are appmodel.ts. Nothing probes here: wavesrv owns the states, and a pinned app's tab is its service's.
 
+import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -85,9 +86,9 @@ export function homeApp(tabId: string): void {
     setAppView(tabId, "page");
 }
 
-// Runs reload, back or forward inside the app's frame, which the cockpit cannot reach into (a cross-origin frame): the
-// host does it (pagekeys.rs). False where it cannot (a Mac, the browser app) or no frame shows.
-function frameAction(tabId: string, action: "reload" | "back" | "forward"): Promise<boolean> {
+// Runs reload, back, forward or open inside the app's frame, which the cockpit cannot reach into (a cross-origin frame):
+// the host does it (pagekeys.rs). False where it cannot (a Mac, the browser app) or no frame shows.
+function frameAction(tabId: string, action: "reload" | "back" | "forward" | "open"): Promise<boolean> {
     return invoke<boolean>("app_frame_action", { name: appFrameName(tabId), action }).catch((e) => {
         console.error(`the app's page: ${action} failed`, e);
         return false;
@@ -99,6 +100,16 @@ export async function reloadAppPage(tabId: string): Promise<void> {
     if (!(await frameAction(tabId, "reload"))) {
         homeApp(tabId);
     }
+}
+
+// Open in the browser: the page the frame is on, which only the frame knows, so it asks for it as a new window, which
+// the host sends to the default browser. The app's own url where the frame cannot be asked (no page showing, a Mac, the
+// browser app).
+export async function openAppInBrowser(tabId: string, onPage: boolean, url: string): Promise<void> {
+    if (onPage && (await frameAction(tabId, "open"))) {
+        return;
+    }
+    getApi().openExternal(url);
 }
 
 // emitted by the host on Ctrl+R, Ctrl+Shift+R or F5 (pagekeys.rs), which no longer reload the whole cockpit
