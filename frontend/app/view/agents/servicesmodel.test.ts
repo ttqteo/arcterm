@@ -175,6 +175,15 @@ describe("servicesChip", () => {
         expect(servicesChip([]).hidden).toBe(true);
     });
 
+    it("is hidden while nothing runs and nothing needs a look", () => {
+        expect(servicesChip([svc("stopped", { id: "a" }), svc("sleeping", { id: "b" })]).hidden).toBe(true);
+    });
+
+    it("stays shown with nothing running when one crashed or has no page", () => {
+        expect(servicesChip([svc("crashed")]).label).toBe("0 · 1 crashed");
+        expect(servicesChip([svc("nopage")]).hidden).toBe(false);
+    });
+
     it("shows the running count, and the crashed ones in the error tone", () => {
         const chip = servicesChip([
             svc("running", { id: "a" }),

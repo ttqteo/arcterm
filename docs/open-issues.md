@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Services chip: with every service stopped or sleeping, the app bar shows no Services chip (no bare
+  `0`); start one and the chip comes back with `1`; a crashed one shows `0 · 1 crashed`. `servicesmodel.ts`
+  `servicesChip`, `serviceschip.tsx`.
 - [ ] (arcterm) Kael sync: with Code on one project, click a file link in an agent of another, large project: Code
   shows at once (its file list fills in after), then opens the file at its line. Tab onto the empty-state buttons, a
   surface error's Retry and Code's view-mode toggle: each shows the accent ring. `codestore.ts` `openInCode`,

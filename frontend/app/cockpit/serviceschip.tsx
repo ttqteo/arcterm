@@ -13,7 +13,7 @@ const TONE_TEXT = { error: "text-error", warning: "text-warning", muted: "text-m
 
 // The app bar's Services chip, before the Jobs chip: how many held services run and, in the error tone, how many
 // crashed (servicesChip). Amber while one has a taken port or no page, muted otherwise. A click opens the Services
-// popover. Nothing while no tool is a service.
+// popover. Nothing while it would read a bare 0.
 export function ServicesChip() {
     useEffect(() => ensureServicesFeed(), []);
     const list = useAtomValue(servicesAtom);

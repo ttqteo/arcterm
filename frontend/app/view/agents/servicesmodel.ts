@@ -101,14 +101,15 @@ const isWarning = (s: ServiceStatus) => s.state === "porttaken" || s.state === "
 export type ServicesChip = { hidden: boolean; label: string; tone: "error" | "warning" | "muted"; title: string };
 
 /** The app bar chip: the running count, "· N crashed" when any is retrying or crashed. Error when any crashed, else
- * warning when any has a taken port or no page, else muted. Hidden when no service is configured. */
+ * warning when any has a taken port or no page, else muted. Hidden while it would read a bare 0: nothing runs and
+ * nothing needs a look. */
 export function servicesChip(list: ServiceStatus[]): ServicesChip {
-    if (list.length === 0) {
-        return { hidden: true, label: "", tone: "muted", title: "" };
-    }
     const running = list.filter((s) => s.state === "running").length;
     const crashed = list.filter(isCrashed).length;
     const attention = list.filter(isWarning).length;
+    if (running === 0 && crashed === 0 && attention === 0) {
+        return { hidden: true, label: "", tone: "muted", title: "" };
+    }
     const stopped = list.filter((s) => s.state === "stopped").length;
     const tone = crashed > 0 ? "error" : attention > 0 ? "warning" : "muted";
     const label = crashed > 0 ? `${running} · ${crashed} crashed` : `${running}`;
