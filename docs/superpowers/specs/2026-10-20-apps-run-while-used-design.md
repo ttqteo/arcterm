@@ -78,4 +78,5 @@ development they run the server another way), and never to be cut off in the mid
 ## Docs
 
 `AGENTS.md`'s service paragraph (one minute, never in the middle of work), the guide's services and nav rail
-sections, `CHANGELOG.md` (Changed), and the RAM watch rows for held services and pinned apps.
+sections, `CHANGELOG.md` (the existing Added line about pinned apps' servers rewritten; the feature is unreleased),
+and the RAM watch rows for held services and pinned apps.

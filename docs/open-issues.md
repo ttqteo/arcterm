@@ -35,9 +35,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   (or have an agent start its dev server): it prints a pid, a log and a stop command, and no console window opens.
   Quit and reopen arcterm: the server still answers. Then stop it with the printed `taskkill`. `wshcmd-detach.go`,
   `jobobject.StartDetached`, `BREAKAWAY_OK` in `src-tauri/src/main.rs` and `jobobject.Attach`.
-- [ ] (arcterm) Services chip: with every service stopped or sleeping, the app bar shows no Services chip (no bare
-  `0`); start one and the chip comes back with `1`; a crashed one shows `0 · 1 crashed`. `servicesmodel.ts`
-  `servicesChip`, `serviceschip.tsx`.
 - [ ] (arcterm) Kael sync: with Code on one project, click a file link in an agent of another, large project: Code
   shows at once (its file list fills in after), then opens the file at its line. Tab onto the empty-state buttons, a
   surface error's Retry and Code's view-mode toggle: each shows the accent ring. `codestore.ts` `openInCode`,
@@ -103,17 +100,26 @@ does not, say what you saw and it becomes a bug row under Actionable.
   has a Log (not `already running`).
 - [ ] (arcterm) Pinned app: in Setup → Tools → Add your own tool, type Folder `~/Workspaces/dev/portfolio-journal`
   (Hóng): a chip `npm run dash · 8386` shows, the other 14 scripts fold under Other scripts, and pressing it fills
-  Name, Command and Page. Add it: it is a held service that sleeps until opened, its row under the project in the Agent
-  tree reads `sleeping` with a hollow dot. Open it: it starts, and the dashboard shows in the centre under Page | Log,
-  the header reading `Running on 127.0.0.1:8386 · up …`, the row `:8386` with a green dot, and the app bar's Services
-  chip counts it; Log shows the npm output; Stop frees 8386 (npm's `node` child too) and the row reads stopped, and it
-  stays stopped when shown again. Leave it for ten minutes (another surface, or another tab in the centre): the row
-  reads `sleeping` and 8386 is free; open it again and it starts. Turn Keep running on (the row's menu, or Setup →
-  Tools): it starts at once, never sleeps, and starts again when you quit and reopen arcterm unless you stopped it. With
-  Hóng already running outside arcterm, its row reads `not started by arcterm` and Open shows it at once; its row in
-  the footer's Servers has Pin as app, which opens the same form filled from it. Also in the Mac app, which the
-  headless-Chrome Final cannot reach: the WKWebView frame, Back/Forward (the window's history there), the row's
-  right-click menu, j/k onto a service row, and a start at boot finding npm from nvm or Homebrew on the login PATH.
+  Name, Command and Page. Add it: it is a held service that sleeps until opened, so it has no row in the Agent tree,
+  and its page in Setup → Tools shows Status `sleeping · starts when opened`, Keep running and On the rail. Open it
+  (Open, or its rail icon once On the rail is on): it starts, and the dashboard shows in the centre under Page | Log,
+  the header reading `Running on 127.0.0.1:8386 · up …`, its row now in the tree with `:8386` and a green dot, and the
+  footer's Servers listing it as `app · <name>`, a click opening it; Log shows the npm output. Stop (the row's menu,
+  Setup → Tools, or the footer's Servers) frees 8386 (npm's `node` child too) and Status reads sleeping; show it again
+  and it starts, since a Stop is not remembered. Leave it for a minute (another surface, or another tab in the
+  centre): Status reads `sleeping`, its row leaves the tree once another row is selected, and 8386 is free; open it
+  again and it starts. Turn Keep running on (the row's menu, or Setup → Tools): it starts at once, never sleeps, and
+  starts again when you quit and reopen arcterm. With Hóng already running outside arcterm, its row reads
+  `not started by arcterm` and Open shows it at once; its row in the footer's Servers has Pin as app, which opens the
+  same form filled from it. Also in the Mac app, which the headless-Chrome Final cannot reach: the WKWebView frame,
+  Back/Forward (the window's history there), the row's right-click menu, j/k onto a service row, and a start at boot
+  finding npm from nvm or Homebrew on the login PATH.
+- [ ] (arcterm) Apps run while used: with Keep running off for the portfolio app, open it, ask its chat something long
+  (a `claude -p` that runs a few minutes), and switch to Agent: `:8386` still answers a minute later, and the app
+  sleeps about a minute after the answer ends (its Status in Setup → Tools reads `sleeping`, 8386 is free). Then turn
+  Keep running on for the portfolio entry (Setup → Tools; it is your `tools.json`, outside the repo; spec model 4) so
+  its ~15:05 build-macro runs. `services.Busy`, `pkg/services/supervisor.go`; spec
+  `docs/superpowers/specs/2026-10-20-apps-run-while-used-design.md`. 2026-10-20.
 - [ ] (arcterm) In a terminal, `echo ~/.claude/settings.json` then hover the printed path: the whole path underlines
   (with `~/.claude`), and Ctrl+click opens it. Same for `.claude/settings.json` printed in a home-folder terminal.
   2026-10-19.
@@ -1272,7 +1278,7 @@ setting; that call is the person's. Layers are the compact RAM popup's.
 
 | Feature | Commit | Layer | Measured | Date | Verdict |
 |---|---|---|---|---|---|
-| Pinned apps: each open app's page kept loaded out of sight for 10 min (`APP_FRAME_IDLE_MS`, `AppFrames` in `apppane.tsx`), so it keeps its page and scroll | uncommitted | Interface | Not measured. One frame, a renderer of its own (127.0.0.1 is cross-site to the cockpit), per app seen in the last 10 min, where before only the app on screen held one; a guess of 50–150 MB each for a dev page. To read: the WebView2 working set with two apps open, one out of sight, then past the 10 min. | 2026-10-19 | pending |
-| Held services: wavesrv holds every pinned app's server (`pkg/services`), each one `cmd` terminal block in a tab of its own; only a shown or Keep-running service runs, a sleeping one holds 0 MB | uncommitted | arcterm (wavesrv) and the apps' processes | Not measured. arcterm's own cost is one PTY and one goroutine per running service, a timer per service off screen, plus a readiness probe (an HTTP GET every 500 ms, up to 30 s) only while a service is starting; nothing polls while one runs. A sleeping service has no process. The running services' own RAM is the apps', not arcterm's. To read: wavesrv's working set with 0, 5 and 10 services running. | 2026-10-20 | pending |
-| Pinned apps: the page's iframe in the centre, and the app's own dev server | uncommitted | Interface, and the app's process | Not measured. No frame until an app is opened; open, the frame (no second webview). The app's server is a held service (row above): it runs whenever its service does, opened or not, and its RAM is the app's, not arcterm's. | 2026-10-19 | pending |
+| Pinned apps: each open app's page kept loaded out of sight for 1 min (`APP_FRAME_IDLE_MS`, `AppFrames` in `apppane.tsx`), so it keeps its page and scroll | uncommitted | Interface | Not measured. One frame, a renderer of its own (127.0.0.1 is cross-site to the cockpit), per app seen in the last minute, where before only the app on screen held one; a guess of 50–150 MB each for a dev page. To read: the WebView2 working set with two apps open, one out of sight, then past the minute. | 2026-10-19 | pending |
+| Held services: wavesrv holds every pinned app's server (`pkg/services`), each one `cmd` terminal block in a tab of its own; only a shown (or just left, or Keep-running) service runs, a sleeping one holds 0 MB | uncommitted | arcterm (wavesrv) and the apps' processes | Not measured. arcterm's own cost is one PTY and one goroutine per running service, a timer per service off screen, and once its minute is up one read of its process tree a minute (`services.Busy`) until it is idle, plus a readiness probe (an HTTP GET every 500 ms, up to 30 s) only while a service is starting; nothing polls while one runs or is shown. A sleeping service has no process. The running services' own RAM is the apps', not arcterm's. To read: wavesrv's working set with 0, 5 and 10 services running. | 2026-10-20 | pending |
+| Pinned apps: the page's iframe in the centre, and the app's own dev server | uncommitted | Interface, and the app's process | Not measured. No frame until an app is opened; open, the frame (no second webview). The app's server is a held service (row above): it runs while the app is used and for a minute after (always, with Keep running), and its RAM is the app's, not arcterm's. | 2026-10-19 | pending |
 | Agent → Canvas gallery: the grid of lazy `<img>` previews, and the viewer's one board iframe | `75278d142` | Interface | The page's JS heap after a GC, from Final's `canvas-gallery` steps 1 (grid) and 3 (viewer) on a 3-canvas fixture: 41.6 MB and 41.8 MB (43.4 and 43.4 in an earlier run). Not measured: the WebView2 working set, and the 17-canvas case. The heap figure is the page's own JS and says nothing of the board iframe. Between visits only the list (a row per canvas) and the folder-URL cache stay. | 2026-10-14 | pending |
