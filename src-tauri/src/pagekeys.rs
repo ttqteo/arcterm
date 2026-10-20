@@ -3,7 +3,7 @@
 // frame). Here they lose that browser action but still reach the page, so a terminal keeps Ctrl+R as the shell's reverse
 // search; the frontend hears RELOAD_KEY_EVENT and reloads the app's page when its frame holds the focus (appstore.ts
 // setupPageReloadKey). The frame's own location.reload() runs here too, as the cockpit cannot reach into it, and so do
-// the header's Back and Forward.
+// the header's Back, Forward and Open in the browser.
 use crate::applog::log_line;
 
 #[cfg(windows)]
@@ -118,8 +118,10 @@ unsafe fn frame_name(frame: &webview2_com::Microsoft::Web::WebView2::Win32::ICor
     Some(webview2_com::take_pwstr(name))
 }
 
-// What the header's Reload, Back and Forward run inside the app's frame. Back and Forward walk the frame's own entries
-// (the Navigation API): the window's history.back() steps whichever frame moved last, a hidden one as readily as the app.
+// What the header's Reload, Back, Forward and Open in the browser run inside the app's frame. Back and Forward walk the
+// frame's own entries (the Navigation API): the window's history.back() steps whichever frame moved last, a hidden one as
+// readily as the app. Open asks for the page the frame is on as a new window, which main.rs's on_new_window hands to the
+// default browser: only the frame knows where it is.
 #[cfg(any(windows, test))]
 fn frame_script(action: &str) -> Option<&'static str> {
     match action {
@@ -130,11 +132,12 @@ fn frame_script(action: &str) -> Option<&'static str> {
         "forward" => Some(
             "void (window.navigation ? navigation.canGoForward && navigation.forward() : history.forward())",
         ),
+        "open" => Some("void window.open(location.href)"),
         _ => None,
     }
 }
 
-// Runs `action` (reload, back, forward) in the app frame named `name`, where it is. False when no live frame has that
+// Runs `action` (reload, back, forward, open) in the app frame named `name`, where it is. False when no live frame has that
 // name.
 #[cfg(windows)]
 #[tauri::command]
@@ -199,10 +202,11 @@ mod tests {
     }
 
     #[test]
-    fn frame_actions_are_reload_back_and_forward_only() {
+    fn frame_actions_are_reload_back_forward_and_open_only() {
         assert_eq!(frame_script("reload"), Some("location.reload()"));
         assert!(frame_script("back").unwrap().contains("navigation.back()"));
         assert!(frame_script("forward").unwrap().contains("navigation.forward()"));
+        assert_eq!(frame_script("open"), Some("void window.open(location.href)"));
         assert_eq!(frame_script("eval"), None);
     }
 }

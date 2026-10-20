@@ -383,7 +383,17 @@ fn main() {
             }
         })
         .setup(move |app| {
-            // the config window already exists here (Tauri builds it before running setup)
+            // The window is tauri.conf.json's, built here ("create": false) to hear a page's new windows: a link with
+            // target=_blank or a window.open, from a pinned app's page or the cockpit, goes to the default browser.
+            // Nothing else opens a second webview, so none is ever created for it.
+            if let Some(conf) = app.config().app.windows.iter().find(|w| w.label == MAIN_WINDOW_LABEL) {
+                tauri::WebviewWindowBuilder::from_config(app.handle(), conf)?
+                    .on_new_window(|url, _| {
+                        commands::open_external(url.to_string());
+                        tauri::webview::NewWindowResponse::Deny
+                    })
+                    .build()?;
+            }
             #[cfg(windows)]
             if let Some(hwnd) = app.get_webview_window("main").and_then(|w| w.hwnd().ok()) {
                 use_resource_window_icons(hwnd.0 as isize);

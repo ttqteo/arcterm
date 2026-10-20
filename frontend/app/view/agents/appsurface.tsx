@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import { appWaitLine } from "./appmodel";
 import { AppSlotView } from "./apppane";
-import { appHistory, appStatesAtom, homeApp, reloadAppPage, setAppView } from "./appstore";
+import { appHistory, appStatesAtom, homeApp, openAppInBrowser, reloadAppPage, setAppView } from "./appstore";
 import { appCard, appSurfaceBody, appSurfaceService } from "./railapps";
 import { appSurfaceIdAtom, railPinsAtom, setRailPinned } from "./railappsstore";
 import { canRestart, canStart, canStop, serviceHeaderLine, serviceRowWords } from "./servicesmodel";
@@ -135,10 +135,13 @@ function AppHeader({
             <button
                 type="button"
                 data-app-browser
-                aria-label="Open in the browser"
-                title="Open in the browser"
+                aria-label="Open this page in the browser"
+                title="Open this page in the browser"
                 disabled={url == null}
-                onClick={() => url != null && getApi().openExternal(url)}
+                onClick={() =>
+                    url != null &&
+                    (tabId != null ? void openAppInBrowser(tabId, onPage, url) : getApi().openExternal(url))
+                }
                 className={BUTTON}
             >
                 <ExternalLink size={14} aria-hidden />

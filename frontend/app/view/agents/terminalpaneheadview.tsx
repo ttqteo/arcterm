@@ -8,7 +8,6 @@
 // dot and servicesmodel.ts's words), Restart, and Stop or Start in place of a close button: a service tab stays, and
 // Stop frees its server. What it says is terminalpanehead.ts's; this only reads the atoms and runs the buttons.
 
-import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { isWindows } from "@/util/platformutil";
 import { cn } from "@/util/util";
@@ -31,7 +30,7 @@ import { confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import { type AppView } from "./appmodel";
-import { appHistory, appStatesAtom, homeApp, reloadAppPage, setAppView } from "./appstore";
+import { appHistory, appStatesAtom, homeApp, openAppInBrowser, reloadAppPage, setAppView } from "./appstore";
 import { agentGridAtom, canOpenInSplit, currentGrid, dropAgentOnGrid } from "./gridstore";
 import { projectsAtom } from "./projectsstore";
 import { moveToDock } from "./railstore";
@@ -259,9 +258,9 @@ export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; 
                     <button
                         type="button"
                         data-app-browser
-                        aria-label="Open in the browser"
-                        title="Open in the browser"
-                        onClick={() => getApi().openExternal(app.url)}
+                        aria-label="Open this page in the browser"
+                        title="Open this page in the browser"
+                        onClick={() => void openAppInBrowser(terminal.id, onPage, app.url)}
                         className={BUTTON}
                     >
                         <ExternalLink size={14} aria-hidden />
