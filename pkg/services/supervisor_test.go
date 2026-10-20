@@ -626,6 +626,26 @@ func TestRemovedToolStopsAndClosesTab(t *testing.T) {
 	h.sup.OnBlockClosed("blk-portfolio")
 }
 
+// removing an entry forgets the person's Stop, so the same id added again sleeps; the remembered port stays, which
+// keeps the page's address (and the app's own browser storage) for the entry that comes back
+func TestRemovedToolForgetsTheStop(t *testing.T) {
+	h := newHarness(t)
+	h.setTools(fixedTool("portfolio", dashURL))
+	h.run("portfolio", dashURL)
+	if err := h.sup.Stop(context.Background(), "portfolio"); err != nil {
+		t.Fatal(err)
+	}
+	h.state.Set("portfolio", Remembered{Port: 8386, Stopped: true})
+	h.setTools()
+	if got := h.state.Get("portfolio"); got.Stopped || got.Port != 8386 {
+		t.Errorf("remembered after removal = %+v, want the Stop forgotten and the port kept", got)
+	}
+	back := fixedTool("portfolio", dashURL)
+	back.Autostart = false
+	h.setTools(back)
+	h.wantState("portfolio", StateSleeping)
+}
+
 func TestNewAutostartServiceStartsAtOnce(t *testing.T) {
 	h := newHarness(t)
 	h.sup.Boot(context.Background())

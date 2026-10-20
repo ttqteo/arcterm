@@ -104,7 +104,7 @@ A new Go package (name left to the builder) supervises services.
   running elsewhere. *(Builder check; our call.)*
 - **The entry changes**: the supervisor watches `tools.json` (the `wconfig` file watcher). A change to a running
   service's command, args, folder, `url` or `port` restarts it; a change to its name, purpose or `autostart` does not.
-  Removing the entry stops the service and closes its tab. A new entry with `autostart` starts as soon as it is added.
+  Removing the entry stops the service, closes its tab and forgets a Stop (the remembered port stays). A new entry with `autostart` starts as soon as it is added.
   *(Builder check; our call.)*
 - **Running elsewhere**: before starting a service with a fixed port, arcterm probes its page. If it already answers
   (pm2 or a terminal runs it), arcterm starts nothing, shows the page, and Stop is not offered: today's `owned: false`.
