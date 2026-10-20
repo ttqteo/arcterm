@@ -4,8 +4,8 @@
 // The Services popover (spec 2026-10-20-held-services-design.md): every held service, those that need the person first
 // (popoverOrder), with its state in words, and on hover Log, Restart, Start and Stop. It hangs from the app bar's
 // Services chip and shares the Jobs panel's frame. servicesmodel.ts decides the words, the order and which buttons
-// apply; this draws. A click on a row opens its terminal in the Agent centre and never starts it. Mounted once in
-// cockpit-root.
+// apply; this draws. A click on a row opens its terminal in the Agent centre, which starts a sleeping one (its pane is
+// then on screen); no hover Start on a sleeping row. Mounted once in cockpit-root.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { PopoverReveal } from "@/app/element/popoverreveal";
@@ -16,7 +16,7 @@ import { PANEL_WIDTH } from "@/app/view/agents/consumers";
 import { usePanelPlacement } from "@/app/view/agents/consumerspanel";
 import {
     canRestart,
-    canStart,
+    canStartFromPopover,
     canStop,
     popoverOrder,
     serviceRowWords,
@@ -56,7 +56,8 @@ function act(what: string, call: () => Promise<void>): void {
 }
 
 // A click, Enter or Log: the service's terminal takes the Agent centre. One that never ran is given its tab and block
-// first (openService); nothing here starts it, and a crashed one shows its log.
+// first (openService); nothing here starts it, though a sleeping one starts once its pane shows (the Seen report), and
+// a crashed one shows its log.
 function openRow(model: AgentsViewModel, s: ServiceStatus): void {
     close();
     fireAndForget(async () => {
@@ -187,7 +188,7 @@ function Row({
                             Restart
                         </button>
                     ) : null}
-                    {canStart(service) ? (
+                    {canStartFromPopover(service) ? (
                         <button
                             type="button"
                             data-service-start
@@ -291,7 +292,7 @@ export function ServicesPanel({ model }: { model: AgentsViewModel }) {
                 <div data-services-panel role="dialog" aria-label="Services">
                     <div className="flex items-center gap-2 border-b border-border px-3 py-2">
                         <span className="text-[12px] font-semibold text-secondary">Services</span>
-                        <span className="flex-1 text-[11px] text-muted">held by arcterm, started with it</span>
+                        <span className="flex-1 text-[11px] text-muted">held by arcterm</span>
                     </div>
                     <div data-services-list className="max-h-[56vh] overflow-y-auto py-1">
                         {rows.length === 0 ? (

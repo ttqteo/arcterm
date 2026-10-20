@@ -221,9 +221,9 @@ function keywordsFromTool(tool: ToolStatus): ToolKeywords {
     if (tool.port) {
         kw.port = tool.port;
     }
-    // a status carries autostart only when it is on (it is on unless tools.json says false), so a page that lacks it is off
-    if ((tool.url || tool.port) && !tool.autostart) {
-        kw.autostart = false;
+    // Keep running is off unless tools.json says true, and a status carries it only when it is on
+    if ((tool.url || tool.port) && tool.autostart) {
+        kw.autostart = true;
     }
     return kw;
 }
@@ -281,7 +281,7 @@ export interface ToolForm {
     url: string; // a pinned app's page (appmodel.ts); empty for a plain tool
     dir: string; // the folder a pinned app runs in; empty follows Opens in
     autoPort: boolean; // arcterm picks the port (`port: "auto"`); the page is then empty
-    autostart: boolean; // the service starts with arcterm; on unless tools.json says false
+    autostart: boolean; // Keep running: the service starts with arcterm and never sleeps; off unless tools.json says true
 }
 
 export function emptyForm(): ToolForm {
@@ -296,7 +296,7 @@ export function emptyForm(): ToolForm {
         url: "",
         dir: "",
         autoPort: false,
-        autostart: true,
+        autostart: false,
     };
 }
 
@@ -313,9 +313,7 @@ export function formFromTool(tool: ToolStatus, platform: string): ToolForm {
         dir: tool.dir ?? "",
         // url wins over a free port when a tool carries both
         autoPort: tool.port === "auto" && !tool.url,
-        // a status carries autostart only for a service; a tool with no page reads the default (on), so saving it, or
-        // adding a page to it, does not write autostart: false
-        autostart: tool.url || tool.port ? (tool.autostart ?? false) : true,
+        autostart: tool.autostart ?? false,
     };
 }
 
@@ -370,8 +368,8 @@ export function formKeywords(form: ToolForm, platform: string, keep: Install): T
     if (form.dir.trim()) {
         kw.dir = form.dir.trim();
     }
-    if (!form.autostart) {
-        kw.autostart = false;
+    if (form.autostart) {
+        kw.autostart = true;
     }
     return kw;
 }

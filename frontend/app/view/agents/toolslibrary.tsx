@@ -586,11 +586,14 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
                     </SettingRow>
                 ) : null}
                 {hasPage ? (
-                    <SettingRow label="Start with arcterm" sub="Run it whenever arcterm is open">
+                    <SettingRow
+                        label="Keep running"
+                        sub="Run it even when its page is not on screen, and start it with arcterm"
+                    >
                         <Toggle
                             on={autostart}
                             onToggle={() => fireAndForget(toggleAutostart)}
-                            label={`Start ${tool.name} with arcterm`}
+                            label={`Keep ${tool.name} running`}
                         />
                     </SettingRow>
                 ) : null}
