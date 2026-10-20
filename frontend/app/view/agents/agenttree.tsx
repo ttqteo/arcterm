@@ -201,8 +201,8 @@ import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showServiceMenu } from "./servicemenu";
-import { canRestart, canStart, serviceRowWords } from "./servicesmodel";
-import { ensureServicesFeed, openService, restartService, servicesAtom, startService } from "./servicesstore";
+import { canRestart, serviceRowWords, treeServiceInput } from "./servicesmodel";
+import { ensureServicesFeed, openService, restartService, servicesAtom } from "./servicesstore";
 import { showTerminalMenu, splitCellMenuItems, SplitMark, ToolGlyph } from "./terminalsrail";
 import { PanelWeb, TreeSpider } from "./themedecorview";
 import { toolIcon, toolTerminalName, type ToolIconName } from "./toolsmodel";
@@ -2109,9 +2109,9 @@ const SERVICE_BUTTON =
 
 // A held service in its project's folder (servicesstore.ts), after the divider: the app-window icon, its name, what its
 // state says (serviceRowWords: words in the tone token, the port, a 6 px dot that is solid, hollow or pulsing; the
-// words carry the state, never the color alone) and, on hover, Start or Restart. A click never starts it: one with a tab takes
-// the centre as any terminal does, and one that never ran is given its tab and block (openService) and takes the centre
-// on its log. Its menu (showServiceMenu) holds the rest.
+// words carry the state, never the color alone) and, on a crashed one, Restart on hover. A click never starts it: one
+// with a tab takes the centre as any terminal does, and one that never ran is given its tab and block (openService) and
+// takes the centre on its log. Its menu (showServiceMenu) holds the rest.
 function ServiceRow({
     model,
     serviceId,
@@ -2142,8 +2142,7 @@ function ServiceRow({
             }
         });
     };
-    const act = w.action ?? null;
-    const actEnabled = act === "restart" ? canRestart(service) : canStart(service);
+    const restartable = w.action === "restart" && canRestart(service);
     return (
         <div
             data-service-row={service.id}
@@ -2186,22 +2185,20 @@ function ServiceRow({
                     {w.port}
                 </span>
             ) : null}
-            {act != null && actEnabled ? (
+            {restartable ? (
                 <button
                     type="button"
-                    data-service-act={act}
+                    data-service-act="restart"
                     onClick={(e) => {
                         e.stopPropagation();
-                        fireAndForget(() =>
-                            act === "restart" ? restartService(service.id) : startService(service.id)
-                        );
+                        fireAndForget(() => restartService(service.id));
                     }}
                     className={cn(
                         SERVICE_BUTTON,
                         "opacity-0 transition-opacity duration-100 focus-visible:opacity-100 group-hover:opacity-100"
                     )}
                 >
-                    {act === "restart" ? "Restart" : "Start"}
+                    Restart
                 </button>
             ) : null}
             <span
@@ -2534,12 +2531,13 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // the plans queued to start (the run queue), each a row in its project's folder under the agents
     useRunQueueFeed();
     const queue = useAtomValue(queuedRowsAtom);
-    // the held services (wavesrv's): a row each in its project's folder, after the divider
+    // the held services (wavesrv's) that are up or in trouble: a row each in its project's folder, after the divider. A
+    // sleeping one has none (the selected one keeps its row), and its tab is still no terminal row.
     useEffect(() => ensureServicesFeed(), []);
     const serviceList = useAtomValue(servicesAtom);
-    const services = useMemo(
-        () => (serviceList ?? []).map((s) => ({ id: s.id, name: s.name, project: s.project, tabId: s.tabid })),
-        [serviceList]
+    const { services, serviceTabs } = useMemo(
+        () => treeServiceInput(serviceList ?? [], focusId),
+        [serviceList, focusId]
     );
     const rows = projectTree({
         tree,
@@ -2549,6 +2547,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         roots,
         queue,
         services,
+        serviceTabs,
     });
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));

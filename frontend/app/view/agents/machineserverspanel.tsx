@@ -31,6 +31,7 @@ import {
     useMachineServersPoll,
 } from "./machineserversstore";
 import { ACTION_BTN, ServerStopButton } from "./railservers";
+import { ensureServicesFeed, servicesAtom, stopService } from "./servicesstore";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
 import { openTerminalLog } from "./terminallog";
 
@@ -53,7 +54,12 @@ function errorText(e: unknown): string {
 
 async function stopServer(row: MachineRow): Promise<void> {
     try {
-        await RpcApi.StopDevServerCommand(TabRpcClient, { pid: row.server.pid, createms: row.server.createms });
+        if (row.badge.kind === "service" && row.badge.serviceId != null) {
+            // wavesrv supervises a held service: killing its process from outside reads as a crash and restarts it
+            await stopService(row.badge.serviceId);
+        } else {
+            await RpcApi.StopDevServerCommand(TabRpcClient, { pid: row.server.pid, createms: row.server.createms });
+        }
         forgetMachineServer(row.server);
     } catch (e) {
         const text = errorText(e);
@@ -104,6 +110,7 @@ function Badge({ badge, model }: { badge: MachineBadge; model: AgentsViewModel }
 
 // One listening process, laid out like the rail's: ports (each opens in the browser), what it runs and for how long;
 // then its PID, what holds it, and Log / Pin as app / Copy / Stop while the row is hovered or focused. Stop asks twice.
+// A held service's server (badge `app · <name>`) has no Pin, being an app already, and its Stop goes through wavesrv.
 function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewModel; now: number }) {
     const [confirming, setConfirming] = useState(false);
     const s = row.server;
@@ -176,19 +183,21 @@ function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewMode
                                 <FileText size={12} aria-hidden />
                             </button>
                         ) : null}
-                        <button
-                            type="button"
-                            data-machine-server-pin
-                            title="Pin as app"
-                            aria-label="Pin as app"
-                            onClick={() => {
-                                fireAndForget(() => pinServerAsApp(model, s));
-                                close();
-                            }}
-                            className={ACTION_BTN}
-                        >
-                            <Pin size={12} aria-hidden />
-                        </button>
+                        {row.badge.kind === "service" ? null : (
+                            <button
+                                type="button"
+                                data-machine-server-pin
+                                title="Pin as app"
+                                aria-label="Pin as app"
+                                onClick={() => {
+                                    fireAndForget(() => pinServerAsApp(model, s));
+                                    close();
+                                }}
+                                className={ACTION_BTN}
+                            >
+                                <Pin size={12} aria-hidden />
+                            </button>
+                        )}
                         <button
                             type="button"
                             data-machine-server-copy
@@ -217,6 +226,8 @@ export function MachineServersPanel({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
     const bgTasks = useAtomValue(backgroundTasksByIdAtom);
+    const services = useAtomValue(servicesAtom);
+    useEffect(() => ensureServicesFeed(), []);
     // the panel is always mounted, so this keeps its state between openings
     const [otherOpen, setOtherOpen] = useState(false);
     const [now, setNow] = useState(() => Date.now());
@@ -247,8 +258,15 @@ export function MachineServersPanel({ model }: { model: AgentsViewModel }) {
     }, [open]);
     const view = useMemo(
         () =>
-            reading.servers == null ? null : buildMachineServers(reading.servers, [...agents, ...terminals], bgTasks),
-        [reading.servers, agents, terminals, bgTasks]
+            reading.servers == null
+                ? null
+                : buildMachineServers(
+                      reading.servers,
+                      [...agents, ...terminals],
+                      bgTasks,
+                      (services ?? []).map((s) => ({ id: s.id, name: s.name, tabid: s.tabid }))
+                  ),
+        [reading.servers, agents, terminals, bgTasks, services]
     );
     return (
         <>

@@ -252,6 +252,13 @@ Tab thứ ba của [Setup](setup.md), sau Instructions và Skills (`Ctrl+G` rồ
 
 **Tool của riêng bạn.** **Add your own tool** mở một biểu mẫu: tên, lệnh, **Opens in**, **Shows** và lệnh cài (không bắt buộc). Tool được lưu vào `tools.json` trong thư mục `config`, cạnh `settings.json` (đổi tay file cũng được, arcterm đọc lại khi file đổi), và nằm ở nhóm **Yours**. Một tool của bạn không có trên `PATH` thì ghi `not on PATH` kèm nút **Edit** ở thư viện và ở Open a tool, và không bao giờ mở ra một terminal lỗi. Biểu mẫu chỉ kiểm tra `PATH` khi bạn lưu; sau đó dòng **Command** của tool ghi `found at …`.
 
+**Ứng dụng (tool có trang).** Tool khai một trang (một URL localhost, hoặc cổng `auto`) là một **ứng dụng**: arcterm giữ server của nó, và nó chỉ chạy khi bạn dùng nó trong arcterm. Mở nó (**Open** trên trang của tool, hay bấm nó trên nav rail) thì nó khởi động; rời khỏi nó thì một phút sau nó ngủ, trừ khi nó còn đang làm việc (một câu trả lời của chat, một script nó đã khởi động), khi đó arcterm chờ thêm một phút rồi hỏi lại. Setup → Tools là nơi quản lý ứng dụng, dù nó đang chạy hay ngủ. Trang của tool có thêm:
+- **Status**: cổng và tuổi khi nó chạy, `sleeping · starts when opened` khi nó ngủ, hoặc lý do khi nó crash hay cổng bị chiếm; **Stop** (dừng ngay, kể cả khi đang làm việc) và **Restart** khi nó chạy. Stop không được nhớ: lần mở sau nó vẫn khởi động.
+- **Keep running**: cho ứng dụng có việc riêng theo giờ. Nó khởi động cùng arcterm và không bao giờ ngủ.
+- **On the rail**: ghim ứng dụng lên [nav rail](cockpit.md#ứng-dụng-ghim-trên-rail) (tối đa ba, dưới Radar), dù nó đang ngủ.
+
+Cây Agent chỉ liệt kê một ứng dụng khi nó đang chạy hoặc gặp sự cố (và khi hàng của nó đang được chọn), nên ứng dụng đang ngủ không giữ một hàng, và thư mục project chỉ chứa nó thì không hiện. Chip **Servers** ở footer cho biết server của ứng dụng là `app · <tên>`.
+
 ### Open a tool (chọn nhanh)
 
 Hộp thoại kiểu palette để mở tool ngay, trong thư mục của agent đang focus. Mở bằng:

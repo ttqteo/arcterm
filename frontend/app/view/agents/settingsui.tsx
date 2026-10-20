@@ -302,16 +302,33 @@ export function Note({
     );
 }
 
-export function Toggle({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
+// A disabled switch is dimmed and its `title` says why; a data-* attribute lands on the button (the CDP scenarios).
+export function Toggle({
+    on,
+    onToggle,
+    label,
+    disabled,
+    title,
+    ...data
+}: {
+    on: boolean;
+    onToggle: () => void;
+    label: string;
+    disabled?: boolean;
+    title?: string;
+} & { [K in `data-${string}`]?: string | boolean }) {
     return (
         <button
             type="button"
             role="switch"
             aria-checked={on}
             aria-label={label}
+            disabled={disabled}
+            title={title}
             onClick={onToggle}
+            {...data}
             className={cn(
-                "relative h-[18px] w-8 shrink-0 cursor-pointer rounded-full transition-colors",
+                "relative h-[18px] w-8 shrink-0 cursor-pointer rounded-full transition-colors disabled:cursor-default disabled:opacity-40",
                 on ? "bg-accent" : "bg-edge-strong"
             )}
         >

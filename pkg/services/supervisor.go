@@ -36,10 +36,10 @@ type BlockRef struct {
 	BlockId string
 }
 
-// Remembered is what arcterm keeps about a service between runs, in its own state file, never in tools.json.
+// Remembered is what arcterm keeps about a service between runs, in its own state file, never in tools.json. A Stop is
+// not kept: an older file's "stopped" key is ignored.
 type Remembered struct {
-	Port    int  `json:"port,omitempty"`    // the port of a service on "port": "auto"
-	Stopped bool `json:"stopped,omitempty"` // the person stopped it: boot does not start it
+	Port int `json:"port,omitempty"` // the port of a service on "port": "auto"
 }
 
 type StateStore interface {
@@ -59,6 +59,7 @@ type Deps struct {
 	Start         func(ctx context.Context, tabId, blockId string) error
 	Stop          func(blockId string)
 	Sweep         func(blockId string)
+	Procs         func(blockId string) []Proc // the service block's process tree; nil when it cannot be read, which counts as idle
 	ReadLog       func(blockId string) string
 	CloseTab      func(ctx context.Context, tabId string) error
 	Publish       func(data wshrpc.ServicesData)
@@ -76,7 +77,7 @@ func commandLine(t arctools.Tool) string {
 }
 
 // BlockMeta is the meta of a service's terminal block. It never starts on its own (cmd:runonstart false): only the
-// supervisor forces a start, so a pane that mounts the log cannot start a stopped service.
+// supervisor forces a start, so a pane that mounts the log cannot start a sleeping service.
 func BlockMeta(d Def) waveobj.MetaMapType {
 	meta := waveobj.MetaMapType{
 		waveobj.MetaKey_View:          "term",
@@ -144,7 +145,7 @@ type svc struct {
 	ignoreUntil time.Time
 
 	// the idle timer is kept apart from cancels: a crash, a retry and a start cancel those, and none of them is a
-	// reason to give the service its ten minutes again
+	// reason to give the service its minute again
 	sleepCancel func()
 	sleepTok    int // a timer that already fired, or was cancelled, finds an older token and does nothing
 }
@@ -185,7 +186,7 @@ func New(d Deps) *Supervisor {
 
 // Seen takes the whole set of services on screen; each call replaces the last. Ids it does not know are kept. Before
 // Boot it only records. After, a service that joined the set loses its idle timer and, when it sleeps, starts (not as
-// the person's start: a service the person stopped stays stopped); a service that left it gets a timer.
+// the person's start); a service that left it gets a timer.
 func (s *Supervisor) Seen(ctx context.Context, ids []string) {
 	shown := make(map[string]bool, len(ids))
 	for _, id := range ids {
@@ -227,7 +228,7 @@ func (s *Supervisor) Seen(ctx context.Context, ids []string) {
 	}
 }
 
-// armSleepLocked gives a service its idle timer, unless it has one already (its ten minutes are not pushed back), is
+// armSleepLocked gives a service its idle timer, unless it has one already (its minute is not pushed back), is
 // on screen, has Keep running, or has no process to stop.
 func (s *Supervisor) armSleepLocked(v *svc) {
 	if v.sleepCancel != nil || v.tool.Autostart || s.shown[v.tool.Id] || !sleepable(v.state) {
@@ -246,8 +247,9 @@ func (s *Supervisor) cancelSleepLocked(v *svc) {
 	v.sleepTok++
 }
 
-// sleepTick is the idle timer firing: a service that is still off screen without Keep running stops, what a Stop
-// does except that the person did not ask for it, so nothing is remembered and it starts again when shown.
+// sleepTick is the idle timer firing: a service that is still off screen without Keep running stops, unless it is
+// busy, in which case the timer is armed again for another IdleSleep. A service that comes back on screen meanwhile
+// keeps running. It starts again when shown.
 func (s *Supervisor) sleepTick(id string, tok int) {
 	s.mu.Lock()
 	v := s.svcs[id]
@@ -260,6 +262,29 @@ func (s *Supervisor) sleepTick(id string, tok int) {
 		s.mu.Unlock()
 		return
 	}
+
+	// reading the tree takes a while: do it without the lock, then look again, since a Seen, a Stop or a crash may
+	// have come in meanwhile (the token tells a Seen)
+	blockId, upMs := v.blockId, v.startedMs
+	if v.state != StateRunning {
+		upMs = 0 // starting also stamps startedMs (the waiting card counts from it); only a page that answered is a baseline
+	}
+	s.mu.Unlock()
+	var procs []Proc
+	if blockId != "" && s.d.Procs != nil {
+		procs = s.d.Procs(blockId)
+	}
+	s.mu.Lock()
+	v = s.svcs[id]
+	if v == nil || v.sleepTok != tok || v.tool.Autostart || s.shown[id] || !sleepable(v.state) {
+		s.mu.Unlock()
+		return
+	}
+	if Busy(procs, upMs, s.d.Now().UnixMilli()) {
+		s.armSleepLocked(v) // ask again in IdleSleep
+		s.mu.Unlock()
+		return
+	}
 	if v.owned() {
 		v.ignoreExits++
 		v.ignoreUntil = s.d.Now().Add(exitIgnoreWindow)
@@ -268,7 +293,7 @@ func (s *Supervisor) sleepTick(id string, tok int) {
 	v.gen++
 	v.state = StateSleeping
 	v.startedMs, v.retryAtMs, v.exitCode, v.holder = 0, 0, 0, ""
-	blockId := v.blockId
+	blockId = v.blockId
 	s.publishLocked()
 	s.mu.Unlock()
 	if blockId != "" {
@@ -276,17 +301,10 @@ func (s *Supervisor) sleepTick(id string, tok int) {
 	}
 }
 
-// idleState is the state of a service with no process of arcterm's: stopped when the person stopped it, else asleep.
-func (s *Supervisor) idleState(id string) string {
-	if s.d.State.Get(id).Stopped {
-		return StateStopped
-	}
-	return StateSleeping
-}
-
-// startsNowLocked reports whether a service the person did not stop starts as soon as the supervisor knows it.
+// startsNowLocked reports whether a service starts as soon as the supervisor knows it: it has Keep running or is on
+// screen.
 func (s *Supervisor) startsNowLocked(v *svc) bool {
-	return !s.d.State.Get(v.tool.Id).Stopped && (v.tool.Autostart || s.shown[v.tool.Id])
+	return v.tool.Autostart || s.shown[v.tool.Id]
 }
 
 // Status is every service, by id. Never nil.
@@ -372,9 +390,8 @@ func (s *Supervisor) byBlockLocked(blockId string) *svc {
 }
 
 // SetTools takes the current services (the tools with a page) from the config. projects maps a project's name to its
-// path. Before Boot it only records them; after, a new service the person did not stop starts at once when it has Keep
-// running or is on screen (else it sleeps), a changed one that runs restarts, and a removed one stops and closes its
-// tab.
+// path. Before Boot it only records them; after, a new service starts at once when it has Keep running or is on screen
+// (else it sleeps), a changed one that runs restarts, and a removed one stops and closes its tab.
 func (s *Supervisor) SetTools(ctx context.Context, tools []arctools.Tool, projects map[string]string, home string) {
 	// the frontend matches project paths without regard to case (registeredProjectFor), and a Mac's disk does not
 	// tell /Users/x/Workspaces from /Users/x/workspaces
@@ -403,8 +420,7 @@ func (s *Supervisor) SetTools(ctx context.Context, tools []arctools.Tool, projec
 		delete(s.svcs, id)
 		blockId, tabId := v.blockId, v.tabId
 		after = append(after, func() {
-			// the Stop went with the entry: the same id added again sleeps. The port stays, for the page's address
-			s.remember(id, func(r *Remembered) { r.Stopped = false })
+			// the remembered port stays, for the page's address
 			if blockId != "" {
 				s.d.Stop(blockId)
 			}
@@ -425,7 +441,7 @@ func (s *Supervisor) SetTools(ctx context.Context, tools []arctools.Tool, projec
 		project := ProjectFor(strings.ToLower(ServiceDir(t)), lowProjects, lowHome)
 		v := s.svcs[id]
 		if v == nil {
-			v = &svc{tool: t, project: project, fixed: fixedPort(t), state: s.idleState(id)}
+			v = &svc{tool: t, project: project, fixed: fixedPort(t), state: StateSleeping}
 			v.port = v.fixed
 			if v.fixed == 0 {
 				v.port = s.d.State.Get(id).Port
@@ -466,7 +482,7 @@ func (s *Supervisor) SetTools(ctx context.Context, tools []arctools.Tool, projec
 			})
 		case StateElsewhere, StatePortTaken, StateCrashed:
 			// the verdict was about the old entry
-			v.state, v.holder, v.exitCode, v.retryAtMs = s.idleState(id), "", 0, 0
+			v.state, v.holder, v.exitCode, v.retryAtMs = StateSleeping, "", 0, 0
 			if s.booted && s.startsNowLocked(v) {
 				after = append(after, func() { _ = s.startService(ctx, id, false) })
 			}
@@ -480,8 +496,8 @@ func (s *Supervisor) SetTools(ctx context.Context, tools []arctools.Tool, projec
 }
 
 // Boot attaches the service blocks left by an earlier run, sweeps their leftover processes, closes the tabs of
-// services that are gone, and starts every service the person did not stop that has Keep running or is on screen,
-// BootStagger apart; the others sleep.
+// services that are gone, and starts every service that has Keep running or is on screen, BootStagger apart; the
+// others sleep.
 func (s *Supervisor) Boot(ctx context.Context) {
 	blocks, err := s.d.ServiceBlocks(ctx)
 	if err != nil {
@@ -561,7 +577,7 @@ func (s *Supervisor) Open(ctx context.Context, id string) (wshrpc.ServiceStatus,
 	return s.statusOf(v), nil
 }
 
-// Start starts a service the person asked for: it clears the stop flag and the crash count.
+// Start starts a service the person asked for: it clears the crash count.
 func (s *Supervisor) Start(ctx context.Context, id string) error {
 	return s.startService(ctx, id, true)
 }
@@ -591,7 +607,6 @@ func (s *Supervisor) startService(ctx context.Context, id string, byPerson bool)
 			s.mu.Unlock()
 			return nil
 		}
-		s.remember(id, func(r *Remembered) { r.Stopped = false })
 		v.crashes.Reset()
 	} else if v.owned() {
 		// a start that is not the person's (a wake, a boot start) finds it already up: leave it be
@@ -640,7 +655,7 @@ func (s *Supervisor) startService(ctx context.Context, id string, byPerson bool)
 		if port == 0 {
 			p, err := s.d.FreePort()
 			if err != nil {
-				_ = s.settle(id, gen, func(v *svc) { v.state = StateStopped })
+				_ = s.settle(id, gen, func(v *svc) { v.state = StateSleeping })
 				return fmt.Errorf("picking a free port: %w", err)
 			}
 			port = p
@@ -777,12 +792,13 @@ func (s *Supervisor) probeTick(id string, gen int) {
 	s.scheduleProbeLocked(v, gen)
 }
 
-// Stop is the person stopping a service: it stays stopped across restarts until Start or Restart.
+// Stop stops a service now, whatever work it is in the middle of. Nothing remembers it: the service starts again the
+// next time it is shown (a Seen that newly shows it), or when Start is called.
 func (s *Supervisor) Stop(ctx context.Context, id string) error {
-	return s.stop(id, true)
+	return s.stop(id)
 }
 
-func (s *Supervisor) stop(id string, remember bool) error {
+func (s *Supervisor) stop(id string) error {
 	s.mu.Lock()
 	v := s.svcs[id]
 	if v == nil {
@@ -797,14 +813,11 @@ func (s *Supervisor) stop(id string, remember bool) error {
 	s.cancelLocked(v)
 	s.cancelSleepLocked(v)
 	v.gen++
-	v.state = StateStopped
+	v.state = StateSleeping
 	v.startedMs, v.retryAtMs, v.exitCode, v.holder = 0, 0, 0, ""
 	if wasOwned {
 		v.ignoreExits++
 		v.ignoreUntil = s.d.Now().Add(exitIgnoreWindow)
-	}
-	if remember {
-		s.remember(id, func(r *Remembered) { r.Stopped = true })
 	}
 	blockId := v.blockId
 	s.publishLocked()
@@ -817,7 +830,7 @@ func (s *Supervisor) stop(id string, remember bool) error {
 
 // Restart is Stop then Start.
 func (s *Supervisor) Restart(ctx context.Context, id string) error {
-	if err := s.stop(id, false); err != nil {
+	if err := s.stop(id); err != nil {
 		return err
 	}
 	return s.startService(ctx, id, true)
@@ -846,9 +859,8 @@ func (s *Supervisor) OnExit(blockId string, exitCode int, interrupted bool) {
 		s.cancelLocked(v)
 		s.cancelSleepLocked(v)
 		v.gen++
-		v.state = StateStopped
+		v.state = StateSleeping
 		v.startedMs = 0
-		s.remember(v.tool.Id, func(r *Remembered) { r.Stopped = true })
 		s.publishLocked()
 		return
 	}
@@ -907,9 +919,8 @@ func (s *Supervisor) OnBlockClosed(blockId string) {
 		s.cancelLocked(v)
 		s.cancelSleepLocked(v)
 		v.gen++
-		v.state = StateStopped
+		v.state = StateSleeping
 		v.startedMs, v.retryAtMs, v.exitCode = 0, 0, 0
-		s.remember(v.tool.Id, func(r *Remembered) { r.Stopped = true })
 	}
 	v.tabId, v.blockId = "", ""
 	s.publishLocked()

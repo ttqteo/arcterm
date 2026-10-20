@@ -13,7 +13,6 @@ import { consumersOpenAtom } from "@/app/view/agents/consumersstore";
 import { machineServersOpenAtom } from "@/app/view/agents/machineserversstore";
 import { atom, type PrimitiveAtom } from "jotai";
 import { useEffect } from "react";
-import { servicesOpenAtom } from "./servicespopoverstore";
 
 // null until the first reading
 export const jobQueueAtom = atom<JobQueueData | null>(null) as PrimitiveAtom<JobQueueData | null>;
@@ -21,10 +20,9 @@ export const jobQueueOpenAtom = atom(false) as PrimitiveAtom<boolean>;
 // the control that opened the popover, which it hangs from (panelPlacement); null when code opened it
 export const jobQueueOpenerAtom = atom<Element | null>(null) as PrimitiveAtom<Element | null>;
 
-/** The chip's click: opens the popover from the chip, or closes it when it is open. It closes the Consumers, Servers
- * and Services popovers, so only one of them is open. */
+/** The chip's click: opens the popover from the chip, or closes it when it is open. It closes the Consumers and Servers
+ * popovers, so only one of them is open. */
 export function toggleJobQueue(opener: Element | null = null): void {
-    globalStore.set(servicesOpenAtom, false);
     globalStore.set(machineServersOpenAtom, false);
     globalStore.set(consumersOpenAtom, null);
     if (globalStore.get(jobQueueOpenAtom)) {

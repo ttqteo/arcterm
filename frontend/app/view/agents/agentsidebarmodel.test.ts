@@ -41,6 +41,7 @@ import {
 import type { AgentVM } from "./agentsviewmodel";
 import { buildAgentTree, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
 import { queuedRows } from "./runqueuemodel";
+import { treeServiceInput } from "./servicesmodel";
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -806,6 +807,59 @@ describe("projectTree", () => {
         it("folds a project's services with the rest of its rows", () => {
             const rows = build([agent("a")], [], { services: [svc("web")], collapsed: ["waveterm"] });
             expect(rows.map((r) => r.kind)).toEqual(["group"]);
+        });
+
+        describe("a sleeping service (treeServiceInput)", () => {
+            const status = (state: string, project = "ops"): ServiceStatus => ({
+                id: "web",
+                name: "web",
+                command: "npm run dev",
+                dir: "~/ops",
+                project,
+                state,
+                autostart: false,
+                tabid: "tab-web",
+            });
+
+            it("has no row, no terminal row for its tab, and leaves no folder that holds nothing else", () => {
+                const rows = build(
+                    [agent("a")],
+                    [term("tab-web", "ops")],
+                    treeServiceInput([status("sleeping")], null)
+                );
+                expect(shapeS(rows)).toEqual(["group:waveterm:1a:0t", "a:a"]);
+            });
+
+            it("is a row, in its folder, while it runs", () => {
+                const rows = build([agent("a")], [term("tab-web", "ops")], treeServiceInput([status("running")], null));
+                expect(shapeS(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "group:ops:0a:0t", "s:web"]);
+            });
+
+            it("keeps the folder of the project's agents, with no divider for a row that is not there", () => {
+                const rows = build(
+                    [agent("a")],
+                    [term("tab-web", "waveterm")],
+                    treeServiceInput([status("sleeping", "waveterm")], null)
+                );
+                expect(shapeS(rows)).toEqual(["group:waveterm:1a:0t", "a:a"]);
+            });
+
+            it("stays a row while its tab is the selected one", () => {
+                const rows = build(
+                    [agent("a")],
+                    [term("tab-web", "ops")],
+                    treeServiceInput([status("sleeping")], "tab-web")
+                );
+                expect(shapeS(rows)).toEqual(["group:waveterm:1a:0t", "a:a", "group:ops:0a:0t", "s:web"]);
+            });
+
+            it("hides its tab's terminal under a project filter too", () => {
+                const rows = build([agent("a")], [term("tab-web", "waveterm"), term("t1")], {
+                    ...treeServiceInput([status("sleeping", "waveterm")], null),
+                    filter: "waveterm",
+                });
+                expect(shapeS(rows)).toEqual(["a:a", "divider:waveterm", "t:t1"]);
+            });
         });
 
         it("keeps services in the order given, and adds nothing when there are none", () => {

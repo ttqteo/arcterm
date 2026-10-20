@@ -5,7 +5,7 @@
 // item's dot and title say, which service the app surface shows, and the words of its card. Pure: the store keeps the
 // pins in localStorage, wavesrv owns the service state. `nowMs` is a parameter, as in servicesmodel.ts.
 
-import { canRestart, serviceRowWords } from "./servicesmodel";
+import { canRestart, serviceHeaderLine, serviceRowWords } from "./servicesmodel";
 
 export const RAIL_APP_MAX = 3;
 export const RAIL_FULL_TITLE = "The rail holds 3 apps: unpin one first";
@@ -103,12 +103,21 @@ export function appSurfaceBody(s: ServiceStatus): AppSurfaceBody {
         case "running":
         case "elsewhere":
             return "page";
-        case "starting":
-        case "sleeping":
-            return "waiting";
-        default:
+        case "retrying":
+        case "crashed":
+        case "porttaken":
+        case "nopage":
             return "card";
+        default:
+            // starting, sleeping, and a state this does not know: showing the app starts it, so there is no stopped card
+            return "waiting";
     }
+}
+
+/** The waiting card's title: Starting <name>, or, for a sleeping app, <name> is asleep: after a Stop with the app on
+ *  screen nothing starts it until it is shown again or its header's Start is pressed, so the card must not say Starting. */
+export function appWaitTitle(s: ServiceStatus): string {
+    return s.state === "starting" ? `Starting ${s.name}` : `${s.name} is asleep`;
 }
 
 export type AppCard = { title: string; line: string; action: "restart" | "start" };
@@ -144,6 +153,7 @@ export function appCard(s: ServiceStatus, nowMs: number): AppCard {
                 action,
             };
         default:
-            return { title: `${s.name} is stopped`, line: "Start it to see its page.", action };
+            // no state that appSurfaceBody sends here gets this: a total fallback, not a stopped card
+            return { title: `${s.name} is ${s.state}`, line: serviceHeaderLine(s, nowMs), action };
     }
 }

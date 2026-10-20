@@ -15,14 +15,14 @@ func TestStateFileRoundTrip(t *testing.T) {
 		t.Fatalf("a missing file reads %+v, want empty", got)
 	}
 	s := NewFileStore(path)
-	if err := s.Set("portfolio", Remembered{Port: 8386, Stopped: true}); err != nil {
+	if err := s.Set("portfolio", Remembered{Port: 8386}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Set("dev", Remembered{Port: 41207}); err != nil {
 		t.Fatal(err)
 	}
 	fresh := NewFileStore(path)
-	if got := fresh.Get("portfolio"); got != (Remembered{Port: 8386, Stopped: true}) {
+	if got := fresh.Get("portfolio"); got != (Remembered{Port: 8386}) {
 		t.Errorf("portfolio = %+v", got)
 	}
 	if got := fresh.Get("dev"); got != (Remembered{Port: 41207}) {
@@ -31,6 +31,22 @@ func TestStateFileRoundTrip(t *testing.T) {
 	left, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "*.tmp"))
 	if len(left) != 0 {
 		t.Errorf("temp files left behind: %v", left)
+	}
+}
+
+// an entry written when a Stop was remembered still reads: the flag is ignored, the port kept
+func TestStateFileReadsAnOldStoppedEntry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "services.json")
+	old := `{"portfolio": {"port": 8386, "stopped": true}, "dev": {"stopped": true}}`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := NewFileStore(path)
+	if got := s.Get("portfolio"); got != (Remembered{Port: 8386}) {
+		t.Errorf("portfolio = %+v, want the port only", got)
+	}
+	if got := s.Get("dev"); got != (Remembered{}) {
+		t.Errorf("dev = %+v, want nothing remembered", got)
 	}
 }
 

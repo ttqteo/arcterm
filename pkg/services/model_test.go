@@ -122,3 +122,29 @@ func TestProjectFor(t *testing.T) {
 		}
 	}
 }
+
+func TestBusy(t *testing.T) {
+	up := int64(1_000_000) // when the page first answered
+	now := up + int64(5*time.Minute/time.Millisecond)
+	late := up + 2*BusyMaxAge.Milliseconds() // long enough after up that an old helper still started after it
+	cases := []struct {
+		name  string
+		procs []Proc
+		now   int64
+		want  bool
+	}{
+		{"nothing runs", nil, now, false},
+		{"only what was there when the page answered", []Proc{{Pid: 1, StartMs: up - 2000}, {Pid: 2, StartMs: up - 10}}, now, false},
+		{"a run the server started after", []Proc{{Pid: 1, StartMs: up - 2000}, {Pid: 9, StartMs: now - 30_000}}, now, true},
+		{"a helper started after up but older than BusyMaxAge is the server's own", []Proc{{Pid: 9, StartMs: late - BusyMaxAge.Milliseconds() - 1}}, late, false},
+		{"one younger than BusyMaxAge at the same late time is work", []Proc{{Pid: 9, StartMs: late - BusyMaxAge.Milliseconds() + 1000}}, late, true},
+	}
+	for _, c := range cases {
+		if got := Busy(c.procs, up, c.now); got != c.want {
+			t.Errorf("%s: Busy = %v, want %v", c.name, got, c.want)
+		}
+	}
+	if Busy([]Proc{{Pid: 9, StartMs: now}}, 0, now) {
+		t.Error("a service that never answered is never busy")
+	}
+}

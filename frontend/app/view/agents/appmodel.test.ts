@@ -38,8 +38,10 @@ describe("appUrlOk", () => {
 });
 
 describe("tools and pages", () => {
-    it("is an app only with a url", () => {
+    it("is an app with a url, or on a port arcterm picks", () => {
         expect(isAppTool({ url: URL_OK })).toBe(true);
+        expect(isAppTool({ port: "auto" })).toBe(true);
+        expect(isAppTool({ port: "8386" })).toBe(false);
         expect(isAppTool({})).toBe(false);
         expect(isAppTool(undefined)).toBe(false);
     });
@@ -86,7 +88,7 @@ describe("a service as the app pane shows it", () => {
     });
 
     it("fails every other state, which shows the log", () => {
-        for (const state of ["crashed", "porttaken", "nopage", "retrying", "stopped", "sleeping"]) {
+        for (const state of ["crashed", "porttaken", "nopage", "retrying", "sleeping"]) {
             const a = serviceAppState(svc(state, { url: undefined, startedms: undefined }), "page", 0);
             expect(a.phase).toBe("failed");
             expect(a.owned).toBe(true);
@@ -129,7 +131,7 @@ describe("the pages kept loaded out of sight", () => {
     const states = { a: open, b: open, c: { phase: "starting" as const }, d: { phase: "failed" as const } };
 
     it("keeps the one on screen and each seen within the idle limit, in the states' order", () => {
-        const seen = { b: now - 60_000, a: now - APP_FRAME_IDLE_MS + 1 };
+        const seen = { b: now - APP_FRAME_IDLE_MS / 2, a: now - APP_FRAME_IDLE_MS + 1 };
         expect(keptAppFrames(states, null, seen, now)).toEqual(["a", "b"]);
         expect(keptAppFrames(states, "b", {}, now)).toEqual(["b"]);
     });

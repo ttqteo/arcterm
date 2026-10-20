@@ -4,7 +4,6 @@
 // The Consumers panel's state: whether it is open and which measure ranked it, and its last GetConsumers reading. The poll
 // runs only while the panel is open.
 
-import { servicesOpenAtom } from "@/app/cockpit/servicespopoverstore";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -45,10 +44,9 @@ export async function loadConsumers(
 }
 
 /** An opener's click: opens the panel ranked by the opener's measure, and closes it when it is open, whichever opener
- * opened it (RAM and tokens are one view). The panel hangs from `opener`. It closes the Servers and Services popovers,
- * so only one of them is open. */
+ * opened it (RAM and tokens are one view). The panel hangs from `opener`. It closes the Servers popover, so only one
+ * of them is open. */
 export function toggleConsumers(sort: ConsumersSort, opener: Element | null = null): void {
-    globalStore.set(servicesOpenAtom, false);
     globalStore.set(machineServersOpenAtom, false);
     if (globalStore.get(consumersOpenAtom) != null) {
         globalStore.set(consumersOpenAtom, null);

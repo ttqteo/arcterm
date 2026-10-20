@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import { RAIL_FULL_TITLE } from "./railapps";
 import {
     canRestart,
     canStart,
-    canStartFromPopover,
     canStop,
-    popoverOrder,
     serviceHeaderLine,
+    serviceMenuChoices,
     serviceRowWords,
-    servicesChip,
+    treeServiceInput,
     upFor,
     withAutostart,
 } from "./servicesmodel";
@@ -37,13 +37,12 @@ describe("serviceRowWords", () => {
         expect(w).not.toHaveProperty("action");
     });
 
-    it("stopped: a hollow muted dot and Start", () => {
-        expect(serviceRowWords(svc("stopped"), NOW)).toEqual({
-            words: "stopped",
-            tone: "muted",
-            dot: "hollow",
-            action: "start",
-        });
+    it("a state it does not know reads as sleeping (an old wavesrv's stopped included)", () => {
+        for (const state of ["stopped", "mystery"]) {
+            const w = serviceRowWords(svc(state), NOW);
+            expect(w).toEqual({ words: "sleeping", tone: "muted", dot: "hollow" });
+            expect(w).not.toHaveProperty("action");
+        }
     });
 
     it("starting: pulsing", () => {
@@ -149,12 +148,13 @@ describe("serviceHeaderLine", () => {
         expect(serviceHeaderLine(svc("nopage"), NOW)).toBe("Running, no page after 30s");
     });
 
-    it("stopped", () => {
-        expect(serviceHeaderLine(svc("stopped"), NOW)).toBe("Stopped");
-    });
-
     it("sleeping", () => {
         expect(serviceHeaderLine(svc("sleeping"), NOW)).toBe("Sleeping · starts when shown");
+    });
+
+    it("a state it does not know reads as sleeping does", () => {
+        expect(serviceHeaderLine(svc("stopped"), NOW)).toBe("Sleeping · starts when shown");
+        expect(serviceHeaderLine(svc("mystery"), NOW)).toBe("Sleeping · starts when shown");
     });
 });
 
@@ -170,130 +170,16 @@ describe("upFor", () => {
     });
 });
 
-describe("servicesChip", () => {
-    it("is hidden when no service is configured", () => {
-        expect(servicesChip([]).hidden).toBe(true);
-    });
-
-    it("is hidden while nothing runs and nothing needs a look", () => {
-        expect(servicesChip([svc("stopped", { id: "a" }), svc("sleeping", { id: "b" })]).hidden).toBe(true);
-    });
-
-    it("stays shown with nothing running when one crashed or has no page", () => {
-        expect(servicesChip([svc("crashed")]).label).toBe("0 · 1 crashed");
-        expect(servicesChip([svc("nopage")]).hidden).toBe(false);
-    });
-
-    it("shows the running count, and the crashed ones in the error tone", () => {
-        const chip = servicesChip([
-            svc("running", { id: "a" }),
-            svc("running", { id: "b" }),
-            svc("running", { id: "c" }),
-            svc("crashed"),
-        ]);
-        expect(chip.hidden).toBe(false);
-        expect(chip.label).toBe("3 · 1 crashed");
-        expect(chip.tone).toBe("error");
-    });
-
-    it("counts a retrying service as crashed", () => {
-        const chip = servicesChip([svc("running"), svc("retrying")]);
-        expect(chip.label).toBe("1 · 1 crashed");
-        expect(chip.tone).toBe("error");
-    });
-
-    it("turns warning for a service with no page, when none crashed", () => {
-        const chip = servicesChip([svc("nopage"), svc("running", { id: "a" }), svc("running", { id: "b" })]);
-        expect(chip.label).toBe("2");
-        expect(chip.tone).toBe("warning");
-    });
-
-    it("turns warning for a taken port", () => {
-        expect(servicesChip([svc("porttaken"), svc("running")]).tone).toBe("warning");
-    });
-
-    it("stays error when one crashed and another has no page", () => {
-        expect(servicesChip([svc("nopage"), svc("crashed")]).tone).toBe("error");
-    });
-
-    it("is muted when all is well", () => {
-        const chip = servicesChip([svc("running"), svc("stopped")]);
-        expect(chip.label).toBe("1");
-        expect(chip.tone).toBe("muted");
-    });
-
-    it("counts a sleeping service in neither the running count nor the tone", () => {
-        const chip = servicesChip([svc("running", { id: "a" }), svc("running", { id: "b" }), svc("sleeping")]);
-        expect(chip.label).toBe("2");
-        expect(chip.tone).toBe("muted");
-        expect(chip.title).toContain("2 running");
-    });
-
-    it("gives a title that sums the states", () => {
-        const chip = servicesChip([svc("running"), svc("stopped"), svc("crashed")]);
-        expect(chip.title).toContain("1 running");
-        expect(chip.title).toContain("1 crashed");
-    });
-});
-
-describe("popoverOrder", () => {
-    it("puts crashed and retrying first, then porttaken and nopage, then up, then stopped, by name inside each", () => {
-        const list = [
-            svc("stopped", { id: "s", name: "alpha" }),
-            svc("running", { id: "r2", name: "zeta" }),
-            svc("nopage", { id: "n", name: "mid" }),
-            svc("retrying", { id: "t", name: "zulu" }),
-            svc("elsewhere", { id: "e", name: "beta" }),
-            svc("crashed", { id: "c", name: "kilo" }),
-            svc("porttaken", { id: "p", name: "able" }),
-            svc("starting", { id: "g", name: "gamma" }),
-            svc("running", { id: "r1", name: "yankee" }),
-        ];
-        expect(popoverOrder(list).map((s) => s.id)).toEqual(["c", "t", "p", "n", "e", "g", "r1", "r2", "s"]);
-    });
-
-    it("puts a sleeping service with the stopped ones, by name", () => {
-        const list = [
-            svc("sleeping", { id: "z", name: "zeta" }),
-            svc("stopped", { id: "m", name: "mid" }),
-            svc("sleeping", { id: "a", name: "alpha" }),
-            svc("running", { id: "r", name: "run" }),
-        ];
-        expect(popoverOrder(list).map((s) => s.id)).toEqual(["r", "a", "m", "z"]);
-    });
-
-    it("does not change the list it is given", () => {
-        const list = [svc("stopped", { id: "s" }), svc("crashed", { id: "c" })];
-        popoverOrder(list);
-        expect(list.map((s) => s.id)).toEqual(["s", "c"]);
-    });
-});
-
 describe("what a state offers", () => {
-    const states = [
-        "stopped",
-        "starting",
-        "running",
-        "elsewhere",
-        "retrying",
-        "crashed",
-        "porttaken",
-        "nopage",
-        "sleeping",
-    ];
+    const states = ["starting", "running", "elsewhere", "retrying", "crashed", "porttaken", "nopage", "sleeping"];
 
     it("canStop: running, starting, retrying, nopage", () => {
         expect(states.filter((st) => canStop(svc(st)))).toEqual(["starting", "running", "retrying", "nopage"]);
     });
 
-    it("canStart: stopped, crashed, porttaken, elsewhere (Start probes again)", () => {
-        expect(states.filter((st) => canStart(svc(st)))).toEqual([
-            "stopped",
-            "elsewhere",
-            "crashed",
-            "porttaken",
-            "sleeping",
-        ]);
+    it("canStart: crashed, porttaken, sleeping, elsewhere (Start probes again); a stopped service is not a state", () => {
+        expect(states.filter((st) => canStart(svc(st)))).toEqual(["elsewhere", "crashed", "porttaken", "sleeping"]);
+        expect(canStart(svc("stopped"))).toBe(false);
     });
 
     it("canRestart: running, starting, retrying, nopage, crashed", () => {
@@ -313,20 +199,158 @@ describe("what a state offers", () => {
         expect(canRestart(s)).toBe(false);
     });
 
-    it("the popover's hover Start: stopped, crashed, porttaken, elsewhere; none for sleeping", () => {
-        expect(states.filter((st) => canStartFromPopover(svc(st)))).toEqual([
-            "stopped",
-            "elsewhere",
-            "crashed",
-            "porttaken",
-        ]);
-    });
-
     it("elsewhere offers Start only", () => {
         const s = svc("elsewhere");
         expect(canStart(s)).toBe(true);
         expect(canStop(s)).toBe(false);
         expect(canRestart(s)).toBe(false);
+    });
+});
+
+describe("treeServiceInput", () => {
+    const ids = (list: ServiceStatus[], selected: string | null) =>
+        treeServiceInput(list, selected).services.map((s) => s.id);
+
+    it("lists a service that is up or in trouble, in the order given, and not a sleeping one", () => {
+        const list = [
+            svc("running", { id: "run" }),
+            svc("sleeping", { id: "sleep" }),
+            svc("crashed", { id: "crash" }),
+            svc("starting", { id: "start" }),
+            svc("retrying", { id: "retry" }),
+            svc("porttaken", { id: "port" }),
+            svc("nopage", { id: "nopage" }),
+            svc("elsewhere", { id: "else" }),
+        ];
+        expect(ids(list, null)).toEqual(["run", "crash", "start", "retry", "port", "nopage", "else"]);
+    });
+
+    it("keeps a sleeping service whose tab is the selected row, and no other", () => {
+        const list = [
+            svc("sleeping", { id: "a", tabid: "tab-a" }),
+            svc("sleeping", { id: "b", tabid: "tab-b" }),
+            svc("running", { id: "c", tabid: "tab-c" }),
+        ];
+        expect(ids(list, "tab-b")).toEqual(["b", "c"]);
+        expect(ids(list, "tab-c")).toEqual(["c"]);
+        expect(ids(list, null)).toEqual(["c"]);
+    });
+
+    it("hands projectTree the fields it reads", () => {
+        const list = [svc("running", { id: "web", name: "Web", project: "loom", tabid: "tab-web" })];
+        expect(treeServiceInput(list, null).services).toEqual([
+            { id: "web", name: "Web", project: "loom", tabId: "tab-web" },
+        ]);
+    });
+
+    it("holds every service's tab, sleeping ones too, and none for a service with no tab", () => {
+        const list = [
+            svc("sleeping", { id: "a", tabid: "tab-a" }),
+            svc("running", { id: "b", tabid: "tab-b" }),
+            svc("sleeping", { id: "c" }),
+            svc("running", { id: "d" }),
+        ];
+        expect([...treeServiceInput(list, null).serviceTabs].sort()).toEqual(["tab-a", "tab-b"]);
+    });
+
+    it("is empty for no services", () => {
+        const none = treeServiceInput([], "tab-x");
+        expect(none.services).toEqual([]);
+        expect(none.serviceTabs.size).toBe(0);
+    });
+});
+
+describe("serviceMenuChoices", () => {
+    const open = { pinned: false, railFull: false };
+    const url = "http://127.0.0.1:8386/";
+    const choice = (s: ServiceStatus, key: string, o = open) => serviceMenuChoices(s, o).find((c) => c.key === key);
+
+    it("lists Stop, Restart, the browser, Keep running, Pin and Edit, with a separator between the groups", () => {
+        expect(serviceMenuChoices(svc("running", { url }), open).map((c) => c.key)).toEqual([
+            "stop",
+            "restart",
+            "separator",
+            "browser",
+            "keepRunning",
+            "pin",
+            "separator",
+            "edit",
+        ]);
+    });
+
+    it("has no browser entry for a service with no url", () => {
+        expect(choice(svc("running"), "browser")).toBeUndefined();
+        expect(choice(svc("running", { url }), "browser")).toMatchObject({
+            label: "Open in the browser",
+            enabled: true,
+        });
+    });
+
+    it("never offers Start, whatever the state", () => {
+        for (const st of [
+            "starting",
+            "running",
+            "elsewhere",
+            "retrying",
+            "crashed",
+            "porttaken",
+            "nopage",
+            "sleeping",
+        ]) {
+            expect(serviceMenuChoices(svc(st), open).map((c) => c.key)).not.toContain("start");
+        }
+    });
+
+    it("enables Stop and Restart as the state allows", () => {
+        for (const st of [
+            "starting",
+            "running",
+            "elsewhere",
+            "retrying",
+            "crashed",
+            "porttaken",
+            "nopage",
+            "sleeping",
+        ]) {
+            expect(choice(svc(st), "stop")).toMatchObject({ label: "Stop", enabled: canStop(svc(st)) });
+            expect(choice(svc(st), "restart")).toMatchObject({ label: "Restart", enabled: canRestart(svc(st)) });
+        }
+    });
+
+    it("checks Keep running as autostart says", () => {
+        expect(choice(svc("running", { autostart: true }), "keepRunning")).toMatchObject({
+            label: "Keep running",
+            enabled: true,
+            checked: true,
+        });
+        expect(choice(svc("running", { autostart: false }), "keepRunning")).toMatchObject({ checked: false });
+    });
+
+    it("pins and unpins", () => {
+        expect(choice(svc("running"), "pin")).toMatchObject({ label: "Pin to the rail", enabled: true });
+        expect(choice(svc("running"), "pin", { pinned: true, railFull: false })).toMatchObject({
+            label: "Unpin from the rail",
+            enabled: true,
+        });
+    });
+
+    it("disables Pin with the full-rail title when the rail is full and the service is not on it", () => {
+        const pin = choice(svc("running"), "pin", { pinned: false, railFull: true });
+        expect(pin).toMatchObject({ label: "Pin to the rail", enabled: false, title: RAIL_FULL_TITLE });
+    });
+
+    it("lets a pinned service unpin from a full rail, with no title", () => {
+        const pin = choice(svc("running"), "pin", { pinned: true, railFull: true });
+        expect(pin).toMatchObject({ label: "Unpin from the rail", enabled: true });
+        expect(pin).not.toHaveProperty("title");
+    });
+
+    it("ends with the entry for Setup → Tools", () => {
+        expect(serviceMenuChoices(svc("sleeping"), open).at(-1)).toMatchObject({
+            key: "edit",
+            label: "Edit in Setup → Tools",
+            enabled: true,
+        });
     });
 });
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import { RAIL_FULL_TITLE } from "./railapps";
 import {
     commandCheck,
     emptyForm,
@@ -10,17 +11,23 @@ import {
     foundLine,
     foundRows,
     headerSummary,
+    initialChoice,
     installPanel,
     libraryRows,
     needsRestartHint,
     overrideKeywords,
+    reduceChoice,
     selectedTool,
     splitCommandLine,
     stateTone,
     statusLabel,
     toolIdFrom,
+    toolRailPin,
+    toolServiceStatus,
     uniqueToolId,
     validateNewTool,
+    type ChoiceEvent,
+    type ChoiceState,
 } from "./toolslibrarymodel";
 
 function tool(id: string, over: Partial<ToolStatus> = {}): ToolStatus {
@@ -538,5 +545,284 @@ describe("commandCheck", () => {
         expect(commandCheck("gh2", { command: "gh", found: true })).toBeNull();
         expect(commandCheck("gh", null)).toBeNull();
         expect(commandCheck("  ", { command: "gh", found: true })).toBeNull();
+    });
+});
+
+function service(state: string, over: Partial<ServiceStatus> = {}): ServiceStatus {
+    return {
+        id: "dash",
+        name: "Dash",
+        command: "npm run dev",
+        dir: "~/dash",
+        project: "dash",
+        state,
+        autostart: false,
+        ...over,
+    };
+}
+
+describe("toolServiceStatus", () => {
+    const now = 1_000_000;
+
+    it("running: the port, in the working tone, with Stop and Restart on offer", () => {
+        expect(toolServiceStatus(service("running", { port: 5173 }), now)).toEqual({
+            words: ":5173",
+            tone: "working",
+            dot: "solid",
+            canStop: true,
+            canRestart: true,
+        });
+    });
+
+    it("sleeping: says it starts when opened, and has no button", () => {
+        expect(toolServiceStatus(service("sleeping"), now)).toEqual({
+            words: "sleeping · starts when opened",
+            tone: "muted",
+            dot: "hollow",
+            canStop: false,
+            canRestart: false,
+        });
+    });
+
+    it("crashed: the exit code in the error tone, Restart but no Stop", () => {
+        expect(toolServiceStatus(service("crashed", { exitcode: 2 }), now)).toEqual({
+            words: "crashed · exit 2",
+            tone: "error",
+            dot: "solid",
+            canStop: false,
+            canRestart: true,
+        });
+    });
+
+    it("retrying: counts down to the next try, and can still be stopped", () => {
+        const s = toolServiceStatus(service("retrying", { retryatms: now + 4_200 }), now);
+        expect(s.words).toBe("crashed · retry in 5s");
+        expect(s.tone).toBe("error");
+        expect(s.canStop).toBe(true);
+        expect(s.canRestart).toBe(true);
+    });
+
+    it("starting: the pulsing dot, and Stop", () => {
+        const s = toolServiceStatus(service("starting"), now);
+        expect(s.words).toBe("starting…");
+        expect(s.dot).toBe("pulse");
+        expect(s.canStop).toBe(true);
+    });
+
+    it("a page answered by a program arcterm did not start has the port and no button", () => {
+        expect(toolServiceStatus(service("elsewhere", { port: 5173 }), now)).toEqual({
+            words: "not started by arcterm · :5173",
+            tone: "working",
+            dot: "hollow",
+            canStop: false,
+            canRestart: false,
+        });
+    });
+
+    it("a taken port names its holder, in the warning tone", () => {
+        const s = toolServiceStatus(service("porttaken", { port: 5173, holder: "node.exe" }), now);
+        expect(s.words).toBe("5173 is held by node.exe");
+        expect(s.tone).toBe("warning");
+    });
+
+    it("no status from wavesrv yet: not started, in the muted tone, no button", () => {
+        for (const none of [undefined, null]) {
+            expect(toolServiceStatus(none, now)).toEqual({
+                words: "not started yet",
+                tone: "muted",
+                dot: "hollow",
+                canStop: false,
+                canRestart: false,
+            });
+        }
+    });
+});
+
+describe("toolRailPin", () => {
+    const list = ["a", "b", "c", "d"].map((id) => service("sleeping", { id, name: id }));
+
+    it("is on when the rail holds the tool", () => {
+        expect(toolRailPin("b", ["a", "b"], list)).toEqual({ on: true, disabled: false });
+    });
+
+    it("is off, and free to turn on, while the rail has room", () => {
+        expect(toolRailPin("c", ["a", "b"], list)).toEqual({ on: false, disabled: false });
+    });
+
+    it("is off and disabled, with the rail's title, when three others fill the rail", () => {
+        expect(toolRailPin("d", ["a", "b", "c"], list)).toEqual({
+            on: false,
+            disabled: true,
+            title: RAIL_FULL_TITLE,
+        });
+    });
+
+    it("stays on, and enabled, for a tool that is one of the three", () => {
+        expect(toolRailPin("c", ["a", "b", "c"], list)).toEqual({ on: true, disabled: false });
+    });
+
+    it("does not count a pin whose service is gone against the rail", () => {
+        expect(toolRailPin("d", ["a", "gone", "b", "c"], list)).toEqual({
+            on: false,
+            disabled: true,
+            title: RAIL_FULL_TITLE,
+        });
+        expect(toolRailPin("d", ["a", "gone", "b"], list)).toEqual({ on: false, disabled: false });
+    });
+
+    it("is off and disabled, with no title, while wavesrv has no status for the tool", () => {
+        expect(toolRailPin("a", ["a"], null)).toEqual({ on: false, disabled: true });
+        expect(toolRailPin("new", [], list)).toEqual({ on: false, disabled: true });
+    });
+
+    it("does not depend on the service's state", () => {
+        const running = list.map((s) => ({ ...s, state: "running" }));
+        expect(toolRailPin("a", ["a"], running)).toEqual({ on: true, disabled: false });
+    });
+});
+
+describe("reduceChoice", () => {
+    const click = (value: boolean): ChoiceEvent<boolean> => ({ type: "click", value });
+    const settled = (ok = true): ChoiceEvent<boolean> => ({ type: "settled", ok });
+    const stored = (value: boolean): ChoiceEvent<boolean> => ({ type: "stored", value });
+    const run = <T>(start: ChoiceState<T>, ...events: ChoiceEvent<T>[]): ChoiceState<T> =>
+        events.reduce((s, e) => reduceChoice(s, e), start);
+
+    const permutations = <T>(xs: T[]): T[][] =>
+        xs.length <= 1
+            ? [xs]
+            : xs.flatMap((x, i) => permutations([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p]));
+
+    it("reads the stored value, and follows it while nothing is picked", () => {
+        expect(initialChoice(true).shown).toBe(true);
+        const s = run(initialChoice(false), stored(true));
+        expect(s).toMatchObject({ shown: true, stored: true, held: false });
+        expect(run(s, stored(false)).shown).toBe(false);
+    });
+
+    it("reads the pick from the click, before the write or any status has answered", () => {
+        const s = run(initialChoice(false), click(true));
+        expect(s).toMatchObject({ shown: true, stored: false, held: true, writes: 1 });
+    });
+
+    it("holds the pick when the write is done but the stored value has not caught up", () => {
+        const s = run(initialChoice(false), click(true), settled());
+        expect(s).toMatchObject({ shown: true, held: true, writes: 0 });
+    });
+
+    it("gives the pick up to the stored value once nothing is in flight and the stored value is the pick", () => {
+        expect(run(initialChoice(false), click(true), settled(), stored(true))).toMatchObject({
+            shown: true,
+            stored: true,
+            held: false,
+            writes: 0,
+        });
+        // the update can beat the answer to the write
+        expect(run(initialChoice(false), click(true), stored(true), settled())).toMatchObject({
+            shown: true,
+            held: false,
+        });
+    });
+
+    it("off then on: the off status landing after the on click does not take the switch back", () => {
+        const afterOff = run(initialChoice(true), click(false), settled(), stored(false));
+        expect(afterOff).toMatchObject({ shown: false, held: false });
+        let s = run(afterOff, click(true));
+        expect(s.shown).toBe(true);
+        // the late status of the off write, then the on write's own answer, still before its status
+        s = run(s, stored(false), settled());
+        expect(s).toMatchObject({ shown: true, held: true });
+        s = run(s, stored(true));
+        expect(s).toMatchObject({ shown: true, stored: true, held: false });
+    });
+
+    it("off then on, clicked before the off write's status has landed", () => {
+        let s = run(initialChoice(true), click(false), click(true));
+        expect(s.shown).toBe(true);
+        s = run(s, stored(false), settled(), settled());
+        expect(s).toMatchObject({ shown: true, held: true, writes: 0 });
+        expect(run(s, stored(true))).toMatchObject({ shown: true, held: false });
+    });
+
+    it("on then off", () => {
+        const afterOn = run(initialChoice(false), click(true), settled(), stored(true));
+        let s = run(afterOn, click(false));
+        expect(s.shown).toBe(false);
+        s = run(s, stored(true), settled());
+        expect(s).toMatchObject({ shown: false, held: true });
+        s = run(s, stored(false));
+        expect(s).toMatchObject({ shown: false, stored: false, held: false });
+    });
+
+    it("a failed write falls back to the stored value", () => {
+        expect(run(initialChoice(false), click(true), settled(false))).toMatchObject({
+            shown: false,
+            held: false,
+            writes: 0,
+        });
+        // the stored value it falls back to is the latest one seen
+        const s = run(initialChoice(false), click(true), stored(true), stored(false), stored(true), settled(false));
+        expect(s).toMatchObject({ shown: true, held: false });
+        // a later change of the stored value is shown, not held back by the pick that failed
+        expect(run(s, stored(false)).shown).toBe(false);
+    });
+
+    it("an unrelated status read leaves a pending click alone", () => {
+        const pending = run(initialChoice(false), click(true));
+        // a read that carries the stored value it already had changes nothing at all
+        expect(reduceChoice(pending, stored(false))).toBe(pending);
+        const written = reduceChoice(pending, settled());
+        expect(reduceChoice(written, stored(false))).toBe(written);
+        expect(written.shown).toBe(true);
+    });
+
+    it("shows an outside change of the stored value once the pick has been given up", () => {
+        const s = run(initialChoice(false), click(true), settled(), stored(true));
+        expect(run(s, stored(false))).toMatchObject({ shown: false, held: false });
+    });
+
+    it("keeps the last pick, whichever order the writes and the status reads arrive in", () => {
+        // From `from`, the person picks the other value (the first write), then picks `from` back (the second). A is the
+        // first write's answer, B the second click, C the second write's answer, D the update of the first write, E the
+        // update of the second. Everything may arrive in any order except what wavesrv fixes: the update of an earlier
+        // write is sent before a later write is answered (D before C), the updates come in the order of the writes
+        // (D before E), and what a click causes comes after it (B before C and E).
+        for (const from of [true, false]) {
+            const events: Record<string, ChoiceEvent<boolean>> = {
+                A: settled(),
+                B: click(from),
+                C: settled(),
+                D: stored(!from),
+                E: stored(from),
+            };
+            const before = (p: string[], a: string, b: string) => p.indexOf(a) < p.indexOf(b);
+            const orders = permutations(Object.keys(events)).filter(
+                (p) => before(p, "B", "C") && before(p, "B", "E") && before(p, "D", "E") && before(p, "D", "C")
+            );
+            expect(orders.length).toBeGreaterThan(10);
+            for (const order of orders) {
+                let s = run(initialChoice(from), click(!from));
+                let picked = false;
+                for (const key of order) {
+                    s = reduceChoice(s, events[key]);
+                    picked ||= key === "B";
+                    if (picked) {
+                        expect(s.shown, `${order.join("")} after ${key}`).toBe(from);
+                    }
+                }
+                expect(s, order.join("")).toMatchObject({ shown: from, stored: from, held: false, writes: 0 });
+            }
+        }
+    });
+
+    it("holds a choice among strings the same way", () => {
+        let s = run(initialChoice("agent"), { type: "click", value: "home" });
+        expect(s.shown).toBe("home");
+        s = run(s, { type: "stored", value: "agent" }, { type: "settled", ok: true });
+        expect(s).toMatchObject({ shown: "home", held: true });
+        s = run(s, { type: "stored", value: "home" });
+        expect(s).toMatchObject({ shown: "home", held: false });
+        s = run(s, { type: "click", value: "root" }, { type: "settled", ok: false });
+        expect(s).toMatchObject({ shown: "home", held: false });
     });
 });

@@ -58,7 +58,6 @@ import { makeSyntheticNodeModel } from "./synthetic-node-model";
 import { FloatLedge } from "./float-ledge";
 import { HintsFooter } from "./hints-footer";
 import { JobQueuePanel } from "./jobqueuepanel";
-import { ServicesPanel } from "./servicespanel";
 import { setupOpenFileSubscription } from "./openfilestore";
 import { setupUiClient } from "./uiclient";
 import { NotificationToasts } from "./notificationtoasts";
@@ -221,8 +220,6 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                 <ConsumersPanel model={model} />
                 {/* the app bar's Jobs chip opens this; it also owns the one feed of the heavy-job queue the chip reads */}
                 <JobQueuePanel model={model} />
-                {/* the app bar's Services chip opens this; the chip owns the feed of the held services */}
-                <ServicesPanel model={model} />
                 {/* the footer's Servers chip opens this; it also owns the one poll that feeds the chip */}
                 <MachineServersPanel model={model} />
                 <NewProjectModal model={model} />

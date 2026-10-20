@@ -202,13 +202,15 @@ Load-bearing rules:
   state and the open / install actions `toolsstore.ts`, the views `toolslibrary.tsx` (Setup → Tools), `toolpicker.tsx`
   and the New dialog's Tool row. A tool with a page (a localhost url, or `port: "auto"`; `arctools.IsService`) is a
   **service** instead: wavesrv's `pkg/services` holds it as one `cmd`-controller block (`tool:service`) in a tab of its
-  own, starts it when it shows, restarts it after a crash and stops it ten minutes after it leaves the screen, unless it
-  is set to Keep running; the cockpit reads its state through
+  own, starts it when it shows, restarts it after a crash and stops it a minute after it leaves the screen once nothing
+  it started is still working (`services.Busy`), unless it is set to Keep running; the cockpit reads its state through
   `view/agents/servicesstore.ts` (the five service commands and the `services:changed` event), and words its tree row,
-  page header and app-bar chip from the pure `servicesmodel.ts`. A service can also be pinned to the nav rail (up to
-  three, under Radar; `railapps.ts` is the pure model, `railappsstore.ts` the localStorage `apps.rail` list and the shown
-  service): it opens as the `app` surface (`appsurface.tsx`), whose body publishes the app slot, so the one page frame
-  moves there through the shell's `AppFrames` without a reload.
+  page header and Setup → Tools row from the pure `servicesmodel.ts`. The Agent tree lists a service only while it is up
+  or in trouble; Setup → Tools manages the apps (state, Pin, Keep running, Stop, Restart, Open), and the footer's Servers
+  names a service's server `app · <name>`. There is no Services chip or popover in the app bar. A service can also be
+  pinned to the nav rail (up to three, under Radar; `railapps.ts` is the pure model, `railappsstore.ts` the
+  localStorage `apps.rail` list and the shown service): it opens as the `app` surface (`appsurface.tsx`), whose body
+  publishes the app slot, so the one page frame moves there through the shell's `AppFrames` without a reload.
 - **Opening an item on another surface goes through the one router**, `frontend/app/view/jarvis/openref.ts`
   (`openAddress` for a string, `openTarget` for an id): it loads the target, writes the destination's
   selection, then switches surface. Don't hand-roll set-selection-then-`surfaceAtom`.

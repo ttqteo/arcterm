@@ -19,7 +19,7 @@ import type { AgentsViewModel } from "./agents";
 import { appWaitLine } from "./appmodel";
 import { AppSlotView } from "./apppane";
 import { appHistory, appStatesAtom, homeApp, openAppInBrowser, reloadAppPage, setAppView } from "./appstore";
-import { appCard, appSurfaceBody, appSurfaceService } from "./railapps";
+import { appCard, appSurfaceBody, appSurfaceService, appWaitTitle } from "./railapps";
 import { appSurfaceIdAtom, railPinsAtom, setRailPinned } from "./railappsstore";
 import { canRestart, canStart, canStop, serviceHeaderLine, serviceRowWords } from "./servicesmodel";
 import {
@@ -210,16 +210,22 @@ function AppHeader({
     );
 }
 
+// A starting app counts its seconds; a sleeping one on screen (stopped by hand, nothing yet starting it) only says so
 function WaitingCard({ service, tabId, now }: { service: ServiceStatus; tabId: string; now: number }) {
+    const starting = service.state === "starting";
     return (
         <div data-app-waiting={tabId} className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <div className="flex items-center gap-2 text-[14px] font-semibold text-primary">
-                <span aria-hidden className="h-[8px] w-[8px] animate-pulse rounded-full bg-accent" />
-                Starting {service.name}
+                {starting ? (
+                    <span aria-hidden className="h-[8px] w-[8px] animate-pulse rounded-full bg-accent" />
+                ) : null}
+                {appWaitTitle(service)}
             </div>
-            <div className="text-[12.5px] tabular-nums text-muted">
-                {appWaitLine({ url: service.url ?? "", startedMs: service.startedms ?? 0 }, now)}
-            </div>
+            {starting ? (
+                <div className="text-[12.5px] tabular-nums text-muted">
+                    {appWaitLine({ url: service.url ?? "", startedMs: service.startedms ?? 0 }, now)}
+                </div>
+            ) : null}
         </div>
     );
 }

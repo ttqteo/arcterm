@@ -344,9 +344,11 @@ Trên macOS, tổng huy hiệu Agent và Cockpit cũng hiện trên biểu tư�
 
 ### Ứng dụng ghim trên rail
 
-Dưới **Radar**, sau một vạch chia thứ hai, rail giữ tối đa ba service (tool có trang, như dashboard hay dev server) mà bạn ghim. Bấm vào một cái để mở nó thành surface riêng: header của service ở trên, trang lấp đầy phần còn lại. Đó vẫn là khung trang mà Agent hiện, nên chuyển qua lại không tải lại trang. Service đang ngủ sẽ thức khi surface của nó hiện. Khi service crash, dừng hay không mở được cổng, surface hiện một thẻ với nút chính (**Restart** hoặc **Start**) và **Open its log**. **Log** trên header mở log của nó ở Agent.
+Dưới **Radar**, sau một vạch chia thứ hai, rail giữ tối đa ba service (tool có trang, như dashboard hay dev server) mà bạn ghim. Bấm vào một cái để mở nó thành surface riêng: header của service ở trên, trang lấp đầy phần còn lại. Đó vẫn là khung trang mà Agent hiện, nên chuyển qua lại không tải lại trang. Service đang ngủ sẽ thức khi surface của nó hiện: trong lúc nó khởi động, surface hiện một thẻ chờ. Khi service crash, cổng bị chiếm hay không có trang, surface hiện một thẻ với nút chính **Restart** và **Open its log**. **Log** trên header mở log của nó ở Agent.
 
-- **Ghim / bỏ ghim:** menu chuột phải của hàng service trong cây Agent (**Pin to the rail** / **Unpin from the rail**). Khi rail đã đủ ba, mục ghim bị mờ và giải thích lý do. Nút **Unpin** trên header, hoặc menu chuột phải của chính mục trên rail (**Unpin from the rail**, **Move up**, **Move down**), cũng bỏ ghim được. Bỏ ghim ứng dụng đang mở sẽ đưa bạn về Agent với đúng service đó.
+Một ứng dụng chỉ chạy khi bạn dùng nó trong arcterm: rời khỏi nó (sang surface khác, hoặc sang tab khác ở trung tâm) thì một phút sau nó ngủ, và mở lại là nó khởi động lại. arcterm không bao giờ cắt ngang việc đang làm: nếu trong cây tiến trình của ứng dụng còn thứ gì nó khởi động sau khi trang đã trả lời (một câu trả lời của chat, một script) thì arcterm chờ thêm một phút rồi hỏi lại, cho tới khi xong mới cho ngủ. Ứng dụng có việc riêng theo giờ thì bật **Keep running** ở Setup → Tools: nó khởi động cùng arcterm và không bao giờ ngủ.
+
+- **Ghim / bỏ ghim:** công tắc **On the rail** ở Setup → Tools, trên trang của tool (xem [Thư viện: Setup → Tools](agent.md#thư-viện-setup--tools)), dùng được cả khi service đang ngủ. Cũng ghim được từ menu chuột phải của hàng service trong cây Agent (**Pin to the rail** / **Unpin from the rail**); hàng đó chỉ có khi service đang chạy hoặc gặp sự cố. Khi rail đã đủ ba, công tắc và mục ghim bị mờ và giải thích lý do. Nút **Unpin** trên header, hoặc menu chuột phải của chính mục trên rail (**Unpin from the rail**, **Move up**, **Move down**), cũng bỏ ghim được. Bỏ ghim ứng dụng đang mở sẽ đưa bạn về Agent với đúng service đó.
 - **Chấm trên biểu tượng:** đỏ khi service crash hoặc đang thử lại, vàng khi cổng bị chiếm hoặc không có trang. Rê chuột để đọc trạng thái.
 - Ứng dụng ghim không có phím `Ctrl+số`. Danh sách ghim nằm trong trình duyệt của app (localStorage `apps.rail`), không phải trong `tools.json`. Service bị xoá khỏi `tools.json` sẽ biến khỏi rail.
 
@@ -371,6 +373,7 @@ Mỗi dòng gồm: các cổng (bấm để mở `http://localhost:<cổng>` tro
 |---|---|
 | `<harness> · <tên agent>` | Một agent đã khởi động nó; bấm để mở agent |
 | `terminal · <tên>` | Một terminal trong arcterm |
+| `app · <tên>` | Server của một ứng dụng (service) mà arcterm đang giữ; bấm để mở ứng dụng. **Stop** dừng đúng service đó (nó ngủ tới lần mở sau), không chỉ giết tiến trình |
 | Tên ứng dụng | Một app khác (vd. Docker) hoặc server mà launcher đã thoát |
 | **no owner** (cam) | Vẫn chạy nhưng không agent, terminal hay app nào giữ — thường là server bị bỏ quên |
 

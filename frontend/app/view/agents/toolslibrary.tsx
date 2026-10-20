@@ -25,14 +25,17 @@ import {
     X,
     type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useReducer, useState, type ReactNode } from "react";
 import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { appUrlFor, folderName, type ScriptSuggestion } from "./appsuggest";
 import { suggestForFolder } from "./appsuggeststore";
-import { setServiceAutostart } from "./servicesstore";
+import { railPinsAtom, setRailPinned } from "./railappsstore";
+import type { ServiceTone } from "./servicesmodel";
+import { ensureServicesFeed, restartService, servicesAtom, setServiceAutostart, stopService } from "./servicesstore";
 import { Toggle } from "./settingsui";
 import { installEndedAtom, selectedToolAtom, toolFormAtom, toolsSearchAtom, watchInstallEnds } from "./setupstore";
+import { StateDot as ServiceStateDot } from "./terminalpaneheadview";
 import {
     commandCheck,
     emptyForm,
@@ -41,15 +44,19 @@ import {
     foundLine,
     foundRows,
     headerSummary,
+    initialChoice,
     installPanel,
     libraryRows,
     needsRestartHint,
     OPENS_IN_OPTIONS,
     overrideKeywords,
+    reduceChoice,
     selectedTool,
     SHOWS_OPTIONS,
     stateTone,
     statusLabel,
+    toolRailPin,
+    toolServiceStatus,
     uniqueToolId,
     validateNewTool,
     type LibraryGroup,
@@ -95,6 +102,14 @@ const TONE_TEXT: Record<StateTone, string> = {
     busy: "text-secondary",
     error: "text-error-soft",
     none: "text-muted",
+};
+
+// the words of a service's state, in the tone the Agent tree draws them in
+const SERVICE_TEXT: Record<ServiceTone, string> = {
+    working: "text-working",
+    error: "text-error",
+    warning: "text-warning",
+    muted: "text-muted",
 };
 
 const ICONS: Record<ToolIconName, LucideIcon> = {
@@ -401,6 +416,69 @@ function SuggestionDetail({ tool }: { tool: ToolStatus }) {
     );
 }
 
+// The Status row of a tool with a page: what its service is doing in words, and Stop / Restart where its state allows
+// them. A sleeping one has no button: Open in the header shows it, and showing it starts it. wavesrv's
+// `services:changed` brings the result of a click; nothing here writes the row.
+function ServiceStatusRow({
+    model,
+    toolId,
+    onStop,
+    onRestart,
+}: {
+    model: AgentsViewModel;
+    toolId: string;
+    onStop: () => void;
+    onRestart: () => void;
+}) {
+    const service = useAtomValue(servicesAtom)?.find((s) => s.id === toolId);
+    const now = useAtomValue(model.nowAtom);
+    const status = toolServiceStatus(service, now);
+    return (
+        <SettingRow label="Status" sub="Whether the app runs now">
+            <span className="flex min-w-0 flex-1 items-center gap-2">
+                <ServiceStateDot tone={status.tone} dot={status.dot} />
+                <span
+                    data-tool-service-status
+                    className={cn("min-w-0 truncate text-[12.5px] tabular-nums", SERVICE_TEXT[status.tone])}
+                >
+                    {status.words}
+                </span>
+            </span>
+            {status.canStop ? (
+                <button type="button" data-tool-service-stop onClick={onStop} className={BTN_SECONDARY}>
+                    Stop
+                </button>
+            ) : null}
+            {status.canRestart ? (
+                <button type="button" data-tool-service-restart onClick={onRestart} className={BTN_SECONDARY}>
+                    Restart
+                </button>
+            ) : null}
+        </SettingRow>
+    );
+}
+
+// A choice the detail makes (a switch, an option): the stored value comes back after the write, from wavesrv's reload of
+// tools.json, and a value read before the pick can land after it. So the pick reads as made from the click until the
+// stored value is it (reduceChoice), and `choose` runs the write, then settles the pick. A write that fails gives the
+// pick up and says why in the notice.
+function useHeldChoice<T>(stored: T, setNotice: (notice: string | null) => void) {
+    const [state, dispatch] = useReducer(reduceChoice<T>, stored, initialChoice<T>);
+    useEffect(() => dispatch({ type: "stored", value: stored }), [stored]);
+    const choose = async (value: T, write: () => Promise<unknown>) => {
+        setNotice(null);
+        dispatch({ type: "click", value });
+        try {
+            await write();
+            dispatch({ type: "settled", ok: true });
+        } catch (e) {
+            dispatch({ type: "settled", ok: false });
+            setNotice(errText(e));
+        }
+    };
+    return [state.shown, choose] as const;
+}
+
 function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow }) {
     const { tool, state } = row;
     const isYours = tool.category === "Yours";
@@ -409,14 +487,21 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
     const pinned = useAtomValue(pinnedToolsAtom).includes(tool.id);
     const ended = useAtomValue(installEndedAtom);
     const [notice, setNotice] = useState<string | null>(null);
-    // the write reaches the config before the status shows it, so the choice is held here until the status agrees
-    const [opensin, setOpensin] = useState(tool.opensin);
-    const [shows, setShows] = useState(tool.shows);
-    useEffect(() => setOpensin(tool.opensin), [tool.opensin]);
-    useEffect(() => setShows(tool.shows), [tool.shows]);
+    const [opensin, chooseOpensin] = useHeldChoice(tool.opensin, setNotice);
+    const [shows, chooseShows] = useHeldChoice(tool.shows, setNotice);
     const hasPage = Boolean(tool.url || tool.port);
-    const [autostart, setAutostart] = useState(tool.autostart ?? false);
-    useEffect(() => setAutostart(tool.autostart ?? false), [tool.autostart]);
+    // Keep running is read from the tool's tools.json entry in the config, which wavesrv sends as soon as the file is
+    // reloaded; the status of the same change takes another read, and one begun before a click can land after it
+    const configured = useAtomValue(atoms.fullConfigAtom)?.tools?.[tool.id];
+    const [autostart, chooseAutostart] = useHeldChoice(
+        configured != null ? configured.autostart === true : (tool.autostart ?? false),
+        setNotice
+    );
+    // the services the Status row and the rail toggle read; the feed is idempotent, as in AgentTree
+    useEffect(() => ensureServicesFeed(), []);
+    const pinIds = useAtomValue(railPinsAtom);
+    const services = useAtomValue(servicesAtom);
+    const rail = toolRailPin(tool.id, pinIds, services);
 
     const guard = async (fn: () => Promise<string | null>) => {
         setNotice(null);
@@ -442,28 +527,24 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
         });
     const openOutput = () =>
         guard(async () => (showInstall(model, tool.id) ? null : "There is no install terminal to show."));
-    const change = async (patch: { opensin?: string; shows?: string }) => {
-        setNotice(null);
-        try {
-            const current = globalStore.get(atoms.fullConfigAtom)?.tools?.[tool.id];
-            await addUserTool(tool.id, overrideKeywords(tool, current, patch));
-        } catch (e) {
-            setOpensin(tool.opensin);
-            setShows(tool.shows);
-            setNotice(errText(e));
-        }
+    const change = (patch: { opensin?: string; shows?: string }) => {
+        const current = globalStore.get(atoms.fullConfigAtom)?.tools?.[tool.id];
+        return addUserTool(tool.id, overrideKeywords(tool, current, patch));
     };
-    const toggleAutostart = async () => {
+    const toggleAutostart = () => {
         const next = !autostart;
-        setAutostart(next);
-        setNotice(null);
-        try {
-            await setServiceAutostart(tool.id, next);
-        } catch (e) {
-            setAutostart(tool.autostart ?? false);
-            setNotice(errText(e));
-        }
+        return chooseAutostart(next, () => setServiceAutostart(tool.id, next));
     };
+    const stop = () =>
+        guard(async () => {
+            await stopService(tool.id);
+            return null;
+        });
+    const restart = () =>
+        guard(async () => {
+            await restartService(tool.id);
+            return null;
+        });
     const reset = () =>
         guard(async () => {
             await removeUserTool(tool.id);
@@ -538,10 +619,7 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
                             label="Opens in"
                             options={OPENS_IN_OPTIONS}
                             value={opensin}
-                            onChange={(id) => {
-                                setOpensin(id);
-                                fireAndForget(() => change({ opensin: id }));
-                            }}
+                            onChange={(id) => fireAndForget(() => chooseOpensin(id, () => change({ opensin: id })))}
                         />
                         <span className="text-[11.5px] text-muted">A worktree agent gives its worktree.</span>
                     </SettingRow>
@@ -553,10 +631,7 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
                             label="Shows"
                             options={SHOWS_OPTIONS}
                             value={shows}
-                            onChange={(id) => {
-                                setShows(id);
-                                fireAndForget(() => change({ shows: id }));
-                            }}
+                            onChange={(id) => fireAndForget(() => chooseShows(id, () => change({ shows: id })))}
                         />
                     </SettingRow>
                 )}
@@ -586,6 +661,14 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
                     </SettingRow>
                 ) : null}
                 {hasPage ? (
+                    <ServiceStatusRow
+                        model={model}
+                        toolId={tool.id}
+                        onStop={() => fireAndForget(stop)}
+                        onRestart={() => fireAndForget(restart)}
+                    />
+                ) : null}
+                {hasPage ? (
                     <SettingRow
                         label="Keep running"
                         sub="Run it even when its page is not on screen, and start it with arcterm"
@@ -594,6 +677,18 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
                             on={autostart}
                             onToggle={() => fireAndForget(toggleAutostart)}
                             label={`Keep ${tool.name} running`}
+                        />
+                    </SettingRow>
+                ) : null}
+                {hasPage ? (
+                    <SettingRow label="On the rail" sub="Up to three apps, under Radar">
+                        <Toggle
+                            data-tool-rail-pin
+                            on={rail.on}
+                            onToggle={() => setRailPinned(tool.id, !rail.on)}
+                            disabled={rail.disabled}
+                            title={rail.title}
+                            label={`Show ${tool.name} on the rail`}
                         />
                     </SettingRow>
                 ) : null}

@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Held services as the cockpit words them (spec 2026-10-20-held-services-design.md, "States"): what a row says, what the
-// page header's line says, what the app bar chip sums up, and in what order the popover lists them. Pure: wavesrv owns
-// the state, this only turns a ServiceStatus into words. `nowMs` is a parameter so the retry seconds are testable.
+// page header's line says, which services the Agent tree lists and what a row's menu offers. Pure: wavesrv owns the
+// state, this only turns a ServiceStatus into words. `nowMs` is a parameter so the retry seconds are testable.
+
+// railapps.ts imports this file too: RAIL_FULL_TITLE is only read when a menu is built, never while the modules load
+import { RAIL_FULL_TITLE } from "./railapps";
 
 export type ServiceDot = "solid" | "hollow" | "pulse";
 export type ServiceTone = "working" | "error" | "warning" | "muted";
@@ -13,19 +16,18 @@ export type ServiceRowWords = {
     port?: string;
     tone: ServiceTone;
     dot: ServiceDot;
-    action?: "start" | "restart";
+    action?: "restart";
 };
 
 const STOPPABLE = new Set(["starting", "running", "retrying", "nopage"]);
-const STARTABLE = new Set(["stopped", "crashed", "porttaken", "elsewhere", "sleeping"]);
+const STARTABLE = new Set(["crashed", "porttaken", "elsewhere", "sleeping"]);
 const RESTARTABLE = new Set(["starting", "running", "retrying", "nopage", "crashed"]);
 
 export const canStop = (s: ServiceStatus): boolean => STOPPABLE.has(s.state);
 // elsewhere is startable: Start probes the page again, and starts the service once it no longer answers. Sleeping is
-// startable for the page header and the menu; its tree row and popover row show no Start (showing the pane starts it).
+// startable for the page header, where it brings an app stopped on screen back; its tree row and menu show no Start
+// (showing the pane starts it).
 export const canStart = (s: ServiceStatus): boolean => STARTABLE.has(s.state);
-// The popover's hover Start: every startable row except a sleeping one, which wakes when its row is opened.
-export const canStartFromPopover = (s: ServiceStatus): boolean => canStart(s) && s.state !== "sleeping";
 export const canRestart = (s: ServiceStatus): boolean => RESTARTABLE.has(s.state);
 
 function retryIn(s: ServiceStatus, nowMs: number): string {
@@ -52,10 +54,10 @@ export function serviceRowWords(s: ServiceStatus, nowMs: number): ServiceRowWord
             return { words: heldBy(s), tone: "warning", dot: "solid" };
         case "nopage":
             return { words: "running, no page after 30s", tone: "warning", dot: "solid" };
+        // sleeping is the one idle state: a state this does not know (an older wavesrv's stopped) reads as it does
         case "sleeping":
-            return { words: "sleeping", tone: "muted", dot: "hollow" };
         default:
-            return { words: "stopped", tone: "muted", dot: "hollow", action: "start" };
+            return { words: "sleeping", tone: "muted", dot: "hollow" };
     }
 }
 
@@ -89,57 +91,51 @@ export function serviceHeaderLine(s: ServiceStatus, nowMs: number): string {
         case "nopage":
             return "Running, no page after 30s";
         case "sleeping":
-            return "Sleeping · starts when shown";
         default:
-            return "Stopped";
+            return "Sleeping · starts when shown";
     }
 }
 
-const isCrashed = (s: ServiceStatus) => s.state === "crashed" || s.state === "retrying";
-const isWarning = (s: ServiceStatus) => s.state === "porttaken" || s.state === "nopage";
-
-export type ServicesChip = { hidden: boolean; label: string; tone: "error" | "warning" | "muted"; title: string };
-
-/** The app bar chip: the running count, "· N crashed" when any is retrying or crashed. Error when any crashed, else
- * warning when any has a taken port or no page, else muted. Hidden while it would read a bare 0: nothing runs and
- * nothing needs a look. */
-export function servicesChip(list: ServiceStatus[]): ServicesChip {
-    const running = list.filter((s) => s.state === "running").length;
-    const crashed = list.filter(isCrashed).length;
-    const attention = list.filter(isWarning).length;
-    if (running === 0 && crashed === 0 && attention === 0) {
-        return { hidden: true, label: "", tone: "muted", title: "" };
-    }
-    const stopped = list.filter((s) => s.state === "stopped").length;
-    const tone = crashed > 0 ? "error" : attention > 0 ? "warning" : "muted";
-    const label = crashed > 0 ? `${running} · ${crashed} crashed` : `${running}`;
-    const parts = [`${running} running`];
-    if (crashed > 0) {
-        parts.push(`${crashed} crashed`);
-    }
-    if (attention > 0) {
-        parts.push(`${attention} need${attention === 1 ? "s" : ""} a look`);
-    }
-    if (stopped > 0) {
-        parts.push(`${stopped} stopped`);
-    }
-    return { hidden: false, label, tone, title: `Services: ${parts.join(" · ")}` };
+/** Pure: the services the Agent tree lists, every one that is up or in trouble (any state but sleeping) and the one
+ *  whose tab is the selected row, so Stop on the row in view does not pull it out from under the pointer; and every
+ *  service's tab, which is never a terminal row. projectTree then draws no folder that holds nothing else. */
+export function treeServiceInput(
+    list: readonly ServiceStatus[],
+    selectedTab: string | null
+): { services: { id: string; name: string; project: string; tabId?: string }[]; serviceTabs: Set<string> } {
+    const services = list
+        .filter((s) => s.state !== "sleeping" || (s.tabid != null && s.tabid === selectedTab))
+        .map((s) => ({ id: s.id, name: s.name, project: s.project, tabId: s.tabid }));
+    const serviceTabs = new Set(list.flatMap((s) => (s.tabid ? [s.tabid] : [])));
+    return { services, serviceTabs };
 }
 
-function orderGroup(s: ServiceStatus): number {
-    if (isCrashed(s)) {
-        return 0;
-    }
-    if (isWarning(s)) {
-        return 1;
-    }
-    return s.state === "stopped" || s.state === "sleeping" ? 3 : 2;
-}
+export type ServiceMenuKey = "stop" | "restart" | "browser" | "keepRunning" | "pin" | "edit";
+export type ServiceMenuChoice =
+    | { key: "separator" }
+    | { key: ServiceMenuKey; label: string; enabled: boolean; checked?: boolean; title?: string };
 
-/** The popover's order: those that need the person first (crashed, then amber), then up, then stopped and sleeping; by
- * name inside each. Returns a new list. */
-export function popoverOrder(list: ServiceStatus[]): ServiceStatus[] {
-    return [...list].sort((a, b) => orderGroup(a) - orderGroup(b) || a.name.localeCompare(b.name));
+/** Pure: a service row's context menu, in order. There is no Start: showing the service starts it. `pinned` is
+ *  whether it sits on the rail, `railFull` whether the rail holds its three. */
+export function serviceMenuChoices(
+    s: ServiceStatus,
+    { pinned, railFull }: { pinned: boolean; railFull: boolean }
+): ServiceMenuChoice[] {
+    return [
+        { key: "stop", label: "Stop", enabled: canStop(s) },
+        { key: "restart", label: "Restart", enabled: canRestart(s) },
+        { key: "separator" },
+        ...(s.url ? [{ key: "browser" as const, label: "Open in the browser", enabled: true }] : []),
+        { key: "keepRunning", label: "Keep running", enabled: true, checked: s.autostart },
+        {
+            key: "pin",
+            label: pinned ? "Unpin from the rail" : "Pin to the rail",
+            enabled: pinned || !railFull,
+            ...(!pinned && railFull ? { title: RAIL_FULL_TITLE } : {}),
+        },
+        { key: "separator" },
+        { key: "edit", label: "Edit in Setup → Tools", enabled: true },
+    ];
 }
 
 /** The tools.json entry with "Keep running" set: on writes `autostart: true`, off drops the key (off is the default).

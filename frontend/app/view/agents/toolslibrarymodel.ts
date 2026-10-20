@@ -6,6 +6,8 @@
 // toolsmodel.ts and toolsstore.ts; toolslibrary.tsx draws this.
 
 import { appUrlProblem } from "./appmodel";
+import { RAIL_FULL_TITLE, railFull, railPins } from "./railapps";
+import { canRestart, canStop, serviceRowWords, type ServiceDot, type ServiceTone } from "./servicesmodel";
 import { installCommand, toolCommandLine, toolGroups, type ToolState } from "./toolsmodel";
 
 // the category of a tool that is only in tools.json (arctools.CategoryYours)
@@ -100,6 +102,93 @@ export function stateTone(state: ToolState): StateTone {
             return "error";
         default:
             return "none";
+    }
+}
+
+export type ToolServiceStatus = {
+    words: string;
+    tone: ServiceTone;
+    dot: ServiceDot;
+    canStop: boolean;
+    canRestart: boolean;
+};
+
+// The Status row on a tool with a page (spec 2026-10-20-apps-run-while-used-design.md, "Where things live"): the
+// service's row words in their tone (the port while it runs), and which of Stop and Restart it allows. A sleeping one
+// has no button: opening it starts it. `undefined` is a service wavesrv has no status for, a tool that was never opened.
+export function toolServiceStatus(s: ServiceStatus | null | undefined, nowMs: number): ToolServiceStatus {
+    if (s == null) {
+        return { words: "not started yet", tone: "muted", dot: "hollow", canStop: false, canRestart: false };
+    }
+    const w = serviceRowWords(s, nowMs);
+    const words =
+        s.state === "sleeping" ? "sleeping · starts when opened" : [w.words, w.port].filter(Boolean).join(" · ");
+    return { words, tone: w.tone, dot: w.dot, canStop: canStop(s), canRestart: canRestart(s) };
+}
+
+export type ToolRailPin = { on: boolean; disabled: boolean; title?: string };
+
+// The On the rail toggle: on when the rail holds the tool, and off but disabled (with the rail's own title) when three
+// others fill it. The service's state does not matter: a sleeping app can be pinned. Before wavesrv has a status for the
+// tool a pin would hold no place on the rail, so the toggle waits (disabled, no title).
+export function toolRailPin(toolId: string, pins: string[], services: ServiceStatus[] | null): ToolRailPin {
+    if (services == null || !services.some((s) => s.id === toolId)) {
+        return { on: false, disabled: true };
+    }
+    if (railPins(pins, services).some((s) => s.id === toolId)) {
+        return { on: true, disabled: false };
+    }
+    return railFull(pins, services)
+        ? { on: false, disabled: true, title: RAIL_FULL_TITLE }
+        : { on: false, disabled: false };
+}
+
+// ---- a pick the detail has not stored yet ----
+
+// What a switch or an option on a tool's page reads. The page writes tools.json, and the stored value comes back later,
+// from wavesrv's reload of the file; a value that arrives meanwhile was read before the pick (off, then on: the status
+// of the off write can land after the on click). So the person's pick is `shown` from the click until the stored value
+// is the pick and no write of a pick is still in flight; a write that fails gives the pick up. With nothing picked,
+// `shown` is the stored value.
+//
+// A stored value that is not the pick is never shown while the pick is held, whatever order it arrives in. One order is
+// not covered: an update of an earlier write arriving after a later write's answer, while the stored value is, by
+// chance, the later pick already (off, then on at once, the off update last). wavesrv sends the update of an earlier
+// write before it answers a later one, so it does not come.
+export interface ChoiceState<T> {
+    shown: T;
+    stored: T; // the newest stored value seen, which is what a failed pick falls back to
+    held: boolean; // `shown` is a pick the stored value has not caught up with
+    writes: number; // writes of a pick still in flight
+}
+
+export type ChoiceEvent<T> =
+    | { type: "click"; value: T } // the person picks a value; its write starts
+    | { type: "settled"; ok: boolean } // a write of a pick ended
+    | { type: "stored"; value: T }; // a stored value arrived (a status read, a config update)
+
+export function initialChoice<T>(stored: T): ChoiceState<T> {
+    return { shown: stored, stored, held: false, writes: 0 };
+}
+
+// the pick is given up once nothing is in flight and the stored value is the pick
+function caughtUp<T>(s: ChoiceState<T>): ChoiceState<T> {
+    return s.held && s.writes === 0 && s.stored === s.shown ? { ...s, held: false } : s;
+}
+
+export function reduceChoice<T>(s: ChoiceState<T>, e: ChoiceEvent<T>): ChoiceState<T> {
+    switch (e.type) {
+        case "click":
+            return { ...s, shown: e.value, held: true, writes: s.writes + 1 };
+        case "settled": {
+            const writes = Math.max(0, s.writes - 1);
+            return e.ok ? caughtUp({ ...s, writes }) : { ...s, writes, held: false, shown: s.stored };
+        }
+        case "stored":
+            if (e.value === s.stored) {
+                return s;
+            }
+            return s.held ? caughtUp({ ...s, stored: e.value }) : { ...s, stored: e.value, shown: e.value };
     }
 }
 

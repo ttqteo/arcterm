@@ -15,12 +15,13 @@ import {
 } from "./devserversmodel";
 import type { BackgroundTask } from "./transcriptprojection";
 
-export type BadgeKind = "agent" | "terminal" | "app" | "noowner";
+export type BadgeKind = "agent" | "terminal" | "service" | "app" | "noowner";
 
 export interface MachineBadge {
     kind: BadgeKind;
     text: string;
-    tabId?: string; // an agent's or terminal's tab, which a click opens
+    tabId?: string; // an agent's, terminal's or held service's tab, which a click opens
+    serviceId?: string; // a held service's id: its Stop goes through wavesrv, which a kill from outside would only restart
 }
 
 export interface MachineRow {
@@ -55,6 +56,13 @@ export interface MachineAgent {
     kind?: "agent" | "terminal" | "background";
 }
 
+// what the model needs of a held service (ServiceStatus fits): its server runs in a terminal tab of its own
+export interface MachineService {
+    id: string;
+    name: string;
+    tabid?: string;
+}
+
 const NO_OWNER: MachineBadge = { kind: "noowner", text: "no owner" };
 
 // "D:\Workspace\SIEM\apps\portal" -> "SIEM/apps/portal": the last three segments, a drive letter not one of them
@@ -68,7 +76,12 @@ function exeName(name: string | undefined): string {
     return (name ?? "").replace(/\.exe$/i, "");
 }
 
-function resolveRow(s: DevServerRow, agents: MachineAgent[], bgTasks: Record<string, BackgroundTask[]>): MachineRow {
+function resolveRow(
+    s: DevServerRow,
+    agents: MachineAgent[],
+    bgTasks: Record<string, BackgroundTask[]>,
+    services: MachineService[]
+): MachineRow {
     const base = { key: `${s.pid}:${s.createms}`, server: s, label: serverLabel(s), stopConfirm: "Stop?" };
     const agentBadge = (tabId: string, fallback?: string, harness?: string): MachineBadge => {
         const a = agents.find((x) => x.id === tabId);
@@ -85,12 +98,23 @@ function resolveRow(s: DevServerRow, agents: MachineAgent[], bgTasks: Record<str
                 log: task ? { agentId: tabId, task } : undefined,
             };
         }
-        case "terminal":
+        case "terminal": {
+            // a held service's server runs in the service's own tab: it reads as the app, not as a terminal
+            const service = o.tabid ? services.find((x) => x.tabid === o.tabid) : undefined;
+            if (service) {
+                return {
+                    ...base,
+                    badge: { kind: "service", text: `app · ${service.name}`, tabId: o.tabid, serviceId: service.id },
+                    termLog: terminalLog(s) ?? undefined,
+                    stopConfirm: `Stop ${service.name}?`,
+                };
+            }
             return {
                 ...base,
                 badge: { kind: "terminal", text: `terminal · ${o.name || "Terminal"}`, tabId: o.tabid },
                 termLog: terminalLog(s) ?? undefined,
             };
+        }
         case "app":
             return { ...base, badge: { kind: "app", text: exeName(o.name) }, stopConfirm: `Stop ${exeName(o.name)}?` };
         default:
@@ -119,15 +143,18 @@ function resolveRow(s: DevServerRow, agents: MachineAgent[], bgTasks: Record<str
     }
 }
 
+// `services` are the held services (servicesAtom): a server whose owner is the terminal tab of one gets the `service`
+// badge and a Stop that names the app; every other row is as without them.
 export function buildMachineServers(
     servers: DevServerRow[],
     agents: MachineAgent[],
-    bgTasks: Record<string, BackgroundTask[]>
+    bgTasks: Record<string, BackgroundTask[]>,
+    services: MachineService[] = []
 ): MachineView {
     const byRepo = new Map<string, MachineRow[]>();
     const other: MachineRow[] = [];
     for (const s of servers) {
-        const r = resolveRow(s, agents, bgTasks);
+        const r = resolveRow(s, agents, bgTasks, services);
         if (s.repo) {
             byRepo.set(s.repo, [...(byRepo.get(s.repo) ?? []), r]);
         } else {

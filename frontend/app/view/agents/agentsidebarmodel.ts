@@ -345,13 +345,16 @@ export function projectTree(input: {
     collapsed: readonly string[];
     roots: ReadonlyMap<string, string>; // project name -> root path
     queue?: readonly QueuedRow[];
-    // the held services; `project` is the status's (wavesrv's "Home" for none), `tabId` its tab. A terminal on a
-    // service's tab is the service's row, never a terminal row.
+    // the held services to list; `project` is the status's (wavesrv's "Home" for none), `tabId` its tab. A terminal on
+    // a service's tab is the service's row, never a terminal row.
     services?: readonly { id: string; name: string; project: string; tabId?: string }[];
+    // every held service's tab, listed or not (treeServiceInput): a sleeping service keeps its tab, which is still no
+    // terminal row. Left out, the tabs of `services`.
+    serviceTabs?: ReadonlySet<string>;
 }): ProjectTreeRow[] {
     const { tree, filter, roots } = input;
     const services = input.services ?? [];
-    const serviceTabs = new Set(services.flatMap((s) => (s.tabId ? [s.tabId] : [])));
+    const serviceTabs = input.serviceTabs ?? new Set(services.flatMap((s) => (s.tabId ? [s.tabId] : [])));
     const terminals = input.terminals.filter((t) => !serviceTabs.has(t.id));
     const serviceFolder = (s: { project: string }) => (s.project === "Home" ? HOME_PROJECT : s.project);
     const serviceRowsOf = (project: string): ProjectTreeRow[] =>

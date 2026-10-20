@@ -31,7 +31,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   for the servers they leave running.
 - `wsh memory` runs a memory check from a shell and applies or keeps what it proposes, as Setup → Memory does;
   while a project's memory index is over the budget it states (`Budget: N bytes`), the check proposes cuts to fit.
-- arcterm now looks after your pinned apps' servers: it gives each a port, starts it when you open the app, restarts it when it crashes, lets it sleep ten minutes after you leave it (it starts again when you come back), and shows them in the Agent tree and the new Services chip. Set an app to Keep running and it starts with arcterm and never sleeps. <!-- big -->
+- arcterm now looks after your pinned apps' servers: it gives each a port, starts it when you open the app, restarts it when it crashes, and stops it a minute after you leave it, never while it is still working (a chat answer, a script it started). Setup → Tools shows each app's state with Stop, Restart, Keep running and its rail pin, and the footer's Servers names an app's server. Keep running starts it with arcterm and never stops it. <!-- big -->
 - Pin up to three of your apps to the nav rail: each opens as its own full-width surface, with the same page you had in Agent. <!-- big -->
 
 ### Changed
