@@ -1,1 +1,1 @@
-{ "name": "skim", "version": "0.1.0", "description": "Skim Claude's replies: Claude marks the few sentences you must read, the mod draws them highlighted and dims the rest, and strips the marks before the reply is stored.", "author": { "name": "ttqteo" }, "types": "./types/index.d.ts" }
+{ "name": "skim", "version": "0.2.0", "description": "Skim Claude's replies: Claude marks the few sentences you must read, the mod draws them highlighted and dims the rest, and strips the marks before the reply is stored.", "author": { "name": "ttqteo" }, "types": "./types/index.d.ts" }
