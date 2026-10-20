@@ -60,6 +60,10 @@ func QuotedNotesRule(approveLabel string) string {
 	return fmt.Sprintf("The human can quote passages of the document with a note on each, so an answer that starts with `%s` is an approval, and its `> ` quoted notes are applied before proceeding; any other text is a change request.", approveLabel)
 }
 
+// AskShapeRule keeps a lead's questions short: one ask packed three decisions into a five-line body whose
+// options repeated it, so the human read the same text twice to answer.
+const AskShapeRule = "Each question carries one decision: a body of at most two short lines (what is at stake and what you recommend), with options whose descriptions say what each choice does without repeating the body. Several decisions are several questions in one ask (up to 4); a point that needs no choice is no question, so put it in the spec, the plan or your report instead. The `Spec review` and `Plan review` asks keep the format given for them."
+
 // AutonomousRules is the one text an autonomous run's lead works by: the launch prompt, the orchestration
 // rules and the mid-run ON wake all carry it. One line, so it can ride in a wake. It names no ask tool and no
 // review header, since an autonomous launch prompt must not invite either.
@@ -111,7 +115,7 @@ func writeAutonomousPaths(b *strings.Builder) {
 }
 
 func writeAskingPaths(b *strings.Builder, runtime string) {
-	fmt.Fprintf(b, "Work this goal with the superpowers:brainstorming skill; the human is at this terminal. Put every question and every approval through %s, never plain text, which does not reach the cockpit.\n", AskTool(runtime))
+	fmt.Fprintf(b, "Work this goal with the superpowers:brainstorming skill; the human is at this terminal. Put every question and every approval through %s, never plain text, which does not reach the cockpit. %s\n", AskTool(runtime), AskShapeRule)
 	b.WriteString("State the path you take (spike, bounded or architectural) and proceed; ask about the path only when it is genuinely unclear. Any approval of something longer than its question carries the file's absolute path on its first line.\n")
 	b.WriteString(spikePath)
 	b.WriteString("- bounded: after the human's yes, implement it here, get the tests passing, commit, write your final report (what you did, and what you could not verify and why) to a temp file the same way, then `wsh jarvis complete --commit $(git rev-parse HEAD) --report <that file>`. A goal that needs a plan worked task by task, a subagent per task, is not bounded: it is architectural, and the engine runs it.\n")
@@ -139,6 +143,7 @@ func OrchestrationRules(runId, specPath, planPath, effortOID string, autonomous 
 	// the engine moves an unanswered question to the human at its deadline and then refuses the lead's answer,
 	// which can happen while the lead's own ask is open.
 	fmt.Fprintf(&b, "- questions: answer from the spec and plan; check code with Read/Grep when they don't settle it; `wsh jarvis dag answer <task> <answers-json>`. A product or scope call, or spec, plan and code disagreeing: ask the human yourself with %s (%s on pi), what you checked and what you recommend first, then relay the human's choice with `wsh jarvis dag answer <task> <answers-json>`. Before you ask, and before you ask again, run `wsh jarvis dag asks`: the human may have answered it in the cockpit. A question moves to the human by itself when its deadline passes (`dag asks` shows it) or the human takes it over, and `dag answer` is then refused; when that happens, or `dag asks` no longer lists the task, relay nothing: it is answered, or waits on the run sheet for the human.\n", AskTool("claude"), AskTool("pi"))
+	b.WriteString("- asking the human: " + AskShapeRule + "\n")
 	b.WriteString("- task still failing, or worker hung: `wsh jarvis dag retry <task>`, retry on another model with `wsh jarvis dag escalate <task> --model <model>`, `wsh jarvis dag skip <task>`, or forward.\n")
 	b.WriteString("- a task failed as stopped-by-human: the human stopped its worker; leave it to them, and don't retry, escalate or skip it unless they ask.\n")
 	b.WriteString("- merge conflict, or tests failed at a merge point: fix it in this working tree, where the lanes land, commit, `wsh jarvis dag merge <task> --continue` (the engine re-runs Verify).\n")

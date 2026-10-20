@@ -421,6 +421,23 @@ func TestEveryWorkingPromptCarriesTheSubagentCap(t *testing.T) {
 	}
 }
 
+// one lead ask packed three decisions into a five-line body: every prompt that has a lead ask the human
+// says how to shape a question
+func TestAskingPromptsCarryTheAskShapeRule(t *testing.T) {
+	for name, p := range map[string]string{
+		"claude launch":       BuildOrchestratePrompt("ship auth", nil, "claude", false),
+		"pi launch":           BuildOrchestratePrompt("ship auth", nil, "pi", false),
+		"orchestration rules": OrchestrationRules("run-1", "", "", "", false),
+	} {
+		if !strings.Contains(p, AskShapeRule) {
+			t.Errorf("%s prompt never says how to shape a question:\n%s", name, p)
+		}
+	}
+	if strings.Contains(BuildOrchestratePrompt("ship auth", nil, "claude", true), AskShapeRule) {
+		t.Error("an autonomous launch prompt asks nothing, so it carries no ask shape rule")
+	}
+}
+
 func TestOrchestrationRulesCoverReviewAndDownstream(t *testing.T) {
 	r := OrchestrationRules("run-1", "", "", "", false)
 	for _, want := range []string{

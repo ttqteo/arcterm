@@ -36,6 +36,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A run's lead asks shorter questions: one decision per question, two lines at most, with several decisions
+  as separate questions in one ask instead of one long paragraph.
 - A plan's `**Depends on:**` reference between two tasks whose `**Files:**` lines share no path must say why in
   parentheses (`Task 1 (uses the rows it adds)`): submit refuses a bare one, so a needless edge no longer makes a
   task wait for another.
