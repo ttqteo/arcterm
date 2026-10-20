@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Account switch resumes mid-turn: with an agent working (or stopped at its usage limit), switch the
+  Claude account in Settings, check it in "Resume agents on …?" and Resume selected; it comes back and carries on by
+  itself with the "Claude account was switched" turn. An idle agent comes back at its prompt with no new turn.
+- [ ] (arcterm) App links open in the browser: after `task dev` (the host is rebuilt), in a pinned app's page click a
+  link with `target="_blank"` and it opens in the default browser; navigate to another page of the app and press the
+  header's ↗, and the browser opens that page, not the start page. The cockpit window still opens maximized and
+  borderless, now that main.rs builds it in setup (`"create": false`).
 - [ ] (arcterm) Starting app counts up: stop `portfolio`, open it again (after `task dev` or the next install), and
   the "Waiting for 127.0.0.1:8386 · N s" card counts 1 s, 2 s… until the page shows, instead of staying at 0 s.
   `startedMs` set at start in `pkg/services/supervisor.go`. Commit c34d80918.

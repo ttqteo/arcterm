@@ -169,34 +169,66 @@ func withRestoreNudge(harness string, args []string, nudge string) ([]string, bo
 	return args, false
 }
 
-// pendingNudges holds when the boot queued each block's nudge, which its next start takes once.
+type pendingNudge struct {
+	at   time.Time
+	text string
+}
+
+// pendingNudges holds each block's queued nudge and when it was queued, which its next start takes once.
 var pendingNudges = struct {
 	sync.Mutex
-	at map[string]time.Time
-}{at: map[string]time.Time{}}
+	m map[string]pendingNudge
+}{m: map[string]pendingNudge{}}
+
+func queueNudge(blockId, text string, now time.Time) {
+	pendingNudges.Lock()
+	defer pendingNudges.Unlock()
+	pendingNudges.m[blockId] = pendingNudge{at: now, text: text}
+}
 
 func queueRestoreNudge(blockId string, now time.Time) {
-	pendingNudges.Lock()
-	defer pendingNudges.Unlock()
-	pendingNudges.at[blockId] = now
+	queueNudge(blockId, restoreNudge, now)
 }
 
-// takeRestoreNudge reports whether a block's start owes the nudge the boot queued for it, forgetting it either way.
+// QueueStartNudge makes text the first turn of the block's next start, the way the boot nudges a restored agent:
+// for a respawn that cuts a turn short, such as a Claude account switch's resume. "" queues nothing.
+func QueueStartNudge(blockId, text string) {
+	if text == "" {
+		return
+	}
+	queueNudge(blockId, text, time.Now())
+}
+
+// DropStartNudge forgets a queued nudge whose start failed.
+func DropStartNudge(blockId string) {
+	takeNudge(blockId, time.Now())
+}
+
+// takeNudge is the nudge a block's start owes, "" for none, forgetting it either way.
+func takeNudge(blockId string, now time.Time) string {
+	pendingNudges.Lock()
+	defer pendingNudges.Unlock()
+	n, ok := pendingNudges.m[blockId]
+	delete(pendingNudges.m, blockId)
+	if !ok || now.Sub(n.at) >= restoreNudgeTTL {
+		return ""
+	}
+	return n.text
+}
+
+// takeRestoreNudge reports whether a block's start owes a queued nudge, forgetting it either way.
 func takeRestoreNudge(blockId string, now time.Time) bool {
-	pendingNudges.Lock()
-	defer pendingNudges.Unlock()
-	at, ok := pendingNudges.at[blockId]
-	delete(pendingNudges.at, blockId)
-	return ok && now.Sub(at) < restoreNudgeTTL
+	return takeNudge(blockId, now) != ""
 }
 
-// restoreStartArgs is the cmd:args a start runs: with the nudge when the boot queued one for this block. Only the
+// restoreStartArgs is the cmd:args a start runs: with the nudge when one is queued for this block. Only the
 // process gets it; the block keeps its plain resume, so a later relaunch does not repeat it.
 func restoreStartArgs(blockId string, meta waveobj.MetaMapType, args []string) []string {
-	if !takeRestoreNudge(blockId, time.Now()) {
+	nudge := takeNudge(blockId, time.Now())
+	if nudge == "" {
 		return args
 	}
-	nudged, ok := withRestoreNudge(meta.GetString(waveobj.MetaKey_Cmd, ""), args, restoreNudge)
+	nudged, ok := withRestoreNudge(meta.GetString(waveobj.MetaKey_Cmd, ""), args, nudge)
 	if !ok {
 		return args
 	}

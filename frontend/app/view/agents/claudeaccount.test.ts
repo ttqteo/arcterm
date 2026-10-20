@@ -4,6 +4,8 @@
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
+    ACCOUNT_SWITCH_NUDGE,
+    accountSwitchNudge,
     addAccountStep,
     defaultAccountName,
     groupCheckState,
@@ -114,6 +116,19 @@ describe("restartCandidates", () => {
             ["w1", "arcterm", "Land queue", "t-2"],
             ["solo", "notes", undefined, undefined],
         ]);
+    });
+});
+
+describe("accountSwitchNudge", () => {
+    it("nudges an agent cut off mid-turn, by its state or its in-turn mark", () => {
+        expect(accountSwitchNudge("working", false)).toBe(ACCOUNT_SWITCH_NUDGE);
+        expect(accountSwitchNudge("asking", false)).toBe(ACCOUNT_SWITCH_NUDGE);
+        // a turn a usage limit ended reports no Stop, so its mark stays in turn
+        expect(accountSwitchNudge("idle", true)).toBe(ACCOUNT_SWITCH_NUDGE);
+    });
+
+    it("leaves an agent whose turn was over at its prompt", () => {
+        expect(accountSwitchNudge("idle", false)).toBeUndefined();
     });
 });
 

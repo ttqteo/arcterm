@@ -248,6 +248,17 @@ export function knownClaudeEmails(saved: Record<string, SavedSnapshot>, identity
     return [...emails].sort();
 }
 
+// The first turn of an agent a switch resumed mid-turn, as the boot's restoreNudge (agentrestore.go) is after a
+// restart: without it the resumed agent waits at its prompt for someone to type "continue".
+export const ACCOUNT_SWITCH_NUDGE =
+    "The Claude account was switched while you were working, and your process was restarted on the new account. Check the working tree and your last steps, then carry on where you left off. If you were waiting on the person, for a permission or an answer, ask again.";
+
+// The nudge a resume owes an agent: one cut off mid-turn, by its state or its block's agent:inturn mark (which a
+// turn a usage limit ended keeps, as no Stop reports it); none for one whose turn was over.
+export function accountSwitchNudge(state: AgentState, inTurn: boolean): string | undefined {
+    return state !== "idle" || inTurn ? ACCOUNT_SWITCH_NUDGE : undefined;
+}
+
 // Respawn the agent's block as `claude --resume <session>`, the same sequence as
 // TermViewModel.forceRestartController. The new process starts from wavesrv's current environment, so
 // it runs on whichever account is active now.
@@ -257,6 +268,8 @@ export async function restartOnAccount(c: RestartCandidate): Promise<void> {
     if (block == null) {
         throw new Error("block not found");
     }
+    // read before the destroy: the old process's exit clears the mark
+    const nudge = accountSwitchNudge(c.state, block.meta?.["agent:inturn"] === true);
     const baseArgs = (block.meta?.["agent:baseargs"] as string[] | undefined) ?? [];
     await RpcApi.SetMetaCommand(TabRpcClient, {
         oref,
@@ -268,5 +281,6 @@ export async function restartOnAccount(c: RestartCandidate): Promise<void> {
         blockid: c.blockId,
         forcerestart: true,
         rtopts: block.runtimeopts,
+        nudge,
     });
 }

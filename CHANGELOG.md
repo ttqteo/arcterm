@@ -47,6 +47,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent you resume on a new Claude account after it stopped mid-turn (at a usage limit, say) carries on with its
+  work, as one does after arcterm restarts; it used to wait at its prompt for you to type continue.
+- A link that opens a new window (`target="_blank"`, `window.open`) in a pinned app's page or in the cockpit opens in
+  your default browser; it did nothing. An app's Open in the browser button opens the page you are on, not its start
+  page.
 - An app that is starting counts the seconds it has waited for its page; it read 0 s the whole time.
 - A file link in an agent or in Diff switches to Code at once, instead of after the repository's file list has
   loaded, which on a large repository looked as if the click did nothing.

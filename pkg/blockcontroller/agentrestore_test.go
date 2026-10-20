@@ -415,6 +415,25 @@ func TestRestoreStartArgsTakesTheNudgeOnce(t *testing.T) {
 	}
 }
 
+func TestQueueStartNudgeCarriesItsOwnText(t *testing.T) {
+	blockId := uuid.NewString()
+	meta := agentMeta("claude", "--resume", "abc")
+	args := []string{"--resume", "abc"}
+	QueueStartNudge(blockId, "switched accounts, carry on")
+	if got := restoreStartArgs(blockId, meta, args); !slices.Equal(got, []string{"--resume", "abc", "switched accounts, carry on"}) {
+		t.Fatalf("the respawn ran %v", got)
+	}
+	QueueStartNudge(blockId, "")
+	if got := restoreStartArgs(blockId, meta, args); !slices.Equal(got, args) {
+		t.Fatalf("an empty nudge was queued: %v", got)
+	}
+	QueueStartNudge(blockId, "dropped")
+	DropStartNudge(blockId)
+	if got := restoreStartArgs(blockId, meta, args); !slices.Equal(got, args) {
+		t.Fatalf("a dropped nudge still ran: %v", got)
+	}
+}
+
 func TestNoteAgentState(t *testing.T) {
 	blockId, _ := insertAgentBlock(t, agentMeta("claude", "--resume", "abc"))
 	steps := []struct {

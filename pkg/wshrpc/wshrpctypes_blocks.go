@@ -35,6 +35,7 @@ type CommandControllerResyncData struct {
 	TabId        string               `json:"tabid"`
 	BlockId      string               `json:"blockid"`
 	RtOpts       *waveobj.RuntimeOpts `json:"rtopts,omitempty"`
+	Nudge        string               `json:"nudge,omitempty"` // a first turn the started agent takes, never saved in its cmd:args
 }
 
 type CommandControllerAppendOutputData struct {
