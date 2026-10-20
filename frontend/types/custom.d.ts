@@ -97,6 +97,7 @@ declare global {
         danger?: boolean; // destructive action — renderer styles it red
         icon?: React.ReactNode; // leading icon (renderer shows it in the leading column)
         accel?: string; // shortcut in binding notation ("Cmd:t"); rendered as a right-aligned KeyCap
+        title?: string; // tooltip on the row, a disabled one's included
     };
 
     type KeyPressDecl = {

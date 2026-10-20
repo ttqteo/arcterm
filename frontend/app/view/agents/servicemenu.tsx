@@ -7,14 +7,20 @@
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { getApi } from "@/app/store/global";
+import { globalStore } from "@/app/store/jotaiStore";
 import { fireAndForget } from "@/util/util";
-import { ExternalLink, Pencil, Play, RotateCcw, Square } from "lucide-react";
+import { ExternalLink, Pencil, Pin, PinOff, Play, RotateCcw, Square } from "lucide-react";
 import type { AgentsViewModel } from "./agents";
+import { RAIL_FULL_TITLE, railFull, railPins } from "./railapps";
+import { railPinsAtom, setRailPinned } from "./railappsstore";
 import { canRestart, canStart, canStop } from "./servicesmodel";
-import { restartService, setServiceAutostart, startService, stopService } from "./servicesstore";
+import { restartService, servicesAtom, setServiceAutostart, startService, stopService } from "./servicesstore";
 import { openSetupTool } from "./setupstore";
 
 export function serviceMenuItems(model: AgentsViewModel, s: ServiceStatus): ContextMenuItem[] {
+    const services = globalStore.get(servicesAtom) ?? [];
+    const pins = globalStore.get(railPinsAtom);
+    const pinned = railPins(pins, services).some((p) => p.id === s.id);
     return [
         {
             label: "Start",
@@ -49,6 +55,13 @@ export function serviceMenuItems(model: AgentsViewModel, s: ServiceStatus): Cont
             type: "checkbox",
             checked: s.autostart,
             click: () => fireAndForget(() => setServiceAutostart(s.id, !s.autostart)),
+        },
+        {
+            label: pinned ? "Unpin from the rail" : "Pin to the rail",
+            icon: pinned ? <PinOff size={15} /> : <Pin size={15} />,
+            enabled: pinned || !railFull(pins, services),
+            title: !pinned && railFull(pins, services) ? RAIL_FULL_TITLE : undefined,
+            click: () => setRailPinned(s.id, !pinned),
         },
         { type: "separator" },
         {

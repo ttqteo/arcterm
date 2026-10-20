@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { digitHintAtom } from "@/app/cockpit/digithints";
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
@@ -27,6 +28,9 @@ import { channelMessagesAtom } from "./channelsstore";
 import { DigitHint } from "./digithint";
 import { answeredAskIdsAcross } from "./jarvisderive";
 import { navRailCollapsed } from "./navrailwidth";
+import { railDot, railItemTitle, railPins } from "./railapps";
+import { appSurfaceIdAtom, moveRailPin, railPinsAtom, setRailPinned } from "./railappsstore";
+import { ensureServicesFeed, servicesAtom } from "./servicesstore";
 import { focusSubagentAtom } from "./subagentsstore";
 import { PanelWeb } from "./themedecorview";
 import { latestUnreadId, unreadLabel } from "./unreadagents";
@@ -101,6 +105,15 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     };
     // while Ctrl is held each surface shows the digit Ctrl+1..7 jumps to (ITEMS is SURFACE_ORDER; digithints.ts)
     const ctrlHeld = useAtomValue(digitHintAtom) === "ctrl";
+    // the apps pinned under Radar: the pins that still name a held service, at most three (railapps.ts)
+    const services = useAtomValue(servicesAtom);
+    const pinIds = useAtomValue(railPinsAtom);
+    const pinned = services == null ? [] : railPins(pinIds, services);
+    const [appId, setAppId] = useAtom(appSurfaceIdAtom);
+    const now = useAtomValue(model.nowAtom);
+    useEffect(() => {
+        ensureServicesFeed();
+    }, []);
     const [narrow, setNarrow] = useState(() => navRailCollapsed(window.innerWidth));
     useEffect(() => {
         const onResize = () => setNarrow(navRailCollapsed(window.innerWidth));
@@ -167,6 +180,65 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
             </button>
         );
     };
+    const renderApp = (s: ServiceStatus) => {
+        const isActive = active === "app" && appId === s.id;
+        const dot = railDot(s);
+        const menu = (e: React.MouseEvent) => {
+            const at = pinned.findIndex((p) => p.id === s.id);
+            ContextMenuModel.getInstance().showContextMenu(
+                [
+                    { label: "Unpin from the rail", click: () => setRailPinned(s.id, false) },
+                    { label: "Move up", enabled: at > 0, click: () => moveRailPin(s.id, -1) },
+                    {
+                        label: "Move down",
+                        enabled: at >= 0 && at < pinned.length - 1,
+                        click: () => moveRailPin(s.id, 1),
+                    },
+                ],
+                e
+            );
+        };
+        return (
+            <button
+                key={`app:${s.id}`}
+                type="button"
+                data-nav-app={s.id}
+                onClick={() => {
+                    setAppId(s.id);
+                    setActive("app");
+                }}
+                onContextMenu={menu}
+                aria-label={s.name}
+                title={railItemTitle(s, now)}
+                className={cn(
+                    "relative mx-2 flex cursor-pointer flex-col items-center gap-[5px] rounded-[10px] border-0 bg-transparent py-[8px] text-muted hover:text-muted-foreground",
+                    isActive && "text-accent-soft"
+                )}
+            >
+                {isActive ? (
+                    <>
+                        <span className="absolute inset-0 rounded-[10px] bg-accent/10" />
+                        <span className="absolute left-[-8px] top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-[3px] bg-accent" />
+                    </>
+                ) : null}
+                <span className="relative z-[1]">
+                    <AppWindow size={16} strokeWidth={1.8} />
+                    {dot ? (
+                        <span
+                            data-nav-app-dot={dot}
+                            className={cn(
+                                "absolute -right-1 -top-1 h-2 w-2 rounded-full ring-2 ring-surface",
+                                dot === "error" ? "bg-error" : "bg-warning"
+                            )}
+                        />
+                    ) : null}
+                </span>
+                {narrow ? null : (
+                    <span className="relative z-[1] max-w-full truncate px-1 text-[10px] font-semibold">{s.name}</span>
+                )}
+            </button>
+        );
+    };
     return (
         <nav
             className={cn(
@@ -179,6 +251,12 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
             {/* a div, not a button: CDP scenarios count the surfaces as `nav button` */}
             <div data-nav-divider aria-hidden="true" className="mx-auto my-1.5 h-px w-8 shrink-0 bg-edge-mid" />
             {TOOL_ITEMS.map(({ key, label }) => renderItem(key, label, badges[key] ?? 0, true))}
+            {pinned.length > 0 ? (
+                <>
+                    <div data-nav-divider aria-hidden="true" className="mx-auto my-1.5 h-px w-8 shrink-0 bg-edge-mid" />
+                    {pinned.map(renderApp)}
+                </>
+            ) : null}
             <div className="flex-1" />
             {renderItem("setup", "Setup")}
             {renderItem("settings", "Settings")}
