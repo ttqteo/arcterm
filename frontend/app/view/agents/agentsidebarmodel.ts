@@ -3,7 +3,7 @@
 //
 // Pure model for the Agent surface's sidebar once it carries conversations as well as live agents. Two parts, each
 // collapsible. The project tree (projectTree) is one collapsible folder per project: the live agents as the tree builds
-// them (agenttreemodel.ts), a divider, then the project's plain terminals and tools. Terminals with no project sit in a
+// them (agenttreemodel.ts), a divider, then the project's held services, then its plain terminals and tools. Terminals with no project sit in a
 // Home folder at the end; the cells of a split keep their rows in their folders, marked. Conversations holds every ended session, in a collapsible folder per
 // project (the folder with the newest conversation first, newest first inside it, each row reading its own age), and
 // "Show more" pages a folder (CONVERSATION_PAGE per press). The app bar's project switcher narrows both to one
@@ -316,6 +316,8 @@ export type ProjectTreeRow =
     | { kind: "divider"; project: string }
     // `place` names the folder it runs in when that is not the project's root (terminalPlace)
     | { kind: "terminal"; project: string; terminal: AgentVM; place?: string }
+    // a held service (servicesstore.ts), after the divider and ahead of the terminals; `tabId` is its tab once it has one
+    | { kind: "service"; project: string; serviceId: string; tabId?: string }
     // a plan queued to start, in its project's folder right under the project's agents. Named apart from the tree's
     // "queued" row, which folds a run's queued tasks.
     | ({ kind: "queuedentry" } & QueuedRow)
@@ -343,8 +345,19 @@ export function projectTree(input: {
     collapsed: readonly string[];
     roots: ReadonlyMap<string, string>; // project name -> root path
     queue?: readonly QueuedRow[];
+    // the held services; `project` is the status's (wavesrv's "Home" for none), `tabId` its tab. A terminal on a
+    // service's tab is the service's row, never a terminal row.
+    services?: readonly { id: string; name: string; project: string; tabId?: string }[];
 }): ProjectTreeRow[] {
-    const { tree, terminals, filter, roots } = input;
+    const { tree, filter, roots } = input;
+    const services = input.services ?? [];
+    const serviceTabs = new Set(services.flatMap((s) => (s.tabId ? [s.tabId] : [])));
+    const terminals = input.terminals.filter((t) => !serviceTabs.has(t.id));
+    const serviceFolder = (s: { project: string }) => (s.project === "Home" ? HOME_PROJECT : s.project);
+    const serviceRowsOf = (project: string): ProjectTreeRow[] =>
+        services
+            .filter((s) => serviceFolder(s) === project)
+            .map((s) => ({ kind: "service", project, serviceId: s.id, tabId: s.tabId }));
     const collapsed = new Set(input.collapsed);
     const queue = input.queue ?? [];
     // an entry whose channel names no project is filed under Home, as a terminal with none is
@@ -373,10 +386,11 @@ export function projectTree(input: {
         out.push(...queuedRowsOf(filter));
         // a shell attributed to no project shows under every one
         const mine = terminals.filter((t) => projectOf(t) === "" || projectOf(t) === filter);
-        if (mine.length > 0 && out.length > 0) {
+        const held = serviceRowsOf(filter);
+        if (mine.length + held.length > 0 && out.length > 0) {
             out.push({ kind: "divider", project: filter });
         }
-        out.push(...termRows(filter, mine));
+        out.push(...held, ...termRows(filter, mine));
         return out;
     }
 
@@ -396,7 +410,9 @@ export function projectTree(input: {
     // the agents' projects in the tree's order, then the others in the order terminals and queued plans came, Home last
     const order = [...bodies.keys()];
     const seen = new Set(order);
-    const others = [...new Set([...terminals.map(termProject), ...queue.map(queueFolder)])]
+    const others = [
+        ...new Set([...terminals.map(termProject), ...queue.map(queueFolder), ...services.map(serviceFolder)]),
+    ]
         .filter((p) => !seen.has(p))
         .sort((a, b) => Number(a === HOME_PROJECT) - Number(b === HOME_PROJECT));
     const out: ProjectTreeRow[] = [];
@@ -418,11 +434,12 @@ export function projectTree(input: {
         }
         const body = folder?.body ?? [];
         const waiting = queuedRowsOf(project);
+        const held = serviceRowsOf(project);
         out.push(...body, ...waiting);
-        if (list.length > 0 && body.length + waiting.length > 0) {
+        if (list.length + held.length > 0 && body.length + waiting.length > 0) {
             out.push({ kind: "divider", project });
         }
-        out.push(...termRows(project, list));
+        out.push(...held, ...termRows(project, list));
     }
     return out;
 }
@@ -503,6 +520,11 @@ export function treeNavIds(rows: ProjectTreeRow[]): string[] {
     for (const r of rows) {
         if (r.kind === "terminal") {
             ids.push(r.terminal.id);
+        } else if (r.kind === "service") {
+            // a service with no tab selects nothing until it is opened, as a queued entry does
+            if (r.tabId) {
+                ids.push(r.tabId);
+            }
         } else if ((r.kind === "parent" || r.kind === "lead" || r.kind === "worker" || r.kind === "stage") && r.agent) {
             ids.push(r.agent.id);
         }

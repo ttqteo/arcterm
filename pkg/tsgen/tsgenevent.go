@@ -48,6 +48,7 @@ var WaveEventDataTypes = map[string]reflect.Type{
 	wps.Event_RunEvent:         reflect.TypeOf(wshrpc.RunEventData{}),
 	wps.Event_RunQueueChanged:  reflect.TypeOf(wshrpc.RunQueueChangedData{}),
 	wps.Event_MemHygieneUpdate: nil,
+	wps.Event_ServicesChanged:  reflect.TypeOf(wshrpc.ServicesData{}),
 }
 
 func getWaveEventDataTSType(eventName string, tsTypesMap map[reflect.Type]string) string {

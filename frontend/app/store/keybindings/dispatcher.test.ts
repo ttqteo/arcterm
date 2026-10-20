@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { servicesOpenAtom } from "@/app/cockpit/servicespopoverstore";
 import { registerModal } from "@/app/modals/modalstack";
 import { contextMenuAtom } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -287,6 +288,9 @@ describe("deriveKeyContext", () => {
         globalStore.set(machineServersOpenAtom, true);
         expect(deriveKeyContext().modalOpen).toBe(true);
         globalStore.set(machineServersOpenAtom, false);
+        globalStore.set(servicesOpenAtom, true);
+        expect(deriveKeyContext().modalOpen).toBe(true);
+        globalStore.set(servicesOpenAtom, false);
         expect(deriveKeyContext().modalOpen).toBe(false);
         unbind();
     });

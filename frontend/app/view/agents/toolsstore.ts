@@ -17,13 +17,14 @@ import { PLATFORM } from "@/util/platformutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
-import { appCwd, appProjectName, isAppTool } from "./appmodel";
-import { adoptApp, probeApp, setAppView, trackApp, whileLaunching } from "./appstore";
-import { homeDir } from "./appsuggeststore";
+import { isAppTool } from "./appmodel";
+import { setAppView } from "./appstore";
 import { HOME_NAME, HOME_PICK } from "./launcher";
 import { closeLauncher, type LauncherModel } from "./launcherstore";
 import { dockedTerminalAtom, railCwdsAtom } from "./railstore";
 import { agentProject } from "./runlineage";
+import { canStart } from "./servicesmodel";
+import { openService, startService } from "./servicesstore";
 import {
     DEFAULT_PINNED_TOOLS,
     installBlockMeta,
@@ -254,7 +255,7 @@ export async function openTool(
         return { ok: false, reason };
     }
     if (isAppTool(tool)) {
-        return openApp(model, tool, opts.project);
+        return openApp(model, tool);
     }
     const ctx = toolContext(model, opts.project);
     const tabId = await launchAgent(model, {
@@ -274,57 +275,22 @@ export async function openTool(
     return { ok: true, tabId };
 }
 
-// A pinned app (appmodel.ts) always takes the centre, as its page shows there. One already open is shown again. A page
-// that already answers gets a shell in the app's folder and nothing is run, so closing it leaves that server alone;
-// otherwise the command runs in the app's terminal and the page shows once it answers.
-async function openApp(model: AgentsViewModel, tool: ToolStatus, project?: string): Promise<OpenToolResult> {
-    const open = globalStore.get(model.terminalsAtom).find((t) => t.toolId === tool.id && t.blockId != null);
-    if (open != null) {
-        adoptApp(open.id, open.blockId!, tool);
-        setAppView(open.id, "page");
-        globalStore.set(model.focusIdAtom, open.id);
-        globalStore.set(model.surfaceAtom, "agent");
-        showTerminal();
-        return { ok: true, tabId: open.id };
+// A pinned app (appmodel.ts) is a service wavesrv holds (servicesstore.ts), and it always takes the centre, as its page
+// shows there. Opening gives it its tab and block without starting it; unless it is running or starting, it is then
+// started (on a service running elsewhere that probes its page again). It never launches a terminal.
+async function openApp(model: AgentsViewModel, tool: ToolStatus): Promise<OpenToolResult> {
+    const status = await openService(tool.id);
+    if (status?.tabid == null) {
+        return { ok: false, reason: `${tool.name} could not be opened as a service` };
     }
-    return whileLaunching(tool.id, () => launchApp(model, tool, project));
-}
-
-async function launchApp(model: AgentsViewModel, tool: ToolStatus, project?: string): Promise<OpenToolResult> {
-    const answered = await probeApp(tool.url!);
-    const ctx = toolContext(model, project);
-    const projects = globalStore.get(atoms.fullConfigAtom)?.projects ?? {};
-    const projectName = tool.dir?.trim()
-        ? appProjectName(tool.dir, projects, await homeDir(), HOME_NAME)
-        : toolProjectName(tool, ctx.project, HOME_NAME);
-    const tabId = await launchAgent(model, {
-        runtime: "terminal",
-        startupCommand: answered ? "" : toolCommandLine(tool),
-        task: "",
-        projectPath: appCwd(tool, { agentCwd: ctx.agentCwd, projectRoot: ctx.projectRoot, home: HOME_PICK }),
-        projectName,
-        toolId: tool.id,
-        focus: true,
-    });
-    const blockId = (await WOS.reloadWaveObject<Tab>(WOS.makeORef("tab", tabId)))?.blockids?.[0];
-    if (blockId != null) {
-        trackApp(tabId, blockId, tool, !answered);
-        if (!answered) {
-            // kept on the block, so a reload of the page still knows closing this terminal stops the server
-            await RpcApi.SetMetaCommand(TabRpcClient, {
-                oref: WOS.makeORef("block", blockId),
-                meta: { "tool:appowned": true },
-            });
-        }
-        // started now: the page or its waiting card covers the terminal, so no pane mounts to start its shell
-        await RpcApi.ControllerResyncCommand(TabRpcClient, {
-            tabid: tabId,
-            blockid: blockId,
-            rtopts: { termsize: INSTALL_TERMSIZE },
-        });
+    if (canStart(status)) {
+        await startService(tool.id);
     }
+    setAppView(status.tabid, "page");
+    globalStore.set(model.focusIdAtom, status.tabid);
     globalStore.set(model.surfaceAtom, "agent");
-    return { ok: true, tabId };
+    showTerminal();
+    return { ok: true, tabId: status.tabid };
 }
 
 // ---- installing a tool ----

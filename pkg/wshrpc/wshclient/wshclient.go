@@ -1296,6 +1296,36 @@ func SealRunEvidenceCommand(w *wshutil.WshRpc, data wshrpc.CommandSealRunEvidenc
 	return err
 }
 
+// command "serviceopen", wshserver.ServiceOpenCommand
+func ServiceOpenCommand(w *wshutil.WshRpc, data wshrpc.CommandServiceData, opts *wshrpc.RpcOpts) (*wshrpc.ServiceStatus, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.ServiceStatus](w, "serviceopen", data, opts)
+	return resp, err
+}
+
+// command "servicerestart", wshserver.ServiceRestartCommand
+func ServiceRestartCommand(w *wshutil.WshRpc, data wshrpc.CommandServiceData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "servicerestart", data, opts)
+	return err
+}
+
+// command "servicesstatus", wshserver.ServicesStatusCommand
+func ServicesStatusCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.ServicesData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.ServicesData](w, "servicesstatus", nil, opts)
+	return resp, err
+}
+
+// command "servicestart", wshserver.ServiceStartCommand
+func ServiceStartCommand(w *wshutil.WshRpc, data wshrpc.CommandServiceData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "servicestart", data, opts)
+	return err
+}
+
+// command "servicestop", wshserver.ServiceStopCommand
+func ServiceStopCommand(w *wshutil.WshRpc, data wshrpc.CommandServiceData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "servicestop", data, opts)
+	return err
+}
+
 // command "setchannelprofile", wshserver.SetChannelProfileCommand
 func SetChannelProfileCommand(w *wshutil.WshRpc, data wshrpc.CommandSetChannelProfileData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "setchannelprofile", data, opts)

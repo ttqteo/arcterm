@@ -1302,6 +1302,36 @@ export class RpcApiType {
         return client.wshRpcCall("sealrunevidence", data, opts);
     }
 
+    // command "serviceopen" [call]
+    ServiceOpenCommand(client: WshClient, data: CommandServiceData, opts?: RpcOpts): Promise<ServiceStatus> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "serviceopen", data, opts);
+        return client.wshRpcCall("serviceopen", data, opts);
+    }
+
+    // command "servicerestart" [call]
+    ServiceRestartCommand(client: WshClient, data: CommandServiceData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "servicerestart", data, opts);
+        return client.wshRpcCall("servicerestart", data, opts);
+    }
+
+    // command "servicesstatus" [call]
+    ServicesStatusCommand(client: WshClient, opts?: RpcOpts): Promise<ServicesData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "servicesstatus", null, opts);
+        return client.wshRpcCall("servicesstatus", null, opts);
+    }
+
+    // command "servicestart" [call]
+    ServiceStartCommand(client: WshClient, data: CommandServiceData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "servicestart", data, opts);
+        return client.wshRpcCall("servicestart", data, opts);
+    }
+
+    // command "servicestop" [call]
+    ServiceStopCommand(client: WshClient, data: CommandServiceData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "servicestop", data, opts);
+        return client.wshRpcCall("servicestop", data, opts);
+    }
+
     // command "setchannelprofile" [call]
     SetChannelProfileCommand(client: WshClient, data: CommandSetChannelProfileData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setchannelprofile", data, opts);

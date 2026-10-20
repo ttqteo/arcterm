@@ -380,6 +380,7 @@ func sendInput(blockId string, inputUnion *BlockInputUnion) error {
 	if controller == nil {
 		return fmt.Errorf("no controller found for block %s", blockId)
 	}
+	noteInput(blockId, inputUnion.InputData, time.Now())
 	return controller.SendInput(inputUnion)
 }
 

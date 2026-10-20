@@ -1,17 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// A pinned app's pure model. A pinned app is a tool of yours with a url (tools.json `url`, and `dir` for the folder it
-// runs in): opening it runs its command in a terminal of its own, waits for the page to answer, and shows the page in
-// place of that terminal (appstore.ts holds the state, AppPane draws it). A page already answering is shown without
-// running anything. arcterm embeds only what this machine serves: http on 127.0.0.1 with a port (arctools.AppURL).
-
-import { registeredProjectFor } from "./projectlabel";
-import { toolCwd, type ToolCwdContext } from "./toolsmodel";
-
-// how long a started app has to answer before its terminal is shown, with its output, in the page's place
-export const APP_START_TIMEOUT_MS = 30_000;
-export const APP_PROBE_INTERVAL_MS = 500;
+// A pinned app's pure model. A pinned app is a tool of yours with a page (tools.json `url`, and `dir` for the folder it
+// runs in), and wavesrv holds its server as a service (pkg/services): this turns the service's status into what the
+// Agent surface shows in its terminal's place, the page or a waiting card (appstore.ts holds the view, AppPane draws
+// it). arcterm embeds only what this machine serves: http on 127.0.0.1 with a port (arctools.AppURL).
 
 export function isAppTool(tool: Pick<ToolStatus, "url"> | null | undefined): boolean {
     return !!tool?.url;
@@ -45,24 +38,6 @@ export function appHost(url: string): string {
     }
 }
 
-// the folder the app runs in: its own dir when it has one, else where any tool would open
-export function appCwd(tool: Pick<ToolStatus, "opensin" | "dir">, ctx: ToolCwdContext): string {
-    return tool.dir?.trim() || toolCwd(tool, ctx);
-}
-
-// The project an app with a folder of its own is filed under in the tree: the registered project that folder is in,
-// else Home, never the project of whatever agent had the focus when it was opened. `home` expands a leading ~.
-export function appProjectName(
-    dir: string,
-    projects: Record<string, { path?: string }>,
-    home: string,
-    homeName: string
-): string {
-    const d = dir.trim();
-    const full = home && (d === "~" || d.startsWith("~/") || d.startsWith("~\\")) ? home + d.slice(1) : d;
-    return registeredProjectFor(full, projects) || homeName;
-}
-
 export type AppPhase = "starting" | "open" | "failed";
 // what the user picked in the header: the page, or the terminal underneath it (its log)
 export type AppView = "page" | "log";
@@ -71,8 +46,7 @@ export interface AppState {
     toolId: string;
     url: string;
     phase: AppPhase;
-    // arcterm ran the command in this terminal: closing it stops the server. False when the page already answered and
-    // the terminal is only a shell in the app's folder, so closing it leaves that server alone.
+    // arcterm started the server (the service is not `elsewhere`): Stop is offered for it
     owned: boolean;
     startedMs: number;
     view: AppView;
@@ -92,23 +66,21 @@ export function focusedAppTab(active: Pick<Element, "tagName" | "getAttribute"> 
     return active?.tagName === "IFRAME" ? active.getAttribute("data-app-frame") : null;
 }
 
-export function startingApp(toolId: string, url: string, owned: boolean, now: number): AppState {
-    return { toolId, url, phase: "starting", owned, startedMs: now, view: "page", reloads: 0 };
-}
-
-// One probe's answer. An answer opens the page; no answer past the timeout fails it and shows the log; an open or
-// failed app stays as it is.
-export function afterProbe(s: AppState, answered: boolean, now: number): AppState {
-    if (s.phase !== "starting") {
-        return s;
-    }
-    if (answered) {
-        return { ...s, phase: "open", view: "page" };
-    }
-    if (now - s.startedMs >= APP_START_TIMEOUT_MS) {
-        return { ...s, phase: "failed", view: "log" };
-    }
-    return s;
+// What a service shows in its terminal's place: running or elsewhere, the page; starting, the waiting card; every other
+// state (stopped, crashed, retrying, porttaken, nopage) fails, which shows the log. `view` and `reloads` are the
+// person's picks (Page | Log, Home), kept per tab by appstore.ts.
+export function serviceAppState(s: ServiceStatus, view: AppView, reloads: number): AppState {
+    const phase: AppPhase =
+        s.state === "running" || s.state === "elsewhere" ? "open" : s.state === "starting" ? "starting" : "failed";
+    return {
+        toolId: s.id,
+        url: s.url ?? "",
+        phase,
+        owned: s.state !== "elsewhere",
+        startedMs: s.startedms ?? 0,
+        view,
+        reloads,
+    };
 }
 
 export type AppShows = "page" | "waiting" | "terminal";
@@ -141,17 +113,6 @@ export function keptAppFrames(
 }
 
 export function appWaitLine(s: Pick<AppState, "url" | "startedMs">, now: number): string {
-    const secs = Math.max(0, Math.floor((now - s.startedMs) / 1000));
+    const secs = s.startedMs > 0 ? Math.max(0, Math.floor((now - s.startedMs) / 1000)) : 0;
     return `Waiting for ${appHost(s.url)} · ${secs} s`;
-}
-
-export function appFailLine(s: Pick<AppState, "url" | "owned">): string {
-    return s.owned
-        ? `Nothing answered on ${appHost(s.url)} after ${APP_START_TIMEOUT_MS / 1000} s`
-        : `Nothing answers on ${appHost(s.url)}`;
-}
-
-// the header's close button: closing the terminal stops a server arcterm started, and only that one
-export function appCloseTitle(name: string, owned: boolean): string {
-    return owned ? `Stop ${name}` : `Close ${name} (its server keeps running: arcterm did not start it)`;
 }
