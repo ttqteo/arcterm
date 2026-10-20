@@ -811,7 +811,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                         ) : canvasMode ? (
                             <CanvasPane model={model} agent={agent} />
                         ) : appMode ? (
-                            <AppPane tabId={agent.id} state={app!} />
+                            <AppPane tabId={agent.id} state={app!} active={surface === "agent"} />
                         ) : agent.blockId == null ? (
                             <div className="flex flex-1 items-center justify-center text-[13px] text-muted">
                                 No live terminal for this agent.

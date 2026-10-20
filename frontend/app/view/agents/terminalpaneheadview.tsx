@@ -54,7 +54,7 @@ const DOT_TONE = {
 } as const;
 
 // a 6 px dot: solid, hollow (a ring) or pulsing, in the tone of the row's own words
-function StateDot({ tone, dot }: { tone: keyof typeof DOT_TONE; dot: "solid" | "hollow" | "pulse" }) {
+export function StateDot({ tone, dot }: { tone: keyof typeof DOT_TONE; dot: "solid" | "hollow" | "pulse" }) {
     return (
         <span
             aria-hidden
@@ -73,10 +73,10 @@ const APP_VIEWS: { key: AppView; label: string }[] = [
     { key: "log", label: "Log" },
 ];
 
-const BUTTON =
+export const BUTTON =
     "flex h-[24px] w-[24px] shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted";
 
-const STOP_BUTTON =
+export const STOP_BUTTON =
     "flex h-[24px] shrink-0 cursor-pointer items-center gap-[5px] rounded-[6px] border border-edge-mid px-[8px] text-[11.5px] font-semibold text-secondary hover:border-error/50 hover:bg-error/15 hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 export function TerminalPaneHead({ model, terminal }: { model: AgentsViewModel; terminal: AgentVM }) {

@@ -14,6 +14,7 @@ import type { AgentsViewModel } from "./agents";
 import { useViewingSync } from "./agentsleep";
 import { AgentSurface } from "./agentsurface";
 import { AppFrames } from "./apppane";
+import { AppSurface } from "./appsurface";
 import { primeChannels } from "./channelsstore";
 import { CockpitSurface } from "./cockpitsurface";
 import { useDockBadge } from "./dockbadgesync";
@@ -168,6 +169,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
                             <SetupSurface model={model} />
                         ) : surface === "settings" ? (
                             <SettingsSurface model={model} />
+                        ) : surface === "app" ? (
+                            <AppSurface model={model} />
                         ) : null}
                     </div>
                 ) : null}
