@@ -247,6 +247,9 @@ func TestStartProbesThenRunning(t *testing.T) {
 	if st.TabId != "tab-portfolio" || st.BlockId != "blk-portfolio" {
 		t.Errorf("status ids = %q %q", st.TabId, st.BlockId)
 	}
+	if st.StartedMs != h.now.UnixMilli() {
+		t.Errorf("starting StartedMs = %d, want %d: the waiting card counts from it", st.StartedMs, h.now.UnixMilli())
+	}
 	if len(h.starts) != 1 || h.ensures[0].Port != 8386 {
 		t.Fatalf("starts %v, ensure %+v", h.starts, h.ensures)
 	}

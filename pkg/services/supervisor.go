@@ -583,6 +583,7 @@ func (s *Supervisor) startService(ctx context.Context, id string, byPerson bool)
 			s.cancelLocked(v)
 			v.gen++
 			v.state = StateStarting
+			v.startedMs = s.d.Now().UnixMilli()
 			v.deadline = s.d.Now().Add(StartTimeout)
 			s.armSleepLocked(v)
 			s.scheduleProbeLocked(v, v.gen)
@@ -672,6 +673,7 @@ func (s *Supervisor) startService(ctx context.Context, id string, byPerson bool)
 	v.tabId, v.blockId = tabId, blockId
 	v.state = StateStarting
 	v.procStart = now
+	v.startedMs = now.UnixMilli() // the waiting card counts from it; running resets it to when the page answered
 	v.deadline = now.Add(StartTimeout)
 	s.armSleepLocked(v)
 	s.publishLocked()
