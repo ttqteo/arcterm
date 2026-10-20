@@ -29845,7 +29845,7 @@ const agentRailTabs = {
         );
 
         // 10. the nav
-        const nav = await h.ev(`[...document.querySelectorAll("nav button")].map((b) => ({ label: b.getAttribute("aria-label"), h: Math.round(b.getBoundingClientRect().height) }))`);
+        const nav = await h.ev(`[...document.querySelectorAll("nav button:not([data-nav-app])")].map((b) => ({ label: b.getAttribute("aria-label"), h: Math.round(b.getBoundingClientRect().height) }))`);
         const divider = await h.ev(`!!document.querySelector("nav [data-nav-divider]")`);
         const height = (label) => nav.find((n) => n.label === label)?.h ?? 0;
         await h.ev(`document.activeElement?.blur?.()`);
@@ -42362,6 +42362,7 @@ async function svcContextMenu(h, sel) {
 const SVC_MENU = `[...document.querySelectorAll("[data-menu-item]")].map((el) => ({
     label: el.getAttribute("data-menu-item"),
     disabled: el.className.includes("opacity-50"),
+    title: el.getAttribute("title"),
     checked: el.getAttribute("data-menu-item") === "Keep running" ? !!el.firstElementChild?.querySelector("svg") : null,
 }))`;
 
@@ -42800,6 +42801,390 @@ const servicesTree = {
     },
     async teardown(h, ctx) {
         await svcTeardown(h, ctx, "services-tree");
+    },
+};
+
+// --- services-rail: a service pinned to the nav rail opens as the app surface (spec 2026-10-20-rail-apps-design.md;
+// boards RailAppSurface and RailAppCrashed). The page is the same frame Agent shows, moved over the surface's slot and
+// back without a reload; a crashed or stopped service shows the card; the rail holds three, in the person's order, and
+// keeps only the icon on a narrow window. Surface-scoped queries read inside [data-app-surface]: the Agent surface stays
+// mounted under it, with its own header buttons and slot.
+const RAIL_KEY = "apps.rail";
+const RAIL_ITEM = (id) => `[data-nav-app="${id}"]`;
+const RAIL_ORDER = `[...document.querySelectorAll("[data-nav-app]")].map((b) => b.getAttribute("data-nav-app"))`;
+const RAIL_STORED = `JSON.parse(localStorage.getItem(${JSON.stringify(RAIL_KEY)}) ?? "[]")`;
+const RAIL_FULL = "The rail holds 3 apps: unpin one first";
+const RAIL_HEAD_BUTTONS = ["back", "forward", "home", "browser", "log", "restart", "stop", "unpin"];
+
+// the frame on screen and the slot it should sit over, as whole pixels
+const railFrameExpr = (slotSel) => `(() => {
+    const f = document.querySelector("[data-app-frame-shown]");
+    const slot = document.querySelector(${JSON.stringify(slotSel)});
+    const box = (el) => { const r = el.getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round); };
+    return {
+        marked: f?.__railMark === 1,
+        loads: f?.__railLoads ?? null,
+        shown: f?.getAttribute("data-app-frame-shown") ?? null,
+        frame: f ? box(f) : null,
+        slot: slot ? box(slot) : null,
+    };
+})()`;
+const railOver = (s) => s.frame != null && s.slot != null && s.slot[2] > 0 && s.frame.every((v, i) => Math.abs(v - s.slot[i]) <= 1);
+
+// Pins `id` from its row's menu in the Agent tree: true once its item is on the rail.
+async function railPinFromTree(h, id) {
+    await h.goto("agent");
+    await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(svcTreeRow(id))})`, 8000);
+    if (!(await svcContextMenu(h, svcTreeRow(id)))) return false;
+    await ttClick(h, '[data-menu-item="Pin to the rail"]');
+    return polishWaitFor(h, `!!document.querySelector(${JSON.stringify(RAIL_ITEM(id))})`, 5000);
+}
+
+// the context menu on a rail item: its rows, then closed again
+async function railMenu(h, id) {
+    const up = await svcContextMenu(h, RAIL_ITEM(id));
+    const items = up ? await h.ev(SVC_MENU) : [];
+    return items;
+}
+
+const railSurfaceUp = (id) => `!!document.querySelector('[data-app-surface="${id}"] [data-app-surface-head]')`;
+const railSurfaceText = (id, sel) =>
+    `(document.querySelector('[data-app-surface="${id}"] ${sel}')?.textContent ?? "").replace(/\\s+/g, " ").trim()`;
+
+const servicesRail = {
+    name: "services-rail",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { listeners: [], sockets: [] };
+        try {
+            ctx.prevRail = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_KEY)})`);
+            await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_KEY)})`);
+            ctx.heldPort = await svcListen(ctx, "tcp");
+            await svcArrange(
+                h,
+                ctx,
+                {
+                    "svc-ok": { command: "node", args: "server.js 127.0.0.1 ok", port: "auto", autostart: true },
+                    "svc-crash": { command: "sh", args: "-c 'exit 1'", port: "auto", autostart: true },
+                    // no Keep running: it sleeps until its surface shows, and takes two seconds to answer, so the waiting card holds
+                    "svc-sleep": { command: "sh", args: "-c 'sleep 2; node server.js 127.0.0.1 sleep'", port: "auto" },
+                    "svc-four": { command: "node", args: "server.js 127.0.0.1 four", port: "auto", autostart: true },
+                    "svc-port": {
+                        command: "node",
+                        args: "server.js 127.0.0.1 taken",
+                        url: `http://127.0.0.1:${ctx.heldPort}/`,
+                        autostart: true,
+                    },
+                },
+                { terminals: [{ key: "shell", cwd: "root" }] }
+            );
+            // a crash takes the five retries (31 s)
+            ctx.settled = await svcWait(h, {
+                "svc-ok": "running",
+                "svc-crash": "crashed",
+                "svc-sleep": "sleeping",
+                "svc-four": "running",
+                "svc-port": "porttaken",
+            });
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const arranged = ctx.arrangeError == null && ctx.inRoster === true && ctx.settled?.ok === true;
+        rec(
+            "0. the services are arranged and the rail holds no app",
+            arranged && (await h.ev(`document.querySelectorAll("[data-nav-app]").length === 0`)),
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }) + svcBrief(ctx.settled?.services ?? [])
+        );
+        if (!arranged) return steps;
+        const status = async () => Object.fromEntries((await svcStatus(h)).map((s) => [s.id, s]));
+        await polishWaitFor(h, `${svcRowsExpr(SVC_TREE)}.length === 5`, 8000);
+
+        // 1. pin from the tree: after the second divider, before Setup
+        const pinned = await railPinFromTree(h, "svc-ok");
+        await polishNap(300);
+        const place = await h.ev(`(() => {
+            const item = document.querySelector(${JSON.stringify(RAIL_ITEM("svc-ok"))});
+            const dividers = [...document.querySelectorAll("[data-nav-divider]")];
+            const setup = document.querySelector('nav button[aria-label="Setup"]');
+            if (!item || !setup) return null;
+            return {
+                dividers: dividers.length,
+                afterSecond: dividers.length >= 2 && !!(dividers[1].compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING),
+                beforeSetup: !!(item.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING),
+                label: item.getAttribute("aria-label"),
+                text: (item.textContent ?? "").trim(),
+            };
+        })()`);
+        const stored1 = await h.ev(RAIL_STORED);
+        rec(
+            "1. Pin to the rail puts svc-ok after the second divider and before Setup, and stores it",
+            pinned && place?.dividers === 2 && place.afterSecond && place.beforeSetup && place.label === "svc-ok" && place.text === "svc-ok" && JSON.stringify(stored1) === '["svc-ok"]',
+            JSON.stringify({ pinned, place, stored1 })
+        );
+        if (!pinned) return steps;
+
+        // 2. the same frame: Agent's page moves to the surface's slot and back, never reloaded
+        let by = await status();
+        const okTab = by["svc-ok"].tabid;
+        const openedAgent = await svcClickRow(h, "svc-ok", okTab);
+        const shownInAgent = await polishWaitFor(h, `!!document.querySelector("[data-app-frame-shown]")`, 15000);
+        await polishNap(600);
+        await h.ev(`(() => {
+            const f = document.querySelector("[data-app-frame-shown]");
+            f.__railMark = 1;
+            f.__railLoads = 0;
+            f.addEventListener("load", () => { f.__railLoads += 1; });
+        })()`);
+        const clickedItem = await ttMouse(h, RAIL_ITEM("svc-ok"));
+        const surfaceUp = await polishWaitFor(h, railSurfaceUp("svc-ok"), 8000);
+        const slotSel = '[data-app-surface] [data-app-slot]';
+        const moved = await polishWaitFor(h, `(${railFrameExpr(slotSel)}).slot?.[2] > 0 && (${railFrameExpr(slotSel)}).shown === "true"`, 8000);
+        await polishNap(500);
+        const onItem = await h.ev(`document.querySelector(${JSON.stringify(RAIL_ITEM("svc-ok"))}).className.includes("text-accent-soft")`);
+        const line = await h.ev(railSurfaceText("svc-ok", "[data-app-surface-line]"));
+        const head = await h.ev(
+            `Object.fromEntries(${JSON.stringify(RAIL_HEAD_BUTTONS)}.map((b) => [b, !!document.querySelector('[data-app-surface="svc-ok"] [data-app-surface-head] [data-app-' + b + ']')]))`
+        );
+        const onSurface = await h.ev(railFrameExpr(slotSel));
+        await h.shot("cdp-shots/services-rail-RailAppSurface.png");
+        await h.goto("agent");
+        const backInAgent = await polishWaitFor(
+            h,
+            `(${railFrameExpr(`[data-app-slot="${okTab}"]`)}).shown === "true" && (${railFrameExpr(`[data-app-slot="${okTab}"]`)}).slot?.[2] > 0`,
+            8000
+        );
+        await polishNap(500);
+        const inAgent = await h.ev(railFrameExpr(`[data-app-slot="${okTab}"]`));
+        rec(
+            "2. the rail item opens svc-ok's surface with the same frame, never reloaded, over the surface's slot, and Agent takes it back over its own",
+            openedAgent &&
+                shownInAgent &&
+                clickedItem &&
+                surfaceUp &&
+                moved &&
+                onItem &&
+                line.startsWith("Running on 127.0.0.1:") &&
+                Object.values(head).every(Boolean) &&
+                onSurface.marked &&
+                onSurface.loads === 0 &&
+                onSurface.shown === "true" &&
+                railOver(onSurface) &&
+                backInAgent &&
+                inAgent.marked &&
+                inAgent.loads === 0 &&
+                railOver(inAgent),
+            JSON.stringify({ openedAgent, shownInAgent, clickedItem, surfaceUp, moved, onItem, line, head, onSurface, backInAgent, inAgent })
+        );
+        await ttMouse(h, RAIL_ITEM("svc-ok"));
+        await polishWaitFor(h, railSurfaceUp("svc-ok"), 8000);
+
+        // 3. Log leaves for Agent, the service's terminal in its Log view
+        const logged = await ttClick(h, '[data-app-surface="svc-ok"] [data-app-log]');
+        const inLog = await polishWaitFor(
+            h,
+            `(${TT_CENTRE}) === "terminal:${okTab}" && (document.querySelector('[data-terminal-pane-head="${okTab}"] [role="tab"][aria-selected="true"]')?.textContent ?? "").trim() === "Log"`,
+            8000
+        );
+        const logSurface = await h.activeSurfaceLabel();
+        rec("3. Log opens Agent with svc-ok's terminal focused in its Log view", logged && inLog && logSurface === "Agent", JSON.stringify({ logged, inLog, logSurface }));
+
+        // 4. Stop reads as the card; Start brings the page back
+        await ttMouse(h, RAIL_ITEM("svc-ok"));
+        await polishWaitFor(h, railSurfaceUp("svc-ok"), 8000);
+        const stoppedClick = await ttClick(h, '[data-app-surface="svc-ok"] [data-app-stop]');
+        const cardUp = await polishWaitFor(h, `!!document.querySelector('[data-app-surface="svc-ok"] [data-app-card="stopped"]')`, 15000);
+        const stoppedTitle = await h.ev(railSurfaceText("svc-ok", "[data-app-card]"));
+        const startBtn = await h.ev(`!!document.querySelector('[data-app-surface="svc-ok"] [data-app-card-action="start"]')`);
+        await ttClick(h, '[data-app-surface="svc-ok"] [data-app-card-action="start"]');
+        const back = await svcWait(h, { "svc-ok": "running" }, 30000);
+        const pageBack = await polishWaitFor(h, `(${railFrameExpr(slotSel)}).shown === "true"`, 15000);
+        rec(
+            "4. Stop shows `svc-ok is stopped` with Start, and Start brings the page back",
+            stoppedClick && cardUp && stoppedTitle.includes("svc-ok is stopped") && startBtn && back.ok && pageBack,
+            JSON.stringify({ stoppedClick, cardUp, stoppedTitle, startBtn, back: back.ok, pageBack })
+        );
+
+        // 5. a crashed pin: the red dot, the card, the log
+        const pinnedCrash = await railPinFromTree(h, "svc-crash");
+        const crashed = await svcWait(h, { "svc-crash": "crashed" }, 60000);
+        await polishNap(400);
+        const crashDot = await h.ev(`document.querySelector(${JSON.stringify(RAIL_ITEM("svc-crash") + " [data-nav-app-dot]")})?.getAttribute("data-nav-app-dot") ?? null`);
+        const crashTitle = await h.ev(`document.querySelector(${JSON.stringify(RAIL_ITEM("svc-crash"))})?.getAttribute("title") ?? ""`);
+        await ttMouse(h, RAIL_ITEM("svc-crash"));
+        const crashUp = await polishWaitFor(h, `!!document.querySelector('[data-app-surface="svc-crash"] [data-app-card="crashed"]')`, 8000);
+        await polishNap(400);
+        const crashCard = await h.ev(railSurfaceText("svc-crash", "[data-app-card]"));
+        const crashLine = await h.ev(railSurfaceText("svc-crash", "[data-app-surface-line]"));
+        const crashHead = await h.ev(
+            `({ restart: !!document.querySelector('[data-app-surface="svc-crash"] [data-app-restart]'), start: !!document.querySelector('[data-app-surface="svc-crash"] [data-app-start]'), stop: !!document.querySelector('[data-app-surface="svc-crash"] [data-app-stop]') })`
+        );
+        await h.shot("cdp-shots/services-rail-RailAppCrashed.png");
+        const crashTab = (await status())["svc-crash"].tabid;
+        await ttClick(h, '[data-app-surface="svc-crash"] [data-app-open-log]');
+        const crashLog = await polishWaitFor(h, `(${TT_CENTRE}) === "terminal:${crashTab}"`, 8000);
+        rec(
+            "5. a crashed pin has the red dot and `crashed` title; its surface is the card, and Open its log opens Agent on its terminal",
+            pinnedCrash &&
+                crashed.ok &&
+                crashDot === "error" &&
+                crashTitle.startsWith("svc-crash: crashed") &&
+                crashUp &&
+                crashCard.includes("svc-crash stopped after 5 crashes") &&
+                crashCard.includes("It last exited with code 1.") &&
+                crashLine === "Crashed · exit 1" &&
+                crashHead.restart &&
+                crashHead.start &&
+                !crashHead.stop &&
+                crashLog,
+            JSON.stringify({ pinnedCrash, crashDot, crashTitle, crashUp, crashCard, crashLine, crashHead, crashLog })
+        );
+
+        // 6. a sleeping pin wakes when its surface shows: the waiting card, then the page over the surface's slot
+        const asleep = (await status())["svc-sleep"]?.state === "sleeping";
+        const pinnedSleep = await railPinFromTree(h, "svc-sleep");
+        await polishNap(300);
+        const sleepDot = await h.ev(`document.querySelector(${JSON.stringify(RAIL_ITEM("svc-sleep") + " [data-nav-app-dot]")})?.getAttribute("data-nav-app-dot") ?? null`);
+        const sleepTitle = await h.ev(`document.querySelector(${JSON.stringify(RAIL_ITEM("svc-sleep"))})?.getAttribute("title") ?? ""`);
+        const stillAsleep = (await status())["svc-sleep"]?.state === "sleeping";
+        await ttMouse(h, RAIL_ITEM("svc-sleep"));
+        const waiting = await polishWaitFor(h, `!!document.querySelector('[data-app-surface="svc-sleep"] [data-app-waiting]')`, 6000);
+        const woke = await svcWait(h, { "svc-sleep": "running" }, 30000);
+        const sleepPage = await polishWaitFor(h, `(${railFrameExpr(slotSel)}).shown === "true"`, 15000);
+        await polishNap(500);
+        const sleepFrame = await h.ev(railFrameExpr(slotSel));
+        rec(
+            "6. a sleeping pin has no dot and reads `sleeping`; opening it shows the waiting card, then the page over the surface's slot",
+            asleep && pinnedSleep && sleepDot === null && sleepTitle === "svc-sleep: sleeping" && stillAsleep && waiting && woke.ok && sleepPage && railOver(sleepFrame),
+            JSON.stringify({ asleep, pinnedSleep, sleepDot, sleepTitle, stillAsleep, waiting, woke: woke.ok, sleepPage, sleepFrame })
+        );
+
+        // 7. the rail is full: a fourth is refused in the menu
+        await h.goto("agent");
+        await polishWaitFor(h, `!!document.querySelector(${JSON.stringify(svcTreeRow("svc-four"))})`, 8000);
+        const fourUp = await svcContextMenu(h, svcTreeRow("svc-four"));
+        const fourItems = fourUp ? await h.ev(SVC_MENU) : [];
+        const fourPin = fourItems.find((i) => i.label === "Pin to the rail");
+        await h.ev(PEEKS_ESC);
+        rec(
+            "7. with three on the rail, a fourth service's Pin to the rail is dimmed and says why",
+            fourUp && fourPin?.disabled === true && fourPin.title === RAIL_FULL,
+            JSON.stringify({ fourUp, fourPin })
+        );
+        await polishNap(300);
+
+        // 8. Move up and Move down, and the ends that cannot
+        const before = await h.ev(RAIL_ORDER);
+        const crashItems = await railMenu(h, "svc-crash");
+        await ttClick(h, '[data-menu-item="Move up"]');
+        await polishNap(500);
+        const afterMove = await h.ev(RAIL_ORDER);
+        const storedMove = await h.ev(RAIL_STORED);
+        const firstItems = await railMenu(h, afterMove[0]);
+        await h.ev(PEEKS_ESC);
+        await polishNap(300);
+        const lastItems = await railMenu(h, afterMove[afterMove.length - 1]);
+        await h.ev(PEEKS_ESC);
+        const row = (items, l) => items.find((i) => i.label === l);
+        rec(
+            "8. Move up puts svc-crash first, the stored order follows, and the first item cannot move up nor the last down",
+            JSON.stringify(before) === '["svc-ok","svc-crash","svc-sleep"]' &&
+                row(crashItems, "Move up")?.disabled === false &&
+                JSON.stringify(afterMove) === '["svc-crash","svc-ok","svc-sleep"]' &&
+                JSON.stringify(storedMove) === JSON.stringify(afterMove) &&
+                row(firstItems, "Move up")?.disabled === true &&
+                row(lastItems, "Move down")?.disabled === true,
+            JSON.stringify({ before, crashItems, afterMove, storedMove, firstItems, lastItems })
+        );
+        await polishNap(300);
+
+        // 9. a narrow window keeps the icon: the label goes, the aria-label and title stay
+        let narrow = null;
+        try {
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 800, height: 800, deviceScaleFactor: 1, mobile: false });
+            const narrowExpr = `[...document.querySelectorAll("[data-nav-app]")].map((b) => ({
+                id: b.getAttribute("data-nav-app"),
+                text: (b.textContent ?? "").trim(),
+                aria: b.getAttribute("aria-label"),
+                title: b.getAttribute("title"),
+            }))`;
+            await polishWaitFor(h, `(${narrowExpr}).length === 3 && (${narrowExpr}).every((b) => b.text === "")`, 5000);
+            narrow = await h.ev(narrowExpr);
+            await h.shot("cdp-shots/services-rail-narrow.png");
+        } finally {
+            await h.cdp("Emulation.clearDeviceMetricsOverride", {});
+        }
+        rec(
+            "9. on a narrow window each pin shows its icon alone, its aria-label and title kept",
+            narrow?.length === 3 && narrow.every((b) => b.text === "" && b.aria === b.id && !!b.title),
+            JSON.stringify(narrow)
+        );
+        await polishNap(500);
+
+        // 10. unpin from the item's menu; a port taken reads amber
+        const unpinMenu = await railMenu(h, "svc-sleep");
+        await ttClick(h, '[data-menu-item="Unpin from the rail"]');
+        await polishNap(500);
+        const afterUnpin = await h.ev(RAIL_ORDER);
+        const storedUnpin = await h.ev(RAIL_STORED);
+        const pinnedPort = await railPinFromTree(h, "svc-port");
+        await polishNap(400);
+        const portDot = await h.ev(`document.querySelector(${JSON.stringify(RAIL_ITEM("svc-port") + " [data-nav-app-dot]")})?.getAttribute("data-nav-app-dot") ?? null`);
+        rec(
+            "10. Unpin from the rail drops svc-sleep from the rail and the stored list; svc-port, its port taken, wears the amber dot",
+            unpinMenu.some((i) => i.label === "Unpin from the rail") &&
+                !afterUnpin.includes("svc-sleep") &&
+                !storedUnpin.includes("svc-sleep") &&
+                pinnedPort &&
+                portDot === "warning",
+            JSON.stringify({ unpinMenu: unpinMenu.map((i) => i.label), afterUnpin, storedUnpin, pinnedPort, portDot })
+        );
+
+        // 11. the header's Unpin on the shown app lands on Agent with that service's tab focused
+        await ttMouse(h, RAIL_ITEM("svc-ok"));
+        const okUp = await polishWaitFor(h, railSurfaceUp("svc-ok"), 8000);
+        await ttClick(h, '[data-app-surface="svc-ok"] [data-app-unpin]');
+        const okGone = await polishWaitFor(h, `!document.querySelector(${JSON.stringify(RAIL_ITEM("svc-ok"))})`, 5000);
+        const okOnAgent = await polishWaitFor(h, `(${TT_CENTRE}) === "terminal:${okTab}"`, 8000);
+        const okSurface = await h.activeSurfaceLabel();
+        const storedOk = await h.ev(RAIL_STORED);
+        rec(
+            "11. Unpin in the header drops the item and lands on Agent with svc-ok's tab focused",
+            okUp && okGone && okOnAgent && okSurface === "Agent" && !storedOk.includes("svc-ok"),
+            JSON.stringify({ okUp, okGone, okOnAgent, okSurface, storedOk })
+        );
+
+        // 12. a pinned service removed from tools.json takes its pin and the surface with it
+        await ttMouse(h, RAIL_ITEM("svc-port"));
+        const portUp = await polishWaitFor(h, `!!document.querySelector('[data-app-surface="svc-port"] [data-app-card="porttaken"]')`, 8000);
+        await h.rpc("toolssetuser", { id: "svc-port" });
+        const portGone = await polishWaitFor(h, `!document.querySelector(${JSON.stringify(RAIL_ITEM("svc-port"))})`, 10000);
+        const portSurface = await polishWaitFor(h, `!document.querySelector("[data-app-surface]")`, 8000);
+        const afterGone = await h.activeSurfaceLabel();
+        rec(
+            "12. removing svc-port from tools.json takes its item off the rail and the surface falls back to Agent",
+            portUp && portGone && portSurface && afterGone === "Agent",
+            JSON.stringify({ portUp, portGone, portSurface, afterGone })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        try {
+            await h.ev(
+                ctx.prevRail == null
+                    ? `localStorage.removeItem(${JSON.stringify(RAIL_KEY)})`
+                    : `localStorage.setItem(${JSON.stringify(RAIL_KEY)}, ${JSON.stringify(ctx.prevRail)})`
+            );
+            await h.ev("location.reload()").catch(() => {});
+            await polishWaitFor(h, `!!document.querySelector("nav button")`, 30000);
+        } catch (e) {
+            console.error(`services-rail teardown: restoring ${RAIL_KEY} failed: ${e?.message ?? e}`);
+        }
+        await svcTeardown(h, ctx, "services-rail");
     },
 };
 
@@ -50530,6 +50915,7 @@ export const SCENARIOS = [
     toolsApp,
     servicesStates,
     servicesTree,
+    servicesRail,
     servicesChip,
     servicesSetup,
     toolsPicker,

@@ -12,6 +12,8 @@ export type ShownPanes = {
     centerHidden: boolean;
     // the tab whose page or waiting card covers the stack in the centre, else null
     appTab: string | null;
+    // the tab of the service the app surface shows (a pinned rail app), else null
+    appSurfaceTab: string | null;
     // the grid's visible cells (tab ids), the focused one included
     cells: string[];
     // the terminal in the panel under the agent, else null
@@ -21,15 +23,22 @@ export type ShownPanes = {
     dockMax: boolean;
 };
 
-/** The ids of the services on screen, sorted and unique. An app's page or waiting card covers the stack, so it is the
- * one on screen; else every cell shows (none when the panel is maximized) and the panel when it is not folded. A tab
- * that is no service is dropped. */
+/** The ids of the services on screen, sorted and unique. On the app surface it is that surface's service alone. On the
+ * Agent surface an app's page or waiting card covers the stack, so it is the one on screen; else every cell shows
+ * (none when the panel is maximized) and the panel when it is not folded. A tab that is no service is dropped. */
 export function shownServices(p: ShownPanes, byTab: Record<string, ServiceStatus>): string[] {
-    if (p.surface !== "agent" || p.centerHidden) {
+    if (p.surface !== "agent" && p.surface !== "app") {
         return [];
     }
     const tabs: string[] = [];
-    if (p.appTab != null) {
+    if (p.surface === "app") {
+        // the app surface covers the hidden Agent surface: its one service is the one on screen
+        if (p.appSurfaceTab != null) {
+            tabs.push(p.appSurfaceTab);
+        }
+    } else if (p.centerHidden) {
+        return [];
+    } else if (p.appTab != null) {
         tabs.push(p.appTab);
     } else {
         if (!p.dockMax) {

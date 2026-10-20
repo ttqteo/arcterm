@@ -37,11 +37,12 @@ import { usageBucketsAtom } from "./usagestore";
 import { aggregateBuckets, type HarnessFilter } from "./usagestats";
 import { landOn } from "@/app/view/jarvis/returnsurface";
 
-export type SurfaceKey = "cockpit" | "jarvis" | "agent" | "radar" | "files" | "usage" | "code" | "setup" | "settings";
+export type SurfaceKey = "cockpit" | "jarvis" | "agent" | "radar" | "files" | "usage" | "code" | "setup" | "settings" | "app";
 
 // Ordered to match the NavRail (navrail.tsx: CORE_ITEMS, then TOOL_ITEMS) so Ctrl+1..7 line up with what the user
 // sees: the surfaces used all day first, then the tools. All 7 entries are chorded. Conversation History is not a
-// surface: it is a centre mode of "agent" (agentcenter.ts).
+// surface: it is a centre mode of "agent" (agentcenter.ts). "app" (a service pinned to the rail) is a surface with no
+// chord, not remembered as the start surface and not a `wsh ui go:` target, so it stays out of this list.
 export const SURFACE_ORDER: SurfaceKey[] = ["cockpit", "jarvis", "agent", "usage", "code", "files", "radar"];
 
 export type ChipFilter = "all" | "asking" | "working" | "idle";

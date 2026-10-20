@@ -23,6 +23,7 @@ import {
     setAppView,
     shownAppTab,
     type AppRect,
+    type AppSlot,
 } from "./appstore";
 import { toolsStatusAtom } from "./toolsstore";
 
@@ -45,18 +46,24 @@ function sameRect(a: AppRect | null, b: AppRect | null): boolean {
     );
 }
 
-// The place the page takes: its rect on screen, null while it has none (display:none above it)
-function AppSlotView({ tabId }: { tabId: string }) {
+// The place the page takes: its rect on screen, null while it has none (display:none above it). Two surfaces can hold a
+// slot for the same service (Agent's pane and the app surface), and the Agent one stays mounted under display:none: so
+// an inactive one neither measures nor publishes, and one going away clears the atom only if it still holds its own slot.
+export function AppSlotView({ tabId, active = true }: { tabId: string; active?: boolean }) {
     const ref = useRef<HTMLDivElement>(null);
     useLayoutEffect(() => {
+        if (!active) {
+            return;
+        }
         const el = ref.current!;
+        let mine: AppSlot | null = null;
         const measure = () => {
             const r = el.getBoundingClientRect();
             const rect =
                 r.width > 0 && r.height > 0 ? { left: r.left, top: r.top, width: r.width, height: r.height } : null;
-            const cur = globalStore.get(appSlotAtom);
-            if (cur?.tabId !== tabId || !sameRect(cur.rect, rect)) {
-                setAppSlot({ tabId, rect });
+            if (mine == null || globalStore.get(appSlotAtom) !== mine || !sameRect(mine.rect, rect)) {
+                mine = { tabId, rect };
+                setAppSlot(mine);
             }
         };
         measure();
@@ -66,20 +73,20 @@ function AppSlotView({ tabId }: { tabId: string }) {
         return () => {
             ro.disconnect();
             window.removeEventListener("resize", measure);
-            if (globalStore.get(appSlotAtom)?.tabId === tabId) {
+            if (mine != null && globalStore.get(appSlotAtom) === mine) {
                 setAppSlot(null);
             }
         };
-    }, [tabId]);
+    }, [tabId, active]);
     return <div ref={ref} data-app-slot={tabId} className="min-h-0 w-full flex-1" />;
 }
 
-export function AppPane({ tabId, state }: { tabId: string; state: AppState }) {
+export function AppPane({ tabId, state, active = true }: { tabId: string; state: AppState; active?: boolean }) {
     const name = useAtomValue(toolsStatusAtom)?.find((t) => t.id === state.toolId)?.name ?? state.toolId;
     const shows = appShows(state);
     const now = useNow(shows === "waiting", 1000);
     if (shows === "page") {
-        return <AppSlotView tabId={tabId} />;
+        return <AppSlotView tabId={tabId} active={active} />;
     }
     return (
         <div data-app-waiting={tabId} className="flex flex-1 flex-col items-center justify-center gap-3 text-center">

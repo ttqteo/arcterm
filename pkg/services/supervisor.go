@@ -403,6 +403,8 @@ func (s *Supervisor) SetTools(ctx context.Context, tools []arctools.Tool, projec
 		delete(s.svcs, id)
 		blockId, tabId := v.blockId, v.tabId
 		after = append(after, func() {
+			// the Stop went with the entry: the same id added again sleeps. The port stays, for the page's address
+			s.remember(id, func(r *Remembered) { r.Stopped = false })
 			if blockId != "" {
 				s.d.Stop(blockId)
 			}

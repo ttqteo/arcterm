@@ -63,7 +63,7 @@ the person did not stop.
 
 - A per-service idle time: one ten-minute rule.
 - Restoring the page's URL or scroll on a Mac.
-- The nav rail pin (its own spec, next in the follow-up initiative).
+- The nav rail pin: its own spec, `2026-10-20-rail-apps-design.md` (shipped in run 85770eac).
 
 ## Verification
 

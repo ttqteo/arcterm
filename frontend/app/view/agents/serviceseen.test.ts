@@ -27,6 +27,7 @@ const panes = (over: Partial<ShownPanes> = {}): ShownPanes => ({
     surface: "agent",
     centerHidden: false,
     appTab: null,
+    appSurfaceTab: null,
     cells: [],
     docked: null,
     dockFolded: false,
@@ -71,6 +72,20 @@ describe("shownServices", () => {
 
     it("another surface counts as off screen", () => {
         expect(shownServices(panes({ surface: "cockpit", cells: ["t-docs"], appTab: "t-api" }), byTab)).toEqual([]);
+    });
+
+    it("shownServices counts the app surface", () => {
+        expect(shownServices(panes({ surface: "app", appSurfaceTab: "t-docs" }), byTab)).toEqual(["docs"]);
+        expect(shownServices(panes({ surface: "app", appSurfaceTab: null }), byTab)).toEqual([]);
+        // a tab that is no service is dropped
+        expect(shownServices(panes({ surface: "app", appSurfaceTab: "t-shell" }), byTab)).toEqual([]);
+        // the Agent surface's cells are behind it: only the app's service is on screen
+        const p = panes({ surface: "app", appSurfaceTab: "t-docs", cells: ["t-api"], docked: "t-api", appTab: "t-api" });
+        expect(shownServices(p, byTab)).toEqual(["docs"]);
+    });
+
+    it("the app surface's tab is off screen while Agent shows", () => {
+        expect(shownServices(panes({ appSurfaceTab: "t-docs", cells: ["t-api"] }), byTab)).toEqual(["api"]);
     });
 
     it("is sorted and unique", () => {
