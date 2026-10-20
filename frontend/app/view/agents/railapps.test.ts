@@ -6,6 +6,7 @@ import {
     appCard,
     appSurfaceBody,
     appSurfaceService,
+    appWaitTitle,
     movedRailPin,
     parseRailPins,
     railDot,
@@ -16,17 +17,7 @@ import {
 } from "./railapps";
 
 const NOW = 1_800_000_000_000;
-const STATES = [
-    "starting",
-    "running",
-    "elsewhere",
-    "retrying",
-    "crashed",
-    "porttaken",
-    "nopage",
-    "sleeping",
-    "stopped",
-];
+const STATES = ["starting", "running", "elsewhere", "retrying", "crashed", "porttaken", "nopage", "sleeping"];
 
 function svc(id: string, state = "running", extra: Partial<ServiceStatus> = {}): ServiceStatus {
     return {
@@ -153,7 +144,6 @@ describe("railDot", () => {
         porttaken: "warning",
         nopage: "warning",
         sleeping: null,
-        stopped: null,
     };
 
     it.each(STATES)("%s", (state) => {
@@ -204,11 +194,29 @@ describe("appSurfaceBody", () => {
         porttaken: "card",
         nopage: "card",
         sleeping: "waiting",
-        stopped: "card",
     };
 
     it.each(STATES)("%s", (state) => {
         expect(appSurfaceBody(svc("x", state))).toBe(want[state]);
+    });
+
+    it("waits for a state it does not know, with no stopped card to fall to", () => {
+        expect(appSurfaceBody(svc("x", "stopped"))).toBe("waiting");
+        expect(appSurfaceBody(svc("x", "mystery"))).toBe("waiting");
+    });
+});
+
+describe("appWaitTitle", () => {
+    it("starting: Starting <name>", () => {
+        expect(appWaitTitle(svc("svc", "starting"))).toBe("Starting svc");
+    });
+
+    it("sleeping: <name> is asleep, since after a Stop nothing starts it until it is shown again", () => {
+        expect(appWaitTitle(svc("svc", "sleeping"))).toBe("svc is asleep");
+    });
+
+    it("a state it does not know reads as sleeping does", () => {
+        expect(appWaitTitle(svc("svc", "stopped"))).toBe("svc is asleep");
     });
 });
 
@@ -229,10 +237,11 @@ describe("appCard", () => {
         });
     });
 
-    it("stopped: Start", () => {
-        expect(appCard(svc("svc", "stopped"), NOW)).toEqual({
-            title: "svc is stopped",
-            line: "Start it to see its page.",
+    it("a state no card names: its state and its header line, Start", () => {
+        // unreachable from appSurfaceBody; the total fallback of appCard
+        expect(appCard(svc("svc", "sleeping"), NOW)).toEqual({
+            title: "svc is sleeping",
+            line: "Sleeping · starts when shown",
             action: "start",
         });
     });

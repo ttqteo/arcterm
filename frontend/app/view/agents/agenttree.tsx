@@ -201,7 +201,7 @@ import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showServiceMenu } from "./servicemenu";
-import { canRestart, canStart, serviceRowWords } from "./servicesmodel";
+import { canRestart, canStart, serviceRowWords, treeServiceInput } from "./servicesmodel";
 import { ensureServicesFeed, openService, restartService, servicesAtom, startService } from "./servicesstore";
 import { showTerminalMenu, splitCellMenuItems, SplitMark, ToolGlyph } from "./terminalsrail";
 import { PanelWeb, TreeSpider } from "./themedecorview";
@@ -2534,12 +2534,13 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // the plans queued to start (the run queue), each a row in its project's folder under the agents
     useRunQueueFeed();
     const queue = useAtomValue(queuedRowsAtom);
-    // the held services (wavesrv's): a row each in its project's folder, after the divider
+    // the held services (wavesrv's) that are up or in trouble: a row each in its project's folder, after the divider. A
+    // sleeping one has none (the selected one keeps its row), and its tab is still no terminal row.
     useEffect(() => ensureServicesFeed(), []);
     const serviceList = useAtomValue(servicesAtom);
-    const services = useMemo(
-        () => (serviceList ?? []).map((s) => ({ id: s.id, name: s.name, project: s.project, tabId: s.tabid })),
-        [serviceList]
+    const { services, serviceTabs } = useMemo(
+        () => treeServiceInput(serviceList ?? [], focusId),
+        [serviceList, focusId]
     );
     const rows = projectTree({
         tree,
@@ -2549,6 +2550,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         roots,
         queue,
         services,
+        serviceTabs,
     });
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));

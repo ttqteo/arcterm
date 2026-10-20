@@ -67,8 +67,8 @@ export function focusedAppTab(active: Pick<Element, "tagName" | "getAttribute"> 
 }
 
 // What a service shows in its terminal's place: running or elsewhere, the page; starting, the waiting card; every other
-// state (stopped, sleeping, crashed, retrying, porttaken, nopage) fails, which shows the log: a sleeping service has no
-// process, and its frame is dropped like a stopped one's until showing the pane wakes it. `view` and `reloads` are the
+// state (sleeping, crashed, retrying, porttaken, nopage) fails, which shows the log: a sleeping service has no
+// process, and its frame is dropped until showing the pane wakes it. `view` and `reloads` are the
 // person's picks (Page | Log, Home), kept per tab by appstore.ts.
 export function serviceAppState(s: ServiceStatus, view: AppView, reloads: number): AppState {
     const phase: AppPhase =
@@ -94,12 +94,14 @@ export function appShows(s: AppState | null | undefined): AppShows {
     return s.phase === "open" ? "page" : "waiting";
 }
 
-// how long an open app's page stays loaded, out of sight, after it was last on screen
-export const APP_FRAME_IDLE_MS = 10 * 60_000;
+// how long an open app's page stays loaded, out of sight, after it was last on screen: as wavesrv's IdleSleep, so a page
+// is not kept over a server that went to sleep
+export const APP_FRAME_IDLE_MS = 60_000;
 
 // The apps whose page stays loaded: the one on screen, and each open one seen within the idle limit. A page out of
-// sight keeps its place and its scroll; past the limit it is dropped and loads afresh when next shown (its server keeps
-// running). In the order of `states`, so a frame already loaded never moves in the DOM, which would reload it.
+// sight keeps its place and its scroll; past the limit it is dropped and loads afresh when next shown (its server may
+// have slept meanwhile, and starts again then). In the order of `states`, so a frame already loaded never moves in the
+// DOM, which would reload it.
 export function keptAppFrames(
     states: Record<string, Pick<AppState, "phase">>,
     shown: string | null,

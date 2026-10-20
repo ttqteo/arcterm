@@ -193,8 +193,8 @@ describe("opening a pinned app", () => {
         m.serviceStart.mockResolvedValue(undefined);
     });
 
-    it("gives a stopped service its tab, starts it, and takes the centre whatever it shows", async () => {
-        m.serviceOpen.mockResolvedValue(svc("stopped"));
+    it("gives a sleeping service its tab, starts it, and takes the centre whatever it shows", async () => {
+        m.serviceOpen.mockResolvedValue(svc("sleeping"));
         const model = fakeModel();
         const res = await openTool(model, app(), { place: "panel" });
         expect(res).toEqual({ ok: true, tabId: "tab-svc" });
@@ -208,7 +208,7 @@ describe("opening a pinned app", () => {
     });
 
     it("never launches a terminal, probes the page, or writes block meta itself", async () => {
-        m.serviceOpen.mockResolvedValue(svc("stopped"));
+        m.serviceOpen.mockResolvedValue(svc("sleeping"));
         await openTool(fakeModel(), app(), { place: "centre" });
         expect(m.launchAgent).not.toHaveBeenCalled();
         expect(fetchMock).not.toHaveBeenCalled();
@@ -235,7 +235,7 @@ describe("opening a pinned app", () => {
     });
 
     it("puts the opened service in the list before wavesrv's event arrives", async () => {
-        m.serviceOpen.mockResolvedValue(svc("stopped"));
+        m.serviceOpen.mockResolvedValue(svc("sleeping"));
         await openTool(fakeModel(), app(), { place: "centre" });
         expect(globalStore.get(servicesAtom)?.map((s) => s.id)).toEqual(["hong"]);
     });
