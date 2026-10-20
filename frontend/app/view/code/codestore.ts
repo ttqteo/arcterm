@@ -1056,14 +1056,15 @@ export async function openInCode(
     const cur = globalStore.get(codeProjectAtom);
     // switching resets expand state, history and the file; a jump within the repository you are
     // already reading must not throw that away
-    if (cur == null || !sameRepoPath(cur.path, project.path)) {
-        await selectProject(project);
-    }
+    // selectProject sets the project before it awaits the index, so the surface switches at once rather than
+    // after a git ls-files, and Code mounts on the new project instead of restoring the last one
+    const selecting = cur == null || !sameRepoPath(cur.path, project.path) ? selectProject(project) : null;
+    landOn(model.surfaceAtom, "code");
+    await selecting;
     revealPath(target.rel);
     globalStore.set(codeCursorAtom, target.rel);
     // set before the read: the viewer honors this the moment the text lands
     globalStore.set(codePendingLineAtom, target.line ?? null);
-    landOn(model.surfaceAtom, "code");
     await openPath(target.rel, { line: target.line ?? null });
 }
 

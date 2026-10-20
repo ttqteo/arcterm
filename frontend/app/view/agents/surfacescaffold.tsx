@@ -117,7 +117,7 @@ export function SurfaceEmptyState({
                                 type="button"
                                 onClick={action.onClick}
                                 disabled={action.disabled}
-                                className="flex cursor-pointer items-center gap-[11px] rounded-lg bg-accent px-[26px] py-3.5 text-[15px] font-bold text-background shadow-cta hover:bg-accenthover disabled:cursor-default disabled:opacity-50"
+                                className="flex cursor-pointer items-center gap-[11px] rounded-lg bg-accent px-[26px] py-3.5 text-[15px] font-bold text-background shadow-cta hover:bg-accenthover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50"
                             >
                                 {action.label}
                             </button>
@@ -126,7 +126,7 @@ export function SurfaceEmptyState({
                             <button
                                 type="button"
                                 onClick={secondaryAction.onClick}
-                                className="cursor-pointer rounded-lg border border-edge-mid bg-surface-raised px-4 py-2.5 text-[13px] font-semibold text-secondary hover:border-edge-strong"
+                                className="cursor-pointer rounded-lg border border-edge-mid bg-surface-raised px-4 py-2.5 text-[13px] font-semibold text-secondary hover:border-edge-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                             >
                                 {secondaryAction.label}
                             </button>
@@ -157,7 +157,7 @@ export function SurfaceError({
                 <button
                     type="button"
                     onClick={onRetry}
-                    className="flex-none cursor-pointer rounded border border-error/40 px-2 py-0.5 font-semibold hover:bg-error/15"
+                    className="flex-none cursor-pointer rounded border border-error/40 px-2 py-0.5 font-semibold hover:bg-error/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     {actionLabel}
                 </button>
