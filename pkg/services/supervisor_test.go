@@ -49,6 +49,8 @@ type harness struct {
 	freePort []int
 	log      string
 	blocks   []BlockRef
+	procs    map[string][]Proc // block id -> the process tree Procs reads
+	onProcs  func()            // runs inside each Procs read, which the supervisor makes without its lock
 
 	ensures    []Def
 	starts     [][2]string
@@ -67,6 +69,7 @@ func newHarness(t *testing.T) *harness {
 		now:     time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC),
 		up:      map[string]bool{},
 		holders: map[int]string{},
+		procs:   map[string][]Proc{},
 	}
 	h.sup = New(h.deps())
 	return h
@@ -115,7 +118,13 @@ func (h *harness) deps() Deps {
 				h.up[url] = false // what was serving is gone
 			}
 		},
-		Sweep:    func(blockId string) { h.sweeps = append(h.sweeps, blockId) },
+		Sweep: func(blockId string) { h.sweeps = append(h.sweeps, blockId) },
+		Procs: func(blockId string) []Proc {
+			if h.onProcs != nil {
+				h.onProcs()
+			}
+			return h.procs[blockId]
+		},
 		ReadLog:  func(string) string { return h.log },
 		CloseTab: func(_ context.Context, tabId string) error { h.closedTabs = append(h.closedTabs, tabId); return nil },
 		Publish:  func(data wshrpc.ServicesData) { h.published = append(h.published, data) },
@@ -285,9 +294,6 @@ func TestCrashRetriesWithBackoffThenGivesUp(t *testing.T) {
 	if h.pendingTimers() != 0 {
 		t.Errorf("a service that gave up must have no timer, %d pending", h.pendingTimers())
 	}
-	if h.state.Get("portfolio").Stopped {
-		t.Error("a crash that gave up is not a stop by the person")
-	}
 }
 
 func TestLongRunResetsCrashCount(t *testing.T) {
@@ -308,43 +314,39 @@ func TestLongRunResetsCrashCount(t *testing.T) {
 	}
 }
 
-func TestStopIsRememberedAndNotRetried(t *testing.T) {
+func TestStopSleepsAndIsNotRetried(t *testing.T) {
 	h := newHarness(t)
 	h.setTools(fixedTool("portfolio", dashURL))
 	h.run("portfolio", dashURL)
 	if err := h.sup.Stop(context.Background(), "portfolio"); err != nil {
 		t.Fatal(err)
 	}
-	h.wantState("portfolio", StateStopped)
-	if !h.state.Get("portfolio").Stopped {
-		t.Error("Stop is not remembered")
+	h.wantState("portfolio", StateSleeping)
+	if got := h.state.Get("portfolio"); got != (Remembered{}) {
+		t.Errorf("Stop remembered %+v: nothing remembers a Stop", got)
 	}
 	if !slices.Equal(h.stops, []string{"blk-portfolio"}) {
 		t.Errorf("stops = %v", h.stops)
 	}
 	h.exit("blk-portfolio", 143, false)
-	h.wantState("portfolio", StateStopped)
+	h.wantState("portfolio", StateSleeping)
 	if h.pendingTimers() != 0 {
 		t.Error("the exit after a Stop must not be retried")
 	}
+	h.advance(time.Minute)
+	h.wantState("portfolio", StateSleeping)
+	if len(h.starts) != 1 {
+		t.Errorf("starts = %v: a stopped service that is not shown started again", h.starts)
+	}
 
-	// a boot leaves it stopped
+	// a boot with the same state starts it: Keep running is the only thing that starts a service nobody shows
 	h2 := newHarness(t)
 	h2.state = h.state
 	h2.sup = New(h2.deps())
 	h2.setTools(fixedTool("portfolio", dashURL))
 	h2.sup.Boot(context.Background())
 	h2.advance(time.Second)
-	if len(h2.starts) != 0 || len(h2.ensures) != 0 {
-		t.Errorf("boot started a service the person stopped: %v", h2.starts)
-	}
-
-	if err := h2.sup.Start(context.Background(), "portfolio"); err != nil {
-		t.Fatal(err)
-	}
-	if h2.state.Get("portfolio").Stopped {
-		t.Error("Start must clear the stop flag")
-	}
+	h2.wantState("portfolio", StateStarting)
 }
 
 func TestStopsExitDoesNotCountAgainstARestart(t *testing.T) {
@@ -371,9 +373,9 @@ func TestInterruptCountsAsStop(t *testing.T) {
 	h.setTools(fixedTool("portfolio", dashURL))
 	h.run("portfolio", dashURL)
 	h.exit("blk-portfolio", 130, true)
-	h.wantState("portfolio", StateStopped)
-	if !h.state.Get("portfolio").Stopped {
-		t.Error("Ctrl+C in the log is a remembered Stop")
+	h.wantState("portfolio", StateSleeping)
+	if got := h.state.Get("portfolio"); got != (Remembered{}) {
+		t.Errorf("Ctrl+C in the log remembered %+v: nothing remembers a Stop", got)
 	}
 	if h.pendingTimers() != 0 {
 		t.Error("no retry after the person's Ctrl+C")
@@ -385,9 +387,9 @@ func TestExitZeroIsStop(t *testing.T) {
 	h.setTools(fixedTool("portfolio", dashURL))
 	h.run("portfolio", dashURL)
 	h.exit("blk-portfolio", 0, false)
-	h.wantState("portfolio", StateStopped)
-	if !h.state.Get("portfolio").Stopped || h.pendingTimers() != 0 {
-		t.Error("a clean exit is a remembered stop with no retry")
+	h.wantState("portfolio", StateSleeping)
+	if got := h.state.Get("portfolio"); got != (Remembered{}) || h.pendingTimers() != 0 {
+		t.Errorf("a clean exit is a stop with no retry and nothing remembered: remembered %+v, %d timers", got, h.pendingTimers())
 	}
 }
 
@@ -626,26 +628,6 @@ func TestRemovedToolStopsAndClosesTab(t *testing.T) {
 	h.sup.OnBlockClosed("blk-portfolio")
 }
 
-// removing an entry forgets the person's Stop, so the same id added again sleeps; the remembered port stays, which
-// keeps the page's address (and the app's own browser storage) for the entry that comes back
-func TestRemovedToolForgetsTheStop(t *testing.T) {
-	h := newHarness(t)
-	h.setTools(fixedTool("portfolio", dashURL))
-	h.run("portfolio", dashURL)
-	if err := h.sup.Stop(context.Background(), "portfolio"); err != nil {
-		t.Fatal(err)
-	}
-	h.state.Set("portfolio", Remembered{Port: 8386, Stopped: true})
-	h.setTools()
-	if got := h.state.Get("portfolio"); got.Stopped || got.Port != 8386 {
-		t.Errorf("remembered after removal = %+v, want the Stop forgotten and the port kept", got)
-	}
-	back := fixedTool("portfolio", dashURL)
-	back.Autostart = false
-	h.setTools(back)
-	h.wantState("portfolio", StateSleeping)
-}
-
 func TestNewAutostartServiceStartsAtOnce(t *testing.T) {
 	h := newHarness(t)
 	h.sup.Boot(context.Background())
@@ -798,8 +780,8 @@ func TestBlockClosedCountsAsStop(t *testing.T) {
 	h.run("portfolio", dashURL)
 	h.up[dashURL] = false // closing the block took the server with it
 	h.sup.OnBlockClosed("blk-portfolio")
-	st := h.wantState("portfolio", StateStopped)
-	if st.TabId != "" || st.BlockId != "" || !h.state.Get("portfolio").Stopped {
+	st := h.wantState("portfolio", StateSleeping)
+	if st.TabId != "" || st.BlockId != "" || h.state.Get("portfolio") != (Remembered{}) {
 		t.Errorf("status %+v, remembered %+v", st, h.state.Get("portfolio"))
 	}
 	n := len(h.ensures)
@@ -888,7 +870,7 @@ func (h *harness) answer(id, url string) {
 	h.wantState(id, StateRunning)
 }
 
-func TestUnseenServiceSleepsAfterTenMinutes(t *testing.T) {
+func TestUnseenServiceSleepsAfterAMinute(t *testing.T) {
 	h := newHarness(t)
 	h.boot(demandTool("portfolio", dashURL))
 	h.wantState("portfolio", StateSleeping)
@@ -900,15 +882,15 @@ func TestUnseenServiceSleepsAfterTenMinutes(t *testing.T) {
 	h.advance(IdleSleep - time.Second)
 	h.wantState("portfolio", StateRunning)
 	if len(h.stops) != 0 {
-		t.Fatalf("stopped before ten minutes: %v", h.stops)
+		t.Fatalf("stopped before its minute: %v", h.stops)
 	}
 	h.advance(time.Second)
 	h.wantState("portfolio", StateSleeping)
 	if !slices.Equal(h.stops, []string{"blk-portfolio"}) {
 		t.Errorf("stops = %v, want one", h.stops)
 	}
-	if h.state.Get("portfolio").Stopped {
-		t.Error("a sleep is not the person's Stop")
+	if got := h.state.Get("portfolio"); got != (Remembered{}) {
+		t.Errorf("a sleep remembered %+v", got)
 	}
 }
 
@@ -919,13 +901,118 @@ func TestSeenAgainCancelsSleep(t *testing.T) {
 	h.answer("portfolio", dashURL)
 
 	h.seen()
-	h.advance(5 * time.Minute)
+	h.advance(IdleSleep / 2)
 	h.seen("portfolio")
-	h.advance(20 * time.Minute)
+	h.advance(2 * IdleSleep)
 	h.wantState("portfolio", StateRunning)
 	if len(h.stops) != 0 {
 		t.Errorf("stops = %v, want none", h.stops)
 	}
+}
+
+func TestBusyServicePostponesItsSleep(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.seen("portfolio")
+	h.answer("portfolio", dashURL)
+	up := h.status("portfolio").StartedMs
+
+	h.seen()
+	h.procs["blk-portfolio"] = []Proc{{Pid: 7, StartMs: up + 1000}} // a claude -p the dashboard started
+	h.advance(IdleSleep)
+	h.wantState("portfolio", StateRunning)
+	h.advance(IdleSleep)
+	h.wantState("portfolio", StateRunning)
+	if len(h.stops) != 0 {
+		t.Fatalf("stops = %v: stopped in the middle of work", h.stops)
+	}
+
+	h.procs["blk-portfolio"] = nil // the run ended
+	h.advance(IdleSleep)
+	h.wantState("portfolio", StateSleeping)
+	if !slices.Equal(h.stops, []string{"blk-portfolio"}) {
+		t.Errorf("stops = %v, want one", h.stops)
+	}
+}
+
+func TestBusyReadWaitsForTheMinute(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.seen("portfolio")
+	h.answer("portfolio", dashURL)
+	reads := 0
+	h.onProcs = func() { reads++ }
+
+	h.advance(10 * IdleSleep) // on screen: nothing is read
+	h.seen()
+	h.advance(IdleSleep - time.Second)
+	if reads != 0 {
+		t.Errorf("read the tree %d times before its minute was up", reads)
+	}
+	h.advance(time.Second)
+	if reads != 1 {
+		t.Errorf("read the tree %d times when its minute was up, want once", reads)
+	}
+}
+
+func TestShownAgainWhileTheTreeIsReadKeepsRunning(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.seen("portfolio")
+	h.answer("portfolio", dashURL)
+
+	h.seen()
+	h.onProcs = func() { h.seen("portfolio") } // the person comes back while the tree is being read
+	h.advance(IdleSleep)
+	h.wantState("portfolio", StateRunning)
+	if len(h.stops) != 0 {
+		t.Errorf("stops = %v: a service that came back on screen was stopped", h.stops)
+	}
+	h.onProcs = nil
+	h.advance(10 * IdleSleep)
+	h.wantState("portfolio", StateRunning)
+}
+
+func TestStopWhileBusyStopsAtOnce(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.seen("portfolio")
+	h.answer("portfolio", dashURL)
+	h.procs["blk-portfolio"] = []Proc{{Pid: 7, StartMs: h.status("portfolio").StartedMs + 1000}}
+
+	if err := h.sup.Stop(context.Background(), "portfolio"); err != nil {
+		t.Fatal(err)
+	}
+	h.wantState("portfolio", StateSleeping)
+	if !slices.Equal(h.stops, []string{"blk-portfolio"}) {
+		t.Errorf("stops = %v: Stop waited on work", h.stops)
+	}
+}
+
+func TestUnreadableTreeCountsAsIdle(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.seen("portfolio")
+	h.answer("portfolio", dashURL)
+	h.sup.d.Procs = nil // a platform that cannot read it
+
+	h.seen()
+	h.advance(IdleSleep)
+	h.wantState("portfolio", StateSleeping)
+}
+
+func TestStopIsNotRemembered(t *testing.T) {
+	h := newHarness(t)
+	h.boot(demandTool("portfolio", dashURL))
+	h.seen("portfolio")
+	h.answer("portfolio", dashURL)
+	if err := h.sup.Stop(context.Background(), "portfolio"); err != nil {
+		t.Fatal(err)
+	}
+	h.wantState("portfolio", StateSleeping)
+	h.seen()
+	h.seen("portfolio") // shown again: it starts
+	h.wantState("portfolio", StateStarting)
 }
 
 func TestSeenSleepingStarts(t *testing.T) {
@@ -939,9 +1026,6 @@ func TestSeenSleepingStarts(t *testing.T) {
 	h.wantState("portfolio", StateStarting)
 	if len(h.ensures) != 1 || len(h.starts) != 1 {
 		t.Errorf("ensures %d starts %d, want one each", len(h.ensures), len(h.starts))
-	}
-	if h.state.Get("portfolio").Stopped {
-		t.Error("a start when shown must not touch the stop flag")
 	}
 }
 
@@ -973,34 +1057,14 @@ func TestNewSetArmsTheOnesThatLeft(t *testing.T) {
 	h.wantState("b", StateSleeping)
 }
 
-func TestStoppedServiceDoesNotStartWhenSeen(t *testing.T) {
-	h := newHarness(t)
-	h.boot(demandTool("portfolio", dashURL))
-	h.run("portfolio", dashURL)
-	if err := h.sup.Stop(context.Background(), "portfolio"); err != nil {
-		t.Fatal(err)
-	}
-	h.seen("portfolio")
-	h.wantState("portfolio", StateStopped)
-	if len(h.starts) != 1 {
-		t.Errorf("starts = %v: showing a service the person stopped started it", h.starts)
-	}
-	if h.pendingTimers() != 0 {
-		t.Errorf("%d timers pending after a Stop", h.pendingTimers())
-	}
-}
-
 func TestStartOffScreenSleeps(t *testing.T) {
 	h := newHarness(t)
 	h.boot(demandTool("portfolio", dashURL))
-	h.run("portfolio", dashURL) // the person's Start, from the popover; its page is never shown
+	h.run("portfolio", dashURL) // a start the person asked for; its page is never shown
 	h.advance(IdleSleep - 2*time.Second - ProbeInterval)
 	h.wantState("portfolio", StateRunning)
 	h.advance(2 * time.Second)
 	h.wantState("portfolio", StateSleeping)
-	if h.state.Get("portfolio").Stopped {
-		t.Error("a sleep is not the person's Stop")
-	}
 }
 
 func TestKeepRunningNeverSleeps(t *testing.T) {
@@ -1045,14 +1109,14 @@ func TestKeepRunningOnStartsSleeping(t *testing.T) {
 
 func TestBootLeavesOnDemandSleeping(t *testing.T) {
 	h := newHarness(t)
-	h.state.m["c"] = Remembered{Stopped: true}
 	h.boot(fixedTool("a", "http://127.0.0.1:8001/"), demandTool("b", "http://127.0.0.1:8002/"), fixedTool("c", "http://127.0.0.1:8003/"))
 	h.wantState("a", StateStarting)
 	h.wantState("b", StateSleeping)
-	h.wantState("c", StateStopped)
+	h.advance(BootStagger)
+	h.wantState("c", StateStarting) // Keep running starts with arcterm, a stagger after a
 	h.advance(time.Minute)
-	if len(h.starts) != 1 || h.starts[0][1] != "blk-a" {
-		t.Errorf("starts = %v, want only a's", h.starts)
+	if len(h.starts) != 2 || h.starts[0][1] != "blk-a" || h.starts[1][1] != "blk-c" {
+		t.Errorf("starts = %v, want a's and c's", h.starts)
 	}
 }
 
@@ -1092,14 +1156,14 @@ func TestRetryingSleepsAndRetriesEnd(t *testing.T) {
 	h.answer("portfolio", dashURL)
 
 	h.seen()
-	h.advance(2 * time.Minute)
+	h.advance(10 * time.Second)
 	h.exit("blk-portfolio", 1, false)
 	h.wantState("portfolio", StateRetrying)
 	h.advance(time.Second)
-	h.wantState("portfolio", StateStarting) // the retry did not push the ten minutes back
+	h.wantState("portfolio", StateStarting) // the retry did not push its minute back
 	h.answer("portfolio", dashURL)
 
-	h.advance(IdleSleep - 2*time.Minute - time.Second - ProbeInterval - 2*time.Second)
+	h.advance(IdleSleep - 10*time.Second - time.Second - ProbeInterval - 2*time.Second)
 	h.exit("blk-portfolio", 1, false)
 	h.wantState("portfolio", StateRetrying)
 	starts := len(h.starts)

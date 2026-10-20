@@ -13,10 +13,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shirou/gopsutil/v4/process"
+
 	"github.com/wavetermdev/waveterm/pkg/arctools"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/devservers"
 	"github.com/wavetermdev/waveterm/pkg/filestore"
+	"github.com/wavetermdev/waveterm/pkg/memusage"
+	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
@@ -75,6 +79,7 @@ func realDeps(state StateStore) Deps {
 			blockcontroller.StopLeftovers(blockId) // the node under npm keeps the port after its parent is gone
 		},
 		Sweep:    blockcontroller.StopLeftovers,
+		Procs:    procs,
 		ReadLog:  readLog,
 		CloseTab: closeTab,
 		Publish: func(data wshrpc.ServicesData) {
@@ -82,6 +87,51 @@ func realDeps(state StateStore) Deps {
 		},
 		State: state,
 	}
+}
+
+// blockJobPids is the members of the jobs registered for a block, nil when it has none. Pure: jobs is LiveJobs().
+func blockJobPids(jobs []jobobject.LiveJob, blockId string) []int32 {
+	var pids []int32
+	for _, j := range jobs {
+		if j.Owner.Kind != jobobject.OwnerKind_Block || j.Owner.Id != blockId {
+			continue
+		}
+		for _, m := range j.Members {
+			pids = append(pids, int32(m))
+		}
+	}
+	return pids
+}
+
+// procs is the service block's process tree with each process's start time: the block's job members (an orphaned
+// grandchild is still one; LiveJobs lists none off Windows), else the tree under the block controller's pid. nil when
+// it cannot be read: a failed read is idle.
+func procs(blockId string) []Proc {
+	pids := blockJobPids(jobobject.LiveJobs(), blockId)
+	if len(pids) == 0 {
+		root := blockcontroller.GetBlockControllerPid(blockId)
+		if root <= 0 {
+			return nil
+		}
+		table, err := memusage.ReadTable()
+		if err != nil {
+			return nil
+		}
+		pids = table.Tree(int32(root))
+	}
+	out := make([]Proc, 0, len(pids))
+	for _, pid := range pids {
+		p, err := process.NewProcess(pid)
+		if err != nil {
+			continue
+		}
+		startMs, err := p.CreateTime()
+		if err != nil {
+			continue
+		}
+		out = append(out, Proc{Pid: pid, StartMs: startMs})
+	}
+	return out
 }
 
 // probe asks for the page; any response counts as the page answering.

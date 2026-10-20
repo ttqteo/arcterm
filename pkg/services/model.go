@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	StateStopped   = "stopped"
 	StateStarting  = "starting"
 	StateRunning   = "running"
 	StateElsewhere = "elsewhere" // its page answers, but arcterm did not start what answers it
@@ -24,7 +23,7 @@ const (
 	StateCrashed   = "crashed" // gave up after MaxCrashes
 	StatePortTaken = "porttaken"
 	StateNoPage    = "nopage"   // the process is up but its page never answered within StartTimeout
-	StateSleeping  = "sleeping" // stopped by arcterm after its page sat off screen; starts again when shown
+	StateSleeping  = "sleeping" // no process of arcterm's: stopped (by the person or after its page sat off screen), starts again when shown
 )
 
 const (
@@ -34,10 +33,36 @@ const (
 	ProbeInterval = 500 * time.Millisecond
 	ProbeTimeout  = 1500 * time.Millisecond
 	BootStagger   = 300 * time.Millisecond // between boot starts, like RestoreLiveAgents
-	IdleSleep     = 10 * time.Minute       // how long a service without Keep running runs with its page off screen, as APP_FRAME_IDLE_MS
+	// IdleSleep is how long a service without Keep running runs with its page off screen before it sleeps, unless it
+	// is busy; as APP_FRAME_IDLE_MS.
+	IdleSleep = time.Minute
+	// BusyMaxAge is how old a process the server started can be and still count as work in progress: a process this
+	// old is the server's own helper, so a false busy cannot keep a service up for good.
+	BusyMaxAge = 30 * time.Minute
 
 	HomeProject = "Home" // the project of a service whose folder is inside no registered project
 )
+
+// Proc is one process of a service's tree: its pid and when it started, in unix ms.
+type Proc struct {
+	Pid     int32
+	StartMs int64
+}
+
+// Busy reports whether a service has work in progress: a process of its tree that started after its page first
+// answered (upMs, the status's StartedMs) and is younger than BusyMaxAge. A service that never answered (upMs 0) is
+// never busy.
+func Busy(procs []Proc, upMs, nowMs int64) bool {
+	if upMs <= 0 {
+		return false
+	}
+	for _, p := range procs {
+		if p.StartMs > upMs && nowMs-p.StartMs < BusyMaxAge.Milliseconds() {
+			return true
+		}
+	}
+	return false
+}
 
 // Backoff is the wait before restart number crash (1-based): 1 s, 2 s, 4 s, 8 s, 16 s, then 16 s again.
 func Backoff(crash int) time.Duration {
