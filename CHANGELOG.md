@@ -57,6 +57,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   blocks, so an engine task's long prompt no longer reads as one wall of text; a long prompt shows its first lines,
   with Show more.
 - Holding `Ctrl` in the Agent view no longer leaves a copy of **Redraw the terminal** in the bottom bar each time.
+- A service whose program starts agents of its own (a dashboard that calls `claude -p`) is listed once in the Agent
+  tree, as its service row, instead of a second time as an agent.
 
 ## 0.15.16 — 2026-10-19
 

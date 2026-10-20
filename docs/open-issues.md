@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Service listed once: with the `portfolio` service running and its dashboard writing a report
+  (`claude -p`), the Agent tree's portfolio-journal folder shows only the `portfolio :8386` service row, no
+  `✳ portfolio` agent row above it. `rosterStatus` in `agentsleep.ts`, read by `liveagents.ts` and
+  `sessionsidebarmodel.ts`. Uncommitted.
 - [ ] (arcterm) `wsh detach`: after installing a build with it, run `wsh detach npm run dev` in a project terminal
   (or have an agent start its dev server): it prints a pid, a log and a stop command, and no console window opens.
   Quit and reopen arcterm: the server still answers. Then stop it with the printed `taskkill`. `wshcmd-detach.go`,

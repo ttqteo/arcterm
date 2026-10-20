@@ -3,6 +3,7 @@ import { EMPTY_GRID } from "./agentgrid";
 import {
     asleepLaunchMeta,
     backgroundConfirmText,
+    rosterStatus,
     sleepingAge,
     sleepingOf,
     sleepingStatus,
@@ -112,6 +113,22 @@ describe("sleepingStatus", () => {
         expect(sleepingStatus(st, { ...asleep, "agent:sleeping": 0 }, OREF)).toBe(st);
         expect(sleepingStatus(null, { ...asleep, cmd: "codex" }, OREF)).toBeNull();
         expect(sleepingStatus(undefined, { ...asleep, cmd: "bash" }, OREF)).toBeUndefined();
+    });
+});
+
+describe("rosterStatus", () => {
+    const OREF = "block:b1";
+    const working = { oref: OREF, state: "working", agent: "claude", ts: 5, transcriptpath: "/t/report.jsonl" };
+
+    it("gives a service's block no status, though an agent its command started reports into it", () => {
+        const service = { controller: "cmd", cmd: "npm run dash", "tool:id": "hong", "tool:service": true };
+        expect(rosterStatus(working, service, OREF)).toBeUndefined();
+    });
+
+    it("reads any other block as sleepingStatus does", () => {
+        expect(rosterStatus(working, { cmd: "claude" }, OREF)).toBe(working);
+        expect(rosterStatus(working, { "tool:id": "lazygit" }, OREF)).toBe(working);
+        expect(rosterStatus(null, { cmd: "claude", "agent:sleeping": SINCE }, OREF)?.state).toBe("idle");
     });
 });
 

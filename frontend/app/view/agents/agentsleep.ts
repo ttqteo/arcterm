@@ -84,6 +84,21 @@ export function sleepingStatus(
     };
 }
 
+/** Pure: the agent status the roster reads for a block. A held service's block (tool:service, pkg/services) has none:
+ *  a program a service runs may start agents of its own (a dashboard calling `claude -p`), and their hooks report into
+ *  the service's block, whose WAVETERM_BLOCKID they inherit. Read as an agent, the service would list twice in the
+ *  sidebar, once as an agent and once as its service row. Every other block reads as sleepingStatus gives it. */
+export function rosterStatus(
+    status: AgentStatusData | null | undefined,
+    meta: Record<string, unknown> | undefined | null,
+    oref: string
+): AgentStatusData | null | undefined {
+    if (meta?.["tool:service"] === true) {
+        return undefined;
+    }
+    return sleepingStatus(status, meta, oref);
+}
+
 /** An agent opened asleep: since is when its session last moved, so its row and card read its age, not when it was
  *  opened; transcriptPath is the session's, which no hook has reported yet. */
 export interface AsleepLaunch {
