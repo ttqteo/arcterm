@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Held services as the cockpit words them (spec 2026-10-20-held-services-design.md, "States"): what a row says, what the
-// page header's line says, what the app bar chip sums up, and in what order the popover lists them. Pure: wavesrv owns
-// the state, this only turns a ServiceStatus into words. `nowMs` is a parameter so the retry seconds are testable.
+// page header's line says, which services the Agent tree lists and what a row's menu offers. Pure: wavesrv owns the
+// state, this only turns a ServiceStatus into words. `nowMs` is a parameter so the retry seconds are testable.
 
 // railapps.ts imports this file too: RAIL_FULL_TITLE is only read when a menu is built, never while the modules load
 import { RAIL_FULL_TITLE } from "./railapps";
@@ -16,7 +16,7 @@ export type ServiceRowWords = {
     port?: string;
     tone: ServiceTone;
     dot: ServiceDot;
-    action?: "start" | "restart";
+    action?: "restart";
 };
 
 const STOPPABLE = new Set(["starting", "running", "retrying", "nopage"]);
@@ -28,8 +28,6 @@ export const canStop = (s: ServiceStatus): boolean => STOPPABLE.has(s.state);
 // startable for the page header, where it brings an app stopped on screen back; its tree row and menu show no Start
 // (showing the pane starts it).
 export const canStart = (s: ServiceStatus): boolean => STARTABLE.has(s.state);
-// The popover's hover Start: every startable row except a sleeping one, which wakes when its row is opened.
-export const canStartFromPopover = (s: ServiceStatus): boolean => canStart(s) && s.state !== "sleeping";
 export const canRestart = (s: ServiceStatus): boolean => RESTARTABLE.has(s.state);
 
 function retryIn(s: ServiceStatus, nowMs: number): string {
@@ -96,53 +94,6 @@ export function serviceHeaderLine(s: ServiceStatus, nowMs: number): string {
         default:
             return "Sleeping · starts when shown";
     }
-}
-
-const isCrashed = (s: ServiceStatus) => s.state === "crashed" || s.state === "retrying";
-const isWarning = (s: ServiceStatus) => s.state === "porttaken" || s.state === "nopage";
-
-export type ServicesChip = { hidden: boolean; label: string; tone: "error" | "warning" | "muted"; title: string };
-
-/** The app bar chip: the running count, "· N crashed" when any is retrying or crashed. Error when any crashed, else
- * warning when any has a taken port or no page, else muted. Hidden while it would read a bare 0: nothing runs and
- * nothing needs a look. */
-export function servicesChip(list: ServiceStatus[]): ServicesChip {
-    const running = list.filter((s) => s.state === "running").length;
-    const crashed = list.filter(isCrashed).length;
-    const attention = list.filter(isWarning).length;
-    if (running === 0 && crashed === 0 && attention === 0) {
-        return { hidden: true, label: "", tone: "muted", title: "" };
-    }
-    const stopped = list.filter((s) => s.state === "stopped").length;
-    const tone = crashed > 0 ? "error" : attention > 0 ? "warning" : "muted";
-    const label = crashed > 0 ? `${running} · ${crashed} crashed` : `${running}`;
-    const parts = [`${running} running`];
-    if (crashed > 0) {
-        parts.push(`${crashed} crashed`);
-    }
-    if (attention > 0) {
-        parts.push(`${attention} need${attention === 1 ? "s" : ""} a look`);
-    }
-    if (stopped > 0) {
-        parts.push(`${stopped} stopped`);
-    }
-    return { hidden: false, label, tone, title: `Services: ${parts.join(" · ")}` };
-}
-
-function orderGroup(s: ServiceStatus): number {
-    if (isCrashed(s)) {
-        return 0;
-    }
-    if (isWarning(s)) {
-        return 1;
-    }
-    return s.state === "stopped" || s.state === "sleeping" ? 3 : 2;
-}
-
-/** The popover's order: those that need the person first (crashed, then amber), then up, then stopped and sleeping; by
- * name inside each. Returns a new list. */
-export function popoverOrder(list: ServiceStatus[]): ServiceStatus[] {
-    return [...list].sort((a, b) => orderGroup(a) - orderGroup(b) || a.name.localeCompare(b.name));
 }
 
 /** Pure: the services the Agent tree lists, every one that is up or in trouble (any state but sleeping) and the one

@@ -6,13 +6,10 @@ import { RAIL_FULL_TITLE } from "./railapps";
 import {
     canRestart,
     canStart,
-    canStartFromPopover,
     canStop,
-    popoverOrder,
     serviceHeaderLine,
     serviceMenuChoices,
     serviceRowWords,
-    servicesChip,
     treeServiceInput,
     upFor,
     withAutostart,
@@ -173,105 +170,6 @@ describe("upFor", () => {
     });
 });
 
-describe("servicesChip", () => {
-    it("is hidden when no service is configured", () => {
-        expect(servicesChip([]).hidden).toBe(true);
-    });
-
-    it("is hidden while nothing runs and nothing needs a look", () => {
-        expect(servicesChip([svc("stopped", { id: "a" }), svc("sleeping", { id: "b" })]).hidden).toBe(true);
-    });
-
-    it("stays shown with nothing running when one crashed or has no page", () => {
-        expect(servicesChip([svc("crashed")]).label).toBe("0 · 1 crashed");
-        expect(servicesChip([svc("nopage")]).hidden).toBe(false);
-    });
-
-    it("shows the running count, and the crashed ones in the error tone", () => {
-        const chip = servicesChip([
-            svc("running", { id: "a" }),
-            svc("running", { id: "b" }),
-            svc("running", { id: "c" }),
-            svc("crashed"),
-        ]);
-        expect(chip.hidden).toBe(false);
-        expect(chip.label).toBe("3 · 1 crashed");
-        expect(chip.tone).toBe("error");
-    });
-
-    it("counts a retrying service as crashed", () => {
-        const chip = servicesChip([svc("running"), svc("retrying")]);
-        expect(chip.label).toBe("1 · 1 crashed");
-        expect(chip.tone).toBe("error");
-    });
-
-    it("turns warning for a service with no page, when none crashed", () => {
-        const chip = servicesChip([svc("nopage"), svc("running", { id: "a" }), svc("running", { id: "b" })]);
-        expect(chip.label).toBe("2");
-        expect(chip.tone).toBe("warning");
-    });
-
-    it("turns warning for a taken port", () => {
-        expect(servicesChip([svc("porttaken"), svc("running")]).tone).toBe("warning");
-    });
-
-    it("stays error when one crashed and another has no page", () => {
-        expect(servicesChip([svc("nopage"), svc("crashed")]).tone).toBe("error");
-    });
-
-    it("is muted when all is well", () => {
-        const chip = servicesChip([svc("running"), svc("stopped")]);
-        expect(chip.label).toBe("1");
-        expect(chip.tone).toBe("muted");
-    });
-
-    it("counts a sleeping service in neither the running count nor the tone", () => {
-        const chip = servicesChip([svc("running", { id: "a" }), svc("running", { id: "b" }), svc("sleeping")]);
-        expect(chip.label).toBe("2");
-        expect(chip.tone).toBe("muted");
-        expect(chip.title).toContain("2 running");
-    });
-
-    it("gives a title that sums the states", () => {
-        const chip = servicesChip([svc("running"), svc("stopped"), svc("crashed")]);
-        expect(chip.title).toContain("1 running");
-        expect(chip.title).toContain("1 crashed");
-    });
-});
-
-describe("popoverOrder", () => {
-    it("puts crashed and retrying first, then porttaken and nopage, then up, then stopped, by name inside each", () => {
-        const list = [
-            svc("stopped", { id: "s", name: "alpha" }),
-            svc("running", { id: "r2", name: "zeta" }),
-            svc("nopage", { id: "n", name: "mid" }),
-            svc("retrying", { id: "t", name: "zulu" }),
-            svc("elsewhere", { id: "e", name: "beta" }),
-            svc("crashed", { id: "c", name: "kilo" }),
-            svc("porttaken", { id: "p", name: "able" }),
-            svc("starting", { id: "g", name: "gamma" }),
-            svc("running", { id: "r1", name: "yankee" }),
-        ];
-        expect(popoverOrder(list).map((s) => s.id)).toEqual(["c", "t", "p", "n", "e", "g", "r1", "r2", "s"]);
-    });
-
-    it("puts a sleeping service with the stopped ones, by name", () => {
-        const list = [
-            svc("sleeping", { id: "z", name: "zeta" }),
-            svc("stopped", { id: "m", name: "mid" }),
-            svc("sleeping", { id: "a", name: "alpha" }),
-            svc("running", { id: "r", name: "run" }),
-        ];
-        expect(popoverOrder(list).map((s) => s.id)).toEqual(["r", "a", "m", "z"]);
-    });
-
-    it("does not change the list it is given", () => {
-        const list = [svc("stopped", { id: "s" }), svc("crashed", { id: "c" })];
-        popoverOrder(list);
-        expect(list.map((s) => s.id)).toEqual(["s", "c"]);
-    });
-});
-
 describe("what a state offers", () => {
     const states = ["starting", "running", "elsewhere", "retrying", "crashed", "porttaken", "nopage", "sleeping"];
 
@@ -299,10 +197,6 @@ describe("what a state offers", () => {
         expect(canStart(s)).toBe(true);
         expect(canStop(s)).toBe(false);
         expect(canRestart(s)).toBe(false);
-    });
-
-    it("the popover's hover Start: crashed, porttaken, elsewhere; none for sleeping", () => {
-        expect(states.filter((st) => canStartFromPopover(svc(st)))).toEqual(["elsewhere", "crashed", "porttaken"]);
     });
 
     it("elsewhere offers Start only", () => {

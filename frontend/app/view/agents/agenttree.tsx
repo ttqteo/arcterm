@@ -201,8 +201,8 @@ import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showServiceMenu } from "./servicemenu";
-import { canRestart, canStart, serviceRowWords, treeServiceInput } from "./servicesmodel";
-import { ensureServicesFeed, openService, restartService, servicesAtom, startService } from "./servicesstore";
+import { canRestart, serviceRowWords, treeServiceInput } from "./servicesmodel";
+import { ensureServicesFeed, openService, restartService, servicesAtom } from "./servicesstore";
 import { showTerminalMenu, splitCellMenuItems, SplitMark, ToolGlyph } from "./terminalsrail";
 import { PanelWeb, TreeSpider } from "./themedecorview";
 import { toolIcon, toolTerminalName, type ToolIconName } from "./toolsmodel";
@@ -2109,9 +2109,9 @@ const SERVICE_BUTTON =
 
 // A held service in its project's folder (servicesstore.ts), after the divider: the app-window icon, its name, what its
 // state says (serviceRowWords: words in the tone token, the port, a 6 px dot that is solid, hollow or pulsing; the
-// words carry the state, never the color alone) and, on hover, Start or Restart. A click never starts it: one with a tab takes
-// the centre as any terminal does, and one that never ran is given its tab and block (openService) and takes the centre
-// on its log. Its menu (showServiceMenu) holds the rest.
+// words carry the state, never the color alone) and, on a crashed one, Restart on hover. A click never starts it: one
+// with a tab takes the centre as any terminal does, and one that never ran is given its tab and block (openService) and
+// takes the centre on its log. Its menu (showServiceMenu) holds the rest.
 function ServiceRow({
     model,
     serviceId,
@@ -2142,8 +2142,7 @@ function ServiceRow({
             }
         });
     };
-    const act = w.action ?? null;
-    const actEnabled = act === "restart" ? canRestart(service) : canStart(service);
+    const restartable = w.action === "restart" && canRestart(service);
     return (
         <div
             data-service-row={service.id}
@@ -2186,22 +2185,20 @@ function ServiceRow({
                     {w.port}
                 </span>
             ) : null}
-            {act != null && actEnabled ? (
+            {restartable ? (
                 <button
                     type="button"
-                    data-service-act={act}
+                    data-service-act="restart"
                     onClick={(e) => {
                         e.stopPropagation();
-                        fireAndForget(() =>
-                            act === "restart" ? restartService(service.id) : startService(service.id)
-                        );
+                        fireAndForget(() => restartService(service.id));
                     }}
                     className={cn(
                         SERVICE_BUTTON,
                         "opacity-0 transition-opacity duration-100 focus-visible:opacity-100 group-hover:opacity-100"
                     )}
                 >
-                    {act === "restart" ? "Restart" : "Start"}
+                    Restart
                 </button>
             ) : null}
             <span
