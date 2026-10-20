@@ -77,6 +77,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Background task Stop inside its card: with a running background task, open the Agent rail's Background
   tasks: the red Stop square sits inside the running row's card, right of "running", and hovering the card lights the
   whole card, Stop included; a stopped row looks as before (`agentdetailsrail.tsx` `BackgroundTaskRow`).
+- [ ] (arcterm) UI check after a commit: after the next build and install, in a Claude session in this repo, commit a
+  change to a `frontend/**/*.tsx` file without running `task verify:ui` or `cdp-shot.mjs` first: the model reads an
+  `[arc ui check]` reminder after the commit's output (it says so, then tries the change or adds a line here); a
+  commit that also touches `docs/open-issues.md`, or one after a `cdp-shot.mjs`, gets none. Unit-tested only
+  (`claude/arc-mod/hooks/uicheck-core.ts`, `register.test.ts`).
 - [ ] (arcterm) Dev server glyph: in the installed build, have an agent start `pnpm dev --host 2>&1` (an Astro site)
   in the background and let its turn end: its sidebar dot goes grey (idle, not working) with a green server glyph
   beside it, and the header reads `idle` then the glyph and `:4321`; the rail's Servers row says `this agent` and

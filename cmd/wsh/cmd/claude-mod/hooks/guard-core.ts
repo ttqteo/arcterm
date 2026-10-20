@@ -42,6 +42,10 @@ const LANE_RULES: [RegExp, string][] = [
     ],
 ];
 
+export function isEngineTree(cwd: string): boolean {
+    return ENGINE_TREE.test(cwd);
+}
+
 // why the session may not run this command from this directory; null when it may
 export function denial(command: string, cwd: string, background = false): string | null {
     if (ARC_IMAGE.test(command) && KILL_BY_NAME.test(command)) {
@@ -51,7 +55,7 @@ export function denial(command: string, cwd: string, background = false): string
     if (background && STDOUT_REDIRECT.test(command.replace(QUOTED, (q) => q[0] + "_".repeat(q.length - 2) + q[0]))) {
         return REDIRECT_REASON;
     }
-    if (!ENGINE_TREE.test(cwd)) {
+    if (!isEngineTree(cwd)) {
         return null;
     }
     const broken = LANE_RULES.find(([pattern]) => pattern.test(command));

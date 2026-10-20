@@ -9,7 +9,7 @@ import { drawCacheMiss } from "./cache-band";
 import { cacheMissNotice, transcriptEntries } from "./cache-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import type { Turn } from "./control-core";
-import { denial } from "./guard-core";
+import { denial, isEngineTree } from "./guard-core";
 import { promptNudge } from "./ideas-core";
 import { jobslotArgs, jobslotLine } from "./jobslot-core";
 import { claudeConfigDir, memoryDir, transcriptFile } from "./claudepaths-core";
@@ -19,6 +19,7 @@ import { leadingMention, mentionRefusal, sendArgs, sendOutcome } from "./mention
 import { idleArgs } from "./status-core";
 import { createSpawnGate, endsTurnSay, RUN_VERDICT, tokengateArgs, tokengateLine } from "./tokengate-core";
 import type { Group, SpawnVerdict } from "./tokengate-core";
+import { isCommit, isLiveCheck, uiCheckReminder, uiFiles } from "./uicheck-core";
 import { usageArgs } from "./usage-core";
 
 const WSH = "__WSH_PATH__";
@@ -141,6 +142,69 @@ async function steerTurn($: EngineInterface, text: string) {
 // why this session may not run the shell command; null when it may, and always outside arcterm
 async function refusal($: EngineInterface, command: string, background?: boolean): Promise<string | null> {
     return active ? denial(command, await $.session.cwd(), background === true) : null;
+}
+
+// set by a shell command that tried a UI change in the running app; a commit that changed UI clears it, so each
+// UI commit needs a try of its own
+let liveChecked = false;
+
+// the HEAD a commit starts from, or null where the UI check does not apply: outside arcterm's repo, or in an
+// engine tree, whose Final runs the plan's scenarios
+async function uiCheckBase($: EngineInterface): Promise<string | null> {
+    if (isEngineTree(await $.session.cwd()) || !(await $.fs.exists("scripts/cdp/scenarios.mjs"))) {
+        return null;
+    }
+    const head = await $.process.run(["git", "rev-parse", "HEAD"]);
+    return head.exitCode === 0 ? head.stdout.trim() : null;
+}
+
+// the reminder for what the session committed since base, or null when it needs none
+async function uiCheckNote($: EngineInterface, base: string): Promise<string | null> {
+    const head = await $.process.run(["git", "rev-parse", "HEAD"]);
+    const tip = head.stdout.trim();
+    if (head.exitCode !== 0 || tip === base) {
+        return null;
+    }
+    const diff = await $.process.run(["git", "diff", "--name-only", base, tip]);
+    if (diff.exitCode !== 0) {
+        return null;
+    }
+    const paths = diff.stdout
+        .split("\n")
+        .map((p) => p.trim())
+        .filter(Boolean);
+    const note = uiCheckReminder(paths, liveChecked);
+    if (uiFiles(paths).length > 0) {
+        liveChecked = false;
+    }
+    return note;
+}
+
+// a shell command's result, with a reminder for the model after a commit that changed UI no one tried in the
+// app. a rule in AGENTS.md alone did not hold: the 2026-10-14..16 insights report found UI fixes committed unseen
+async function withUiCheck<R extends { deny?: string; isError?: true; context?: readonly string[] }>(
+    $: EngineInterface,
+    command: string,
+    run: () => Promise<R>
+): Promise<R> {
+    if (isLiveCheck(command)) {
+        const result = await run();
+        liveChecked ||= result.deny === undefined;
+        return result;
+    }
+    if (!isCommit(command)) {
+        return run();
+    }
+    const base = await uiCheckBase($).catch(() => null);
+    const result = await run();
+    if (base === null || result.deny !== undefined || result.isError) {
+        return result;
+    }
+    const note = await uiCheckNote($, base).catch((err) => {
+        $.ui.log(`arc: the ui check failed: ${String(err)}`, { to: "debug" });
+        return null;
+    });
+    return note === null ? result : { ...result, context: [...(result.context ?? []), note] };
 }
 
 // a heavy command (a build, the typecheck, a whole test suite) waits for its turn in arcterm's job queue, and
@@ -445,12 +509,12 @@ export const register: Register = (on) => {
     // refused in code: a prompt's rule is one the model can talk itself out of
     on("tool.call", { tool: "Bash" }, async ($, e, next) => {
         const why = await refusal($, e.command, e.run_in_background);
-        return why === null ? withJobSlot($, e.command, () => next(e)) : { deny: why };
+        return why === null ? withJobSlot($, e.command, () => withUiCheck($, e.command, () => next(e))) : { deny: why };
     });
 
     on("tool.call", { tool: "PowerShell" }, async ($, e, next) => {
         const why = await refusal($, e.command, e.run_in_background);
-        return why === null ? withJobSlot($, e.command, () => next(e)) : { deny: why };
+        return why === null ? withJobSlot($, e.command, () => withUiCheck($, e.command, () => next(e))) : { deny: why };
     });
 
     // a costly spawn waits on the person's card; refused in code, as the shell is. always runs outside arcterm
