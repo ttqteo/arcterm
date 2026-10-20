@@ -15,8 +15,9 @@ export interface PathCandidate {
 
 // a URL is never a path; it is blanked to spaces so offsets hold
 const URL_RE = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
-// an optional root (a drive, ~, ./, ../ or a separator), then segments of path characters joined by separators
-const PATH_RE = /(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])?[\w@+-][\w.@+-]*(?:[\\/][\w.@+-]+)*/g;
+// an optional root (a drive, ~, ./, ../ or a separator), then segments of path characters joined by separators; the
+// first may be a dot folder (~/.claude/…)
+const PATH_RE = /(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])?\.?[\w@+-][\w.@+-]*(?:[\\/][\w.@+-]+)*/g;
 // what may follow a path: :12, :12:5, (12) or (12,5)
 const SUFFIX_RE = /^(?::(\d+)(?::(\d+))?|\((\d+)(?:,\s*(\d+))?\))/;
 // a file name's extension: a letter then 1–9 letters or digits, so ".ts" and ".go" but not "e.g" or "0.4s"
@@ -36,7 +37,8 @@ function isPathToken(token: string): boolean {
     if (SEP_RE.test(token)) {
         return true;
     }
-    return EXT_RE.test(token);
+    // a bare dot name (.gitignore, ".ts files") is more often talk about a kind of file than a path
+    return !token.startsWith(".") && EXT_RE.test(token);
 }
 
 export function findPathCandidates(line: string): PathCandidate[] {
@@ -149,10 +151,25 @@ export function isAbsolutePath(p: string): boolean {
     return /^(?:[A-Za-z]:[\\/]|[\\/])/.test(p);
 }
 
+// a leading ~ (alone or before a separator) read as `home`; null for ~ with no home given, or another user's ~name
+function expandHome(p: string, home: string | null | undefined): string | null {
+    if (!p.startsWith("~")) {
+        return p;
+    }
+    if (!home || !(p.length === 1 || SEP_RE.test(p[1]))) {
+        return null;
+    }
+    return home + p.slice(1);
+}
+
 // an absolute path with forward slashes and . / .. folded, or null when it cannot be known here
-export function resolvePath(cwd: string | null | undefined, p: string): string | null {
-    if (p.startsWith("~")) {
-        return null; // the shell's home is not known here
+export function resolvePath(cwd: string | null | undefined, path: string, home?: string | null): string | null {
+    const p = expandHome(path, home);
+    if (p == null) {
+        return null;
+    }
+    if (cwd != null) {
+        cwd = expandHome(cwd, home);
     }
     let joined: string;
     if (isAbsolutePath(p)) {

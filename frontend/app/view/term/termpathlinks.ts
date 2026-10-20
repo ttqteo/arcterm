@@ -7,7 +7,7 @@
 // and indents, is joined back across the rows.
 
 import type { FileRef } from "@/app/view/agents/agentrailtabs";
-import { fileExists } from "@/app/view/agents/pathlinkroute";
+import { fileExists, homeDir } from "@/app/view/agents/pathlinkroute";
 import {
     findPathCandidates,
     findSpanningPaths,
@@ -54,7 +54,7 @@ type Touched = PathLinkHooks["touched"];
 
 // the existing file a path names: under the cwd, else the one file the agent touched that the path is the tail of
 async function locate(path: string, cwd: string | null, touched: Touched): Promise<string | null> {
-    const abs = resolvePath(cwd, path);
+    const abs = resolvePath(cwd, path, await homeDir());
     if (abs != null && (await exists(abs))) {
         return abs;
     }

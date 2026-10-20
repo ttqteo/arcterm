@@ -10,6 +10,7 @@ import { isUnderRoot } from "@/app/cockpit/openfileroute";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
 import { fireAndForget } from "@/util/util";
 import { resolveCwd } from "./agentcwdresolve";
 import { openFileInPanel, openRefInCode } from "./agentrailstore";
@@ -66,6 +67,21 @@ export function openPathFromTerminal(blockId: string, ref: FileRef): void {
         return;
     }
     fireAndForget(() => openRefInCode(model, ref));
+}
+
+// the home folder a ~ path names, asked of the server once; a failed ask is tried again next time
+let home: Promise<string> | null = null;
+
+export function homeDir(): Promise<string> {
+    home ??= RpcApi.FileInfoCommand(TabRpcClient, { info: { path: "~" } })
+        .then(homeFromInfo)
+        .catch(() => "");
+    return home.then((h) => {
+        if (h === "") {
+            home = null;
+        }
+        return h;
+    });
 }
 
 export async function fileExists(abs: string): Promise<boolean> {
@@ -162,7 +178,7 @@ export function touchedPathForBlock(blockId: string, cwd: string | null, path: s
 
 // a path an agent named: under its working directory, else the one file it touched that the path is the tail of
 async function locateAgentPath(agent: AgentVM, cwd: string | null, path: string): Promise<string | null> {
-    const abs = resolvePath(cwd, path);
+    const abs = resolvePath(cwd, path, await homeDir());
     if (abs != null && (await fileExists(abs))) {
         return abs;
     }

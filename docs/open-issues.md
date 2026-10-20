@@ -103,6 +103,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   the footer's Servers has Pin as app, which opens the same form filled from it. Also in the Mac app, which the
   headless-Chrome Final cannot reach: the WKWebView frame, Back/Forward (the window's history there), the row's
   right-click menu, j/k onto a service row, and a start at boot finding npm from nvm or Homebrew on the login PATH.
+- [ ] (arcterm) In a terminal, `echo ~/.claude/settings.json` then hover the printed path: the whole path underlines
+  (with `~/.claude`), and Ctrl+click opens it. Same for `.claude/settings.json` printed in a home-folder terminal.
+  2026-10-19.
 - [ ] (arcterm) Jarvis → Waiting on you, a "plan" row whose agent is closed (or the Needs you strip, the palette, the
   pet's peek): Open lands on the Brief with that initiative expanded on its Proposed group (Accept all, Drop all),
   even from another surface, past the 6-row cap, under a search or another project's filter. Its activity link and

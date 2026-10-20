@@ -47,6 +47,17 @@ describe("findPathCandidates", () => {
         expect(paths("--config=x 1.32s v3.2.4 e.g. i.e. 0.4s 2026/10/06 localhost:5174")).toEqual([]);
     });
 
+    it("takes a path through a dot folder, from home or relative, but not a bare dot name", () => {
+        expect(paths("open ~/.claude/usage-data/report.html")).toEqual([
+            ["~/.claude/usage-data/report.html", undefined, undefined],
+        ]);
+        expect(paths("see .claude/settings.json and ../.env/x")).toEqual([
+            [".claude/settings.json", undefined, undefined],
+            ["../.env/x", undefined, undefined],
+        ]);
+        expect(paths("edit .gitignore and .ts files")).toEqual([]);
+    });
+
     it("gives the text the link covers, with its offsets", () => {
         const [c] = findPathCandidates("at src/a.ts:3:1 here");
         expect(c).toMatchObject({ text: "src/a.ts:3:1", start: 3, end: 15 });
@@ -101,10 +112,20 @@ describe("resolvePath", () => {
         expect(resolvePath("~", "/etc/hosts")).toBe("/etc/hosts");
     });
 
-    it("cannot resolve a relative path without an absolute cwd, nor a ~ path", () => {
+    it("cannot resolve a relative path without an absolute cwd, nor a ~ path without the home folder", () => {
         expect(resolvePath("~", "a.ts")).toBeNull();
         expect(resolvePath(null, "a.ts")).toBeNull();
         expect(resolvePath("D:/repo", "~/a.ts")).toBeNull();
+    });
+
+    it("reads ~ as the home folder, in the path and in the cwd", () => {
+        const home = "C:\\Users\\u";
+        expect(resolvePath("D:/repo", "~/.claude/usage-data/report.html", home)).toBe(
+            "C:/Users/u/.claude/usage-data/report.html"
+        );
+        expect(resolvePath("~", "a.ts", home)).toBe("C:/Users/u/a.ts");
+        expect(resolvePath("~/proj", "src/a.ts", "/home/u")).toBe("/home/u/proj/src/a.ts");
+        expect(resolvePath(null, "~user/a.ts", home)).toBeNull();
     });
 });
 

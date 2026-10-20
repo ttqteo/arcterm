@@ -46,6 +46,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the worker stayed busy.
 - On Windows, a program you installed while arcterm was open now runs in the next terminal or agent you open, and
   Setup → Tools shows it installed, without restarting arcterm.
+- A path from your home folder or through a dot folder, such as `~/.claude/usage-data/report.html`, is a link in a
+  terminal and an agent's transcript: Ctrl+click opens it.
 
 ## 0.15.16 — 2026-10-19
 
