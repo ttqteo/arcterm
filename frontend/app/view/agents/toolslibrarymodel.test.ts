@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import { RAIL_FULL_TITLE } from "./railapps";
 import {
     commandCheck,
     emptyForm,
@@ -19,6 +20,8 @@ import {
     stateTone,
     statusLabel,
     toolIdFrom,
+    toolRailPin,
+    toolServiceStatus,
     uniqueToolId,
     validateNewTool,
 } from "./toolslibrarymodel";
@@ -538,5 +541,138 @@ describe("commandCheck", () => {
         expect(commandCheck("gh2", { command: "gh", found: true })).toBeNull();
         expect(commandCheck("gh", null)).toBeNull();
         expect(commandCheck("  ", { command: "gh", found: true })).toBeNull();
+    });
+});
+
+function service(state: string, over: Partial<ServiceStatus> = {}): ServiceStatus {
+    return {
+        id: "dash",
+        name: "Dash",
+        command: "npm run dev",
+        dir: "~/dash",
+        project: "dash",
+        state,
+        autostart: false,
+        ...over,
+    };
+}
+
+describe("toolServiceStatus", () => {
+    const now = 1_000_000;
+
+    it("running: the port, in the working tone, with Stop and Restart on offer", () => {
+        expect(toolServiceStatus(service("running", { port: 5173 }), now)).toEqual({
+            words: ":5173",
+            tone: "working",
+            dot: "solid",
+            canStop: true,
+            canRestart: true,
+        });
+    });
+
+    it("sleeping: says it starts when opened, and has no button", () => {
+        expect(toolServiceStatus(service("sleeping"), now)).toEqual({
+            words: "sleeping · starts when opened",
+            tone: "muted",
+            dot: "hollow",
+            canStop: false,
+            canRestart: false,
+        });
+    });
+
+    it("crashed: the exit code in the error tone, Restart but no Stop", () => {
+        expect(toolServiceStatus(service("crashed", { exitcode: 2 }), now)).toEqual({
+            words: "crashed · exit 2",
+            tone: "error",
+            dot: "solid",
+            canStop: false,
+            canRestart: true,
+        });
+    });
+
+    it("retrying: counts down to the next try, and can still be stopped", () => {
+        const s = toolServiceStatus(service("retrying", { retryatms: now + 4_200 }), now);
+        expect(s.words).toBe("crashed · retry in 5s");
+        expect(s.tone).toBe("error");
+        expect(s.canStop).toBe(true);
+        expect(s.canRestart).toBe(true);
+    });
+
+    it("starting: the pulsing dot, and Stop", () => {
+        const s = toolServiceStatus(service("starting"), now);
+        expect(s.words).toBe("starting…");
+        expect(s.dot).toBe("pulse");
+        expect(s.canStop).toBe(true);
+    });
+
+    it("a page answered by a program arcterm did not start has the port and no button", () => {
+        expect(toolServiceStatus(service("elsewhere", { port: 5173 }), now)).toEqual({
+            words: "not started by arcterm · :5173",
+            tone: "working",
+            dot: "hollow",
+            canStop: false,
+            canRestart: false,
+        });
+    });
+
+    it("a taken port names its holder, in the warning tone", () => {
+        const s = toolServiceStatus(service("porttaken", { port: 5173, holder: "node.exe" }), now);
+        expect(s.words).toBe("5173 is held by node.exe");
+        expect(s.tone).toBe("warning");
+    });
+
+    it("no status from wavesrv yet: not started, in the muted tone, no button", () => {
+        for (const none of [undefined, null]) {
+            expect(toolServiceStatus(none, now)).toEqual({
+                words: "not started yet",
+                tone: "muted",
+                dot: "hollow",
+                canStop: false,
+                canRestart: false,
+            });
+        }
+    });
+});
+
+describe("toolRailPin", () => {
+    const list = ["a", "b", "c", "d"].map((id) => service("sleeping", { id, name: id }));
+
+    it("is on when the rail holds the tool", () => {
+        expect(toolRailPin("b", ["a", "b"], list)).toEqual({ on: true, disabled: false });
+    });
+
+    it("is off, and free to turn on, while the rail has room", () => {
+        expect(toolRailPin("c", ["a", "b"], list)).toEqual({ on: false, disabled: false });
+    });
+
+    it("is off and disabled, with the rail's title, when three others fill the rail", () => {
+        expect(toolRailPin("d", ["a", "b", "c"], list)).toEqual({
+            on: false,
+            disabled: true,
+            title: RAIL_FULL_TITLE,
+        });
+    });
+
+    it("stays on, and enabled, for a tool that is one of the three", () => {
+        expect(toolRailPin("c", ["a", "b", "c"], list)).toEqual({ on: true, disabled: false });
+    });
+
+    it("does not count a pin whose service is gone against the rail", () => {
+        expect(toolRailPin("d", ["a", "gone", "b", "c"], list)).toEqual({
+            on: false,
+            disabled: true,
+            title: RAIL_FULL_TITLE,
+        });
+        expect(toolRailPin("d", ["a", "gone", "b"], list)).toEqual({ on: false, disabled: false });
+    });
+
+    it("is off and disabled, with no title, while wavesrv has no status for the tool", () => {
+        expect(toolRailPin("a", ["a"], null)).toEqual({ on: false, disabled: true });
+        expect(toolRailPin("new", [], list)).toEqual({ on: false, disabled: true });
+    });
+
+    it("does not depend on the service's state", () => {
+        const running = list.map((s) => ({ ...s, state: "running" }));
+        expect(toolRailPin("a", ["a"], running)).toEqual({ on: true, disabled: false });
     });
 });

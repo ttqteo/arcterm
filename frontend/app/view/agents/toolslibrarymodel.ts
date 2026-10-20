@@ -6,6 +6,8 @@
 // toolsmodel.ts and toolsstore.ts; toolslibrary.tsx draws this.
 
 import { appUrlProblem } from "./appmodel";
+import { RAIL_FULL_TITLE, railFull, railPins } from "./railapps";
+import { canRestart, canStop, serviceRowWords, type ServiceDot, type ServiceTone } from "./servicesmodel";
 import { installCommand, toolCommandLine, toolGroups, type ToolState } from "./toolsmodel";
 
 // the category of a tool that is only in tools.json (arctools.CategoryYours)
@@ -101,6 +103,44 @@ export function stateTone(state: ToolState): StateTone {
         default:
             return "none";
     }
+}
+
+export type ToolServiceStatus = {
+    words: string;
+    tone: ServiceTone;
+    dot: ServiceDot;
+    canStop: boolean;
+    canRestart: boolean;
+};
+
+// The Status row on a tool with a page (spec 2026-10-20-apps-run-while-used-design.md, "Where things live"): the
+// service's row words in their tone (the port while it runs), and which of Stop and Restart it allows. A sleeping one
+// has no button: opening it starts it. `undefined` is a service wavesrv has no status for, a tool that was never opened.
+export function toolServiceStatus(s: ServiceStatus | null | undefined, nowMs: number): ToolServiceStatus {
+    if (s == null) {
+        return { words: "not started yet", tone: "muted", dot: "hollow", canStop: false, canRestart: false };
+    }
+    const w = serviceRowWords(s, nowMs);
+    const words =
+        s.state === "sleeping" ? "sleeping · starts when opened" : [w.words, w.port].filter(Boolean).join(" · ");
+    return { words, tone: w.tone, dot: w.dot, canStop: canStop(s), canRestart: canRestart(s) };
+}
+
+export type ToolRailPin = { on: boolean; disabled: boolean; title?: string };
+
+// The On the rail toggle: on when the rail holds the tool, and off but disabled (with the rail's own title) when three
+// others fill it. The service's state does not matter: a sleeping app can be pinned. Before wavesrv has a status for the
+// tool a pin would hold no place on the rail, so the toggle waits (disabled, no title).
+export function toolRailPin(toolId: string, pins: string[], services: ServiceStatus[] | null): ToolRailPin {
+    if (services == null || !services.some((s) => s.id === toolId)) {
+        return { on: false, disabled: true };
+    }
+    if (railPins(pins, services).some((s) => s.id === toolId)) {
+        return { on: true, disabled: false };
+    }
+    return railFull(pins, services)
+        ? { on: false, disabled: true, title: RAIL_FULL_TITLE }
+        : { on: false, disabled: false };
 }
 
 const MANAGERS: Record<string, string> = { win32: "winget", darwin: "brew" };
