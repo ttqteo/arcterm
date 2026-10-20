@@ -43,7 +43,8 @@ plugin's server, learns its port, starts the enabled ones at boot and stops them
 - arcterm stopping a server it did not start.
 - A `node` child left holding the port after Stop or Restart (`npm run dash` spawns one).
 - Polling that costs CPU or RAM while services run.
-- arcterm editing the person's `tools.json` outside the Setup → Tools UI.
+- arcterm editing the person's `tools.json` on its own: the remembered port and the Stop flag live in arcterm's own
+  store. The person's own edits are the Setup → Tools form and the tree menu's "Start with arcterm" check.
 
 ## What a service is
 
@@ -62,10 +63,11 @@ and one new optional key:
 
 A new Go package (name left to the builder) supervises services.
 
-- **One terminal block per service**, created the first time it starts and kept after. Controller `cmd` (not `shell`
-  plus `cmd:firstcommand`, which is cleared once typed and so cannot restart, `firstcommand.go:87-89`): `cmd` is the
-  tool's command and args, `cmd:cwd` its folder (`dir`, else as `opensin` resolves today), `tool:id` the tool. Stop
-  never closes it; the terminal's scrollback is the log.
+- **One terminal block per service**, created the first time it starts or is shown, and kept after. Controller `cmd`
+  (not `shell` plus `cmd:firstcommand`, which is cleared once typed and so cannot restart, `firstcommand.go:87-89`):
+  `cmd` is the tool's command and args, `cmd:cwd` its folder (`dir`, else Home: with no focused agent and no project,
+  that is where `opensin` resolves today), `tool:id` the tool, and `cmd:runonstart` false, so a pane that mounts the
+  log never starts it. Stop never closes it; the terminal's scrollback is the log.
 - **Its tab.** wavesrv creates the tab and the block itself (`wcore.CreateTab`, `pkg/wcore/workspace.go:200`, in the
   client's workspace) when the service has none, so a boot start needs no surface open. The tab carries `tool:id` and
   `session:project`. The tree lists it once, as the service row, never also as a terminal row. If the tab or block is
@@ -99,9 +101,12 @@ A new Go package (name left to the builder) supervises services.
   running elsewhere. *(Builder check; our call.)*
 - **The entry changes**: the supervisor watches `tools.json` (the `wconfig` file watcher). A change to a running
   service's command, args, folder, `url` or `port` restarts it; a change to its name, purpose or `autostart` does not.
-  Removing the entry stops the service and closes its tab. *(Builder check; our call.)*
+  Removing the entry stops the service and closes its tab. A new entry with `autostart` starts as soon as it is added.
+  *(Builder check; our call.)*
 - **Running elsewhere**: before starting a service with a fixed port, arcterm probes its page. If it already answers
   (pm2 or a terminal runs it), arcterm starts nothing, shows the page, and Stop is not offered: today's `owned: false`.
+  Start stays offered: it probes again, nothing changes while the page answers, and once it no longer does arcterm
+  starts the service. Nothing probes on its own.
 - **Readiness** moves from the frontend (`appstore.ts:100-133`) to wavesrv: an HTTP GET of the page, any response
   counts, 1.5 s timeout, every 500 ms, up to 30 s. It runs only while a service starts. While it runs, nothing polls;
   a crash is the process exiting.
@@ -146,7 +151,8 @@ Start, Stop and Restart are wshrpc commands; "Start with arcterm" is written thr
 - The row is today's `TerminalRow` (`agenttree.tsx:2006`) with the app icon, the state words or port, and the dot.
   Hover shows the one action that fits: Start when stopped, Restart when crashed. Its menu: Start / Stop / Restart,
   Open in the browser, Start with arcterm (a check), Edit in Setup → Tools.
-- A click shows the service in the centre: the page when running, the log otherwise.
+- A click shows the service in the centre: the page when running, the log otherwise. It never starts it: a service
+  that never ran gets its tab and block at that click, not started, and the header offers Start.
 - The header (`terminalpaneheadview.tsx`) keeps Page | Log, Back, Forward, Home and Open in the browser, and adds the
   state line ("Running on 127.0.0.1:8386 · up 2h 14m"), a Restart button, and Stop (or Start when stopped). A service
   has no close button: it stays in the tree, and selecting another row leaves it.
