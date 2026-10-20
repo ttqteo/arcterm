@@ -357,6 +357,9 @@ func (sc *ShellController) failStart(err error) {
 	if hook := exitHook(); hook != nil {
 		go hook(sc.BlockId, startFailedExitCode)
 	}
+	if hook := serviceExitHook(); hook != nil {
+		go hook(sc.BlockId, startFailedExitCode)
+	}
 }
 
 // [Include all the remaining private methods with bc replaced by sc]
@@ -593,6 +596,9 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 		go checkCloseOnExit(bc.BlockId, exitCode, bc)
 		go emitAgentIdleOnExit(bc.BlockId)
 		if hook := exitHook(); hook != nil {
+			go hook(bc.BlockId, exitCode)
+		}
+		if hook := serviceExitHook(); hook != nil {
 			go hook(bc.BlockId, exitCode)
 		}
 	}()
