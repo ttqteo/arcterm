@@ -109,9 +109,9 @@ export const MINI_SPROUT_BOX = 64; // the 48px sprite (petsprite.ts PET_PX) with
 export const MINI_REST_SIZE = { width: 320, height: 336 }; // room beside Sprout for the hover card and the bubble
 export const MINI_CHAT_SIZE = { width: 380, height: 620 };
 const MINI_MARGIN = 24;
-// the bottom-right corner's Sprout sits this far up, clear of the button a page keeps there (Messenger's new-message
-// button, a help bubble), which reaches 64 to 80px up from the bottom
-const MINI_BOTTOM_RIGHT_DY = 96;
+// how far up the bottom-right corner's Sprout sat from 2026-10-17 to 2026-10-19, clear of a page's chat button; a
+// Bottom right picked then reads as the corner again (parseSpot)
+const RAISED_BOTTOM_RIGHT_DY = 96;
 
 // which way from Sprout the list, the bubble and the chat open: toward the middle of the screen
 export interface MiniSides {
@@ -144,8 +144,9 @@ export function miniSides(sprout: WinRect, work: WinRect): MiniSides {
 // bottom-right corner, so Sprout is always found in the same place
 export function miniSproutRect(spot: WinRect | null, work: WinRect, scale: number): WinRect {
     const size = MINI_SPROUT_BOX * scale;
-    const x = spot?.x ?? work.x + work.width - size - MINI_MARGIN * scale;
-    const y = spot?.y ?? work.y + work.height - size - MINI_BOTTOM_RIGHT_DY * scale;
+    const margin = MINI_MARGIN * scale;
+    const x = spot?.x ?? work.x + work.width - size - margin;
+    const y = spot?.y ?? work.y + work.height - size - margin;
     return {
         x: clamp(x, work.x, work.x + work.width - size),
         y: clamp(y, work.y, work.y + work.height - size),
@@ -203,7 +204,7 @@ export const SPROUT_CORNER_LABEL: Record<SproutCorner, string> = {
 
 export function cornerSpot(corner: SproutCorner): SproutSpot {
     const [v, h] = corner.split("-") as [SproutSpot["v"], SproutSpot["h"]];
-    return { h, v, dx: MINI_MARGIN, dy: corner === "bottom-right" ? MINI_BOTTOM_RIGHT_DY : MINI_MARGIN };
+    return { h, v, dx: MINI_MARGIN, dy: MINI_MARGIN };
 }
 
 // the corner a kept spot sits in, or null when a drag left it elsewhere; no spot is a first fold's bottom right
@@ -211,9 +212,7 @@ export function spotCorner(spot: SproutSpot | null): SproutCorner | null {
     if (spot == null) {
         return "bottom-right";
     }
-    const corner: SproutCorner = `${spot.v}-${spot.h}`;
-    const at = cornerSpot(corner);
-    return spot.dx === at.dx && spot.dy === at.dy ? corner : null;
+    return spot.dx === MINI_MARGIN && spot.dy === MINI_MARGIN ? `${spot.v}-${spot.h}` : null;
 }
 
 export function parseSpot(raw: unknown): SproutSpot | null {
@@ -224,8 +223,8 @@ export function parseSpot(raw: unknown): SproutSpot | null {
     if ((s.h !== "left" && s.h !== "right") || (s.v !== "top" && s.v !== "bottom")) {
         return null;
     }
-    // Bottom right picked while that corner sat MINI_MARGIN up, over a page's chat button: it takes the raised one
-    if (s.h === "right" && s.v === "bottom" && s.dx === MINI_MARGIN && s.dy === MINI_MARGIN) {
+    // Bottom right picked while that corner sat raised: it takes the corner again
+    if (s.h === "right" && s.v === "bottom" && s.dx === MINI_MARGIN && s.dy === RAISED_BOTTOM_RIGHT_DY) {
         return cornerSpot("bottom-right");
     }
     return { h: s.h, v: s.v, dx: s.dx, dy: s.dy };

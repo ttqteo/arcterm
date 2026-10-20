@@ -94,10 +94,10 @@ describe("parseRect and parseRestore", () => {
 });
 
 describe("miniSproutRect", () => {
-    it("puts a Sprout with no spot, a first fold's, in the bottom-right corner, 24px in and 96px up", () => {
+    it("puts a Sprout with no spot, a first fold's, in the bottom-right corner of the work area, 24px in", () => {
         expect(miniSproutRect(null, laptop, 2)).toEqual({
             x: laptop.x + laptop.width - 128 - 48,
-            y: laptop.y + laptop.height - 128 - 192,
+            y: laptop.y + laptop.height - 128 - 48,
             width: 128,
             height: 128,
         });
@@ -134,12 +134,12 @@ describe("miniSproutRect", () => {
 });
 
 describe("sproutSpot and spotRect", () => {
-    it("keeps the first fold's corner as 24px in and 96px up from the bottom right", () => {
+    it("keeps the first fold's corner as 24px in from the bottom right", () => {
         expect(sproutSpot(miniSproutRect(null, laptop, 2), laptop, 2)).toEqual({
             h: "right",
             v: "bottom",
             dx: 24,
-            dy: 96,
+            dy: 24,
         });
     });
     it("keeps a Sprout dragged up off the corner, so the next fold does not cover what sits there", () => {
@@ -200,10 +200,11 @@ describe("sproutSpot and spotRect", () => {
         expect(parseSpot(null)).toBeNull();
         expect(parseSpot("corner")).toBeNull();
     });
-    it("reads a Bottom right picked before the corner was raised as the raised corner", () => {
-        expect(parseSpot({ h: "right", v: "bottom", dx: 24, dy: 24 })).toEqual(cornerSpot("bottom-right"));
-        expect(spotCorner(parseSpot({ h: "right", v: "bottom", dx: 24, dy: 24 }))).toBe("bottom-right");
-        expect(parseSpot({ h: "left", v: "bottom", dx: 24, dy: 24 })).toEqual(cornerSpot("bottom-left"));
+    it("reads a Bottom right picked while the corner sat raised as the corner", () => {
+        expect(parseSpot({ h: "right", v: "bottom", dx: 24, dy: 96 })).toEqual(cornerSpot("bottom-right"));
+        expect(spotCorner(parseSpot({ h: "right", v: "bottom", dx: 24, dy: 96 }))).toBe("bottom-right");
+        const dragged = { h: "left", v: "bottom", dx: 24, dy: 96 };
+        expect(parseSpot(dragged)).toEqual(dragged);
     });
 });
 

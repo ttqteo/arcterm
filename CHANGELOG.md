@@ -37,6 +37,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   task wait for another.
 - A terminal's header no longer spells out "Ctrl Tab back to …": the bar is shorter, and `Ctrl`+`Tab` still goes
   back to the agent you were on.
+- Folded into the bottom-right corner, your pet sits in the corner again, 24px in, instead of 96px up.
 
 ### Fixed
 

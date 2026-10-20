@@ -111,6 +111,8 @@ does not, say what you saw and it becomes a bug row under Actionable.
   even from another surface, past the 6-row cap, under a search or another project's filter. Its activity link and
   right-click Open activity still open the Activity sheet. 2026-10-19 (`openref.ts` selectEffort,
   `briefsurface.tsx` briefOpenInitiativeAtom).
+- [ ] (arcterm) Fold to the pet with Bottom right picked (or never moved): the pet sits 24px in from the screen's
+  bottom-right corner, not 96px up; Windows and Mac. 2026-10-19 (`floatwindow.ts`).
 - [ ] (arcterm) Kael sync: open a run's DAG and click a task node: a peek opens beside it (session, route rows,
   description, actions); click it again, the background or press Esc to close it; click the final-stage node: its
   steps show in the peek, a finished step's kept output still opens. (ffeb41ae3)
