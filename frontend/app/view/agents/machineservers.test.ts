@@ -162,6 +162,35 @@ describe("buildMachineServers", () => {
         expect(v.groups[0].rows[0].stopConfirm).toBe("Stop?");
     });
 
+    // a held service runs in a tab of its own, so its server's owner is that terminal tab
+    it("a terminal server in a held service's tab reads as the app, with its own Stop", () => {
+        const services = [{ id: "svc-web", name: "Web", tabid: "tab-t" }];
+        const v = buildMachineServers([vite, uvicorn], agents, {}, services);
+        const byPid = Object.fromEntries(v.groups.flatMap((g) => g.rows).map((r) => [r.server.pid, r]));
+        expect(byPid[456180].badge).toEqual({
+            kind: "service",
+            text: "app · Web",
+            tabId: "tab-t",
+            serviceId: "svc-web",
+        });
+        expect(byPid[456180].stopConfirm).toBe("Stop Web?");
+        expect(byPid[456180].termLog).toEqual({ tabId: "tab-t", blockId: "blk-t" });
+        // any other row is unchanged
+        expect(byPid[291124].badge).toEqual({ kind: "agent", text: "claude · portal", tabId: "tab-p" });
+        expect(byPid[291124].stopConfirm).toBe("Stop?");
+    });
+
+    it("a terminal in another tab, or with no services held, keeps its terminal badge", () => {
+        const elsewhere = [{ id: "svc-web", name: "Web", tabid: "tab-other" }];
+        const noTab = [{ id: "svc-web", name: "Web" }];
+        for (const services of [elsewhere, noTab, []]) {
+            const r = buildMachineServers([vite], agents, {}, services).groups[0].rows[0];
+            expect(r.badge).toEqual({ kind: "terminal", text: "terminal · dev", tabId: "tab-t" });
+            expect(r.stopConfirm).toBe("Stop?");
+        }
+        expect(buildMachineServers([vite], agents, {}).groups[0].rows[0].badge.kind).toBe("terminal");
+    });
+
     it("an agent's server shows Log only when its launcher matches a running task", () => {
         const launched = { ...uvicorn, launchercmdline: 'bash -c "pnpm run start"' };
         expect(buildMachineServers([launched], agents, { "tab-p": [pnpmTask] }).groups[0].rows[0].log?.task).toBe(

@@ -5,12 +5,13 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Network } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { AgentsViewModel } from "./agents";
 import { consumersOpenAtom } from "./consumersstore";
 import { portsLabel } from "./devserversmodel";
 import { buildMachineServers } from "./machineservers";
 import { machineServersOpenAtom, machineServersReadingAtom } from "./machineserversstore";
+import { ensureServicesFeed, servicesAtom } from "./servicesstore";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
 
 // The footer's Servers chip, before the RAM chip: how many servers run inside a git repo and, in the warning tone,
@@ -22,13 +23,20 @@ export function MachineServersChip({ model }: { model: AgentsViewModel }) {
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
     const bgTasks = useAtomValue(backgroundTasksByIdAtom);
+    const services = useAtomValue(servicesAtom);
+    useEffect(() => ensureServicesFeed(), []);
     // a first read that failed still draws the chip, with its `?`
     const view = useMemo(
         () =>
             reading.servers == null && !reading.failed
                 ? null
-                : buildMachineServers(reading.servers ?? [], [...agents, ...terminals], bgTasks),
-        [reading.servers, reading.failed, agents, terminals, bgTasks]
+                : buildMachineServers(
+                      reading.servers ?? [],
+                      [...agents, ...terminals],
+                      bgTasks,
+                      (services ?? []).map((s) => ({ id: s.id, name: s.name, tabid: s.tabid }))
+                  ),
+        [reading.servers, reading.failed, agents, terminals, bgTasks, services]
     );
     if (view == null) {
         return null;
