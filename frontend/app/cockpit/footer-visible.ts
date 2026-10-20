@@ -43,15 +43,19 @@ export function visibleHints(
 // would fire right now, in registry order. Inside the terminal that is all that reaches the cockpit, so it is the list
 // of ways out. The digit jumps collapse into one chip (their numbers already show where they land: the rail's
 // surfaces, the Active list's agents). On a Mac the held key is Command, so a Control chord (Ctrl+Tab) is not its own.
+// A chord two live bindings share is listed once, as the first in registry order: the one matchBinding runs. The
+// footer keys its chips by chord, and a repeated key left React an orphan chip on every hold.
 export function heldHints(ctx: KeyContext, bindings: Binding[], mod: "ctrl" | "alt", mac: boolean): HintChip[] {
     const own = (m: string) => (mod === "alt" ? m === "Alt" : m === "Mod" || (!mac && m === "Ctrl"));
     const other = (m: string) => (mod === "alt" ? m === "Mod" || m === "Ctrl" : m === "Alt");
     const out: HintChip[] = [];
+    const seen = new Set<string>();
     let digits: HintChip | null = null;
     for (const b of bindings) {
-        if (b.keys.includes(" ") || (b.when && !b.when(ctx))) {
+        if (b.keys.includes(" ") || (b.when && !b.when(ctx)) || seen.has(b.keys)) {
             continue;
         }
+        seen.add(b.keys);
         const parts = b.keys.split(":");
         const key = parts.pop()!;
         if (!parts.some(own) || parts.some(other)) {

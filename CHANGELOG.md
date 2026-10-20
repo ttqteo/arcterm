@@ -52,6 +52,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A prompt you sent, in the live transcript and a past one, keeps its line breaks and shows its headings and code
   blocks, so an engine task's long prompt no longer reads as one wall of text; a long prompt shows its first lines,
   with Show more.
+- Holding `Ctrl` in the Agent view no longer leaves a copy of **Redraw the terminal** in the bottom bar each time.
 
 ## 0.15.16 — 2026-10-19
 

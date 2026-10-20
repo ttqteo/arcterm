@@ -226,6 +226,15 @@ describe("heldHints", () => {
         expect(heldHints({ ...term, surface: "code" }, reg, "alt", false)).toEqual([]);
     });
 
+    it("lists a chord two live bindings share once, as the one that fires", () => {
+        const shared: Binding[] = [
+            { id: "redraw", keys: "Mod:Shift:r", group: "Agent", label: "Redraw the terminal", when: agentOnly, run },
+            ...reg,
+        ];
+        const chips = heldHints(term, shared, "ctrl", false).filter((c) => c.keys === "Mod:Shift:r");
+        expect(chips).toEqual([{ keys: "Mod:Shift:r", label: "Redraw the terminal" }]);
+    });
+
     it("on a Mac the held key is Command, so a Control chord is not its own", () => {
         expect(heldHints(term, reg, "ctrl", true).map((c) => c.keys)).not.toContain("Ctrl:Tab");
     });
