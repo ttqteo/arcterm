@@ -25,7 +25,7 @@ import {
     X,
     type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useReducer, useState, type ReactNode } from "react";
 import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { appUrlFor, folderName, type ScriptSuggestion } from "./appsuggest";
@@ -44,11 +44,13 @@ import {
     foundLine,
     foundRows,
     headerSummary,
+    initialChoice,
     installPanel,
     libraryRows,
     needsRestartHint,
     OPENS_IN_OPTIONS,
     overrideKeywords,
+    reduceChoice,
     selectedTool,
     SHOWS_OPTIONS,
     stateTone,
@@ -456,6 +458,27 @@ function ServiceStatusRow({
     );
 }
 
+// A choice the detail makes (a switch, an option): the stored value comes back after the write, from wavesrv's reload of
+// tools.json, and a value read before the pick can land after it. So the pick reads as made from the click until the
+// stored value is it (reduceChoice), and `choose` runs the write, then settles the pick. A write that fails gives the
+// pick up and says why in the notice.
+function useHeldChoice<T>(stored: T, setNotice: (notice: string | null) => void) {
+    const [state, dispatch] = useReducer(reduceChoice<T>, stored, initialChoice<T>);
+    useEffect(() => dispatch({ type: "stored", value: stored }), [stored]);
+    const choose = async (value: T, write: () => Promise<unknown>) => {
+        setNotice(null);
+        dispatch({ type: "click", value });
+        try {
+            await write();
+            dispatch({ type: "settled", ok: true });
+        } catch (e) {
+            dispatch({ type: "settled", ok: false });
+            setNotice(errText(e));
+        }
+    };
+    return [state.shown, choose] as const;
+}
+
 function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow }) {
     const { tool, state } = row;
     const isYours = tool.category === "Yours";
@@ -464,14 +487,16 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
     const pinned = useAtomValue(pinnedToolsAtom).includes(tool.id);
     const ended = useAtomValue(installEndedAtom);
     const [notice, setNotice] = useState<string | null>(null);
-    // the write reaches the config before the status shows it, so the choice is held here until the status agrees
-    const [opensin, setOpensin] = useState(tool.opensin);
-    const [shows, setShows] = useState(tool.shows);
-    useEffect(() => setOpensin(tool.opensin), [tool.opensin]);
-    useEffect(() => setShows(tool.shows), [tool.shows]);
+    const [opensin, chooseOpensin] = useHeldChoice(tool.opensin, setNotice);
+    const [shows, chooseShows] = useHeldChoice(tool.shows, setNotice);
     const hasPage = Boolean(tool.url || tool.port);
-    const [autostart, setAutostart] = useState(tool.autostart ?? false);
-    useEffect(() => setAutostart(tool.autostart ?? false), [tool.autostart]);
+    // Keep running is read from the tool's tools.json entry in the config, which wavesrv sends as soon as the file is
+    // reloaded; the status of the same change takes another read, and one begun before a click can land after it
+    const configured = useAtomValue(atoms.fullConfigAtom)?.tools?.[tool.id];
+    const [autostart, chooseAutostart] = useHeldChoice(
+        configured != null ? configured.autostart === true : (tool.autostart ?? false),
+        setNotice
+    );
     // the services the Status row and the rail toggle read; the feed is idempotent, as in AgentTree
     useEffect(() => ensureServicesFeed(), []);
     const pinIds = useAtomValue(railPinsAtom);
@@ -502,27 +527,13 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
         });
     const openOutput = () =>
         guard(async () => (showInstall(model, tool.id) ? null : "There is no install terminal to show."));
-    const change = async (patch: { opensin?: string; shows?: string }) => {
-        setNotice(null);
-        try {
-            const current = globalStore.get(atoms.fullConfigAtom)?.tools?.[tool.id];
-            await addUserTool(tool.id, overrideKeywords(tool, current, patch));
-        } catch (e) {
-            setOpensin(tool.opensin);
-            setShows(tool.shows);
-            setNotice(errText(e));
-        }
+    const change = (patch: { opensin?: string; shows?: string }) => {
+        const current = globalStore.get(atoms.fullConfigAtom)?.tools?.[tool.id];
+        return addUserTool(tool.id, overrideKeywords(tool, current, patch));
     };
-    const toggleAutostart = async () => {
+    const toggleAutostart = () => {
         const next = !autostart;
-        setAutostart(next);
-        setNotice(null);
-        try {
-            await setServiceAutostart(tool.id, next);
-        } catch (e) {
-            setAutostart(tool.autostart ?? false);
-            setNotice(errText(e));
-        }
+        return chooseAutostart(next, () => setServiceAutostart(tool.id, next));
     };
     const stop = () =>
         guard(async () => {
@@ -608,10 +619,7 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
                             label="Opens in"
                             options={OPENS_IN_OPTIONS}
                             value={opensin}
-                            onChange={(id) => {
-                                setOpensin(id);
-                                fireAndForget(() => change({ opensin: id }));
-                            }}
+                            onChange={(id) => fireAndForget(() => chooseOpensin(id, () => change({ opensin: id })))}
                         />
                         <span className="text-[11.5px] text-muted">A worktree agent gives its worktree.</span>
                     </SettingRow>
@@ -623,10 +631,7 @@ function ToolDetail({ model, row }: { model: AgentsViewModel; row: LibraryRow })
                             label="Shows"
                             options={SHOWS_OPTIONS}
                             value={shows}
-                            onChange={(id) => {
-                                setShows(id);
-                                fireAndForget(() => change({ shows: id }));
-                            }}
+                            onChange={(id) => fireAndForget(() => chooseShows(id, () => change({ shows: id })))}
                         />
                     </SettingRow>
                 )}

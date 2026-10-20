@@ -11,10 +11,12 @@ import {
     foundLine,
     foundRows,
     headerSummary,
+    initialChoice,
     installPanel,
     libraryRows,
     needsRestartHint,
     overrideKeywords,
+    reduceChoice,
     selectedTool,
     splitCommandLine,
     stateTone,
@@ -24,6 +26,8 @@ import {
     toolServiceStatus,
     uniqueToolId,
     validateNewTool,
+    type ChoiceEvent,
+    type ChoiceState,
 } from "./toolslibrarymodel";
 
 function tool(id: string, over: Partial<ToolStatus> = {}): ToolStatus {
@@ -674,5 +678,151 @@ describe("toolRailPin", () => {
     it("does not depend on the service's state", () => {
         const running = list.map((s) => ({ ...s, state: "running" }));
         expect(toolRailPin("a", ["a"], running)).toEqual({ on: true, disabled: false });
+    });
+});
+
+describe("reduceChoice", () => {
+    const click = (value: boolean): ChoiceEvent<boolean> => ({ type: "click", value });
+    const settled = (ok = true): ChoiceEvent<boolean> => ({ type: "settled", ok });
+    const stored = (value: boolean): ChoiceEvent<boolean> => ({ type: "stored", value });
+    const run = <T>(start: ChoiceState<T>, ...events: ChoiceEvent<T>[]): ChoiceState<T> =>
+        events.reduce((s, e) => reduceChoice(s, e), start);
+
+    const permutations = <T>(xs: T[]): T[][] =>
+        xs.length <= 1
+            ? [xs]
+            : xs.flatMap((x, i) => permutations([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p]));
+
+    it("reads the stored value, and follows it while nothing is picked", () => {
+        expect(initialChoice(true).shown).toBe(true);
+        const s = run(initialChoice(false), stored(true));
+        expect(s).toMatchObject({ shown: true, stored: true, held: false });
+        expect(run(s, stored(false)).shown).toBe(false);
+    });
+
+    it("reads the pick from the click, before the write or any status has answered", () => {
+        const s = run(initialChoice(false), click(true));
+        expect(s).toMatchObject({ shown: true, stored: false, held: true, writes: 1 });
+    });
+
+    it("holds the pick when the write is done but the stored value has not caught up", () => {
+        const s = run(initialChoice(false), click(true), settled());
+        expect(s).toMatchObject({ shown: true, held: true, writes: 0 });
+    });
+
+    it("gives the pick up to the stored value once nothing is in flight and the stored value is the pick", () => {
+        expect(run(initialChoice(false), click(true), settled(), stored(true))).toMatchObject({
+            shown: true,
+            stored: true,
+            held: false,
+            writes: 0,
+        });
+        // the update can beat the answer to the write
+        expect(run(initialChoice(false), click(true), stored(true), settled())).toMatchObject({
+            shown: true,
+            held: false,
+        });
+    });
+
+    it("off then on: the off status landing after the on click does not take the switch back", () => {
+        const afterOff = run(initialChoice(true), click(false), settled(), stored(false));
+        expect(afterOff).toMatchObject({ shown: false, held: false });
+        let s = run(afterOff, click(true));
+        expect(s.shown).toBe(true);
+        // the late status of the off write, then the on write's own answer, still before its status
+        s = run(s, stored(false), settled());
+        expect(s).toMatchObject({ shown: true, held: true });
+        s = run(s, stored(true));
+        expect(s).toMatchObject({ shown: true, stored: true, held: false });
+    });
+
+    it("off then on, clicked before the off write's status has landed", () => {
+        let s = run(initialChoice(true), click(false), click(true));
+        expect(s.shown).toBe(true);
+        s = run(s, stored(false), settled(), settled());
+        expect(s).toMatchObject({ shown: true, held: true, writes: 0 });
+        expect(run(s, stored(true))).toMatchObject({ shown: true, held: false });
+    });
+
+    it("on then off", () => {
+        const afterOn = run(initialChoice(false), click(true), settled(), stored(true));
+        let s = run(afterOn, click(false));
+        expect(s.shown).toBe(false);
+        s = run(s, stored(true), settled());
+        expect(s).toMatchObject({ shown: false, held: true });
+        s = run(s, stored(false));
+        expect(s).toMatchObject({ shown: false, stored: false, held: false });
+    });
+
+    it("a failed write falls back to the stored value", () => {
+        expect(run(initialChoice(false), click(true), settled(false))).toMatchObject({
+            shown: false,
+            held: false,
+            writes: 0,
+        });
+        // the stored value it falls back to is the latest one seen
+        const s = run(initialChoice(false), click(true), stored(true), stored(false), stored(true), settled(false));
+        expect(s).toMatchObject({ shown: true, held: false });
+        // a later change of the stored value is shown, not held back by the pick that failed
+        expect(run(s, stored(false)).shown).toBe(false);
+    });
+
+    it("an unrelated status read leaves a pending click alone", () => {
+        const pending = run(initialChoice(false), click(true));
+        // a read that carries the stored value it already had changes nothing at all
+        expect(reduceChoice(pending, stored(false))).toBe(pending);
+        const written = reduceChoice(pending, settled());
+        expect(reduceChoice(written, stored(false))).toBe(written);
+        expect(written.shown).toBe(true);
+    });
+
+    it("shows an outside change of the stored value once the pick has been given up", () => {
+        const s = run(initialChoice(false), click(true), settled(), stored(true));
+        expect(run(s, stored(false))).toMatchObject({ shown: false, held: false });
+    });
+
+    it("keeps the last pick, whichever order the writes and the status reads arrive in", () => {
+        // From `from`, the person picks the other value (the first write), then picks `from` back (the second). A is the
+        // first write's answer, B the second click, C the second write's answer, D the update of the first write, E the
+        // update of the second. Everything may arrive in any order except what wavesrv fixes: the update of an earlier
+        // write is sent before a later write is answered (D before C), the updates come in the order of the writes
+        // (D before E), and what a click causes comes after it (B before C and E).
+        for (const from of [true, false]) {
+            const events: Record<string, ChoiceEvent<boolean>> = {
+                A: settled(),
+                B: click(from),
+                C: settled(),
+                D: stored(!from),
+                E: stored(from),
+            };
+            const before = (p: string[], a: string, b: string) => p.indexOf(a) < p.indexOf(b);
+            const orders = permutations(Object.keys(events)).filter(
+                (p) => before(p, "B", "C") && before(p, "B", "E") && before(p, "D", "E") && before(p, "D", "C")
+            );
+            expect(orders.length).toBeGreaterThan(10);
+            for (const order of orders) {
+                let s = run(initialChoice(from), click(!from));
+                let picked = false;
+                for (const key of order) {
+                    s = reduceChoice(s, events[key]);
+                    picked ||= key === "B";
+                    if (picked) {
+                        expect(s.shown, `${order.join("")} after ${key}`).toBe(from);
+                    }
+                }
+                expect(s, order.join("")).toMatchObject({ shown: from, stored: from, held: false, writes: 0 });
+            }
+        }
+    });
+
+    it("holds a choice among strings the same way", () => {
+        let s = run(initialChoice("agent"), { type: "click", value: "home" });
+        expect(s.shown).toBe("home");
+        s = run(s, { type: "stored", value: "agent" }, { type: "settled", ok: true });
+        expect(s).toMatchObject({ shown: "home", held: true });
+        s = run(s, { type: "stored", value: "home" });
+        expect(s).toMatchObject({ shown: "home", held: false });
+        s = run(s, { type: "click", value: "root" }, { type: "settled", ok: false });
+        expect(s).toMatchObject({ shown: "home", held: false });
     });
 });

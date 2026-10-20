@@ -143,6 +143,55 @@ export function toolRailPin(toolId: string, pins: string[], services: ServiceSta
         : { on: false, disabled: false };
 }
 
+// ---- a pick the detail has not stored yet ----
+
+// What a switch or an option on a tool's page reads. The page writes tools.json, and the stored value comes back later,
+// from wavesrv's reload of the file; a value that arrives meanwhile was read before the pick (off, then on: the status
+// of the off write can land after the on click). So the person's pick is `shown` from the click until the stored value
+// is the pick and no write of a pick is still in flight; a write that fails gives the pick up. With nothing picked,
+// `shown` is the stored value.
+//
+// A stored value that is not the pick is never shown while the pick is held, whatever order it arrives in. One order is
+// not covered: an update of an earlier write arriving after a later write's answer, while the stored value is, by
+// chance, the later pick already (off, then on at once, the off update last). wavesrv sends the update of an earlier
+// write before it answers a later one, so it does not come.
+export interface ChoiceState<T> {
+    shown: T;
+    stored: T; // the newest stored value seen, which is what a failed pick falls back to
+    held: boolean; // `shown` is a pick the stored value has not caught up with
+    writes: number; // writes of a pick still in flight
+}
+
+export type ChoiceEvent<T> =
+    | { type: "click"; value: T } // the person picks a value; its write starts
+    | { type: "settled"; ok: boolean } // a write of a pick ended
+    | { type: "stored"; value: T }; // a stored value arrived (a status read, a config update)
+
+export function initialChoice<T>(stored: T): ChoiceState<T> {
+    return { shown: stored, stored, held: false, writes: 0 };
+}
+
+// the pick is given up once nothing is in flight and the stored value is the pick
+function caughtUp<T>(s: ChoiceState<T>): ChoiceState<T> {
+    return s.held && s.writes === 0 && s.stored === s.shown ? { ...s, held: false } : s;
+}
+
+export function reduceChoice<T>(s: ChoiceState<T>, e: ChoiceEvent<T>): ChoiceState<T> {
+    switch (e.type) {
+        case "click":
+            return { ...s, shown: e.value, held: true, writes: s.writes + 1 };
+        case "settled": {
+            const writes = Math.max(0, s.writes - 1);
+            return e.ok ? caughtUp({ ...s, writes }) : { ...s, writes, held: false, shown: s.stored };
+        }
+        case "stored":
+            if (e.value === s.stored) {
+                return s;
+            }
+            return s.held ? caughtUp({ ...s, stored: e.value }) : { ...s, stored: e.value, shown: e.value };
+    }
+}
+
 const MANAGERS: Record<string, string> = { win32: "winget", darwin: "brew" };
 
 // "4 installed · 9 in the library": the built-in catalog, whether its commands were found. A tool of yours is not part of
