@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -98,11 +99,75 @@ func KillTreeKeeping(job uintptr) {
 
 // disarm drops KILL_ON_JOB_CLOSE, keeping BREAKAWAY_OK.
 func disarm(job uintptr) error {
+	return setLimits(job, windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK)
+}
+
+// arm sets KILL_ON_JOB_CLOSE again, the limits Attach gave the job.
+func arm(job uintptr) error {
+	return setLimits(job, windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE|windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK)
+}
+
+func setLimits(job uintptr, flags uint32) error {
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
-		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{LimitFlags: windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK},
+		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{LimitFlags: flags},
 	}
 	_, err := windows.SetInformationJobObject(windows.Handle(job), windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)))
 	return err
+}
+
+// keepWatchInterval is how often WatchKeptApps looks for a kept app in the registered jobs.
+const keepWatchInterval = 10 * time.Second
+
+// WatchKeptApps stops each registered job from killing on close while it holds a kept desktop app, and arms it
+// again once the app is gone. Every quit of arcterm ends this server abruptly (the host kills it, an install
+// force-stops it), and its jobs then close armed and take a Docker Desktop an agent started down with the agent; a
+// disarmed job leaves it, and KillKeptJobs reaps the rest at shutdown. Runs for the server's life.
+func WatchKeptApps() {
+	for {
+		refreshKeptArming(processTable())
+		time.Sleep(keepWatchInterval)
+	}
+}
+
+func refreshKeptArming(table map[int]procEntry) {
+	if table == nil {
+		return
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	for job, e := range registry.jobs {
+		members, err := Members(job)
+		if err != nil {
+			continue
+		}
+		keep := len(keptMembers(members, table, keepImages)) > 0
+		if keep == e.disarmed {
+			continue
+		}
+		if keep {
+			err = disarm(job)
+		} else {
+			err = arm(job)
+		}
+		if err != nil {
+			log.Printf("jobobject: setting kill-on-close %v for %s %s: %v", !keep, e.owner.Kind, e.owner.Id, err)
+			continue
+		}
+		e.disarmed = keep
+		registry.jobs[job] = e
+		log.Printf("jobobject: %s %s holds a kept app %v, kill-on-close %v", e.owner.Kind, e.owner.Id, keep, !keep)
+	}
+}
+
+// KillKeptJobs reaps each job WatchKeptApps disarmed, sparing its kept app: closing it at exit no longer would.
+func KillKeptJobs() {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	for job, e := range registry.jobs {
+		if e.disarmed {
+			KillTreeKeeping(job)
+		}
+	}
 }
 
 // terminateIn terminates pid when, on the handle it opens, it is still a running member of job.

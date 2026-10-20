@@ -32,7 +32,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   itself with the "Claude account was switched" turn. An idle agent comes back at its prompt with no new turn.
 - [ ] (arcterm) Docker Desktop outlives its agent: with Docker Desktop quit, have an agent start it (`docker desktop
   start`), then resume that agent on another account (or close its tab); Docker Desktop stays up and `docker ps`
-  answers. Quitting arcterm itself still takes it down (the host's job), a known gap.
+  answers. Then, 10 s on, quit arcterm (tray → Quit) and, once more, let `task install` close it: Docker Desktop
+  stays up both times, no stray claude.exe is left under it (`Get-Process claude`), and waveapp.log says "host job
+  holds a kept app: true".
 - [ ] (arcterm) App links open in the browser: after `task dev` (the host is rebuilt), in a pinned app's page click a
   link with `target="_blank"` and it opens in the default browser; navigate to another page of the app and press the
   header's ↗, and the browser opens that page, not the start page. The cockpit window still opens maximized and

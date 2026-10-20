@@ -49,6 +49,8 @@ func OwnerFrom(ctx context.Context) (Owner, bool) {
 type regEntry struct {
 	owner   Owner
 	rootPid int
+	// disarmed: the job holds a kept desktop app, so closing it no longer kills (WatchKeptApps)
+	disarmed bool
 }
 
 // the lock is held across every use of a registered handle, so Close (which unregisters first)

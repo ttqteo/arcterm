@@ -40,6 +40,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/sleepwatch"
 	"github.com/wavetermdev/waveterm/pkg/telebot"
 	"github.com/wavetermdev/waveterm/pkg/util/envutil"
+	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
 	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 	"github.com/wavetermdev/waveterm/pkg/util/sigutil"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
@@ -82,7 +83,9 @@ func doShutdown(reason string) {
 		log.Printf("shutting down: %s\n", reason)
 		ctx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancelFn()
+		blockcontroller.MarkShuttingDown()
 		go blockcontroller.StopAllBlockControllersForShutdown()
+		jobobject.KillKeptJobs() // a job holding a kept app (Docker Desktop) no longer kills its tree when this process exits
 		// TODO deal with flush in progress
 		clearTempFiles()
 		filestore.WFS.FlushCache(ctx)
@@ -509,6 +512,12 @@ func main() {
 	maybeStartPprofServer()
 	go stdinReadWatch()
 	go tempAttachmentCleanupLoop()
+	go func() {
+		defer func() {
+			panichandler.PanicHandler("jobobject:watch-kept-apps", recover())
+		}()
+		jobobject.WatchKeptApps() // a quit kills this server outright: a block's Docker Desktop must not go with it
+	}()
 	// trashed sessions older than 7 days are removed: now, then daily
 	sessiontrash.StartPurgeLoop(context.Background())
 	// Settings → Storage: a scan after a short delay, then the daily auto-clean when storage:autoclean is on

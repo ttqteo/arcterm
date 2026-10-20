@@ -440,3 +440,51 @@ func TestKillTreeKeepingSparesAKeptApp(t *testing.T) {
 	KillTreeKeeping(job2)
 	waitForExit(t, plain.Process.Pid)
 }
+
+// TestWatchKeptAppsDisarmsWhileAKeptAppRuns: a registered job holding a kept app stops killing on close, KillKeptJobs
+// reaps the rest of it at shutdown, and the job is armed again once the app is gone.
+func TestWatchKeptAppsDisarmsWhileAKeptAppRuns(t *testing.T) {
+	old := keepImages
+	keepImages = map[string]bool{"ping.exe": true}
+	t.Cleanup(func() { keepImages = old })
+
+	root := startSleeper(t)
+	o := Owner{Kind: OwnerKind_Block, Id: "test-watch-kept-apps"}
+	job := attachRegistered(t, root, o)
+	disarmed := func() bool {
+		registry.mu.Lock()
+		defer registry.mu.Unlock()
+		return registry.jobs[job].disarmed
+	}
+
+	refreshKeptArming(processTable())
+	if disarmed() {
+		t.Fatal("a job with no kept app was disarmed")
+	}
+	app := exec.Command("ping", "-n", "120", "127.0.0.1")
+	if err := app.Start(); err != nil {
+		t.Fatalf("starting ping: %v", err)
+	}
+	t.Cleanup(func() {
+		app.Process.Kill()
+		app.Wait()
+	})
+	assignToJob(t, job, app.Process.Pid)
+	refreshKeptArming(processTable())
+	if !disarmed() {
+		t.Fatal("a job holding a kept app still kills on close")
+	}
+
+	KillKeptJobs()
+	waitForExit(t, root.Process.Pid)
+	if !isRunning(app.Process.Pid) {
+		t.Fatal("KillKeptJobs took the kept app")
+	}
+
+	app.Process.Kill()
+	waitForExit(t, app.Process.Pid)
+	refreshKeptArming(processTable())
+	if disarmed() {
+		t.Fatal("the job was not armed again once the app was gone")
+	}
+}
