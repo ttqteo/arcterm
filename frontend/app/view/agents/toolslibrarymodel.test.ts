@@ -186,6 +186,10 @@ describe("selectedTool", () => {
 });
 
 describe("validateNewTool", () => {
+    it("takes an empty page when a free port is picked", () => {
+        expect(validateNewTool({ name: "docs", command: "npm run dev", url: "", autoPort: true })).toBeNull();
+    });
+
     it("asks for a name first, then a command", () => {
         expect(validateNewTool({ name: "", command: "" })).toBe("Add a name");
         expect(validateNewTool({ name: "  ", command: "gh dash" })).toBe("Add a name");
@@ -342,6 +346,8 @@ describe("the add and edit form", () => {
             purpose: "",
             url: "",
             dir: "",
+            autoPort: false,
+            autostart: true,
         });
     });
 
@@ -366,6 +372,8 @@ describe("the add and edit form", () => {
             purpose: "prs",
             url: "",
             dir: "",
+            autoPort: false,
+            autostart: true,
         });
         expect(formFromTool(mine, "darwin").install).toBe("brew install gh");
     });
@@ -430,6 +438,74 @@ describe("the add and edit form", () => {
     it("keeps the purpose an edit started with", () => {
         const form = { ...emptyForm(), id: "pr", name: "PR", command: "gh", purpose: "prs" };
         expect(formKeywords(form, "win32", {})).toMatchObject({ purpose: "prs" });
+    });
+
+    it("writes port auto and no url for a free port", () => {
+        const form = { ...emptyForm(), name: "docs", command: "npm run dev", url: "", autoPort: true };
+        const kw = formKeywords(form, "darwin", {});
+        expect(kw).toMatchObject({ name: "docs", command: "npm", args: "run dev", port: "auto" });
+        expect(kw).not.toHaveProperty("url");
+        expect(formKeywords({ ...form, url: "http://127.0.0.1:8386" }, "darwin", {})).not.toHaveProperty("url");
+    });
+
+    it("writes no port key for a fixed page", () => {
+        const form = { ...emptyForm(), name: "hong", command: "npm run dash", url: "http://127.0.0.1:8386" };
+        expect(formKeywords(form, "darwin", {})).not.toHaveProperty("port");
+    });
+
+    it("writes autostart only when it is off", () => {
+        const form = { ...emptyForm(), name: "hong", command: "npm run dash", url: "http://127.0.0.1:8386" };
+        expect(formKeywords({ ...form, autostart: false }, "darwin", {})).toMatchObject({ autostart: false });
+        expect(formKeywords({ ...form, autostart: true }, "darwin", {})).not.toHaveProperty("autostart");
+    });
+
+    it("reads a free port and Start with arcterm back from a tool", () => {
+        const auto = tool("docs", { category: "Yours", user: true, command: "npm", port: "auto", autostart: false });
+        expect(formFromTool(auto, "darwin")).toMatchObject({ autoPort: true, autostart: false, url: "" });
+        const fixed = tool("hong", { category: "Yours", user: true, command: "npm", url: "http://127.0.0.1:8386" });
+        expect(formFromTool(fixed, "darwin")).toMatchObject({ autoPort: false });
+    });
+
+    it("reads a free port as off when the tool also has a url, since the url wins", () => {
+        const both = tool("docs", {
+            category: "Yours",
+            user: true,
+            command: "npm",
+            port: "auto",
+            url: "http://127.0.0.1:8386",
+            autostart: true,
+        });
+        expect(formFromTool(both, "darwin")).toMatchObject({ autoPort: false, url: "http://127.0.0.1:8386" });
+        expect(formKeywords(formFromTool(both, "darwin"), "darwin", {})).toMatchObject({
+            url: "http://127.0.0.1:8386",
+        });
+        expect(formKeywords(formFromTool(both, "darwin"), "darwin", {})).not.toHaveProperty("port");
+    });
+
+    it("reads Start with arcterm as on for a tool with no page, and a save writes no autostart", () => {
+        const plain = tool("pr", { category: "Yours", user: true, command: "gh" });
+        expect(formFromTool(plain, "darwin").autostart).toBe(true);
+        expect(formKeywords(formFromTool(plain, "darwin"), "darwin", {})).not.toHaveProperty("autostart");
+    });
+
+    it("keeps a plain tool's autostart default when the edit adds a page", () => {
+        const plain = tool("pr", { category: "Yours", user: true, command: "gh" });
+        const withFreePort = { ...formFromTool(plain, "darwin"), autoPort: true };
+        const kw = formKeywords(withFreePort, "darwin", {});
+        expect(kw).toMatchObject({ port: "auto" });
+        expect(kw).not.toHaveProperty("autostart");
+        const withUrl = { ...formFromTool(plain, "darwin"), url: "http://127.0.0.1:8386" };
+        expect(formKeywords(withUrl, "darwin", {})).not.toHaveProperty("autostart");
+    });
+
+    it("keeps a free port and a stopped Start with arcterm when only Opens in changes", () => {
+        const auto = tool("docs", { category: "Yours", user: true, command: "npm", port: "auto", autostart: false });
+        expect(overrideKeywords(auto, undefined, { shows: "panel" })).toMatchObject({
+            port: "auto",
+            autostart: false,
+        });
+        const on = tool("docs", { category: "Yours", user: true, command: "npm", port: "auto", autostart: true });
+        expect(overrideKeywords(on, undefined, { shows: "panel" })).not.toHaveProperty("autostart");
     });
 });
 

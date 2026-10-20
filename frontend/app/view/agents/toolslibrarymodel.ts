@@ -218,17 +218,29 @@ function keywordsFromTool(tool: ToolStatus): ToolKeywords {
     if (tool.dir) {
         kw.dir = tool.dir;
     }
+    if (tool.port) {
+        kw.port = tool.port;
+    }
+    // a status carries autostart only when it is on (it is on unless tools.json says false), so a page that lacks it is off
+    if ((tool.url || tool.port) && !tool.autostart) {
+        kw.autostart = false;
+    }
     return kw;
 }
 
-export function validateNewTool(form: { name: string; command: string; url?: string }): string | null {
+export function validateNewTool(form: {
+    name: string;
+    command: string;
+    url?: string;
+    autoPort?: boolean;
+}): string | null {
     if (form.name.trim() === "") {
         return "Add a name";
     }
     if (form.command.trim() === "") {
         return "Add a command";
     }
-    return appUrlProblem(form.url ?? "");
+    return form.autoPort ? null : appUrlProblem(form.url ?? "");
 }
 
 // a lowercase slug of the name, the id a tool of yours is kept under in tools.json
@@ -268,6 +280,8 @@ export interface ToolForm {
     purpose: string;
     url: string; // a pinned app's page (appmodel.ts); empty for a plain tool
     dir: string; // the folder a pinned app runs in; empty follows Opens in
+    autoPort: boolean; // arcterm picks the port (`port: "auto"`); the page is then empty
+    autostart: boolean; // the service starts with arcterm; on unless tools.json says false
 }
 
 export function emptyForm(): ToolForm {
@@ -281,6 +295,8 @@ export function emptyForm(): ToolForm {
         purpose: "",
         url: "",
         dir: "",
+        autoPort: false,
+        autostart: true,
     };
 }
 
@@ -295,6 +311,11 @@ export function formFromTool(tool: ToolStatus, platform: string): ToolForm {
         purpose: tool.purpose ?? "",
         url: tool.url ?? "",
         dir: tool.dir ?? "",
+        // url wins over a free port when a tool carries both
+        autoPort: tool.port === "auto" && !tool.url,
+        // a status carries autostart only for a service; a tool with no page reads the default (on), so saving it, or
+        // adding a page to it, does not write autostart: false
+        autostart: tool.url || tool.port ? (tool.autostart ?? false) : true,
     };
 }
 
@@ -341,11 +362,16 @@ export function formKeywords(form: ToolForm, platform: string, keep: Install): T
     if (darwin) {
         kw["install:darwin"] = darwin;
     }
-    if (form.url.trim()) {
+    if (form.autoPort) {
+        kw.port = "auto";
+    } else if (form.url.trim()) {
         kw.url = form.url.trim();
     }
     if (form.dir.trim()) {
         kw.dir = form.dir.trim();
+    }
+    if (!form.autostart) {
+        kw.autostart = false;
     }
     return kw;
 }
