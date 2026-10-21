@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Skim 0.2.3: after the next install, ask Claude for a long reply with a numbered list whose items open
+  on bold. Under skim the bold words stay bright while the rest of each item dims, and the reply marks 2-4 sentences
+  (what changed, a caveat, a decision left to you), not only the caveat. `claude/skim-mod` `layout` `isLead`,
+  a51a646de and 73e554929.
 - [ ] (arcterm) Rail Changes tab: in Agent, open the panel on an agent that changed files; a third tab (the diff
   icon) after Overview and Files lists every changed file at Overview's width, with no resize grip, and a click opens
   that file's Diff on the File tab, which still resizes. `agentdetailsrail.tsx` `filesContent`.
