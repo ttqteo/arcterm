@@ -63,7 +63,8 @@ wsh council wait <id>
 
 `wait` polls until the council stops running, then prints its Summary and Matrix as markdown. Sum the directions up in
 the conversation in a few lines (the top direction, why it ranked there, where the panel disagreed), and carry on from
-there with the spec, the plan or the draft.
+there with the spec, the plan or the draft. A council started from this session puts each direction into this session's
+Ideas list itself, so do not record them again with `wsh idea add`.
 
 Optional flags of `start`: `--screenshot <png>` (repeatable) for a UI the experts should see, `--question "<text>"`
 for something to put to the whole council, `--queue` to wait while another council of this project is running. Leave
