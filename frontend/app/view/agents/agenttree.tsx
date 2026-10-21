@@ -146,8 +146,8 @@ import {
 } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
-import { reconcileGrid } from "./agentgrid";
-import { agentGridAtom, canOpenInSplit, eligibleIds, isInSplit, openInSplit } from "./gridstore";
+import { reconcileProjectGrids, shownGrid } from "./agentgrid";
+import { canOpenInSplit, eligibleIds, gridProjects, isInSplit, openInSplit, projectGridsAtom } from "./gridstore";
 import { finalRowFocusId, type FinalTone } from "./finalstage";
 import { useFinalStageView } from "./finalstageviews";
 import { LEAD_MARK_CLASS, leadMark } from "./leadcardmodel";
@@ -2494,17 +2494,20 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const bgTasks = useAtomValue(backgroundTasksByIdAtom);
     const waits = useMemo(() => waitMap(agents, bgTasks), [agents, bgTasks]);
     const tree = buildAgentTree(agents, order, lineage, folds, focusId, waits);
-    // the split the Agent surface shows (the grid as it reconciles it, agents and terminals alike): its cells keep their
-    // rows, each marked. The docked terminal is no cell: the surface prunes it.
-    const gridState = useAtomValue(agentGridAtom);
+    // the split the Agent surface shows (the focused tab's project's grid as it reconciles it, agents and terminals
+    // alike): its cells keep their rows, each marked. The docked terminal is no cell: the surface prunes it.
+    const projectGrids = useAtomValue(projectGridsAtom);
     const seeded = useAtomValue(rosterSeededAtom);
     const terminals = useAtomValue(model.terminalsAtom);
     const dockedId = useAtomValue(dockedTerminalAtom);
-    const cells = reconcileGrid(gridState, {
-        focusId,
-        eligible: eligibleIds([...agents, ...terminals.filter((t) => t.id !== dockedId)]),
-        seeded,
-    }).ids;
+    const cells = shownGrid(
+        reconcileProjectGrids(projectGrids, {
+            focusId,
+            eligible: eligibleIds([...agents, ...terminals.filter((t) => t.id !== dockedId)]),
+            projectOf: gridProjects([...agents, ...terminals]),
+            seeded,
+        })
+    ).ids;
     // project name -> root path, as activenav.ts builds it: the folders a terminal's branch chip is read against
     const registered = useAtomValue(projectsAtom);
     const roots = useMemo(() => {

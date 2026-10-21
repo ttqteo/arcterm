@@ -38,7 +38,7 @@ import { activeNavOrder } from "./activenav";
 import { centerModeAtom, showTerminal, type CenterMode } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { AgentDetailsRail } from "./agentdetailsrail";
-import { gridEquals, placementStyle, reconcileGrid, visibleCells } from "./agentgrid";
+import { placementStyle, projectGridsEquals, reconcileProjectGrids, shownGrid, visibleCells } from "./agentgrid";
 import { AgentHeader } from "./agentheader";
 import { AgentLaunchHero } from "./agentlaunchhero";
 import { AgentTree } from "./agenttree";
@@ -63,7 +63,15 @@ import { GridCellBar } from "./gridcellbar";
 import { mentionTarget } from "./griddrop";
 import { GridDropOverlay } from "./griddropoverlay";
 import { HeldAskBar } from "./heldaskbar";
-import { agentGridAtom, currentGrid, eligibleIds, openInSplit, removeFromGrid } from "./gridstore";
+import {
+    agentGridAtom,
+    currentGrid,
+    eligibleIds,
+    gridProjects,
+    openInSplit,
+    projectGridsAtom,
+    removeFromGrid,
+} from "./gridstore";
 import { finalRowFocusId } from "./finalstage";
 import { FinalStagePane } from "./finalstagepane";
 import { rosterSeededAtom } from "./liveagents";
@@ -184,23 +192,27 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     }, [dock.dockedId]);
 
-    // The grid follows the roster and the focus (reconcileGrid): agents that left are pruned, and the focused
-    // agent takes its cell or the focused cell. Memoized in render, not left to the effect, so the cells drawn below
-    // are already right; written back only when it differs, which makes it a fixed point (reconcileGrid is
-    // idempotent). The write is skipped when the stored grid moved on since this render (a drop or an x landing
-    // before the effect flushed): the next render reconciles that one instead of this stale snapshot.
-    const reconciled = useMemo(
-        () => reconcileGrid(gridState, { focusId: agent?.id, eligible, seeded }),
-        [gridState, agent?.id, eligible, seeded]
+    // The grids follow the roster and the focus (reconcileProjectGrids): the focused tab's project's grid is the one
+    // shown, agents that left are pruned, and the focused agent takes its cell or the focused cell. Memoized in render,
+    // not left to the effect, so the cells drawn below are already right; written back only when it differs, which
+    // makes it a fixed point (the reconcile is idempotent). The write is skipped when the stored grids moved on since
+    // this render (a drop or an x landing before the effect flushed): the next render reconciles those instead of this
+    // stale snapshot.
+    const projectGrids = useAtomValue(projectGridsAtom);
+    const tabProjects = useMemo(() => gridProjects([...agents, ...terminals]), [agents, terminals]);
+    const reconciledGrids = useMemo(
+        () => reconcileProjectGrids(projectGrids, { focusId: agent?.id, eligible, projectOf: tabProjects, seeded }),
+        [projectGrids, agent?.id, eligible, tabProjects, seeded]
     );
+    const reconciled = shownGrid(reconciledGrids);
     useEffect(() => {
-        if (!gridEquals(globalStore.get(agentGridAtom), gridState)) {
+        if (!projectGridsEquals(globalStore.get(projectGridsAtom), projectGrids)) {
             return;
         }
-        if (!gridEquals(reconciled, gridState)) {
-            globalStore.set(agentGridAtom, reconciled);
+        if (!projectGridsEquals(reconciledGrids, projectGrids)) {
+            globalStore.set(projectGridsAtom, reconciledGrids);
         }
-    }, [reconciled, gridState]);
+    }, [reconciledGrids, projectGrids]);
 
     // What the terminal stack shows: the grid's cells, or one cell alone (fullscreen; a tab that is not a cell yet,
     // such as an agent with no terminal). When the centre shows something else (a subagent's interior, a session or

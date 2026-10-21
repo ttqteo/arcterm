@@ -5,7 +5,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { atom } from "jotai";
 import { beforeEach, describe, expect, it } from "vitest";
 import { centerModeAtom } from "./agentcenter";
-import { EMPTY_GRID, type GridState } from "./agentgrid";
+import { EMPTY_PROJECT_GRIDS, type GridState } from "./agentgrid";
 import {
     agentGridAtom,
     canOpenInSplit,
@@ -14,6 +14,7 @@ import {
     eligibleIds,
     endSplit,
     openInSplit,
+    projectGridsAtom,
     removeFromGrid,
     type GridModel,
 } from "./gridstore";
@@ -30,7 +31,7 @@ function model(ids: string[], focus?: string, terminalIds: string[] = []): GridM
 }
 
 beforeEach(() => {
-    globalStore.set(agentGridAtom, EMPTY_GRID);
+    globalStore.set(projectGridsAtom, EMPTY_PROJECT_GRIDS);
     globalStore.set(centerModeAtom, "terminal");
 });
 
@@ -279,5 +280,54 @@ describe("canOpenInSplit", () => {
         const m = model(["a"], "a", ["t"]);
         globalStore.set(agentGridAtom, g(["a"]));
         expect(canOpenInSplit(m, "t")).toBe(true);
+    });
+});
+
+describe("one grid per project", () => {
+    // agents a, b in project x; c and terminal t in project y; terminal h names no project (Home)
+    function projectModel(focus: string): GridModel {
+        return {
+            focusIdAtom: atom<string | undefined>(focus),
+            agentsAtom: atom([
+                { id: "a", blockId: "blk-a", project: "x" },
+                { id: "b", blockId: "blk-b", project: "x" },
+                { id: "c", blockId: "blk-c", project: "y" },
+            ]),
+            terminalsAtom: atom([
+                { id: "t", blockId: "blk-t", project: "y" },
+                { id: "h", blockId: "blk-h" },
+            ]),
+        };
+    }
+
+    it("opens a tab of the focused tab's project in the split, and not another project's", () => {
+        const m = projectModel("a");
+        expect(canOpenInSplit(m, "b")).toBe(true);
+        expect(canOpenInSplit(m, "c")).toBe(false);
+        expect(canOpenInSplit(m, "t")).toBe(false);
+        expect(canOpenInSplit(m, "h")).toBe(false);
+        expect(openInSplit(m, "c")).toBe(false);
+        expect(currentGrid(m)).toEqual(g(["a"]));
+    });
+    it("does not drop another project's tab on the grid", () => {
+        const m = projectModel("a");
+        dropAgentOnGrid(m, "t", 0, "right");
+        expect(currentGrid(m)).toEqual(g(["a"]));
+        expect(globalStore.get(m.focusIdAtom)).toBe("a");
+    });
+    it("shows each project's own split, and keeps the other's while away", () => {
+        const onX = projectModel("a");
+        openInSplit(onX, "b");
+        const onY = projectModel("c");
+        expect(currentGrid(onY)).toEqual(g(["c"]));
+        openInSplit(onY, "t");
+        expect(currentGrid(onY)).toEqual(g(["c", "t"], "t"));
+        expect(currentGrid(projectModel("b"))).toEqual(g(["a", "b"], "b"));
+        expect(globalStore.get(projectGridsAtom).grids).toEqual({ x: g(["a", "b"], "b"), y: g(["c", "t"], "t") });
+    });
+    it("gives the terminals with no project a split of their own", () => {
+        const m = projectModel("h");
+        expect(currentGrid(m)).toEqual(g(["h"]));
+        expect(canOpenInSplit(m, "a")).toBe(false);
     });
 });

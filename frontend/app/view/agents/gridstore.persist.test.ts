@@ -21,7 +21,7 @@ const lsMock = vi.hoisted(() => {
     return mock;
 });
 
-const KEY = "agent.grid";
+const KEY = "agent.grids";
 
 async function freshStore() {
     vi.resetModules();
@@ -45,11 +45,19 @@ describe("agentGridAtom storage", () => {
     it("starts empty for a profile that never stored a grid", async () => {
         expect(await gridAtStartup()).toEqual({ ids: [], focused: null });
     });
-    it("reads back a stored grid on the first read", async () => {
-        expect(await gridAtStartup('{"ids":["a","b"],"focused":"b"}')).toEqual({ ids: ["a", "b"], focused: "b" });
+    it("reads back the shown project's stored grid on the first read", async () => {
+        const stored = '{"project":"x","grids":{"x":{"ids":["a","b"],"focused":"b"},"y":{"ids":["c"],"focused":"c"}}}';
+        expect(await gridAtStartup(stored)).toEqual({ ids: ["a", "b"], focused: "b" });
     });
     it("repairs a stored grid whose focus names a cell it does not have", async () => {
-        expect(await gridAtStartup('{"ids":["a","b"],"focused":"zz"}')).toEqual({ ids: ["a", "b"], focused: "a" });
+        const stored = '{"project":"x","grids":{"x":{"ids":["a","b"],"focused":"zz"}}}';
+        expect(await gridAtStartup(stored)).toEqual({ ids: ["a", "b"], focused: "a" });
+    });
+    it("does not read the single grid stored before grids followed projects", async () => {
+        lsMock.clear();
+        lsMock.store.set("agent.grid", '{"ids":["a","b"],"focused":"b"}');
+        const { store, agentGridAtom } = await freshStore();
+        expect(store.get(agentGridAtom)).toEqual({ ids: [], focused: null });
     });
     it("reads text that is not JSON as an empty grid", async () => {
         expect(await gridAtStartup("{not json")).toEqual({ ids: [], focused: null });
@@ -57,12 +65,12 @@ describe("agentGridAtom storage", () => {
     it("reads JSON that is not a grid as an empty grid", async () => {
         expect(await gridAtStartup("5")).toEqual({ ids: [], focused: null });
     });
-    it("stores the grid as JSON under agent.grid, and a restart reads it back", async () => {
+    it("stores the grids as JSON under agent.grids, and a restart reads them back", async () => {
         lsMock.clear();
         const { store, agentGridAtom } = await freshStore();
         store.set(agentGridAtom, { ids: ["a", "b"], focused: "a" });
         const saved = lsMock.store.get(KEY);
-        expect(JSON.parse(saved!)).toEqual({ ids: ["a", "b"], focused: "a" });
+        expect(JSON.parse(saved!)).toEqual({ project: "~home", grids: { "~home": { ids: ["a", "b"], focused: "a" } } });
         expect(await gridAtStartup(saved)).toEqual({ ids: ["a", "b"], focused: "a" });
     });
 });

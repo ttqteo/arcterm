@@ -285,3 +285,98 @@ export function gridHold(state: GridState, eligible: ReadonlySet<string>, seeded
     const s = normalizeGrid(state);
     return !seeded && s.focused != null && !eligible.has(s.focused);
 }
+
+// Each project keeps a grid of its own: a split holds one project's agents and terminals, and choosing a tab of
+// another project shows that project's grid, the first one staying as it was for when its project comes back.
+// `project` is whose grid is shown; a project with no cells has no entry. Every function here returns a normalized
+// value, as the GridState ones do.
+export interface ProjectGrids {
+    project: string | null;
+    grids: Readonly<Record<string, GridState>>;
+}
+
+export const EMPTY_PROJECT_GRIDS: ProjectGrids = { project: null, grids: {} };
+
+// What localStorage hands back: anything. Each grid is repaired (parseGrid), and one with no cells dropped.
+export function parseProjectGrids(raw: unknown): ProjectGrids {
+    if (raw == null || typeof raw !== "object") {
+        return { project: null, grids: {} };
+    }
+    const r = raw as { project?: unknown; grids?: unknown };
+    const grids: Record<string, GridState> = {};
+    if (r.grids != null && typeof r.grids === "object" && !Array.isArray(r.grids)) {
+        for (const [project, value] of Object.entries(r.grids)) {
+            const grid = parseGrid(value);
+            if (grid.ids.length > 0) {
+                grids[project] = grid;
+            }
+        }
+    }
+    return { project: typeof r.project === "string" ? r.project : null, grids };
+}
+
+export function shownGrid(state: ProjectGrids): GridState {
+    return state.project != null && state.grids[state.project] != null
+        ? normalizeGrid(state.grids[state.project])
+        : { ids: [], focused: null };
+}
+
+// `next` as the shown project's grid, the others left as they are. With no project shown yet it is filed under
+// `fallback` (the project of a tab that names none), which becomes the shown one.
+export function withShownGrid(state: ProjectGrids, next: GridState, fallback?: string): ProjectGrids {
+    const project = state.project ?? fallback ?? null;
+    if (project == null) {
+        return state;
+    }
+    const grids = { ...state.grids };
+    const grid = normalizeGrid(next);
+    if (grid.ids.length > 0) {
+        grids[project] = grid;
+    } else {
+        delete grids[project];
+    }
+    return { project, grids };
+}
+
+export function projectGridsEquals(a: ProjectGrids, b: ProjectGrids): boolean {
+    const keys = Object.keys(a.grids);
+    return (
+        a.project === b.project &&
+        keys.length === Object.keys(b.grids).length &&
+        keys.every((k) => b.grids[k] != null && gridEquals(a.grids[k], b.grids[k]))
+    );
+}
+
+export interface ProjectReconcileInput extends ReconcileInput {
+    projectOf: ReadonlyMap<string, string>; // each tab's project, as the sidebar's folders file it
+}
+
+// reconcileGrid for every project: the focused tab's project's grid is shown and follows the focus, each grid keeps
+// only the live tabs of its own project, and a grid left with no cells goes. A focus that is no cell (an ended worker, a
+// tab with no terminal) keeps the shown project. Nothing changes until the roster has been read, as in reconcileGrid.
+export function reconcileProjectGrids(state: ProjectGrids, input: ProjectReconcileInput): ProjectGrids {
+    const s = parseProjectGrids(state);
+    if (!input.seeded) {
+        return s;
+    }
+    const focusProject =
+        input.focusId != null && input.eligible.has(input.focusId) ? input.projectOf.get(input.focusId) : undefined;
+    const project = focusProject ?? s.project;
+    const grids: Record<string, GridState> = {};
+    const projects = new Set(Object.keys(s.grids));
+    if (project != null) {
+        projects.add(project);
+    }
+    for (const p of projects) {
+        const mine = new Set([...input.eligible].filter((id) => input.projectOf.get(id) === p));
+        const grid = s.grids[p] ?? EMPTY_GRID;
+        const next =
+            p === project
+                ? reconcileGrid(grid, { focusId: input.focusId, eligible: mine, seeded: true })
+                : pruneMissing(grid, mine);
+        if (next.ids.length > 0) {
+            grids[p] = next;
+        }
+    }
+    return { project, grids };
+}

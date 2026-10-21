@@ -60,7 +60,7 @@ import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
 import { docReviewStateAtom, openReview } from "./docreviewstore";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { floatModeAtom, toggleFloat } from "./floatstore";
-import { agentGridAtom, currentGrid, eligibleIds, openInSplit, removeFromGrid } from "./gridstore";
+import { agentGridAtom, currentGrid, eligibleIds, gridProjects, openInSplit, removeFromGrid } from "./gridstore";
 import { InitiativePopover, initiativePopoverAtom } from "./initiativepopover";
 import { liveTokensAtom } from "./livetokensstore";
 import { rosterSeededAtom } from "./liveagents";
@@ -389,29 +389,27 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const splitShown = cellCount > 1;
     const canSplit = blockId != null && !ended;
 
-    // The visible way to a second cell: every other live agent, and what to do with none (dragging a sidebar row onto
-    // the terminal works too, but nothing on screen says so). Built when opened, from the grid as it is then.
+    // The visible way to a second cell: every other live agent and terminal of this agent's project (a split holds one
+    // project's), and what to do with none (dragging a sidebar row onto the terminal works too, but nothing on screen
+    // says so). Built when opened, from the grid as it is then.
     const openSplitMenu = (e: React.MouseEvent) => {
         const grid = currentGrid(model);
+        const roster = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
+        const projects = gridProjects(roster);
+        const mine = roster.filter((a) => projects.get(a.id) === projects.get(agent.id));
         const s = splitMenuState(
-            [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)].map((a) => ({
-                id: a.id,
-                name: a.name,
-                blockId: a.blockId,
-                project: projectOf(a),
-            })),
+            mine.map((a) => ({ id: a.id, name: a.name, blockId: a.blockId, project: projectOf(a) })),
             grid.ids
         );
         const items: ContextMenuItem[] = [{ label: "Show beside this agent", type: "header" }];
         if (s.full) {
             items.push({ label: `The grid is full (${s.cells} of 4)`, enabled: false });
         } else if (s.targets.length === 0) {
-            items.push({ label: "No other agent or terminal is running", enabled: false });
+            items.push({ label: "No other agent or terminal is running in this project", enabled: false });
         } else {
             for (const t of s.targets) {
                 items.push({
                     label: t.name,
-                    sublabel: t.project || undefined,
                     icon: <Columns2 size={15} />,
                     enabled: rosterSeeded,
                     click: () => {

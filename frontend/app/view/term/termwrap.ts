@@ -92,6 +92,17 @@ function auditAllFits(trigger: string) {
     }
 }
 
+// Every WebGL terminal draws from one glyph atlas (xterm's CharAtlasCache shares it between terminals of the same font
+// and colors), and clearing it empties its pages for all of them while only the terminal that asked drops the glyph
+// positions it drew with. A split's other pane kept drawing from positions that now held other glyphs, so its text came
+// out as wrong characters as soon as a pane was shown or took focus. A rebuild is therefore every mounted terminal's: the
+// first empties the atlas, and each one redraws its whole screen from it.
+function rebuildGlyphAtlas() {
+    for (const wrap of liveTermWraps.values()) {
+        wrap.webglAddon?.clearTextureAtlas();
+    }
+}
+
 // one timer and one pair of listeners for every mounted terminal, started by the first
 function startFitAudit() {
     if (fitAuditStarted) {
@@ -99,9 +110,16 @@ function startFitAudit() {
     }
     fitAuditStarted = true;
     setInterval(() => auditAllFits("timer"), FitAuditMs);
-    window.addEventListener("focus", () => auditAllFits("focus"));
+    // the WebGL renderer keeps its glyphs in a GPU texture that can be lost with no context-loss event (Chromium after
+    // sleep, or a GPU stall while the machine is short of RAM): backgrounds still draw and most text goes missing.
+    // Rebuilding the atlas when the window comes back redraws the text.
+    window.addEventListener("focus", () => {
+        rebuildGlyphAtlas();
+        auditAllFits("focus");
+    });
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
+            rebuildGlyphAtlas();
             auditAllFits("visible");
         }
     });
@@ -491,21 +509,15 @@ export class TermWrap {
                 focus: () => this.terminal.focus(),
             }),
         });
-        // the WebGL renderer keeps its glyphs in a GPU texture that can be lost with no context-loss event (Chromium
-        // after sleep, or a GPU stall while the machine is short of RAM): backgrounds still draw and most text goes
-        // missing. Rebuilding the atlas when the window comes back or the terminal takes focus redraws the text.
+        // a lost glyph texture (see startFitAudit) also redraws when the terminal takes focus
         const refreshGlyphs = () => {
             if (document.visibilityState === "visible") {
-                this.webglAddon?.clearTextureAtlas();
+                rebuildGlyphAtlas();
             }
         };
-        window.addEventListener("focus", refreshGlyphs);
-        document.addEventListener("visibilitychange", refreshGlyphs);
         this.terminal.textarea?.addEventListener("focus", refreshGlyphs);
         this.toDispose.push({
             dispose: () => {
-                window.removeEventListener("focus", refreshGlyphs);
-                document.removeEventListener("visibilitychange", refreshGlyphs);
                 this.terminal.textarea?.removeEventListener("focus", refreshGlyphs);
             },
         });
@@ -865,11 +877,12 @@ export class TermWrap {
         const reloadedWebGl = this.unparkWebGl();
         // every WebGL terminal shares one glyph atlas, which the visible ones grow and repack while this one is
         // hidden; shown again, it drew from stale glyph positions and its text came out garbled until a window
-        // focus rebuilt the atlas. Showing a pane (choosing its agent) rebuilds it here.
+        // focus rebuilt the atlas. Showing a pane (choosing its agent) rebuilds it here, for every terminal
+        // (rebuildGlyphAtlas), or the panes already on screen beside it would draw from the emptied atlas.
         if (this.hiddenSinceShown) {
             this.hiddenSinceShown = false;
             if (!reloadedWebGl) {
-                this.webglAddon?.clearTextureAtlas();
+                rebuildGlyphAtlas();
             }
         }
         const oldRows = this.terminal.rows;
@@ -912,7 +925,7 @@ export class TermWrap {
             return;
         }
         this.fitAddon.fit();
-        this.webglAddon?.clearTextureAtlas();
+        rebuildGlyphAtlas();
         this.terminal.refresh(0, this.terminal.rows - 1);
         this.nudgePtySize();
     }
