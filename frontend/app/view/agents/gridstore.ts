@@ -48,7 +48,7 @@ export const agentGridAtom = atom(
     (get, set, next: GridState) => set(projectGridsAtom, withShownGrid(get(projectGridsAtom), next, HOME_PROJECT))
 );
 
-type GridTab = { id: string; blockId?: string } & Partial<Pick<AgentVM, "project" | "transcriptPath">>;
+export type GridTab = { id: string; blockId?: string } & Partial<Pick<AgentVM, "project" | "transcriptPath">>;
 
 // What the operations need of AgentsViewModel; spelled out so they can be tested without one.
 export interface GridModel {
@@ -90,6 +90,43 @@ function currentGrids(model: GridModel): ProjectGrids {
 // The grid on screen as currentGrids has it.
 export function currentGrid(model: GridModel): GridState {
     return shownGrid(currentGrids(model));
+}
+
+// The grids the sidebar draws its split rows from, as the surface reconciles them: the docked terminal is no cell.
+// Takes the values rather than the atoms so the tree (hooks) and activeNavOrder (globalStore) read it alike.
+export function treeSplits(
+    grids: ProjectGrids,
+    input: {
+        focusId: string | undefined;
+        agents: ReadonlyArray<GridTab>;
+        terminals: ReadonlyArray<GridTab>;
+        dockedId: string | null | undefined;
+        seeded: boolean;
+    }
+): ProjectGrids {
+    const tabs = [...input.agents, ...input.terminals];
+    return reconcileProjectGrids(grids, {
+        focusId: input.focusId,
+        eligible: eligibleIds([...input.agents, ...input.terminals.filter((t) => t.id !== input.dockedId)]),
+        projectOf: gridProjects(tabs),
+        seeded: input.seeded,
+    });
+}
+
+// The project whose split (2+ cells) `id` is a cell of, shown or not.
+function splitProject(grids: ProjectGrids, id: string): string | undefined {
+    return Object.keys(grids.grids).find((p) => grids.grids[p].ids.length > 1 && grids.grids[p].ids.includes(id));
+}
+
+// `next` as `project`'s grid when that project is not the one shown: focus and the centre stay as they are.
+function commitHidden(grids: ProjectGrids, project: string, next: GridState): void {
+    const all = { ...grids.grids };
+    if (next.ids.length > 0) {
+        all[project] = next;
+    } else {
+        delete all[project];
+    }
+    globalStore.set(projectGridsAtom, { project: grids.project, grids: all });
 }
 
 // Whether `id` can be a cell of the grid on screen: it is live and of the shown project. Another project's tab is
@@ -137,11 +174,10 @@ export function removeFromGrid(model: GridModel, id: string): void {
     commit(model, removeCell(s, id));
 }
 
-// Whether `id` is a cell of a split (a grid of one cell is no split): its row's menu then offers Remove from split and
-// End split where it would offer Open in split.
+// Whether `id` is a cell of a split of any project's (a grid of one cell is no split): its row's menu then offers
+// Remove from split and End split where it would offer Open in split.
 export function isInSplit(model: GridModel, id: string): boolean {
-    const s = currentGrid(model);
-    return s.ids.length > 1 && s.ids.includes(id);
+    return splitProject(currentGrids(model), id) != null;
 }
 
 // "End split" (a split cell's row menu): the other cells go and the focused agent fills the area. Their agents keep
@@ -152,6 +188,35 @@ export function endSplit(model: GridModel): void {
         return;
     }
     commit(model, collapseToFocused(s));
+}
+
+// Remove from split, for a cell of any project's split (its row in the sidebar's split row, its menu): on the split on
+// screen it is removeFromGrid; on another project's it changes that grid only.
+export function removeFromSplit(model: GridModel, id: string): void {
+    const grids = currentGrids(model);
+    const project = splitProject(grids, id);
+    if (project == null) {
+        return;
+    }
+    if (project === grids.project) {
+        removeFromGrid(model, id);
+        return;
+    }
+    commitHidden(grids, project, removeCell(grids.grids[project], id));
+}
+
+// End split, for the split `id` is a cell of: that project's grid keeps only its focused cell.
+export function endSplitOf(model: GridModel, id: string): void {
+    const grids = currentGrids(model);
+    const project = splitProject(grids, id);
+    if (project == null) {
+        return;
+    }
+    if (project === grids.project) {
+        endSplit(model);
+        return;
+    }
+    commitHidden(grids, project, collapseToFocused(grids.grids[project]));
 }
 
 export function canOpenInSplit(model: GridModel, id: string): boolean {

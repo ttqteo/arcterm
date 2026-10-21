@@ -13,9 +13,13 @@ import {
     dropAgentOnGrid,
     eligibleIds,
     endSplit,
+    endSplitOf,
+    isInSplit,
     openInSplit,
     projectGridsAtom,
     removeFromGrid,
+    removeFromSplit,
+    treeSplits,
     type GridModel,
 } from "./gridstore";
 
@@ -350,5 +354,68 @@ describe("one grid per project", () => {
         const m = projectModel("h");
         expect(currentGrid(m)).toEqual(g(["h"]));
         expect(canOpenInSplit(m, "a")).toBe(false);
+    });
+});
+
+describe("splits of another project", () => {
+    // a and b are project p's, c and d project q's; q's split is shown
+    function twoProjects(focus: string): GridModel {
+        return {
+            focusIdAtom: atom<string | undefined>(focus),
+            agentsAtom: atom([
+                { id: "a", blockId: "blk-a", project: "p" },
+                { id: "b", blockId: "blk-b", project: "p" },
+                { id: "c", blockId: "blk-c", project: "q" },
+                { id: "d", blockId: "blk-d", project: "q" },
+            ]),
+            terminalsAtom: atom([]),
+        };
+    }
+    beforeEach(() => {
+        globalStore.set(projectGridsAtom, { project: "q", grids: { p: g(["a", "b"]), q: g(["c", "d"]) } });
+    });
+
+    it("isInSplit is true for a cell of a split not on screen", () => {
+        expect(isInSplit(twoProjects("c"), "a")).toBe(true);
+    });
+    it("removeFromSplit takes a cell out of its own project's split and leaves the focus", () => {
+        const m = twoProjects("c");
+        removeFromSplit(m, "a");
+        expect(globalStore.get(projectGridsAtom).grids.p.ids).toEqual(["b"]);
+        expect(globalStore.get(projectGridsAtom).grids.q.ids).toEqual(["c", "d"]);
+        expect(globalStore.get(m.focusIdAtom)).toBe("c");
+    });
+    it("removeFromSplit on the shown split is removeFromGrid", () => {
+        const m = twoProjects("c");
+        removeFromSplit(m, "d");
+        expect(globalStore.get(projectGridsAtom).grids.q.ids).toEqual(["c"]);
+    });
+    it("endSplitOf keeps only the focused cell of the cell's project", () => {
+        const m = twoProjects("c");
+        endSplitOf(m, "b");
+        expect(globalStore.get(projectGridsAtom).grids.p.ids).toEqual(["a"]);
+        expect(globalStore.get(projectGridsAtom).grids.q.ids).toEqual(["c", "d"]);
+        expect(globalStore.get(m.focusIdAtom)).toBe("c");
+    });
+    it("endSplitOf on the shown split is endSplit: the focused cell stays", () => {
+        const m = twoProjects("c");
+        endSplitOf(m, "d");
+        expect(globalStore.get(projectGridsAtom).grids.q.ids).toEqual(["c"]);
+        expect(globalStore.get(projectGridsAtom).grids.p.ids).toEqual(["a", "b"]);
+        expect(globalStore.get(m.focusIdAtom)).toBe("c");
+    });
+});
+
+describe("treeSplits", () => {
+    it("reconciles every grid against the roster, the docked terminal pruned", () => {
+        const grids = { project: "p", grids: { p: g(["a", "t"]) } };
+        const out = treeSplits(grids, {
+            focusId: "a",
+            agents: [{ id: "a", blockId: "blk-a", project: "p" }],
+            terminals: [{ id: "t", blockId: "blk-t", project: "p" }],
+            dockedId: "t",
+            seeded: true,
+        });
+        expect(out.grids.p.ids).toEqual(["a"]);
     });
 });
