@@ -30683,8 +30683,10 @@ const GRID_SETTLE_MS = 800;
 const GRID_FIT_SLACK_PX = 40;
 // where in the overlay each zone's point sits (an edge is the outer quarter)
 const GRID_ZONE_AT = { center: [0.5, 0.5], left: [0.1, 0.5], right: [0.9, 0.5], top: [0.5, 0.1], bottom: [0.5, 0.9] };
-// an agent the grid shows keeps its row in its folder, marked as in the split
+// an agent is a row in its folder while it has no cell in a split of 2+ cells (a one-cell grid is no split), and its
+// cell in the project's split row while it has one: the tree folds that row into the split row
 const gridRow = (id) => `[data-agent-row="${id}"]`;
+const gridCell = (id) => `[data-split-cell="${id}"]`;
 const gridBar = (id) => `[data-agent-cell-bar="${id}"]`;
 const gridNear = (a, b, tol = 4) => Math.abs(a - b) <= tol;
 const gridSameSize = (a, b) => gridNear(a.w, b.w) && gridNear(a.h, b.h);
@@ -31108,13 +31110,13 @@ const agentGrid = {
                 order(lay) === want(D, B, A) && cellAt(lay, B).focused === true,
                 lay
             );
-            await click(gridRow(D));
+            const clickedD = await click(gridCell(D));
             await settle();
             lay = await gridLayout(h);
             rec(
-                "8b. the row of an agent that has a cell focuses that cell and leaves the list alone",
-                order(lay) === want(D, B, A) && cellAt(lay, D).focused === true,
-                lay
+                "8b. D's cell in the split row focuses that cell and leaves the list alone",
+                clickedD === true && order(lay) === want(D, B, A) && cellAt(lay, D).focused === true,
+                { clickedD, lay }
             );
 
             // 9. fullscreen shows the focused cell alone and brings the grid back
