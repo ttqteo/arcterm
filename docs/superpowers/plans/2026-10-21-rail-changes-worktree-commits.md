@@ -104,7 +104,7 @@ git commit -m "feat(agents): the rail commits' shared types" -- frontend/app/vie
 
 ### Task 2: The graph draws the root row and parents outside the list
 
-**Depends on:** Task 1
+**Depends on:** Task 1 (uses `GraphCommit.boundary`)
 **Files:** `frontend/app/view/agents/gitgraphgeom.ts`, `frontend/app/view/agents/graphgutter.tsx`, `frontend/app/view/agents/gitgraphgeom.test.ts`
 
 The range's root is not a commit of the range: it is drawn hollow, dashed and grey (`graphlane-fold`), and so is the
@@ -467,7 +467,7 @@ git commit -m "feat(agents): the rail's commits model: range, rows and where lin
 
 ### Task 4: The per-agent store, `railcommitsstore.ts`
 
-**Depends on:** Task 1
+**Depends on:** Task 1 (uses `RAIL_COMMITS_CAP`)
 **Files:** `frontend/app/view/agents/railcommitsstore.ts`, `frontend/app/view/agents/railcommitsstore.test.ts`, `frontend/app/view/agents/changesstatus.ts`
 
 The read goes through the existing DEV fault hook (`devCommitFault()`, `changesstatus.ts`), so the CDP scenario can hold a
@@ -793,7 +793,7 @@ git commit -m "feat(agents): open the branch compare on a chosen commit" -- fron
 
 ### Task 7: The Commits section component
 
-**Depends on:** Task 2, Task 3
+**Depends on:** Task 2 (uses the `stubs` option and the boundary drawing), Task 3 (uses `railCommitTitle`)
 **Files:** `frontend/app/view/agents/railcommitssection.tsx`
 
 Boards: `Main`, `ManyCommits`, `States`. A view over `railcommits.ts`'s rows; Task 8 wires it, Task 10's scenario shows
@@ -996,7 +996,7 @@ git commit -m "feat(agents): the rail's Commits section" -- frontend/app/view/ag
 
 ### Task 8: The where line, the Commits section and the Files header on the rail
 
-**Depends on:** Task 3, Task 4, Task 5, Task 6, Task 7
+**Depends on:** Task 3 (uses the model's functions), Task 4 (uses the store), Task 5 (uses `showInLog`), Task 6 (uses `openBranchDiff`'s `select`), Task 7 (uses `RailCommitsSection`)
 **Files:** `frontend/app/view/agents/agentdetailsrail.tsx`
 
 Boards: `Main` (linked worktree, Branch and Session), `MainCheckout`, `ManyCommits`, `States`. The Commit… button and
@@ -1256,7 +1256,7 @@ git commit -m "feat(agents): commit ticked files from the rail's Changes tab" --
 
 ### Task 10: The `rail-changes-commits` scenario
 
-**Depends on:** Task 8
+**Depends on:** Task 8 (drives the rail it wires)
 **Files:** `scripts/cdp/scenarios.mjs`
 
 Boards `Main`, `ManyCommits`, `States`, and the row click. A new `railChangesCommits` scenario, registered in
@@ -1327,7 +1327,7 @@ git commit -m "test(cdp): rail-changes-commits scenario" -- scripts/cdp/scenario
 
 ### Task 11: The `rail-commit-mode` scenario, the changelog
 
-**Depends on:** Task 9, Task 10
+**Depends on:** Task 9 (drives the commit mode it adds), Task 10
 **Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`
 
 Boards `CommitMode` and `MainCheckout`. A second scenario, `railCommitMode`, registered after `railChangesCommits`,
