@@ -22,32 +22,20 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 0.15.17 — 2026-10-21
 
 ### Added
 
 - **Council**: ask a panel of expert agents to review a feature. They propose, argue in a thread you can join, and
   Summarize ranks the directions with a matrix of who stood where. <!-- try: new-council --> <!-- big -->
+- The Agent panel has a Changes tab beside Overview and Files: the agent's whole Files changed list, not only its
+  first eight files, with the Session / Branch switch and View diff; a file opens on its Diff. It says which branch
+  and worktree the list is measured in, lists that range's commits over their graph with what is not committed yet on
+  top, commits ticked files without leaving the agent, and reads git again when the agent finishes a turn, when you
+  open it and when you come back to the window.
 - Servers: a server started outside arcterm whose output goes to a file (a redirect, or a task a Claude session that
   has ended ran in the background) now opens that file as its live Log. A server with no owner also has
   Restart in arcterm, which stops it and runs it again in a terminal in its folder, so you can see its output from then on.
-- The side panel's Changes tab says which branch and worktree its list is measured in, lists that range's commits over
-  their graph with what is not committed yet on top, and commits ticked files without leaving the agent.
-
-### Fixed
-
-- The side panel's Changes list now reads git again when the agent finishes a turn, when you open Changes and when
-  you come back to the window: it no longer keeps showing what it read when you picked the agent (a folder caught
-  mid-move listed every file deleted long after the agent had committed the rename).
-- An agent arcterm brought back after a restart no longer goes missing from the Agent tree when it was slow to load:
-  resuming its conversation said it was already open and went nowhere. It now shows once it loads.
-
-## 0.15.17 — 2026-10-21
-
-### Added
-
-- The Agent panel has a Changes tab beside Overview and Files: the agent's whole Files changed list, not only its
-  first eight files, with the Session / Branch switch and View diff; a file opens on its Diff.
 - A pinned app's page shows a thin line along its top while it loads, after opening it, Home or Reload, with the page
   it had staying in view meanwhile.
 - arcterm's Ctrl and Alt shortcuts (the palette, Ctrl+Tab, a surface's keys) work while you are clicked into a pinned
@@ -90,6 +78,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A folder's file tree (the Agent panel's Files tab, the Code surface) shows at once: the files git listed last time
   show while it reads the folder again, and a folder never listed before shows its top level from the disk meanwhile.
   Before, the tree sat on a placeholder for as long as git took, over ten seconds on a busy machine.
+- An agent arcterm brought back after a restart no longer goes missing from the Agent tree when it was slow to load:
+  resuming its conversation said it was already open and went nowhere. It now shows once it loads.
 
 ## 0.15.16 — 2026-10-21
 
