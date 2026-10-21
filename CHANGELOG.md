@@ -22,7 +22,7 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 0.15.16 — 2026-10-21
 
 ### Added
 
@@ -33,47 +33,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   while a project's memory index is over the budget it states (`Budget: N bytes`), the check proposes cuts to fit.
 - arcterm now looks after your pinned apps' servers: it gives each a port, starts it when you open the app, restarts it when it crashes, and stops it a minute after you leave it, never while it is still working (a chat answer, a script it started). Setup → Tools shows each app's state with Stop, Restart, Keep running and its rail pin, and the footer's Servers names an app's server. Keep running starts it with arcterm and never stops it. <!-- big -->
 - Pin up to three of your apps to the nav rail: each opens as its own full-width surface, with the same page you had in Agent. <!-- big -->
-
-### Changed
-
-- A run's lead asks shorter questions: one decision per question, two lines at most, with several decisions
-  as separate questions in one ask instead of one long paragraph.
-- A plan's `**Depends on:**` reference between two tasks whose `**Files:**` lines share no path must say why in
-  parentheses (`Task 1 (uses the rows it adds)`): submit refuses a bare one, so a needless edge no longer makes a
-  task wait for another.
-- A terminal's header no longer spells out "Ctrl Tab back to …": the bar is shorter, and `Ctrl`+`Tab` still goes
-  back to the agent you were on.
-- Folded into the bottom-right corner, your pet sits in the corner again, 24px in, instead of 96px up.
-
-### Fixed
-
-- An agent you resume on a new Claude account after it stopped mid-turn (at a usage limit, say) carries on with its
-  work, as one does after arcterm restarts; it used to wait at its prompt for you to type continue.
-- Docker Desktop started by an agent keeps running when that agent is restarted (such as resuming it on another
-  Claude account), its tab is closed, or arcterm quits or updates; it used to quit with the agent.
-- A link that opens a new window (`target="_blank"`, `window.open`) in a pinned app's page or in the cockpit opens in
-  your default browser; it did nothing. An app's Open in the browser button opens the page you are on, not its start
-  page.
-- An app that is starting counts the seconds it has waited for its page; it read 0 s the whole time.
-- A file link in an agent or in Diff switches to Code at once, instead of after the repository's file list has
-  loaded, which on a large repository looked as if the click did nothing.
-- A running worker's row in the Agent tree shows how long it has run since it started; it read <1m for as long as
-  the worker stayed busy.
-- On Windows, a program you installed while arcterm was open now runs in the next terminal or agent you open, and
-  Setup → Tools shows it installed, without restarting arcterm.
-- A path from your home folder or through a dot folder, such as `~/.claude/usage-data/report.html`, is a link in a
-  terminal and an agent's transcript: Ctrl+click opens it.
-- A prompt you sent, in the live transcript and a past one, keeps its line breaks and shows its headings and code
-  blocks, so an engine task's long prompt no longer reads as one wall of text; a long prompt shows its first lines,
-  with Show more.
-- Holding `Ctrl` in the Agent view no longer leaves a copy of **Redraw the terminal** in the bottom bar each time.
-- A service whose program starts agents of its own (a dashboard that calls `claude -p`) is listed once in the Agent
-  tree, as its service row, instead of a second time as an agent.
-
-## 0.15.16 — 2026-10-19
-
-### Added
-
 - A pinned app's page reloads where it is with `Ctrl`+`R` or `F5` pressed in it, or its new Reload button, as in a
   browser (Windows).
 - Setup → Tools suggests the terminal tools it finds on your computer (htop, ncdu, tig, bottom and about 20 more)
@@ -113,6 +72,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A run's lead asks shorter questions: one decision per question, two lines at most, with several decisions
+  as separate questions in one ask instead of one long paragraph.
+- A plan's `**Depends on:**` reference between two tasks whose `**Files:**` lines share no path must say why in
+  parentheses (`Task 1 (uses the rows it adds)`): submit refuses a bare one, so a needless edge no longer makes a
+  task wait for another.
+- A terminal's header no longer spells out "Ctrl Tab back to …": the bar is shorter, and `Ctrl`+`Tab` still goes
+  back to the agent you were on.
+- Folded into the bottom-right corner, your pet sits in the corner again, 24px in, instead of 96px up.
 - Resume agents on a new Claude account lists them by project, with each run's lead and workers under the run, a
   checkbox for a whole project or run, and Select all; a long list scrolls instead of running off the screen.
 - `Ctrl`+`R` and `F5` never reload the whole arcterm window any more (Windows): outside a terminal `Ctrl`+`R` redraws
@@ -159,6 +126,28 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- An agent you resume on a new Claude account after it stopped mid-turn (at a usage limit, say) carries on with its
+  work, as one does after arcterm restarts; it used to wait at its prompt for you to type continue.
+- Docker Desktop started by an agent keeps running when that agent is restarted (such as resuming it on another
+  Claude account), its tab is closed, or arcterm quits or updates; it used to quit with the agent.
+- A link that opens a new window (`target="_blank"`, `window.open`) in a pinned app's page or in the cockpit opens in
+  your default browser; it did nothing. An app's Open in the browser button opens the page you are on, not its start
+  page.
+- An app that is starting counts the seconds it has waited for its page; it read 0 s the whole time.
+- A file link in an agent or in Diff switches to Code at once, instead of after the repository's file list has
+  loaded, which on a large repository looked as if the click did nothing.
+- A running worker's row in the Agent tree shows how long it has run since it started; it read <1m for as long as
+  the worker stayed busy.
+- On Windows, a program you installed while arcterm was open now runs in the next terminal or agent you open, and
+  Setup → Tools shows it installed, without restarting arcterm.
+- A path from your home folder or through a dot folder, such as `~/.claude/usage-data/report.html`, is a link in a
+  terminal and an agent's transcript: Ctrl+click opens it.
+- A prompt you sent, in the live transcript and a past one, keeps its line breaks and shows its headings and code
+  blocks, so an engine task's long prompt no longer reads as one wall of text; a long prompt shows its first lines,
+  with Show more.
+- Holding `Ctrl` in the Agent view no longer leaves a copy of **Redraw the terminal** in the bottom bar each time.
+- A service whose program starts agents of its own (a dashboard that calls `claude -p`) is listed once in the Agent
+  tree, as its service row, instead of a second time as an agent.
 - In the New dialog, a click anywhere in the Command box puts the caret in it, not only a click on the text.
 - Settings → Storage fills each card as soon as its scan is done, instead of reading Scanning… for minutes until
   build output and the package caches have been measured.
