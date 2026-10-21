@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import { placementFor } from "./agentgrid";
 import {
     agentDigits,
     agentExited,
@@ -666,6 +667,8 @@ describe("projectTree", () => {
                     return `a:${r.agent.id}`;
                 case "queuedentry":
                     return `q:${r.entry.id}:${r.place ?? "-"}`;
+                case "split":
+                    return `split:${r.project}:${r.shown ? "shown" : "saved"}:${r.cells.map((c) => c.id).join(",")}`;
                 default:
                     return r.kind;
             }
@@ -994,6 +997,148 @@ describe("projectTree", () => {
             );
         });
     });
+
+    describe("splits", () => {
+        const grids = (project: string | null, all: Record<string, string[]>) => ({
+            project,
+            grids: Object.fromEntries(Object.entries(all).map(([p, ids]) => [p, { ids, focused: ids[0] }])),
+        });
+        const withSplits = (agents: AgentVM[], terminals: AgentVM[], splits: ReturnType<typeof grids>, over = {}) =>
+            build(agents, terminals, { splits, roster: [...agents, ...terminals], ...over });
+
+        it("puts one split row where the topmost cell's row was, and drops the cells' rows", () => {
+            const rows = withSplits(
+                [agent("a"), agent("b"), agent("c")],
+                [term("t1")],
+                grids("waveterm", { waveterm: ["c", "a"] })
+            );
+            expect(shape(rows)).toEqual([
+                "group:waveterm:3a:1t",
+                "split:waveterm:shown:c,a",
+                "a:b",
+                "divider:waveterm",
+                "t:t1",
+            ]);
+        });
+
+        it("takes an agent and a terminal together, and drops a divider left with nothing on one side", () => {
+            const rows = withSplits([agent("a")], [term("t1")], grids("waveterm", { waveterm: ["a", "t1"] }));
+            expect(shape(rows)).toEqual(["group:waveterm:1a:1t", "split:waveterm:shown:a,t1"]);
+        });
+
+        it("draws another project's saved split too, not shown", () => {
+            const rows = withSplits(
+                [agent("a"), agent("b"), agent("c", undefined, "loom"), agent("d", undefined, "loom")],
+                [],
+                grids("waveterm", { waveterm: ["a", "b"], loom: ["c", "d"] })
+            );
+            expect(shape(rows)).toEqual([
+                "group:waveterm:2a:0t",
+                "split:waveterm:shown:a,b",
+                "group:loom:2a:0t",
+                "split:loom:saved:c,d",
+            ]);
+        });
+
+        it("leaves a grid of one cell as plain rows", () => {
+            const rows = withSplits([agent("a"), agent("b")], [], grids("waveterm", { waveterm: ["a"] }));
+            expect(shape(rows)).toEqual(["group:waveterm:2a:0t", "a:a", "a:b"]);
+        });
+
+        it("draws nothing for a collapsed folder", () => {
+            const rows = withSplits([agent("a"), agent("b")], [], grids("waveterm", { waveterm: ["a", "b"] }), {
+                collapsed: ["waveterm"],
+            });
+            expect(shape(rows)).toEqual(["group:waveterm:2a:0t:closed"]);
+        });
+
+        it("puts a split whose cells have no row at the top of the folder's body, from the roster", () => {
+            // "x" and "y" are live cells the tree draws no row for (workers of a folded run, say)
+            const rows = build([agent("a")], [], {
+                splits: grids("waveterm", { waveterm: ["x", "y"] }),
+                roster: [agent("a"), agent("x"), agent("y")],
+            });
+            expect(shape(rows)).toEqual(["group:waveterm:1a:0t", "split:waveterm:shown:x,y", "a:a"]);
+        });
+
+        it("folds the filtered project's split", () => {
+            const rows = withSplits(
+                [agent("a"), agent("b")],
+                [term("t1")],
+                grids("waveterm", { waveterm: ["b", "t1"] }),
+                { filter: "waveterm" }
+            );
+            expect(shape(rows)).toEqual(["a:a", "split:waveterm:shown:b,t1"]);
+        });
+
+        const placesIn = (rows: ProjectTreeRow[]) => {
+            const split = rows.find((r) => r.kind === "split");
+            return split?.kind === "split" ? split.cells.map((c) => c.place) : null;
+        };
+
+        it("places each cell as the grid does on screen: 2 side by side, 3 and 4 by the template", () => {
+            const four = [agent("a"), agent("b"), agent("c"), agent("d")];
+            for (const n of [2, 3, 4]) {
+                const ids = four.slice(0, n).map((a) => a.id);
+                expect(placesIn(withSplits(four, [], grids("waveterm", { waveterm: ids })))).toEqual(placementFor(n));
+            }
+            const rows = withSplits(four, [], grids("waveterm", { waveterm: ["a", "b", "c", "d"] }));
+            expect(shape(rows)).toEqual(["group:waveterm:4a:0t", "split:waveterm:shown:a,b,c,d"]);
+        });
+
+        it("keeps a grid's stored places: one tall cell and two stacked", () => {
+            const places = [
+                { row: 1, col: 1, rowSpan: 2, colSpan: 1 },
+                { row: 1, col: 2, rowSpan: 1, colSpan: 1 },
+                { row: 2, col: 2, rowSpan: 1, colSpan: 1 },
+            ];
+            const rows = withSplits([agent("a"), agent("b"), agent("c")], [], {
+                project: "waveterm",
+                grids: { waveterm: { ids: ["a", "b", "c"], focused: "a", places } },
+            });
+            expect(placesIn(rows)).toEqual(places);
+        });
+
+        describe("a cell inside a run", () => {
+            // a hand-made tree: the run's lead, its worker (only while the run is unfolded), then a plain agent
+            const run = { runId: "r1" };
+            const lead = agent("l");
+            const w = { ...agent("w"), runId: "r1" };
+            const tree = (open: boolean) =>
+                [
+                    { kind: "group", project: "waveterm", count: 3, attn: 0, running: 0 },
+                    { kind: "lead", agent: lead, project: "waveterm", run, open, live: 1 },
+                    ...(open ? [{ kind: "worker", agent: w, project: "waveterm", run, task: {} }] : []),
+                    { kind: "parent", agent: agent("a"), project: "waveterm" },
+                ] as unknown as AgentTreeRow[];
+            const menus = (rows: ProjectTreeRow[]) => {
+                const split = rows.find((r) => r.kind === "split");
+                return split?.kind === "split"
+                    ? split.cells.map((c) => `${c.id}:${c.menu}:${c.run?.runId ?? "-"}`)
+                    : null;
+            };
+
+            it("pulls an unfolded run's worker row out, the split at the worker's place, with the task menu", () => {
+                const rows = build([], [], {
+                    tree: tree(true),
+                    splits: grids("waveterm", { waveterm: ["a", "w"] }),
+                    roster: [lead, w, agent("a")],
+                });
+                expect(shape(rows)).toEqual(["group:waveterm:3a:0t", "lead", "split:waveterm:shown:a,w"]);
+                expect(menus(rows)).toEqual(["a:agent:-", "w:task:-"]);
+            });
+
+            it("takes a folded run's worker from the roster, with the task menu; the lead's cell has the run's", () => {
+                const rows = build([], [], {
+                    tree: tree(false),
+                    splits: grids("waveterm", { waveterm: ["l", "w"] }),
+                    roster: [lead, w, agent("a")],
+                });
+                expect(shape(rows)).toEqual(["group:waveterm:3a:0t", "split:waveterm:shown:l,w", "a:a"]);
+                expect(menus(rows)).toEqual(["l:lead:r1", "w:task:-"]);
+            });
+        });
+    });
 });
 
 describe("projectLabel", () => {
@@ -1046,16 +1191,12 @@ describe("terminalRowState", () => {
 
 describe("terminalShows", () => {
     it("says panel for the docked terminal", () => {
-        expect(terminalShows("t1", [], "t1")).toBe("panel");
-        expect(terminalShows("t1", ["a", "t1"], "t1")).toBe("panel");
+        expect(terminalShows("t1", "t1")).toBe("panel");
     });
-    it("says split for a cell of a split, and nothing for the one cell of a grid that is not split", () => {
-        expect(terminalShows("t1", ["a", "t1"], null)).toBe("split");
-        expect(terminalShows("t1", ["t1"], null)).toBeUndefined();
-    });
-    it("is nothing for a terminal that is neither", () => {
-        expect(terminalShows("t1", ["a", "b"], "t2")).toBeUndefined();
-        expect(terminalShows("t1", [], undefined)).toBeUndefined();
+    it("is nothing for a terminal that is not the docked one", () => {
+        expect(terminalShows("t1", "t2")).toBeUndefined();
+        expect(terminalShows("t1", null)).toBeUndefined();
+        expect(terminalShows("t1", undefined)).toBeUndefined();
     });
 });
 
@@ -1146,6 +1287,18 @@ describe("treeNavIds", () => {
         });
         expect(rows.some((r) => r.kind === "queuedentry")).toBe(true);
         expect(treeNavIds(rows)).toEqual(["a", "b", "t1", "c", "t2"]);
+    });
+    it("walks a split row's cells in reading order where the row sits", () => {
+        const rows = projectTree({
+            tree: treeOf(agents),
+            terminals,
+            filter: ALL_PROJECTS,
+            collapsed: [],
+            roots: new Map(),
+            splits: { project: "waveterm", grids: { waveterm: { ids: ["t1", "a"], focused: "a" } } },
+            roster: [...agents, ...terminals],
+        });
+        expect(treeNavIds(rows)).toEqual(["t1", "a", "b", "c", "t2"]);
     });
     it("skips a worker row whose session is gone, and rows that are not a session", () => {
         const gone = { kind: "worker", project: "p", run: {}, task: {} } as unknown as ProjectTreeRow;

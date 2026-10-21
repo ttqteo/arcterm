@@ -518,6 +518,18 @@ export function shownGrid(state: ProjectGrids): GridState {
         : { ids: [], focused: null };
 }
 
+// The splits the sidebar draws as one row each: every project's grid of two cells or more (a grid of one is no split).
+export function splitGrids(state: ProjectGrids): Map<string, GridState> {
+    const out = new Map<string, GridState>();
+    for (const [project, grid] of Object.entries(state.grids)) {
+        const g = normalizeGrid(grid);
+        if (g.ids.length > 1) {
+            out.set(project, g);
+        }
+    }
+    return out;
+}
+
 // `next` as the shown project's grid, the others left as they are. With no project shown yet it is filed under
 // `fallback` (the project of a tab that names none), which becomes the shown one.
 export function withShownGrid(state: ProjectGrids, next: GridState, fallback?: string): ProjectGrids {
