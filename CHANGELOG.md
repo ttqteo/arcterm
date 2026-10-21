@@ -22,6 +22,15 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Fixed
+
+- Updating arcterm now always updates the `wsh` its agents run; before, an agent session left running across the
+  update could keep them on the old one, so newer commands such as `wsh detach` were missing.
+- The mouse's Back and Forward buttons in a pinned app's page go back and forward in that page; before, they moved
+  another app's page out of sight, or one whose app had stopped, which then showed an error.
+
 ## 0.15.16 — 2026-10-21
 
 ### Added

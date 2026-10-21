@@ -391,9 +391,7 @@ func syncStableWsh(src, dst string) error {
 	if err := os.WriteFile(tmp, want, 0o755); err != nil {
 		return fmt.Errorf("writing %s: %w", tmp, err)
 	}
-	old := dst + ".old"
-	// a previous swap's copy may still be executing; if it cannot go, the rename below reports it
-	_ = os.Remove(old)
+	old := stableWshAsideName(dst)
 	if _, err := os.Stat(dst); err == nil {
 		if err := os.Rename(dst, old); err != nil {
 			return fmt.Errorf("moving aside %s: %w", dst, err)
@@ -405,6 +403,29 @@ func syncStableWsh(src, dst string) error {
 	}
 	_ = os.Remove(old) // fails only while the previous copy is still executing; the next sync retries
 	return nil
+}
+
+// stableWshAsideName removes the copies earlier swaps moved aside and returns a free name to move dst to: dst.old,
+// or dst.old.N while an earlier copy is still executing, which Windows will neither delete nor let a rename replace.
+// A long-lived `wsh agentctl` holds one for days, and reusing its name failed every swap until it exited.
+func stableWshAsideName(dst string) string {
+	base := filepath.Base(dst) + ".old"
+	if entries, err := os.ReadDir(filepath.Dir(dst)); err == nil {
+		for _, e := range entries {
+			if name := e.Name(); name == base || strings.HasPrefix(name, base+".") {
+				_ = os.Remove(filepath.Join(filepath.Dir(dst), name))
+			}
+		}
+	}
+	for i := 0; ; i++ {
+		name := dst + ".old"
+		if i > 0 {
+			name = fmt.Sprintf("%s.old.%d", dst, i)
+		}
+		if _, err := os.Lstat(name); os.IsNotExist(err) {
+			return name
+		}
+	}
 }
 
 // resolveHookWsh returns the wsh path to write into the integrations. A failed refresh keeps an existing

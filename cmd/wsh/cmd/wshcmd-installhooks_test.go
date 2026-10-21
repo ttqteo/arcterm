@@ -842,6 +842,40 @@ func TestSyncStableWsh_survivesARebuildDeletingTheOldBinary(t *testing.T) {
 	}
 }
 
+// a long-lived process (wsh agentctl) still runs the copy an earlier swap moved aside, so .old cannot go; a
+// non-empty directory stands in for it, since neither a remove nor a rename onto it succeeds on any OS
+func TestSyncStableWsh_swapsWhileAnEarlierCopyIsStillRunning(t *testing.T) {
+	dir := t.TempDir()
+	dst := stableWshPath(filepath.Join(dir, "home"))
+	writeTestFile(t, dst, "build 10")
+	writeTestFile(t, filepath.Join(dst+".old", "held"), "build 9")
+	src := filepath.Join(dir, "wsh-0.14.11-windows.x64.exe")
+	writeTestFile(t, src, "build 11")
+
+	if err := syncStableWsh(src, dst); err != nil {
+		t.Fatalf("sync with a held .old: %v", err)
+	}
+	if got, err := os.ReadFile(dst); err != nil || string(got) != "build 11" {
+		t.Fatalf("stable copy = %q (err %v), want the new build", got, err)
+	}
+}
+
+func TestSyncStableWsh_removesCopiesMovedAsideEarlier(t *testing.T) {
+	dir := t.TempDir()
+	dst := stableWshPath(filepath.Join(dir, "home"))
+	writeTestFile(t, dst, "build 10")
+	writeTestFile(t, dst+".old.1", "build 9, no longer running")
+	src := filepath.Join(dir, "wsh-0.14.11-windows.x64.exe")
+	writeTestFile(t, src, "build 11")
+
+	if err := syncStableWsh(src, dst); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if _, err := os.Stat(dst + ".old.1"); !os.IsNotExist(err) {
+		t.Fatalf("an earlier swap's copy that no process holds was left behind")
+	}
+}
+
 func TestResolveHookWsh_namesTheStableCopy(t *testing.T) {
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
