@@ -25,18 +25,22 @@ describe("wos reject-then-retry", () => {
         vi.clearAllMocks();
     });
 
-    it("leaves the atom cleared (not loading) and drops the cache so a remount retries", async () => {
-        // the transport fails on first load; an unhandled rejection would otherwise leave loading true forever
-        (fetch as any).mockRejectedValueOnce(new Error("backend down"));
-        const failed = getWaveObjectValue(oref);
-        await expect(failed.pendingPromise).rejects.toThrow("backend down");
-        expect(globalStore.get(failed.dataAtom)).toEqual({ value: null, loading: false, error: true });
+    it("leaves the atom cleared (not loading) and retries into the same entry", async () => {
+        vi.useFakeTimers();
+        try {
+            // the transport fails on first load; an unhandled rejection would otherwise leave loading true forever
+            (fetch as any).mockRejectedValueOnce(new Error("backend down"));
+            const failed = getWaveObjectValue(oref);
+            await expect(failed.pendingPromise).rejects.toThrow("backend down");
+            expect(globalStore.get(failed.dataAtom)).toEqual({ value: null, loading: false, error: true });
 
-        // the cache entry is gone, so a fresh getWaveObjectValue triggers a new fetch (no stale wov)
-        (fetch as any).mockResolvedValueOnce(okResponse(block));
-        const retried = getWaveObjectValue(oref);
-        expect(retried.pendingPromise).toBeInstanceOf(Promise);
-        await expect(retried.pendingPromise).resolves.toEqual(block);
-        expect(globalStore.get(retried.dataAtom)).toEqual({ value: block, loading: false, error: false });
+            // the entry stays, so the atoms already handed out see the retry land
+            expect(getWaveObjectValue(oref)).toBe(failed);
+            (fetch as any).mockResolvedValueOnce(okResponse(block));
+            await vi.advanceTimersByTimeAsync(1000);
+            expect(globalStore.get(failed.dataAtom)).toEqual({ value: block, loading: false, error: false });
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
