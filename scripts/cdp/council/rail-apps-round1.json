@@ -1,0 +1,120 @@
+{
+  "id": "fx-council-round1",
+  "project": "",
+  "feature": "Rail apps",
+  "question": "Which changes to pinned apps on the nav rail are worth making first?",
+  "files": [
+    "frontend/app/view/agents/railapps.ts",
+    "frontend/app/view/agents/railappsstore.ts",
+    "pkg/services/model.go"
+  ],
+  "group": "ui-feature",
+  "experts": [
+    {
+      "id": "ux",
+      "name": "UX",
+      "model": "sonnet",
+      "brief": "You review the feature as the UX expert. Ask whether someone can find, read and use it without being told how."
+    },
+    {
+      "id": "ram",
+      "name": "RAM",
+      "model": "sonnet",
+      "brief": "You review the feature for memory. Ask what stays in memory, for how long, and whether it is logged in RAM watch."
+    },
+    {
+      "id": "newuser",
+      "name": "New user",
+      "model": "sonnet",
+      "brief": "You are on your first day in arcterm and know none of its names, panes or shortcuts. Ask what is confusing and what is missing."
+    },
+    {
+      "id": "skeptic",
+      "name": "Skeptic",
+      "model": "sonnet",
+      "brief": "You are the skeptic. Name what breaks: the input nobody tried, the state two features reach at once, the claim another expert made without checking it."
+    },
+    {
+      "id": "coordinator",
+      "name": "Coordinator",
+      "model": "opus",
+      "coordinator": true,
+      "brief": "You are the coordinator. Merge the proposals that say the same thing, rank the directions that remain, and mark the claims that cite nothing as weak."
+    }
+  ],
+  "state": "running",
+  "round": 1,
+  "proposals": [
+    {
+      "id": "P1",
+      "author": "ux",
+      "title": "Show asleep and waking on the rail icon",
+      "argument": "railDot draws only error and warning, so a sleeping app looks the same as a running one.",
+      "evidence": [
+        {
+          "ref": "railapps.ts:72"
+        }
+      ],
+      "ts": 1792573310000
+    },
+    {
+      "id": "P2",
+      "author": "ux",
+      "title": "Keep the last-used pinned app awake",
+      "argument": "It sleeps after a minute off screen, so going back to it restarts the server.",
+      "evidence": [
+        {
+          "ref": "pkg/services/model.go:38"
+        }
+      ],
+      "ts": 1792573312000
+    },
+    {
+      "id": "P4",
+      "author": "newuser",
+      "title": "Show the empty rail slots with a pin hint",
+      "argument": "The cap of 3 is explained only once the rail is full.",
+      "evidence": [
+        {
+          "ref": "railapps.ts:11"
+        }
+      ],
+      "ts": 1792573350000
+    }
+  ],
+  "activity": {
+    "ram": {
+      "text": "Grep \"IdleSleep\" in pkg/services"
+    },
+    "skeptic": {
+      "text": "Read railappsstore.ts"
+    }
+  },
+  "stats": {
+    "ux": {
+      "ms": 112000,
+      "tokens": 84000,
+      "calls": 1
+    },
+    "ram": {
+      "ms": 190000,
+      "tokens": 71000,
+      "calls": 0
+    },
+    "newuser": {
+      "ms": 150000,
+      "tokens": 66000,
+      "calls": 1
+    },
+    "skeptic": {
+      "ms": 228000,
+      "tokens": 92000,
+      "calls": 0
+    }
+  },
+  "tokens": 313000,
+  "calls": 2,
+  "started": 1792573200000,
+  "created": 1792573180000,
+  "updated": 1792573428000
+}

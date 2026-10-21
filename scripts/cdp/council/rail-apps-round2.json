@@ -1,0 +1,349 @@
+{
+  "id": "fx-council-round2",
+  "project": "",
+  "feature": "Rail apps",
+  "question": "Which changes to pinned apps on the nav rail are worth making first?",
+  "files": [
+    "frontend/app/view/agents/railapps.ts",
+    "frontend/app/view/agents/railappsstore.ts",
+    "pkg/services/model.go"
+  ],
+  "group": "ui-feature",
+  "experts": [
+    {
+      "id": "ux",
+      "name": "UX",
+      "model": "sonnet",
+      "brief": "You review the feature as the UX expert. Ask whether someone can find, read and use it without being told how."
+    },
+    {
+      "id": "ram",
+      "name": "RAM",
+      "model": "sonnet",
+      "brief": "You review the feature for memory. Ask what stays in memory, for how long, and whether it is logged in RAM watch."
+    },
+    {
+      "id": "newuser",
+      "name": "New user",
+      "model": "sonnet",
+      "brief": "You are on your first day in arcterm and know none of its names, panes or shortcuts. Ask what is confusing and what is missing."
+    },
+    {
+      "id": "skeptic",
+      "name": "Skeptic",
+      "model": "sonnet",
+      "brief": "You are the skeptic. Name what breaks: the input nobody tried, the state two features reach at once, the claim another expert made without checking it."
+    },
+    {
+      "id": "coordinator",
+      "name": "Coordinator",
+      "model": "opus",
+      "coordinator": true,
+      "brief": "You are the coordinator. Merge the proposals that say the same thing, rank the directions that remain, and mark the claims that cite nothing as weak."
+    }
+  ],
+  "state": "running",
+  "round": 2,
+  "proposals": [
+    {
+      "id": "P1",
+      "author": "ux",
+      "title": "Show asleep and waking on the rail icon",
+      "argument": "A sleeping app looks the same as a running one. railDot draws only error and warning, so the rail never says an app is asleep.",
+      "evidence": [
+        {
+          "ref": "railapps.ts:72"
+        }
+      ],
+      "ts": 1792573310000
+    },
+    {
+      "id": "P2",
+      "author": "ux",
+      "title": "Keep the last-used pinned app awake",
+      "argument": "A pinned app sleeps after a minute off screen, so going back to it restarts its server and the page. The app you used last is the one you go back to. Reopening one takes about 3 s.",
+      "evidence": [
+        {
+          "ref": "pkg/services/model.go:38"
+        },
+        {
+          "ref": "",
+          "weak": true,
+          "note": "\"about 3 s\" has no measurement"
+        }
+      ],
+      "ts": 1792573312000
+    },
+    {
+      "id": "P3",
+      "author": "ram",
+      "title": "Measure a woken app before keeping any awake",
+      "argument": "Log it in RAM watch. Keeping one awake holds its whole dev server, and nobody has measured what a woken app costs.",
+      "evidence": [
+        {
+          "ref": "pkg/services/model.go:36"
+        }
+      ],
+      "ts": 1792573395000
+    },
+    {
+      "id": "P4",
+      "author": "newuser",
+      "title": "Show the empty rail slots with a pin hint",
+      "argument": "The cap shows only once the rail is full. A new user learns it by hitting it.",
+      "evidence": [
+        {
+          "ref": "railapps.ts:11"
+        }
+      ],
+      "ts": 1792573350000
+    },
+    {
+      "id": "P5",
+      "author": "skeptic",
+      "title": "Move the rail pins from localStorage to settings",
+      "argument": "A cleared WebView2 profile loses them. railappsstore.ts keeps the pins in localStorage.",
+      "evidence": [
+        {
+          "ref": "railappsstore.ts:12"
+        }
+      ],
+      "ts": 1792573426000
+    },
+    {
+      "id": "P6",
+      "author": "skeptic",
+      "title": "Drop the cap of 3 apps",
+      "argument": "The spec gives no reason for 3. Three fit under Radar at 56 px wide.",
+      "evidence": [
+        {
+          "ref": "railapps.ts:10"
+        }
+      ],
+      "ts": 1792573428000,
+      "withdrawn": true
+    }
+  ],
+  "replies": [
+    {
+      "id": "r1",
+      "proposalid": "P3",
+      "author": "ux",
+      "stance": "accept",
+      "text": "Fine, if the number decides.",
+      "round": 2,
+      "ts": 1792573462000
+    },
+    {
+      "id": "r2",
+      "proposalid": "P4",
+      "author": "ux",
+      "stance": "accept",
+      "text": "Teaches the cap before it bites.",
+      "round": 2,
+      "ts": 1792573468000
+    },
+    {
+      "id": "r3",
+      "proposalid": "P5",
+      "author": "ux",
+      "stance": "accept",
+      "text": "Pins should follow me to a new machine.",
+      "round": 2,
+      "ts": 1792573475000
+    },
+    {
+      "id": "r4",
+      "proposalid": "P6",
+      "author": "ux",
+      "stance": "challenge",
+      "text": "Three fit under Radar at 56 px wide.",
+      "round": 2,
+      "ts": 1792573482000
+    },
+    {
+      "id": "r5",
+      "proposalid": "P1",
+      "author": "skeptic",
+      "stance": "challenge",
+      "text": "A third dot state: name what I do differently.",
+      "round": 2,
+      "ts": 1792573485000
+    },
+    {
+      "id": "r6",
+      "proposalid": "P1",
+      "author": "ram",
+      "stance": "accept",
+      "text": "The state is already in ServiceStatus.",
+      "round": 2,
+      "ts": 1792573490000
+    },
+    {
+      "id": "r7",
+      "proposalid": "P5",
+      "author": "ram",
+      "stance": "accept",
+      "text": "No cost.",
+      "round": 2,
+      "ts": 1792573496000
+    },
+    {
+      "id": "r8",
+      "proposalid": "P6",
+      "author": "ram",
+      "stance": "oppose",
+      "text": "Each pinned app can hold a server.",
+      "round": 2,
+      "ts": 1792573500000
+    },
+    {
+      "id": "r9",
+      "proposalid": "P2",
+      "author": "skeptic",
+      "stance": "challenge",
+      "text": "The 3 s figure is a guess. Time a cold reopen of one real app, or drop the claim.",
+      "round": 2,
+      "ts": 1792573503000
+    },
+    {
+      "id": "r10",
+      "proposalid": "P3",
+      "author": "skeptic",
+      "stance": "accept",
+      "text": "A claim with a test.",
+      "round": 2,
+      "ts": 1792573510000
+    },
+    {
+      "id": "r11",
+      "proposalid": "P4",
+      "author": "skeptic",
+      "stance": "oppose",
+      "text": "Chrome on a rail that should stay quiet.",
+      "round": 2,
+      "ts": 1792573512000
+    },
+    {
+      "id": "r12",
+      "proposalid": "P2",
+      "author": "ram",
+      "stance": "oppose",
+      "text": "Keeping one awake holds its whole dev server. Measure a woken app and log it in RAM watch first.",
+      "evidence": [
+        {
+          "ref": "pkg/services/model.go:36"
+        }
+      ],
+      "round": 2,
+      "ts": 1792573520000
+    },
+    {
+      "id": "r13",
+      "proposalid": "P1",
+      "author": "newuser",
+      "stance": "accept",
+      "text": "I would wait instead of clicking again.",
+      "round": 2,
+      "ts": 1792573530000
+    },
+    {
+      "id": "r14",
+      "proposalid": "P1",
+      "parentid": "r5",
+      "author": "ux",
+      "text": "A sleeping app gets a muted dot and a waking one a slow pulse.",
+      "round": 2,
+      "ts": 1792573535000
+    },
+    {
+      "id": "r15",
+      "proposalid": "P5",
+      "author": "newuser",
+      "stance": "accept",
+      "text": "I lost mine after clearing data.",
+      "round": 2,
+      "ts": 1792573545000
+    },
+    {
+      "id": "r16",
+      "proposalid": "P4",
+      "parentid": "r11",
+      "author": "newuser",
+      "text": "It shows only while fewer than 3 are pinned.",
+      "round": 2,
+      "ts": 1792573550000
+    },
+    {
+      "id": "r17",
+      "proposalid": "P2",
+      "parentid": "r12",
+      "author": "newuser",
+      "stance": "accept",
+      "text": "From the outside a blank frame reads as broken. A “Waking…” label would do, even if it stays asleep.",
+      "round": 2,
+      "ts": 1792573575000
+    },
+    {
+      "id": "r18",
+      "proposalid": "P2",
+      "parentid": "r12",
+      "author": "you",
+      "text": "Does any of this change on a Mac, where the app frame cannot reload in place yet?",
+      "to": [
+        "ux",
+        "ram"
+      ],
+      "round": 2,
+      "ts": 1792573590000
+    },
+    {
+      "id": "r19",
+      "proposalid": "P2",
+      "parentid": "r9",
+      "author": "ux",
+      "revised": true,
+      "text": "Fair. I dropped the number; the claim is now only that it restarts, which model.go:38 shows.",
+      "round": 2,
+      "ts": 1792573630000
+    }
+  ],
+  "activity": {
+    "ram": {
+      "text": "Replying on P4",
+      "proposalid": "P4"
+    },
+    "skeptic": {
+      "text": "Replying to UX on P2",
+      "proposalid": "P2",
+      "parentid": "r19"
+    }
+  },
+  "stats": {
+    "ux": {
+      "ms": 205000,
+      "tokens": 150000,
+      "calls": 2
+    },
+    "ram": {
+      "ms": 280000,
+      "tokens": 110000,
+      "calls": 1
+    },
+    "newuser": {
+      "ms": 230000,
+      "tokens": 140000,
+      "calls": 2
+    },
+    "skeptic": {
+      "ms": 310000,
+      "tokens": 150000,
+      "calls": 1
+    }
+  },
+  "tokens": 550000,
+  "calls": 6,
+  "started": 1792573200000,
+  "created": 1792573170000,
+  "updated": 1792573640000
+}

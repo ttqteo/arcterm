@@ -41,6 +41,7 @@ import {
 } from "./memory-fixtures.mjs";
 import { notesWsh, vaultRemote, vaultRoot } from "./notes-wsh.mjs";
 import { makeCockpitOfficeScenarios } from "./cockpitofficescenarios.mjs";
+import { makeCouncilScenarios } from "./councilscenarios.mjs";
 import {
     arrangeSetupFixture,
     assertSetupFixtureInstalled,
@@ -44751,6 +44752,16 @@ const { cockpitOffice, cockpitOfficePet, cockpitOfficeControls, cockpitOfficeNee
     caMenuClick,
 });
 
+// the Council's scenarios (docs/superpowers/plans/2026-10-21-council.md): council-tree, council-setup, council-ask,
+// council-discussion, council-summary. Their hooks and fixtures are in ./councilscenarios.mjs and ./council/
+const councilScenarios = makeCouncilScenarios({
+    waitForProjectInConfig,
+    polishReload,
+    openRailTerminal,
+    openPalette,
+    waveService,
+});
+
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
 // nothing mocked. `runs:maxactive` is 1 and a run held by deferstart (it spawns nothing) is active, so no entry has room
@@ -51528,6 +51539,7 @@ export const SCENARIOS = [
     briefRunQueueScenario,
     runOriginScenario,
     ideasRail,
+    ...councilScenarios,
     needsYouLearnCard,
     setupSkillAdditions,
     setupLearned,
