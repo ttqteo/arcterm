@@ -49,6 +49,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   changed, any caveat, and any decision left to you, not only the caveat.
 - When the rest of a reply dims around its highlighted sentences, the bold words that open a list item or a paragraph
   stay bright, as headings do, so the reply keeps its outline.
+- A run's land no longer holds on your uncommitted edits to a file your project lists in `.arc/union-merge` (such as
+  `CHANGELOG.md`): when they sit apart from the run's changes, or only add lines beside its own, the land merges and
+  puts your edits back on top, still uncommitted.
 
 ### Fixed
 

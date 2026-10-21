@@ -477,7 +477,7 @@ Nó **giữ** land, kèm lý do, và để checkout nguyên như cũ, khi:
 - merge conflict (nó bị hủy, và lý do nêu các file);
 - git từ chối ghi đè sửa đổi chưa commit ở các file merge chạm tới (các sửa đổi ở lại).
 
-Sửa đổi chưa commit ở file khác không giữ land, và sống sót qua merge.
+Sửa đổi chưa commit ở file khác không giữ land, và sống sót qua merge. Sửa chưa stage ở một file `.arc/union-merge` liệt kê (như `CHANGELOG.md`, `docs/open-issues.md`) cũng không giữ land khi nó đặt được lên bản của run: hai bên sửa chỗ khác nhau, hoặc cùng chỗ nhưng chỉ thêm dòng. Engine cất sửa đó vào `.git/arc-carried/<runId>/`, merge, rồi đặt lại lên file đã merge, vẫn chưa stage và không vào commit land: dòng của run trước, rồi dòng của bạn. Không đặt lại được (base đổi ngay dưới land) thì bản cất ở lại và land ghi chú đường dẫn. Sửa đổi một dòng mà run cũng sửa vẫn giữ land như trên.
 
 **Dự đoán conflict.** Conflict với base được dự đoán *trước khi* lead đi. Lúc run xong, engine chạy `git merge-tree` giữa branch và base (không đụng cây nào). Thấy conflict thì wake kết thúc "The land into <base> will conflict in <files>: merge <base> into this tree, resolve, commit, then complete". `wsh jarvis complete` của lead kiểm lại và bị từ chối khi conflict còn. `wsh jarvis complete --hold-land` vẫn hoàn tất, dành cho khi người quyết định để đó, và land xử lý conflict như trên (resolver, rồi giữ nếu không giải được). Base vẫn có thể đổi giữa `complete` và lúc merge, nhất là khi land khác đi trước trong hàng; conflict đến lúc đó cũng do land tự xử lý như trên.
 

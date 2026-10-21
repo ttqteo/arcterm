@@ -1,4 +1,5 @@
-# files whose conflicts the land resolves when both sides only added lines: the base's lines, then the run's
+# files whose conflicts the land resolves when both sides only added lines (the base's lines, then the run's), and
+# whose uncommitted edits in the checkout it carries across its merge when they go on top of the run's version
 CHANGELOG.md
 docs/open-issues.md
 scripts/cdp/scenarios.mjs

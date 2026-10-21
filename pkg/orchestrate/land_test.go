@@ -425,6 +425,62 @@ func TestLandKeepsUncommittedEdits(t *testing.T) {
 			t.Fatalf("checkout left dirty after the land:\n%s", status)
 		}
 	})
+	// another session's line in CHANGELOG.md held a land that appended its own there
+	carryFixture := func(t *testing.T, branchLog string) (*mergeFixture, string) {
+		f, tree := landFixture(t)
+		commitOnBase(t, f.project, ".arc/union-merge", "CHANGELOG.md\n")
+		commitOnBase(t, f.project, "CHANGELOG.md", "# Changelog\n\n- one\n")
+		gitCmd(t, tree, "merge", "--no-edit", "main")
+		commitOnBranch(t, tree, "CHANGELOG.md", branchLog)
+		f.setLandCommands(t, "", "true")
+		return f, tree
+	}
+	t.Run("an edit to a listed file that only adds lines lands and stays unstaged on top", func(t *testing.T) {
+		f, _ := carryFixture(t, "# Changelog\n\n- one\n- from the run\n")
+		writeFile(t, filepath.Join(f.project, "CHANGELOG.md"), "# Changelog\n\n- one\n- mine\n")
+
+		run, err := wstore.GetRun(f.ctx, f.channel, f.ownerID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hold := landPrecheck(f.ctx, run); hold != nil {
+			t.Fatalf("landPrecheck = %+v, want no hold for an edit the land carries", hold)
+		}
+		if land := f.landRun(t, false); land.State != LandState_Landed || len(land.Notes) > 0 {
+			t.Fatalf("land = %+v, want landed with no notes", land)
+		}
+		if got, want := strings.ReplaceAll(readFile(t, filepath.Join(f.project, "CHANGELOG.md")), "\r\n", "\n"), "# Changelog\n\n- one\n- from the run\n- mine\n"; got != want {
+			t.Fatalf("CHANGELOG.md = %q, want %q", got, want)
+		}
+		if committed := gitCmd(t, f.project, "show", "HEAD:CHANGELOG.md"); strings.Contains(committed, "mine") {
+			t.Fatalf("the edit went into the land's commit:\n%s", committed)
+		}
+		if status := gitCmd(t, f.project, "status", "--porcelain"); status != "M CHANGELOG.md" {
+			t.Fatalf("status = %q, want only the edit, unstaged", status)
+		}
+		aside := gitCmd(t, f.project, "rev-parse", "--git-path", "arc-carried/"+f.ownerID)
+		if !filepath.IsAbs(aside) {
+			aside = filepath.Join(f.project, aside)
+		}
+		if _, err := os.Stat(aside); !os.IsNotExist(err) {
+			t.Fatalf("the set-aside copies were left in %s: %v", aside, err)
+		}
+	})
+	t.Run("an edit to a listed file that changes the run's line holds", func(t *testing.T) {
+		f, _ := carryFixture(t, "# Changelog\n\n- one, by the run\n")
+		edit := "# Changelog\n\n- one, by me\n"
+		writeFile(t, filepath.Join(f.project, "CHANGELOG.md"), edit)
+		head := gitCmd(t, f.project, "rev-parse", "main")
+
+		land := f.landRun(t, false)
+		f.assertHeld(t, land, head, "unstaged edits to files the run changes: CHANGELOG.md")
+		if !land.Dirty {
+			t.Fatalf("land = %+v, want a dirty hold the engine retries", land)
+		}
+		if got := readFile(t, filepath.Join(f.project, "CHANGELOG.md")); got != edit {
+			t.Fatalf("CHANGELOG.md = %q, want the edit byte-identical", got)
+		}
+	})
 	t.Run("a copy of the branch's version beside a real edit still holds", func(t *testing.T) {
 		f, tree := landFixture(t)
 		commitOnBase(t, f.project, "other.txt", "base other\n")

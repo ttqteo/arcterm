@@ -262,21 +262,29 @@ func landRun(ctx context.Context, run *waveobj.Run, g *waveobj.TaskGroup, force 
 	if reason := clearUntrackedCopies(ctx, project, branch); reason != "" {
 		return heldLand(reason)
 	}
-	if reason, dirty := clearEditedCopies(ctx, project, branch); reason != "" {
+	carried, reason, dirty := clearEditedCopies(ctx, project, branch, unionMergePaths(ctx, project, run.BaseBranch))
+	if reason != "" {
 		return &waveobj.RunLand{State: LandState_Held, Reason: reason, Dirty: dirty}
 	}
 	pre, err := ProjectHeadCommit(ctx, project)
 	if err != nil {
 		return heldLand("reading the checkout's head: " + err.Error())
 	}
+	aside, err := setAsideEdits(ctx, project, run.ID, carried)
+	if err != nil {
+		return heldLand("setting aside the checkout's edits to " + carriedPaths(carried) + ": " + err.Error())
+	}
 	title := landTitle(run, g, branchSubjects(ctx, project, pre, branch))
 	if _, err := git(ctx, project, "merge", "--no-ff", "-m", title, "-m", "Arc-Run: "+run.ID, branch); err != nil {
-		return heldLand(mergeRefusal(ctx, project, run.BaseBranch, err))
+		reason := mergeRefusal(ctx, project, run.BaseBranch, err)
+		restoreEdits(carried, project, aside)
+		return heldLand(reason)
 	}
 	land := &waveobj.RunLand{State: LandState_Landed}
 	if land.Commit, err = ProjectHeadCommit(ctx, project); err != nil {
 		log.Printf("run %s: reading the land's merge commit: %v", run.ID, err)
 	}
+	land.Notes = append(land.Notes, putBackEdits(ctx, project, pre, aside, carried)...)
 	if checkNote != "" {
 		land.Notes = append(land.Notes, checkNote)
 	}
@@ -371,7 +379,8 @@ func finalHold(g *waveobj.TaskGroup) string {
 // git operation, has staged changes the merge commit would sweep in, has unstaged edits the merge would overwrite,
 // or has an untracked file where the branch adds a different one. dirty is set when only uncommitted changes stand
 // in the way. Those belong to another session or the human, so nothing of the engine's touches them: the land
-// retries by itself once they are gone (retryDirtyLands).
+// retries by itself once they are gone (retryDirtyLands). The exception is an edit to a file .arc/union-merge lists
+// that goes on top of the run's version: the land carries it across the merge (carriedEdit).
 func checkoutHold(ctx context.Context, run *waveobj.Run) (reason string, dirty bool) {
 	project, branch := run.ProjectPath, "wave/"+run.ID
 	cur, err := git(ctx, project, "rev-parse", "--abbrev-ref", "HEAD")
@@ -401,7 +410,7 @@ func checkoutHold(ctx context.Context, run *waveobj.Run) (reason string, dirty b
 	if clean, _ := IndexClean(ctx, project); !clean {
 		return "the checkout has staged changes", true
 	}
-	overlap, _, err := unstagedOverlap(ctx, project, branch)
+	overlap, _, _, err := unstagedOverlap(ctx, project, branch, unionMergePaths(ctx, project, run.BaseBranch))
 	if err != nil {
 		return err.Error(), false
 	}
@@ -421,22 +430,24 @@ func checkoutHold(ctx context.Context, run *waveobj.Run) (reason string, dirty b
 // unstagedOverlap names the checkout's unstaged edits to files the run's branch changes, which git merge refuses
 // to overwrite only after the re-run of Check and Verify. Edits to other files stay: git merges past them. An edit
 // that is already the branch's version is a copy, not an overlap: a generated file every build rewrites (the
-// embedded claude-mod), synced from a source the run committed, held run ee18a780 with nobody's work at stake.
-func unstagedOverlap(ctx context.Context, project, branch string) (overlap, copies []string, err error) {
+// embedded claude-mod), synced from a source the run committed, held run ee18a780 with nobody's work at stake. An
+// edit to a file union lists (.arc/union-merge) that goes on top of the run's version is carried, not an overlap:
+// another session's line in CHANGELOG.md or docs/open-issues.md held lands that appended lines there too.
+func unstagedOverlap(ctx context.Context, project, branch string, union []string) (overlap, copies []string, carried []*carriedEdit, err error) {
 	edited, err := git(ctx, project, "diff", "--name-only", "--no-renames", "-z")
 	if err != nil {
-		return nil, nil, fmt.Errorf("listing the checkout's unstaged edits: %w", err)
+		return nil, nil, nil, fmt.Errorf("listing the checkout's unstaged edits: %w", err)
 	}
 	if edited == "" {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	base, err := git(ctx, project, "merge-base", "HEAD", branch)
 	if err != nil {
-		return nil, nil, fmt.Errorf("finding where the run's branch forked: %w", err)
+		return nil, nil, nil, fmt.Errorf("finding where the run's branch forked: %w", err)
 	}
 	changed, err := git(ctx, project, "diff", "--name-only", "--no-renames", "-z", base, branch)
 	if err != nil {
-		return nil, nil, fmt.Errorf("listing what the run changes: %w", err)
+		return nil, nil, nil, fmt.Errorf("listing what the run changes: %w", err)
 	}
 	theirs := strings.Split(changed, "\x00")
 	for _, p := range strings.Split(edited, "\x00") {
@@ -445,11 +456,21 @@ func unstagedOverlap(ctx context.Context, project, branch string) (overlap, copi
 		}
 		if sameAsBranch(ctx, project, branch, p) {
 			copies = append(copies, p)
-		} else {
-			overlap = append(overlap, p)
+			continue
 		}
+		if slices.Contains(union, p) {
+			c, err := carryableEdit(ctx, project, branch, p)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("reading the checkout's edit to %s: %w", p, err)
+			}
+			if c != nil {
+				carried = append(carried, c)
+				continue
+			}
+		}
+		overlap = append(overlap, p)
 	}
-	return overlap, copies, nil
+	return overlap, copies, carried, nil
 }
 
 // sameAsBranch says whether the checkout's file p holds the branch's version of it, a missing file matching one the
@@ -468,22 +489,23 @@ func sameAsBranch(ctx context.Context, project, branch, p string) bool {
 
 // clearEditedCopies puts back the checkout's unstaged copies of the branch's version, which git merge would refuse
 // to overwrite. Nothing is lost: the branch holds the same content, and the merge takes it in. It reads them again
-// under the checkout claim, so an edit made since the precheck holds the land instead, as a dirty hold.
-func clearEditedCopies(ctx context.Context, project, branch string) (reason string, dirty bool) {
-	overlap, copies, err := unstagedOverlap(ctx, project, branch)
+// under the checkout claim, so an edit made since the precheck holds the land instead, as a dirty hold. carried is
+// the edits the land sets aside and puts back on top of the merge.
+func clearEditedCopies(ctx context.Context, project, branch string, union []string) (carried []*carriedEdit, reason string, dirty bool) {
+	overlap, copies, carried, err := unstagedOverlap(ctx, project, branch, union)
 	if err != nil {
-		return err.Error(), false
+		return nil, err.Error(), false
 	}
 	if len(overlap) > 0 {
-		return "the checkout has unstaged edits to files the run changes: " + strings.Join(overlap, ", "), true
+		return nil, "the checkout has unstaged edits to files the run changes: " + strings.Join(overlap, ", "), true
 	}
 	if len(copies) == 0 {
-		return "", false
+		return carried, "", false
 	}
 	if _, err := git(ctx, project, append([]string{"checkout", "--"}, copies...)...); err != nil {
-		return "putting back the checkout's copies of what the run changes: " + err.Error(), false
+		return nil, "putting back the checkout's copies of what the run changes: " + err.Error(), false
 	}
-	return "", false
+	return carried, "", false
 }
 
 // syncBase merges the base branch into wave/<run> in the landing tree before the land, so Check and Verify run on,
