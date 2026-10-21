@@ -1,28 +1,123 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Agent surface's terminal grid as pure data: which live agents hold the (at most four) cells, in order,
-// and which cell is focused. No React and no atoms: gridstore.ts persists it, agentsurface.tsx draws it, and
-// every rule that drag and drop, the sidebar and the keyboard share lives here so it can be tested.
+// The Agent surface's terminal grid as pure data: which live agents hold the (at most four) cells, where each sits
+// in a fixed 2x2 template, and which cell is focused. No React and no atoms: gridstore.ts persists it,
+// agentsurface.tsx draws it, and every rule that drag and drop, the sidebar and the keyboard share lives here so it
+// can be tested.
 //
-// The shape depends only on how many cells there are (placementFor): 1 fills the area, 2 sit side by side,
-// 3 are two on top and one spanning the bottom, 4 are 2x2. A cell has no place of its own, only a position in
-// the list, so adding, removing or swapping one never needs a geometry rule.
+// A cell's place is its own (`places`), not a function of the count: an edge drop splits the target cell in two along
+// that edge (the bottom edge stacks the new cell under it, the right edge puts it beside), and a cell that leaves is
+// filled by a neighbour sharing a whole side with it. A grid whose cells sit as placementFor has them (1 fills the
+// area, 2 side by side, 3 two on top and one spanning the bottom, 4 a 2x2) stores no places. The cells are kept in
+// reading order (row, then column), so the list order is the order on screen.
 //
 // Every function that returns a GridState returns a normalized one (normalizeGrid): ids are unique, non-empty
-// and at most MAX_CELLS, and `focused` is one of them, or null exactly when there are none. So a stale or
-// hand-edited stored value cannot break a caller. Nothing here mutates its input.
+// and at most MAX_CELLS, `places`, when present, tiles the 2x2 exactly with one place per id, and `focused` is one of
+// the ids, or null exactly when there are none. So a stale or hand-edited stored value cannot break a caller.
+// Nothing here mutates its input.
 
 export const MAX_CELLS = 4;
 
 export type DropZone = "center" | "left" | "right" | "top" | "bottom";
 
+// A cell's place in the fixed 2x2 template; rows and columns count from 1, spans from 1.
+export interface CellPlacement {
+    row: number;
+    col: number;
+    rowSpan: number;
+    colSpan: number;
+}
+
 export interface GridState {
     ids: string[];
     focused: string | null;
+    places?: CellPlacement[]; // one per id, in the same order; left out when the cells sit as placementFor has them
 }
 
 export const EMPTY_GRID: GridState = { ids: [], focused: null };
+
+const PLACEMENTS: readonly (readonly CellPlacement[])[] = [
+    [],
+    [{ row: 1, col: 1, rowSpan: 2, colSpan: 2 }],
+    [
+        { row: 1, col: 1, rowSpan: 2, colSpan: 1 },
+        { row: 1, col: 2, rowSpan: 2, colSpan: 1 },
+    ],
+    [
+        { row: 1, col: 1, rowSpan: 1, colSpan: 1 },
+        { row: 1, col: 2, rowSpan: 1, colSpan: 1 },
+        { row: 2, col: 1, rowSpan: 1, colSpan: 2 },
+    ],
+    [
+        { row: 1, col: 1, rowSpan: 1, colSpan: 1 },
+        { row: 1, col: 2, rowSpan: 1, colSpan: 1 },
+        { row: 2, col: 1, rowSpan: 1, colSpan: 1 },
+        { row: 2, col: 2, rowSpan: 1, colSpan: 1 },
+    ],
+];
+
+// The default placement of each cell for a grid of `count` cells, in reading order. Clamped to 0..4.
+export function placementFor(count: number): CellPlacement[] {
+    const n = Number.isNaN(count) ? 0 : Math.min(MAX_CELLS, Math.max(0, Math.trunc(count)));
+    return PLACEMENTS[n].map((p) => ({ ...p }));
+}
+
+const isSpan = (n: unknown): n is 1 | 2 => n === 1 || n === 2;
+
+// Whether `places` covers each of the template's four squares exactly once, with `count` places.
+function tiles(places: readonly CellPlacement[], count: number): boolean {
+    if (places.length !== count || count === 0) {
+        return false;
+    }
+    const taken = new Set<number>();
+    for (const p of places) {
+        if (![p.row, p.col, p.rowSpan, p.colSpan].every(isSpan) || p.row + p.rowSpan > 3 || p.col + p.colSpan > 3) {
+            return false;
+        }
+        for (let r = p.row; r < p.row + p.rowSpan; r++) {
+            for (let c = p.col; c < p.col + p.colSpan; c++) {
+                const sq = r * 3 + c;
+                if (taken.has(sq)) {
+                    return false;
+                }
+                taken.add(sq);
+            }
+        }
+    }
+    return taken.size === 4;
+}
+
+const samePlace = (a: CellPlacement, b: CellPlacement) =>
+    a.row === b.row && a.col === b.col && a.rowSpan === b.rowSpan && a.colSpan === b.colSpan;
+
+// Each cell's place: the stored ones, or the default for the count.
+export function placesOf(state: GridState): CellPlacement[] {
+    return state.places != null && tiles(state.places, state.ids.length)
+        ? state.places.map((p) => ({ ...p }))
+        : placementFor(state.ids.length);
+}
+
+// A grid from ids and their places: put in reading order, the places dropped when they are the default (or do not
+// tile, which falls back to the default too). `ids` is already deduplicated and capped.
+function withPlaces(
+    ids: readonly string[],
+    focused: string | null,
+    places: readonly CellPlacement[] | undefined
+): GridState {
+    if (places == null || !tiles(places, ids.length)) {
+        return { ids: [...ids], focused };
+    }
+    const order = ids
+        .map((id, i) => ({ id, p: { ...places[i] } }))
+        .sort((a, b) => a.p.row - b.p.row || a.p.col - b.p.col);
+    const sorted = order.map((o) => o.id);
+    const def = placementFor(ids.length);
+    if (order.every((o, i) => samePlace(o.p, def[i]))) {
+        return { ids: sorted, focused };
+    }
+    return { ids: sorted, focused, places: order.map((o) => o.p) };
+}
 
 export function normalizeGrid(state: GridState): GridState {
     const ids: string[] = [];
@@ -32,21 +127,42 @@ export function normalizeGrid(state: GridState): GridState {
         }
     }
     const focused = state.focused != null && ids.includes(state.focused) ? state.focused : (ids[0] ?? null);
-    return { ids, focused };
+    // places follow the ids one to one, so a list that lost an id has lost which place was whose
+    return withPlaces(ids, focused, ids.length === state.ids.length ? state.places : undefined);
 }
 
-// What localStorage hands back: anything. Only string ids survive.
+function parsePlace(raw: unknown): CellPlacement | null {
+    if (raw == null || typeof raw !== "object") {
+        return null;
+    }
+    const r = raw as Record<string, unknown>;
+    const p = { row: r.row, col: r.col, rowSpan: r.rowSpan, colSpan: r.colSpan };
+    return Object.values(p).every(isSpan) ? (p as CellPlacement) : null;
+}
+
+// What localStorage hands back: anything. Only string ids survive, and places only when every one reads.
 export function parseGrid(raw: unknown): GridState {
     if (raw == null || typeof raw !== "object") {
         return { ids: [], focused: null };
     }
-    const r = raw as { ids?: unknown; focused?: unknown };
-    const ids = Array.isArray(r.ids) ? r.ids.filter((x): x is string => typeof x === "string") : [];
-    return normalizeGrid({ ids, focused: typeof r.focused === "string" ? r.focused : null });
+    const r = raw as { ids?: unknown; focused?: unknown; places?: unknown };
+    const allIds = Array.isArray(r.ids) ? r.ids : [];
+    const ids = allIds.filter((x): x is string => typeof x === "string");
+    const places = Array.isArray(r.places) && ids.length === allIds.length ? r.places.map(parsePlace) : null;
+    return normalizeGrid({
+        ids,
+        focused: typeof r.focused === "string" ? r.focused : null,
+        places: places != null && places.every((p) => p != null) ? (places as CellPlacement[]) : undefined,
+    });
 }
 
 export function gridEquals(a: GridState, b: GridState): boolean {
-    return a.focused === b.focused && a.ids.length === b.ids.length && a.ids.every((id, i) => id === b.ids[i]);
+    if (a.focused !== b.focused || a.ids.length !== b.ids.length || !a.ids.every((id, i) => id === b.ids[i])) {
+        return false;
+    }
+    const pa = placesOf(a);
+    const pb = placesOf(b);
+    return pa.every((p, i) => samePlace(p, pb[i]));
 }
 
 // Who is focused once some cells have left: the focused cell if it stayed, else the nearest survivor at or
@@ -72,7 +188,7 @@ function clampIndex(i: number, length: number): number {
     return Number.isNaN(i) ? 0 : Math.min(length - 1, Math.max(0, Math.trunc(i)));
 }
 
-// Swaps two cells by index. Focus stays on the same agent, wherever it lands.
+// Swaps two cells by index: the agents trade places, the places stay. Focus stays on the same agent, wherever it lands.
 export function swapCells(state: GridState, a: number, b: number): GridState {
     const s = normalizeGrid(state);
     const valid = (i: number) => Number.isInteger(i) && i >= 0 && i < s.ids.length;
@@ -81,7 +197,55 @@ export function swapCells(state: GridState, a: number, b: number): GridState {
     }
     const ids = [...s.ids];
     [ids[a], ids[b]] = [ids[b], ids[a]];
-    return { ids, focused: s.focused };
+    return withPlaces(ids, s.focused, placesOf(s));
+}
+
+// The places once the cell at `i` leaves: a neighbour sharing a whole side with it grows over it (one beside it in
+// the same row first); when none does, it spanned the whole height or width and the cells beside it each grow across.
+function placesWithout(places: readonly CellPlacement[], i: number): CellPlacement[] {
+    const p = places[i];
+    const rest = places.filter((_, j) => j !== i).map((q) => ({ ...q }));
+    const beside = rest.find(
+        (q) =>
+            q.row === p.row && q.rowSpan === p.rowSpan && (q.col + q.colSpan === p.col || p.col + p.colSpan === q.col)
+    );
+    if (beside != null) {
+        beside.col = Math.min(beside.col, p.col);
+        beside.colSpan += p.colSpan;
+        return rest;
+    }
+    const over = rest.find(
+        (q) =>
+            q.col === p.col && q.colSpan === p.colSpan && (q.row + q.rowSpan === p.row || p.row + p.rowSpan === q.row)
+    );
+    if (over != null) {
+        over.row = Math.min(over.row, p.row);
+        over.rowSpan += p.rowSpan;
+        return rest;
+    }
+    for (const q of rest) {
+        if (p.rowSpan === 2) {
+            q.col = 1;
+            q.colSpan = 2;
+        } else {
+            q.row = 1;
+            q.rowSpan = 2;
+        }
+    }
+    return rest;
+}
+
+// Drops every cell in `gone` (their agents keep running; they just have no cell), its neighbours filling the space.
+function removeIds(s: GridState, gone: (id: string) => boolean): GridState {
+    let ids = [...s.ids];
+    let places = placesOf(s);
+    for (let i = ids.length - 1; i >= 0; i--) {
+        if (gone(ids[i])) {
+            places = placesWithout(places, i);
+            ids = ids.filter((_, j) => j !== i);
+        }
+    }
+    return withPlaces(ids, refocus(s.ids, s.focused, ids), places);
 }
 
 // Drops a cell from the grid (the agent keeps running; it just has no cell).
@@ -90,16 +254,14 @@ export function removeCell(state: GridState, id: string): GridState {
     if (!s.ids.includes(id)) {
         return s;
     }
-    const kept = s.ids.filter((x) => x !== id);
-    return { ids: kept, focused: refocus(s.ids, s.focused, kept) };
+    return removeIds(s, (x) => x === id);
 }
 
 // Drops every cell whose agent is not live any more.
 export function pruneMissing(state: GridState, existing: Iterable<string>): GridState {
     const s = normalizeGrid(state);
     const live = new Set(existing);
-    const kept = s.ids.filter((id) => live.has(id));
-    return { ids: kept, focused: refocus(s.ids, s.focused, kept) };
+    return s.ids.every((id) => live.has(id)) ? s : removeIds(s, (id) => !live.has(id));
 }
 
 // Puts `id` in the focused cell. An agent that is already another cell trades places with the focused one, so
@@ -122,7 +284,7 @@ export function replaceFocused(state: GridState, id: string): GridState {
         ids[at] = s.focused;
     }
     ids[focusedAt] = id;
-    return { ids, focused: id };
+    return withPlaces(ids, id, placesOf(s));
 }
 
 // The one rule for "this agent was selected" (a sidebar click, Ctrl+Tab, an arrow, the palette): if it already
@@ -133,32 +295,102 @@ export function focusAgent(state: GridState, id: string): GridState {
         return s;
     }
     if (s.ids.includes(id)) {
-        return s.focused === id ? s : { ids: s.ids, focused: id };
+        return s.focused === id ? s : { ...s, focused: id };
     }
     return replaceFocused(s, id);
 }
 
-// An agent already in the grid is moved: centre swaps it with the target, an edge zone puts it before (left, top)
-// or after (right, bottom) the target. `t` is the target's index in the list as it was.
+// The two halves of `p` split along an edge zone, the zone's own half first; null when `p` is one square wide (left,
+// right) or tall (top, bottom) and has nothing to split.
+function splitPlace(p: CellPlacement, zone: DropZone): [CellPlacement, CellPlacement] | null {
+    if (zone === "left" || zone === "right") {
+        if (p.colSpan !== 2) {
+            return null;
+        }
+        const left = { ...p, col: 1, colSpan: 1 };
+        const right = { ...p, col: 2, colSpan: 1 };
+        return zone === "left" ? [left, right] : [right, left];
+    }
+    if (zone === "top" || zone === "bottom") {
+        if (p.rowSpan !== 2) {
+            return null;
+        }
+        const top = { ...p, row: 1, rowSpan: 1 };
+        const bottom = { ...p, row: 2, rowSpan: 1 };
+        return zone === "top" ? [top, bottom] : [bottom, top];
+    }
+    return null;
+}
+
+// The edge zones the cell at `index` can be split along: left and right when it is two squares wide, top and bottom
+// when it is two tall. A full grid splits nothing.
+export function splitZones(state: GridState, index: number): DropZone[] {
+    const s = normalizeGrid(state);
+    const p = placesOf(s)[index];
+    if (p == null || s.ids.length >= MAX_CELLS) {
+        return [];
+    }
+    const zones: DropZone[] = [];
+    if (p.colSpan === 2) {
+        zones.push("left", "right");
+    }
+    if (p.rowSpan === 2) {
+        zones.push("top", "bottom");
+    }
+    return zones;
+}
+
+const ACROSS: Record<DropZone, DropZone> = {
+    left: "top",
+    right: "bottom",
+    top: "left",
+    bottom: "right",
+    center: "center",
+};
+
+// A new cell for `id` (not in `s`, which has room) split off the cell at `t` along `zone`. A cell too narrow for that
+// edge is split along the other axis instead (right becomes bottom), and when the target cannot split at all (a
+// one-square cell) the first cell that can gives up its second half: the agent always gets a cell, never replaces one.
+function splitOff(s: GridState, id: string, t: number, zone: DropZone): GridState {
+    const places = placesOf(s);
+    const tries: [number, DropZone][] = [
+        [t, zone],
+        [t, ACROSS[zone]],
+        ...places.map((p, i): [number, DropZone] => [i, p.colSpan === 2 ? "right" : "bottom"]),
+    ];
+    for (const [i, z] of tries) {
+        const halves = splitPlace(places[i], z);
+        if (halves != null) {
+            const next = [...places];
+            next[i] = halves[1];
+            return withPlaces([...s.ids, id], id, [...next, halves[0]]);
+        }
+    }
+    // unreachable while the grid has room: a tiling of fewer than four cells always has a two-square one
+    const ids = [...s.ids];
+    ids[t] = id;
+    return withPlaces(ids, id, places);
+}
+
+// An agent already in the grid is moved: centre swaps it with the target; an edge zone takes it out (its neighbours
+// fill its space) and splits it off the target along that edge. `t` is the target's index in the list as it was.
 function moveCell(s: GridState, id: string, t: number, zone: DropZone): GridState {
     const from = s.ids.indexOf(id);
     if (from === t) {
-        return { ids: s.ids, focused: id };
+        return { ...s, focused: id };
     }
     if (zone === "center") {
-        return { ids: swapCells(s, from, t).ids, focused: id };
+        return { ...swapCells(s, from, t), focused: id };
     }
     const target = s.ids[t];
-    const rest = s.ids.filter((x) => x !== id);
-    const at = rest.indexOf(target) + (zone === "left" || zone === "top" ? 0 : 1);
-    const ids = [...rest];
-    ids.splice(at, 0, id);
-    return { ids, focused: id };
+    const rest = removeCell(s, id);
+    return splitOff(rest, id, rest.ids.indexOf(target), zone);
 }
 
-// A drop of `id` on the cell at `targetIndex`. A new agent: centre replaces the target (which leaves the grid),
-// left/top insert before it, right/bottom after it; on a full grid there is no room, so an edge acts as the
-// centre. An agent already in the grid is moved (moveCell). The dropped agent becomes the focused cell.
+// A drop of `id` on the cell at `targetIndex`. A new agent: centre replaces the target (which leaves the grid), an
+// edge splits the target in two along that edge, the agent taking that edge's half (splitOff); on a full grid there is
+// no room, so an edge acts as the centre. An agent already in the grid is moved (moveCell). The dropped agent becomes
+// the focused cell.
 export function addCell(state: GridState, id: string, targetIndex: number, zone: DropZone): GridState {
     const s = normalizeGrid(state);
     if (id === "") {
@@ -171,13 +403,12 @@ export function addCell(state: GridState, id: string, targetIndex: number, zone:
     if (s.ids.includes(id)) {
         return moveCell(s, id, t, zone);
     }
-    const ids = [...s.ids];
-    if (zone === "center" || ids.length >= MAX_CELLS) {
+    if (zone === "center" || s.ids.length >= MAX_CELLS) {
+        const ids = [...s.ids];
         ids[t] = id;
-    } else {
-        ids.splice(zone === "left" || zone === "top" ? t : t + 1, 0, id);
+        return withPlaces(ids, id, placesOf(s));
     }
-    return { ids, focused: id };
+    return splitOff(s, id, t, zone);
 }
 
 // The grid as one cell, which is what fullscreen shows. The other centre modes (History and the like) hide the
@@ -185,40 +416,6 @@ export function addCell(state: GridState, id: string, targetIndex: number, zone:
 export function collapseToFocused(state: GridState): GridState {
     const s = normalizeGrid(state);
     return s.focused == null ? s : { ids: [s.focused], focused: s.focused };
-}
-
-// A cell's place in the fixed 2x2 template; rows and columns count from 1, spans from 1.
-export interface CellPlacement {
-    row: number;
-    col: number;
-    rowSpan: number;
-    colSpan: number;
-}
-
-const PLACEMENTS: readonly (readonly CellPlacement[])[] = [
-    [],
-    [{ row: 1, col: 1, rowSpan: 2, colSpan: 2 }],
-    [
-        { row: 1, col: 1, rowSpan: 2, colSpan: 1 },
-        { row: 1, col: 2, rowSpan: 2, colSpan: 1 },
-    ],
-    [
-        { row: 1, col: 1, rowSpan: 1, colSpan: 1 },
-        { row: 1, col: 2, rowSpan: 1, colSpan: 1 },
-        { row: 2, col: 1, rowSpan: 1, colSpan: 2 },
-    ],
-    [
-        { row: 1, col: 1, rowSpan: 1, colSpan: 1 },
-        { row: 1, col: 2, rowSpan: 1, colSpan: 1 },
-        { row: 2, col: 1, rowSpan: 1, colSpan: 1 },
-        { row: 2, col: 2, rowSpan: 1, colSpan: 1 },
-    ],
-];
-
-// The placement of each cell for a grid of `count` cells, in order. Clamped to 0..4.
-export function placementFor(count: number): CellPlacement[] {
-    const n = Number.isNaN(count) ? 0 : Math.min(MAX_CELLS, Math.max(0, Math.trunc(count)));
-    return PLACEMENTS[n].map((p) => ({ ...p }));
 }
 
 // The inline style a cell carries: gridRow/gridColumn with spans, over a template that never changes.
@@ -241,10 +438,10 @@ export function visibleCells(state: GridState, opts: { focusId: string | undefin
     }
     const s = normalizeGrid(state);
     const shown: GridState = s.ids.includes(opts.focusId)
-        ? { ids: s.ids, focused: opts.focusId }
+        ? { ...s, focused: opts.focusId }
         : { ids: [opts.focusId], focused: opts.focusId };
     const cells = opts.collapsed ? collapseToFocused(shown) : shown;
-    const spots = placementFor(cells.ids.length);
+    const spots = placesOf(cells);
     return cells.ids.map((id, i) => ({ id, placement: spots[i], focused: id === cells.focused }));
 }
 

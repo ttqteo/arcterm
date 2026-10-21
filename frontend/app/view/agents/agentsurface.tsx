@@ -806,7 +806,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                                 <GridDropOverlay
                                                     model={model}
                                                     id={a.id}
-                                                    ids={reconciled.ids}
+                                                    grid={reconciled}
                                                     mentionTo={mentionTarget(a)}
                                                 />
                                             ) : null}

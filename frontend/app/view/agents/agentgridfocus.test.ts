@@ -110,6 +110,13 @@ describe("an agent that exits", () => {
             seeded: true,
         });
         expect(agent?.id).toBe("c");
-        expect(settle(s, agent?.id, eligible)).toEqual(g(["a", "c"], "c"));
+        // b leaves the top row, so a widens over it: a above, c below
+        expect(settle(s, agent?.id, eligible)).toEqual({
+            ...g(["a", "c"], "c"),
+            places: [
+                { row: 1, col: 1, rowSpan: 1, colSpan: 2 },
+                { row: 2, col: 1, rowSpan: 1, colSpan: 2 },
+            ],
+        });
     });
 });

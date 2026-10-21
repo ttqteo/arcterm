@@ -65,7 +65,14 @@ describe("eligibleIds", () => {
 describe("currentGrid", () => {
     it("drops agents that are not live and keeps the rest in order", () => {
         globalStore.set(agentGridAtom, g(["a", "b", "c"]));
-        expect(currentGrid(model(["a", "c"], "a"))).toEqual(g(["a", "c"], "a"));
+        // b leaves the top row, so a widens over it
+        expect(currentGrid(model(["a", "c"], "a"))).toEqual({
+            ...g(["a", "c"], "a"),
+            places: [
+                { row: 1, col: 1, rowSpan: 1, colSpan: 2 },
+                { row: 2, col: 1, rowSpan: 1, colSpan: 2 },
+            ],
+        });
     });
     it("does not count an agent with no terminal", () => {
         const m: GridModel = {
@@ -169,7 +176,13 @@ describe("removeFromGrid", () => {
         const m = model(["a", "b", "c"], "b");
         globalStore.set(agentGridAtom, g(["a", "b", "c"], "b"));
         removeFromGrid(m, "b");
-        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "c"], "c"));
+        expect(globalStore.get(agentGridAtom)).toEqual({
+            ...g(["a", "c"], "c"),
+            places: [
+                { row: 1, col: 1, rowSpan: 1, colSpan: 2 },
+                { row: 2, col: 1, rowSpan: 1, colSpan: 2 },
+            ],
+        });
         expect(globalStore.get(m.focusIdAtom)).toBe("c");
     });
     it("keeps focus where it was when another cell goes", () => {
@@ -204,11 +217,11 @@ describe("openInSplit", () => {
         expect(openInSplit(m, "b")).toBe(true);
         expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "b"], "b"));
     });
-    it("inserts right after the focused cell", () => {
+    it("splits the cell that can when the focused one cannot (a one-square cell)", () => {
         const m = model(["a", "b", "c", "d"], "b");
         globalStore.set(agentGridAtom, g(["a", "b", "c"], "b"));
         expect(openInSplit(m, "d")).toBe(true);
-        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "b", "d", "c"], "d"));
+        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "b", "c", "d"], "d"));
     });
     it("does nothing for an agent that already has a cell, on a full grid, or for a ghost", () => {
         const m = model(["a", "b", "c", "d", "e"], "a");
@@ -231,7 +244,15 @@ describe("openInSplit", () => {
         const m = model(["a", "b"], "a", ["t"]);
         globalStore.set(agentGridAtom, g(["a", "b"], "a"));
         expect(openInSplit(m, "t")).toBe(true);
-        expect(globalStore.get(agentGridAtom)).toEqual(g(["a", "t", "b"], "t"));
+        // a is one square wide, so it splits along its height: t under it, b keeping the right column
+        expect(globalStore.get(agentGridAtom)).toEqual({
+            ...g(["a", "b", "t"], "t"),
+            places: [
+                { row: 1, col: 1, rowSpan: 1, colSpan: 1 },
+                { row: 1, col: 2, rowSpan: 2, colSpan: 1 },
+                { row: 2, col: 1, rowSpan: 1, colSpan: 1 },
+            ],
+        });
         expect(globalStore.get(m.focusIdAtom)).toBe("t");
     });
 });

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The pure half of dropping an agent on the grid: which drags count, which zone of a cell a point is in, which
-// zones a grid of N cells offers, and what to say about the zone. The overlay (griddropoverlay.tsx) only draws it.
+// zones a cell offers, and what to say about the zone. The overlay (griddropoverlay.tsx) only draws it.
 
-import { MAX_CELLS, type DropZone } from "./agentgrid";
+import { removeCell, splitZones, type DropZone, type GridState } from "./agentgrid";
 import { mentionToken } from "./agentrowmodel";
 import type { AgentVM } from "./agentsviewmodel";
 
@@ -56,27 +56,30 @@ export function zoneFromPoint(rect: Rect, x: number, y: number): DropZone {
     return "bottom";
 }
 
-const ALL_ZONES: readonly DropZone[] = ["center", "left", "right", "top", "bottom"];
-
-// A full grid has no room to insert, so only the swap remains.
-export function allowedZones(cellCount: number): readonly DropZone[] {
-    return cellCount >= MAX_CELLS ? ["center"] : ALL_ZONES;
+// The zones a drop of `dragId` on the cell `targetId` offers: the centre always, and the edges along which the
+// target can be split (agentgrid.ts splitZones), judged in the grid as it is once the dragged cell, when it is one,
+// has left it. So the overlay shows only what the drop does: a cell side by side with another has no left or right
+// edge, and a full grid offers only the swap.
+export function allowedZones(state: GridState, targetId: string, dragId: string): DropZone[] {
+    const grid = state.ids.includes(dragId) ? removeCell(state, dragId) : state;
+    return ["center", ...splitZones(grid, grid.ids.indexOf(targetId))];
 }
 
-// A drop on the cell `targetId`, resolved against `ids`: the grid as it is when the drop lands (gridstore's
+// A drop on the cell `targetId`, resolved against `state`: the grid as it is when the drop lands (gridstore's
 // currentGrid), not as it was when the overlay last rendered, so the index handed to dropAgentOnGrid is always a
 // position in the list that call reads. Null when the target has left the grid since. A zone the grid no longer
 // offers (it filled up mid-drag) becomes the swap.
 export function resolveDrop(
-    ids: readonly string[],
+    state: GridState,
     targetId: string,
+    dragId: string,
     zone: DropZone
 ): { index: number; zone: DropZone } | null {
-    const index = ids.indexOf(targetId);
+    const index = state.ids.indexOf(targetId);
     if (index < 0) {
         return null;
     }
-    return { index, zone: allowedZones(ids.length).includes(zone) ? zone : "center" };
+    return { index, zone: allowedZones(state, targetId, dragId).includes(zone) ? zone : "center" };
 }
 
 export type ZoneBox = Rect;
@@ -94,12 +97,20 @@ export function zoneBox(zone: DropZone): ZoneBox {
     return ZONE_BOX[zone];
 }
 
+// an edge says where the agent lands: the half of the cell it takes
+const ZONE_LABEL: Record<Exclude<DropZone, "center">, string> = {
+    left: "Place left",
+    right: "Place right",
+    top: "Place above",
+    bottom: "Place below",
+};
+
 // `moving`: the dragged agent already has a cell, so the centre swaps instead of replacing.
 export function zoneLabel(zone: DropZone, moving: boolean): string {
     if (zone === "center") {
         return moving ? "Swap" : "Replace";
     }
-    return zone === "left" || zone === "top" ? "Place before" : "Place after";
+    return ZONE_LABEL[zone];
 }
 
 // A drop with Alt (Option on a Mac) held types the dragged agent's @mention at the cell's prompt instead of placing it,

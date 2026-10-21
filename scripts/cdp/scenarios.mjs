@@ -30671,7 +30671,9 @@ const codeTreeOnArrival = {
 // geometry and identity from DOM marks; garbling is for the shots. rosterSeededAtom cannot be read from here, but the
 // surface writes the reconciled grid back to storage only once the roster is seeded, so a stored grid holding the
 // agent just clicked is the proof that it is, and nothing is dropped or counted before that.
-const GRID_KEY = "agent.grid";
+// one grid per project (gridstore.ts): { project, grids: { [project]: { ids, focused, places? } } }
+const GRID_KEY = "agent.grids";
+const GRID_EMPTY = { project: null, grids: {} };
 const GRID_PROJECT = "verify-grid";
 const GRID_NAMES = ["grid-a", "grid-b", "grid-c", "grid-d", "grid-e"];
 const GRID_MARK = "agent-grid";
@@ -30892,7 +30894,7 @@ const agentGrid = {
             for (const base of GRID_NAMES) ctx.agents.push(await openGridAgent(h, ctx, base, stamp));
             // the grid is read from storage once per page load, so a clean start needs a reload
             await h.ev(
-                `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))})`
+                `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`
             );
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await h.goto("agent");
@@ -30962,7 +30964,8 @@ const agentGrid = {
                 h,
                 `(() => {
                     try {
-                        const g = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null");
+                        const all = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null");
+                        const g = all?.grids?.[all?.project];
                         return g?.ids?.length === 1 && g.ids[0] === ${JSON.stringify(A)};
                     } catch {
                         return false;
@@ -31008,40 +31011,44 @@ const agentGrid = {
             await fitStep("2b. both terminals refit to their cell");
             await h.shot("cdp-shots/agent-grid-2.png");
 
-            // 3. three cells: two on top, one spanning the bottom
-            const d3 = await gridDrag(h, { source: gridRow(C), target: B, zone: "right" });
+            // 3. three cells: C stacked under B, A keeping the full height. B sits beside A, so it offers no left or
+            // right edge, only the two it can be split along
+            const d3 = await gridDrag(h, { source: gridRow(C), target: B, zone: "bottom" });
             await settle();
             lay = await gridLayout(h);
             rec(
-                "3. dropping C after B gives two on top and one spanning the bottom",
-                gridDropOk(d3, "right") &&
+                "3. dropping C on B's bottom edge stacks C under B, A keeping its full height; B offered only top and bottom",
+                gridDropOk(d3, "bottom") &&
+                    d3.zones === "center top bottom" &&
                     lay.count === 3 &&
                     order(lay) === want(A, B, C) &&
                     cellAt(lay, C).focused === true &&
-                    gridNear(cellAt(lay, A).y, cellAt(lay, B).y) &&
-                    cellAt(lay, C).y >= cellAt(lay, A).y + cellAt(lay, A).h - 2 &&
-                    gridNear(cellAt(lay, C).x, cellAt(lay, A).x) &&
-                    cellAt(lay, C).w > cellAt(lay, A).w * 1.8,
+                    gridNear(cellAt(lay, C).x, cellAt(lay, B).x) &&
+                    cellAt(lay, C).y >= cellAt(lay, B).y + cellAt(lay, B).h - 2 &&
+                    gridSameSize(cellAt(lay, B), cellAt(lay, C)) &&
+                    cellAt(lay, A).x < cellAt(lay, B).x &&
+                    cellAt(lay, A).h > cellAt(lay, B).h * 1.8,
                 { drag: d3, lay }
             );
-            await fitStep("3b. all three terminals refit, the spanning one included");
+            await fitStep("3b. all three terminals refit, the full-height one included");
             await markStep("3c. no terminal was remounted by the shape change", ALL);
             await h.shot("cdp-shots/agent-grid-3.png");
 
-            // 4. four cells, 2x2
-            const d4 = await gridDrag(h, { source: gridRow(D), target: C, zone: "right" });
+            // 4. four cells, 2x2: D splits A, the one cell still two squares tall
+            const d4 = await gridDrag(h, { source: gridRow(D), target: A, zone: "bottom" });
             await settle();
             const lay4 = await gridLayout(h);
             rec(
-                "4. dropping D after C gives a 2x2",
-                gridDropOk(d4, "right") &&
+                "4. dropping D on A's bottom edge gives a 2x2, D under A",
+                gridDropOk(d4, "bottom") &&
                     lay4.count === 4 &&
-                    order(lay4) === want(A, B, C, D) &&
+                    order(lay4) === want(A, B, D, C) &&
                     [B, C, D].every((id) => gridSameSize(cellAt(lay4, id), cellAt(lay4, A))) &&
                     gridNear(cellAt(lay4, B).y, cellAt(lay4, A).y) &&
-                    gridNear(cellAt(lay4, C).x, cellAt(lay4, A).x) &&
-                    cellAt(lay4, D).x > cellAt(lay4, C).x &&
-                    cellAt(lay4, D).y > cellAt(lay4, B).y,
+                    gridNear(cellAt(lay4, D).x, cellAt(lay4, A).x) &&
+                    cellAt(lay4, D).y > cellAt(lay4, A).y &&
+                    cellAt(lay4, C).x > cellAt(lay4, D).x &&
+                    gridNear(cellAt(lay4, C).y, cellAt(lay4, D).y),
                 { drag: d4, lay: lay4 }
             );
             await fitStep("4b. all four terminals refit");
@@ -31055,7 +31062,7 @@ const agentGrid = {
                 "5. at four cells the overlay offers only the centre, and a bar dropped on A swaps D and A",
                 d5.zones === "center" &&
                     gridDropOk(d5, "center") &&
-                    order(lay) === want(D, B, C, A) &&
+                    order(lay) === want(D, B, A, C) &&
                     gridNear(cellAt(lay, D).x, cellAt(lay4, A).x) &&
                     gridNear(cellAt(lay, D).y, cellAt(lay4, A).y) &&
                     gridNear(cellAt(lay, A).x, cellAt(lay4, D).x) &&
@@ -31070,7 +31077,7 @@ const agentGrid = {
             lay = await gridLayout(h);
             rec(
                 "6. dropping E on B at four cells replaces B, which leaves the grid but keeps running",
-                d6.zones === "center" && gridDropOk(d6, "center") && order(lay) === want(D, E, C, A),
+                d6.zones === "center" && gridDropOk(d6, "center") && order(lay) === want(D, E, A, C),
                 { drag: d6, lay }
             );
             await markStep("6b. B's terminal is hidden, not unmounted, and nothing remounted", ALL);
@@ -31080,7 +31087,7 @@ const agentGrid = {
             await settle();
             lay = await gridLayout(h);
             rec(
-                "7. the x on C's bar leaves three cells: D and E on top, A spanning the bottom",
+                "7. the x on C's bar leaves three cells: D and E on top, A widening over C's place to span the bottom",
                 removed === true &&
                     lay.count === 3 &&
                     order(lay) === want(D, E, A) &&
@@ -31209,7 +31216,8 @@ const agentGrid = {
                 { from: fromId, pick: pickId, inTerm, found, gone, active, lay }
             );
 
-            // 12. Open in split from the palette adds the agent right after the focused cell
+            // 12. Open in split from the palette gives the agent half of a cell: the focused one when it can be split,
+            // else the cell that can (here the bottom one, the only cell two squares long), so E takes its right half
             const splitFrom = gridFocused(lay);
             const ids = lay.cells.map((c) => c.id);
             if (ids.length !== 3 || splitFrom == null || nameOf(E) === "") {
@@ -31218,7 +31226,6 @@ const agentGrid = {
                     lay,
                 });
             }
-            const after = ids.indexOf(splitFrom) + 1;
             const inTerm2 = await focusGridTerm(h, splitFrom);
             if (inTerm2 !== true) {
                 return bail("12. the focused cell's terminal could not take the keyboard: the palette is not opened", {
@@ -31232,12 +31239,14 @@ const agentGrid = {
             lay = await gridLayout(h);
             active = await gridActiveCell(h);
             rec(
-                "12. Open in split in the palette adds E right after the focused cell and focuses it",
+                "12. Open in split in the palette splits the spanning bottom cell, E taking its right half, and focuses E",
                 inTerm2 === true &&
                     split.ok === true &&
                     gone2 === true &&
                     lay.count === 4 &&
-                    order(lay) === want(...ids.slice(0, after), E, ...ids.slice(after)) &&
+                    order(lay) === want(...ids, E) &&
+                    gridNear(cellAt(lay, E).y, cellAt(lay, ids[2]).y) &&
+                    cellAt(lay, E).x > cellAt(lay, ids[2]).x &&
                     gridFocused(lay) === E,
                 { from: splitFrom, inTerm2, split, gone2, active, lay }
             );
@@ -31315,7 +31324,7 @@ const agentGrid = {
                 h,
                 `(() => {
                     try {
-                        const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                        const ids = Object.values(JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.grids ?? {}).flatMap((g) => g?.ids ?? []);
                         return ${JSON.stringify(ctx.tabIds)}.every((id) => !ids.includes(id));
                     } catch {
                         return true;
@@ -31547,7 +31556,7 @@ const agentUploads = {
             await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`);
             // an empty grid, so the agent made below is shown alone, and the user's own grid is not rearranged around it
             await h.ev(
-                `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))})`
+                `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`
             );
             // all of them are read once per page load
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
@@ -31844,7 +31853,7 @@ const agentUploads = {
                     h,
                     `(() => {
                         try {
-                            const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                            const ids = Object.values(JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.grids ?? {}).flatMap((g) => g?.ids ?? []);
                             return !ids.includes(${JSON.stringify(ctx.tabId)});
                         } catch {
                             return true;
@@ -32133,7 +32142,7 @@ const agentRailWorktreeFiles = {
             await h.ev(`(() => {
                 localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
                 for (const k of ${JSON.stringify([RAIL_SECTIONS_KEY, "agent.rail.tab", "agent.rail.wideWidth", "agent.rail.treeWidth"])}) localStorage.removeItem(k);
-                localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))});
+                localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))});
             })()`);
             // the roster and the dev hooks (window.__arcTermPathLinks) are read once per page load
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
@@ -36283,7 +36292,7 @@ const notifyToast = {
             ctx.ran = true;
             // an empty grid, so the agent made below is shown alone, and the user's own grid is not rearranged around it
             await h.ev(
-                `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))})`
+                `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`
             );
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
             await openNotifyAgent(h, ctx);
@@ -36530,7 +36539,7 @@ const notifyToast = {
                     h,
                     `(() => {
                         try {
-                            const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                            const ids = Object.values(JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.grids ?? {}).flatMap((g) => g?.ids ?? []);
                             return !ids.includes(${JSON.stringify(ctx.tabId)});
                         } catch {
                             return true;
@@ -45489,7 +45498,7 @@ const briefRunQueueScenario = {
                 h,
                 `(() => {
                     try {
-                        const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                        const ids = Object.values(JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.grids ?? {}).flatMap((g) => g?.ids ?? []);
                         return !${JSON.stringify(ctx.tabIds ?? [])}.some((id) => ids.includes(id));
                     } catch {
                         return true;
@@ -45721,7 +45730,7 @@ const runOriginScenario = {
                 h,
                 `(() => {
                     try {
-                        const ids = JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.ids ?? [];
+                        const ids = Object.values(JSON.parse(localStorage.getItem(${JSON.stringify(GRID_KEY)}) ?? "null")?.grids ?? {}).flatMap((g) => g?.ids ?? []);
                         return !${JSON.stringify(ctx.tabIds ?? [])}.some((id) => ids.includes(id));
                     } catch {
                         return true;
@@ -46088,7 +46097,7 @@ const ideasRail = {
             await h.ev(`(() => {
                 localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
                 for (const k of ${JSON.stringify(IDEAS_KEYS.filter((k) => k !== RAIL_VISIBLE_KEY && k !== GRID_KEY))}) localStorage.removeItem(k);
-                localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))});
+                localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))});
             })()`);
             // the roster is read once at boot
             if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
@@ -47658,7 +47667,7 @@ async function initPrepare(h, ctx, extra = {}) {
     await h.ev(`localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true")`);
     await h.ev(`localStorage.removeItem(${JSON.stringify(RAIL_SECTIONS_KEY)})`);
     await h.ev(
-        `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify({ ids: [], focused: null }))})`
+        `localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))})`
     );
     for (const [key, value] of Object.entries(extra)) {
         await h.ev(

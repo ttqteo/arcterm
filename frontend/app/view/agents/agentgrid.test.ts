@@ -19,8 +19,10 @@ import {
     reconcileGrid,
     removeCell,
     replaceFocused,
+    splitZones,
     swapCells,
     visibleCells,
+    type CellPlacement,
     type GridState,
 } from "./agentgrid";
 
@@ -28,6 +30,23 @@ import {
 const g = (ids: string[], focused: string | null = ids[0] ?? null): GridState => ({ ids, focused });
 // the set of live (eligible) agent ids
 const live = (...ids: string[]) => new Set(ids);
+// the places of the 2x2 template, by name: two squares wide or tall, then the four single squares
+const P = (row: number, col: number, rowSpan: number, colSpan: number): CellPlacement => ({
+    row,
+    col,
+    rowSpan,
+    colSpan,
+});
+const LEFT = P(1, 1, 2, 1);
+const RIGHT = P(1, 2, 2, 1);
+const TOP = P(1, 1, 1, 2);
+const BOTTOM = P(2, 1, 1, 2);
+const TL = P(1, 1, 1, 1);
+const TR = P(1, 2, 1, 1);
+const BL = P(2, 1, 1, 1);
+const BR = P(2, 2, 1, 1);
+// a state whose cells sit at `places` rather than where placementFor puts them
+const gp = (ids: string[], focused: string, places: CellPlacement[]): GridState => ({ ids, focused, places });
 
 describe("normalizeGrid", () => {
     it("MAX_CELLS is four", () => {
@@ -76,6 +95,40 @@ describe("parseGrid", () => {
     });
 });
 
+describe("places", () => {
+    it("round-trips a stored layout", () => {
+        const s = gp(["a", "b", "c"], "b", [LEFT, TR, BR]);
+        expect(parseGrid(JSON.parse(JSON.stringify(s)))).toEqual(s);
+    });
+    it("stores no places for the default layout", () => {
+        expect(normalizeGrid(gp(["a", "b"], "a", [LEFT, RIGHT]))).toEqual(g(["a", "b"], "a"));
+        expect("places" in normalizeGrid(gp(["a", "b", "c"], "a", [TL, TR, BOTTOM]))).toBe(false);
+    });
+    it("puts the cells in reading order, each keeping its place", () => {
+        expect(normalizeGrid(gp(["b", "a"], "a", [BOTTOM, TOP]))).toEqual(gp(["a", "b"], "a", [TOP, BOTTOM]));
+    });
+    it("drops places that do not tile the 2x2, or no longer match the ids", () => {
+        expect(normalizeGrid(gp(["a", "b"], "a", [TOP, TOP]))).toEqual(g(["a", "b"], "a"));
+        expect(normalizeGrid(gp(["a", "b"], "a", [TOP]))).toEqual(g(["a", "b"], "a"));
+        expect(normalizeGrid(gp(["a", "a", "b"], "a", [TOP, BL, BR]))).toEqual(g(["a", "b"], "a"));
+        expect(
+            parseGrid({ ids: ["a", "b"], focused: "a", places: [TOP, { row: 3, col: 1, rowSpan: 1, colSpan: 2 }] })
+        ).toEqual(g(["a", "b"], "a"));
+        expect(parseGrid({ ids: ["a", 7, "b"], focused: "a", places: [TL, TR, BOTTOM] })).toEqual(g(["a", "b"], "a"));
+    });
+    it("a swap trades the agents and keeps the places", () => {
+        expect(swapCells(gp(["a", "b"], "a", [TOP, BOTTOM]), 0, 1)).toEqual(gp(["b", "a"], "a", [TOP, BOTTOM]));
+    });
+    it("splitZones offers the edges a cell is two squares long on, and none on a full grid", () => {
+        expect(splitZones(g(["a"]), 0)).toEqual(["left", "right", "top", "bottom"]);
+        expect(splitZones(g(["a", "b"]), 1)).toEqual(["top", "bottom"]);
+        expect(splitZones(gp(["a", "b"], "a", [TOP, BOTTOM]), 0)).toEqual(["left", "right"]);
+        expect(splitZones(g(["a", "b", "c"]), 0)).toEqual([]);
+        expect(splitZones(g(["a", "b", "c", "d"]), 0)).toEqual([]);
+        expect(splitZones(g(["a"]), 3)).toEqual([]);
+    });
+});
+
 describe("gridEquals", () => {
     it("compares ids in order and the focused id", () => {
         expect(gridEquals(g(["a", "b"], "a"), g(["a", "b"], "a"))).toBe(true);
@@ -83,6 +136,8 @@ describe("gridEquals", () => {
         expect(gridEquals(g(["a", "b"], "a"), g(["a", "b"], "b"))).toBe(false);
         expect(gridEquals(g(["a"], "a"), g(["a", "b"], "a"))).toBe(false);
         expect(gridEquals(EMPTY_GRID, g([]))).toBe(true);
+        expect(gridEquals(g(["a", "b"], "a"), gp(["a", "b"], "a", [TOP, BOTTOM]))).toBe(false);
+        expect(gridEquals(g(["a", "b"], "a"), gp(["a", "b"], "a", [LEFT, RIGHT]))).toBe(true);
     });
 });
 
@@ -94,22 +149,36 @@ describe("addCell with an agent that is not in the grid", () => {
     it("centre replaces the cell under the drop, which leaves the grid", () => {
         expect(addCell(g(["a", "b"]), "c", 1, "center")).toEqual(g(["a", "c"], "c"));
     });
-    it("left and top insert before the target", () => {
-        expect(addCell(g(["a", "b"]), "c", 1, "left")).toEqual(g(["a", "c", "b"], "c"));
-        expect(addCell(g(["a", "b"]), "c", 0, "top")).toEqual(g(["c", "a", "b"], "c"));
+    it("an edge splits the target along it, the agent taking that edge's half", () => {
+        expect(addCell(g(["a"]), "b", 0, "bottom")).toEqual(gp(["a", "b"], "b", [TOP, BOTTOM]));
+        expect(addCell(g(["a"]), "b", 0, "top")).toEqual(gp(["b", "a"], "b", [TOP, BOTTOM]));
+        expect(addCell(g(["a"]), "b", 0, "right")).toEqual(g(["a", "b"], "b"));
+        expect(addCell(g(["a"]), "b", 0, "left")).toEqual(g(["b", "a"], "b"));
     });
-    it("right and bottom insert after the target", () => {
-        expect(addCell(g(["a", "b"]), "c", 0, "right")).toEqual(g(["a", "c", "b"], "c"));
-        expect(addCell(g(["a", "b"]), "c", 1, "bottom")).toEqual(g(["a", "b", "c"], "c"));
+    it("a bottom or top drop on one of two side-by-side cells stacks it there, the other keeping its full height", () => {
+        expect(addCell(g(["a", "b"]), "c", 1, "bottom")).toEqual(gp(["a", "b", "c"], "c", [LEFT, TR, BR]));
+        expect(addCell(g(["a", "b"]), "c", 0, "top")).toEqual(gp(["c", "b", "a"], "c", [TL, RIGHT, BL]));
+    });
+    it("a right or left drop on one of two stacked cells puts it beside that one", () => {
+        expect(addCell(gp(["a", "b"], "a", [TOP, BOTTOM]), "c", 1, "right")).toEqual(
+            gp(["a", "b", "c"], "c", [TOP, BL, BR])
+        );
+    });
+    it("an edge the target is too narrow for splits it along the other axis", () => {
+        expect(addCell(g(["a", "b"]), "c", 1, "right")).toEqual(gp(["a", "b", "c"], "c", [LEFT, TR, BR]));
+        expect(addCell(g(["a", "b"]), "c", 1, "left")).toEqual(gp(["a", "c", "b"], "c", [LEFT, TR, BR]));
+    });
+    it("a one-square target that cannot split leaves the split to the cell that can, so no one is replaced", () => {
+        expect(addCell(g(["a", "b", "c"]), "d", 0, "right")).toEqual(g(["a", "b", "c", "d"], "d"));
     });
     it("builds a grid up to four cells and focuses each agent as it lands", () => {
         let s = g(["a"]);
         s = addCell(s, "b", 0, "right");
         expect(s).toEqual(g(["a", "b"], "b"));
-        s = addCell(s, "c", 1, "right");
-        expect(s).toEqual(g(["a", "b", "c"], "c"));
-        s = addCell(s, "d", 2, "right");
-        expect(s).toEqual(g(["a", "b", "c", "d"], "d"));
+        s = addCell(s, "c", 1, "bottom");
+        expect(s).toEqual(gp(["a", "b", "c"], "c", [LEFT, TR, BR]));
+        s = addCell(s, "d", 0, "bottom");
+        expect(s).toEqual(g(["a", "b", "d", "c"], "d"));
     });
     it("on a full grid an edge zone acts as the centre", () => {
         expect(addCell(g(["a", "b", "c", "d"]), "e", 2, "left")).toEqual(g(["a", "b", "e", "d"], "e"));
@@ -123,16 +192,16 @@ describe("addCell with an agent that is not in the grid", () => {
         }
     });
     it("clamps the target index", () => {
-        expect(addCell(g(["a", "b"]), "x", 99, "right").ids).toEqual(["a", "b", "x"]);
-        expect(addCell(g(["a", "b"]), "x", -5, "left").ids).toEqual(["x", "a", "b"]);
-        expect(addCell(g(["a", "b"]), "x", Number.NaN, "left").ids).toEqual(["x", "a", "b"]);
-        expect(addCell(g(["a", "b", "c"]), "x", 1.9, "left").ids).toEqual(["a", "x", "b", "c"]);
+        const s = g(["a", "b", "c"]);
+        expect(addCell(s, "x", 99, "right")).toEqual(addCell(s, "x", 2, "right"));
+        expect(addCell(s, "x", -5, "left")).toEqual(addCell(s, "x", 0, "left"));
+        expect(addCell(s, "x", Number.NaN, "left")).toEqual(addCell(s, "x", 0, "left"));
+        expect(addCell(s, "x", 1.9, "center")).toEqual(addCell(s, "x", 1, "center"));
     });
     it("pins an infinite target index to the last or the first cell", () => {
-        expect(addCell(g(["a", "b", "c"]), "x", Number.POSITIVE_INFINITY, "left").ids).toEqual(["a", "b", "x", "c"]);
-        expect(addCell(g(["a", "b", "c"]), "x", Number.POSITIVE_INFINITY, "right").ids).toEqual(["a", "b", "c", "x"]);
-        expect(addCell(g(["a", "b", "c"]), "x", Number.NEGATIVE_INFINITY, "right").ids).toEqual(["a", "x", "b", "c"]);
-        expect(addCell(g(["a", "b", "c"]), "x", Number.NEGATIVE_INFINITY, "left").ids).toEqual(["x", "a", "b", "c"]);
+        const s = g(["a", "b", "c"]);
+        expect(addCell(s, "x", Number.POSITIVE_INFINITY, "center")).toEqual(g(["a", "b", "x"], "x"));
+        expect(addCell(s, "x", Number.NEGATIVE_INFINITY, "center")).toEqual(g(["x", "b", "c"], "x"));
     });
     it("ignores an empty id", () => {
         expect(addCell(g(["a"]), "", 0, "right")).toEqual(g(["a"]));
@@ -157,17 +226,17 @@ describe("addCell with an agent that is already in the grid (a move)", () => {
         expect(addCell(g(["a", "b", "c"], "a"), "b", 1, "center")).toEqual(g(["a", "b", "c"], "b"));
         expect(addCell(g(["a", "b", "c"], "a"), "b", 1, "left")).toEqual(g(["a", "b", "c"], "b"));
     });
-    it("left and top move it before the target", () => {
-        expect(addCell(g(["a", "b", "c"]), "a", 2, "left")).toEqual(g(["b", "a", "c"], "a"));
-        expect(addCell(g(["a", "b", "c"]), "c", 0, "top")).toEqual(g(["c", "a", "b"], "c"));
+    it("an edge takes it out of its cell and splits it off the target along that edge", () => {
+        expect(addCell(g(["a", "b"]), "a", 1, "bottom")).toEqual(gp(["b", "a"], "a", [TOP, BOTTOM]));
+        expect(addCell(g(["a", "b"]), "b", 0, "top")).toEqual(gp(["b", "a"], "b", [TOP, BOTTOM]));
+        expect(addCell(gp(["a", "b"], "a", [TOP, BOTTOM]), "a", 1, "left")).toEqual(g(["a", "b"], "a"));
     });
-    it("right and bottom move it after the target", () => {
-        expect(addCell(g(["a", "b", "c"]), "a", 2, "right")).toEqual(g(["b", "c", "a"], "a"));
-        expect(addCell(g(["a", "b", "c"]), "c", 0, "bottom")).toEqual(g(["a", "c", "b"], "c"));
+    it("the cell it leaves is filled before the target splits", () => {
+        // a leaves the top row, so b widens over it; then the bottom cell splits and a takes its right half
+        expect(addCell(g(["a", "b", "c"]), "a", 2, "right")).toEqual(gp(["b", "c", "a"], "a", [TOP, BL, BR]));
     });
     it("moves on a full grid without dropping anyone", () => {
-        expect(addCell(g(["a", "b", "c", "d"]), "d", 0, "left")).toEqual(g(["d", "a", "b", "c"], "d"));
-        expect(addCell(g(["a", "b", "c", "d"]), "a", 3, "right")).toEqual(g(["b", "c", "d", "a"], "a"));
+        expect(addCell(g(["a", "b", "c", "d"]), "a", 1, "right")).toEqual(g(["b", "a", "c", "d"], "a"));
     });
 });
 
@@ -192,14 +261,22 @@ describe("swapCells", () => {
 
 describe("removeCell", () => {
     it("removes a cell that is not focused and keeps focus", () => {
-        expect(removeCell(g(["a", "b", "c"], "a"), "b")).toEqual(g(["a", "c"], "a"));
+        expect(removeCell(g(["a", "b", "c"], "a"), "b")).toEqual(gp(["a", "c"], "a", [TOP, BOTTOM]));
     });
     it("focus moves to the cell that takes the removed one's place", () => {
-        expect(removeCell(g(["a", "b", "c"], "b"), "b")).toEqual(g(["a", "c"], "c"));
+        expect(removeCell(g(["a", "b", "c"], "b"), "b")).toEqual(gp(["a", "c"], "c", [TOP, BOTTOM]));
         expect(removeCell(g(["a", "b"], "a"), "a")).toEqual(g(["b"], "b"));
     });
     it("focus goes to the next survivor, not the last one", () => {
-        expect(removeCell(g(["a", "b", "c", "d"], "b"), "b")).toEqual(g(["a", "c", "d"], "c"));
+        expect(removeCell(g(["a", "b", "c", "d"], "b"), "b")).toEqual(gp(["a", "c", "d"], "c", [TOP, BL, BR]));
+    });
+    it("a neighbour sharing a whole side with it fills its space, one in the same row first", () => {
+        expect(removeCell(g(["a", "b", "c", "d"], "a"), "d")).toEqual(g(["a", "b", "c"], "a"));
+        expect(removeCell(g(["a", "b", "c"], "a"), "c")).toEqual(g(["a", "b"], "a"));
+        expect(removeCell(gp(["a", "b", "c"], "a", [LEFT, TR, BR]), "c")).toEqual(g(["a", "b"], "a"));
+    });
+    it("a cell spanning the whole height leaves the cells beside it each growing across", () => {
+        expect(removeCell(gp(["a", "b", "c"], "a", [LEFT, TR, BR]), "a")).toEqual(gp(["b", "c"], "b", [TOP, BOTTOM]));
     });
     it("focus moves to the previous cell when the last one is removed", () => {
         expect(removeCell(g(["a", "b", "c"], "c"), "c")).toEqual(g(["a", "b"], "b"));
@@ -264,14 +341,18 @@ describe("focusAgent (the one rule: its cell, else the focused cell)", () => {
 
 describe("pruneMissing", () => {
     it("drops agents that are not live, keeping the order", () => {
-        expect(pruneMissing(g(["a", "b", "c"], "a"), new Set(["a", "c"]))).toEqual(g(["a", "c"], "a"));
+        expect(pruneMissing(g(["a", "b", "c"], "a"), new Set(["a", "c"]))).toEqual(gp(["a", "c"], "a", [TOP, BOTTOM]));
     });
     it("accepts any iterable of live ids", () => {
         expect(pruneMissing(g(["a", "b"]), ["b"])).toEqual(g(["b"], "b"));
     });
     it("a focused cell that left hands focus to the next surviving cell", () => {
-        expect(pruneMissing(g(["a", "b", "c", "d"], "b"), new Set(["a", "c", "d"]))).toEqual(g(["a", "c", "d"], "c"));
-        expect(pruneMissing(g(["a", "b", "c", "d"], "b"), new Set(["a", "d"]))).toEqual(g(["a", "d"], "d"));
+        expect(pruneMissing(g(["a", "b", "c", "d"], "b"), new Set(["a", "c", "d"]))).toEqual(
+            gp(["a", "c", "d"], "c", [TOP, BL, BR])
+        );
+        expect(pruneMissing(g(["a", "b", "c", "d"], "b"), new Set(["a", "d"]))).toEqual(
+            gp(["a", "d"], "d", [TOP, BOTTOM])
+        );
     });
     it("falls back to the last survivor when none is after the focused one", () => {
         expect(pruneMissing(g(["a", "b", "c"], "c"), new Set(["a", "b"]))).toEqual(g(["a", "b"], "b"));
@@ -384,6 +465,10 @@ describe("visibleCells", () => {
         const cells = visibleCells(g(["a", "b", "c"], "c"), { focusId: "c", collapsed: false });
         expect(cells.map((c) => c.placement)).toEqual(placementFor(3));
     });
+    it("puts each cell at its stored place", () => {
+        const cells = visibleCells(gp(["a", "b"], "a", [TOP, BOTTOM]), { focusId: "b", collapsed: false });
+        expect(cells.map((c) => c.placement)).toEqual([TOP, BOTTOM]);
+    });
     it("collapses to the focused cell, filling the area", () => {
         expect(visibleCells(g(["a", "b"]), { focusId: "b", collapsed: true })).toEqual([
             { id: "b", placement: { row: 1, col: 1, rowSpan: 2, colSpan: 2 }, focused: true },
@@ -410,7 +495,7 @@ describe("reconcileGrid", () => {
     it("prunes agents that are no longer live", () => {
         expect(
             reconcileGrid(g(["a", "b", "c"], "a"), { focusId: "a", eligible: live("a", "c"), seeded: true })
-        ).toEqual(g(["a", "c"], "a"));
+        ).toEqual(gp(["a", "c"], "a", [TOP, BOTTOM]));
     });
     it("focuses the cell of a focused agent that is already in the grid", () => {
         expect(reconcileGrid(g(["a", "b"], "a"), { focusId: "b", eligible: live("a", "b"), seeded: true })).toEqual(
@@ -430,7 +515,7 @@ describe("reconcileGrid", () => {
     it("only prunes when nothing is in focus", () => {
         expect(
             reconcileGrid(g(["a", "b", "c"], "b"), { focusId: undefined, eligible: live("a", "c"), seeded: true })
-        ).toEqual(g(["a", "c"], "c"));
+        ).toEqual(gp(["a", "c"], "c", [TOP, BOTTOM]));
     });
     it("starts a one-cell grid from a focused live agent", () => {
         expect(reconcileGrid(EMPTY_GRID, { focusId: "a", eligible: live("a"), seeded: true })).toEqual(g(["a"], "a"));

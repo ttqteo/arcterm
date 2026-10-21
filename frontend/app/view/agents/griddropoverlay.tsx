@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The zones that appear over a grid cell while an agent is being dragged: centre swaps (or replaces), an edge
-// inserts, and with Alt (Option) held the whole cell types the dragged agent's @mention at its prompt. One overlay per
+// splits the cell along it (only the edges the cell can be split along are offered), and with Alt (Option) held the whole cell types the dragged agent's @mention at its prompt. One overlay per
 // cell, a child of the cell, so it is exactly the cell's size; it renders nothing at all unless an agent drag is
 // active, and never over the cell being dragged.
 
@@ -13,7 +13,7 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useState } from "react";
 import { agentDragAtom, endAgentDrag } from "./agentdragstore";
-import type { DropZone } from "./agentgrid";
+import type { DropZone, GridState } from "./agentgrid";
 import { mentionToken } from "./agentrowmodel";
 import {
     AGENT_DRAG_MIME,
@@ -30,7 +30,7 @@ import { currentGrid, dropAgentOnGrid, type GridModel } from "./gridstore";
 interface OverlayProps {
     model: GridModel;
     id: string; // the cell's agent
-    ids: readonly string[]; // every cell of the grid the surface drew, in order (what the overlay shows; a drop re-reads the grid)
+    grid: GridState; // the grid the surface drew (what the overlay shows; a drop re-reads the grid)
     mentionTo: string | null; // the cell's terminal block when its prompt takes an @mention (griddrop.ts mentionTarget)
 }
 
@@ -57,11 +57,11 @@ export function GridDropOverlay(props: OverlayProps) {
     return <ActiveOverlay {...props} dragId={drag.id} />;
 }
 
-function ActiveOverlay({ model, id, ids, mentionTo, dragId }: OverlayProps & { dragId: string }) {
+function ActiveOverlay({ model, id, grid, mentionTo, dragId }: OverlayProps & { dragId: string }) {
     const [zone, setZone] = useState<DropZone | null>(null);
     const [mention, setMention] = useState(false);
-    const zones = allowedZones(ids.length);
-    const moving = ids.includes(dragId);
+    const zones = allowedZones(grid, id, dragId);
+    const moving = grid.ids.includes(dragId);
 
     const zoneAt = (e: React.DragEvent<HTMLDivElement>): DropZone => {
         const z = zoneFromPoint(e.currentTarget.getBoundingClientRect(), e.clientX, e.clientY);
@@ -103,7 +103,7 @@ function ActiveOverlay({ model, id, ids, mentionTo, dragId }: OverlayProps & { d
         }
         // dropAgentOnGrid's index is a position in the grid it reads now (currentGrid), which can have moved on since
         // this overlay rendered; a target that has left the grid takes no drop
-        const target = resolveDrop(currentGrid(model).ids, id, picked);
+        const target = resolveDrop(currentGrid(model), id, dropped, picked);
         if (target == null) {
             return;
         }

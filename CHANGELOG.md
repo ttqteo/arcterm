@@ -38,6 +38,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Dropping an agent or terminal on a split cell's top or bottom edge stacks it there, as the drop preview shows;
+  before, two cells always sat side by side whichever edge you dropped on. A drop splits the cell under it, so a cell
+  beside another offers only its top and bottom edges, and closing a cell lets its neighbour fill the space.
 - Sentences Claude highlights below a table in its reply now show highlighted; before, every one after the table
   stayed plain.
 - Updating arcterm now always updates the `wsh` its agents run; before, an agent session left running across the

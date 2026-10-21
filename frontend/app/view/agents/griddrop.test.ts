@@ -76,32 +76,50 @@ describe("zoneFromPoint", () => {
     });
 });
 
+// a grid whose cells sit where placementFor puts them, focused on the first
+const g = (ids: string[]) => ({ ids, focused: ids[0] ?? null });
+const STACKED = {
+    ids: ["a", "b"],
+    focused: "a",
+    places: [
+        { row: 1, col: 1, rowSpan: 1, colSpan: 2 },
+        { row: 2, col: 1, rowSpan: 1, colSpan: 2 },
+    ],
+};
+
 describe("allowedZones", () => {
-    it("offers every zone until the grid is full", () => {
-        for (const n of [0, 1, 2, 3]) {
-            expect(allowedZones(n)).toEqual(["center", "left", "right", "top", "bottom"]);
-        }
+    it("offers every edge on a cell that fills the area", () => {
+        expect(allowedZones(g(["a"]), "a", "x")).toEqual(["center", "left", "right", "top", "bottom"]);
     });
-    it("offers only the swap at four cells", () => {
-        expect(allowedZones(4)).toEqual(["center"]);
-        expect(allowedZones(9)).toEqual(["center"]);
+    it("offers top and bottom on a cell beside another, left and right on one stacked over another", () => {
+        expect(allowedZones(g(["a", "b"]), "b", "x")).toEqual(["center", "top", "bottom"]);
+        expect(allowedZones(STACKED, "b", "x")).toEqual(["center", "left", "right"]);
+    });
+    it("judges a move in the grid as it is once the dragged cell has left it", () => {
+        // b gone, a fills the area and splits along any edge
+        expect(allowedZones(g(["a", "b"]), "a", "b")).toEqual(["center", "left", "right", "top", "bottom"]);
+    });
+    it("offers only the swap on a one-square cell and on a full grid", () => {
+        expect(allowedZones(g(["a", "b", "c"]), "a", "x")).toEqual(["center"]);
+        expect(allowedZones(g(["a", "b", "c", "d"]), "a", "x")).toEqual(["center"]);
     });
 });
 
 describe("resolveDrop", () => {
     it("finds the target's index in the grid as it is now, so a drop never lands on a stale position", () => {
-        expect(resolveDrop(["a", "b", "c"], "c", "left")).toEqual({ index: 2, zone: "left" });
+        expect(resolveDrop(g(["a", "b", "c"]), "c", "x", "left")).toEqual({ index: 2, zone: "left" });
         // the grid changed between the hover and the drop: the target moved from 2 to 0
-        expect(resolveDrop(["c", "a"], "c", "left")).toEqual({ index: 0, zone: "left" });
+        expect(resolveDrop(g(["c", "a"]), "c", "x", "top")).toEqual({ index: 0, zone: "top" });
     });
     it("is null when the target has left the grid", () => {
-        expect(resolveDrop(["a", "b"], "c", "center")).toBeNull();
-        expect(resolveDrop([], "a", "center")).toBeNull();
+        expect(resolveDrop(g(["a", "b"]), "c", "x", "center")).toBeNull();
+        expect(resolveDrop(g([]), "a", "x", "center")).toBeNull();
     });
-    it("turns an edge into the swap once the grid is full, which is all a full grid offers", () => {
-        expect(resolveDrop(["a", "b", "c", "d"], "b", "right")).toEqual({ index: 1, zone: "center" });
-        expect(resolveDrop(["a", "b", "c", "d"], "b", "center")).toEqual({ index: 1, zone: "center" });
-        expect(resolveDrop(["a", "b", "c"], "b", "right")).toEqual({ index: 1, zone: "right" });
+    it("turns an edge the target no longer offers into the swap", () => {
+        expect(resolveDrop(g(["a", "b", "c", "d"]), "b", "x", "right")).toEqual({ index: 1, zone: "center" });
+        expect(resolveDrop(g(["a", "b", "c", "d"]), "b", "x", "center")).toEqual({ index: 1, zone: "center" });
+        expect(resolveDrop(g(["a", "b"]), "b", "x", "right")).toEqual({ index: 1, zone: "center" });
+        expect(resolveDrop(g(["a", "b"]), "b", "x", "bottom")).toEqual({ index: 1, zone: "bottom" });
     });
 });
 
@@ -134,10 +152,10 @@ describe("zoneLabel", () => {
     it("says what a drop will do", () => {
         expect(zoneLabel("center", false)).toBe("Replace");
         expect(zoneLabel("center", true)).toBe("Swap");
-        expect(zoneLabel("left", false)).toBe("Place before");
-        expect(zoneLabel("top", true)).toBe("Place before");
-        expect(zoneLabel("right", false)).toBe("Place after");
-        expect(zoneLabel("bottom", true)).toBe("Place after");
+        expect(zoneLabel("left", false)).toBe("Place left");
+        expect(zoneLabel("top", true)).toBe("Place above");
+        expect(zoneLabel("right", false)).toBe("Place right");
+        expect(zoneLabel("bottom", true)).toBe("Place below");
     });
 });
 
