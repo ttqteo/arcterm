@@ -5,8 +5,6 @@ import {
     directionRows,
     docPathLabel,
     evidenceLabel,
-    expertColor,
-    expertInitial,
     initiativeSeed,
     outdatedLabel,
     positionsOf,
@@ -95,36 +93,6 @@ const council = (extra: Partial<Council> = {}): Council => ({
     created: 0,
     updated: 0,
     ...extra,
-});
-
-describe("expertColor", () => {
-    it("follows the panel's order and gives the coordinator the ink", () => {
-        const c = council();
-        expect(["ux", "ram", "nu", "sk"].map((id) => expertColor(c, id))).toEqual([
-            "conn-1",
-            "conn-2",
-            "conn-3",
-            "conn-6",
-        ]);
-        expect(expertColor(c, "coordinator")).toBe("primary");
-        expect(expertColor(c, "gone")).toBe("primary");
-    });
-
-    it("wraps past the palette", () => {
-        const many = Array.from(
-            { length: 8 },
-            (_, i): CouncilExpert => ({ id: `e${i}`, name: `E${i}`, brief: "", model: "sonnet" })
-        );
-        const c = council({ experts: many });
-        expect(expertColor(c, "e5")).toBe("conn-8");
-        expect(expertColor(c, "e6")).toBe(expertColor(c, "e0"));
-    });
-});
-
-describe("expertInitial", () => {
-    it("is the first letter, upper case", () => {
-        expect(expertInitial("  new user")).toBe("N");
-    });
 });
 
 describe("positionsOf", () => {

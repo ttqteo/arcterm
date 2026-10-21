@@ -9,26 +9,6 @@
 
 import { councilProjectKey, panel, type StanceLabel } from "./councilmodel";
 
-/** The identity token an expert's avatar is drawn in; the view maps each to its (static) Tailwind classes. */
-export type ColorKey = "primary" | "conn-1" | "conn-2" | "conn-3" | "conn-6" | "conn-7" | "conn-8";
-
-// the order the canvas gives a panel (UX blue, RAM purple, New user pink, Skeptic orange), then the rest of the
-// identity palette; the coordinator is the ivory ink. The Discussion's avatarTone (councildiscussionmodel.ts) uses the
-// same slots, so an expert keeps one color across the views: conn-4 (red reads as an error) and conn-5 (conn-1's twin)
-// are left out of both
-const PANEL_COLORS: ColorKey[] = ["conn-1", "conn-2", "conn-3", "conn-6", "conn-7", "conn-8"];
-
-/** Pure: the color an expert is drawn in, by its place on the panel (a custom role has no fixed color of its own). */
-export function expertColor(c: Council, expertId: string): ColorKey {
-    const index = panel(c).findIndex((e) => e.id === expertId);
-    return index < 0 ? "primary" : PANEL_COLORS[index % PANEL_COLORS.length];
-}
-
-/** Pure: the letter in an expert's avatar. */
-export function expertInitial(name: string): string {
-    return name.trim().charAt(0).toUpperCase();
-}
-
 export const STANCE_WORD: Record<StanceLabel, string> = {
     accept: "Accept",
     challenge: "Challenge",

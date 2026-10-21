@@ -20,6 +20,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronUp, Code, Loader2, TriangleAler
 import { useMemo, useState, type ReactNode } from "react";
 import { showCouncil, showCouncilSetup } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
+import { avatarTone } from "./councildiscussionmodel";
 import { draftFromCouncil, matrixRows, outdatedCount, panel, summaryChip, type StanceLabel } from "./councilmodel";
 import {
     councilOpenProposalAtom,
@@ -35,17 +36,15 @@ import {
     directionRows,
     docPathLabel,
     evidenceLabel,
-    expertColor,
-    expertInitial,
     initiativeSeed,
     outdatedLabel,
     projectNameOf,
     STANCE_WORD,
     writtenLine,
-    type ColorKey,
     type DirectionRow,
     type Position,
 } from "./councilsummarymodel";
+import { CouncilAvatar } from "./councilthread";
 import { runtimeStartupCommand } from "./launch";
 import { projectListAtom } from "./projectsstore";
 
@@ -60,17 +59,6 @@ interface MadeInitiative {
 const initiativeAtom = atomFamily(
     (_id: string) => atom<MadeInitiative | null>(null) as PrimitiveAtom<MadeInitiative | null>
 );
-
-// the avatar ring and letter of each identity color (literal classes, so Tailwind sees them)
-const AVATAR: Record<ColorKey, string> = {
-    primary: "border-primary text-primary",
-    "conn-1": "border-conn-1 text-conn-1",
-    "conn-2": "border-conn-2 text-conn-2",
-    "conn-3": "border-conn-3 text-conn-3",
-    "conn-6": "border-conn-6 text-conn-6",
-    "conn-7": "border-conn-7 text-conn-7",
-    "conn-8": "border-conn-8 text-conn-8",
-};
 
 const STANCE_PILL: Record<StanceLabel, string> = {
     accept: "bg-success/12 text-success-soft",
@@ -93,17 +81,29 @@ const PRIMARY = cn(
     FOCUS
 );
 
-function Avatar({ c, id, name, size }: { c: Council; id: string; name: string; size: number }) {
+// The Discussion's avatar, in the colour avatarTone gives the expert. It is decorative here (the name is always beside
+// it, so a screen reader skips the letter) and sits on the Summary's own surfaces, so it has no disc fill of its own.
+function Avatar({
+    c,
+    id,
+    name,
+    small,
+    className,
+}: {
+    c: Council;
+    id: string;
+    name: string;
+    small?: boolean;
+    className?: string;
+}) {
     return (
-        <span
-            aria-hidden
-            style={{ width: size, height: size, fontSize: Math.round(size * 0.5) }}
-            className={cn(
-                "flex flex-none items-center justify-center rounded-full border-2 font-bold",
-                AVATAR[expertColor(c, id)]
-            )}
-        >
-            {expertInitial(name)}
+        <span aria-hidden className="flex flex-none">
+            <CouncilAvatar
+                tone={avatarTone(c, id)}
+                name={name}
+                small={small}
+                className={cn("bg-transparent", className)}
+            />
         </span>
     );
 }
@@ -140,7 +140,7 @@ function EvidenceChip({ evidence }: { evidence: CouncilEvidence }) {
 function PositionView({ c, position }: { c: Council; position: Position }) {
     return (
         <div data-council-position={position.expert.id} className="flex gap-[10px]">
-            <Avatar c={c} id={position.expert.id} name={position.expert.name} size={22} />
+            <Avatar c={c} id={position.expert.id} name={position.expert.name} className="text-[11px]" />
             <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
                 <div className="flex items-center gap-2">
                     <span className="text-[12px] font-semibold text-primary">{position.expert.name}</span>
@@ -222,7 +222,13 @@ function DirectionCard({
                                 STANCE_PILL[chip.stance]
                             )}
                         >
-                            <Avatar c={c} id={chip.expert.id} name={chip.expert.name} size={16} />
+                            <Avatar
+                                c={c}
+                                id={chip.expert.id}
+                                name={chip.expert.name}
+                                small
+                                className="h-[16px] w-[16px] text-[8px]"
+                            />
                             {STANCE_WORD[chip.stance]}
                         </span>
                     ))}
@@ -325,7 +331,7 @@ function Matrix({ c }: { c: Council }) {
                                     className="px-[10px] py-[9px] text-[12px] font-semibold text-primary"
                                 >
                                     <span className="flex items-center gap-[6px]">
-                                        <Avatar c={c} id={e.id} name={e.name} size={18} />
+                                        <Avatar c={c} id={e.id} name={e.name} small />
                                         {e.name}
                                     </span>
                                 </th>
@@ -676,7 +682,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                 data-council-expert={e.id}
                                 className="flex items-center gap-[6px] rounded-full bg-surface py-[3px] pl-[3px] pr-[9px] text-[11px] text-secondary"
                             >
-                                <Avatar c={c} id={e.id} name={e.name} size={18} />
+                                <Avatar c={c} id={e.id} name={e.name} small />
                                 {e.name} <span className="text-muted">{e.model}</span>
                             </span>
                         ))}
