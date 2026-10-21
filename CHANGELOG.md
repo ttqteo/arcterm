@@ -33,9 +33,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - The Servers popover shows each server's Log button all the time, not only on hover; a server started outside
   arcterm shows it faded, and its tooltip says why there is no log to open.
+- Claude highlights the must-read sentences in every long reply, a report of what it did or a list included: what
+  changed, any caveat, and any decision left to you, not only the caveat.
 
 ### Fixed
 
+- Sentences Claude highlights below a table in its reply now show highlighted; before, every one after the table
+  stayed plain.
 - Updating arcterm now always updates the `wsh` its agents run; before, an agent session left running across the
   update could keep them on the old one, so newer commands such as `wsh detach` were missing.
 - The mouse's Back and Forward buttons no longer go back in another app's page, out of sight, or in one whose app had

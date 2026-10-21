@@ -8,7 +8,7 @@ export const MARK = "==";
 // what the model is told; fixed text, so the system prompt's cache never moves for it
 export const HIGHLIGHT_SECTION = [
     "Highlighting in replies: the person reads your replies in a terminal that draws text wrapped in ==double equals== highlighted, and strips the marks everywhere else (copies, the saved transcript).",
-    "- When a reply explains something at length, wrap the 2-4 sentences the person must read to get the point in ==…==. Mark whole sentences, never a whole paragraph, and nothing in a short reply.",
+    "- When a reply runs long (an explanation, a report of what you did, a summary with a list), wrap the 2-4 sentences the person must read to get the point in ==…==: what happened or changed, any warning or caveat that changes what they should do, and any decision left to them. A sentence inside a list item counts. Mark whole sentences, never a whole paragraph, and nothing in a short reply.",
     '- In a brainstorming or design turn, mark only the question you are waiting on the person to answer, as the last marked sentence, ending with "?". Never mark your own recommendation.',
     "- Marks go in your reply text only: never in files, code, commands, commit messages or tool inputs, and never inside code spans or blocks. The one exception: when the person asks you to highlight a markdown file, write the ==…== into that file itself, not a copy, and don't repeat the file in your reply.",
     "- Write a command the person has to type as `! <command>`, in a code span or alone in a code block: it draws highlighted with the marked sentences, so it takes no marks. Do mark the sentence saying what it will do, above all what it closes, deletes or overwrites.",
@@ -16,7 +16,7 @@ export const HIGHLIGHT_SECTION = [
 
 // the same ask in one line, for the prompts after the first where the system prompt never got the section
 export const HIGHLIGHT_REMINDER =
-    "Highlighting: in a long explanation wrap the 2-4 sentences the person must read in ==…== (whole sentences, never in code), among them what a `! command` to type will do; in a brainstorming turn mark only the question you wait on.";
+    "Highlighting: in a long reply (an explanation, a report, a summary with a list) wrap the 2-4 sentences the person must read in ==…== (whole sentences, a list item's too, never in code): what changed, any caveat that changes what they should do, any decision left to them, and what a `! command` to type will do; in a brainstorming turn mark only the question you wait on.";
 
 export type SubmitState = { isInteractive: boolean; isCommand: boolean; isComposed: boolean; hasTold: boolean };
 
@@ -282,8 +282,7 @@ export function layout(clean: string, marks: readonly string[], isSkim: boolean)
             inFence = !inFence;
         }
         const ranges: [number, number][] = [];
-        // a table row stays the engine's: one row drawn apart would break the table
-        if (!inFence && !FENCE.test(line) && !TABLE_ROW.test(line)) {
+        if (!inFence && !FENCE.test(line)) {
             let from = 0;
             for (let want = pending[0]; want !== undefined; want = pending[0]) {
                 const at = line.indexOf(want, from);
@@ -293,6 +292,11 @@ export function layout(clean: string, marks: readonly string[], isSkim: boolean)
                 pending.shift();
             }
             ranges.push(...commandSpans(line));
+        }
+        // a table row stays the engine's: one row drawn apart would break the table. its marks are passed by, not
+        // left waiting, or every mark after them would go undrawn
+        if (TABLE_ROW.test(line)) {
+            ranges.length = 0;
         }
         const isHeading = !inFence && HEADING.test(line);
         if (ranges.length === 0 && !(isSkim && isHeading)) {

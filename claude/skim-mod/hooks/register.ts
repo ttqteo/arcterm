@@ -26,6 +26,9 @@ const DEFAULT_COLUMNS = 80;
 // the columns a reply's text loses to the bullet before it
 const REPLY_INDENT = 2;
 
+// the system prompt section asking claude to mark
+const SECTION_ID = "skim:highlight";
+
 // the marks of stored replies, by the hash of the text stored, kept across sessions so a resumed one still draws them
 const STORE_KEY = "highlightMarks";
 
@@ -45,7 +48,9 @@ let palette: Palette = paletteFor(undefined);
 let askNow: Ask | null = null;
 // what the ask's row last reported about its rows; the timer carries it into state
 let isAskOutOfView = false;
-// whether this load's prompt.compose hook ran on an interactive prompt, and whether a prompt already carried the ask
+// whether the system prompt keeps the section, and whether a prompt already carried the ask. prompt.submit runs
+// before the first prompt is composed, so session.start composes one to learn it early; else the first prompt would
+// carry the ask a second time
 let isComposed = false;
 let hasTold = false;
 let isInteractive = true;
@@ -76,6 +81,14 @@ export const register: Register = (on) => {
         byHash = new Map(kept);
         palette = paletteFor(await themeOf($));
         askNow = await read($, ask);
+        if (isInteractive) {
+            try {
+                const { sections } = await $.prompt.compose();
+                isComposed ||= sections.some((section) => section.id === SECTION_ID);
+            } catch {
+                // left to the prompt.compose hook below
+            }
+        }
         $.ui.status((await read($, isSkimOff)) ? SKIM_OFF_STATUS : undefined);
         await $.command.register({
             name: "skim",
@@ -108,7 +121,7 @@ export const register: Register = (on) => {
         return {
             sections: [
                 ...composed.sections,
-                { id: "skim:highlight", text: HIGHLIGHT_SECTION, scope: "session" as const },
+                { id: SECTION_ID, text: HIGHLIGHT_SECTION, scope: "session" as const },
             ],
         };
     });
