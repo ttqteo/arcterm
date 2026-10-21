@@ -11,7 +11,15 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { atom, type PrimitiveAtom } from "jotai";
-import { appFrameName, focusedAppTab, serviceAppState, type AppState, type AppView } from "./appmodel";
+import {
+    appFrameName,
+    focusedAppTab,
+    pageChordKeyEvent,
+    serviceAppState,
+    type AppState,
+    type AppView,
+    type PageChord,
+} from "./appmodel";
 import { serviceByTabAtom } from "./servicesstore";
 
 // terminal tab id -> the view the person picked (page when none) and how often Home reloaded its page
@@ -71,6 +79,24 @@ export function setAppSlot(slot: AppSlot | null): void {
     globalStore.set(appSlotAtom, slot);
 }
 
+// terminal tab id -> its page is loading: from the frame's mount (an open, Home) or a Reload to the frame's load event.
+// A link followed inside the page is not seen: a cross-origin frame tells the cockpit only that it loaded.
+export const appLoadingAtom = atom<Record<string, true>>({}) as PrimitiveAtom<Record<string, true>>;
+
+export function setAppLoading(tabId: string, loading: boolean): void {
+    const all = globalStore.get(appLoadingAtom);
+    if ((all[tabId] === true) === loading) {
+        return;
+    }
+    const next = { ...all };
+    if (loading) {
+        next[tabId] = true;
+    } else {
+        delete next[tabId];
+    }
+    globalStore.set(appLoadingAtom, next);
+}
+
 // Page | Log in the header
 export function setAppView(tabId: string, view: AppView): void {
     const views = globalStore.get(appViewsAtom);
@@ -97,6 +123,7 @@ function frameAction(tabId: string, action: "reload" | "back" | "forward" | "ope
 
 // Reload: the page where it is, as a browser's reload; where the host cannot, Home's start page stands in.
 export async function reloadAppPage(tabId: string): Promise<void> {
+    setAppLoading(tabId, true);
     if (!(await frameAction(tabId, "reload"))) {
         homeApp(tabId);
     }
@@ -123,6 +150,32 @@ export function setupPageReloadKey(): () => void {
         const tabId = focusedAppTab(document.activeElement);
         if (tabId != null) {
             void reloadAppPage(tabId);
+        }
+    });
+    return () => void unlisten.then((off) => off());
+}
+
+// emitted by the host on a Ctrl or Alt chord pressed anywhere in the webview (pagekeys.rs CHORD_KEY_EVENT)
+export const PAGE_CHORD_KEY_EVENT = "page-chord-key";
+
+// A Ctrl or Alt chord pressed in a pinned app's page runs as the cockpit's own (the palette, Ctrl+Tab, a surface's
+// chords): the page's keys never reach the cockpit's keybindings, so the host hears them for it. The page gets the key
+// too, except its own editing chords, which the cockpit leaves alone (pageChordKeyEvent). One the cockpit took moves
+// the focus out of the page, so the cockpit hears what follows, such as Ctrl let go after Ctrl+Tab.
+export function setupPageChordKeys(): () => void {
+    const unlisten = listen<PageChord>(PAGE_CHORD_KEY_EVENT, (e) => {
+        const frame = document.activeElement;
+        if (focusedAppTab(frame) == null) {
+            return;
+        }
+        const init = pageChordKeyEvent(e.payload);
+        if (init == null) {
+            return;
+        }
+        const replay = new KeyboardEvent("keydown", init);
+        window.dispatchEvent(replay);
+        if (replay.defaultPrevented && document.activeElement === frame) {
+            (frame as HTMLElement).blur();
         }
     });
     return () => void unlisten.then((off) => off());

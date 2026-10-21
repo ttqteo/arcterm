@@ -13,6 +13,7 @@ import {
     focusedAppTab,
     isAppTool,
     keptAppFrames,
+    pageChordKeyEvent,
     serviceAppState,
 } from "./appmodel";
 
@@ -142,5 +143,33 @@ describe("the pages kept loaded out of sight", () => {
     });
     it("never keeps a page that is not open", () => {
         expect(keptAppFrames(states, "c", { c: now, d: now }, now)).toEqual([]);
+    });
+});
+
+describe("pageChordKeyEvent", () => {
+    const chord = (vk: number, mods: Partial<{ ctrl: boolean; shift: boolean; alt: boolean }> = {}) =>
+        pageChordKeyEvent({ vk, ctrl: false, shift: false, alt: false, ...mods });
+
+    it("names a letter as the browser does, upper case with Shift", () => {
+        expect(chord(0x4b, { ctrl: true })).toMatchObject({ key: "k", code: "KeyK", ctrlKey: true, shiftKey: false });
+        expect(chord(0x50, { ctrl: true, shift: true })).toMatchObject({ key: "P", code: "KeyP", shiftKey: true });
+    });
+    it("names digits, Tab, arrows, function keys and brackets", () => {
+        expect(chord(0x31, { alt: true })).toMatchObject({ key: "1", code: "Digit1", altKey: true });
+        expect(chord(0x09, { ctrl: true })).toMatchObject({ key: "Tab", code: "Tab" });
+        expect(chord(0x25, { alt: true })).toMatchObject({ key: "ArrowLeft", code: "ArrowLeft" });
+        expect(chord(0x71, { ctrl: true })).toMatchObject({ key: "F2", code: "F2" });
+        expect(chord(0xdb, { ctrl: true })).toMatchObject({ key: "[", code: "BracketLeft" });
+        expect(chord(0x20, { ctrl: true })).toMatchObject({ key: " ", code: "Space" });
+    });
+    it("leaves the page its own copy, cut, paste, select all, undo and redo", () => {
+        for (const vk of [0x41, 0x43, 0x56, 0x58, 0x59, 0x5a]) {
+            expect(chord(vk, { ctrl: true })).toBeNull();
+            expect(chord(vk, { ctrl: true, shift: true })).toBeNull();
+        }
+        expect(chord(0x43, { alt: true })).toMatchObject({ key: "c" });
+    });
+    it("names no key it does not know", () => {
+        expect(chord(0xff, { ctrl: true })).toBeNull();
     });
 });

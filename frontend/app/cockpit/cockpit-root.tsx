@@ -23,7 +23,7 @@ import { BackgroundAgentsPoller } from "@/app/view/agents/backgroundagentspoller
 import { AttentionPoller } from "@/app/view/agents/attentionpoller";
 import { LauncherModal } from "@/app/view/agents/launchermodal";
 import { floatNoteOpenAtom } from "@/app/view/agents/floatnotestore";
-import { setupMouseHistoryButtons, setupPageReloadKey } from "@/app/view/agents/appstore";
+import { setupMouseHistoryButtons, setupPageChordKeys, setupPageReloadKey } from "@/app/view/agents/appstore";
 import { floatMiniAtom, floatModeAtom, setupFloatMode } from "@/app/view/agents/floatstore";
 import { NewInitiativeHost } from "@/app/view/jarvis/newinitiativecontrol";
 import { InitiativeProjectPicker } from "@/app/view/jarvis/initiativeprojectpicker";
@@ -112,6 +112,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
     useEffect(() => setupFloatMode(model), [model]);
     useEffect(() => setupPageReloadKey(), []);
     useEffect(() => setupMouseHistoryButtons(), []);
+    useEffect(() => setupPageChordKeys(), []);
     // the Ctrl+Tab switcher orders its tabs by when each was last in view, from any route that chose it
     useEffect(() => trackRecentTabs(model), [model]);
     // in Float the window is the focused terminal: the float bar stands in for the app bar and a ledge for the footer,

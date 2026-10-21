@@ -28,6 +28,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - The Agent panel has a Changes tab beside Overview and Files: the agent's whole Files changed list, not only its
   first eight files, with the Session / Branch switch and View diff; a file opens on its Diff.
+- A pinned app's page shows a thin line along its top while it loads, after opening it, Home or Reload, with the page
+  it had staying in view meanwhile.
+- arcterm's Ctrl and Alt shortcuts (the palette, Ctrl+Tab, a surface's keys) work while you are clicked into a pinned
+  app's page; the page keeps its own copy, paste, select all and undo.
 
 ### Changed
 
@@ -50,8 +54,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The mouse's Back and Forward buttons no longer go back in another app's page, out of sight, or in one whose app had
   stopped, which then showed an error: they now do nothing. The Back and Forward buttons in an app's header still go
   back and forward in its page.
-- The mouse's Back and Forward buttons in a pinned app's page go back and forward in that page; before, they moved
-  another app's page out of sight, or one whose app had stopped, which then showed an error.
 
 ## 0.15.16 — 2026-10-21
 

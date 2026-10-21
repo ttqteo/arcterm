@@ -40,6 +40,15 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Mouse Back/Forward in an app's page (Windows): open a pinned app, follow a link or two in it, then
   press the mouse's Back and Forward buttons over the page and over the cockpit; nothing moves, no app shows an error
   page, and the header's Back still goes back a page.
+- [ ] (arcterm) App page loading line: open a pinned app whose page is slow to answer, press Home, then the header's
+  Reload: a thin accent line sweeps along the page's top until it loads, the old page staying in view under it, and is
+  gone once it has. With reduced motion the line stays still. `apppane.tsx` `AppLoadingBar`; `task verify:ui --
+  tools-app` step 3d checks it on a slow start page.
+- [ ] (arcterm) Shortcuts from inside an app's page (Windows, after a restart of `task dev` or the next install: the
+  host changed): click into a pinned app's page, then Ctrl+K opens the palette, Ctrl+Tab switches as from anywhere and
+  closes when Ctrl is let go, and Ctrl+1..9 change surface. Ctrl+C, Ctrl+V, Ctrl+A and Ctrl+Z still copy, paste,
+  select and undo in the page, and arcterm does nothing with them. `pagekeys.rs` `CHORD_KEY_EVENT`, `appstore.ts`
+  `setupPageChordKeys`.
 - [ ] (arcterm) Account switch resumes mid-turn: with an agent working (or stopped at its usage limit), switch the
   Claude account in Settings, check it in "Resume agents on …?" and Resume selected; it comes back and carries on by
   itself with the "Claude account was switched" turn. An idle agent comes back at its prompt with no new turn.
