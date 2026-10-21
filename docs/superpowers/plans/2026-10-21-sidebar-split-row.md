@@ -21,12 +21,10 @@ that act on any project's split. `agenttree.tsx` draws `SplitRow` / `SplitCell`;
 ### Task 1: `split` rows in the pure tree model
 
 **Depends on:** none
+**Files:** `frontend/app/view/agents/agentgrid.ts`, `frontend/app/view/agents/agentsidebarmodel.ts`, `frontend/app/view/agents/agentgrid.test.ts`, `frontend/app/view/agents/agentsidebarmodel.test.ts`
 
-**Files:**
-- Modify: `frontend/app/view/agents/agentgrid.ts` (add `splitGrids` after `shownGrid`, ~line 520)
-- Modify: `frontend/app/view/agents/agentsidebarmodel.ts` (`ProjectTreeRow` ~303, `projectTree` ~341, `terminalShows`
-  ~503, `treeNavIds` ~521)
-- Test: `frontend/app/view/agents/agentgrid.test.ts`, `frontend/app/view/agents/agentsidebarmodel.test.ts`
+Where: `agentgrid.ts` gets `splitGrids` after `shownGrid` (~line 520); `agentsidebarmodel.ts` changes `ProjectTreeRow`
+(~303), `projectTree` (~341), `terminalShows` (~503) and `treeNavIds` (~521).
 
 **Step 1: Write the failing tests**
 
@@ -261,11 +259,8 @@ git commit -m "feat(agents): the tree model folds a split's cells into one row" 
 
 ### Task 2: split operations on any project's split
 
-**Depends on:** Task 1
-
-**Files:**
-- Modify: `frontend/app/view/agents/gridstore.ts`
-- Test: `frontend/app/view/agents/gridstore.test.ts`
+**Depends on:** none
+**Files:** `frontend/app/view/agents/gridstore.ts`, `frontend/app/view/agents/gridstore.test.ts`
 
 **Step 1: Write the failing tests**
 
@@ -421,13 +416,11 @@ git commit -m "feat(agents): split operations reach any project's split" -- fron
 
 ### Task 3: draw the split row
 
-**Depends on:** Task 2
+**Depends on:** Task 1 (uses the `split` row, the `splits`/`roster` inputs and the new `terminalShows`), Task 2 (uses `treeSplits`, `removeFromSplit` and `endSplitOf`)
+**Files:** `frontend/app/view/agents/agenttree.tsx`, `frontend/app/view/agents/terminalsrail.tsx`, `frontend/app/view/agents/activenav.ts`
 
-**Files:**
-- Modify: `frontend/app/view/agents/agenttree.tsx` (imports ~102-206, `splitMenuItem` ~272, `ParentRow` ~768-1043,
-  `TerminalRow` ~2012-2097, `AgentTree` ~2495-2760)
-- Modify: `frontend/app/view/agents/terminalsrail.tsx` (`SplitMark` ~53, `splitCellMenuItems` ~79)
-- Modify: `frontend/app/view/agents/activenav.ts`
+Where: `agenttree.tsx` imports (~102-206), `splitMenuItem` (~272), `ParentRow` (~768-1043), `TerminalRow`
+(~2012-2097), `AgentTree` (~2495-2760); `terminalsrail.tsx` `SplitMark` (~53), `splitCellMenuItems` (~79).
 
 **Step 1: Menus act on the cell's project**
 
@@ -606,11 +599,10 @@ git commit -m "feat(agents): the sidebar draws a split as one row" -- frontend/a
 
 ### Task 4: scenario, changelog, hand check
 
-**Depends on:** Task 3
+**Depends on:** Task 3 (checks the split row it draws, by its `data-split-*` attributes)
+**Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/open-issues.md`
 
-**Files:**
-- Modify: `scripts/cdp/scenarios.mjs` (`toolsSplit` ~41361-41463)
-- Modify: `CHANGELOG.md`, `docs/open-issues.md`
+Where: `scenarios.mjs` `toolsSplit` (~41361-41463).
 
 **Step 1: Rewrite `tools-split` for the split row**
 
