@@ -45,6 +45,13 @@ func runFakePiHelper(args []string) {
 	case "blank":
 		fmt.Println(`{"type":"other_event"}`)
 		fmt.Println()
+	case "claude":
+		// a claude stream-json session: a tool call, the reply, then the result with usage
+		fmt.Println(`{"type":"system","subtype":"init"}`)
+		fmt.Println(`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Grep","input":{"pattern":"IdleSleep","path":"pkg/services"}}]}}`)
+		fmt.Println(`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"pkg/services/idle.go"}}]}}`)
+		fmt.Println(`{"type":"assistant","message":{"content":[{"type":"text","text":"found "},{"type":"text","text":"it"}]}}`)
+		fmt.Println(`{"type":"result","subtype":"success","result":"found it","usage":{"input_tokens":10,"cache_read_input_tokens":900,"cache_creation_input_tokens":40,"output_tokens":50}}`)
 	case "two-errors":
 		fmt.Println(`{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"first failure"}}`)
 		fmt.Println(`{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"second failure"}}`)
@@ -93,6 +100,31 @@ func TestPiParseLine(t *testing.T) {
 	event = spec.ParseLine([]byte(`{"type":"agent_settled"}`))
 	if !event.Complete {
 		t.Fatalf("event = %+v, want Complete", event)
+	}
+}
+
+func TestRunClaudeSpec_reportsToolsReplyAndUsage(t *testing.T) {
+	os.Setenv(fakePiHelperEnv, "1")
+	t.Cleanup(func() { os.Unsetenv(fakePiHelperEnv) })
+	spec := fakePiSpec("claude")
+	spec.ParseLine = claudeParseLine
+	var tools []string
+	full, usage, err := runClaudeSpec(context.Background(), spec, "", "prompt", "sonnet", func(d string) { tools = append(tools, d) })
+	if err != nil {
+		t.Fatalf("runClaudeSpec error: %v", err)
+	}
+	if full != "found it" {
+		t.Errorf("reply = %q, want %q", full, "found it")
+	}
+	if want := []string{`Grep "IdleSleep" in pkg/services`, "Read idle.go"}; !reflect.DeepEqual(tools, want) {
+		t.Errorf("tools = %v, want %v", tools, want)
+	}
+	if want := (Usage{Model: "sonnet", TotalTokens: 1000}); usage != want {
+		t.Errorf("usage = %+v, want %+v", usage, want)
+	}
+	// a nil onTool is allowed
+	if _, _, err := runClaudeSpec(context.Background(), spec, "", "prompt", "", nil); err != nil {
+		t.Fatalf("runClaudeSpec with no onTool: %v", err)
 	}
 }
 

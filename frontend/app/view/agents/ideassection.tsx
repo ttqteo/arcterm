@@ -5,17 +5,21 @@
 // `wsh idea add` and the user's own hand. Rows group as Decided / Ideas / Open, or by topic once ideas carry one (the
 // topics other than the newest fold); newest first. A row is at most two lines, its kind told by its ink (an open
 // question brightest, a decision dimmest, with a small check); hovering one shows its whole text and meta in the tip at
-// its left and offers Edit, Mark as decided and Drop, and a click on it picks rows to Merge or Drop together; Dropped
-// folds at the end with Restore; Add an idea takes a line of the user's own. The rail draws the header row
-// (IdeasHeaderExtra adds "N new" and Mark read to it); the section marks the list read when it goes away (closed,
-// another tab, another agent).
+// its left and offers Edit, Mark as decided and Drop (and, on an open question of a session whose project is known,
+// Ask the council, which opens the council Setup with the question), and a click on it picks rows to Merge or Drop
+// together; Dropped folds at the end with Restore; Add an idea takes a line of the user's own. The rail draws the
+// header row (IdeasHeaderExtra adds "N new" and Mark read to it); the section marks the list read when it goes away
+// (closed, another tab, another agent).
 // Every control carries a data-ideas-* attribute for the CDP scenario `ideas-rail`.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
-import { useAtom, useAtomValue } from "jotai";
+import { atom, useAtom, useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, CircleCheck, Lightbulb, Pencil, Plus, X } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { showCouncilSetup } from "./agentcenter";
+import { projectOf } from "./agentsviewmodel";
+import { devRosterAtom } from "./devmock";
 import { inputRequestLive } from "./ideacapture";
 import {
     canMarkDecided,
@@ -33,6 +37,7 @@ import {
     sectionFoldKey,
     sectionOpen,
     selectionLabel,
+    sessionIdFromTranscript,
     toggleChecked,
     type IdeaKind,
 } from "./ideasmodel";
@@ -45,6 +50,8 @@ import {
     updateIdeas,
     useSessionIdeas,
 } from "./ideasstore";
+import { liveAgentsAtom } from "./liveagents";
+import { projectsAtom } from "./projectsstore";
 
 // what the user acts on reads brightest: an open question, then an idea still weighed, then a settled decision
 const KIND_INK: Record<IdeaKind, string> = {
@@ -55,6 +62,9 @@ const KIND_INK: Record<IdeaKind, string> = {
 
 const ACTION =
     "flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-[5px] border-0 bg-transparent text-secondary outline-none hover:bg-surface-selected hover:text-primary focus-visible:ring-2 focus-visible:ring-accent";
+// Ask the council is a word, not an icon: nothing else in the row names a panel of experts
+const ASK_ACTION =
+    "flex h-[22px] cursor-pointer items-center rounded-[5px] border-0 bg-transparent px-[6px] text-[11px] text-secondary outline-none hover:bg-surface-selected hover:text-primary focus-visible:ring-2 focus-visible:ring-accent";
 const TEXT_BUTTON =
     "cursor-pointer rounded-[5px] border-0 bg-transparent px-[4px] py-[2px] text-[11px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent";
 
@@ -81,6 +91,21 @@ export function IdeasHeaderExtra({ sessionId }: { sessionId: string }) {
     );
 }
 
+// The root of the project the agent that owns this session works in, "" when the session has no live agent in a
+// registered project (an ended conversation): a council needs a folder to read, and a guess would read the wrong one.
+function useSessionProjectRoot(sessionId: string): string {
+    const rootAtom = useMemo(
+        () =>
+            atom((get) => {
+                const roster = get(import.meta.env.DEV ? devRosterAtom : liveAgentsAtom);
+                const agent = roster.find((a) => sessionIdFromTranscript(a.transcriptPath) === sessionId);
+                return agent == null ? "" : (get(projectsAtom)[projectOf(agent)]?.path ?? "");
+            }),
+        [sessionId]
+    );
+    return useAtomValue(rootAtom);
+}
+
 function IdeaRow({
     idea,
     withTopic,
@@ -90,6 +115,7 @@ function IdeaRow({
     onEdit,
     onDecide,
     onDrop,
+    onAsk,
 }: {
     idea: Idea;
     withTopic: boolean; // the list is laid out by topic and this row sits outside its topic's section
@@ -99,6 +125,7 @@ function IdeaRow({
     onEdit: () => void;
     onDecide: () => void;
     onDrop: () => void;
+    onAsk?: () => void; // an open question in a session with a project: open the council Setup with it
 }) {
     const kind = ideaKindOf(idea);
     const onHover = "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100";
@@ -174,6 +201,17 @@ function IdeaRow({
                     onHover
                 )}
             >
+                {onAsk != null ? (
+                    <button
+                        type="button"
+                        data-ideas-action="council"
+                        title="Ask a panel of experts to weigh this question"
+                        onClick={onAsk}
+                        className={ASK_ACTION}
+                    >
+                        Ask the council
+                    </button>
+                ) : null}
                 <button
                     type="button"
                     data-ideas-action="edit"
@@ -436,6 +474,7 @@ export function IdeasSection({ sessionId, quiet }: { sessionId: string; quiet?: 
     const [editing, setEditing] = useState<string | null>(null);
     const [droppedOpen, setDroppedOpen] = useState(false);
     const [folds, setFolds] = useAtom(ideasFoldAtom(sessionId));
+    const projectRoot = useSessionProjectRoot(sessionId);
 
     // a checked idea that was dropped, merged away or deleted by an agent is no longer picked
     useEffect(() => {
@@ -500,6 +539,11 @@ export function IdeasSection({ sessionId, quiet }: { sessionId: string; quiet?: 
                 onEdit={() => setEditing(idea.id)}
                 onDecide={() => void updateIdeas(sessionId, { op: "kind", ids: [idea.id], newkind: "decision" })}
                 onDrop={() => void updateIdeas(sessionId, { op: "drop", ids: [idea.id] })}
+                onAsk={
+                    projectRoot !== "" && ideaKindOf(idea) === "question"
+                        ? () => showCouncilSetup(projectRoot, { question: idea.text, sessionId })
+                        : undefined
+                }
             />
         );
     return (

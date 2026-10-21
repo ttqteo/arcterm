@@ -66,6 +66,42 @@ func TestReviewEstimates(t *testing.T) {
 	}
 }
 
+// a Council spawn is logged by `wsh council start` but starts no Agent call: it counts as logged and run, and never
+// takes the session's subagents from the Agent group that did start them
+func TestReviewEstimatesLeavesCouncilSpawnsUnmatched(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().Truncate(time.Second)
+	t0 := now.Add(-2 * time.Hour)
+	writeJSONL(t, filepath.Join(root, "proj", "s1", "subagents", "agent-a.jsonl"),
+		asstLine("a1", t0.Add(time.Minute), testSonnet, "/w", 2000, 0, 0, 0, 0))
+	line := func(l EstimateLine) string {
+		data, err := json.Marshal(l)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	logPath := filepath.Join(root, "estimates.jsonl")
+	writeJSONL(t, logPath,
+		// logged first and earlier than the Agent group: it would take agent-a if it were matched
+		line(EstimateLine{Ts: t0.Unix(), Session: "s1", Tool: "Council", Agents: 4, Types: []string{}, Estimate: 820000, Verdict: "run"}),
+		line(EstimateLine{Ts: t0.Add(30 * time.Second).Unix(), Session: "s1", Tool: "Agent", Agents: 1, Types: []string{"Explore"}, Estimate: 1000, Verdict: "run"}),
+		// refused: logged, never ran
+		line(EstimateLine{Ts: t0.Add(time.Hour).Unix(), Session: "s1", Tool: "Council", Agents: 4, Types: []string{}, Estimate: 820000, Verdict: "deny"}),
+	)
+	rev, err := reviewEstimatesIn(root, logPath, 7, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev.Logged != 3 || rev.Run != 2 || rev.Matched != 1 {
+		t.Fatalf("logged/run/matched = %d/%d/%d, want 3/2/1", rev.Logged, rev.Run, rev.Matched)
+	}
+	// agent-a's 2000 tokens against the Agent group's 1000, not the council's 820000
+	if rev.MedianRatio != 2 {
+		t.Fatalf("median ratio %v, want 2", rev.MedianRatio)
+	}
+}
+
 func TestReviewEstimatesWithNoLogIsEmpty(t *testing.T) {
 	rev, err := reviewEstimatesIn(t.TempDir(), filepath.Join(t.TempDir(), "none.jsonl"), 7, time.Now())
 	if err != nil || rev.Logged != 0 || rev.Matched != 0 {

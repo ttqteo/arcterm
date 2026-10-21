@@ -81,6 +81,11 @@ func reviewEstimatesIn(root, logPath string, days int, now time.Time) (EstimateR
 			continue
 		}
 		rev.Run++
+		// a Council starts no Agent call: its calls are `claude -p` runs of wavesrv's, which leave no subagent files
+		// in the asking session, so matching it would take another group's subagents
+		if l.Tool == "Council" {
+			continue
+		}
 		subs := bySession[l.Session]
 		if l.Session == "" || l.Estimate <= 0 || len(subs) == 0 {
 			continue

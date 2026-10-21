@@ -580,6 +580,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "WAVESRV-ESTART ws:%s web:%s version:%s buildtime:%s\n", wsListener.Addr(), webListener.Addr(), WaveVersion, BuildTime)
 	}()
 	go wshutil.RunWshRpcOverListener(unixListener, nil)
+	// a council left running when wavesrv last quit has nothing running it, so it is marked stopped; one that already has
+	// a run behind it is left alone, so the listeners above being up is no problem
+	wshserver.StartCouncilRunner()
 	// last: its first evaluation can start a run, which spawns workers that dial back into the listeners above, and
 	// reads settings, so it waits for the config watcher, the engine and the block controller too
 	wshserver.StartRunQueue(context.Background())

@@ -27,6 +27,42 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council, a real run: in Agent, New council on a project, a UI feature with a few files, the
+  "Review a UI feature" group, Start council. The Running board (Discussion in round 1) shows each expert's card with
+  the line it is reading (`Grep "…" in pkg/…`) and the proposals appear as the experts finish; Summarize stays off until round 1
+  is done, and round 2 fills the threads as replies arrive; the chip's round, the clock, the reply count
+  and the token count move on their own. The scenarios (`council-tree`, `-setup`, `-ask`, `-discussion`, `-summary`)
+  only draw fixtures and replace every call that would reach a model, so none of this has run live; they also have
+  not run before Final. Also try Pause after round 1 (untick a proposal, ask a question, Continue), Stop council
+  mid-round 1, and Retry on an expert that failed. Spec `docs/superpowers/specs/2026-10-21-council-design.md`,
+  `frontend/app/view/agents/councildiscussion.tsx`, `pkg/council/runner.go`.
+- [ ] (arcterm) Council from an agent: in a claude session, let it offer a Council review (the `arc:council` skill) and
+  pick it. `wsh council start` shows the Token burn gate card with the estimate; allow it and the council runs, and
+  `wsh council wait` prints the Summary and Matrix back into the session, with the directions in that session's Ideas.
+  Run it again and refuse the card: the agent reports `Not run: …` without retrying, the project has a `Not run`
+  council row, and its Discussion's Start council (with the estimate) runs it. `cmd/wsh/cmd/wshcmd-council.go`,
+  `skills/council/SKILL.md`, `pkg/tokengate`.
+- [ ] (arcterm) Ask the council: in a real agent session with an open `question` line in its Ideas, click Ask the
+  council. Setup opens with the question filled in, the session's project and a group the coordinator suggests; Start
+  council runs it and, after a real run, the directions come back into that session's Ideas (not a copy in another
+  session). `frontend/app/view/agents/ideassection.tsx`, `councilsetup.tsx`; the runner files them with the council's
+  `sessionid`.
+- [ ] (arcterm) Council Setup, the parts a person has to try: "+ Add a file or folder" opens the OS pickers and the
+  chosen paths show as file chips; a screenshot pasted into Setup shows its thumbnail and reaches round 1 (the experts
+  open it with Read); Save as group names the current panel and the group is in the group menu the next time Setup
+  opens (the note names what a group cannot keep: a suggested role and a per-row model); the coordinator's role
+  suggestion, with a feature and a first file, comes back as dashed rows you can add or ignore, and Run again from a
+  Summary does not call it. `frontend/app/view/agents/councilsetup.tsx`.
+- [ ] (arcterm) Council Summary, the actions the scenario replaces: on a done council, Brainstorm this opens a claude
+  agent in the project seeded with the direction and its thread (the scenario stubs the launch, so only the prompt was
+  checked); Save as doc writes `docs/council/YYYY-MM-DD-<feature>.md` and shows the path; Create initiative makes one
+  chunk per direction; Ask the experts again opens that direction's thread; a reply after the summary marks the
+  Summary `Outdated · N replies since` and Summarize again clears it. `frontend/app/view/agents/councilsummary.tsx`.
+- [ ] (arcterm) Council acceptance on a real paper: run the "Paper review" group on the AsiaCCS 2027 #282 submission
+  (`mit-thesis/paper/asiaccs2027/main.tex`) and compare with the real reviews
+  (`paper/asiaccs2027/final/decision_282_reviews.md` in mit-thesis). The council should surface the unreadable prose
+  (undefined internal terms, dense "not X but Y" sentences) and the missing Bullseye baseline. If it misses the prose,
+  mixed runtimes (codex, agy) move out of Deferred in the spec.
 - [ ] (arcterm) Rail commit mode with a real agent and with amend: let a live Claude agent edit two files in a worktree;
   when its turn ends, the rail's Changes tab shows the Uncommitted row without a switch. Open Commit…, untick one file,
   commit: the box closes, the commit tops the Commits list, the unticked file stays uncommitted. Then turn Amend on in
@@ -1355,6 +1391,7 @@ setting; that call is the person's. Layers are the compact RAM popup's.
 
 | Feature | Commit | Layer | Measured | Date | Verdict |
 |---|---|---|---|---|---|
+| Council: round 1 runs one `claude -p` per expert at once (four in the shipped groups), each read-only with `Read, Grep, Glob`; rounds 2 and 3 are text-only calls. A council holds no process between rounds | `7abb6f4ab` | arcterm (wavesrv) and the experts' `claude` processes | Not measured. The runner's own cost is a goroutine per call and one JSON file per council (rewritten on every reply). Each tool call claims 512 MiB from the job queue (`toolSlotBytes` in `pkg/council/caller.go`), a guess for a claude process reading a project. To read: the working set of the four `claude` processes (and wavesrv's) during round 1 of the first real council, and whether the queue held any of them. | 2026-10-21 | pending |
 | Pinned apps: each open app's page kept loaded out of sight for 1 min (`APP_FRAME_IDLE_MS`, `AppFrames` in `apppane.tsx`), so it keeps its page and scroll | uncommitted | Interface | Not measured. One frame, a renderer of its own (127.0.0.1 is cross-site to the cockpit), per app seen in the last minute, where before only the app on screen held one; a guess of 50–150 MB each for a dev page. To read: the WebView2 working set with two apps open, one out of sight, then past the minute. | 2026-10-19 | pending |
 | Held services: wavesrv holds every pinned app's server (`pkg/services`), each one `cmd` terminal block in a tab of its own; only a shown (or just left, or Keep-running) service runs, a sleeping one holds 0 MB | uncommitted | arcterm (wavesrv) and the apps' processes | Not measured. arcterm's own cost is one PTY and one goroutine per running service, a timer per service off screen, and once its minute is up one read of its process tree a minute (`services.Busy`) until it is idle, plus a readiness probe (an HTTP GET every 500 ms, up to 30 s) only while a service is starting; nothing polls while one runs or is shown. A sleeping service has no process. The running services' own RAM is the apps', not arcterm's. To read: wavesrv's working set with 0, 5 and 10 services running. | 2026-10-20 | pending |
 | Pinned apps: the page's iframe in the centre, and the app's own dev server | uncommitted | Interface, and the app's process | Not measured. No frame until an app is opened; open, the frame (no second webview). The app's server is a held service (row above): it runs while the app is used and for a minute after (always, with Keep running), and its RAM is the app's, not arcterm's. | 2026-10-19 | pending |

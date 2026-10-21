@@ -1,0 +1,51 @@
+{
+  "id": "fx-council-notrun",
+  "project": "",
+  "feature": "Rail apps",
+  "question": "Which changes to pinned apps on the nav rail are worth making first?",
+  "files": [
+    "frontend/app/view/agents/railapps.ts",
+    "frontend/app/view/agents/railappsstore.ts",
+    "pkg/services/model.go"
+  ],
+  "group": "ui-feature",
+  "experts": [
+    {
+      "id": "ux",
+      "name": "UX",
+      "model": "sonnet",
+      "brief": "You review the feature as the UX expert. Ask whether someone can find, read and use it without being told how."
+    },
+    {
+      "id": "ram",
+      "name": "RAM",
+      "model": "sonnet",
+      "brief": "You review the feature for memory. Ask what stays in memory, for how long, and whether it is logged in RAM watch."
+    },
+    {
+      "id": "newuser",
+      "name": "New user",
+      "model": "sonnet",
+      "brief": "You are on your first day in arcterm and know none of its names, panes or shortcuts. Ask what is confusing and what is missing."
+    },
+    {
+      "id": "skeptic",
+      "name": "Skeptic",
+      "model": "sonnet",
+      "brief": "You are the skeptic. Name what breaks: the input nobody tried, the state two features reach at once, the claim another expert made without checking it."
+    },
+    {
+      "id": "coordinator",
+      "name": "Coordinator",
+      "model": "opus",
+      "coordinator": true,
+      "brief": "You are the coordinator. Merge the proposals that say the same thing, rank the directions that remain, and mark the claims that cite nothing as weak."
+    }
+  ],
+  "state": "not-run",
+  "round": 0,
+  "tokens": 0,
+  "calls": 0,
+  "created": 1792573140000,
+  "updated": 1792573140000
+}
