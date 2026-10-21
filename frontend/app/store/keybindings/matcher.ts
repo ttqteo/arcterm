@@ -37,7 +37,8 @@ export function leaderChord(leader: string): string {
 
 // Pure. No DOM, no atoms. `ctx.leader` carries the active leader prefix (or null).
 export function matchBinding(waveEvent: WaveKeyboardEvent, ctx: KeyContext, bindings: Binding[]): MatchResult {
-    const active = bindings.filter((b) => (b.when ? b.when(ctx) : true));
+    // a binding with no keys is reached by name (the palette, `wsh ui do`), never by a keypress
+    const active = bindings.filter((b) => b.keys !== "" && (b.when ? b.when(ctx) : true));
     const sequences = active.filter((b) => isSequenceKeys(b.keys));
     const singles = active.filter((b) => !isSequenceKeys(b.keys));
 

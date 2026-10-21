@@ -37,10 +37,15 @@ type apiBackend interface {
 // ParsedEvent is one decoded JSONL event from a runtime's stream. Text carries reply text (empty for
 // non-reply events), Complete marks a runtime's settlement/completion signal (pi agent_settled), and
 // Err surfaces a runtime-reported assistant error. At most one of Text/Complete/Err is meaningful.
+// Tool and Tokens are claude-only additions: Tool describes a tool call the assistant made (it can
+// ride on the same event as Text), and Tokens is the call's total token count, set on the Complete
+// event that closes it.
 type ParsedEvent struct {
 	Text     string
 	Complete bool
 	Err      error
+	Tool     string
+	Tokens   int64
 }
 
 // RuntimeSpec is how to invoke a runtime in one-shot/print mode.
@@ -99,34 +104,94 @@ func codexParseLine(line []byte) ParsedEvent {
 }
 
 // claudeParseLine extracts assistant text from a `claude -p --output-format stream-json` JSONL event.
-// The reply arrives as assistant events carrying text content blocks; system/hook/init, rate-limit,
-// and the redundant final result events are skipped (accumulating assistant text is the reply).
+// The reply arrives as assistant events carrying text content blocks (accumulating them is the reply),
+// and a tool_use block in the same event is reported as Tool. The final result event repeats the reply,
+// so it carries no Text: it only settles the call (Complete) and reports its token usage.
+// System/hook/init and rate-limit events are skipped.
 func claudeParseLine(line []byte) ParsedEvent {
 	var ev struct {
 		Type    string `json:"type"`
 		Message struct {
 			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
+				Type  string          `json:"type"`
+				Text  string          `json:"text"`
+				Name  string          `json:"name"`
+				Input json.RawMessage `json:"input"`
 			} `json:"content"`
 		} `json:"message"`
+		Usage struct {
+			Input         int64 `json:"input_tokens"`
+			CacheRead     int64 `json:"cache_read_input_tokens"`
+			CacheCreation int64 `json:"cache_creation_input_tokens"`
+			Output        int64 `json:"output_tokens"`
+		} `json:"usage"`
 	}
 	if json.Unmarshal(line, &ev) != nil {
 		return ParsedEvent{}
 	}
-	if ev.Type != "assistant" {
-		return ParsedEvent{}
-	}
-	var b strings.Builder
-	for _, c := range ev.Message.Content {
-		if c.Type == "text" {
-			b.WriteString(c.Text)
+	switch ev.Type {
+	case "result":
+		u := ev.Usage
+		return ParsedEvent{Complete: true, Tokens: u.Input + u.CacheRead + u.CacheCreation + u.Output}
+	case "assistant":
+		var text strings.Builder
+		var tool string
+		for _, c := range ev.Message.Content {
+			switch c.Type {
+			case "text":
+				text.WriteString(c.Text)
+			case "tool_use":
+				if tool == "" {
+					tool = describeClaudeTool(c.Name, c.Input)
+				}
+			}
 		}
+		return ParsedEvent{Text: text.String(), Tool: tool}
 	}
-	if b.Len() == 0 {
-		return ParsedEvent{}
+	return ParsedEvent{}
+}
+
+// describeClaudeTool is the one-line description of a claude tool call the Council shows while an
+// expert works: `Grep "pattern" in path`, `Read file.ts` (base name only), `Glob **/*.ts`. A tool
+// without a summary field is named alone.
+func describeClaudeTool(name string, rawInput json.RawMessage) string {
+	var in struct {
+		Pattern  string `json:"pattern"`
+		Path     string `json:"path"`
+		FilePath string `json:"file_path"`
 	}
-	return ParsedEvent{Text: b.String()}
+	_ = json.Unmarshal(rawInput, &in)
+	switch name {
+	case "Grep":
+		if in.Pattern == "" {
+			return name
+		}
+		// quoted by hand, not %q: a regex's backslashes would show doubled
+		if in.Path == "" {
+			return name + ` "` + in.Pattern + `"`
+		}
+		return name + ` "` + in.Pattern + `" in ` + in.Path
+	case "Read":
+		if in.FilePath == "" {
+			return name
+		}
+		return name + " " + baseName(in.FilePath)
+	case "Glob":
+		if in.Pattern == "" {
+			return name
+		}
+		return name + " " + in.Pattern
+	}
+	return name
+}
+
+// baseName is the last element of a path written with either separator: a transcript can carry a
+// Windows path while the server runs elsewhere, so filepath.Base is not enough.
+func baseName(p string) string {
+	if i := strings.LastIndexAny(p, `/\`); i >= 0 {
+		return p[i+1:]
+	}
+	return p
 }
 
 // opencodeParseLine extracts assistant text from an `opencode run --format json` JSONL event.
@@ -267,6 +332,25 @@ func SpecForTier(runtime string, tier Tier) (RuntimeSpec, bool) {
 	}
 	spec.BaseArgs = append(append([]string{}, spec.BaseArgs...), "--model", model)
 	return spec, true
+}
+
+// CallOpts is what one claude call picks for itself, where a tier only picks a model class: the
+// model alias (empty keeps the operator's default) and the tools it may use (empty gives it none).
+type CallOpts struct {
+	Model string
+	Tools []string
+}
+
+// ClaudeArgs is claude's argument list for one call (prompt excluded): the one-shot base, then
+// --model when set, then --tools and --strict-mcp-config. --tools "" is the empty list, which gives
+// the run no tools; --strict-mcp-config stops the account's connector tools loading despite --tools
+// (Radar's audit and the memory judge pass the same pair).
+func ClaudeArgs(o CallOpts) []string {
+	args := append([]string{}, runtimeSpecs["claude"].BaseArgs...)
+	if o.Model != "" {
+		args = append(args, "--model", o.Model)
+	}
+	return append(args, "--tools", strings.Join(o.Tools, ","), "--strict-mcp-config")
 }
 
 // HeadlessRuntime returns the runtime the background AI features (gatekeeper, recall, gardener,

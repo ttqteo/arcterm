@@ -122,7 +122,8 @@ func tokengateRead(ctx context.Context, transcript string) (tokengate.Reading, [
 
 // tokengateDecide is the decision `wsh tokengate` makes about one spawn group: off, or no rule firing, it runs
 // (with a note); otherwise it waits on the person's card. A decided group is logged for `wsh tokengate review`. An
-// error is a broken gate, which the mod answers by letting the spawn run.
+// error is a broken gate, which the mod answers by letting the spawn run. `wsh council start` asks it too, with
+// Tool "Council" and the council's own estimate, and treats an error the same way.
 func tokengateDecide(ctx context.Context, s tokengate.Spawn, transcript string, onHold func(any)) (tokengate.Verdict, error) {
 	if err := ctx.Err(); err != nil {
 		return tokengate.Verdict{}, err
@@ -263,9 +264,10 @@ func tokengateReviewText(r *wshrpc.CommandReviewTokenEstimatesRtnData) string {
 
 // tokengateCapped is agent-hook's session cap, read before any card: once the session has dispatched every subagent
 // the cap allows, agent-hook refuses the next Agent call whatever the person said on the card, so the gate refuses it
-// first, with the cap's own reason. The session is the transcript's; a Workflow is no Agent call and the cap leaves it
+// first, with the cap's own reason. The session is the transcript's; a Workflow is no Agent call and the cap leaves it,
+// and so is a Council, whose experts are `claude -p` calls wavesrv makes, not subagents of the asking session
 func tokengateCapped(dir, transcript, tool string) (tokengate.Verdict, bool) {
-	if transcript == "" || tool == "Workflow" {
+	if transcript == "" || tool == "Workflow" || tool == "Council" {
 		return tokengate.Verdict{}, false
 	}
 	session := strings.TrimSuffix(filepath.Base(transcript), ".jsonl")

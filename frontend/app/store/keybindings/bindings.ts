@@ -49,6 +49,7 @@ import { sessionIdFromTranscript } from "@/app/view/agents/ideasmodel";
 import { runIdeaCapture } from "@/app/view/agents/ideasstore";
 import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
+import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { activeReviewKeyAtom, canSendKey, lineReviewsAtom } from "@/app/view/agents/linecommentstore";
 import { canRequest } from "@/app/view/agents/proseanchor";
 import {
@@ -417,6 +418,17 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "New run",
             when: (ctx) => !ctx.modalOpen,
             run: () => openLauncher(model, "run"),
+        },
+        {
+            // Setup for a new council, in the project of the agent in focus (else the first registered one). No chord: a
+            // council costs 0.5-1.5M tokens, so it is reached by name, from the palette's New council… row (which this
+            // binding stands in for, palette-commands.ts START_DEFS) or `wsh ui do new-council`; the matcher skips it.
+            id: "new-council",
+            keys: "",
+            group: "Global",
+            label: "New council",
+            when: (ctx) => !ctx.modalOpen,
+            run: () => openNewCouncil(model),
         },
         {
             // The Float ledge's Note tab: from outside Float or from a terminal it floats straight onto the note, from the

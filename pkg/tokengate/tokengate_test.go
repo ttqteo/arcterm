@@ -38,6 +38,78 @@ func TestEstimateCountsAtLeastOneAgent(t *testing.T) {
 	}
 }
 
+func TestCouncilSpawnIsPricedFromItsOwnEstimate(t *testing.T) {
+	council := Spawn{Tool: "Council", Agents: 4, EstimateTokens: 900_000}
+	if got := Estimate(council); got != 900_000 {
+		t.Fatalf("Estimate = %d, want the council's own 900k, not %d", got, 4*PerAgentTokens)
+	}
+	// measured subagent costs say nothing about a council's one-shot calls: the estimate stands, with no range
+	if got, want := Price(council, testCosts), (Priced{Estimate: 900_000}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Price = %+v, want %+v", got, want)
+	}
+	if got, want := Price(council, nil), (Priced{Estimate: 900_000}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Price without costs = %+v, want %+v", got, want)
+	}
+	// a spawn with no estimate of its own is still priced per agent
+	if got := Estimate(Spawn{Tool: "Council", Agents: 4}); got != 4*PerAgentTokens {
+		t.Fatalf("Estimate without EstimateTokens = %d", got)
+	}
+}
+
+func TestCouncilSpawnAsksLikeAnAgentSpawnOfThatSize(t *testing.T) {
+	council := Spawn{Tool: "Council", Agents: 4, EstimateTokens: 900_000}
+	agents := Spawn{Tool: "Agent", Agents: 4}
+	cases := []struct {
+		name  string
+		rules Rules
+		q     Quota
+		want  bool
+	}{
+		{"four experts reach the agent count rule", DefaultRules, Quota{}, true},
+		{"a big window share asks", Rules{SharePct: 10}, Quota{FiveHourPct: f64(20), Share: pint(10)}, true},
+		{"a small share with the count rule off runs", Rules{SharePct: 10}, Quota{FiveHourPct: f64(20), Share: pint(3)}, false},
+		{"a full window asks", DefaultRules, Quota{FiveHourPct: f64(70)}, true},
+		{"a rule at 0 is off", Rules{}, Quota{FiveHourPct: f64(99), Share: pint(50)}, false},
+	}
+	for _, c := range cases {
+		got, want := Asks(c.rules, council, c.q), Asks(c.rules, agents, c.q)
+		if got != c.want || got != want {
+			t.Errorf("%s: council asks %v, agent spawn of that size asks %v, want %v", c.name, got, want, c.want)
+		}
+	}
+	// two experts stay under the count rule, as two agents do
+	two := Spawn{Tool: "Council", Agents: 2, EstimateTokens: 400_000}
+	if Asks(DefaultRules, two, Quota{}) {
+		t.Fatal("a two-expert council asked with room in every window")
+	}
+}
+
+func TestCouncilSpawnIsNamedOnTheCardTheNoteAndTheVerdict(t *testing.T) {
+	s := Spawn{Tool: "Council", Agents: 4, EstimateTokens: 900_000}
+	p := Price(s, testCosts)
+	wantCard := "An agent wants to start a Council (4 experts), about 900k tokens (rough)."
+	if got := Question(s, p, Quota{}, time.UTC).Question; got != wantCard {
+		t.Fatalf("question\n%q\nwant\n%q", got, wantCard)
+	}
+	if got, want := Note(s, p, Quota{Share: pint(2)}), "Token burn: starting a Council (4 experts), about 900k tokens (rough), ~2% of the 5h window."; got != want {
+		t.Fatalf("note\n%q\nwant\n%q", got, want)
+	}
+	if got := Asking(s).Hold; !strings.Contains(got, "start a Council (4 experts)") {
+		t.Fatalf("hold %q", got)
+	}
+	if v := VerdictFor(OptionDeny, s, p.Estimate); v.Run || !strings.Contains(v.Reason, "start a Council (4 experts)") || !strings.Contains(v.Reason, "about 900k tokens") {
+		t.Fatalf("deny %+v", v)
+	}
+	if got := Question(Spawn{Tool: "Council", Agents: 1, EstimateTokens: 200_000}, Priced{Estimate: 200_000}, Quota{}, time.UTC).Question; !strings.Contains(got, "Council (1 expert)") {
+		t.Fatalf("one expert: %q", got)
+	}
+	// the estimate log names the spawn "Council", with the council's own estimate
+	line := NewLogLine(time.Unix(0, 0), "s1", s, p, Verdict{Run: true}, false)
+	if line.Tool != "Council" || line.Agents != 4 || line.Estimate != 900_000 || line.Low != 0 || line.High != 0 {
+		t.Fatalf("log line %+v", line)
+	}
+}
+
 func TestPrice(t *testing.T) {
 	gp := "general-purpose"
 	cases := []struct {

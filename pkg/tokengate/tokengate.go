@@ -3,7 +3,8 @@
 
 // Package tokengate holds a costly spawn (subagents, a workflow) for the person's say before it spends tokens:
 // cost grows as context × calls × agents, nearly all of it cache reads. `wsh tokengate` asks; the Claude mod
-// calls it before every Agent, Task or Workflow tool call, as it calls `wsh jobslot` before a heavy shell command.
+// calls it before every Agent, Task or Workflow tool call, as it calls `wsh jobslot` before a heavy shell command;
+// `wsh council start` asks it for a Council, which arrives as a Bash command and brings its own estimate.
 // It asks only when a rule says the spawn matters: a card on every spawn trains a reflex Allow.
 package tokengate
 
@@ -49,12 +50,14 @@ const (
 
 // Spawn is what the agent is about to start: one group of parallel tool calls
 type Spawn struct {
-	Tool          string // Agent, Task or Workflow; a group with any Workflow is Workflow
-	Agents        int
-	AtLeast       bool // a workflow's agent count is a floor: loops multiply it
+	Tool          string // Agent, Task or Workflow; a group with any Workflow is Workflow; Council for `wsh council start`
+	Agents        int    // a Council's is its experts
+	AtLeast       bool   // a workflow's agent count is a floor: loops multiply it
 	ContextTokens int64
 	ContextMax    int64
-	Types         []string // each agent's subagent type, in order; "" or missing is unknown (a Workflow's agents)
+	// the spawn's own estimate when it has one (a Council's, from pkg/council); 0 prices each agent as usual
+	EstimateTokens int64
+	Types          []string // each agent's subagent type, in order; "" or missing is unknown (a Workflow's agents)
 	// agents the same agent started in the seconds before, which count toward the agents rule: one message's spawns
 	// reach the gate spread out as Claude writes them, so the mod chains the groups that come within seconds
 	Earlier int
@@ -71,7 +74,7 @@ type Cost struct {
 
 // Priced is a spawn's estimate: the sum of its agents' mean costs, and a range (the sums of their p25 and p90) when
 // every agent was priced from samples. Basis names the rows used, "14 general-purpose" or "31 recent", in the order
-// first used; none means every agent was priced at PerAgentTokens.
+// first used; none means every agent was priced at PerAgentTokens (or the spawn brought its own estimate).
 type Priced struct {
 	Estimate int64
 	Low      int64
@@ -155,14 +158,22 @@ type Hold struct {
 	Hold string `json:"hold"`
 }
 
-// Estimate is the spawn at PerAgentTokens an agent, for a caller with no measured costs
+// Estimate is the spawn at PerAgentTokens an agent, for a caller with no measured costs; a spawn with an estimate of
+// its own is that
 func Estimate(s Spawn) int64 {
+	if s.EstimateTokens > 0 {
+		return s.EstimateTokens
+	}
 	return int64(max(s.Agents, 1)) * PerAgentTokens
 }
 
 // Price prices each agent from its type's row when that has minTypeSamples, else the every-type row when that has
-// minAllSamples, else at PerAgentTokens. An agent with no known type takes the every-type row.
+// minAllSamples, else at PerAgentTokens. An agent with no known type takes the every-type row. A spawn with an
+// estimate of its own is priced at that, with no range: finished subagents' costs say nothing about its calls.
 func Price(s Spawn, costs []Cost) Priced {
+	if s.EstimateTokens > 0 {
+		return Priced{Estimate: s.EstimateTokens}
+	}
 	rows := map[string]Cost{}
 	for _, c := range costs {
 		rows[c.Type] = c
@@ -298,6 +309,9 @@ func what(s Spawn) string {
 	n := max(s.Agents, 1)
 	if s.Tool == "Workflow" {
 		return "run a workflow with at least " + plural(n, "agent")
+	}
+	if s.Tool == "Council" {
+		return fmt.Sprintf("start a Council (%s)", plural(n, "expert"))
 	}
 	if s.AtLeast {
 		return "start at least " + plural(n, "subagent")

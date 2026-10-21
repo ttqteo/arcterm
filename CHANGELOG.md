@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Council**: ask a panel of expert agents to review a feature. They propose, argue in a thread you can join, and
+  Summarize ranks the directions with a matrix of who stood where. <!-- try: new-council --> <!-- big -->
 - Servers: a server started outside arcterm whose output goes to a file (a redirect, or a task a Claude session that
   has ended ran in the background) now opens that file as its live Log. A server with no owner also has
   Restart in arcterm, which stops it and runs it again in a terminal in its folder, so you can see its output from then on.

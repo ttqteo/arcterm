@@ -22,6 +22,7 @@ declare global {
         | "jobqueue"
         | "memorypressure"
         | "ideas:changed"
+        | "council:changed"
         | "storage:scan"
         | "dag:child-done"
         | "dag:gate-open"
@@ -59,6 +60,7 @@ declare global {
         { event: "jobqueue"; data?: JobQueueData; } | 
         { event: "memorypressure"; data?: MemoryPressureData; } | 
         { event: "ideas:changed"; data?: IdeasChangedData; } | 
+        { event: "council:changed"; data?: CouncilChangedData; } | 
         { event: "storage:scan"; data?: StorageReport; } | 
         { event: "dag:child-done"; data?: string; } | 
         { event: "dag:gate-open"; data?: string; } | 

@@ -147,7 +147,6 @@ func TestClaudeParseLine_extractsAssistantText(t *testing.T) {
 		`{"type":"system","subtype":"init","session_id":"b16"}`,
 		`{"type":"system","subtype":"hook_started","hook_name":"SessionStart:startup"}`,
 		`{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}`,
-		`{"type":"result","subtype":"success","result":"pong"}`, // final result is redundant with the assistant delta
 	}
 	for _, line := range skip {
 		if ev := claudeParseLine([]byte(line)); ev.Text != "" || ev.Complete || ev.Err != nil {
@@ -158,6 +157,91 @@ func TestClaudeParseLine_extractsAssistantText(t *testing.T) {
 	ev := claudeParseLine([]byte(reply))
 	if ev.Text != "pong" {
 		t.Errorf("expected assistant text 'pong', got %+v", ev)
+	}
+	// the final result is redundant with the assistant text: it settles the call but adds no reply text
+	ev = claudeParseLine([]byte(`{"type":"result","subtype":"success","result":"pong"}`))
+	if ev.Text != "" || !ev.Complete || ev.Err != nil {
+		t.Errorf("expected a result to settle without text, got %+v", ev)
+	}
+}
+
+func TestClaudeParseLineToolUse(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		want ParsedEvent
+	}{
+		{
+			"grep with a path",
+			`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Grep","input":{"pattern":"IdleSleep","path":"pkg/services"}}]}}`,
+			ParsedEvent{Tool: `Grep "IdleSleep" in pkg/services`},
+		},
+		{
+			"grep without a path",
+			`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Grep","input":{"pattern":"IdleSleep"}}]}}`,
+			ParsedEvent{Tool: `Grep "IdleSleep"`},
+		},
+		{
+			"read shows the base name of a windows path",
+			`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"D:\\x\\railappsstore.ts"}}]}}`,
+			ParsedEvent{Tool: "Read railappsstore.ts"},
+		},
+		{
+			"read shows the base name of a slash path",
+			`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/home/x/railappsstore.ts"}}]}}`,
+			ParsedEvent{Tool: "Read railappsstore.ts"},
+		},
+		{
+			"glob",
+			`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Glob","input":{"pattern":"**/*.ts"}}]}}`,
+			ParsedEvent{Tool: "Glob **/*.ts"},
+		},
+		{
+			"a tool with no summary field is named alone",
+			`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"WebFetch","input":{"url":"https://example.com"}}]}}`,
+			ParsedEvent{Tool: "WebFetch"},
+		},
+		{
+			"several tool calls report the first",
+			`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Glob","input":{"pattern":"*.go"}},{"type":"tool_use","name":"Read","input":{"file_path":"a.go"}}]}}`,
+			ParsedEvent{Tool: "Glob *.go"},
+		},
+		{
+			"text next to a tool call keeps both",
+			`{"type":"assistant","message":{"content":[{"type":"text","text":"Looking."},{"type":"tool_use","name":"Read","input":{"file_path":"a.go"}}]}}`,
+			ParsedEvent{Text: "Looking.", Tool: "Read a.go"},
+		},
+	}
+	for _, c := range cases {
+		if got := claudeParseLine([]byte(c.line)); got != c.want {
+			t.Errorf("%s: got %+v, want %+v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestClaudeParseLineResultUsage(t *testing.T) {
+	line := `{"type":"result","subtype":"success","result":"pong","usage":{"input_tokens":10,"cache_read_input_tokens":900,"cache_creation_input_tokens":40,"output_tokens":50}}`
+	if got, want := claudeParseLine([]byte(line)), (ParsedEvent{Complete: true, Tokens: 1000}); got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestClaudeArgsWithModelAndTools(t *testing.T) {
+	base, _ := SpecFor("claude")
+	got := ClaudeArgs(CallOpts{Model: "sonnet", Tools: []string{"Read", "Grep", "Glob"}})
+	want := append(append([]string{}, base.BaseArgs...), "--model", "sonnet", "--tools", "Read,Grep,Glob", "--strict-mcp-config")
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	// no tools is the empty list, which gives the run none; no model keeps the operator's default
+	got = ClaudeArgs(CallOpts{})
+	want = append(append([]string{}, base.BaseArgs...), "--tools", "", "--strict-mcp-config")
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	// the shared spec's argument list is never written through
+	if again, _ := SpecFor("claude"); !slices.Equal(again.BaseArgs, base.BaseArgs) {
+		t.Errorf("ClaudeArgs changed the claude spec: %v", again.BaseArgs)
 	}
 }
 

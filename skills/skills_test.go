@@ -36,6 +36,20 @@ func TestShippedSkills(t *testing.T) {
 		t.Errorf("doc-review frontmatter name = %q, want doc-review", got)
 	}
 
+	doc, err = fs.ReadFile(FS, "council/SKILL.md")
+	if err != nil {
+		t.Fatalf("council/SKILL.md is not embedded: %v", err)
+	}
+	if got := frontmatterName(t, string(doc)); got != "council" {
+		t.Errorf("council frontmatter name = %q, want council", got)
+	}
+	// the offer, the run, the read-back and the refusal are what the skill teaches; each names its command
+	for _, want := range []string{"wsh council estimate", "wsh council start", "wsh council wait", "Not run:"} {
+		if !strings.Contains(string(doc), want) {
+			t.Errorf("council/SKILL.md does not mention %q", want)
+		}
+	}
+
 	entries, err := fs.ReadDir(FS, ".")
 	if err != nil {
 		t.Fatal(err)

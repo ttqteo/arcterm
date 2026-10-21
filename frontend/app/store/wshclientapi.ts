@@ -300,6 +300,84 @@ export class RpcApiType {
         return client.wshRpcCall("controllerresync", data, opts);
     }
 
+    // command "councilcontinue" [call]
+    CouncilContinueCommand(client: WshClient, data: CommandCouncilContinueData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilcontinue", data, opts);
+        return client.wshRpcCall("councilcontinue", data, opts);
+    }
+
+    // command "councilestimate" [call]
+    CouncilEstimateCommand(client: WshClient, data: CommandCouncilEstimateData, opts?: RpcOpts): Promise<CouncilEstimateRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilestimate", data, opts);
+        return client.wshRpcCall("councilestimate", data, opts);
+    }
+
+    // command "councilget" [call]
+    CouncilGetCommand(client: WshClient, data: CommandCouncilIdData, opts?: RpcOpts): Promise<Council> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilget", data, opts);
+        return client.wshRpcCall("councilget", data, opts);
+    }
+
+    // command "councillist" [call]
+    CouncilListCommand(client: WshClient, data: CommandCouncilListData, opts?: RpcOpts): Promise<Council[]> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councillist", data, opts);
+        return client.wshRpcCall("councillist", data, opts);
+    }
+
+    // command "councilreply" [call]
+    CouncilReplyCommand(client: WshClient, data: CommandCouncilReplyData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilreply", data, opts);
+        return client.wshRpcCall("councilreply", data, opts);
+    }
+
+    // command "councilretry" [call]
+    CouncilRetryCommand(client: WshClient, data: CommandCouncilRetryData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilretry", data, opts);
+        return client.wshRpcCall("councilretry", data, opts);
+    }
+
+    // command "councilroles" [call]
+    CouncilRolesCommand(client: WshClient, opts?: RpcOpts): Promise<CouncilRolesRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilroles", null, opts);
+        return client.wshRpcCall("councilroles", null, opts);
+    }
+
+    // command "councilsavedoc" [call]
+    CouncilSaveDocCommand(client: WshClient, data: CommandCouncilSaveDocData, opts?: RpcOpts): Promise<CouncilSaveDocRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilsavedoc", data, opts);
+        return client.wshRpcCall("councilsavedoc", data, opts);
+    }
+
+    // command "councilsavegroup" [call]
+    CouncilSaveGroupCommand(client: WshClient, data: CouncilGroup, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilsavegroup", data, opts);
+        return client.wshRpcCall("councilsavegroup", data, opts);
+    }
+
+    // command "councilstart" [call]
+    CouncilStartCommand(client: WshClient, data: CommandCouncilStartData, opts?: RpcOpts): Promise<Council> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilstart", data, opts);
+        return client.wshRpcCall("councilstart", data, opts);
+    }
+
+    // command "councilstop" [call]
+    CouncilStopCommand(client: WshClient, data: CommandCouncilIdData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilstop", data, opts);
+        return client.wshRpcCall("councilstop", data, opts);
+    }
+
+    // command "councilsuggest" [call]
+    CouncilSuggestCommand(client: WshClient, data: CommandCouncilSuggestData, opts?: RpcOpts): Promise<CouncilSuggestion> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilsuggest", data, opts);
+        return client.wshRpcCall("councilsuggest", data, opts);
+    }
+
+    // command "councilsummarize" [call]
+    CouncilSummarizeCommand(client: WshClient, data: CommandCouncilIdData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilsummarize", data, opts);
+        return client.wshRpcCall("councilsummarize", data, opts);
+    }
+
     // command "createblock" [call]
     CreateBlockCommand(client: WshClient, data: CommandCreateBlockData, opts?: RpcOpts): Promise<ORef> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "createblock", data, opts);
