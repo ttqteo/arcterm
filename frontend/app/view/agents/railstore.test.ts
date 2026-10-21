@@ -145,3 +145,45 @@ describe("branchDiffOf", () => {
         expect(branchDiffOf(null)).toBeUndefined();
     });
 });
+
+describe("rereadsOnState", () => {
+    it("reads again when the agent stops working, the turn whose edits and commits it now shows", async () => {
+        const { rereadsOnState } = await import("./railstore");
+        expect(rereadsOnState("working", "idle")).toBe(true);
+        expect(rereadsOnState("working", "asking")).toBe(true);
+    });
+
+    it("does not read while the agent works, or on a change that is no turn's end", async () => {
+        const { rereadsOnState } = await import("./railstore");
+        expect(rereadsOnState("idle", "working")).toBe(false);
+        expect(rereadsOnState("working", "working")).toBe(false);
+        expect(rereadsOnState("asking", "idle")).toBe(false);
+        expect(rereadsOnState(undefined, "idle")).toBe(false);
+    });
+});
+
+describe("loadRailForAgent", () => {
+    const shown = { cwd: "/repo", branch: "main", isRepo: true, changes: { files: [], adds: 0, dels: 0 } };
+
+    async function withPendingCwd() {
+        vi.resetModules();
+        const { resolveCwd } = await import("./agentcwdresolve");
+        vi.mocked(resolveCwd).mockReturnValue(new Promise(() => {}));
+        const { globalStore } = await import("@/app/store/jotaiStore");
+        const rail = await import("./railstore");
+        globalStore.set(rail.railStateAtom, shown);
+        return { globalStore, rail };
+    }
+
+    it("empties the rail while it reads a newly focused agent", async () => {
+        const { globalStore, rail } = await withPendingCwd();
+        void rail.loadRailForAgent("a1", "/t.jsonl");
+        expect(globalStore.get(rail.railStateAtom)).toBeNull();
+    });
+
+    it("keeps what is on screen while a silent read of the same agent is in flight", async () => {
+        const { globalStore, rail } = await withPendingCwd();
+        void rail.loadRailForAgent("a1", "/t.jsonl", undefined, { silent: true });
+        expect(globalStore.get(rail.railStateAtom)).toBe(shown);
+    });
+});

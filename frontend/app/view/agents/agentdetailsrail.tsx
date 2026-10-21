@@ -23,7 +23,7 @@ import {
     LayoutTemplate,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { driveAgent, NUDGE_INPUT } from "./agentactions";
 import { agentDiffScope, openBranchDiff, openDiff } from "./agentdiffnav";
 import {
@@ -81,6 +81,7 @@ import {
     railCwdsAtom,
     railStateAtom,
     railVisibleAtom,
+    rereadsOnState,
     type RailChangesRange,
 } from "./railstore";
 import { RailTreePane } from "./railtreepane";
@@ -625,6 +626,33 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
 
     useEffect(() => {
         fireAndForget(() => loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId));
+    }, [agent.id, agent.transcriptPath, agent.blockId]);
+
+    // and again, keeping the list on screen meanwhile: when a turn ends (what the agent just did to the worktree), when
+    // Changes is opened, and when the window comes back (a commit made outside arcterm)
+    const reread = () =>
+        fireAndForget(() => loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId, { silent: true }));
+    const lastState = useRef({ id: agent.id, state: agent.state });
+    useEffect(() => {
+        const prev = lastState.current;
+        lastState.current = { id: agent.id, state: agent.state };
+        // a switch to another agent is the focus read's, above
+        if (prev.id === agent.id && rereadsOnState(prev.state, agent.state)) {
+            reread();
+        }
+    }, [agent.id, agent.state]);
+    const onChanges = shown === "changes";
+    const wasOnChanges = useRef(onChanges);
+    useEffect(() => {
+        // only on opening it: a rail mounted on Changes has the focus read
+        if (onChanges && !wasOnChanges.current) {
+            reread();
+        }
+        wasOnChanges.current = onChanges;
+    }, [onChanges]);
+    useEffect(() => {
+        window.addEventListener("focus", reread);
+        return () => window.removeEventListener("focus", reread);
     }, [agent.id, agent.transcriptPath, agent.blockId]);
 
     // re-read while focused: every turn writes the cache again, so a status read once at focus

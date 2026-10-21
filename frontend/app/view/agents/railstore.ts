@@ -16,6 +16,7 @@ import { showTerminal } from "./agentcenter";
 import { resolveCwd } from "./agentcwdresolve";
 import { linkedWorktree } from "./agentrailmodel";
 import { ensureSessionStart } from "./agentsessionstore";
+import type { AgentState } from "./agentsviewmodel";
 import { parseGitChanges, type GitChanges } from "./gitstatus";
 import { recentTabsAtom } from "./tabswitcherstore";
 import { DOCK_DEFAULT_PX, dockHostId } from "./terminaldock";
@@ -146,13 +147,24 @@ const current = { id: "" };
 
 const EMPTY: RailGitState = { cwd: null, branch: "", isRepo: false, changes: null };
 
+// The rail reads git when an agent is focused, and again when it stops working: the turn just ended is what changed the
+// worktree (a commit, a rename half done and then finished). Without it, the list stood as it was read at focus until the
+// next switch: a move caught mid-way showed every file deleted long after its commit.
+export function rereadsOnState(prev: AgentState | undefined, next: AgentState): boolean {
+    return prev === "working" && next !== "working";
+}
+
+// silent: a re-read of the agent already shown keeps its list on screen until the new one lands, rather than a skeleton
 export async function loadRailForAgent(
     id: string,
     transcriptPath: string | undefined,
-    blockId?: string
+    blockId?: string,
+    opts?: { silent?: boolean }
 ): Promise<void> {
     current.id = id;
-    globalStore.set(railStateAtom, null);
+    if (!opts?.silent) {
+        globalStore.set(railStateAtom, null);
+    }
 
     const [cwd, startTs] = await Promise.all([resolveCwd(transcriptPath, blockId), ensureSessionStart(transcriptPath)]);
     setRailCwd(id, cwd || null);

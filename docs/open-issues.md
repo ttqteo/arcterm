@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Rail Changes reads again: keep an agent focused with the side panel on Changes, have it edit a file and
+  commit it in one turn; when the turn ends the list drops the committed file without switching agents, and does not
+  flash a skeleton. Commit something from a terminal outside arcterm, come back to the window: the list follows. Never
+  run in the app (CDP was down); `rereadsOnState` and the silent load are unit-tested.
+  `frontend/app/view/agents/agentdetailsrail.tsx`, `frontend/app/view/agents/railstore.ts`.
 - [ ] (arcterm) Servers file log and Restart in arcterm: open the footer's Servers popover with a "no owner" server
   whose output goes to a file (an `astro dev` writing `.astro\dev.log`, or a task from an ended Claude session). Its
   Log icon is lit, its tooltip names the file, and a click follows the file live in the focused agent's side panel.

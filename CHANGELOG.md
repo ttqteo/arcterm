@@ -32,6 +32,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The side panel's Changes list now reads git again when the agent finishes a turn, when you open Changes and when
+  you come back to the window: it no longer keeps showing what it read when you picked the agent (a folder caught
+  mid-move listed every file deleted long after the agent had committed the rename).
 - An agent arcterm brought back after a restart no longer goes missing from the Agent tree when it was slow to load:
   resuming its conversation said it was already open and went nowhere. It now shows once it loads.
 
