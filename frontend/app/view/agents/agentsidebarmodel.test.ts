@@ -13,11 +13,13 @@ import {
     conversationCount,
     conversationProjects,
     conversationTree,
+    councilRowsByProject,
     endedConversationsByProject,
     folderBlocks,
     folderCounts,
     HOME_PROJECT,
     liveBranches,
+    newCouncilRoot,
     notableBranch,
     projectLabel,
     projectTree,
@@ -33,9 +35,11 @@ import {
     terminalRowState,
     terminalShows,
     treeNavIds,
+    UNTITLED_COUNCIL,
     UNTITLED_SESSION,
     type ConversationEntry,
     type ConversationTreeRow,
+    type CouncilRowVM,
     type EndedSessionRow,
     type ProjectTreeRow,
 } from "./agentsidebarmodel";
@@ -653,10 +657,17 @@ describe("projectTree", () => {
         ...(cwd != null ? { cwd } : {}),
     });
     // a row as a short string: "group:<project>:<agents>a:<terminals>t[:closed]", "divider:<project>", "t:<id>",
-    // "a:<id>" for a plain agent row, "q:<entry id>:<place>" for a queued entry (place "-" when blocked)
+    // "a:<id>" for a plain agent row, "q:<entry id>:<place>" for a queued entry (place "-" when blocked), and for the
+    // council rows "ch:<project>" (the Councils head), "cn:<project>[:draft]" (New council) and "c:<id>:<meta>"
     const shape = (rows: ProjectTreeRow[]) =>
         rows.map((r) => {
             switch (r.kind) {
+                case "councilhead":
+                    return `ch:${r.project}`;
+                case "councilnew":
+                    return `cn:${r.project}${r.draft ? ":draft" : ""}`;
+                case "council":
+                    return `c:${r.id}:${r.meta}`;
                 case "group":
                     return `group:${r.project}:${r.agents}a:${r.terminals}t${r.open ? "" : ":closed"}`;
                 case "divider":
@@ -874,6 +885,158 @@ describe("projectTree", () => {
                 "s:api",
             ]);
             expect(shapeS(build([agent("a")], [], { services: [] }))).toEqual(["group:waveterm:1a:0t", "a:a"]);
+        });
+    });
+
+    describe("councils", () => {
+        const roots = new Map([
+            ["waveterm", "D:\\code\\waveterm"],
+            ["loom", "D:\\code\\loom"],
+            ["ops", "D:\\code\\ops"],
+        ]);
+        const cvm = (id: string, created: number, over: Partial<CouncilRowVM> = {}): CouncilRowVM => ({
+            id,
+            feature: `feature ${id}`,
+            created,
+            meta: "Done",
+            tone: "muted",
+            ...over,
+        });
+        // the council input of a project name -> councils object, over the roots the registry holds
+        const withCouncils = (
+            byProject: Record<string, CouncilRowVM[]> = {},
+            over: Partial<Parameters<typeof projectTree>[0]> = {}
+        ) => ({ roots, councils: new Map(Object.entries(byProject)), ...over });
+
+        it("lists Councils, New council and the councils newest first, after the agents and before the divider", () => {
+            const councils = {
+                waveterm: [cvm("old", 1), cvm("new", 3, { meta: "Round 2", tone: "working" }), cvm("mid", 2)],
+            };
+            expect(shape(build([agent("a")], [term("t1")], withCouncils(councils)))).toEqual([
+                "group:waveterm:1a:1t",
+                "a:a",
+                "ch:waveterm",
+                "cn:waveterm",
+                "c:new:Round 2",
+                "c:mid:Done",
+                "c:old:Done",
+                "divider:waveterm",
+                "t:t1",
+            ]);
+        });
+
+        it("carries what a row draws: the feature, the meta, its tone, and the root New council opens Setup in", () => {
+            const rows = build(
+                [agent("a")],
+                [],
+                withCouncils({ waveterm: [cvm("c1", 1, { meta: "Waiting on you", tone: "asking" })] })
+            );
+            expect(rows.find((r) => r.kind === "council")).toMatchObject({
+                kind: "council",
+                project: "waveterm",
+                id: "c1",
+                feature: "feature c1",
+                meta: "Waiting on you",
+                tone: "asking",
+            });
+            expect(rows.find((r) => r.kind === "councilnew")).toMatchObject({
+                project: "waveterm",
+                root: "D:\\code\\waveterm",
+                draft: false,
+            });
+        });
+
+        it("breaks a tie in created by id, so the order never depends on the input's", () => {
+            const rows = build([agent("a")], [], withCouncils({ waveterm: [cvm("b", 5), cvm("a", 5), cvm("c", 5)] }));
+            expect(shape(rows).filter((s) => s.startsWith("c:"))).toEqual(["c:a:Done", "c:b:Done", "c:c:Done"]);
+        });
+
+        it("marks New council as a draft for the projects whose Setup holds an unsent one", () => {
+            const rows = build([agent("a"), agent("b", undefined, "loom")], [], {
+                ...withCouncils(),
+                councilDrafts: new Set(["waveterm"]),
+            });
+            expect(shape(rows)).toEqual([
+                "group:waveterm:1a:0t",
+                "a:a",
+                "ch:waveterm",
+                "cn:waveterm:draft",
+                "group:loom:1a:0t",
+                "a:b",
+                "ch:loom",
+                "cn:loom",
+            ]);
+        });
+
+        it("gives a project with no council the head and New council only, with the divider above its terminals", () => {
+            const rows = build([agent("a")], [term("t2", "loom")], withCouncils({ waveterm: [cvm("c1", 1)] }));
+            expect(shape(rows)).toEqual([
+                "group:waveterm:1a:0t",
+                "a:a",
+                "ch:waveterm",
+                "cn:waveterm",
+                "c:c1:Done",
+                "group:loom:0a:1t",
+                "ch:loom",
+                "cn:loom",
+                "divider:loom",
+                "t:t2",
+            ]);
+        });
+
+        it("gives a project whose only content is a council a folder, after the agents' projects", () => {
+            const rows = build([agent("a")], [term("h", null)], withCouncils({ ops: [cvm("c1", 1)] }));
+            expect(shape(rows)).toEqual([
+                "group:waveterm:1a:0t",
+                "a:a",
+                "ch:waveterm",
+                "cn:waveterm",
+                "group:ops:0a:0t",
+                "ch:ops",
+                "cn:ops",
+                "c:c1:Done",
+                `group:${HOME_PROJECT}:0a:1t`,
+                "t:h",
+            ]);
+            // a project with no council and nothing else has no folder
+            expect(shape(build([agent("a")], [], withCouncils())).some((s) => s.includes("ops"))).toBe(false);
+        });
+
+        it("draws nothing for a project with no root to start a council in, and nothing without the input", () => {
+            // scratch is no registered project; Home has no root either
+            const rows = build([agent("a", undefined, "scratch")], [term("h", null)], withCouncils());
+            expect(shape(rows)).toEqual(["group:scratch:1a:0t", "a:a", `group:${HOME_PROJECT}:0a:1t`, "t:h"]);
+            expect(shape(build([agent("a")], [term("t1")], { roots }))).toEqual([
+                "group:waveterm:1a:1t",
+                "a:a",
+                "divider:waveterm",
+                "t:t1",
+            ]);
+        });
+
+        it("folds the council rows with the rest of the folder", () => {
+            const rows = build(
+                [agent("a")],
+                [],
+                withCouncils({ waveterm: [cvm("c1", 1)] }, { collapsed: ["waveterm"] })
+            );
+            expect(shape(rows)).toEqual(["group:waveterm:1a:0t:closed"]);
+        });
+
+        it("narrows to one project's councils, after its agents and before the divider and terminals", () => {
+            const councils = { waveterm: [cvm("c1", 1)], loom: [cvm("c2", 2)] };
+            const rows = build([agent("a"), agent("b", undefined, "loom")], [term("t1"), term("t2", "loom")], {
+                ...withCouncils(councils),
+                filter: "waveterm",
+                collapsed: ["waveterm"],
+            });
+            expect(shape(rows)).toEqual(["a:a", "ch:waveterm", "cn:waveterm", "c:c1:Done", "divider:waveterm", "t:t1"]);
+        });
+
+        it("shows a quiet project its head and New council when the filter narrows to it", () => {
+            expect(shape(build([agent("a")], [], { ...withCouncils(), filter: "ops" }))).toEqual(["ch:ops", "cn:ops"]);
+            // and nothing for a project with no root
+            expect(shape(build([agent("a")], [], { ...withCouncils(), filter: "scratch" }))).toEqual([]);
         });
     });
 
@@ -1141,6 +1304,92 @@ describe("projectTree", () => {
     });
 });
 
+describe("councilRowsByProject", () => {
+    const roots = new Map([
+        ["waveterm", "D:\\code\\waveterm\\"],
+        ["loom", "/home/u/loom"],
+    ]);
+    const council = (id: string, project: string, over: Partial<Council> = {}): Council => ({
+        id,
+        project,
+        feature: `feature ${id}`,
+        experts: [],
+        state: "running",
+        round: 2,
+        tokens: 0,
+        calls: 0,
+        created: 1000,
+        updated: 2000,
+        ...over,
+    });
+
+    it("files each council under the registered project whose root it ran in, however the path is spelled", () => {
+        const rows = councilRowsByProject(
+            [
+                council("a", "d:/code/waveterm"),
+                council("b", "D:\\code\\waveterm\\"),
+                council("c", "/home/u/loom/"),
+                council("d", "/home/u/Loom"),
+            ],
+            roots
+        );
+        expect([...rows.keys()]).toEqual(["waveterm", "loom"]);
+        expect(rows.get("waveterm")?.map((r) => r.id)).toEqual(["a", "b"]);
+        // a POSIX path is case-sensitive; only a drive path is compared without case
+        expect(rows.get("loom")?.map((r) => r.id)).toEqual(["c"]);
+    });
+
+    it("words each row's meta and tone as treeMeta does, and keeps created for the tree's order", () => {
+        const rows = councilRowsByProject(
+            [
+                council("run", "/home/u/loom", { state: "running", round: 2, created: 7 }),
+                council("ask", "/home/u/loom", { state: "awaiting-you", round: 1 }),
+                council("done", "/home/u/loom", { state: "done", round: 3 }),
+                council("nr", "/home/u/loom", { state: "not-run", round: 0 }),
+                council("bad", "/home/u/loom", { state: "failed", round: 3 }),
+            ],
+            roots
+        );
+        expect(rows.get("loom")).toEqual([
+            { id: "run", feature: "feature run", created: 7, meta: "Round 2", tone: "working" },
+            { id: "ask", feature: "feature ask", created: 1000, meta: "Waiting on you", tone: "asking" },
+            { id: "done", feature: "feature done", created: 1000, meta: "Done", tone: "muted" },
+            { id: "nr", feature: "feature nr", created: 1000, meta: "Not run", tone: "muted" },
+            { id: "bad", feature: "feature bad", created: 1000, meta: "Failed", tone: "error" },
+        ]);
+    });
+
+    it("leaves out a council of a project that is not registered, and has nothing before the list loads", () => {
+        expect(councilRowsByProject([council("x", "/elsewhere")], roots).size).toBe(0);
+        expect(councilRowsByProject(null, roots).size).toBe(0);
+        expect(councilRowsByProject(undefined, roots).size).toBe(0);
+    });
+
+    it("names a council whose feature is blank", () => {
+        const rows = councilRowsByProject([council("x", "/home/u/loom", { feature: "  " })], roots);
+        expect(rows.get("loom")?.[0].feature).toBe(UNTITLED_COUNCIL);
+    });
+});
+
+describe("newCouncilRoot", () => {
+    const projects = { waveterm: { path: "D:\\code\\waveterm" }, loom: { path: "D:\\code\\loom" }, bare: {} };
+
+    it("is the root of the project of the agent or terminal in focus", () => {
+        expect(newCouncilRoot(agent("a", undefined, "loom"), projects)).toBe("D:\\code\\loom");
+    });
+    it("falls back to the first registered project with a path when nothing is in focus or its project is not registered", () => {
+        expect(newCouncilRoot(undefined, projects)).toBe("D:\\code\\waveterm");
+        expect(newCouncilRoot(agent("a", undefined, "scratch"), projects)).toBe("D:\\code\\waveterm");
+        // a registered project with no path is no root
+        expect(newCouncilRoot(agent("a", undefined, "bare"), projects)).toBe("D:\\code\\waveterm");
+        expect(newCouncilRoot(undefined, { bare: {}, loom: { path: "/loom" } })).toBe("/loom");
+    });
+    it("is empty when no project is registered", () => {
+        expect(newCouncilRoot(undefined, {})).toBe("");
+        expect(newCouncilRoot(agent("a"), { bare: {} })).toBe("");
+    });
+});
+
 describe("projectLabel", () => {
     it("calls the terminals with no project Home, and names every other folder as it is", () => {
         expect(projectLabel(HOME_PROJECT)).toBe("Home");
@@ -1286,6 +1535,26 @@ describe("treeNavIds", () => {
             queue,
         });
         expect(rows.some((r) => r.kind === "queuedentry")).toBe(true);
+        expect(treeNavIds(rows)).toEqual(["a", "b", "t1", "c", "t2"]);
+    });
+    it("skips the council rows: they are no focus target, so j/k and Alt+digit never land on them", () => {
+        const rows = projectTree({
+            tree: treeOf(agents),
+            terminals,
+            filter: ALL_PROJECTS,
+            collapsed: [],
+            roots: new Map([
+                ["waveterm", "/code/waveterm"],
+                ["loom", "/code/loom"],
+            ]),
+            councils: new Map([
+                ["waveterm", [{ id: "c1", feature: "f", created: 1, meta: "Done", tone: "muted" as const }]],
+            ]),
+            councilDrafts: new Set(["loom"]),
+        });
+        expect(
+            rows.filter((r) => r.kind === "council" || r.kind === "councilhead" || r.kind === "councilnew")
+        ).toHaveLength(5);
         expect(treeNavIds(rows)).toEqual(["a", "b", "t1", "c", "t2"]);
     });
     it("walks a split row's cells in reading order where the row sits", () => {

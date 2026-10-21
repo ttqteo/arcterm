@@ -38,6 +38,14 @@ describe("matchBinding", () => {
         expect(r).toEqual({ kind: "run", binding: b });
     });
 
+    it("never matches a binding with no keys, a chordless action that is reached by name", () => {
+        const b = bind({ id: "by-name", keys: "" });
+        expect(matchBinding(ev(""), navCtx, [b])).toEqual({ kind: "none" });
+        expect(matchBinding(ev("j"), navCtx, [b])).toEqual({ kind: "none" });
+        // nor as the continuation of a leader
+        expect(matchBinding(ev(""), { ...navCtx, leader: "g" }, [b])).toEqual({ kind: "reset" });
+    });
+
     it("does not match a navigate single-key when editable", () => {
         const b = bind({ id: "nav", keys: "j", when: (c) => !c.editable });
         expect(matchBinding(ev("j"), editCtx, [b])).toEqual({ kind: "none" });

@@ -3,7 +3,8 @@
 //
 // Pure model for the Agent surface's sidebar once it carries conversations as well as live agents. Two parts, each
 // collapsible. The project tree (projectTree) is one collapsible folder per project: the live agents as the tree builds
-// them (agenttreemodel.ts), a divider, then the project's held services, then its plain terminals and tools. Terminals with no project sit in a
+// them (agenttreemodel.ts), the project's councils (a Councils label, New council and a row per council), a divider, then
+// the project's held services, then its plain terminals and tools. Terminals with no project sit in a
 // Home folder at the end; a project's split is one row in its folder, in place of its cells' rows. Conversations holds every ended session, in a collapsible folder per
 // project (the folder with the newest conversation first, newest first inside it, each row reading its own age), and
 // "Show more" pages a folder (CONVERSATION_PAGE per press). The app bar's project switcher narrows both to one
@@ -17,6 +18,7 @@
 import { placesOf, splitGrids, type CellPlacement, type GridState, type ProjectGrids } from "./agentgrid";
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
 import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
+import { councilProjectKey, treeMeta, type CouncilTone } from "./councilmodel";
 import type { RunInfo } from "./runlineage";
 import type { QueuedRow } from "./runqueuemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
@@ -26,6 +28,7 @@ export const CONVERSATION_PAGE = 10;
 // the project filter's value for no filter (the model's projectFilterAtom)
 export const ALL_PROJECTS = "all";
 export const UNTITLED_SESSION = "(untitled session)";
+export const UNTITLED_COUNCIL = "(untitled council)";
 
 // an ended session, with the project it is filed under
 export interface EndedSessionRow {
@@ -302,6 +305,55 @@ export const HOME_PROJECT = "~home";
 // the agent body rows buildAgentTree emits under a project's group row (parent, lead, run, worker, ...)
 type AgentBodyRow = Exclude<AgentTreeRow, { kind: "group" }>;
 
+// A council as the tree draws its row: its feature, its state in a word (`meta`) and the tone that word is drawn in.
+// `created` (epoch ms) is the order: a running council saves constantly, so its `updated` would reshuffle the rows.
+export interface CouncilRowVM {
+    id: string;
+    feature: string;
+    created: number;
+    meta: string;
+    tone: CouncilTone;
+}
+
+/** Pure: the councils (councilListAtom("")) as tree rows, by the registered project each one ran in. The folders of
+ *  projectTree are keyed by project name and a council holds the project's path, so each is filed under the name whose
+ *  root is the same path (councilProjectKey: separators, trailing slash and a drive path's case aside). A council of a
+ *  folder that is no registered project has no folder to sit in and is left out. `null` is a list not loaded yet. */
+export function councilRowsByProject(
+    councils: readonly Council[] | null | undefined,
+    roots: ReadonlyMap<string, string>
+): Map<string, CouncilRowVM[]> {
+    const out = new Map<string, CouncilRowVM[]>();
+    const nameOf = new Map<string, string>();
+    for (const [name, root] of roots) {
+        const key = councilProjectKey(root);
+        if (!nameOf.has(key)) {
+            nameOf.set(key, name);
+        }
+    }
+    for (const c of councils ?? []) {
+        const name = nameOf.get(councilProjectKey(c.project));
+        if (name == null) {
+            continue;
+        }
+        const { text, tone } = treeMeta(c);
+        const row: CouncilRowVM = {
+            id: c.id,
+            feature: c.feature.trim() || UNTITLED_COUNCIL,
+            created: c.created,
+            meta: text,
+            tone,
+        };
+        const list = out.get(name);
+        if (list == null) {
+            out.set(name, [row]);
+        } else {
+            list.push(row);
+        }
+    }
+    return out;
+}
+
 export type ProjectTreeRow =
     // a project's folder: the agents it holds (done workers aside) and the terminals, the agents among them waiting on
     // you, and those working now
@@ -320,6 +372,12 @@ export type ProjectTreeRow =
     | { kind: "terminal"; project: string; terminal: AgentVM; place?: string }
     // a held service (servicesstore.ts), after the divider and ahead of the terminals; `tabId` is its tab once it has one
     | { kind: "service"; project: string; serviceId: string; tabId?: string }
+    // the councils block of a project's folder, after its agents: the Councils label, its New council row (`root` is where
+    // Setup opens, `draft` that Setup holds an unsent form for the project) and a row per council, newest first. None of
+    // the three is a focus target.
+    | { kind: "councilhead"; project: string }
+    | { kind: "councilnew"; project: string; root: string; draft: boolean }
+    | ({ kind: "council"; project: string } & CouncilRowVM)
     // a plan queued to start, in its project's folder right under the project's agents. Named apart from the tree's
     // "queued" row, which folds a run's queued tasks.
     | ({ kind: "queuedentry" } & QueuedRow)
@@ -406,6 +464,17 @@ function foldSplit(
     return kept.filter((r, i) => r.kind !== "divider" || (i > 0 && i < kept.length - 1));
 }
 
+/** Pure: the root a council opened with no project named (the palette's New council…, `wsh ui do new-council`) starts
+ *  in: the root of the project of the agent or terminal in focus, else the first registered project that has a path.
+ *  "" when none is registered, so there is nowhere to start one. */
+export function newCouncilRoot(focus: AgentVM | undefined, projects: ProjectRegistry): string {
+    const own = focus != null ? projects[projectOf(focus)]?.path : undefined;
+    if (own) {
+        return own;
+    }
+    return Object.values(projects).find((p) => p?.path)?.path ?? "";
+}
+
 /** Pure: the sidebar's one tree per project. `tree` is buildAgentTree's output; `terminals` are the plain shells and
  *  tools (liveTerminalsAtom). Each project's folder lists its agent rows, a divider when terminals follow, then its
  *  terminals in the order given. The folders are the agents' projects in the tree's order, then the projects only
@@ -415,6 +484,13 @@ function foldSplit(
  *  `queue` (queuedRows) is the plans waiting to start: each goes in its project's folder right after the project's
  *  agent rows, in queue order, ahead of the divider and the terminals. They are not agents, so the group row does not
  *  count them, and treeNavIds skips them (they select nothing).
+ *
+ *  `councils` (councilRowsByProject, by project name) turns the councils block on: each registered project's folder then
+ *  holds, right after its queued plans and ahead of the divider, a Councils label, a New council row and one row per
+ *  council (`created`, newest first; `councilDrafts` is the project names whose Setup holds an unsent draft). A project
+ *  with no council gets the label and New council only; one whose only content is a council still gets a folder. A
+ *  project with no root (Home, the agents with no registered project) has no block: there is nowhere to start a council.
+ *  The rows are no focus target, so treeNavIds skips them and j/k need no councils input.
  *
  *  Each project's split (`splits`, its grids of 2+ cells) is one row in its folder, where the topmost of its cells'
  *  rows was; the cells' own rows go. `roster` is every live agent and terminal, read for a cell the tree draws no row
@@ -437,6 +513,8 @@ export function projectTree(input: {
     serviceTabs?: ReadonlySet<string>;
     splits?: ProjectGrids; // the grids as the surface reconciles them (gridstore treeSplits)
     roster?: readonly AgentVM[];
+    councils?: ReadonlyMap<string, CouncilRowVM[]>; // by project name
+    councilDrafts?: ReadonlySet<string>; // project names with an unsent Setup draft
 }): ProjectTreeRow[] {
     const { tree, filter, roots } = input;
     const services = input.services ?? [];
@@ -461,6 +539,21 @@ export function projectTree(input: {
             terminal,
             place: terminalPlace(terminal.cwd, roots.get(project)),
         }));
+    // a project's councils block: nothing without the input, or for a project with no root to start a council in
+    const councilRowsOf = (project: string): ProjectTreeRow[] => {
+        const root = roots.get(project);
+        if (input.councils == null || root == null) {
+            return [];
+        }
+        const list = [...(input.councils.get(project) ?? [])].sort(
+            (a, b) => b.created - a.created || byText(a.id, b.id)
+        );
+        return [
+            { kind: "councilhead", project },
+            { kind: "councilnew", project, root, draft: input.councilDrafts?.has(project) ?? false },
+            ...list.map((c): ProjectTreeRow => ({ kind: "council", project, ...c })),
+        ];
+    };
     const splits = input.splits != null ? splitGrids(input.splits) : new Map<string, GridState>();
     const byId = new Map((input.roster ?? []).map((a) => [a.id, a]));
     const fold = (project: string, body: ProjectTreeRow[]) => {
@@ -478,7 +571,7 @@ export function projectTree(input: {
                 out.push(r);
             }
         }
-        out.push(...queuedRowsOf(filter));
+        out.push(...queuedRowsOf(filter), ...councilRowsOf(filter));
         // a shell attributed to no project shows under every one
         const mine = terminals.filter((t) => projectOf(t) === "" || projectOf(t) === filter);
         const held = serviceRowsOf(filter);
@@ -502,11 +595,20 @@ export function projectTree(input: {
             bodies.get(r.project)?.body.push(r);
         }
     }
-    // the agents' projects in the tree's order, then the others in the order terminals and queued plans came, Home last
+    // the agents' projects in the tree's order, then the others in the order terminals, queued plans, services and
+    // councils came, Home last
+    const councilFolders = [...(input.councils ?? [])].flatMap(([p, list]) =>
+        list.length > 0 && roots.has(p) ? [p] : []
+    );
     const order = [...bodies.keys()];
     const seen = new Set(order);
     const others = [
-        ...new Set([...terminals.map(termProject), ...queue.map(queueFolder), ...services.map(serviceFolder)]),
+        ...new Set([
+            ...terminals.map(termProject),
+            ...queue.map(queueFolder),
+            ...services.map(serviceFolder),
+            ...councilFolders,
+        ]),
     ]
         .filter((p) => !seen.has(p))
         .sort((a, b) => Number(a === HOME_PROJECT) - Number(b === HOME_PROJECT));
@@ -530,8 +632,8 @@ export function projectTree(input: {
         const agentRows = folder?.body ?? [];
         const waiting = queuedRowsOf(project);
         const held = serviceRowsOf(project);
-        const body: ProjectTreeRow[] = [...agentRows, ...waiting];
-        if (list.length + held.length > 0 && agentRows.length + waiting.length > 0) {
+        const body: ProjectTreeRow[] = [...agentRows, ...waiting, ...councilRowsOf(project)];
+        if (list.length + held.length > 0 && body.length > 0) {
             body.push({ kind: "divider", project });
         }
         body.push(...held, ...termRows(project, list));

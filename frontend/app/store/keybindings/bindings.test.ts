@@ -34,6 +34,8 @@ import { NO_LINEAGE } from "@/app/view/agents/runlineage";
 import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { activeReviewAtom } from "@/app/view/agents/reviewmarks";
 import { reopenClosedAgent } from "@/app/cockpit/cockpit-actions";
+import { START_DEFS } from "@/app/cockpit/palette-commands";
+import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { runIdeaCapture } from "@/app/view/agents/ideasstore";
 import { renamingRowAtom } from "@/app/view/agents/rowrenameatom";
@@ -99,6 +101,9 @@ vi.mock("@/app/cockpit/cockpit-actions", async (orig) => ({
     ...(await orig<typeof import("@/app/cockpit/cockpit-actions")>()),
     reopenClosedAgent: vi.fn(async () => {}),
 }));
+
+// Setup reads the registered projects and the focused agent; the binding is only asked to open it
+vi.mock("@/app/view/agents/newcouncil", () => ({ openNewCouncil: vi.fn() }));
 
 vi.mock("@/app/view/agents/agentactions", async (orig) => ({
     ...(await orig<typeof import("@/app/view/agents/agentactions")>()),
@@ -872,6 +877,27 @@ describe("open a tool chord", () => {
 
     it("leaves the palette its own Open a tool row, so the action is not listed twice", () => {
         expect(find({ surfaceAtom: atom<SurfaceKey>("agent") } as any).paletteHidden).toBe(true);
+    });
+});
+
+describe("new council", () => {
+    const find = (model: any) => buildGlobalBindings(model).find((x) => x.id === "new-council")!;
+
+    // a council costs 0.5-1.5M tokens: opened by name (the palette row, `wsh ui do new-council`), never by a keystroke
+    it("has no chord, so no keypress runs it, and opens the council Setup from anywhere but a modal", () => {
+        const model = { surfaceAtom: atom<SurfaceKey>("agent") } as any;
+        const b = find(model);
+        expect(b.keys).toBe("");
+        expect(b.group).toBe("Global");
+        expect(b.when?.({ ...ctx("agent"), editable: true })).toBe(true);
+        expect(b.when?.({ ...ctx(), modalOpen: true })).toBe(false);
+        vi.mocked(openNewCouncil).mockClear();
+        b.run(ctx("agent"));
+        expect(openNewCouncil).toHaveBeenCalledWith(model);
+    });
+
+    it("is the one binding the palette's Start row stands in for", () => {
+        expect(START_DEFS.find((d) => d.id === "council")?.binding).toBe("new-council");
     });
 });
 

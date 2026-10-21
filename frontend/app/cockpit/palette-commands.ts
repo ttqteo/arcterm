@@ -86,7 +86,7 @@ export function buildExtraItems(deps: ExtraDeps): CommandItem[] {
     ];
 }
 
-export type StartId = "run" | "agent" | "initiative";
+export type StartId = "run" | "agent" | "initiative" | "council";
 
 export interface StartDef {
     id: StartId;
@@ -114,6 +114,7 @@ export const START_DEFS: StartDef[] = [
         echo: "Opens the new initiative form",
         binding: "jarvis:new-initiative",
     },
+    { id: "council", title: "New council…", echo: "Opens a new council", binding: "new-council" },
 ];
 
 export const START_BINDINGS = new Set(START_DEFS.map((d) => d.binding));
