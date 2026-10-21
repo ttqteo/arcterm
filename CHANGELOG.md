@@ -35,6 +35,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A split shows in the Agent sidebar as one row: its agents and terminals leave their places in the folder and sit
+  together, laid out as on screen, with the split on screen framed. Every project's saved split keeps its row, so a
+  click on one of its cells brings that split back; the × on a cell takes it out of the split.
 - The Servers popover shows each server's Log button all the time, not only on hover; a server started outside
   arcterm shows it faded, and its tooltip says why there is no log to open.
 - Each project keeps its own split in Agent: choosing an agent or terminal of another project shows that project's

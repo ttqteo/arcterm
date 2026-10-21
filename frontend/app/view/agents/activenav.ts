@@ -10,8 +10,11 @@ import type { AgentsViewModel } from "./agents";
 import { projectTree, treeNavIds } from "./agentsidebarmodel";
 import { buildAgentTree } from "./agenttreemodel";
 import { waitMap } from "./agentwaits";
+import { projectGridsAtom, treeSplits } from "./gridstore";
+import { rosterSeededAtom } from "./liveagents";
 import { collapsedProjectsAtom } from "./projectfoldstore";
 import { projectsAtom } from "./projectsstore";
+import { dockedTerminalAtom } from "./railstore";
 import { treeFoldsAtom } from "./runlineagestore";
 import { treeServiceInput } from "./servicesmodel";
 import { servicesAtom } from "./servicesstore";
@@ -42,6 +45,14 @@ export function activeNavOrder(model: AgentsViewModel): string[] {
             filter: globalStore.get(model.projectFilterAtom),
             collapsed: globalStore.get(collapsedProjectsAtom),
             roots,
+            splits: treeSplits(globalStore.get(projectGridsAtom), {
+                focusId,
+                agents,
+                terminals,
+                dockedId: globalStore.get(dockedTerminalAtom),
+                seeded: globalStore.get(rosterSeededAtom),
+            }),
+            roster: [...agents, ...terminals],
             ...treeServiceInput(globalStore.get(servicesAtom) ?? [], focusId),
         })
     );

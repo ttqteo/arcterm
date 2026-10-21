@@ -19,6 +19,7 @@ import {
     reconcileGrid,
     removeCell,
     replaceFocused,
+    splitGrids,
     splitZones,
     swapCells,
     visibleCells,
@@ -572,5 +573,15 @@ describe("gridHold", () => {
     });
     it("never holds an empty grid", () => {
         expect(gridHold(EMPTY_GRID, new Set(), false)).toBe(false);
+    });
+});
+
+describe("splitGrids", () => {
+    it("keeps the grids of two cells or more, by project", () => {
+        const state = {
+            project: "a",
+            grids: { a: { ids: ["x", "y"], focused: "x" }, b: { ids: ["z"], focused: "z" } },
+        };
+        expect([...splitGrids(state).keys()]).toEqual(["a"]);
     });
 });

@@ -30683,8 +30683,10 @@ const GRID_SETTLE_MS = 800;
 const GRID_FIT_SLACK_PX = 40;
 // where in the overlay each zone's point sits (an edge is the outer quarter)
 const GRID_ZONE_AT = { center: [0.5, 0.5], left: [0.1, 0.5], right: [0.9, 0.5], top: [0.5, 0.1], bottom: [0.5, 0.9] };
-// an agent the grid shows keeps its row in its folder, marked as in the split
+// an agent is a row in its folder while it has no cell in a split of 2+ cells (a one-cell grid is no split), and its
+// cell in the project's split row while it has one: the tree folds that row into the split row
 const gridRow = (id) => `[data-agent-row="${id}"]`;
+const gridCell = (id) => `[data-split-cell="${id}"]`;
 const gridBar = (id) => `[data-agent-cell-bar="${id}"]`;
 const gridNear = (a, b, tol = 4) => Math.abs(a - b) <= tol;
 const gridSameSize = (a, b) => gridNear(a.w, b.w) && gridNear(a.h, b.h);
@@ -31108,13 +31110,13 @@ const agentGrid = {
                 order(lay) === want(D, B, A) && cellAt(lay, B).focused === true,
                 lay
             );
-            await click(gridRow(D));
+            const clickedD = await click(gridCell(D));
             await settle();
             lay = await gridLayout(h);
             rec(
-                "8b. the row of an agent that has a cell focuses that cell and leaves the list alone",
-                order(lay) === want(D, B, A) && cellAt(lay, D).focused === true,
-                lay
+                "8b. D's cell in the split row focuses that cell and leaves the list alone",
+                clickedD === true && order(lay) === want(D, B, A) && cellAt(lay, D).focused === true,
+                { clickedD, lay }
             );
 
             // 9. fullscreen shows the focused cell alone and brings the grid back
@@ -40869,15 +40871,17 @@ const TT_TERM_ROW = (id) => `document.querySelector('[data-tree-terminal-row="${
 const TT_PICKER = `document.querySelector("[data-tool-picker]")`;
 const TT_FLAT = `((el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim())`;
 
-// the tree's rows in order, each as folder:<project>, agent:<id>, divider:<project> or terminal:<tab id>
+// the tree's rows in order, each as folder:<project>, agent:<id>, divider:<project>, terminal:<tab id> or
+// split:<project> (a split's cells are inside its one row, not rows of their own)
 const TT_TREE_SHAPE = `(() => {
     const root = ${TT_ROWS};
     if (!root) return null;
-    const sel = "[data-project-folder], [data-agent-row], [data-project-divider], [data-tree-terminal-row]";
+    const sel = "[data-project-folder], [data-agent-row], [data-project-divider], [data-tree-terminal-row], [data-split-row]";
     return [...root.querySelectorAll(sel)].map((el) => {
         if (el.hasAttribute("data-project-folder")) return "folder:" + el.getAttribute("data-project-folder");
         if (el.hasAttribute("data-agent-row")) return "agent:" + el.getAttribute("data-agent-row");
         if (el.hasAttribute("data-project-divider")) return "divider:" + el.getAttribute("data-project-divider");
+        if (el.hasAttribute("data-split-row")) return "split:" + el.getAttribute("data-split-row");
         return "terminal:" + el.getAttribute("data-tree-terminal-row");
     });
 })()`;
@@ -40951,9 +40955,10 @@ async function ttStartInstall(h, toolId) {
 // What every tools scenario starts from: a registered project with a temp folder, the four user tools, the fixture
 // agent in that project, and the terminals asked for. `terminals` is a list of { key, project, cwd, label } where cwd is
 // "~", "root" or "root/<sub>" (made on disk). It reloads, so the roster and the tool list are read fresh, and lands on
-// the Agent surface with the fixture agent in focus. A throw still returns ctx (the caller catches), so teardown closes
-// what was already made.
-async function ttArrange(h, ctx, { terminals = [], agent = true, overrides = {} } = {}) {
+// the Agent surface with the fixture agent in focus. `agentState` is that agent's state: "asking" gives it `blockedMs`,
+// as the tree fixtures elsewhere do. A throw still returns ctx (the caller catches), so teardown closes what was already
+// made.
+async function ttArrange(h, ctx, { terminals = [], agent = true, agentState = "idle", overrides = {} } = {}) {
     ctx.terminals = [];
     ctx.dirs = [];
     ctx.userTools = [];
@@ -41013,10 +41018,10 @@ async function ttArrange(h, ctx, { terminals = [], agent = true, overrides = {} 
                         name: TT_AGENT_NAME,
                         project: TT_PROJECT,
                         task: "verify terminals and tools",
-                        state: "idle",
+                        state: agentState,
                         agent: "claude",
                         model: "opus",
-                        idleSince: Date.now() - 60_000,
+                        ...(agentState === "asking" ? { blockedMs: 60_000 } : { idleSince: Date.now() - 60_000 }),
                         blockId: TT_AGENT_BLOCK,
                     },
                 ],
@@ -41358,16 +41363,47 @@ const TT_GRID = `(() => {
 })()`;
 const TT_PLACE = (id) => `(${TT_FLAT})(${TT_TERM_ROW(id)}?.querySelector("[data-terminal-place]")) || null`;
 
-// --- tools-split: a terminal opened beside the agent (board Main). Two cells, one a terminal. Nothing in the tree moves:
-// each cell keeps its row in its folder, marked as in the split, and the focused terminal keeps the agent's header and
-// rail, so the cells keep their size. A Home terminal taking the focused cell leaves the tree's order as it was.
+// each tab's place in a 2x2 as the sidebar's split row and the grid on screen draw it, read from their rects: a cell
+// that is over 60% of its container's width (height) spans both columns (rows), and one that does not sits in the column
+// (row) its centre is in. { split: { <tab id>: place }, grid: { <tab id>: place } }, the grid's shown cells only.
+const TT_SPLIT_LAYOUT = `(() => {
+    const placeOf = (el, box) => {
+        const r = el.getBoundingClientRect();
+        const b = box.getBoundingClientRect();
+        const colSpan = r.width > b.width * 0.6 ? 2 : 1;
+        const rowSpan = r.height > b.height * 0.6 ? 2 : 1;
+        return {
+            col: colSpan === 2 || r.x + r.width / 2 < b.x + b.width / 2 ? 1 : 2,
+            row: rowSpan === 2 || r.y + r.height / 2 < b.y + b.height / 2 ? 1 : 2,
+            colSpan,
+            rowSpan,
+        };
+    };
+    const out = { split: {}, grid: {} };
+    const row = document.querySelector("[data-agent-tree] [data-split-row]");
+    for (const c of row?.querySelectorAll("[data-split-cell]") ?? []) out.split[c.getAttribute("data-split-cell")] = placeOf(c, row);
+    const grid = document.querySelector("[data-agent-grid]");
+    for (const c of grid?.querySelectorAll("[data-agent-cell]") ?? []) {
+        if (!c.classList.contains("hidden")) out.grid[c.getAttribute("data-agent-terminal")] = placeOf(c, grid);
+    }
+    return out;
+})()`;
+
+// --- tools-split: a terminal opened beside the agent (board Main). Two cells, one a terminal. The cells leave their rows
+// and show as one [data-split-row] in the project's folder, right after the folder row, the split on screen framed; the
+// focused terminal keeps the agent's header and rail, so the cells keep their size. A third cell is laid out in the row
+// as on screen, and a click on another project's terminal leaves the split saved, its row still drawn, with a click on
+// a cell bringing it back. The × on a cell, and End split in its menu, take the cell out and end the split.
 const toolsSplit = {
     name: "tools-split",
     surface: "agent",
     async arrange(h) {
         const ctx = {};
         try {
-            await ttArrange(h, ctx, { terminals: [{ key: "a", cwd: "root" }, { key: "home", project: null }] });
+            await ttArrange(h, ctx, {
+                terminals: [{ key: "a", cwd: "root" }, { key: "b", cwd: "root" }, { key: "home", project: null }],
+                agentState: "asking",
+            });
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -41377,18 +41413,31 @@ const toolsSplit = {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const arranged = ctx.arrangeError == null && ctx.inRoster === true;
-        rec("0. the fixture agent and two terminals are in the tree", arranged, ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster }));
+        rec(
+            "0. the asking fixture agent and three terminals are in the tree",
+            arranged,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster })
+        );
         if (!arranged) return steps;
-        const [a, home] = ctx.terminals;
-        const before = await h.ev(TT_TREE_SHAPE);
-        // the split marks, the header and the rail as the surface draws them now
+        const [a, b, home] = ctx.terminals;
+        const sameIds = (x, y) => JSON.stringify([...x].sort()) === JSON.stringify([...y].sort());
+        // the project's split row sits right after its folder row, where the first of its cells' rows was
+        const splitAfterFolder = (shape) => {
+            const f = shape?.indexOf(`folder:${TT_PROJECT}`) ?? -1;
+            return f >= 0 && shape[f + 1] === `split:${TT_PROJECT}`;
+        };
+        const splitRow = (l) => (l.splitRows.length === 1 ? l.splitRows[0] : null);
+        // svcContextMenu throws on a target that is not there: that is a failed step, not a lost scenario
+        const rightClick = (sel) => svcContextMenu(h, sel).catch(() => false);
+        // the split rows, the header and the rail as the surface draws them now
         const look = `(() => {
-            const marked = [...document.querySelectorAll("[data-agent-tree] [data-row-in-split]")].map(
-                (m) => m.closest("[data-agent-row], [data-tree-terminal-row]")?.getAttribute(m.closest("[data-agent-row]") ? "data-agent-row" : "data-tree-terminal-row")
-            );
             const cell = document.querySelector('[data-agent-terminal="${TT_AGENT_ID}"]')?.getBoundingClientRect();
             return {
-                marked,
+                splitRows: [...document.querySelectorAll("[data-agent-tree] [data-split-row]")].map((r) => ({
+                    project: r.getAttribute("data-split-row"),
+                    shown: r.getAttribute("data-split-shown") === "true",
+                    cells: [...r.querySelectorAll("[data-split-cell]")].map((c) => c.getAttribute("data-split-cell")),
+                })),
                 agentHeader: !!document.querySelector("[data-agent-header]"),
                 termHeader: !!document.querySelector("[data-terminal-pane-head]"),
                 rail: !!document.querySelector('aside[aria-label="Agent details"]'),
@@ -41396,6 +41445,9 @@ const toolsSplit = {
             };
         })()`;
 
+        // the agent in view first, so it is the tab before the terminal that Open beside offers
+        await ttClick(h, `[data-agent-row="${TT_AGENT_ID}"]`);
+        await polishNap(400);
         await ttClick(h, `[data-tree-terminal-row="${a.tabId}"]`);
         await polishWaitFor(h, `!!document.querySelector('[data-terminal-pane-head="${a.tabId}"] [data-terminal-open-split]')`, 5000);
         const beside = await h.ev(
@@ -41404,28 +41456,34 @@ const toolsSplit = {
         await ttClick(h, `[data-terminal-pane-head="${a.tabId}"] [data-terminal-open-split]`);
         const two = await polishWaitFor(h, `(${TT_GRID}).cells.length === 2`, 5000);
         await polishNap(400);
+        const rowUp = await polishWaitFor(h, `document.querySelectorAll("[data-agent-tree] [data-split-row]").length === 1`, 5000);
         const grid = await h.ev(TT_GRID);
         const shape = await h.ev(TT_TREE_SHAPE);
         const onTerm = await h.ev(look);
+        const askingDot = await h.ev(`!!document.querySelector('[data-split-cell="${TT_AGENT_ID}"] [aria-label="asking"]')`);
         await h.shot("cdp-shots/tools-split-1-beside.png");
         rec(
-            "1. Open beside the agent: two cells, the tree's rows where they were, both marked, and the focused terminal under the agent's header and rail",
+            "1. Open beside the agent: two cells, the cells' rows gone for one framed split row right after the folder, the asking agent's cell asking, and the focused terminal under the agent's header and rail",
             beside === `Open beside ${TT_AGENT_NAME}` &&
                 two &&
+                rowUp &&
                 grid.cells.length === 2 &&
                 grid.cells.includes(a.tabId) &&
                 grid.cells.includes(TT_AGENT_ID) &&
-                JSON.stringify(shape) === JSON.stringify(before) &&
-                onTerm.marked.includes(a.tabId) &&
-                onTerm.marked.includes(TT_AGENT_ID) &&
+                splitAfterFolder(shape) &&
+                !shape.includes(`agent:${TT_AGENT_ID}`) &&
+                !shape.includes(`terminal:${a.tabId}`) &&
+                splitRow(onTerm)?.shown === true &&
+                sameIds(splitRow(onTerm)?.cells ?? [], [TT_AGENT_ID, a.tabId]) &&
+                askingDot &&
                 onTerm.agentHeader &&
                 onTerm.rail &&
                 !onTerm.termHeader,
-            JSON.stringify({ beside, grid, shape, before, onTerm })
+            JSON.stringify({ beside, grid, shape, askingDot, onTerm })
         );
 
         // the agent's cell takes the focus: same header, same rail, same cell width
-        await ttClick(h, `[data-agent-row="${TT_AGENT_ID}"]`);
+        await ttClick(h, `[data-split-cell="${TT_AGENT_ID}"]`);
         await polishNap(600);
         const onAgent = await h.ev(look);
         rec(
@@ -41438,23 +41496,155 @@ const toolsSplit = {
             JSON.stringify({ onTerm, onAgent })
         );
 
-        // a Home terminal takes the focused cell (a pick replaces it): every row stays where it was
-        await ttClick(h, `[data-tree-terminal-row="${a.tabId}"]`);
-        await polishNap(300);
-        await ttClick(h, `[data-tree-terminal-row="${home.tabId}"]`);
-        const homeIn = await polishWaitFor(h, `(${TT_GRID}).cells.includes("${home.tabId}")`, 5000);
+        // a third terminal joins from its own row's menu: the split row lays the three cells out as the grid does
+        const ids3 = [TT_AGENT_ID, a.tabId, b.tabId];
+        const menuB = await rightClick(`[data-tree-terminal-row="${b.tabId}"]`);
+        const itemB = menuB && (await ttClick(h, '[data-menu-item="Open in split"]'));
+        const threeUp = await polishWaitFor(h, `(${TT_GRID}).cells.length === 3`, 5000);
         await polishNap(400);
-        const crossShape = await h.ev(TT_TREE_SHAPE);
-        const cross = await h.ev(look);
-        await h.shot("cdp-shots/tools-split-2-cross-project.png");
+        const grid3 = await h.ev(TT_GRID);
+        const shape3 = await h.ev(TT_TREE_SHAPE);
+        const three = await h.ev(look);
+        const lay = await h.ev(TT_SPLIT_LAYOUT);
+        await h.shot("cdp-shots/tools-split-1c-three.png");
+        const sameAsGrid = ids3.every((id) => lay.split[id] != null && JSON.stringify(lay.split[id]) === JSON.stringify(lay.grid[id]));
+        const doubles = ids3.filter((id) => lay.grid[id] != null && lay.grid[id].colSpan * lay.grid[id].rowSpan === 2);
         rec(
-            "2. cross-project: a Home terminal in the split stays in Home, marked; no row moves",
-            homeIn &&
-                JSON.stringify(crossShape) === JSON.stringify(before) &&
-                cross.marked.includes(home.tabId) &&
-                cross.marked.includes(TT_AGENT_ID) &&
-                cross.agentHeader,
-            JSON.stringify({ cross, crossShape, before })
+            "1c. Open in split from a terminal's row menu: three cells, one split row holding all three laid out as on screen with one spanning two squares, and that terminal's row gone",
+            menuB &&
+                itemB &&
+                threeUp &&
+                sameIds(grid3.cells, ids3) &&
+                sameIds(splitRow(three)?.cells ?? [], ids3) &&
+                splitAfterFolder(shape3) &&
+                !shape3.includes(`terminal:${b.tabId}`) &&
+                sameAsGrid &&
+                doubles.length === 1,
+            JSON.stringify({ grid3, shape3, three, lay })
+        );
+
+        // Rename in a cell's menu: its name becomes a box and Escape puts the name back
+        const cellA = `[data-split-cell="${a.tabId}"]`;
+        const nameBefore = await h.ev(`(${TT_FLAT})(document.querySelector('${cellA}'))`);
+        const menuA = await rightClick(cellA);
+        const renameItem = menuA && (await ttClick(h, '[data-menu-item="Rename"]'));
+        const boxUp = await polishWaitFor(h, `!!document.querySelector('${cellA} input')`, 3000);
+        const boxFocused = await h.ev(`document.activeElement === document.querySelector('${cellA} input')`);
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+        }
+        const boxGone = await polishWaitFor(h, `!document.querySelector('${cellA} input')`, 3000);
+        const nameAfter = await h.ev(`(${TT_FLAT})(document.querySelector('${cellA}'))`);
+        rec(
+            "1d. Rename in a cell's menu: the cell's name becomes a box, and Escape closes it with the name unchanged",
+            menuA &&
+                renameItem &&
+                boxUp &&
+                boxGone &&
+                nameBefore !== "" &&
+                nameAfter === nameBefore,
+            JSON.stringify({ nameBefore, nameAfter, boxUp, boxFocused, boxGone })
+        );
+
+        // Alt held numbers the cells in reading order (digithints.ts shows the digits once it has been down a moment)
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Alt", code: "AltLeft", windowsVirtualKeyCode: 18, modifiers: 1 });
+        const hinted = await polishWaitFor(h, `document.querySelectorAll("[data-split-row] [data-digit-hint]").length === 3`, 3000);
+        const digits = await h.ev(`Object.fromEntries(
+            [...document.querySelectorAll("[data-split-row] [data-split-cell]")].map((c) => [
+                c.getAttribute("data-split-cell"),
+                Number(c.querySelector("[data-digit-hint]")?.getAttribute("data-digit-hint") ?? 0),
+            ])
+        )`);
+        await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Alt", code: "AltLeft", windowsVirtualKeyCode: 18 });
+        const hintsGone = await polishWaitFor(h, `!document.querySelector("[data-digit-hint]")`, 3000);
+        const at = (id) => lay.split[id] ?? { row: 9, col: 9 };
+        const reading = [...ids3].sort((x, y) => at(x).row - at(y).row || at(x).col - at(y).col);
+        const ascending = reading.every((id, i) => digits[id] > 0 && (i === 0 || digits[id] > digits[reading[i - 1]]));
+        rec(
+            "1e. Alt held shows each cell's digit, rising in reading order, and releasing it hides them",
+            hinted && ascending && hintsGone,
+            JSON.stringify({ digits, reading, hinted, hintsGone })
+        );
+
+        // another project's terminal takes the screen: the split is saved, its row stays where it was and loses its frame
+        await ttClick(h, `[data-tree-terminal-row="${home.tabId}"]`);
+        const homeAlone = await polishWaitFor(h, `(${TT_GRID}).cells.length === 1 && (${TT_GRID}).cells[0] === "${home.tabId}"`, 5000);
+        await polishNap(400);
+        const gridHome = await h.ev(TT_GRID);
+        const shapeSaved = await h.ev(TT_TREE_SHAPE);
+        const saved = await h.ev(look);
+        await h.shot("cdp-shots/tools-split-2-saved.png");
+        rec(
+            "2. a Home terminal takes the screen: the saved split keeps its row right after the folder, three cells, no longer framed",
+            homeAlone &&
+                gridHome.cells.length === 1 &&
+                gridHome.cells[0] === home.tabId &&
+                splitAfterFolder(shapeSaved) &&
+                splitRow(saved)?.shown === false &&
+                sameIds(splitRow(saved)?.cells ?? [], ids3),
+            JSON.stringify({ gridHome, shapeSaved, saved })
+        );
+
+        // a click on one of its cells brings the split back
+        await ttClick(h, cellA);
+        const backUp = await polishWaitFor(h, `(${TT_GRID}).cells.length === 3`, 5000);
+        await polishNap(400);
+        const gridBack = await h.ev(TT_GRID);
+        const back = await h.ev(look);
+        rec(
+            "3. a click on a cell of the saved split brings the split back, framed again",
+            backUp && sameIds(gridBack.cells, ids3) && splitRow(back)?.shown === true,
+            JSON.stringify({ gridBack, back })
+        );
+
+        // the × shows on hover and takes the cell out of the split, its terminal row back in the folder after the divider
+        const hovered = await ttMouse(h, `[data-split-cell="${b.tabId}"]`, "move");
+        const clickedX = hovered && (await ttMouse(h, `[data-split-cell-remove="${b.tabId}"]`));
+        const twoLeft = await polishWaitFor(h, `(${TT_GRID}).cells.length === 2`, 5000);
+        await polishNap(400);
+        const gridTwo = await h.ev(TT_GRID);
+        const shapeTwo = await h.ev(TT_TREE_SHAPE);
+        const afterX = await h.ev(look);
+        await h.shot("cdp-shots/tools-split-3-removed.png");
+        const divider = shapeTwo.indexOf(`divider:${TT_PROJECT}`);
+        rec(
+            "4. the × on a cell takes it out of the split: two cells left in the row and on screen, and the terminal's row back in the folder after the divider",
+            clickedX &&
+                twoLeft &&
+                sameIds(gridTwo.cells, [TT_AGENT_ID, a.tabId]) &&
+                sameIds(splitRow(afterX)?.cells ?? [], [TT_AGENT_ID, a.tabId]) &&
+                divider >= 0 &&
+                shapeTwo.indexOf(`terminal:${b.tabId}`) > divider,
+            JSON.stringify({ gridTwo, shapeTwo, afterX })
+        );
+
+        // the split saved again, End split in a cell's menu ends it without moving the focus
+        await ttClick(h, `[data-tree-terminal-row="${home.tabId}"]`);
+        const homeAgain = await polishWaitFor(h, `(${TT_GRID}).cells.length === 1 && (${TT_GRID}).cells[0] === "${home.tabId}"`, 5000);
+        await polishNap(300);
+        const savedAgain = await h.ev(look);
+        const menuEnd = await rightClick(cellA);
+        const labels = ((await h.ev(SVC_MENU)) ?? []).map((i) => i.label);
+        const endItem = menuEnd && (await ttClick(h, '[data-menu-item="End split"]'));
+        const rowGone = await polishWaitFor(h, `document.querySelectorAll("[data-agent-tree] [data-split-row]").length === 0`, 5000);
+        await polishNap(400);
+        const shapeEnd = await h.ev(TT_TREE_SHAPE);
+        const gridEnd = await h.ev(TT_GRID);
+        await h.shot("cdp-shots/tools-split-4-ended.png");
+        rec(
+            "5. End split in a saved split's cell menu: the row is gone, the agent's and the terminal's rows are back in the folder, and the screen still shows the Home terminal",
+            homeAgain &&
+                splitRow(savedAgain)?.shown === false &&
+                menuEnd &&
+                labels.includes("Remove from split") &&
+                labels.includes("End split") &&
+                endItem &&
+                rowGone &&
+                shapeEnd.includes(`agent:${TT_AGENT_ID}`) &&
+                shapeEnd.includes(`terminal:${a.tabId}`) &&
+                gridEnd.cells.length === 1 &&
+                gridEnd.cells[0] === home.tabId,
+            JSON.stringify({ labels, shapeEnd, gridEnd, savedAgain })
         );
         return steps;
     },

@@ -4,7 +4,7 @@
 // Pure model for the Agent surface's sidebar once it carries conversations as well as live agents. Two parts, each
 // collapsible. The project tree (projectTree) is one collapsible folder per project: the live agents as the tree builds
 // them (agenttreemodel.ts), a divider, then the project's held services, then its plain terminals and tools. Terminals with no project sit in a
-// Home folder at the end; the cells of a split keep their rows in their folders, marked. Conversations holds every ended session, in a collapsible folder per
+// Home folder at the end; a project's split is one row in its folder, in place of its cells' rows. Conversations holds every ended session, in a collapsible folder per
 // project (the folder with the newest conversation first, newest first inside it, each row reading its own age), and
 // "Show more" pages a folder (CONVERSATION_PAGE per press). The app bar's project switcher narrows both to one
 // project, which then needs no folder: each part is a flat list, and agentsElsewhere counts the agents it hides so one
@@ -14,8 +14,10 @@
 // History only. No React. It imports overlayLive from sessionsarchivestore, which pulls in the RPC client and the
 // store; nothing here calls either.
 
+import { placesOf, splitGrids, type CellPlacement, type GridState, type ProjectGrids } from "./agentgrid";
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
 import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
+import type { RunInfo } from "./runlineage";
 import type { QueuedRow } from "./runqueuemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
 import { groupRunSessions, memberSession, runSelKey, sessionKey, type RunSessions } from "./sessionsruns";
@@ -321,7 +323,88 @@ export type ProjectTreeRow =
     // a plan queued to start, in its project's folder right under the project's agents. Named apart from the tree's
     // "queued" row, which folds a run's queued tasks.
     | ({ kind: "queuedentry" } & QueuedRow)
+    // a project's split (2+ cells) as one row, where the topmost of its cells' rows was: each cell its tab and its place
+    // in the 2x2 the surface draws. `shown` is the split on screen; another project's saved split is drawn too.
+    | { kind: "split"; project: string; shown: boolean; cells: SplitRowCell[] }
     | AgentBodyRow;
+
+// One cell of a split row. `menu` is the row menu its right-click opens, the one its own row in the tree has: an
+// agent's, a lead's (with its run's items, from `run`), a worker's or a stage's ("task", the short one), a terminal's.
+export interface SplitRowCell {
+    id: string;
+    vm: AgentVM;
+    place: CellPlacement;
+    menu: "agent" | "lead" | "task" | "terminal";
+    run?: RunInfo;
+}
+
+// the tab a row stands for, when it is one a split cell can hold
+function rowTabId(r: ProjectTreeRow): string | undefined {
+    if (r.kind === "terminal") {
+        return r.terminal.id;
+    }
+    if (r.kind === "parent" || r.kind === "lead" || r.kind === "stage" || r.kind === "worker") {
+        return r.agent?.id;
+    }
+    return undefined;
+}
+
+// The menu a cell opens: its row's when it has one; with none (a worker of a folded run), a run's tab takes the
+// worker's and any other its kind's.
+function cellMenu(vm: AgentVM, row: ProjectTreeRow | undefined): Pick<SplitRowCell, "menu" | "run"> {
+    if (row?.kind === "lead") {
+        return { menu: "lead", run: row.run };
+    }
+    if (row?.kind === "worker" || row?.kind === "stage") {
+        return { menu: "task" };
+    }
+    if (vm.kind === "terminal") {
+        return { menu: "terminal" };
+    }
+    return { menu: row == null && vm.runId != null ? "task" : "agent" };
+}
+
+// One folder's body with its split folded in: the cells' rows pulled out, one split row where the first of them was
+// (the top of the body when none had a row), and a divider left with nothing above or below it dropped. A cell the
+// roster does not hold is left out; fewer than two left, the body is returned as it was.
+function foldSplit(
+    body: ProjectTreeRow[],
+    project: string,
+    grid: GridState,
+    shown: boolean,
+    byId: ReadonlyMap<string, AgentVM>
+): ProjectTreeRow[] {
+    const places = placesOf(grid);
+    const rowOf = new Map<string, ProjectTreeRow>();
+    for (const r of body) {
+        const id = rowTabId(r);
+        if (id != null && !rowOf.has(id)) {
+            rowOf.set(id, r);
+        }
+    }
+    const cells: SplitRowCell[] = grid.ids.flatMap((id, i) => {
+        const vm = byId.get(id);
+        return vm != null ? [{ id, vm, place: places[i], ...cellMenu(vm, rowOf.get(id)) }] : [];
+    });
+    if (cells.length < 2) {
+        return body;
+    }
+    const ids = new Set(cells.map((c) => c.id));
+    const at = body.findIndex((r) => ids.has(rowTabId(r) ?? ""));
+    const kept: ProjectTreeRow[] = [];
+    body.forEach((r, i) => {
+        if (i === at) {
+            kept.push({ kind: "split", project, shown, cells });
+        }
+        if (!ids.has(rowTabId(r) ?? "")) {
+            kept.push(r);
+        }
+    });
+    if (at < 0) {
+        kept.unshift({ kind: "split", project, shown, cells });
+    }
+    return kept.filter((r, i) => r.kind !== "divider" || (i > 0 && i < kept.length - 1));
+}
 
 /** Pure: the sidebar's one tree per project. `tree` is buildAgentTree's output; `terminals` are the plain shells and
  *  tools (liveTerminalsAtom). Each project's folder lists its agent rows, a divider when terminals follow, then its
@@ -333,8 +416,9 @@ export type ProjectTreeRow =
  *  agent rows, in queue order, ahead of the divider and the terminals. They are not agents, so the group row does not
  *  count them, and treeNavIds skips them (they select nothing).
  *
- *  The surface's split moves nothing here: its cells keep their rows in their folders, each marked as in the split
- *  (the tree draws the mark), so choosing a row never moves it out from under the pointer.
+ *  Each project's split (`splits`, its grids of 2+ cells) is one row in its folder, where the topmost of its cells'
+ *  rows was; the cells' own rows go. `roster` is every live agent and terminal, read for a cell the tree draws no row
+ *  for.
  *
  *  Filtered to a project (the app bar's switcher), no folder and no fold: that project's agent rows, its queued plans, a
  *  divider and its terminals together with those that name no project, as the Terminals section filtered before. */
@@ -351,6 +435,8 @@ export function projectTree(input: {
     // every held service's tab, listed or not (treeServiceInput): a sleeping service keeps its tab, which is still no
     // terminal row. Left out, the tabs of `services`.
     serviceTabs?: ReadonlySet<string>;
+    splits?: ProjectGrids; // the grids as the surface reconciles them (gridstore treeSplits)
+    roster?: readonly AgentVM[];
 }): ProjectTreeRow[] {
     const { tree, filter, roots } = input;
     const services = input.services ?? [];
@@ -375,6 +461,12 @@ export function projectTree(input: {
             terminal,
             place: terminalPlace(terminal.cwd, roots.get(project)),
         }));
+    const splits = input.splits != null ? splitGrids(input.splits) : new Map<string, GridState>();
+    const byId = new Map((input.roster ?? []).map((a) => [a.id, a]));
+    const fold = (project: string, body: ProjectTreeRow[]) => {
+        const grid = splits.get(project);
+        return grid == null ? body : foldSplit(body, project, grid, input.splits?.project === project, byId);
+    };
 
     if (filter !== ALL_PROJECTS) {
         const out: ProjectTreeRow[] = [];
@@ -394,7 +486,7 @@ export function projectTree(input: {
             out.push({ kind: "divider", project: filter });
         }
         out.push(...held, ...termRows(filter, mine));
-        return out;
+        return fold(filter, out);
     }
 
     const byProject = new Map<string, AgentVM[]>();
@@ -435,14 +527,15 @@ export function projectTree(input: {
         if (!open) {
             continue;
         }
-        const body = folder?.body ?? [];
+        const agentRows = folder?.body ?? [];
         const waiting = queuedRowsOf(project);
         const held = serviceRowsOf(project);
-        out.push(...body, ...waiting);
-        if (list.length + held.length > 0 && body.length + waiting.length > 0) {
-            out.push({ kind: "divider", project });
+        const body: ProjectTreeRow[] = [...agentRows, ...waiting];
+        if (list.length + held.length > 0 && agentRows.length + waiting.length > 0) {
+            body.push({ kind: "divider", project });
         }
-        out.push(...held, ...termRows(project, list));
+        body.push(...held, ...termRows(project, list));
+        out.push(...fold(project, body));
     }
     return out;
 }
@@ -500,19 +593,12 @@ export function terminalRowState(
     return gone.includes(tabId) ? "removed" : undefined;
 }
 
-export type TerminalShows = "split" | "panel";
+export type TerminalShows = "panel";
 
-/** Pure: where a terminal shows when that is not the centre: "panel" while it is the docked one, "split" while it is a
- *  cell of a split (a grid of one cell is no split), nothing otherwise. `cells` are the grid's ids. */
-export function terminalShows(
-    id: string,
-    cells: readonly string[],
-    dockedId: string | null | undefined
-): TerminalShows | undefined {
-    if (dockedId === id) {
-        return "panel";
-    }
-    return cells.length > 1 && cells.includes(id) ? "split" : undefined;
+/** Pure: where a terminal shows when that is not the centre: "panel" while it is the docked one, nothing otherwise (a
+ *  cell of a split has no terminal row: the split row holds it). */
+export function terminalShows(id: string, dockedId: string | null | undefined): TerminalShows | undefined {
+    return dockedId === id ? "panel" : undefined;
 }
 
 /** Pure: the ids the agent keys (j/k, the arrows, Alt+1..9, Ctrl+Tab) step through, agents and terminals together: each
@@ -528,6 +614,8 @@ export function treeNavIds(rows: ProjectTreeRow[]): string[] {
             if (r.tabId) {
                 ids.push(r.tabId);
             }
+        } else if (r.kind === "split") {
+            ids.push(...r.cells.map((c) => c.id));
         } else if ((r.kind === "parent" || r.kind === "lead" || r.kind === "worker" || r.kind === "stage") && r.agent) {
             ids.push(r.agent.id);
         }

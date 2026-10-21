@@ -149,7 +149,7 @@ Cột trái 248 px, từ trên xuống: nút **Conversation History**, rồi hai
 Mỗi project là một **thư mục**; bấm tên thư mục để gấp/mở. Trong thư mục là các hàng agent, một **đường kẻ mảnh**, rồi các **terminal và tool** của project, cái dùng gần nhất lên trước. Terminal là hàng ngang hàng với agent: chọn nó (bấm, `j` / `k`, `Ctrl+Tab`, `Ctrl+P`) thì nó chiếm trung tâm, xem [Terminal thường và tool ở giữa](#terminal-thường-và-tool-ở-giữa). Thư mục đang gấp ghi nó chứa gì, ví dụ `2 agents · 1 terminal`.
 
 - Terminal thuộc project mà thư mục hiện tại của nó nằm trong (`cd` sang project khác thì nó chuyển thư mục theo), không thì project của tab đã mở nó. **Home** là thư mục cuối, chứa terminal và tool không thuộc project nào (btop chẳng hạn); agent không có project nằm ở thư mục `ungrouped` riêng.
-- Một [split](#lưới-terminal-2x2) hiện thành **một hàng** gồm các ô nhỏ, mỗi ô một agent hoặc terminal, nằm đầu thư mục của project khi mọi ô cùng project; nếu các ô thuộc nhiều project thì hàng nằm trên cùng cây và mỗi ô ghi thêm project của nó. Các ô của split rời hàng riêng của mình (và khỏi số đếm của thư mục) cho tới khi split kết thúc.
+- Mỗi project có [split](#lưới-terminal-2x2) từ hai ô trở lên (cả split đã lưu của project không hiện trên màn hình) có **một hàng split** trong thư mục của nó, ở chỗ hàng trên cùng trong các ô (hoặc đầu thư mục khi không ô nào có hàng hiện). Các ô rời hàng riêng của mình vào hàng split, xếp như lưới trên màn hình. Mỗi ô chỉ có biểu tượng trạng thái, tên, chấm `asking` hoặc số chưa đọc, chữ số `Alt` khi giữ `Alt`, và `×` khi rê chuột (bỏ ô khỏi split, agent vẫn chạy). Split đang hiện có viền accent và ô đang focus được tô như hàng đang chọn; split đã lưu của project khác có viền thường. Bấm một ô để focus nó; chuột phải mở menu của chính hàng đó (có **Remove from split** và **End split**); kéo ô thả lên lưới như kéo hàng. `j` / `k` và `Alt`+số đi qua các ô theo thứ tự đọc.
 - Chọn một project ở app bar thì thư mục biến mất, danh sách phẳng (agent, đường kẻ, terminal), và một dòng `N in other projects · M asking` cho biết agent ở project khác (bấm để xem tất cả project).
 
 Mỗi hàng agent: biểu tượng harness và **tên** ở dòng trên; dòng dưới là model, nhánh git (chỉ khi khác `main`), chip subagent, rồi các dấu hiệu:
@@ -195,7 +195,7 @@ Các shell thường và [tool](#tools) (không phải agent) nằm dưới đư
 |---|---|
 | Tên | Tên tool khi nó chạy một tool; không thì lệnh gần nhất terminal chạy (`task dev`), hoặc "Terminal 2" nếu chưa chạy lệnh nào |
 | Chấm nhấp nháy | Shell đang chạy một lệnh (dev server, build); không có chấm khi đã về prompt |
-| `split` / `panel` | Nơi nó đang hiện khi không phải trung tâm: một ô của split, hoặc panel dưới agent |
+| `panel` | Nó đang hiện ở panel dưới agent (terminal là một ô của split thì nằm trong hàng split, không có hàng riêng) |
 | `installing` / `install failed` | Terminal cài tool từ thư viện ("Install glow") đang chạy, hoặc đã thoát lỗi và được giữ lại cùng output |
 | `removed` | Thư mục nó chạy đã bị xóa (worktree của agent đã land); chip thư mục bị gạch ngang |
 
