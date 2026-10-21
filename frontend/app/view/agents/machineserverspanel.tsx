@@ -39,6 +39,8 @@ import { openTerminalLog } from "./terminallog";
 const NOW_TICK_MS = 30_000;
 
 const NO_OWNER_TIP = "Still running. No agent, terminal or open app holds it.";
+// a process started outside arcterm: its output went to the console that started it, which no other process can read
+const NO_LOG_TIP = "No log here: it was started outside arcterm, so its output went to the console that started it.";
 const BADGE = "rounded-[4px] px-1 text-[10.5px]";
 
 // a StopDevServer refusal that says the listed process is no longer the one running (pkg/devservers)
@@ -109,7 +111,8 @@ function Badge({ badge, model }: { badge: MachineBadge; model: AgentsViewModel }
 }
 
 // One listening process, laid out like the rail's: ports (each opens in the browser), what it runs and for how long;
-// then its PID, what holds it, and Log / Pin as app / Copy / Stop while the row is hovered or focused. Stop asks twice.
+// then its PID, what holds it, its Log (always shown, faint with a reason when there is none), and Pin as app / Copy /
+// Stop while the row is hovered or focused. Stop asks twice.
 // A held service's server (badge `app · <name>`) has no Pin, being an app already, and its Stop goes through wavesrv.
 function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewModel; now: number }) {
     const [confirming, setConfirming] = useState(false);
@@ -170,19 +173,6 @@ function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewMode
                             !confirming && "opacity-0 focus-within:opacity-100 group-hover/server:opacity-100"
                         )}
                     >
-                        {row.log != null || row.termLog != null ? (
-                            <button
-                                type="button"
-                                data-machine-server-log
-                                data-machine-server-termlog={row.log == null ? "" : undefined}
-                                title="Open its log"
-                                aria-label="Open its log"
-                                onClick={() => (row.log != null ? openLog(row.log) : openTermLog(row.termLog!))}
-                                className={ACTION_BTN}
-                            >
-                                <FileText size={12} aria-hidden />
-                            </button>
-                        ) : null}
                         {row.badge.kind === "service" ? null : (
                             <button
                                 type="button"
@@ -213,6 +203,31 @@ function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewMode
                             onStop={() => fireAndForget(() => stopServer(row))}
                             onConfirmingChange={setConfirming}
                         />
+                    </span>
+                    {/* Log stays in view: the one action a row is opened for, at the row end */}
+                    <span className="-my-[2px] flex shrink-0 items-center">
+                        {row.log != null || row.termLog != null ? (
+                            <button
+                                type="button"
+                                data-machine-server-log
+                                data-machine-server-termlog={row.log == null ? "" : undefined}
+                                title="Open its live log"
+                                aria-label="Open its live log"
+                                onClick={() => (row.log != null ? openLog(row.log) : openTermLog(row.termLog!))}
+                                className={ACTION_BTN}
+                            >
+                                <FileText size={12} aria-hidden />
+                            </button>
+                        ) : (
+                            <span
+                                data-machine-server-nolog
+                                title={NO_LOG_TIP}
+                                aria-label={NO_LOG_TIP}
+                                className="flex h-[18px] min-w-[18px] items-center justify-center px-[3px] text-muted opacity-40"
+                            >
+                                <FileText size={12} aria-hidden />
+                            </span>
+                        )}
                     </span>
                 </div>
             </div>

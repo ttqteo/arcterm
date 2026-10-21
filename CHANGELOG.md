@@ -29,6 +29,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Agent panel has a Changes tab beside Overview and Files: the agent's whole Files changed list, not only its
   first eight files, with the Session / Branch switch and View diff; a file opens on its Diff.
 
+### Changed
+
+- The Servers popover shows each server's Log button all the time, not only on hover; a server started outside
+  arcterm shows it faded, and its tooltip says why there is no log to open.
+
 ### Fixed
 
 - Updating arcterm now always updates the `wsh` its agents run; before, an agent session left running across the
