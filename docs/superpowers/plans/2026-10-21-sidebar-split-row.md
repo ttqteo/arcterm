@@ -113,15 +113,76 @@ and add:
             expect(shape(rows)).toEqual(["a:a", "split:waveterm:shown:b,t1"]);
         });
 
-        it("places each cell as the grid does on screen", () => {
-            const rows = withSplits([agent("a"), agent("b"), agent("c")], [], grids("waveterm", { waveterm: ["a", "b", "c"] }));
+        const placesIn = (rows: ProjectTreeRow[]) => {
             const split = rows.find((r) => r.kind === "split");
-            expect(split?.kind === "split" && split.cells.map((c) => c.place)).toEqual(placementFor(3));
+            return split?.kind === "split" ? split.cells.map((c) => c.place) : null;
+        };
+
+        it("places each cell as the grid does on screen: 2 side by side, 3 and 4 by the template", () => {
+            const four = [agent("a"), agent("b"), agent("c"), agent("d")];
+            for (const n of [2, 3, 4]) {
+                const ids = four.slice(0, n).map((a) => a.id);
+                expect(placesIn(withSplits(four, [], grids("waveterm", { waveterm: ids })))).toEqual(placementFor(n));
+            }
+            const rows = withSplits(four, [], grids("waveterm", { waveterm: ["a", "b", "c", "d"] }));
+            expect(shape(rows)).toEqual(["group:waveterm:4a:0t", "split:waveterm:shown:a,b,c,d"]);
+        });
+
+        it("keeps a grid's stored places: one tall cell and two stacked", () => {
+            const places = [
+                { row: 1, col: 1, rowSpan: 2, colSpan: 1 },
+                { row: 1, col: 2, rowSpan: 1, colSpan: 1 },
+                { row: 2, col: 2, rowSpan: 1, colSpan: 1 },
+            ];
+            const rows = withSplits([agent("a"), agent("b"), agent("c")], [], {
+                project: "waveterm",
+                grids: { waveterm: { ids: ["a", "b", "c"], focused: "a", places } },
+            });
+            expect(placesIn(rows)).toEqual(places);
+        });
+
+        describe("a cell inside a run", () => {
+            // a hand-made tree: the run's lead, its worker (only while the run is unfolded), then a plain agent
+            const run = { runId: "r1" };
+            const lead = agent("l");
+            const w = { ...agent("w"), runId: "r1" };
+            const tree = (open: boolean) =>
+                [
+                    { kind: "group", project: "waveterm", count: 3, attn: 0, running: 0 },
+                    { kind: "lead", agent: lead, project: "waveterm", run, open, live: 1 },
+                    ...(open ? [{ kind: "worker", agent: w, project: "waveterm", run, task: {} }] : []),
+                    { kind: "parent", agent: agent("a"), project: "waveterm" },
+                ] as unknown as AgentTreeRow[];
+            const menus = (rows: ProjectTreeRow[]) => {
+                const split = rows.find((r) => r.kind === "split");
+                return split?.kind === "split" ? split.cells.map((c) => `${c.id}:${c.menu}:${c.run?.runId ?? "-"}`) : null;
+            };
+
+            it("pulls an unfolded run's worker row out, the split at the worker's place, with the task menu", () => {
+                const rows = build([], [], {
+                    tree: tree(true),
+                    splits: grids("waveterm", { waveterm: ["a", "w"] }),
+                    roster: [lead, w, agent("a")],
+                });
+                expect(shape(rows)).toEqual(["group:waveterm:3a:0t", "lead", "split:waveterm:shown:a,w"]);
+                expect(menus(rows)).toEqual(["a:agent:-", "w:task:-"]);
+            });
+
+            it("takes a folded run's worker from the roster, with the task menu; the lead's cell has the run's", () => {
+                const rows = build([], [], {
+                    tree: tree(false),
+                    splits: grids("waveterm", { waveterm: ["l", "w"] }),
+                    roster: [lead, w, agent("a")],
+                });
+                expect(shape(rows)).toEqual(["group:waveterm:3a:0t", "split:waveterm:shown:l,w", "a:a"]);
+                expect(menus(rows)).toEqual(["l:lead:r1", "w:task:-"]);
+            });
         });
     });
 ```
 
-(import `placementFor` from `./agentgrid`.) In `describe("treeNavIds", …)` add:
+(import `placementFor` from `./agentgrid`, and `type AgentTreeRow` from `./agenttreemodel` if the file does not
+import it yet.) In `describe("treeNavIds", …)` add:
 
 ```ts
     it("walks a split row's cells in reading order where the row sits", () => {
@@ -138,8 +199,10 @@ and add:
     });
 ```
 
-Replace the `terminalShows` test's split case: `terminalShows("t1", "t1")` is `"panel"`, `terminalShows("t1", null)` and
-`terminalShows("t1", undefined)` are undefined (the "split" answer goes: a cell no longer has a terminal row).
+Rewrite all three `it()` blocks of `describe("terminalShows", …)` (~1047-1059) to the 2-argument form, since every
+3-argument call breaks once `cells` goes: `terminalShows("t1", "t1")` is `"panel"`; `terminalShows("t1", "t2")`,
+`terminalShows("t1", null)` and `terminalShows("t1", undefined)` are undefined (the "split" answer goes: a cell no longer
+has a terminal row).
 
 **Step 2: Run them to see them fail**
 
@@ -175,8 +238,22 @@ export function splitGrids(state: ProjectGrids): Map<string, GridState> {
     | { kind: "split"; project: string; shown: boolean; cells: SplitRowCell[] }
 ```
 
-  and `export interface SplitRowCell { id: string; vm: AgentVM; place: CellPlacement }`.
-- Add a pure helper above `projectTree`:
+  and
+
+```ts
+// One cell of a split row. `menu` is the row menu its right-click opens, the one its own row in the tree has: an
+// agent's, a lead's (with its run's items, from `run`), a worker's or a stage's ("task", the short one), a terminal's.
+export interface SplitRowCell {
+    id: string;
+    vm: AgentVM;
+    place: CellPlacement;
+    menu: "agent" | "lead" | "task" | "terminal";
+    run?: RunInfo;
+}
+```
+
+  (`RunInfo` imported as a type from where `agenttreemodel.ts` imports it.)
+- Add pure helpers above `projectTree`:
 
 ```ts
 // the tab a row stands for, when it is one a split cell can hold
@@ -190,6 +267,21 @@ function rowTabId(r: ProjectTreeRow): string | undefined {
     return undefined;
 }
 
+// The menu a cell opens: its row's when it has one; with none (a worker of a folded run), a run's tab takes the
+// worker's and any other its kind's.
+function cellMenu(vm: AgentVM, row: ProjectTreeRow | undefined): Pick<SplitRowCell, "menu" | "run"> {
+    if (row?.kind === "lead") {
+        return { menu: "lead", run: row.run };
+    }
+    if (row?.kind === "worker" || row?.kind === "stage") {
+        return { menu: "task" };
+    }
+    if (vm.kind === "terminal") {
+        return { menu: "terminal" };
+    }
+    return { menu: row == null && vm.runId != null ? "task" : "agent" };
+}
+
 // One folder's body with its split folded in: the cells' rows pulled out, one split row where the first of them was
 // (the top of the body when none had a row), and a divider left with nothing above or below it dropped. A cell the
 // roster does not hold is left out; fewer than two left, the body is returned as it was.
@@ -201,9 +293,16 @@ function foldSplit(
     byId: ReadonlyMap<string, AgentVM>
 ): ProjectTreeRow[] {
     const places = placesOf(grid);
-    const cells = grid.ids.flatMap((id, i) => {
+    const rowOf = new Map<string, ProjectTreeRow>();
+    for (const r of body) {
+        const id = rowTabId(r);
+        if (id != null && !rowOf.has(id)) {
+            rowOf.set(id, r);
+        }
+    }
+    const cells: SplitRowCell[] = grid.ids.flatMap((id, i) => {
         const vm = byId.get(id);
-        return vm != null ? [{ id, vm, place: places[i] }] : [];
+        return vm != null ? [{ id, vm, place: places[i], ...cellMenu(vm, rowOf.get(id)) }] : [];
     });
     if (cells.length < 2) {
         return body;
@@ -302,6 +401,14 @@ describe("splits of another project", () => {
         const m = twoProjects("c");
         endSplitOf(m, "b");
         expect(globalStore.get(projectGridsAtom).grids.p.ids).toEqual(["a"]);
+        expect(globalStore.get(projectGridsAtom).grids.q.ids).toEqual(["c", "d"]);
+        expect(globalStore.get(m.focusIdAtom)).toBe("c");
+    });
+    it("endSplitOf on the shown split is endSplit: the focused cell stays", () => {
+        const m = twoProjects("c");
+        endSplitOf(m, "d");
+        expect(globalStore.get(projectGridsAtom).grids.q.ids).toEqual(["c"]);
+        expect(globalStore.get(projectGridsAtom).grids.p.ids).toEqual(["a", "b"]);
         expect(globalStore.get(m.focusIdAtom)).toBe("c");
     });
 });
@@ -451,7 +558,13 @@ Drop unused imports (`SplitMark`, `reconcileProjectGrids`, `shownGrid`, `eligibl
 
 Extract the agent row's menu from `ParentRow.onContextMenu` into
 `function agentRowMenuItems(model, agent, lead: RunInfo | undefined, later: boolean): ContextMenuItem[]` (the same list,
-the run's items when `lead` is given) so `ParentRow` and `SplitCell` share it. Then, beside `TerminalRow`:
+the run's items when `lead` is given; `ParentRow` passes `lead?.run`), and the identical short menu of `WorkerRow`
+(~1269) and `StageRow` (~1377) into `function taskRowMenuItems(model, agent, ended = false): ContextMenuItem[]` (the split
+items unless `ended`, a separator, Close agent), so the rows and `SplitCell` share them. A cell opens the menu its
+`menu` names (`SplitRowCell.menu`, set by `projectTree`): `agent` → `agentRowMenuItems(…, undefined, …)`, `lead` →
+`agentRowMenuItems(…, cell.run, …)`, `task` → `taskRowMenuItems`, `terminal` → `showTerminalMenu`. Rename works in a
+cell as in a row: while `renamingRowAtom` names the cell's id it draws `RenameBox` in place of the name, and its drag
+source is off. Then, beside `TerminalRow`:
 
 ```tsx
 // A project's split as one row (projectTree's "split"): the cells laid out as the 2x2 the surface draws, the split on
@@ -480,7 +593,7 @@ function SplitRow({
         >
             {row.cells.map((c) => (
                 <div key={c.id} style={placementStyle(c.place)} className="min-w-0 bg-surface">
-                    <SplitCell model={model} vm={c.vm} navDigit={digits.get(c.id)} tools={tools} />
+                    <SplitCell model={model} cell={c} navDigit={digits.get(c.id)} tools={tools} />
                 </div>
             ))}
         </div>
@@ -489,16 +602,18 @@ function SplitRow({
 
 function SplitCell({
     model,
-    vm,
+    cell,
     navDigit,
     tools,
 }: {
     model: AgentsViewModel;
-    vm: AgentVM;
+    cell: SplitRowCell;
     navDigit?: number;
     tools: ToolStatus[];
 }) {
+    const vm = cell.vm;
     const selected = useSelectedRowId(model) === vm.id;
+    const renaming = useAtomValue(renamingRowAtom) === vm.id;
     const digit = useHeldDigit(navDigit);
     const unreadCount = useAtomValue(unreadAgentsAtom).get(vm.id) ?? 0;
     const bgTasks = useAtomValue(backgroundTasksByIdAtom)[vm.id];
@@ -507,16 +622,23 @@ function SplitCell({
     const terminal = vm.kind === "terminal";
     const name = terminal ? toolTerminalName(vm, tools) : vm.name;
     const asking = vm.state === "asking";
-    const onContextMenu = (e: React.MouseEvent) =>
-        terminal
-            ? showTerminalMenu(model, vm, e, name)
-            : ContextMenuModel.getInstance().showContextMenu(agentRowMenuItems(model, vm, undefined, laterAt != null), e);
+    const onContextMenu = (e: React.MouseEvent) => {
+        if (cell.menu === "terminal") {
+            showTerminalMenu(model, vm, e, name);
+            return;
+        }
+        const items =
+            cell.menu === "task"
+                ? taskRowMenuItems(model, vm)
+                : agentRowMenuItems(model, vm, cell.menu === "lead" ? cell.run : undefined, laterAt != null);
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
     return (
         <div
             data-split-cell={vm.id}
             onClick={() => selectAgentRow(model, vm.id)}
             onContextMenu={onContextMenu}
-            {...dragSource(vm, true)}
+            {...dragSource(vm, !renaming)}
             className={cn(
                 "group/cell flex h-full min-w-0 cursor-pointer items-center gap-[6px] px-[8px] py-[6px]",
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover"
@@ -531,16 +653,20 @@ function SplitCell({
                     <RuntimeGlyph runtime={vm.agent} state={shownState(vm.state, backgroundActivity(bgTasks, machineServers))} />
                 )}
             </DigitHint>
-            <span
-                title={name}
-                className={cn(
-                    "min-w-0 flex-1 truncate text-[12px]",
-                    selected || unreadCount > 0 ? "text-primary" : "text-secondary",
-                    unreadCount > 0 && "font-semibold"
-                )}
-            >
-                {name}
-            </span>
+            {renaming ? (
+                <RenameBox tabId={vm.id} shown={name} />
+            ) : (
+                <span
+                    title={name}
+                    className={cn(
+                        "min-w-0 flex-1 truncate text-[12px]",
+                        selected || unreadCount > 0 ? "text-primary" : "text-secondary",
+                        unreadCount > 0 && "font-semibold"
+                    )}
+                >
+                    {name}
+                </span>
+            )}
             {asking ? (
                 <span aria-label="asking" className="h-[6px] w-[6px] flex-none rounded-full bg-warning" />
             ) : unreadCount > 0 ? (
@@ -572,8 +698,10 @@ function SplitCell({
 ```
 
 Match the imports to what the file already has (`ToolStatus` is the type `toolsStatusAtom` holds; `toolTerminalName`,
-`toolIcon`, `unreadLabel`, `StatusDot`, `RuntimeGlyph`, `SleepGlyph`, `shownState`, `backgroundActivity` are already
-used in this file). If a name differs, use the one `ParentRow` / `TerminalRow` use; do not add a second copy. The
+`toolIcon`, `unreadLabel`, `StatusDot`, `RuntimeGlyph`, `SleepGlyph`, `shownState`, `backgroundActivity`, `RenameBox`,
+`renamingRowAtom` are already used in this file). Add `placementStyle` to the `./agentgrid` import (the file does not
+import it yet; that import line loses `reconcileProjectGrids` and `shownGrid` in Step 3), and `type SplitRowCell` to
+the `./agentsidebarmodel` import. If a name differs, use the one `ParentRow` / `TerminalRow` use; do not add a second copy. The
 `bg-accent/25` / `border-accent/60` tints must be tokens with an opacity modifier, never a raw color.
 
 In the rows loop add, beside `case "terminal"`:
@@ -591,6 +719,10 @@ In the rows loop add, beside `case "terminal"`:
 Run: `task check:ts` (about 2 minutes; give it a 5-minute timeout). Expected: exit 0.
 Run: `npx vitest run frontend/app/view/agents`. Expected: PASS.
 
+Shown in the app by `tools-split` steps 1, 1b, 1c, 2, 3, 4 and 5 (the row, a click on a cell, three cells laid out as
+the grid, the saved split unframed, a cell bringing it back, the × on a cell, End split from a saved split's cell menu).
+Task 4 writes those steps and Final runs them in this run's own dev app; do not run them here.
+
 **Step 6: Commit**
 
 ```bash
@@ -602,12 +734,17 @@ git commit -m "feat(agents): the sidebar draws a split as one row" -- frontend/a
 **Depends on:** Task 3 (checks the split row it draws, by its `data-split-*` attributes)
 **Files:** `scripts/cdp/scenarios.mjs`, `CHANGELOG.md`, `docs/open-issues.md`
 
-Where: `scenarios.mjs` `toolsSplit` (~41361-41463).
+Where: `scenarios.mjs` `TT_TREE_SHAPE` (~40873), `toolsSplit` (~41361-41463).
 
 **Step 1: Rewrite `tools-split` for the split row**
 
-Update its header comment: the two cells now leave their rows and show as one `[data-split-row]` in the project's
-folder. Replace the `look` helper's `marked` with
+`TT_TREE_SHAPE`: add `[data-split-row]` to its selector and map it to `"split:" + el.getAttribute("data-split-row")`
+(a split row holds no `[data-agent-row]` or `[data-tree-terminal-row]`, so the cells add nothing else; `tools-tree`, the
+other user, makes no split and reads the same).
+
+`ttArrange` gets a third terminal: `terminals: [{ key: "a", cwd: "root" }, { key: "b", cwd: "root" }, { key: "home",
+project: null }]`, and `const [a, b, home] = ctx.terminals;`. Update the header comment: the cells leave their rows and
+show as one `[data-split-row]` in the project's folder. Replace the `look` helper's `marked` with
 
 ```js
             splitRows: [...document.querySelectorAll("[data-agent-tree] [data-split-row]")].map((r) => ({
@@ -617,22 +754,40 @@ folder. Replace the `look` helper's `marked` with
             })),
 ```
 
-and the steps:
+and add a `layout(id)` evaluation that, for each `[data-split-cell]` of the row and each shown `[data-agent-cell]` of
+`[data-agent-grid]` (keyed by `data-agent-terminal`), reads its place in its container's 2x2 from its rect: `col` 1 or
+2 by its left edge against the container's middle, `row` likewise by its top edge, `colSpan` 2 when its width is over
+60% of the container's, `rowSpan` likewise by height. The steps (each position check is on `TT_TREE_SHAPE`: the
+`split:${TT_PROJECT}` entry comes right after `folder:${TT_PROJECT}`, where the agent's row was):
 
-- **1.** After Open beside: two grid cells; `TT_TREE_SHAPE` no longer holds `agent:${TT_AGENT_ID}` nor
-  `terminal:${a.tabId}`; exactly one split row, `shown: true`, whose cells are both ids. Shot
-  `cdp-shots/tools-split-1-beside.png` (the sidebar shows the framed row).
+- **1.** After Open beside: two grid cells; `TT_TREE_SHAPE` holds `split:${TT_PROJECT}` right after
+  `folder:${TT_PROJECT}` and no longer holds `agent:${TT_AGENT_ID}` nor `terminal:${a.tabId}`; exactly one split row,
+  `shown: true`, whose cells are both ids. Shot `cdp-shots/tools-split-1-beside.png` (the sidebar shows the framed row).
 - **1b.** Click `[data-split-cell="${TT_AGENT_ID}"]` (not the gone agent row): header, rail and cell width unchanged, as
   now.
-- **2.** Click the Home terminal's row: the split row is still drawn in the project's folder with `shown: false`, the
-  Home terminal shows alone (`TT_GRID` cells `[home]`). Shot `cdp-shots/tools-split-2-saved.png`.
-- **3.** Click `[data-split-cell="${a.tabId}"]`: the project's split is back (`TT_GRID` holds both ids) and the row is
-  `shown: true`.
-- **4.** Hover the cell, click `[data-split-cell-remove="${a.tabId}"]`: no split row is left and
-  `[data-tree-terminal-row="${a.tabId}"]` is back in the folder. Shot `cdp-shots/tools-split-3-removed.png`.
+- **1c.** Right-click `[data-tree-terminal-row="${b.tabId}"]` with `svcContextMenu` and click
+  `[data-menu-item="Open in split"]`: `TT_GRID` holds three cells; the one split row holds the three ids and
+  `terminal:${b.tabId}` is gone from `TT_TREE_SHAPE`; for every id the split cell's place equals its grid cell's place
+  (`layout`), and exactly one of the three spans two squares. Shot `cdp-shots/tools-split-1c-three.png`.
+- **2.** Click the Home terminal's row: the split row is still drawn right after `folder:${TT_PROJECT}` with
+  `shown: false` and its three cells; the Home terminal shows alone (`TT_GRID` cells `[home]`). Shot
+  `cdp-shots/tools-split-2-saved.png`.
+- **3.** Click `[data-split-cell="${a.tabId}"]`: the project's split is back (`TT_GRID` holds the three ids) and the
+  row is `shown: true`.
+- **4.** `ttMouse(h, '[data-split-cell="${b.tabId}"]', "move")` to hover the cell, then
+  `ttMouse(h, '[data-split-cell-remove="${b.tabId}"]')` to click its ×: the split row holds the agent and `a` only,
+  `TT_GRID` holds those two, and `terminal:${b.tabId}` is back in the folder after the divider. Shot
+  `cdp-shots/tools-split-3-removed.png`.
+- **5.** Click the Home terminal's row again (the split is saved, `shown: false`), then right-click
+  `[data-split-cell="${a.tabId}"]` with `svcContextMenu`: the menu (`SVC_MENU`) holds `Remove from split` and
+  `End split`; click `[data-menu-item="End split"]`: no split row is left, `agent:${TT_AGENT_ID}` and
+  `terminal:${a.tabId}` are back in the folder, and `TT_GRID` cells are still `[home]` (the focus did not move). Shot
+  `cdp-shots/tools-split-4-ended.png`.
 
-Use the file's helpers as the scenario already does (`ttClick`, `polishWaitFor`, `polishNap`, `rec`); hover with the
-real-mouse helper the file defines next to `TT_TREE_SHAPE` before the × click.
+Use the file's helpers as the scenario already does (`ttClick`, `ttMouse`, `svcContextMenu`, `SVC_MENU`,
+`polishWaitFor`, `polishNap`, `rec`). `ttClick`'s `el.click()` skips hover, so the × is reached with `ttMouse`: kind
+`"move"` hovers, the default `"click"` clicks. The cell states (asking dot, unread count, sleeping glyph, a running
+terminal's dot) reuse the rows' own components and are left to the hand check below.
 
 **Step 2: CHANGELOG and the hand check**
 
@@ -647,16 +802,17 @@ real-mouse helper the file defines next to `TT_TREE_SHAPE` before the × click.
 `docs/open-issues.md`, section "0 · Waiting on a hand check":
 
 ```markdown
-- [ ] (arcterm) Split row: in Agent, split an agent and a terminal of one project; the sidebar shows one framed row
-  holding both where the agent's row was, and neither has its own row. Choose an agent of another project: the row
-  stays, unframed; click its terminal half and the split is back. The × on a half takes it out and its row returns.
-  With three cells the row shows them as the surface lays them out. `agentsidebarmodel.ts` `foldSplit`, `agenttree.tsx`
-  `SplitRow`.
+- [ ] (arcterm) Split row cells: put an asking agent, an agent with an unread turn, a sleeping agent and a terminal
+  running a command into splits; each cell shows the warning dot, the unread count, the moon glyph and the working dot
+  as its row did; Alt held shows the digits in reading order; right-click a worker's cell inside a run and a lead's
+  cell: each opens its own row's menu. `agenttree.tsx` `SplitCell`.
 ```
 
-**Step 3: Run the scenario**
+**Step 3: Check the scenario file parses**
 
-Run (the dev app running): `task verify:ui -- tools-split`. Expected: every step PASS; look at the three shots.
+Run: `node --check scripts/cdp/scenarios.mjs`. Expected: exit 0. Do not run `task verify:ui` here: this tree has no
+dev app of its own, and one on `:9222` runs another checkout's code. Final runs `tools-split` in the run's own dev app
+and judges its five shots.
 
 **Step 4: Commit**
 
