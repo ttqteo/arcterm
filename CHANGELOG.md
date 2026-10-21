@@ -35,6 +35,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   arcterm shows it faded, and its tooltip says why there is no log to open.
 - Claude highlights the must-read sentences in every long reply, a report of what it did or a list included: what
   changed, any caveat, and any decision left to you, not only the caveat.
+- When the rest of a reply dims around its highlighted sentences, the bold words that open a list item or a paragraph
+  stay bright, as headings do, so the reply keeps its outline.
 
 ### Fixed
 

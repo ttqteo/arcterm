@@ -27,7 +27,7 @@ function drawRun({ Text }: RowElements, run: Run, isSkim: boolean, palette: Pale
             {...(run.isStrike ? { strikethrough: true } : {})}
             {...(run.isCode ? { color: CODE_COLOR } : {})}
             {...marked}
-            {...(isSkim && !run.isMarked ? { dimColor: true } : {})}
+            {...(isSkim && !run.isMarked && !run.isLead ? { dimColor: true } : {})}
         >
             {run.text}
         </Text>

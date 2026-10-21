@@ -37,6 +37,8 @@ export const MAX_MARKED_SHARE = 1 / 3;
 const FENCE = /^\s*(```|~~~)/;
 const HEADING = /^\s*(#{1,6}\s|\*\*[^*]+\*\*:?\s*$)/;
 const LIST_ITEM = /^(\s*(?:[-*+]|\d+[.)])\s+)/;
+// a bold run opening a list item or a paragraph, `**Name.** the rest`: a heading written inline
+const LEAD_BOLD = /^\*\*[^*]+\*\*/;
 const TABLE_ROW = /^\s*\|/;
 
 // a mark opens on == followed by a non-space and closes on a non-space followed by ==, within one line, so
@@ -146,7 +148,16 @@ export function keepMarks(kept: [string, string[]][], hash: string, marks: strin
     return [...kept.filter(([h]) => h !== hash), [hash, marks] as [string, string[]]].slice(-MAX_KEPT);
 }
 
-export type Run = { text: string; isMarked?: true; isBold?: true; isItalic?: true; isCode?: true; isStrike?: true };
+// isLead: the bold that opens the line, which stays bright under skim as a heading does
+export type Run = {
+    text: string;
+    isMarked?: true;
+    isBold?: true;
+    isItalic?: true;
+    isCode?: true;
+    isStrike?: true;
+    isLead?: true;
+};
 
 export type Segment =
     // markdown the engine draws as it draws a reply
@@ -299,22 +310,26 @@ export function layout(clean: string, marks: readonly string[], isSkim: boolean)
             ranges.length = 0;
         }
         const isHeading = !inFence && HEADING.test(line);
-        if (ranges.length === 0 && !(isSkim && isHeading)) {
+        const heading = /^\s*#{1,6}\s+/.exec(line);
+        const item = heading ? null : LIST_ITEM.exec(line);
+        const cut = (heading ?? item)?.[0].length ?? 0;
+        // under skim a line opening on bold is drawn here, so its bold can stay bright while the rest dims
+        const isLead = !inFence && !isHeading && !TABLE_ROW.test(line) && LEAD_BOLD.test(line.slice(cut));
+        if (ranges.length === 0 && !(isSkim && (isHeading || isLead))) {
             chunk.push(line);
             continue;
         }
         flush(false);
-        if (ranges.length === 0) {
+        if (ranges.length === 0 && isHeading) {
             segments.push({ kind: "markdown", text: line, isDim: false });
             continue;
         }
-        const heading = /^\s*#{1,6}\s+/.exec(line);
-        const item = heading ? null : LIST_ITEM.exec(line);
-        const cut = (heading ?? item)?.[0].length ?? 0;
         const shifted = ranges.map(([a, b]) => [a - cut, b - cut] as [number, number]);
-        const runs = inlineRuns(line.slice(cut), shifted).map((run) =>
-            heading ? { ...run, isBold: true as const } : run
-        );
+        let isOpening = isLead;
+        const runs = inlineRuns(line.slice(cut), shifted).map((run) => {
+            isOpening &&= !!run.isBold;
+            return heading ? { ...run, isBold: true as const } : isOpening ? { ...run, isLead: true as const } : run;
+        });
         segments.push({ kind: "line", prefix: item?.[1] ?? "", runs, isHeading: !!heading });
     }
     flush(true);

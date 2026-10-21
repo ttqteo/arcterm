@@ -157,6 +157,48 @@ describe("layout", () => {
         ]);
     });
 
+    it("under skim keeps the bold that opens an item or a paragraph bright, marked or not", () => {
+        const text = "1. **Risk one.** Plain rest. Do this.\n2. **Risk two.** Only **plain** bold.\n\n**Lead.** Para.";
+        expect(layout(text, ["Do this."], true)).toEqual([
+            {
+                kind: "line",
+                prefix: "1. ",
+                runs: [
+                    { text: "Risk one.", isBold: true, isLead: true },
+                    { text: " Plain rest. " },
+                    { text: "Do this.", isMarked: true },
+                ],
+                isHeading: false,
+            },
+            {
+                kind: "line",
+                prefix: "2. ",
+                runs: [
+                    { text: "Risk two.", isBold: true, isLead: true },
+                    { text: " Only " },
+                    { text: "plain", isBold: true },
+                    { text: " bold." },
+                ],
+                isHeading: false,
+            },
+            { kind: "gap" },
+            {
+                kind: "line",
+                prefix: "",
+                runs: [{ text: "Lead.", isBold: true, isLead: true }, { text: " Para." }],
+                isHeading: false,
+            },
+        ]);
+    });
+
+    it("leaves a line opening on bold to the engine when nothing dims", () => {
+        const text = "- **Risk.** Rest.\n- Key one.";
+        expect(layout(text, ["Key one."], false)).toEqual([
+            { kind: "markdown", text: "- **Risk.** Rest.", isDim: false },
+            { kind: "line", prefix: "- ", runs: [{ text: "Key one.", isMarked: true }], isHeading: false },
+        ]);
+    });
+
     it("marks a sentence inside a paragraph, leaving the rest of the line plain", () => {
         const [line] = layout("Before. Key one. After.", ["Key one."], false);
         expect(line).toEqual({
