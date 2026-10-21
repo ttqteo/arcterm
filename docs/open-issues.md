@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Stable wsh updates past a held copy: after the next `task install`, `~/.arc/bin/wsh.exe detach --help`
+  prints the detach help even while an old `wsh agentctl` (PID 163912 today) still runs; a `wsh.exe.old.1` may sit
+  beside it until that process exits, and the following launch removes it. 498b85887
 - [ ] (arcterm) Account switch resumes mid-turn: with an agent working (or stopped at its usage limit), switch the
   Claude account in Settings, check it in "Resume agents on …?" and Resume selected; it comes back and carries on by
   itself with the "Claude account was switched" turn. An idle agent comes back at its prompt with no new turn.
