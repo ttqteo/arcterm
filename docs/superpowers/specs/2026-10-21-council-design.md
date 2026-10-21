@@ -1,6 +1,7 @@
 # Council: a panel of expert agents that reviews a feature
 
-Status: design, agreed 2026-10-21. Prototype: `.superpowers\design\council\project\`
+Status: built, awaiting hand checks (design agreed 2026-10-21; the checks are the Council lines in
+`docs/open-issues.md` "0 · Waiting on a hand check"). Prototype: `.superpowers\design\council\project\`
 (canvas `council`, gitignored; boards Main = Discussion, Summary, Setup, Running, Paused).
 
 ## What it is
@@ -47,7 +48,8 @@ the cost label says so, with the higher estimate, before you send.
 - **Groups** are saved sets of roles picked in one go. Two ship: **Review a UI feature** (UX, RAM, New user, Skeptic)
   and **Paper review** (Reviewer A for the venue's security bar, Reviewer B for baselines and datasets, Reader for
   prose: terms used before they are defined, sentences that read as machine-written; the coordinator acts as area
-  chair). **Save as group** on Setup adds one.
+  chair). **Save as group** on Setup adds one; a group holds library role ids only, so a suggested role added to the
+  panel and a per-row model change are not kept (Setup's note names what was left out).
 - **The coordinator suggests roles** for the feature at hand from the files it is given (Setup's dashed rows: "Mac
   user: the frame reload is Windows-only for now"); you add or ignore them. It is one sonnet call when Setup has a
   feature and a file to read (a few tens of thousands of tokens, read-only tools), which also proposes the files the
@@ -109,8 +111,9 @@ No new surface and no nav rail entry.
 While round 1 runs (board Running) the body shows each expert's card with what it is reading
 (`Grep "IdleSleep" in pkg/services`) and the proposals as they arrive; Summarize stays off until round 1 is done.
 
-Showing what an expert is reading needs the tool events of its stream: `claudeParseLine`
-(`pkg/consult/consult.go:104`) keeps only text today and must also return `tool_use` events.
+What an expert is reading comes from the tool events of its stream: `claudeParseLine`
+(`pkg/consult/consult.go`) returns `tool_use` events as well as text, and `RunClaude` hands each to the council's
+`OnTool` callback.
 
 ### Summary (board Summary)
 
@@ -126,7 +129,9 @@ Opened by Summarize, with a breadcrumb back to the Discussion.
 
 ## What comes out
 
-- **Ideas.** Each direction becomes a line in the Ideas list of the agent session that started the council. A council
+- **Ideas.** Each direction becomes a line in the Ideas list of the agent session that started the council (topic
+  `Council · <feature>`); a Summarize again adds a line only for a direction whose title the earlier Summary did not
+  have. A council
   started by hand has no session: its directions stay on the council, and **Brainstorm this** opens a claude agent in
   the project, seeded with the direction and its thread, whose Ideas list then holds it.
 - **Save as doc** writes the Summary and Matrix as markdown into the project (`docs/council/YYYY-MM-DD-<feature>.md`
@@ -141,9 +146,12 @@ Opened by Summarize, with a breadcrumb back to the Discussion.
   holds the project, feature, question, inputs (file paths, screenshot paths), experts (role, brief, model), Pause
   after round 1, state (`running | awaiting-you | done | not-run | stopped | failed`), each round's structured
   result, the replies and follow-ups, the session that started it (if any), and the token count.
-- **`pkg/consult` changes:** per-call `--model` and `--tools` arguments for claude; `tool_use` events from the stream;
-  and token usage from claude's final `result` event, since `RunWithUsage` returns an empty `Usage` for a CLI runtime
-  today (`pkg/consult/exec.go:55`).
+- **`pkg/consult` changes** (built as `RunClaude` and `ClaudeArgs`, `pkg/consult/exec.go`, `consult.go`): per-call
+  `--model` and `--tools` arguments for claude, with `--strict-mcp-config` so the account's connector tools do not
+  load; `tool_use` events from the stream; and token usage from claude's final `result` event, since `RunWithUsage`
+  returns an empty `Usage` for a CLI runtime. `Usage.TotalTokens` is the sum of all four counts, cache reads included,
+  so a council's token figure reads higher than Radar's audit total, which leaves cache reads out. An empty reply
+  counts as a failed call.
 - **RPC and events:** a `wshrpctypes_council.go` group (start, list, get, reply, continue, summarize, stop, retry,
   suggest, estimate, save-doc, roles, save-group) and a `council:changed` event in `pkg/wps/wpstypes.go`, regenerated with `task generate`.
 - **`wsh council start | estimate | list | show | wait | stop`**, the agent-facing commands; `estimate` prints the
@@ -152,8 +160,14 @@ Opened by Summarize, with a breadcrumb back to the Discussion.
 ## Failures
 
 - **An expert fails** (exit, timeout, unparseable JSON): its card says so with **Retry**; the round goes on without it
-  and the coordinator names who was missing. Retry reruns that expert's call in the round it failed in. A failed
-  coordinator leaves the council `failed` with Retry on round 3.
+  and the coordinator names who was missing. Retry reruns that expert's call in the round it failed in. An expert
+  that failed in round 1 sits round 2 out. A failed coordinator leaves the council `failed` with Retry on round 3.
+  A Retry that succeeds restores the state the council had before it, so one that failed with every expert gone in
+  round 1 stays `failed`, with its error, until Summarize (its next step, not a round 2) makes it `done`. A Retry of a
+  round 1 failure on a council that is already done adds only that expert's proposals: nobody has reviewed them and
+  the Summary is not rerun, so the Discussion says so on each such proposal and Summarize ranks them with the rest.
+- **arcterm closes while a council runs:** at the next start every council left `running` is marked `stopped`, with
+  `arcterm closed during round N`; the rounds that finished stay and Summarize works on them.
 - **The gate refuses:** `wsh council start` saves the council as `not-run` without running it; its tree row says
   `Not run`, and its Discussion offers **Start council** (with the estimate), which is the yes.
 - **Stop council** keeps whatever rounds finished; Summarize works on them.
@@ -162,8 +176,11 @@ Opened by Summarize, with a breadcrumb back to the Discussion.
 ## RAM and cost
 
 A council holds no process between rounds: each call is a `claude -p` that exits. Round 1 runs one process per expert
-at once (four in the shipped groups), each through `wsh jobslot`'s RAM check. Its RAM goes into open-issues' RAM
-watch when it is first measured.
+at once (four in the shipped groups). A call with tools claims a slot in wavesrv's job queue first (`jobqueue.Hold`
+in `pkg/council/caller.go`, 512 MiB each as the estimate, the way the engine's Verify queues), so on a tight machine
+the experts wait their turn instead of all starting together; a call without tools (rounds 2 and 3) answers from text
+and starts at once. The 512 MiB is a guess: open-issues' RAM watch has a pending row to measure it on the first real
+run.
 
 ## Testing
 
