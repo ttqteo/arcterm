@@ -60,6 +60,40 @@ func RunWithUsage(ctx context.Context, spec RuntimeSpec, cwd, prompt string, emi
 	return full, Usage{}, err
 }
 
+// RunClaude runs claude once with the call's own model and tools, returns the reply and what the
+// call consumed (the model alias it asked for, and the token total its result event reported), and
+// calls onTool with a description of each tool call the assistant makes while it works. onTool may
+// be nil. Run and RunWithUsage are unchanged: this is the path for a caller that picks the model and
+// tools per call and shows the work.
+func RunClaude(ctx context.Context, cwd, prompt string, o CallOpts, onTool func(string)) (string, Usage, error) {
+	spec, ok := SpecFor("claude")
+	if !ok {
+		return "", Usage{}, fmt.Errorf("claude has no headless spec")
+	}
+	spec.BaseArgs = ClaudeArgs(o)
+	return runClaudeSpec(ctx, spec, cwd, prompt, o.Model, onTool)
+}
+
+// runClaudeSpec is RunClaude on a given spec: it wraps the spec's parser to watch the tool and result
+// events and runs it through the pipe path. The wrapper runs on the read loop's goroutine, one line at
+// a time, so the token total needs no lock.
+func runClaudeSpec(ctx context.Context, spec RuntimeSpec, cwd, prompt, model string, onTool func(string)) (string, Usage, error) {
+	parse := spec.ParseLine
+	var tokens int64
+	spec.ParseLine = func(line []byte) ParsedEvent {
+		ev := parse(line)
+		if ev.Tool != "" && onTool != nil {
+			onTool(ev.Tool)
+		}
+		if ev.Tokens > 0 {
+			tokens = ev.Tokens
+		}
+		return ev
+	}
+	full, err := runPipe(ctx, spec, cwd, prompt, func(string) {})
+	return full, Usage{Model: model, TotalTokens: int(tokens)}, err
+}
+
 // runPipe spawns the CLI with stdout piped. With a ParseLine it reads JSONL events line-by-line and
 // emits the text each reply event carries; without one it emits raw stdout chunks verbatim. It drains
 // stdout to EOF (a Complete/settlement event does not stop the drain) and only then reaps the process,
