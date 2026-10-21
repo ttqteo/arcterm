@@ -62,7 +62,7 @@ const STEP_INDENT_PX = 22;
 const AMEND_TITLE = "Rewrite the last commit (not pushed yet)";
 const AMEND_LOCKED_TITLE = "Already pushed: amending would need a force push";
 
-function CountsOrNote({ change }: { change: GitChange }) {
+export function CountsOrNote({ change }: { change: GitChange }) {
     if (change.note) {
         return (
             <span title={CHANGE_NOTE_TITLE[change.note]} className="flex-none text-[10.5px] text-muted">

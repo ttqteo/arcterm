@@ -73,6 +73,7 @@ import { prettyModel } from "./modellabel";
 import { PlanReviewSection } from "./planreviewsection";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { artifactsView } from "./railartifacts";
+import { RailCommitBox, RailCommitFiles } from "./railcommitbox";
 import {
     commitRange,
     commitsOpenByDefault,
@@ -83,7 +84,14 @@ import {
     type RailWhere,
 } from "./railcommits";
 import { RailCommitsSection } from "./railcommitssection";
-import { loadRailCommits, railCommitsAtom, railCommitsOpenAtom, setRailCommitsOpen } from "./railcommitsstore";
+import {
+    loadRailCommits,
+    railCommitModeAtom,
+    railCommitsAtom,
+    railCommitsOpenAtom,
+    setRailCommitMode,
+    setRailCommitsOpen,
+} from "./railcommitsstore";
 import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
 import { clearRailSectionRequest, railSectionRequestAtom } from "./railsection";
@@ -580,11 +588,14 @@ function FilesChangedList({
     summary,
     onOpen,
     onViewDiff,
+    onCommit,
 }: {
     files: { path: string; status: string; adds: number; dels: number }[];
     summary: string;
     onOpen: (path: string) => void;
     onViewDiff: () => void;
+    // opens commit mode; offered while there is something to commit
+    onCommit?: () => void;
 }) {
     return (
         <>
@@ -603,6 +614,17 @@ function FilesChangedList({
             <div className="mt-[8px] flex items-center gap-[10px] text-[10.5px] tabular-nums">
                 <span className="text-muted">{summary}</span>
                 <span className="flex-1" />
+                {onCommit ? (
+                    <button
+                        type="button"
+                        data-rail-commit-open
+                        onClick={onCommit}
+                        title="Tick files and commit them here"
+                        className="cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[8px] py-[2px] text-[10.5px] font-semibold text-ink-hi hover:border-edge-strong"
+                    >
+                        Commit…
+                    </button>
+                ) : null}
                 <button
                     type="button"
                     onClick={onViewDiff}
@@ -752,6 +774,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const commitsState = useAtomValue(railCommitsAtom)[agent.id];
     const openChoice = useAtomValue(railCommitsOpenAtom)[agent.id];
     const uncommitted = useAtomValue(commitListAtom)[railState?.cwd ?? ""]?.changes.files.length ?? 0;
+    // commit mode (railcommitbox.tsx): the tab lists what is uncommitted and pins the commit box to its foot
+    const committing = useAtomValue(railCommitModeAtom)[agent.id] === true && !ended && railState?.cwd != null;
     const commitsKey = railState?.cwd && range ? `${railState.cwd}|${range.from}` : null;
     const commitsView =
         range && commitsState?.key === commitsKey
@@ -967,6 +991,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         value={onBranch ? "branch" : "session"}
                         base={branchDiff.base}
                         onChange={(r) => globalStore.set(railChangesRangeAtom, r)}
+                        disabled={committing}
                     />
                 ) : null}
                 {full && commitsView && commitsView.rows.length > 0 ? (
@@ -976,10 +1001,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         failure={commitsState!.failure}
                         open={commitsOpen}
                         summary={commitsSummary(commitsView, range!)}
-                        committing={false}
+                        committing={committing}
                         onToggle={() => setRailCommitsOpen(agent.id, !commitsOpen)}
                         onOpenCommit={(h) => openRailCommit(h)}
-                        onUncommitted={() => {}}
+                        onUncommitted={() => setRailCommitMode(agent.id, true)}
                         onMore={() => openRailCommit()}
                         onRetry={retryCommits}
                     />
@@ -999,27 +1024,34 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         onRetry={retryCommits}
                     />
                 ) : null}
-                {full ? (
-                    <div
-                        data-rail-files-header
-                        className="flex items-center gap-[8px] py-[5px] text-[12px] font-medium text-secondary"
-                    >
-                        <FileDiff size={13} aria-hidden className="flex-none" />
-                        Files
-                        <span className="text-[11px] tabular-nums text-muted">{listed.length}</span>
-                    </div>
-                ) : null}
-                {listed.length === 0 ? (
-                    <div className="text-[11.5px] text-muted">
-                        {onBranch ? `No changes against ${branchDiff.base}` : "No changes"}
-                    </div>
+                {full && committing ? (
+                    <RailCommitFiles cwd={railState.cwd} />
                 ) : (
-                    <FilesChangedList
-                        files={listed}
-                        summary={filesSummary(changes)}
-                        onOpen={openChangedFile}
-                        onViewDiff={() => openFileDiff()}
-                    />
+                    <>
+                        {full ? (
+                            <div
+                                data-rail-files-header
+                                className="flex items-center gap-[8px] py-[5px] text-[12px] font-medium text-secondary"
+                            >
+                                <FileDiff size={13} aria-hidden className="flex-none" />
+                                Files
+                                <span className="text-[11px] tabular-nums text-muted">{listed.length}</span>
+                            </div>
+                        ) : null}
+                        {listed.length === 0 ? (
+                            <div className="text-[11.5px] text-muted">
+                                {onBranch ? `No changes against ${branchDiff.base}` : "No changes"}
+                            </div>
+                        ) : (
+                            <FilesChangedList
+                                files={listed}
+                                summary={filesSummary(changes)}
+                                onOpen={openChangedFile}
+                                onViewDiff={() => openFileDiff()}
+                                onCommit={full && uncommitted > 0 ? () => setRailCommitMode(agent.id, true) : undefined}
+                            />
+                        )}
+                    </>
                 )}
             </>
         );
@@ -1339,11 +1371,29 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         agentState={agent.state}
                     />
                 ) : shown === "changes" ? (
-                    <div
-                        data-rail-changes
-                        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-[40px] pt-[12px]"
-                    >
-                        {filesContent(changes, true)}
+                    <div className="flex min-h-0 flex-1 flex-col">
+                        <div
+                            data-rail-changes
+                            className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-[40px] pt-[12px]"
+                        >
+                            {filesContent(changes, true)}
+                        </div>
+                        {committing && railState?.cwd ? (
+                            <RailCommitBox
+                                cwd={railState.cwd}
+                                agents={agents}
+                                onCancel={() => setRailCommitMode(agent.id, false)}
+                                onMore={() => openRailCommit()}
+                                onDone={() => {
+                                    setRailCommitMode(agent.id, false);
+                                    fireAndForget(() =>
+                                        loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId, {
+                                            silent: true,
+                                        })
+                                    );
+                                }}
+                            />
+                        ) : null}
                     </div>
                 ) : undefined
             }
