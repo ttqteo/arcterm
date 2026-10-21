@@ -19,6 +19,8 @@ export interface GeometryOpts {
     rowH: number;
     // lanes past this fold into the last drawable column; keeps a 9-lane repo inside a fixed gutter
     maxLanes: number;
+    // a parent outside the rows draws a dashed stub one row down (the rail's scoped list), instead of nothing (the Log's paged one)
+    stubs?: boolean;
 }
 
 export interface GraphEdge {
@@ -27,6 +29,7 @@ export interface GraphEdge {
     lane: number;
     folded: boolean;
     dashed: boolean;
+    boundary: boolean;
 }
 
 export interface GraphNode {
@@ -37,6 +40,7 @@ export interface GraphNode {
     merge: boolean;
     folded: boolean;
     workingTree: boolean;
+    boundary: boolean;
 }
 
 export interface GraphGeometry {
@@ -83,6 +87,8 @@ export function graphGeometry(rows: LanedRow[], opts: GeometryOpts): GraphGeomet
     const edges: GraphEdge[] = [];
     const nodes: GraphNode[] = [];
     let foldedCount = 0;
+    // the lowest y a stub reaches, which can be past the last row
+    let stubBottom = 0;
 
     rows.forEach((row, i) => {
         const folded = row.lane > lastLane;
@@ -94,14 +100,26 @@ export function graphGeometry(rows: LanedRow[], opts: GeometryOpts): GraphGeomet
         for (const parent of row.parents) {
             const pi = rowOf.get(parent);
             if (pi === undefined) {
-                continue; // parent not in this page; the lane stays reserved but nothing is drawn
+                // parent not in this page: the Log keeps the lane reserved and draws nothing; a scoped list runs on dashed
+                if (opts.stubs) {
+                    edges.push({
+                        d: `M${x1} ${y1} L${x1} ${y1 + rowH}`,
+                        lane: row.lane,
+                        folded,
+                        dashed: true,
+                        boundary: false,
+                    });
+                    stubBottom = Math.max(stubBottom, y1 + rowH);
+                }
+                continue;
             }
             const par = rows[pi];
             edges.push({
                 d: edgePath(x1, y1, x(par.lane), y(pi)),
                 lane: Math.min(row.lane, par.lane),
                 folded: folded || par.lane > lastLane,
-                dashed: !!row.workingTree,
+                dashed: !!row.workingTree || !!par.boundary,
+                boundary: !!par.boundary,
             });
         }
         nodes.push({
@@ -112,13 +130,14 @@ export function graphGeometry(rows: LanedRow[], opts: GeometryOpts): GraphGeomet
             merge: row.merge,
             folded,
             workingTree: !!row.workingTree,
+            boundary: !!row.boundary,
         });
     });
 
     const gutter = PAD_L + maxLanes * LANE_W + 4;
     return {
         width: gutter,
-        height: rows.length === 0 ? 0 : acc + BOTTOM_PAD,
+        height: rows.length === 0 ? 0 : Math.max(acc + BOTTOM_PAD, stubBottom),
         gutter,
         edges,
         nodes,

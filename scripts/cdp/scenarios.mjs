@@ -29677,8 +29677,8 @@ const agentRailTabs = {
         const w1 = await h.ev(railTabsWidth);
         await h.shot("cdp-shots/agent-rail-tabs-overview.png");
         rec(
-            "1. Overview and Files are the tabs, Overview selected and 300px wide, and Files changed lists a.txt",
-            JSON.stringify(tabs1) === JSON.stringify(["Overview*", "Files"]) && Math.abs(w1 - 300) <= 2 && listed,
+            "1. Overview, Files and Changes are the tabs, Overview selected and 300px wide, and Files changed lists a.txt",
+            JSON.stringify(tabs1) === JSON.stringify(["Overview*", "Files", "Changes"]) && Math.abs(w1 - 300) <= 2 && listed,
             JSON.stringify({ tabs1, w1, listed })
         );
 
@@ -29709,7 +29709,7 @@ const agentRailTabs = {
         await h.shot("cdp-shots/agent-rail-tabs-file.png");
         rec(
             "2. a.txt in the Cockpit card's tool row opens the Agent surface with a.txt on the File tab, at the wide width",
-            clicked2 && editor2 && surface2 === "Agent" && JSON.stringify(tabs2) === JSON.stringify(["Overview", "Files", "File a.txt*"]) && Math.abs(w2 - wide) <= 2,
+            clicked2 && editor2 && surface2 === "Agent" && JSON.stringify(tabs2) === JSON.stringify(["Overview", "Files", "Changes", "File a.txt*"]) && Math.abs(w2 - wide) <= 2,
             JSON.stringify({ clicked2, editor2, surface2, tabs2, w2, wide })
         );
 
@@ -29749,6 +29749,8 @@ const agentRailTabs = {
         await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
         const tabs5a = await h.ev(railTabLabels);
         await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
+        const tabs5c = await h.ev(railTabLabels);
+        await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
         const tabs5 = await h.ev(railTabLabels);
         const surface5a = await h.activeSurfaceLabel();
         await h.ev(`${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] [data-file-open-code]")?.focus()`);
@@ -29756,11 +29758,12 @@ const agentRailTabs = {
         const tabs5b = await h.ev(railTabLabels);
         const surface5b = await h.activeSurfaceLabel();
         rec(
-            "5. → in the tab strip selects Files, then File, without leaving the agent, and Esc in the File tab closes the file back to Files, not the surface",
-            JSON.stringify(tabs5a) === JSON.stringify(["Overview", "Files*", "File a.txt"]) &&
-                JSON.stringify(tabs5) === JSON.stringify(["Overview", "Files", "File a.txt*"]) && surface5a === "Agent" &&
-                JSON.stringify(tabs5b) === JSON.stringify(["Overview", "Files*"]) && surface5b === "Agent",
-            JSON.stringify({ tabs5a, tabs5, surface5a, tabs5b, surface5b })
+            "5. → in the tab strip selects Files, then Changes, then File, without leaving the agent, and Esc in the File tab closes the file back to Changes (the tab → came from), not the surface",
+            JSON.stringify(tabs5a) === JSON.stringify(["Overview", "Files*", "Changes", "File a.txt"]) &&
+                JSON.stringify(tabs5c) === JSON.stringify(["Overview", "Files", "Changes*", "File a.txt"]) &&
+                JSON.stringify(tabs5) === JSON.stringify(["Overview", "Files", "Changes", "File a.txt*"]) && surface5a === "Agent" &&
+                JSON.stringify(tabs5b) === JSON.stringify(["Overview", "Files", "Changes*"]) && surface5b === "Agent",
+            JSON.stringify({ tabs5a, tabs5c, tabs5, surface5a, tabs5b, surface5b })
         );
 
         // 6. the grip: drag left widens, keys reach both ends
@@ -29802,7 +29805,7 @@ const agentRailTabs = {
         rec(
             "7. collapsed, the strip shows Overview, Files and the open file; the file's icon opens the panel on File",
             Math.abs(w7 - 44) <= 2 && strip7.includes("Overview") && strip7.includes("Files") && strip7.some((l) => l === "File a.txt") &&
-                JSON.stringify(tabs7) === JSON.stringify(["Overview", "Files", "File a.txt*"]),
+                JSON.stringify(tabs7) === JSON.stringify(["Overview", "Files", "Changes", "File a.txt*"]),
             JSON.stringify({ w7, strip7, tabs7 })
         );
 
@@ -32535,6 +32538,828 @@ const agentRailWorktreeFiles = {
         });
         await step("reload onto the restored roster", () => ahReload(h));
         await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }));
+    },
+};
+
+// The Agent panel's Changes tab: where its diff is measured, and the commits of the same range over the graph's lanes
+// (docs/superpowers/specs/2026-10-21-rail-changes-worktree-commits-design.md), run on the dev app. Two fixture agents, each
+// in its own linked worktree of one repo (their block ids are made up and their cwd and session start come from a one-line
+// transcript, so neither needs a terminal):
+//   - W, in rcc-wt on feat/x. f1 (+10 min) is on the branch, m1 (+20) on main, f2 (+30) on the branch, then main merged
+//     into it (+40), and f1.txt edited again, uncommitted. The branch range (merge base m1) holds merge, f2 and f1, and f1's
+//     parent lies outside the list; the session starts at +35, so its range is merge and m1;
+//   - M, in rcc-many on feat/many, 23 commits on main's tip: more than the section's 20.
+// Every commit is dated (T0 two hours ago, plus the minutes), so the session start picks the same commit on every run.
+// Steps follow the Prototype's boards Main, ManyCommits and States. Teardown puts back the user's fixture roster and the
+// keys this touches, and removes the temp directory.
+const RCC_AGENT_W = "fx-rcc-w";
+const RCC_AGENT_M = "fx-rcc-m";
+const RCC_BLOCK_W = "fx-blk-rcc-w";
+const RCC_BLOCK_M = "fx-blk-rcc-m";
+const RCC_PROJECT = "verify-rail-commits";
+const RCC_KEYS = [RAIL_VISIBLE_KEY, RAIL_RANGE_KEY, "agent.rail.tab", GRID_KEY];
+// the section's cap (RAIL_COMMITS_CAP in railcommits.ts), mirrored: agent M's branch holds three more
+const RCC_CAP = 20;
+const RCC_FOLD_TOKEN = "var(--color-graphlane-fold)";
+const rccSel = (sel) => `${RWF_ASIDE}?.querySelector(${JSON.stringify(sel)})`;
+const rccAll = (sel) => `[...(${RWF_ASIDE}?.querySelectorAll(${JSON.stringify(sel)}) ?? [])]`;
+const rccCount = (sel) => `${rccAll(sel)}.length`;
+const RCC_HEADER = "[data-rail-commits] h3 button";
+const rccClick = (h, sel) => h.ev(`(() => { const el = ${rccSel(sel)}; el?.click(); return el != null; })()`);
+
+function rccFixture(base) {
+    const t0 = Math.floor(Date.now() / 1000) - 2 * 3600;
+    const at = (min) => `@${t0 + min * 60} +0000`;
+    const git = (dir, min, ...args) =>
+        execFileSync("git", ["-C", dir, "-c", "user.email=v@v", "-c", "user.name=v", ...args], {
+            stdio: "pipe",
+            env: { ...process.env, GIT_AUTHOR_DATE: at(min), GIT_COMMITTER_DATE: at(min) },
+        });
+    const put = (dir, name, text) => writeFileSync(join(dir, name), text);
+    const commit = (dir, min, name, text, message) => {
+        put(dir, name, text);
+        git(dir, min, "add", name);
+        git(dir, min, "commit", "-q", "-m", message);
+    };
+    const repo = join(base, "repo");
+    const wt = join(base, "rcc-wt");
+    const many = join(base, "rcc-many");
+    // outside every repo, so the transcripts are not among the files a worktree lists as uncommitted
+    const logs = join(base, "transcripts");
+    for (const dir of [repo, logs]) mkdirSync(dir);
+
+    git(repo, 0, "init", "-q", "--initial-branch=main");
+    commit(repo, 0, "a.txt", "a\n", "seed a");
+    git(repo, 0, "worktree", "add", "-q", "-b", "feat/x", wt);
+    commit(wt, 10, "f1.txt", "f1\n", "add f1");
+    commit(repo, 20, "m1.txt", "m1\n", "add m1 on main");
+    commit(wt, 30, "f2.txt", "f2\n", "add f2");
+    git(wt, 40, "merge", "-q", "--no-edit", "main");
+    // the one uncommitted file
+    put(wt, "f1.txt", "f1\nf1 again\n");
+    git(repo, 0, "worktree", "add", "-q", "-b", "feat/many", many, "main");
+    for (let i = 0; i < RCC_CAP + 3; i++) {
+        commit(many, 50 + i, `n${String(i).padStart(2, "0")}.txt`, `n${i}\n`, `add n${i}`);
+    }
+
+    // a record with a cwd is how the rail finds a directory for an agent whose block names none, and its timestamp is the
+    // session's start
+    const transcript = (name, cwd, min) => {
+        const path = join(logs, name);
+        const record = {
+            type: "user",
+            cwd,
+            timestamp: new Date((t0 + min * 60) * 1000).toISOString(),
+            message: { role: "user", content: [{ type: "text", text: "list the commits" }] },
+        };
+        writeFileSync(path, JSON.stringify(record) + "\n");
+        return path;
+    };
+    return { repo, wt, many, transcriptW: transcript("w.jsonl", wt, 35), transcriptM: transcript("m.jsonl", many, 45) };
+}
+
+const rccRoster = (ctx) =>
+    [
+        { id: RCC_AGENT_W, name: "rail commits agent", blockId: RCC_BLOCK_W, transcriptPath: ctx.transcriptW },
+        { id: RCC_AGENT_M, name: "many commits agent", blockId: RCC_BLOCK_M, transcriptPath: ctx.transcriptM },
+    ].map((a) => ({
+        project: RCC_PROJECT,
+        task: "list the commits",
+        state: "idle",
+        agent: "claude",
+        model: "opus",
+        idleSince: Date.now() - 60_000,
+        ...a,
+    }));
+
+// The Changes tab of the shown agent's panel, once its strip has drawn it (the rail knows the cwd by then) and the tab
+// body has drawn `until`. Right after another agent is chosen the strip is still the previous agent's until the rail has
+// loaded this one's, and a click on that one is lost with it, so the click is repeated until the body is up
+async function rccOpenChanges(h, until = "[data-rail-commits]", ms = 60000) {
+    for (let waited = 0; waited < ms; waited += 1500) {
+        const clicked = await h.ev(`(() => {
+            const tab = ${rccSel('[data-rail-tab="changes"]')};
+            tab?.click();
+            return tab != null;
+        })()`);
+        if (clicked && (await polishWaitFor(h, `!!${rccSel(until)}`, 1500))) return true;
+        if (!clicked) await polishNap(1500);
+    }
+    return false;
+}
+
+// What the Changes tab says right now, read in the page
+const RCC_SNAPSHOT = `(() => {
+    const aside = ${RWF_ASIDE};
+    const body = aside?.querySelector("[data-rail-changes]");
+    const where = body?.querySelector("[data-rail-changes-where]");
+    const group = body?.querySelector('[role="radiogroup"]');
+    const section = aside?.querySelector("[data-rail-commits]");
+    const gutter = section?.querySelector("[data-graph-gutter]");
+    const circles = [...(gutter?.querySelectorAll("circle") ?? [])];
+    const paths = [...(gutter?.querySelectorAll("path") ?? [])];
+    const last = circles.at(-1);
+    const root = section?.querySelector("[data-rail-commit-root]");
+    return {
+        where: where?.textContent ?? null,
+        whereBeforeSwitch: !!(where && group && where.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING),
+        commits: section?.querySelectorAll("[data-rail-commit]").length ?? 0,
+        uncommitted: section?.querySelector("[data-rail-commit-uncommitted]")?.textContent ?? null,
+        root: root?.textContent ?? null,
+        rootSpans: root?.querySelectorAll("span").length ?? null,
+        circles: circles.length,
+        lastDash: last?.getAttribute("stroke-dasharray") ?? null,
+        lastStroke: last?.getAttribute("stroke") ?? null,
+        dashedPaths: paths.filter((p) => p.hasAttribute("stroke-dasharray")).length,
+        lastPathDashed: paths.length > 0 && paths.at(-1).hasAttribute("stroke-dasharray"),
+        more: !!section?.querySelector("[data-rail-commits-more]"),
+    };
+})()`;
+
+// How far each graph node sits from the middle of its row, and how far the gutter's end is from the middle of the More row
+// under the list (a stub runs from a row's middle to the next row's middle, so the last line ends in the More button)
+const RCC_GEOMETRY = `(() => {
+    const section = ${RWF_ASIDE}?.querySelector("[data-rail-commits]");
+    const svg = section?.querySelector("[data-graph-gutter]");
+    if (!section || !svg) return null;
+    const rows = [...section.querySelectorAll("[data-rail-commit-uncommitted], [data-rail-commit], [data-rail-commit-root]")];
+    const circles = [...svg.querySelectorAll("circle")];
+    const mid = (el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
+    const offsets = circles.map((c, i) => (rows[i] ? Math.round((mid(c) - mid(rows[i])) * 10) / 10 : null));
+    const more = section.querySelector("[data-rail-commits-more]")?.parentElement ?? null;
+    return {
+        rows: rows.length,
+        circles: circles.length,
+        offsets,
+        moreGap: more ? Math.round((svg.getBoundingClientRect().bottom - mid(more)) * 10) / 10 : null,
+    };
+})()`;
+
+const agentRailChangesCommits = {
+    name: "rail-changes-commits",
+    surface: "agent",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "vrcc-"));
+        const ctx = {
+            base,
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+            prevKeys: {},
+        };
+        try {
+            for (const k of RCC_KEYS) {
+                ctx.prevKeys[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
+            }
+            Object.assign(ctx, rccFixture(base));
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(rccRoster(ctx), null, 2));
+            ctx.wroteFixture = true;
+            // a known rail: open, on the branch range, the default tab, an empty grid so each agent is shown alone
+            await h.ev(`(() => {
+                localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
+                localStorage.setItem(${JSON.stringify(RAIL_RANGE_KEY)}, ${JSON.stringify('"branch"')});
+                localStorage.removeItem("agent.rail.tab");
+                localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))});
+            })()`);
+            // the roster is read once per page load
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            ctx.inRoster = await polishWaitFor(
+                h,
+                `${JSON.stringify([RCC_AGENT_W, RCC_AGENT_M])}.every((id) => !!document.querySelector('[data-agent-terminal="' + id + '"]'))`,
+                15000
+            );
+            if (!ctx.inRoster) return ctx;
+            ctx.shownW = await rwfShow(h, RCC_AGENT_W);
+            ctx.changesW = ctx.shownW && (await rccOpenChanges(h));
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const ready = ctx.arrangeError == null && ctx.inRoster === true && ctx.changesW === true;
+        rec(
+            "0. both fixture agents are in the surface and W's Changes tab draws its commits",
+            ready,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster, shownW: ctx.shownW, changesW: ctx.changesW })
+        );
+        if (!ready) return steps;
+        const shot = (name) => h.shot(`cdp-shots/rail-changes-commits-${name}.png`);
+        const snap = () => h.ev(RCC_SNAPSHOT);
+        const waitRows = (n, ms = 15000) => polishWaitFor(h, `${rccCount("[data-rail-commit]")} === ${n}`, ms);
+        const headerState = () => h.ev(`(() => { const b = ${rccSel(RCC_HEADER)}; return { expanded: b?.getAttribute("aria-expanded") ?? null, text: b?.textContent ?? null }; })()`);
+        const waitExpanded = (value, ms = 5000) =>
+            polishWaitFor(h, `${rccSel(RCC_HEADER)}?.getAttribute("aria-expanded") === "${value}"`, ms);
+
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far, and the fault hook
+        // must not outlive the run
+        try {
+            // --- 1. Main, Branch ---------------------------------------------------------------------------------------
+            // the uncommitted row's count is its own read (commitstore's), so it can land after the commits do
+            const loaded = await polishWaitFor(
+                h,
+                `${rccCount("[data-rail-commit]")} === 3 && !!${rccSel("[data-rail-commit-uncommitted]")}`,
+                15000
+            );
+            const s1 = await snap();
+            await shot("1-main-branch");
+            rec(
+                "1. Main, Branch: the where line names feat/x and rcc-wt above the range switch; the list is the uncommitted row, three commits and the root over five nodes, dashed where the line leaves the range",
+                loaded &&
+                    s1.where != null && s1.where.includes("feat/x") && s1.where.includes("rcc-wt") && !s1.where.includes("main checkout") &&
+                    s1.whereBeforeSwitch === true &&
+                    s1.commits === 3 &&
+                    (s1.uncommitted ?? "").endsWith("1 file") &&
+                    (s1.root ?? "").includes("main") && (s1.root ?? "").includes("branched off here") &&
+                    s1.circles === 5 && !!s1.lastDash && s1.lastStroke === RCC_FOLD_TOKEN &&
+                    s1.dashedPaths >= 3,
+                { loaded, ...s1 }
+            );
+            const geo = await h.ev(RCC_GEOMETRY);
+            rec(
+                "1b. each graph node sits on the middle of its row",
+                geo != null && geo.rows === geo.circles && geo.offsets.every((o) => o != null && Math.abs(o) <= 2),
+                geo
+            );
+
+            // --- 2. the row's tooltip -----------------------------------------------------------------------------------
+            const first = await h.ev(`(() => {
+                const row = ${rccSel("[data-rail-commit]")};
+                if (!row) return null;
+                const spans = [...row.querySelectorAll("span")].map((s) => s.textContent);
+                return { hash: row.getAttribute("data-rail-commit"), title: row.getAttribute("title"), sha: spans[0], subject: spans[1] };
+            })()`);
+            const parts = (first?.title ?? "").split(" · ");
+            rec(
+                "2. the first commit's tooltip carries its short sha, its subject and the author",
+                first != null && first.hash.startsWith(first.sha) && parts[0] === first.sha && parts[1] === first.subject && parts[2] === "v",
+                first
+            );
+
+            // --- 3. Main, Session ---------------------------------------------------------------------------------------
+            await rccClick(h, '[data-changes-range="session"]');
+            const sessionRows = await polishWaitFor(
+                h,
+                `${rccCount("[data-rail-commit]")} === 2 && (${rccSel("[data-rail-commit-root]")}?.textContent ?? "").includes("session started here")`,
+                15000
+            );
+            const s3 = await snap();
+            await shot("3-main-session");
+            await rccClick(h, '[data-changes-range="branch"]');
+            const branchBack = await waitRows(3);
+            rec(
+                "3. Session: the root says session started here with no ref chip and two commits follow; Branch brings three back",
+                sessionRows && (s3.root ?? "").includes("session started here") && !(s3.root ?? "").includes("main") && s3.rootSpans === 2 &&
+                    s3.commits === 2 && branchBack,
+                { sessionRows, root: s3.root, rootSpans: s3.rootSpans, commits: s3.commits, branchBack }
+            );
+
+            // --- 4. the fold --------------------------------------------------------------------------------------------
+            const open0 = await headerState();
+            await rccClick(h, RCC_HEADER);
+            const folded = await waitExpanded("false");
+            const foldedState = await headerState();
+            await shot("4-main-folded");
+            await rccClick(h, RCC_HEADER);
+            const reopened = await waitExpanded("true");
+            rec(
+                "4. the header folds the list to its summary line and opens it again",
+                open0.expanded === "true" && folded && (foldedState.text ?? "").includes("since main") && reopened,
+                { open0, folded, foldedState, reopened }
+            );
+
+            // --- 5. ManyCommits -----------------------------------------------------------------------------------------
+            const shownM = await rwfShow(h, RCC_AGENT_M);
+            const tabM = shownM && (await rccOpenChanges(h));
+            const closed = tabM && (await polishWaitFor(
+                h,
+                `${rccSel(RCC_HEADER)}?.getAttribute("aria-expanded") === "false" && ${rccSel(RCC_HEADER)}.textContent.includes("${RCC_CAP}+")`,
+                20000
+            ));
+            const closedState = await headerState();
+            await shot("5a-many-folded");
+            await rccClick(h, RCC_HEADER);
+            const opened = await waitRows(RCC_CAP);
+            const s5 = await snap();
+            const geoM = await h.ev(RCC_GEOMETRY);
+            await shot("5b-many-open");
+            rec(
+                "5. a branch of more than twenty commits arrives folded with 20+, opens to twenty rows, and its last line runs dashed into the middle of More in Diff with no root",
+                shownM && tabM && closed && opened && s5.commits === RCC_CAP && s5.more && s5.root == null && s5.lastPathDashed &&
+                    geoM != null && geoM.moreGap != null && Math.abs(geoM.moreGap) <= 2,
+                { shownM, tabM, closed, closedState, opened, commits: s5.commits, more: s5.more, root: s5.root, lastPathDashed: s5.lastPathDashed, geoM }
+            );
+            const clickedMore = await rccClick(h, "[data-rail-commits-more]");
+            let surfaceM = null;
+            for (let waited = 0; waited < 10000 && surfaceM !== SURFACE_LABEL.files; waited += 250) {
+                surfaceM = await h.activeSurfaceLabel();
+                if (surfaceM !== SURFACE_LABEL.files) await polishNap(250);
+            }
+            rec("5c. More in Diff opens the Diff surface", clickedMore && surfaceM === SURFACE_LABEL.files, { clickedMore, surface: surfaceM });
+            await h.goto("agent");
+            const backW = await rwfShow(h, RCC_AGENT_W);
+            const backTab = backW && (await rccOpenChanges(h));
+            if (!backTab) rec("5d. back on W with its Changes tab", false, { backW, backTab });
+
+            // --- 6. States ----------------------------------------------------------------------------------------------
+            await h.ev(`window.__commitChangesFault = "hang"`);
+            await rccClick(h, '[data-changes-range="session"]');
+            const skeleton = await polishWaitFor(h, `${rccCount("[data-rail-commits-skeleton] > div")} === 3`, 8000);
+            await shot("6a-states-loading");
+            await h.ev(`window.__commitChangesFault = "error"`);
+            await rccClick(h, '[data-changes-range="branch"]');
+            const failed = await polishWaitFor(h, `!!${rccSel("[data-rail-commits-failure]")}`, 8000);
+            const failure = await h.ev(`${rccSel("[data-rail-commits-failure]")}?.textContent ?? null`);
+            const filesHeader = await h.ev(`!!${rccSel("[data-rail-files-header]")}`);
+            await shot("6b-states-failed");
+            const retried = await rccClick(h, "[data-rail-commits-retry]");
+            const recovered = retried && (await waitRows(3, 10000));
+            rec(
+                "6. the loading read draws three skeleton rows; a failed one names it, keeps the Files header and recovers on Retry",
+                backTab && skeleton && failed && (failure ?? "").includes("Couldn't read the commits") && (failure ?? "").includes("injected") &&
+                    filesHeader && recovered,
+                { backTab, skeleton, failed, failure, filesHeader, retried, recovered }
+            );
+
+            // --- 7. a commit row opens the Diff surface on that commit -------------------------------------------------
+            const row = await h.ev(`${rccSel("[data-rail-commit]")}?.getAttribute("data-rail-commit") ?? null`);
+            await rccClick(h, "[data-rail-commit]");
+            let surface7 = null;
+            let selected7 = false;
+            for (let waited = 0; waited < 10000 && !(surface7 === SURFACE_LABEL.files && selected7); waited += 250) {
+                surface7 = await h.activeSurfaceLabel();
+                selected7 = row != null && (await h.ev(`!!document.querySelector('[data-compare-commit="${row}"][data-selected]')`));
+                if (!(surface7 === SURFACE_LABEL.files && selected7)) await polishNap(250);
+            }
+            await shot("7-row-click");
+            rec(
+                "7. a commit row opens the Diff surface with that commit selected in the branch compare",
+                row != null && surface7 === SURFACE_LABEL.files && selected7,
+                { row, surface: surface7, selected: selected7 }
+            );
+            await h.goto("agent");
+        } catch (e) {
+            rec("a call threw before the scenario finished", false, String(e?.message ?? e));
+        } finally {
+            await h.ev("window.__commitChangesFault = undefined").catch(() => {});
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`rail-changes-commits teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the fault hook", () => h.ev("window.__commitChangesFault = undefined"));
+        await step("restore the keys", async () => {
+            for (const [k, v] of Object.entries(ctx.prevKeys ?? {})) {
+                await h.ev(restoreStorageKey(k, v));
+            }
+        });
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        await step("reload onto the restored roster", () => ahReload(h));
+        await step("go to the Agent surface", () => h.goto("agent"));
+        await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
+    },
+};
+
+// The Agent panel's Changes tab in commit mode, and on the main checkout
+// (docs/superpowers/specs/2026-10-21-rail-changes-worktree-commits-design.md), run on the dev app with rail-changes-commits'
+// helpers. One repo, two fixture agents (their block ids are made up; cwd and session start come from a one-line transcript):
+//   - C, in the linked worktree rcm-wt on feat/c: f1.txt committed on the branch and edited again, and n.txt (untracked), so
+//     two files are uncommitted. The session starts at +7 min, on the commit the branch was cut from;
+//   - K, in the main checkout on main: a.txt edited, one uncommitted file. Its session starts on main's tip, so its range holds
+//     no commit. The last step commits a.txt there and puts the file back, so K's range lists nothing while a.txt is uncommitted.
+// The repo's commit-msg hook (the worktree shares it) refuses a message containing REFUSE, which shows a refusal with no test
+// hook in the app. The repo carries its own git identity: the app's commit call passes none. Every commit is dated (T0 two
+// hours ago, plus the minutes). Steps follow the Prototype's boards CommitMode and MainCheckout. Teardown puts back the user's
+// fixture roster and the keys this touches, and removes the project and the temp directory.
+const RCM_AGENT_C = "fx-rcm-c";
+const RCM_AGENT_K = "fx-rcm-k";
+const RCM_BLOCK_C = "fx-blk-rcm-c";
+const RCM_BLOCK_K = "fx-blk-rcm-k";
+const RCM_NAME_C = "rail commit agent";
+// short: the where line shares a 300px rail with it, and a long name squeezes the branch down to "m.."
+const RCM_PROJECT = "verify-rcm";
+// the keys rail-changes-commits touches: a known rail, on the branch range, the default tab, an empty grid
+const RCM_KEYS = RCC_KEYS;
+const RCM_REFUSAL = "refused by the test hook";
+const RCM_TICK = (path) => `[data-rail-commit-tick=${JSON.stringify(path)}]`;
+
+function rcmFixture(base) {
+    const t0 = Math.floor(Date.now() / 1000) - 2 * 3600;
+    const at = (min) => `@${t0 + min * 60} +0000`;
+    const git = (dir, min, ...args) =>
+        execFileSync("git", ["-C", dir, ...args], {
+            stdio: "pipe",
+            env: { ...process.env, GIT_AUTHOR_DATE: at(min), GIT_COMMITTER_DATE: at(min) },
+        });
+    const put = (dir, name, text) => writeFileSync(join(dir, name), text);
+    const commit = (dir, min, name, text, message) => {
+        put(dir, name, text);
+        git(dir, min, "add", name);
+        git(dir, min, "commit", "-q", "-m", message);
+    };
+    const repo = join(base, "repo");
+    const wt = join(base, "rcm-wt");
+    // outside every repo, so the transcripts are not among the files a checkout lists as uncommitted
+    const logs = join(base, "transcripts");
+    for (const dir of [repo, logs]) mkdirSync(dir);
+
+    git(repo, 0, "init", "-q", "--initial-branch=main");
+    // the app's GitCommitCommand carries no identity of its own, and the worktree shares this config
+    git(repo, 0, "config", "user.name", "v");
+    git(repo, 0, "config", "user.email", "v@v");
+    git(repo, 0, "config", "core.autocrlf", "false");
+    const hooks = join(repo, ".git", "hooks");
+    mkdirSync(hooks, { recursive: true });
+    writeFileSync(
+        join(hooks, "commit-msg"),
+        `#!/bin/sh\nif grep -q REFUSE "$1"; then echo "${RCM_REFUSAL}" >&2; exit 1; fi\n`,
+        { mode: 0o755 }
+    );
+    commit(repo, 0, "a.txt", "a\n", "seed a");
+    commit(repo, 5, "b.txt", "b\n", "add b");
+    git(repo, 5, "worktree", "add", "-q", "-b", "feat/c", wt);
+    commit(wt, 10, "f1.txt", "f1\n", "add f1");
+    // C's two uncommitted files, and K's one
+    put(wt, "f1.txt", "f1\nf1 again\n");
+    put(wt, "n.txt", "n\n");
+    put(repo, "a.txt", "a\na again\n");
+
+    // a record with a cwd is how the rail finds a directory for an agent whose block names none, and its timestamp is the
+    // session's start
+    const transcript = (name, cwd, min) => {
+        const path = join(logs, name);
+        const record = {
+            type: "user",
+            cwd,
+            timestamp: new Date((t0 + min * 60) * 1000).toISOString(),
+            message: { role: "user", content: [{ type: "text", text: "commit the files" }] },
+        };
+        writeFileSync(path, JSON.stringify(record) + "\n");
+        return path;
+    };
+    return { repo, wt, transcriptC: transcript("c.jsonl", wt, 7), transcriptK: transcript("k.jsonl", repo, 20) };
+}
+
+const rcmRoster = (ctx) =>
+    [
+        { id: RCM_AGENT_C, name: RCM_NAME_C, blockId: RCM_BLOCK_C, transcriptPath: ctx.transcriptC },
+        { id: RCM_AGENT_K, name: "main checkout agent", blockId: RCM_BLOCK_K, transcriptPath: ctx.transcriptK },
+    ].map((a) => ({
+        project: RCM_PROJECT,
+        task: "commit the files",
+        state: "idle",
+        agent: "claude",
+        model: "opus",
+        idleSince: Date.now() - 60_000,
+        ...a,
+    }));
+
+// The Changes tab of the shown agent's panel, once its where line says `place`. The strip and the body are the previous
+// agent's until the rail has loaded this one's, so a bare "the tab drew something" would be answered by the other agent
+async function rcmOpenChanges(h, place, ms = 60000) {
+    for (let waited = 0; waited < ms; waited += 1500) {
+        await rccClick(h, '[data-rail-tab="changes"]');
+        const there = await polishWaitFor(
+            h,
+            `(${rccSel("[data-rail-changes-where]")}?.textContent ?? "").includes(${JSON.stringify(place)})`,
+            1500
+        );
+        if (there) return true;
+    }
+    return false;
+}
+
+const agentRailCommitMode = {
+    name: "rail-commit-mode",
+    surface: "agent",
+    async arrange(h) {
+        const base = mkdtempSync(join(tmpdir(), "vrcm-"));
+        const ctx = {
+            base,
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+            prevKeys: {},
+        };
+        try {
+            // the scenario before this one ends in a reload, and createproject needs window.TabRpcClient
+            await waitForAppBoot(h);
+            for (const k of RCM_KEYS) {
+                ctx.prevKeys[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
+            }
+            Object.assign(ctx, rcmFixture(base));
+            // the main checkout's where line names its project
+            await h.rpc("createproject", { name: RCM_PROJECT, path: ctx.repo });
+            ctx.project = RCM_PROJECT;
+            // the reload below must boot a frontend whose project list already has it
+            await waitForProjectInConfig(h, RCM_PROJECT);
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(TREE_RAIL_FIXTURE, JSON.stringify(rcmRoster(ctx), null, 2));
+            ctx.wroteFixture = true;
+            await h.ev(`(() => {
+                localStorage.setItem(${JSON.stringify(RAIL_VISIBLE_KEY)}, "true");
+                localStorage.setItem(${JSON.stringify(RAIL_RANGE_KEY)}, ${JSON.stringify('"branch"')});
+                localStorage.removeItem("agent.rail.tab");
+                localStorage.setItem(${JSON.stringify(GRID_KEY)}, ${JSON.stringify(JSON.stringify(GRID_EMPTY))});
+            })()`);
+            // the roster is read once per page load
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            await h.goto("agent");
+            ctx.inRoster = await polishWaitFor(
+                h,
+                `${JSON.stringify([RCM_AGENT_C, RCM_AGENT_K])}.every((id) => !!document.querySelector('[data-agent-terminal="' + id + '"]'))`,
+                15000
+            );
+            if (!ctx.inRoster) return ctx;
+            ctx.shownC = await rwfShow(h, RCM_AGENT_C);
+            ctx.changesC = ctx.shownC && (await rcmOpenChanges(h, "rcm-wt"));
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const ready = ctx.arrangeError == null && ctx.inRoster === true && ctx.changesC === true;
+        rec(
+            "0. both fixture agents are in the surface and C's Changes tab names rcm-wt",
+            ready,
+            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster, shownC: ctx.shownC, changesC: ctx.changesC })
+        );
+        if (!ready) return steps;
+        // each agent chosen raises a toast over the foot of the panel, where the commit box sits
+        const shot = async (name) => {
+            await h.ev(`document.querySelectorAll("[data-notification-close]").forEach((b) => b.click())`);
+            await polishNap(300);
+            await h.shot(`cdp-shots/rail-commit-mode-${name}.png`);
+        };
+        const tickOf = (path) => h.ev(`${rccSel(RCM_TICK(path))}?.getAttribute("aria-checked") ?? null`);
+        const allTick = () => h.ev(`${rccSel("[data-rail-commit-tick-all]")}?.getAttribute("aria-checked") ?? null`);
+        const waitAll = (value, ms = 5000) =>
+            polishWaitFor(h, `${rccSel("[data-rail-commit-tick-all]")}?.getAttribute("aria-checked") === ${JSON.stringify(value)}`, ms);
+        const waitBox = (up, ms = 8000) => polishWaitFor(h, `${up ? "!!" : "!"}${rccSel("[data-rail-commit-box]")}`, ms);
+        const ranges = () =>
+            h.ev(`(() => { const bs = ${rccAll("[data-changes-range]")}; return { n: bs.length, disabled: bs.filter((b) => b.disabled).length }; })()`);
+        // the box's textarea is React-controlled: the native setter, then an input event, is what its onChange hears
+        const setMessage = (text) =>
+            h.ev(`(() => {
+                const el = ${rccSel("[data-rail-commit-message]")};
+                if (!el) return false;
+                Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(el, ${JSON.stringify(text)});
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+                return true;
+            })()`);
+        const message = () => h.ev(`${rccSel("[data-rail-commit-message]")}?.value ?? null`);
+        const buttonReady = (ms = 5000) => polishWaitFor(h, `${rccSel("[data-rail-commit-button]")}?.disabled === false`, ms);
+        const uncommittedText = () => h.ev(`${rccSel("[data-rail-commit-uncommitted]")}?.textContent ?? null`);
+        const gitC = (...args) => execFileSync("git", ["-C", ctx.wt, ...args], { stdio: "pipe" }).toString().trim();
+
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far, and the override
+        // must not outlive the run
+        try {
+            // --- 1. CommitMode -----------------------------------------------------------------------------------------
+            // the box counts the agents the roster says work in the worktree, and the fixture's are idle: the DEV override
+            // names one. The uncommitted row's count is its own read (commitstore's), so it can land after the commits do
+            await h.ev(`window.__syncWorkingAgents = [${JSON.stringify(RCM_NAME_C)}]`);
+            const listed = await polishWaitFor(
+                h,
+                `${rccCount("[data-rail-commit]")} === 1 && !!${rccSel("[data-rail-commit-uncommitted]")} && !!${rccSel("[data-rail-commit-open]")}`,
+                20000
+            );
+            const clickedOpen = await rccClick(h, "[data-rail-commit-open]");
+            const boxUp = clickedOpen && (await waitBox(true));
+            const ticksUp = boxUp && (await polishWaitFor(h, `${rccCount("[data-rail-commit-tick]")} === 2`, 15000));
+            const s1 = await h.ev(`(() => {
+                const box = ${rccSel("[data-rail-commit-box]")};
+                const row = ${rccSel("[data-rail-commit-uncommitted]")};
+                return {
+                    box: box?.textContent ?? null,
+                    selected: row?.classList.contains("bg-surface-selected") ?? false,
+                    row: row?.textContent ?? null,
+                    ticks: ${rccCount("[data-rail-commit-tick]")},
+                };
+            })()`);
+            const r1 = await ranges();
+            const f1 = await tickOf("f1.txt");
+            const n1 = await tickOf("n.txt");
+            const all1 = await allTick();
+            await shot("1-commit-mode");
+            rec(
+                "1. Commit… opens the box: the Uncommitted row is selected, the range switch waits, f1.txt is ticked and untracked n.txt is not, tick-all reads mixed, and one agent is running here",
+                listed && clickedOpen && boxUp && ticksUp &&
+                    (s1.box ?? "").includes("1 agent running here") && s1.selected && s1.ticks === 2 &&
+                    r1.n === 2 && r1.disabled === 2 && f1 === "true" && n1 === "false" && all1 === "mixed",
+                { listed, clickedOpen, boxUp, ticksUp, ...s1, ranges: r1, f1, n1, all1 }
+            );
+
+            // --- 2. tick-all follows the ticks ---------------------------------------------------------------------------
+            const clickedN = await rccClick(h, RCM_TICK("n.txt"));
+            const allTrue = clickedN && (await waitAll("true"));
+            const nOn = await tickOf("n.txt");
+            await rccClick(h, RCM_TICK("n.txt"));
+            const allMixed = await waitAll("mixed");
+            const nOff = await tickOf("n.txt");
+            rec(
+                "2. ticking n.txt makes tick-all true, and unticking it brings mixed back",
+                clickedN && allTrue && nOn === "true" && allMixed && nOff === "false",
+                { clickedN, allTrue, nOn, allMixed, nOff }
+            );
+
+            // --- 3. Cancel keeps the draft and the ticks -----------------------------------------------------------------
+            const typed3 = await setMessage("draft kept");
+            const draft3 = typed3 && (await polishWaitFor(h, `${rccSel("[data-rail-commit-message]")}?.value === "draft kept"`, 3000));
+            const cancelled = await rccClick(h, "[data-rail-commit-cancel]");
+            const closed3 = cancelled && (await waitBox(false));
+            const r3 = await ranges();
+            const reopenShown = await polishWaitFor(h, `!!${rccSel("[data-rail-commit-open]")}`, 8000);
+            const reopened = reopenShown && (await rccClick(h, "[data-rail-commit-open]"));
+            const boxBack = reopened && (await waitBox(true)) && (await polishWaitFor(h, `${rccCount("[data-rail-commit-tick]")} === 2`, 15000));
+            const msg3 = await message();
+            const f3 = await tickOf("f1.txt");
+            const n3 = await tickOf("n.txt");
+            rec(
+                "3. Cancel closes the box and frees the range switch; Commit… again brings back the message and the ticks",
+                draft3 && closed3 && r3.n === 2 && r3.disabled === 0 && boxBack && msg3 === "draft kept" && f3 === "true" && n3 === "false",
+                { typed3, draft3, cancelled, closed3, ranges: r3, reopenShown, reopened, boxBack, msg3, f3, n3 }
+            );
+
+            // --- 4. an empty message commits nothing ---------------------------------------------------------------------
+            await setMessage("");
+            await h.ev(`${rccSel("[data-rail-commit-message]")}?.focus()`);
+            await railTabsKey(h, "Enter", "Enter", 13, 2);
+            await polishNap(700);
+            const s4 = await h.ev(`({ box: !!${rccSel("[data-rail-commit-box]")}, failure: !!${rccSel("[data-commit-failure]")} })`);
+            rec(
+                "4. Ctrl+Enter with an empty message does nothing: the box stays and no failure shows",
+                s4.box && !s4.failure,
+                s4
+            );
+
+            // --- 5. a refused commit --------------------------------------------------------------------------------------
+            await setMessage("REFUSE this");
+            const enabled5 = await buttonReady();
+            await rccClick(h, "[data-rail-commit-button]");
+            const refused = await polishWaitFor(h, `!!${rccSel("[data-rail-commit-box] [data-commit-failure]")}`, 10000);
+            const failure5 = await h.ev(`${rccSel("[data-rail-commit-box] [data-commit-failure]")}?.textContent ?? null`);
+            const open5 = await h.ev(`!!${rccSel("[data-rail-commit-box]")}`);
+            await shot("5-refused");
+            rec(
+                "5. a message the hook refuses leaves the box open with the failure under the button",
+                enabled5 && refused && (failure5 ?? "").includes(RCM_REFUSAL) && open5,
+                { enabled5, refused, failure5, open5 }
+            );
+
+            // --- 6. a commit that goes through --------------------------------------------------------------------------
+            const before6 = await h.ev(rccCount("[data-rail-commit]"));
+            await setMessage("rail commit");
+            const enabled6 = await buttonReady();
+            await rccClick(h, "[data-rail-commit-button]");
+            const gone6 = await waitBox(false, 10000);
+            const subject6 = gitC("log", "-1", "--format=%s");
+            const grew = await polishWaitFor(
+                h,
+                `${rccCount("[data-rail-commit]")} === ${before6 + 1} && (${rccSel("[data-rail-commit-uncommitted]")}?.textContent ?? "").endsWith("1 file")`,
+                15000
+            );
+            const after6 = await h.ev(rccCount("[data-rail-commit]"));
+            const row6 = await uncommittedText();
+            await shot("6-committed");
+            rec(
+                "6. Commit 1 file closes the box, git has the commit, the list gains a commit row and the Uncommitted row keeps untracked n.txt",
+                before6 >= 1 && enabled6 && gone6 && subject6 === "rail commit" && grew,
+                { before6, enabled6, gone6, subject6, grew, after6, row6 }
+            );
+
+            // --- 7. MainCheckout -----------------------------------------------------------------------------------------
+            const shownK = await rwfShow(h, RCM_AGENT_K);
+            const changesK = shownK && (await rcmOpenChanges(h, "main checkout"));
+            const loadedK =
+                changesK &&
+                (await polishWaitFor(
+                    h,
+                    `!!${rccSel("[data-rail-commit-uncommitted]")} && !!${rccSel("[data-rail-commit-root]")} && !!${rccSel("[data-rail-commit-open]")}`,
+                    15000
+                ));
+            const s7 = await h.ev(`(() => {
+                const section = ${rccSel("[data-rail-commits]")};
+                return {
+                    where: ${rccSel("[data-rail-changes-where]")}?.textContent ?? null,
+                    radiogroup: !!${rccSel('[data-rail-changes] [role="radiogroup"]')},
+                    commits: section?.querySelectorAll("[data-rail-commit]").length ?? 0,
+                    uncommitted: section?.querySelector("[data-rail-commit-uncommitted]")?.textContent ?? null,
+                    root: section?.querySelector("[data-rail-commit-root]")?.textContent ?? null,
+                    open: !!${rccSel("[data-rail-commit-open]")},
+                };
+            })()`);
+            await shot("7-main-checkout");
+            rec(
+                "7. the main checkout's Changes tab names main, its project and main checkout, has no range switch and no commit rows, and the Uncommitted row sits over session started here",
+                loadedK && s7.where != null && s7.where.includes("main") && s7.where.includes(RCM_PROJECT) && s7.where.includes("main checkout") &&
+                    !s7.radiogroup && s7.commits === 0 && (s7.uncommitted ?? "").endsWith("1 file") &&
+                    (s7.root ?? "").includes("session started here") && s7.open,
+                { shownK, changesK, loadedK, ...s7 }
+            );
+
+            // --- 8. the range lists nothing while the working tree is not clean ----------------------------------------
+            // K's agent commits a.txt after the session started, then the file goes back to what the session started with:
+            // `git diff <session start>` lists nothing, `git status` still lists a.txt against HEAD. Commit… stays on the tab
+            const when = `@${Math.floor(Date.now() / 1000) - 3600} +0000`;
+            const gitK = (...args) =>
+                execFileSync("git", ["-C", ctx.repo, ...args], {
+                    stdio: "pipe",
+                    env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when },
+                });
+            writeFileSync(join(ctx.repo, "a.txt"), "a\nagent edit\n");
+            gitK("add", "a.txt");
+            gitK("commit", "-q", "-m", "agent edit a");
+            writeFileSync(join(ctx.repo, "a.txt"), "a\n");
+            // the rail reads git again when an agent is chosen: away to C and back to K
+            const awayC = await rwfShow(h, RCM_AGENT_C);
+            const backK = awayC && (await rwfShow(h, RCM_AGENT_K));
+            const changesK8 = backK && (await rcmOpenChanges(h, "main checkout"));
+            const emptyListed =
+                changesK8 &&
+                (await polishWaitFor(
+                    h,
+                    `/Files\\s*0$/.test((${rccSel("[data-rail-files-header]")}?.textContent ?? "").trim()) && !!${rccSel("[data-rail-commit-open]")}`,
+                    20000
+                ));
+            const s8 = await h.ev(`(() => {
+                const tab = ${rccSel("[data-rail-changes]")};
+                const text = tab?.textContent ?? "";
+                return {
+                    header: ${rccSel("[data-rail-files-header]")}?.textContent ?? null,
+                    noChanges: text.includes("No changes"),
+                    viewDiff: text.includes("View diff"),
+                    open: !!${rccSel("[data-rail-commit-open]")},
+                };
+            })()`);
+            await shot("8-empty-range-commit");
+            const clicked8 = await rccClick(h, "[data-rail-commit-open]");
+            const box8 = clicked8 && (await waitBox(true));
+            const ticks8 = box8 && (await polishWaitFor(h, `${rccCount("[data-rail-commit-tick]")} === 1`, 15000));
+            const a8 = await tickOf("a.txt");
+            await shot("8-empty-range-commit-mode");
+            const cancelled8 = await rccClick(h, "[data-rail-commit-cancel]");
+            const closed8 = cancelled8 && (await waitBox(false));
+            rec(
+                "8. a range that lists no file but leaves a.txt uncommitted keeps Commit… under No changes (no View diff), and it opens commit mode with a.txt ticked",
+                emptyListed && s8.noChanges && !s8.viewDiff && s8.open && clicked8 && box8 && ticks8 && a8 === "true" && closed8,
+                { awayC, backK, changesK8, emptyListed, ...s8, clicked8, box8, ticks8, a8, closed8 }
+            );
+        } catch (e) {
+            rec("a call threw before the scenario finished", false, String(e?.message ?? e));
+        } finally {
+            await h.ev("window.__syncWorkingAgents = undefined").catch(() => {});
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`rail-commit-mode teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the DEV override", () => h.ev("window.__syncWorkingAgents = undefined"));
+        if (ctx.project) {
+            // deleteproject leaves the channel createproject made, so that goes too
+            await step("remove the project", async () => {
+                await h.rpc("deleteproject", { name: ctx.project });
+                const norm = (s) => (s || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+                const channels = (await h.rpc("getchannels", null))?.channels ?? [];
+                for (const c of channels.filter((c) => norm(c.projectpath) === norm(ctx.repo))) {
+                    await h.rpc("deletechannel", { channelid: c.oid });
+                }
+            });
+        }
+        await step("restore the keys", async () => {
+            for (const [k, v] of Object.entries(ctx.prevKeys ?? {})) {
+                await h.ev(restoreStorageKey(k, v));
+            }
+        });
+        if (ctx.wroteFixture) {
+            await step("restore the fixture roster", () =>
+                ctx.prevFixture != null ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture) : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        await step("reload onto the restored roster", () => ahReload(h));
+        await step("go to the Agent surface", () => h.goto("agent"));
+        await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
     },
 };
 
@@ -51479,6 +52304,8 @@ export const SCENARIOS = [
     agentUploads,
     agentRailTabs,
     agentRailWorktreeFiles,
+    agentRailChangesCommits,
+    agentRailCommitMode,
     mdComments,
     docFind,
     workerCapacity,
