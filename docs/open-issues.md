@@ -34,6 +34,18 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Rail Changes tab: in Agent, open the panel on an agent that changed files; a third tab (the diff
   icon) after Overview and Files lists every changed file at Overview's width, with no resize grip, and a click opens
   that file's Diff on the File tab, which still resizes. `agentdetailsrail.tsx` `filesContent`.
+- [ ] (arcterm) Files tab shows at once: after a restart (wavesrv rebuilt), open the panel's Files tab on a project
+  listed before; the tree shows at once with no skeleton, and the Files tab is as wide as Overview with no resize grip.
+  On a folder never opened, the top level shows within a moment and a folder opens one level at a time until git's
+  listing lands. Kept listings live in `<data>/listcache/`; a listing over 2s logs `gitinfo: listing … took` in
+  `waveapp.log`. `railtreestore.ts` `showEarly`, `gitinfo/listcache.go`.
+- [ ] (arcterm) Split glyphs: in Agent, open a terminal running `claude` or `codex` in a split beside an agent, then
+  click back and forth between the two panes a few times. Neither pane's text should turn into wrong characters
+  (before, the pane not clicked garbled). `termwrap.ts` `rebuildGlyphAtlas`.
+- [ ] (arcterm) Split per project: split two agents of project A, then choose an agent of project B in the sidebar.
+  B shows alone (or B's own split), with nothing of A beside it; choose an agent of A again and A's split is back as
+  it was. A row of B has Open in split greyed out while A is shown, and the header's Split menu lists only A's agents and
+  terminals. `agentgrid.ts` `reconcileProjectGrids`, `gridstore.ts`.
 - [ ] (arcterm) Stable wsh updates past a held copy: after the next `task install`, `~/.arc/bin/wsh.exe detach --help`
   prints the detach help even while an old `wsh agentctl` (PID 163912 today) still runs; a `wsh.exe.old.1` may sit
   beside it until that process exits, and the following launch removes it. 498b85887
