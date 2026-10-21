@@ -8,11 +8,15 @@ import {
     centerForSelection,
     centerModeAtom,
     showCanvases,
+    showCouncil,
+    showCouncilSetup,
     showHistory,
     showSession,
     showTerminal,
 } from "./agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
+import { emptyCouncilDraft } from "./councilmodel";
+import { councilSelAtom, councilSetupDraftAtom, councilSetupProjectAtom, councilViewAtom } from "./councilstore";
 
 // `member` seeds sessionsMemberAtom, so a test can tell a member that was left alone from one that was set
 const stub = (member = "lead") =>
@@ -78,5 +82,69 @@ describe("openers", () => {
         expect(globalStore.get(model.sessionsSelAtom)).toBe("run:r1");
         expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-2");
         expect(globalStore.get(centerModeAtom)).toBe("run");
+    });
+});
+
+describe("council openers", () => {
+    beforeEach(() => {
+        globalStore.set(councilSelAtom, null);
+        globalStore.set(councilViewAtom, "discussion");
+        globalStore.set(councilSetupProjectAtom, null);
+        globalStore.set(councilSetupDraftAtom("/work/a"), null);
+        globalStore.set(councilSetupDraftAtom("/work/b"), null);
+    });
+
+    it("showCouncil opens the council on its Discussion, and on the Summary when asked", () => {
+        showCouncil("c1");
+        expect(globalStore.get(councilSelAtom)).toBe("c1");
+        expect(globalStore.get(councilViewAtom)).toBe("discussion");
+        expect(globalStore.get(centerModeAtom)).toBe("council");
+        showCouncil("c2", "summary");
+        expect(globalStore.get(councilSelAtom)).toBe("c2");
+        expect(globalStore.get(councilViewAtom)).toBe("summary");
+    });
+
+    it("showCouncil leaves the surface alone without a model, and lands on Agent with one", () => {
+        const model = stub();
+        showCouncil("c1");
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+        showCouncil("c1", "discussion", model);
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+    });
+
+    it("showCouncilSetup opens Setup on a blank draft for the project", () => {
+        showCouncilSetup("/work/a");
+        expect(globalStore.get(councilViewAtom)).toBe("setup");
+        expect(globalStore.get(centerModeAtom)).toBe("council");
+        expect(globalStore.get(councilSetupProjectAtom)).toBe("/work/a");
+        expect(globalStore.get(councilSetupDraftAtom("/work/a"))).toEqual(emptyCouncilDraft("/work/a"));
+    });
+
+    it("showCouncilSetup keeps the draft the person left, and starts again from a prefill over a blank one", () => {
+        showCouncilSetup("/work/a", { feature: "Rail apps", files: ["a.ts"] });
+        expect(globalStore.get(councilSetupDraftAtom("/work/a"))).toEqual({
+            ...emptyCouncilDraft("/work/a"),
+            feature: "Rail apps",
+            files: ["a.ts"],
+        });
+        showCouncil("c1");
+        showCouncilSetup("/work/a");
+        expect(globalStore.get(councilSetupDraftAtom("/work/a"))?.feature).toBe("Rail apps");
+        // a prefill replaces the draft rather than merging into it: Run again must not inherit the old files
+        showCouncilSetup("/work/a", { question: "Why?" });
+        expect(globalStore.get(councilSetupDraftAtom("/work/a"))).toEqual({
+            ...emptyCouncilDraft("/work/a"),
+            question: "Why?",
+        });
+    });
+
+    it("showCouncilSetup keeps each project's draft apart and lands on Agent with a model", () => {
+        const model = stub();
+        showCouncilSetup("/work/a", { feature: "A" });
+        showCouncilSetup("/work/b", { feature: "B" }, model);
+        expect(globalStore.get(councilSetupProjectAtom)).toBe("/work/b");
+        expect(globalStore.get(councilSetupDraftAtom("/work/a"))?.feature).toBe("A");
+        expect(globalStore.get(councilSetupDraftAtom("/work/b"))?.feature).toBe("B");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
     });
 });
