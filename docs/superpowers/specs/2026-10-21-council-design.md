@@ -49,7 +49,9 @@ says so before you send.
   prose: terms used before they are defined, sentences that read as machine-written; the coordinator acts as area
   chair). **Save as group** on Setup adds one.
 - **The coordinator suggests roles** for the feature at hand from the files it is given (Setup's dashed rows: "Mac
-  user: the frame reload is Windows-only for now"); you add or ignore them.
+  user: the frame reload is Windows-only for now"); you add or ignore them. It is one sonnet call when Setup has a
+  feature and a file to read (a few tens of thousands of tokens, read-only tools), which also proposes the files the
+  experts read; Setup works without it, with the group's roles and the files you pick.
 - **Models:** experts default to sonnet, the coordinator to opus; each row can change it. Rounds 2 and 3 read only
   text, so they cost far less than round 1.
 - One runtime, claude, in this version. Mixing runtimes (codex, agy, which `pkg/consult` already runs) is deferred
@@ -71,10 +73,11 @@ Two ways, and nothing starts a council by itself: each costs 0.5–1.5M tokens.
    `wsh council start --group <g> --feature <f> --files <...>` at once, with no second question and no Setup. The
    skill is `skills/council` (embedded by `skills/skills.go` like the others, `arc:council` in Claude).
 
-Either way the start passes through `pkg/tokengate`. The Claude mod asks the gate only before an `Agent`, `Task` or
+The agent's start passes through `pkg/tokengate`. The Claude mod asks the gate only before an `Agent`, `Task` or
 `Workflow` tool call, and `wsh council start` arrives as a Bash command (which the mod sends to `wsh jobslot`), so
-wavesrv asks the gate itself, with a new spawn kind priced from the council's own estimate. A refusal leaves the
-council `not-run`. `--queue` waits while another council is running, as `wsh runs start --queue` does.
+`wsh council start` asks the gate itself, as `wsh tokengate` does, with a new spawn kind, `Council`, priced from the
+council's own estimate. A refusal prints `Not run: …` and starts nothing. Start council on Setup is itself the yes:
+the button shows the estimate. `--queue` waits while another council is running, as `wsh runs start --queue` does.
 
 **An agent that started a council reads it back:** it runs `wsh council wait <id>`, sums the directions up in the
 conversation, and carries on (a spec, a plan) from there.
@@ -128,14 +131,16 @@ Opened by Summarize, with a breadcrumb back to the Discussion.
 
 ## Backend
 
-- **`pkg/council`** runs the rounds and owns the council object. A new waveobj type, `council`, with migration
-  `db/migrations-wstore/000025_council.{up,down}.sql`. It holds the project, feature, question, inputs (file paths,
-  screenshot paths), experts (role, brief, model), Pause after round 1, state (`setup | running | awaiting-you | done
-  | not-run | stopped | failed`), each round's structured result, the replies and follow-ups, and the token count.
+- **`pkg/council`** runs the rounds and owns the council record. It is a file per council,
+  `<data dir>/councils/<id>.json`, the way `pkg/ideastore` keeps a file per session: no waveobj and no migration. It
+  holds the project, feature, question, inputs (file paths, screenshot paths), experts (role, brief, model), Pause
+  after round 1, state (`running | awaiting-you | done | not-run | stopped | failed`), each round's structured
+  result, the replies and follow-ups, the session that started it (if any), and the token count.
 - **`pkg/consult` changes:** per-call `--model` and `--tools` arguments for claude; `tool_use` events from the stream;
   and token usage from claude's final `result` event, since `RunWithUsage` returns an empty `Usage` for a CLI runtime
   today (`pkg/consult/exec.go:55`).
-- **RPC and events:** a `wshrpctypes_council.go` group (start, list, get, reply, follow-up, summarize, stop, roles,
+- **RPC and events:** a `wshrpctypes_council.go` group (start, list, get, reply, summarize, stop, retry, suggest,
+  save-doc, roles,
   groups) and a `council:changed` event in `pkg/wps/wpstypes.go`, regenerated with `task generate`.
 - **`wsh council start | list | show | wait | stop`**, the agent-facing commands.
 
