@@ -9,8 +9,9 @@ import { isUnderRoot, toRel } from "@/app/cockpit/openfileroute";
 import { normalizeRepoPath } from "@/util/paths";
 
 // "tree" is the Files tab, the agent's worktree (docs/superpowers/specs/2026-10-08-rail-worktree-files-design.md); it is
-// "tree" because "files" already names the Files changed count
-export type RailTab = "overview" | "tree" | "file";
+// "tree" because "files" already names the Files changed count. "changes" is the Changes tab: the Files changed list on
+// a tab of its own, every file of it rather than Overview's first few
+export type RailTab = "overview" | "tree" | "changes" | "file";
 
 // a file opened into the panel: its absolute path, the directory it was resolved against, and the line to show
 export interface FileRef {
@@ -78,8 +79,6 @@ export const FILE_TABS_MAX = 5;
 export const RAIL_OVERVIEW_PX = 300;
 export const RAIL_WIDE_DEFAULT_PX = 520;
 export const RAIL_WIDE_MIN_PX = 360;
-// the Files tab is a tree, not a page: it opens as wide as Overview and keeps its own dragged width apart from File's
-export const RAIL_TREE_MIN_PX = 240;
 const CENTRE_MIN_PX = 640; // DESIGN.md's stage-min
 const AGENT_TREE_PX = 248; // agenttree.tsx's column
 
@@ -106,6 +105,7 @@ export function visibleTabs(p: PanelState, hasTree: boolean): RailTab[] {
     if (hasTree) {
         tabs.push("tree");
     }
+    tabs.push("changes");
     if (p.files.length > 0) {
         tabs.push("file");
     }
@@ -253,12 +253,11 @@ export function wideWidthMax(windowWidth: number, navWidth: number): number {
     return Math.max(RAIL_WIDE_MIN_PX, windowWidth - navWidth - AGENT_TREE_PX - CENTRE_MIN_PX);
 }
 
-// the panel tabs that take a dragged width, each with its own: File (a page of text) and Files (the worktree tree)
-export type ResizableTab = "file" | "tree";
+// the panel tabs that take a dragged width: File (a page of text). Overview, Files and Changes are fixed at Overview's
+export type ResizableTab = "file";
 
 export const RAIL_WIDTHS: Record<ResizableTab, { min: number; def: number }> = {
     file: { min: RAIL_WIDE_MIN_PX, def: RAIL_WIDE_DEFAULT_PX },
-    tree: { min: RAIL_TREE_MIN_PX, def: RAIL_OVERVIEW_PX },
 };
 
 export function clampWideWidth(value: number, max: number, tab: ResizableTab = "file"): number {

@@ -15,6 +15,7 @@ import {
     ArrowLeft,
     ArrowUpRight,
     ChevronLeft,
+    FileDiff,
     FileText,
     FolderTree,
     GitBranch,
@@ -605,8 +606,10 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const treeCwd = sub == null ? agentCwd : null;
     const hasTree = treeCwd != null;
     const shown = shownTab(panel, hasTree);
-    // File and Files each keep their own dragged width; Overview's is fixed
-    const wide = useWideWidth(shown === "tree" ? "tree" : "file");
+    // File keeps a dragged width; Overview, Files and Changes share one fixed width, so moving between them never
+    // resizes the panel
+    const fixedWidth = shown !== "file";
+    const wide = useWideWidth("file");
     const openTab = activeFile(panel);
     const fileRef = openTab?.current ?? null;
     const railVisible = useAtomValue(railVisibleAtom);
@@ -803,6 +806,41 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         bgtasks: RAIL_ICON.terminal,
         run: RAIL_ICON.autonomy,
     };
+    // Files changed: Overview's section lists the first few (RailFilesCap), the Changes tab every one
+    const filesContent = (listed: typeof changes): ReactNode =>
+        ended ? (
+            <SealedFiles files={ended.files} />
+        ) : railState == null ? (
+            <div aria-hidden="true" className="flex flex-col gap-2">
+                {["w-[80%]", "w-[60%]", "w-[70%]"].map((w, i) => (
+                    <SkeletonLine key={i} className={cn("h-[10px]", w)} />
+                ))}
+            </div>
+        ) : !railState.isRepo ? (
+            <div className="text-[11.5px] text-muted">Not a git repository</div>
+        ) : (
+            <>
+                {branchDiff ? (
+                    <ChangesRangeSwitch
+                        value={onBranch ? "branch" : "session"}
+                        base={branchDiff.base}
+                        onChange={(r) => globalStore.set(railChangesRangeAtom, r)}
+                    />
+                ) : null}
+                {listed.length === 0 ? (
+                    <div className="text-[11.5px] text-muted">
+                        {onBranch ? `No changes against ${branchDiff.base}` : "No changes"}
+                    </div>
+                ) : (
+                    <FilesChangedList
+                        files={listed}
+                        summary={filesSummary(changes)}
+                        onOpen={openChangedFile}
+                        onViewDiff={() => openFileDiff()}
+                    />
+                )}
+            </>
+        );
     // thunks: a section the plan leaves out is never built (run would touch a roleRun that may not exist)
     const CONTENT: Record<AgentRailSectionId, () => ReactNode> = {
         plan: () => <PlanReviewSection key={agent.id} agent={agent} />,
@@ -963,40 +1001,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                 })}
             </div>
         ),
-        files: () =>
-            ended ? (
-                <SealedFiles files={ended.files} />
-            ) : railState == null ? (
-                <div aria-hidden="true" className="flex flex-col gap-2">
-                    {["w-[80%]", "w-[60%]", "w-[70%]"].map((w, i) => (
-                        <SkeletonLine key={i} className={cn("h-[10px]", w)} />
-                    ))}
-                </div>
-            ) : !railState.isRepo ? (
-                <div className="text-[11.5px] text-muted">Not a git repository</div>
-            ) : (
-                <>
-                    {branchDiff ? (
-                        <ChangesRangeSwitch
-                            value={onBranch ? "branch" : "session"}
-                            base={branchDiff.base}
-                            onChange={(r) => globalStore.set(railChangesRangeAtom, r)}
-                        />
-                    ) : null}
-                    {shownFiles.length === 0 ? (
-                        <div className="text-[11.5px] text-muted">
-                            {onBranch ? `No changes against ${branchDiff.base}` : "No changes"}
-                        </div>
-                    ) : (
-                        <FilesChangedList
-                            files={shownFiles}
-                            summary={filesSummary(changes)}
-                            onOpen={openChangedFile}
-                            onViewDiff={() => openFileDiff()}
-                        />
-                    )}
-                </>
-            ),
+        files: () => filesContent(shownFiles),
         artifacts: () => (
             <div className="flex flex-col gap-[7px]">
                 <div className="flex min-w-0 items-center gap-[6px]">
@@ -1121,7 +1126,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             ariaLabel="Agent details"
             // the stage's own id is no session, so its rail is the stage alone
             sections={isFinalStageId(agent.id) ? finalSection : sections}
-            width={shown === "overview" ? RAIL_OVERVIEW_PX : wide.width}
+            width={fixedWidth ? RAIL_OVERVIEW_PX : wide.width}
             widthKey={shown}
             tabs={
                 <>
@@ -1151,13 +1156,16 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         cwd={treeCwd}
                         agentState={agent.state}
                     />
+                ) : shown === "changes" ? (
+                    <div
+                        data-rail-changes
+                        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-[40px] pt-[12px]"
+                    >
+                        {filesContent(changes)}
+                    </div>
                 ) : undefined
             }
-            edge={
-                shown !== "overview" ? (
-                    <RailResizeGrip tab={shown === "tree" ? "tree" : "file"} width={wide.width} max={wide.max} />
-                ) : undefined
-            }
+            edge={!fixedWidth ? <RailResizeGrip tab="file" width={wide.width} max={wide.max} /> : undefined}
             stripTabs={[
                 {
                     key: "overview",
@@ -1181,6 +1189,15 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                           },
                       ]
                     : []),
+                {
+                    key: "changes",
+                    icon: <FileDiff size={17} strokeWidth={1.8} aria-hidden />,
+                    ariaLabel: "Changes",
+                    onClick: () => {
+                        selectRailTab(agent.id, "changes", hasTree);
+                        showRail();
+                    },
+                },
                 ...(fileRef != null
                     ? [
                           {

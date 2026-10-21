@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The Agent panel's state: per agent and in memory (the selected tab, the open files with their history), plus the three
-// persisted preferences (the tab an unseen agent opens on, the File and Files tabs' widths, how a markdown file shows).
+// persisted preferences (the tab an unseen agent opens on, the File tab's width, how a markdown file shows).
 
 import { isUnderRoot, toRel } from "@/app/cockpit/openfileroute";
 import { openFileInCode } from "@/app/cockpit/openfilestore";
@@ -17,7 +17,6 @@ import {
     goForward,
     openFile,
     panelFor,
-    RAIL_OVERVIEW_PX,
     RAIL_WIDE_DEFAULT_PX,
     selectKey,
     selectTab,
@@ -50,14 +49,8 @@ export const railMdModeAtom = atomWithStorage<"preview" | "source">("agent.rail.
 // back on, since showing the change is why that file was clicked; session-scoped like the panels
 export const railDiffOnAtom = atom(true);
 
-// the Files tab's own width: it opens at Overview's, and a drag there leaves File's width alone
-export const railTreeWidthAtom = atomWithStorage<number>("agent.rail.treeWidth", RAIL_OVERVIEW_PX, undefined, {
-    getOnInit: true,
-}) as PrimitiveAtom<number>;
-
 export const railWidthAtoms: Record<ResizableTab, PrimitiveAtom<number>> = {
     file: railWideWidthAtom,
-    tree: railTreeWidthAtom,
 };
 
 // the width while a grip is dragged: committed to that tab's width atom on release (one grip shows at a time)

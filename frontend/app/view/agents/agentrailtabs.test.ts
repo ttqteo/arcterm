@@ -20,8 +20,6 @@ import {
     nextTab,
     openFile,
     panelFor,
-    RAIL_OVERVIEW_PX,
-    RAIL_TREE_MIN_PX,
     RAIL_WIDE_DEFAULT_PX,
     RAIL_WIDE_MIN_PX,
     selectFile,
@@ -53,13 +51,13 @@ describe("panelFor", () => {
 });
 
 describe("the tabs", () => {
-    it("lists Overview, then Files while there is a worktree, then File while a file is open", () => {
+    it("lists Overview, then Files while there is a worktree, then Changes, then File while a file is open", () => {
         const p = panelFor({}, "x", "overview");
-        expect(visibleTabs(p, false)).toEqual(["overview"]);
-        expect(visibleTabs(p, true)).toEqual(["overview", "tree"]);
+        expect(visibleTabs(p, false)).toEqual(["overview", "changes"]);
+        expect(visibleTabs(p, true)).toEqual(["overview", "tree", "changes"]);
         const withFile = openFile(p, a);
-        expect(visibleTabs(withFile, false)).toEqual(["overview", "file"]);
-        expect(visibleTabs(withFile, true)).toEqual(["overview", "tree", "file"]);
+        expect(visibleTabs(withFile, false)).toEqual(["overview", "changes", "file"]);
+        expect(visibleTabs(withFile, true)).toEqual(["overview", "tree", "changes", "file"]);
     });
 
     it("selects Files and remembers the tab it came from", () => {
@@ -91,7 +89,7 @@ describe("the File tab", () => {
         const p = openFile(panelFor({}, "x", "overview"), a);
         expect(p).toMatchObject({ tab: "file", prevTab: "overview" });
         expect(activeFile(p)?.current).toEqual(a);
-        expect(visibleTabs(p, false)).toEqual(["overview", "file"]);
+        expect(visibleTabs(p, false)).toEqual(["overview", "changes", "file"]);
     });
 
     it("opens a file from Files and closes back to Files", () => {
@@ -195,7 +193,7 @@ describe("the File tab", () => {
         expect(p.tab).toBe("overview");
         expect(p.files).toEqual([]);
         expect(activeFile(p)).toBeNull();
-        expect(visibleTabs(p, false)).toEqual(["overview"]);
+        expect(visibleTabs(p, false)).toEqual(["overview", "changes"]);
     });
 
     it("does not select File while no file is open", () => {
@@ -259,12 +257,6 @@ describe("widths", () => {
         expect(clampWideWidth(2000, 900)).toBe(900);
         expect(clampWideWidth(Number.NaN, 900)).toBe(RAIL_WIDE_DEFAULT_PX);
     });
-
-    it("lets the Files tab go as narrow as its own minimum and defaults it to Overview's width", () => {
-        expect(clampWideWidth(260, 900, "tree")).toBe(260);
-        expect(clampWideWidth(100, 900, "tree")).toBe(RAIL_TREE_MIN_PX);
-        expect(clampWideWidth(Number.NaN, 900, "tree")).toBe(RAIL_OVERVIEW_PX);
-    });
 });
 
 describe("nextTab", () => {
@@ -313,12 +305,12 @@ describe("the strip's keys", () => {
     it("lists every file on File, and folds them into the one on show elsewhere", () => {
         const p = openFile(openFile(panelFor({}, "x", "overview"), a), b);
         const [ka, kb] = p.files.map((f) => fileKey(f.id));
-        expect(stripKeys(p, true)).toEqual(["overview", "tree", ka, kb]);
+        expect(stripKeys(p, true)).toEqual(["overview", "tree", "changes", ka, kb]);
         expect(shownKey(p, true)).toBe(kb);
         const onTree = selectTab(p, "tree", true);
-        expect(stripKeys(onTree, true)).toEqual(["overview", "tree", kb]);
+        expect(stripKeys(onTree, true)).toEqual(["overview", "tree", "changes", kb]);
         expect(shownKey(onTree, true)).toBe("tree");
-        expect(stripKeys(panelFor({}, "x", "overview"), false)).toEqual(["overview"]);
+        expect(stripKeys(panelFor({}, "x", "overview"), false)).toEqual(["overview", "changes"]);
     });
 
     it("selects a tab or a file by its key", () => {

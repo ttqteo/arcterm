@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Rail Changes tab: in Agent, open the panel on an agent that changed files; a third tab (the diff
+  icon) after Overview and Files lists every changed file at Overview's width, with no resize grip, and a click opens
+  that file's Diff on the File tab, which still resizes. `agentdetailsrail.tsx` `filesContent`.
 - [ ] (arcterm) Stable wsh updates past a held copy: after the next `task install`, `~/.arc/bin/wsh.exe detach --help`
   prints the detach help even while an old `wsh agentctl` (PID 163912 today) still runs; a `wsh.exe.old.1` may sit
   beside it until that process exits, and the following launch removes it. 498b85887

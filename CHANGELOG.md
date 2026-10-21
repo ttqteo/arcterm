@@ -24,6 +24,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- The Agent panel has a Changes tab beside Overview and Files: the agent's whole Files changed list, not only its
+  first eight files, with the Session / Branch switch and View diff; a file opens on its Diff.
+
 ### Fixed
 
 - Updating arcterm now always updates the `wsh` its agents run; before, an agent session left running across the

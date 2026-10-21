@@ -137,6 +137,15 @@ export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; pan
                     <FolderTree size={16} strokeWidth={1.8} aria-hidden />
                 </button>
             ) : null}
+            <button
+                type="button"
+                {...tabProps("changes")}
+                aria-label="Changes"
+                title="Changes"
+                className={cn(TAB, current === "changes" ? TAB_ON : TAB_OFF)}
+            >
+                <FileDiff size={16} strokeWidth={1.8} aria-hidden />
+            </button>
             {fileTabs.map((f) =>
                 f.current == null ? null : (
                     <RailFileTab
