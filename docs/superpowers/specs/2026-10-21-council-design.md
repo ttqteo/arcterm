@@ -62,7 +62,9 @@ Two ways, and nothing starts a council by itself: each costs 0.5–1.5M tokens.
 1. **By hand.** **New council** under a project's Councils label in the Agent tree, or the palette's "New council…",
    opens **Setup** (board Setup): feature, question, the files the experts read (the coordinator picks them from the
    spec; you add or remove), a pasted screenshot, the group and each row's model, suggested roles, Pause after round
-   1, and the estimate (`≈ 9 calls · ~0.8M tokens · ~6 min`). **Start council** runs it.
+   1, and the estimate (`≈ 9 calls · ~0.8M tokens · ~6 min`). **Start council** runs it. An open `question` line in
+   an agent's Ideas list has **Ask the council** too: it opens Setup with that question filled in, the session's
+   project, and a group the coordinator suggests for it; the council's directions come back into that session's Ideas.
 2. **An agent offers it,** the way `writing-plans` offers the Arc engine: a numbered choice at a natural point (a
    direction just weighed, a spec just written, a plan before it goes to the engine, a paper draft before it is
    submitted), naming the group, every model and the estimate. Picking it is the yes: the agent runs
