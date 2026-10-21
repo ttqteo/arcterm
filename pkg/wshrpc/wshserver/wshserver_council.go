@@ -15,11 +15,27 @@ import (
 	"unicode"
 
 	"github.com/wavetermdev/waveterm/pkg/council"
+	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
-// errCouncilRunnerNotWired answers the commands that run a council until the runner is wired into wavesrv.
-var errCouncilRunnerNotWired = errors.New("council runner not wired yet")
+// councilRunner runs every council in wavesrv, through the real claude caller. A test replaces it with a fake caller.
+var councilRunner = newCouncilRunner(council.ConsultCaller{})
+
+func newCouncilRunner(caller council.Caller) *council.Runner {
+	return &council.Runner{Caller: caller, OnChange: publishCouncilChanged}
+}
+
+// publishCouncilChanged tells the cockpit and `wsh council wait` that a council was saved.
+func publishCouncilChanged(c *council.Council) {
+	wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_CouncilChanged, Data: wshrpc.CouncilChangedData{Id: c.Id, Project: c.Project}})
+}
+
+// StartCouncilRunner is called once at startup: a council left running when wavesrv last quit has no run behind it, so
+// it is marked stopped. A council with a live run is left alone.
+func StartCouncilRunner() {
+	councilRunner.MarkStale()
+}
 
 // councilDocDay is the date a saved doc's default file name starts with; a test replaces it.
 var councilDocDay = func() time.Time { return time.Now() }
@@ -27,8 +43,45 @@ var councilDocDay = func() time.Time { return time.Now() }
 // councilDocSlugRunes cuts a feature's slug so a long feature does not make a long file name.
 const councilDocSlugRunes = 60
 
+// councilPanel is the experts of a new council: the ones named, else the panel of the group (the coordinator last).
+// An unknown group is an error.
+func councilPanel(group string, experts []council.CouncilExpert) ([]council.CouncilExpert, error) {
+	if len(experts) > 0 {
+		return experts, nil
+	}
+	if strings.TrimSpace(group) == "" {
+		return nil, errors.New("a council needs a group or a list of experts")
+	}
+	return council.ExpertsFor(group)
+}
+
+// CouncilStartCommand starts a council and returns it as saved: the rounds run in the background, so the council it
+// returns is running at round 1 (or not-run), and the council:changed events carry the rest. Id alone starts the saved
+// not-run council of that id.
 func (ws *WshServer) CouncilStartCommand(ctx context.Context, data wshrpc.CommandCouncilStartData) (*council.Council, error) {
-	return nil, errCouncilRunnerNotWired
+	// the rounds outlive this request, so they get their own context: Stop is what ends them
+	if data.Id != "" {
+		return councilRunner.StartSaved(context.Background(), data.Id)
+	}
+	experts, err := councilPanel(data.Group, data.Experts)
+	if err != nil {
+		return nil, err
+	}
+	c := &council.Council{
+		Project:          data.Project,
+		Feature:          data.Feature,
+		Question:         data.Question,
+		Files:            data.Files,
+		Screenshots:      data.Screenshots,
+		Group:            data.Group,
+		Experts:          experts,
+		PauseAfterRound1: data.Pause,
+		SessionId:        data.SessionId,
+	}
+	if data.NotRun {
+		return councilRunner.Record(c)
+	}
+	return councilRunner.Start(context.Background(), c)
 }
 
 func (ws *WshServer) CouncilListCommand(ctx context.Context, data wshrpc.CommandCouncilListData) ([]*council.Council, error) {
@@ -42,28 +95,41 @@ func (ws *WshServer) CouncilGetCommand(ctx context.Context, data wshrpc.CommandC
 	return council.Load(data.Id)
 }
 
+// CouncilReplyCommand posts the person's reply; the runner checks the proposal and the parent exist and answers it.
 func (ws *WshServer) CouncilReplyCommand(ctx context.Context, data wshrpc.CommandCouncilReplyData) error {
-	return errCouncilRunnerNotWired
+	_, err := councilRunner.Reply(data.Id, data.ProposalId, data.ParentId, data.Text, data.Tools)
+	return err
 }
 
 func (ws *WshServer) CouncilContinueCommand(ctx context.Context, data wshrpc.CommandCouncilContinueData) error {
-	return errCouncilRunnerNotWired
+	_, err := councilRunner.Continue(data.Id, data.Cut, data.Question)
+	return err
 }
 
 func (ws *WshServer) CouncilSummarizeCommand(ctx context.Context, data wshrpc.CommandCouncilIdData) error {
-	return errCouncilRunnerNotWired
+	_, err := councilRunner.Summarize(data.Id)
+	return err
 }
 
+// CouncilStopCommand returns once the run has saved the council as stopped, which waits for the calls in flight to be
+// cancelled: 15 seconds at the longest.
 func (ws *WshServer) CouncilStopCommand(ctx context.Context, data wshrpc.CommandCouncilIdData) error {
-	return errCouncilRunnerNotWired
+	_, err := councilRunner.Stop(data.Id)
+	return err
 }
 
 func (ws *WshServer) CouncilRetryCommand(ctx context.Context, data wshrpc.CommandCouncilRetryData) error {
-	return errCouncilRunnerNotWired
+	_, err := councilRunner.Retry(data.Id, data.ExpertId)
+	return err
 }
 
+// CouncilSuggestCommand makes the one claude call behind Setup's suggestion. It answers the request, so it ends with it.
 func (ws *WshServer) CouncilSuggestCommand(ctx context.Context, data wshrpc.CommandCouncilSuggestData) (*council.CouncilSuggestion, error) {
-	return nil, errCouncilRunnerNotWired
+	s, err := councilRunner.Suggest(ctx, data.Project, data.Feature, data.Question, data.Files)
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
 }
 
 func (ws *WshServer) CouncilEstimateCommand(ctx context.Context, data wshrpc.CommandCouncilEstimateData) (*wshrpc.CouncilEstimateRtnData, error) {
