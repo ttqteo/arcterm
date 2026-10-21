@@ -44,6 +44,7 @@ import {
     headerChip,
     panel,
     rankedProposals,
+    summarizeHold,
     type RankedProposal,
     type SegmentState,
 } from "./councilmodel";
@@ -251,9 +252,7 @@ function Header({ c, now, acts }: { c: Council; now: number; acts: Actions }) {
         ? action.call
             ? "Rank the directions and fill the matrix from the discussion so far"
             : "Open the ranked directions and the matrix"
-        : c.state === "not-run"
-          ? "This council has not run"
-          : "Summarize unlocks after round 1";
+        : summarizeHold(c);
     const showBar = (c.state === "running" && c.round <= 1) || c.state === "awaiting-you";
     return (
         <header className="flex flex-none flex-col gap-3 border-b border-edge-faint px-8 pb-3 pt-4">

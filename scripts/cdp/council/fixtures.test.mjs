@@ -23,6 +23,7 @@ import {
     panel,
     rankedProposals,
     replyLabel,
+    summarizeHold,
     summaryChip,
     threadTree,
     treeMeta,
@@ -115,6 +116,9 @@ describe("the fixtures as records", () => {
         expect(c.activity.ram.text).toBe("Grep \"IdleSleep\" in pkg/services");
         expect(treeMeta(c)).toEqual({ text: "Round 1", tone: "working" });
         expect(costLine(c, c.updated)).toBe("3:48 · 0 replies · 0.31M tokens");
+        // the runner refuses a running council
+        expect(canSummarize(c)).toBe(false);
+        expect(summarizeHold(c)).toBe("Summarize unlocks after round 1");
     });
 
     it("round2 is Main.dc.html: the P2 thread, Skeptic typing under UX's revision, the person's reply queued", () => {
@@ -150,6 +154,9 @@ describe("the fixtures as records", () => {
         expect(answerers(c, you.proposalid, you.parentid, you.text).map((e) => e.id)).toEqual(you.to);
         // the weak chip on P2
         expect(c.proposals.find((p) => p.id === "P2").evidence.some((e) => e.weak)).toBe(true);
+        // the runner refuses a running council: the synthesis comes by itself when round 2 ends
+        expect(canSummarize(c)).toBe(false);
+        expect(summarizeHold(c)).toBe("The summary comes by itself when round 2 ends");
     });
 
     it("awaiting is Paused.dc.html: six proposals, four calls done, waiting on the person", () => {
@@ -159,6 +166,16 @@ describe("the fixtures as records", () => {
         expect(c.proposals.map((p) => p.id)).toEqual(["P1", "P2", "P3", "P4", "P5", "P6"]);
         expect(c.pauseafterround1).toBe(true);
         expect(callSegments(c)).toEqual([...Array(4).fill("done"), ...Array(5).fill("pending")]);
+        expect(canSummarize(c)).toBe(true);
+        expect(c.summary).toBeUndefined();
+    });
+
+    it("awaiting stopped (the discussion scenario's variant) is a council at rest at round 1 that Summarize takes", () => {
+        const c = placeCouncil(loadCouncilFixture("awaiting"), "awaiting", "/work/fixture", NOW);
+        c.state = "stopped";
+        expect(c.round).toBe(1);
+        expect(headerChip(c)).toBe("Stopped");
+        expect(c.summary).toBeUndefined();
         expect(canSummarize(c)).toBe(true);
     });
 
@@ -198,6 +215,7 @@ describe("the fixtures as records", () => {
         expect(rows[0].cells.map((cell) => cell.stance)).toEqual(["accept", "accept", "accept", "proposed"]);
         expect(rows[0].cells[3].reason).toBe("A cleared WebView2 profile loses them.");
         expect(c.proposals.find((p) => p.id === "P6").withdrawn).toBe(true);
+        expect(canSummarize(c)).toBe(true);
     });
 
     it("failed has Skeptic failed in round 1 and the coordinator in round 3", () => {
@@ -211,6 +229,8 @@ describe("the fixtures as records", () => {
         // Skeptic sat out round 2: it has no reply
         expect(c.replies.some((r) => r.author === "skeptic")).toBe(false);
         expect(c.summary).toBeUndefined();
+        // the synthesis failed, so Summarize (the coordinator's retry too) is the way on
+        expect(canSummarize(c)).toBe(true);
     });
 
     it("notrun was saved without starting", () => {
@@ -220,6 +240,7 @@ describe("the fixtures as records", () => {
         expect(c.proposals ?? []).toEqual([]);
         expect(c.started ?? 0).toBe(0);
         expect(canSummarize(c)).toBe(false);
+        expect(summarizeHold(c)).toBe("This council has not run");
         expect(callSegments(c)).toEqual(Array(9).fill("pending"));
     });
 });

@@ -21,6 +21,7 @@ import {
     rankedProposals,
     replyLabel,
     score,
+    summarizeHold,
     summaryChip,
     threadTree,
     treeMeta,
@@ -576,21 +577,60 @@ describe("outdatedCount and canSummarize", () => {
         expect(outdatedCount(council({ replies: [reply("r1", "ram")] }))).toBe(0);
     });
 
-    it("lets Summarize through once round 1 is done and not before", () => {
-        expect(canSummarize(council({ round: 1 }))).toBe(false);
-        expect(canSummarize(council({ round: 2 }))).toBe(true);
-        expect(canSummarize(council({ state: "awaiting-you", round: 1 }))).toBe(true);
-        expect(canSummarize(council({ state: "done", round: 3 }))).toBe(true);
-        expect(canSummarize(council({ state: "failed", round: 3 }))).toBe(true);
-        expect(canSummarize(council({ state: "stopped", round: 2 }))).toBe(true);
-        expect(canSummarize(council({ state: "stopped", round: 1 }))).toBe(false);
+    // Runner.summarizeLocked: it refuses a council the runner is running, and accepts one at rest in any round
+    it.each(["awaiting-you", "done", "stopped", "failed"] as const)(
+        "lets Summarize through a %s council, in any round",
+        (state) => {
+            for (const round of [1, 2, 3]) {
+                expect(canSummarize(council({ state, round }))).toBe(true);
+            }
+        }
+    );
+
+    it("lets Summarize through a council stopped at the pause or failed in round 1", () => {
+        expect(canSummarize(council({ state: "stopped", round: 1 }))).toBe(true);
+        expect(canSummarize(council({ state: "failed", round: 1 }))).toBe(true);
+    });
+
+    it("holds Summarize while the council runs, in any round: round 2 ends in a synthesis by itself", () => {
+        for (const round of [1, 2, 3]) {
+            expect(canSummarize(council({ state: "running", round }))).toBe(false);
+        }
+    });
+
+    it("holds Summarize for a council that has not run", () => {
         expect(canSummarize(council({ state: "not-run", round: 0 }))).toBe(false);
     });
 
-    it("holds Summarize while a synthesis or an answers pass runs, and with nothing to summarize", () => {
-        expect(canSummarize(council({ state: "running", round: 3 }))).toBe(false);
+    it("holds Summarize with nothing to summarize", () => {
         expect(canSummarize(council({ state: "done", round: 3, proposals: [] }))).toBe(false);
         expect(canSummarize(council({ state: "failed", round: 3, proposals: undefined }))).toBe(false);
+        expect(canSummarize(council({ state: "stopped", round: 1, proposals: [] }))).toBe(false);
+        expect(canSummarize(council({ state: "awaiting-you", round: 1, proposals: [] }))).toBe(false);
+    });
+});
+
+describe("summarizeHold", () => {
+    it("says a running round 2 is summarized by itself when it ends", () => {
+        expect(summarizeHold(council({ state: "running", round: 2 }))).toBe(
+            "The summary comes by itself when round 2 ends"
+        );
+    });
+
+    it("keeps round 1's words, and says the others are still working", () => {
+        expect(summarizeHold(council({ state: "running", round: 1 }))).toBe("Summarize unlocks after round 1");
+        expect(summarizeHold(council({ state: "running", round: 3 }))).toBe(
+            "Summarize is on again when the council stops"
+        );
+    });
+
+    it("says a council that has not run has not run, and one with no proposal has nothing to summarize", () => {
+        expect(summarizeHold(council({ state: "not-run", round: 0, proposals: undefined }))).toBe(
+            "This council has not run"
+        );
+        expect(summarizeHold(council({ state: "stopped", round: 1, proposals: [] }))).toBe(
+            "There is no proposal to summarize"
+        );
     });
 });
 

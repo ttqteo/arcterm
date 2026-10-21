@@ -439,24 +439,36 @@ export function outdatedCount(c: Council): number {
     return at == null ? 0 : (c.replies ?? []).filter((r) => r.ts > at).length;
 }
 
-/** Pure: whether Summarize is on: round 1 is over (the council is past it or waiting at the pause), there is a
- *  proposal to summarize, and no synthesis or answers pass is running. */
+/** Pure: whether Summarize is on: exactly when Runner.summarizeLocked takes it. It refuses a council the runner is
+ *  running (in round 2 the synthesis comes by itself when the round ends) and accepts one at rest in any round, so a
+ *  council stopped at the pause or failed in round 1 can still be summarized; it needs a proposal to summarize. */
 export function canSummarize(c: Council): boolean {
     if ((c.proposals ?? []).length === 0) {
         return false;
     }
     switch (c.state) {
         case "awaiting-you":
-            return true;
-        case "running":
-            return c.round === 2;
         case "done":
         case "stopped":
         case "failed":
-            return c.round >= 2;
+            return true;
         default:
             return false;
     }
+}
+
+/** Pure: why Summarize is off, for the button's title (`canSummarize` false). */
+export function summarizeHold(c: Council): string {
+    if (c.state === "not-run") {
+        return "This council has not run";
+    }
+    if (c.state === "running") {
+        if (c.round >= 3) {
+            return "Summarize is on again when the council stops";
+        }
+        return c.round === 2 ? "The summary comes by itself when round 2 ends" : "Summarize unlocks after round 1";
+    }
+    return "There is no proposal to summarize";
 }
 
 export interface MatrixCell {
