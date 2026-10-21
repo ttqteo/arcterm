@@ -27,6 +27,13 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Servers file log and Restart in arcterm: open the footer's Servers popover with a "no owner" server
+  whose output goes to a file (an `astro dev` writing `.astro\dev.log`, or a task from an ended Claude session). Its
+  Log icon is lit, its tooltip names the file, and a click follows the file live in the focused agent's side panel.
+  Hover the row: Restart (↻) asks "Restart here?", and a second click stops the server and opens a terminal in its
+  folder, under its project, running the folder's script (`pnpm run dev`), with the port back up. Never run in the
+  app; the stdout lookup was checked against three live processes and by `pkg/devservers` tests.
+  `frontend/app/view/agents/machineserverspanel.tsx`, `pkg/devservers/stdout_windows.go`.
 - [ ] (arcterm) Failed object loads retry: after the next install, restart arcterm with several agents running; every
   agent the restart brings back shows in the Agent tree, and resuming one from Conversation History lands on its
   terminal rather than toasting "already open" over nothing. The failure itself (a GetObject that fails at boot) was

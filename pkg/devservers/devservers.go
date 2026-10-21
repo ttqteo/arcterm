@@ -22,6 +22,7 @@ type Proc struct {
 	Cmdline  string
 	Cwd      string
 	CreateMs int64
+	LogFile  string // the file its stdout (else stderr) writes to; ListAll reads it
 }
 
 // Listener is one listening TCP socket.
@@ -40,8 +41,9 @@ type Server struct {
 	Cwd             string       `json:"cwd"`
 	ByAgent         bool         `json:"byagent"`
 	LauncherCmdline string       `json:"launchercmdline,omitempty"`
-	Repo            string       `json:"repo,omitempty"`  // ListAll: the git repo holding Cwd
-	Owner           *ServerOwner `json:"owner,omitempty"` // ListAll: what holds the process; List: only a terminal
+	Repo            string       `json:"repo,omitempty"`    // ListAll: the git repo holding Cwd
+	LogFile         string       `json:"logfile,omitempty"` // ListAll: the file its output goes to, when it is a file
+	Owner           *ServerOwner `json:"owner,omitempty"`   // ListAll: what holds the process; List: only a terminal
 }
 
 // Select picks the servers that belong to an agent: a listener whose cwd is inside root, or one that descends from

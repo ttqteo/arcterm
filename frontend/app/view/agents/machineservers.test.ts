@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DevServerRow } from "./devserversmodel";
-import { buildMachineServers, machinePollMs } from "./machineservers";
+import { buildMachineServers, logHost, machinePollMs, restartPlan } from "./machineservers";
 import type { BackgroundTask } from "./transcriptprojection";
 
 const row = (o: Partial<DevServerRow>): DevServerRow => ({
@@ -197,6 +197,64 @@ describe("buildMachineServers", () => {
             pnpmTask
         );
         expect(buildMachineServers([uvicorn], agents, { "tab-p": [pnpmTask] }).groups[0].rows[0].log).toBeUndefined();
+    });
+
+    it("a server with no log of its own reads the file its output goes to, and one with no owner can restart", () => {
+        const logged = { ...portal, logfile: String.raw`D:\Workspace\SIEM\apps\portal\.astro\dev.log` };
+        const r = buildMachineServers([logged], agents, {}).groups[0].rows[0];
+        expect(r.fileLog).toBe(logged.logfile);
+        expect(r.restart).toBe(true);
+        // a task's log or a terminal wins over the file; an owned server is not restarted from here
+        const tasked = buildMachineServers([{ ...logged, launchercmdline: "pnpm run start" }], agents, {
+            "tab-p": [pnpmTask],
+        }).groups[0].rows[0];
+        expect(tasked.log?.task).toBe(pnpmTask);
+        expect(tasked.fileLog).toBeUndefined();
+        expect(tasked.restart).toBeUndefined();
+        const term = buildMachineServers([{ ...vite, logfile: "x.log" }], agents, {}).groups[0].rows[0];
+        expect(term.fileLog).toBeUndefined();
+        expect(term.restart).toBeUndefined();
+    });
+});
+
+describe("logHost", () => {
+    const roster = [{ id: "a1", kind: "agent" as const }, { id: "t1", kind: "terminal" as const }, { id: "a2" }];
+    it("is the focused agent, else the first; never a terminal", () => {
+        expect(logHost("a2", roster)).toBe("a2");
+        expect(logHost("t1", roster)).toBe("a1");
+        expect(logHost(undefined, roster)).toBe("a1");
+        expect(logHost("t1", [{ id: "t1", kind: "terminal" }])).toBeNull();
+    });
+});
+
+describe("restartPlan", () => {
+    const projects = [
+        { name: "SIEM", path: String.raw`D:\Workspace\SIEM` },
+        { name: "portal", path: "d:/workspace/siem/apps/portal/" },
+    ];
+    it("runs the folder's script in its folder, in the deepest registered project holding it", () => {
+        const s = row({
+            cwd: String.raw`D:\Workspace\SIEM\apps\portal\ `.trim(),
+            cmdline: String.raw`"C:\nvm4w\nodejs\node.exe" D:\Workspace\SIEM\node_modules\astro\astro.js dev`,
+        });
+        const scripts = [{ script: "dev", body: "astro dev", command: "pnpm run dev", server: true, port: null }];
+        expect(restartPlan(s, scripts, projects)).toEqual({
+            command: "pnpm run dev",
+            cwd: String.raw`D:\Workspace\SIEM\apps\portal`,
+            projectName: "portal",
+        });
+    });
+    it("falls back to the process's own line, and a project named after its repo", () => {
+        const s = row({
+            cwd: String.raw`D:\other\api`,
+            repo: String.raw`D:\other`,
+            cmdline: String.raw`"C:\Python\python.exe" -m uvicorn app.main:app --port 8100`,
+        });
+        expect(restartPlan(s, [], projects)).toEqual({
+            command: "python -m uvicorn app.main:app --port 8100",
+            cwd: String.raw`D:\other\api`,
+            projectName: "other",
+        });
     });
 });
 

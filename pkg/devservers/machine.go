@@ -142,7 +142,7 @@ type machineLister struct {
 	listeners func(context.Context) ([]Listener, error)
 	table     func() (memusage.Table, error)
 	createMs  func(context.Context, int32) (int64, bool)
-	detail    func(context.Context, int32) (Proc, bool) // name, command line, cwd
+	detail    func(context.Context, int32) (Proc, bool) // name, command line, cwd, log file
 	repos     *repoFinder
 
 	mu       sync.Mutex
@@ -192,6 +192,7 @@ func (m *machineLister) list(ctx context.Context, holders map[int32]ServerOwner)
 			Cwd:             p.Cwd,
 			LauncherCmdline: launcher,
 			Repo:            m.repos.find(p.Cwd),
+			LogFile:         p.LogFile,
 			Owner:           &owner,
 		})
 	}

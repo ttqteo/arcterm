@@ -83,6 +83,9 @@ var machine = &machineLister{
 		out := Proc{Pid: pid, Name: name}
 		out.Cmdline, _ = p.CmdlineWithContext(ctx)
 		out.Cwd, _ = p.CwdWithContext(ctx)
+		// a process started outside arcterm whose output went to a file (a redirect, a Claude background task's
+		// .output) has that file as its log
+		out.LogFile = stdoutFile(pid)
 		return out, true
 	},
 	repos: newRepoFinder(),

@@ -24,6 +24,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Servers: a server started outside arcterm whose output goes to a file (a redirect, or a task a Claude session that
+  has ended ran in the background) now opens that file as its live Log. A server with no owner also has
+  Restart in arcterm, which stops it and runs it again in a terminal in its folder, so you can see its output from then on.
+
 ### Fixed
 
 - An agent arcterm brought back after a restart no longer goes missing from the Agent tree when it was slow to load:

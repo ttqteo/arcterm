@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The footer's Servers popover as pure functions (docs/superpowers/specs/2026-10-08-machine-servers-design.md): every
-// listening process grouped by repo, each row's owner badge, the log a background task wrote for it, its Stop
-// confirm, and the chip's counts. machineserversstore.ts polls; machineserverspanel.tsx draws.
+// listening process grouped by repo, each row's owner badge, the log a background task wrote for it (else the file
+// its output goes to), its Stop confirm, what Restart in arcterm runs, and the chip's counts. machineserversstore.ts
+// polls; machineserverspanel.tsx draws.
 
+import { folderName, formFromServer, plainCommand, type ScriptSuggestion } from "./appsuggest";
 import {
     matchEndedTask,
     matchLauncherTask,
@@ -31,6 +33,8 @@ export interface MachineRow {
     badge: MachineBadge;
     log?: { agentId: string; task: BackgroundTask };
     termLog?: TerminalLog; // the arcterm terminal that holds the server: its pane is the log
+    fileLog?: string; // with neither: the file its output goes to
+    restart?: boolean; // a stray server in a repo: Restart in arcterm runs it again in a terminal
     stopConfirm: string;
 }
 
@@ -143,6 +147,12 @@ function resolveRow(
     }
 }
 
+// a row with no log of its own reads the file its output goes to; one with no owner can be restarted in arcterm
+function withExtras(r: MachineRow): MachineRow {
+    const fileLog = r.log == null && r.termLog == null && r.server.logfile ? r.server.logfile : undefined;
+    return { ...r, fileLog, restart: r.badge.kind === "noowner" || undefined };
+}
+
 // `services` are the held services (servicesAtom): a server whose owner is the terminal tab of one gets the `service`
 // badge and a Stop that names the app; every other row is as without them.
 export function buildMachineServers(
@@ -154,7 +164,7 @@ export function buildMachineServers(
     const byRepo = new Map<string, MachineRow[]>();
     const other: MachineRow[] = [];
     for (const s of servers) {
-        const r = resolveRow(s, agents, bgTasks, services);
+        const r = withExtras(resolveRow(s, agents, bgTasks, services));
         if (s.repo) {
             byRepo.set(s.repo, [...(byRepo.get(s.repo) ?? []), r]);
         } else {
@@ -177,4 +187,49 @@ export function buildMachineServers(
 // how often the footer asks for every listener: fast while the popover is open
 export function machinePollMs(open: boolean): number {
     return open ? 3000 : 15000;
+}
+
+// the agent whose side panel shows a file log: the focused one, else the first; null with no agent at all
+export function logHost(focusId: string | undefined, agents: Pick<MachineAgent, "id" | "kind">[]): string | null {
+    const live = agents.filter((a) => a.kind == null || a.kind === "agent");
+    return (live.find((a) => a.id === focusId) ?? live[0])?.id ?? null;
+}
+
+export interface RestartPlan {
+    command: string;
+    cwd: string;
+    projectName: string;
+}
+
+function pathKey(p: string): string {
+    return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+// the one server script whose tool (its first word) names a path segment of cmdline; null for none or several
+function toolScript(cmdline: string, scripts: ScriptSuggestion[]): ScriptSuggestion | null {
+    const segs = new Set(cmdline.toLowerCase().split(/[\\/\s"]+/));
+    const hits = scripts.filter((sc) => sc.server && segs.has(sc.body.trim().split(/\s+/)[0]?.toLowerCase() ?? ""));
+    return hits.length === 1 ? hits[0] : null;
+}
+
+// What Restart in arcterm runs for a server: the line Pin as app would start it with (formFromServer), in its folder, in
+// the registered project that holds that folder (the deepest), else one named after its repo's folder.
+export function restartPlan(
+    s: DevServerRow,
+    scripts: ScriptSuggestion[],
+    projects: { name: string; path: string }[]
+): RestartPlan {
+    const form = formFromServer(s, scripts);
+    // a tool's own entry (`node …\astro\astro.js dev`) matches no script line: the folder's server script that runs
+    // that tool does
+    const tool = form.command === plainCommand(s.cmdline) ? toolScript(s.cmdline, scripts) : null;
+    const dir = pathKey(form.dir);
+    const project = projects
+        .filter((p) => p.path && (dir === pathKey(p.path) || dir.startsWith(pathKey(p.path) + "/")))
+        .sort((a, b) => b.path.length - a.path.length)[0];
+    return {
+        command: tool?.command ?? form.command,
+        cwd: form.dir,
+        projectName: project?.name ?? (folderName(s.repo || form.dir) || "Home"),
+    };
 }

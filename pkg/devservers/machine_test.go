@@ -153,7 +153,7 @@ func machineFixture() *fakeOS {
 		listeners: []Listener{{Pid: 50, Port: 4321}, {Pid: 50, Port: 4321}, {Pid: 60, Port: 135}},
 		parents:   map[int32]int32{50: 40, 40: 4, 4: 1, 60: 1},
 		procs: map[int32]Proc{
-			50: {Pid: 50, Name: "node.exe", Cmdline: "node astro dev", Cwd: "", CreateMs: 900},
+			50: {Pid: 50, Name: "node.exe", Cmdline: "node astro dev", Cwd: "", CreateMs: 900, LogFile: `D:\w\.astro\dev.log`},
 			40: {Pid: 40, Name: "sh.exe", Cmdline: "sh pnpm dev", CreateMs: 800},
 			4:  {Pid: 4, Name: "explorer.exe", Cmdline: "explorer.exe", CreateMs: 100},
 			60: {Pid: 60, Name: "svchost.exe", CreateMs: 50}, // its command line can't be read
@@ -169,6 +169,9 @@ func TestListAllListsReadableListenersOnce(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Pid != 50 || len(got[0].Ports) != 1 || got[0].Owner == nil || got[0].Owner.Kind != OwnerApp {
 		t.Fatalf("got %+v; want only node, one port, owned by the app below explorer", got)
+	}
+	if got[0].LogFile != `D:\w\.astro\dev.log` {
+		t.Fatalf("LogFile = %q; want the file its stdout writes to", got[0].LogFile)
 	}
 }
 

@@ -3578,6 +3578,7 @@ declare global {
         byagent: boolean;
         launchercmdline?: string;
         repo?: string;
+        logfile?: string;
         owner?: ServerOwner;
     };
 

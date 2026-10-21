@@ -4,7 +4,9 @@
 // The footer's Servers popover (docs/superpowers/specs/2026-10-08-machine-servers-design.md): every listening process
 // on the machine grouped by repo, each with what holds it, and per row open a port, read the log, copy, stop. Opened
 // from the Servers chip. machineservers.ts decides what each row shows; this draws, and machineserversstore.ts polls.
+// A stray server (no owner) can be restarted in arcterm: stopped, then run again in a terminal, whose pane is its log.
 
+import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { SkeletonLine } from "@/app/element/skeleton";
@@ -16,13 +18,13 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronRight, Copy, FileText, Pin } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { openFileInPanel } from "./agentrailstore";
+import { ChevronRight, Copy, FileText, Pin, RotateCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { openFileInPanel, openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
-import { pinServerAsApp } from "./appsuggeststore";
+import { pinServerAsApp, suggestForFolder } from "./appsuggeststore";
 import { copyText, portsLabel, serverUrl, uptimeLabel, type TerminalLog } from "./devserversmodel";
-import { buildMachineServers, type MachineBadge, type MachineRow } from "./machineservers";
+import { buildMachineServers, logHost, restartPlan, type MachineBadge, type MachineRow } from "./machineservers";
 import {
     forgetMachineServer,
     loadMachineServers,
@@ -30,6 +32,7 @@ import {
     machineServersReadingAtom,
     useMachineServersPoll,
 } from "./machineserversstore";
+import { projectListAtom } from "./projectsstore";
 import { ACTION_BTN, ServerStopButton } from "./railservers";
 import { ensureServicesFeed, servicesAtom, stopService } from "./servicesstore";
 import { backgroundTasksByIdAtom } from "./subagentsstore";
@@ -39,8 +42,13 @@ import { openTerminalLog } from "./terminallog";
 const NOW_TICK_MS = 30_000;
 
 const NO_OWNER_TIP = "Still running. No agent, terminal or open app holds it.";
-// a process started outside arcterm: its output went to the console that started it, which no other process can read
-const NO_LOG_TIP = "No log here: it was started outside arcterm, so its output went to the console that started it.";
+// a process started outside arcterm whose output goes to a console or a pipe, which no other process can read (one
+// writing to a file has that file as its log)
+const NO_LOG_TIP = "No log here: it was started outside arcterm, and its output goes to the console that started it.";
+const NO_LOG_RESTART_TIP = `${NO_LOG_TIP} Restart it in arcterm to see it.`;
+const RESTART_TIP = "Restart in arcterm: stop it and run it again in a terminal, which shows its output";
+// how long Restart waits for its second click
+const RESTART_CONFIRM_MS = 3000;
 const BADGE = "rounded-[4px] px-1 text-[10.5px]";
 
 // a StopDevServer refusal that says the listed process is no longer the one running (pkg/devservers)
@@ -73,6 +81,73 @@ async function stopServer(row: MachineRow): Promise<void> {
         // either way the list is out of date
         fireAndForget(() => loadMachineServers());
     }
+}
+
+// Restart in arcterm: stop the server, then run the line that starts it (restartPlan) in a terminal in its folder, which
+// takes the centre. A stop refused for another reason than the process being gone runs nothing: the port is still held.
+async function restartServer(model: AgentsViewModel, row: MachineRow): Promise<void> {
+    const s = row.server;
+    const plan = restartPlan(s, await suggestForFolder(s.cwd), globalStore.get(projectListAtom));
+    try {
+        await RpcApi.StopDevServerCommand(TabRpcClient, { pid: s.pid, createms: s.createms });
+    } catch (e) {
+        const text = errorText(e);
+        if (!ALREADY_EXITED.test(text)) {
+            pushToast({ title: "Couldn't stop it", message: text, level: "error" });
+            fireAndForget(() => loadMachineServers());
+            return;
+        }
+    }
+    forgetMachineServer(s);
+    await launchAgent(model, {
+        runtime: "terminal",
+        startupCommand: plan.command,
+        task: "",
+        projectPath: plan.cwd,
+        projectName: plan.projectName,
+    });
+}
+
+// Restart asks twice, as Stop does: it stops the server too
+function RestartButton({
+    onRestart,
+    onConfirmingChange,
+}: {
+    onRestart: () => void;
+    onConfirmingChange: (confirming: boolean) => void;
+}) {
+    const [confirming, setConfirmingState] = useState(false);
+    const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const setConfirming = (c: boolean) => {
+        setConfirmingState(c);
+        onConfirmingChange(c);
+    };
+    useEffect(() => () => clearTimeout(timer.current ?? undefined), []);
+    const click = () => {
+        clearTimeout(timer.current ?? undefined);
+        if (!confirming) {
+            setConfirming(true);
+            timer.current = setTimeout(() => setConfirming(false), RESTART_CONFIRM_MS);
+            return;
+        }
+        setConfirming(false);
+        onRestart();
+    };
+    return (
+        <button
+            type="button"
+            data-machine-server-restart
+            title={confirming ? "Click again to restart it in arcterm" : RESTART_TIP}
+            aria-label={confirming ? "Confirm restart in arcterm" : "Restart in arcterm"}
+            onClick={click}
+            className={cn(
+                ACTION_BTN,
+                confirming && "border border-edge-strong px-[6px] text-[10.5px] font-semibold text-primary"
+            )}
+        >
+            {confirming ? "Restart here?" : <RotateCw size={12} aria-hidden />}
+        </button>
+    );
 }
 
 function Badge({ badge, model }: { badge: MachineBadge; model: AgentsViewModel }) {
@@ -112,10 +187,12 @@ function Badge({ badge, model }: { badge: MachineBadge; model: AgentsViewModel }
 
 // One listening process, laid out like the rail's: ports (each opens in the browser), what it runs and for how long;
 // then its PID, what holds it, its Log (always shown, faint with a reason when there is none), and Pin as app / Copy /
-// Stop while the row is hovered or focused. Stop asks twice.
+// Restart in arcterm (a stray server's) / Stop while the row is hovered or focused. Restart and Stop ask twice.
 // A held service's server (badge `app · <name>`) has no Pin, being an app already, and its Stop goes through wavesrv.
 function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewModel; now: number }) {
-    const [confirming, setConfirming] = useState(false);
+    const [stopConfirming, setStopConfirming] = useState(false);
+    const [restartConfirming, setRestartConfirming] = useState(false);
+    const confirming = stopConfirming || restartConfirming;
     const s = row.server;
     const openLog = (log: NonNullable<MachineRow["log"]>) => {
         openFileInPanel(model, log.agentId, {
@@ -126,6 +203,23 @@ function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewMode
             title: `${portsLabel(s.ports)} ${row.label}`,
         });
         fireAndForget(() => openTarget(model, { kind: "agent", tabId: log.agentId }));
+        close();
+    };
+    // the file its output goes to, followed live in an agent's side panel (the focused one's); with no agent, the editor
+    const openFileLog = (abs: string) => {
+        const host = logHost(globalStore.get(model.focusIdAtom), globalStore.get(model.agentsAtom));
+        if (host == null) {
+            fireAndForget(() => openRefInCode(model, { abs, root: null }));
+        } else {
+            openFileInPanel(model, host, {
+                abs,
+                root: null,
+                reread: Date.now(),
+                live: true,
+                title: `${portsLabel(s.ports)} ${row.label}`,
+            });
+            fireAndForget(() => openTarget(model, { kind: "agent", tabId: host }));
+        }
         close();
     };
     // a server in an arcterm terminal: that terminal, with its search box open
@@ -198,22 +292,38 @@ function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewMode
                         >
                             <Copy size={12} aria-hidden />
                         </button>
+                        {row.restart ? (
+                            <RestartButton
+                                onRestart={() => {
+                                    fireAndForget(() => restartServer(model, row));
+                                    close();
+                                }}
+                                onConfirmingChange={setRestartConfirming}
+                            />
+                        ) : null}
                         <ServerStopButton
                             confirmLabel={row.stopConfirm}
                             onStop={() => fireAndForget(() => stopServer(row))}
-                            onConfirmingChange={setConfirming}
+                            onConfirmingChange={setStopConfirming}
                         />
                     </span>
                     {/* Log stays in view: the one action a row is opened for, at the row end */}
                     <span className="-my-[2px] flex shrink-0 items-center">
-                        {row.log != null || row.termLog != null ? (
+                        {row.log != null || row.termLog != null || row.fileLog != null ? (
                             <button
                                 type="button"
                                 data-machine-server-log
-                                data-machine-server-termlog={row.log == null ? "" : undefined}
-                                title="Open its live log"
+                                data-machine-server-termlog={row.log == null && row.termLog != null ? "" : undefined}
+                                data-machine-server-filelog={row.log == null && row.termLog == null ? "" : undefined}
+                                title={row.fileLog != null ? `Open its live log (${row.fileLog})` : "Open its live log"}
                                 aria-label="Open its live log"
-                                onClick={() => (row.log != null ? openLog(row.log) : openTermLog(row.termLog!))}
+                                onClick={() =>
+                                    row.log != null
+                                        ? openLog(row.log)
+                                        : row.termLog != null
+                                          ? openTermLog(row.termLog)
+                                          : openFileLog(row.fileLog!)
+                                }
                                 className={ACTION_BTN}
                             >
                                 <FileText size={12} aria-hidden />
@@ -221,8 +331,8 @@ function ServerRow({ row, model, now }: { row: MachineRow; model: AgentsViewMode
                         ) : (
                             <span
                                 data-machine-server-nolog
-                                title={NO_LOG_TIP}
-                                aria-label={NO_LOG_TIP}
+                                title={row.restart ? NO_LOG_RESTART_TIP : NO_LOG_TIP}
+                                aria-label={row.restart ? NO_LOG_RESTART_TIP : NO_LOG_TIP}
                                 className="flex h-[18px] min-w-[18px] items-center justify-center px-[3px] text-muted opacity-40"
                             >
                                 <FileText size={12} aria-hidden />

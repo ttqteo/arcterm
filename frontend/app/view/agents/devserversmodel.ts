@@ -26,6 +26,7 @@ export interface DevServerRow {
     byagent: boolean;
     launchercmdline?: string;
     repo?: string;
+    logfile?: string; // the file its stdout writes to, when it is one (a redirect, a Claude background task's .output)
     owner?: DevServerOwner;
 }
 
