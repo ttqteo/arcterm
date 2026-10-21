@@ -91,9 +91,9 @@ Prototype: `.superpowers\design\rail-changes-commits\project\` (boards `Main`, `
 ## How it is built
 
 - `railcommits.ts` (pure, `railcommits.test.ts`): the where line's parts from rail state; the commit range for a range
-  choice (`{ from, label } | null`); rows and the root row from `HistoryCommit[]` with the 20 cap and the more flag;
+  choice (`{ from, root, base? } | null`); rows and the root row from `HistoryCommit[]` with the 20 cap and the more flag;
   the row tooltip; the fold default.
-- `railcommitsstore.ts`: per-agent commits atom (`{ key, commits, more, status, failure }`, keyed by `cwd` + range), a
+- `railcommitsstore.ts`: per-agent commits atom (`{ key, status, commits, head, failure }`, keyed by `cwd` + range; the more flag comes from the rows), a
   load guarded like `railstore`'s `current`, the fold atom, the commit-mode atom (per agent). Reads when the Changes tab
   shows, when rail state lands for the agent, after a rail commit, and on Retry: no new poll. The same reads also call
   `loadCommitList(cwd)` for the Uncommitted row's count (a `git status` and numstat, which the rail state read already
