@@ -256,7 +256,7 @@ export async function setAmend(cwd: string, on: boolean): Promise<void> {
 }
 
 // Opens a commit in the Log tab, selected with its first file open. `hash` is the full sha the history rows are keyed by.
-function showInLog(cwd: string, hash: string): void {
+export function showInLog(cwd: string, hash: string): void {
     globalStore.set(panelTabAtom, "log");
     globalStore.set(panelFoldedAtom, false);
     void selectCommit(cwd, hash);

@@ -9,10 +9,11 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, ChevronRight, CircleAlert, Folder, RefreshCw, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Folder, RefreshCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import { TreeModeToggle } from "./changedfilelist";
+import { CommitFailure, growMessageBox } from "./commitbox";
 import {
     amendAllowed,
     canCommit,
@@ -60,8 +61,6 @@ const BASE_INDENT_PX = 22; // under the group header's checkbox
 const STEP_INDENT_PX = 22;
 const AMEND_TITLE = "Rewrite the last commit (not pushed yet)";
 const AMEND_LOCKED_TITLE = "Already pushed: amending would need a force push";
-const MIN_BOX_PX = 72; // three lines
-const MAX_BOX_PX = 198; // ten lines
 
 function CountsOrNote({ change }: { change: GitChange }) {
     if (change.note) {
@@ -263,40 +262,6 @@ function NothingToCommit() {
     );
 }
 
-function CommitFailure({ failure, onDismiss }: { failure: GitFailure; onDismiss: () => void }) {
-    const hook = /hook/i.test(failure.stderr);
-    return (
-        <div
-            data-commit-failure
-            className="flex flex-col gap-[5px] rounded-[8px] border border-edge-mid bg-surface-raised px-[10px] py-[8px]"
-        >
-            <div className="flex items-center gap-[6px] text-[11.5px] font-semibold text-error">
-                <CircleAlert size={12} className="flex-none" />
-                <span className="min-w-0 flex-1">
-                    {hook ? "A hook stopped the commit" : "The commit did not go through"}
-                </span>
-                <button
-                    onClick={onDismiss}
-                    aria-label="Dismiss"
-                    className="flex flex-none text-muted hover:text-ink-hi"
-                >
-                    <X size={12} />
-                </button>
-            </div>
-            <div className="select-text break-words font-mono text-[10.5px] text-muted">
-                {failure.command}
-                {failure.exitcode >= 0 ? ` · exit ${failure.exitcode}` : ""}
-            </div>
-            {failure.stderr ? (
-                <pre className="max-h-[120px] select-text overflow-auto whitespace-pre-wrap break-words font-mono text-[10.5px] leading-[1.5] text-secondary">
-                    {failure.stderr.trim()}
-                </pre>
-            ) : null}
-            <div className="text-[11px] text-ink-mid">Your message and ticks are kept. Fix it, then commit again.</div>
-        </div>
-    );
-}
-
 export function CommitTab({
     cwd,
     agents,
@@ -356,8 +321,7 @@ export function CommitTab({
         if (el == null) {
             return;
         }
-        el.style.height = "auto";
-        el.style.height = `${Math.min(MAX_BOX_PX, Math.max(MIN_BOX_PX, el.scrollHeight + 2))}px`;
+        growMessageBox(el);
     }, [draft, cwd, boxShown]);
 
     if (cwd == null || entry == null) {
