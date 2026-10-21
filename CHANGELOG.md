@@ -38,6 +38,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Updating arcterm now always updates the `wsh` its agents run; before, an agent session left running across the
   update could keep them on the old one, so newer commands such as `wsh detach` were missing.
+- The mouse's Back and Forward buttons no longer go back in another app's page, out of sight, or in one whose app had
+  stopped, which then showed an error: they now do nothing. The Back and Forward buttons in an app's header still go
+  back and forward in its page.
 - The mouse's Back and Forward buttons in a pinned app's page go back and forward in that page; before, they moved
   another app's page out of sight, or one whose app had stopped, which then showed an error.
 

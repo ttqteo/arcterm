@@ -128,6 +128,19 @@ export function setupPageReloadKey(): () => void {
     return () => void unlisten.then((off) => off());
 }
 
+// The mouse's Back and Forward buttons pressed on the cockpit itself do nothing. It keeps no history of its own, so the
+// browser's step would only move whichever app's page moved last, often one out of sight; inside an app's page the host
+// turns them off too (pagekeys.rs MOUSE_HISTORY_SCRIPT).
+export function setupMouseHistoryButtons(): () => void {
+    const drop = (e: MouseEvent) => {
+        if (e.button === 3 || e.button === 4) {
+            e.preventDefault();
+        }
+    };
+    window.addEventListener("mouseup", drop, true);
+    return () => window.removeEventListener("mouseup", drop, true);
+}
+
 // Back and Forward walk the app frame's own pages, a single-page app's included, and do nothing with none to walk. The
 // window's history would step whichever frame moved last (another app's, a PDF's), so it is only the fallback where
 // the host cannot reach the frame (a Mac, the browser app).

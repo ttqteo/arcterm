@@ -33,6 +33,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Stable wsh updates past a held copy: after the next `task install`, `~/.arc/bin/wsh.exe detach --help`
   prints the detach help even while an old `wsh agentctl` (PID 163912 today) still runs; a `wsh.exe.old.1` may sit
   beside it until that process exits, and the following launch removes it. 498b85887
+- [ ] (arcterm) Mouse Back/Forward in an app's page (Windows): open a pinned app, follow a link or two in it, then
+  press the mouse's Back and Forward buttons over the page and over the cockpit; nothing moves, no app shows an error
+  page, and the header's Back still goes back a page.
 - [ ] (arcterm) Account switch resumes mid-turn: with an agent working (or stopped at its usage limit), switch the
   Claude account in Settings, check it in "Resume agents on …?" and Resume selected; it comes back and carries on by
   itself with the "Claude account was switched" turn. An idle agent comes back at its prompt with no new turn.
@@ -86,9 +89,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   the focused terminal; `Ctrl`+`Shift`+`R` redraws from inside one; `F5` anywhere never reloads arcterm; the palette's
   **Reload the window** does. `src-tauri/src/pagekeys.rs`, commit "fix(keys): Ctrl+R reloads a pinned app's page".
 - [ ] (arcterm) Pinned app Back / Forward (Windows), in the dev app after a restart of `task dev` (the host changed):
-  open a pinned app, click through two of its pages, then header ← steps back one page and → forward again; with a
-  second pinned app open, ← on the first never moves the second. They run `navigation.back()` in the app's frame
-  (`pagekeys.rs` `app_frame_action`) instead of the window's `history.back()`, which stepped whichever frame moved last.
+  open a pinned app, click through two of its pages, then header ← steps back one page and → forward again. They run
+  `navigation.back()` in the app's frame (`pagekeys.rs` `app_frame_action`) instead of the window's `history.back()`,
+  which stepped whichever frame moved last. A second pinned app that changed page after the first's earlier page still
+  goes back with it: the frames share the window's one history (seen in headless Edge, 2026-10-21).
 - [ ] (arcterm) Found on this machine: after rebuilding wavesrv (`task build:backend:quickdev:windows`, then restart
   the dev app) or the next install, open Setup → Tools: **mole** sits under System reading installed (`mo` from
   `%LOCALAPPDATA%\Programs\mole-cli`), and any of the detected TUIs on PATH (htop, ncdu, tig, btm…) list first under

@@ -3,7 +3,8 @@
 // frame). Here they lose that browser action but still reach the page, so a terminal keeps Ctrl+R as the shell's reverse
 // search; the frontend hears RELOAD_KEY_EVENT and reloads the app's page when its frame holds the focus (appstore.ts
 // setupPageReloadKey). The frame's own location.reload() runs here too, as the cockpit cannot reach into it, and so do
-// the header's Back, Forward and Open in the browser.
+// the header's Back, Forward and Open in the browser. The mouse's Back and Forward buttons are turned off in every page
+// (MOUSE_HISTORY_SCRIPT).
 use crate::applog::log_line;
 
 #[cfg(windows)]
@@ -102,8 +103,28 @@ unsafe fn install(
         Ok(())
     }));
     core.add_FrameCreated(&frames, &mut token)?;
+
+    let added = webview2_com::AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(|res, _| {
+        if let Err(e) = res {
+            log_line(&format!("[tauri] watching the mouse's Back and Forward in app pages failed: {e}"));
+        }
+        Ok(())
+    }));
+    core.AddScriptToExecuteOnDocumentCreated(&windows::core::HSTRING::from(MOUSE_HISTORY_SCRIPT), &added)?;
     Ok(())
 }
+
+// The mouse's Back and Forward buttons do nothing anywhere in the window. Left to the browser they step the window's one
+// history, whichever frame moved last: another app's page out of sight, or one whose app has since stopped, which then
+// shows an error. Walking only the pressed frame's pages cannot be done either: its earlier pages lie behind every later
+// step of the other frames, which go back with it. The header's Back and Forward stay the way to walk an app's page. A
+// cross-origin frame's mouse events never reach the cockpit, so this runs in every document (WebView2 runs a
+// document-created script in child frames too); the cockpit's own document, loaded before this is added, drops them in
+// appstore.ts setupMouseHistoryButtons.
+#[cfg(any(windows, test))]
+const MOUSE_HISTORY_SCRIPT: &str = r#"addEventListener("mouseup", (e) => {
+    if (e.button === 3 || e.button === 4) e.preventDefault();
+}, true);"#;
 
 #[cfg(windows)]
 unsafe fn destroyed(frame: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Frame) -> bool {
@@ -188,7 +209,7 @@ unsafe fn run_in_frame(name: &str, script: &str) -> Result<bool, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{frame_script, is_reload_key};
+    use super::{frame_script, is_reload_key, MOUSE_HISTORY_SCRIPT};
 
     #[test]
     fn reload_keys_are_ctrl_r_and_f5_never_with_alt() {
@@ -208,5 +229,11 @@ mod tests {
         assert!(frame_script("forward").unwrap().contains("navigation.forward()"));
         assert_eq!(frame_script("open"), Some("void window.open(location.href)"));
         assert_eq!(frame_script("eval"), None);
+    }
+
+    #[test]
+    fn the_mouse_buttons_only_cancel_the_browsers_step() {
+        assert!(MOUSE_HISTORY_SCRIPT.contains("e.preventDefault()"));
+        assert!(!MOUSE_HISTORY_SCRIPT.contains("back()"));
     }
 }
