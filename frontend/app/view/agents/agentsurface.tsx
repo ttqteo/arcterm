@@ -875,7 +875,7 @@ function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclud
             ) : mode === "canvases" ? (
                 <CanvasGallery model={model} />
             ) : mode === "council" ? (
-                <CouncilPane />
+                <CouncilPane model={model} />
             ) : mode === "run" ? (
                 <RunPane model={model} />
             ) : (
