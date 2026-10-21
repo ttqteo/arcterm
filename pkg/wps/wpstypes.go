@@ -31,6 +31,7 @@ const (
 	Event_JobQueue         = "jobqueue"         // type: wshrpc.JobQueueData
 	Event_MemoryPressure   = "memorypressure"   // type: wshrpc.MemoryPressureData
 	Event_IdeasChanged     = "ideas:changed"    // type: wshrpc.IdeasChangedData
+	Event_CouncilChanged   = "council:changed"  // type: wshrpc.CouncilChangedData
 	// orchestration engine events (pkg/orchestrate publishes these; the cockpit rail mirrors them)
 	DagEventChildDone   = "dag:child-done"   // type: string (task id)
 	DagEventGateOpen    = "dag:gate-open"    // type: string (gate task id)
@@ -66,6 +67,7 @@ var AllEvents []string = []string{
 	Event_JobQueue,
 	Event_MemoryPressure,
 	Event_IdeasChanged,
+	Event_CouncilChanged,
 	Event_StorageScan,
 	DagEventChildDone,
 	DagEventGateOpen,

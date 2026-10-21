@@ -711,6 +711,77 @@ declare global {
         nudge?: string;
     };
 
+    // wshrpc.CommandCouncilContinueData
+    type CommandCouncilContinueData = {
+        id: string;
+        cut?: string[];
+        question?: string;
+    };
+
+    // wshrpc.CommandCouncilEstimateData
+    type CommandCouncilEstimateData = {
+        project?: string;
+        files?: string[];
+        experts?: CouncilExpert[];
+        id?: string;
+        followup?: number;
+        tools?: boolean;
+    };
+
+    // wshrpc.CommandCouncilIdData
+    type CommandCouncilIdData = {
+        id: string;
+    };
+
+    // wshrpc.CommandCouncilListData
+    type CommandCouncilListData = {
+        project?: string;
+    };
+
+    // wshrpc.CommandCouncilReplyData
+    type CommandCouncilReplyData = {
+        id: string;
+        proposalid?: string;
+        parentid?: string;
+        text: string;
+        tools?: boolean;
+    };
+
+    // wshrpc.CommandCouncilRetryData
+    type CommandCouncilRetryData = {
+        id: string;
+        expertid: string;
+    };
+
+    // wshrpc.CommandCouncilSaveDocData
+    type CommandCouncilSaveDocData = {
+        id: string;
+        path?: string;
+    };
+
+    // wshrpc.CommandCouncilStartData
+    type CommandCouncilStartData = {
+        id?: string;
+        project?: string;
+        feature?: string;
+        question?: string;
+        files?: string[];
+        screenshots?: string[];
+        group?: string;
+        experts?: CouncilExpert[];
+        pause?: boolean;
+        sessionid?: string;
+        notrun?: boolean;
+    };
+
+    // wshrpc.CommandCouncilSuggestData
+    type CommandCouncilSuggestData = {
+        project: string;
+        feature: string;
+        question?: string;
+        files?: string[];
+    };
+
     // wshrpc.CommandCreateBlockData
     type CommandCreateBlockData = {
         tabid: string;
@@ -2185,6 +2256,158 @@ declare global {
         pid: number;
         command: string;
         bytes: number;
+    };
+
+    // council.Council
+    type Council = {
+        id: string;
+        project: string;
+        feature: string;
+        question?: string;
+        files?: string[];
+        screenshots?: string[];
+        group?: string;
+        experts: CouncilExpert[];
+        pauseafterround1?: boolean;
+        sessionid?: string;
+        state: string;
+        round: number;
+        error?: string;
+        proposals?: CouncilProposal[];
+        replies?: CouncilReply[];
+        summary?: CouncilSummary;
+        activity?: {[key: string]: CouncilActivity};
+        failed?: {[key: string]: CouncilFailure};
+        stats?: {[key: string]: CouncilExpertStat};
+        tokens: number;
+        calls: number;
+        started?: number;
+        created: number;
+        updated: number;
+    };
+
+    // council.CouncilActivity
+    type CouncilActivity = {
+        text: string;
+        proposalid?: string;
+        parentid?: string;
+    };
+
+    // wshrpc.CouncilChangedData
+    type CouncilChangedData = {
+        id: string;
+        project: string;
+    };
+
+    // council.CouncilDirection
+    type CouncilDirection = {
+        rank: number;
+        title: string;
+        reasoning: string;
+        from: string[];
+        stances: {[key: string]: string};
+        agreed: boolean;
+        ideaid?: string;
+    };
+
+    // wshrpc.CouncilEstimateRtnData
+    type CouncilEstimateRtnData = {
+        calls: number;
+        tokens: number;
+        minutes: number;
+    };
+
+    // council.CouncilEvidence
+    type CouncilEvidence = {
+        ref: string;
+        weak?: boolean;
+        note?: string;
+    };
+
+    // council.CouncilExpert
+    type CouncilExpert = {
+        id: string;
+        name: string;
+        brief: string;
+        model: string;
+        coordinator?: boolean;
+        why?: string;
+    };
+
+    // council.CouncilExpertStat
+    type CouncilExpertStat = {
+        ms: number;
+        tokens: number;
+        calls: number;
+    };
+
+    // council.CouncilFailure
+    type CouncilFailure = {
+        round: number;
+        error: string;
+    };
+
+    // council.CouncilGroup
+    type CouncilGroup = {
+        id: string;
+        name: string;
+        roles: string[];
+        coordinator: string;
+    };
+
+    // council.CouncilProposal
+    type CouncilProposal = {
+        id: string;
+        author: string;
+        title: string;
+        argument: string;
+        evidence?: CouncilEvidence[];
+        ts: number;
+        withdrawn?: boolean;
+        cut?: boolean;
+    };
+
+    // council.CouncilReply
+    type CouncilReply = {
+        id: string;
+        proposalid: string;
+        parentid?: string;
+        author: string;
+        stance?: string;
+        revised?: boolean;
+        text: string;
+        evidence?: CouncilEvidence[];
+        to?: string[];
+        tools?: boolean;
+        answered?: boolean;
+        round: number;
+        ts: number;
+    };
+
+    // wshrpc.CouncilRolesRtnData
+    type CouncilRolesRtnData = {
+        roles: CouncilExpert[];
+        groups: CouncilGroup[];
+    };
+
+    // wshrpc.CouncilSaveDocRtnData
+    type CouncilSaveDocRtnData = {
+        path: string;
+    };
+
+    // council.CouncilSuggestion
+    type CouncilSuggestion = {
+        files: string[];
+        roles: CouncilExpert[];
+        group?: string;
+    };
+
+    // council.CouncilSummary
+    type CouncilSummary = {
+        text: string;
+        directions: CouncilDirection[];
+        outcomes: {[key: string]: string};
+        at: number;
     };
 
     // wshrpc.DagAskItem
