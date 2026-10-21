@@ -17,6 +17,7 @@ import {
     ChevronLeft,
     FileDiff,
     FileText,
+    Folder,
     FolderTree,
     GitBranch,
     LayoutList,
@@ -57,6 +58,7 @@ import { setAgentView } from "./agentview";
 import { agentCacheStatusAtom, formatCacheCountdown, loadCacheStatusForAgent } from "./cachestatusstore";
 import { canvasStateAtom, selectCanvasTab } from "./canvasstore";
 import { ASK_OWNER_USER } from "./childaskmodel";
+import { commitListAtom, loadCommitList, showInLog } from "./commitstore";
 import { useDevServers } from "./devserversstore";
 import { FileTab } from "./filetab";
 import { finalRowFocusId, isFinalStageId } from "./finalstage";
@@ -71,6 +73,25 @@ import { prettyModel } from "./modellabel";
 import { PlanReviewSection } from "./planreviewsection";
 import { useInitiativeReread, usePlanReview } from "./planreviewstore";
 import { artifactsView } from "./railartifacts";
+import { RailCommitBox, RailCommitFiles } from "./railcommitbox";
+import {
+    commitRange,
+    commitsOpenByDefault,
+    commitsSummary,
+    railCommitRows,
+    railWhere,
+    type RailCommitRows,
+    type RailWhere,
+} from "./railcommits";
+import { RailCommitsSection } from "./railcommitssection";
+import {
+    loadRailCommits,
+    railCommitModeAtom,
+    railCommitsAtom,
+    railCommitsOpenAtom,
+    setRailCommitMode,
+    setRailCommitsOpen,
+} from "./railcommitsstore";
 import { RAIL_ICON } from "./railicons";
 import { RAIL_ROW, RAIL_ROW_ACTION } from "./railrow";
 import { clearRailSectionRequest, railSectionRequestAtom } from "./railsection";
@@ -121,6 +142,8 @@ const SUB_COLOR: Record<SubagentState, string> = {
 
 const RailFilesCap = 8; // a 296px rail can't show a large worktree; the summary line under it counts them all
 const USAGE_REFRESH_MS = 15_000;
+// the Commits section's first read: it draws its skeleton (or its failure) with no rows yet
+const EMPTY_COMMITS: RailCommitRows = { rows: [], count: 0, more: false };
 
 // A fact line of the session block, under its token usage: the project, the branch and the worktree the agent
 // works in, its model, or a subagent's state.
@@ -244,6 +267,44 @@ function FactsLine({
                 </div>
             ) : null}
         </>
+    );
+}
+
+// RailWhereLine is the Changes tab's first line: where its diff is measured, branch · worktree (a linked worktree's short
+// name) or branch · project · main checkout. The tooltip carries the full path.
+function RailWhereLine({ where }: { where: RailWhere }) {
+    const dot = <span className="flex-none text-ink-faint">·</span>;
+    return (
+        <div
+            data-rail-changes-where
+            title={where.path}
+            className="mb-[8px] flex min-w-0 items-center gap-[6px] text-[11.5px] font-medium text-secondary"
+        >
+            {where.branch ? (
+                <>
+                    <span className="flex min-w-0 items-center gap-[3px]">
+                        <GitBranch size={11} aria-hidden className="flex-none text-muted" />
+                        <span className="truncate">{shortIds(where.branch)}</span>
+                    </span>
+                    {dot}
+                </>
+            ) : null}
+            {where.kind === "worktree" ? (
+                <span className="flex min-w-0 items-center gap-[3px]">
+                    <FolderTree size={11} aria-hidden className="flex-none text-muted" />
+                    <span className="truncate">{where.place}</span>
+                </span>
+            ) : (
+                <>
+                    <span className="flex min-w-0 items-center gap-[3px]">
+                        <Folder size={11} aria-hidden className="flex-none text-muted" />
+                        <span className="truncate">{where.place}</span>
+                    </span>
+                    {dot}
+                    <span className="flex-none text-muted">main checkout</span>
+                </>
+            )}
+        </div>
     );
 }
 
@@ -479,10 +540,13 @@ function ChangesRangeSwitch({
     value,
     base,
     onChange,
+    disabled,
 }: {
     value: RailChangesRange;
     base: string;
     onChange: (r: RailChangesRange) => void;
+    // commit mode lists what is not committed yet, whichever range was chosen: the choice waits
+    disabled?: boolean;
 }) {
     const opt = (r: RailChangesRange, label: string, title: string) => (
         <button
@@ -491,10 +555,15 @@ function ChangesRangeSwitch({
             aria-checked={value === r}
             data-changes-range={r}
             title={title}
+            disabled={disabled}
             onClick={() => onChange(r)}
             className={cn(
-                "min-w-0 flex-1 cursor-pointer truncate rounded-[5px] border-0 px-[8px] py-[2px] text-[10.5px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
-                value === r ? "bg-surface-raised text-primary" : "bg-transparent text-muted hover:text-secondary"
+                "min-w-0 flex-1 truncate rounded-[5px] border-0 px-[8px] py-[2px] text-[10.5px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                disabled
+                    ? "cursor-default bg-transparent text-ink-faint"
+                    : value === r
+                      ? "cursor-pointer bg-surface-raised text-primary"
+                      : "cursor-pointer bg-transparent text-muted hover:text-secondary"
             )}
         >
             {label}
@@ -504,6 +573,8 @@ function ChangesRangeSwitch({
         <div
             role="radiogroup"
             aria-label="Changes to list"
+            aria-disabled={disabled || undefined}
+            title={disabled ? "Commit or cancel first: committing lists what is not committed yet" : undefined}
             className="mb-[8px] flex gap-[2px] rounded-[7px] border border-border p-[2px]"
         >
             {opt("session", "Session", "What changed since this session started")}
@@ -512,16 +583,35 @@ function ChangesRangeSwitch({
     );
 }
 
+// opens commit mode: beside View diff under the listed files, or alone under "No changes" when the range lists none but the
+// working tree still has uncommitted files
+function RailCommitOpenButton({ onClick }: { onClick: () => void }) {
+    return (
+        <button
+            type="button"
+            data-rail-commit-open
+            onClick={onClick}
+            title="Tick files and commit them here"
+            className="cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[8px] py-[2px] text-[10.5px] font-semibold text-ink-hi hover:border-edge-strong"
+        >
+            Commit…
+        </button>
+    );
+}
+
 function FilesChangedList({
     files,
     summary,
     onOpen,
     onViewDiff,
+    onCommit,
 }: {
     files: { path: string; status: string; adds: number; dels: number }[];
     summary: string;
     onOpen: (path: string) => void;
     onViewDiff: () => void;
+    // opens commit mode; offered while there is something to commit
+    onCommit?: () => void;
 }) {
     return (
         <>
@@ -540,6 +630,7 @@ function FilesChangedList({
             <div className="mt-[8px] flex items-center gap-[10px] text-[10.5px] tabular-nums">
                 <span className="text-muted">{summary}</span>
                 <span className="flex-1" />
+                {onCommit ? <RailCommitOpenButton onClick={onCommit} /> : null}
                 <button
                     type="button"
                     onClick={onViewDiff}
@@ -682,6 +773,34 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const changes = (onBranch ? branchDiff.changes.files : railState?.changes?.files) ?? [];
     const { shown: shownFiles } = capFiles(changes, RailFilesCap);
 
+    const project = agentProject(lineage, agents, agent);
+    // the Changes tab's where line and Commits section: the commits are the files list's own range
+    const where = railState && !ended ? railWhere(railState, project) : null;
+    const range = railState && !ended ? commitRange(changesRange, railState) : null;
+    const commitsState = useAtomValue(railCommitsAtom)[agent.id];
+    const openChoice = useAtomValue(railCommitsOpenAtom)[agent.id];
+    const uncommitted = useAtomValue(commitListAtom)[railState?.cwd ?? ""]?.changes.files.length ?? 0;
+    // commit mode (railcommitbox.tsx): the tab lists what is uncommitted and pins the commit box to its foot
+    const committing = useAtomValue(railCommitModeAtom)[agent.id] === true && !ended && railState?.cwd != null;
+    const commitsKey = railState?.cwd && range ? `${railState.cwd}|${range.from}` : null;
+    const commitsView =
+        range && commitsState?.key === commitsKey
+            ? railCommitRows(commitsState.commits, range, { head: commitsState.head, uncommitted, now: Date.now() })
+            : null;
+    // read on Changes, and again whenever the rail's state is read again (a turn's end, Changes opened, the window back).
+    // With no range (Session, no start recorded) there are no commits, but the uncommitted list still feeds Commit…
+    useEffect(() => {
+        const cwd = railState?.cwd;
+        if (shown !== "changes" || !cwd || ended) {
+            return;
+        }
+        if (range) {
+            fireAndForget(() => loadRailCommits(agent.id, cwd, range.from));
+        } else {
+            fireAndForget(() => loadCommitList(cwd));
+        }
+    }, [shown, railState, range?.from, agent.id, ended]);
+
     // A path is only worth linking when the rail resolved a working directory to resolve it against.
     const openFileDiff = (path?: string) => {
         globalStore.set(model.focusIdAtom, agent.id);
@@ -706,6 +825,30 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             diff: { rel: path, base: onBranch ? branchDiff.ref : (railState?.ref ?? "") },
         });
     };
+    // a commit row opens the Diff surface on that commit: the branch compare where there is one, else the Log
+    const openRailCommit = (hash?: string) => {
+        const cwd = railState?.cwd;
+        if (!cwd) {
+            return;
+        }
+        globalStore.set(model.focusIdAtom, agent.id);
+        const scope = agentDiffScope(agent.id, agent.name);
+        if (branchDiff) {
+            openBranchDiff(model, scope, cwd, branchDiff.base, railState.branch || "HEAD", hash);
+            return;
+        }
+        openDiff(model, scope);
+        if (hash) {
+            showInLog(cwd, hash);
+        }
+    };
+    const retryCommits = () => {
+        const cwd = railState?.cwd;
+        if (cwd && range) {
+            fireAndForget(() => loadRailCommits(agent.id, cwd, range.from));
+        }
+    };
+    const commitsOpen = openChoice ?? commitsOpenByDefault(commitsView?.count ?? 0);
     const drive = (data: string) => driveAgent(agent.blockId, data);
     // a board's row opens the agent's canvas on that board alone (its own tab, not the All view)
     const openArtifact = (board: string) => {
@@ -758,7 +901,6 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             : agent.model
               ? prettyModel(agent.model)
               : "";
-    const project = agentProject(lineage, agents, agent);
 
     // opens the rail on Overview with a section open, then brings it into view once it has rendered
     const revealSection = (id: AgentRailSectionId) => {
@@ -835,7 +977,8 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
         run: RAIL_ICON.autonomy,
     };
     // Files changed: Overview's section lists the first few (RailFilesCap), the Changes tab every one
-    const filesContent = (listed: typeof changes): ReactNode =>
+    // `full` is the Changes tab: it names where the diff is measured, draws the commits of the same range and heads the files
+    const filesContent = (listed: typeof changes, full = false): ReactNode =>
         ended ? (
             <SealedFiles files={ended.files} />
         ) : railState == null ? (
@@ -848,24 +991,82 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             <div className="text-[11.5px] text-muted">Not a git repository</div>
         ) : (
             <>
+                {full && where ? <RailWhereLine where={where} /> : null}
                 {branchDiff ? (
                     <ChangesRangeSwitch
                         value={onBranch ? "branch" : "session"}
                         base={branchDiff.base}
                         onChange={(r) => globalStore.set(railChangesRangeAtom, r)}
+                        disabled={committing}
                     />
                 ) : null}
-                {listed.length === 0 ? (
-                    <div className="text-[11.5px] text-muted">
-                        {onBranch ? `No changes against ${branchDiff.base}` : "No changes"}
-                    </div>
-                ) : (
-                    <FilesChangedList
-                        files={listed}
-                        summary={filesSummary(changes)}
-                        onOpen={openChangedFile}
-                        onViewDiff={() => openFileDiff()}
+                {full && commitsView && commitsView.rows.length > 0 ? (
+                    <RailCommitsSection
+                        view={commitsView}
+                        status={commitsState!.status}
+                        failure={commitsState!.failure}
+                        open={commitsOpen}
+                        summary={commitsSummary(commitsView, range!)}
+                        committing={committing}
+                        onToggle={() => setRailCommitsOpen(agent.id, !commitsOpen)}
+                        onOpenCommit={(h) => openRailCommit(h)}
+                        onUncommitted={() => setRailCommitMode(agent.id, true)}
+                        onMore={() => openRailCommit()}
+                        onRetry={retryCommits}
                     />
+                ) : full && commitsState?.key === commitsKey && commitsState.status !== "ready" ? (
+                    // the first read draws the skeleton, so the files do not jump when it lands; a failed one its panel
+                    <RailCommitsSection
+                        view={EMPTY_COMMITS}
+                        status={commitsState.status}
+                        failure={commitsState.failure}
+                        open
+                        summary=""
+                        committing={false}
+                        onToggle={() => {}}
+                        onOpenCommit={() => {}}
+                        onUncommitted={() => {}}
+                        onMore={() => {}}
+                        onRetry={retryCommits}
+                    />
+                ) : null}
+                {full && committing ? (
+                    <RailCommitFiles cwd={railState.cwd} />
+                ) : (
+                    <>
+                        {full ? (
+                            <div
+                                data-rail-files-header
+                                className="flex items-center gap-[8px] py-[5px] text-[12px] font-medium text-secondary"
+                            >
+                                <FileDiff size={13} aria-hidden className="flex-none" />
+                                Files
+                                <span className="text-[11px] tabular-nums text-muted">{listed.length}</span>
+                            </div>
+                        ) : null}
+                        {listed.length === 0 ? (
+                            <>
+                                <div className="text-[11.5px] text-muted">
+                                    {onBranch ? `No changes against ${branchDiff.base}` : "No changes"}
+                                </div>
+                                {/* the range can list nothing while the working tree is not clean: a file edited back to
+                                    where the range started is uncommitted against HEAD, and commit mode must stay reachable */}
+                                {full && uncommitted > 0 ? (
+                                    <div className="mt-[8px] flex justify-end">
+                                        <RailCommitOpenButton onClick={() => setRailCommitMode(agent.id, true)} />
+                                    </div>
+                                ) : null}
+                            </>
+                        ) : (
+                            <FilesChangedList
+                                files={listed}
+                                summary={filesSummary(changes)}
+                                onOpen={openChangedFile}
+                                onViewDiff={() => openFileDiff()}
+                                onCommit={full && uncommitted > 0 ? () => setRailCommitMode(agent.id, true) : undefined}
+                            />
+                        )}
+                    </>
                 )}
             </>
         );
@@ -1185,11 +1386,29 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         agentState={agent.state}
                     />
                 ) : shown === "changes" ? (
-                    <div
-                        data-rail-changes
-                        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-[40px] pt-[12px]"
-                    >
-                        {filesContent(changes)}
+                    <div className="flex min-h-0 flex-1 flex-col">
+                        <div
+                            data-rail-changes
+                            className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-[40px] pt-[12px]"
+                        >
+                            {filesContent(changes, true)}
+                        </div>
+                        {committing && railState?.cwd ? (
+                            <RailCommitBox
+                                cwd={railState.cwd}
+                                agents={agents}
+                                onCancel={() => setRailCommitMode(agent.id, false)}
+                                onMore={() => openRailCommit()}
+                                onDone={() => {
+                                    setRailCommitMode(agent.id, false);
+                                    fireAndForget(() =>
+                                        loadRailForAgent(agent.id, agent.transcriptPath, agent.blockId, {
+                                            silent: true,
+                                        })
+                                    );
+                                }}
+                            />
+                        ) : null}
                     </div>
                 ) : undefined
             }

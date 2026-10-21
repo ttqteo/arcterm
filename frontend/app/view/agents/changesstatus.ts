@@ -10,8 +10,9 @@
 export type ChangesStatus = "loading" | "failed" | "ready";
 
 // The DEV fault hook (window.__commitChangesFault) is read at the top of a commit's change read, by
-// the history store and the compare store alike: "error" fails that one read, "hang" never answers it,
-// and either clears itself. It lets the CDP scenario show the loading and failed states of the list.
+// the history store, the compare store and the rail's commits store (railcommitsstore.ts) alike: "error" fails that
+// one read, "hang" never answers it, and either clears itself. It lets the CDP scenario show the loading and failed
+// states of the list.
 export async function devCommitFault(): Promise<void> {
     if (!import.meta.env.DEV || typeof window === "undefined") {
         return;
