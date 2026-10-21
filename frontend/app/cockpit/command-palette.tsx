@@ -48,6 +48,7 @@ import {
 import { buildBriefIndex, rankBriefRows, type BriefRow } from "@/app/view/jarvis/briefpalette";
 import { workOnInitiative } from "@/app/view/jarvis/initiativeworkaction";
 import { openLauncher } from "@/app/view/agents/launcherstore";
+import { openNewCouncil } from "@/app/view/agents/newcouncil";
 import { openAddress, openTarget } from "@/app/view/jarvis/openref";
 import { taskListAtom } from "@/app/view/jarvis/tasksstore";
 import { joinRepoPath, sameRepoPath } from "@/util/paths";
@@ -65,6 +66,7 @@ import {
     SlidersHorizontal,
     Square,
     SquareTerminal,
+    Users,
     type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -172,7 +174,12 @@ function actionIcon(a: ThingAction<any>): LucideIcon {
     return a.destructive ? CircleX : ACTION_ICONS[a.group];
 }
 
-const START_ICONS: Record<StartId, LucideIcon> = { run: SlidersHorizontal, agent: SquareTerminal, initiative: Flag };
+const START_ICONS: Record<StartId, LucideIcon> = {
+    run: SlidersHorizontal,
+    agent: SquareTerminal,
+    initiative: Flag,
+    council: Users,
+};
 
 // the attention kind as the one word a Needs you row's status shows
 const NEEDS_STATUS: Record<string, string> = {
@@ -502,6 +509,7 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
             run: () => openLauncher(model, "run"),
             agent: () => openLauncher(model, "agent"),
             initiative: () => globalStore.set(model.newInitiativeOpenAtom, true),
+            council: () => openNewCouncil(model),
         };
         return START_DEFS.map((d) => ({
             key: `start:${d.id}`,

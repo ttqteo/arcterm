@@ -83,7 +83,8 @@ export function ShortcutsCheatSheet({ model }: { model: AgentsViewModel }) {
                                 <div key={b.id} className="flex items-center justify-between py-[5px] text-[13px]">
                                     <span className="text-secondary">{b.label}</span>
                                     <span className="flex items-center gap-1">
-                                        <KeyCaps keys={b.keys} />
+                                        {/* a binding reached by name (the palette) has no chord to draw */}
+                                        {b.keys !== "" ? <KeyCaps keys={b.keys} /> : null}
                                     </span>
                                 </div>
                             ))}

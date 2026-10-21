@@ -55,6 +55,7 @@ import {
     Pencil,
     PenTool,
     Play,
+    Plus,
     RotateCcw,
     Square,
     SquareTerminal,
@@ -97,7 +98,15 @@ import {
     useRunQueueFeed,
 } from "./runqueuestore";
 import { runMenuEntries } from "./runrowmenu";
-import { centerModeAtom, showCanvases, showHistory, showSession, showTerminal } from "./agentcenter";
+import {
+    centerModeAtom,
+    showCanvases,
+    showCouncil,
+    showCouncilSetup,
+    showHistory,
+    showSession,
+    showTerminal,
+} from "./agentcenter";
 import {
     agentDigits,
     agentsElsewhere,
@@ -105,6 +114,7 @@ import {
     collidingTitles,
     conversationCount,
     conversationTree,
+    councilRowsByProject,
     endedConversationsByProject,
     folderBlocks,
     folderCounts,
@@ -121,6 +131,7 @@ import {
     terminalShows,
     treeNavIds,
     type ConversationEntry,
+    type CouncilRowVM,
     type EndedRunRow,
     type EndedSessionRow,
     type ProjectTreeRow,
@@ -128,6 +139,14 @@ import {
     type TerminalRowState,
     type TerminalShows,
 } from "./agentsidebarmodel";
+import { councilProjectKey, type CouncilTone } from "./councilmodel";
+import {
+    councilSelAtom,
+    councilSetupDraftAtom,
+    councilSetupProjectAtom,
+    councilViewAtom,
+    useCouncils,
+} from "./councilstore";
 import { projectsAtom } from "./projectsstore";
 import { useRunObjects } from "./runobjects";
 import { runtimeMeta } from "./runtimemeta";
@@ -2351,6 +2370,100 @@ function ServiceRow({
     );
 }
 
+const COUNCIL_TONE: Record<CouncilTone, { text: string; dot: string }> = {
+    working: { text: "text-working", dot: "bg-working" },
+    asking: { text: "text-asking", dot: "bg-asking" },
+    muted: { text: "text-muted", dot: "bg-muted" },
+    error: { text: "text-error", dot: "bg-error" },
+};
+
+// The councils block of a project's folder (projectTree's councilhead, councilnew and council rows), after its agents.
+// None of them is a focus target: a click opens the council centre mode (agentcenter.ts) and j/k, Ctrl+Tab and Alt+digit
+// keep moving between agents and terminals. They read as selected while that mode shows them, which the agent rows
+// cannot (useSelectedRowId shows none while the centre is not a terminal).
+
+// the Councils label: a section label like Conversations'
+function CouncilHeadRow({ project }: { project: string }) {
+    return (
+        <div
+            data-council-head={project}
+            className="flex h-[24px] items-center px-[10px] text-[10.5px] font-bold text-muted"
+        >
+            Councils
+        </div>
+    );
+}
+
+// New council opens Setup in the project's root; `draft` is an unsent form Setup still holds for it
+function CouncilNewRow({ project, root, draft }: { project: string; root: string; draft: boolean }) {
+    const center = useAtomValue(centerModeAtom);
+    const view = useAtomValue(councilViewAtom);
+    const setupProject = useAtomValue(councilSetupProjectAtom);
+    const selected =
+        center === "council" &&
+        view === "setup" &&
+        setupProject != null &&
+        councilProjectKey(setupProject) === councilProjectKey(root);
+    return (
+        <button
+            type="button"
+            data-council-new={project}
+            data-council-draft={draft ? "true" : undefined}
+            aria-current={selected ? "true" : undefined}
+            onClick={() => showCouncilSetup(root)}
+            className={cn(
+                "flex w-full cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] text-left transition-colors duration-[140ms]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
+        >
+            <Slot>
+                <Plus size={13} aria-hidden className="text-muted" />
+            </Slot>
+            <span className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}>
+                New council
+                {draft ? <span className="text-muted">{" · draft"}</span> : null}
+            </span>
+        </button>
+    );
+}
+
+// One council: a dot, its feature and its state in a word. The word is in the state's tone token and carries the state
+// whatever the color, `Waiting on you` in the amber one.
+function CouncilRow({ row }: { row: CouncilRowVM }) {
+    const center = useAtomValue(centerModeAtom);
+    const view = useAtomValue(councilViewAtom);
+    const open = useAtomValue(councilSelAtom);
+    const selected = center === "council" && view !== "setup" && open === row.id;
+    const tone = COUNCIL_TONE[row.tone];
+    return (
+        <button
+            type="button"
+            data-council-row={row.id}
+            data-council-tone={row.tone}
+            title={`${row.feature} · ${row.meta}`}
+            aria-current={selected ? "true" : undefined}
+            onClick={() => showCouncil(row.id)}
+            className={cn(
+                "flex w-full cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] text-left transition-colors duration-[140ms]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
+        >
+            <Slot>
+                <span aria-hidden className={cn("h-[6px] w-[6px] rounded-full", tone.dot)} />
+            </Slot>
+            <span
+                data-council-feature
+                className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
+            >
+                {row.feature}
+            </span>
+            <span data-council-meta className={cn("flex-none whitespace-nowrap text-[11px]", tone.text)}>
+                {row.meta}
+            </span>
+        </button>
+    );
+}
+
 // A plan queued to start (the run queue, runqueuestore.ts). It has no session or run yet, so a click selects nothing and
 // shows nothing in the centre; the tooltip carries the plan, its route and its age instead. Hover offers Start now and
 // Remove, and the menu adds Run next (not on the head of the queue, which has nowhere to go). A blocked entry reads in the
@@ -2671,6 +2784,21 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         () => treeServiceInput(serviceList ?? [], focusId),
         [serviceList, focusId]
     );
+    // the councils (councilstore.ts), every project's, filed under the registered project each ran in; and the projects
+    // whose Setup holds an unsent draft, which New council says
+    const councilList = useCouncils("");
+    const councils = useMemo(() => councilRowsByProject(councilList, roots), [councilList, roots]);
+    const draftsAtom = useMemo(
+        () =>
+            atom(
+                (get) =>
+                    new Set(
+                        [...roots].filter(([, root]) => get(councilSetupDraftAtom(root)) != null).map(([name]) => name)
+                    )
+            ),
+        [roots]
+    );
+    const councilDrafts = useAtomValue(draftsAtom);
     const rows = projectTree({
         tree,
         terminals,
@@ -2682,6 +2810,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         serviceTabs,
         splits,
         roster: [...agents, ...terminals],
+        councils,
+        councilDrafts,
     });
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));
@@ -2807,6 +2937,15 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                         `queued-entry-${r.entry.id}`,
                                         <QueuedEntryRow model={model} row={r} />
                                     );
+                                case "councilhead":
+                                    return plain(`council-head-${r.project}`, <CouncilHeadRow project={r.project} />);
+                                case "councilnew":
+                                    return plain(
+                                        `council-new-${r.project}`,
+                                        <CouncilNewRow project={r.project} root={r.root} draft={r.draft} />
+                                    );
+                                case "council":
+                                    return plain(`council-${r.id}`, <CouncilRow row={r} />);
                                 case "service":
                                     return plain(
                                         `service-${r.serviceId}`,
