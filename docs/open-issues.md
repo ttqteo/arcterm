@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Split row cells: put an agent with an unread turn, a sleeping agent and a terminal running a command
+  into splits; each cell shows the unread count, the moon glyph and the working dot as its row did; right-click a
+  worker's cell inside a run and a lead's cell: each opens its own row's menu. The asking dot, Alt's digits and Rename
+  are checked by the `tools-split` scenario. `agenttree.tsx` `SplitCell`.
 - [ ] (arcterm) Skim 0.2.3: after the next install, ask Claude for a long reply with a numbered list whose items open
   on bold. Under skim the bold words stay bright while the rest of each item dims, and the reply marks 2-4 sentences
   (what changed, a caveat, a decision left to you), not only the caveat. `claude/skim-mod` `layout` `isLead`,

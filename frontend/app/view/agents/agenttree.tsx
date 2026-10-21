@@ -123,6 +123,8 @@ import {
     type ConversationEntry,
     type EndedRunRow,
     type EndedSessionRow,
+    type ProjectTreeRow,
+    type SplitRowCell,
     type TerminalRowState,
     type TerminalShows,
 } from "./agentsidebarmodel";
@@ -146,8 +148,8 @@ import {
 } from "./agentsviewmodel";
 import { parseDocReview } from "./docreview";
 import { openReview } from "./docreviewstore";
-import { reconcileProjectGrids, shownGrid } from "./agentgrid";
-import { canOpenInSplit, eligibleIds, gridProjects, isInSplit, openInSplit, projectGridsAtom } from "./gridstore";
+import { placementStyle } from "./agentgrid";
+import { canOpenInSplit, isInSplit, openInSplit, projectGridsAtom, removeFromSplit, treeSplits } from "./gridstore";
 import { finalRowFocusId, type FinalTone } from "./finalstage";
 import { useFinalStageView } from "./finalstageviews";
 import { LEAD_MARK_CLASS, leadMark } from "./leadcardmodel";
@@ -203,7 +205,7 @@ import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showServiceMenu } from "./servicemenu";
 import { canRestart, serviceRowWords, treeServiceInput } from "./servicesmodel";
 import { ensureServicesFeed, openService, restartService, servicesAtom } from "./servicesstore";
-import { showTerminalMenu, splitCellMenuItems, SplitMark, ToolGlyph } from "./terminalsrail";
+import { showTerminalMenu, splitCellMenuItems, ToolGlyph } from "./terminalsrail";
 import { PanelWeb, TreeSpider } from "./themedecorview";
 import { toolIcon, toolTerminalName, type ToolIconName } from "./toolsmodel";
 import { failedAtom, installingAtom, loadTools, toolsStatusAtom } from "./toolsstore";
@@ -267,8 +269,8 @@ function dragSource(agent: AgentVM | undefined, enabled: boolean): React.HTMLAtt
 
 // "Open in split" adds the agent as a new cell beside the focused one. Disabled when it already has a cell, the grid
 // is full or the roster is not seeded yet (a grid operation prunes against the roster as it is); empty for an agent
-// with no terminal. The palette has the same action (cockpit/actions/agent.ts). A cell of the split offers Remove from
-// split and End split instead, as its row is where the split is reached from.
+// with no terminal. The palette has the same action (cockpit/actions/agent.ts). A cell of a split (any project's) offers
+// Remove from split and End split instead, as its cell in the split row is where the split is reached from.
 function splitMenuItem(model: AgentsViewModel, agent: AgentVM): ContextMenuItem[] {
     if (agent.blockId == null) {
         return [];
@@ -403,6 +405,51 @@ function sleepMenuItems(agent: AgentVM): ContextMenuItem[] {
         return [];
     }
     return [{ label: "Sleep", icon: <Moon size={15} />, click: () => fireAndForget(() => sleepWithConfirm(agent)) }];
+}
+
+// An agent's row menu, which ParentRow and the agent's cell in a split row (SplitCell) share. A lead's row is also its
+// run's: with `lead` the run's items follow the agent's, and Cancel run sits beside Close agent. The lead's terminal is
+// the row itself. `later` is whether its transcript is marked to read later.
+function agentRowMenuItems(
+    model: AgentsViewModel,
+    agent: AgentVM,
+    lead: RunInfo | undefined,
+    later: boolean
+): ContextMenuItem[] {
+    const runMenu = lead != null ? runMenuItems(model, lead.runId, ["run:lead-terminal"]) : null;
+    return [
+        { label: "Rename", icon: <Pencil size={15} />, click: () => startRowRename(agent.id) },
+        { label: "Duplicate", icon: <CopyPlus size={15} />, click: () => duplicateSession(model, agent.id) },
+        ...splitMenuItem(model, agent),
+        {
+            label: "Copy name",
+            icon: <Copy size={15} />,
+            click: () => void navigator.clipboard.writeText(agent.name),
+        },
+        mentionMenuItem(agent),
+        laterMenuItem(agent.transcriptPath, later),
+        ...sleepMenuItems(agent),
+        ...(runMenu != null ? [{ type: "separator" } as const, ...runMenu.items] : []),
+        { type: "separator" },
+        ...(runMenu?.danger ?? []),
+        {
+            label: "Close agent",
+            icon: <X size={15} />,
+            danger: true,
+            click: () => confirmCloseSession(agent, model),
+        },
+    ];
+}
+
+// The short menu of a run's worker or stage row (WorkerRow, StageRow) and of its cell in a split row: the split items
+// (none once the task is `ended`, whose transcript has no terminal to split), a separator, Close agent.
+function taskRowMenuItems(model: AgentsViewModel, agent: AgentVM, ended = false): ContextMenuItem[] {
+    const split = ended ? [] : splitMenuItem(model, agent);
+    return [
+        ...split,
+        ...(split.length > 0 ? [{ type: "separator" as const }] : []),
+        { label: "Close agent", icon: <X size={15} />, danger: true, click: () => confirmCloseSession(agent) },
+    ];
 }
 
 const PULSE = "pulse-dot";
@@ -772,7 +819,6 @@ function ParentRow({
     tokens,
     lead,
     navDigit,
-    inSplit,
     nested,
     waitsFor,
 }: {
@@ -782,7 +828,6 @@ function ParentRow({
     tokens?: number; // its session's token total (livetokensstore); absent until read
     lead?: { run: RunInfo; open: boolean; live: number };
     navDigit?: number; // its Alt+1..9 digit
-    inSplit?: boolean; // a cell of the split on screen: the row stays in its folder and wears SplitMark
     nested?: boolean; // it waits on the agent just above it, and sits under it on a tree guide
     waitsFor?: string; // the name of the agent it waits on where it cannot nest under it
 }) {
@@ -842,32 +887,7 @@ function ParentRow({
 
     const select = () => selectAgentRow(model, agent.id);
     const onContextMenu = (e: React.MouseEvent) => {
-        // a lead's row is also its run's: the run's items follow the agent's, and Cancel run sits beside Close agent.
-        // The lead's terminal is this row itself
-        const runMenu = lead != null ? runMenuItems(model, lead.run.runId, ["run:lead-terminal"]) : null;
-        const items: ContextMenuItem[] = [
-            { label: "Rename", icon: <Pencil size={15} />, click: () => startRowRename(agent.id) },
-            { label: "Duplicate", icon: <CopyPlus size={15} />, click: () => duplicateSession(model, agent.id) },
-            ...splitMenuItem(model, agent),
-            {
-                label: "Copy name",
-                icon: <Copy size={15} />,
-                click: () => void navigator.clipboard.writeText(agent.name),
-            },
-            mentionMenuItem(agent),
-            laterMenuItem(agent.transcriptPath, laterAt != null),
-            ...sleepMenuItems(agent),
-            ...(runMenu != null ? [{ type: "separator" } as const, ...runMenu.items] : []),
-            { type: "separator" },
-            ...(runMenu?.danger ?? []),
-            {
-                label: "Close agent",
-                icon: <X size={15} />,
-                danger: true,
-                click: () => confirmCloseSession(agent, model),
-            },
-        ];
-        ContextMenuModel.getInstance().showContextMenu(items, e);
+        ContextMenuModel.getInstance().showContextMenu(agentRowMenuItems(model, agent, lead?.run, laterAt != null), e);
     };
 
     const subsChip =
@@ -1040,7 +1060,6 @@ function ParentRow({
                         >
                             {agent.name}
                         </span>
-                        {inSplit ? <SplitMark /> : null}
                         <CanvasTag model={model} id={agent.id} />
                         {laterAt != null ? <LaterMark title={laterTitle(laterAt, now, formatAgeShort)} /> : null}
                         {/* a lead's second line already holds its workers chip, progress and badges */}
@@ -1270,13 +1289,7 @@ function WorkerRow({
         if (agent == null) {
             return;
         }
-        const split = ended ? [] : splitMenuItem(model, agent);
-        const items: ContextMenuItem[] = [
-            ...split,
-            ...(split.length > 0 ? [{ type: "separator" as const }] : []),
-            { label: "Close agent", icon: <X size={15} />, danger: true, click: () => confirmCloseSession(agent) },
-        ];
-        ContextMenuModel.getInstance().showContextMenu(items, e);
+        ContextMenuModel.getInstance().showContextMenu(taskRowMenuItems(model, agent, ended), e);
     };
 
     return (
@@ -1375,13 +1388,7 @@ function StageRow({
     const digit = useHeldDigit(navDigit);
     const select = () => selectAgentRow(model, agent.id);
     const onContextMenu = (e: React.MouseEvent) => {
-        const split = splitMenuItem(model, agent);
-        const items: ContextMenuItem[] = [
-            ...split,
-            ...(split.length > 0 ? [{ type: "separator" as const }] : []),
-            { label: "Close agent", icon: <X size={15} />, danger: true, click: () => confirmCloseSession(agent) },
-        ];
-        ContextMenuModel.getInstance().showContextMenu(items, e);
+        ContextMenuModel.getInstance().showContextMenu(taskRowMenuItems(model, agent), e);
     };
     return (
         <div
@@ -2004,7 +2011,7 @@ function InstallState({ state }: { state: Exclude<TerminalRowState, "removed"> }
 
 // A plain terminal or tool in its project's folder, a peer of the agent rows above the divider: the tool's icon and
 // name (a plain shell: the terminal icon and its last command), the folder it runs in when that is not the project's
-// root, a pulsing dot while its shell runs a command, and where it shows when that is not the centre (the split mark, `panel`).
+// root, a pulsing dot while its shell runs a command, and where it shows when that is not the centre (`panel`; a cell of a split has no row, SplitRow holds it).
 // A click gives it the centre, as an agent's row does. It drags onto the grid and takes an Alt digit like one, and its
 // menu (showTerminalMenu) can open it in a split or move it to the panel. An install terminal reads installing, or
 // install failed once it exited non-zero; one whose folder was removed (worktreegone.ts) strikes its folder through and
@@ -2085,13 +2092,143 @@ function TerminalRow({
                     <StatusDot state="working" pulse className="!h-[6px] !w-[6px]" />
                 </span>
             ) : null}
-            {shows === "split" ? (
-                <SplitMark />
-            ) : shows != null ? (
+            {shows != null ? (
                 <span data-terminal-place={shows} className="flex-none text-[11px] text-ink-faint">
                     {shows}
                 </span>
             ) : null}
+        </div>
+    );
+}
+
+// A project's split as one row (projectTree's "split"): the cells laid out as the 2x2 the surface draws, the split on
+// screen in an accent frame. A cell is the tab's glyph, name and what wants you; its meta stays in the right panel.
+function SplitRow({
+    model,
+    row,
+    digits,
+    tools,
+}: {
+    model: AgentsViewModel;
+    row: Extract<ProjectTreeRow, { kind: "split" }>;
+    digits: ReadonlyMap<string, number>;
+    tools: ToolStatus[];
+}) {
+    const rows = Math.max(...row.cells.map((c) => c.place.row + c.place.rowSpan - 1));
+    return (
+        <div
+            data-split-row={row.project}
+            data-split-shown={row.shown ? "true" : undefined}
+            className={cn(
+                "grid gap-px overflow-hidden rounded-[7px] border",
+                row.shown ? "border-accent/60 bg-accent/25" : "border-border bg-border"
+            )}
+            style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gridTemplateRows: `repeat(${rows}, auto)` }}
+        >
+            {row.cells.map((c) => (
+                <div key={c.id} style={placementStyle(c.place)} className="min-w-0 bg-surface">
+                    <SplitCell model={model} cell={c} navDigit={digits.get(c.id)} tools={tools} />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function SplitCell({
+    model,
+    cell,
+    navDigit,
+    tools,
+}: {
+    model: AgentsViewModel;
+    cell: SplitRowCell;
+    navDigit?: number;
+    tools: ToolStatus[];
+}) {
+    const vm = cell.vm;
+    const selected = useSelectedRowId(model) === vm.id;
+    const renaming = useAtomValue(renamingRowAtom) === vm.id;
+    const digit = useHeldDigit(navDigit);
+    const unreadCount = useAtomValue(unreadAgentsAtom).get(vm.id) ?? 0;
+    const bgTasks = useAtomValue(backgroundTasksByIdAtom)[vm.id];
+    const machineServers = useAtomValue(machineServersReadingAtom).servers;
+    const laterAt = laterSince(useAtomValue(laterMarksAtom), vm.transcriptPath);
+    const terminal = vm.kind === "terminal";
+    const name = terminal ? toolTerminalName(vm, tools) : vm.name;
+    const asking = vm.state === "asking";
+    const onContextMenu = (e: React.MouseEvent) => {
+        if (cell.menu === "terminal") {
+            showTerminalMenu(model, vm, e, name);
+            return;
+        }
+        const items =
+            cell.menu === "task"
+                ? taskRowMenuItems(model, vm)
+                : agentRowMenuItems(model, vm, cell.menu === "lead" ? cell.run : undefined, laterAt != null);
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
+    return (
+        <div
+            data-split-cell={vm.id}
+            onClick={() => selectAgentRow(model, vm.id)}
+            onContextMenu={onContextMenu}
+            {...dragSource(vm, !renaming)}
+            className={cn(
+                "group/cell flex h-full min-w-0 cursor-pointer items-center gap-[6px] px-[8px] py-[6px]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
+        >
+            <DigitHint digit={digit}>
+                {terminal ? (
+                    <ToolGlyph name={toolIcon(tools.find((t) => t.id === vm.toolId))} className="text-muted" />
+                ) : vm.sleeping ? (
+                    <SleepGlyph id={vm.id} runtime={vm.agent} />
+                ) : (
+                    <RuntimeGlyph
+                        runtime={vm.agent}
+                        state={shownState(vm.state, backgroundActivity(bgTasks, machineServers))}
+                    />
+                )}
+            </DigitHint>
+            {renaming ? (
+                <RenameBox tabId={vm.id} shown={name} />
+            ) : (
+                <span
+                    title={name}
+                    className={cn(
+                        "min-w-0 flex-1 truncate text-[12px]",
+                        selected || unreadCount > 0 ? "text-primary" : "text-secondary",
+                        unreadCount > 0 && "font-semibold"
+                    )}
+                >
+                    {name}
+                </span>
+            )}
+            {asking ? (
+                <span aria-label="asking" className="h-[6px] w-[6px] flex-none rounded-full bg-warning" />
+            ) : unreadCount > 0 ? (
+                <span
+                    data-agent-unread={unreadCount}
+                    className="flex h-[14px] min-w-[14px] flex-none items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold tabular-nums text-background"
+                >
+                    {unreadLabel(unreadCount)}
+                </span>
+            ) : terminal && vm.running ? (
+                <StatusDot state="working" pulse className="!h-[6px] !w-[6px]" />
+            ) : null}
+            <button
+                type="button"
+                data-split-cell-remove={vm.id}
+                title="Remove from split"
+                aria-label="Remove from split"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    removeFromSplit(model, vm.id);
+                }}
+                className="hidden h-[16px] w-[16px] flex-none cursor-pointer items-center justify-center rounded-[4px] text-muted hover:bg-surface-hover hover:text-primary group-hover/cell:flex"
+            >
+                <X size={11} aria-hidden />
+            </button>
         </div>
     );
 }
@@ -2494,20 +2631,12 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const bgTasks = useAtomValue(backgroundTasksByIdAtom);
     const waits = useMemo(() => waitMap(agents, bgTasks), [agents, bgTasks]);
     const tree = buildAgentTree(agents, order, lineage, folds, focusId, waits);
-    // the split the Agent surface shows (the focused tab's project's grid as it reconciles it, agents and terminals
-    // alike): its cells keep their rows, each marked. The docked terminal is no cell: the surface prunes it.
     const projectGrids = useAtomValue(projectGridsAtom);
     const seeded = useAtomValue(rosterSeededAtom);
     const terminals = useAtomValue(model.terminalsAtom);
     const dockedId = useAtomValue(dockedTerminalAtom);
-    const cells = shownGrid(
-        reconcileProjectGrids(projectGrids, {
-            focusId,
-            eligible: eligibleIds([...agents, ...terminals.filter((t) => t.id !== dockedId)]),
-            projectOf: gridProjects([...agents, ...terminals]),
-            seeded,
-        })
-    ).ids;
+    // every project's split as the surface reconciles it: each is one row in its folder (projectTree)
+    const splits = treeSplits(projectGrids, { focusId, agents, terminals, dockedId, seeded });
     // project name -> root path, as activenav.ts builds it: the folders a terminal's branch chip is read against
     const registered = useAtomValue(projectsAtom);
     const roots = useMemo(() => {
@@ -2551,11 +2680,11 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         queue,
         services,
         serviceTabs,
+        splits,
+        roster: [...agents, ...terminals],
     });
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));
-    // the rows the split on screen shows, each marked (a grid of one cell is no split)
-    const splitIds = new Set(cells.length > 1 ? cells : []);
     // what the filter hides: the row under the tree says how many agents are in other projects and how many are asking
     const elsewhere = agentsElsewhere(tree, filter);
     // every project's, whatever the filter: it lights the spider, so an agent asking in a project the filter hides is
@@ -2696,10 +2825,15 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             name={toolTerminalName(r.terminal, tools)}
                                             icon={toolIcon(tools.find((t) => t.id === r.terminal.toolId))}
                                             place={r.place}
-                                            shows={terminalShows(r.terminal.id, cells, dockedId)}
+                                            shows={terminalShows(r.terminal.id, dockedId)}
                                             state={terminalRowState(r.terminal.id, installing, failed, gone)}
                                             navDigit={digits.get(r.terminal.id)}
                                         />
+                                    );
+                                case "split":
+                                    return plain(
+                                        `split-${r.project}`,
+                                        <SplitRow model={model} row={r} digits={digits} tools={tools} />
                                     );
                             }
                             // an agent's row keeps the agent's key wherever it moves (a worker folding into done, an
@@ -2716,7 +2850,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             branch={branches.get(r.agent.id)}
                                             tokens={tokens.get(r.agent.id)}
                                             navDigit={digits.get(r.agent.id)}
-                                            inSplit={splitIds.has(r.agent.id)}
                                             nested={r.nested}
                                             waitsFor={r.waitsFor}
                                         />
@@ -2732,7 +2865,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             tokens={tokens.get(r.agent.id)}
                                             lead={{ run: r.run, open: r.open, live: r.live }}
                                             navDigit={digits.get(r.agent.id)}
-                                            inSplit={splitIds.has(r.agent.id)}
                                         />
                                     );
                                     break;

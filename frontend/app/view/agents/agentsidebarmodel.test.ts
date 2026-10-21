@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { placementFor } from "./agentgrid";
+import { placementFor, type ProjectGrids } from "./agentgrid";
 import {
     agentDigits,
     agentExited,
@@ -1003,7 +1003,7 @@ describe("projectTree", () => {
             project,
             grids: Object.fromEntries(Object.entries(all).map(([p, ids]) => [p, { ids, focused: ids[0] }])),
         });
-        const withSplits = (agents: AgentVM[], terminals: AgentVM[], splits: ReturnType<typeof grids>, over = {}) =>
+        const withSplits = (agents: AgentVM[], terminals: AgentVM[], splits: ProjectGrids, over = {}) =>
             build(agents, terminals, { splits, roster: [...agents, ...terminals], ...over });
 
         it("puts one split row where the topmost cell's row was, and drops the cells' rows", () => {

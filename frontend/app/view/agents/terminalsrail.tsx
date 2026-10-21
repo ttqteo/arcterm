@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // What a plain terminal's row in the Agent tree shares with its other faces: the glyph a terminal or tool wears (the
-// row, the centre's pane head), the menu of its row, and the mark a row of a split cell wears (an agent's as well).
+// row, the centre's pane head) and the menu of its row.
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -26,7 +26,7 @@ import {
 import { confirmCloseSession } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
-import { canOpenInSplit, endSplit, isInSplit, openInSplit, removeFromGrid } from "./gridstore";
+import { canOpenInSplit, endSplitOf, isInSplit, openInSplit, removeFromSplit } from "./gridstore";
 import { rosterSeededAtom } from "./liveagents";
 import { dockedTerminalAtom, moveToDock, undock } from "./railstore";
 import { startRowRename } from "./rowrename";
@@ -50,21 +50,6 @@ export function ToolGlyph({ name, size = 13, className }: { name: ToolIconName; 
     return <Icon size={size} aria-hidden className={cn("shrink-0", className)} />;
 }
 
-/** The mark an Agent tree row wears while its agent or terminal is a cell of the split on screen: the row stays in its
- *  folder, so this is how the tree says which rows the split shows. */
-export function SplitMark() {
-    return (
-        <span
-            data-row-in-split
-            title="In the split"
-            aria-label="in the split"
-            className="flex flex-none text-ink-faint"
-        >
-            <Columns2 size={11} aria-hidden />
-        </span>
-    );
-}
-
 // Open a terminal beside the agent in view: the panel gives up a terminal it holds first (the grid prunes the docked
 // one), then it becomes a cell; plain focus when it can no longer be split (the grid changed after the menu opened)
 function openTerminalInSplit(model: AgentsViewModel, id: string): void {
@@ -74,12 +59,12 @@ function openTerminalInSplit(model: AgentsViewModel, id: string): void {
     }
 }
 
-// What a split cell's row menu offers for the split, an agent's or a terminal's: take this cell out (it keeps running),
-// or keep only the focused one
+// What a split cell's menu offers for the split, an agent's or a terminal's: take this cell out (it keeps running), or
+// keep only its split's focused one. Both act on the split the cell is in, whichever project's it is.
 export function splitCellMenuItems(model: AgentsViewModel, id: string): ContextMenuItem[] {
     return [
-        { label: "Remove from split", icon: <X size={15} />, click: () => removeFromGrid(model, id) },
-        { label: "End split", icon: <Columns2 size={15} />, click: () => endSplit(model) },
+        { label: "Remove from split", icon: <X size={15} />, click: () => removeFromSplit(model, id) },
+        { label: "End split", icon: <Columns2 size={15} />, click: () => endSplitOf(model, id) },
     ];
 }
 
