@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1567,13 +1568,46 @@ const listFilesTimeout = 45 * time.Second
 func ListFiles(ctx context.Context, cwd string) (*FileList, error) {
 	ctx, cancel := context.WithTimeout(ctx, listFilesTimeout)
 	defer cancel()
-	inside, err := run(ctx, cwd, "rev-parse", "--is-inside-work-tree")
-	if err != nil || strings.TrimSpace(inside) != "true" {
+	start := time.Now()
+	// The three reads are independent, and each pays a git launch and the two listings a walk of the working tree, so
+	// they run at once: in sequence, a cold walk is paid twice over before the tree shows. Outside a repository the
+	// listings fail fast and are dropped.
+	var inside, out, ignoredOut string
+	var err, ignoredErr error
+	var insideDur, outDur, ignoredDur time.Duration
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		t := time.Now()
+		inside, _ = run(ctx, cwd, "rev-parse", "--is-inside-work-tree")
+		insideDur = time.Since(t)
+	}()
+	go func() {
+		defer wg.Done()
+		t := time.Now()
+		// -z: NUL-separated, so a path containing a space or non-ASCII byte survives unquoted.
+		out, err = run(ctx, cwd, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+		outDur = time.Since(t)
+	}()
+	go func() {
+		defer wg.Done()
+		t := time.Now()
+		// --directory stops at a directory ignored as a whole instead of walking it (node_modules is one entry, not a
+		// hundred thousand).
+		ignoredOut, ignoredErr = run(ctx, cwd, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z")
+		ignoredDur = time.Since(t)
+	}()
+	wg.Wait()
+	// a slow listing is a cold disk cache, an antivirus scan of the git launches or a busy disk: the split says which
+	// read waited, the next time the Files tab sits on its skeleton
+	if total := time.Since(start); total > 2*time.Second {
+		log.Printf("gitinfo: listing %s took %v (rev-parse %v, ls-files %v, ignored %v)\n", cwd, total.Round(time.Millisecond),
+			insideDur.Round(time.Millisecond), outDur.Round(time.Millisecond), ignoredDur.Round(time.Millisecond))
+	}
+	if strings.TrimSpace(inside) != "true" {
 		return &FileList{IsRepo: false}, nil
 	}
-	// -z: NUL-separated, so a path containing a space or non-ASCII byte survives unquoted.
-	args := []string{"ls-files", "--cached", "--others", "--exclude-standard", "-z"}
-	out, err := run(ctx, cwd, args...)
 	if err != nil {
 		// A deadline kill reaches us as the killed process's exit code — "exit status 1" on Windows,
 		// where TerminateProcess sets it — so name the timeout, and otherwise git's own stderr.
@@ -1595,12 +1629,11 @@ func ListFiles(ctx context.Context, cwd string) (*FileList, error) {
 		paths = paths[:maxListFiles]
 		truncated = true
 	}
-	// --directory stops at a directory ignored as a whole instead of walking it (node_modules is one
-	// entry, not a hundred thousand). The tree is still usable without the ignored entries, so a
-	// failure here leaves them out rather than failing the listing.
+	// The tree is still usable without the ignored entries, so a failure there leaves them out rather than failing the
+	// listing.
 	ignored := []string{}
-	if out, err := run(ctx, cwd, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"); err == nil {
-		ignored = splitNul(out)
+	if ignoredErr == nil {
+		ignored = splitNul(ignoredOut)
 		sort.Strings(ignored)
 		if len(ignored) > maxIgnored {
 			ignored = ignored[:maxIgnored]
@@ -1619,12 +1652,13 @@ func splitNul(out string) []string {
 	return parts
 }
 
-// ListIgnoredDir lists one level of an ignored directory for the tree, which opens those lazily (see
-// FileList.Ignored): repo-relative paths with forward slashes, a directory ending in "/", sorted, at
+// ListIgnoredDir lists one level of a directory for the tree: an ignored one, which it opens lazily (see
+// FileList.Ignored), or any, while the tree shows the folder from the disk before ListFiles answers.
+// dir "" is cwd itself. Repo-relative paths with forward slashes, a directory ending in "/", sorted, at
 // most maxIgnored. dir must stay inside cwd.
 func ListIgnoredDir(cwd, dir string) ([]string, error) {
 	rel := filepath.Clean(filepath.FromSlash(strings.TrimSuffix(dir, "/")))
-	if rel == "." || filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" || rel == ".." ||
+	if (rel == "." && dir != "") || filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" || rel == ".." ||
 		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return nil, fmt.Errorf("directory %q is outside the project", dir)
 	}
@@ -1632,13 +1666,16 @@ func ListIgnoredDir(cwd, dir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	base := filepath.ToSlash(rel)
+	prefix := filepath.ToSlash(rel) + "/"
+	if rel == "." {
+		prefix = ""
+	}
 	out := []string{}
 	for _, e := range entries {
 		if e.Name() == ".git" {
 			continue
 		}
-		p := base + "/" + e.Name()
+		p := prefix + e.Name()
 		if e.IsDir() {
 			p += "/"
 		}

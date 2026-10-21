@@ -7,8 +7,10 @@ package wshserver
 import (
 	"context"
 	"encoding/base64"
+	"path/filepath"
 
 	"github.com/wavetermdev/waveterm/pkg/gitinfo"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -54,7 +56,17 @@ func (ws *WshServer) GitCompareChangesCommand(ctx context.Context, data wshrpc.C
 }
 
 func (ws *WshServer) GitListFilesCommand(ctx context.Context, data wshrpc.CommandGitListFilesData) (*wshrpc.CommandGitListFilesRtnData, error) {
+	if data.Cached {
+		fl := gitinfo.KeptListing(listCacheDir(), data.Cwd)
+		if fl == nil {
+			return &wshrpc.CommandGitListFilesRtnData{}, nil
+		}
+		return &wshrpc.CommandGitListFilesRtnData{Files: fl.Paths, Ignored: fl.Ignored, IsRepo: true, Truncated: fl.Truncated, Cached: true}, nil
+	}
 	fl, err := gitinfo.ListFiles(ctx, data.Cwd)
+	if err == nil && fl.IsRepo {
+		gitinfo.KeepListing(listCacheDir(), data.Cwd, fl)
+	}
 	if err == nil && !fl.IsRepo && data.AllowPlain {
 		fl, err = gitinfo.WalkFiles(ctx, data.Cwd)
 	}
@@ -62,6 +74,11 @@ func (ws *WshServer) GitListFilesCommand(ctx context.Context, data wshrpc.Comman
 		return nil, err
 	}
 	return &wshrpc.CommandGitListFilesRtnData{Files: fl.Paths, Ignored: fl.Ignored, IsRepo: fl.IsRepo, Truncated: fl.Truncated}, nil
+}
+
+// where the last git listing of each folder is kept between launches
+func listCacheDir() string {
+	return filepath.Join(wavebase.GetWaveDataDir(), "listcache")
 }
 
 func (ws *WshServer) GitListIgnoredDirCommand(ctx context.Context, data wshrpc.CommandGitListIgnoredDirData) (*wshrpc.CommandGitListIgnoredDirRtnData, error) {

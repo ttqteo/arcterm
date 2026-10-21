@@ -97,9 +97,13 @@ type CommandGitCompareChangesRtnData struct {
 
 // AllowPlain lists a directory that is not a repository by walking it, instead of answering
 // isrepo:false with no files. IsRepo still says which reader answered.
+//
+// Cached answers at once with the last git listing kept for cwd (in memory, else on disk), running no
+// git: the tree shows it while a fresh listing walks. The reply's Cached says one was kept.
 type CommandGitListFilesData struct {
 	Cwd        string `json:"cwd"`
 	AllowPlain bool   `json:"allowplain,omitempty"`
+	Cached     bool   `json:"cached,omitempty"`
 }
 
 // Files are repo-relative, forward-slashed, sorted. Truncated reports that the repo exceeded the
@@ -112,9 +116,10 @@ type CommandGitListFilesRtnData struct {
 	Ignored   []string `json:"ignored,omitempty"`
 	IsRepo    bool     `json:"isrepo"`
 	Truncated bool     `json:"truncated,omitempty"`
+	Cached    bool     `json:"cached,omitempty"` // a kept listing, for a Cached request; false when none was kept
 }
 
-// Dir is repo-relative; the reply lists its entries one level deep, a directory ending in "/".
+// Dir is repo-relative, "" for cwd itself; the reply lists its entries one level deep, a directory ending in "/".
 type CommandGitListIgnoredDirData struct {
 	Cwd string `json:"cwd"`
 	Dir string `json:"dir"`

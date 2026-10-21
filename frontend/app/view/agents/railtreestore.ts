@@ -24,6 +24,9 @@ export interface RailListing {
     ignored: string[];
     truncated: boolean; // the server's cap cut the listing short
     error?: string; // set only with status "error"
+    // the folder read level by level from the disk while git walks, before any listing of it was kept: its directories
+    // end in "/" in `files` and are read as they open (listIgnoredDirs). Only ever with status "loading"
+    partial?: true;
 }
 
 // the listing of a worktree nobody has loaded yet
@@ -88,11 +91,15 @@ function listedFor(cwd: string): Listed {
 // Reads the worktree's files again for `agentId`'s Files tab. The rows already shown stay while the load is in flight,
 // and a reply that a newer load for the same cwd has overtaken is dropped. A failure replaces the rows with its message
 // (status "error"); it is never an empty tree. Afterwards the agent's expanded and selected rows that no longer exist
-// are dropped.
+// are dropped. With no rows to show yet, the tree shows what is quicker than git meanwhile (showEarly).
 export async function reloadTree(cwd: string, agentId: string): Promise<void> {
     const seq = (loadSeq.get(cwd) ?? 0) + 1;
     loadSeq.set(cwd, seq);
-    putListing(cwd, { ...(globalStore.get(railListingsAtom)[cwd] ?? NO_ROWS), status: "loading", error: undefined });
+    const had = globalStore.get(railListingsAtom)[cwd];
+    putListing(cwd, { ...(had ?? NO_ROWS), status: "loading", error: undefined });
+    if (had == null || had.files.length === 0) {
+        void showEarly(cwd, seq);
+    }
     let res: CommandGitListFilesRtnData;
     try {
         res = await RpcApi.GitListFilesCommand(TabRpcClient, { cwd }, { timeout: LIST_RPC_TIMEOUT_MS });
@@ -119,6 +126,78 @@ export async function reloadTree(cwd: string, agentId: string): Promise<void> {
     // the directories opened before may hold other files now; the old entries show until the new ones land
     await refreshListedDirs(cwd);
     pruneAgentTree(agentId, cwd);
+}
+
+// Git's walk of a folder takes 0.5s warm, and well over 10s on a cold disk cache or a busy machine, so a tree with
+// nothing to show asks for two quicker answers at once: the listing wavesrv kept from the last walk (a memory or file
+// read), and the folder's top level from the disk (one directory read). The top level shows until the kept listing
+// lands; either gives way to git's. Neither replaces rows git or an error already put there.
+async function showEarly(cwd: string, seq: number): Promise<void> {
+    let keptShown = false;
+    const waiting = () => loadSeq.get(cwd) === seq && globalStore.get(railListingsAtom)[cwd]?.status === "loading";
+    const top = (async () => {
+        let entries: string[];
+        try {
+            entries = (await RpcApi.GitListIgnoredDirCommand(TabRpcClient, { cwd, dir: "" })).entries ?? [];
+        } catch {
+            return; // git's answer will say why
+        }
+        if (!keptShown && waiting()) {
+            putListing(cwd, { status: "loading", files: entries, ignored: [], truncated: false, partial: true });
+        }
+    })();
+    const kept = (async () => {
+        let res: CommandGitListFilesRtnData;
+        try {
+            res = await RpcApi.GitListFilesCommand(TabRpcClient, { cwd, cached: true });
+        } catch {
+            return;
+        }
+        if (res.cached && waiting()) {
+            keptShown = true;
+            putListing(cwd, {
+                status: "loading",
+                files: res.files ?? [],
+                ignored: res.ignored ?? [],
+                truncated: res.truncated ?? false,
+            });
+        }
+    })();
+    await Promise.all([top, kept]);
+}
+
+// While the tree is the partial top level, an opened directory is read the same way, one level, into `files`; git's
+// listing then replaces it all.
+async function listPartialDirs(cwd: string, expanded: readonly string[]): Promise<void> {
+    const listing = globalStore.get(railListingsAtom)[cwd];
+    if (!listing?.partial) {
+        return;
+    }
+    const unread = expanded.filter(
+        (d) => listing.files.includes(`${d}/`) && !listing.files.some((p) => p.startsWith(`${d}/`) && p !== `${d}/`)
+    );
+    await Promise.all(
+        unread.map(async (dir) => {
+            const key = `${cwd}\n${dir}`;
+            if (listingDirs.has(key)) {
+                return;
+            }
+            listingDirs.add(key);
+            let entries: string[];
+            try {
+                entries = (await RpcApi.GitListIgnoredDirCommand(TabRpcClient, { cwd, dir: `${dir}/` })).entries ?? [];
+            } catch {
+                return;
+            } finally {
+                listingDirs.delete(key);
+            }
+            const now = globalStore.get(railListingsAtom)[cwd];
+            if (now?.partial) {
+                const have = new Set(now.files);
+                putListing(cwd, { ...now, files: [...now.files, ...entries.filter((e) => !have.has(e))] });
+            }
+        })
+    );
 }
 
 function pruneAgentTree(agentId: string, cwd: string): void {
@@ -172,6 +251,10 @@ async function listIgnoredDir(cwd: string, dir: string): Promise<void> {
 export async function listIgnoredDirs(cwd: string, expanded: readonly string[]): Promise<void> {
     const listing = globalStore.get(railListingsAtom)[cwd];
     if (listing == null) {
+        return;
+    }
+    if (listing.partial) {
+        await listPartialDirs(cwd, expanded);
         return;
     }
     const listed = listedFor(cwd);

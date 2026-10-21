@@ -425,6 +425,25 @@ export async function reloadFileIndex(path: string): Promise<CodeIndex> {
     return idx;
 }
 
+// A cold walk takes seconds, so while it runs the tree shows the listing wavesrv kept from the last one (no git run),
+// until git's own lands. It stays out of indexCache: it is only a stand-in.
+async function showKeptIndex(path: string, token: string): Promise<void> {
+    let res: CommandGitListFilesRtnData;
+    try {
+        res = await RpcApi.GitListFilesCommand(TabRpcClient, { cwd: path, cached: true });
+    } catch {
+        return;
+    }
+    if (res.cached && current.indexToken === token && globalStore.get(codeIndexAtom) == null) {
+        globalStore.set(codeIndexAtom, {
+            paths: res.files ?? [],
+            ignored: res.ignored ?? [],
+            isRepo: true,
+            truncated: res.truncated ?? false,
+        });
+    }
+}
+
 async function loadIndex(p: CodeProject): Promise<void> {
     const token = `index:${p.path}`;
     current.indexToken = token;
@@ -435,6 +454,7 @@ async function loadIndex(p: CodeProject): Promise<void> {
         globalStore.set(codeIndexAtom, cached);
         return;
     }
+    void showKeptIndex(p.path, token);
     try {
         const idx = await loadFileIndex(p.path);
         if (current.indexToken !== token) {

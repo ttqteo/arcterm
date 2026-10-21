@@ -1453,6 +1453,7 @@ declare global {
     type CommandGitListFilesData = {
         cwd: string;
         allowplain?: boolean;
+        cached?: boolean;
     };
 
     // wshrpc.CommandGitListFilesRtnData
@@ -1461,6 +1462,7 @@ declare global {
         ignored?: string[];
         isrepo: boolean;
         truncated?: boolean;
+        cached?: boolean;
     };
 
     // wshrpc.CommandGitListIgnoredDirData

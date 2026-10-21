@@ -1545,11 +1545,41 @@ func TestListFilesIgnoredDirectoryIsOneEntryListedOnDemand(t *testing.T) {
 	if err != nil || strings.Join(nested, "|") != "node_modules/pkg/index.js" {
 		t.Fatalf("nested = %v, %v", nested, err)
 	}
+	// "" is the folder itself, read before the listing lands; .git stays out
+	top, err := ListIgnoredDir(dir, "")
+	if err != nil || strings.Join(top, "|") != ".gitignore|node_modules/|src/" {
+		t.Fatalf("top = %v, %v", top, err)
+	}
+}
+
+func TestKeptListingOutlivesTheLaunch(t *testing.T) {
+	dir := t.TempDir()
+	cwd := filepath.Join(t.TempDir(), "repo")
+	if KeptListing(dir, cwd) != nil {
+		t.Fatal("a folder never listed has no kept listing")
+	}
+	fl := &FileList{Paths: []string{"a.go", "src/b.go"}, Ignored: []string{"node_modules/"}, IsRepo: true}
+	KeepListing(dir, cwd, fl)
+	if got := KeptListing(dir, cwd); got != fl {
+		t.Fatalf("kept = %+v, want the one just kept", got)
+	}
+	// a new launch: memory is empty, the disk copy answers once the background write lands
+	keptMu.Lock()
+	delete(keptLists, cwd)
+	keptMu.Unlock()
+	var got *FileList
+	for i := 0; i < 100 && got == nil; i++ {
+		time.Sleep(10 * time.Millisecond)
+		got = KeptListing(dir, cwd)
+	}
+	if got == nil || strings.Join(got.Paths, "|") != "a.go|src/b.go" || strings.Join(got.Ignored, "|") != "node_modules/" {
+		t.Fatalf("from disk = %+v", got)
+	}
 }
 
 func TestListIgnoredDirRefusesPathsOutsideTheProject(t *testing.T) {
 	dir := t.TempDir()
-	for _, bad := range []string{"..", "../x", "a/../../x", "", ".", filepath.Join(dir, "x")} {
+	for _, bad := range []string{"..", "../x", "a/../../x", ".", filepath.Join(dir, "x")} {
 		if _, err := ListIgnoredDir(dir, bad); err == nil {
 			t.Errorf("ListIgnoredDir(%q) must refuse", bad)
 		}

@@ -3,9 +3,15 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), listDir: vi.fn() }));
+// git's listing, the kept one (cached: true), one ignored directory, and the folder's top level (dir "")
+const mocks = vi.hoisted(() => ({ list: vi.fn(), kept: vi.fn(), listDir: vi.fn(), top: vi.fn() }));
 vi.mock("@/app/store/wshclientapi", () => ({
-    RpcApi: { GitListFilesCommand: mocks.list, GitListIgnoredDirCommand: mocks.listDir },
+    RpcApi: {
+        GitListFilesCommand: (c: unknown, d: { cached?: boolean }, o: unknown) =>
+            d.cached ? mocks.kept(c, d, o) : mocks.list(c, d, o),
+        GitListIgnoredDirCommand: (c: unknown, d: { dir: string }) =>
+            d.dir === "" ? mocks.top(c, d) : mocks.listDir(c, d),
+    },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
@@ -38,9 +44,65 @@ const listing = () => globalStore.get(railListingsAtom)[CWD];
 beforeEach(() => {
     mocks.list.mockReset();
     mocks.listDir.mockReset();
+    mocks.kept.mockReset().mockResolvedValue({ files: [], isrepo: false });
+    mocks.top.mockReset().mockRejectedValue(new Error("not read"));
     globalStore.set(railListingsAtom, {});
     globalStore.set(railIgnoredListedAtom, {});
     globalStore.set(railTreeStateAtom(AGENT), EMPTY_RAIL_TREE);
+});
+
+describe("reloadTree, before git answers", () => {
+    it("shows the kept listing while git walks, then git's", async () => {
+        const git = deferred<unknown>();
+        mocks.list.mockReturnValueOnce(git.promise);
+        mocks.kept.mockResolvedValue({ files: ["old.ts"], ignored: ["build/"], isrepo: true, cached: true });
+        mocks.top.mockResolvedValue({ entries: ["src/"] });
+        const pending = reloadTree(CWD, AGENT);
+        await vi.waitFor(() => expect(listing()?.files).toEqual(["old.ts"]));
+        expect(listing()).toEqual({ status: "loading", files: ["old.ts"], ignored: ["build/"], truncated: false });
+        // the top level, landing after the kept listing, does not replace it
+        await Promise.resolve();
+        expect(listing()?.files).toEqual(["old.ts"]);
+        git.resolve({ files: ["new.ts"], isrepo: true });
+        await pending;
+        expect(listing()).toEqual({ status: "ready", files: ["new.ts"], ignored: [], truncated: false });
+    });
+
+    it("shows the top level when nothing was kept, reading a folder as it opens", async () => {
+        const git = deferred<unknown>();
+        mocks.list.mockReturnValueOnce(git.promise);
+        mocks.top.mockResolvedValue({ entries: ["README.md", "src/"] });
+        mocks.listDir.mockResolvedValue({ entries: ["src/a.ts", "src/lib/"] });
+        const pending = reloadTree(CWD, AGENT);
+        await vi.waitFor(() => expect(listing()?.partial).toBe(true));
+        expect(listing()?.files).toEqual(["README.md", "src/"]);
+        await listIgnoredDirs(CWD, ["src"]);
+        expect(mocks.listDir).toHaveBeenCalledWith({}, { cwd: CWD, dir: "src/" });
+        expect(listing()?.files).toEqual(["README.md", "src/", "src/a.ts", "src/lib/"]);
+        git.resolve({ files: ["README.md", "src/a.ts"], isrepo: true });
+        await pending;
+        expect(listing()).toEqual({ status: "ready", files: ["README.md", "src/a.ts"], ignored: [], truncated: false });
+    });
+
+    it("asks for neither once it has rows to show", async () => {
+        mocks.list.mockResolvedValue({ files: ["a.ts"], isrepo: true });
+        await reloadTree(CWD, AGENT);
+        mocks.kept.mockClear();
+        mocks.top.mockClear();
+        await reloadTree(CWD, AGENT);
+        expect(mocks.kept).not.toHaveBeenCalled();
+        expect(mocks.top).not.toHaveBeenCalled();
+    });
+
+    it("never covers git's answer with a slower early one", async () => {
+        const kept = deferred<unknown>();
+        mocks.kept.mockReturnValueOnce(kept.promise);
+        mocks.list.mockResolvedValueOnce({ files: ["a.ts"], isrepo: true });
+        await reloadTree(CWD, AGENT);
+        kept.resolve({ files: ["old.ts"], isrepo: true, cached: true });
+        await Promise.resolve();
+        expect(listing()).toEqual({ status: "ready", files: ["a.ts"], ignored: [], truncated: false });
+    });
 });
 
 describe("reloadTree", () => {
