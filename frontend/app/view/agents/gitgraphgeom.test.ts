@@ -143,4 +143,22 @@ describe("graphGeometry", () => {
         // drawable lane: 13 + (3 - 1) * 15 - 7 = 36
         expect(graphGeometry(rows, { rowH: 34, maxLanes: 3 }).foldX).toBe(36);
     });
+
+    it("draws the range's root, and the edge into it, as a boundary", () => {
+        const g = graphGeometry(assignLanes([c("a", "root"), { hash: "root", parents: [], boundary: true }]), OPTS);
+        expect(g.nodes[1].boundary).toBe(true);
+        expect(g.nodes[0].boundary).toBe(false);
+        expect(g.edges).toHaveLength(1);
+        expect(g.edges[0]).toMatchObject({ boundary: true, dashed: true });
+    });
+
+    it("draws a parent outside the rows as a dashed stub one row down, only when asked", () => {
+        const rows = assignLanes([c("a", "gone")]);
+        expect(graphGeometry(rows, OPTS).edges).toHaveLength(0);
+        const g = graphGeometry(rows, { ...OPTS, stubs: true });
+        expect(g.edges).toHaveLength(1);
+        expect(g.edges[0]).toMatchObject({ dashed: true, boundary: false, d: "M13 17 L13 51" });
+        // the stub runs past the last row, so the svg is tall enough to hold it
+        expect(g.height).toBeGreaterThanOrEqual(51);
+    });
 });

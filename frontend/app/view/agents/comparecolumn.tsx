@@ -94,6 +94,8 @@ function CommitRowView({
     return (
         <button
             onClick={onSelect}
+            data-compare-commit={row.hash}
+            data-selected={selected || undefined}
             style={{ height: ROW_H }}
             className={cn(
                 "relative flex w-full items-center gap-[8px] rounded-[7px] pl-[16px] pr-[8px] text-left transition-colors duration-[140ms] hover:bg-surface-hover",

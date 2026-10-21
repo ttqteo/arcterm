@@ -7,10 +7,10 @@
 // on its first file instead of the one that was clicked.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { fireAndForget } from "@/util/util";
 import { landOn } from "@/app/view/jarvis/returnsurface";
+import { fireAndForget } from "@/util/util";
 import type { AgentsViewModel } from "./agents";
-import { setCompareRefs } from "./comparestore";
+import { selectCompareRow, setCompareRefs } from "./comparestore";
 import { panelAppliedKeyAtom } from "./difflayout";
 import { defaultRangeFor, scopeKey, type DiffOrigin, type DiffScope } from "./diffscope";
 import { requestFileLink } from "./filesstore";
@@ -52,14 +52,21 @@ export function openDiff(model: AgentsViewModel, scope: DiffScope, file?: string
 }
 
 // the whole branch on the Diff surface: a compare from the default branch it left (merge-base form, what the branch
-// introduced), returning to the scope's own range on leaving it
+// introduced), returning to the scope's own range on leaving it. `select` is a commit of that range to open on;
+// setCompareRefs resets the selection to the aggregate before its reads, so the commit is chosen after it resolves.
 export function openBranchDiff(
     model: AgentsViewModel,
     scope: DiffScope,
     cwd: string,
     base: string,
-    head: string
+    head: string,
+    select?: string
 ): void {
     openDiff(model, { ...scope, range: { kind: "compare", base, head, form: "mergebase", from: scope.range } });
-    fireAndForget(() => setCompareRefs(cwd, base, head));
+    fireAndForget(async () => {
+        await setCompareRefs(cwd, base, head);
+        if (select) {
+            await selectCompareRow(cwd, select);
+        }
+    });
 }

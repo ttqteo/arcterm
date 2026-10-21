@@ -14,6 +14,8 @@ export interface GraphCommit {
     divider?: string;
     // dimmed: context from before the scope's anchor
     before?: boolean;
+    // the range's root on a scoped list (the rail's merge base or session start): not a commit of the range, drawn grey
+    boundary?: boolean;
 }
 
 export interface LanedRow extends GraphCommit {
