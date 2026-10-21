@@ -2,19 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // council-discussion (docs/superpowers/plans/2026-10-21-council.md, Task 14): the Discussion in round 2 (the thread, the
-// avatars, the proposals column, a real reply, Summarize), round 1 (the experts' cards and the call bar), at the pause
-// (the ticks, Ask the experts, Continue), failed (Retry on an expert and on the coordinator), not run (Start council) and
-// as a follow-up on a done council (the cost label with Let them read code). Each phase seeds its own fixture council and
-// takes its own shot.
+// avatars, the proposals column, a real reply, Summarize off while the round runs), round 1 (the experts' cards and the
+// call bar), at the pause (the ticks, Ask the experts, Continue), stopped at the pause (Summarize), failed (Retry on an
+// expert and on the coordinator), not run (Start council) and as a follow-up on a done council (the cost label with Let
+// them read code). Each phase seeds its own fixture council and takes its own shot.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). Nothing here
-// spends a token or starts an agent: Summarize, Continue, Retry, Start council and the follow-up's send are clicked with
-// their RpcApi command replaced in the page (fixtures.mjs stubRpc) and the call read back with rpcCalls. The one real
-// write is the round 2 reply: that council is `running` on disk with no run behind it, so wavesrv only stores the reply.
-// The estimate is a real RPC, but it prices and calls no model.
+// spends a token or starts an agent: Summarize (on the stopped council), Continue, Retry, Start council and the
+// follow-up's send are clicked with their RpcApi command replaced in the page (fixtures.mjs stubRpc) and the call read
+// back with rpcCalls. The one real write is the round 2 reply: that council is `running` on disk with no run behind it,
+// so wavesrv only stores the reply. The estimate is a real RPC, but it prices and calls no model.
 
 import { waitFor } from "../attach.mjs";
-import { arrangeCouncilProject, openCouncil, rpcCalls, seedCouncil, stubRpc, teardownCouncilProject, unstubRpc } from "./fixtures.mjs";
+import {
+    arrangeCouncilProject,
+    councilFixtureId,
+    openCouncil,
+    rpcCalls,
+    seedCouncil,
+    stubRpc,
+    teardownCouncilProject,
+    unstubRpc,
+} from "./fixtures.mjs";
 
 const WAIT_MS = 8000;
 
@@ -51,8 +60,8 @@ const shortened = (x) => (typeof x === "string" ? x : JSON.stringify(x));
 
 // seeds a fixture council, opens its Discussion and waits for that council's own root: the root of the one shown before
 // is there at once, and carries another id
-async function openFixture(h, ctx, name) {
-    const id = await seedCouncil(h, ctx, name);
+async function openFixture(h, ctx, name, opts) {
+    const id = await seedCouncil(h, ctx, name, opts);
     await openCouncil(h, id, "discussion");
     if (!(await until(h, `!!document.querySelector(${sel(rootOf(id))})`))) {
         throw new Error(`the Discussion of ${id} did not load within ${WAIT_MS / 1000}s`);
@@ -70,7 +79,7 @@ const tokensIn = (label) => {
 const REPLY_TEXT = 'Would a "Waking…" label on the rail icon be enough?';
 
 async function round2(h, ctx, rec) {
-    const id = await openFixture(h, ctx, "round2");
+    await openFixture(h, ctx, "round2");
 
     const chip = await settledText(h, "[data-council-chip]", "Round 2 of 3 · 2 replying");
     rec("round 2: the header chip reads `Round 2 of 3 · 2 replying`", chip === "Round 2 of 3 · 2 replying", chip);
@@ -159,16 +168,15 @@ async function round2(h, ctx, rec) {
         placed
     );
 
-    // Summarize: no summary yet, so it asks for one (stubbed) and opens the Summary
-    await stubRpc(h, ["CouncilSummarizeCommand"]);
-    const label = await text(h, "[data-council-summarize]");
-    await click(h, "[data-council-summarize]");
-    const opened = await until(h, `!!document.querySelector("[data-council-summary]")`);
-    const calls = await rpcCalls(h, "CouncilSummarizeCommand");
+    // Summarize: the runner refuses a running council (the synthesis comes by itself when round 2 ends), so it is off
+    const summarize = await h.ev(`(() => {
+        const b = document.querySelector("[data-council-summarize]");
+        return b ? { disabled: b.disabled === true, title: b.getAttribute("title") } : null;
+    })()`);
     rec(
-        "round 2: Summarize (stubbed) records one CouncilSummarizeCommand and opens the Summary",
-        label === "Summarize" && calls.length === 1 && calls[0].data?.id === id && opened,
-        { label, calls, opened }
+        "round 2: Summarize is disabled, and its title says the summary comes by itself when round 2 ends",
+        summarize?.disabled === true && summarize.title === "The summary comes by itself when round 2 ends",
+        summarize
     );
 }
 
@@ -256,6 +264,36 @@ async function awaiting(h, ctx, rec) {
         "paused: Continue to round 2 (stubbed) records CouncilContinueCommand with cut [P6] and the question",
         calls.length === 1 && data?.id === id && JSON.stringify(data?.cut) === '["P6"]' && data?.question === PAUSE_QUESTION,
         calls
+    );
+}
+
+// ---- stopped at the pause ----
+
+// "Stop here and keep round 1" leaves the paused council stopped at round 1 with no summary: the runner summarizes it, so
+// Summarize is its next step. It is the paused fixture with its state changed, under its own id.
+async function stopped(h, ctx, rec) {
+    const id = await openFixture(h, ctx, "awaiting", {
+        id: `${councilFixtureId("awaiting")}-stopped`,
+        edit: (c) => void (c.state = "stopped"),
+    });
+    const chip = await settledText(h, "[data-council-chip]", "Stopped");
+    const label = await text(h, "[data-council-summarize]");
+    const on = await h.ev(`document.querySelector("[data-council-summarize]")?.disabled === false`);
+    rec(
+        "stopped at round 1: the chip reads `Stopped` and Summarize is enabled",
+        chip === "Stopped" && label === "Summarize" && on,
+        `${chip} | ${label} | enabled: ${on}`
+    );
+
+    // no summary yet, so it asks for one (stubbed) and opens the Summary
+    await stubRpc(h, ["CouncilSummarizeCommand"]);
+    await click(h, "[data-council-summarize]");
+    const opened = await until(h, `!!document.querySelector("[data-council-summary]")`);
+    const calls = await rpcCalls(h, "CouncilSummarizeCommand");
+    rec(
+        "stopped at round 1: Summarize (stubbed) records one CouncilSummarizeCommand and opens the Summary",
+        calls.length === 1 && calls[0].data?.id === id && opened,
+        { calls, opened }
     );
 }
 
@@ -369,6 +407,7 @@ const PHASES = [
     ["round 2", round2],
     ["round 1", round1],
     ["paused", awaiting],
+    ["stopped", stopped],
     ["failed", failed],
     ["not run", notRun],
     ["follow-up", followUp],
