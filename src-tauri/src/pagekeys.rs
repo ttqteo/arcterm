@@ -1,4 +1,5 @@
-// The page's reload keys: Ctrl+R, Ctrl+Shift+R and F5. WebView2 takes them as browser keys and reloads the whole
+// The page's keys the cockpit cannot hear itself: the reload keys, and the Ctrl and Alt chords (CHORD_KEY_EVENT).
+// The reload keys: Ctrl+R, Ctrl+Shift+R and F5. WebView2 takes them as browser keys and reloads the whole
 // cockpit, even from inside a pinned app's page, whose keys never reach the cockpit's keybindings (it is a cross-origin
 // frame). Here they lose that browser action but still reach the page, so a terminal keeps Ctrl+R as the shell's reverse
 // search; the frontend hears RELOAD_KEY_EVENT and reloads the app's page when its frame holds the focus (appstore.ts
@@ -19,6 +20,27 @@ const VK_R: u32 = 0x52;
 #[cfg(any(windows, test))]
 fn is_reload_key(vk: u32, ctrl: bool, alt: bool) -> bool {
     !alt && ((vk == VK_R && ctrl) || vk == VK_F5)
+}
+
+// A Ctrl or Alt chord pressed while the webview has the focus, sent to the frontend: inside a pinned app's page the
+// cockpit's keybindings never hear it, so appstore.ts setupPageChordKeys runs it as the cockpit's own when an app's
+// frame holds the focus. The page still gets the key. A reload key is RELOAD_KEY_EVENT's, never one of these.
+#[cfg(windows)]
+const CHORD_KEY_EVENT: &str = "page-chord-key";
+
+#[cfg(windows)]
+#[derive(Clone, serde::Serialize)]
+struct ChordKey {
+    vk: u32,
+    ctrl: bool,
+    shift: bool,
+    alt: bool,
+}
+
+// a key pressed with Ctrl or Alt held, not a modifier itself (Shift, Ctrl, Alt, either Windows key, or a left/right one)
+#[cfg(any(windows, test))]
+fn is_chord_key(vk: u32, ctrl: bool, alt: bool) -> bool {
+    (ctrl || alt) && !matches!(vk, 0x10..=0x12 | 0x5B | 0x5C | 0xA0..=0xA5)
 }
 
 #[cfg(windows)]
@@ -58,7 +80,7 @@ unsafe fn install(
     };
     use webview2_com::{AcceleratorKeyPressedEventHandler, FrameCreatedEventHandler};
     use windows::core::Interface;
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
 
     let mut token = 0i64;
     let keys = AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
@@ -75,6 +97,10 @@ unsafe fn install(
         let ctrl = GetKeyState(VK_CONTROL as i32) < 0;
         let alt = GetKeyState(VK_MENU as i32) < 0;
         if !is_reload_key(vk, ctrl, alt) {
+            if is_chord_key(vk, ctrl, alt) {
+                let shift = GetKeyState(VK_SHIFT as i32) < 0;
+                let _ = app.emit(CHORD_KEY_EVENT, ChordKey { vk, ctrl, shift, alt });
+            }
             return Ok(());
         }
         // the key still goes to the page; only the browser's reload is taken away, on every repeat too
@@ -209,7 +235,19 @@ unsafe fn run_in_frame(name: &str, script: &str) -> Result<bool, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{frame_script, is_reload_key, MOUSE_HISTORY_SCRIPT};
+    use super::{frame_script, is_chord_key, is_reload_key, MOUSE_HISTORY_SCRIPT};
+
+    #[test]
+    fn chord_keys_are_ctrl_or_alt_with_a_key_never_a_modifier_alone() {
+        assert!(is_chord_key(0x4B, true, false)); // Ctrl+K
+        assert!(is_chord_key(0x09, true, false)); // Ctrl+Tab
+        assert!(is_chord_key(0x31, false, true)); // Alt+1
+        assert!(!is_chord_key(0x4B, false, false)); // a plain k
+        assert!(!is_chord_key(0x11, true, false)); // Ctrl itself
+        assert!(!is_chord_key(0xA2, true, false)); // left Ctrl
+        assert!(!is_chord_key(0x12, false, true)); // Alt itself
+        assert!(!is_chord_key(0x10, true, false)); // Shift with Ctrl held
+    }
 
     #[test]
     fn reload_keys_are_ctrl_r_and_f5_never_with_alt() {

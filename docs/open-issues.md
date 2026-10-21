@@ -38,12 +38,33 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Rail Changes tab: in Agent, open the panel on an agent that changed files; a third tab (the diff
   icon) after Overview and Files lists every changed file at Overview's width, with no resize grip, and a click opens
   that file's Diff on the File tab, which still resizes. `agentdetailsrail.tsx` `filesContent`.
+- [ ] (arcterm) Files tab shows at once: after a restart (wavesrv rebuilt), open the panel's Files tab on a project
+  listed before; the tree shows at once with no skeleton, and the Files tab is as wide as Overview with no resize grip.
+  On a folder never opened, the top level shows within a moment and a folder opens one level at a time until git's
+  listing lands. Kept listings live in `<data>/listcache/`; a listing over 2s logs `gitinfo: listing … took` in
+  `waveapp.log`. `railtreestore.ts` `showEarly`, `gitinfo/listcache.go`.
+- [ ] (arcterm) Split glyphs: in Agent, open a terminal running `claude` or `codex` in a split beside an agent, then
+  click back and forth between the two panes a few times. Neither pane's text should turn into wrong characters
+  (before, the pane not clicked garbled). `termwrap.ts` `rebuildGlyphAtlas`.
+- [ ] (arcterm) Split per project: split two agents of project A, then choose an agent of project B in the sidebar.
+  B shows alone (or B's own split), with nothing of A beside it; choose an agent of A again and A's split is back as
+  it was. A row of B has Open in split greyed out while A is shown, and the header's Split menu lists only A's agents and
+  terminals. `agentgrid.ts` `reconcileProjectGrids`, `gridstore.ts`.
 - [ ] (arcterm) Stable wsh updates past a held copy: after the next `task install`, `~/.arc/bin/wsh.exe detach --help`
   prints the detach help even while an old `wsh agentctl` (PID 163912 today) still runs; a `wsh.exe.old.1` may sit
   beside it until that process exits, and the following launch removes it. 498b85887
 - [ ] (arcterm) Mouse Back/Forward in an app's page (Windows): open a pinned app, follow a link or two in it, then
   press the mouse's Back and Forward buttons over the page and over the cockpit; nothing moves, no app shows an error
   page, and the header's Back still goes back a page.
+- [ ] (arcterm) App page loading line: open a pinned app whose page is slow to answer, press Home, then the header's
+  Reload: a thin accent line sweeps along the page's top until it loads, the old page staying in view under it, and is
+  gone once it has. With reduced motion the line stays still. `apppane.tsx` `AppLoadingBar`; `task verify:ui --
+  tools-app` step 3d checks it on a slow start page.
+- [ ] (arcterm) Shortcuts from inside an app's page (Windows, after a restart of `task dev` or the next install: the
+  host changed): click into a pinned app's page, then Ctrl+K opens the palette, Ctrl+Tab switches as from anywhere and
+  closes when Ctrl is let go, and Ctrl+1..9 change surface. Ctrl+C, Ctrl+V, Ctrl+A and Ctrl+Z still copy, paste,
+  select and undo in the page, and arcterm does nothing with them. `pagekeys.rs` `CHORD_KEY_EVENT`, `appstore.ts`
+  `setupPageChordKeys`.
 - [ ] (arcterm) Account switch resumes mid-turn: with an agent working (or stopped at its usage limit), switch the
   Claude account in Settings, check it in "Resume agents on …?" and Resume selected; it comes back and carries on by
   itself with the "Claude account was switched" turn. An idle agent comes back at its prompt with no new turn.

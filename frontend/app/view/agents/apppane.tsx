@@ -15,10 +15,12 @@ import { useAtomValue } from "jotai";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { appFrameName, appShows, appWaitLine, keptAppFrames, type AppState } from "./appmodel";
 import {
+    appLoadingAtom,
     appSeenAtom,
     appSlotAtom,
     appStatesAtom,
     lastAppRect,
+    setAppLoading,
     setAppSlot,
     setAppView,
     shownAppTab,
@@ -113,6 +115,7 @@ export function AppFrames() {
     const states = useAtomValue(appStatesAtom);
     const slot = useAtomValue(appSlotAtom);
     const seen = useAtomValue(appSeenAtom);
+    const loading = useAtomValue(appLoadingAtom);
     const tools = useAtomValue(toolsStatusAtom);
     const shown = shownAppTab(slot);
     const [now, setNow] = useState(() => Date.now());
@@ -131,26 +134,72 @@ export function AppFrames() {
             {kept.map((id) => {
                 const s = states[id];
                 const on = id === shown;
-                const rect = on ? slot!.rect! : lastAppRect(id);
                 return (
-                    <iframe
+                    <AppFrame
                         // Home bumps reloads: a new frame loads the app's own url afresh
                         key={`${id}:${s.reloads}`}
-                        data-app-frame={id}
-                        data-app-frame-shown={on ? "true" : undefined}
-                        name={appFrameName(id)}
-                        src={s.url}
+                        tabId={id}
+                        url={s.url}
                         title={tools?.find((t) => t.id === s.toolId)?.name ?? s.toolId}
-                        allow="clipboard-read; clipboard-write"
-                        aria-hidden={on ? undefined : true}
-                        tabIndex={on ? undefined : -1}
-                        style={rect ?? undefined}
-                        // a page with no background of its own reads as it does in a browser: on white, not on the
-                        // cockpit's dark. Out of sight it is invisible, not display:none, which would lose its scroll.
-                        className={cn("fixed border-0 bg-page-canvas", !on && "invisible")}
+                        on={on}
+                        rect={on ? slot!.rect! : lastAppRect(id)}
                     />
                 );
             })}
+            {/* after every frame, so a bar coming or going never moves a frame in the DOM, which would reload it */}
+            {shown != null && loading[shown] && kept.includes(shown) ? <AppLoadingBar rect={slot!.rect!} /> : null}
         </>
+    );
+}
+
+function AppFrame({
+    tabId,
+    url,
+    title,
+    on,
+    rect,
+}: {
+    tabId: string;
+    url: string;
+    title: string;
+    on: boolean;
+    rect: AppRect | null;
+}) {
+    // loading from the mount, before the frame can fire its load (a layout effect runs before any task does)
+    useLayoutEffect(() => {
+        setAppLoading(tabId, true);
+        return () => setAppLoading(tabId, false);
+    }, [tabId]);
+    return (
+        <iframe
+            data-app-frame={tabId}
+            data-app-frame-shown={on ? "true" : undefined}
+            name={appFrameName(tabId)}
+            src={url}
+            title={title}
+            allow="clipboard-read; clipboard-write"
+            aria-hidden={on ? undefined : true}
+            tabIndex={on ? undefined : -1}
+            style={rect ?? undefined}
+            onLoad={() => setAppLoading(tabId, false)}
+            // a page with no background of its own reads as it does in a browser: on white, not on the
+            // cockpit's dark. Out of sight it is invisible, not display:none, which would lose its scroll.
+            className={cn("fixed border-0 bg-page-canvas", !on && "invisible")}
+        />
+    );
+}
+
+// A browser's loading line along the top of the page on screen, the page it had staying in view under it. Reduced
+// motion keeps the faint track without the sweep.
+function AppLoadingBar({ rect }: { rect: AppRect }) {
+    return (
+        <div
+            data-app-loading
+            aria-hidden
+            style={{ left: rect.left, top: rect.top, width: rect.width }}
+            className="pointer-events-none fixed h-[2px] overflow-hidden bg-accent/25"
+        >
+            <div className="h-full w-[26%] animate-[flowBar_1.9s_linear_infinite] bg-gradient-to-r from-transparent via-accent to-transparent motion-reduce:animate-none" />
+        </div>
     );
 }

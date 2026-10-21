@@ -42128,11 +42128,16 @@ setTimeout(() => {
             // every page asked for, in order, for the scenario to read Back and Forward from; no-store, so a step back
             // is fetched again rather than restored from the cache
             require("node:fs").appendFileSync("requests.log", req.url + "\\n");
-            res.setHeader("content-type", "text/html");
-            res.setHeader("cache-control", "no-store");
-            res.end(req.url === "/two"
-                ? '<body style="font:16px sans-serif;padding:24px"><h1>ARC-APP-TWO</h1></body>'
-                : '<body style="font:16px sans-serif;padding:24px"><h1>ARC-APP-READY</h1><a href="/two">two</a></body>');
+            const send = () => {
+                res.setHeader("content-type", "text/html");
+                res.setHeader("cache-control", "no-store");
+                res.end(req.url === "/two"
+                    ? '<body style="font:16px sans-serif;padding:24px"><h1>ARC-APP-TWO</h1></body>'
+                    : '<body style="font:16px sans-serif;padding:24px"><h1>ARC-APP-READY</h1><a href="/two">two</a></body>');
+            };
+            // a slow start page while the scenario's flag file is there, so the page's loading line can be seen
+            if (req.url === "/" && require("node:fs").existsSync("slow")) setTimeout(send, 2500);
+            else send();
         })
         .listen(port, "127.0.0.1", () => console.log("arc-app listening"));
 }, 2500);
@@ -42289,6 +42294,26 @@ const toolsApp = {
         await ttClick(h, "[data-app-home]");
         const wentHome = await waitUntil(() => asked().length >= beforeHome + 1, 8000);
         rec("3c. Home loads the app's start page afresh", wentHome && asked().at(-1) === "/", JSON.stringify({ last: asked().at(-1), asked: asked().slice(beforeHome) }));
+
+        // Home again with the start page answering slowly: the loading line runs along the page's top until it loads
+        const slowFlag = join(ctx.root, "app", "slow");
+        await polishNap(800);
+        writeFileSync(slowFlag, "");
+        await ttClick(h, "[data-app-home]");
+        const lineShown = await polishWaitFor(h, `!!document.querySelector("[data-app-loading]")`, 1500);
+        const lineAt = await h.ev(`(() => {
+            const line = document.querySelector("[data-app-loading]")?.getBoundingClientRect();
+            const page = document.querySelector("[data-app-frame-shown]")?.getBoundingClientRect();
+            return line && page ? { top: line.top === page.top, width: line.width === page.width, height: line.height } : null;
+        })()`);
+        await h.shot("cdp-shots/tools-app-3d-loading.png");
+        const lineGone = await polishWaitFor(h, `!document.querySelector("[data-app-loading]")`, 8000);
+        rmSync(slowFlag, { force: true });
+        rec(
+            "3d. while the page loads a 2 px line runs along its top, and goes once it has loaded",
+            lineShown && lineAt?.top === true && lineAt?.width === true && lineAt?.height === 2 && lineGone,
+            JSON.stringify({ lineShown, lineAt, lineGone })
+        );
 
         // a page of the app's own before leaving it: Log and back, and another surface and back, come back to it unreloaded
         const beforeTwo = asked().length;

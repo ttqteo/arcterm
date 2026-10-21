@@ -67,6 +67,78 @@ export function focusedAppTab(active: Pick<Element, "tagName" | "getAttribute"> 
     return active?.tagName === "IFRAME" ? active.getAttribute("data-app-frame") : null;
 }
 
+// A Ctrl or Alt chord the host heard in the webview (pagekeys.rs CHORD_KEY_EVENT), by its Windows virtual key.
+export interface PageChord {
+    vk: number;
+    ctrl: boolean;
+    shift: boolean;
+    alt: boolean;
+}
+
+// the punctuation keys by their Windows virtual key, as a US layout gives them unshifted
+const OEM_KEYS: Record<number, [key: string, code: string]> = {
+    0xba: [";", "Semicolon"],
+    0xbb: ["=", "Equal"],
+    0xbc: [",", "Comma"],
+    0xbd: ["-", "Minus"],
+    0xbe: [".", "Period"],
+    0xbf: ["/", "Slash"],
+    0xc0: ["`", "Backquote"],
+    0xdb: ["[", "BracketLeft"],
+    0xdc: ["\\", "Backslash"],
+    0xdd: ["]", "BracketRight"],
+    0xde: ["'", "Quote"],
+};
+
+const NAMED_KEYS: Record<number, string> = {
+    0x08: "Backspace",
+    0x09: "Tab",
+    0x0d: "Enter",
+    0x1b: "Escape",
+    0x20: " ",
+    0x21: "PageUp",
+    0x22: "PageDown",
+    0x23: "End",
+    0x24: "Home",
+    0x25: "ArrowLeft",
+    0x26: "ArrowUp",
+    0x27: "ArrowRight",
+    0x28: "ArrowDown",
+    0x2e: "Delete",
+};
+
+// the editing chords a page keeps for itself: copy, cut, paste, select all, undo and redo
+const PAGE_EDIT_KEYS = new Set(["a", "c", "v", "x", "y", "z"]);
+
+// The keydown the cockpit replays for a chord pressed in an app's page, as the browser would have given it; null for a
+// key it cannot name, and for the page's own editing chords (Ctrl+C in the page copies, it never reaches the cockpit).
+export function pageChordKeyEvent(c: PageChord): KeyboardEventInit | null {
+    let key: string;
+    let code: string;
+    if (c.vk >= 0x41 && c.vk <= 0x5a) {
+        const letter = String.fromCharCode(c.vk);
+        key = c.shift ? letter : letter.toLowerCase();
+        code = `Key${letter}`;
+        if (c.ctrl && !c.alt && PAGE_EDIT_KEYS.has(letter.toLowerCase())) {
+            return null;
+        }
+    } else if (c.vk >= 0x30 && c.vk <= 0x39) {
+        key = String.fromCharCode(c.vk);
+        code = `Digit${key}`;
+    } else if (c.vk >= 0x70 && c.vk <= 0x7b) {
+        key = `F${c.vk - 0x6f}`;
+        code = key;
+    } else if (OEM_KEYS[c.vk] != null) {
+        [key, code] = OEM_KEYS[c.vk];
+    } else if (NAMED_KEYS[c.vk] != null) {
+        key = NAMED_KEYS[c.vk];
+        code = key === " " ? "Space" : key;
+    } else {
+        return null;
+    }
+    return { key, code, ctrlKey: c.ctrl, shiftKey: c.shift, altKey: c.alt, bubbles: true, cancelable: true };
+}
+
 // What a service shows in its terminal's place: running or elsewhere, the page; starting, the waiting card; every other
 // state (sleeping, crashed, retrying, porttaken, nopage) fails, which shows the log: a sleeping service has no
 // process, and its frame is dropped until showing the pane wakes it. `view` and `reloads` are the

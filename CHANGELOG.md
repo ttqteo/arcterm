@@ -28,6 +28,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - The Agent panel has a Changes tab beside Overview and Files: the agent's whole Files changed list, not only its
   first eight files, with the Session / Branch switch and View diff; a file opens on its Diff.
+- A pinned app's page shows a thin line along its top while it loads, after opening it, Home or Reload, with the page
+  it had staying in view meanwhile.
+- arcterm's Ctrl and Alt shortcuts (the palette, Ctrl+Tab, a surface's keys) work while you are clicked into a pinned
+  app's page; the page keeps its own copy, paste, select all and undo.
 
 ### Changed
 
@@ -36,6 +40,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   click on one of its cells brings that split back; the × on a cell takes it out of the split.
 - The Servers popover shows each server's Log button all the time, not only on hover; a server started outside
   arcterm shows it faded, and its tooltip says why there is no log to open.
+- Each project keeps its own split in Agent: choosing an agent or terminal of another project shows that project's
+  split, and coming back finds the first one as you left it. Open in split and the header's Split menu offer only the
+  project's own agents and terminals; terminals that name no project split among themselves. A split arranged before
+  this update is not kept.
+- The Agent panel's Files tab is as wide as Overview and Changes, fixed; only an open file's tab can be dragged wider.
 - Claude highlights the must-read sentences in every long reply, a report of what it did or a list included: what
   changed, any caveat, and any decision left to you, not only the caveat.
 - When the rest of a reply dims around its highlighted sentences, the bold words that open a list item or a paragraph
@@ -46,6 +55,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Dropping an agent or terminal on a split cell's top or bottom edge stacks it there, as the drop preview shows;
   before, two cells always sat side by side whichever edge you dropped on. A drop splits the cell under it, so a cell
   beside another offers only its top and bottom edges, and closing a cell lets its neighbour fill the space.
+- Text in a split no longer turns into wrong characters when a pane opens beside it or you click from one pane to the
+  other (a `claude` or `codex` running in a terminal showed it most).
 - Sentences Claude highlights below a table in its reply now show highlighted; before, every one after the table
   stayed plain.
 - Updating arcterm now always updates the `wsh` its agents run; before, an agent session left running across the
@@ -53,8 +64,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The mouse's Back and Forward buttons no longer go back in another app's page, out of sight, or in one whose app had
   stopped, which then showed an error: they now do nothing. The Back and Forward buttons in an app's header still go
   back and forward in its page.
-- The mouse's Back and Forward buttons in a pinned app's page go back and forward in that page; before, they moved
-  another app's page out of sight, or one whose app had stopped, which then showed an error.
+- A folder's file tree (the Agent panel's Files tab, the Code surface) shows at once: the files git listed last time
+  show while it reads the folder again, and a folder never listed before shows its top level from the disk meanwhile.
+  Before, the tree sat on a placeholder for as long as git took, over ten seconds on a busy machine.
 
 ## 0.15.16 — 2026-10-21
 
