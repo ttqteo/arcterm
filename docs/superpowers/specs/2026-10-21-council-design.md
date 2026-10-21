@@ -36,8 +36,8 @@ marks the Summary `Outdated · N replies since`, and **Summarize again** reruns 
 **Follow-ups** work after the council is done, days later too. Each question opens a short round with only the experts
 it reaches: a reply in a branch goes to the experts in that branch, `@RAM` to one expert, **Ask the whole council** to
 all of them. Each call is sent the expert's own proposals and the branch it argued in, as text, so its answer follows
-on; an expert is given its read-only tools again only when the question asks it to look at code, and the cost label
-says so before you send.
+on; an expert is given its read-only tools again only when you turn on **Let them read code** in the composer, and
+the cost label says so, with the higher estimate, before you send.
 
 ## Experts, groups and models
 
@@ -86,7 +86,10 @@ conversation, and carries on (a spec, a plan) from there.
 
 A council is a centre mode of the Agent surface, `council`, beside `terminal | session | run | history | canvases`
 (`view/agents/agentcenter.ts:23`). The Agent tree lists a project's councils under a **Councils** label inside its
-folder (`projectTree`, `agentsidebarmodel.ts`), each row with its state (`Round 2`, `Waiting on you` in amber, `Done`).
+folder (`projectTree`, `agentsidebarmodel.ts`), after its agents and before its terminals: a **New council** row
+(meta `draft` while Setup holds an unsent draft for that project), then each council with its state (`Round 2`,
+`Waiting on you` in amber, `Done`, `Not run`). A project with a council has a folder even with no agent or terminal.
+Council rows are not focus targets: `j`/`k` keep moving between agents and terminals.
 No new surface and no nav rail entry.
 
 ### Discussion (the main view, board Main)
@@ -97,7 +100,9 @@ No new surface and no nav rail entry.
 - **Body: one proposal as a thread,** Reddit-style. The post carries a score (accepts minus opposes), its author,
   round and time, the argument, and its evidence chips. Replies nest under it with thread lines; each reply carries
   its stance and a **Reply** button. A reply being written shows as a dashed row (`Skeptic is writing a reply…`). Your
-  own replies sit in the branch you answered, tinted, labelled `Queued for round 3` until they are answered.
+  own replies sit in the branch you answered, tinted, and labelled until they are answered: `Queued for round 2` when
+  posted before round 2 starts (round 2 answers it), `Answered after the summary` when posted during round 2 or 3 (a
+  short pass right after the synthesis answers it, and the Summary then reads `Outdated`).
 - **Right column:** **Ask the whole council**, then the proposals ranked by score, the one open selected, a green dot
   on those someone is replying in, a withdrawn one dimmed with its negative score.
 
@@ -139,16 +144,18 @@ Opened by Summarize, with a breadcrumb back to the Discussion.
 - **`pkg/consult` changes:** per-call `--model` and `--tools` arguments for claude; `tool_use` events from the stream;
   and token usage from claude's final `result` event, since `RunWithUsage` returns an empty `Usage` for a CLI runtime
   today (`pkg/consult/exec.go:55`).
-- **RPC and events:** a `wshrpctypes_council.go` group (start, list, get, reply, summarize, stop, retry, suggest,
-  save-doc, roles,
-  groups) and a `council:changed` event in `pkg/wps/wpstypes.go`, regenerated with `task generate`.
-- **`wsh council start | list | show | wait | stop`**, the agent-facing commands.
+- **RPC and events:** a `wshrpctypes_council.go` group (start, list, get, reply, continue, summarize, stop, retry,
+  suggest, estimate, save-doc, roles, save-group) and a `council:changed` event in `pkg/wps/wpstypes.go`, regenerated with `task generate`.
+- **`wsh council start | estimate | list | show | wait | stop`**, the agent-facing commands; `estimate` prints the
+  group, every model and the estimate and starts nothing, for an agent's offer.
 
 ## Failures
 
 - **An expert fails** (exit, timeout, unparseable JSON): its card says so with **Retry**; the round goes on without it
-  and the coordinator names who was missing. A failed coordinator leaves the council `failed` with Retry on round 3.
-- **The gate refuses:** the council is `not-run`, its tree row says so, and Start council offers it again.
+  and the coordinator names who was missing. Retry reruns that expert's call in the round it failed in. A failed
+  coordinator leaves the council `failed` with Retry on round 3.
+- **The gate refuses:** `wsh council start` saves the council as `not-run` without running it; its tree row says
+  `Not run`, and its Discussion offers **Start council** (with the estimate), which is the yes.
 - **Stop council** keeps whatever rounds finished; Summarize works on them.
 - **Empty state:** a project with no council shows only the **New council** row under Councils.
 
