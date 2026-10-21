@@ -22,6 +22,13 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Fixed
+
+- An agent arcterm brought back after a restart no longer goes missing from the Agent tree when it was slow to load:
+  resuming its conversation said it was already open and went nowhere. It now shows once it loads.
+
 ## 0.15.17 — 2026-10-21
 
 ### Added

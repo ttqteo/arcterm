@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // each GetObject fetch parks here, tagged with the oref it asked for, until the test settles it with the object
 // it "found", or with FAIL
@@ -28,7 +28,13 @@ vi.mock("@/util/endpoints", () => ({ getWebServerEndpoint: () => "http://wavesrv
 vi.mock("@/app/store/windowtype", () => ({ isPreviewWindow: () => false }));
 
 import { globalStore } from "./jotaiStore";
-import { getWaveObjectValue, loadAndPinWaveObject, reloadCachedWaveObjects, updateWaveObject } from "./wos";
+import {
+    getWaveObjectAtom,
+    getWaveObjectValue,
+    loadAndPinWaveObject,
+    reloadCachedWaveObjects,
+    updateWaveObject,
+} from "./wos";
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
@@ -158,6 +164,17 @@ describe("wos refetch after the socket comes back", () => {
         expect(getWaveObjectValue(oref, false)).toBe(wov);
     });
 
+    it("refetches an object whose first load failed", async () => {
+        const { oref, oid } = freshRun();
+        const wov = getWaveObjectValue(oref);
+        sentFor(oref)[0](FAIL);
+        await settle();
+        reloadCachedWaveObjects();
+        sentFor(oref)[1]({ otype: "run", oid, version: 1 });
+        await settle();
+        expect(globalStore.get(wov.dataAtom)).toMatchObject({ value: { version: 1 }, error: false });
+    });
+
     it("leaves an object whose first load is still out to that load", async () => {
         const { oref, oid } = freshRun();
         const wov = getWaveObjectValue(oref);
@@ -165,6 +182,75 @@ describe("wos refetch after the socket comes back", () => {
         expect(sentFor(oref)).toHaveLength(1);
         sentFor(oref)[0]({ otype: "run", oid, version: 1 });
         await settle();
+        expect(globalStore.get(wov.dataAtom).value).toMatchObject({ version: 1 });
+    });
+});
+
+// A failed first load used to drop the cache entry, while the atoms already handed out (getWaveObjectAtom, the loading
+// and error atoms) stayed bound to it: every later load and push landed in a new entry those atoms never read, so a tab
+// whose load failed at boot stayed out of the Agent roster for good.
+describe("wos failed first load", () => {
+    beforeEach(() => {
+        inflight.length = 0;
+        vi.useFakeTimers();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
+
+    it("retries into the entry the handed-out atoms read", async () => {
+        const { oref, oid } = freshRun();
+        const valueAtom = getWaveObjectAtom(oref);
+        sentFor(oref)[0](FAIL);
+        await tick();
+        expect(sentFor(oref)).toHaveLength(1);
+        await tick(1000);
+        expect(sentFor(oref)).toHaveLength(2);
+        sentFor(oref)[1]({ otype: "run", oid, version: 1 });
+        await tick();
+        expect(globalStore.get(valueAtom)).toMatchObject({ version: 1 });
+    });
+
+    it("lands a push on the entry the handed-out atoms read, and retries no more", async () => {
+        const { oref, oid } = freshRun();
+        const valueAtom = getWaveObjectAtom(oref);
+        sentFor(oref)[0](FAIL);
+        await tick();
+        const pushed = { otype: "run", oid, version: 2 } as unknown as WaveObj;
+        updateWaveObject({ updatetype: "update", otype: "run", oid, obj: pushed } as WaveObjUpdate);
+        expect(globalStore.get(valueAtom)).toBe(pushed);
+        await tick(60_000);
+        expect(sentFor(oref)).toHaveLength(1);
+    });
+
+    it("keeps retrying, further apart, while the load keeps failing", async () => {
+        const { oref } = freshRun();
+        getWaveObjectAtom(oref);
+        sentFor(oref)[0](FAIL);
+        await tick();
+        await tick(1000);
+        sentFor(oref)[1](FAIL);
+        await tick();
+        await tick(1000);
+        expect(sentFor(oref)).toHaveLength(2);
+        await tick(1000);
+        expect(sentFor(oref)).toHaveLength(3);
+    });
+
+    it("starts a load again for a reader that asks after the retries ran out", async () => {
+        const { oref, oid } = freshRun();
+        const wov = getWaveObjectValue(oref);
+        for (let i = 0; i < 20 && sentFor(oref).length > i; i++) {
+            sentFor(oref)[i](FAIL);
+            await tick(60_000);
+        }
+        const sent = sentFor(oref).length;
+        expect(getWaveObjectValue(oref)).toBe(wov);
+        expect(sentFor(oref)).toHaveLength(sent + 1);
+        sentFor(oref)[sent]({ otype: "run", oid, version: 1 });
+        await tick();
         expect(globalStore.get(wov.dataAtom).value).toMatchObject({ version: 1 });
     });
 });

@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Failed object loads retry: after the next install, restart arcterm with several agents running; every
+  agent the restart brings back shows in the Agent tree, and resuming one from Conversation History lands on its
+  terminal rather than toasting "already open" over nothing. The failure itself (a GetObject that fails at boot) was
+  never reproduced, only read from the 2026-10-21 log and store. `frontend/app/store/wos.ts` `loadInto`.
+
 - [ ] (arcterm) Split row cells: put an agent with an unread turn, a sleeping agent and a terminal running a command
   into splits; each cell shows the unread count, the moon glyph and the working dot as its row did; right-click a
   worker's cell inside a run and a lead's cell: each opens its own row's menu. The asking dot, Alt's digits and Rename

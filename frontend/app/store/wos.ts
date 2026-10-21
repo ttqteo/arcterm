@@ -24,7 +24,11 @@ type WaveObjectDataItemType<T extends WaveObj> = {
 type WaveObjectValue<T extends WaveObj> = {
     pendingPromise: Promise<T>;
     dataAtom: PrimitiveAtom<WaveObjectDataItemType<T>>;
+    retryTimer?: ReturnType<typeof setTimeout>; // the next try of a first load that failed
 };
+
+// How long a failed first load waits before each next try; once they run out, the next reader to ask starts again.
+const LOAD_RETRY_MS = [1000, 2000, 5000, 10000, 30000];
 
 function splitORef(oref: string): [string, string] {
     const parts = oref.split(":");
@@ -162,8 +166,7 @@ function reloadWaveObject<T extends WaveObj>(oref: string): Promise<T> {
     prtn.then((val) => {
         globalStore.set(wov.dataAtom, { value: val, loading: false, error: false });
     }).catch((err) => {
-        // don't cache a failed load: drop the entry so a remount retries, and clear loading
-        waveObjectValueCache.delete(oref);
+        // the entry stays (see loadInto): the next reader to ask loads it again
         globalStore.set(wov.dataAtom, { value: null, loading: false, error: true });
         dlog("WaveObj reload failed", oref, err);
     });
@@ -213,9 +216,18 @@ function reloadCachedWaveObjects(): void {
 function createWaveValueObject<T extends WaveObj>(oref: string, shouldFetch: boolean): WaveObjectValue<T> {
     const wov = { pendingPromise: null, dataAtom: null };
     wov.dataAtom = atom({ value: null, loading: true, error: false });
-    if (!shouldFetch) {
-        return wov;
+    if (shouldFetch) {
+        loadInto(oref, wov, 0);
     }
+    return wov;
+}
+
+// A load into an entry that is never replaced: the atoms already handed out for it (getWaveObjectAtom, the loading and
+// error atoms) read its dataAtom, so a failed load is tried again into the same entry, never a new one in its place.
+// Dropping the entry stranded them: a tab whose load failed at boot stayed out of the Agent roster for good.
+function loadInto<T extends WaveObj>(oref: string, wov: WaveObjectValue<T>, attempt: number) {
+    clearTimeout(wov.retryTimer);
+    wov.retryTimer = undefined;
     const localPromise = GetObject<T>(oref);
     wov.pendingPromise = localPromise;
     localPromise
@@ -237,17 +249,26 @@ function createWaveValueObject<T extends WaveObj>(oref: string, shouldFetch: boo
             globalStore.set(wov.dataAtom, { value: val, loading: false, error: false });
         })
         .catch((err) => {
-            // a transient backend failure must not leave the atom loading forever nor be cached, so
-            // a remount can retry: clear the pending state and drop the cache entry
+            // a transient backend failure must not leave the atom loading forever
             if (wov.pendingPromise != localPromise) {
                 return;
             }
             wov.pendingPromise = null;
-            waveObjectValueCache.delete(oref);
             globalStore.set(wov.dataAtom, { value: null, loading: false, error: true });
             dlog("WaveObj load failed", oref, err);
+            const delay = LOAD_RETRY_MS[attempt];
+            if (delay == null) {
+                return;
+            }
+            wov.retryTimer = setTimeout(() => {
+                wov.retryTimer = undefined;
+                // a push or a socket-back refetch landed it meanwhile, or one is out
+                if (wov.pendingPromise != null || !globalStore.get(wov.dataAtom).error) {
+                    return;
+                }
+                loadInto(oref, wov, attempt + 1);
+            }, delay);
         });
-    return wov;
 }
 
 function getWaveObjectValue<T extends WaveObj>(oref: string, createIfMissing = true): WaveObjectValue<T> {
@@ -255,6 +276,14 @@ function getWaveObjectValue<T extends WaveObj>(oref: string, createIfMissing = t
     if (wov === undefined && createIfMissing) {
         wov = createWaveValueObject(oref, true);
         waveObjectValueCache.set(oref, wov);
+    } else if (
+        wov !== undefined &&
+        wov.pendingPromise == null &&
+        wov.retryTimer == null &&
+        globalStore.get(wov.dataAtom).error
+    ) {
+        // its load failed and its retries ran out: a reader asking (a remount) tries again
+        loadInto(oref, wov, 0);
     }
     return wov;
 }
