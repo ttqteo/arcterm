@@ -15,11 +15,11 @@ const (
 	ModelExpert      = "sonnet"
 	ModelCoordinator = "opus"
 
-	// evidenceRule ends every brief: what counts as evidence, and what happens to a claim without any.
-	evidenceRule = "Cite a path:line for every claim, or a region of an attached screenshot; a claim with neither is marked weak."
+	// briefEvidenceRule ends every brief: what counts as evidence, and what happens to a claim without any.
+	briefEvidenceRule = "Cite a path:line for every claim, or a region of an attached screenshot; a claim with neither is marked weak."
 )
 
-func brief(angle string) string { return angle + " " + evidenceRule }
+func brief(angle string) string { return angle + " " + briefEvidenceRule }
 
 // builtInRoles is the library that ships. councilroles.json overrides a role by id and adds its own.
 var builtInRoles = []CouncilExpert{
