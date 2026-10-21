@@ -55,6 +55,7 @@ type WshRpcInterface interface {
 	EffortCommands
 	NoteCommands
 	IdeaCommands
+	CouncilCommands
 	SecretCommands
 	ClaudeAccountCommands
 	AskCommands

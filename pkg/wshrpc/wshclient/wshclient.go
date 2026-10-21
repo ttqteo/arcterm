@@ -7,6 +7,7 @@ package wshclient
 
 import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
+	"github.com/wavetermdev/waveterm/pkg/council"
 	"github.com/wavetermdev/waveterm/pkg/ideastore"
 	"github.com/wavetermdev/waveterm/pkg/storage"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -293,6 +294,84 @@ func ControllerInputCommand(w *wshutil.WshRpc, data wshrpc.CommandBlockInputData
 // command "controllerresync", wshserver.ControllerResyncCommand
 func ControllerResyncCommand(w *wshutil.WshRpc, data wshrpc.CommandControllerResyncData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "controllerresync", data, opts)
+	return err
+}
+
+// command "councilcontinue", wshserver.CouncilContinueCommand
+func CouncilContinueCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilContinueData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilcontinue", data, opts)
+	return err
+}
+
+// command "councilestimate", wshserver.CouncilEstimateCommand
+func CouncilEstimateCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilEstimateData, opts *wshrpc.RpcOpts) (*wshrpc.CouncilEstimateRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CouncilEstimateRtnData](w, "councilestimate", data, opts)
+	return resp, err
+}
+
+// command "councilget", wshserver.CouncilGetCommand
+func CouncilGetCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilIdData, opts *wshrpc.RpcOpts) (*council.Council, error) {
+	resp, err := sendRpcRequestCallHelper[*council.Council](w, "councilget", data, opts)
+	return resp, err
+}
+
+// command "councillist", wshserver.CouncilListCommand
+func CouncilListCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilListData, opts *wshrpc.RpcOpts) ([]*council.Council, error) {
+	resp, err := sendRpcRequestCallHelper[[]*council.Council](w, "councillist", data, opts)
+	return resp, err
+}
+
+// command "councilreply", wshserver.CouncilReplyCommand
+func CouncilReplyCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilReplyData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilreply", data, opts)
+	return err
+}
+
+// command "councilretry", wshserver.CouncilRetryCommand
+func CouncilRetryCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilRetryData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilretry", data, opts)
+	return err
+}
+
+// command "councilroles", wshserver.CouncilRolesCommand
+func CouncilRolesCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CouncilRolesRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CouncilRolesRtnData](w, "councilroles", nil, opts)
+	return resp, err
+}
+
+// command "councilsavedoc", wshserver.CouncilSaveDocCommand
+func CouncilSaveDocCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilSaveDocData, opts *wshrpc.RpcOpts) (*wshrpc.CouncilSaveDocRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CouncilSaveDocRtnData](w, "councilsavedoc", data, opts)
+	return resp, err
+}
+
+// command "councilsavegroup", wshserver.CouncilSaveGroupCommand
+func CouncilSaveGroupCommand(w *wshutil.WshRpc, data council.CouncilGroup, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilsavegroup", data, opts)
+	return err
+}
+
+// command "councilstart", wshserver.CouncilStartCommand
+func CouncilStartCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilStartData, opts *wshrpc.RpcOpts) (*council.Council, error) {
+	resp, err := sendRpcRequestCallHelper[*council.Council](w, "councilstart", data, opts)
+	return resp, err
+}
+
+// command "councilstop", wshserver.CouncilStopCommand
+func CouncilStopCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilIdData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilstop", data, opts)
+	return err
+}
+
+// command "councilsuggest", wshserver.CouncilSuggestCommand
+func CouncilSuggestCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilSuggestData, opts *wshrpc.RpcOpts) (*council.CouncilSuggestion, error) {
+	resp, err := sendRpcRequestCallHelper[*council.CouncilSuggestion](w, "councilsuggest", data, opts)
+	return resp, err
+}
+
+// command "councilsummarize", wshserver.CouncilSummarizeCommand
+func CouncilSummarizeCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilIdData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilsummarize", data, opts)
 	return err
 }
 
