@@ -29,6 +29,7 @@ const ConnectionsFile = "connections.json"
 const ProfilesFile = "profiles.json"
 const ProjectsFile = "projects.json"
 const ToolsFile = "tools.json"
+const CouncilRolesFile = "councilroles.json"
 
 var configWriteLock sync.Mutex
 
@@ -180,6 +181,27 @@ type ToolKeywords struct {
 	Dir            string `json:"dir,omitempty"`       // the folder it runs in, in place of opensin; ~ is home
 	Port           string `json:"port,omitempty"`      // "auto": arcterm picks a free port and passes it to the command as PORT; any other value means nothing
 	Autostart      *bool  `json:"autostart,omitempty"` // Keep running: a service starts with arcterm and never sleeps; false unless this says true
+}
+
+// CouncilRolesConfig is councilroles.json: the person's own Council roles and groups. A role of a built-in's id
+// overrides the fields it sets; pkg/council merges the two (it imports wconfig, so the shape lives here).
+type CouncilRolesConfig struct {
+	Roles  []CouncilRoleConfig  `json:"roles,omitempty"`
+	Groups []CouncilGroupConfig `json:"groups,omitempty"`
+}
+
+type CouncilRoleConfig struct {
+	Id    string `json:"id"`
+	Name  string `json:"name,omitempty"`
+	Brief string `json:"brief,omitempty"`
+	Model string `json:"model,omitempty"`
+}
+
+type CouncilGroupConfig struct {
+	Id          string   `json:"id"`
+	Name        string   `json:"name,omitempty"`
+	Roles       []string `json:"roles"`
+	Coordinator string   `json:"coordinator,omitempty"`
 }
 
 type ConnKeywords struct {
@@ -809,4 +831,60 @@ func SetUserTool(id string, t *ToolKeywords) error {
 		m[id] = *t
 	}
 	return writeWaveHomeConfigFileLocked(ToolsFile, m)
+}
+
+// readCouncilRolesFile reads councilroles.json into the raw map, which SetUserCouncilGroup writes back, and the
+// typed config. A missing file is an empty config; one that does not parse is an error.
+func readCouncilRolesFile() (waveobj.MetaMapType, CouncilRolesConfig, error) {
+	var cfg CouncilRolesConfig
+	m, cerrs := ReadWaveHomeConfigFile(CouncilRolesFile)
+	if len(cerrs) > 0 {
+		return nil, cfg, fmt.Errorf("error reading config file: %v", cerrs[0])
+	}
+	if m == nil {
+		return nil, cfg, nil
+	}
+	barr, err := json.Marshal(m)
+	if err != nil {
+		return nil, cfg, err
+	}
+	if err := json.Unmarshal(barr, &cfg); err != nil {
+		return nil, cfg, fmt.Errorf("error reading %s: %w", CouncilRolesFile, err)
+	}
+	return m, cfg, nil
+}
+
+// ReadCouncilRoles reads councilroles.json; a missing file is an empty config.
+func ReadCouncilRoles() (CouncilRolesConfig, error) {
+	_, cfg, err := readCouncilRolesFile()
+	return cfg, err
+}
+
+// SetUserCouncilGroup writes one group into councilroles.json, replacing any group of that id and keeping the
+// file's roles and its other groups. A file that does not parse is left as it is.
+func SetUserCouncilGroup(g CouncilGroupConfig) error {
+	configWriteLock.Lock()
+	defer configWriteLock.Unlock()
+	m, cfg, err := readCouncilRolesFile()
+	if err != nil {
+		return err
+	}
+	if m == nil {
+		m = make(waveobj.MetaMapType)
+	}
+	groups := make([]CouncilGroupConfig, 0, len(cfg.Groups)+1)
+	replaced := false
+	for _, old := range cfg.Groups {
+		if old.Id == g.Id {
+			groups = append(groups, g)
+			replaced = true
+			continue
+		}
+		groups = append(groups, old)
+	}
+	if !replaced {
+		groups = append(groups, g)
+	}
+	m["groups"] = groups
+	return writeWaveHomeConfigFileLocked(CouncilRolesFile, m)
 }
