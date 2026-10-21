@@ -51,6 +51,8 @@ Design rule from the review: **compact by default.** One pane in focus; anything
 - Folder order and agent rows are as today. Under a divider: terminals and tools, most recent first.
 - A terminal row: icon, name (the tool's name, else the last command as today), branch chip when not at the root, and
   `panel` when it is docked under the agent; nothing otherwise. A running command keeps the pulsing dot.
+- Superseded 2026-10-21 by `2026-10-21-sidebar-split-row-design.md`: each project's split is one framed row again, in
+  its own folder, laid out like the grid; `SplitMark` is gone. What follows is the rule it replaced.
 - A split moves no row (changed 2026-10-13, after the split row shipped): every cell, agent or terminal, keeps its row in
   its own folder and wears a split mark (`SplitMark` in `terminalsrail.tsx`); the row's menu has Remove from split and
   End split. The split row that lifted the cells out jumped to the top when its cells spanned projects, and the row you
