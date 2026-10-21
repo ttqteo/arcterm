@@ -29677,8 +29677,8 @@ const agentRailTabs = {
         const w1 = await h.ev(railTabsWidth);
         await h.shot("cdp-shots/agent-rail-tabs-overview.png");
         rec(
-            "1. Overview and Files are the tabs, Overview selected and 300px wide, and Files changed lists a.txt",
-            JSON.stringify(tabs1) === JSON.stringify(["Overview*", "Files"]) && Math.abs(w1 - 300) <= 2 && listed,
+            "1. Overview, Files and Changes are the tabs, Overview selected and 300px wide, and Files changed lists a.txt",
+            JSON.stringify(tabs1) === JSON.stringify(["Overview*", "Files", "Changes"]) && Math.abs(w1 - 300) <= 2 && listed,
             JSON.stringify({ tabs1, w1, listed })
         );
 
@@ -29709,7 +29709,7 @@ const agentRailTabs = {
         await h.shot("cdp-shots/agent-rail-tabs-file.png");
         rec(
             "2. a.txt in the Cockpit card's tool row opens the Agent surface with a.txt on the File tab, at the wide width",
-            clicked2 && editor2 && surface2 === "Agent" && JSON.stringify(tabs2) === JSON.stringify(["Overview", "Files", "File a.txt*"]) && Math.abs(w2 - wide) <= 2,
+            clicked2 && editor2 && surface2 === "Agent" && JSON.stringify(tabs2) === JSON.stringify(["Overview", "Files", "Changes", "File a.txt*"]) && Math.abs(w2 - wide) <= 2,
             JSON.stringify({ clicked2, editor2, surface2, tabs2, w2, wide })
         );
 
@@ -29749,6 +29749,8 @@ const agentRailTabs = {
         await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
         const tabs5a = await h.ev(railTabLabels);
         await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
+        const tabs5c = await h.ev(railTabLabels);
+        await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
         const tabs5 = await h.ev(railTabLabels);
         const surface5a = await h.activeSurfaceLabel();
         await h.ev(`${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] [data-file-open-code]")?.focus()`);
@@ -29756,11 +29758,12 @@ const agentRailTabs = {
         const tabs5b = await h.ev(railTabLabels);
         const surface5b = await h.activeSurfaceLabel();
         rec(
-            "5. → in the tab strip selects Files, then File, without leaving the agent, and Esc in the File tab closes the file back to Files, not the surface",
-            JSON.stringify(tabs5a) === JSON.stringify(["Overview", "Files*", "File a.txt"]) &&
-                JSON.stringify(tabs5) === JSON.stringify(["Overview", "Files", "File a.txt*"]) && surface5a === "Agent" &&
-                JSON.stringify(tabs5b) === JSON.stringify(["Overview", "Files*"]) && surface5b === "Agent",
-            JSON.stringify({ tabs5a, tabs5, surface5a, tabs5b, surface5b })
+            "5. → in the tab strip selects Files, then Changes, then File, without leaving the agent, and Esc in the File tab closes the file back to Changes (the tab → came from), not the surface",
+            JSON.stringify(tabs5a) === JSON.stringify(["Overview", "Files*", "Changes", "File a.txt"]) &&
+                JSON.stringify(tabs5c) === JSON.stringify(["Overview", "Files", "Changes*", "File a.txt"]) &&
+                JSON.stringify(tabs5) === JSON.stringify(["Overview", "Files", "Changes", "File a.txt*"]) && surface5a === "Agent" &&
+                JSON.stringify(tabs5b) === JSON.stringify(["Overview", "Files", "Changes*"]) && surface5b === "Agent",
+            JSON.stringify({ tabs5a, tabs5c, tabs5, surface5a, tabs5b, surface5b })
         );
 
         // 6. the grip: drag left widens, keys reach both ends
@@ -29802,7 +29805,7 @@ const agentRailTabs = {
         rec(
             "7. collapsed, the strip shows Overview, Files and the open file; the file's icon opens the panel on File",
             Math.abs(w7 - 44) <= 2 && strip7.includes("Overview") && strip7.includes("Files") && strip7.some((l) => l === "File a.txt") &&
-                JSON.stringify(tabs7) === JSON.stringify(["Overview", "Files", "File a.txt*"]),
+                JSON.stringify(tabs7) === JSON.stringify(["Overview", "Files", "Changes", "File a.txt*"]),
             JSON.stringify({ w7, strip7, tabs7 })
         );
 
@@ -32936,7 +32939,7 @@ const agentRailChangesCommits = {
 //   - C, in the linked worktree rcm-wt on feat/c: f1.txt committed on the branch and edited again, and n.txt (untracked), so
 //     two files are uncommitted. The session starts at +7 min, on the commit the branch was cut from;
 //   - K, in the main checkout on main: a.txt edited, one uncommitted file. Its session starts on main's tip, so its range holds
-//     no commit.
+//     no commit. The last step commits a.txt there and puts the file back, so K's range lists nothing while a.txt is uncommitted.
 // The repo's commit-msg hook (the worktree shares it) refuses a message containing REFUSE, which shows a refusal with no test
 // hook in the app. The repo carries its own git identity: the app's commit call passes none. Every commit is dated (T0 two
 // hours ago, plus the minutes). Steps follow the Prototype's boards CommitMode and MainCheckout. Teardown puts back the user's
@@ -33268,6 +33271,54 @@ const agentRailCommitMode = {
                     !s7.radiogroup && s7.commits === 0 && (s7.uncommitted ?? "").endsWith("1 file") &&
                     (s7.root ?? "").includes("session started here") && s7.open,
                 { shownK, changesK, loadedK, ...s7 }
+            );
+
+            // --- 8. the range lists nothing while the working tree is not clean ----------------------------------------
+            // K's agent commits a.txt after the session started, then the file goes back to what the session started with:
+            // `git diff <session start>` lists nothing, `git status` still lists a.txt against HEAD. Commit… stays on the tab
+            const when = `@${Math.floor(Date.now() / 1000) - 3600} +0000`;
+            const gitK = (...args) =>
+                execFileSync("git", ["-C", ctx.repo, ...args], {
+                    stdio: "pipe",
+                    env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when },
+                });
+            writeFileSync(join(ctx.repo, "a.txt"), "a\nagent edit\n");
+            gitK("add", "a.txt");
+            gitK("commit", "-q", "-m", "agent edit a");
+            writeFileSync(join(ctx.repo, "a.txt"), "a\n");
+            // the rail reads git again when an agent is chosen: away to C and back to K
+            const awayC = await rwfShow(h, RCM_AGENT_C);
+            const backK = awayC && (await rwfShow(h, RCM_AGENT_K));
+            const changesK8 = backK && (await rcmOpenChanges(h, "main checkout"));
+            const emptyListed =
+                changesK8 &&
+                (await polishWaitFor(
+                    h,
+                    `/Files\\s*0$/.test((${rccSel("[data-rail-files-header]")}?.textContent ?? "").trim()) && !!${rccSel("[data-rail-commit-open]")}`,
+                    20000
+                ));
+            const s8 = await h.ev(`(() => {
+                const tab = ${rccSel("[data-rail-changes]")};
+                const text = tab?.textContent ?? "";
+                return {
+                    header: ${rccSel("[data-rail-files-header]")}?.textContent ?? null,
+                    noChanges: text.includes("No changes"),
+                    viewDiff: text.includes("View diff"),
+                    open: !!${rccSel("[data-rail-commit-open]")},
+                };
+            })()`);
+            await shot("8-empty-range-commit");
+            const clicked8 = await rccClick(h, "[data-rail-commit-open]");
+            const box8 = clicked8 && (await waitBox(true));
+            const ticks8 = box8 && (await polishWaitFor(h, `${rccCount("[data-rail-commit-tick]")} === 1`, 15000));
+            const a8 = await tickOf("a.txt");
+            await shot("8-empty-range-commit-mode");
+            const cancelled8 = await rccClick(h, "[data-rail-commit-cancel]");
+            const closed8 = cancelled8 && (await waitBox(false));
+            rec(
+                "8. a range that lists no file but leaves a.txt uncommitted keeps Commit… under No changes (no View diff), and it opens commit mode with a.txt ticked",
+                emptyListed && s8.noChanges && !s8.viewDiff && s8.open && clicked8 && box8 && ticks8 && a8 === "true" && closed8,
+                { awayC, backK, changesK8, emptyListed, ...s8, clicked8, box8, ticks8, a8, closed8 }
             );
         } catch (e) {
             rec("a call threw before the scenario finished", false, String(e?.message ?? e));

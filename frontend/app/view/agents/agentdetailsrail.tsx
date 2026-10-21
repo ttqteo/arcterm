@@ -583,6 +583,22 @@ function ChangesRangeSwitch({
     );
 }
 
+// opens commit mode: beside View diff under the listed files, or alone under "No changes" when the range lists none but the
+// working tree still has uncommitted files
+function RailCommitOpenButton({ onClick }: { onClick: () => void }) {
+    return (
+        <button
+            type="button"
+            data-rail-commit-open
+            onClick={onClick}
+            title="Tick files and commit them here"
+            className="cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[8px] py-[2px] text-[10.5px] font-semibold text-ink-hi hover:border-edge-strong"
+        >
+            Commit…
+        </button>
+    );
+}
+
 function FilesChangedList({
     files,
     summary,
@@ -614,17 +630,7 @@ function FilesChangedList({
             <div className="mt-[8px] flex items-center gap-[10px] text-[10.5px] tabular-nums">
                 <span className="text-muted">{summary}</span>
                 <span className="flex-1" />
-                {onCommit ? (
-                    <button
-                        type="button"
-                        data-rail-commit-open
-                        onClick={onCommit}
-                        title="Tick files and commit them here"
-                        className="cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[8px] py-[2px] text-[10.5px] font-semibold text-ink-hi hover:border-edge-strong"
-                    >
-                        Commit…
-                    </button>
-                ) : null}
+                {onCommit ? <RailCommitOpenButton onClick={onCommit} /> : null}
                 <button
                     type="button"
                     onClick={onViewDiff}
@@ -1039,9 +1045,18 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                             </div>
                         ) : null}
                         {listed.length === 0 ? (
-                            <div className="text-[11.5px] text-muted">
-                                {onBranch ? `No changes against ${branchDiff.base}` : "No changes"}
-                            </div>
+                            <>
+                                <div className="text-[11.5px] text-muted">
+                                    {onBranch ? `No changes against ${branchDiff.base}` : "No changes"}
+                                </div>
+                                {/* the range can list nothing while the working tree is not clean: a file edited back to
+                                    where the range started is uncommitted against HEAD, and commit mode must stay reachable */}
+                                {full && uncommitted > 0 ? (
+                                    <div className="mt-[8px] flex justify-end">
+                                        <RailCommitOpenButton onClick={() => setRailCommitMode(agent.id, true)} />
+                                    </div>
+                                ) : null}
+                            </>
                         ) : (
                             <FilesChangedList
                                 files={listed}
