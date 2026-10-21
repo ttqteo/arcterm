@@ -63,6 +63,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   (`paper/asiaccs2027/final/decision_282_reviews.md` in mit-thesis). The council should surface the unreadable prose
   (undefined internal terms, dense "not X but Y" sentences) and the missing Bullseye baseline. If it misses the prose,
   mixed runtimes (codex, agy) move out of Deferred in the spec.
+- [ ] (arcterm) Rail commit mode with a real agent and with amend: let a live Claude agent edit two files in a worktree;
+  when its turn ends, the rail's Changes tab shows the Uncommitted row without a switch. Open Commit…, untick one file,
+  commit: the box closes, the commit tops the Commits list, the unticked file stays uncommitted. Then turn Amend on in
+  the Diff surface's Commit tab and come back: the rail's button reads "Amend with N files" and amends. The run's CDP
+  scenarios (`rail-changes-commits`, `rail-commit-mode`, 31/31 in the Final of run fb9eca52) drove a staged agent, not
+  hooks, and never amended. `frontend/app/view/agents/railcommitbox.tsx`.
 - [ ] (arcterm) Servers file log and Restart in arcterm: open the footer's Servers popover with a "no owner" server
   whose output goes to a file (an `astro dev` writing `.astro\dev.log`, or a task from an ended Claude session). Its
   Log icon is lit, its tooltip names the file, and a click follows the file live in the focused agent's side panel.

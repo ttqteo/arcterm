@@ -68,7 +68,7 @@ export function GraphGutter({ geom, selectedIndex = -1 }: { geom: GraphGeometry;
                     key={i}
                     d={e.d}
                     fill="none"
-                    stroke={laneColor(e.lane, e.folded)}
+                    stroke={e.boundary ? FOLD_TOKEN : laneColor(e.lane, e.folded)}
                     strokeWidth={1.8}
                     strokeDasharray={e.dashed ? "3 3" : undefined}
                     opacity={e.folded ? 0.5 : 1}
@@ -80,19 +80,19 @@ export function GraphGutter({ geom, selectedIndex = -1 }: { geom: GraphGeometry;
                     cx={n.x}
                     cy={n.y}
                     r={n.r}
-                    // hollow for merges and for the working tree, so both read as "not an ordinary
-                    // commit". The hole has to be whatever is painted beneath it, which on the selected
-                    // row is the selection fill rather than the page background.
+                    // hollow for merges, the working tree and a scoped list's boundary root, so each
+                    // reads as "not an ordinary commit". The hole has to be whatever is painted beneath
+                    // it, which on the selected row is the selection fill rather than the page background.
                     fill={
-                        n.merge || n.workingTree
+                        n.merge || n.workingTree || n.boundary
                             ? i === selectedIndex
                                 ? "var(--color-surface-selected)"
                                 : "var(--color-background)"
                             : laneColor(n.lane, n.folded)
                     }
-                    stroke={laneColor(n.lane, n.folded)}
+                    stroke={n.boundary ? FOLD_TOKEN : laneColor(n.lane, n.folded)}
                     strokeWidth={2}
-                    strokeDasharray={n.workingTree ? "2.5 2.5" : undefined}
+                    strokeDasharray={n.workingTree || n.boundary ? "2.5 2.5" : undefined}
                 />
             ))}
         </svg>

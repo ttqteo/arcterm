@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Servers: a server started outside arcterm whose output goes to a file (a redirect, or a task a Claude session that
   has ended ran in the background) now opens that file as its live Log. A server with no owner also has
   Restart in arcterm, which stops it and runs it again in a terminal in its folder, so you can see its output from then on.
+- The side panel's Changes tab says which branch and worktree its list is measured in, lists that range's commits over
+  their graph with what is not committed yet on top, and commits ticked files without leaving the agent.
 
 ### Fixed
 

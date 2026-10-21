@@ -36,7 +36,8 @@ Prototype: `.superpowers\design\rail-changes-commits\project\` (boards `Main`, `
   (10.5px tabular `text-muted`). No author mark: the rail is narrow and the commits are mostly the agent's; the tooltip
   carries sha · subject · author · age.
 - Lanes come from the existing `assignLanes` (`gitgraph.ts`) and `graphGeometry` (`gitgraphgeom.ts`), drawn by
-  `GraphGutter`, `graphlane-*` tokens; a merge is a hollow node, an edge to a parent outside the range is dashed.
+  `GraphGutter`, `graphlane-*` tokens; a merge is a hollow node, an edge to a parent outside the range is a dashed stub
+  one row down.
 - The first row, while the worktree has uncommitted files, is **Uncommitted changes**, drawn as the Diff surface's Log
   draws its working-tree row: a hollow dashed node on lane 0 with a dashed edge down to HEAD, the label in
   `font-semibold text-warning`, "N files" at the right in `text-ink-mid`; no sha, no age. N is the uncommitted list's
@@ -46,8 +47,9 @@ Prototype: `.superpowers\design\rail-changes-commits\project\` (boards `Main`, `
   above the root row).
 - The last row is the range's root, not a commit of it: a grey dashed hollow node (`graphlane-fold`), its short sha, and
   "branched off here" with a `main` ref chip (Branch) or "session started here" (Session).
-- Past 20: the line runs on dashed under the last row and ends in "N more in Diff ↗", which opens the Diff surface
-  (as row click does, below) (`ManyCommits`).
+- Past 20: the line runs on dashed under the last row and ends in "More in Diff ↗", which opens the Diff surface
+  (as row click does, below) (`ManyCommits`). No count: the read takes one past the cap, so it knows there are more,
+  not how many.
 - Fold: open by default at 5 commits or fewer, folded above; a click keeps the choice per agent for the session (a
   jotai atom keyed by agent id, not localStorage).
 - First read: three skeleton rows at row height. A failed read: an inline panel "Couldn't read the commits", the command
@@ -89,13 +91,14 @@ Prototype: `.superpowers\design\rail-changes-commits\project\` (boards `Main`, `
 ## How it is built
 
 - `railcommits.ts` (pure, `railcommits.test.ts`): the where line's parts from rail state; the commit range for a range
-  choice (`{ from, label } | null`); rows and the root row from `HistoryCommit[]` with the 20 cap and the more count;
-  the fold default.
-- `railcommitsstore.ts`: per-agent commits atom (`{ key, commits, more, status, failure }`, keyed by `cwd` + range), a
+  choice (`{ from, root, base? } | null`); rows and the root row from `HistoryCommit[]` with the 20 cap and the more flag;
+  the row tooltip; the fold default.
+- `railcommitsstore.ts`: per-agent commits atom (`{ key, status, commits, head, failure }`, keyed by `cwd` + range; the more flag comes from the rows), a
   load guarded like `railstore`'s `current`, the fold atom, the commit-mode atom (per agent). Reads when the Changes tab
   shows, when rail state lands for the agent, after a rail commit, and on Retry: no new poll. The same reads also call
   `loadCommitList(cwd)` for the Uncommitted row's count (a `git status` and numstat, which the rail state read already
-  runs once); the Commit tab's own 10 s poll (`startCommitPoll`) runs only while commit mode is open.
+  runs once); with no range (Session, no start recorded) the tab still calls `loadCommitList(cwd)`, so **Commit…** shows
+  there too. The Commit tab's own 10 s poll (`startCommitPoll`) runs only while commit mode is open.
 - `agentdetailsrail.tsx`: the where line, the Commits section and the files header in `filesContent`; commit mode swaps
   the list and adds the box. `CommitFailure` and the textarea sizing move out of `committab.tsx` to be shared
   (`commitbox.tsx` or exported), not copied.
@@ -109,9 +112,11 @@ Prototype: `.superpowers\design\rail-changes-commits\project\` (boards `Main`, `
 
 ## Checks
 
-- vitest: `railcommits.test.ts` (range per choice and per missing ref, cap and more count, root row, fold default, where
-  line in a linked worktree and the main checkout).
-- CDP scenario `rail-changes-commits` in `scripts/cdp/scenarios.mjs`: a temp repo on a branch with three commits, one
-  merge, and uncommitted edits; shows the where line, the Commits lanes, the fold, commit mode with a tick changed, and
-  the list after a commit. Until it runs in the dev app, a hand-check line in `docs/open-issues.md`.
+- vitest: `railcommits.test.ts` (range per choice and per missing ref, cap and more flag, root row, tooltip, fold
+  default, where line in a linked worktree and the main checkout), `railcommitsstore.test.ts`, `gitgraphgeom.test.ts`
+  (the boundary root and the dashed stub).
+- CDP scenarios in `scripts/cdp/scenarios.mjs`, run by the plan's Final: `rail-changes-commits` (a linked worktree on a
+  branch with commits, a merge and an uncommitted edit, in Branch and Session; 23 commits folded with More in Diff; the
+  skeleton, a failed read and Retry; a row opening the Diff surface on that commit) and `rail-commit-mode` (commit mode,
+  ticks, Cancel, a refused and a done commit; a main checkout on main).
 - `CHANGELOG.md` Unreleased: one Added line for the commits and commit mode on the rail.
