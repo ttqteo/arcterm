@@ -123,7 +123,7 @@ levers", "Benchmark", "Phases" item 0)
 
 ### Task 4: The V3 harness (prompt-only agent-team council)
 
-**Depends on:** Task 1
+**Depends on:** Task 1 (reads teamprobe.md: the headless line and where the transcripts live)
 **Files:** `<data dir>/council-bench/work/v3/{review.md,brainstorm.md,run.sh,tokens.sh}`
 
 **Interfaces:**
@@ -148,7 +148,7 @@ levers", "Benchmark", "Phases" item 0)
 
 ### Task 5: Estimate and the person's go
 
-**Depends on:** Task 2, Task 3, Task 4
+**Depends on:** Task 2 (estimates each case in cases.json), Task 3 (estimates V0 on the solo groups), Task 4 (estimates V3 from its harness)
 **Files:** `<data dir>/council-bench/work/estimate.md`
 
 - [ ] **Step 1:** For each case, `wsh council estimate` for V2 (group) and V0 (solo group); V1 is V2's round 1 plus one
@@ -159,7 +159,7 @@ levers", "Benchmark", "Phases" item 0)
 
 ### Task 6: Run the twelve
 
-**Depends on:** Task 5
+**Depends on:** Task 5 (runs only after the person's go on estimate.md)
 **Files:** `<data dir>/council-bench/work/run.sh`, `<data dir>/council-bench/work/runs.jsonl`
 
 - [ ] **Step 1:** `run.sh <case> <V0|V1|V2>` runs from the case's project: V2
@@ -176,7 +176,7 @@ levers", "Benchmark", "Phases" item 0)
 
 ### Task 7: Judge and score
 
-**Depends on:** Task 6
+**Depends on:** Task 6 (judges the runs listed in runs.jsonl)
 **Files:** `<data dir>/council-bench/work/judge.sh`, `<data dir>/council-bench/work/results.md`
 
 - [ ] **Step 1:** `judge.sh <case> <variant>` builds the report (v1: `wsh council show <id> --json` summary text plus
@@ -191,7 +191,7 @@ levers", "Benchmark", "Phases" item 0)
 
 ### Task 8: Findings note
 
-**Depends on:** Task 1, Task 7
+**Depends on:** Task 1 (quotes teamprobe.md), Task 7 (quotes results.md)
 **Files:** `docs/council-phase0.md`
 
 - [ ] **Step 1:** Write the note: the results table; what the argue round bought (V2 vs V1), what the panel bought (V1
