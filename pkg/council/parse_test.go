@@ -5,6 +5,7 @@ package council
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -149,6 +150,28 @@ func TestParseRound2(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestParseRound2Picks(t *testing.T) {
+	got, err := ParseRound2(jsonFence(`{"stances": [], "picks": ["P1", " P3 ", "P3", "", "P4", "P5"]}`))
+	if err != nil || !slices.Equal(got.Picks, []string{"P1", "P3", "P4"}) {
+		t.Fatalf("picks = %v, %v, want the first 3 distinct", got.Picks, err)
+	}
+	got, err = ParseRound2(jsonFence(`{"stances": []}`))
+	if err != nil || len(got.Picks) != 0 {
+		t.Fatalf("picks = %v, %v, want none", got.Picks, err)
+	}
+}
+
+func TestParseSynthesisAnswer(t *testing.T) {
+	with, _, err := ParseSynthesis(jsonFence(`{"answer": " Do P2 first. ", "text": "t", "directions": []}`))
+	if err != nil || with.Answer != "Do P2 first." {
+		t.Fatalf("answer = %q, %v", with.Answer, err)
+	}
+	without, _, err := ParseSynthesis(jsonFence(`{"text": "t", "directions": []}`))
+	if err != nil || without.Answer != "" {
+		t.Fatalf("answer = %q, %v, want none", without.Answer, err)
 	}
 }
 
@@ -319,14 +342,17 @@ func TestShapesParse(t *testing.T) {
 	if props, _, err := ParseRound1(jsonFence(round1Shape)); err != nil || len(props) != 1 || props[0].Evidence[0].Weak {
 		t.Errorf("round1Shape: %+v, %v", props, err)
 	}
-	if r, err := ParseRound2(jsonFence(round2Shape)); err != nil || len(r.Stances) != 1 || len(r.Revisions) != 1 || len(r.Answers) != 1 {
+	if r, err := ParseRound2(jsonFence(round2Shape)); err != nil || len(r.Stances) != 1 || len(r.Revisions) != 1 || len(r.Answers) != 1 || len(r.Picks) != 3 {
 		t.Errorf("round2Shape: %+v, %v", r, err)
 	}
 	if a, err := ParseAnswers(jsonFence(answersShape)); err != nil || len(a) != 1 || a[0].Stance != StanceAccept || len(a[0].Evidence) != 1 {
 		t.Errorf("answersShape: %+v, %v", a, err)
 	}
 	sum, weak, err := ParseSynthesis(jsonFence(synthesisShape))
-	if err != nil || len(sum.Directions) != 1 || len(sum.Outcomes) != 3 || len(weak) != 1 || sum.Directions[0].Agreed {
+	if err != nil || len(sum.Directions) != 1 || len(sum.Outcomes) != 3 || len(weak) != 1 || sum.Directions[0].Agreed || sum.Answer == "" {
 		t.Errorf("synthesisShape: %+v, %+v, %v", sum, weak, err)
+	}
+	if _, _, err := ParseSynthesis(jsonFence(synthesisShapeNoQuestion)); err != nil {
+		t.Errorf("synthesisShapeNoQuestion: %v", err)
 	}
 }

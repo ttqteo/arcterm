@@ -6,17 +6,20 @@ import {
     addScreenshot,
     applyGroup,
     applySuggestion,
+    askText,
     basename,
     beginSuggest,
     estimateKey,
     estimateRequest,
     expertInitial,
+    expertsLine,
     expertTone,
     failSuggestion,
     groupFromDraft,
     groupName,
     groupSlug,
     initialPanel,
+    joinAsk,
     panelFor,
     pendingRoles,
     readingLine,
@@ -27,6 +30,7 @@ import {
     retrySuggestion,
     setExpertModel,
     settleRerun,
+    splitAsk,
     startBlocker,
     startData,
     suggestRequest,
@@ -372,6 +376,76 @@ describe("what the suggestion changes", () => {
     });
 });
 
+describe("the composer's text", () => {
+    it("takes the first line as the feature and the rest as the question", () => {
+        expect(splitAsk("Rail apps\nIs the pin worth it?")).toEqual({
+            feature: "Rail apps",
+            question: "Is the pin worth it?",
+        });
+    });
+
+    it("leaves the question empty for one line that is not a question", () => {
+        expect(splitAsk("Rail apps")).toEqual({ feature: "Rail apps", question: "" });
+        expect(splitAsk("")).toEqual({ feature: "", question: "" });
+    });
+
+    it("makes one line ending in ? both the feature and the question", () => {
+        expect(splitAsk("Is the pin worth it?")).toEqual({
+            feature: "Is the pin worth it?",
+            question: "Is the pin worth it?",
+        });
+    });
+
+    it("skips blank lines before the feature and trims what it keeps", () => {
+        expect(splitAsk("\n  \n  Rail apps  \n\n  Is it worth it?  \n")).toEqual({
+            feature: "Rail apps",
+            question: "Is it worth it?",
+        });
+        expect(splitAsk("\n\nIs it worth it?\n\n")).toEqual({
+            feature: "Is it worth it?",
+            question: "Is it worth it?",
+        });
+    });
+
+    it("keeps a multi-line question with its line breaks", () => {
+        expect(splitAsk("Rail apps\nIs it worth it?\nAnd for Mac users?")).toEqual({
+            feature: "Rail apps",
+            question: "Is it worth it?\nAnd for Mac users?",
+        });
+        expect(splitAsk("Rail apps\r\nOne?\r\nTwo?").question).toBe("One?\nTwo?");
+    });
+
+    it("shows Ask the council's question as the one line, and splits it back into a question", () => {
+        const ask = draft({ question: "Is the rail the right home for pinned apps?", sessionId: "s1" });
+        expect(joinAsk(ask)).toBe("Is the rail the right home for pinned apps?");
+        expect(splitAsk(joinAsk(ask)).question).toBe(ask.question);
+    });
+
+    it("round-trips a Run again draft and one saved with a separate feature and question", () => {
+        for (const d of [
+            draft({ feature: "Rail apps", question: "Is the pin worth it?" }),
+            draft({ feature: "Rail apps", question: "Is it worth it?\nAnd for Mac users?" }),
+            draft({ feature: "Rail apps" }),
+        ]) {
+            expect(joinAsk(d)).toBe([d.feature, d.question].filter((x) => x !== "").join("\n"));
+            expect(splitAsk(joinAsk(d)).feature).toBe(d.feature);
+        }
+        const both = draft({ feature: "Rail apps", question: "Is the pin worth it?" });
+        expect(splitAsk(joinAsk(both))).toEqual({ feature: both.feature, question: both.question });
+        expect(joinAsk(draft({ feature: "Is it?", question: "Is it?" }))).toBe("Is it?");
+        expect(joinAsk(draft())).toBe("");
+    });
+
+    it("keeps what the person typed while it still reads as the draft, so a new line can be started", () => {
+        const typed = "Rail apps\n";
+        const d = { ...draft(), ...splitAsk(typed) };
+        expect(askText(d, typed)).toBe(typed);
+        // a draft that came from outside replaces it
+        expect(askText(draft({ feature: "Other", question: "Why?" }), typed)).toBe("Other\nWhy?");
+        expect(askText(draft({ question: "Why?", sessionId: "s1" }), null)).toBe("Why?");
+    });
+});
+
 describe("Start council", () => {
     const ready = () =>
         initialPanel(draft({ feature: " Rail apps ", question: "Is the rail right?", files: ["a.ts"] }), lib);
@@ -381,7 +455,7 @@ describe("Start council", () => {
     });
 
     it("says what is missing", () => {
-        expect(startBlocker(initialPanel(draft(), lib))).toBe("Name the feature to review");
+        expect(startBlocker(initialPanel(draft(), lib))).toBe("Say what the council should review");
         expect(startBlocker(draft({ feature: "Rail apps" }))).toBe("Pick a group of experts");
         let d = ready();
         for (const id of ["ux", "ram", "newuser", "skeptic"]) d = removeExpert(d, id);
@@ -404,6 +478,15 @@ describe("Start council", () => {
             sessionid: "s1",
         });
         expect(data.experts?.at(-1)?.coordinator).toBe(true);
+    });
+
+    it("is ready with only a question, as Ask the council hands it over, and sends it as the feature too", () => {
+        const ask = initialPanel(draft({ question: "Is the rail right?", sessionId: "s1" }), lib);
+        expect(startBlocker(ask)).toBe("");
+        const data = startData(ask);
+        expect(data.feature).toBe("Is the rail right?");
+        expect(data.question).toBe("Is the rail right?");
+        expect(data.sessionid).toBe("s1");
     });
 
     it("leaves out what is empty", () => {
@@ -430,19 +513,35 @@ describe("the estimate and the footer", () => {
         expect(estimateKey({ ...d, feature: "Rail apps", pause: true })).toBe(key);
     });
 
-    it("counts the models that read in round 1", () => {
+    it("counts the models that read the code first", () => {
         const d = initialPanel(draft(), lib);
-        expect(readingLine(d)).toBe("4 sonnet experts read the code in round 1; rounds 2 and 3 read only text");
+        expect(readingLine(d)).toBe("4 sonnet experts read the code first; then they argue over text only");
         expect(readingLine(setExpertModel(d, "ux", "opus"))).toBe(
-            "3 sonnet and 1 opus experts read the code in round 1; rounds 2 and 3 read only text"
+            "3 sonnet and 1 opus experts read the code first; then they argue over text only"
         );
         const three = setExpertModel(setExpertModel(d, "ux", "opus"), "ram", "haiku");
         expect(readingLine(three)).toBe(
-            "2 sonnet, 1 opus and 1 haiku experts read the code in round 1; rounds 2 and 3 read only text"
+            "2 sonnet, 1 opus and 1 haiku experts read the code first; then they argue over text only"
         );
         const one = removeExpert(removeExpert(removeExpert(d, "ux"), "ram"), "newuser");
-        expect(readingLine(one)).toBe("1 sonnet expert reads the code in round 1; rounds 2 and 3 read only text");
+        expect(readingLine(one)).toBe("1 sonnet expert reads the code first; then they argue over text only");
         expect(readingLine(draft())).toBe("");
+    });
+});
+
+describe("expertsLine", () => {
+    it("names the group's experts and the coordinator who writes the answer", () => {
+        const d = initialPanel(draft(), lib);
+        expect(expertsLine(d, lib)).toBe(
+            "Review a UI feature: UX, RAM, New user and Skeptic each read the code from their own side; the Coordinator writes the answer."
+        );
+        expect(expertsLine(removeExpert(removeExpert(removeExpert(d, "ux"), "ram"), "newuser"), lib)).toBe(
+            "Review a UI feature: Skeptic reads the code from its own side; the Coordinator writes the answer."
+        );
+    });
+
+    it("is empty without an expert", () => {
+        expect(expertsLine(draft(), lib)).toBe("");
     });
 });
 

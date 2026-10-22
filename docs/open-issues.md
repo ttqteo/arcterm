@@ -41,14 +41,20 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Copy id with the 8-character id beside it (a # icon, no @), and pasting gives the bare id. Alt-drag onto a Claude
   pane still types `@id `. Commit "feat(agents): the row menu copies an agent's bare id".
 - [ ] (arcterm) Council, a real run: in Agent, New council on a project, a UI feature with a few files, the
-  "Review a UI feature" group, Start council. The Running board (Discussion in round 1) shows each expert's card with
-  the line it is reading (`Grep "…" in pkg/…`) and the proposals appear as the experts finish; Summarize stays off until round 1
-  is done, and round 2 fills the threads as replies arrive; the chip's round, the clock, the reply count
+  "Review a UI feature" group, Start council. The Discussion at Step 1 of 3 shows each expert's card with
+  the line it is reading (`Grep "…" in pkg/…`) and the ideas appear as the experts finish; Summarize stays off until the
+  first ideas are in, and Step 2 fills the threads as replies arrive; the chip's step, the clock, the reply count
   and the token count move on their own. The scenarios (`council-tree`, `-setup`, `-ask`, `-discussion`, `-summary`)
   only draw fixtures and replace every call that would reach a model, so none of this has run live; they also have
-  not run before Final. Also try Pause after round 1 (untick a proposal, ask a question, Continue), Stop council
-  mid-round 1, and Retry on an expert that failed. Spec `docs/superpowers/specs/2026-10-21-council-design.md`,
-  `frontend/app/view/agents/councildiscussion.tsx`, `pkg/council/runner.go`.
+  not run before Final. Also try Pause after the first ideas (Setup's Options; untick an idea, ask a question,
+  Continue), Stop council during Step 1, and Retry on an expert that failed. Spec
+  `docs/superpowers/specs/2026-10-21-council-design.md`, `frontend/app/view/agents/councildiscussion.tsx`,
+  `pkg/council/runner.go`.
+- [ ] (arcterm) Council, the readable report: run a real council with a question on the installed app. The finished
+  council should open on a one-sentence answer above its directions; an expert who agrees without a comment should
+  show as a reaction under the idea, never as a reply row (reply counts leave it out); and the done toast should arrive
+  while another surface is showing, with an unread dot on the council's row that clears when you open it. Spec
+  `docs/superpowers/specs/2026-10-22-council-agent-team-design.md` (Phases, Ahead of Phase 0b).
 - [ ] (arcterm) Council from an agent: in a claude session, let it offer a Council review (the `arc:council` skill) and
   pick it. `wsh council start` shows the Token burn gate card with the estimate; allow it and the council runs, and
   `wsh council wait` prints the Summary and Matrix back into the session, with the directions in that session's Ideas.
@@ -66,9 +72,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   opens (the note names what a group cannot keep: a suggested role and a per-row model); the coordinator's role
   suggestion, with a feature and a first file, comes back as dashed rows you can add or ignore, and Run again from a
   Summary does not call it. `frontend/app/view/agents/councilsetup.tsx`.
-- [ ] (arcterm) Council Summary, the actions the scenario replaces: on a done council, Brainstorm this opens a claude
+- [ ] (arcterm) Council Summary, the actions the scenario replaces: on a done council, Start an agent on it opens a claude
   agent in the project seeded with the direction and its thread (the scenario stubs the launch, so only the prompt was
-  checked); Save as doc writes `docs/council/YYYY-MM-DD-<feature>.md` and shows the path; Create initiative makes one
+  checked); Save as doc (in the ⋯ menu) writes `docs/council/YYYY-MM-DD-<feature>.md` and shows the path; Create initiative makes one
   chunk per direction; Ask the experts again opens that direction's thread; a reply after the summary marks the
   Summary `Outdated · N replies since` and Summarize again clears it. `frontend/app/view/agents/councilsummary.tsx`.
 - [ ] (arcterm) Rail commit mode with a real agent and with amend: let a live Claude agent edit two files in a worktree;
@@ -1125,6 +1131,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
 | (arcterm) A run's sheet timeline shows the raw event kind `queued-start` where `run-queue` step 6 expects "Started from the queue": no frontend label exists for the kind (`runEventKindQueuedStart`, `pkg/wshrpc/wshserver/wshserver_runqueue.go:40`). Not from the project Overview run, whose diff reaches no run-sheet code (not rerun on the base) | bug | S | run 3d198707 Final, `data/final-shots/bd35362c-a6b5-4df7-9d46-6f522a0bca94/1/shots.json` |
+| (arcterm) `TestRepliesPostedAsARunEndsAreNeverLost` in `pkg/council` is flaky: it failed, then passed on a rerun, in run 74b368ce's Verify after merging its t-10 | bug | S | run 74b368ce final report; `pkg/council/runner_test.go` |
+| (arcterm) `pkg/council` `TestRepliesPostedAsARunEndsAreNeverLost` is flaky: it failed, then passed on a rerun, in the Verify after a merge of run 74b368ce, which left that run's Final unverified | bug | S | run 74b368ce report; `pkg/council/runner_test.go` |
 | (arcterm) A message meant for one worker reached another session: during run 0ea46b22 a lead's note for the codefix rerun was injected into the newcomer V3 lead's session (07:38:32Z), which the run put down to a lead launched from a tab inheriting that tab's block id. The run's diagnosis, not yet checked in the source (`wsh agents send` routing, `pkg/wshrpc` block targeting) | bug | M | `docs/council-phase0.md` ("Two flags on the data") |
 | (arcterm) `wsh council estimate` is low: V0 reads a flat 0.3M on every case (real runs 0.54M), V1 is assumed half of V2 but cost as much (round 1 and the Summary are most of it), and codefix V1/V2 came to ~1.4M against 0.4–0.8M estimated | bug | S | `docs/council-phase0.md` (Results, Deviations); `pkg/council/estimate.go` |
 | (arcterm) Scenario steps that fail in a Final on a Mac and are not the settings reorganization's: `settings-pages` agents-detail and `settings-storage` step 11 read the DOM once before it redraws (racy), `settings-telegram` step 3 needs `ARC_TELEGRAM_API_BASE`, which `final-verify.mjs` does not set, and `agy-harness` 2/5/6/7/9, `route-picker-flat` (too few fixture rows to scroll) and `jarvis-pet` 8 fail on the base too. Each is a chunk of effort `c721a0be` (11–16) with its cause | verification gap | M | run d09b9dd1 Final, `data/final-shots/f983b4e3-ff58-410d-9457-f3007b0cb39e/1/shots.json`; `scripts/cdp/scenarios.mjs` |

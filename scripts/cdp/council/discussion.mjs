@@ -1,9 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// council-discussion (docs/superpowers/plans/2026-10-21-council.md, Task 14): the Discussion in round 2 (the thread, the
-// avatars, the proposals column, a real reply, Summarize off while the round runs), round 1 (the experts' cards and the
-// call bar), at the pause (the ticks, Ask the experts, Continue), stopped at the pause (Summarize), failed (Retry on an
+// council-discussion (docs/superpowers/plans/2026-10-21-council.md, Task 14; the plain words and the picks:
+// 2026-10-22-council-v1-ui.md, Task 3): the Discussion while the experts argue (the thread, the avatars, the ideas
+// column, a real reply, Summarize off while they do), on a council whose experts gave their picks (ranked by them, the
+// unpicked folded, agreement a reaction, no id in the column), while they first propose (the experts' cards and the call
+// bar), at the pause (the ticks, Ask the experts, Continue), stopped at the pause (Summarize), failed (Retry on an
 // expert and on the coordinator), not run (Start council) and as a follow-up on a done council (the cost label with Let
 // them read code). Each phase seeds its own fixture council and takes its own shot.
 //
@@ -69,20 +71,26 @@ async function openFixture(h, ctx, name, opts) {
     return id;
 }
 
+// the visible words the person reads: none of them is the word `round` (a step is "Step 2 of 3", an argument "argue")
+const noRound = async (h, root) => {
+    const t = await text(h, root);
+    return { ok: t !== "" && !/\brounds?\b/i.test(t), found: /.{0,30}\brounds?\b.{0,30}/i.exec(t)?.[0] ?? null };
+};
+
 const tokensIn = (label) => {
     const m = /~([\d.]+)([kM])/.exec(label ?? "");
     return m ? Number(m[1]) * (m[2] === "M" ? 1_000_000 : 1000) : NaN;
 };
 
-// ---- round 2: the thread ----
+// ---- the experts argue: the thread ----
 
 const REPLY_TEXT = 'Would a "Waking…" label on the rail icon be enough?';
 
 async function round2(h, ctx, rec) {
     await openFixture(h, ctx, "round2");
 
-    const chip = await settledText(h, "[data-council-chip]", "Round 2 of 3 · 2 replying");
-    rec("round 2: the header chip reads `Round 2 of 3 · 2 replying`", chip === "Round 2 of 3 · 2 replying", chip);
+    const chip = await settledText(h, "[data-council-chip]", "Step 2 of 3 · 2 replying");
+    rec("round 2: the header chip reads `Step 2 of 3 · 2 replying`", chip === "Step 2 of 3 · 2 replying", chip);
 
     const avatars = await h.ev(`({
         all: document.querySelectorAll("[data-council-avatar]").length,
@@ -90,8 +98,8 @@ async function round2(h, ctx, rec) {
         skeptic: document.querySelector('[data-council-avatar="skeptic"]')?.getAttribute("title") ?? null,
     })`);
     rec(
-        "round 2: five avatars, two lit, Skeptic's hover reads `Skeptic: Replying to UX on P2`",
-        avatars.all === 5 && avatars.lit === 2 && avatars.skeptic === "Skeptic: Replying to UX on P2",
+        "round 2: five avatars, two lit, Skeptic's hover reads `Skeptic: Replying to UX`",
+        avatars.all === 5 && avatars.lit === 2 && avatars.skeptic === "Skeptic: Replying to UX",
         avatars
     );
 
@@ -104,7 +112,7 @@ async function round2(h, ctx, rec) {
         withdrawn: e.getAttribute("data-withdrawn") === "true",
     }))`);
     rec(
-        "round 2: the proposals column lists six, the top-ranked open, the withdrawn P6 last",
+        "round 2: the ideas column lists six, the top-ranked open, the withdrawn P6 last (no picks: ranked by score as before)",
         col.length === 6 && col[0].selected && col.slice(0, 5).every((p) => !p.withdrawn) && col[5].id === "P6" && col[5].withdrawn,
         col.map((p) => p.id + (p.selected ? "*" : "") + (p.withdrawn ? "(w)" : "")).join(" ")
     );
@@ -125,6 +133,9 @@ async function round2(h, ctx, rec) {
         nodes.some((n) => n.depth === 2) && typing === "Skeptic is writing a reply…",
         `${nodes.map((n) => `${n.depth}${n.kind === "typing" ? "t" : ""}:${n.key}`).join(" ")} | ${typing}`
     );
+
+    const words = await noRound(h, rootOf(await attr(h, "[data-council-discussion]", "data-council-discussion")));
+    rec("round 2: no visible text holds the word `round`", words.ok, words.found);
 
     const mine = await text(h, '[data-council-node="r18"]');
     rec("round 2: the person's reply is labelled `Answered after the summary`", mine.includes("Answered after the summary"), mine);
@@ -168,23 +179,82 @@ async function round2(h, ctx, rec) {
         placed
     );
 
-    // Summarize: the runner refuses a running council (the synthesis comes by itself when round 2 ends), so it is off
+    // Summarize: the runner refuses a running council (the synthesis comes by itself when the replies end), so it is off
     const summarize = await h.ev(`(() => {
         const b = document.querySelector("[data-council-summarize]");
         return b ? { disabled: b.disabled === true, title: b.getAttribute("title") } : null;
     })()`);
     rec(
-        "round 2: Summarize is disabled, and its title says the summary comes by itself when round 2 ends",
-        summarize?.disabled === true && summarize.title === "The summary comes by itself when round 2 ends",
+        "round 2: Summarize is disabled, and its title says the summary comes by itself when the experts finish replying",
+        summarize?.disabled === true && summarize.title === "The summary comes by itself when the experts finish replying",
         summarize
     );
+}
+
+// ---- the experts' picks: ranking, the fold, reactions ----
+
+// round 2's fixture under another id, with picks (RAM and Skeptic pick P2, New user picks P1; P3 to P6 are unpicked) and
+// New user's accept on P2 stripped of its text: agreement with nothing to add
+async function picks(h, ctx, rec) {
+    await openFixture(h, ctx, "round2", {
+        id: `${councilFixtureId("round2")}-picks`,
+        edit: (c) => {
+            c.picks = { ram: ["P2"], skeptic: ["P2"], newuser: ["P1"] };
+            const accept = c.replies.find((r) => r.id === "r17");
+            accept.text = "";
+        },
+    });
+    await until(h, `!!document.querySelector("[data-council-folded]")`);
+
+    const column = await text(h, "[data-council-proposals]");
+    rec("picks: the ideas column shows no proposal id", !/\bP\d+\b/.test(column), column);
+
+    const shown = await h.ev(`[...document.querySelectorAll("[data-council-proposal]")].map((e) => e.getAttribute("data-council-proposal"))`);
+    const folded = await text(h, "[data-council-folded]");
+    rec(
+        "picks: P2 ranks first, P1 second, and the other four fold under `4 more with no picks`",
+        shown.join(",") === "P2,P1" && folded === "4 more with no picks",
+        `${shown.join(",")} | ${folded}`
+    );
+
+    const up = await h.ev(`({
+        title: document.querySelector("[data-council-post] [role='img']")?.getAttribute("title") ?? null,
+        score: (document.querySelector("[data-council-score]")?.textContent ?? "").trim(),
+        row: document.querySelector('[data-council-proposal="P2"] [data-council-proposal-score]')?.textContent ?? null,
+    })`);
+    rec(
+        "picks: P2's ↑ reads 2 and its title `Picked by 2 of 4 experts`",
+        up.title === "Picked by 2 of 4 experts" && up.score === "2" && up.row === "2",
+        up
+    );
+
+    const reaction = await h.ev(`[...document.querySelectorAll("[data-council-reaction]")].map((e) => (e.textContent ?? "").replace(/\\s+/g, " ").trim())`);
+    const hidden = !(await exists(h, '[data-council-node="r17"]'));
+    const foot = await text(h, "[data-council-post-foot]");
+    rec(
+        "picks: New user's blank accept is a `New user agrees` reaction, no reply row, and no reply in the count",
+        reaction.join("|") === "New user agrees" && hidden && foot === "4 replies · 1 from you",
+        `${reaction.join("|")} | row hidden: ${hidden} | ${foot}`
+    );
+
+    await click(h, "[data-council-folded]");
+    await until(h, `document.querySelectorAll("[data-council-proposal]").length === 6`);
+    const all = await h.ev(`[...document.querySelectorAll("[data-council-proposal]")].map((e) => e.getAttribute("data-council-proposal"))`);
+    const expanded = await attr(h, "[data-council-folded]", "aria-expanded");
+    const unfoldedColumn = await text(h, "[data-council-proposals]");
+    rec(
+        "picks: the fold unfolds to all six, P2 still first, still with no id in the text",
+        all.length === 6 && all[0] === "P2" && all[1] === "P1" && expanded === "true" && !/\bP\d+\b/.test(unfoldedColumn),
+        `${all.join(",")} | ${expanded}`
+    );
+    await h.shot("cdp-shots/council-discussion-picks.png");
 }
 
 // ---- round 1: the experts' cards ----
 
 async function round1(h, ctx, rec) {
     await openFixture(h, ctx, "round1");
-    await settledText(h, "[data-council-chip]", /^Round 1 of 3/);
+    await settledText(h, "[data-council-chip]", /^Step 1 of 3/);
 
     const cards = await h.ev(`[...document.querySelectorAll("[data-council-expert-card]")].map((c) => ({
         id: c.getAttribute("data-council-expert-card"),
@@ -211,12 +281,30 @@ async function round1(h, ctx, rec) {
 
     const arrived = await h.ev(`[...document.querySelectorAll("[data-council-arrived]")].map((e) => e.getAttribute("data-council-arrived"))`);
     const summarizeOff = await h.ev(`document.querySelector("[data-council-summarize]")?.disabled === true`);
+    const arrivedText = await h.ev(`[...document.querySelectorAll("[data-council-arrived]")].map((e) => (e.textContent ?? "")).join(" ")`);
+    const heading = await h.ev(`document.body.textContent.includes("Ideas so far")`);
     rec(
-        "round 1: `Proposals so far` lists P1, P2, P4, and Summarize is disabled",
-        arrived.join(",") === "P1,P2,P4" && summarizeOff,
-        `${arrived.join(",")} | summarize disabled: ${summarizeOff}`
+        "round 1: `Ideas so far` lists three ideas (ids in the hooks, none in the text), and Summarize is disabled",
+        arrived.join(",") === "P1,P2,P4" && summarizeOff && heading && !/\bP\d+\b/.test(arrivedText),
+        `${arrived.join(",")} | summarize disabled: ${summarizeOff} | ${arrivedText}`
     );
+    const words = await noRound(h, "[data-council-discussion]");
+    rec("round 1: no visible text holds the word `round`", words.ok, words.found);
     await h.shot("cdp-shots/council-discussion-round1.png");
+
+    // no idea yet: the empty state
+    await openFixture(h, ctx, "round1", {
+        id: `${councilFixtureId("round1")}-empty`,
+        edit: (c) => void (c.proposals = []),
+    });
+    const empty = await settledText(h, "[data-council-discussion] [data-council-expert-card] ~ div", /No ideas yet\./).catch(() => "");
+    const body = await text(h, "[data-council-discussion]");
+    const emptyWords = await noRound(h, "[data-council-discussion]");
+    rec(
+        "round 1: with no idea yet the body reads `No ideas yet.` and holds no `round`",
+        body.includes("No ideas yet.") && emptyWords.ok,
+        `${empty} | ${emptyWords.found}`
+    );
 }
 
 // ---- the pause ----
@@ -232,9 +320,18 @@ async function awaiting(h, ctx, rec) {
         tick: !!r.querySelector('input[type="checkbox"]')?.checked,
     }))`);
     rec(
-        "paused: the chip reads `Waiting on you`, with six proposals all ticked",
+        "paused: the chip reads `Waiting on you`, with six ideas all ticked",
         chip === "Waiting on you" && rows.length === 6 && rows.every((r) => r.kept && r.tick),
         `${chip} | ${rows.map((r) => r.id).join(",")}`
+    );
+
+    const pauseText = await text(h, "[data-council-pause]");
+    const pauseWords = await noRound(h, "[data-council-pause]");
+    const continueText = await text(h, "[data-council-continue]");
+    rec(
+        "paused: the panel reads `Ideas so far` and `Continue: let them argue`, with no proposal id and no `round`",
+        pauseText.includes("Ideas so far") && continueText === "Continue: let them argue" && !/\bP\d+\b/.test(pauseText) && pauseWords.ok,
+        `${continueText} | ${pauseWords.found}`
     );
 
     await click(h, '[data-council-pause-row="P6"] input');
@@ -246,11 +343,11 @@ async function awaiting(h, ctx, rec) {
 
     await typeInto(h, "[data-council-pause-ask]", PAUSE_QUESTION);
     const asked = await h.ev(`document.querySelector("[data-council-pause-ask]")?.value ?? null`);
-    const remaining = await settledText(h, "[data-council-remaining]", /Rounds 2 and 3/);
+    const remaining = await settledText(h, "[data-council-remaining]", /^The rest:/);
     const stopHere = await text(h, "[data-council-stop-here]");
     rec(
-        "paused: the question box takes a question, the line reads `Rounds 2 and 3: ≈ 5 calls · ~0.3M tokens`, Stop here is offered",
-        asked === PAUSE_QUESTION && remaining === "Rounds 2 and 3: ≈ 5 calls · ~0.3M tokens" && stopHere === "Stop here and keep round 1",
+        "paused: the question box takes a question, the line reads `The rest: ≈ 5 calls · ~0.3M tokens`, Stop here is offered",
+        asked === PAUSE_QUESTION && remaining === "The rest: ≈ 5 calls · ~0.3M tokens" && stopHere === "Stop here and keep these ideas",
         `${remaining} | ${stopHere}`
     );
     await h.shot("cdp-shots/council-discussion-paused.png");
@@ -261,7 +358,7 @@ async function awaiting(h, ctx, rec) {
     const calls = await rpcCalls(h, "CouncilContinueCommand");
     const data = calls[0]?.data;
     rec(
-        "paused: Continue to round 2 (stubbed) records CouncilContinueCommand with cut [P6] and the question",
+        "paused: Continue: let them argue (stubbed) records CouncilContinueCommand with cut [P6] and the question",
         calls.length === 1 && data?.id === id && JSON.stringify(data?.cut) === '["P6"]' && data?.question === PAUSE_QUESTION,
         calls
     );
@@ -269,7 +366,7 @@ async function awaiting(h, ctx, rec) {
 
 // ---- stopped at the pause ----
 
-// "Stop here and keep round 1" leaves the paused council stopped at round 1 with no summary: the runner summarizes it, so
+// "Stop here and keep these ideas" leaves the paused council stopped with no summary: the runner summarizes it, so
 // Summarize is its next step. It is the paused fixture with its state changed, under its own id.
 async function stopped(h, ctx, rec) {
     const id = await openFixture(h, ctx, "awaiting", {
@@ -280,7 +377,7 @@ async function stopped(h, ctx, rec) {
     const label = await text(h, "[data-council-summarize]");
     const on = await h.ev(`document.querySelector("[data-council-summarize]")?.disabled === false`);
     rec(
-        "stopped at round 1: the chip reads `Stopped` and Summarize is enabled",
+        "stopped at the pause: the chip reads `Stopped` and Summarize is enabled",
         chip === "Stopped" && label === "Summarize" && on,
         `${chip} | ${label} | enabled: ${on}`
     );
@@ -291,7 +388,7 @@ async function stopped(h, ctx, rec) {
     const opened = await until(h, `!!document.querySelector("[data-council-summary]")`);
     const calls = await rpcCalls(h, "CouncilSummarizeCommand");
     rec(
-        "stopped at round 1: Summarize (stubbed) records one CouncilSummarizeCommand and opens the Summary",
+        "stopped at the pause: Summarize (stubbed) records one CouncilSummarizeCommand and opens the Summary",
         calls.length === 1 && calls[0].data?.id === id && opened,
         { calls, opened }
     );
@@ -405,6 +502,7 @@ async function followUp(h, ctx, rec) {
 
 const PHASES = [
     ["round 2", round2],
+    ["picks", picks],
     ["round 1", round1],
     ["paused", awaiting],
     ["stopped", stopped],

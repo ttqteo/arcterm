@@ -166,6 +166,23 @@ describe("palette-needs: a plan to review", () => {
     });
 });
 
+describe("palette-needs: a council waiting on you", () => {
+    const council = { ...item("council", "council:c1"), oref: "council:c1" } as AttentionItem;
+    it("is a review, not a blocked item", () => {
+        const g = needsGroups(needsRows([council], []));
+        expect(g.map((x) => [x.group, x.rows.length])).toEqual([["reviews", 1]]);
+    });
+    it("lands on its council, from its council:<id> oref", () => {
+        expect(needsTarget(needsRows([council], [])[0])).toEqual({ kind: "council", councilId: "c1" });
+    });
+    it("lands nowhere when the oref is not a council's", () => {
+        const other = { ...council, oref: "effort:c1" } as AttentionItem;
+        expect(needsTarget(needsRows([other], [])[0])).toBeNull();
+        const bare = { ...council, oref: "council:" } as AttentionItem;
+        expect(needsTarget(needsRows([bare], [])[0])).toBeNull();
+    });
+});
+
 describe("palette-needs: a learned rule", () => {
     const learn = {
         ...item("learn-proposal", "learn:skill:notes#short"),

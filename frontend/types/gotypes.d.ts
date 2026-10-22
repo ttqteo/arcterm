@@ -2275,6 +2275,7 @@ declare global {
         error?: string;
         proposals?: CouncilProposal[];
         replies?: CouncilReply[];
+        picks?: {[key: string]: string[]};
         summary?: CouncilSummary;
         activity?: {[key: string]: CouncilActivity};
         failed?: {[key: string]: CouncilFailure};
@@ -2407,6 +2408,7 @@ declare global {
         text: string;
         directions: CouncilDirection[];
         outcomes: {[key: string]: string};
+        answer?: string;
         at: number;
     };
 

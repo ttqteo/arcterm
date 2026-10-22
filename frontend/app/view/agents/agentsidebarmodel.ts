@@ -313,15 +313,19 @@ export interface CouncilRowVM {
     created: number;
     meta: string;
     tone: CouncilTone;
+    /** it ended while the person was elsewhere and they have not opened it since (councilUnreadAtom) */
+    unread: boolean;
 }
 
 /** Pure: the councils (councilListAtom("")) as tree rows, by the registered project each one ran in. The folders of
  *  projectTree are keyed by project name and a council holds the project's path, so each is filed under the name whose
  *  root is the same path (councilProjectKey: separators, trailing slash and a drive path's case aside). A council of a
- *  folder that is no registered project has no folder to sit in and is left out. `null` is a list not loaded yet. */
+ *  folder that is no registered project has no folder to sit in and is left out. `null` is a list not loaded yet.
+ *  `unread` is the ids of the councils that ended unseen. */
 export function councilRowsByProject(
     councils: readonly Council[] | null | undefined,
-    roots: ReadonlyMap<string, string>
+    roots: ReadonlyMap<string, string>,
+    unread: ReadonlySet<string> = new Set()
 ): Map<string, CouncilRowVM[]> {
     const out = new Map<string, CouncilRowVM[]>();
     const nameOf = new Map<string, string>();
@@ -343,6 +347,7 @@ export function councilRowsByProject(
             created: c.created,
             meta: text,
             tone,
+            unread: unread.has(c.id),
         };
         const list = out.get(name);
         if (list == null) {

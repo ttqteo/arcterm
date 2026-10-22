@@ -900,6 +900,7 @@ describe("projectTree", () => {
             created,
             meta: "Done",
             tone: "muted",
+            unread: false,
             ...over,
         });
         // the council input of a project name -> councils object, over the roots the registry holds
@@ -1351,11 +1352,11 @@ describe("councilRowsByProject", () => {
             roots
         );
         expect(rows.get("loom")).toEqual([
-            { id: "run", feature: "feature run", created: 7, meta: "Round 2", tone: "working" },
-            { id: "ask", feature: "feature ask", created: 1000, meta: "Waiting on you", tone: "asking" },
-            { id: "done", feature: "feature done", created: 1000, meta: "Done", tone: "muted" },
-            { id: "nr", feature: "feature nr", created: 1000, meta: "Not run", tone: "muted" },
-            { id: "bad", feature: "feature bad", created: 1000, meta: "Failed", tone: "error" },
+            { id: "run", feature: "feature run", created: 7, meta: "Running", tone: "working", unread: false },
+            { id: "ask", feature: "feature ask", created: 1000, meta: "Waiting on you", tone: "asking", unread: false },
+            { id: "done", feature: "feature done", created: 1000, meta: "Done", tone: "muted", unread: false },
+            { id: "nr", feature: "feature nr", created: 1000, meta: "Not run", tone: "muted", unread: false },
+            { id: "bad", feature: "feature bad", created: 1000, meta: "Failed", tone: "error", unread: false },
         ]);
     });
 
@@ -1363,6 +1364,21 @@ describe("councilRowsByProject", () => {
         expect(councilRowsByProject([council("x", "/elsewhere")], roots).size).toBe(0);
         expect(councilRowsByProject(null, roots).size).toBe(0);
         expect(councilRowsByProject(undefined, roots).size).toBe(0);
+    });
+
+    it("marks the councils in the unread set, and keeps their meta", () => {
+        const rows = councilRowsByProject(
+            [
+                council("a", "/home/u/loom", { state: "done", round: 3 }),
+                council("b", "/home/u/loom", { state: "done", round: 3 }),
+            ],
+            roots,
+            new Set(["a"])
+        );
+        expect(rows.get("loom")?.map((r) => [r.id, r.unread, r.meta])).toEqual([
+            ["a", true, "Done"],
+            ["b", false, "Done"],
+        ]);
     });
 
     it("names a council whose feature is blank", () => {
@@ -1548,7 +1564,10 @@ describe("treeNavIds", () => {
                 ["loom", "/code/loom"],
             ]),
             councils: new Map([
-                ["waveterm", [{ id: "c1", feature: "f", created: 1, meta: "Done", tone: "muted" as const }]],
+                [
+                    "waveterm",
+                    [{ id: "c1", feature: "f", created: 1, meta: "Done", tone: "muted" as const, unread: false }],
+                ],
             ]),
             councilDrafts: new Set(["loom"]),
         });

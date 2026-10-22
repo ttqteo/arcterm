@@ -36,6 +36,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent's right-click menu has **Copy id** in place of Copy @mention: it copies the bare id, so pasting it to tell
   an agent about another one keeps the message with the agent you typed to, where a leading `@id` sent it away. Drag
   an agent onto a pane holding Alt still types its `@` token to message it.
+- A council that ends shows a toast and an unread dot on its row, and one waiting on you has an item in Needs you that
+  opens it.
+
+### Changed
+
+- A finished council opens on its answer: one sentence first, then the directions.
+- The council speaks in plain words (Agrees, Has doubts, Is against it) and ranks ideas by each expert's top three
+  picks; an expert who agrees without a comment shows as a reaction under the idea, not as a reply.
+- New council is one box: write what to review, and the options sit under it.
 
 ## 0.15.17 — 2026-10-21
 

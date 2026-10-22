@@ -18,7 +18,14 @@ import {
 } from "./agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
 import { emptyCouncilDraft } from "./councilmodel";
-import { councilSelAtom, councilSetupDraftAtom, councilSetupProjectAtom, councilViewAtom } from "./councilstore";
+import {
+    councilAtom,
+    councilListAtom,
+    councilSelAtom,
+    councilSetupDraftAtom,
+    councilSetupProjectAtom,
+    councilViewAtom,
+} from "./councilstore";
 
 // `member` seeds sessionsMemberAtom, so a test can tell a member that was left alone from one that was set
 const stub = (member = "lead") =>
@@ -124,6 +131,57 @@ describe("council openers", () => {
         showCouncil("c2", "summary");
         expect(globalStore.get(councilSelAtom)).toBe("c2");
         expect(globalStore.get(councilViewAtom)).toBe("summary");
+    });
+
+    describe("with no view", () => {
+        const done = (id: string, extra: Partial<Council> = {}): Council =>
+            ({
+                id,
+                project: "/work/a",
+                feature: "F",
+                experts: [],
+                state: "done",
+                round: 3,
+                summary: { text: "t", directions: [], outcomes: {}, at: 1 },
+                ...extra,
+            }) as Council;
+
+        beforeEach(() => {
+            globalStore.set(councilAtom("d1"), null);
+            globalStore.set(councilAtom("r1"), null);
+            globalStore.set(councilListAtom(""), null);
+        });
+
+        it("opens the report of a finished council it has by id", () => {
+            globalStore.set(councilAtom("d1"), done("d1"));
+            showCouncil("d1");
+            expect(globalStore.get(councilViewAtom)).toBe("summary");
+        });
+
+        it("opens the report of a finished council it only has in the list", () => {
+            globalStore.set(councilListAtom(""), [done("d1")]);
+            showCouncil("d1");
+            expect(globalStore.get(councilViewAtom)).toBe("summary");
+        });
+
+        it("opens the discussion of a running council, of a finished one with no summary, and of one it does not know", () => {
+            globalStore.set(councilListAtom(""), [
+                done("r1", { state: "running" }),
+                done("n1", { summary: undefined }),
+            ]);
+            showCouncil("r1");
+            expect(globalStore.get(councilViewAtom)).toBe("discussion");
+            showCouncil("n1");
+            expect(globalStore.get(councilViewAtom)).toBe("discussion");
+            showCouncil("nobody");
+            expect(globalStore.get(councilViewAtom)).toBe("discussion");
+        });
+
+        it("keeps the view it is told to open", () => {
+            globalStore.set(councilAtom("d1"), done("d1"));
+            showCouncil("d1", "discussion");
+            expect(globalStore.get(councilViewAtom)).toBe("discussion");
+        });
     });
 
     it("showCouncil leaves the surface alone without a model, and lands on Agent with one", () => {

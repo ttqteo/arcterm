@@ -2,17 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // What the council Discussion (councildiscussion.tsx, councilthread.tsx) draws beyond councilmodel.ts: an expert's colour
-// and initial, what it is doing (the avatar's hover and the round 1 cards), the pills on a reply, the lines under a post
-// and in the proposals column, who a composer says will answer, what the Summarize button does, and the pause's ticks.
+// and initial, what it is doing (the avatar's hover and the first step's cards), the pills on a reply, the reactions and
+// the lines under a post and in the ideas column, who a composer says will answer, what the Summarize button does, and
+// the pause's ticks. Every word here is the plain one (`STANCE_WORD`); the wire's stances, rounds and ids stay in the data.
 // Pure, no React, no Wave runtime imports, so every rule here has a test (councildiscussionmodel.test.ts).
 
 import {
+    STANCE_WORD,
     authorName,
     callSegments,
     costLine,
+    isReaction,
     latestStances,
     outdatedCount,
     panel,
+    pickCount,
+    readableReplies,
     replyLabel,
     type RankedProposal,
     type SegmentState,
@@ -21,6 +26,8 @@ import {
 const YOU = "you";
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+const PILL_STANCES: ReadonlySet<string> = new Set(["accept", "challenge", "oppose"]);
 
 // ---- who is who ----
 
@@ -89,9 +96,24 @@ export function isLit(c: Council, id: string): boolean {
 }
 
 const proposalsBy = (c: Council, id: string) => (c.proposals ?? []).filter((p) => p.author === id).length;
-const repliesBy = (c: Council, id: string) => (c.replies ?? []).filter((r) => r.author === id).length;
+const repliesBy = (c: Council, id: string) => readableReplies(c).filter((r) => r.author === id).length;
 
-/** Pure: what an avatar's hover says after the name (`Skeptic: Replying to UX on P2`): the tool or reply being written,
+/** Pure: where a failed call failed, in words: round 1 proposing, round 2 replying, round 3 writing the answer, later
+ *  ones the follow-up. */
+export function failedWhile(round: number): string {
+    switch (round) {
+        case 1:
+            return "Failed while proposing";
+        case 2:
+            return "Failed while replying";
+        case 3:
+            return "Failed while writing the answer";
+        default:
+            return round > 3 ? "Failed while answering" : "Failed";
+    }
+}
+
+/** Pure: what an avatar's hover says after the name (`Skeptic: Replying to UX`): the tool or reply being written,
  *  else where the expert stands. */
 export function expertDoing(c: Council, e: CouncilExpert): string {
     const act = c.state === "running" ? c.activity?.[e.id] : undefined;
@@ -100,32 +122,36 @@ export function expertDoing(c: Council, e: CouncilExpert): string {
     }
     const failure = c.failed?.[e.id];
     if (failure != null) {
-        return `Failed in round ${failure.round}`;
+        return failedWhile(failure.round);
     }
     if (e.coordinator) {
-        return c.summary != null ? "Wrote the summary" : c.state === "running" ? "Waits for round 3" : "No summary yet";
+        return c.summary != null
+            ? "Wrote the summary"
+            : c.state === "running"
+              ? "Waits for the answer"
+              : "No summary yet";
     }
     const replies = repliesBy(c, e.id);
     if (c.state === "running" && c.round <= 1) {
         return (c.stats?.[e.id]?.calls ?? 0) >= 1
-            ? `Round 1 done · ${plural(proposalsBy(c, e.id), "proposal", "proposals")}`
+            ? `Proposed · ${plural(proposalsBy(c, e.id), "idea", "ideas")}`
             : "Waits to start";
     }
     if (c.state === "running") {
-        return replies > 0 ? `Round 2 done · ${plural(replies, "reply", "replies")}` : "Round 2 done";
+        return replies > 0 ? `Replied · ${plural(replies, "reply", "replies")}` : "Replied";
     }
     const posts = [
-        proposalsBy(c, e.id) > 0 ? plural(proposalsBy(c, e.id), "proposal", "proposals") : "",
+        proposalsBy(c, e.id) > 0 ? plural(proposalsBy(c, e.id), "idea", "ideas") : "",
         replies > 0 ? plural(replies, "reply", "replies") : "",
     ].filter(Boolean);
     return posts.length > 0 ? posts.join(" · ") : "No posts";
 }
 
-/** How a round 1 expert card's dot reads: `working` green, `done` the green dimmed, `failed` red, `waiting` grey. */
+/** How a first-step expert card's dot reads: `working` green, `done` the green dimmed, `failed` red, `waiting` grey. */
 export type CardDot = "working" | "done" | "failed" | "waiting";
 
-/** Pure: a round 1 expert card's state line and its dot: the tool being used (`Grep "IdleSleep" in pkg/services`), then
- *  `Done · 2 proposals`, `Failed`, or why there is nothing yet. */
+/** Pure: a first-step expert card's state line and its dot: the tool being used (`Grep "IdleSleep" in pkg/services`),
+ *  then `Proposed · 2 ideas`, `Failed`, or why there is nothing yet. */
 export function expertCard(c: Council, e: CouncilExpert): { dot: CardDot; text: string } {
     const act = c.state === "running" ? c.activity?.[e.id] : undefined;
     if (act != null) {
@@ -137,7 +163,7 @@ export function expertCard(c: Council, e: CouncilExpert): { dot: CardDot; text: 
     }
     if ((c.stats?.[e.id]?.calls ?? 0) >= 1) {
         const n = proposalsBy(c, e.id);
-        return { dot: "done", text: n === 0 ? "Done · no proposals" : `Done · ${plural(n, "proposal", "proposals")}` };
+        return { dot: "done", text: n === 0 ? "Proposed · no ideas" : `Proposed · ${plural(n, "idea", "ideas")}` };
     }
     if (failure != null) {
         return { dot: "failed", text: "Failed" };
@@ -158,10 +184,10 @@ export function segmentSummary(segments: SegmentState[]): string {
 }
 
 /** Pure: the header's cost line (`7:20 · 19 replies · 0.55M tokens`), without the `0 replies` of a council that has had
- *  no discussion yet (round 1, the pause). */
+ *  no discussion yet (the experts' first step, the pause). */
 export function headerCost(c: Council, nowMs: number): string {
     const parts = costLine(c, nowMs).split(" · ");
-    return (c.replies ?? []).length === 0 ? parts.filter((p) => p !== "0 replies").join(" · ") : parts.join(" · ");
+    return readableReplies(c).length === 0 ? parts.filter((p) => p !== "0 replies").join(" · ") : parts.join(" · ");
 }
 
 /** Pure: the call bar's words for a council. */
@@ -192,8 +218,13 @@ export function evidenceChip(e: CouncilEvidence): { text: string; weak: boolean 
     return { text: `Weak · ${e.note || e.ref || "no evidence"}`, weak: true };
 }
 
-/** Pure: the post's score for a screen reader: `Score 1 so far: 2 accept, 1 oppose, 1 challenge`. */
+/** Pure: the post's ↑ for a screen reader and its hover: `Picked by 2 of 4 experts`; for a council with no picks (one
+ *  from before them) the old score, `Score 1 so far: 2 accept, 1 oppose, 1 challenge`. */
 export function scoreSummary(c: Council, proposalId: string): string {
+    const picked = pickCount(c, proposalId);
+    if (picked != null) {
+        return `Picked by ${picked} of ${panel(c).length} experts`;
+    }
     const stances = Object.values(latestStances(c)[proposalId] ?? {});
     const count = (s: string) => stances.filter((x) => x === s).length;
     const parts = (["accept", "oppose", "challenge"] as const)
@@ -205,9 +236,31 @@ export function scoreSummary(c: Council, proposalId: string): string {
         : `Score ${net}: no one has taken a stance yet`;
 }
 
+/** Pure: the reactions under a post, `Reader agrees` one per expert whose latest word on it is an accept with no text
+ *  (an expert that agreed and then spoke up is not one), in the order they came. */
+export function reactions(c: Council, proposalId: string): string[] {
+    const latest = new Map<string, CouncilReply>();
+    (c.replies ?? [])
+        .map((r, i) => ({ r, i }))
+        .sort((a, b) => a.r.ts - b.r.ts || a.i - b.i)
+        .forEach(({ r }) => {
+            if (r.proposalid === proposalId && r.author !== YOU && PILL_STANCES.has(r.stance ?? "")) {
+                latest.delete(r.author);
+                latest.set(r.author, r);
+            }
+        });
+    return [...latest.values()].filter(isReaction).map((r) => `${authorName(c, r.author)} agrees`);
+}
+
+/** Pure: how many of the ideas no expert picked, which the column folds under `n more with no picks`; 0 for a council
+ *  with no picks. */
+export function foldedCount(c: Council): number {
+    return (c.proposals ?? []).filter((p) => pickCount(c, p.id) === 0).length;
+}
+
 /** Pure: under the post: `5 replies · 1 from you`. */
 export function postFoot(c: Council, proposalId: string): string {
-    const replies = (c.replies ?? []).filter((r) => r.proposalid === proposalId);
+    const replies = readableReplies(c).filter((r) => r.proposalid === proposalId);
     if (replies.length === 0) {
         return "No replies yet";
     }
@@ -234,10 +287,8 @@ export interface ReplyPill {
     tone: PillTone;
 }
 
-const STANCE_WORD: Record<string, string> = { accept: "Accept", challenge: "Challenge", oppose: "Oppose" };
-
-/** Pure: the pills beside a reply's author: the stance and `Revised P2` for an expert's, the label of the person's own
- *  until it is answered (`Queued for round 2`); a reply with neither is a plain `Reply`. */
+/** Pure: the pills beside a reply's author: the stance (`Has doubts`) and `Revised` for an expert's, the label of the
+ *  person's own until it is answered (`Queued for the next step`); a reply with neither is a plain `Reply`. */
 export function replyPills(c: Council, r: CouncilReply): ReplyPill[] {
     if (r.author === YOU) {
         const label = replyLabel(c, r);
@@ -245,11 +296,11 @@ export function replyPills(c: Council, r: CouncilReply): ReplyPill[] {
     }
     const pills: ReplyPill[] = [];
     const stance = r.stance ?? "";
-    if (STANCE_WORD[stance] != null) {
-        pills.push({ word: STANCE_WORD[stance], tone: stance as PillTone });
+    if (PILL_STANCES.has(stance)) {
+        pills.push({ word: STANCE_WORD[stance as keyof typeof STANCE_WORD], tone: stance as PillTone });
     }
     if (r.revised) {
-        pills.push({ word: `Revised ${r.proposalid}`, tone: "neutral" });
+        pills.push({ word: "Revised", tone: "neutral" });
     }
     return pills.length > 0 ? pills : [{ word: "Reply", tone: "neutral" }];
 }
@@ -260,12 +311,12 @@ export function replyAddressees(c: Council, r: CouncilReply): string {
     return names.length === 0 ? "" : `For ${listNames(names)}`;
 }
 
-// ---- the proposals column ----
+// ---- the ideas column ----
 
-/** Pure: a proposal's second line in the column: `UX · P2 · 5 replies · 1 replying`, `Skeptic · P6 · withdrawn`. */
+/** Pure: a proposal's second line in the column: `UX · 5 replies · 1 replying`, `Skeptic · withdrawn`. */
 export function proposalLine(c: Council, row: RankedProposal): string {
     const p = row.proposal;
-    const parts = [authorName(c, p.author), p.id];
+    const parts = [authorName(c, p.author)];
     parts.push(p.withdrawn ? "withdrawn" : p.cut ? "cut at the pause" : plural(row.replies, "reply", "replies"));
     if (row.replying > 0) {
         parts.push(`${row.replying} replying`);
@@ -290,13 +341,15 @@ export function isFollowUp(c: Council): boolean {
 }
 
 /** Pure: what the composer says of who answers and when, for a council that is not over (a follow-up's is
- *  `followupLabel`): `UX and RAM answer it in round 2`. */
+ *  `followupLabel`): `UX and RAM answer it while the experts argue`. */
 export function composerHint(c: Council, who: CouncilExpert[]): string {
     if (who.length === 0) {
         return "Name an expert with @ to choose who answers";
     }
     const when =
-        c.state === "awaiting-you" || (c.state === "running" && c.round <= 1) ? "in round 2" : "after the summary";
+        c.state === "awaiting-you" || (c.state === "running" && c.round <= 1)
+            ? "while the experts argue"
+            : "after the summary";
     return `${listNames(who.map((e) => e.name))} ${who.length === 1 ? "answers" : "answer"} it ${when}`;
 }
 
@@ -356,7 +409,7 @@ export function toggleCut(cut: readonly string[], id: string): string[] {
     return cut.includes(id) ? cut.filter((x) => x !== id) : [...cut, id];
 }
 
-/** Pure: whether the pause can go on: round 2 needs a proposal to review. */
+/** Pure: whether the pause can go on: the argument needs an idea to review. */
 export function canContinue(c: Council, cut: readonly string[]): boolean {
     return keptProposals(c, cut).length > 0;
 }

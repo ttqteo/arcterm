@@ -20,6 +20,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/agentask"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
+	"github.com/wavetermdev/waveterm/pkg/council"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/learn"
 	"github.com/wavetermdev/waveterm/pkg/runqueue"
@@ -55,6 +56,9 @@ const (
 	// a correction the user made in two sessions, proposed as a line for a skill or a Claude memory: it names
 	// the proposal through LearnID, which the card's Accept, Edit and Dismiss decide.
 	AttentionLearnProposal = "learn-proposal"
+	// a council paused after step 1 for the person's cuts and questions: it names no channel either, so it
+	// addresses the council through ORef (council:<id>) and opens on its Discussion, where Continue is pressed
+	AttentionCouncil = "council"
 )
 
 // mirrors orchestrate.TaskState_* and the two RadarReport/RadarFinding vocabularies, spelled here
@@ -103,6 +107,8 @@ type AttentionInput struct {
 	Queue []wshrpc.RunQueueEntry
 	// Learn are the pending learned-addition proposals, oldest first as learn.Store.Pending returns them.
 	Learn []learn.Proposal
+	// Councils are every council; only the ones awaiting the person make an item.
+	Councils []*council.Council
 }
 
 // runForWorker finds the run whose phases claim this worker tab oref.
@@ -417,7 +423,8 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	plans := planReviewItems(in.Efforts)
 	queued := queueBlockedItems(in.Queue)
 	learned := learnItems(in.Learn)
-	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, queued, plans, triage, unverified, due, learned} {
+	councils := councilItems(in.Councils)
+	for _, group := range [][]wshrpc.AttentionItem{gates, escalations, asks, queued, plans, triage, unverified, due, learned, councils} {
 		g := group
 		sort.SliceStable(g, func(i, j int) bool {
 			if g[i].WaitingSince != g[j].WaitingSince {
@@ -427,7 +434,7 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 		})
 	}
 
-	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(queued)+len(plans)+len(triage)+len(unverified)+len(due)+len(learned))
+	out := make([]wshrpc.AttentionItem, 0, len(gates)+len(escalations)+len(asks)+len(queued)+len(plans)+len(triage)+len(unverified)+len(due)+len(learned)+len(councils))
 	out = append(out, gates...)
 	out = append(out, escalations...)
 	out = append(out, asks...)
@@ -445,6 +452,28 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 	out = append(out, due...)
 	// a proposal is a suggestion: nothing is stopped or late if it waits
 	out = append(out, learned...)
+	// a paused council holds nothing running, but its experts' step 1 sits unread until the person continues
+	out = append(out, councils...)
+	return out
+}
+
+// councilItems are the councils paused at the pause after step 1, one row each. A council in any other state
+// makes none, so one resolved elsewhere (Continue pressed in the app) leaves on the next refresh.
+func councilItems(councils []*council.Council) []wshrpc.AttentionItem {
+	var out []wshrpc.AttentionItem
+	for _, c := range councils {
+		if c == nil || c.State != council.StateAwaiting {
+			continue
+		}
+		out = append(out, wshrpc.AttentionItem{
+			Kind:         AttentionCouncil,
+			Key:          "council:" + c.Id,
+			ORef:         "council:" + c.Id,
+			Text:         "Council waiting on you: " + c.Feature,
+			Action:       "Open",
+			WaitingSince: c.Updated,
+		})
+	}
 	return out
 }
 
@@ -974,6 +1003,12 @@ func GatherAttentionFromLedger(ctx context.Context, chans []*waveobj.Channel, ru
 		log.Printf("jarvis attention: learn proposals unreadable, learn rows omitted: %v", lerr)
 	} else {
 		in.Learn = proposals
+	}
+	// and for councils: an unreadable folder means no council rows, logged
+	if councils, cerr := council.List(""); cerr != nil {
+		log.Printf("jarvis attention: councils unreadable, council rows omitted: %v", cerr)
+	} else {
+		in.Councils = councils
 	}
 	queue, qerr := runqueue.List()
 	if qerr != nil {

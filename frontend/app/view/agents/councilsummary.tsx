@@ -1,11 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The council Summary (docs/superpowers/specs/2026-10-21-council-design.md, board Summary.dc.html): the coordinator's
-// paragraph, the directions ranked (a row opens to the coordinator's reasoning and each expert's position), and the
-// matrix of every proposal against every expert. Opened by Summarize on the Discussion, with a breadcrumb back to it.
+// The council report (docs/superpowers/specs/2026-10-22-council-agent-team-design.md "UI", board ReportDone.dc.html): what
+// was asked, the answer in one bold sentence, the coordinator's text under it, the directions ranked (a row opens to the
+// coordinator's reasoning and each expert's position), and the matrix of every idea against every expert, folded at the
+// bottom. A finished council opens on it; Summarize on the Discussion opens it too, and Show the discussion goes back.
 // What it derives from the council is councilsummarymodel.ts (and councilmodel.ts); what it hands on is a saved doc,
-// an initiative, a Setup draft to run again, the Discussion on one direction's thread, and a new agent to brainstorm in.
+// an initiative, a Setup draft to run again, the Discussion on one direction's thread, and a new agent started on it.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -16,12 +17,20 @@ import { openTarget } from "@/app/view/jarvis/openref";
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
-import { Check, ChevronDown, ChevronLeft, ChevronUp, Code, Loader2, TriangleAlert } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { Check, ChevronDown, ChevronUp, Code, Ellipsis, Loader2, TriangleAlert } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { showCouncil, showCouncilSetup } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { avatarTone } from "./councildiscussionmodel";
-import { draftFromCouncil, matrixRows, outdatedCount, panel, summaryChip, type StanceLabel } from "./councilmodel";
+import {
+    STANCE_WORD,
+    draftFromCouncil,
+    matrixRows,
+    outdatedCount,
+    panel,
+    summaryChip,
+    type StanceLabel,
+} from "./councilmodel";
 import {
     councilOpenProposalAtom,
     councilSelAtom,
@@ -31,15 +40,17 @@ import {
     useCouncil,
 } from "./councilstore";
 import {
+    answerParts,
+    askedLine,
     brainstormPrompt,
     canRunSummary,
     directionRows,
     docPathLabel,
     evidenceLabel,
     initiativeSeed,
+    outcomeLabel,
     outdatedLabel,
     projectNameOf,
-    STANCE_WORD,
     writtenLine,
     type DirectionRow,
     type Position,
@@ -50,6 +61,7 @@ import { projectListAtom } from "./projectsstore";
 
 // what the Summary keeps for a council while the person is elsewhere (the Agent surface stays mounted, this view does not)
 const openDirectionsAtom = atomFamily((_id: string) => atom<number[]>([]) as PrimitiveAtom<number[]>);
+const matrixOpenAtom = atomFamily((_id: string) => atom<boolean>(false) as PrimitiveAtom<boolean>);
 const savedDocAtom = atomFamily((_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>);
 interface MadeInitiative {
     oid: string;
@@ -70,10 +82,6 @@ const STANCE_PILL: Record<StanceLabel, string> = {
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 const BUTTON = cn(
     "flex h-[28px] flex-none cursor-pointer items-center rounded-md border border-edge-mid bg-surface-raised px-3 text-[12px] text-secondary hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50 disabled:hover:border-edge-mid disabled:hover:bg-surface-raised",
-    FOCUS
-);
-const GHOST = cn(
-    "flex h-[28px] flex-none cursor-pointer items-center rounded-md px-[10px] text-[12px] text-muted hover:bg-surface-hover hover:text-secondary",
     FOCUS
 );
 const PRIMARY = cn(
@@ -237,7 +245,9 @@ function DirectionCard({
                     data-council-tag
                     className={cn(
                         "flex-none rounded-full px-2 py-[2px] text-[10.5px] font-semibold",
-                        row.tag === "Agreed" ? "bg-success/12 text-success-soft" : "bg-askingbg text-warning-soft"
+                        row.tag === "Everyone agrees"
+                            ? "bg-success/12 text-success-soft"
+                            : "bg-askingbg text-warning-soft"
                     )}
                 >
                     {row.tag}
@@ -272,7 +282,7 @@ function DirectionCard({
                             className={PRIMARY}
                         >
                             {busy ? <Loader2 size={12} aria-hidden className="mr-[6px] animate-spin" /> : null}
-                            Brainstorm this
+                            Start an agent on it
                         </button>
                         <button type="button" data-council-action="ask-again" onClick={onAskAgain} className={BUTTON}>
                             Ask the experts again
@@ -295,114 +305,210 @@ function citedRefs(p: CouncilProposal): string {
     return refs.length > 0 ? refs.join(", ") : "cites no evidence";
 }
 
+// the report's bottom: every idea against every expert, folded (the open state is kept per council)
 function Matrix({ c }: { c: Council }) {
+    const [open, setOpen] = useAtom(matrixOpenAtom(c.id));
     const rows = useMemo(() => matrixRows(c), [c]);
     const experts = panel(c);
+    const bodyId = "council-matrix-body";
     return (
         <section id="council-matrix" data-council-matrix className="flex flex-col gap-[10px]">
-            <div className="flex items-center gap-[10px]">
-                <h2 className="m-0 text-[10.5px] font-bold uppercase tracking-[.1em] text-muted">Matrix</h2>
-                <span className="text-[11.5px] text-muted">
-                    every proposal, every expert's stance at the end of round 2
-                </span>
-                <div className="h-px flex-1 bg-edge-faint" />
-            </div>
-            <div className="overflow-x-auto rounded-[10px] border border-border">
-                <table className="w-full table-fixed border-collapse text-left">
-                    <colgroup>
-                        <col className="w-[26%]" />
-                        {experts.map((e) => (
-                            <col key={e.id} />
-                        ))}
-                        <col className="w-[150px]" />
-                    </colgroup>
-                    <thead className="bg-surface">
-                        <tr>
-                            <th
-                                scope="col"
-                                className="px-3 py-[9px] text-[10.5px] font-bold uppercase tracking-[.1em] text-muted"
-                            >
-                                Proposal
-                            </th>
+            <button
+                type="button"
+                data-council-matrix-toggle
+                aria-expanded={open}
+                aria-controls={open ? bodyId : undefined}
+                onClick={() => setOpen(!open)}
+                className={cn(
+                    "flex w-fit cursor-pointer items-center gap-[8px] rounded-[6px] py-[3px] pr-[6px] text-left text-[12.5px] font-semibold text-secondary hover:text-primary",
+                    FOCUS
+                )}
+            >
+                {open ? (
+                    <ChevronUp size={14} aria-hidden className="flex-none text-muted" />
+                ) : (
+                    <ChevronDown size={14} aria-hidden className="flex-none text-muted" />
+                )}
+                Every expert on every idea
+                <span className="text-[11.5px] font-normal text-muted">where each expert ended up on each idea</span>
+            </button>
+            {open ? (
+                <div id={bodyId} className="overflow-x-auto rounded-[10px] border border-border">
+                    <table className="w-full table-fixed border-collapse text-left">
+                        <colgroup>
+                            <col className="w-[26%]" />
                             {experts.map((e) => (
-                                <th
-                                    key={e.id}
-                                    scope="col"
-                                    className="px-[10px] py-[9px] text-[12px] font-semibold text-primary"
-                                >
-                                    <span className="flex items-center gap-[6px]">
-                                        <Avatar c={c} id={e.id} name={e.name} small />
-                                        {e.name}
-                                    </span>
-                                </th>
+                                <col key={e.id} />
                             ))}
-                            <th
-                                scope="col"
-                                className="px-[10px] py-[9px] text-[10.5px] font-bold uppercase tracking-[.1em] text-muted"
-                            >
-                                Outcome
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {rows.map((row) => {
-                            const out = row.proposal.withdrawn || row.proposal.cut;
-                            return (
-                                <tr
-                                    key={row.proposal.id}
-                                    data-council-matrix-row={row.proposal.id}
-                                    className="border-t border-border align-top"
+                            <col className="w-[150px]" />
+                        </colgroup>
+                        <thead className="bg-surface">
+                            <tr>
+                                <th
+                                    scope="col"
+                                    className="px-3 py-[9px] text-[10.5px] font-bold uppercase tracking-[.1em] text-muted"
                                 >
-                                    <td className="min-w-0 px-3 py-[11px]">
-                                        <div className="flex items-baseline gap-2">
-                                            <span className="text-[11px] font-bold text-muted">{row.proposal.id}</span>
-                                            <span
+                                    Idea
+                                </th>
+                                {experts.map((e) => (
+                                    <th
+                                        key={e.id}
+                                        scope="col"
+                                        className="px-[10px] py-[9px] text-[12px] font-semibold text-primary"
+                                    >
+                                        <span className="flex items-center gap-[6px]">
+                                            <Avatar c={c} id={e.id} name={e.name} small />
+                                            {e.name}
+                                        </span>
+                                    </th>
+                                ))}
+                                <th
+                                    scope="col"
+                                    className="px-[10px] py-[9px] text-[10.5px] font-bold uppercase tracking-[.1em] text-muted"
+                                >
+                                    Outcome
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map((row) => {
+                                const out = row.proposal.withdrawn || row.proposal.cut;
+                                return (
+                                    <tr
+                                        key={row.proposal.id}
+                                        data-council-matrix-row={row.proposal.id}
+                                        className="border-t border-border align-top"
+                                    >
+                                        <td className="min-w-0 px-3 py-[11px]">
+                                            <div
                                                 className={cn(
                                                     "text-[12.5px] font-semibold",
                                                     out ? "text-muted" : "text-primary"
                                                 )}
                                             >
                                                 {row.proposal.title}
-                                            </span>
-                                        </div>
-                                        <div className="mt-1 text-[11px] text-muted">{citedRefs(row.proposal)}</div>
-                                    </td>
-                                    {row.cells.map((cell) => (
-                                        <td
-                                            key={cell.expert.id}
-                                            data-council-matrix-cell={cell.expert.id}
-                                            className="min-w-0 border-l border-edge-faint px-[10px] py-[11px]"
-                                        >
-                                            {cell.stance !== "" ? (
-                                                <div className="flex flex-col gap-[5px]">
-                                                    <StancePill stance={cell.stance} />
-                                                    {cell.reason !== "" ? (
-                                                        <span className="break-words text-[11.5px] leading-[1.4] text-secondary">
-                                                            {cell.reason}
-                                                        </span>
-                                                    ) : null}
-                                                </div>
-                                            ) : (
-                                                <span className="text-[11.5px] text-ink-faint">No stance</span>
-                                            )}
+                                            </div>
+                                            <div className="mt-1 text-[11px] text-muted">{citedRefs(row.proposal)}</div>
                                         </td>
-                                    ))}
-                                    <td
-                                        data-council-matrix-outcome
-                                        className={cn(
-                                            "border-l border-edge-faint px-[10px] py-[11px] text-[11.5px]",
-                                            out ? "text-muted" : "text-primary"
-                                        )}
-                                    >
-                                        {row.outcome || "—"}
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </div>
+                                        {row.cells.map((cell) => (
+                                            <td
+                                                key={cell.expert.id}
+                                                data-council-matrix-cell={cell.expert.id}
+                                                className="min-w-0 border-l border-edge-faint px-[10px] py-[11px]"
+                                            >
+                                                {cell.stance !== "" ? (
+                                                    <div className="flex flex-col gap-[5px]">
+                                                        <StancePill stance={cell.stance} />
+                                                        {cell.reason !== "" ? (
+                                                            <span className="break-words text-[11.5px] leading-[1.4] text-secondary">
+                                                                {cell.reason}
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-[11.5px] text-ink-faint">No view</span>
+                                                )}
+                                            </td>
+                                        ))}
+                                        <td
+                                            data-council-matrix-outcome
+                                            className={cn(
+                                                "border-l border-edge-faint px-[10px] py-[11px] text-[11.5px]",
+                                                out ? "text-muted" : "text-primary"
+                                            )}
+                                        >
+                                            {outcomeLabel(row.outcome) || "—"}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            ) : null}
         </section>
+    );
+}
+
+// The report's less-used actions behind a `⋯`: Save as doc, Create initiative, Run again. Arrow keys move through them,
+// Escape closes and gives the focus back, a click outside closes.
+function ActionsMenu({ items }: { items: { id: string; label: string; disabled?: boolean; onPick: () => void }[] }) {
+    const [open, setOpen] = useState(false);
+    const wrap = useRef<HTMLDivElement>(null);
+    const trigger = useRef<HTMLButtonElement>(null);
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        const onDown = (e: MouseEvent) => {
+            if (!wrap.current?.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", onDown, true);
+        wrap.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+        return () => document.removeEventListener("mousedown", onDown, true);
+    }, [open]);
+    const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (!open) {
+            return;
+        }
+        if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen(false);
+            trigger.current?.focus();
+        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            const els = Array.from(
+                wrap.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []
+            );
+            if (els.length > 0) {
+                const at = els.indexOf(document.activeElement as HTMLElement);
+                els[(at + (e.key === "ArrowDown" ? 1 : -1) + els.length) % els.length].focus();
+            }
+        }
+    };
+    return (
+        <div ref={wrap} onKeyDown={onKeyDown} className="relative flex-none">
+            <button
+                ref={trigger}
+                type="button"
+                data-council-menu
+                aria-haspopup="menu"
+                aria-expanded={open}
+                aria-label="More actions"
+                onClick={() => setOpen((o) => !o)}
+                className={cn(BUTTON, "w-[28px] justify-center px-0")}
+            >
+                <Ellipsis size={14} aria-hidden />
+            </button>
+            {open ? (
+                <div
+                    role="menu"
+                    aria-label="More actions"
+                    className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[190px] rounded-[10px] border border-edge-mid bg-surface-raised p-[4px] shadow-popover-md"
+                >
+                    {items.map((item) => (
+                        <button
+                            key={item.id}
+                            type="button"
+                            role="menuitem"
+                            data-council-action={item.id}
+                            disabled={item.disabled}
+                            onClick={() => {
+                                setOpen(false);
+                                trigger.current?.focus();
+                                item.onPick();
+                            }}
+                            className="flex h-[28px] w-full cursor-pointer items-center rounded-[6px] border-0 bg-transparent px-[8px] text-left text-[12px] text-primary outline-none hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
+                        >
+                            {item.label}
+                        </button>
+                    ))}
+                </div>
+            ) : null}
+        </div>
     );
 }
 
@@ -600,93 +706,63 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
 
     const toggle = (rank: number) => setOpen(open.includes(rank) ? open.filter((r) => r !== rank) : [...open, rank]);
 
-    const jumpToMatrix = () => document.getElementById("council-matrix")?.scrollIntoView({ block: "start" });
-
     const written = writtenLine(c);
+    const asked = askedLine(c);
+    const { answer, rest } = answerParts(c);
     return (
         <>
             <header className="flex flex-none flex-col gap-3 border-b border-edge-faint px-8 pb-[14px] pt-[18px]">
                 <div className="flex flex-wrap items-center gap-x-[10px] gap-y-2">
-                    <button
-                        type="button"
-                        data-council-back
-                        onClick={() => showCouncil(c.id, "discussion")}
-                        className={cn(
-                            "-ml-1 flex h-[28px] cursor-pointer items-center gap-1 rounded-md pl-1 pr-2 text-[12px] text-secondary hover:bg-surface-hover",
-                            FOCUS
-                        )}
-                    >
-                        <ChevronLeft size={14} aria-hidden />
-                        Discussion
-                    </button>
-                    <span aria-hidden className="text-ink-faint">
-                        /
-                    </span>
                     <h1 className="m-0 min-w-0 text-[15px] font-semibold tracking-[-0.01em] text-primary">
-                        Summary · {c.feature}
+                        Council · {c.feature}
                     </h1>
                     <StateChip model={model} c={c} />
                     <div className="flex-1" />
                     <button
                         type="button"
-                        data-council-action="save-doc"
-                        disabled={summary == null || busy === "doc"}
-                        onClick={() => void saveDoc()}
+                        data-council-action="discussion"
+                        onClick={() => showCouncil(c.id, "discussion")}
                         className={BUTTON}
                     >
-                        Save as doc
+                        Show the discussion
                     </button>
-                    <button
-                        type="button"
-                        data-council-action="initiative"
-                        disabled={
-                            summary == null || directions.length === 0 || busy === "initiative" || initiative != null
-                        }
-                        onClick={() => void createInitiative()}
-                        className={BUTTON}
-                    >
-                        Create initiative
-                    </button>
-                    <button
-                        type="button"
-                        data-council-action="run-again"
-                        onClick={() => showCouncilSetup(c.project, draftFromCouncil(c))}
-                        className={GHOST}
-                    >
-                        Run again
-                    </button>
+                    <ActionsMenu
+                        items={[
+                            {
+                                id: "save-doc",
+                                label: "Save as doc",
+                                disabled: summary == null || busy === "doc",
+                                onPick: () => void saveDoc(),
+                            },
+                            {
+                                id: "initiative",
+                                label: "Create initiative",
+                                disabled:
+                                    summary == null ||
+                                    directions.length === 0 ||
+                                    busy === "initiative" ||
+                                    initiative != null,
+                                onPick: () => void createInitiative(),
+                            },
+                            {
+                                id: "run-again",
+                                label: "Run again",
+                                onPick: () => showCouncilSetup(c.project, draftFromCouncil(c)),
+                            },
+                        ]}
+                    />
                 </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    {written !== "" ? (
-                        <span data-council-written className="text-[11.5px] text-muted">
-                            {written}
-                        </span>
-                    ) : null}
-                    {summary != null ? (
-                        <button
-                            type="button"
-                            data-council-jump
-                            onClick={jumpToMatrix}
-                            className={cn(
-                                "cursor-pointer rounded-[4px] text-[11.5px] text-accent hover:text-accenthover",
-                                FOCUS
-                            )}
+                <div className="flex flex-wrap items-center gap-[6px]">
+                    {c.experts.map((e) => (
+                        <span
+                            key={e.id}
+                            data-council-expert={e.id}
+                            className="flex items-center gap-[6px] rounded-full bg-surface py-[3px] pl-[3px] pr-[9px] text-[11px] text-secondary"
                         >
-                            Jump to the matrix
-                        </button>
-                    ) : null}
-                    <div className="flex flex-wrap items-center gap-[6px]">
-                        {c.experts.map((e) => (
-                            <span
-                                key={e.id}
-                                data-council-expert={e.id}
-                                className="flex items-center gap-[6px] rounded-full bg-surface py-[3px] pl-[3px] pr-[9px] text-[11px] text-secondary"
-                            >
-                                <Avatar c={c} id={e.id} name={e.name} small />
-                                {e.name} <span className="text-muted">{e.model}</span>
-                            </span>
-                        ))}
-                    </div>
+                            <Avatar c={c} id={e.id} name={e.name} small />
+                            {e.name} <span className="text-muted">{e.model}</span>
+                        </span>
+                    ))}
                 </div>
                 {savedDoc != null || initiative != null || error != null ? (
                     <div className="flex flex-col gap-1 text-[11.5px]">
@@ -766,13 +842,31 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                 ) : (
                     <div className="flex flex-col gap-[30px]">
                         <div className="flex max-w-[900px] flex-col gap-[10px]">
-                            {summary.text !== "" ? (
+                            {asked !== "" ? (
+                                <span data-council-asked className="text-[12px] text-muted">
+                                    {asked}
+                                </span>
+                            ) : null}
+                            {answer !== "" ? (
+                                <p
+                                    data-council-answer
+                                    className="m-0 whitespace-pre-wrap text-[17px] font-semibold leading-[1.4] tracking-[-0.01em] text-primary"
+                                >
+                                    {answer}
+                                </p>
+                            ) : null}
+                            {rest !== "" ? (
                                 <p
                                     data-council-summary-text
-                                    className="m-0 mb-[6px] whitespace-pre-wrap text-[13.5px] leading-[1.55] text-ink-hi"
+                                    className="m-0 whitespace-pre-wrap text-[13.5px] leading-[1.55] text-ink-hi"
                                 >
-                                    {summary.text}
+                                    {rest}
                                 </p>
+                            ) : null}
+                            {written !== "" ? (
+                                <span data-council-written className="mb-[6px] text-[11.5px] text-muted">
+                                    {written}
+                                </span>
                             ) : null}
                             {directions.map((row) => (
                                 <DirectionCard

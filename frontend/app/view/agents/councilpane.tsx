@@ -3,7 +3,7 @@
 //
 // The council centre mode of the Agent surface (agentcenter.ts "council"): the Discussion, the Summary or Setup, whichever
 // councilViewAtom names. Thin: each view reads its own council (or the project's draft) from councilstore.ts. The
-// Summary takes the model: Brainstorm this opens an agent through launchAgent.
+// Summary takes the model: Start an agent on it opens an agent through launchAgent.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { useAtomValue } from "jotai";

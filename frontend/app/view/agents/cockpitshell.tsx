@@ -17,6 +17,7 @@ import { AppFrames } from "./apppane";
 import { AppSurface } from "./appsurface";
 import { primeChannels } from "./channelsstore";
 import { CockpitSurface } from "./cockpitsurface";
+import { CouncilNotifySync } from "./councilnotifysync";
 import { useDockBadge } from "./dockbadgesync";
 import { useDocCompileSync } from "./docpdfstore";
 import { DocReviewDialog } from "./docreviewdialog";
@@ -186,6 +187,8 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
             <ToolPicker model={model} />
             {/* a turn can end or an ask can land while any surface shows */}
             <NotifySync model={model} />
+            {/* a council can end while any surface shows */}
+            <CouncilNotifySync model={model} />
             {/* a scan can finish while any surface shows */}
             <StorageNudge model={model} />
             {/* the menu bar / tray icon's count and its popover's feed: what waits can change while any surface shows */}

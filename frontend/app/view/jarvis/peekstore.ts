@@ -12,7 +12,10 @@ import type { OpenTarget } from "./address";
 import { bubbleRowKey } from "./petpeekmodel";
 import { petBubbleAtom, petPeekOpenAtom, petUnreadAtom } from "./petstore";
 
-export type PeekTarget = Exclude<OpenTarget, { kind: "channel" } | { kind: "canvas" } | { kind: "memhygiene" }>;
+export type PeekTarget = Exclude<
+    OpenTarget,
+    { kind: "channel" } | { kind: "canvas" } | { kind: "memhygiene" } | { kind: "council" }
+>;
 
 export type PeekItem = { target: PeekTarget; status: "loading" | "ready" };
 

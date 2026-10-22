@@ -1,17 +1,17 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The council Discussion's thread (Main.dc.html): the open proposal as a post with its score, and the replies under it,
+// The council Discussion's thread (Main.dc.html): the open proposal as a post with its picks, and the replies under it,
 // nested with thread lines, each with its stance and a Reply button; an expert writing a reply shows as a dashed row; the
 // person's own replies are tinted and labelled until they are answered. The composer is here too: it says who answers a
 // reply (and on a council that is over, what the follow-up costs, with the Let them read code toggle), so a post, a reply
-// and Ask the whole council share it. Every part carries a data-council-* attribute for the CDP scenario
-// `council-discussion`. The rules are in councildiscussionmodel.ts and councilmodel.ts.
+// and Ask the whole council share it. An expert's agreement with nothing to add is a green reaction under the post, not
+// a reply row. Every part carries a data-council-* attribute for the CDP scenario `council-discussion`. The rules are in councildiscussionmodel.ts and councilmodel.ts.
 
 import { cn } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
-import { ArrowBigDown, ArrowBigUp } from "lucide-react";
+import { ArrowBigDown, ArrowBigUp, Check } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
     avatarTone,
@@ -20,6 +20,7 @@ import {
     initialOf,
     isFollowUp,
     postFoot,
+    reactions,
     replyAddressees,
     replyPills,
     scoreSummary,
@@ -33,6 +34,7 @@ import {
     authorName,
     flattenThread,
     followupLabel,
+    pickCount,
     score,
     threadTree,
     type ThreadNode,
@@ -330,7 +332,8 @@ export function CouncilComposer({
 const ghostButton =
     "h-[24px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[8px] text-[11.5px] font-semibold text-secondary outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent";
 
-/** The open proposal as a post: its score, author, round and time, argument and evidence, with a Reply. */
+/** The open proposal as a post: its ↑ (the experts that picked it; an old council with no picks, its score), author and
+ *  time, argument, evidence and reactions, with a Reply. */
 export function ProposalPost({
     c,
     proposal,
@@ -344,8 +347,10 @@ export function ProposalPost({
 }) {
     const author = c.experts.find((e) => e.id === proposal.author);
     const tone = avatarTone(c, proposal.author);
-    const net = score(c, proposal.id);
+    const picked = pickCount(c, proposal.id);
+    const net = picked ?? score(c, proposal.id);
     const out = proposal.withdrawn || proposal.cut;
+    const agrees = reactions(c, proposal.id);
     return (
         <article
             data-council-post={proposal.id}
@@ -357,6 +362,7 @@ export function ProposalPost({
             <div
                 role="img"
                 aria-label={scoreSummary(c, proposal.id)}
+                title={scoreSummary(c, proposal.id)}
                 className="flex w-[34px] flex-none flex-col items-center gap-[2px]"
             >
                 <ArrowBigUp size={16} strokeWidth={2.2} className={net > 0 ? "text-success-soft" : "text-muted"} />
@@ -366,17 +372,16 @@ export function ProposalPost({
                 >
                     {net}
                 </span>
-                <ArrowBigDown size={16} strokeWidth={2.2} className={net < 0 ? "text-error-soft" : "text-muted"} />
+                {picked == null && (
+                    <ArrowBigDown size={16} strokeWidth={2.2} className={net < 0 ? "text-error-soft" : "text-muted"} />
+                )}
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-[7px]">
                 <div className="flex flex-wrap items-center gap-[7px] text-[11.5px] text-muted">
                     <CouncilAvatar tone={tone} name={authorName(c, proposal.author)} small />
                     <span className={cn("font-semibold", TONE_TEXT[tone])}>{authorName(c, proposal.author)}</span>
                     <span className="tabular-nums">
-                        {[author?.model, "round 1", sinceStart(c, proposal.ts)].filter(Boolean).join(" · ")}
-                    </span>
-                    <span className="rounded-full bg-pill px-[7px] py-px font-semibold text-secondary">
-                        {proposal.id}
+                        {[author?.model, sinceStart(c, proposal.ts)].filter(Boolean).join(" · ")}
                     </span>
                     {proposal.withdrawn && (
                         <span className="rounded-full bg-askingbg px-[7px] py-px font-semibold text-warning-soft">
@@ -396,6 +401,20 @@ export function ProposalPost({
                     {proposal.argument}
                 </p>
                 <EvidenceChips evidence={proposal.evidence} />
+                {agrees.length > 0 && (
+                    <div className="flex flex-wrap gap-[6px]">
+                        {agrees.map((text, i) => (
+                            <span
+                                key={i}
+                                data-council-reaction
+                                className="inline-flex items-center gap-[5px] rounded-full bg-success/12 px-[8px] py-px text-[11px] font-semibold text-success-soft"
+                            >
+                                <Check size={10} strokeWidth={3} aria-hidden />
+                                {text}
+                            </span>
+                        ))}
+                    </div>
+                )}
                 <div className="flex items-center gap-[14px] pt-[2px] text-[11.5px] text-muted">
                     <button
                         type="button"
