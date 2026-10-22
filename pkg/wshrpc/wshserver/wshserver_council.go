@@ -11,9 +11,18 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/council"
+	"github.com/wavetermdev/waveterm/pkg/council/bench"
+	"github.com/wavetermdev/waveterm/pkg/effortstore"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -35,7 +44,26 @@ func publishCouncilChanged(c *council.Council) {
 // queued, and the oldest one starts now.
 func StartCouncilRunner() {
 	councilRunner.MarkStale()
+	stopQueuedBenchCouncils()
 	councilRunner.StartNext()
+}
+
+// stopQueuedBenchCouncils stops the bench councils left queued when wavesrv last quit. The bench that queued them ended
+// with it, so one started now would spend a panel's tokens with nothing to score it and nobody to read it.
+func stopQueuedBenchCouncils() {
+	list, err := council.List("")
+	if err != nil {
+		log.Printf("[council-bench] queued bench councils not stopped: %v", err)
+		return
+	}
+	for _, c := range list {
+		if !c.Bench || c.State != council.StateQueued {
+			continue
+		}
+		if _, err := councilRunner.Stop(c.Id); err != nil {
+			log.Printf("[council-bench] council %s not stopped: %v", c.Id, err)
+		}
+	}
 }
 
 // councilPanel is the experts of a new council: the ones named, else the panel of the group (the coordinator last).
@@ -237,4 +265,268 @@ func (ws *WshServer) CouncilRolesCommand(ctx context.Context) (*wshrpc.CouncilRo
 
 func (ws *WshServer) CouncilSaveGroupCommand(ctx context.Context, data council.CouncilGroup) error {
 	return council.SaveGroup(data)
+}
+
+// ---- the benchmark ----
+
+// councilBenchWiring is what bench.Run is given beside the data dir and the options: the real calls. A test replaces
+// them with fakes, so no council runs and no claude is called.
+type councilBenchWiring struct {
+	start  bench.StartFunc
+	wait   bench.WaitFunc
+	judge  bench.JudgeFunc
+	remind bench.RemindFunc
+}
+
+var councilBenchWire = func() councilBenchWiring {
+	return councilBenchWiring{start: benchStartCouncil, wait: benchWaitCouncil, judge: bench.Judge, remind: benchRemind}
+}
+
+// benchStartCouncil starts the council a plan item built. The bench leaves the panel empty, so it is filled from the
+// council's group here; without it the runner refuses the council and every row would be a failed one.
+func benchStartCouncil(ctx context.Context, c *council.Council) (*council.Council, error) {
+	experts, err := councilPanel(c.Group, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.Experts = experts
+	return councilRunner.Start(ctx, c)
+}
+
+// benchWaitCouncil waits through the queue, behind the person's own council, to the end of the bench council's run.
+// A bench council never pauses; one found waiting on the person is stopped, since nobody reads it. When ctx ends the
+// council is stopped too: a queued one starts on a background context and would otherwise spend tokens later with
+// nobody reading it.
+func benchWaitCouncil(ctx context.Context, id string) (*council.Council, error) {
+	c, err := councilRunner.Wait(ctx, id)
+	if ctx.Err() != nil {
+		if _, serr := councilRunner.Stop(id); serr != nil {
+			log.Printf("[council-bench] council %s not stopped: %v", id, serr)
+		}
+		return c, err
+	}
+	if err == nil && c.State == council.StateAwaiting {
+		return councilRunner.Stop(id)
+	}
+	return c, err
+}
+
+// councilBenchRun is the bench running in this wavesrv. There is at most one: it spends the tokens of a whole panel
+// for every item of its plan.
+type councilBenchRun struct {
+	cancel context.CancelFunc
+	done   chan struct{} // closed once the run has ended and the next bench may start
+
+	mu       sync.Mutex
+	inflight string // the council the bench is on, "" between councils
+}
+
+var (
+	councilBenchMu  sync.Mutex
+	councilBenchCur *councilBenchRun
+)
+
+// councilBenchStopWait is how long Stop waits for the bench to end after cancelling it: the council in flight saves
+// itself stopped within 15 seconds.
+const councilBenchStopWait = 20 * time.Second
+
+func (b *councilBenchRun) setInflight(id string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.inflight = id
+}
+
+func (b *councilBenchRun) inflightId() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.inflight
+}
+
+// tracking wraps the start and wait of a bench so Stop knows which council is in flight.
+func (b *councilBenchRun) tracking(w councilBenchWiring) (bench.StartFunc, bench.WaitFunc) {
+	start := func(ctx context.Context, c *council.Council) (*council.Council, error) {
+		started, err := w.start(ctx, c)
+		if err == nil && started != nil {
+			b.setInflight(started.Id)
+		}
+		return started, err
+	}
+	wait := func(ctx context.Context, id string) (*council.Council, error) {
+		defer b.setInflight("")
+		return w.wait(ctx, id)
+	}
+	return start, wait
+}
+
+// planCouncilBench is a bench's plan over the cases in dataDir. A case named with --case that LoadCases left out comes
+// back from Plan as an unknown case, so the cases it skipped, and why, travel with the error.
+func planCouncilBench(dataDir string, opts bench.Options) (*wshrpc.CouncilBenchRtnData, error) {
+	cases, skipped, err := bench.LoadCases(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	items, estimate, err := bench.Plan(cases, opts)
+	if err == nil && len(items) == 0 {
+		err = errors.New("no benchmark cases to run")
+	}
+	if err != nil {
+		if len(skipped) > 0 {
+			err = fmt.Errorf("%w (%s)", err, strings.Join(skipped, "; "))
+		}
+		return nil, err
+	}
+	return &wshrpc.CouncilBenchRtnData{Items: items, Estimate: estimate, Skipped: skipped}, nil
+}
+
+// CouncilBenchCommand plans a benchmark and, without DryRun, starts it in the background and returns at once: the
+// councils run one at a time, each ends in a line of the results file, and `wsh council bench results` reads them. A
+// dry run prices the plan and starts nothing, so the caller asks the Token burn gate between the two calls. Only one
+// bench runs at a time; a dry run still answers while it does.
+func (ws *WshServer) CouncilBenchCommand(ctx context.Context, data wshrpc.CommandCouncilBenchData) (*wshrpc.CouncilBenchRtnData, error) {
+	dataDir := wavebase.GetWaveDataDir()
+	opts := bench.Options{Cases: data.Cases, Variants: data.Variants, Runs: data.Runs}
+	if data.DryRun {
+		return planCouncilBench(dataDir, opts)
+	}
+
+	councilBenchMu.Lock()
+	defer councilBenchMu.Unlock()
+	if councilBenchCur != nil {
+		return nil, errors.New("a bench is already running; `wsh council bench stop` ends it")
+	}
+	plan, err := planCouncilBench(dataDir, opts)
+	if err != nil {
+		return nil, err
+	}
+	// the run outlives this request, so it gets its own context: Stop is what ends it
+	runCtx, cancel := context.WithCancel(context.Background())
+	run := &councilBenchRun{cancel: cancel, done: make(chan struct{})}
+	councilBenchCur = run
+	wire := councilBenchWire()
+	start, wait := run.tracking(wire)
+	go func() {
+		defer close(run.done)
+		defer func() {
+			councilBenchMu.Lock()
+			councilBenchCur = nil
+			councilBenchMu.Unlock()
+		}()
+		defer func() { panichandler.PanicHandler("council bench", recover()) }()
+		defer cancel()
+		if err := bench.Run(runCtx, dataDir, opts, start, wait, wire.judge, wire.remind); err != nil {
+			log.Printf("[council-bench] the bench ended early: %v", err)
+			return
+		}
+		log.Printf("[council-bench] the bench finished: %d councils", len(plan.Items))
+	}()
+	return plan, nil
+}
+
+// CouncilBenchStopCommand cancels the bench and stops the council it is on, then returns once the bench has ended. The
+// councils it already scored keep their lines in the results file; the one interrupted gets none. With no bench running
+// it says so.
+func (ws *WshServer) CouncilBenchStopCommand(ctx context.Context) (*wshrpc.CouncilBenchStopRtnData, error) {
+	councilBenchMu.Lock()
+	run := councilBenchCur
+	councilBenchMu.Unlock()
+	if run == nil {
+		return &wshrpc.CouncilBenchStopRtnData{}, nil
+	}
+	run.cancel()
+	if id := run.inflightId(); id != "" {
+		if _, err := councilRunner.Stop(id); err != nil {
+			log.Printf("[council-bench] council %s not stopped: %v", id, err)
+		}
+	}
+	select {
+	case <-run.done:
+	case <-ctx.Done():
+	case <-time.After(councilBenchStopWait):
+	}
+	return &wshrpc.CouncilBenchStopRtnData{Stopped: true}, nil
+}
+
+// CouncilBenchResultsCommand reads the results file back as the table: a row per harness version and variant for the
+// bench runs, and per harness version and mode for the ratings.
+func (ws *WshServer) CouncilBenchResultsCommand(ctx context.Context) (*wshrpc.CouncilBenchResultsRtnData, error) {
+	runs, ratings, err := bench.LoadResults(wavebase.GetWaveDataDir())
+	if err != nil {
+		return nil, err
+	}
+	rtn := &wshrpc.CouncilBenchResultsRtnData{Runs: bench.Summarize(runs), Ratings: bench.SummarizeRatings(ratings)}
+	if rtn.Runs == nil {
+		rtn.Runs = []bench.CouncilBenchRow{}
+	}
+	if rtn.Ratings == nil {
+		rtn.Ratings = []bench.CouncilBenchRatingRow{}
+	}
+	return rtn, nil
+}
+
+// The initiative a full bench reminds through, and the chunk it adds: due a month after the bench, so the council is
+// measured again whenever its prompts or models have changed since.
+const (
+	councilBenchEffortTitle = "Council benchmark"
+	councilBenchChunkLabel  = "Re-measure the council: wsh council bench"
+	councilBenchRemindDays  = 30
+	councilBenchRemindNote  = "Run `wsh council bench` and compare `wsh council bench results` with the row before: " +
+		"recall falling at the same tokens means a prompt or model change hurt."
+)
+
+// councilBenchEfforts is the three initiative calls the reminder makes; a test fakes them.
+type councilBenchEfforts struct {
+	list   func(ctx context.Context) ([]*waveobj.Effort, error)
+	create func(ctx context.Context, data wshrpc.CommandEffortCreateData) (*wshrpc.CommandEffortCreateRtnData, error)
+	mutate func(ctx context.Context, data wshrpc.CommandEffortMutateData) (*wshrpc.CommandEffortMutateRtnData, error)
+}
+
+// benchRemind is the reminder a full bench ends with, through the same code `wsh effort` runs.
+func benchRemind(ctx context.Context) error {
+	ws := &WshServer{}
+	return addBenchReminder(ctx, councilBenchEfforts{list: effortstore.GetAll, create: ws.EffortCreateCommand, mutate: ws.EffortMutateCommand}, time.Now())
+}
+
+// addBenchReminder puts the re-measure chunk, due councilBenchRemindDays after now, on the Council benchmark initiative,
+// creating the initiative when no live one has that title. When the chunk is already there (an earlier bench's) it moves
+// that one's due date and reopens it if it was closed: a chunk label is unique in an initiative, and one reminder is
+// all the council needs.
+func addBenchReminder(ctx context.Context, api councilBenchEfforts, now time.Time) error {
+	due := now.AddDate(0, 0, councilBenchRemindDays).Format(jarvis.DueLayout)
+	all, err := api.list(ctx)
+	if err != nil {
+		return fmt.Errorf("listing the initiatives: %w", err)
+	}
+	var effort *waveobj.Effort
+	for _, e := range all {
+		if e.Status != "archived" && strings.TrimSpace(e.Title) == councilBenchEffortTitle {
+			effort = e
+			break
+		}
+	}
+	var oid string
+	var ops []wshrpc.EffortOp
+	if effort == nil {
+		created, err := api.create(ctx, wshrpc.CommandEffortCreateData{Title: councilBenchEffortTitle})
+		if err != nil {
+			return fmt.Errorf("creating the %s initiative: %w", councilBenchEffortTitle, err)
+		}
+		oid = created.EffortOID
+		ops = []wshrpc.EffortOp{{Op: "addChunk", Label: councilBenchChunkLabel, Due: due}}
+	} else {
+		oid = effort.OID
+		idx := slices.IndexFunc(effort.Chunks, func(c waveobj.EffortChunk) bool { return c.Label == councilBenchChunkLabel })
+		switch {
+		case idx < 0:
+			ops = []wshrpc.EffortOp{{Op: "addChunk", Label: councilBenchChunkLabel, Due: due}}
+		default:
+			if s := effort.Chunks[idx].Status; s == "done" || s == "skipped" {
+				ops = append(ops, wshrpc.EffortOp{Op: "setChunkStatus", Chunk: councilBenchChunkLabel, Status: "pending"})
+			}
+			ops = append(ops, wshrpc.EffortOp{Op: "setChunkDue", Chunk: councilBenchChunkLabel, Due: due})
+		}
+	}
+	if _, err := api.mutate(ctx, wshrpc.CommandEffortMutateData{EffortOID: oid, Ops: ops, Note: councilBenchRemindNote}); err != nil {
+		return fmt.Errorf("adding the re-measure chunk to %s: %w", councilBenchEffortTitle, err)
+	}
+	return nil
 }

@@ -297,6 +297,24 @@ func ControllerResyncCommand(w *wshutil.WshRpc, data wshrpc.CommandControllerRes
 	return err
 }
 
+// command "councilbench", wshserver.CouncilBenchCommand
+func CouncilBenchCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilBenchData, opts *wshrpc.RpcOpts) (*wshrpc.CouncilBenchRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CouncilBenchRtnData](w, "councilbench", data, opts)
+	return resp, err
+}
+
+// command "councilbenchresults", wshserver.CouncilBenchResultsCommand
+func CouncilBenchResultsCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CouncilBenchResultsRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CouncilBenchResultsRtnData](w, "councilbenchresults", nil, opts)
+	return resp, err
+}
+
+// command "councilbenchstop", wshserver.CouncilBenchStopCommand
+func CouncilBenchStopCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CouncilBenchStopRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CouncilBenchStopRtnData](w, "councilbenchstop", nil, opts)
+	return resp, err
+}
+
 // command "councilcontinue", wshserver.CouncilContinueCommand
 func CouncilContinueCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilContinueData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "councilcontinue", data, opts)

@@ -711,6 +711,14 @@ declare global {
         nudge?: string;
     };
 
+    // wshrpc.CommandCouncilBenchData
+    type CommandCouncilBenchData = {
+        cases?: string[];
+        variants?: string[];
+        runs?: number;
+        dryrun?: boolean;
+    };
+
     // wshrpc.CommandCouncilContinueData
     type CommandCouncilContinueData = {
         id: string;
@@ -2300,6 +2308,53 @@ declare global {
         text: string;
         proposalid?: string;
         parentid?: string;
+    };
+
+    // bench.CouncilBenchPlanItem
+    type CouncilBenchPlanItem = {
+        case: string;
+        variant: string;
+        run: number;
+    };
+
+    // bench.CouncilBenchRatingRow
+    type CouncilBenchRatingRow = {
+        harness: string;
+        mode: string;
+        useful: number;
+        not: number;
+    };
+
+    // wshrpc.CouncilBenchResultsRtnData
+    type CouncilBenchResultsRtnData = {
+        runs: CouncilBenchRow[];
+        ratings: CouncilBenchRatingRow[];
+    };
+
+    // bench.CouncilBenchRow
+    type CouncilBenchRow = {
+        harness: string;
+        variant: string;
+        runs: number;
+        scored: number;
+        recall: number;
+        keys: number;
+        kept: number;
+        wrong: number;
+        tokens: number;
+        recallperm: number;
+    };
+
+    // wshrpc.CouncilBenchRtnData
+    type CouncilBenchRtnData = {
+        items: CouncilBenchPlanItem[];
+        estimate: number;
+        skipped?: string[];
+    };
+
+    // wshrpc.CouncilBenchStopRtnData
+    type CouncilBenchStopRtnData = {
+        stopped: boolean;
     };
 
     // wshrpc.CouncilChangedData

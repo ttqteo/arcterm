@@ -300,6 +300,24 @@ export class RpcApiType {
         return client.wshRpcCall("controllerresync", data, opts);
     }
 
+    // command "councilbench" [call]
+    CouncilBenchCommand(client: WshClient, data: CommandCouncilBenchData, opts?: RpcOpts): Promise<CouncilBenchRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilbench", data, opts);
+        return client.wshRpcCall("councilbench", data, opts);
+    }
+
+    // command "councilbenchresults" [call]
+    CouncilBenchResultsCommand(client: WshClient, opts?: RpcOpts): Promise<CouncilBenchResultsRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilbenchresults", null, opts);
+        return client.wshRpcCall("councilbenchresults", null, opts);
+    }
+
+    // command "councilbenchstop" [call]
+    CouncilBenchStopCommand(client: WshClient, opts?: RpcOpts): Promise<CouncilBenchStopRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilbenchstop", null, opts);
+        return client.wshRpcCall("councilbenchstop", null, opts);
+    }
+
     // command "councilcontinue" [call]
     CouncilContinueCommand(client: WshClient, data: CommandCouncilContinueData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilcontinue", data, opts);
