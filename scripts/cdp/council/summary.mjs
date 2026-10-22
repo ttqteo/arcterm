@@ -17,7 +17,7 @@
 // fixture seeded as a Brainstorm, with a saved document written into the temp project first so Open the document opens it.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { SURFACE_LABEL, waitFor } from "../attach.mjs";
 import {
     arrangeCouncilProject,
@@ -51,11 +51,12 @@ const click = (h, sel) =>
     h.ev(`(() => { const el = document.querySelector(${q(sel)}); if (el == null || el.disabled) return false; el.click(); return true; })()`);
 const until = (h, expr, ms = WAIT_MS) => waitFor((e) => h.ev(e), expr, ms);
 
-// the Summary of the council, reopened (a step that left it for the Discussion or Setup comes back this way) and drawn
-async function openSummary(h, ctx) {
-    await openCouncil(h, ctx.councilId, "summary");
+// the Summary of the council (or of another seeded from the same fixture, by id), reopened (a step that left it for the
+// Discussion or Setup comes back this way) and drawn
+async function openSummary(h, ctx, id = ctx.councilId) {
+    await openCouncil(h, id, "summary");
     // the root of an earlier council's Summary may still be up for a moment, so the council it shows is named too
-    const drawn = `document.querySelector(${q(SUMMARY)})?.dataset.councilId === ${q(ctx.councilId)} &&
+    const drawn = `document.querySelector(${q(SUMMARY)})?.dataset.councilId === ${q(id)} &&
         document.querySelectorAll(${q(`${SUMMARY} [data-council-direction]`)}).length === 4`;
     if (!(await until(h, drawn))) {
         throw new Error("the Summary did not draw its four directions");
@@ -348,16 +349,31 @@ export const councilSummary = {
 
         await step("Save as doc (in the ⋯ menu) writes the doc into the project and shows its path", async () => {
             await menuClick(h, "save-doc");
-            const shown = await until(h, `!!document.querySelector("[data-council-doc-saved]")`);
+            // the save keeps the path on the council (docpath), and the report's saved line shows it
+            const shown = await until(h, `!!document.querySelector("[data-council-docpath]")`);
             const saved = await h.ev(`(() => {
-                const el = document.querySelector("[data-council-doc-saved]");
+                const el = document.querySelector("[data-council-docpath]");
                 return el == null ? null : { path: el.dataset.path, text: el.innerText.replace(/\\s+/g, " ").trim() };
             })()`);
-            const path = saved?.path ?? "";
+            // a path relative to the project is the project's file
+            const asKept = saved?.path ?? "";
+            const path = asKept === "" || isAbsolute(asKept) ? asKept : join(ctx.repo, asKept);
             const inProject = slashes(path).startsWith(`${slashes(ctx.repo)}/docs/council/`);
-            const body = shown && existsSync(path) ? readFileSync(path, "utf8") : "";
-            const ok = shown && inProject && /\.md$/.test(path) && body.includes("# Council: Rail apps") && body.includes("## Matrix") && /docs\/council\/.+\.md/.test(saved.text);
-            return { ok, detail: JSON.stringify({ saved, exists: existsSync(path) }) };
+            const body = shown && path !== "" && existsSync(path) ? readFileSync(path, "utf8") : "";
+            // the report, then the whole discussion and the run facts (council.Document)
+            const sections = ["# Council: Rail apps", "## Matrix", "## The discussion", "## Run facts"].filter((s) => !body.includes(s));
+            // now that it has saved, the menu opens the document instead of saving another
+            const items = shown ? await menuItems(h) : [];
+            const ok =
+                shown &&
+                inProject &&
+                /\.md$/.test(path) &&
+                body !== "" &&
+                sections.length === 0 &&
+                /docs\/council\/.+\.md/.test(saved.text) &&
+                items.includes("open-doc=Open the document") &&
+                !items.some((i) => i.startsWith("save-doc="));
+            return { ok, detail: JSON.stringify({ saved, exists: path !== "" && existsSync(path), missing: sections, items }) };
         });
 
         await step("Create initiative (in the ⋯ menu) makes an initiative named after the feature with a chunk per direction", async () => {
@@ -570,7 +586,9 @@ export const councilSummary = {
             await openBrainstormSummary(h, id);
             const facts = await h.ev(BRAINSTORM_FACTS);
             const items = await menuItems(h);
-            await openSummary(h, ctx);
+            // a Review council of its own that has saved nothing: the council of the steps above has by now (Save as doc)
+            const unsaved = await seedCouncil(h, ctx, "done", { id: "fx-council-review-unsaved" });
+            await openSummary(h, ctx, unsaved);
             const review = await h.ev(BRAINSTORM_FACTS);
             const reviewItems = await menuItems(h);
             const ok =
