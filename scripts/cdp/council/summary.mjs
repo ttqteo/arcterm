@@ -13,8 +13,8 @@
 // and teardown closes the tab. Save as doc writes into the temp project, and Create initiative makes an initiative that
 // teardown deletes: both are real.
 //
-// Two steps after the failed synthesis are the "Was this useful?" row (docs/superpowers/plans/2026-10-22-council-bench.md,
-// Task 5): CouncilRateCommand is replaced in the page, so no click reaches the data dir's council-bench.jsonl.
+// Two steps after the failed synthesis are the "Was this useful?" row (docs/superpowers/specs/2026-10-22-council-agent-team-design.md,
+// Storage): CouncilRateCommand is replaced in the page, so no click reaches the data dir's council-bench.jsonl.
 //
 // The last two steps are the Brainstorm report (docs/superpowers/plans/2026-10-22-council-v1-room.md, Task 5): a done
 // fixture seeded as a Brainstorm, with a saved document written into the temp project first so Open the document opens it.
@@ -505,7 +505,7 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ banner, directions, rating, calls }) };
         });
 
-        // "Was this useful?" (docs/superpowers/plans/2026-10-22-council-bench.md, Task 5). CouncilRateCommand is replaced, so
+        // "Was this useful?" (docs/superpowers/specs/2026-10-22-council-agent-team-design.md, Storage). CouncilRateCommand is replaced, so
         // nothing reaches the data dir's council-bench.jsonl and no click rates a real council; the page puts the rating on
         // the council from what it sent, and nothing here announces council:changed (a reload would drop the stubbed rating)
         await step("Was this useful? asks under the report with Useful and Not really; Useful records one rating and thanks, and Change asks again for the other", async () => {

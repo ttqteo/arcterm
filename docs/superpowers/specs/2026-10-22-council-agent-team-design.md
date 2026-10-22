@@ -20,16 +20,19 @@ Work moves to another machine; the person stopped the runs below on purpose.
 - **Shipped:** run 3f0ba255, the room (the running council as a group chat, Brainstorm mode, one council at a time
   with a Queued row, started by the agent from a chat, saved into `docs/council/`). Its hand checks are in
   `docs/open-issues.md` "0 · Waiting on a hand check".
-- **Next, in this order, each with Arc engine** (`wsh runs start --plan <file> --runtime claude --model opus`):
-  1. `docs/superpowers/plans/2026-10-22-council-bench.md` (`wsh council bench`, "Was this useful?"). Never started.
-  2. `docs/superpowers/plans/2026-10-22-council-phase0b.md` (the stronger benchmark). Cancelled at its task 4 with 9
-     of 12 runs done (services-bugs, agents-bugs and newcomer, each V0, V2, V3; services-sleep not run) and nothing
-     judged. Those results and every bench case live only in the old machine's data dir, so a new machine re-runs the
-     plan from the start; its tasks 1 and 2 rebuild the cases, but the `newcomer` case must be rebuilt by hand first:
-     `git archive 0a2c46437` into `<data dir>/council-bench-projects/newcomer/`, its key the five lines under
-     "Benchmark" item 3, and its entry added to `<data dir>/council-bench/cases.json` (Phase 0's shape).
-- The bench plan (1) builds without any case (its tests make their own); only its hand check reads `cases.json`, so on
-  a new machine that check waits for the phase0b plan's tasks 1–2 (or the hand rebuild).
+- **Shipped:** run ab534f5b, the benchmark tooling (`wsh council bench` with `--dry-run`, `--runs`, `bench results`
+  and `bench stop`; the opus judge; `council-bench.jsonl`; the harness version on every council; "Was this useful?" on
+  the report; the "Council benchmark" initiative's re-measure chunk). Its hand checks are in `docs/open-issues.md`
+  "0 · Waiting on a hand check".
+- **Next, with Arc engine** (`wsh runs start --plan <file> --runtime claude --model opus`):
+  `docs/superpowers/plans/2026-10-22-council-phase0b.md` (the stronger benchmark). Cancelled at its task 4 with 9
+  of 12 runs done (services-bugs, agents-bugs and newcomer, each V0, V2, V3; services-sleep not run) and nothing
+  judged. Those results and every bench case live only in the old machine's data dir, so a new machine re-runs the
+  plan from the start; its tasks 1 and 2 rebuild the cases, but the `newcomer` case must be rebuilt by hand first:
+  `git archive 0a2c46437` into `<data dir>/council-bench-projects/newcomer/`, its key the five lines under
+  "Benchmark" item 3, and its entry added to `<data dir>/council-bench/cases.json` (Phase 0's shape).
+- The bench's hand check reads `cases.json`, so on a new machine it waits for the phase0b plan's tasks 1–2 (or the
+  hand rebuild).
 
 ## Why
 
