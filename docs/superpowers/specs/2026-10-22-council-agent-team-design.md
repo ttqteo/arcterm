@@ -257,6 +257,11 @@ variants land close. The full set (4 cases × 2 runs,
 
 ## Phases
 
+**Ahead of Phase 0b** (the person's call, 2026-10-22): `docs/superpowers/plans/2026-10-22-council-v1-ui.md` builds the
+parts that need no agent team on v1's runner and views now: the answer-first report, plain words, the top-3 vote with
+agreement as a reaction, the done and waiting notices, and Setup as one composer. It extends v1's Discussion and Summary
+on purpose; they still go away in Phase 2 if the room ships.
+
 0. **Probe agent teams, then benchmark them before building** (no product code; the person wants the agent team, and
    because it costs more, its worth measured first): prepare the cases and keys, run a prompt-only agent-team council
    (V3: a lead given the harness as a prompt) against V0–V2 on cases 1–3, one run each, and probe agent teams: where messages and tasks live,
