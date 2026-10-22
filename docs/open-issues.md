@@ -65,9 +65,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   opens (the note names what a group cannot keep: a suggested role and a per-row model); the coordinator's role
   suggestion, with a feature and a first file, comes back as dashed rows you can add or ignore, and Run again from a
   Summary does not call it. `frontend/app/view/agents/councilsetup.tsx`.
-- [ ] (arcterm) Council Summary, the actions the scenario replaces: on a done council, Brainstorm this opens a claude
+- [ ] (arcterm) Council Summary, the actions the scenario replaces: on a done council, Start an agent on it opens a claude
   agent in the project seeded with the direction and its thread (the scenario stubs the launch, so only the prompt was
-  checked); Save as doc writes `docs/council/YYYY-MM-DD-<feature>.md` and shows the path; Create initiative makes one
+  checked); Save as doc (in the ⋯ menu) writes `docs/council/YYYY-MM-DD-<feature>.md` and shows the path; Create initiative makes one
   chunk per direction; Ask the experts again opens that direction's thread; a reply after the summary marks the
   Summary `Outdated · N replies since` and Summarize again clears it. `frontend/app/view/agents/councilsummary.tsx`.
 - [ ] (arcterm) Rail commit mode with a real agent and with amend: let a live Claude agent edit two files in a worktree;

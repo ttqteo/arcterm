@@ -1,19 +1,72 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// What the council Summary (councilsummary.tsx) draws, derived from a `Council`: the ranked directions with one stance
-// chip per expert and the expert positions behind each, the lines under the header, and the two things the Summary
-// hands on: the seed of the initiative Create initiative makes and the first prompt Brainstorm this opens an agent
-// with. Pure, no React, no Wave runtime imports, so every rule here has a test (councilsummarymodel.test.ts). The
+// What the council report (councilsummary.tsx) draws, derived from a `Council`: the answer line, the ranked directions
+// with their plain tag, one stance chip per expert and the expert positions behind each, the lines under the header,
+// which view a council opens on, and the two things the report hands on: the seed of the initiative Create initiative
+// makes and the first prompt Start an agent on it opens an agent with. Pure, no React, no Wave runtime imports, so every rule here has a test (councilsummarymodel.test.ts). The
 // stances, ranking and matrix of the whole council are in councilmodel.ts.
 
-import { councilProjectKey, panel, type StanceLabel } from "./councilmodel";
+import { listNames } from "./councildiscussionmodel";
+import { councilProjectKey, panel, STANCE_WORD, type StanceLabel } from "./councilmodel";
 
 function asStance(s: string | undefined): Exclude<StanceLabel, "proposed"> | undefined {
     return s === "accept" || s === "challenge" || s === "oppose" ? s : undefined;
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+// ---- what a council opens on ----
+
+/** Pure: the view a council opens on: its report when it has ended with a summary, else its Discussion (a council still
+ *  running or waiting, one with no summary, and one that is not known yet). */
+export function defaultCouncilView(c: Council | null | undefined): "discussion" | "summary" {
+    if (c == null || c.summary == null) {
+        return "discussion";
+    }
+    return c.state === "done" || c.state === "stopped" || c.state === "failed" ? "summary" : "discussion";
+}
+
+// ---- the answer ----
+
+// the first sentence of a text and what follows it: the end of a sentence is . ! or ? before a space or the end
+function splitFirstSentence(text: string): { first: string; rest: string } {
+    const flat = text.trim();
+    const end = flat.search(/[.!?…](\s|$)/);
+    if (end < 0) {
+        return { first: flat, rest: "" };
+    }
+    return { first: flat.slice(0, end + 1), rest: flat.slice(end + 1).trim() };
+}
+
+/** Pure: the report's bold line and the text under it. The coordinator's one-sentence `answer` when it wrote one (the
+ *  whole summary text is then the rest); a council from before answers, or without a question, opens on the summary
+ *  text's first sentence and the rest of the text follows. */
+export function answerParts(c: Council): { answer: string; rest: string } {
+    const text = c.summary?.text ?? "";
+    const answer = (c.summary?.answer ?? "").trim();
+    if (answer !== "") {
+        return { answer, rest: text.trim() };
+    }
+    const { first, rest } = splitFirstSentence(text);
+    return { answer: first, rest };
+}
+
+/** Pure: the report's bold line (see answerParts). */
+export function answerLine(c: Council): string {
+    return answerParts(c).answer;
+}
+
+/** Pure: `You asked: <question>`, empty for a council without a question. */
+export function askedLine(c: Council): string {
+    const q = (c.question ?? "").replace(/\s+/g, " ").trim();
+    return q === "" ? "" : `You asked: ${q}`;
+}
+
+/** Pure: how a proposal's outcome reads in the report: the round a withdrawal happened in is a v1 detail. */
+export function outcomeLabel(outcome: string): string {
+    return /^Withdrawn in round \d+$/.test(outcome) ? "Withdrawn" : outcome;
+}
 
 // ---- the directions ----
 
@@ -32,9 +85,9 @@ export interface Position {
 
 export interface DirectionRow {
     direction: CouncilDirection;
-    meta: string; // `Merged UX P2 + RAM P3 · 1 weak claim · in Ideas`
+    meta: string; // `from UX and RAM · 1 file · 1 weak claim · in Ideas`
     chips: StanceChip[]; // the experts that proposed or took a stance, in panel order
-    tag: "Agreed" | "Split";
+    tag: string; // `Everyone agrees`, `Reader has doubts`, `RAM is against it` (directionTag)
     positions: Position[];
     firstProposal: string; // the proposal "Ask the experts again" opens, or empty when none of `from` is on the council
 }
@@ -88,15 +141,36 @@ function fileOf(e: CouncilEvidence): string {
     return e.ref.replace(/:\d+(-\d+)?$/, "");
 }
 
+// `from UX and RAM`: the authors of the proposals a direction came from, each once, in the order they come
 function fromLine(c: Council, from: string[]): string {
     const named = from.flatMap((id) => {
         const p = (c.proposals ?? []).find((x) => x.id === id);
-        return p == null ? [] : [`${c.experts.find((e) => e.id === p.author)?.name ?? p.author} ${p.id}`];
+        return p == null ? [] : [c.experts.find((e) => e.id === p.author)?.name ?? p.author];
     });
-    if (named.length === 0) {
-        return "";
+    const authors = named.filter((name, i) => named.indexOf(name) === i);
+    return authors.length === 0 ? "" : `from ${listNames(authors)}`;
+}
+
+/** Pure: a direction's tag in words: `Everyone agrees`, `Reader has doubts`, `Reader and UX have doubts`, `RAM is
+ *  against it`. Against wins over doubts, so a direction one expert opposes reads as that. The names are in panel
+ *  order. */
+export function directionTag(c: Council, d: CouncilDirection): string {
+    const named = (stance: string) => {
+        const ids = Object.keys(d.stances ?? {}).filter((id) => d.stances?.[id] === stance);
+        const order = panel(c).map((e) => e.id);
+        return ids
+            .sort((a, b) => (order.indexOf(a) + 1 || order.length + 1) - (order.indexOf(b) + 1 || order.length + 1))
+            .map((id) => c.experts.find((e) => e.id === id)?.name ?? id);
+    };
+    const against = named("oppose");
+    if (against.length > 0) {
+        return `${listNames(against)} ${against.length === 1 ? "is" : "are"} against it`;
     }
-    return named.length === 1 ? `From ${named[0]}` : `Merged ${named.join(" + ")}`;
+    const doubts = named("challenge");
+    if (doubts.length > 0) {
+        return `${listNames(doubts)} ${doubts.length === 1 ? "has" : "have"} doubts`;
+    }
+    return d.agreed === false && Object.keys(d.stances ?? {}).length === 0 ? "Not everyone agrees" : "Everyone agrees";
 }
 
 /** Pure: the Summary's directions by rank, each with its line of facts, its stance chips and its positions. */
@@ -126,7 +200,7 @@ export function directionRows(c: Council): DirectionRow[] {
                 );
                 return proposed ? [{ expert, stance: "proposed" }] : [];
             }),
-            tag: direction.agreed ? "Agreed" : "Split",
+            tag: directionTag(c, direction),
             positions,
             firstProposal: direction.from.find((id) => (c.proposals ?? []).some((p) => p.id === id)) ?? "",
         };
@@ -223,7 +297,7 @@ const PROMPT_REPLY_CHARS = 500;
 const PROMPT_REPLIES = 30;
 const PROMPT_CHARS = 8000;
 
-/** Pure: the first prompt of the agent Brainstorm this opens: the direction, the coordinator's reasoning, the proposals
+/** Pure: the first prompt of the agent Start an agent on it opens: the direction, the coordinator's reasoning, the proposals
  *  it came from and their thread, and the ask to record the direction with `wsh idea add` before brainstorming, so the
  *  new session's Ideas holds it. The thread is cut from its oldest end when the whole would be too long for a launch
  *  argument. */
@@ -232,16 +306,19 @@ export function brainstormPrompt(c: Council, row: DirectionRow): string {
     const name = (id: string) => (id === "you" ? "You" : (c.experts.find((e) => e.id === id)?.name ?? id));
     const from = new Set(d.from);
     const proposals = (c.proposals ?? []).filter((p) => from.has(p.id));
+    // ideas are named by their title, never by id: the agent's prompt reads like the report
+    const titleOf = (id: string) => `"${proposals.find((p) => p.id === id)?.title ?? "an idea"}"`;
     const thread = (c.replies ?? [])
         .map((r, i) => ({ r, i }))
         .filter(({ r }) => from.has(r.proposalid))
         .sort((a, b) => a.r.ts - b.r.ts || a.i - b.i)
-        .map(
-            ({ r }) =>
-                `- ${name(r.author)} on ${r.proposalid}${r.stance ? ` (${r.stance})` : ""}: ${clip(r.text, PROMPT_REPLY_CHARS)}`
-        );
+        .map(({ r }) => {
+            const stance = r.stance && r.stance in STANCE_WORD ? ` (${STANCE_WORD[r.stance as StanceLabel]})` : "";
+            const text = clip(r.text, PROMPT_REPLY_CHARS);
+            return `- ${name(r.author)} on ${titleOf(r.proposalid)}${stance}${text === "" ? "" : `: ${text}`}`;
+        });
     const head = [
-        `Brainstorm this direction with me. A council of expert agents reviewed "${c.feature}"${c.question ? ` (${clip(c.question, 300)})` : ""} and ranked this direction ${d.rank}, ${row.tag.toLowerCase()}.`,
+        `Brainstorm this direction with me. A council of expert agents reviewed "${c.feature}"${c.question ? ` (${clip(c.question, 300)})` : ""} and ranked this direction ${d.rank} (${row.tag}).`,
         "",
         `Direction: ${d.title}`,
         d.reasoning ? `Why: ${clip(d.reasoning, 1000)}` : "",
@@ -249,7 +326,7 @@ export function brainstormPrompt(c: Council, row: DirectionRow): string {
         ...(proposals.length > 0
             ? [
                   "It came from:",
-                  ...proposals.map((p) => `- ${p.id} by ${name(p.author)}, ${p.title}: ${clip(p.argument, 600)}`),
+                  ...proposals.map((p) => `- "${p.title}" by ${name(p.author)}: ${clip(p.argument, 600)}`),
                   "",
               ]
             : []),

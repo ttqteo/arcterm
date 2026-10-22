@@ -627,7 +627,7 @@ function selectMemHygiene(model: AgentsViewModel, project: string): OpenResult {
 
 // A council has no load to prove: the Agent surface's council view reads it by id itself (useCouncil).
 function selectCouncil(model: AgentsViewModel, target: CouncilTarget): OpenResult {
-    showCouncil(target.councilId, "discussion", model);
+    showCouncil(target.councilId, undefined, model);
     return OK;
 }
 
