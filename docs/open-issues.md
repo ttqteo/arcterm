@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Hide on a service row: in the Agent tree, select a sleeping service (e.g. `portfolio`), right-click →
+  Hide; the row leaves the tree and the selection moves to the row beside it. On a running one the item reads Stop
+  and hide and does both; on a crashed one it is greyed with a tooltip. `servicemenu.tsx`, commit "feat(agents): Hide on a service row's menu".
 - [ ] (arcterm) Council v2 Phase 0, the agent-team probe's live half (only the headless half ran in run 0ea46b22): open a
   claude agent from arcterm in the data dir's `council-bench/work/teamprobe/`, send it the team prompt with
   `wsh agents send <tab> "…"`. Each teammate's exchange should appear in `<session>/subagents/agent-<id>.jsonl` beside

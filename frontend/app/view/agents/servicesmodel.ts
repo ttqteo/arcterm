@@ -110,20 +110,31 @@ export function treeServiceInput(
     return { services, serviceTabs };
 }
 
-export type ServiceMenuKey = "stop" | "restart" | "browser" | "keepRunning" | "pin" | "edit";
+export type ServiceMenuKey = "stop" | "restart" | "hide" | "browser" | "keepRunning" | "pin" | "edit";
 export type ServiceMenuChoice =
     | { key: "separator" }
     | { key: ServiceMenuKey; label: string; enabled: boolean; checked?: boolean; title?: string };
 
+const HIDE_TROUBLE_TITLE = "A service in trouble stays in the tree until it is fixed or restarted";
+
 /** Pure: a service row's context menu, in order. There is no Start: showing the service starts it. `pinned` is
- *  whether it sits on the rail, `railFull` whether the rail holds its three. */
+ *  whether it sits on the rail, `railFull` whether the rail holds its three. Hide takes the row out of the tree (the
+ *  click moves the selection off it, so treeServiceInput drops it): an up one is stopped first; one in trouble keeps
+ *  its row, so its Hide is off. */
 export function serviceMenuChoices(
     s: ServiceStatus,
     { pinned, railFull }: { pinned: boolean; railFull: boolean }
 ): ServiceMenuChoice[] {
+    const hideable = canStop(s) || s.state === "sleeping";
     return [
         { key: "stop", label: "Stop", enabled: canStop(s) },
         { key: "restart", label: "Restart", enabled: canRestart(s) },
+        {
+            key: "hide",
+            label: canStop(s) ? "Stop and hide" : "Hide",
+            enabled: hideable,
+            ...(!hideable ? { title: HIDE_TROUBLE_TITLE } : {}),
+        },
         { key: "separator" },
         ...(s.url ? [{ key: "browser" as const, label: "Open in the browser", enabled: true }] : []),
         { key: "keepRunning", label: "Keep running", enabled: true, checked: s.autostart },

@@ -269,6 +269,7 @@ describe("serviceMenuChoices", () => {
         expect(serviceMenuChoices(svc("running", { url }), open).map((c) => c.key)).toEqual([
             "stop",
             "restart",
+            "hide",
             "separator",
             "browser",
             "keepRunning",
@@ -314,6 +315,18 @@ describe("serviceMenuChoices", () => {
         ]) {
             expect(choice(svc(st), "stop")).toMatchObject({ label: "Stop", enabled: canStop(svc(st)) });
             expect(choice(svc(st), "restart")).toMatchObject({ label: "Restart", enabled: canRestart(svc(st)) });
+        }
+    });
+
+    it("hides a sleeping one, stops and hides an up one, and keeps one in trouble", () => {
+        expect(choice(svc("sleeping"), "hide")).toMatchObject({ label: "Hide", enabled: true });
+        expect(choice(svc("sleeping"), "hide")).not.toHaveProperty("title");
+        for (const st of ["starting", "running", "retrying", "nopage"]) {
+            expect(choice(svc(st), "hide")).toMatchObject({ label: "Stop and hide", enabled: true });
+        }
+        for (const st of ["crashed", "porttaken", "elsewhere"]) {
+            expect(choice(svc(st), "hide")).toMatchObject({ label: "Hide", enabled: false });
+            expect(choice(svc(st), "hide")).toHaveProperty("title");
         }
     });
 
