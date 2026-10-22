@@ -36,10 +36,12 @@ vi.mock("@/app/cockpit/notificationstore", () => ({ pushToast: (...a: unknown[])
 import { globalStore } from "@/app/store/jotaiStore";
 import { setPlatform } from "@/util/platformutil";
 import { atom } from "jotai";
+import { centerModeAtom } from "../agents/agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "../agents/agents";
 import type { AgentVM } from "../agents/agentsviewmodel";
 import { attachCanvas, detachCanvas, getCanvas, setCanvasMode } from "../agents/canvasstore";
 import { activeChannelIdAtom } from "../agents/channelsstore";
+import { councilSelAtom, councilViewAtom } from "../agents/councilstore";
 import { memorySelectedChangeAtom, memorySelectedProjectAtom } from "../agents/memorystore";
 import {
     currentReportIdAtom,
@@ -467,6 +469,29 @@ describe("memory hygiene landing", () => {
         expect(isPeekable(target)).toBe(false);
         expect(await peekTarget(model, target)).toEqual({ ok: true });
         expect(globalStore.get(model.surfaceAtom)).toBe("setup");
+        expect(globalStore.get(peekItemAtom)).toBeNull();
+    });
+});
+
+describe("council landings", () => {
+    it("opens the council's Discussion in the Agent surface", async () => {
+        const model = makeModel();
+        globalStore.set(centerModeAtom, "terminal");
+        globalStore.set(councilSelAtom, null);
+        globalStore.set(councilViewAtom, "summary");
+        expect(await openAddress(model, "council:c-1")).toEqual({ ok: true });
+        expect(globalStore.get(councilSelAtom)).toBe("c-1");
+        expect(globalStore.get(councilViewAtom)).toBe("discussion");
+        expect(globalStore.get(centerModeAtom)).toBe("council");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+    });
+
+    it("is not peekable: a peek lands", async () => {
+        const model = makeModel();
+        const target: OpenTarget = { kind: "council", councilId: "c-1" };
+        expect(isPeekable(target)).toBe(false);
+        expect(await peekTarget(model, target)).toEqual({ ok: true });
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
         expect(globalStore.get(peekItemAtom)).toBeNull();
     });
 });

@@ -90,6 +90,16 @@ describe("parseAddress", () => {
         );
     });
 
+    describe("council:", () => {
+        it("reads a council id", () => {
+            expect(parseAddress("council:c-1")).toEqual({ kind: "council", councilId: "c-1" });
+        });
+
+        it("refuses an empty id", () => {
+            expect(parseAddress("council:")).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+        });
+    });
+
     describe("memhygiene:", () => {
         it("reads a project", () => {
             expect(parseAddress("memhygiene:waveterm")).toEqual({ kind: "memhygiene", project: "waveterm" });

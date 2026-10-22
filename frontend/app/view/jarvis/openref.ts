@@ -15,6 +15,7 @@ import { globalStore } from "@/app/store/global";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { showCouncil } from "../agents/agentcenter";
 import { resolveCwd } from "../agents/agentcwdresolve";
 import type { AgentsViewModel } from "../agents/agents";
 import { setAgentView } from "../agents/agentview";
@@ -54,6 +55,7 @@ type RadarTarget = Extract<OpenTarget, { kind: "radar" }>;
 type CanvasTarget = Extract<OpenTarget, { kind: "canvas" }>;
 type NoteTarget = Extract<OpenTarget, { kind: "note" }>;
 type MemHygieneTarget = Extract<OpenTarget, { kind: "memhygiene" }>;
+type CouncilTarget = Extract<OpenTarget, { kind: "council" }>;
 type Caller = AddressHint["caller"];
 
 const OK: OpenResult = { ok: true };
@@ -91,6 +93,8 @@ function targetName(target: OpenTarget): string {
             return `note ${target.noteId}`;
         case "memhygiene":
             return `memory of ${target.project}`;
+        case "council":
+            return `council ${target.councilId}`;
     }
 }
 
@@ -148,7 +152,7 @@ export async function openAddress(
 }
 
 export function isPeekable(target: OpenTarget): boolean {
-    return target.kind !== "canvas" && target.kind !== "memhygiene";
+    return target.kind !== "canvas" && target.kind !== "memhygiene" && target.kind !== "council";
 }
 
 // an address that does not parse still peeks, so the refusal is the peek's own toast
@@ -164,7 +168,7 @@ export async function peekTarget(
     target: OpenTarget,
     report: ReportOpen = toast
 ): Promise<OpenResult> {
-    if (target.kind === "canvas" || target.kind === "memhygiene") {
+    if (target.kind === "canvas" || target.kind === "memhygiene" || target.kind === "council") {
         return openTarget(model, target, report);
     }
     const current = nextOpen();
@@ -270,6 +274,8 @@ async function land(
             return select(await loadCanvas(model, target, current, caller), (c) => selectCanvas(model, target, c));
         case "memhygiene":
             return select(await loadMemHygiene(target, current), () => selectMemHygiene(model, target.project));
+        case "council":
+            return selectCouncil(model, target);
     }
 }
 
@@ -283,7 +289,7 @@ async function select<T>(load: Loaded<T>, write: (facts: T) => OpenResult | Prom
 
 async function peek(
     model: AgentsViewModel,
-    target: Exclude<OpenTarget, CanvasTarget | MemHygieneTarget>,
+    target: Exclude<OpenTarget, CanvasTarget | MemHygieneTarget | CouncilTarget>,
     current: () => boolean
 ): Promise<OpenResult> {
     const resolved = target.kind === "channel" ? await channelRun(target, current) : loaded<PeekTarget>(target);
@@ -616,6 +622,12 @@ function selectMemHygiene(model: AgentsViewModel, project: string): OpenResult {
     globalStore.set(setupTabAtom, "memory");
     selectMemoryProject(project);
     landOn(model.surfaceAtom, "setup");
+    return OK;
+}
+
+// A council has no load to prove: the Agent surface's council view reads it by id itself (useCouncil).
+function selectCouncil(model: AgentsViewModel, target: CouncilTarget): OpenResult {
+    showCouncil(target.councilId, "discussion", model);
     return OK;
 }
 
