@@ -17,12 +17,12 @@ Work moves to another machine; the person stopped the runs below on purpose.
 - **Shipped:** run 74b368ce, the readable council on v1 (answer-first report, plain words, top-3 picks with agreement as
   a reaction, done toast and unread dot, a waiting council in Needs you, Setup as one composer). Its hand checks are in
   `docs/open-issues.md` "0 · Waiting on a hand check".
+- **Shipped:** run 3f0ba255, the room (the running council as a group chat, Brainstorm mode, one council at a time
+  with a Queued row, started by the agent from a chat, saved into `docs/council/`). Its hand checks are in
+  `docs/open-issues.md` "0 · Waiting on a hand check".
 - **Next, in this order, each with Arc engine** (`wsh runs start --plan <file> --runtime claude --model opus`):
-  1. `docs/superpowers/plans/2026-10-22-council-v1-room.md` (the room as a group chat, Brainstorm mode, one council at
-     a time, started from a chat, saved into `docs/council/`). Cancelled right after it started; nothing of it landed.
-  2. `docs/superpowers/plans/2026-10-22-council-bench.md` (`wsh council bench`, "Was this useful?"), with
-     `--after <the run of 1>`. Never started.
-  3. `docs/superpowers/plans/2026-10-22-council-phase0b.md` (the stronger benchmark). Cancelled at its task 4 with 9
+  1. `docs/superpowers/plans/2026-10-22-council-bench.md` (`wsh council bench`, "Was this useful?"). Never started.
+  2. `docs/superpowers/plans/2026-10-22-council-phase0b.md` (the stronger benchmark). Cancelled at its task 4 with 9
      of 12 runs done (services-bugs, agents-bugs and newcomer, each V0, V2, V3; services-sleep not run) and nothing
      judged. Those results and every bench case live only in the old machine's data dir, so a new machine re-runs the
      plan from the start; its tasks 1 and 2 rebuild the cases, but the `newcomer` case must be rebuilt by hand first:
