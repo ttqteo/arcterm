@@ -34,6 +34,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   next message; asking the lead to stop Bob while he is still working should end his turn, and a later `SendMessage`
   should resume him with his earlier messages. Findings: `docs/council-phase0.md` ("Probe").
 
+- [ ] (arcterm) Copy id: right-click an agent in the Agent sidebar tree, and a segment of a split row: the menu shows
+  Copy id with the 8-character id beside it (a # icon, no @), and pasting gives the bare id. Alt-drag onto a Claude
+  pane still types `@id `. Commit "feat(agents): the row menu copies an agent's bare id".
 - [ ] (arcterm) Council, a real run: in Agent, New council on a project, a UI feature with a few files, the
   "Review a UI feature" group, Start council. The Running board (Discussion in round 1) shows each expert's card with
   the line it is reading (`Grep "…" in pkg/…`) and the proposals appear as the experts finish; Summarize stays off until round 1

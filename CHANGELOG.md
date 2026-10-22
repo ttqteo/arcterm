@@ -22,6 +22,14 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- An agent's right-click menu has **Copy id** in place of Copy @mention: it copies the bare id, so pasting it to tell
+  an agent about another one keeps the message with the agent you typed to, where a leading `@id` sent it away. Drag
+  an agent onto a pane holding Alt still types its `@` token to message it.
+
 ## 0.15.17 — 2026-10-21
 
 ### Added

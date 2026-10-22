@@ -9,6 +9,7 @@ import {
     isFinishTransition,
     mentionToken,
     muteMode,
+    shortTabId,
     subagentsLabel,
     tasksLabel,
 } from "./agentrowmodel";
@@ -64,7 +65,7 @@ describe("agentRowMenuItems", () => {
             { key: "open", label: "Open" },
             { key: "terminal", label: "Open terminal" },
             { key: "copy", label: "Copy name" },
-            { key: "mention", label: "Copy @mention" },
+            { key: "id", label: "Copy id" },
             { separator: true },
             { key: "close", label: "Close agent", danger: true },
         ]);
@@ -80,7 +81,13 @@ describe("agentRowMenuItems", () => {
     it("orders optional items diff -> mute between terminal and copy", () => {
         const items = agentRowMenuItems({ hasDiff: true, hasMute: true });
         const keys = items.map((i) => ("key" in i ? i.key : "sep"));
-        expect(keys).toEqual(["open", "terminal", "diff", "mute", "copy", "mention", "sep", "close"]);
+        expect(keys).toEqual(["open", "terminal", "diff", "mute", "copy", "id", "sep", "close"]);
+    });
+});
+
+describe("shortTabId", () => {
+    it("is the 8 characters of the tab id wsh agents list prints, with no @", () => {
+        expect(shortTabId("3f2a91bc-1234-5678-9abc-def012345678")).toBe("3f2a91bc");
     });
 });
 

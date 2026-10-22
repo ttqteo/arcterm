@@ -12,10 +12,10 @@ import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue, type Atom } from "jotai";
 import {
     ArrowUpRight,
-    AtSign,
     Check,
     Copy,
     GitCompare,
+    Hash,
     Minimize2,
     PanelRight,
     Plus,
@@ -31,8 +31,8 @@ import {
     clampQuestionIndex,
     entriesToShow,
     isFinishTransition,
-    mentionToken,
     muteMode,
+    shortTabId,
     subagentsLabel,
     tasksLabel,
     type AgentRowMenuItem,
@@ -285,7 +285,7 @@ export const AgentRow = memo(function AgentRow({
             diff: <GitCompare size={15} />,
             mute: <Minimize2 size={15} />,
             copy: <Copy size={15} />,
-            mention: <AtSign size={15} />,
+            id: <Hash size={15} />,
             close: <X size={15} />,
         };
         const clicks: Record<string, () => void> = {
@@ -294,7 +294,7 @@ export const AgentRow = memo(function AgentRow({
             diff: onOpenDiff,
             mute: () => muteAction?.(),
             copy: () => void navigator.clipboard.writeText(agent.name),
-            mention: () => void navigator.clipboard.writeText(mentionToken(agent.id)),
+            id: () => void navigator.clipboard.writeText(shortTabId(agent.id)),
             close: () => confirmCloseSession(agent),
         };
         const items: ContextMenuItem[] = agentRowMenuItems({ hasDiff: !!diff, hasMute: !!muteAction }).map(
@@ -303,7 +303,7 @@ export const AgentRow = memo(function AgentRow({
                     ? { type: "separator" }
                     : {
                           label: it.label,
-                          sublabel: it.key === "mention" ? mentionToken(agent.id) : undefined,
+                          sublabel: it.key === "id" ? shortTabId(agent.id) : undefined,
                           icon: icons[it.key],
                           click: clicks[it.key],
                           danger: it.danger,
