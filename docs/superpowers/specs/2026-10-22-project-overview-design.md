@@ -42,22 +42,23 @@ One column, `max-width` 760px, centred in the centre pane.
   - Terminal is `quickTerminal(model, project, path)` (`agenttree.tsx`).
   - Council is `showCouncilSetup(project)` (`agentcenter.ts`).
 
-**Needs you** — rows that wait on the person, each with one action:
-- an agent of the project that is asking: its name, `asking` in the asking colour and its question; **Answer** focuses
-  the agent (`showTerminal` + `focusIdAtom`).
-- a run of the project whose land was held or that asks: its id and title, why it waits; **Land again** (`landAgain`,
-  `view/jarvis/landrun.ts`) for a held land, **Open** for the rest.
+**Needs you** — rows that wait on the person, each with its action:
+- an agent of the project that is asking: its name, `asking` in the asking colour and its question; **Answer** selects
+  the agent (`selectAgentRow`, `agenttree.tsx`), which puts its terminal back in the centre.
+- the Cockpit's own Needs you items scoped to this project: a run whose land was held (Land again), a run to confirm or
+  start, a review gate, a blocked task, an escalation, a due chunk. They are `useNeedsYou` (`needsyou.ts`) with the
+  project in place of the app bar's filter, drawn with the strip's own rows (`needsyoustrip.tsx`), so an item reads and
+  acts the same on both pages.
 
-**Running** — the project's agents at work, its active runs and its terminals: a working dot, the name, what it is
-doing, and its tokens and age (a run: tasks done of total). A click on a row selects that agent or terminal, or opens the
-run.
+**Running** — the project's agents at work (a lead counts: its run is its agent) and its terminals running a command:
+a working dot, the name, what it is doing, and how long. A click on a row selects that agent or terminal.
 
 **Quiet** — when Needs you and Running are both empty, neither block is drawn; one line takes their place:
 "Nothing needs you and nothing is running in <project>." A block that is empty while the other is not is left out.
 
-Everything the page shows is already in the frontend: the agents and terminals per project are what `projectTree`
-(`agentsidebarmodel.ts`) files under the folder, runs come from the runs store, and the change count from the git
-changes the Diff surface and the cards already load. No new backend command.
+Everything the page shows is already in the frontend: the agents and terminals per project by `projectOf`
+(`agentsviewmodel.ts`), the Needs you items from the attention feed, and the branch and change count from
+`GitChangesCommand` on the project path, the call the agent cards already make. No new backend command.
 
 ## Shape of the code
 
