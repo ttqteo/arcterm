@@ -63,6 +63,9 @@ func (ws *WshServer) CouncilStartCommand(ctx context.Context, data wshrpc.Comman
 	if data.Id != "" {
 		return councilRunner.StartSaved(context.Background(), data.Id)
 	}
+	if data.Mode != "" && data.Mode != council.ModeReview && data.Mode != council.ModeBrainstorm {
+		return nil, fmt.Errorf("unknown council mode %q: use %s or %s", data.Mode, council.ModeReview, council.ModeBrainstorm)
+	}
 	experts, err := councilPanel(data.Group, data.Experts)
 	if err != nil {
 		return nil, err
@@ -74,6 +77,8 @@ func (ws *WshServer) CouncilStartCommand(ctx context.Context, data wshrpc.Comman
 		Files:            data.Files,
 		Screenshots:      data.Screenshots,
 		Group:            data.Group,
+		Mode:             data.Mode,
+		ModeWhy:          data.ModeWhy,
 		Experts:          experts,
 		PauseAfterRound1: data.Pause,
 		SessionId:        data.SessionId,

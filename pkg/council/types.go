@@ -15,7 +15,23 @@ const (
 	StateNotRun   CouncilState = "not-run"
 	StateStopped  CouncilState = "stopped"
 	StateFailed   CouncilState = "failed"
+	StateQueued   CouncilState = "queued" // waits for the one council that runs; starts by itself when it ends
 )
+
+// The two modes of a council. Review is the default and the mode of every council saved before modes existed, so a
+// council with no Mode reads as Review (ModeOf).
+const (
+	ModeReview     = "review"
+	ModeBrainstorm = "brainstorm"
+)
+
+// ModeOf is a council's mode, Review when none is set.
+func ModeOf(c *Council) string {
+	if c == nil || c.Mode == "" {
+		return ModeReview
+	}
+	return c.Mode
+}
 
 type CouncilStance string
 
@@ -57,7 +73,8 @@ type CouncilProposal struct {
 	Evidence  []CouncilEvidence `json:"evidence,omitempty"`
 	Ts        int64             `json:"ts"`
 	Withdrawn bool              `json:"withdrawn,omitempty"`
-	Cut       bool              `json:"cut,omitempty"` // unticked by the person at the pause
+	Cut       bool              `json:"cut,omitempty"`  // unticked by the person at the pause
+	Wild      bool              `json:"wild,omitempty"` // a Brainstorm wild idea
 }
 
 type CouncilReply struct {
@@ -67,6 +84,7 @@ type CouncilReply struct {
 	Author     string            `json:"author"`             // an expert id, or YouId
 	Stance     CouncilStance     `json:"stance,omitempty"`
 	Revised    bool              `json:"revised,omitempty"` // the author revised its own proposal here
+	Builds     bool              `json:"builds,omitempty"`  // a Brainstorm reply that builds on the idea
 	Text       string            `json:"text"`
 	Evidence   []CouncilEvidence `json:"evidence,omitempty"`
 	To         []string          `json:"to,omitempty"`    // the person's reply: the experts who answer it
@@ -83,12 +101,14 @@ type CouncilDirection struct {
 	From      []string                 `json:"from"`    // proposal ids
 	Stances   map[string]CouncilStance `json:"stances"` // expert id -> stance; the authors are left out
 	Agreed    bool                     `json:"agreed"`
-	IdeaId    string                   `json:"ideaid,omitempty"` // the line ideastore.Add made in the session's Ideas
+	IdeaId    string                   `json:"ideaid,omitempty"`    // the line ideastore.Add made in the session's Ideas
+	FirstStep string                   `json:"firststep,omitempty"` // Brainstorm: the one thing to do first
 }
 
 type CouncilSummary struct {
 	Text       string             `json:"text"`
 	Directions []CouncilDirection `json:"directions"`
+	Kept       []CouncilDirection `json:"kept,omitempty"`   // Brainstorm: the wild ideas kept aside
 	Outcomes   map[string]string  `json:"outcomes"`         // proposal id -> "Direction 1", "Merged into direction 3", "Withdrawn in round 2"
 	Answer     string             `json:"answer,omitempty"` // the one-sentence answer to the person's question; empty without a question
 	At         int64              `json:"at"`
@@ -116,6 +136,9 @@ type CouncilSuggestion struct {
 	Files []string        `json:"files"`
 	Roles []CouncilExpert `json:"roles"`
 	Group string          `json:"group,omitempty"`
+	// Mode is the mode the coordinator reads from the question, and ModeWhy its one-line reason.
+	Mode    string `json:"mode,omitempty"`
+	ModeWhy string `json:"modewhy,omitempty"`
 }
 
 type Council struct {
@@ -126,7 +149,11 @@ type Council struct {
 	Files            []string                     `json:"files,omitempty"`
 	Screenshots      []string                     `json:"screenshots,omitempty"`
 	Group            string                       `json:"group,omitempty"`
-	Experts          []CouncilExpert              `json:"experts"` // the coordinator last
+	Mode             string                       `json:"mode,omitempty"`        // ModeReview or ModeBrainstorm; empty reads as review
+	ModeWhy          string                       `json:"modewhy,omitempty"`     // why the mode was picked: the suggestion's, the agent's --mode-why, or "picked by hand"
+	QueuedAfter      string                       `json:"queuedafter,omitempty"` // the id of the council this one waits on while queued
+	DocPath          string                       `json:"docpath,omitempty"`     // the absolute path of the saved document
+	Experts          []CouncilExpert              `json:"experts"`               // the coordinator last
 	PauseAfterRound1 bool                         `json:"pauseafterround1,omitempty"`
 	SessionId        string                       `json:"sessionid,omitempty"` // the agent session that started it
 	State            CouncilState                 `json:"state"`

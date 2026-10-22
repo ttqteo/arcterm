@@ -32,7 +32,8 @@ type CouncilCommands interface {
 // CommandCouncilStartData starts a council. Id alone starts the saved not-run council of that id and every other
 // field is ignored. Otherwise Experts is the panel (the coordinator last, as council.ExpertsFor builds it) and, when
 // empty, the panel of Group. NotRun saves the council as not-run and starts nothing, for a start the token gate
-// refused: Start council in the app runs it later.
+// refused: Start council in the app runs it later. Mode is council.ModeReview or council.ModeBrainstorm (empty is
+// review; any other word is refused) and ModeWhy the one-line reason it was picked.
 type CommandCouncilStartData struct {
 	Id          string                  `json:"id,omitempty"`
 	Project     string                  `json:"project,omitempty"`
@@ -45,6 +46,8 @@ type CommandCouncilStartData struct {
 	Pause       bool                    `json:"pause,omitempty"`
 	SessionId   string                  `json:"sessionid,omitempty"`
 	NotRun      bool                    `json:"notrun,omitempty"`
+	Mode        string                  `json:"mode,omitempty"`
+	ModeWhy     string                  `json:"modewhy,omitempty"`
 }
 
 // CommandCouncilListData lists the councils of one project, newest first; an empty project lists them all.

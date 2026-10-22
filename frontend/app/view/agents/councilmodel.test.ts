@@ -496,6 +496,11 @@ describe("headerChip and treeMeta", () => {
         expect(headerChip(council({ state: "failed", round: 3 }))).toBe("Failed");
     });
 
+    it("words a council waiting for the one that runs", () => {
+        expect(headerChip(council({ state: "queued", round: 0 }))).toBe("Queued");
+        expect(treeMeta(council({ state: "queued", round: 0 }))).toEqual({ text: "Queued", tone: "muted" });
+    });
+
     it("gives the tree row its word and tone", () => {
         expect(treeMeta(council({ round: 2 }))).toEqual({ text: "Running", tone: "working" });
         expect(treeMeta(council({ round: 3 }))).toEqual({ text: "Running", tone: "working" });
@@ -810,9 +815,19 @@ describe("draftFromCouncil and emptyCouncilDraft", () => {
             sessionId: "s1",
             suggestState: "idle",
             groupPicked: true,
+            mode: "review",
+            modePicked: true,
         });
         expect(d.experts).not.toBe(c.experts);
         expect(d.files).not.toBe(c.files);
+    });
+
+    it("takes the council's mode, and reads a council with none as Review", () => {
+        expect(draftFromCouncil(council({ mode: "brainstorm" })).mode).toBe("brainstorm");
+        expect(draftFromCouncil(council({ mode: "brainstorm" })).modePicked).toBe(true);
+        expect(draftFromCouncil(council({ mode: "review" })).mode).toBe("review");
+        expect(draftFromCouncil(council()).mode).toBe("review");
+        expect(draftFromCouncil(council()).modePicked).toBe(true);
     });
 
     it("fills what an old council leaves out", () => {
@@ -837,6 +852,8 @@ describe("draftFromCouncil and emptyCouncilDraft", () => {
             pause: false,
             suggestState: "idle",
             groupPicked: false,
+            mode: "review",
+            modePicked: false,
         });
     });
 });

@@ -772,6 +772,8 @@ declare global {
         pause?: boolean;
         sessionid?: string;
         notrun?: boolean;
+        mode?: string;
+        modewhy?: string;
     };
 
     // wshrpc.CommandCouncilSuggestData
@@ -2267,6 +2269,10 @@ declare global {
         files?: string[];
         screenshots?: string[];
         group?: string;
+        mode?: string;
+        modewhy?: string;
+        queuedafter?: string;
+        docpath?: string;
         experts: CouncilExpert[];
         pauseafterround1?: boolean;
         sessionid?: string;
@@ -2309,6 +2315,7 @@ declare global {
         stances: {[key: string]: string};
         agreed: boolean;
         ideaid?: string;
+        firststep?: string;
     };
 
     // wshrpc.CouncilEstimateRtnData
@@ -2366,6 +2373,7 @@ declare global {
         ts: number;
         withdrawn?: boolean;
         cut?: boolean;
+        wild?: boolean;
     };
 
     // council.CouncilReply
@@ -2376,6 +2384,7 @@ declare global {
         author: string;
         stance?: string;
         revised?: boolean;
+        builds?: boolean;
         text: string;
         evidence?: CouncilEvidence[];
         to?: string[];
@@ -2401,12 +2410,15 @@ declare global {
         files: string[];
         roles: CouncilExpert[];
         group?: string;
+        mode?: string;
+        modewhy?: string;
     };
 
     // council.CouncilSummary
     type CouncilSummary = {
         text: string;
         directions: CouncilDirection[];
+        kept?: CouncilDirection[];
         outcomes: {[key: string]: string};
         answer?: string;
         at: number;

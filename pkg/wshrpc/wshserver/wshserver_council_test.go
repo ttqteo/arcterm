@@ -744,6 +744,76 @@ func TestCouncilStartTakesTheGroupsPanelWhenNoExperts(t *testing.T) {
 	}
 }
 
+func TestCouncilStartCopiesMode(t *testing.T) {
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	// a not-run council keeps the mode and the reason it was picked
+	data := councilStartData(t)
+	data.Mode, data.ModeWhy, data.NotRun = council.ModeBrainstorm, "a goal", true
+	saved, err := ws.CouncilStartCommand(ctx, data)
+	if err != nil {
+		t.Fatalf("start with a mode: %v", err)
+	}
+	if saved.Mode != council.ModeBrainstorm || saved.ModeWhy != "a goal" {
+		t.Errorf("saved mode = %q (%q), want brainstorm (a goal)", saved.Mode, saved.ModeWhy)
+	}
+	got, err := ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: saved.Id})
+	if err != nil || got.Mode != council.ModeBrainstorm || got.ModeWhy != "a goal" {
+		t.Errorf("get after the save = %+v, %v, want the mode on disk", got, err)
+	}
+
+	// a started council carries them too
+	data = councilStartData(t)
+	data.Mode, data.ModeWhy = council.ModeBrainstorm, "picked by hand"
+	started, err := ws.CouncilStartCommand(ctx, data)
+	if err != nil {
+		t.Fatalf("start a running council with a mode: %v", err)
+	}
+	if started.Mode != council.ModeBrainstorm || started.ModeWhy != "picked by hand" {
+		t.Errorf("started mode = %q (%q), want brainstorm (picked by hand)", started.Mode, started.ModeWhy)
+	}
+	waitCouncil(t, started.Id)
+
+	// no mode on the wire is no mode on the council: it reads as review
+	plain := councilStartData(t)
+	plain.NotRun = true
+	review, err := ws.CouncilStartCommand(ctx, plain)
+	if err != nil {
+		t.Fatalf("start without a mode: %v", err)
+	}
+	if review.Mode != "" || council.ModeOf(review) != council.ModeReview {
+		t.Errorf("a start with no mode saved %q, want none, read as review", review.Mode)
+	}
+	data = councilStartData(t)
+	data.Mode, data.NotRun = council.ModeReview, true
+	if explicit, err := ws.CouncilStartCommand(ctx, data); err != nil || council.ModeOf(explicit) != council.ModeReview {
+		t.Errorf("a start with mode review = %+v, %v, want a review council", explicit, err)
+	}
+}
+
+func TestCouncilStartRefusesAnUnknownMode(t *testing.T) {
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	data := councilStartData(t)
+	data.Mode = "debate"
+	if c, err := ws.CouncilStartCommand(ctx, data); err == nil {
+		t.Errorf("start with mode debate = %+v, want an error", c)
+	}
+	data.NotRun = true
+	if c, err := ws.CouncilStartCommand(ctx, data); err == nil {
+		t.Errorf("not-run start with mode debate = %+v, want an error", c)
+	}
+	if list, _ := council.List(""); len(list) != 0 || fake.total() != 0 {
+		t.Errorf("a refused start left %d councils and %d calls", len(list), fake.total())
+	}
+}
+
 func TestCouncilStartRefusesWhatCannotRun(t *testing.T) {
 	fake := newCouncilFake()
 	useCouncilRig(t, fake)
