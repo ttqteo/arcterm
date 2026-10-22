@@ -1,74 +1,87 @@
 ---
 name: council
-description: Use when a direction was just weighed, a spec or plan was just written, or a paper draft is about to be submitted — offer a Council review as a numbered choice and, when picked, run it with `wsh council start` and read back its Summary.
+description: Use when the conversation holds a clear problem or a thing to judge and a real open question more viewpoints would settle (two directions weighed and neither won, a spec or plan just written, a draft about to be submitted), or when the person asks for a council ("ask a council", "hỏi council", /arc:council) — start it yourself with `wsh council start`, wait for it, and sum its report up in the conversation.
 ---
 
-# Offering a Council review
+# Starting a Council
 
-A council is a panel of expert agents that reviews one feature in three rounds of one-shot `claude -p` calls:
-each expert proposes directions, the experts review each other's proposals, and a coordinator ranks the directions.
-arcterm shows it as a Discussion with a Summary (ranked directions plus a matrix). One council costs roughly 0.5–1.5M
-tokens, so you offer it and the person picks it; you never start one on your own.
+A council is a panel of expert agents that works one question in three rounds of one-shot `claude -p` calls: each
+expert proposes, the experts react to each other's proposals, and a coordinator writes the answer. It runs in one of
+two modes, which you pick:
 
-## When to offer it
+- **`review`** — a thing to judge (a spec, a plan, a design, a draft, two directions already on the table). The report
+  ranks the directions.
+- **`brainstorm`** — a problem or a goal with no answer yet. The report holds up to three ideas worth trying, each with
+  its why and a first step, plus the wild ideas kept aside.
 
-At a natural point, in the same place you would offer the Arc engine:
+arcterm shows it as a group chat while it runs, then as a report, and saves every finished council as a document in the
+project's `docs/council/` with its whole discussion. One council costs roughly 0.5–1.5M tokens. The Token burn gate
+prices every start and asks the person when it is costly, so you start one without asking first.
 
-- a direction was just weighed with the person and they are about to commit to one;
-- a spec was just written;
-- a plan is written and about to go to the engine;
+## When to start one
+
+**Without being asked**, when the conversation holds a clear problem or a thing to judge *and* a real open question
+that more viewpoints would settle:
+
+- two directions were weighed and neither won;
+- a spec or a plan was just written, before it goes to the engine;
 - a paper draft (`.tex`) is about to be submitted.
 
-Offer it at most once per decision. If the person passed it over, do not offer it again for the same spec, plan or
-draft. Never start one without their pick.
+**At once** when the person asks for one: "ask a council", "hỏi council", `/arc:council`. Do not judge whether the
+conversation is ready; use what it holds. If they ask and the conversation holds no question yet, ask for it in one line; do not invent one.
 
-## The offer
+**Not** for a question already settled, a small or reversible choice, a question you can answer by reading the code,
+or when the person said no council. Start at most one council per decision: if the person stopped one or turned it
+down for this spec, plan, draft or question, do not start another for it unless they ask. `wsh council list` shows the
+project's councils, so check it before starting a second one on the same thing.
 
-Get the line to quote with `wsh council estimate`, which starts nothing and asks nothing:
+## Starting it
 
-```
-wsh council estimate --feature "<the feature, in a few words>" --files <path>,<path> --group <group>
-```
-
-`--files` are the files the experts read (the spec or plan, the source it touches), comma-separated, relative to the
-working directory or absolute; their size is part of the estimate. `--group` is `ui-feature` (the default, "Review a
-UI feature") for a UI feature, a spec or a plan; use `paper` ("Paper review") for a `.tex` draft. `wsh council start`
-and `wsh council estimate` take the same four flags (`--feature`, `--files`, `--group`, `--project`).
-
-Put its line into a numbered choice, with your usual option to skip, and mark the council as recommended only when it
-is worth the tokens:
+Pick the mode yourself, from the question: a problem or a goal ("how do we…", "what should…") is `brainstorm`; a thing
+that exists to be judged (a draft, a spec, a plan, a feature, "review this", "what's wrong with…") is `review`. The
+person does not choose it. Then run:
 
 ```
-1. Council review (recommended) — group "Review a UI feature": UX, RAM, New user, Skeptic on sonnet, Coordinator on opus · ≈ 9 calls · ~0.8M tokens · ~6 min
-2. Carry on without it
+wsh council start --mode <review|brainstorm> --mode-why "<one line: why this mode>" \
+  --feature "<the first line: what the council looks at>" \
+  --question "<the question in the person's words. Keep to: <the constraints they stated>>" \
+  --files <path>,<path> [--screenshot <png>]...
 ```
 
-Quote the line as `estimate` printed it: it names the group, every expert's model and the cost, which is what the
-person is agreeing to.
+- `--mode-why` is one line, kept with the council beside its mode ("a goal with no answer yet", "a plan to judge").
+- `--question` is the person's question in their own words, not your reading of it, and not your preferred answer: a
+  council anchored on your view adds nothing. When they stated constraints (the budget, the stack, what is out of
+  scope, what is already decided), add them after "Keep to:"; leave "Keep to:" out when they stated none.
+- `--files` are the files the experts read (the spec or plan, the source it touches), comma-separated, relative to the
+  working directory or absolute. Their size is part of the cost, so name what matters, not the whole tree.
+- `--screenshot <png>` (repeatable) for a UI the experts should see.
+- `--group` is optional: `brainstorm` takes `product-ideas` and `review` takes `ui-feature` (a UI feature, a spec or a
+  plan) when you leave it out. Use `--group paper` ("Paper review") for a `.tex` draft.
+- Leave `--pause` out unless the person asked for it: a paused council stops after round 1 and only the person can
+  continue it. `--queue` is accepted and does nothing more; every second start is queued.
 
-## When it is picked
+Say in **one line** what happened, from the line `start` printed:
 
-Picking it is the yes: run it at once, with no second question and no Setup. Use the same feature, files and group
-as the offer:
+- `council <id> started: …` — it is running. Say so with the mode, the group and the estimate.
+- `Queued after <id> (<feature>)` — one council runs at a time across all projects, so this one waits for the running
+  council and starts by itself when it ends. Say so, and which council it waits for.
+- `Not run: …` — see below.
 
-```
-wsh council start --feature "<the feature>" --files <path>,<path> --group <group>
-```
-
-It prints `council <id> started: …`. Then read it back:
+Then read it back:
 
 ```
 wsh council wait <id>
 ```
 
-`wait` polls until the council stops running, then prints its Summary and Matrix as markdown. Sum the directions up in
-the conversation in a few lines (the top direction, why it ranked there, where the panel disagreed), and carry on from
-there with the spec, the plan or the draft. A council started from this session puts each direction into this session's
-Ideas list itself, so do not record them again with `wsh idea add`.
+`<id>` is the new council's own id; when the printed line does not carry it, `wsh council list` shows it (newest
+first). `wait` polls until the council stops running (a queued one included), then prints the report and the matrix as
+markdown. Sum it up in the conversation in a few lines: for a review, the top direction, why it ranked there and where
+the panel disagreed; for a brainstorm, the ideas worth trying with their first steps, and a wild idea only when it
+changes the choice. Then carry on from there with the spec, the plan, the draft or the problem.
 
-Optional flags of `start`: `--screenshot <png>` (repeatable) for a UI the experts should see, `--question "<text>"`
-for something to put to the whole council, `--queue` to wait while another council of this project is running. Leave
-`--pause` out unless the person asked for it: a paused council stops after round 1 and only the person can continue it.
+A council started from this session puts each direction into this session's Ideas list itself, so do not record them
+again with `wsh idea add`. Its document is saved under the project's `docs/council/` when it ends (done or stopped);
+`wsh council show <id> --json` carries its path as `docpath`.
 
 ## What can come back
 
@@ -80,11 +93,11 @@ for something to put to the whole council, `--queue` to wait while another counc
 - **A failed council** makes `wait` exit non-zero with the reason. Report it and carry on; do not start another to
   retry, which would spend the tokens again.
 - **A stopped council** prints what its finished rounds hold. Use it as it is.
-- **A timeout** (`wait` gives up after 30 minutes by default) leaves the council running. Say so, and run
-  `wsh council wait <id>` again later if you need the answer.
+- **A timeout** (`wait` gives up after 30 minutes by default) leaves the council as it is, running or still queued.
+  Say so, and run `wsh council wait <id>` again later if you need the answer.
 
 ## The other commands
 
 - `wsh council list` — the project's councils, newest first: id, state, round and feature.
-- `wsh council show <id>` — a council's Summary and Matrix as markdown, without waiting.
-- `wsh council stop <id>` — stop a running council; the rounds that finished stay. Only when the person asks.
+- `wsh council show <id>` — a council's report and matrix as markdown, without waiting.
+- `wsh council stop <id>` — stop a running or queued council; the rounds that finished stay. Only when the person asks.

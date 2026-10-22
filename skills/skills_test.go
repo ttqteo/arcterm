@@ -43,8 +43,10 @@ func TestShippedSkills(t *testing.T) {
 	if got := frontmatterName(t, string(doc)); got != "council" {
 		t.Errorf("council frontmatter name = %q, want council", got)
 	}
-	// the offer, the run, the read-back and the refusal are what the skill teaches; each names its command
-	for _, want := range []string{"wsh council estimate", "wsh council start", "wsh council wait", "Not run:"} {
+	// the start (with the mode the agent picks), the read-back, the refusal and the queued line are what the skill
+	// teaches; each names its command or the words it prints. wsh council estimate is not among them: the agent starts
+	// a council itself and the token gate prices the start, so the skill no longer offers with an estimate.
+	for _, want := range []string{"wsh council start", "--mode", "wsh council wait", "Not run:", "Queued after"} {
 		if !strings.Contains(string(doc), want) {
 			t.Errorf("council/SKILL.md does not mention %q", want)
 		}
