@@ -61,6 +61,9 @@ export const launcherRestoredAtom = atom(false) as PrimitiveAtom<boolean>;
 export const launcherBusyAtom = atom(false) as PrimitiveAtom<boolean>;
 // what the next open fills in, read by the dialog once the project list is in
 export const launcherPrefillAtom = atom<NewRunPrefill | null>(null) as PrimitiveAtom<NewRunPrefill | null>;
+// The project this open names for itself (a project Overview's New agent and Run); null on every other open. The dialog
+// starts on it, and the focused row's project does not take its place (launchermodal.tsx), as a prefill's does not.
+export const launcherOwnProjectAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
 export type LauncherModel = { launcherAtom: PrimitiveAtom<LauncherKind | null> };
 
@@ -80,8 +83,14 @@ export const RESUME_PICK_KEEP_MS = 2 * 60 * 1000;
 let closedAt: number | null = null;
 
 // Every way in. A door picks its own half of the Start list; the agent row and the run shape inside it stay as the
-// last open left them. A prefill always opens on the run half.
-export function openLauncher(model: LauncherModel, door: LauncherKind, prefill?: NewRunPrefill): void {
+// last open left them. A prefill always opens on the run half. A `project` is the registered project the open picks for
+// itself, which the focused agent's project does not override.
+export function openLauncher(
+    model: LauncherModel,
+    door: LauncherKind,
+    prefill?: NewRunPrefill,
+    project?: string
+): void {
     if (closedAt != null && Date.now() - closedAt > RESUME_PICK_KEEP_MS) {
         globalStore.set(launcherResumeAtom, null);
     }
@@ -90,6 +99,10 @@ export function openLauncher(model: LauncherModel, door: LauncherKind, prefill?:
     globalStore.set(launcherKindAtom, kind);
     globalStore.set(launcherRestoredAtom, prefill == null && draftShown(keptDraft()));
     globalStore.set(launcherPrefillAtom, prefill ?? null);
+    globalStore.set(launcherOwnProjectAtom, project ?? null);
+    if (project != null) {
+        pickLauncherProject(project, globalStore.get(launcherProjectAtom));
+    }
     globalStore.set(model.launcherAtom, door);
 }
 

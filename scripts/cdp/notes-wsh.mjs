@@ -23,11 +23,15 @@ function builtWsh() {
     return join(REPO, "dist", "bin", `wsh-${version}-${os}.${process.arch}${ext}`);
 }
 
-// mirrors wconfig.resolveVaultRoot
+// mirrors wconfig.resolveVaultRoot: a configured memory:vaultpath, else <datadir>/vault for an app started with
+// ARC_DEV_NO_GLOBAL_INSTALL (final-verify's isolated app keeps its vault there), else ~/.waveterm/vault. The app
+// does not report that flag, so the vault folder in its data dir stands for it
 export async function vaultRoot(h) {
     const settings = (await h.rpc("getfullconfig", null))?.settings ?? {};
     const configured = settings["memory:vaultpath"];
-    return configured ? configured.replace(/^~(?=$|[\\/])/, homedir()) : join(homedir(), ".waveterm", "vault");
+    if (configured) return configured.replace(/^~(?=$|[\\/])/, homedir());
+    const owned = join((await h.rpc("waveinfo", null)).datadir, "vault");
+    return existsSync(owned) ? owned : join(homedir(), ".waveterm", "vault");
 }
 
 // a vault with a remote is one the app pushes: a dev app pointed at it would publish the fixture note

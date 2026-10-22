@@ -14632,8 +14632,9 @@ async function ahResolveModules(h) {
     }
 }
 
-// answers getsessionsactivity with the seeded sessions (counting calls) and delegates every other command to what was there
-async function installAhMock(h, sessions, apiUrl) {
+// answers getsessionsactivity with the seeded sessions (counting calls) and delegates every other command to what was there;
+// the probe call must find the session `probeId` among them
+async function installAhMock(h, sessions, apiUrl, probeId = "ah-1") {
     return h.ev(`(async () => {
         const mod = await import(${JSON.stringify(apiUrl)});
         const api = mod.RpcApi;
@@ -14658,7 +14659,7 @@ async function installAhMock(h, sessions, apiUrl) {
         api.setMockRpcClient(mock);
         const probe = await api.GetSessionsActivityCommand(window.TabRpcClient, { windowdays: 30, limit: 100 });
         state.calls = 0;
-        return (probe.sessions ?? []).some((s) => s.id === "ah-1") ? "ok" : "not-intercepted";
+        return (probe.sessions ?? []).some((s) => s.id === ${JSON.stringify(probeId)}) ? "ok" : "not-intercepted";
     })()`);
 }
 
@@ -52196,6 +52197,671 @@ const codeStaleBarLook = {
     },
 };
 
+// A project's Overview (docs/superpowers/specs/2026-10-22-project-overview-design.md): a project folder's right-click menu
+// opens it in the Agent surface's centre, and it says what in the project waits on you and what runs in it, and starts
+// new work there. The arrangement: two throwaway projects, each with a channel bound to its folder (step 8's held runs
+// are scoped to a project through its channel's path), one throwaway terminal in the first, which puts its folder in the
+// Active section, and an ended session filed under it, which puts its folder in Conversations (a mock of
+// getsessionsactivity as agent-history's: the store holds none). Step 8's fixture roster replaces only the agents, so
+// the terminals stay live. Teardown puts the roster file, the Needs you list and the mock back.
+const OV_PROJECT = "verify-overview";
+const OV_OTHER = "verify-overview-other";
+const OV_ASK_ID = "fx-ov-ask";
+const OV_WORK_ID = "fx-ov-work";
+const OV_ELSEWHERE_ID = "fx-ov-elsewhere";
+const OV_SESSION_ID = "ov-1";
+const OV_TERM_NAME = "verify-overview terminal";
+const OV_OTHER_TERM_NAME = "verify-overview-other terminal";
+const OV_QUIET = `Nothing needs you and nothing is running in ${OV_PROJECT}.`;
+// the project's folder row in the Active section, and in Conversations
+const OV_ACTIVE_FOLDER = `[data-agent-folder-section="active"][data-project-folder="${OV_PROJECT}"]`;
+const OV_CONVO_FOLDER = `[data-agent-folder-section="conversations"][data-agent-folder="${OV_PROJECT}"]`;
+// each OS names its file manager (code/pathactions.ts revealLabel), and the app reads the platform off this machine
+const OV_REVEAL = ON_MAC ? "Reveal in Finder" : process.platform === "win32" ? "Show in Explorer" : "Open Containing Folder";
+// page expressions, each parenthesized so a `!` or a `.includes(` after it binds to the whole
+const ovUp = `(document.querySelector('[data-project-overview="${OV_PROJECT}"]') != null)`;
+const ovDown = `(!document.querySelector("[data-project-overview]"))`;
+const ovHas = (sel) => `(document.querySelector(${JSON.stringify(sel)}) != null)`;
+const ovClass = (sel) => `(document.querySelector(${JSON.stringify(sel)})?.className ?? "")`;
+
+const ovGit = (dir, ...args) =>
+    execFileSync("git", ["-C", dir, "-c", "user.email=v@v", "-c", "user.name=v", ...args], { stdio: "pipe" });
+
+// a.txt committed with two lines, then edited (one changed, one added): the header reads one file, +2 −1
+function ovSeedRepo(dir) {
+    ovGit(dir, "init", "-q", "-b", "main");
+    writeFileSync(join(dir, "a.txt"), "one\ntwo\n");
+    ovGit(dir, "add", ".");
+    ovGit(dir, "commit", "-qm", "seed");
+    writeFileSync(join(dir, "a.txt"), "ONE\ntwo\nthree\n");
+}
+
+// an ended session under the first project, in getsessionsactivity's shape (ahSessions'). Its transcript is never read, and
+// stays out of the project's folder: a file there would be an untracked change in the header's count
+function ovSession(ctx, now) {
+    return {
+        runtime: "claude",
+        projectpath: ctx.dirA,
+        projectname: OV_PROJECT,
+        branch: "main",
+        model: "opus",
+        tokenstotal: 1200,
+        status: "done",
+        startedts: now - 3_600_000,
+        durationms: 60_000,
+        events: [],
+        id: OV_SESSION_ID,
+        task: "overview seed",
+        lastactivets: now - 600_000,
+        resumecommand: `claude --resume ${OV_SESSION_ID}`,
+        transcriptpath: join(ctx.base, `${OV_SESSION_ID}.jsonl`),
+    };
+}
+
+// a right-click on the row, where the pointer would be
+const ovContext = (h, sel) =>
+    h.ev(`(() => {
+        const el = document.querySelector(${JSON.stringify(sel)});
+        if (!el) return false;
+        el.scrollIntoView({ block: "nearest" });
+        const r = el.getBoundingClientRect();
+        el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.top + r.height / 2, button: 2 }));
+        return true;
+    })()`);
+
+// a real key, down then up, the modifiers on both events. `down` is CDP's key-down type: "keyDown" is Blink's KeyDown,
+// the event of a key that types a character, while a key press from the keyboard arrives as RawKeyDown, which is the
+// type Blink raises the context menu of Shift+F10 on (WebViewImpl::HandleKeyEvent); keyDown never does
+async function ovKey(h, key, code, keyCode, modifiers = 0, down = "keyDown") {
+    for (const type of [down, "keyUp"]) {
+        await h.cdp("Input.dispatchKeyEvent", {
+            type,
+            key,
+            code,
+            windowsVirtualKeyCode: keyCode,
+            nativeVirtualKeyCode: keyCode,
+            ...(modifiers ? { modifiers } : {}),
+        });
+    }
+}
+
+// Escape shuts the menu, and the Agent surface's own "esc back" takes the same key to the Cockpit (rqCloseMenu), so the
+// surface is entered again
+async function ovCloseMenu(h) {
+    await ovKey(h, "Escape", "Escape", 27);
+    await polishWaitFor(h, `!${CA_MENU_PANEL}`, 2000);
+    await h.goto("agent");
+}
+
+// A modal owns Escape (the surface's bindings stand down under it), so nothing else moves
+async function ovCloseModal(h, gone) {
+    await ovKey(h, "Escape", "Escape", 27);
+    return polishWaitFor(h, gone, 3000);
+}
+
+// the folder row's menu, then Open overview; true once the page is in the centre
+async function ovOpenFromMenu(h, folder = OV_ACTIVE_FOLDER) {
+    if (!(await ovContext(h, folder))) return false;
+    if (!(await polishWaitFor(h, caMenuHas("Open overview"), 3000))) return false;
+    await h.ev(caMenuClick("Open overview"));
+    return polishWaitFor(h, ovUp, 5000);
+}
+
+// the throwaway terminal's row takes the centre back (selectAgentRow), which is how a step leaves the Overview
+async function ovLeave(h, tabId) {
+    await h.ev(`document.querySelector('[data-agent-terminal-row="${tabId}"]')?.click()`);
+    return polishWaitFor(h, ovDown, 3000);
+}
+
+// a real tab whose shell starts in `cwd`, as rail-servers' step 10 makes one; on ctx.tabs the moment it exists, so teardown
+// closes it whatever fails after
+async function ovTerminalTab(h, ctx, name, cwd) {
+    const term = { tabId: await waveService(h, "workspace", "CreateTab", [ctx.workspaceId, name, false]), blockId: null };
+    ctx.tabs.push(term.tabId);
+    const tab = await waveService(h, "object", "GetObject", [`tab:${term.tabId}`]);
+    term.blockId = tab?.blockids?.[0] ?? null;
+    if (!term.blockId) throw new Error(`the throwaway terminal tab ${term.tabId} has no block`);
+    await h.rpc("setmeta", { oref: `block:${term.blockId}`, meta: { view: "term", controller: "shell", "cmd:cwd": cwd } });
+    await h.rpc("controllerresync", { tabid: term.tabId, blockid: term.blockId, forcerestart: true });
+    return term;
+}
+
+// The block's runtime info, which the page writes from the shell's marks: shell:state is `ready` once it has read a prompt
+// mark of the live shell, `running-command` between a command's start mark and the next prompt
+const ovRtInfo = (h, blockId) => h.rpc("getrtinfo", { oref: `block:${blockId}` }).catch(() => null);
+
+// The shell's prompt mark has been read by the page. A shell that has printed something has not always loaded its
+// integration, and a mark that came while the page was reloading is only replayed, so an empty Enter makes it draw a
+// prompt again, and the page records `ready` when it reads that mark. A command typed before then is run unmarked.
+async function ovShellReady(h, blockId) {
+    for (let waited = 0; waited < 20000; waited += 500) {
+        if (waited % 4000 === 0) {
+            await h.rpc("controllerinput", { blockid: blockId, inputdata64: Buffer.from("\r").toString("base64") });
+        }
+        if ((await ovRtInfo(h, blockId))?.["shell:state"] === "ready") return true;
+        await polishNap(500);
+    }
+    return false;
+}
+
+// Types `command` after a different one. The page reports a command on the start mark the shell integration writes, and
+// PowerShell's PSReadLine does not give its history handler (where that mark is written) a line equal to the previous line
+// of its history, which is a file every shell of every earlier run shares: the same `sleep 30` typed a second time ran
+// unmarked, and its terminal never read as running. An echo of its own goes first, so the line that follows is never a
+// repeat. True once the echo's output is in, and the command is sent either way.
+async function ovTypeCommand(h, blockId, command) {
+    const send = (text) =>
+        h.rpc("controllerinput", { blockid: blockId, inputdata64: Buffer.from(text).toString("base64") });
+    await send("echo ov-warm\r");
+    const warmed = (await uploadsTermHas(h, blockId, "echo ov-warm\nov-warm")).seen;
+    await polishNap(300);
+    await send(`${command}\r`);
+    return warmed;
+}
+
+// the last `n` characters the shell printed, raw, with each escape written as ␛: where its marks (OSC 16162) are visible
+async function ovTermTail(h, blockId, n = 600) {
+    try {
+        const [endpoint, key] = await h.ev(`[window.api.getEnv("WAVE_SERVER_WEB_ENDPOINT"), window.api.getAuthKey()]`);
+        const res = await fetch(`http://${endpoint}/wave/file?zoneid=${blockId}&name=term`, { headers: { "x-authkey": key } });
+        if (res.status !== 200) return `HTTP ${res.status}`;
+        return Buffer.from(await res.arrayBuffer()).toString("utf8").replace(/\x1b/g, "␛").slice(-n); // eslint-disable-line no-control-regex
+    } catch (e) {
+        return String(e?.message ?? e);
+    }
+}
+
+// the ids of the terminal rows under the project's Active folder: the rows between its folder row and the next one
+const OV_TERMINALS = `(() => {
+    const head = document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.closest("[data-agent-active-rows] > div");
+    if (!head) return null;
+    const ids = [];
+    for (let el = head.nextElementSibling; el && !el.querySelector("[data-agent-folder]"); el = el.nextElementSibling) {
+        const row = el.querySelector("[data-agent-terminal-row]");
+        if (row) ids.push(row.getAttribute("data-agent-terminal-row"));
+    }
+    return ids;
+})()`;
+
+// what the launcher shows: its title, and the project rows that are picked
+const OV_LAUNCHER = `(() => {
+    const root = document.querySelector("[data-launcher]");
+    if (!root) return null;
+    return {
+        title: root.querySelector("h2")?.textContent.trim() ?? null,
+        picked: [...root.querySelectorAll('[data-project-row][aria-checked="true"]')].map((r) => r.getAttribute("data-project-row")),
+    };
+})()`;
+
+// a run lands held, as the item shape of needsyoustripmodel.test.ts
+const ovHeldRun = (key, channelid, now) => ({
+    kind: "run-land-held",
+    key,
+    channelid,
+    runid: `run-${key}`,
+    taskid: "",
+    source: "verify the overview",
+    text: `land ${key}`,
+    action: "Land again",
+    phaseidx: 0,
+    waitingsince: now - 120_000,
+});
+
+const projectOverview = {
+    name: "project-overview",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            base: mkdtempSync(join(tmpdir(), "verify-overview-")),
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+            registered: [],
+            channelIds: [],
+            // every terminal tab this scenario made, for teardown
+            tabs: [],
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            ctx.dirA = join(ctx.base, "a");
+            ctx.dirB = join(ctx.base, "b");
+            mkdirSync(ctx.dirA);
+            mkdirSync(ctx.dirB);
+            ovSeedRepo(ctx.dirA);
+            for (const [name, dir] of [
+                [OV_PROJECT, ctx.dirA],
+                [OV_OTHER, ctx.dirB],
+            ]) {
+                await h.rpc("createproject", { name, path: dir });
+                ctx.registered.push(name);
+                await waitForProjectInConfig(h, name);
+                ctx.channelIds.push((await h.rpc("createchannel", { name, projectpath: dir })).oid);
+            }
+            ctx.channelA = ctx.channelIds[0];
+            ctx.channelB = ctx.channelIds[1];
+            // the throwaway terminals, one in each project's folder: the first is what the steps type into, the second what
+            // the launcher steps focus, so that a focused row of another project is there to take the pick over
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            ctx.term = await ovTerminalTab(h, ctx, OV_TERM_NAME, ctx.dirA);
+            ctx.termOther = await ovTerminalTab(h, ctx, OV_OTHER_TERM_NAME, ctx.dirB);
+            // the frontend boots with the projects, the channels and the tab; the sessions mock is the document's, so it
+            // goes in after this reload, and the runner's entry into Agent starts the scan that reads it
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            ctx.modules = await ahResolveModules(h);
+            ctx.mock = ctx.modules.urls
+                ? await installAhMock(h, [ovSession(ctx, Date.now())], ctx.modules.urls.api, OV_SESSION_ID)
+                : `no-module-url (${ctx.modules.error})`;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const folderUp =
+            ctx.arrangeError == null && (await polishWaitFor(h, ovHas(OV_ACTIVE_FOLDER), 20000));
+        rec(
+            "0. the projects, their channels, the terminal in the first project's folder and the sessions mock are in place",
+            folderUp && ctx.mock === "ok",
+            ctx.arrangeError ?? JSON.stringify({ folderUp, mock: ctx.mock })
+        );
+        if (!folderUp) return steps;
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            const tabId = ctx.term.tabId;
+
+            // 1. a right-click on the Active folder row opens its menu
+            await ovContext(h, OV_ACTIVE_FOLDER);
+            const menu1 = await polishWaitFor(h, caMenuHas("Open overview"), 3000);
+            const items1 = {
+                overview: await h.ev(caMenuHas("Open overview")),
+                copy: await h.ev(caMenuHas("Copy Absolute Path")),
+                reveal: await h.ev(caMenuHas(OV_REVEAL)),
+            };
+            await h.shot("cdp-shots/project-overview-1.png");
+            await ovCloseMenu(h);
+            rec(
+                `1. a right-click on the project's Active folder row opens a menu holding Open overview, Copy Absolute Path and ${OV_REVEAL}`,
+                menu1 && items1.overview && items1.copy && items1.reveal,
+                JSON.stringify({ menu1, ...items1 })
+            );
+
+            // 2. Shift+F10 on the focused folder row raises the same menu
+            const focused = await h.ev(`(() => {
+                const el = document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)});
+                el?.focus();
+                return el != null && document.activeElement === el;
+            })()`);
+            await ovKey(h, "F10", "F10", 121, 8, "rawKeyDown");
+            const menu2 = await polishWaitFor(h, caMenuHas("Open overview"), 3000);
+            const items2 = { copy: await h.ev(caMenuHas("Copy Absolute Path")), reveal: await h.ev(caMenuHas(OV_REVEAL)) };
+            await h.shot("cdp-shots/project-overview-2.png");
+            await ovCloseMenu(h);
+            rec(
+                "2. Shift+F10 on the focused folder row opens the same menu",
+                focused && menu2 && items2.copy && items2.reveal,
+                JSON.stringify({ focused, menu2, ...items2 })
+            );
+
+            // 3. the Conversations folder has the menu too, and its Open overview selects that folder's row
+            let convoUp = await polishWaitFor(h, ovHas(OV_CONVO_FOLDER), 10000);
+            if (!convoUp) {
+                // the sidebar rescans on re-entry at most every 5s: enter Agent again once the gap has passed
+                await h.goto("cockpit");
+                await polishNap(AH_SCAN_GAP_MS);
+                await h.goto("agent");
+                convoUp = await polishWaitFor(h, ovHas(OV_CONVO_FOLDER), 10000);
+            }
+            await ovContext(h, OV_CONVO_FOLDER);
+            const menu3 = await polishWaitFor(h, caMenuHas("Open overview"), 3000);
+            await h.shot("cdp-shots/project-overview-3.png");
+            await h.ev(caMenuClick("Open overview"));
+            const opened3 = await polishWaitFor(h, ovUp, 5000);
+            const convoSelected = await polishWaitFor(h, `${ovClass(OV_CONVO_FOLDER)}.includes("bg-surface-selected")`, 3000);
+            rec(
+                "3. a right-click on the Conversations folder row shows the menu with Open overview, which opens the Overview and fills that folder row selected",
+                convoUp && menu3 && opened3 && convoSelected,
+                JSON.stringify({ convoUp, menu3, opened3, convoSelected })
+            );
+
+            // 4. from the Active row's menu: the header, the four buttons, and the quiet line
+            const opened4 = await ovOpenFromMenu(h);
+            const changesUp = await polishWaitFor(h, `(document.querySelector("[data-overview-changes]")?.textContent ?? "").length > 0`, 8000);
+            const quietUp = await polishWaitFor(h, `${ovHas("[data-overview-quiet]")}`, 8000);
+            const page4 = await h.ev(`(() => {
+                const page = document.querySelector('[data-project-overview="${OV_PROJECT}"]');
+                if (!page) return null;
+                return {
+                    branch: [...page.querySelectorAll("header span")].some((s) => s.textContent.trim() === "main"),
+                    changes: page.querySelector("[data-overview-changes]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                    actions: [...page.querySelectorAll("[data-overview-action]")].map((b) => b.getAttribute("data-overview-action")),
+                    quiet: page.querySelector("[data-overview-quiet]")?.textContent.trim() ?? null,
+                    needs: !!page.querySelector("[data-overview-needs]"),
+                    running: !!page.querySelector("[data-overview-running]"),
+                };
+            })()`);
+            await h.shot("cdp-shots/project-overview-4.png");
+            rec(
+                "4. Open overview shows the page with the branch main, `1 file` with its + and − counts, the four action buttons, and the quiet line with no Needs you or Running block",
+                opened4 &&
+                    changesUp &&
+                    quietUp &&
+                    page4 != null &&
+                    page4.branch &&
+                    /^1 file\b/.test(page4.changes ?? "") &&
+                    /\+\d+/.test(page4.changes ?? "") &&
+                    /−\d+/.test(page4.changes ?? "") &&
+                    JSON.stringify(page4.actions) === JSON.stringify(["agent", "terminal", "run", "council"]) &&
+                    page4.quiet === OV_QUIET &&
+                    !page4.needs &&
+                    !page4.running,
+                JSON.stringify({ opened4, changesUp, quietUp, ...page4 })
+            );
+
+            // 5. the folder row reads selected while the page shows; a click folds it and the page stays
+            const folded0 = await h.ev(`document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.getAttribute("aria-expanded") ?? null`);
+            const selected = (await h.ev(ovClass(OV_ACTIVE_FOLDER))).includes("bg-surface-selected");
+            await h.ev(`document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.click()`);
+            const folded = await polishWaitFor(h, `document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.getAttribute("aria-expanded") === "false"`, 3000);
+            const stays = await h.ev(ovUp);
+            await h.shot("cdp-shots/project-overview-5.png");
+            await h.ev(`document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.click()`);
+            const reopened = await polishWaitFor(h, `document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.getAttribute("aria-expanded") === "true"`, 3000);
+            rec(
+                "5. the folder row is selected while the Overview shows, a click folds it (aria-expanded flips) with the Overview still in the centre, and a second click opens it",
+                folded0 === "true" && selected && folded && stays === true && reopened,
+                JSON.stringify({ folded0, selected, folded, stays, reopened })
+            );
+
+            // 5b. committed, the change count says so; git is read once per mount, so the page is left and opened again
+            ovGit(ctx.dirA, "commit", "-qam", "edit a.txt");
+            const left5b = await ovLeave(h, tabId);
+            const opened5b = await ovOpenFromMenu(h);
+            const clean = await polishWaitFor(
+                h,
+                `(document.querySelector("[data-overview-changes]")?.textContent ?? "").trim() === "no uncommitted changes"`,
+                8000
+            );
+            const quiet5b = await polishWaitFor(h, ovHas("[data-overview-quiet]"), 5000);
+            const changes5b = await h.ev(`document.querySelector("[data-overview-changes]")?.textContent.trim() ?? null`);
+            await h.shot("cdp-shots/project-overview-5b.png");
+            rec(
+                "5b. after the commit the page, opened again, reads `no uncommitted changes` and keeps the quiet line",
+                left5b && opened5b && clean && quiet5b,
+                JSON.stringify({ left5b, opened5b, clean, quiet5b, changes5b })
+            );
+
+            // 6. the header buttons; each is followed by closing what it opened, and the Overview opened again when the centre left it.
+            // The terminal of the other project is focused first: the launcher starts on the focused row's project unless it
+            // is given one, and 6a and 6b are what shows that the Overview gives it its own
+            const otherRow = `[data-agent-terminal-row="${ctx.termOther.tabId}"]`;
+            await h.ev(`document.querySelector(${JSON.stringify(otherRow)})?.click()`);
+            const otherFocused = await polishWaitFor(h, `${ovClass(otherRow)}.includes("bg-surface-selected")`, 5000);
+            const reopened6 = otherFocused && (await ovOpenFromMenu(h));
+            await h.ev(`document.querySelector('[data-overview-action="agent"]')?.click()`);
+            const launcherA = await polishWaitFor(h, `(${OV_LAUNCHER})?.picked.length > 0`, 8000);
+            // the dialog settles its project once, after it opens: read what it holds then, not the first frame
+            await polishNap(500);
+            const factsA = await h.ev(OV_LAUNCHER);
+            await h.shot("cdp-shots/project-overview-6a.png");
+            const closedA = await ovCloseModal(h, `!${ovHas("[data-launcher]")}`);
+            rec(
+                `6a. with a terminal of ${OV_OTHER} focused, New agent opens the launcher as New agent with ${OV_PROJECT} picked as its project`,
+                otherFocused &&
+                    reopened6 &&
+                    launcherA &&
+                    factsA?.title === "New agent" &&
+                    JSON.stringify(factsA?.picked) === JSON.stringify([OV_PROJECT]) &&
+                    closedA,
+                JSON.stringify({ otherFocused, reopened6, launcherA, ...factsA, closedA })
+            );
+
+            await h.ev(`document.querySelector('[data-overview-action="run"]')?.click()`);
+            const launcherB = await polishWaitFor(h, `(${OV_LAUNCHER})?.picked.length > 0`, 8000);
+            await polishNap(500);
+            const factsB = await h.ev(OV_LAUNCHER);
+            await h.shot("cdp-shots/project-overview-6b.png");
+            const closedB = await ovCloseModal(h, `!${ovHas("[data-launcher]")}`);
+            rec(
+                `6b. with the same terminal still focused, Run opens the launcher on its run door, as New run, with ${OV_PROJECT} picked`,
+                launcherB &&
+                    factsB?.title === "New run" &&
+                    JSON.stringify(factsB?.picked) === JSON.stringify([OV_PROJECT]) &&
+                    closedB,
+                JSON.stringify({ launcherB, ...factsB, closedB })
+            );
+
+            await h.ev(`document.querySelector('[data-overview-action="council"]')?.click()`);
+            const council = await polishWaitFor(h, ovHas("[data-council-setup]"), 5000);
+            const overviewLeft = await h.ev(ovDown);
+            await h.shot("cdp-shots/project-overview-6c.png");
+            const reopenedC = await ovOpenFromMenu(h);
+            rec(
+                "6c. Council puts the council setup in the centre, in place of the Overview",
+                council && overviewLeft === true && reopenedC,
+                JSON.stringify({ council, overviewLeft, reopenedC })
+            );
+
+            const before = await h.ev(OV_TERMINALS);
+            await h.ev(`document.querySelector('[data-overview-action="terminal"]')?.click()`);
+            const added = await polishWaitFor(h, `(${OV_TERMINALS})?.length === ${(before?.length ?? 0) + 1}`, 15000);
+            const after = await h.ev(OV_TERMINALS);
+            // on ctx at once, so teardown closes it whatever fails after
+            for (const id of after ?? []) if (!(before ?? []).includes(id)) ctx.tabs.push(id);
+            await h.shot("cdp-shots/project-overview-6d.png");
+            const reopenedD = await ovOpenFromMenu(h);
+            rec(
+                `6d. Terminal adds a terminal row under the ${OV_PROJECT} folder`,
+                before != null && added && after.length === before.length + 1 && reopenedD,
+                JSON.stringify({ before, after, added, reopenedD })
+            );
+
+            // 7. a terminal running a command is in Running, as `terminal`; its row opens it. The throwaway terminal was shown
+            // at step 5b, so its xterm is mounted and reports the shell's marks
+            const shellUp = await uploadsShellUp(h, ctx.term.blockId);
+            const shellReady = shellUp && (await ovShellReady(h, ctx.term.blockId));
+            const warmed = shellReady && (await ovTypeCommand(h, ctx.term.blockId, "sleep 30"));
+            const runRow = `[data-overview-running] [data-overview-running-row="${tabId}"]`;
+            const running = shellReady && (await polishWaitFor(h, ovHas(runRow), 10000));
+            const quietGone = await polishWaitFor(h, `!${ovHas("[data-overview-quiet]")}`, 3000);
+            const row7 = await h.ev(`document.querySelector(${JSON.stringify(runRow)})?.textContent.replace(/\\s+/g, " ").trim() ?? null`);
+            const rt7 = await ovRtInfo(h, ctx.term.blockId);
+            await h.shot("cdp-shots/project-overview-7.png");
+            await h.ev(`document.querySelector(${JSON.stringify(runRow)})?.click()`);
+            const leftTerm = await polishWaitFor(h, ovDown, 3000);
+            rec(
+                "7. a command running in the project's terminal puts a Running row for it, reading `terminal`, with the quiet line gone, and a click on the row puts the centre back on the terminal",
+                shellReady && running && quietGone && /terminal/.test(row7 ?? "") && leftTerm,
+                JSON.stringify({
+                    shellUp,
+                    shellReady,
+                    warmed,
+                    running,
+                    quietGone,
+                    row7,
+                    leftTerm,
+                    shellState: rt7?.["shell:state"] ?? null,
+                    lastCmd: rt7?.["shell:lastcmd"] ?? null,
+                    // what the shell printed, only when no row came: it shows whether the command arrived and was marked
+                    ...(running ? {} : { tail: await ovTermTail(h, ctx.term.blockId) }),
+                })
+            );
+
+            // 8. two agents in the project (one asks, one works), one asking in the other, and a held run in each project
+            const now = Date.now();
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: OV_ASK_ID,
+                            name: "overview asker",
+                            project: OV_PROJECT,
+                            task: "pick a port",
+                            state: "asking",
+                            agent: "claude",
+                            model: "opus",
+                            blockedMs: 60_000,
+                            stateSince: now - 60_000,
+                            blockId: "fx-blk-ov-ask",
+                            ask: {
+                                askId: "fx-ov-ask-1",
+                                oref: "block:fx-blk-ov-ask",
+                                questions: [
+                                    { header: "Port", question: "Which port?", options: [{ label: "9222" }, { label: "9223" }] },
+                                ],
+                            },
+                        },
+                        {
+                            id: OV_WORK_ID,
+                            name: "overview worker",
+                            project: OV_PROJECT,
+                            task: "edit the overview",
+                            state: "working",
+                            agent: "claude",
+                            model: "opus",
+                            activity: "Editing overview.tsx",
+                            activeMs: 60_000,
+                            stateSince: now - 60_000,
+                            blockId: "fx-blk-ov-work",
+                        },
+                        {
+                            id: OV_ELSEWHERE_ID,
+                            name: "elsewhere asker",
+                            project: OV_OTHER,
+                            task: "pick a branch",
+                            state: "asking",
+                            agent: "claude",
+                            model: "opus",
+                            blockedMs: 30_000,
+                            stateSince: now - 30_000,
+                            blockId: "fx-blk-ov-elsewhere",
+                            ask: {
+                                askId: "fx-ov-elsewhere-1",
+                                oref: "block:fx-blk-ov-elsewhere",
+                                questions: [{ header: "Branch", question: "Which branch?", options: [{ label: "main" }] }],
+                            },
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // the roster is read once at boot; the dev hook for the Needs you list is installed when the Cockpit first mounts
+            const reloaded = await ahReload(h);
+            await h.goto("cockpit");
+            const hook = await polishWaitFor(h, `typeof window.__cockpitOfficeAttention === "function"`, 10000);
+            if (hook) {
+                await h.ev(
+                    `window.__cockpitOfficeAttention(${JSON.stringify([
+                        ovHeldRun("ov-mine", ctx.channelA, now),
+                        ovHeldRun("ov-theirs", ctx.channelB, now),
+                    ])})`
+                );
+            }
+            await h.goto("agent");
+            const folder8 = await polishWaitFor(h, ovHas(OV_ACTIVE_FOLDER), 15000);
+            const opened8 = folder8 && (await ovOpenFromMenu(h));
+            const mineUp = await polishWaitFor(h, ovHas(`[data-project-overview] [data-needs-you-row="ov-mine"]`), 10000);
+            const workUp = await polishWaitFor(
+                h,
+                ovHas(`[data-overview-running] [data-overview-running-row="${OV_WORK_ID}"]`),
+                10000
+            );
+            const page8 = await h.ev(`(() => {
+                const page = document.querySelector('[data-project-overview="${OV_PROJECT}"]');
+                if (!page) return null;
+                const needs = page.querySelector("[data-overview-needs]");
+                const ask = needs?.querySelector('[data-overview-asking="${OV_ASK_ID}"]');
+                const work = page.querySelector('[data-overview-running] [data-overview-running-row="${OV_WORK_ID}"]');
+                const text = (el) => el?.textContent.replace(/\\s+/g, " ").trim() ?? null;
+                return {
+                    count: text(needs?.querySelector("h2")),
+                    ask: text(ask),
+                    mine: !!needs?.querySelector('[data-needs-you-row="ov-mine"]'),
+                    elsewhere: !!page.querySelector('[data-overview-asking="${OV_ELSEWHERE_ID}"]'),
+                    theirs: !!page.querySelector('[data-needs-you-row="ov-theirs"]'),
+                    work: text(work),
+                    quiet: !!page.querySelector("[data-overview-quiet]"),
+                };
+            })()`);
+            await h.shot("cdp-shots/project-overview-8.png");
+            rec(
+                "8. with agents in the project the page lists, under Needs you 2, the asking agent (asking, its question) and this project's held run, and not the other project's agent or run; Running lists the working agent with what it does and an age",
+                reloaded &&
+                    hook &&
+                    opened8 &&
+                    mineUp &&
+                    workUp &&
+                    page8 != null &&
+                    /^Needs you 2$/.test(page8.count ?? "") &&
+                    (page8.ask ?? "").includes("asking") &&
+                    (page8.ask ?? "").includes("Which port?") &&
+                    page8.mine &&
+                    !page8.elsewhere &&
+                    !page8.theirs &&
+                    (page8.work ?? "").includes("Editing overview.tsx") &&
+                    // the age is its own span after the activity, so the text runs on into it
+                    /(\d+[mhd]|just now)$/.test(page8.work ?? "") &&
+                    !page8.quiet,
+                JSON.stringify({ reloaded, hook, opened8, mineUp, workUp, ...page8 })
+            );
+
+            // 9. Answer leaves the page for the agent's terminal, the agent focused and its tree row selected
+            await h.ev(`document.querySelector('[data-overview-answer="${OV_ASK_ID}"]')?.click()`);
+            const gone9 = await polishWaitFor(h, ovDown, 3000);
+            const selected9 = await polishWaitFor(
+                h,
+                `(document.querySelector('[data-agent-row="${OV_ASK_ID}"]')?.className ?? "").includes("bg-surface-selected")`,
+                3000
+            );
+            await h.shot("cdp-shots/project-overview-9.png");
+            rec(
+                "9. Answer on the asking agent leaves the Overview with that agent focused, its tree row selected",
+                gone9 && selected9,
+                JSON.stringify({ gone9, selected9 })
+            );
+        } catch (e) {
+            rec("a call failed before the steps finished", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // each is its own step: one failing must not skip the rest
+        const step = async (what, run) => {
+            try {
+                await run();
+            } catch (e) {
+                console.error(`project-overview teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("put the live Needs you list back", () => h.ev("window.__cockpitOfficeAttention?.(null)"));
+        await step("remove the sessions mock", () => removeAhMock(h));
+        for (const tabId of ctx.tabs ?? []) {
+            await step(`close terminal tab ${tabId}`, () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, tabId, false]));
+        }
+        for (const channelId of ctx.channelIds ?? []) {
+            await step(`delete channel ${channelId}`, () => h.rpc("deletechannel", { channelid: channelId }));
+        }
+        for (const name of ctx.registered ?? []) {
+            await step(`delete project ${name}`, () => h.rpc("deleteproject", { name }));
+        }
+        await step("restore the fixture roster", () => {
+            if (ctx.prevFixture != null) writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture);
+            else rmSync(TREE_RAIL_FIXTURE, { force: true });
+        });
+        await step("reload onto the restored roster", async () => {
+            if (!(await ahReload(h))) throw new Error("the app did not come back within 60s of the reload");
+        });
+        // the terminals' shells can hold the project folder for a moment after their tabs close
+        await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -52402,6 +53068,7 @@ export const SCENARIOS = [
     runSheetLegacyLook,
     runSheetCardsLook,
     codeStaleBarLook,
+    projectOverview,
     // last: its fixture roster stands in for the live one until its teardown reloads
     agentComposer,
 ];

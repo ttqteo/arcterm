@@ -5,7 +5,6 @@
 // what runs in it, and the buttons that start work there. The rows are projectoverviewmodel.ts's; the Needs you items
 // beyond an agent's ask are the Cockpit strip's own (needsyou.ts), scoped to this project.
 
-import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useAtomValue } from "jotai";
@@ -18,7 +17,7 @@ import { quickTerminal, selectAgentRow } from "./agenttree";
 import { diffStatsFromChanges } from "./cardgitstore";
 import { parseGitChanges } from "./gitstatus";
 import type { LauncherKind } from "./launcher";
-import { launcherProjectAtom, openLauncher, pickLauncherProject } from "./launcherstore";
+import { openLauncher } from "./launcherstore";
 import { useNeedsYou } from "./needsyou";
 import { NeedsYouRows } from "./needsyoustrip";
 import { askLine, changesLabel, doingLine, isQuiet, overviewRows } from "./projectoverviewmodel";
@@ -78,10 +77,7 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
     if (project === "") {
         return null;
     }
-    const launch = (door: LauncherKind) => {
-        pickLauncherProject(project, globalStore.get(launcherProjectAtom));
-        openLauncher(model, door);
-    };
+    const launch = (door: LauncherKind) => openLauncher(model, door, undefined, project);
     const since = (a: AgentVM) => (a.stateSince != null ? formatAge(Math.max(0, now - a.stateSince)) : "");
     const waiting = rows.asking.length + ny.rows.length;
     const running = rows.working.length + rows.terminals.length;
