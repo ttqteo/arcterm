@@ -259,7 +259,7 @@ function showLessConversations(project: string): void {
 }
 
 // choosing an agent's row brings its terminal back from a session, History or one of its subagents
-function selectAgentRow(model: AgentsViewModel, id: string): void {
+export function selectAgentRow(model: AgentsViewModel, id: string): void {
     globalStore.set(model.focusIdAtom, id);
     globalStore.set(model.focusReplyAtom, false);
     globalStore.set(focusSubagentAtom, null);
