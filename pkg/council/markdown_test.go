@@ -229,6 +229,19 @@ func TestMarkdownDiscussion(t *testing.T) {
 	}
 }
 
+func TestDocumentRunFactsHarness(t *testing.T) {
+	c := documentCouncil()
+	if doc := Document(c); strings.Contains(doc, "Harness") {
+		t.Errorf("a council with no harness version names one in its run facts\n%s", doc)
+	}
+	c.Harness = "2026-10-22.1"
+	doc := Document(c)
+	facts := doc[strings.Index(doc, "## Run facts"):]
+	if !strings.Contains(facts, "\n- Harness: 2026-10-22.1\n") {
+		t.Errorf("the run facts lack the harness version\n%s", facts)
+	}
+}
+
 func TestMarkdownDiscussionOfAnEmptyCouncil(t *testing.T) {
 	doc := Document(&Council{Id: "c1", Feature: "Nothing yet", State: StateStopped, Experts: []CouncilExpert{{Id: "lead", Name: "Lead", Coordinator: true}}})
 	for _, w := range []string{"_No summary yet._", "## The discussion\n\n_Nothing was said._\n", "## Run facts\n\n- Mode: Review\n", "- Experts: Lead (coordinator)\n", "- Ended: stopped\n"} {

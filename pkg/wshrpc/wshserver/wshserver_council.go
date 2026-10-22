@@ -84,8 +84,20 @@ func (ws *WshServer) CouncilStartCommand(ctx context.Context, data wshrpc.Comman
 	return councilRunner.Start(context.Background(), c)
 }
 
+// CouncilListCommand is the cockpit's list, so it leaves out the councils the benchmark started: they raise no notice,
+// tree row or Needs you item. The queue reads council.List itself and still sees them; CouncilGetCommand still loads one.
 func (ws *WshServer) CouncilListCommand(ctx context.Context, data wshrpc.CommandCouncilListData) ([]*council.Council, error) {
-	return council.List(data.Project)
+	all, err := council.List(data.Project)
+	if err != nil {
+		return nil, err
+	}
+	shown := make([]*council.Council, 0, len(all))
+	for _, c := range all {
+		if !c.Bench {
+			shown = append(shown, c)
+		}
+	}
+	return shown, nil
 }
 
 func (ws *WshServer) CouncilGetCommand(ctx context.Context, data wshrpc.CommandCouncilIdData) (*council.Council, error) {

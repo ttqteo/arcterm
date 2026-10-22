@@ -152,6 +152,8 @@ type Council struct {
 	Mode             string                       `json:"mode,omitempty"`        // ModeReview or ModeBrainstorm; empty reads as review
 	ModeWhy          string                       `json:"modewhy,omitempty"`     // why the mode was picked: the suggestion's, the agent's --mode-why, or "picked by hand"
 	QueuedAfter      string                       `json:"queuedafter,omitempty"` // the id of the council this one waits on while queued
+	Harness          string                       `json:"harness,omitempty"`     // HarnessVersion when its run began; empty before it ran, and on a council saved before versions existed
+	Bench            bool                         `json:"bench,omitempty"`       // a council the benchmark started: no document in its project, and the cockpit never lists it
 	DocPath          string                       `json:"docpath,omitempty"`     // the absolute path of the saved document
 	Experts          []CouncilExpert              `json:"experts"`               // the coordinator last
 	PauseAfterRound1 bool                         `json:"pauseafterround1,omitempty"`

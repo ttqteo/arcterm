@@ -105,6 +105,36 @@ func TestCouncilGetAndListByProject(t *testing.T) {
 	}
 }
 
+func TestCouncilListHidesBenchCouncils(t *testing.T) {
+	useCouncilStore(t)
+	ws := &WshServer{}
+	ctx := context.Background()
+	p := t.TempDir()
+	saveCouncil(t, &council.Council{Id: "real", Project: p, Feature: "Idle sleep", State: council.StateDone})
+	saveCouncil(t, &council.Council{Id: "bench-done", Project: p, Feature: "Idle sleep", State: council.StateDone, Bench: true})
+	saveCouncil(t, &council.Council{Id: "bench-queued", Project: p, Feature: "Idle sleep", State: council.StateQueued, Bench: true})
+
+	for _, project := range []string{p, ""} {
+		list, err := ws.CouncilListCommand(ctx, wshrpc.CommandCouncilListData{Project: project})
+		if err != nil {
+			t.Fatalf("CouncilListCommand(%q): %v", project, err)
+		}
+		if ids := councilIds(list); !reflect.DeepEqual(ids, []string{"real"}) {
+			t.Errorf("list(%q) = %v, want only the council the person started", project, ids)
+		}
+	}
+
+	// the filter is the cockpit's list only: a bench council loads by id, and the queue, which reads the store, still sees it
+	got, err := ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: "bench-done"})
+	if err != nil || !got.Bench {
+		t.Errorf("CouncilGetCommand of a bench council = %+v, %v, want it loaded", got, err)
+	}
+	all, err := council.List("")
+	if err != nil || !reflect.DeepEqual(councilIds(all), []string{"bench-done", "bench-queued", "real"}) {
+		t.Errorf("council.List(\"\") = %v, %v, want the store to hold all three", councilIds(all), err)
+	}
+}
+
 func TestCouncilEstimateWholeCouncil(t *testing.T) {
 	useCouncilStore(t)
 	ws := &WshServer{}

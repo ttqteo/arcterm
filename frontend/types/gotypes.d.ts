@@ -2272,6 +2272,8 @@ declare global {
         mode?: string;
         modewhy?: string;
         queuedafter?: string;
+        harness?: string;
+        bench?: boolean;
         docpath?: string;
         experts: CouncilExpert[];
         pauseafterround1?: boolean;
