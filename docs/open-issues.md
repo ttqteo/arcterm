@@ -35,19 +35,20 @@ does not, say what you saw and it becomes a bug row under Actionable.
   should resume him with his earlier messages. Findings: `docs/council-phase0.md` ("Probe").
 
 - [ ] (arcterm) Council, a real run: in Agent, New council on a project, a UI feature with a few files, the
-  "Review a UI feature" group, Start council. The Running board (Discussion in round 1) shows each expert's card with
-  the line it is reading (`Grep "…" in pkg/…`) and the proposals appear as the experts finish; Summarize stays off until round 1
-  is done, and round 2 fills the threads as replies arrive; the chip's round, the clock, the reply count
+  "Review a UI feature" group, Start council. The Discussion at Step 1 of 3 shows each expert's card with
+  the line it is reading (`Grep "…" in pkg/…`) and the ideas appear as the experts finish; Summarize stays off until the
+  first ideas are in, and Step 2 fills the threads as replies arrive; the chip's step, the clock, the reply count
   and the token count move on their own. The scenarios (`council-tree`, `-setup`, `-ask`, `-discussion`, `-summary`)
   only draw fixtures and replace every call that would reach a model, so none of this has run live; they also have
-  not run before Final. Also try Pause after round 1 (untick a proposal, ask a question, Continue), Stop council
-  mid-round 1, and Retry on an expert that failed. Spec `docs/superpowers/specs/2026-10-21-council-design.md`,
-  `frontend/app/view/agents/councildiscussion.tsx`, `pkg/council/runner.go`.
+  not run before Final. Also try Pause after the first ideas (Setup's Options; untick an idea, ask a question,
+  Continue), Stop council during Step 1, and Retry on an expert that failed. Spec
+  `docs/superpowers/specs/2026-10-21-council-design.md`, `frontend/app/view/agents/councildiscussion.tsx`,
+  `pkg/council/runner.go`.
 - [ ] (arcterm) Council, the readable report: run a real council with a question on the installed app. The finished
   council should open on a one-sentence answer above its directions; an expert who agrees without a comment should
   show as a reaction under the idea, never as a reply row (reply counts leave it out); and the done toast should arrive
-  while another surface is showing, with an unread dot on the council's row that clears when you open it. Plan
-  `docs/superpowers/plans/2026-10-22-council-v1-ui.md`.
+  while another surface is showing, with an unread dot on the council's row that clears when you open it. Spec
+  `docs/superpowers/specs/2026-10-22-council-agent-team-design.md` (Phases, Ahead of Phase 0b).
 - [ ] (arcterm) Council from an agent: in a claude session, let it offer a Council review (the `arc:council` skill) and
   pick it. `wsh council start` shows the Token burn gate card with the estimate; allow it and the council runs, and
   `wsh council wait` prints the Summary and Matrix back into the session, with the directions in that session's Ideas.
