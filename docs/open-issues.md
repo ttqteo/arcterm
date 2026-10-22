@@ -65,11 +65,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   checked); Save as doc writes `docs/council/YYYY-MM-DD-<feature>.md` and shows the path; Create initiative makes one
   chunk per direction; Ask the experts again opens that direction's thread; a reply after the summary marks the
   Summary `Outdated · N replies since` and Summarize again clears it. `frontend/app/view/agents/councilsummary.tsx`.
-- [ ] (arcterm) Council acceptance on a real paper: run the "Paper review" group on the [removed] 2027 [removed] submission
-  [removed] and compare with the real reviews
-  [removed] in mit-thesis). The council should surface the unreadable prose
-  (undefined internal terms, dense "not X but Y" sentences) and the missing [removed] baseline. If it misses the prose,
-  mixed runtimes (codex, agy) move out of Deferred in the spec.
 - [ ] (arcterm) Rail commit mode with a real agent and with amend: let a live Claude agent edit two files in a worktree;
   when its turn ends, the rail's Changes tab shows the Uncommitted row without a switch. Open Commit…, untick one file,
   commit: the box closes, the commit tops the Commits list, the unticked file stays uncommitted. Then turn Amend on in
