@@ -1108,6 +1108,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **Pasted images in the transcript.** Paste an image into the New dialog's Task and start the agent:
   the image shows in the transcript, live and when the session is read back, not "no longer on disk". In the New
   dialog a click on the thumbnail shows it larger under the row, and another click shrinks it. `78fad34cf`
+- [ ] (arcterm) In the installed app, right-click a project folder in the Agent tree → Open overview: the page shows that
+  project's asking agents and running work, and Show in Explorer opens the folder (project Overview, `45f8bd7da`).
 
 ---
 

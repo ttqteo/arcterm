@@ -7,10 +7,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
     centerForSelection,
     centerModeAtom,
+    overviewProjectAtom,
     showCanvases,
     showCouncil,
     showCouncilSetup,
     showHistory,
+    showProjectOverview,
     showSession,
     showTerminal,
 } from "./agentcenter";
@@ -82,6 +84,26 @@ describe("openers", () => {
         expect(globalStore.get(model.sessionsSelAtom)).toBe("run:r1");
         expect(globalStore.get(model.sessionsMemberAtom)).toBe("t-2");
         expect(globalStore.get(centerModeAtom)).toBe("run");
+    });
+});
+
+describe("showProjectOverview", () => {
+    it("opens the project's Overview in the centre", () => {
+        showProjectOverview("arcterm");
+        expect(globalStore.get(centerModeAtom)).toBe("project");
+        expect(globalStore.get(overviewProjectAtom)).toBe("arcterm");
+    });
+
+    it("lands on the Agent surface when given the model", () => {
+        const model = stub();
+        showProjectOverview("arcterm", model);
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+    });
+
+    it("leaves the Overview when an agent is chosen", () => {
+        showProjectOverview("arcterm");
+        showTerminal();
+        expect(globalStore.get(centerModeAtom)).toBe("terminal");
     });
 });
 

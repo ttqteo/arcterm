@@ -95,6 +95,7 @@ import {
     launcherKindAtom,
     launcherLaunchAbandoned,
     launcherLaunchTicket,
+    launcherOwnProjectAtom,
     launcherPrefillAtom,
     launcherProjectAtom,
     launcherPrototypeAtom,
@@ -403,8 +404,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     }, [open, rows, prefill]);
 
     // Opened without a project of its own, the dialog starts on the project of the agent or terminal in focus on the
-    // Agent surface. A prefill names its own, and a kept draft keeps the project it was written for. Once per open,
-    // when the project list is there (it may arrive after the open, with the prefill's effect above).
+    // Agent surface. A prefill names its own, an open given a project (a project's Overview) names it too, and a kept
+    // draft keeps the project it was written for. Once per open, when the project list is there (it may arrive after the
+    // open, with the prefill's effect above).
     const focusPickRef = useRef(false);
     useEffect(() => {
         focusPickRef.current = open;
@@ -414,7 +416,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             return;
         }
         focusPickRef.current = false;
-        if (prefill != null || restored || globalStore.get(model.surfaceAtom) !== "agent") {
+        if (
+            prefill != null ||
+            restored ||
+            globalStore.get(launcherOwnProjectAtom) != null ||
+            globalStore.get(model.surfaceAtom) !== "agent"
+        ) {
             return;
         }
         const id = globalStore.get(model.focusIdAtom);

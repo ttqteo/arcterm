@@ -20,6 +20,7 @@ import {
 import { globalStore } from "@/app/store/jotaiStore";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import * as WOS from "@/app/store/wos";
+import { pathMenuItems } from "@/app/view/code/pathmenu";
 import { openTarget, peekTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
@@ -48,6 +49,7 @@ import {
     Hash,
     History as HistoryIcon,
     Hourglass,
+    LayoutDashboard,
     LayoutGrid,
     Loader2,
     Moon,
@@ -99,10 +101,12 @@ import {
 import { runMenuEntries } from "./runrowmenu";
 import {
     centerModeAtom,
+    overviewProjectAtom,
     showCanvases,
     showCouncil,
     showCouncilSetup,
     showHistory,
+    showProjectOverview,
     showSession,
     showTerminal,
 } from "./agentcenter";
@@ -117,6 +121,7 @@ import {
     endedConversationsByProject,
     folderBlocks,
     folderCounts,
+    HOME_PROJECT,
     liveBranches,
     notableBranch,
     projectLabel,
@@ -258,7 +263,7 @@ function showLessConversations(project: string): void {
 }
 
 // choosing an agent's row brings its terminal back from a session, History or one of its subagents
-function selectAgentRow(model: AgentsViewModel, id: string): void {
+export function selectAgentRow(model: AgentsViewModel, id: string): void {
     globalStore.set(model.focusIdAtom, id);
     globalStore.set(model.focusReplyAtom, false);
     globalStore.set(focusSubagentAtom, null);
@@ -1954,9 +1959,30 @@ function FoldBody({ open, children }: { open: boolean; children: React.ReactNode
     );
 }
 
+// A project folder's right-click menu: its Overview, then its path's copy and reveal (the Code tree's items). Home has
+// none: it is no project and has no path. Shift+F10 on the focused row raises the same contextmenu event.
+function openFolderMenu(project: string, e: React.MouseEvent): void {
+    if (project === HOME_PROJECT) {
+        return;
+    }
+    const root = globalStore.get(projectsAtom)?.[project]?.path;
+    const items: ContextMenuItem[] = [
+        {
+            label: "Open overview",
+            icon: <LayoutDashboard size={13} strokeWidth={1.8} />,
+            click: () => showProjectOverview(project),
+        },
+    ];
+    if (root) {
+        items.push({ type: "separator" }, ...pathMenuItems(root, null));
+    }
+    ContextMenuModel.getInstance().showContextMenu(items, e);
+}
+
 // A project's folder row, in either section: the chevron and the folder say whether it is open, then the project's name
 // (`label` where the folder's key reads otherwise: Home) and, at the far end, `trailing`, which a folded folder keeps
-// (what in it wants you, how much it holds).
+// (what in it wants you, how much it holds); a right-click opens its menu (openFolderMenu), and its Overview in the
+// centre fills it.
 function FolderRow({
     section,
     project,
@@ -1964,6 +1990,7 @@ function FolderRow({
     open,
     onToggle,
     trailing,
+    selected,
 }: {
     section: SidebarSection;
     project: string;
@@ -1971,16 +1998,21 @@ function FolderRow({
     open: boolean;
     onToggle: () => void;
     trailing?: React.ReactNode;
+    selected?: boolean;
 }) {
     return (
         <button
             type="button"
             onClick={onToggle}
+            onContextMenu={(e) => openFolderMenu(project, e)}
             aria-expanded={open}
             data-agent-folder={project}
             data-agent-folder-section={section}
             data-project-folder={section === "active" ? project : undefined}
-            className="flex w-full cursor-pointer items-center gap-[7px] overflow-hidden rounded-[6px] px-[8px] py-[6px] text-left hover:bg-surface-hover"
+            className={cn(
+                "flex w-full cursor-pointer items-center gap-[7px] overflow-hidden rounded-[6px] px-[8px] py-[6px] text-left",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
         >
             <ChevronRight
                 size={12}
@@ -1993,7 +2025,11 @@ function FolderRow({
                 <Folder size={14} aria-hidden className="shrink-0 text-muted" />
             )}
             {/* the name keeps a few letters however much the far end holds */}
-            <span className="min-w-[40px] flex-1 truncate text-[13px] text-secondary">{label ?? project}</span>
+            <span
+                className={cn("min-w-[40px] flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
+            >
+                {label ?? project}
+            </span>
             {trailing}
         </button>
     );
@@ -2553,6 +2589,7 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
     const presses = useAtomValue(conversationPressesAtom);
     const now = useAtomValue(model.nowAtom);
     const mode = useAtomValue(centerModeAtom);
+    const overviewProject = useAtomValue(overviewProjectAtom);
     const sel = useAtomValue(model.sessionsSelAtom);
     const open = useSectionOpen("conversations");
     // filed under the project name the Active section's folders use (agentsidebarmodel.ts); only the projects added to
@@ -2603,6 +2640,7 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
                                     <FolderRow
                                         section="conversations"
                                         project={head.project}
+                                        selected={mode === "project" && overviewProject === head.project}
                                         open={head.open}
                                         onToggle={() =>
                                             globalStore.set(
@@ -2735,6 +2773,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     const focusId = useAtomValue(model.focusIdAtom);
     const collapsedList = useAtomValue(collapsedProjectsAtom);
     const center = useAtomValue(centerModeAtom);
+    const overviewProject = useAtomValue(overviewProjectAtom);
     // One tree per project: each project's live agents, a divider, then its terminals and tools (projectTree), a collapsed
     // project folding to its folder row. The ended conversations are the section under it (ConversationsSection).
     const filter = useAtomValue(model.projectFilterAtom);
@@ -2901,6 +2940,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             <FolderRow
                                                 section="active"
                                                 project={r.project}
+                                                selected={center === "project" && overviewProject === r.project}
                                                 label={projectLabel(r.project)}
                                                 open={r.open}
                                                 onToggle={() =>

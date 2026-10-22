@@ -78,6 +78,7 @@ import { FinalStagePane } from "./finalstagepane";
 import { rosterSeededAtom } from "./liveagents";
 import { agentFocusFallback } from "./modalfocusfallback";
 import { NO_PANES, nextPaneMounts } from "./panemounts";
+import { ProjectOverview } from "./projectoverview";
 import { RunPane } from "./runpane";
 import { shownServices } from "./serviceseen";
 import { appSurfaceService } from "./railapps";
@@ -865,8 +866,8 @@ function seedTerminalName(blockId: string) {
     });
 }
 
-// History, the canvases, a council and a session's transcript take the centre column; the terminal stack stays mounted
-// beside them
+// History, the canvases, a council, a project's Overview and a session's transcript take the centre column; the
+// terminal stack stays mounted beside them
 function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclude<CenterMode, "terminal"> }) {
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -878,6 +879,8 @@ function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclud
                 <CouncilPane model={model} />
             ) : mode === "run" ? (
                 <RunPane model={model} />
+            ) : mode === "project" ? (
+                <ProjectOverview model={model} />
             ) : (
                 <SessionPane model={model} />
             )}

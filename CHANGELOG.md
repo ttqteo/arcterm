@@ -24,6 +24,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Right-click a project's folder in the Agent tree and pick Open overview: one page with what in the project waits on
+  you, what is running in it, and buttons to start an agent, a terminal, a run or a council there.
+
 ### Changed
 
 - An agent's right-click menu has **Copy id** in place of Copy @mention: it copies the bare id, so pasting it to tell

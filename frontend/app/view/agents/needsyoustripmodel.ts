@@ -115,6 +115,7 @@ export function buildNeedsYouRows(input: {
     channelProject: Map<string, string>;
     channelMessages: Record<string, ChannelMessage[]>;
     roster: AgentVM[];
+    learn?: boolean; // false leaves learned rules out (a project's Overview: they belong to no one project); left out, they show
 }): StripRow[] {
     const rows: StripRow[] = [];
     for (const a of input.attention ?? []) {
@@ -123,6 +124,9 @@ export function buildNeedsYouRows(input: {
         }
         const channelId = a.channelid ?? "";
         const learnId = a.kind === "learn-proposal" && a.learnid ? a.learnid : null;
+        if (learnId != null && input.learn === false) {
+            continue;
+        }
         // a learned rule is tied to a skill or a project folder, never a channel, so the project filter keeps it
         if (learnId == null && input.filter !== "all" && input.channelProject.get(channelId) !== input.filter) {
             continue;

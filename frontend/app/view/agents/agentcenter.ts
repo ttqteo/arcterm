@@ -13,6 +13,7 @@
 //   council   one council's Discussion or Summary, or a project's council Setup (councilpane.tsx); which council, which
 //             of the three views and which project's draft are councilstore.ts's councilSelAtom, councilViewAtom and
 //             councilSetupProjectAtom
+//   project   one project's Overview (projectoverview.tsx): what in it waits on you and runs; which project is overviewProjectAtom
 // The terminal stack stays mounted, hidden, in the others, so a live xterm is never torn down and re-fitted.
 // "session" is already overloaded in this codebase (workspace tab sessions, the Brief region), so the sessions*Atoms
 // on the model keep their names rather than churn a rename.
@@ -25,9 +26,12 @@ import { emptyCouncilDraft, type CouncilSetupDraft, type CouncilView } from "./c
 import { councilSelAtom, councilSetupDraftAtom, councilSetupProjectAtom, councilViewAtom } from "./councilstore";
 import { runIdOfSel } from "./sessionsruns";
 
-export type CenterMode = "terminal" | "session" | "run" | "history" | "canvases" | "council";
+export type CenterMode = "terminal" | "session" | "run" | "history" | "canvases" | "council" | "project";
 
 export const centerModeAtom = atom<CenterMode>("terminal") as PrimitiveAtom<CenterMode>;
+
+// the project whose Overview the `project` mode shows: a registry name, as the tree's folders name it
+export const overviewProjectAtom = atom("") as PrimitiveAtom<string>;
 
 type CenterOpener = Pick<AgentsViewModel, "surfaceAtom" | "sessionsSelAtom" | "sessionsMemberAtom">;
 
@@ -53,6 +57,16 @@ export function showHistory(model: Pick<AgentsViewModel, "surfaceAtom">): void {
 export function showCanvases(model: Pick<AgentsViewModel, "surfaceAtom">): void {
     globalStore.set(centerModeAtom, "canvases");
     landOn(model.surfaceAtom, "agent");
+}
+
+/** Open a project's Overview in the Agent surface. From the tree nothing more is needed; from another surface pass the
+ *  model, which lands on Agent. */
+export function showProjectOverview(project: string, model?: Pick<AgentsViewModel, "surfaceAtom">): void {
+    globalStore.set(overviewProjectAtom, project);
+    globalStore.set(centerModeAtom, "project");
+    if (model != null) {
+        landOn(model.surfaceAtom, "agent");
+    }
 }
 
 /** Open one council in the Agent surface, on its Discussion unless `view` says otherwise. From the Agent surface itself

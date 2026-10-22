@@ -27,6 +27,7 @@ import {
     launcherKindAtom,
     launcherLaunchAbandoned,
     launcherLaunchTicket,
+    launcherOwnProjectAtom,
     launcherPageAtom,
     launcherPrefillAtom,
     launcherProjectAtom,
@@ -75,6 +76,7 @@ beforeEach(() => {
     globalStore.set(launcherRuntimeAtom, null);
     globalStore.set(launcherProjectAtom, "");
     globalStore.set(launcherPrefillAtom, null);
+    globalStore.set(launcherOwnProjectAtom, null);
     globalStore.set(launcherBusyAtom, false);
     endLauncherDraft();
     resetRunConfig();
@@ -154,6 +156,40 @@ describe("openLauncher", () => {
         globalStore.set(launcherGoalAtom, "old goal");
         openLauncher(model(), "run", { projectName: "", goal: "new", shape: "quick" });
         expect(globalStore.get(launcherRestoredAtom)).toBe(false);
+    });
+    it("a project given is picked and recorded as this open's own, at either door", () => {
+        globalStore.set(launcherProjectAtom, "other");
+        openLauncher(model(), "agent", undefined, "arc");
+        expect(globalStore.get(launcherProjectAtom)).toBe("arc");
+        expect(globalStore.get(launcherOwnProjectAtom)).toBe("arc");
+        openLauncher(model(), "run", undefined, "alpha");
+        expect(globalStore.get(launcherProjectAtom)).toBe("alpha");
+        expect(globalStore.get(launcherOwnProjectAtom)).toBe("alpha");
+    });
+    it("a project given picks it over a kept draft's, and leaves the draft", () => {
+        globalStore.set(launcherProjectAtom, "other");
+        globalStore.set(launcherTaskAtom, "fix it");
+        openLauncher(model(), "agent", undefined, "arc");
+        expect(globalStore.get(launcherProjectAtom)).toBe("arc");
+        expect(globalStore.get(launcherTaskAtom)).toBe("fix it");
+        expect(globalStore.get(launcherRestoredAtom)).toBe(true);
+    });
+    it("a project given that differs re-defaults the worktree branch, as picking one does", () => {
+        globalStore.set(launcherProjectAtom, "other");
+        globalStore.set(launcherBranchAtom, "feat/x");
+        openLauncher(model(), "agent", undefined, "arc");
+        expect(globalStore.get(launcherBranchAtom)).toBeNull();
+    });
+    it("every other open, a reopen included, records none and keeps the last pick", () => {
+        openLauncher(model(), "agent", undefined, "arc");
+        openLauncher(model(), "agent");
+        expect(globalStore.get(launcherOwnProjectAtom)).toBeNull();
+        expect(globalStore.get(launcherProjectAtom)).toBe("arc");
+        openLauncher(model(), "run", undefined, "arc");
+        reopenLauncher(model());
+        expect(globalStore.get(launcherOwnProjectAtom)).toBeNull();
+        openLauncher(model(), "run", { projectName: "alpha", goal: "", shape: "quick" });
+        expect(globalStore.get(launcherOwnProjectAtom)).toBeNull();
     });
 });
 
