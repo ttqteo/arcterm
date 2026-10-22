@@ -72,6 +72,33 @@ describe("queueLine", () => {
         });
     });
 
+    // queueLine colours by the wire kind, never by QueueRow.tone alone: a council row is amber, not the red fallthrough
+    it("reads a council row as one line that opens its council, in the asking tone", () => {
+        const line = queueLine(
+            {
+                ...q,
+                key: "council:c1",
+                kind: "Council",
+                title: "Council waiting on you: Rail apps",
+                action: "Open",
+                nav: { kind: "council", oref: "council:c1" },
+                wireKind: "council",
+                channelId: "",
+                runId: null,
+                why: "",
+                attrib: "",
+                detail: "",
+            },
+            NOW
+        );
+        expect(line).toMatchObject({
+            kind: "council",
+            kindTone: "asking",
+            title: "Council waiting on you: Rail apps",
+            target: { queue: { kind: "oref", oref: "council:c1" } },
+        });
+    });
+
     it("stays static when it names nothing to open, and prints no wait it does not know", () => {
         const line = queueLine({ ...q, nav: null, ts: null, tone: "error" }, NOW);
         expect([line.target, line.age, line.kindTone]).toEqual([null, "", "error"]);
@@ -81,7 +108,8 @@ describe("queueLine", () => {
     it("tones the kind by who is held up: amber for an answer, red for stuck, grey for a reminder", () => {
         const tone = (wireKind: string, over: Partial<QueueRow> = {}) =>
             queueLine({ ...q, wireKind, ...over }, NOW).kindTone;
-        expect(["dag-gate", "ask", "escalation", "plan-review"].map((k) => tone(k))).toEqual([
+        expect(["dag-gate", "ask", "escalation", "plan-review", "council"].map((k) => tone(k))).toEqual([
+            "asking",
             "asking",
             "asking",
             "asking",

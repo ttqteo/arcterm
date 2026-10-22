@@ -71,7 +71,7 @@ describe("splitAttention", () => {
         expect(out.jarvis).toHaveLength(0);
     });
 
-    it("counts gates, runs, escalations, due chunks and learn proposals on Jarvis, not Cockpit", () => {
+    it("counts gates, runs, escalations, due chunks, learn proposals and councils on Jarvis, not Cockpit", () => {
         const out = splitAttention([
             item({ key: "a", kind: "ask" }),
             item({ key: "c", kind: "dag-gate", channelid: "c2" }),
@@ -80,9 +80,10 @@ describe("splitAttention", () => {
             item({ key: "f", kind: "run-unverified", channelid: "c1" }),
             item({ key: "g", kind: "chunk-due" }),
             item({ key: "h", kind: "learn-proposal" }),
+            item({ key: "i", kind: "council", oref: "council:c1" }),
         ]);
         expect(out.cockpit.map((i) => i.key)).toEqual(["a"]);
-        expect(out.jarvis.map((i) => i.key)).toEqual(["c", "d", "e", "f", "g", "h"]);
+        expect(out.jarvis.map((i) => i.key)).toEqual(["c", "d", "e", "f", "g", "h", "i"]);
     });
 
     it("routes radar triage to the Radar badge, even though it names no channel", () => {

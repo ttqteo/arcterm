@@ -23,6 +23,14 @@ export type SegmentState = "done" | "running" | "failed" | "pending";
 const YOU = "you";
 const ROUNDS = 3;
 
+/** The words the person reads for a stance (the wire keeps `accept | challenge | oppose`). */
+export const STANCE_WORD: Record<StanceLabel, string> = {
+    accept: "Agrees",
+    challenge: "Has doubts",
+    oppose: "Is against it",
+    proposed: "Proposed",
+};
+
 const STANCES: ReadonlySet<string> = new Set(["accept", "challenge", "oppose"]);
 
 function isStance(s: string | undefined): s is "accept" | "challenge" | "oppose" {
@@ -40,6 +48,18 @@ export function authorName(c: Council, id: string): string {
         return "You";
     }
     return c.experts.find((e) => e.id === id)?.name ?? id;
+}
+
+/** Pure: whether a reply is agreement with nothing to add: an expert's accept with no text. It is drawn as a reaction
+ *  under the post, never as a reply, and counts in no reply total; the stance still counts in the vote and the
+ *  synthesis reads it. */
+export function isReaction(r: CouncilReply): boolean {
+    return r.author !== YOU && r.stance === "accept" && r.text.trim() === "";
+}
+
+/** Pure: the replies a person reads as replies, which leaves out the reactions. */
+export function readableReplies(c: Council): CouncilReply[] {
+    return (c.replies ?? []).filter((r) => !isReaction(r));
 }
 
 // replies in the order they were posted: by time, a tie by arrival
@@ -100,24 +120,37 @@ function replyingOn(c: Council, proposalId: string): number {
     return Object.values(c.activity ?? {}).filter((a) => a.proposalid === proposalId).length;
 }
 
+/** Pure: how many experts put a proposal in their top picks; `null` for a council with no `picks` at all (one from
+ *  before picks, or whose round 2 has not reported any), which is ranked by `score` instead. */
+export function pickCount(c: Council, proposalId: string): number | null {
+    const picks = Object.values(c.picks ?? {});
+    if (picks.length === 0) {
+        return null;
+    }
+    return picks.filter((ids) => ids.includes(proposalId)).length;
+}
+
 export interface RankedProposal {
     proposal: CouncilProposal;
-    score: number;
-    replies: number; // every reply on it, the person's included
+    score: number; // accepts minus opposes
+    picks: number | null; // experts that picked it, null for a council with no picks
+    replies: number; // every reply on it a person reads, the person's included (a reaction is not one)
     replying: number; // the experts writing one now
 }
 
-/** Pure: the proposals by score, best first, a tie in arrival order. A withdrawn one and one the person cut at the
- *  pause go last (their score kept, so the list can dim it). */
+/** Pure: the proposals by the experts' picks, best first (a council with no picks: by score), a tie by score and then
+ *  in arrival order. A withdrawn one and one the person cut at the pause go last (their count kept, so the list can dim
+ *  it). */
 export function rankedProposals(c: Council): RankedProposal[] {
     const stances = latestStances(c);
-    const replies = c.replies ?? [];
+    const replies = readableReplies(c);
     return (c.proposals ?? [])
         .map((proposal, i) => ({
             i,
             row: {
                 proposal,
                 score: scoreOf(stances[proposal.id]),
+                picks: pickCount(c, proposal.id),
                 replies: replies.filter((r) => r.proposalid === proposal.id).length,
                 replying: replyingOn(c, proposal.id),
             },
@@ -125,7 +158,7 @@ export function rankedProposals(c: Council): RankedProposal[] {
         .sort((a, b) => {
             const aOut = a.row.proposal.withdrawn || a.row.proposal.cut ? 1 : 0;
             const bOut = b.row.proposal.withdrawn || b.row.proposal.cut ? 1 : 0;
-            return aOut - bOut || b.row.score - a.row.score || a.i - b.i;
+            return aOut - bOut || (b.row.picks ?? 0) - (a.row.picks ?? 0) || b.row.score - a.row.score || a.i - b.i;
         })
         .map((x) => x.row);
 }
@@ -149,11 +182,11 @@ function setDepth(nodes: ThreadNode[], depth: number): void {
     }
 }
 
-/** Pure: one proposal's replies as a tree: nested by `parentid`, siblings by time. A reply whose parent is not in the
- *  thread is a root. While the council runs, an expert whose `activity` names this proposal adds a `typing` node, last
+/** Pure: one proposal's replies as a tree: nested by `parentid`, siblings by time. A reaction is no reply, so it is not
+ *  in the tree; a reply whose parent is not in the thread (a reaction included) is a root. While the council runs, an expert whose `activity` names this proposal adds a `typing` node, last
  *  among the children of the reply it answers (or of the post itself). */
 export function threadTree(c: Council, proposalId: string): ThreadNode[] {
-    const ordered = byTime((c.replies ?? []).filter((r) => r.proposalid === proposalId));
+    const ordered = byTime(readableReplies(c).filter((r) => r.proposalid === proposalId));
     const nodes = new Map<string, ThreadNode>();
     const roots: ThreadNode[] = [];
     for (const reply of ordered) {
@@ -244,7 +277,7 @@ export function replyLabel(c: Council, reply: CouncilReply): string {
         return c.state === "running" ? "Answering…" : "";
     }
     if (reply.round <= 1 || c.state === "awaiting-you") {
-        return "Queued for round 2";
+        return "Queued for the next step";
     }
     return "Answered after the summary";
 }
@@ -281,8 +314,7 @@ export function estimateTokens(n: number): string {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Pure: `≈ 9 calls · ~0.8M tokens · ~6 min`; `minutes` false leaves the time out (`Rounds 2 and 3: ≈ 5 calls ·
- *  ~0.3M tokens`). */
+/** Pure: `≈ 9 calls · ~0.8M tokens · ~6 min`; `minutes` false leaves the time out (`≈ 5 calls · ~0.3M tokens`). */
 export function estimateLabel(est: CouncilEstimateRtnData, minutes = true): string {
     const parts = [`≈ ${plural(est.calls, "call", "calls")}`, `~${estimateTokens(est.tokens)} tokens`];
     if (minutes) {
@@ -349,8 +381,8 @@ const STATE_WORD: Record<string, string> = {
     failed: "Failed",
 };
 
-/** Pure: the chip in the Discussion's header: the round and what is going on in it while the council runs
- *  (`Round 1 of 3 · 2 of 4 experts done`, `Round 2 of 3 · 2 replying`), else the state (`Waiting on you`, `Done`). */
+/** Pure: the chip in the Discussion's header: the step and what is going on in it while the council runs
+ *  (`Step 1 of 3 · 2 of 4 experts done`, `Step 2 of 3 · 2 replying`), else the state (`Waiting on you`, `Done`). */
 export function headerChip(c: Council): string {
     if (c.state !== "running") {
         return STATE_WORD[c.state] ?? c.state;
@@ -359,7 +391,7 @@ export function headerChip(c: Council): string {
     if (c.round > ROUNDS) {
         return n > 0 ? `Follow-up · ${n} answering` : "Follow-up";
     }
-    const head = `Round ${Math.max(1, c.round)} of ${ROUNDS}`;
+    const head = `Step ${Math.max(1, c.round)} of ${ROUNDS}`;
     if (c.round <= 1) {
         return `${head} · ${round1Done(c)} of ${panel(c).length} experts done`;
     }
@@ -373,7 +405,7 @@ export function headerChip(c: Council): string {
 export function treeMeta(c: Council): { text: string; tone: CouncilTone } {
     switch (c.state) {
         case "running":
-            return { text: c.round > ROUNDS ? "Answering" : `Round ${Math.max(1, c.round)}`, tone: "working" };
+            return { text: c.round > ROUNDS ? "Answering" : "Running", tone: "working" };
         case "awaiting-you":
             return { text: "Waiting on you", tone: "asking" };
         case "failed":
@@ -383,12 +415,9 @@ export function treeMeta(c: Council): { text: string; tone: CouncilTone } {
     }
 }
 
-/** Pure: the Summary's chip: `Done · 4 experts · 3 rounds · 11 min · 0.86M tokens`. */
+/** Pure: the Summary's chip: `Done · 4 experts · 11 min · 0.86M tokens`. */
 export function summaryChip(c: Council, nowMs: number): string {
     const parts = [STATE_WORD[c.state] ?? c.state, plural(panel(c).length, "expert", "experts")];
-    if (c.round >= 1) {
-        parts.push(plural(Math.min(c.round, ROUNDS), "round", "rounds"));
-    }
     const ms = elapsedMs(c, nowMs);
     if (c.started) {
         parts.push(`${Math.max(1, Math.round(ms / 60_000))} min`);
@@ -397,13 +426,13 @@ export function summaryChip(c: Council, nowMs: number): string {
     return parts.join(" · ");
 }
 
-/** Pure: the Discussion header's cost line: `7:20 · 19 replies · 0.55M tokens`. */
+/** Pure: the Discussion header's cost line: `7:20 · 19 replies · 0.55M tokens` (reactions are no replies). */
 export function costLine(c: Council, nowMs: number): string {
     const parts: string[] = [];
     if (c.started) {
         parts.push(clock(elapsedMs(c, nowMs)));
     }
-    parts.push(plural((c.replies ?? []).length, "reply", "replies"), `${countTokens(c.tokens)} tokens`);
+    parts.push(plural(readableReplies(c).length, "reply", "replies"), `${countTokens(c.tokens)} tokens`);
     return parts.join(" · ");
 }
 
@@ -466,7 +495,9 @@ export function summarizeHold(c: Council): string {
         if (c.round >= 3) {
             return "Summarize is on again when the council stops";
         }
-        return c.round === 2 ? "The summary comes by itself when round 2 ends" : "Summarize unlocks after round 1";
+        return c.round === 2
+            ? "The summary comes by itself when the experts finish replying"
+            : "Summarize unlocks after the experts' first ideas";
     }
     return "There is no proposal to summarize";
 }
@@ -480,7 +511,7 @@ export interface MatrixCell {
 export interface MatrixRow {
     proposal: CouncilProposal;
     cells: MatrixCell[]; // one per expert of the panel, in its order
-    outcome: string; // `Direction 1`, `Merged into direction 3`, `Withdrawn in round 2`
+    outcome: string; // `Direction 1`, `Merged into direction 3`, `Withdrawn`
 }
 
 // a proposal's argument down to its first sentence: the author's cell in the matrix
@@ -525,7 +556,7 @@ export function matrixRows(c: Council): MatrixRow[] {
             }),
             outcome:
                 summary.outcomes[proposal.id] ??
-                (proposal.cut ? "Cut at the pause" : proposal.withdrawn ? "Withdrawn in round 2" : ""),
+                (proposal.cut ? "Cut at the pause" : proposal.withdrawn ? "Withdrawn" : ""),
         }));
 }
 

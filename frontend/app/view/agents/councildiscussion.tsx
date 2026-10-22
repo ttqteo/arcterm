@@ -1,11 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The council Discussion (Main.dc.html, Running.dc.html, Paused.dc.html): a header in one line (the feature, the round
+// The council Discussion (Main.dc.html, Running.dc.html, Paused.dc.html): a header in one line (the feature, the step
 // chip, the experts' avatars, the cost line, Summarize, Stop council), and a body that depends on where the council is.
-// From round 2 on it is one proposal as a Reddit-style thread beside the proposals ranked by score (councilthread.tsx);
-// while round 1 runs it is each expert's card with what it is reading and the proposals as they arrive; at the pause it
-// is the ticks and the question for round 2; a council the token gate did not run offers Start council. A failed expert
+// From the argument on it is one idea as a Reddit-style thread beside the ideas ranked by the experts' picks, those no
+// expert picked folded away (councilthread.tsx); while the experts first read and propose it is each expert's card with
+// what it is reading and the ideas as they arrive; at the pause it is the ticks and the question for the argument; a
+// council the token gate did not run offers Start council. The words are plain ones: no proposal id, round or stance
+// word is drawn (the wire's stay in the data-council-* attributes). A failed expert
 // shows its error with Retry, a failed coordinator a Summary failed panel. Status is a dot and a word, never colour
 // alone. Every control carries a data-council-* attribute for the CDP scenario `council-discussion`. The rules are in
 // councildiscussionmodel.ts and councilmodel.ts; the store's actions answer `{ ok, error }`, and a refusal shows in place.
@@ -13,7 +15,7 @@
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
-import { ArrowBigUp, Check, ListChecks, MessageCircle } from "lucide-react";
+import { ArrowBigUp, Check, ChevronDown, ChevronRight, ListChecks, MessageCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { showCouncil } from "./agentcenter";
 import {
@@ -26,11 +28,14 @@ import {
     expertCard,
     expertDoing,
     failedExperts,
+    failedWhile,
+    foldedCount,
     headerCost,
     isLit,
     keptProposals,
     proposalLine,
     retriedOut,
+    scoreSummary,
     summarizeAction,
     toggleCut,
     type CardDot,
@@ -299,7 +304,7 @@ function Header({ c, now, acts }: { c: Council; now: number; acts: Actions }) {
             {showBar && <CallBar c={c} />}
             {c.state === "running" && c.round <= 1 && (
                 <span className="self-start text-[11.5px] text-muted">
-                    The discussion opens here as proposals arrive. Summarize unlocks after round 1.
+                    The discussion opens here as ideas arrive. Summarize unlocks after the experts' first ideas.
                 </span>
             )}
             {acts.error != null && (
@@ -341,7 +346,7 @@ function ExpertFailureCard({ c, f, acts }: { c: Council; f: FailedExpert; acts: 
                 <span className="text-[11px] text-muted">{f.expert.model}</span>
                 <span className="flex items-center gap-[6px] text-[11.5px] text-error-soft">
                     <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-error" />
-                    Failed in round {f.round}
+                    {failedWhile(f.round)}
                 </span>
             </div>
             <span data-council-failed-error className="break-words text-[12px] leading-[1.5] text-secondary">
@@ -363,7 +368,7 @@ function SummaryFailedPanel({ c, f, acts }: { c: Council; f: FailedExpert; acts:
                 <span className="text-[12.5px] font-semibold">Summary failed</span>
                 <span className="flex items-center gap-[6px] text-[11.5px] text-error-soft">
                     <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-error" />
-                    Failed in round {f.round}
+                    {failedWhile(f.round)}
                 </span>
             </div>
             <span data-council-failed-error className="break-words text-[12px] leading-[1.5] text-secondary">
@@ -457,11 +462,11 @@ function ProposalsSoFar({ c }: { c: Council }) {
     return (
         <>
             <div className="flex items-center gap-[10px]">
-                <span className={SECTION_LABEL}>Proposals so far</span>
+                <span className={SECTION_LABEL}>Ideas so far</span>
                 <span className="text-[10.5px] tabular-nums text-muted">{proposals.length}</span>
                 <div className="h-px flex-1 bg-edge-faint" />
             </div>
-            {proposals.length === 0 && <span className="text-[12px] text-muted">No proposals yet.</span>}
+            {proposals.length === 0 && <span className="text-[12px] text-muted">No ideas yet.</span>}
             {proposals.map((p) => (
                 <div
                     key={p.id}
@@ -473,10 +478,7 @@ function ProposalsSoFar({ c }: { c: Council }) {
                         name={c.experts.find((e) => e.id === p.author)?.name ?? p.author}
                     />
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-bold text-muted">{p.id}</span>
-                            <span className="text-[13px] font-semibold">{p.title}</span>
-                        </div>
+                        <span className="text-[13px] font-semibold">{p.title}</span>
                         <span className="text-[12px] leading-[1.5] text-secondary">{p.argument}</span>
                         <EvidenceChips evidence={p.evidence} />
                     </div>
@@ -505,8 +507,8 @@ function ExpertsBody({ c, acts }: { c: Council; acts: Actions }) {
                             <span className="h-[58px] rounded-[10px] bg-surface opacity-35" />
                         </div>
                         <span className="text-[11.5px] text-muted">
-                            The ranked directions appear here after round 3. You can leave; the Council row in the tree
-                            turns to Done.
+                            The answer appears here once the experts have argued it out. You can leave; the Council row
+                            in the tree turns to Done.
                         </span>
                     </>
                 )}
@@ -528,7 +530,7 @@ function PauseRow({ c, p, kept, onToggle }: { c: Council; p: CouncilProposal; ke
                 type="checkbox"
                 checked={kept}
                 onChange={onToggle}
-                aria-label={`Keep ${p.id}: ${p.title}`}
+                aria-label={`Keep: ${p.title}`}
                 className="peer sr-only"
             />
             <span
@@ -545,7 +547,6 @@ function PauseRow({ c, p, kept, onToggle }: { c: Council; p: CouncilProposal; ke
                 name={c.experts.find((e) => e.id === p.author)?.name ?? p.author}
                 dim={!kept}
             />
-            <span className="w-[24px] flex-none text-[11px] font-bold text-muted">{p.id}</span>
             <span
                 data-council-pause-title
                 className={cn("min-w-0 flex-1 text-[13px]", kept ? "text-primary" : "text-muted line-through")}
@@ -573,9 +574,14 @@ function PauseBody({ c, acts }: { c: Council; acts: Actions }) {
     return (
         <div data-council-pause className="min-h-0 flex-1 overflow-y-auto px-8 py-5">
             <div className="flex max-w-[900px] flex-col gap-3">
+                <div className="flex items-center gap-[10px]">
+                    <span className={SECTION_LABEL}>Ideas so far</span>
+                    <span className="text-[10.5px] tabular-nums text-muted">{proposals.length}</span>
+                    <div className="h-px flex-1 bg-edge-faint" />
+                </div>
                 <p className="m-0 text-[13.5px] leading-[1.55] text-ink-hi">
-                    Round 1 brought {proposals.length} {proposals.length === 1 ? "proposal" : "proposals"}. Untick the
-                    ones not worth a review; round 2 reads only the ones you keep, and anything you ask below.
+                    Untick the ideas not worth a review: the argument reads only the ones you keep, and anything you ask
+                    below.
                 </p>
                 <div className="flex flex-col rounded-[10px] border border-border bg-surface">
                     {proposals.map((p) => (
@@ -598,7 +604,7 @@ function PauseBody({ c, acts }: { c: Council; acts: Actions }) {
                         className="box-border w-full resize-none rounded-[6px] border border-edge-strong bg-surface px-[10px] py-2 text-[13px] leading-[1.5] text-primary outline-none focus:border-accent"
                     />
                     <span className="text-[11.5px] text-muted">
-                        Every expert answers it in round 2, beside their review of the kept proposals.
+                        Every expert answers it while they argue, beside their review of the kept ideas.
                     </span>
                 </label>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -606,11 +612,11 @@ function PauseBody({ c, acts }: { c: Council; acts: Actions }) {
                         type="button"
                         data-council-continue
                         disabled={!canContinue(c, draft.cut) || acts.busy.has("continue")}
-                        title={canContinue(c, draft.cut) ? undefined : "Keep at least one proposal"}
+                        title={canContinue(c, draft.cut) ? undefined : "Keep at least one idea"}
                         onClick={() => void go()}
                         className={primaryButton}
                     >
-                        {acts.busy.has("continue") ? "Continuing…" : "Continue to round 2"}
+                        {acts.busy.has("continue") ? "Continuing…" : "Continue: let them argue"}
                     </button>
                     <button
                         type="button"
@@ -619,15 +625,15 @@ function PauseBody({ c, acts }: { c: Council; acts: Actions }) {
                         onClick={() => void acts.run("stop", "Stop", () => stopCouncil(c.id))}
                         className={secondaryButton}
                     >
-                        Stop here and keep round 1
+                        Stop here and keep these ideas
                     </button>
                     <span data-council-remaining className="text-[11.5px] tabular-nums text-muted">
-                        {est != null ? `Rounds 2 and 3: ${estimateLabel(est, false)}` : ""}
+                        {est != null ? `The rest: ${estimateLabel(est, false)}` : ""}
                     </span>
                 </div>
                 {keptProposals(c, draft.cut).length === 0 && (
                     <span className="text-[11.5px] text-warning-soft">
-                        Nothing is kept. Tick a proposal, or stop here and keep round 1.
+                        Nothing is kept. Tick an idea, or stop here and keep these ideas.
                     </span>
                 )}
             </div>
@@ -699,13 +705,18 @@ function ProposalRow({
             )}
         >
             <span
+                title={scoreSummary(c, p.id)}
                 className={cn(
                     "flex w-[22px] flex-none flex-col items-center text-[12px] font-bold tabular-nums",
-                    row.score < 0 ? "text-error-soft" : out ? "text-muted" : "text-success-soft"
+                    row.picks == null && row.score < 0
+                        ? "text-error-soft"
+                        : out || row.picks === 0
+                          ? "text-muted"
+                          : "text-success-soft"
                 )}
             >
                 <ArrowBigUp size={12} strokeWidth={2.2} aria-hidden />
-                <span data-council-proposal-score>{row.score}</span>
+                <span data-council-proposal-score>{row.picks ?? row.score}</span>
             </span>
             <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
                 <span className={cn("text-[12px] font-semibold leading-[1.35]", out ? "text-muted" : "text-primary")}>
@@ -727,11 +738,52 @@ function ProposalRow({
     );
 }
 
+// the ideas no expert picked, folded under one row; an open idea inside it keeps the fold unfolded
+function FoldedIdeas({
+    c,
+    rows,
+    openId,
+    onOpen,
+}: {
+    c: Council;
+    rows: RankedProposal[];
+    openId: string | undefined;
+    onOpen: (id: string) => void;
+}) {
+    const [unfolded, setUnfolded] = useState(false);
+    const shown = unfolded || rows.some((r) => r.proposal.id === openId);
+    return (
+        <>
+            <button
+                type="button"
+                data-council-folded={rows.length}
+                aria-expanded={shown}
+                onClick={() => setUnfolded(!shown)}
+                className="flex h-[28px] w-full flex-none cursor-pointer items-center gap-[6px] rounded-[8px] border-0 bg-transparent px-[6px] text-left text-[11.5px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+            >
+                {shown ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />}
+                {rows.length} more with no picks
+            </button>
+            {shown &&
+                rows.map((row) => (
+                    <ProposalRow
+                        key={row.proposal.id}
+                        c={c}
+                        row={row}
+                        selected={row.proposal.id === openId}
+                        onOpen={() => onOpen(row.proposal.id)}
+                    />
+                ))}
+        </>
+    );
+}
+
 function ThreadBody({ c, acts }: { c: Council; acts: Actions }) {
     const ranked = rankedProposals(c);
     const [openId, setOpenId] = useAtom(councilOpenProposalAtom(c.id));
     const [composer, setComposer] = useAtom(councilComposerAtom(c.id));
     const open = (ranked.find((r) => r.proposal.id === openId) ?? ranked[0])?.proposal;
+    const folded = foldedCount(c) > 0 ? ranked.filter((r) => r.picks === 0) : [];
 
     const here = (proposalId: string, parentId: string) =>
         composer != null && composer.proposalId === proposalId && composer.parentId === parentId;
@@ -780,16 +832,19 @@ function ThreadBody({ c, acts }: { c: Council; acts: Actions }) {
                     Ask the whole council
                 </button>
                 {renderComposer("", "")}
-                <span className={cn(SECTION_LABEL, "pt-[6px]")}>Proposals</span>
-                {ranked.map((row) => (
-                    <ProposalRow
-                        key={row.proposal.id}
-                        c={c}
-                        row={row}
-                        selected={row.proposal.id === open?.id}
-                        onOpen={() => setOpenId(row.proposal.id)}
-                    />
-                ))}
+                <span className={cn(SECTION_LABEL, "pt-[6px]")}>Ideas</span>
+                {ranked
+                    .filter((row) => !folded.includes(row))
+                    .map((row) => (
+                        <ProposalRow
+                            key={row.proposal.id}
+                            c={c}
+                            row={row}
+                            selected={row.proposal.id === open?.id}
+                            onOpen={() => setOpenId(row.proposal.id)}
+                        />
+                    ))}
+                {folded.length > 0 && <FoldedIdeas c={c} rows={folded} openId={open?.id} onOpen={setOpenId} />}
             </aside>
         </div>
     );

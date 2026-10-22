@@ -652,7 +652,7 @@ func withOpenAsks(c *Council, e CouncilExpert) *Council {
 func round2Target(c *Council, e CouncilExpert) *CouncilActivity {
 	for _, p := range c.Proposals {
 		if p.Author != e.Id && !p.Cut {
-			return &CouncilActivity{Text: "Replying to " + speaker(c, p.Author) + " on " + p.Id, ProposalId: p.Id}
+			return &CouncilActivity{Text: "Replying to " + speaker(c, p.Author), ProposalId: p.Id}
 		}
 	}
 	if asks := unansweredFor(c, e.Id); len(asks) > 0 {
@@ -708,6 +708,9 @@ func applyRound2(c *Council, e CouncilExpert, res Round2Result, now int64) {
 		if p == nil || p.Author == e.Id || p.Cut || hasStance(c, p.Id, e.Id) {
 			continue
 		}
+		if strings.TrimSpace(s.Reason) == "" && s.Stance != StanceAccept { // an accept needs no words; a doubt or an objection does
+			continue
+		}
 		c.Replies = append(c.Replies, CouncilReply{
 			Id: nextReplyId(c), ProposalId: p.Id, Author: e.Id, Stance: s.Stance,
 			Text: s.Reason, Evidence: s.Evidence, Round: 2, Ts: now,
@@ -741,7 +744,28 @@ func applyRound2(c *Council, e CouncilExpert, res Round2Result, now int64) {
 			Revised: true, Text: text, Round: 2, Ts: now,
 		})
 	}
+	applyPicks(c, e, res.Picks)
 	applyAnswers(c, e, res.Answers, 2, now)
+}
+
+// applyPicks keeps an expert's picks that name another expert's proposal still in the running, at most maxPicks, in
+// the order given. The model names the ids, so each is checked like a stance.
+func applyPicks(c *Council, e CouncilExpert, picks []string) {
+	var kept []string
+	for _, id := range picks {
+		p := findProposal(c, id)
+		if p == nil || p.Author == e.Id || p.Cut || p.Withdrawn || slices.Contains(kept, id) || len(kept) == maxPicks {
+			continue
+		}
+		kept = append(kept, id)
+	}
+	if len(kept) == 0 {
+		return
+	}
+	if c.Picks == nil {
+		c.Picks = map[string][]string{}
+	}
+	c.Picks[e.Id] = kept
 }
 
 // ---- the person's replies ----
@@ -1102,6 +1126,9 @@ func (r *Runner) synthesize(ctx context.Context, rn *run, id string) error {
 // cleanSummary drops what the coordinator named that is not on the council: a proposal that does not exist, an
 // expert that is not on the panel, and a stance from the author of a proposal the direction merges.
 func cleanSummary(c *Council, s CouncilSummary) CouncilSummary {
+	if strings.TrimSpace(c.Question) == "" {
+		s.Answer = "" // nothing was asked, so there is nothing to answer
+	}
 	panel := map[string]bool{}
 	for _, e := range panelOf(c) {
 		panel[e.Id] = true

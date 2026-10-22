@@ -59,13 +59,21 @@ const click = (selector) => `(() => {
     el.click();
     return true;
 })()`;
-// React reads a controlled input's value through its own setter, so the native one is called and an input event follows
-const setValue = (selector, text) => `(() => {
+// React reads a controlled field's value through its own setter, so the native one is called and an input event follows
+// (the composer is a textarea, so it is the textarea's)
+const setText = (selector, text) => `(() => {
     const el = document.querySelector(${JSON.stringify(selector)});
     if (!el) return false;
     el.focus();
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, ${JSON.stringify(text)});
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(el, ${JSON.stringify(text)});
     el.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+})()`;
+// Options unfolds the expert rows and Pause; a click only when it is folded
+const OPEN_OPTIONS = `(() => {
+    const el = document.querySelector("[data-council-options]");
+    if (!el) return false;
+    if (el.getAttribute("aria-expanded") !== "true") el.click();
     return true;
 })()`;
 const escape = `document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true })) ?? false`;
@@ -78,9 +86,21 @@ const SETUP = `(() => {
     const q = (s) => root.querySelector(s);
     const text = (s) => { const el = q(s); return el ? flat(el) : null; };
     const start = q("[data-council-start]");
+    const composer = q("[data-council-composer]");
     return {
-        feature: q('[data-council-input="feature"]')?.value ?? null,
-        question: q('[data-council-input="question"]')?.value ?? null,
+        ask: q('[data-council-input="ask"]')?.value ?? null,
+        placeholder: q('[data-council-input="ask"]')?.getAttribute("placeholder") ?? null,
+        optionsOpen: q("[data-council-options]")?.getAttribute("aria-expanded") ?? null,
+        // what sits inside the composer's box
+        inComposer: {
+            attach: composer?.querySelector("[data-council-attach]") != null,
+            chips: [...(composer?.querySelectorAll("[data-council-file-chip]") ?? [])].map((c) => flat(c)),
+            bar: composer?.querySelector("[data-council-composer-bar]") != null,
+            estimate: flat(composer?.querySelector("[data-council-composer-bar] [data-council-estimate]")),
+            start: composer?.querySelector("[data-council-composer-bar] [data-council-start]") != null,
+            group: flat(composer?.querySelector("[data-council-composer-bar] [data-council-group]")),
+        },
+        expertsLine: text("[data-council-experts-line]"),
         group: text("[data-council-group]"),
         experts: [...root.querySelectorAll("[data-council-expert]")].map((r) => ({
             id: r.dataset.councilExpert,
@@ -103,6 +123,7 @@ const SETUP = `(() => {
             add: r.querySelector("[data-council-suggested-add]") != null,
         })),
         pause: q("[data-council-pause]")?.getAttribute("aria-checked") ?? null,
+        pauseLabel: q("[data-council-pause]")?.getAttribute("aria-label") ?? null,
         estimate: text("[data-council-estimate]"),
         footnote: text("[data-council-footnote]"),
         start: start ? { disabled: start.disabled, text: flat(start) } : null,
@@ -175,12 +196,22 @@ export const councilSetup = {
             const newRow = `[data-council-new="${COUNCIL_PROJECT}"]`;
             await until(present(newRow), 10_000);
             await h.ev(click(newRow));
-            await until(`document.querySelectorAll("[data-council-expert]").length === 5`);
+            await until(`(document.querySelector("[data-council-group]")?.textContent ?? "").includes("Review a UI feature")`);
             let v = await view();
+            // the rows are folded under Options until it is opened
+            const foldedRows = v?.experts.length;
+            await h.ev(OPEN_OPTIONS);
+            await until(`document.querySelectorAll("[data-council-expert]").length === 5`);
+            v = await view();
             const coordinator = v?.experts.find((e) => e.coordinator);
             rec(
-                "1. New council opens Setup: the group button reads Review a UI feature, five rows, the coordinator last on opus with no remove",
-                v?.group === "Review a UI feature" &&
+                "1. New council opens Setup: one composer with its placeholder, the group chip reads Review a UI feature, the rows are folded until Options opens them, then five rows, the coordinator last on opus with no remove",
+                v?.placeholder === "What should the council review? The first line names it; ask a question under it." &&
+                    v.ask === "" &&
+                    foldedRows === 0 &&
+                    v.optionsOpen === "true" &&
+                    v.inComposer.group === "Review a UI feature" &&
+                    v?.group === "Review a UI feature" &&
                     sameList(v.experts.map((e) => e.id), ["ux", "ram", "newuser", "skeptic", "coordinator"]) &&
                     v.experts.at(-1)?.coordinator === true &&
                     coordinator?.model === "opus" &&
@@ -189,20 +220,22 @@ export const councilSetup = {
                 v
             );
 
-            // 2. the feature, the estimate and the button that waits for it
-            const blockedBefore = v?.start?.disabled === true && v.footnote === "Name the feature to review";
-            await h.ev(setValue('[data-council-input="feature"]', "Rail apps"));
-            await until(`/≈ \\d+ calls · ~[\\d.]+M tokens · ~\\d+ min/.test(document.querySelector("[data-council-estimate]")?.textContent ?? "")`);
+            // 2. the feature and a question on two lines, the estimate in the composer's bar and the button that waits
+            const blockedBefore = v?.start?.disabled === true && v.footnote === "Say what the council should review";
+            await h.ev(setText('[data-council-input="ask"]', "Rail apps\nIs the pin worth it?"));
+            await until(`/≈ \\d+ calls · ~[\\d.]+M tokens · ~\\d+ min/.test(document.querySelector("[data-council-composer-bar] [data-council-estimate]")?.textContent ?? "")`);
             v = await view();
             rec(
-                "2. a feature enables Start council, and the footer estimate reads ≈ N calls · ~X.XM tokens · ~N min (≈ 9 calls for four experts)",
+                "2. a feature on the first line and a question under it enable Start council, and the estimate in the composer's bar reads ≈ N calls · ~X.XM tokens · ~N min (≈ 9 calls for four experts)",
                 blockedBefore &&
-                    v?.feature === "Rail apps" &&
+                    v?.ask === "Rail apps\nIs the pin worth it?" &&
                     v.start?.disabled === false &&
-                    ESTIMATE_RE.test(v.estimate ?? "") &&
-                    (v.estimate ?? "").startsWith("≈ 9 calls") &&
-                    v.footnote === "4 sonnet experts read the code in round 1; rounds 2 and 3 read only text",
-                { blockedBefore, feature: v?.feature, start: v?.start, estimate: v?.estimate, footnote: v?.footnote }
+                    v.inComposer.start === true &&
+                    ESTIMATE_RE.test(v.inComposer.estimate) &&
+                    v.inComposer.estimate.startsWith("≈ 9 calls") &&
+                    v.estimate === v.inComposer.estimate &&
+                    v.footnote === "4 sonnet experts read the code first; then they argue over text only",
+                { blockedBefore, ask: v?.ask, start: v?.start, inComposer: v?.inComposer, footnote: v?.footnote }
             );
             const noAsk = (await calls("CouncilSuggestCommand")).length === 0;
 
@@ -215,8 +248,9 @@ export const councilSetup = {
                 sameList(v?.experts.map((e) => e.id), ["ux", "ram", "skeptic", "coordinator"]) &&
                     (v?.estimate ?? "").startsWith("≈ 7 calls") &&
                     v.experts.find((e) => e.coordinator)?.remove === false &&
-                    v.footnote === "3 sonnet experts read the code in round 1; rounds 2 and 3 read only text",
-                { experts: v?.experts.map((e) => e.id), estimate: v?.estimate, footnote: v?.footnote }
+                    v.footnote === "3 sonnet experts read the code first; then they argue over text only" &&
+                    /^Review a UI feature: UX, RAM and Skeptic each read the code/.test(v.expertsLine ?? ""),
+                { experts: v?.experts.map((e) => e.id), estimate: v?.estimate, footnote: v?.footnote, line: v?.expertsLine }
             );
 
             // 4. a model menu, and the group menu
@@ -246,11 +280,15 @@ export const councilSetup = {
             // 5. prefilled with two files and a screenshot: chips with ×, the add button, the screenshot card
             const FILES = ["docs/superpowers/specs/2026-10-20-rail-apps-design.md", "railapps.ts"];
             await openCouncilSetup(h, ctx.repo, { feature: "Rail apps", files: FILES, screenshots: [ctx.shot] });
-            await until(`document.querySelectorAll("[data-council-file]").length === 2 && document.querySelectorAll("[data-council-expert]").length === 5`);
+            await until(`document.querySelectorAll("[data-council-file]").length === 2`);
+            await h.ev(OPEN_OPTIONS);
+            await until(`document.querySelectorAll("[data-council-expert]").length === 5`);
             v = await view();
             const chipsBefore = v?.files;
-            await h.ev(click('[data-council-add]'));
-            await until(`document.querySelectorAll("[data-council-add-item]").length === 2`);
+            const composerBefore = v?.inComposer;
+            const askBefore = v?.ask;
+            await h.ev(click('[data-council-attach]'));
+            await until(`document.querySelectorAll("[data-council-add-item]").length === 3`);
             const addItems = await h.ev(menuItems("data-council-add-item"));
             await h.ev(escape);
             await until(`document.querySelectorAll("[data-council-add-item]").length === 0`);
@@ -258,15 +296,28 @@ export const councilSetup = {
             await until(`document.querySelectorAll("[data-council-file]").length === 1`);
             v = await view();
             rec(
-                "5. prefilled with two files and a screenshot: two file chips with ×, removing one leaves one; + Add a file or folder offers File… and Folder…; the screenshot card shows rail-apps.png",
+                "5. prefilled with two files and a screenshot: two file chips with ×, removing one leaves one; Attach offers File…, Folder… and Screenshot…; the screenshot chip shows rail-apps.png",
                 sameList(chipsBefore?.map((c) => c.path), FILES) &&
                     chipsBefore.every((c) => c.remove) &&
                     sameList(v?.files.map((c) => c.path), [FILES[0]]) &&
-                    v.add === "+ Add a file or folder" &&
-                    sameList(addItems.map((i) => i.text), ["File…", "Folder…"]) &&
+                    v.add === "Attach" &&
+                    sameList(addItems.map((i) => i.text), ["File…", "Folder…", "Screenshot…"]) &&
                     sameList(v.screenshots, [ctx.shot]) &&
                     v.group === "Review a UI feature",
                 { chipsBefore, files: v?.files, add: v?.add, addItems, screenshots: v?.screenshots }
+            );
+
+            // 5b. the attach button and every chip (two files and the screenshot) sit inside the composer's box
+            rec(
+                "5b. the attach button and the file and screenshot chips are inside the composer, which holds the prefilled feature",
+                askBefore === "Rail apps" &&
+                    composerBefore?.attach === true &&
+                    composerBefore.bar === true &&
+                    composerBefore.chips.length === 3 &&
+                    composerBefore.chips.some((c) => c.includes("railapps.ts")) &&
+                    composerBefore.chips.some((c) => c.includes("rail-apps.png")) &&
+                    v?.inComposer.chips.length === 2,
+                { before: composerBefore, after: v?.inComposer }
             );
 
             // 6. the coordinator is asked once, a moment after the last edit: Suggesting… while the call is out
@@ -335,7 +386,9 @@ export const councilSetup = {
                 groupPicked: true,
                 suggestState: "idle",
             });
-            await until(`document.querySelectorAll("[data-council-file]").length === 1 && document.querySelectorAll("[data-council-expert]").length === 5`);
+            await until(`document.querySelectorAll("[data-council-file]").length === 1`);
+            await h.ev(OPEN_OPTIONS);
+            await until(`document.querySelectorAll("[data-council-expert]").length === 5`);
             // longer than the page waits before it asks
             await new Promise((r) => setTimeout(r, 1800));
             v = await view();
@@ -346,7 +399,7 @@ export const councilSetup = {
                     v?.suggesting == null &&
                     v.failed == null &&
                     v.suggested.length === 0 &&
-                    v.feature === "Rail apps" &&
+                    v.ask === "Rail apps" &&
                     sameList(v.experts.map((e) => e.id), ["ux", "ram", "newuser", "skeptic", "coordinator"]) &&
                     sameList(v.files.map((c) => c.path), [FILES[1]]),
                 { beforeRerun, afterRerun, suggesting: v?.suggesting, failed: v?.failed }
@@ -356,6 +409,8 @@ export const councilSetup = {
             await stubRpc(h, ["CouncilSuggestCommand"], { CouncilSuggestCommand: { reject: "claude exited with status 1" } });
             await openCouncilSetup(h, ctx.repo, { feature: "Rail apps", files: [FILES[1]] });
             await until(`${present("[data-council-suggest-failed]")}`, SUGGEST_WAIT_MS);
+            await h.ev(OPEN_OPTIONS);
+            await until(`document.querySelectorAll("[data-council-expert]").length === 5`);
             v = await view();
             const afterReject = (await calls("CouncilSuggestCommand")).length;
             await h.ev(click("[data-council-suggest-retry]"));
@@ -372,8 +427,33 @@ export const councilSetup = {
                 { failed: v?.failed, retry: v?.retry, experts: v?.experts.map((e) => e.id), afterReject, retried }
             );
 
-            // 10. Pause after round 1 toggles
+            // 9b. a draft restored with a separate feature and question (the shape saved before the composer, and Run
+            // again's) shows both lines in the composer; its panel is set and picked, so it is not asked
+            await openCouncilSetup(h, ctx.repo, {
+                feature: "Rail apps",
+                question: "Is the pin worth it?",
+                files: [FILES[1]],
+                group: "ui-feature",
+                experts: rerunPanel,
+                groupPicked: true,
+                suggestState: "idle",
+            });
+            await until(`(document.querySelector('[data-council-input="ask"]')?.value ?? "") === "Rail apps\\nIs the pin worth it?"`);
+            await h.ev(OPEN_OPTIONS);
+            await until(`document.querySelectorAll("[data-council-expert]").length === 5`);
+            v = await view();
+            rec(
+                "9b. a draft with a separate feature and question shows both lines in the composer, the feature first",
+                v?.ask === "Rail apps\nIs the pin worth it?" &&
+                    v.start?.disabled === false &&
+                    sameList(v.files.map((c) => c.path), [FILES[1]]) &&
+                    v.group === "Review a UI feature",
+                { ask: v?.ask, start: v?.start, files: v?.files }
+            );
+
+            // 10. Pause after the first ideas toggles
             const pauseBefore = (await view())?.pause;
+            const pauseLabel = (await view())?.pauseLabel;
             await h.ev(click("[data-council-pause]"));
             await until(`document.querySelector("[data-council-pause]")?.getAttribute("aria-checked") === "true"`);
             const pauseOn = (await view())?.pause;
@@ -383,9 +463,12 @@ export const councilSetup = {
             await h.ev(click("[data-council-pause]"));
             await until(`document.querySelector("[data-council-pause]")?.getAttribute("aria-checked") === "true"`);
             rec(
-                "10. Pause after round 1 starts off and toggles on, off and on again",
-                pauseBefore === "false" && pauseOn === "true" && pauseOff === "false",
-                { pauseBefore, pauseOn, pauseOff }
+                "10. Pause after the first ideas (inside Options) starts off and toggles on, off and on again",
+                pauseLabel === "Pause after the first ideas" &&
+                    pauseBefore === "false" &&
+                    pauseOn === "true" &&
+                    pauseOff === "false",
+                { pauseLabel, pauseBefore, pauseOn, pauseOff }
             );
 
             // 11. Start council is the accent button; the stubbed start records the draft and opens the Discussion
@@ -399,12 +482,13 @@ export const councilSetup = {
             await until(`${rowText} === "New council"`);
             const newRowText = await h.ev(rowText);
             rec(
-                "11. Start council is drawn in the accent; clicking it (stubbed) sends the draft's feature, files, panel and pause once, opens the Discussion, and the tree's New council row no longer reads draft",
+                "11. Start council is drawn in the accent; clicking it (stubbed) sends the draft's feature, question, files, panel and pause once, opens the Discussion, and the tree's New council row no longer reads draft",
                 fill.got != null &&
                     fill.got === fill.want &&
                     v?.start?.text === "Start council" &&
                     startCalls.length === 1 &&
                     sent?.feature === "Rail apps" &&
+                    sent.question === "Is the pin worth it?" &&
                     sameList(sent?.files, [FILES[1]]) &&
                     sameList(sent?.experts?.map((e) => e.id), ["ux", "ram", "newuser", "skeptic", "coordinator"]) &&
                     sent.experts.at(-1)?.coordinator === true &&
@@ -569,27 +653,29 @@ export const councilAsk = {
 
             // 2. Setup opens with the question, and the coordinator is asked about it
             await until(`${present("[data-council-setup]")}`);
-            await until(`document.querySelectorAll("[data-council-expert]").length === 5`);
+            await until(`(document.querySelector("[data-council-group]")?.textContent ?? "").includes("Review a UI feature")`);
             const asked = await until(`${present("[data-council-suggesting]")}`, SUGGEST_WAIT_MS);
             let v = await view();
             const askCalls = await calls("CouncilSuggestCommand");
             rec(
-                "2. Ask the council opens Setup with the Question holding the line, Start council waiting for a feature, and asks the coordinator once with that question",
-                v?.question === ASK_QUESTION &&
-                    v.feature === "" &&
-                    v.start?.disabled === true &&
-                    v.footnote === "Name the feature to review" &&
+                "2. Ask the council opens Setup with the composer holding the Idea's question as its one line, Start council ready without naming a feature, and asks the coordinator once with that question",
+                v?.ask === ASK_QUESTION &&
+                    !(v.ask ?? "").includes("\n") &&
+                    v.start?.disabled === false &&
+                    v.footnote === "4 sonnet experts read the code first; then they argue over text only" &&
                     asked &&
                     v.suggesting === "Suggesting…" &&
                     askCalls.length === 1 &&
                     askCalls[0].data?.question === ASK_QUESTION &&
                     askCalls[0].data?.project === ctx.repo,
-                { question: v?.question, feature: v?.feature, footnote: v?.footnote, suggesting: v?.suggesting, calls: askCalls }
+                { ask: v?.ask, start: v?.start, footnote: v?.footnote, suggesting: v?.suggesting, calls: askCalls }
             );
 
             // 3. the answer names the Paper review group: the group button and the rows follow it
             await resolveStub(h, "CouncilSuggestCommand", { files: [], roles: [], group: "paper" });
             await until(`(document.querySelector("[data-council-group]")?.textContent ?? "").trim() === "Paper review"`);
+            await h.ev(OPEN_OPTIONS);
+            await until(`document.querySelectorAll("[data-council-expert]").length === 4`);
             v = await view();
             // the runner's own shot of this scenario (council-ask) is taken on arrival, before the question is asked
             await h.shot("cdp-shots/council-ask-paper.png");
@@ -605,18 +691,18 @@ export const councilAsk = {
             );
 
             // 4. the session rides along: starting from here sends it, so the directions come back into that session's Ideas
-            await h.ev(setValue('[data-council-input="feature"]', "Rail apps"));
+            // no feature is named: the question alone starts it, as the question and as the feature the experts review
             await until(`document.querySelector("[data-council-start]")?.disabled === false`);
             await h.ev(click("[data-council-start]"));
             await until(`${present("[data-council-discussion]")}`);
             const startCalls = await calls("CouncilStartCommand");
             const sent = startCalls[0]?.data;
             rec(
-                "4. Start council from Ask the council (stubbed) sends the question, the paper group and this agent's session, then opens the Discussion",
+                "4. Start council from Ask the council (stubbed) sends the Idea's question as the question, the paper group and this agent's session, then opens the Discussion",
                 startCalls.length === 1 &&
                     sent?.sessionid === ASK_SESSION &&
                     sent.question === ASK_QUESTION &&
-                    sent.feature === "Rail apps" &&
+                    sent.feature === ASK_QUESTION &&
                     sent.group === "paper" &&
                     sent.project === ctx.repo,
                 { calls: startCalls.length, sessionid: sent?.sessionid, question: sent?.question, group: sent?.group }

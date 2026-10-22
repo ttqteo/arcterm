@@ -147,7 +147,9 @@ export type QueueNav =
     | { kind: "radar"; oref: string }
     | { kind: "record"; oref: string }
     // a plan to review whose agent is still open: the agent's rail is where it is decided (planreviewtarget.ts)
-    | { kind: "agent"; oref: string };
+    | { kind: "agent"; oref: string }
+    // a council paused for the person: its Discussion is where Continue is pressed
+    | { kind: "council"; oref: string };
 export interface QueueRow {
     key: string;
     kind: string;
@@ -213,6 +215,7 @@ const QUEUE_KIND_LABEL: Record<string, string> = {
     "chunk-due": "due",
     "plan-review": "plan",
     "learn-proposal": "Learned rule",
+    council: "Council",
 };
 
 export function buildAttentionQueue(input: {
@@ -236,6 +239,8 @@ export function buildAttentionQueue(input: {
         // a chunk that came due names its initiative the same way, and opens it on the chunk's row
         const dueORef = a.kind === "chunk-due" && a.oref != null && a.oref !== "" ? a.oref : null;
         // a plan to review opens the agent that proposed it while one is open, else its initiative
+        // a waiting council opens on its Discussion, addressed by the oref the server sent
+        const councilORef = a.kind === "council" && a.oref != null && a.oref !== "" ? a.oref : null;
         const planORef = a.kind === "plan-review" ? planReviewORef(a, input.roster ?? []) : "";
         const planNav: QueueNav | null = planORef.startsWith("agent:")
             ? { kind: "agent", oref: planORef }
@@ -253,7 +258,10 @@ export function buildAttentionQueue(input: {
             ts: a.waitingsince > 0 ? a.waitingsince : null,
             // a standalone item names no channel, so there is no run body to land on; it renders as
             // static info rather than a button that would navigate nowhere (NeedsRow's rule, kept).
-            action: channelId !== "" || radarORef != null || dueORef != null || planNav != null ? a.action : null,
+            action:
+                channelId !== "" || radarORef != null || dueORef != null || planNav != null || councilORef != null
+                    ? a.action
+                    : null,
             nav:
                 radarORef != null
                     ? { kind: "radar", oref: radarORef }
@@ -261,9 +269,15 @@ export function buildAttentionQueue(input: {
                       ? { kind: "effort", oref: dueORef }
                       : planNav != null
                         ? planNav
-                        : channelId !== ""
-                          ? { kind: "channel", channelId, runId: a.runid != null && a.runid !== "" ? a.runid : null }
-                          : null,
+                        : councilORef != null
+                          ? { kind: "council", oref: councilORef }
+                          : channelId !== ""
+                            ? {
+                                  kind: "channel",
+                                  channelId,
+                                  runId: a.runid != null && a.runid !== "" ? a.runid : null,
+                              }
+                            : null,
             tone: a.kind === "dag-blocked" ? "error" : "asking",
             // a due chunk IS the initiative's row (detail carries the title), as a blocked chunk is below; so is
             // a plan to review, whose source is the initiative's title
@@ -358,7 +372,8 @@ export type KindWord =
     | "unverified"
     | "held"
     | "not started"
-    | "rule";
+    | "rule"
+    | "council";
 
 // the same word from a wire kind alone, for a surface that holds no QueueRow (the tray popover's waits)
 export function kindWord(wireKind: string, retry = false): KindWord {
@@ -384,6 +399,8 @@ export function kindWord(wireKind: string, retry = false): KindWord {
             return "not started";
         case "learn-proposal":
             return "rule";
+        case "council":
+            return "council";
         default:
             return "blocked";
     }

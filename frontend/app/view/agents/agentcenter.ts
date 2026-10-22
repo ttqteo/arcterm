@@ -10,7 +10,7 @@
 //             and the member sessionsMemberAtom, as History's run detail reads them
 //   history   Conversation History: the old Sessions surface's master-detail, embedded
 //   canvases  Canvas gallery: the gallery of every project's design canvases, and its viewer (canvasgallerystore.ts)
-//   council   one council's Discussion or Summary, or a project's council Setup (councilpane.tsx); which council, which
+//   council   one council's Discussion or report (Summary), or a project's council Setup (councilpane.tsx); which council, which
 //             of the three views and which project's draft are councilstore.ts's councilSelAtom, councilViewAtom and
 //             councilSetupProjectAtom
 // The terminal stack stays mounted, hidden, in the others, so a live xterm is never torn down and re-fitted.
@@ -22,7 +22,15 @@ import { landOn } from "@/app/view/jarvis/returnsurface";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { AgentsViewModel } from "./agents";
 import { emptyCouncilDraft, type CouncilSetupDraft, type CouncilView } from "./councilmodel";
-import { councilSelAtom, councilSetupDraftAtom, councilSetupProjectAtom, councilViewAtom } from "./councilstore";
+import {
+    councilAtom,
+    councilListAtom,
+    councilSelAtom,
+    councilSetupDraftAtom,
+    councilSetupProjectAtom,
+    councilViewAtom,
+} from "./councilstore";
+import { defaultCouncilView } from "./councilsummarymodel";
 import { runIdOfSel } from "./sessionsruns";
 
 export type CenterMode = "terminal" | "session" | "run" | "history" | "canvases" | "council";
@@ -55,15 +63,19 @@ export function showCanvases(model: Pick<AgentsViewModel, "surfaceAtom">): void 
     landOn(model.surfaceAtom, "agent");
 }
 
-/** Open one council in the Agent surface, on its Discussion unless `view` says otherwise. From the Agent surface itself
- *  (a tree row) nothing more is needed; from any other (the palette) pass the model, which lands on Agent. */
+/** Open one council in the Agent surface, on `view` when given, else on its report when it has ended with a summary and
+ *  on its Discussion otherwise (defaultCouncilView, read from the council's atom, else from the list of every council;
+ *  a council not loaded yet opens on its Discussion). From the Agent surface itself (a tree row) nothing more is needed;
+ *  from any other (the palette) pass the model, which lands on Agent. */
 export function showCouncil(
     id: string,
-    view: Exclude<CouncilView, "setup"> = "discussion",
+    view?: Exclude<CouncilView, "setup">,
     model?: Pick<AgentsViewModel, "surfaceAtom">
 ): void {
+    const known =
+        globalStore.get(councilAtom(id)) ?? globalStore.get(councilListAtom(""))?.find((c) => c.id === id) ?? null;
     globalStore.set(councilSelAtom, id);
-    globalStore.set(councilViewAtom, view);
+    globalStore.set(councilViewAtom, view ?? defaultCouncilView(known));
     globalStore.set(centerModeAtom, "council");
     if (model != null) {
         landOn(model.surfaceAtom, "agent");

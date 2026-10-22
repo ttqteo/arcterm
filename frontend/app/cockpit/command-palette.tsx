@@ -211,6 +211,8 @@ function needsEcho(row: NeedsRow, t: NeedsTarget | null): string {
             return `Opens ${name}’s review`;
         case "effort":
             return "Opens the initiative";
+        case "council":
+            return "Opens the council’s discussion";
         case "dag":
             return "Opens the run’s task graph";
         case "run":

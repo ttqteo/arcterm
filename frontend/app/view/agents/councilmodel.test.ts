@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    STANCE_WORD,
     answerers,
     callSegments,
     canSummarize,
@@ -18,6 +19,7 @@ import {
     matrixRows,
     outdatedCount,
     panel,
+    pickCount,
     rankedProposals,
     replyLabel,
     score,
@@ -124,6 +126,75 @@ describe("latestStances", () => {
         });
         expect(latestStances(c).P2).toEqual({ ux: "proposed" });
         expect(latestStances(c).P99).toBeUndefined();
+    });
+});
+
+describe("STANCE_WORD", () => {
+    it("is the plain word for each stance", () => {
+        expect(STANCE_WORD).toEqual({
+            accept: "Agrees",
+            challenge: "Has doubts",
+            oppose: "Is against it",
+            proposed: "Proposed",
+        });
+    });
+});
+
+describe("pickCount and the ranking by picks", () => {
+    const picked = council({
+        picks: { ux: ["P2", "P3"], ram: ["P2"], sk: ["P3", "P2", "P4"] },
+        replies: [reply("r1", "ram", { stance: "oppose", proposalid: "P1", ts: 1 })],
+    });
+
+    it("counts the experts whose picks hold the proposal", () => {
+        expect(pickCount(picked, "P2")).toBe(3);
+        expect(pickCount(picked, "P3")).toBe(2);
+        expect(pickCount(picked, "P4")).toBe(1);
+        expect(pickCount(picked, "P1")).toBe(0);
+    });
+
+    it("is null for a council with no picks at all", () => {
+        expect(pickCount(council(), "P2")).toBeNull();
+        expect(pickCount(council({ picks: {} }), "P2")).toBeNull();
+    });
+
+    it("ranks by picks, a tie by score, withdrawn and cut last, and keeps the score beside them", () => {
+        const rows = rankedProposals(picked);
+        expect(rows.map((r) => r.proposal.id)).toEqual(["P2", "P3", "P4", "P5", "P1", "P6"]);
+        expect(rows.map((r) => r.picks)).toEqual([3, 2, 1, 0, 0, 0]);
+        expect(rows.find((r) => r.proposal.id === "P1")!.score).toBe(-1);
+    });
+
+    it("leaves picks null on every row of a council with no picks, which ranks by score as before", () => {
+        const rows = rankedProposals(council({ replies: [reply("r1", "nu", { stance: "accept", ts: 1 })] }));
+        expect(rows.every((r) => r.picks === null)).toBe(true);
+        expect(rows[0].proposal.id).toBe("P2");
+    });
+});
+
+describe("reactions are no replies", () => {
+    const blank = (id: string, author: string, extra: Partial<CouncilReply> = {}) =>
+        reply(id, author, { stance: "accept", text: "", ...extra });
+
+    it("leaves an accept with no text out of the thread, the reply count and the cost line", () => {
+        const c = council({
+            tokens: 1000,
+            replies: [blank("r1", "ram", { ts: 1 }), reply("r2", "sk", { stance: "challenge", ts: 2 })],
+        });
+        expect(flattenThread(threadTree(c, "P2")).map((n) => n.key)).toEqual(["r2"]);
+        expect(rankedProposals(c).find((r) => r.proposal.id === "P2")!.replies).toBe(1);
+        expect(costLine(c, 0)).toBe("1 reply · 1k tokens");
+    });
+
+    it("still counts the accept in the vote", () => {
+        const c = council({ replies: [blank("r1", "ram", { ts: 1 })] });
+        expect(latestStances(c).P2.ram).toBe("accept");
+        expect(score(c, "P2")).toBe(1);
+    });
+
+    it("keeps an accept with text, and the person's reply, as replies", () => {
+        const c = council({ replies: [reply("r1", "ram", { stance: "accept" }), blank("r2", "you")] });
+        expect(flattenThread(threadTree(c, "P2")).map((n) => n.key)).toEqual(["r1", "r2"]);
     });
 });
 
@@ -303,9 +374,13 @@ describe("replyLabel", () => {
     const mine = (extra: Partial<CouncilReply>) => reply("r1", "you", extra);
 
     it("queues a reply posted in round 1 or while awaiting for round 2", () => {
-        expect(replyLabel(council({ round: 1 }), mine({ round: 1 }))).toBe("Queued for round 2");
-        expect(replyLabel(council({ round: 1, state: "awaiting-you" }), mine({ round: 1 }))).toBe("Queued for round 2");
-        expect(replyLabel(council({ round: 2, state: "awaiting-you" }), mine({ round: 2 }))).toBe("Queued for round 2");
+        expect(replyLabel(council({ round: 1 }), mine({ round: 1 }))).toBe("Queued for the next step");
+        expect(replyLabel(council({ round: 1, state: "awaiting-you" }), mine({ round: 1 }))).toBe(
+            "Queued for the next step"
+        );
+        expect(replyLabel(council({ round: 2, state: "awaiting-you" }), mine({ round: 2 }))).toBe(
+            "Queued for the next step"
+        );
     });
 
     it("says a reply posted in round 2 or 3 is answered after the summary", () => {
@@ -382,13 +457,13 @@ describe("headerChip and treeMeta", () => {
             },
             activity: { ram: { text: "Grep" }, sk: { text: "Read" } },
         });
-        expect(headerChip(c)).toBe("Round 1 of 3 · 2 of 4 experts done");
+        expect(headerChip(c)).toBe("Step 1 of 3 · 2 of 4 experts done");
         const failed = council({
             ...c,
             stats: { ux: { ms: 1, tokens: 1, calls: 1 } },
             failed: { sk: { round: 1, error: "timeout" } },
         });
-        expect(headerChip(failed)).toBe("Round 1 of 3 · 2 of 4 experts done");
+        expect(headerChip(failed)).toBe("Step 1 of 3 · 2 of 4 experts done");
     });
 
     it("counts the experts replying in round 2, not the coordinator", () => {
@@ -399,14 +474,14 @@ describe("headerChip and treeMeta", () => {
                 coordinator: { text: "Waiting" },
             },
         });
-        expect(headerChip(c)).toBe("Round 2 of 3 · 2 replying");
-        expect(headerChip(council())).toBe("Round 2 of 3");
+        expect(headerChip(c)).toBe("Step 2 of 3 · 2 replying");
+        expect(headerChip(council())).toBe("Step 2 of 3");
     });
 
     it("words the last round and a follow-up", () => {
-        expect(headerChip(council({ round: 3 }))).toBe("Round 3 of 3 · summarizing");
+        expect(headerChip(council({ round: 3 }))).toBe("Step 3 of 3 · summarizing");
         expect(headerChip(council({ round: 3, activity: { ux: { text: "Answering" } } }))).toBe(
-            "Round 3 of 3 · 1 answering"
+            "Step 3 of 3 · 1 answering"
         );
         expect(headerChip(council({ round: 4, activity: { ux: { text: "a" }, ram: { text: "b" } } }))).toBe(
             "Follow-up · 2 answering"
@@ -422,8 +497,8 @@ describe("headerChip and treeMeta", () => {
     });
 
     it("gives the tree row its word and tone", () => {
-        expect(treeMeta(council({ round: 2 }))).toEqual({ text: "Round 2", tone: "working" });
-        expect(treeMeta(council({ round: 3 }))).toEqual({ text: "Round 3", tone: "working" });
+        expect(treeMeta(council({ round: 2 }))).toEqual({ text: "Running", tone: "working" });
+        expect(treeMeta(council({ round: 3 }))).toEqual({ text: "Running", tone: "working" });
         expect(treeMeta(council({ round: 4 }))).toEqual({ text: "Answering", tone: "working" });
         expect(treeMeta(council({ state: "awaiting-you" }))).toEqual({ text: "Waiting on you", tone: "asking" });
         expect(treeMeta(council({ state: "done" }))).toEqual({ text: "Done", tone: "muted" });
@@ -445,7 +520,7 @@ describe("summaryChip and costLine", () => {
             updated: started + 40 * MIN,
             summary: { text: "", directions: [], outcomes: {}, at: started + 11 * MIN },
         });
-        expect(summaryChip(c, started + 99 * MIN)).toBe("Done · 4 experts · 3 rounds · 11 min · 0.86M tokens");
+        expect(summaryChip(c, started + 99 * MIN)).toBe("Done · 4 experts · 11 min · 0.86M tokens");
     });
 
     it("times a running council to now and a finished one to its summary or last save", () => {
@@ -457,7 +532,7 @@ describe("summaryChip and costLine", () => {
         expect(costLine(running, started + 7 * MIN + 20_000)).toBe("7:20 · 19 replies · 0.55M tokens");
         const stopped = council({ state: "stopped", started, updated: started + 3 * MIN, tokens: 0 });
         expect(costLine(stopped, started + 90 * MIN)).toBe("3:00 · 0 replies · 0 tokens");
-        expect(summaryChip(stopped, started + 90 * MIN)).toBe("Stopped · 4 experts · 2 rounds · 3 min · 0 tokens");
+        expect(summaryChip(stopped, started + 90 * MIN)).toBe("Stopped · 4 experts · 3 min · 0 tokens");
     });
 
     it("runs past the hour, and leaves the time out of a council that never started", () => {
@@ -613,12 +688,14 @@ describe("outdatedCount and canSummarize", () => {
 describe("summarizeHold", () => {
     it("says a running round 2 is summarized by itself when it ends", () => {
         expect(summarizeHold(council({ state: "running", round: 2 }))).toBe(
-            "The summary comes by itself when round 2 ends"
+            "The summary comes by itself when the experts finish replying"
         );
     });
 
     it("keeps round 1's words, and says the others are still working", () => {
-        expect(summarizeHold(council({ state: "running", round: 1 }))).toBe("Summarize unlocks after round 1");
+        expect(summarizeHold(council({ state: "running", round: 1 }))).toBe(
+            "Summarize unlocks after the experts' first ideas"
+        );
         expect(summarizeHold(council({ state: "running", round: 3 }))).toBe(
             "Summarize is on again when the council stops"
         );
@@ -701,7 +778,7 @@ describe("matrixRows", () => {
             proposals: [prop("P1", "ux", { cut: true }), prop("P2", "ram", { withdrawn: true }), prop("P3", "nu")],
             summary: { text: "", directions: [], outcomes: {}, at: 1 },
         });
-        expect(matrixRows(gap).map((r) => r.outcome)).toEqual(["Cut at the pause", "Withdrawn in round 2", ""]);
+        expect(matrixRows(gap).map((r) => r.outcome)).toEqual(["Cut at the pause", "Withdrawn", ""]);
     });
 
     it("has no rows without a summary", () => {

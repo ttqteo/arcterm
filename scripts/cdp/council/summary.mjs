@@ -1,12 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// council-summary (docs/superpowers/plans/2026-10-21-council.md, Task 15): the Summary of the `done` council, its ranked
-// directions and its matrix, and what it hands on. The hooks are called by councilscenarios.mjs as arrange(h, fx),
+// council-summary (docs/superpowers/plans/2026-10-21-council.md, Task 15; the report: docs/superpowers/plans/
+// 2026-10-22-council-v1-ui.md, Task 4): the Summary of the `done` council, the report it opens on (what was asked, the
+// answer, the ranked directions and the matrix folded under them), and what it hands on. The hooks are called by councilscenarios.mjs as arrange(h, fx),
 // assert(h, ctx, fx), teardown(h, ctx, fx).
 //
 // Nothing here calls a model. Summarize again, and the Setup that Run again opens (it may suggest roles when it shows),
-// have their RpcApi commands replaced in the page. Brainstorm this opens an agent through launchAgent, which makes a
+// have their RpcApi commands replaced in the page. Start an agent on it opens an agent through launchAgent, which makes a
 // tab with a real CreateTab and then writes the launch (the claude command and the prompt) with SetMetaCommand: that and
 // AgentSyncApplyCommand are replaced, so the tab stays a plain shell, the recorded SetMetaCommand call holds the prompt,
 // and teardown closes the tab. Save as doc writes into the temp project, and Create initiative makes an initiative that
@@ -14,7 +15,15 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { waitFor } from "../attach.mjs";
-import { openCouncil, rpcCalls, seedCouncil, stubRpc, teardownCouncilProject, arrangeCouncilProject } from "./fixtures.mjs";
+import {
+    arrangeCouncilProject,
+    loadCouncilFixture,
+    openCouncil,
+    rpcCalls,
+    seedCouncil,
+    stubRpc,
+    teardownCouncilProject,
+} from "./fixtures.mjs";
 
 const WAIT_MS = 10_000;
 const SUMMARY = "[data-council-summary]";
@@ -48,6 +57,18 @@ async function openSummary(h, ctx) {
         throw new Error("the Summary did not draw its four directions");
     }
 }
+
+// an action behind the `⋯` menu: open the menu, then click the item (false when it is missing or disabled)
+async function menuClick(h, action) {
+    await click(h, "[data-council-menu]");
+    if (!(await until(h, `!!document.querySelector(${q(`[role="menuitem"][data-council-action="${action}"]`)})`))) {
+        return false;
+    }
+    return click(h, `[role="menuitem"][data-council-action="${action}"]`);
+}
+
+// the first sentence of the fixture's summary text: what the report's bold line reads for a council with no answer
+const FIRST_SENTENCE = loadCouncilFixture("done").summary.text.match(/^.*?[.!?](?=\s|$)/)[0];
 
 // a direction opened (the open ones are kept in an atom, so a reopened Summary may have it open already)
 async function openDirection(h, rank) {
@@ -100,12 +121,13 @@ export const councilSummary = {
         };
         await openSummary(h, ctx);
 
-        await step("the header: breadcrumb, title, state chip, written line and one chip per expert with its model", async () => {
+        await step("the header: title, state chip, Show the discussion, the ⋯ menu and one chip per expert with its model", async () => {
             const header = await h.ev(`(() => {
                 const root = document.querySelector(${q(SUMMARY)});
                 const t = (s) => root.querySelector(s)?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
                 return {
-                    back: t("[data-council-back]"),
+                    back: t("[data-council-action='discussion']"),
+                    menu: !!root.querySelector("[data-council-menu]"),
                     title: t("h1"),
                     chip: t("[data-council-state-chip]"),
                     written: t("[data-council-written]"),
@@ -114,23 +136,81 @@ export const councilSummary = {
             })()`);
             const want = ["UX sonnet", "RAM sonnet", "New user sonnet", "Skeptic sonnet", "Coordinator opus"];
             const ok =
-                header.back === "Discussion" &&
-                header.title === "Summary · Rail apps" &&
-                /Done · 4 experts · 3 rounds · \d+ min · [\d.]+M tokens/.test(header.chip ?? "") &&
+                header.back === "Show the discussion" &&
+                header.menu &&
+                header.title === "Council · Rail apps" &&
+                /^Done · 4 experts · \d+ min · [\d.]+M tokens$/.test(header.chip ?? "") &&
                 /^Written by the coordinator at \d\d:\d\d from 18 replies$/.test(header.written ?? "") &&
                 header.experts.length === want.length &&
                 want.every((w, i) => header.experts[i].endsWith(w));
             return { ok, detail: JSON.stringify(header) };
         });
 
-        await step("the breadcrumb goes back to the Discussion", async () => {
-            await click(h, "[data-council-back]");
+        await step("Show the discussion goes back to the Discussion", async () => {
+            await click(h, "[data-council-action='discussion']");
             const shown = await until(h, `!!document.querySelector("[data-council-discussion]")`);
             await openSummary(h, ctx);
             return { ok: shown, detail: shown ? "the Discussion showed" : "[data-council-discussion] did not show" };
         });
 
-        await step("four directions in rank order, the third Split, each with a stance chip per expert", async () => {
+        await step("a finished council opened from its tree row lands on the Summary, asking what was asked and opening on the first sentence", async () => {
+            await openCouncil(h, ctx.councilId, "discussion");
+            const row = `[data-council-row="${ctx.councilId}"]`;
+            const rowShown = await until(h, `!!document.querySelector(${q(row)})`);
+            await click(h, row);
+            const landed = await until(h, `document.querySelector(${q(SUMMARY)})?.dataset.councilId === ${q(ctx.councilId)}`);
+            const asked = await textOf(h, `${SUMMARY} [data-council-asked]`);
+            const answer = await h.ev(`(() => {
+                const el = document.querySelector(${q(`${SUMMARY} [data-council-answer]`)});
+                return el == null ? null : { text: el.innerText.replace(/\\s+/g, " ").trim(), weight: Number(getComputedStyle(el).fontWeight) };
+            })()`);
+            const ok =
+                rowShown &&
+                landed &&
+                /^You asked: Which changes to pinned apps/.test(asked ?? "") &&
+                answer?.text === FIRST_SENTENCE &&
+                answer.weight >= 600;
+            return { ok, detail: JSON.stringify({ rowShown, landed, asked, answer, want: FIRST_SENTENCE }) };
+        });
+
+        await step("a council with an answer opens on it in bold, with the whole summary text under it", async () => {
+            const answer = "Do the pins first: they are cheap and nobody objects.";
+            const id = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-answered",
+                edit: (c) => {
+                    c.summary.answer = answer;
+                },
+            });
+            await openCouncil(h, id, "summary");
+            const shown = await until(h, `document.querySelector(${q(`${SUMMARY} [data-council-answer]`)})?.innerText === ${q(answer)}`);
+            const rest = await textOf(h, `${SUMMARY} [data-council-summary-text]`);
+            const full = loadCouncilFixture("done").summary.text.replace(/\s+/g, " ").trim();
+            await openSummary(h, ctx);
+            return { ok: shown && rest === full, detail: JSON.stringify({ shown, rest }) };
+        });
+
+        await step("a council without a question shows no You asked line", async () => {
+            const id = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-noquestion",
+                edit: (c) => {
+                    delete c.question;
+                },
+            });
+            await openCouncil(h, id, "summary");
+            const drawn = await until(h, `document.querySelector(${q(`${SUMMARY} [data-council-answer]`)})?.innerText === ${q(FIRST_SENTENCE)}`);
+            const asked = await exists(h, `${SUMMARY} [data-council-asked]`);
+            const text = await h.ev(`document.querySelector(${q(SUMMARY)}).innerText`);
+            await openSummary(h, ctx);
+            return { ok: drawn && !asked && !/You asked/.test(text), detail: JSON.stringify({ drawn, asked }) };
+        });
+
+        await step("no proposal id shows anywhere in the Summary's text, directions closed and the matrix folded", async () => {
+            const text = await h.ev(`document.querySelector(${q(SUMMARY)}).innerText`);
+            const ids = text.match(/\bP\d+\b/g) ?? [];
+            return { ok: ids.length === 0 && text.length > 0, detail: JSON.stringify({ ids }) };
+        });
+
+        await step("four directions in rank order, each tagged in words, each with a stance chip per expert", async () => {
             const dirs = await h.ev(`[...document.querySelectorAll(${q(`${SUMMARY} [data-council-direction]`)})].map((d) => ({
                 rank: d.dataset.councilDirection,
                 title: d.querySelector("[data-council-title]")?.innerText ?? null,
@@ -141,12 +221,12 @@ export const councilSummary = {
             const ok =
                 dirs.length === 4 &&
                 dirs.every((d, i) => d.rank === String(i + 1) && d.title === TITLES[i] && d.chips === 4 && d.open === "false") &&
-                dirs[0].tag === "Agreed" &&
-                dirs[2].tag === "Split";
+                dirs.map((d) => d.tag).join("|") ===
+                    "Everyone agrees|Skeptic has doubts|RAM is against it|Skeptic is against it";
             return { ok, detail: JSON.stringify(dirs.map((d) => [d.rank, d.tag, d.chips, d.open])) };
         });
 
-        await step("direction 3 opens to its reasoning, each expert's position, a weak chip, its Ideas line and Brainstorm this", async () => {
+        await step("direction 3 opens to its reasoning, each expert's position, a weak chip, its Ideas line and Start an agent on it", async () => {
             await openDirection(h, 3);
             const open = await h.ev(`(() => {
                 const d = document.querySelector(${q(DIRECTION(3))});
@@ -160,6 +240,7 @@ export const councilSummary = {
                     brainstorm: body.querySelector('[data-council-action="brainstorm"]')?.innerText ?? null,
                     askAgain: body.querySelector('[data-council-action="ask-again"]')?.innerText ?? null,
                     meta: d.querySelector("[data-council-meta]")?.innerText ?? null,
+                    chips: Object.fromEntries([...d.querySelectorAll("[data-council-chip]")].map((c) => [c.dataset.councilChip, c.innerText.replace(/\\s+/g, " ").trim()])),
                 };
             })()`);
             const ok =
@@ -169,38 +250,44 @@ export const councilSummary = {
                 open.weak[0] === 'Weak · "about 3 s" has no measurement' &&
                 open.refs.includes("pkg/services/model.go:36") &&
                 open.idea === "In Ideas as fx-idea-3" &&
-                open.brainstorm === "Brainstorm this" &&
+                open.brainstorm === "Start an agent on it" &&
                 open.askAgain === "Ask the experts again" &&
-                open.meta === "Merged UX P2 + RAM P3 · 1 file · 1 weak claim · in Ideas";
+                open.meta === "from UX and RAM · 1 file · 1 weak claim · in Ideas" &&
+                // the chip's text starts with the expert's avatar letter
+                open.chips.ram.endsWith(" Is against it") &&
+                open.chips.skeptic.endsWith(" Has doubts") &&
+                open.chips.newuser.endsWith(" Agrees") &&
+                open.chips.ux.endsWith(" Proposed");
             await h.shot("cdp-shots/council-summary.png");
             return { ok, detail: JSON.stringify(open) };
         });
 
-        await step("Jump to the matrix brings it into the scroller's view: six rows, Withdrawn in round 2 on P6", async () => {
-            const place = `(() => {
-                const sc = document.querySelector("[data-council-scroll]");
-                const m = document.getElementById("council-matrix");
-                const s = sc.getBoundingClientRect();
-                return { top: Math.round(m.getBoundingClientRect().top - s.top), height: Math.round(s.height) };
-            })()`;
-            await h.ev(`document.querySelector("[data-council-scroll]").scrollTop = 0`);
-            const before = await h.ev(place);
-            await click(h, "[data-council-jump]");
-            await sleep(300);
-            const after = await h.ev(place);
+        await step("the matrix is folded under Every expert on every idea, and unfolds to six rows by idea title, Withdrawn on the sixth", async () => {
+            const toggle = "[data-council-matrix-toggle]";
+            const label = await textOf(h, toggle);
+            const foldedRows = await h.ev(`document.querySelectorAll("#council-matrix tbody tr").length`);
+            const before = await h.ev(`document.querySelector(${q(toggle)})?.getAttribute("aria-expanded")`);
+            await click(h, toggle);
+            const unfolded = await until(h, `document.querySelectorAll("#council-matrix tbody tr").length === 6`);
             const rows = await h.ev(`[...document.querySelectorAll("#council-matrix tbody tr")].map((r) => ({
                 id: r.dataset.councilMatrixRow,
+                first: r.querySelector("td")?.innerText?.replace(/\\s+/g, " ").trim() ?? null,
+                text: r.innerText,
                 outcome: r.querySelector("[data-council-matrix-outcome]")?.innerText?.trim() ?? null,
                 cells: r.querySelectorAll("[data-council-matrix-cell]").length,
             }))`);
+            await h.ev(`document.getElementById("council-matrix").scrollIntoView({ block: "start" })`);
             await h.shot("cdp-shots/council-summary-matrix.png");
             const ok =
-                after.top >= -1 &&
-                after.top < after.height &&
+                label?.startsWith("Every expert on every idea") &&
+                foldedRows === 0 &&
+                before === "false" &&
+                unfolded &&
                 rows.map((r) => r.id).join() === "P5,P1,P2,P3,P4,P6" &&
-                rows.every((r) => r.cells === 4) &&
-                rows.find((r) => r.id === "P6")?.outcome === "Withdrawn in round 2";
-            return { ok, detail: JSON.stringify({ before, after, rows: rows.map((r) => [r.id, r.outcome]) }) };
+                rows.every((r) => r.cells === 4 && !/\bP\d+\b/.test(r.text)) &&
+                rows.find((r) => r.id === "P6")?.first?.startsWith("Drop the cap of 3 apps") &&
+                rows.find((r) => r.id === "P6")?.outcome === "Withdrawn";
+            return { ok, detail: JSON.stringify({ label, foldedRows, before, rows: rows.map((r) => [r.id, r.first?.slice(0, 40), r.outcome]) }) };
         });
 
         await step("the banner reads Outdated · 1 reply since, and Summarize again (stubbed) records one summarize call", async () => {
@@ -213,8 +300,8 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ banner, clicked, calls }) };
         });
 
-        await step("Save as doc writes the doc into the project and shows its path", async () => {
-            await click(h, "[data-council-action='save-doc']");
+        await step("Save as doc (in the ⋯ menu) writes the doc into the project and shows its path", async () => {
+            await menuClick(h, "save-doc");
             const shown = await until(h, `!!document.querySelector("[data-council-doc-saved]")`);
             const saved = await h.ev(`(() => {
                 const el = document.querySelector("[data-council-doc-saved]");
@@ -227,8 +314,8 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ saved, exists: existsSync(path) }) };
         });
 
-        await step("Create initiative makes an initiative named after the feature with a chunk per direction", async () => {
-            await click(h, "[data-council-action='initiative']");
+        await step("Create initiative (in the ⋯ menu) makes an initiative named after the feature with a chunk per direction", async () => {
+            await menuClick(h, "initiative");
             const shown = await until(h, `!!document.querySelector("[data-council-initiative-made]")`);
             const oid = shown ? await h.ev(`document.querySelector("[data-council-initiative-made]").dataset.effortOid`) : null;
             if (oid) ctx.efforts.push(oid);
@@ -238,12 +325,12 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ oid, title: effort?.title, project: effort?.project, labels }) };
         });
 
-        await step("Run again opens Setup with the feature, files and experts of the council", async () => {
+        await step("Run again (in the ⋯ menu) opens Setup with the feature, files and experts of the council", async () => {
             // Setup may ask for roles when it shows a feature and a file: never for real
             await stubRpc(h, ["CouncilSuggestCommand", "CouncilStartCommand"], {
                 CouncilSuggestCommand: { value: { files: [], roles: [], group: "" } },
             });
-            await click(h, "[data-council-action='run-again']");
+            await menuClick(h, "run-again");
             const shown = await until(h, `!!document.querySelector("[data-council-setup]")`);
             // the text of the form and what its inputs hold
             const form = shown
@@ -337,7 +424,7 @@ export const councilSummary = {
             return { ok: shown && open === "P5" && post, detail: JSON.stringify({ shown, before, open, post }) };
         });
 
-        await step("Brainstorm this (the launch stubbed) records a prompt with the direction and opens no agent", async () => {
+        await step("Start an agent on it (the launch stubbed) records a prompt with the direction and its ideas by title, and opens no agent", async () => {
             await stubRpc(h, ["SetMetaCommand", "AgentSyncApplyCommand"]);
             await openDirection(h, 3);
             const tabsBefore = new Set(await tabIds(h, ctx));
@@ -358,7 +445,7 @@ export const councilSummary = {
                 slashes(launch.data.meta["cmd:cwd"]) === slashes(ctx.repo) &&
                 prompt.includes(TITLES[2]) &&
                 prompt.includes("wsh idea add") &&
-                prompt.includes("P2") &&
+                prompt.includes('"Keep the last-used pinned app awake" by UX') &&
                 (await rpcCalls(h, "AgentSyncApplyCommand")).length >= 1;
             return { ok, detail: JSON.stringify({ clicked, wrote, cmd: launch?.data?.meta?.cmd, cwd: launch?.data?.meta?.["cmd:cwd"], prompt: prompt.slice(0, 160) }) };
         });

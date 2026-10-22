@@ -22,6 +22,20 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Added
+
+- A council that ends shows a toast and an unread dot on its row, and one waiting on you has an item in Needs you that
+  opens it.
+
+### Changed
+
+- A finished council opens on its answer: one sentence first, then the directions.
+- The council speaks in plain words (Agrees, Has doubts, Is against it) and ranks ideas by each expert's top three
+  picks; an expert who agrees without a comment shows as a reaction under the idea, not as a reply.
+- New council is one box: write what to review, and the options sit under it.
+
 ## 0.15.17 — 2026-10-21
 
 ### Added

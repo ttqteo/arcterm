@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+    answerLine,
+    answerParts,
+    askedLine,
     brainstormPrompt,
     canRunSummary,
+    defaultCouncilView,
     directionRows,
+    directionTag,
     docPathLabel,
     evidenceLabel,
     initiativeSeed,
+    outcomeLabel,
     outdatedLabel,
     positionsOf,
     projectNameOf,
@@ -142,11 +148,11 @@ describe("positionsOf", () => {
 });
 
 describe("directionRows", () => {
-    it("lists the directions by rank with Agreed or Split", () => {
+    it("lists the directions by rank with a plain tag", () => {
         const rows = directionRows(council());
         expect(rows.map((r) => [r.direction.rank, r.tag])).toEqual([
-            [1, "Split"],
-            [2, "Agreed"],
+            [1, "RAM is against it"],
+            [2, "Everyone agrees"],
         ]);
     });
 
@@ -168,8 +174,29 @@ describe("directionRows", () => {
 
     it("says where a direction came from, how many files and weak claims it cites, and that it is in Ideas", () => {
         const rows = directionRows(council());
-        expect(rows[0].meta).toBe("Merged UX P2 + RAM P3 · 1 file · 1 weak claim");
-        expect(rows[1].meta).toBe("From Skeptic P5 · 1 file · in Ideas");
+        expect(rows[0].meta).toBe("from UX and RAM · 1 file · 1 weak claim");
+        expect(rows[1].meta).toBe("from Skeptic · 1 file · in Ideas");
+    });
+
+    it("names no proposal id and no Merged in a line of facts", () => {
+        const c = council({
+            summary: {
+                text: "",
+                directions: [direction(1, ["P2", "P3"], { ideaid: "i1" })],
+                outcomes: {},
+                at: 15,
+            },
+        });
+        const [row] = directionRows(c);
+        expect(row.meta).toBe("from UX and RAM · 1 file · 1 weak claim · in Ideas");
+        expect(row.meta).not.toMatch(/\bP\d+\b|Merged/);
+    });
+
+    it("names one author once when two of its proposals meet in a direction", () => {
+        const c = council({
+            summary: { text: "", directions: [direction(1, ["P1", "P2"])], outcomes: {}, at: 15 },
+        });
+        expect(directionRows(c)[0].meta.startsWith("from UX · ")).toBe(true);
     });
 
     it("leaves out what it cannot say", () => {
@@ -192,6 +219,108 @@ describe("directionRows", () => {
 
     it("is empty before a summary", () => {
         expect(directionRows(council({ summary: undefined }))).toEqual([]);
+    });
+});
+
+describe("directionTag", () => {
+    const tagOf = (stances: Record<string, string>) => directionTag(council(), direction(1, ["P2"], { stances }));
+
+    it("says everyone agrees when no one has doubts or is against it", () => {
+        expect(tagOf({})).toBe("Everyone agrees");
+        expect(tagOf({ ux: "accept", ram: "accept" })).toBe("Everyone agrees");
+    });
+
+    it("names who has doubts, in the panel's order", () => {
+        expect(tagOf({ sk: "challenge" })).toBe("Skeptic has doubts");
+        expect(tagOf({ sk: "challenge", ux: "challenge" })).toBe("UX and Skeptic have doubts");
+        expect(tagOf({ sk: "challenge", ux: "challenge", ram: "challenge" })).toBe("UX, RAM and Skeptic have doubts");
+    });
+
+    it("lets against win over doubts", () => {
+        expect(tagOf({ ram: "oppose", sk: "challenge" })).toBe("RAM is against it");
+        expect(tagOf({ ram: "oppose", ux: "oppose", sk: "challenge" })).toBe("UX and RAM are against it");
+    });
+
+    it("ignores a stance word it does not know", () => {
+        expect(tagOf({ ram: "maybe" as string })).toBe("Everyone agrees");
+    });
+
+    it("does not say everyone agrees of a direction the coordinator marked split with no one named", () => {
+        const c = council();
+        expect(directionTag(c, direction(1, ["P2"], { agreed: false, stances: {} }))).toBe("Not everyone agrees");
+    });
+});
+
+describe("defaultCouncilView", () => {
+    const withSummary = council().summary;
+
+    it("opens a finished council with a summary on its report", () => {
+        for (const state of ["done", "stopped", "failed"]) {
+            expect(defaultCouncilView(council({ state, summary: withSummary }))).toBe("summary");
+        }
+    });
+
+    it("opens a running council, one waiting on you and one without a summary on the discussion", () => {
+        expect(defaultCouncilView(council({ state: "running" }))).toBe("discussion");
+        expect(defaultCouncilView(council({ state: "awaiting-you" }))).toBe("discussion");
+        expect(defaultCouncilView(council({ state: "done", summary: undefined }))).toBe("discussion");
+        expect(defaultCouncilView(council({ state: "stopped", summary: undefined }))).toBe("discussion");
+    });
+
+    it("opens a council that is not known on the discussion", () => {
+        expect(defaultCouncilView(null)).toBe("discussion");
+        expect(defaultCouncilView(undefined)).toBe("discussion");
+    });
+});
+
+describe("answerLine and askedLine", () => {
+    const text = "Move the pins first: both are cheap. Keeping an app awake waits on a measurement.";
+    const summary = (extra: Partial<CouncilSummary> = {}): CouncilSummary => ({
+        text,
+        directions: [],
+        outcomes: {},
+        at: 1,
+        ...extra,
+    });
+
+    it("is the answer when the coordinator wrote one", () => {
+        const c = council({ summary: summary({ answer: "Yes: do the pins first." }) });
+        expect(answerLine(c)).toBe("Yes: do the pins first.");
+        expect(answerParts(c)).toEqual({ answer: "Yes: do the pins first.", rest: text });
+    });
+
+    it("falls back to the first sentence of the summary text, and leaves the rest of it under", () => {
+        const c = council({ summary: summary() });
+        expect(answerLine(c)).toBe("Move the pins first: both are cheap.");
+        expect(answerParts(c).rest).toBe("Keeping an app awake waits on a measurement.");
+    });
+
+    it("takes a text with one sentence, or none ended, whole", () => {
+        expect(answerLine(council({ summary: summary({ text: "Only this" }) }))).toBe("Only this");
+        expect(answerParts(council({ summary: summary({ text: "Only this" }) })).rest).toBe("");
+        expect(answerLine(council({ summary: summary({ text: "Costs 0.5 s. Then more." }) }))).toBe("Costs 0.5 s.");
+    });
+
+    it("is empty without a summary or with an empty one", () => {
+        expect(answerLine(council({ summary: undefined }))).toBe("");
+        expect(answerLine(council({ summary: summary({ text: "" }) }))).toBe("");
+        expect(answerParts(council({ summary: undefined }))).toEqual({ answer: "", rest: "" });
+    });
+
+    it("asks what the person asked, and says nothing without a question", () => {
+        expect(askedLine(council({ question: "What first?" }))).toBe("You asked: What first?");
+        expect(askedLine(council({ question: "  " }))).toBe("");
+        expect(askedLine(council({ question: undefined }))).toBe("");
+    });
+});
+
+describe("outcomeLabel", () => {
+    it("drops the round from a withdrawn proposal and leaves the rest", () => {
+        expect(outcomeLabel("Withdrawn in round 2")).toBe("Withdrawn");
+        expect(outcomeLabel("Withdrawn")).toBe("Withdrawn");
+        expect(outcomeLabel("Direction 1")).toBe("Direction 1");
+        expect(outcomeLabel("Merged into direction 3")).toBe("Merged into direction 3");
+        expect(outcomeLabel("")).toBe("");
     });
 });
 
@@ -330,14 +459,27 @@ describe("brainstormPrompt", () => {
         const prompt = brainstormPrompt(c, row);
         expect(prompt).toContain('"Rail apps"');
         expect(prompt).toContain("(What first?)");
-        expect(prompt).toContain("ranked this direction 1, split");
+        expect(prompt).toContain("ranked this direction 1 (RAM is against it)");
         expect(prompt).toContain("Direction: direction 1");
         expect(prompt).toContain("Why: reasoning 1");
-        expect(prompt).toContain("- P2 by UX, title P2: argument P2.");
-        expect(prompt).toContain("- RAM on P2 (oppose): holds a whole dev server");
-        expect(prompt).toContain("- You on P2: does this change on a Mac?");
+        expect(prompt).toContain('- "title P2" by UX: argument P2.');
+        expect(prompt).toContain('- RAM on "title P2" (Is against it): holds a whole dev server');
+        expect(prompt).toContain('- You on "title P2": does this change on a Mac?');
         expect(prompt).toContain("wsh idea add");
         expect(prompt.indexOf("wsh idea add")).toBeGreaterThan(prompt.indexOf("The thread:"));
+    });
+
+    it("names proposals by title and author, never by id", () => {
+        const base = council({ question: "What first?" });
+        const c = {
+            ...base,
+            proposals: base.proposals!.map((p) => ({ ...p, title: `idea about ${p.author}`, argument: "a reason." })),
+            replies: base.replies!.map((r) => ({ ...r, text: "a reply" })),
+        };
+        const prompt = brainstormPrompt(c, directionRows(c)[0]);
+        expect(prompt).toContain('- "idea about ux" by UX: a reason.');
+        expect(prompt).toContain('- RAM on "idea about ux" (Is against it): a reply');
+        expect(prompt).not.toMatch(/\bP\d+\b/);
     });
 
     it("leaves out the thread of other directions", () => {

@@ -169,10 +169,15 @@ func TestListFiltersByProjectNewestFirst(t *testing.T) {
 
 func TestListComparesProjectsAsThePathsAre(t *testing.T) {
 	useTempRoot(t)
-	if err := Save(sampleCouncil("c1", `D:\p\`)); err != nil {
+	// filepath.Clean reads only the host's separators, so each OS gets its own path form
+	saved, unclean, cased := `D:\p\`, `D:\p\.`, `d:\P`
+	if !isWindows {
+		saved, unclean, cased = "/d/p/", "/d/p/.", "/D/P"
+	}
+	if err := Save(sampleCouncil("c1", saved)); err != nil {
 		t.Fatal(err)
 	}
-	got, err := List(`D:\p\.`)
+	got, err := List(unclean)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +185,7 @@ func TestListComparesProjectsAsThePathsAre(t *testing.T) {
 		t.Fatalf("List with an unclean path found %d councils, want 1", len(got))
 	}
 	// Windows paths ignore case; elsewhere the case counts
-	got, _ = List(`d:\P`)
+	got, _ = List(cased)
 	wantFound := 0
 	if isWindows {
 		wantFound = 1

@@ -738,6 +738,7 @@ describe("queueOpenTarget", () => {
     it.each([
         { kind: "radar" as const, oref: "radarreport:rr1" },
         { kind: "effort" as const, oref: "effort:e1" },
+        { kind: "council" as const, oref: "council:c1" },
     ])("routes $kind through its own oref", (nav) => {
         expect(queueOpenTarget(nav)).toEqual({ kind: "oref", oref: nav.oref });
     });
@@ -936,6 +937,36 @@ describe("buildAttentionQueue: a plan to review", () => {
     });
 });
 
+describe("buildAttentionQueue: a council waiting on you", () => {
+    const council = {
+        kind: "council",
+        key: "council:c1",
+        source: "",
+        text: "Council waiting on you: Rail apps",
+        action: "Open",
+        phaseidx: 0,
+        waitingsince: 1000,
+        oref: "council:c1",
+    } as AttentionItem;
+
+    it("is a row that opens its council, in the asking tone", () => {
+        const [row] = buildAttentionQueue({ attention: [council], efforts: [] });
+        expect(row.kind).toBe("Council");
+        expect(row.title).toBe("Council waiting on you: Rail apps");
+        expect(row.action).toBe("Open");
+        expect(row.tone).toBe("asking");
+        expect(row.nav).toEqual({ kind: "council", oref: "council:c1" });
+        expect(queueKindLabel(row)).toBe("council");
+        expect(queueAction(row)).toEqual({ label: "Open", kind: "open" });
+        expect(queueOpenTarget(row.nav)).toEqual({ kind: "oref", oref: "council:c1" });
+    });
+
+    it("stays static when the server sent no oref", () => {
+        const [row] = buildAttentionQueue({ attention: [{ ...council, oref: "" } as AttentionItem], efforts: [] });
+        expect([row.action, row.nav]).toEqual([null, null]);
+    });
+});
+
 describe("kindWord", () => {
     it("is the Brief's short kind for a wire kind", () => {
         expect(kindWord("ask")).toBe("ask");
@@ -943,6 +974,7 @@ describe("kindWord", () => {
         expect(kindWord("dag-gate")).toBe("gate");
         expect(kindWord("plan-review")).toBe("plan");
         expect(kindWord("learn-proposal")).toBe("rule");
+        expect(kindWord("council")).toBe("council");
         expect(kindWord("dag-blocked", true)).toBe("failed");
         expect(kindWord("dag-blocked")).toBe("blocked");
     });
