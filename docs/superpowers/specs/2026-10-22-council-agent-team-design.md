@@ -42,7 +42,7 @@ Work moved to another machine on 2026-10-22, and Phase 0b ran there.
   the variants is paid for: it needs cases whose lines one agent misses and a team finds, and more than the 50M this
   pass used. No date is set. The setup worth questioning is the panel, not the team: in both passes one agent came
   within a key line of v1's recall at 30 to 40% of its tokens.
-- **For whoever runs the bench next.** The Benchmark section's "about 0.5–1M tokens per run" is out of date: a run cost
+- **For whoever runs the bench next.** Plan a pass on 0b's costs, not Phase 0's: a run cost
   1.0M to 17.5M in 0b, and v1's cost grows with the case's files (4.4M to 17.5M for V2) while `wsh council start`
   prints about 1M for it. `wsh council bench` without `--case` runs every case in `cases.json`, agents-bugs (dropped,
   never run) included, so pass `--case`. The cases and keys are in this machine's data dir only (`council-bench/`,
@@ -291,7 +291,9 @@ dir (`council-bench.jsonl`): date, harness version, case, variant, scores. It is
 change; an initiative chunk reminds the person monthly (Phase 3). Real councils add their Useful / Not really rating
 with harness version and mode.
 
-**Cost of the benchmark**: about 0.5–1M tokens per run. **The first pass is the cheap one** (the person chose it): cases
+**Cost of the benchmark**: Phase 0 measured about 0.5–3M tokens per run; Phase 0b's ran 1–7M, and 17.5M for a
+council on a code case with large files (`docs/council-phase0.md`, Phase 0b tokens). **The first pass is the cheap
+one** (the person chose it): cases
 1–3 × V0–V3 × 1 run in Phase 0, with V3 a prompt-only agent team, roughly 8–12M tokens, repeated only where two
 variants land close. The full set (4 cases × 2 runs,
 ~12–24M) comes later. Any pass is said to the person before it runs, per AGENTS.md.
