@@ -22,6 +22,13 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Added
+
+- Right-click a project's folder in the Agent tree and pick Open overview: one page with what in the project waits on
+  you, what is running in it, and buttons to start an agent, a terminal, a run or a council there.
+
 ## 0.15.17 — 2026-10-21
 
 ### Added
