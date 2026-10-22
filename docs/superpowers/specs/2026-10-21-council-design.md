@@ -57,7 +57,7 @@ the cost label says so, with the higher estimate, before you send.
 - **Models:** experts default to sonnet, the coordinator to opus; each row can change it. Rounds 2 and 3 read only
   text, so they cost far less than round 1.
 - One runtime, claude, in this version. Mixing runtimes (codex, agy, which `pkg/consult` already runs) is deferred
-  until the AsiaCCS check below says whether a single model's blind spots matter.
+  until a benchmark says whether a single model's blind spots matter.
 
 ## Starting a council
 
@@ -189,11 +189,7 @@ run.
 - Go tests for `pkg/council`'s rounds against a fake consult runtime, and for the consult parser's `tool_use` and
   usage events.
 - CDP scenarios `council-discussion`, `council-summary`, `council-setup` over a fixture council.
-- **Acceptance, on a real paper:** run the Paper review group on the AsiaCCS 2027 #282 submission
-  (`mit-thesis/paper/asiaccs2027/main.tex`) and compare with the real reviews
-  (`paper/asiaccs2027/final/decision_282_reviews.md`). The council should surface the unreadable prose (undefined
-  internal terms, dense "not X but Y" sentences) and the missing Bullseye baseline. If it misses the prose, mixing
-  runtimes moves out of Deferred.
+- **Acceptance:** replaced by the benchmark in `2026-10-22-council-agent-team-design.md`.
 
 ## Deferred
 

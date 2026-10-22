@@ -34,14 +34,19 @@ export function tasksLabel(done: number, total: number): string {
     return `${done}/${total} tasks`;
 }
 
-// what the person types at another agent's prompt to send this one a message (the Claude mod's mention-core.ts):
-// the tab id cut to the length wsh agents list prints
+// the tab id cut to the length wsh agents list prints. The row menu copies it bare: pasted at the start of a
+// prompt with an @ it would send that prompt to this agent instead (the Claude mod's mention-core.ts)
+export function shortTabId(tabId: string): string {
+    return tabId.slice(0, 8);
+}
+
+// what the person types at another agent's prompt to send this one a message
 export function mentionToken(tabId: string): string {
-    return "@" + tabId.slice(0, 8);
+    return "@" + shortTabId(tabId);
 }
 
 export type AgentRowMenuItem =
-    | { key: "open" | "terminal" | "diff" | "mute" | "copy" | "mention" | "close"; label: string; danger?: boolean }
+    | { key: "open" | "terminal" | "diff" | "mute" | "copy" | "id" | "close"; label: string; danger?: boolean }
     | { separator: true };
 
 export function agentRowMenuItems(flags: { hasDiff: boolean; hasMute: boolean }): AgentRowMenuItem[] {
@@ -56,7 +61,7 @@ export function agentRowMenuItems(flags: { hasDiff: boolean; hasMute: boolean })
         items.push({ key: "mute", label: "Move to background" });
     }
     items.push({ key: "copy", label: "Copy name" });
-    items.push({ key: "mention", label: "Copy @mention" });
+    items.push({ key: "id", label: "Copy id" });
     items.push({ separator: true });
     items.push({ key: "close", label: "Close agent", danger: true });
     return items;

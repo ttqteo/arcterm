@@ -28,7 +28,6 @@ import {
     AppWindow,
     ArrowRight,
     ArrowUpRight,
-    AtSign,
     Ban,
     Check,
     Bookmark,
@@ -72,7 +71,7 @@ import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef } from "rea
 import { confirmCloseRun, confirmCloseSession } from "./agentactions";
 import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
-import { mentionToken } from "./agentrowmodel";
+import { shortTabId } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
 import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
 import { setAgentView } from "./agentview";
@@ -450,7 +449,7 @@ function agentRowMenuItems(
             icon: <Copy size={15} />,
             click: () => void navigator.clipboard.writeText(agent.name),
         },
-        mentionMenuItem(agent),
+        idMenuItem(agent),
         laterMenuItem(agent.transcriptPath, later),
         ...sleepMenuItems(agent),
         ...(runMenu != null ? [{ type: "separator" } as const, ...runMenu.items] : []),
@@ -1664,15 +1663,15 @@ function copyTitleItem(title: string): ContextMenuItem {
     };
 }
 
-// A row menu's mention item: the token another Claude agent's prompt takes to send this one a message
-// (mention-core.ts in the Claude mod), shown beside the label so it can be typed without copying.
-function mentionMenuItem(agent: AgentVM): ContextMenuItem {
-    const token = mentionToken(agent.id);
+// A row menu's id item: the short tab id, shown beside the label so it can be typed without copying. Bare, so
+// pasting it to tell an agent about this one keeps the prompt there; a leading @id would send it here instead.
+function idMenuItem(agent: AgentVM): ContextMenuItem {
+    const id = shortTabId(agent.id);
     return {
-        label: "Copy @mention",
-        sublabel: token,
-        icon: <AtSign size={15} />,
-        click: () => void navigator.clipboard.writeText(token),
+        label: "Copy id",
+        sublabel: id,
+        icon: <Hash size={15} />,
+        click: () => void navigator.clipboard.writeText(id),
     };
 }
 

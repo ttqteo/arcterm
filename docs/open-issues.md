@@ -27,6 +27,16 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council v2 Phase 0, the agent-team probe's live half (only the headless half ran in run 0ea46b22): open a
+  claude agent from arcterm in the data dir's `council-bench/work/teamprobe/`, send it the team prompt with
+  `wsh agents send <tab> "…"`. Each teammate's exchange should appear in `<session>/subagents/agent-<id>.jsonl` beside
+  the lead's transcript; a second `wsh agents send` ("tell Bob to argue the opposite of Alice") should change Bob's
+  next message; asking the lead to stop Bob while he is still working should end his turn, and a later `SendMessage`
+  should resume him with his earlier messages. Findings: `docs/council-phase0.md` ("Probe").
+
+- [ ] (arcterm) Copy id: right-click an agent in the Agent sidebar tree, and a segment of a split row: the menu shows
+  Copy id with the 8-character id beside it (a # icon, no @), and pasting gives the bare id. Alt-drag onto a Claude
+  pane still types `@id `. Commit "feat(agents): the row menu copies an agent's bare id".
 - [ ] (arcterm) Council, a real run: in Agent, New council on a project, a UI feature with a few files, the
   "Review a UI feature" group, Start council. The Running board (Discussion in round 1) shows each expert's card with
   the line it is reading (`Grep "…" in pkg/…`) and the proposals appear as the experts finish; Summarize stays off until round 1
@@ -58,11 +68,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   checked); Save as doc writes `docs/council/YYYY-MM-DD-<feature>.md` and shows the path; Create initiative makes one
   chunk per direction; Ask the experts again opens that direction's thread; a reply after the summary marks the
   Summary `Outdated · N replies since` and Summarize again clears it. `frontend/app/view/agents/councilsummary.tsx`.
-- [ ] (arcterm) Council acceptance on a real paper: run the "Paper review" group on the AsiaCCS 2027 #282 submission
-  (`mit-thesis/paper/asiaccs2027/main.tex`) and compare with the real reviews
-  (`paper/asiaccs2027/final/decision_282_reviews.md` in mit-thesis). The council should surface the unreadable prose
-  (undefined internal terms, dense "not X but Y" sentences) and the missing Bullseye baseline. If it misses the prose,
-  mixed runtimes (codex, agy) move out of Deferred in the spec.
 - [ ] (arcterm) Rail commit mode with a real agent and with amend: let a live Claude agent edit two files in a worktree;
   when its turn ends, the rail's Changes tab shows the Uncommitted row without a switch. Open Commit…, untick one file,
   commit: the box closes, the commit tops the Commits list, the unticked file stays uncommitted. Then turn Amend on in
@@ -1112,6 +1117,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
+| (arcterm) A message meant for one worker reached another session: during run 0ea46b22 a lead's note for the codefix rerun was injected into the newcomer V3 lead's session (07:38:32Z), which the run put down to a lead launched from a tab inheriting that tab's block id. The run's diagnosis, not yet checked in the source (`wsh agents send` routing, `pkg/wshrpc` block targeting) | bug | M | `docs/council-phase0.md` ("Two flags on the data") |
+| (arcterm) `wsh council estimate` is low: V0 reads a flat 0.3M on every case (real runs 0.54M), V1 is assumed half of V2 but cost as much (round 1 and the Summary are most of it), and codefix V1/V2 came to ~1.4M against 0.4–0.8M estimated | bug | S | `docs/council-phase0.md` (Results, Deviations); `pkg/council/estimate.go` |
 | (arcterm) Scenario steps that fail in a Final on a Mac and are not the settings reorganization's: `settings-pages` agents-detail and `settings-storage` step 11 read the DOM once before it redraws (racy), `settings-telegram` step 3 needs `ARC_TELEGRAM_API_BASE`, which `final-verify.mjs` does not set, and `agy-harness` 2/5/6/7/9, `route-picker-flat` (too few fixture rows to scroll) and `jarvis-pet` 8 fail on the base too. Each is a chunk of effort `c721a0be` (11–16) with its cause | verification gap | M | run d09b9dd1 Final, `data/final-shots/f983b4e3-ff58-410d-9457-f3007b0cb39e/1/shots.json`; `scripts/cdp/scenarios.mjs` |
 | (arcterm) Engine worktrees moved to `%LOCALAPPDATA%\arc-wt\<8 of run id>` with the kaeltran16 sync (2026-10-13), but our own path readers still look only under `<project>/.waveterm/worktrees`: the sidebar's grouping of engine conversations under their project (`agentsidebarmodel.ts` `ENGINE_WORKTREES`), Claude project mapping (`pkg/agentsessions/claudeprojects.go`), Settings → Storage's engine-tree cleanup (`pkg/storage/worktrees.go`) and Usage's "engine run" project label (`pkg/usagestats/sessions.go` `projectOf`). `orchestrate.runOfWorktree` already reads both | bug | M | `pkg/orchestrate/worktreeroot.go`, `launchorigin.go` `runOfShortTree` |
 | (arcterm) Not ported from the kaeltran16 sync (2026-10-13): Usage's **By work** lens (spend by project, run and session; `usageattribution.ts` and the backend's session directory are in, our tabbed Usage surface does not draw it), the New run goal's file-pick button (it lived in the fork's `newruncontrol.tsx`, which our New dialog replaced), and the fork's `docs/orchestrator-guide.md` changes (short worktree root, cleanup round, final stage row) into `docs/guide/orchestrator.md` | feature | M | merge of `kael/main` 713f11140; dropped scenarios `usage-work`, `new-run-attachments`, `run-sheet-carry` |
