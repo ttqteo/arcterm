@@ -1118,6 +1118,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
+| (arcterm) `TestRepliesPostedAsARunEndsAreNeverLost` in `pkg/council` is flaky: it failed, then passed on a rerun, in run 74b368ce's Verify after merging its t-10 | bug | S | run 74b368ce final report; `pkg/council/runner_test.go` |
 | (arcterm) `pkg/council` `TestRepliesPostedAsARunEndsAreNeverLost` is flaky: it failed, then passed on a rerun, in the Verify after a merge of run 74b368ce, which left that run's Final unverified | bug | S | run 74b368ce report; `pkg/council/runner_test.go` |
 | (arcterm) A message meant for one worker reached another session: during run 0ea46b22 a lead's note for the codefix rerun was injected into the newcomer V3 lead's session (07:38:32Z), which the run put down to a lead launched from a tab inheriting that tab's block id. The run's diagnosis, not yet checked in the source (`wsh agents send` routing, `pkg/wshrpc` block targeting) | bug | M | `docs/council-phase0.md` ("Two flags on the data") |
 | (arcterm) `wsh council estimate` is low: V0 reads a flat 0.3M on every case (real runs 0.54M), V1 is assumed half of V2 but cost as much (round 1 and the Summary are most of it), and codefix V1/V2 came to ~1.4M against 0.4–0.8M estimated | bug | S | `docs/council-phase0.md` (Results, Deviations); `pkg/council/estimate.go` |

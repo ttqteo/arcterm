@@ -10,6 +10,26 @@ and "Where it lives" parts of `2026-10-21-council-design.md`; the role library, 
 store carry over unless this file says otherwise. Prototype: `.superpowers/design/council-newcomer/project/`
 (gitignored; row C is this design: `V2Setup`, `V2Room`, `V2Report`; row B's `ReportDone` is the Review report).
 
+## Where it stands (handoff, 2026-10-22)
+
+Work moves to another machine; the person stopped the runs below on purpose.
+
+- **Shipped:** run 74b368ce, the readable council on v1 (answer-first report, plain words, top-3 picks with agreement as
+  a reaction, done toast and unread dot, a waiting council in Needs you, Setup as one composer). Its hand checks are in
+  `docs/open-issues.md` "0 · Waiting on a hand check".
+- **Next, in this order, each with Arc engine** (`wsh runs start --plan <file> --runtime claude --model opus`):
+  1. `docs/superpowers/plans/2026-10-22-council-v1-room.md` (the room as a group chat, Brainstorm mode, one council at
+     a time, started from a chat, saved into `docs/council/`). Cancelled right after it started; nothing of it landed.
+  2. `docs/superpowers/plans/2026-10-22-council-bench.md` (`wsh council bench`, "Was this useful?"), with
+     `--after <the run of 1>`. Never started.
+  3. `docs/superpowers/plans/2026-10-22-council-phase0b.md` (the stronger benchmark). Cancelled at its task 4 with 9
+     of 12 runs done (services-bugs, agents-bugs and newcomer, each V0, V2, V3; services-sleep not run) and nothing
+     judged. Those results and every bench case live only in the old machine's data dir, so a new machine re-runs the
+     plan from the start; its tasks 1 and 2 rebuild the cases, but the `newcomer` case must be rebuilt by hand first:
+     `git archive 0a2c46437` into `<data dir>/council-bench-projects/newcomer/`, its key the five lines under
+     "Benchmark" item 3, and its entry added to `<data dir>/council-bench/cases.json` (Phase 0's shape).
+- The bench plan (2) also reads `cases.json`, so run 3's tasks 1–2 (or the hand rebuild) before it on a new machine.
+
 ## Why
 
 Council v1 was built as "a panel of expert agents that reviews a feature": one-shot read-only `claude -p` calls in three
