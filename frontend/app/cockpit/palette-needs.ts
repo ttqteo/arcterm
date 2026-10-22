@@ -29,6 +29,7 @@ const KIND_GROUP: Record<string, NeedsGroup> = {
     "dag-gate": "reviews",
     "plan-review": "plan",
     "learn-proposal": "reviews",
+    council: "reviews",
     "chunk-due": "due",
 };
 
@@ -101,7 +102,8 @@ export type NeedsTarget =
     | { kind: "dag"; channelId: string; runId: string; dagId: string; taskId?: string }
     | { kind: "run"; channelId: string; runId: string }
     | { kind: "channel"; channelId: string }
-    | { kind: "effort"; effortId: string }; // a due chunk's initiative, or a plan to review whose agent is gone
+    | { kind: "effort"; effortId: string } // a due chunk's initiative, or a plan to review whose agent is gone
+    | { kind: "council"; councilId: string }; // a council paused after step 1, on its Discussion
 
 // Where Enter on a Needs you row lands. A dag item's key names its dag ("dag-gate:<dag>[:<task>]",
 // "dag-blocked:<dag>", pkg/jarvis/attention.go); an ask whose agent left the roster falls back to its
@@ -117,6 +119,11 @@ export function needsTarget(row: NeedsRow): NeedsTarget | null {
     const { kind, key, channelid, runid, taskid, oref } = row.item;
     if ((kind === "chunk-due" || kind === "plan-review") && oref?.startsWith("effort:")) {
         return { kind: "effort", effortId: oref.slice("effort:".length) };
+    }
+    // a council item names no channel: pkg/jarvis/attention.go addresses it as "council:<id>"
+    if (kind === "council") {
+        const councilId = oref?.startsWith("council:") ? oref.slice("council:".length) : "";
+        return councilId ? { kind: "council", councilId } : null;
     }
     if (!channelid) {
         return null;

@@ -41,7 +41,7 @@ export const councilNeedsYou = {
         return ctx;
     },
 
-    async assert(h, ctx) {
+    async assert(h, ctx, fx) {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         const until = (expr, ms = UI_WAIT_MS) => waitFor((e) => h.ev(e), expr, ms);
@@ -74,14 +74,36 @@ export const councilNeedsYou = {
             JSON.stringify({ opened, surface })
         );
 
-        // 4. the same council written as done: its row is gone after the next refresh, and the badge is one less
+        // 4. the palette's Needs you scope lists the council still awaiting (written again under the same id); its row
+        //    opens that council's Discussion and closes the palette. Back on Jarvis first, so the Discussion shown by step 3
+        //    is not what the assert reads
+        writeCouncil(ctx, "awaiting", { id: ctx.id });
+        await h.goto("jarvis");
+        const PALETTE = `document.querySelector('input[data-palette-input]')?.closest('[role="dialog"]')`;
+        const palRow = `[...(${PALETTE}?.querySelectorAll("button[data-idx]") ?? [])].find((b) => (b.textContent ?? "").includes("Rail apps"))`;
+        const palOpened = await fx.openPalette(h);
+        await h.ev(`document.querySelector('[data-palette-scope="needs"]')?.click()`);
+        const palListed = await until(`!!${palRow}`, POLL_WAIT_MS);
+        await h.shot("cdp-shots/council-needs-you-palette.png");
+        await h.ev(`${palRow}?.click()`);
+        const palLanded = await until(
+            `document.querySelector("[data-council-discussion]")?.dataset.councilId === ${q(ctx.id)} && !document.querySelector('input[data-palette-input]')`
+        );
+        const palSurface = await h.activeSurfaceLabel();
+        rec(
+            "4. the palette's Needs you row for the waiting council opens its Discussion and closes the palette",
+            palOpened && palListed && palLanded && palSurface === "Agent",
+            JSON.stringify({ palOpened, palListed, palLanded, palSurface })
+        );
+
+        // 5. the same council written as done: its row is gone after the next refresh, and the badge is one less
         writeCouncil(ctx, "done", { id: ctx.id });
         await h.goto("jarvis");
         const gone = await until(`${ROWS(ROW_TEXT)}.length === 0`, POLL_WAIT_MS);
         const after = await h.ev(BADGE);
         await h.shot("cdp-shots/council-needs-you-gone.png");
         rec(
-            "4. once the council is done its Needs you row is gone on the next refresh, and the Jarvis badge counts one less",
+            "5. once the council is done its Needs you row is gone on the next refresh, and the Jarvis badge counts one less",
             gone && after === before - 1,
             JSON.stringify({ gone, before, after })
         );
