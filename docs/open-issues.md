@@ -43,6 +43,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   not run before Final. Also try Pause after round 1 (untick a proposal, ask a question, Continue), Stop council
   mid-round 1, and Retry on an expert that failed. Spec `docs/superpowers/specs/2026-10-21-council-design.md`,
   `frontend/app/view/agents/councildiscussion.tsx`, `pkg/council/runner.go`.
+- [ ] (arcterm) Council, the readable report: run a real council with a question on the installed app. The finished
+  council should open on a one-sentence answer above its directions; an expert who agrees without a comment should
+  show as a reaction under the idea, never as a reply row (reply counts leave it out); and the done toast should arrive
+  while another surface is showing, with an unread dot on the council's row that clears when you open it. Plan
+  `docs/superpowers/plans/2026-10-22-council-v1-ui.md`.
 - [ ] (arcterm) Council from an agent: in a claude session, let it offer a Council review (the `arc:council` skill) and
   pick it. `wsh council start` shows the Token burn gate card with the estimate; allow it and the council runs, and
   `wsh council wait` prints the Summary and Matrix back into the session, with the directions in that session's Ideas.
