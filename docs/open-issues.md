@@ -1110,6 +1110,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   dialog a click on the thumbnail shows it larger under the row, and another click shrinks it. `78fad34cf`
 - [ ] (arcterm) In the installed app, right-click a project folder in the Agent tree → Open overview: the page shows that
   project's asking agents and running work, and Show in Explorer opens the folder (project Overview, `45f8bd7da`).
+  Two things Final's shots raised: the branch pill and change count were missing in the shot with agents seeded
+  (`project-overview-8.png`; present in step 4), so check they come back each time the page opens; and the Cockpit's
+  Needs you rows inside the Overview's panel keep the strip's small type and fixed label columns, unlike the asking
+  rows above them. Say if either reads wrong.
 
 ---
 
@@ -1117,6 +1121,7 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
+| (arcterm) A run's sheet timeline shows the raw event kind `queued-start` where `run-queue` step 6 expects "Started from the queue": no frontend label exists for the kind (`runEventKindQueuedStart`, `pkg/wshrpc/wshserver/wshserver_runqueue.go:40`). Fails on the base too, not from the project Overview run | bug | S | run 3d198707 Final, `data/final-shots/bd35362c-a6b5-4df7-9d46-6f522a0bca94/1/shots.json` |
 | (arcterm) A message meant for one worker reached another session: during run 0ea46b22 a lead's note for the codefix rerun was injected into the newcomer V3 lead's session (07:38:32Z), which the run put down to a lead launched from a tab inheriting that tab's block id. The run's diagnosis, not yet checked in the source (`wsh agents send` routing, `pkg/wshrpc` block targeting) | bug | M | `docs/council-phase0.md` ("Two flags on the data") |
 | (arcterm) `wsh council estimate` is low: V0 reads a flat 0.3M on every case (real runs 0.54M), V1 is assumed half of V2 but cost as much (round 1 and the Summary are most of it), and codefix V1/V2 came to ~1.4M against 0.4–0.8M estimated | bug | S | `docs/council-phase0.md` (Results, Deviations); `pkg/council/estimate.go` |
 | (arcterm) Scenario steps that fail in a Final on a Mac and are not the settings reorganization's: `settings-pages` agents-detail and `settings-storage` step 11 read the DOM once before it redraws (racy), `settings-telegram` step 3 needs `ARC_TELEGRAM_API_BASE`, which `final-verify.mjs` does not set, and `agy-harness` 2/5/6/7/9, `route-picker-flat` (too few fixture rows to scroll) and `jarvis-pet` 8 fail on the base too. Each is a chunk of effort `c721a0be` (11–16) with its cause | verification gap | M | run d09b9dd1 Final, `data/final-shots/f983b4e3-ff58-410d-9457-f3007b0cb39e/1/shots.json`; `scripts/cdp/scenarios.mjs` |
