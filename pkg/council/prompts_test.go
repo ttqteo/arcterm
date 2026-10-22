@@ -183,6 +183,24 @@ func TestSynthesisPromptAsksForAnAnswerOnlyWithAQuestion(t *testing.T) {
 	mustContain(t, "synthesis prompt", p, synthesisShapeNoQuestion)
 }
 
+// The person reads a reason, a summary, an answer and a weak note, and the UI shows no proposal id: every prompt that
+// cites proposals by id says to name them by title in prose.
+func TestPromptsNameProposalsByTitleInProse(t *testing.T) {
+	c := promptCouncil()
+	noQuestion := promptCouncil()
+	noQuestion.Question = ""
+	r3 := c.Replies[2]
+	for name, p := range map[string]string{
+		"round 2 prompt":                    Round2Prompt(c, c.Experts[0]),
+		"round 2 prompt, nothing to review": Round2Prompt(&Council{Experts: c.Experts}, c.Experts[0]),
+		"synthesis prompt":                  SynthesisPrompt(c),
+		"synthesis prompt, no question":     SynthesisPrompt(noQuestion),
+		"answers prompt":                    AnswersPrompt(c, c.Experts[0], []CouncilReply{r3}),
+	} {
+		mustContain(t, name, p, titleRule, "never by its id")
+	}
+}
+
 func TestSynthesisPromptNamesNoMissingExpertWhenNoneFailed(t *testing.T) {
 	c := promptCouncil()
 	c.Failed["lead"] = CouncilFailure{Round: 3, Error: "the synthesis itself"} // the coordinator being retried is not "missing"

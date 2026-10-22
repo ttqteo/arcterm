@@ -84,6 +84,12 @@ const (
 
 	stanceRule = `A stance is one of "accept", "challenge" or "oppose".`
 
+	// titleRule is in every prompt that cites proposals by id: the person reads the prose fields, and the UI shows no
+	// proposal id.
+	titleRule = "Name a proposal by its title or by what it says, never by its id (\"P2\"), in every sentence the person " +
+		"reads: a reason, an argument, an answer, a note, the reasoning behind a direction, the summary text. Ids go only " +
+		"in the fields that hold ids."
+
 	jsonRule = "End your reply with one JSON object in a ```json fence and nothing after it, in this shape:"
 )
 
@@ -292,6 +298,7 @@ func Round2Prompt(c *Council, e CouncilExpert) string {
 		`set "withdraw" to true to drop it, or give its new title and argument. Leave "revisions" empty otherwise.` + "\n\n")
 	b.WriteString(`Answer each question from the person with an entry in "answers", by its replyid. Leave "answers" empty ` +
 		"when there are none.\n\n")
+	b.WriteString(titleRule + "\n\n")
 	b.WriteString(evidenceRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + round2Shape + "\n```\n")
 	return b.String()
@@ -400,7 +407,8 @@ func SynthesisPrompt(c *Council) string {
 			"answer itself, not a description of the discussion.\n")
 		shape = synthesisShape
 	}
-	b.WriteString("\n" + evidenceRule + "\n\n")
+	b.WriteString("\n" + titleRule + "\n\n")
+	b.WriteString(evidenceRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + shape + "\n```\n")
 	return b.String()
 }
@@ -481,6 +489,7 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 	b.WriteString("## What to do\n\n")
 	b.WriteString("Answer every reply above with one entry in \"answers\", by its replyid. If an answer changes your " +
 		"view of the proposal it sits on, add a \"stance\". " + stanceRule + "\n\n")
+	b.WriteString(titleRule + "\n\n")
 	b.WriteString(evidenceRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + answersShape + "\n```\n")
 	return b.String()
