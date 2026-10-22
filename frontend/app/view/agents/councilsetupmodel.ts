@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The council Setup's pure rules (councilsetup.tsx draws them): the panel a group makes, editing a draft's panel, files
-// and screenshots, when the coordinator's suggestion is asked and how it lands, what Start council sends, and the footer's
-// words. The draft type is councilmodel.ts's; every function here returns the next draft and leaves the one it was given
+// and screenshots, the mode (Review or Brainstorm) and its chip, when the coordinator's suggestion is asked and how it
+// lands, what Start council sends and what the button reads, and the footer's words. The draft type is councilmodel.ts's; every function here returns the next draft and leaves the one it was given
 // alone, and returns that same object when nothing changed so an atom set from it does not rerender. Pure, no React, no
 // Wave runtime imports (councilsetupmodel.test.ts).
 
@@ -74,6 +74,79 @@ export function initialPanel(draft: CouncilSetupDraft, lib: RoleLibrary): Counci
 /** Pure: a group's name for the group button; a panel with no group in the library is Custom. */
 export function groupName(lib: RoleLibrary, groupId: string): string {
     return lib.groups.find((g) => g.id === groupId)?.name ?? "Custom";
+}
+
+// ---- the mode ----
+
+export type CouncilMode = CouncilSetupDraft["mode"];
+
+/** The group a Brainstorm opens on, and the one a Review falls back to when the suggestion names none. */
+export const BRAINSTORM_GROUP = "product-ideas";
+export const REVIEW_GROUP = "ui-feature";
+
+const MODE_NAME: Record<CouncilMode, string> = { review: "Review", brainstorm: "Brainstorm" };
+
+const MODE_RULES: Record<CouncilMode, string> = {
+    brainstorm: "Ideas first and no doubts yet; then they build on each other and pick the best.",
+    review: "Every claim cites a file line or a screenshot, or is marked as citing nothing.",
+};
+
+// the wire word of a suggestion's mode; anything but the two modes is no answer
+function asMode(word: string | undefined): CouncilMode | undefined {
+    return word === "review" || word === "brainstorm" ? word : undefined;
+}
+
+function suggestedMode(draft: CouncilSetupDraft): CouncilMode | undefined {
+    return asMode(draft.suggestion?.mode);
+}
+
+/** Pure: the mode chip in the composer's bar: the mode, and whose pick it is: `Brainstorm · picked from your question`
+ *  when the coordinator named it, `Review · you picked it` once the person flipped the chip (or a rerun carried it). A
+ *  draft whose suggestion named no mode reads the mode alone. */
+export function modeChip(draft: CouncilSetupDraft): string {
+    const name = MODE_NAME[draft.mode];
+    if (draft.modePicked) {
+        return `${name} · you picked it`;
+    }
+    return suggestedMode(draft) != null ? `${name} · picked from your question` : name;
+}
+
+/** Pure: the one sentence of rules under the chip. */
+export function modeRules(mode: CouncilMode): string {
+    return MODE_RULES[mode];
+}
+
+/** Pure: the suggestion's one-line reason for the mode, empty when the person picked it or it named none. */
+export function modeReason(draft: CouncilSetupDraft): string {
+    return draft.modePicked || suggestedMode(draft) == null ? "" : (draft.suggestion?.modewhy ?? "").trim();
+}
+
+/** Pure: the draft in the other mode, counted as the person's pick (a later suggestion no longer changes it). Its
+ *  group follows the mode unless the person picked or edited one: Product ideas for Brainstorm, the suggestion's group
+ *  or the UI group for Review. */
+export function flipMode(draft: CouncilSetupDraft, lib: RoleLibrary): CouncilSetupDraft {
+    const mode: CouncilMode = draft.mode === "brainstorm" ? "review" : "brainstorm";
+    const next: CouncilSetupDraft = { ...draft, mode, modePicked: true };
+    if (draft.groupPicked) {
+        return next;
+    }
+    return applyGroup(
+        next,
+        lib,
+        mode === "brainstorm" ? BRAINSTORM_GROUP : draft.suggestion?.group || REVIEW_GROUP,
+        false
+    );
+}
+
+/** Pure: whether a council runs (any project: one runs at a time, and a council waiting on the person holds no slot),
+ *  which makes a new one wait its turn. */
+export function anyCouncilRunning(councils: readonly Council[] | null | undefined): boolean {
+    return (councils ?? []).some((c) => c.state === "running");
+}
+
+/** Pure: Start council's label: Queue council while a council runs, else Start council. */
+export function startLabel(councils: readonly Council[] | null | undefined): string {
+    return anyCouncilRunning(councils) ? "Queue council" : "Start council";
 }
 
 // ---- the panel ----
@@ -233,8 +306,10 @@ export function settleRerun(draft: CouncilSetupDraft): CouncilSetupDraft {
         : draft;
 }
 
-/** Pure: what the answer changes: its files join the chips, its roles wait as dashed rows, and its group replaces the
- *  panel unless the person has picked a group or edited the rows. Lands only on a draft that is waiting for it. */
+/** Pure: what the answer changes: its files join the chips, its roles wait as dashed rows, its mode becomes the draft's
+ *  unless the person flipped the chip, and its group replaces the panel unless the person has picked a group or edited
+ *  the rows. A Brainstorm opens on Product ideas whatever group came with it. Lands only on a draft that is waiting for
+ *  it. */
 export function applySuggestion(
     draft: CouncilSetupDraft,
     suggestion: CouncilSuggestion,
@@ -243,13 +318,24 @@ export function applySuggestion(
     if (draft.suggestState !== "asking") {
         return draft;
     }
+    const named = asMode(suggestion.mode);
+    const mode: CouncilMode = draft.modePicked || named == null ? draft.mode : named;
     let next: CouncilSetupDraft = {
         ...draft,
+        mode,
         files: withFiles(draft, suggestion.files ?? []),
-        suggestion: { files: suggestion.files ?? [], roles: suggestion.roles ?? [], group: suggestion.group },
+        suggestion: {
+            files: suggestion.files ?? [],
+            roles: suggestion.roles ?? [],
+            group: suggestion.group,
+            mode: suggestion.mode,
+            modewhy: suggestion.modewhy,
+        },
         suggestState: "done",
     };
-    const group = suggestion.group ?? "";
+    // a suggestion with no mode named keeps the draft's: its group alone decides, as before modes
+    const group =
+        mode === "brainstorm" ? BRAINSTORM_GROUP : suggestion.group || (mode !== draft.mode ? REVIEW_GROUP : "");
     if (group !== "" && !draft.groupPicked) {
         next = applyGroup(next, lib, group, false);
     }
@@ -341,6 +427,8 @@ export function startData(draft: CouncilSetupDraft): CommandCouncilStartData {
         experts: draft.experts,
         pause: draft.pause,
         sessionid: draft.sessionId || undefined,
+        mode: draft.mode,
+        modewhy: modeReason(draft) || "picked by hand",
     };
 }
 

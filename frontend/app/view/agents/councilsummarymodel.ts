@@ -85,7 +85,8 @@ export interface Position {
 
 export interface DirectionRow {
     direction: CouncilDirection;
-    meta: string; // `from UX and RAM · 1 file · 1 weak claim · in Ideas`
+    meta: string; // `from UX and RAM · 1 file · 1 weak claim · in Ideas`; a Brainstorm's starts `Had it: UX · built on by RAM`
+    firstStep: string; // `First step: Try it on one screen`, or empty when the coordinator gave none
     chips: StanceChip[]; // the experts that proposed or took a stance, in panel order
     tag: string; // `Everyone agrees`, `Reader has doubts`, `RAM is against it` (directionTag)
     positions: Position[];
@@ -141,14 +142,44 @@ function fileOf(e: CouncilEvidence): string {
     return e.ref.replace(/:\d+(-\d+)?$/, "");
 }
 
-// `from UX and RAM`: the authors of the proposals a direction came from, each once, in the order they come
-function fromLine(c: Council, from: string[]): string {
+// the authors of the proposals a direction came from, each once, in the order they come
+function authorNames(c: Council, from: string[]): string[] {
     const named = from.flatMap((id) => {
         const p = (c.proposals ?? []).find((x) => x.id === id);
         return p == null ? [] : [c.experts.find((e) => e.id === p.author)?.name ?? p.author];
     });
-    const authors = named.filter((name, i) => named.indexOf(name) === i);
+    return named.filter((name, i) => named.indexOf(name) === i);
+}
+
+// `from UX and RAM`
+function fromLine(c: Council, from: string[]): string {
+    const authors = authorNames(c, from);
     return authors.length === 0 ? "" : `from ${listNames(authors)}`;
+}
+
+/** Pure: whether a council is a Brainstorm; a council saved before modes has none and reads as Review. */
+export function isBrainstorm(c: Council): boolean {
+    return c.mode === "brainstorm";
+}
+
+// the experts whose reply builds on one of these proposals, each once, in panel order (the person's reply is none)
+function builderNames(c: Council, from: string[]): string[] {
+    const builders = new Set(
+        (c.replies ?? []).filter((r) => r.builds === true && from.includes(r.proposalid)).map((r) => r.author)
+    );
+    return panel(c)
+        .filter((e) => builders.has(e.id))
+        .map((e) => e.name);
+}
+
+// `Had it: UX and RAM · built on by New user`: who had the idea and who built on it (Brainstorm)
+function hadLine(c: Council, from: string[]): string {
+    const authors = authorNames(c, from);
+    if (authors.length === 0) {
+        return "";
+    }
+    const builders = builderNames(c, from);
+    return `Had it: ${listNames(authors)}${builders.length > 0 ? ` · built on by ${listNames(builders)}` : ""}`;
 }
 
 /** Pure: a direction's tag in words: `Everyone agrees`, `Reader has doubts`, `Reader and UX have doubts`, `RAM is
@@ -173,23 +204,31 @@ export function directionTag(c: Council, d: CouncilDirection): string {
     return d.agreed === false && Object.keys(d.stances ?? {}).length === 0 ? "Not everyone agrees" : "Everyone agrees";
 }
 
+/** Pure: what heads the directions: a Brainstorm's are ideas worth trying; a Review's have no heading. */
+export function directionsHeading(c: Council): string {
+    return isBrainstorm(c) ? "Ideas worth trying, best first" : "";
+}
+
 /** Pure: the Summary's directions by rank, each with its line of facts, its stance chips and its positions. */
 export function directionRows(c: Council): DirectionRow[] {
     const directions = [...(c.summary?.directions ?? [])].sort((a, b) => a.rank - b.rank);
+    const brainstorm = isBrainstorm(c);
     return directions.map((direction) => {
         const positions = positionsOf(c, direction);
         const evidence = positions.flatMap((p) => p.evidence);
         const files = new Set(evidence.map(fileOf).filter((f) => f !== ""));
         const weak = evidence.filter((e) => e.weak).length;
         const meta = [
-            fromLine(c, direction.from),
+            brainstorm ? hadLine(c, direction.from) : fromLine(c, direction.from),
             files.size > 0 ? plural(files.size, "file", "files") : "",
             weak > 0 ? plural(weak, "weak claim", "weak claims") : "",
             direction.ideaid ? "in Ideas" : "",
         ].filter((part) => part !== "");
+        const firstStep = (direction.firststep ?? "").replace(/\s+/g, " ").trim();
         return {
             direction,
             meta: meta.join(" · "),
+            firstStep: firstStep === "" ? "" : `First step: ${firstStep}`,
             chips: panel(c).flatMap((expert): StanceChip[] => {
                 const stance = asStance(direction.stances?.[expert.id]);
                 if (stance != null) {
@@ -205,6 +244,44 @@ export function directionRows(c: Council): DirectionRow[] {
             firstProposal: direction.from.find((id) => (c.proposals ?? []).some((p) => p.id === id)) ?? "",
         };
     });
+}
+
+export interface KeptRow {
+    direction: CouncilDirection; // its title is the idea, its reasoning why it was kept aside
+    had: string; // `Had it: New user`, with `· built on by …` when any reply built on it
+}
+
+/** Pure: a Brainstorm's wild ideas kept aside, by rank; empty when the coordinator kept none. */
+export function keptRows(c: Council): KeptRow[] {
+    return [...(c.summary?.kept ?? [])]
+        .sort((a, b) => a.rank - b.rank)
+        .map((direction) => ({ direction, had: hadLine(c, direction.from) }));
+}
+
+/** Pure: `3 more ideas merged or dropped`: a Brainstorm's proposals that are in no direction and not kept; empty at 0,
+ *  for a Review and before a summary. */
+export function droppedLine(c: Council): string {
+    const summary = c.summary;
+    if (summary == null || !isBrainstorm(c)) {
+        return "";
+    }
+    const used = new Set([...summary.directions, ...(summary.kept ?? [])].flatMap((d) => d.from));
+    const n = (c.proposals ?? []).filter((p) => !used.has(p.id)).length;
+    return n === 0 ? "" : `${n} more ${n === 1 ? "idea" : "ideas"} merged or dropped`;
+}
+
+/** Pure: `Saved to docs/council/2026-10-22-rail-apps.md with the whole discussion`: where the finished council saved
+ *  itself (relative to the project when inside it); empty before it did. */
+export function savedLine(c: Council): string {
+    const path = c.docpath ?? "";
+    return path === "" ? "" : `Saved to ${docPathLabel(c.project, path)} with the whole discussion`;
+}
+
+/** Pure: the `⋯` menu's document item: Open the document once the council saved itself, else Save as doc. */
+export function docAction(c: Council): { id: "open-doc" | "save-doc"; label: string } {
+    return (c.docpath ?? "") !== ""
+        ? { id: "open-doc", label: "Open the document" }
+        : { id: "save-doc", label: "Save as doc" };
 }
 
 /** Pure: how a piece of evidence reads on its chip: the ref, or for a weak one why it is weak. */

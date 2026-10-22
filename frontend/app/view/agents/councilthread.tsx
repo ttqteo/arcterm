@@ -56,7 +56,7 @@ const TONE_BORDER: Record<AvatarTone, string> = {
     "conn-8": "border-conn-8",
 };
 
-const TONE_TEXT: Record<AvatarTone, string> = {
+export const TONE_TEXT: Record<AvatarTone, string> = {
     you: "text-accent",
     coordinator: "text-primary",
     muted: "text-muted",

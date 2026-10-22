@@ -7,14 +7,19 @@ import {
     canRunSummary,
     defaultCouncilView,
     directionRows,
+    directionsHeading,
     directionTag,
+    docAction,
     docPathLabel,
+    droppedLine,
     evidenceLabel,
     initiativeSeed,
+    keptRows,
     outcomeLabel,
     outdatedLabel,
     positionsOf,
     projectNameOf,
+    savedLine,
     writtenLine,
 } from "./councilsummarymodel";
 
@@ -219,6 +224,119 @@ describe("directionRows", () => {
 
     it("is empty before a summary", () => {
         expect(directionRows(council({ summary: undefined }))).toEqual([]);
+    });
+});
+
+describe("a Brainstorm report", () => {
+    // P2 (UX) and P3 (RAM) meet in direction 1, built on by New user and Skeptic; P5 (Skeptic) is direction 2 with no
+    // builder; P1 (UX) is a wild idea kept aside; P4 (New user) is in neither
+    const brainstorm = (extra: Partial<Council> = {}): Council => {
+        const base = council();
+        return council({
+            mode: "brainstorm",
+            proposals: [...base.proposals!, prop("P7", "nu", { wild: true })],
+            replies: [
+                reply("b1", "P2", "nu", { builds: true, text: "and a hint on the empty slot", ts: 11 }),
+                reply("b2", "P3", "sk", { builds: true, text: "measure it first", ts: 12 }),
+                reply("b3", "P5", "ux", { text: "no build", ts: 13 }),
+                reply("b4", "P2", "you", { builds: true, text: "me too", ts: 14 }),
+            ],
+            summary: {
+                text: "",
+                directions: [
+                    direction(1, ["P2", "P3"], { firststep: "Try it on one screen" }),
+                    direction(2, ["P5"], { firststep: "  " }),
+                ],
+                kept: [direction(1, ["P7"], { reasoning: "too big for now" })],
+                outcomes: {},
+                at: 15,
+            },
+            ...extra,
+        });
+    };
+
+    it("heads the directions Ideas worth trying, best first; a Review report has no heading", () => {
+        expect(directionsHeading(brainstorm())).toBe("Ideas worth trying, best first");
+        expect(directionsHeading(council())).toBe("");
+        expect(directionsHeading(council({ mode: "review" }))).toBe("");
+    });
+
+    it("gives each row its first step, and none for a row without one", () => {
+        const [first, second] = directionRows(brainstorm());
+        expect(first.firstStep).toBe("First step: Try it on one screen");
+        expect(second.firstStep).toBe("");
+        expect(directionRows(council())[0].firstStep).toBe("");
+    });
+
+    it("says who had the idea and who built on it, in panel order and once each, leaving the person out", () => {
+        const [first, second] = directionRows(brainstorm());
+        expect(first.meta).toBe("Had it: UX and RAM · built on by New user and Skeptic · 1 file · 1 weak claim");
+        expect(second.meta).toBe("Had it: Skeptic · 1 file");
+        expect(first.meta).not.toContain("You");
+    });
+
+    it("says nothing about builders when no reply builds on it", () => {
+        const c = brainstorm({ replies: [] });
+        expect(directionRows(c)[1].meta).toBe("Had it: Skeptic · 1 file");
+    });
+
+    it("keeps the from line, not Had it, in a Review report", () => {
+        expect(directionRows(council())[1].meta).toBe("from Skeptic · 1 file · in Ideas");
+    });
+
+    it("lists the wild ideas kept aside with who had them and why", () => {
+        const rows = keptRows(brainstorm());
+        expect(rows).toHaveLength(1);
+        expect(rows[0].direction.reasoning).toBe("too big for now");
+        expect(rows[0].had).toBe("Had it: New user");
+    });
+
+    it("shows no kept section when nothing was kept, or the council is not a Brainstorm", () => {
+        expect(keptRows(brainstorm({ summary: { ...brainstorm().summary!, kept: [] } }))).toEqual([]);
+        expect(keptRows(brainstorm({ summary: { ...brainstorm().summary!, kept: undefined } }))).toEqual([]);
+        expect(keptRows(council())).toEqual([]);
+        expect(keptRows(council({ summary: undefined }))).toEqual([]);
+    });
+
+    it("counts the ideas in no direction and not kept", () => {
+        // P1 is in neither; P2, P3 and P5 are in directions and P7 is kept
+        expect(droppedLine(brainstorm())).toBe("1 more idea merged or dropped");
+        const two = brainstorm({ proposals: [...brainstorm().proposals!, prop("P8", "ux")] });
+        expect(droppedLine(two)).toBe("2 more ideas merged or dropped");
+    });
+
+    it("has no count line at 0, in a Review report, or before a summary", () => {
+        const none = brainstorm({
+            proposals: [prop("P2", "ux"), prop("P3", "ram"), prop("P5", "sk"), prop("P7", "nu")],
+        });
+        expect(droppedLine(none)).toBe("");
+        expect(droppedLine(council())).toBe("");
+        expect(droppedLine(brainstorm({ summary: undefined }))).toBe("");
+    });
+});
+
+describe("the saved document", () => {
+    it("says where the whole discussion was saved, relative to the project", () => {
+        const c = council({ docpath: "D:\\code\\arc\\docs\\council\\2026-10-22-rail-apps.md" });
+        expect(savedLine(c)).toBe("Saved to docs/council/2026-10-22-rail-apps.md with the whole discussion");
+    });
+
+    it("gives the whole path for a document outside the project", () => {
+        const c = council({ docpath: "D:\\notes\\rail-apps.md" });
+        expect(savedLine(c)).toBe("Saved to D:\\notes\\rail-apps.md with the whole discussion");
+    });
+
+    it("says nothing before the council saved itself", () => {
+        expect(savedLine(council())).toBe("");
+        expect(savedLine(council({ docpath: "" }))).toBe("");
+    });
+
+    it("offers Open the document once it is saved, else Save as doc", () => {
+        expect(docAction(council())).toEqual({ id: "save-doc", label: "Save as doc" });
+        expect(docAction(council({ docpath: "D:\\code\\arc\\docs\\council\\x.md" }))).toEqual({
+            id: "open-doc",
+            label: "Open the document",
+        });
     });
 });
 

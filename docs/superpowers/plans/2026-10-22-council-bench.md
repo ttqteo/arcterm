@@ -52,14 +52,15 @@ back to the person.
 ### Task 1: The harness version on every council
 
 **Depends on:** none
-**Files:** `pkg/council/prompts.go`, `pkg/council/types.go`, `pkg/council/runner.go`, `pkg/council/prompts_test.go`, `frontend/types/gotypes.d.ts`
+**Files:** `pkg/council/prompts.go`, `pkg/council/types.go`, `pkg/council/runner.go`, `pkg/council/markdown.go`, `pkg/council/prompts_test.go`, `pkg/council/markdown_test.go`, `frontend/types/gotypes.d.ts`
 
 **Interfaces:**
 - Produces: `const HarnessVersion = "<YYYY-MM-DD>.<n>"` in `prompts.go` (start at today's date `.1`), with a comment:
   bump it in the same commit as any change to a prompt, a role brief or a default model; `Council.Harness string`
   (`json:"harness,omitempty"`) set when a council starts.
 
-- [ ] **Step 1: Test.** A council started through the runner carries `Harness == HarnessVersion`.
+- [ ] **Step 1: Test.** A council started through the runner carries `Harness == HarnessVersion`; the saved document's
+  run facts (`Markdown`, the room plan's Task 3) carry a `Harness: <version>` line when it is set.
 - [ ] **Step 2:** Run `go test ./pkg/council -run Harness` — Expected: FAIL.
 - [ ] **Step 3:** Implement; run `task generate`.
 - [ ] **Step 4:** Run `go test ./pkg/council` — Expected: PASS.

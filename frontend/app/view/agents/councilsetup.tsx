@@ -3,10 +3,11 @@
 //
 // The council Setup (board ReportSetup.dc.html, docs/superpowers/specs/2026-10-22-council-agent-team-design.md "UI"): one
 // composer for the feature (its first line) and the question (the rest) with the files and screenshots as chips inside it,
-// a bar with Attach, the group, the estimate and Start council, and Options for the panel rows with their models, Save as
-// group and Pause after the first ideas. The form is the project's draft in councilSetupDraftAtom, so it survives
-// switching away; councilsetupmodel.ts holds every rule (the composer's text is `joinAsk` of the draft, written back
-// with `splitAsk`) and this file only draws them and calls the store.
+// a bar with Attach, the group, the mode chip (Review or Brainstorm, flipped by a click, with its rules under the box), the
+// estimate and Start council (Queue council while another council runs), and Options for the panel rows with their
+// models, Save as group and Pause after the first ideas. The form is the project's draft in councilSetupDraftAtom, so it
+// survives switching away; councilsetupmodel.ts holds every rule (the composer's text is `joinAsk` of the draft, written
+// back with `splitAsk`) and this file only draws them and calls the store.
 //
 // The coordinator's suggestion is one model call, asked once when the draft has a feature and a first file (or comes
 // from Ask the council with a question), a moment after the last edit. It lives in askCoordinator below, outside the
@@ -27,6 +28,7 @@ import {
     addFiles,
     addRole,
     addScreenshot,
+    anyCouncilRunning,
     applyGroup,
     applySuggestion,
     askText,
@@ -38,10 +40,14 @@ import {
     expertsLine,
     expertTone,
     failSuggestion,
+    flipMode,
     groupFromDraft,
     groupName,
     initialPanel,
+    modeChip,
     MODEL_CHOICES,
+    modeReason,
+    modeRules,
     pendingRoles,
     readingLine,
     removeExpert,
@@ -53,6 +59,7 @@ import {
     splitAsk,
     startBlocker,
     startData,
+    startLabel,
     suggestRequest,
     type ExpertTone,
     type RoleLibrary,
@@ -65,6 +72,7 @@ import {
     saveCouncilGroup,
     startCouncil,
     suggestCouncil,
+    useCouncils,
 } from "./councilstore";
 import { imageFilesOf, imageRoom } from "./launcherimages";
 import { projectsAtom } from "./projectsstore";
@@ -508,6 +516,8 @@ function SetupForm({ project }: { project: string }) {
     const draftAtom = councilSetupDraftAtom(project);
     const draft = useAtomValue(draftAtom);
     const projects = useAtomValue(projectsAtom);
+    // every council, in every project: one runs at a time, so a running one turns Start council into Queue council
+    const allCouncils = useCouncils("");
     const { lib, failed: libFailed, reload } = useRoleLibrary();
     const root = useRef<HTMLDivElement>(null);
     const askInput = useRef<HTMLTextAreaElement>(null);
@@ -608,6 +618,7 @@ function SetupForm({ project }: { project: string }) {
     const pending = pendingRoles(draft);
     const libraryOrEmpty = lib ?? NO_LIBRARY;
     const who = expertsLine(draft, libraryOrEmpty);
+    const queueing = anyCouncilRunning(allCouncils);
 
     const cancel = () => {
         forgetAsk(project);
@@ -672,7 +683,10 @@ function SetupForm({ project }: { project: string }) {
                 <div className="flex max-w-[780px] flex-col gap-[14px]">
                     <p className="m-0 text-[13px] leading-[1.5] text-secondary">
                         A few AI experts read your project, argue over each other's ideas, and give you a ranked answer.
-                        They never edit anything.
+                        They never edit anything.{" "}
+                        <span data-council-saves>
+                            The finished council saves to docs/council/ in the project, with the whole discussion.
+                        </span>
                     </p>
 
                     <div
@@ -760,7 +774,7 @@ function SetupForm({ project }: { project: string }) {
                         ) : null}
                         <div
                             data-council-composer-bar
-                            className="flex items-center gap-2 rounded-b-[10px] border-t border-edge-faint px-2 py-[6px]"
+                            className="flex flex-wrap items-center gap-2 rounded-b-[10px] border-t border-edge-faint px-2 py-[6px]"
                         >
                             <MenuButton
                                 ariaLabel="Add a file, folder or screenshot"
@@ -800,32 +814,59 @@ function SetupForm({ project }: { project: string }) {
                                 {draft.experts.length === 0 ? "Pick a group" : groupName(libraryOrEmpty, draft.group)}
                                 <ChevronDown size={12} strokeWidth={2} className="text-muted" aria-hidden />
                             </MenuButton>
-                            <div className="flex-1" />
-                            <span data-council-estimate className="flex-none text-[12px] tabular-nums text-secondary">
-                                {estimateText}
-                            </span>
                             <button
                                 type="button"
-                                data-council-cancel
-                                onClick={cancel}
-                                className="h-[30px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-3 text-[12.5px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                                data-council-mode-chip
+                                data-mode={draft.mode}
+                                title={
+                                    modeReason(draft) ||
+                                    `Click to switch to ${draft.mode === "brainstorm" ? "Review" : "Brainstorm"}`
+                                }
+                                onClick={() => update((d) => flipMode(d, libraryOrEmpty))}
+                                className={cn(SECONDARY, "min-w-0 max-w-full")}
                             >
-                                Cancel
+                                <span className="min-w-0 truncate">{modeChip(draft)}</span>
                             </button>
-                            <button
-                                type="button"
-                                data-council-start
-                                disabled={blocker !== "" || starting}
-                                title={blocker !== "" ? blocker : "Start the council. The estimate is what it will use"}
-                                onClick={() => void start()}
-                                className="h-[30px] cursor-pointer rounded-[6px] border-0 bg-accent px-[14px] text-[12.5px] font-semibold text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-default disabled:opacity-40 disabled:hover:bg-accent"
-                            >
-                                {starting ? "Starting…" : "Start council"}
-                            </button>
+                            {/* the estimate and the buttons wrap as one group, so Start council is never alone on a row */}
+                            <div className="ml-auto flex flex-none items-center gap-2">
+                                <span
+                                    data-council-estimate
+                                    className="flex-none text-[12px] tabular-nums text-secondary"
+                                >
+                                    {estimateText}
+                                </span>
+                                <button
+                                    type="button"
+                                    data-council-cancel
+                                    onClick={cancel}
+                                    className="h-[30px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-3 text-[12.5px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    data-council-start
+                                    disabled={blocker !== "" || starting}
+                                    title={
+                                        blocker !== ""
+                                            ? blocker
+                                            : queueing
+                                              ? "A council is running. This one waits its turn and starts when that one ends"
+                                              : "Start the council. The estimate is what it will use"
+                                    }
+                                    onClick={() => void start()}
+                                    className="h-[30px] cursor-pointer rounded-[6px] border-0 bg-accent px-[14px] text-[12.5px] font-semibold text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-default disabled:opacity-40 disabled:hover:bg-accent"
+                                >
+                                    {starting ? (queueing ? "Queueing…" : "Starting…") : startLabel(allCouncils)}
+                                </button>
+                            </div>
                         </div>
                     </div>
 
                     <div className="flex flex-col gap-[6px]">
+                        <span data-council-mode-rules className="min-w-0 text-[11.5px] text-muted">
+                            {modeRules(draft.mode)}
+                        </span>
                         <span
                             data-council-footnote={blocker !== "" ? "blocked" : "reading"}
                             className="min-w-0 text-[11.5px] text-muted"

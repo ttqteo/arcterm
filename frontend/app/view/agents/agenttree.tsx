@@ -150,6 +150,7 @@ import {
     councilSetupProjectAtom,
     councilUnreadAtom,
     councilViewAtom,
+    stopCouncil,
     useCouncils,
 } from "./councilstore";
 import { projectsAtom } from "./projectsstore";
@@ -2465,13 +2466,23 @@ function CouncilNewRow({ project, root, draft }: { project: string; root: string
 
 // One council: a dot, its feature and its state in a word. The word is in the state's tone token and carries the state
 // whatever the color, `Waiting on you` in the amber one. A primary-ink dot before it says it ended while you were away.
+// A queued council also offers Remove from queue (hover, and the menu): it stops the council before it ever starts, as
+// the queued run's row does. The button cannot hold the action, so a queued row sits in a wrapper beside it.
 function CouncilRow({ row }: { row: CouncilRowVM }) {
     const center = useAtomValue(centerModeAtom);
     const view = useAtomValue(councilViewAtom);
     const open = useAtomValue(councilSelAtom);
     const selected = center === "council" && view !== "setup" && open === row.id;
     const tone = COUNCIL_TONE[row.tone];
-    return (
+    const queued = row.queued === true;
+    const remove = () => fireAndForget(() => stopCouncil(row.id));
+    const onContextMenu = (e: React.MouseEvent) => {
+        const items: ContextMenuItem[] = [
+            { label: "Remove from queue", icon: <X size={15} />, danger: true, click: remove },
+        ];
+        ContextMenuModel.getInstance().showContextMenu(items, e);
+    };
+    const button = (
         <button
             type="button"
             data-council-row={row.id}
@@ -2480,31 +2491,76 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
             aria-current={selected ? "true" : undefined}
             onClick={() => showCouncil(row.id)}
             className={cn(
-                "flex w-full cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] text-left transition-colors duration-[140ms]",
-                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+                "flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] text-left transition-colors duration-[140ms]",
+                queued ? "min-w-0 flex-1" : "w-full",
+                selected ? "bg-surface-selected" : queued ? null : "hover:bg-surface-hover"
             )}
         >
             <Slot>
                 <span aria-hidden className={cn("h-[6px] w-[6px] rounded-full", tone.dot)} />
             </Slot>
-            <span
-                data-council-feature
-                className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
-            >
-                {row.feature}
-            </span>
-            {row.unread ? (
-                <span
-                    data-council-unread
-                    role="img"
-                    aria-label="Not opened since it ended"
-                    className="h-[6px] w-[6px] flex-none rounded-full bg-primary"
-                />
-            ) : null}
-            <span data-council-meta className={cn("flex-none whitespace-nowrap text-[11px]", tone.text)}>
-                {row.meta}
-            </span>
+            {queued ? (
+                // `Queued · after <feature>` is too long to share a line with the feature in a narrow sidebar, so
+                // the queued run's row's two lines are used: the feature, then the word under it
+                <div className="min-w-0 flex-1">
+                    <div
+                        data-council-feature
+                        className={cn("truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
+                    >
+                        {row.feature}
+                    </div>
+                    <div data-council-meta className={cn("truncate text-[11px]", tone.text)}>
+                        {row.meta}
+                    </div>
+                </div>
+            ) : (
+                <>
+                    <span
+                        data-council-feature
+                        className={cn(
+                            "min-w-0 flex-1 truncate text-[13px]",
+                            selected ? "text-primary" : "text-secondary"
+                        )}
+                    >
+                        {row.feature}
+                    </span>
+                    {row.unread ? (
+                        <span
+                            data-council-unread
+                            role="img"
+                            aria-label="Not opened since it ended"
+                            className="h-[6px] w-[6px] flex-none rounded-full bg-primary"
+                        />
+                    ) : null}
+                    <span data-council-meta className={cn("flex-none whitespace-nowrap text-[11px]", tone.text)}>
+                        {row.meta}
+                    </span>
+                </>
+            )}
         </button>
+    );
+    if (!queued) {
+        return button;
+    }
+    return (
+        <div
+            onContextMenu={onContextMenu}
+            className="group relative flex items-center rounded-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
+        >
+            {button}
+            <span className="flex flex-none items-center pr-[6px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
+                <button
+                    type="button"
+                    data-council-act="remove"
+                    title="Remove from queue"
+                    aria-label={`Remove ${row.feature} from the queue`}
+                    onClick={remove}
+                    className="flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-error"
+                >
+                    <X size={12} aria-hidden />
+                </button>
+            </span>
+        </div>
     );
 }
 

@@ -12,9 +12,13 @@
 // AgentSyncApplyCommand are replaced, so the tab stays a plain shell, the recorded SetMetaCommand call holds the prompt,
 // and teardown closes the tab. Save as doc writes into the temp project, and Create initiative makes an initiative that
 // teardown deletes: both are real.
+//
+// The last two steps are the Brainstorm report (docs/superpowers/plans/2026-10-22-council-v1-room.md, Task 5): a done
+// fixture seeded as a Brainstorm, with a saved document written into the temp project first so Open the document opens it.
 
-import { existsSync, readFileSync } from "node:fs";
-import { waitFor } from "../attach.mjs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
+import { SURFACE_LABEL, waitFor } from "../attach.mjs";
 import {
     arrangeCouncilProject,
     loadCouncilFixture,
@@ -47,11 +51,12 @@ const click = (h, sel) =>
     h.ev(`(() => { const el = document.querySelector(${q(sel)}); if (el == null || el.disabled) return false; el.click(); return true; })()`);
 const until = (h, expr, ms = WAIT_MS) => waitFor((e) => h.ev(e), expr, ms);
 
-// the Summary of the council, reopened (a step that left it for the Discussion or Setup comes back this way) and drawn
-async function openSummary(h, ctx) {
-    await openCouncil(h, ctx.councilId, "summary");
+// the Summary of the council (or of another seeded from the same fixture, by id), reopened (a step that left it for the
+// Discussion or Setup comes back this way) and drawn
+async function openSummary(h, ctx, id = ctx.councilId) {
+    await openCouncil(h, id, "summary");
     // the root of an earlier council's Summary may still be up for a moment, so the council it shows is named too
-    const drawn = `document.querySelector(${q(SUMMARY)})?.dataset.councilId === ${q(ctx.councilId)} &&
+    const drawn = `document.querySelector(${q(SUMMARY)})?.dataset.councilId === ${q(id)} &&
         document.querySelectorAll(${q(`${SUMMARY} [data-council-direction]`)}).length === 4`;
     if (!(await until(h, drawn))) {
         throw new Error("the Summary did not draw its four directions");
@@ -89,6 +94,48 @@ async function callSeen(h, name, pred, ms = 5_000) {
         await sleep(200);
     }
 }
+
+// the `⋯` menu's items as `action=label`, opened and closed again (a click on its button toggles it)
+async function menuItems(h) {
+    await click(h, "[data-council-menu]");
+    await until(h, `!!document.querySelector('[role="menu"]')`);
+    const items = await h.ev(
+        `[...document.querySelectorAll('[role="menuitem"][data-council-action]')].map((b) => b.dataset.councilAction + "=" + b.innerText.trim())`
+    );
+    await click(h, "[data-council-menu]");
+    return items;
+}
+
+// the Summary of a Brainstorm council opened by id, drawn once its three directions are (not openSummary's four)
+async function openBrainstormSummary(h, id) {
+    await openCouncil(h, id, "summary");
+    const drawn = `document.querySelector(${q(SUMMARY)})?.dataset.councilId === ${q(id)} &&
+        document.querySelectorAll(${q(`${SUMMARY} [data-council-direction]`)}).length === 3`;
+    if (!(await until(h, drawn))) {
+        throw new Error("the Summary did not draw its three directions");
+    }
+}
+
+// what a Brainstorm report shows, reduced to what a step reads
+const BRAINSTORM_FACTS = `(() => {
+    const root = document.querySelector(${q(SUMMARY)});
+    const t = (el) => el?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
+    const all = (sel) => [...root.querySelectorAll(sel)];
+    return {
+        heading: t(root.querySelector("[data-council-directions-heading]")),
+        titles: all("[data-council-direction] [data-council-title]").map(t),
+        steps: all("[data-council-direction] [data-council-first-step]").map(t),
+        meta: all("[data-council-direction] [data-council-meta]").map(t),
+        keptHeading: t(root.querySelector("[data-council-kept] h2")),
+        kept: all("[data-council-kept-idea]").map((k) => ({
+            title: t(k.querySelector("[data-council-title]")),
+            meta: t(k.querySelector("[data-council-meta]")),
+        })),
+        dropped: t(root.querySelector("[data-council-dropped]")),
+        docpath: t(root.querySelector("[data-council-docpath]")),
+        docSaved: !!root.querySelector("[data-council-doc-saved]"),
+    };
+})()`;
 
 // the tabs of the workspace, to find what a click opened
 async function tabIds(h, ctx) {
@@ -302,16 +349,31 @@ export const councilSummary = {
 
         await step("Save as doc (in the ⋯ menu) writes the doc into the project and shows its path", async () => {
             await menuClick(h, "save-doc");
-            const shown = await until(h, `!!document.querySelector("[data-council-doc-saved]")`);
+            // the save keeps the path on the council (docpath), and the report's saved line shows it
+            const shown = await until(h, `!!document.querySelector("[data-council-docpath]")`);
             const saved = await h.ev(`(() => {
-                const el = document.querySelector("[data-council-doc-saved]");
+                const el = document.querySelector("[data-council-docpath]");
                 return el == null ? null : { path: el.dataset.path, text: el.innerText.replace(/\\s+/g, " ").trim() };
             })()`);
-            const path = saved?.path ?? "";
+            // a path relative to the project is the project's file
+            const asKept = saved?.path ?? "";
+            const path = asKept === "" || isAbsolute(asKept) ? asKept : join(ctx.repo, asKept);
             const inProject = slashes(path).startsWith(`${slashes(ctx.repo)}/docs/council/`);
-            const body = shown && existsSync(path) ? readFileSync(path, "utf8") : "";
-            const ok = shown && inProject && /\.md$/.test(path) && body.includes("# Council: Rail apps") && body.includes("## Matrix") && /docs\/council\/.+\.md/.test(saved.text);
-            return { ok, detail: JSON.stringify({ saved, exists: existsSync(path) }) };
+            const body = shown && path !== "" && existsSync(path) ? readFileSync(path, "utf8") : "";
+            // the report, then the whole discussion and the run facts (council.Document)
+            const sections = ["# Council: Rail apps", "## Matrix", "## The discussion", "## Run facts"].filter((s) => !body.includes(s));
+            // now that it has saved, the menu opens the document instead of saving another
+            const items = shown ? await menuItems(h) : [];
+            const ok =
+                shown &&
+                inProject &&
+                /\.md$/.test(path) &&
+                body !== "" &&
+                sections.length === 0 &&
+                /docs\/council\/.+\.md/.test(saved.text) &&
+                items.includes("open-doc=Open the document") &&
+                !items.some((i) => i.startsWith("save-doc="));
+            return { ok, detail: JSON.stringify({ saved, exists: path !== "" && existsSync(path), missing: sections, items }) };
         });
 
         await step("Create initiative (in the ⋯ menu) makes an initiative named after the feature with a chunk per direction", async () => {
@@ -448,6 +510,102 @@ export const councilSummary = {
                 prompt.includes('"Keep the last-used pinned app awake" by UX') &&
                 (await rpcCalls(h, "AgentSyncApplyCommand")).length >= 1;
             return { ok, detail: JSON.stringify({ clicked, wrote, cmd: launch?.data?.meta?.cmd, cwd: launch?.data?.meta?.["cmd:cwd"], prompt: prompt.slice(0, 160) }) };
+        });
+
+        // The done fixture as a Brainstorm: its fourth direction becomes a wild idea kept aside, the other three carry a first
+        // step, New user builds on the Skeptic's idea (direction 1), and the Skeptic's other idea (P6) is in no direction and
+        // not kept. Its document was saved into the project, so the `⋯` menu opens it instead of saving one.
+        const DOC_REL = "docs/council/2026-10-22-x.md";
+        await step("a Brainstorm report heads three ideas worth trying, each with a first step and who had and built on it, keeps the wild idea aside, counts the rest, says where it saved itself, and opens that document in Code", async () => {
+            await h.goto("agent");
+            const doc = join(ctx.repo, ...DOC_REL.split("/"));
+            mkdirSync(dirname(doc), { recursive: true });
+            writeFileSync(doc, "# Council: Rail apps\n\nA brainstorm, saved with its whole discussion.\n");
+            const id = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-brainstorm",
+                edit: (c) => {
+                    const ds = c.summary.directions;
+                    c.mode = "brainstorm";
+                    c.summary.kept = [{ ...ds[3], rank: 1 }];
+                    c.summary.directions = ds.slice(0, 3).map((d) => ({ ...d, firststep: "Try it on one screen" }));
+                    const prior = c.replies.find((r) => r.id === "r15");
+                    c.replies.push({
+                        id: "rb1",
+                        proposalid: "P5",
+                        author: "newuser",
+                        text: "and the pin could carry the hint too",
+                        round: 2,
+                        ts: prior.ts + 1000,
+                        builds: true,
+                    });
+                    c.docpath = doc;
+                },
+            });
+            await openBrainstormSummary(h, id);
+            const facts = await h.ev(BRAINSTORM_FACTS);
+            await h.shot("cdp-shots/council-summary-brainstorm.png");
+            const items = await menuItems(h);
+            await menuClick(h, "open-doc");
+            const inCode = await until(h, `document.querySelector("[data-code-path]")?.getAttribute("data-code-path") === ${q(DOC_REL)}`);
+            const surface = await h.activeSurfaceLabel();
+            // back on the Agent surface for the steps that follow
+            await h.goto("agent");
+            await openSummary(h, ctx);
+            const ok =
+                facts.heading === "Ideas worth trying, best first" &&
+                facts.titles.join("|") === TITLES.slice(0, 3).join("|") &&
+                facts.steps.length === 3 &&
+                facts.steps.every((s) => s === "First step: Try it on one screen") &&
+                facts.meta[0].startsWith("Had it: Skeptic · built on by New user") &&
+                facts.meta[1].startsWith("Had it: UX") &&
+                !facts.meta[1].includes("built on by") &&
+                facts.meta[2].startsWith("Had it: UX and RAM") &&
+                facts.keptHeading === "Wild ideas kept aside" &&
+                facts.kept.length === 1 &&
+                facts.kept[0].title === TITLES[3] &&
+                facts.kept[0].meta === "Had it: New user" &&
+                facts.dropped === "1 more idea merged or dropped" &&
+                facts.docpath === `Saved to ${DOC_REL} with the whole discussion` &&
+                !facts.docSaved &&
+                items.includes("open-doc=Open the document") &&
+                !items.some((i) => i.startsWith("save-doc=")) &&
+                inCode &&
+                surface === SURFACE_LABEL.code;
+            return { ok, detail: JSON.stringify({ facts, items, inCode, surface }) };
+        });
+
+        await step("a Brainstorm that kept nothing aside shows no kept section and offers Save as doc until it has saved itself, and a Review report shows none of the Brainstorm parts", async () => {
+            const id = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-brainstorm-nokept",
+                edit: (c) => {
+                    c.mode = "brainstorm";
+                    c.summary.kept = [];
+                    c.summary.directions = c.summary.directions.slice(0, 3);
+                },
+            });
+            await openBrainstormSummary(h, id);
+            const facts = await h.ev(BRAINSTORM_FACTS);
+            const items = await menuItems(h);
+            // a Review council of its own that has saved nothing: the council of the steps above has by now (Save as doc)
+            const unsaved = await seedCouncil(h, ctx, "done", { id: "fx-council-review-unsaved" });
+            await openSummary(h, ctx, unsaved);
+            const review = await h.ev(BRAINSTORM_FACTS);
+            const reviewItems = await menuItems(h);
+            const ok =
+                facts.heading === "Ideas worth trying, best first" &&
+                facts.keptHeading == null &&
+                facts.kept.length === 0 &&
+                facts.dropped === "2 more ideas merged or dropped" &&
+                facts.docpath == null &&
+                items.includes("save-doc=Save as doc") &&
+                !items.some((i) => i.startsWith("open-doc=")) &&
+                review.heading == null &&
+                review.steps.length === 0 &&
+                review.keptHeading == null &&
+                review.dropped == null &&
+                review.docpath == null &&
+                reviewItems.includes("save-doc=Save as doc");
+            return { ok, detail: JSON.stringify({ facts, items, review, reviewItems }) };
         });
 
         return steps;

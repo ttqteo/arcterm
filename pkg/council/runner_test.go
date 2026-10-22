@@ -4,11 +4,13 @@
 package council
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -654,6 +656,7 @@ func TestStartRefusesACouncilThatCannotRun(t *testing.T) {
 		{"a repeated expert", func(c *Council) { c.Experts[1].Id = "ux" }, "twice"},
 		{"the person as an expert", func(c *Council) { c.Experts[0].Id = YouId }, "person"},
 		{"an id in use", func(c *Council) { c.Id = "taken" }, "already exists"},
+		{"an unknown mode", func(c *Council) { c.Mode = "fast" }, "mode"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1789,6 +1792,551 @@ func TestWait(t *testing.T) {
 	}
 }
 
+// ---- one council at a time ----
+
+// councilAs is a council whose experts' ids start with prefix, in a project folder of its own: several councils can then
+// be held at their own gates at once, and each saves its document into its own folder.
+func councilAs(t *testing.T, id, prefix string) *Council {
+	t.Helper()
+	c := testCouncil(id)
+	c.Project = t.TempDir()
+	for i := range c.Experts {
+		c.Experts[i].Id = prefix + c.Experts[i].Id
+	}
+	return c
+}
+
+// r1CallsBy counts the round 1 calls made by experts whose id starts with prefix.
+func r1CallsBy(h *harness, prefix string) int {
+	n := 0
+	for _, req := range h.f.calls("r1") {
+		if strings.HasPrefix(req.Expert.Id, prefix) {
+			n++
+		}
+	}
+	return n
+}
+
+// holdFirst starts council a, held in its round 1 at the gate of its first expert.
+func (h *harness) holdFirst(a *Council) {
+	h.t.Helper()
+	gate := a.Experts[0].Id + "/r1"
+	h.f.gate(gate)
+	h.start(a)
+	h.f.entered(h.t, gate)
+}
+
+func TestQueueSecondStart(t *testing.T) {
+	h := newHarness(t)
+	h.holdFirst(councilAs(t, "a", ""))
+
+	// a Start while a council runs queues behind it, whatever the project
+	saved := h.start(councilAs(t, "b", "b-"))
+	if saved.State != StateQueued || saved.QueuedAfter != "a" || saved.Round != 0 || saved.Started != 0 || saved.Created == 0 || saved.Error != "" {
+		t.Fatalf("Start while another runs returned %s after %q round %d started %d, want queued after a", saved.State, saved.QueuedAfter, saved.Round, saved.Started)
+	}
+	if got := h.load("b"); got.State != StateQueued || got.QueuedAfter != "a" || len(got.Proposals) != 0 {
+		t.Fatalf("saved b = %s after %q with %d proposals", got.State, got.QueuedAfter, len(got.Proposals))
+	}
+
+	// so does a council saved as not run when the person presses Start council
+	if _, err := h.r.Record(councilAs(t, "n", "n-")); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := h.r.StartSaved(context.Background(), "n")
+	if err != nil {
+		t.Fatalf("StartSaved: %v", err)
+	}
+	if queued.State != StateQueued || queued.QueuedAfter != "a" || queued.Round != 0 {
+		t.Fatalf("StartSaved while another runs returned %s after %q, want queued after a", queued.State, queued.QueuedAfter)
+	}
+	if _, err := h.r.StartSaved(context.Background(), "n"); err == nil {
+		t.Error("a queued council started a second time")
+	}
+
+	// a queued council made no call, and the cockpit was told about its save
+	for _, req := range h.f.all() {
+		if strings.HasPrefix(req.Expert.Id, "b-") || strings.HasPrefix(req.Expert.Id, "n-") {
+			t.Fatalf("a queued council's expert %s was called", req.Expert.Id)
+		}
+	}
+	h.mu.Lock()
+	told := map[string]bool{}
+	for _, c := range h.seen {
+		if c.State == StateQueued {
+			told[c.Id] = true
+		}
+	}
+	h.mu.Unlock()
+	if !told["b"] || !told["n"] {
+		t.Errorf("OnChange was told of queued saves for %v, want b and n", told)
+	}
+
+	// first come, first served: b before n
+	h.f.release("ux/r1")
+	for _, id := range []string{"a", "b", "n"} {
+		if c := h.wait(id); c.State != StateDone || c.QueuedAfter != "" {
+			t.Fatalf("%s ended %s (%s) after %q, want done", id, c.State, c.Error, c.QueuedAfter)
+		}
+	}
+	first := map[string]int{}
+	for i, req := range h.f.all() {
+		for _, prefix := range []string{"b-", "n-"} {
+			if _, seen := first[prefix]; !seen && strings.HasPrefix(req.Expert.Id, prefix) {
+				first[prefix] = i
+			}
+		}
+	}
+	if first["b-"] > first["n-"] {
+		t.Errorf("n ran before b, which was queued first (first calls at %v)", first)
+	}
+}
+
+func TestQueueTwoStartsAtOnce(t *testing.T) {
+	for i := range 5 {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			h := newHarness(t)
+			h.f.gate("x-ux/r1")
+			h.f.gate("y-ux/r1")
+			start := make(chan struct{})
+			results := make([]*Council, 2)
+			errs := make([]error, 2)
+			var wg sync.WaitGroup
+			for i, c := range []*Council{councilAs(t, "x", "x-"), councilAs(t, "y", "y-")} {
+				wg.Go(func() {
+					<-start
+					results[i], errs[i] = h.r.Start(context.Background(), c)
+				})
+			}
+			close(start)
+			wg.Wait()
+			for _, err := range errs {
+				if err != nil {
+					t.Fatalf("Start: %v", err)
+				}
+			}
+			states := []CouncilState{results[0].State, results[1].State}
+			slices.Sort(states)
+			if !slices.Equal(states, []CouncilState{StateQueued, StateRunning}) {
+				t.Fatalf("two starts at once = %v, want one running and one queued", states)
+			}
+			running, waiting := results[0], results[1]
+			if running.State != StateRunning {
+				running, waiting = waiting, running
+			}
+			if waiting.QueuedAfter != running.Id {
+				t.Errorf("the queued council waits on %q, want %q", waiting.QueuedAfter, running.Id)
+			}
+			prefix := map[string]string{"x": "x-", "y": "y-"}
+			h.f.entered(t, prefix[running.Id]+"ux/r1")
+			if n := r1CallsBy(h, prefix[waiting.Id]); n != 0 {
+				t.Errorf("the queued council made %d calls while the other ran", n)
+			}
+			h.f.release(prefix[running.Id] + "ux/r1")
+			h.f.entered(t, prefix[waiting.Id]+"ux/r1") // the queued one starts when the first ends
+			h.f.release(prefix[waiting.Id] + "ux/r1")
+			for _, id := range []string{running.Id, waiting.Id} {
+				if c := h.wait(id); c.State != StateDone {
+					t.Errorf("%s ended %s (%s), want done: neither start may be lost", id, c.State, c.Error)
+				}
+			}
+			for _, p := range []string{"x-", "y-"} {
+				if n := r1CallsBy(h, p); n != 4 {
+					t.Errorf("%s council made %d round 1 calls, want 4: it ran once", p, n)
+				}
+			}
+		})
+	}
+}
+
+func TestQueueNextStartsOnce(t *testing.T) {
+	release := func(h *harness) { h.f.release("ux/r1") }
+	for name, tc := range map[string]struct {
+		setup func(h *harness, a *Council)
+		end   func(h *harness)
+		want  CouncilState
+	}{
+		"done": {nil, release, StateDone},
+		"failed": {func(h *harness, a *Council) {
+			for _, id := range panelIds() {
+				h.f.setFail(id+"/r1", errors.New("no network"))
+			}
+		}, release, StateFailed},
+		"awaiting-you": {func(h *harness, a *Council) { a.PauseAfterRound1 = true }, release, StateAwaiting},
+		"stopped":      {nil, func(h *harness) { h.r.Stop("a") }, StateStopped},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			a := councilAs(t, "a", "")
+			if tc.setup != nil {
+				tc.setup(h, a)
+			}
+			h.holdFirst(a)
+			h.f.gate("b-ux/r1")
+			h.start(councilAs(t, "b", "b-"))
+			h.start(councilAs(t, "c", "c-"))
+			for _, id := range []string{"b", "c"} {
+				if got := h.load(id); got.State != StateQueued || got.QueuedAfter != "a" {
+					t.Fatalf("%s is %s after %q, want queued after a", id, got.State, got.QueuedAfter)
+				}
+			}
+
+			tc.end(h)
+			if got := h.wait("a"); got.State != tc.want {
+				t.Fatalf("a ended %s (%s), want %s", got.State, got.Error, tc.want)
+			}
+			// the oldest queued council starts, and only it
+			h.f.entered(t, "b-ux/r1")
+			waitFor(t, "b's round 1 calls", func() bool { return r1CallsBy(h, "b-") == 4 })
+			if got := h.load("b"); got.State != StateRunning || got.QueuedAfter != "" || got.Round != 1 || got.Started == 0 {
+				t.Errorf("b = %s after %q round %d, want running with no queue left", got.State, got.QueuedAfter, got.Round)
+			}
+			if got := h.load("c"); got.State != StateQueued || got.QueuedAfter != "b" {
+				t.Errorf("c = %s after %q, want it queued behind b, the council that runs now", got.State, got.QueuedAfter)
+			}
+			if n := r1CallsBy(h, "c-"); n != 0 {
+				t.Errorf("c made %d calls while b ran", n)
+			}
+
+			h.f.release("b-ux/r1")
+			if got := h.wait("b"); got.State != StateDone || got.DocPath == "" {
+				t.Errorf("b ended %s with the document at %q, want done and saved", got.State, got.DocPath)
+			}
+			if got := h.wait("c"); got.State != StateDone {
+				t.Errorf("c ended %s (%s), want done", got.State, got.Error)
+			}
+			for _, p := range []string{"b-", "c-"} {
+				if n := r1CallsBy(h, p); n != 4 {
+					t.Errorf("%s council made %d round 1 calls, want 4: it started once", p, n)
+				}
+			}
+		})
+	}
+}
+
+func TestQueueStopRemoves(t *testing.T) {
+	h := newHarness(t)
+	h.holdFirst(councilAs(t, "a", ""))
+	b, c := councilAs(t, "b", "b-"), councilAs(t, "c", "c-")
+	h.start(b)
+	h.start(c)
+
+	got, err := h.r.Stop("b")
+	if err != nil || got.State != StateStopped || got.QueuedAfter != "" || got.Error != "" {
+		t.Fatalf("Stop of a queued council = %+v, %v, want stopped and off the queue", got, err)
+	}
+	if w := h.wait("b"); w.State != StateStopped {
+		t.Errorf("Wait on the removed council = %s, want it stopped at once", w.State)
+	}
+	if again, err := h.r.Stop("b"); err != nil || again.State != StateStopped {
+		t.Errorf("a second Stop = %v, %v", again, err)
+	}
+
+	// the council behind it is not held up, and the removed one never runs and writes no document
+	h.f.release("ux/r1")
+	if got := h.wait("c"); got.State != StateDone {
+		t.Fatalf("c ended %s (%s), want done", got.State, got.Error)
+	}
+	if got := h.load("b"); got.State != StateStopped || got.Round != 0 || got.DocPath != "" {
+		t.Errorf("b = %s round %d doc %q after the queue ran, want it still stopped and never run", got.State, got.Round, got.DocPath)
+	}
+	if n := r1CallsBy(h, "b-"); n != 0 {
+		t.Errorf("the removed council made %d calls", n)
+	}
+	if _, err := os.Stat(filepath.Join(b.Project, "docs")); err == nil {
+		t.Error("a council that never ran saved a document")
+	}
+	h.r.StartNext()
+	if n := r1CallsBy(h, "b-"); n != 0 {
+		t.Errorf("StartNext started the removed council (%d calls)", n)
+	}
+}
+
+func TestQueuedCouncilRefusesWhatNeedsARun(t *testing.T) {
+	h := newHarness(t)
+	h.holdFirst(councilAs(t, "a", ""))
+	h.start(councilAs(t, "b", "b-"))
+	for name, err := range map[string]error{
+		"Reply":      second(h.r.Reply("b", "", "", "Anyone?", false)),
+		"Continue":   second(h.r.Continue("b", nil, "")),
+		"Summarize":  second(h.r.Summarize("b")),
+		"Retry":      second(h.r.Retry("b", "b-ux")),
+		"StartSaved": second(h.r.StartSaved(context.Background(), "b")),
+	} {
+		if err == nil {
+			t.Errorf("%s on a queued council worked", name)
+		}
+	}
+	if got := h.load("b"); got.State != StateQueued || len(got.Replies) != 0 {
+		t.Errorf("b = %s with %d replies after the refusals, want it queued and untouched", got.State, len(got.Replies))
+	}
+	h.f.release("ux/r1")
+	h.wait("b")
+}
+
+func TestQueuePersonActsNotQueued(t *testing.T) {
+	h := newHarness(t)
+	h.holdFirst(councilAs(t, "a", "")) // a runs the whole time
+
+	fixture := func(id string, state CouncilState, round int) *Council {
+		c := fixtureCouncil(id, state, round)
+		c.Project = t.TempDir()
+		return c
+	}
+	paused := fixture("paused", StateAwaiting, 1)
+	paused.PauseAfterRound1 = true
+	failed := fixture("failed", StateDone, 3)
+	failed.Failed = map[string]CouncilFailure{"ram": {Round: 2, Error: "timed out"}}
+	for _, c := range []*Council{paused, fixture("done", StateDone, 3), failed, fixture("summed", StateDone, 3)} {
+		h.save(c)
+	}
+
+	for name, act := range map[string]struct {
+		id string
+		do func() (*Council, error)
+	}{
+		"Continue":  {"paused", func() (*Council, error) { return h.r.Continue("paused", nil, "") }},
+		"Reply":     {"done", func() (*Council, error) { return h.r.Reply("done", "P1", "", "And on a Mac?", false) }},
+		"Retry":     {"failed", func() (*Council, error) { return h.r.Retry("failed", "ram") }},
+		"Summarize": {"summed", func() (*Council, error) { return h.r.Summarize("summed") }},
+	} {
+		saved, err := act.do()
+		if err != nil {
+			t.Fatalf("%s while another council runs: %v", name, err)
+		}
+		if saved.State != StateRunning || saved.QueuedAfter != "" {
+			t.Errorf("%s returned %s after %q, want it running at once", name, saved.State, saved.QueuedAfter)
+		}
+		if got := h.wait(act.id); got.State != StateDone && got.State != StateAwaiting {
+			t.Errorf("%s ended %s (%s), want it to finish while a is still running", name, got.State, got.Error)
+		}
+		if got := h.load("a"); got.State != StateRunning {
+			t.Fatalf("a is %s after %s, want it still running", got.State, name)
+		}
+	}
+	if q := queuedCouncils(); len(q) != 0 {
+		t.Errorf("the person's own actions queued %d councils", len(q))
+	}
+	h.f.release("ux/r1")
+	h.wait("a")
+}
+
+// TestQueueOldCouncils: councils saved before modes and the queue existed (no mode, no queue fields, a state of their
+// own) read as Review, open as before, and are never queued or started by the queue.
+func TestQueueOldCouncils(t *testing.T) {
+	h := newHarness(t)
+	old := func(id, state string) {
+		body := fmt.Sprintf(`{"id":%q,"project":%q,"feature":"Idle sleep","state":%q,"round":3,"experts":[
+			{"id":"ux","name":"UX","brief":"b","model":"sonnet"},{"id":"lead","name":"Lead","brief":"b","model":"opus","coordinator":true}],
+			"proposals":[{"id":"P1","author":"ux","title":"T","argument":"A","ts":1}],"tokens":0,"calls":0,"created":1,"updated":1}`,
+			id, t.TempDir(), state)
+		if err := os.MkdirAll(Dir(), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(Dir(), id+".json"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, state := range []string{"done", "not-run", "stopped", "failed", "awaiting-you"} {
+		old(strings.ReplaceAll(state, "-", ""), state)
+	}
+	for id, state := range map[string]CouncilState{"done": StateDone, "notrun": StateNotRun, "stopped": StateStopped, "failed": StateFailed, "awaitingyou": StateAwaiting} {
+		c := h.load(id)
+		if c.State != state || ModeOf(c) != ModeReview || c.QueuedAfter != "" || c.DocPath != "" {
+			t.Errorf("%s = %s mode %q after %q doc %q, want it read as it was, as a review", id, c.State, ModeOf(c), c.QueuedAfter, c.DocPath)
+		}
+	}
+
+	// the queue and a restart leave them alone
+	h.r.MarkStale()
+	h.r.StartNext()
+	if n := len(h.f.all()); n != 0 {
+		t.Errorf("StartNext started an old council (%d calls)", n)
+	}
+	for id, state := range map[string]CouncilState{"done": StateDone, "notrun": StateNotRun, "stopped": StateStopped, "failed": StateFailed, "awaitingyou": StateAwaiting} {
+		if c := h.load(id); c.State != state {
+			t.Errorf("%s = %s after StartNext, want %s", id, c.State, state)
+		}
+	}
+	if q := queuedCouncils(); len(q) != 0 {
+		t.Errorf("%d old councils read as queued", len(q))
+	}
+
+	// a council with no mode starts at once on a free runner, and an old done one takes a follow-up while another runs
+	started := h.start(councilAs(t, "new", "n-"))
+	if started.State != StateRunning || started.QueuedAfter != "" || ModeOf(started) != ModeReview {
+		t.Errorf("a council with no mode on a free runner = %s after %q mode %q", started.State, started.QueuedAfter, ModeOf(started))
+	}
+	h.wait("new")
+	h.f.gate("ux/ans")
+	if saved, err := h.r.Reply("done", "P1", "", "Still true?", false); err != nil || saved.State != StateRunning {
+		t.Fatalf("a follow-up on an old done council = %+v, %v", saved, err)
+	}
+	h.f.entered(t, "ux/ans")
+	h.f.release("ux/ans")
+	h.wait("done")
+}
+
+func TestQueueStartNextAfterRestart(t *testing.T) {
+	h := newHarness(t)
+	queuedBefore := func(id, prefix string, created int64) {
+		c := councilAs(t, id, prefix)
+		c.State, c.Round, c.Created, c.QueuedAfter = StateQueued, 0, created, "gone"
+		h.save(c)
+	}
+	queuedBefore("q2", "q2-", 2) // saved first, but asked later: the oldest by Created starts
+	queuedBefore("q1", "q1-", 1)
+	h.save(fixtureCouncil("stale", StateRunning, 2))
+
+	h.r.MarkStale()
+	for id, state := range map[string]CouncilState{"q1": StateQueued, "q2": StateQueued, "stale": StateStopped} {
+		if got := h.load(id); got.State != state {
+			t.Errorf("%s = %s after MarkStale, want %s", id, got.State, state)
+		}
+	}
+	if n := len(h.f.all()); n != 0 {
+		t.Fatalf("MarkStale made %d calls", n)
+	}
+
+	h.f.gate("q1-ux/r1")
+	h.r.StartNext()
+	h.f.entered(t, "q1-ux/r1")
+	if got := h.load("q1"); got.State != StateRunning || got.QueuedAfter != "" {
+		t.Errorf("q1 = %s after %q, want the oldest running", got.State, got.QueuedAfter)
+	}
+	if got := h.load("q2"); got.State != StateQueued || got.QueuedAfter != "q1" {
+		t.Errorf("q2 = %s after %q, want it queued behind q1", got.State, got.QueuedAfter)
+	}
+	h.r.StartNext() // once is enough: a second call while q1 runs starts nobody
+	if n := r1CallsBy(h, "q2-"); n != 0 {
+		t.Errorf("a second StartNext started q2 (%d calls)", n)
+	}
+	h.f.release("q1-ux/r1")
+	for _, id := range []string{"q1", "q2"} {
+		if got := h.wait(id); got.State != StateDone {
+			t.Errorf("%s ended %s (%s), want done", id, got.State, got.Error)
+		}
+	}
+}
+
+// ---- the saved document ----
+
+// syncBuf is a log sink the council goroutines can write to while the test reads it.
+type syncBuf struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
+func TestDocPathSavedOnEnd(t *testing.T) {
+	useDocDay(t)
+	h := newHarness(t)
+
+	// done: the document lands under the project's docs/council and its path is kept on the council
+	a := councilAs(t, "a", "")
+	c := h.run(a)
+	want := filepath.Join(a.Project, "docs", "council", "2026-10-21-idle-sleep-for-services.md")
+	if c.State != StateDone || c.DocPath != want {
+		t.Fatalf("done council: %s with the document at %q, want %q", c.State, c.DocPath, want)
+	}
+	body, err := os.ReadFile(want)
+	if err != nil {
+		t.Fatalf("the document was not written: %v", err)
+	}
+	for _, w := range []string{"# Council: Idle sleep for services", "The panel prefers showing the state.", "## The discussion", "proposes · P1 · Title from ", "## Run facts", "- Ended: done"} {
+		if !strings.Contains(string(body), w) {
+			t.Errorf("the document lacks %q\n%s", w, body)
+		}
+	}
+	h.mu.Lock()
+	lastSeen := h.seen[len(h.seen)-1]
+	h.mu.Unlock()
+	if lastSeen.DocPath != want {
+		t.Errorf("the last OnChange carried DocPath %q, want %q: the cockpit hears of the document", lastSeen.DocPath, want)
+	}
+
+	// a follow-up on the done council rewrites the same file, with the new reply in it
+	if _, err := h.r.Reply("a", "P1", "", "What about the Mac?", false); err != nil {
+		t.Fatal(err)
+	}
+	c = h.wait("a")
+	body, _ = os.ReadFile(want)
+	files, _ := os.ReadDir(filepath.Dir(want))
+	if c.DocPath != want || len(files) != 1 || !strings.Contains(string(body), "What about the Mac?") {
+		t.Errorf("after a follow-up: document %q, %d files, new reply in it %v; want the same file rewritten", c.DocPath, len(files), strings.Contains(string(body), "What about the Mac?"))
+	}
+
+	// stopped: what the finished rounds hold is saved too
+	b := councilAs(t, "b", "b-")
+	h.holdFirst(b)
+	if got, err := h.r.Stop("b"); err != nil || got.State != StateStopped || got.DocPath == "" {
+		t.Fatalf("Stop = %+v, %v, want stopped with a document", got, err)
+	}
+	if body, err := os.ReadFile(h.load("b").DocPath); err != nil || !strings.Contains(string(body), "- Ended: stopped") {
+		t.Errorf("the stopped council's document = %q, %v", body, err)
+	}
+	// a council that ended paused is stopped by Stop with no run behind it: it saves its document there
+	p := councilAs(t, "p", "p-")
+	p.PauseAfterRound1 = true
+	h.run(p)
+	if got, err := h.r.Stop("p"); err != nil || got.State != StateStopped || got.DocPath == "" {
+		t.Errorf("Stop at the pause = %+v, %v, want stopped with a document", got, err)
+	}
+
+	// failed and paused councils have no document: only done and stopped save
+	f := councilAs(t, "f", "f-")
+	for _, e := range panelOf(f) {
+		h.f.setFail(e.Id+"/r1", errors.New("no network"))
+	}
+	if got := h.run(f); got.State != StateFailed || got.DocPath != "" {
+		t.Errorf("failed council: %s with a document at %q", got.State, got.DocPath)
+	}
+	if _, err := os.Stat(filepath.Join(f.Project, "docs")); err == nil {
+		t.Error("a failed council saved a document")
+	}
+}
+
+func TestDocPathWriteErrorStillEndsTheCouncil(t *testing.T) {
+	h := newHarness(t)
+	logs := &syncBuf{}
+	log.SetOutput(logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	// docs is a file, so docs/council cannot be made
+	a := councilAs(t, "a", "")
+	if err := os.WriteFile(filepath.Join(a.Project, "docs"), []byte("not a folder"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := h.run(a)
+	if c.State != StateDone || c.DocPath != "" || c.Summary == nil {
+		t.Errorf("council = %s with the document at %q, want it done with no document", c.State, c.DocPath)
+	}
+	if !strings.Contains(logs.String(), "document not saved") {
+		t.Errorf("the failed write was not logged: %q", logs.String())
+	}
+
+	// a project folder that is not there is not made for the document
+	gone := councilAs(t, "g", "g-")
+	gone.Project = filepath.Join(t.TempDir(), "gone")
+	if got := h.run(gone); got.State != StateDone || got.DocPath != "" {
+		t.Errorf("council with no project folder = %s, document %q", got.State, got.DocPath)
+	}
+	if _, err := os.Stat(gone.Project); err == nil {
+		t.Error("the project folder was created to hold the document")
+	}
+}
+
 // ---- the suggestion ----
 
 func TestSuggest(t *testing.T) {
@@ -1851,6 +2399,299 @@ func TestSuggest(t *testing.T) {
 	}
 	if _, err := h.r.Suggest(context.Background(), "", "Idle sleep", "", nil); err == nil {
 		t.Errorf("Suggest with no project worked")
+	}
+}
+
+func TestSuggestMode(t *testing.T) {
+	h := newHarness(t)
+	project := t.TempDir()
+	suggest := func(raw map[string]any) CouncilSuggestion {
+		t.Helper()
+		raw["files"], raw["roles"] = []string{}, []any{}
+		h.f.setText("suggest/suggest", fence(mustJSON(raw)))
+		got, err := h.r.Suggest(context.Background(), project, "Council is hard for a newcomer", "How do we fix it?", nil)
+		if err != nil {
+			t.Fatalf("Suggest: %v", err)
+		}
+		return got
+	}
+
+	for name, tc := range map[string]struct {
+		raw     map[string]any
+		mode    string
+		modeWhy string
+	}{
+		"a brainstorm":          {map[string]any{"mode": "brainstorm", "modewhy": " a goal with no answer yet "}, ModeBrainstorm, "a goal with no answer yet"},
+		"a review":              {map[string]any{"mode": "review", "modewhy": "a spec to judge"}, ModeReview, "a spec to judge"},
+		"another case":          {map[string]any{"mode": " Brainstorm ", "modewhy": "x"}, ModeBrainstorm, "x"},
+		"a mode with no reason": {map[string]any{"mode": "brainstorm"}, ModeBrainstorm, ""},
+		"no mode":               {map[string]any{"group": "ui-feature"}, "", ""},
+		"an unknown mode":       {map[string]any{"mode": "fast", "modewhy": "because"}, "", ""},
+		"a reason with no mode": {map[string]any{"modewhy": "because"}, "", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := suggest(tc.raw)
+			if got.Mode != tc.mode || got.ModeWhy != tc.modeWhy {
+				t.Errorf("mode %q why %q, want %q and %q", got.Mode, got.ModeWhy, tc.mode, tc.modeWhy)
+			}
+		})
+	}
+
+	req := h.f.calls("suggest")[0]
+	mustContain(t, "suggest prompt", req.Prompt, `"mode"`, `"modewhy"`, ModeBrainstorm, ModeReview, "a problem or a goal", "a thing to judge", "product-ideas: Product ideas")
+}
+
+// ---- Brainstorm ----
+
+func brainstormTestCouncil(id string) *Council {
+	c := testCouncil(id)
+	c.Mode, c.ModeWhy = ModeBrainstorm, "a goal with no answer yet"
+	c.Feature = "Make Council easy for a newcomer"
+	return c
+}
+
+var wildHeadRe = regexp.MustCompile(`(?m)^### (P\d+) · .* \(wild idea\)$`)
+
+// brainstormRound1 gives an idea with no evidence, and flags it wild when the expert is ram.
+func brainstormRound1(req CallReq) string {
+	idea := map[string]any{"title": "Idea from " + req.Expert.Id, "argument": "Argument from " + req.Expert.Id}
+	if req.Expert.Id == "ram" {
+		idea["wild"] = true
+	}
+	return fence(mustJSON(map[string]any{"overview": "x", "proposals": []map[string]any{idea}}))
+}
+
+// brainstormRound2 builds on the first idea it reviews, accepts the others, and picks all it reviewed.
+func brainstormRound2(req CallReq) string {
+	ids := idsIn(proposalHeadRe, sectionText(req.Prompt, "## Proposals to review"))
+	stances := []map[string]any{}
+	for i, pid := range ids {
+		s := map[string]any{"proposalid": pid, "stance": "accept"}
+		if i == 0 {
+			s["builds"], s["reason"] = true, "Build from "+req.Expert.Id+" on "+pid
+		}
+		stances = append(stances, s)
+	}
+	return fence(mustJSON(map[string]any{"stances": stances, "picks": ids}))
+}
+
+func TestBrainstormRunKeepsKept(t *testing.T) {
+	h := newHarness(t)
+	for _, id := range panelIds() {
+		h.f.setFn(id+"/r1", brainstormRound1)
+		h.f.setFn(id+"/r2", brainstormRound2)
+	}
+	h.f.setFn("lead/r3", func(req CallReq) string {
+		wild := idsIn(wildHeadRe, req.Prompt)
+		dirs := []map[string]any{}
+		for i, title := range []string{"Idea one", "Idea two", "Idea three", "Idea four"} {
+			dirs = append(dirs, map[string]any{
+				"rank": i + 1, "title": title, "reasoning": "Why " + title + ".", "firststep": "Start " + title,
+				"from": []string{"P1"}, "stances": map[string]string{"ux": "accept"},
+			})
+		}
+		return fence(mustJSON(map[string]any{
+			"text": "Four ideas.", "answer": "Start with the tour.", "directions": dirs,
+			"kept":     []map[string]any{{"title": "A mascot", "reasoning": "Odd but kind.", "from": append(wild, "P99")}},
+			"outcomes": map[string]string{"P1": "Direction 1", wild[0]: "Kept aside"},
+			"weak":     []map[string]string{{"ref": "P1", "note": "no evidence"}},
+		}))
+	})
+
+	c := h.run(brainstormTestCouncil("b1"))
+	if c.State != StateDone || c.Round != 3 || c.Error != "" || c.Summary == nil {
+		t.Fatalf("final = %s round %d error %q summary %v, want done with a summary", c.State, c.Round, c.Error, c.Summary)
+	}
+	if c.Mode != ModeBrainstorm || c.ModeWhy != "a goal with no answer yet" {
+		t.Errorf("mode %q why %q, want both kept", c.Mode, c.ModeWhy)
+	}
+
+	// round 1: ram's idea is wild, and no idea carries the "cites no evidence" chip a Review gives
+	wild := 0
+	for _, p := range c.Proposals {
+		if p.Wild {
+			wild++
+			if p.Author != "ram" {
+				t.Errorf("%s by %s is wild, want only ram's", p.Id, p.Author)
+			}
+		}
+		if len(p.Evidence) != 0 {
+			t.Errorf("%s evidence = %+v, want none: a Brainstorm asks for none", p.Id, p.Evidence)
+		}
+	}
+	if wild != 1 || len(c.Proposals) != 4 {
+		t.Errorf("%d wild of %d ideas, want 1 of 4", wild, len(c.Proposals))
+	}
+
+	// round 2: the first idea each expert reviewed is built on, the rest are plain agreements
+	builds, accepts := 0, 0
+	for _, r := range c.Replies {
+		switch {
+		case r.Builds:
+			builds++
+			if !strings.HasPrefix(r.Text, "Build from "+r.Author) || r.Stance != StanceAccept || r.Round != 2 {
+				t.Errorf("build %+v, want its text, an accept in round 2", r)
+			}
+		case r.Stance == StanceAccept:
+			accepts++
+			if r.Text != "" {
+				t.Errorf("accept %+v, want a bare reaction", r)
+			}
+		}
+	}
+	if builds != 4 || accepts != 8 {
+		t.Errorf("%d builds and %d accepts, want 4 and 8", builds, accepts)
+	}
+	for _, id := range panelIds() {
+		if len(c.Picks[id]) != 3 {
+			t.Errorf("Picks[%s] = %v, want 3", id, c.Picks[id])
+		}
+	}
+
+	// round 3: three ideas worth trying (the fourth is cut), each with a first step; the wild idea is kept aside
+	s := c.Summary
+	if len(s.Directions) != 3 || s.Directions[0].Title != "Idea one" || s.Directions[0].FirstStep != "Start Idea one" || s.Directions[2].FirstStep != "Start Idea three" {
+		t.Errorf("directions = %+v, want the first three with their first steps", s.Directions)
+	}
+	var wildId string
+	for _, p := range c.Proposals {
+		if p.Wild {
+			wildId = p.Id
+		}
+	}
+	if len(s.Kept) != 1 || s.Kept[0].Title != "A mascot" || !slices.Equal(s.Kept[0].From, []string{wildId}) {
+		t.Errorf("kept = %+v, want the mascot from %s only (P99 is not on the council)", s.Kept, wildId)
+	}
+	if s.Outcomes[wildId] != "Kept aside" || s.Answer != "Start with the tour." {
+		t.Errorf("outcomes %v answer %q", s.Outcomes, s.Answer)
+	}
+	for _, p := range c.Proposals {
+		if len(p.Evidence) != 0 {
+			t.Errorf("%s evidence = %+v after the synthesis, want none: a Brainstorm marks nothing weak", p.Id, p.Evidence)
+		}
+	}
+
+	// the prompts the experts got were the Brainstorm's
+	for _, kind := range []string{"r1", "r2", "r3"} {
+		reqs := h.f.calls(kind)
+		if len(reqs) == 0 {
+			t.Fatalf("no %s calls", kind)
+		}
+		for _, req := range reqs {
+			mustContain(t, kind+" prompt", req.Prompt, "brainstorms ideas")
+			mustNotContain(t, kind+" prompt", req.Prompt, evidenceRule)
+		}
+	}
+}
+
+func TestBrainstormRunLeavesNoKeptSectionWhenThereAreNoWildIdeas(t *testing.T) {
+	h := newHarness(t)
+	h.f.setFn("lead/r3", func(CallReq) string {
+		return fence(`{"text": "One idea.", "directions": [{"rank": 1, "title": "Idea one", "reasoning": "Why.", "firststep": "Start", "from": ["P1"]}], "kept": [], "outcomes": {}}`)
+	})
+	c := h.run(brainstormTestCouncil("b2"))
+	if c.Summary == nil || len(c.Summary.Kept) != 0 || len(c.Summary.Directions) != 1 {
+		t.Fatalf("summary = %+v, want one idea and nothing kept", c.Summary)
+	}
+	raw, err := json.Marshal(c.Summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"kept"`) {
+		t.Errorf("summary JSON = %s, want no kept field", raw)
+	}
+}
+
+func TestAReviewKeepsNothingOfABrainstorm(t *testing.T) {
+	h := newHarness(t)
+	// a Review model that wanders into Brainstorm words: the flags and fields are dropped, the weak chip stays
+	h.f.setFn("ux/r1", func(CallReq) string {
+		return fence(`{"overview": "x", "proposals": [{"title": "Idea from ux", "argument": "a", "wild": true}]}`)
+	})
+	h.f.setFn("ram/r2", func(req CallReq) string {
+		ids := idsIn(proposalHeadRe, sectionText(req.Prompt, "## Proposals to review"))
+		return fence(mustJSON(map[string]any{"stances": []map[string]any{{"proposalid": ids[0], "stance": "accept", "builds": true, "reason": "Build."}}}))
+	})
+	h.f.setFn("lead/r3", func(CallReq) string {
+		return fence(`{"text": "x", "directions": [{"rank": 1, "title": "One", "firststep": "Start", "from": ["P1"]}], "kept": [{"title": "A mascot"}], "outcomes": {}}`)
+	})
+	c := h.run(testCouncil("r1"))
+	ux := repliesBy(c, "ram")
+	if len(ux) != 1 || ux[0].Builds {
+		t.Errorf("ram's replies = %+v, want one that does not build", ux)
+	}
+	for _, p := range c.Proposals {
+		if p.Wild {
+			t.Errorf("%s is wild in a Review", p.Id)
+		}
+		if p.Author == "ux" && (len(p.Evidence) != 1 || !p.Evidence[0].Weak || p.Evidence[0].Note != noEvidenceNote) {
+			t.Errorf("%s evidence = %+v, want the weak chip a Review gives", p.Id, p.Evidence)
+		}
+	}
+	if c.Summary == nil || len(c.Summary.Kept) != 0 || c.Summary.Directions[0].FirstStep != "" {
+		t.Errorf("summary = %+v, want no kept ideas and no first step in a Review", c.Summary)
+	}
+}
+
+func TestApplyRound2Builds(t *testing.T) {
+	brainstorm := picksCouncil()
+	brainstorm.Mode = ModeBrainstorm
+	review := picksCouncil()
+	res := Round2Result{Stances: []Round2Stance{
+		{ProposalId: "P2", Stance: StanceAccept, Builds: true, Reason: "Add a badge."},
+		{ProposalId: "P3", Stance: StanceAccept, Builds: true},
+		{ProposalId: "P6", Stance: StanceAccept},
+	}}
+	applyRound2(brainstorm, brainstorm.Experts[0], res, 5)
+	if len(brainstorm.Replies) != 3 {
+		t.Fatalf("replies = %+v, want three", brainstorm.Replies)
+	}
+	if r := brainstorm.Replies[0]; !r.Builds || r.Text != "Add a badge." || r.Stance != StanceAccept {
+		t.Errorf("reply 0 = %+v, want a build with its text", r)
+	}
+	if r := brainstorm.Replies[1]; r.Builds || r.Text != "" {
+		t.Errorf("reply 1 = %+v, want a build with no words to read as a plain accept", r)
+	}
+	if r := brainstorm.Replies[2]; r.Builds {
+		t.Errorf("reply 2 = %+v, want a plain accept", r)
+	}
+
+	applyRound2(review, review.Experts[0], res, 5)
+	for _, r := range review.Replies {
+		if r.Builds {
+			t.Errorf("reply %+v builds in a Review", r)
+		}
+	}
+}
+
+func TestCleanSummaryForABrainstorm(t *testing.T) {
+	c := fixtureCouncil("c1", StateDone, 3) // P1 by ux, P2 by ram
+	c.Mode = ModeBrainstorm
+	dir := func(title string) CouncilDirection {
+		return CouncilDirection{Title: title, From: []string{"P1"}, FirstStep: "Start " + title}
+	}
+	in := CouncilSummary{
+		Directions: []CouncilDirection{dir("a"), dir("b"), dir("c"), dir("d")},
+		Kept: []CouncilDirection{
+			{Title: "wild", From: []string{"P2", "P2", "P9"}, Stances: map[string]CouncilStance{"ux": StanceAccept, "ghost": StanceAccept}},
+			{Title: "gone", From: []string{"P9"}},
+		},
+	}
+	got := cleanSummary(c, in)
+	if len(got.Directions) != maxIdeas || got.Directions[2].Title != "c" {
+		t.Errorf("directions = %+v, want the first %d", got.Directions, maxIdeas)
+	}
+	if len(got.Kept) != 2 || !slices.Equal(got.Kept[0].From, []string{"P2"}) || len(got.Kept[1].From) != 0 {
+		t.Errorf("kept = %+v, want the known ids once; a kept idea that cites nothing real stays (it is the model's idea)", got.Kept)
+	}
+	if want := map[string]CouncilStance{"ux": StanceAccept}; !reflect.DeepEqual(got.Kept[0].Stances, want) {
+		t.Errorf("kept stances = %v, want %v", got.Kept[0].Stances, want)
+	}
+
+	c.Mode = ModeReview
+	got = cleanSummary(c, in)
+	if len(got.Directions) != 4 || len(got.Kept) != 0 || got.Directions[0].FirstStep != "" {
+		t.Errorf("review summary = %+v, want no cap, no kept ideas and no first steps", got)
 	}
 }
 

@@ -55,12 +55,26 @@ does not, say what you saw and it becomes a bug row under Actionable.
   show as a reaction under the idea, never as a reply row (reply counts leave it out); and the done toast should arrive
   while another surface is showing, with an unread dot on the council's row that clears when you open it. Spec
   `docs/superpowers/specs/2026-10-22-council-agent-team-design.md` (Phases, Ahead of Phase 0b).
-- [ ] (arcterm) Council from an agent: in a claude session, let it offer a Council review (the `arc:council` skill) and
-  pick it. `wsh council start` shows the Token burn gate card with the estimate; allow it and the council runs, and
+- [ ] (arcterm) Council from an agent: in a claude session, let it start a council (the `arc:council` skill).
+  `wsh council start` shows the Token burn gate card with the estimate; allow it and the council runs, and
   `wsh council wait` prints the Summary and Matrix back into the session, with the directions in that session's Ideas.
   Run it again and refuse the card: the agent reports `Not run: …` without retrying, the project has a `Not run`
   council row, and its Discussion's Start council (with the estimate) runs it. `cmd/wsh/cmd/wshcmd-council.go`,
   `skills/council/SKILL.md`, `pkg/tokengate`.
+- [ ] (arcterm) Council started by the agent itself: in a claude session, weigh two options with the agent until
+  neither wins. It should start a council without asking and say so in one line (mode, group, estimate; `Queued after …`
+  when another council runs). Then say "ask a council about this": a council starts at once, and when it ends the agent
+  sums the report up in the chat and carries on. A refused Token burn card must come back as `Not run: …`, never
+  retried. `skills/council/SKILL.md`, `cmd/wsh/cmd/wshcmd-council.go`; spec
+  `docs/superpowers/specs/2026-10-22-council-agent-team-design.md` ("Starting a council").
+- [ ] (arcterm) Council room, the live parts: run a real Brainstorm council (a problem, not a thing to judge). Its
+  ideas, builds and report should come back in the wild / builds / first-step shapes; the prompts were only tried
+  against a fake caller. Start a second council while it runs: it shows as `Queued · after <feature>` in the Agent
+  tree. Hover that row: a Remove button fades in. Right-click it: Remove from queue. Either one stops it and the row
+  goes; CDP only clicked the button, and cannot open the native menu. When the first council ends, the queued one
+  starts by itself. The finished council's report reads `Saved to docs/council/….md with the whole discussion`, and
+  that file exists. `pkg/council/prompts.go`, `runner.go`, `frontend/app/view/agents/agenttree.tsx`; spec
+  `docs/superpowers/specs/2026-10-22-council-agent-team-design.md`.
 - [ ] (arcterm) Ask the council: in a real agent session with an open `question` line in its Ideas, click Ask the
   council. Setup opens with the question filled in, the session's project and a group the coordinator suggests; Start
   council runs it and, after a real run, the directions come back into that session's Ideas (not a copy in another

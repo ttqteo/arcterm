@@ -30,6 +30,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   you, what is running in it, and buttons to start an agent, a terminal, a run or a council there.
 - Right-click an app in the Agent tree and pick Hide (Stop and hide while it runs) to take its row out of the tree;
   it comes back when it starts again, and Setup → Tools still lists it.
+- **Brainstorm**: a council has a second mode beside Review. Ask it about a problem or a goal and its experts offer
+  ideas, build on each other's and keep the wild ones aside; the report ranks up to three ideas worth trying, each with
+  a first step. arcterm picks the mode from your question, and the chip in New council flips it. <!-- try: new-council --> <!-- big -->
+- Every finished council is saved in its project as `docs/council/<date>-<feature>.md` with its whole discussion, and
+  the report shows the path and opens the file.
+- An agent starts a council when the conversation holds a real open question (two directions weighed and neither won,
+  a spec or plan just written), and at once when you ask for one; it sums the report up in the chat when the council
+  ends.
 
 ### Changed
 
@@ -45,6 +53,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The council speaks in plain words (Agrees, Has doubts, Is against it) and ranks ideas by each expert's top three
   picks; an expert who agrees without a comment shows as a reaction under the idea, not as a reply.
 - New council is one box: write what to review, and the options sit under it.
+- A running council reads as a group chat: a bar for the step it is on, a chip for each expert with what it is doing
+  now, and every idea and reply as a message in the order it came, with Reply on each expert's message.
+- One council runs at a time across all projects. A council started while another runs shows in the Agent tree as
+  Queued, can be removed from the queue, and starts when the running one ends or waits on you.
 
 ## 0.15.17 — 2026-10-21
 

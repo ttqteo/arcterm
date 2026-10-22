@@ -79,12 +79,39 @@ var builtInRoles = []CouncilExpert{
 			"submission, ranked by how likely each point is to sink the paper. Merge duplicate points, mark a claim " +
 			"weak when it cites nothing, and say which concerns the text can answer and which need new work."),
 	},
+	// The Brainstorm's roles. A Brainstorm asks for no evidence, so their briefs carry no evidence rule.
+	{
+		Id: "designer", Name: "Designer", Model: ModelExpert,
+		Brief: "You are the designer. Think in what a person sees and does: the screen, the flow, the first minute. Propose " +
+			"ideas you can describe in a sentence or two and picture on a screen, not general principles, and include one " +
+			"that removes something instead of adding it.",
+	},
+	{
+		Id: "builder", Name: "Builder", Model: ModelExpert,
+		Brief: "You are the builder. Think in what can be built small: the cheapest version that would test the idea, the " +
+			"code that already exists and could be reused, the first step that fits in a day. For every idea you propose or " +
+			"build on, say what that first step is and roughly what it costs.",
+	},
+	{
+		Id: "contrarian", Name: "Contrarian", Model: ModelExpert,
+		Brief: "You are the contrarian. Turn the problem over: what if the goal is the wrong one, what would the opposite " +
+			"approach look like, what is everyone assuming. Propose the ideas nobody else will, and mark the far-fetched ones " +
+			"wild; a wild idea is kept, not thrown away.",
+	},
+	{
+		Id: "facilitator", Name: "Facilitator", Model: ModelCoordinator, Coordinator: true,
+		Brief: "You are the facilitator, the coordinator of a brainstorm. Merge the ideas that say the same thing, rank them " +
+			"by the picks and builds they earned, and choose at most three worth trying, each with why and a first step. Keep " +
+			"the wild ideas aside rather than dropping them, and name any viewpoint the panel was missing. Add no ideas of " +
+			"your own.",
+	},
 }
 
-// builtInGroups are the two groups that ship.
+// builtInGroups are the three groups that ship.
 var builtInGroups = []CouncilGroup{
 	{Id: "ui-feature", Name: "Review a UI feature", Roles: []string{"ux", "ram", "newuser", "skeptic"}, Coordinator: "coordinator"},
 	{Id: "paper", Name: "Paper review", Roles: []string{"reviewer-a", "reviewer-b", "reader"}, Coordinator: "areachair"},
+	{Id: "product-ideas", Name: "Product ideas", Roles: []string{"newuser", "designer", "builder", "contrarian"}, Coordinator: "facilitator"},
 }
 
 // userRoles reads councilroles.json; a file that does not parse leaves the built-ins alone, and says so in the log.

@@ -8,11 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
-	"unicode"
 
 	"github.com/wavetermdev/waveterm/pkg/council"
 	"github.com/wavetermdev/waveterm/pkg/wps"
@@ -32,16 +31,12 @@ func publishCouncilChanged(c *council.Council) {
 }
 
 // StartCouncilRunner is called once at startup: a council left running when wavesrv last quit has no run behind it, so
-// it is marked stopped. A council with a live run is left alone.
+// it is marked stopped. A council with a live run is left alone. A council that was queued when wavesrv quit stays
+// queued, and the oldest one starts now.
 func StartCouncilRunner() {
 	councilRunner.MarkStale()
+	councilRunner.StartNext()
 }
-
-// councilDocDay is the date a saved doc's default file name starts with; a test replaces it.
-var councilDocDay = func() time.Time { return time.Now() }
-
-// councilDocSlugRunes cuts a feature's slug so a long feature does not make a long file name.
-const councilDocSlugRunes = 60
 
 // councilPanel is the experts of a new council: the ones named, else the panel of the group (the coordinator last).
 // An unknown group is an error.
@@ -63,6 +58,9 @@ func (ws *WshServer) CouncilStartCommand(ctx context.Context, data wshrpc.Comman
 	if data.Id != "" {
 		return councilRunner.StartSaved(context.Background(), data.Id)
 	}
+	if data.Mode != "" && data.Mode != council.ModeReview && data.Mode != council.ModeBrainstorm {
+		return nil, fmt.Errorf("unknown council mode %q: use %s or %s", data.Mode, council.ModeReview, council.ModeBrainstorm)
+	}
 	experts, err := councilPanel(data.Group, data.Experts)
 	if err != nil {
 		return nil, err
@@ -74,6 +72,8 @@ func (ws *WshServer) CouncilStartCommand(ctx context.Context, data wshrpc.Comman
 		Files:            data.Files,
 		Screenshots:      data.Screenshots,
 		Group:            data.Group,
+		Mode:             data.Mode,
+		ModeWhy:          data.ModeWhy,
 		Experts:          experts,
 		PauseAfterRound1: data.Pause,
 		SessionId:        data.SessionId,
@@ -189,55 +189,10 @@ func councilFileBytes(project string, files []string) int64 {
 	return total
 }
 
-// councilFeatureSlug is a feature as a file name part: letters and digits, lower case, runs of anything else one dash.
-func councilFeatureSlug(feature string) string {
-	var b strings.Builder
-	runes, dash := 0, false
-	for _, r := range strings.ToLower(feature) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r) {
-			b.WriteRune(r)
-			runes++
-			dash = false
-		} else if !dash && runes > 0 {
-			b.WriteByte('-')
-			runes++
-			dash = true
-		}
-		if runes >= councilDocSlugRunes {
-			break
-		}
-	}
-	if slug := strings.Trim(b.String(), "-"); slug != "" {
-		return slug
-	}
-	return "council"
-}
-
-// councilDocPath is where a doc is written: the default path, or the one asked for, under the project. A path
-// outside the project is refused.
-func councilDocPath(c *council.Council, asked string) (string, error) {
-	project := strings.TrimSpace(c.Project)
-	if project == "" {
-		return "", fmt.Errorf("council %s has no project folder to save a doc into", c.Id)
-	}
-	project = filepath.Clean(project)
-	path := strings.TrimSpace(asked)
-	if path == "" {
-		path = filepath.Join("docs", "council", councilDocDay().Format("2006-01-02")+"-"+councilFeatureSlug(c.Feature)+".md")
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(project, path)
-	}
-	path = filepath.Clean(path)
-	rel, err := filepath.Rel(project, path)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("%s is outside the project %s", path, project)
-	}
-	return path, nil
-}
-
-// CouncilSaveDocCommand writes the council's Summary and Matrix as markdown into its project. It writes the file and
-// nothing else: it never stages or commits.
+// CouncilSaveDocCommand writes the council's document (the report, the whole discussion and the run facts) into its
+// project, at the path asked for or the default one. It writes the file and nothing else: it never stages or commits.
+// The path is kept on the council (DocPath) and announced, so the report can open the document, and the next save,
+// like the one a finished council makes by itself, rewrites the same file instead of starting a -2 copy.
 func (ws *WshServer) CouncilSaveDocCommand(ctx context.Context, data wshrpc.CommandCouncilSaveDocData) (*wshrpc.CouncilSaveDocRtnData, error) {
 	if data.Id == "" {
 		return nil, errors.New("a council id is required")
@@ -246,15 +201,20 @@ func (ws *WshServer) CouncilSaveDocCommand(ctx context.Context, data wshrpc.Comm
 	if err != nil {
 		return nil, err
 	}
-	path, err := councilDocPath(c, data.Path)
+	path, err := council.WriteDocument(c, data.Path)
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
-	}
-	if err := os.WriteFile(path, []byte(council.Markdown(c)), 0o644); err != nil {
-		return nil, fmt.Errorf("writing %s: %w", path, err)
+	if path != c.DocPath {
+		saved, err := council.Update(c.Id, func(c *council.Council) error {
+			c.DocPath = path
+			return nil
+		})
+		if err != nil {
+			log.Printf("[council] %s: document path not kept: %v", c.Id, err)
+		} else {
+			publishCouncilChanged(saved)
+		}
 	}
 	return &wshrpc.CouncilSaveDocRtnData{Path: path}, nil
 }

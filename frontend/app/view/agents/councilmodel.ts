@@ -379,6 +379,7 @@ const STATE_WORD: Record<string, string> = {
     "not-run": "Not run",
     stopped: "Stopped",
     failed: "Failed",
+    queued: "Queued",
 };
 
 /** Pure: the chip in the Discussion's header: the step and what is going on in it while the council runs
@@ -578,6 +579,8 @@ export interface CouncilSetupDraft {
     suggestion?: CouncilSuggestion;
     suggestState: "idle" | "asking" | "done" | "failed";
     groupPicked: boolean;
+    mode: "review" | "brainstorm";
+    modePicked: boolean; // the person flipped the mode chip, so a new suggestion does not change it
 }
 
 /** Pure: a blank draft for a project. */
@@ -593,11 +596,13 @@ export function emptyCouncilDraft(project: string): CouncilSetupDraft {
         pause: false,
         suggestState: "idle",
         groupPicked: false,
+        mode: "review",
+        modePicked: false,
     };
 }
 
-/** Pure: the draft Run again opens: the council's inputs and panel, with the group counted as picked so a new
- *  suggestion does not change it. */
+/** Pure: the draft Run again opens: the council's inputs and panel, with the group and the mode counted as picked so
+ *  a new suggestion does not change them. A council saved before modes has none, which reads as Review. */
 export function draftFromCouncil(c: Council): CouncilSetupDraft {
     return {
         project: c.project,
@@ -611,5 +616,7 @@ export function draftFromCouncil(c: Council): CouncilSetupDraft {
         sessionId: c.sessionid || undefined,
         suggestState: "idle",
         groupPicked: true,
+        mode: c.mode === "brainstorm" ? "brainstorm" : "review",
+        modePicked: true,
     };
 }

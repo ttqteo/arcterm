@@ -12,6 +12,11 @@
 // question in its Ideas, the way the ideas-rail scenario does (a roster fixture, a transcript, the session's ideas via
 // `ideaadd`), and asks the council from that question's row.
 //
+// The mode chip (docs/superpowers/plans/2026-10-22-council-v1-room.md, Task 5) is shown by council-setup: a suggestion that
+// names a mode sets the chip, the rules line and the group, a click flips it, and Start council reads Queue council while
+// another council runs. The council Start council "starts" is written just before step 11's click, so no council runs
+// before it and that step still reads Start council.
+//
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx).
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -26,6 +31,7 @@ import {
     placeCouncil,
     resolveStub,
     rpcCalls,
+    seedCouncil,
     stubRpc,
     teardownCouncilProject,
     writeCouncil,
@@ -40,6 +46,10 @@ const PNG_1X1 = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
     "base64"
 );
+
+// the one sentence of rules under the mode chip
+const REVIEW_RULES = "Every claim cites a file line or a screenshot, or is marked as citing nothing.";
+const BRAINSTORM_RULES = "Ideas first and no doubts yet; then they build on each other and pick the best.";
 
 const SUGGESTED_FILES = ["railappsstore.ts", "appsurface.tsx"];
 const SUGGESTED_ROLE = {
@@ -99,7 +109,13 @@ const SETUP = `(() => {
             estimate: flat(composer?.querySelector("[data-council-composer-bar] [data-council-estimate]")),
             start: composer?.querySelector("[data-council-composer-bar] [data-council-start]") != null,
             group: flat(composer?.querySelector("[data-council-composer-bar] [data-council-group]")),
+            mode: flat(composer?.querySelector("[data-council-composer-bar] [data-council-mode-chip]")),
         },
+        mode: text("[data-council-mode-chip]"),
+        modeKey: q("[data-council-mode-chip]")?.dataset.mode ?? null,
+        modeTitle: q("[data-council-mode-chip]")?.getAttribute("title") ?? null,
+        modeRules: text("[data-council-mode-rules]"),
+        saves: text("[data-council-saves]"),
         expertsLine: text("[data-council-experts-line]"),
         group: text("[data-council-group]"),
         experts: [...root.querySelectorAll("[data-council-expert]")].map((r) => ({
@@ -158,9 +174,9 @@ export const councilSetup = {
         try {
             ctx.shot = join(ctx.base, "rail-apps.png");
             writeFileSync(ctx.shot, PNG_1X1);
-            // the council Start council "starts" is the round2 fixture, written to the data dir so its Discussion can load it
+            // the council Start council "starts" is the round2 fixture; step 11 writes it to the data dir so its Discussion
+            // can load it (a running council on disk before then would make the button read Queue council)
             ctx.startedId = councilFixtureId("round2");
-            writeCouncil(ctx, "round2");
         } catch (e) {
             await teardownCouncilProject(h, ctx).catch(() => {});
             throw e;
@@ -205,12 +221,17 @@ export const councilSetup = {
             v = await view();
             const coordinator = v?.experts.find((e) => e.coordinator);
             rec(
-                "1. New council opens Setup: one composer with its placeholder, the group chip reads Review a UI feature, the rows are folded until Options opens them, then five rows, the coordinator last on opus with no remove",
+                "1. New council opens Setup: one composer with its placeholder, the group chip reads Review a UI feature and the mode chip Review with its rules line under the box, Setup says the council saves to docs/council/, the rows are folded until Options opens them, then five rows, the coordinator last on opus with no remove",
                 v?.placeholder === "What should the council review? The first line names it; ask a question under it." &&
                     v.ask === "" &&
                     foldedRows === 0 &&
                     v.optionsOpen === "true" &&
                     v.inComposer.group === "Review a UI feature" &&
+                    v.inComposer.mode === "Review" &&
+                    v.mode === "Review" &&
+                    v.modeKey === "review" &&
+                    v.modeRules === REVIEW_RULES &&
+                    (v.saves ?? "").includes("saves to docs/council/") &&
                     v?.group === "Review a UI feature" &&
                     sameList(v.experts.map((e) => e.id), ["ux", "ram", "newuser", "skeptic", "coordinator"]) &&
                     v.experts.at(-1)?.coordinator === true &&
@@ -474,6 +495,8 @@ export const councilSetup = {
             // 11. Start council is the accent button; the stubbed start records the draft and opens the Discussion
             const fill = await h.ev(ACCENT_FILL);
             v = await view();
+            // the council the stubbed start answers with goes to disk now, so its Discussion can load it
+            writeCouncil(ctx, "round2");
             await h.ev(click("[data-council-start]"));
             await until(`${present("[data-council-discussion]")}`);
             const startCalls = await calls("CouncilStartCommand");
@@ -495,8 +518,68 @@ export const councilSetup = {
                     sent.pause === true &&
                     sent.group === "ui-feature" &&
                     sent.project === ctx.repo &&
-                    newRowText === "New council",
+                    newRowText === "New council" &&
+                    sent.mode === "review" &&
+                    sent.modewhy === "picked by hand",
                 { fill, calls: startCalls.length, sent, newRowText }
+            );
+
+            // 12. a suggestion that names a mode sets the chip, the rules line and the group; a click on the chip flips it
+            // back and counts as the person's pick. The council step 11 wrote leaves the disk first: nothing runs again
+            rmSync(join(ctx.dataDir, "councils", `${ctx.startedId}.json`), { force: true });
+            await stubRpc(h, ["CouncilSuggestCommand"], { CouncilSuggestCommand: { pending: true } });
+            await openCouncilSetup(h, ctx.repo, { feature: "Rail apps", files: [FILES[1]] });
+            const modeAsked = await until(`${present("[data-council-suggesting]")}`, SUGGEST_WAIT_MS);
+            const before = await view();
+            await resolveStub(h, "CouncilSuggestCommand", { files: [], roles: [], mode: "brainstorm", modewhy: "a goal to reach" });
+            await until(`(document.querySelector("[data-council-mode-chip]")?.textContent ?? "").trim() === "Brainstorm · picked from your question"`);
+            await until(`(document.querySelector("[data-council-group]")?.textContent ?? "").trim() === "Product ideas"`);
+            v = await view();
+            await h.shot("cdp-shots/council-setup-brainstorm.png");
+            await h.ev(click("[data-council-mode-chip]"));
+            await until(`(document.querySelector("[data-council-mode-chip]")?.textContent ?? "").trim() === "Review · you picked it"`);
+            await until(`(document.querySelector("[data-council-group]")?.textContent ?? "").trim() === "Review a UI feature"`);
+            const flipped = await view();
+            rec(
+                "12. before the answer the mode chip reads Review; a suggestion naming brainstorm (reason: a goal to reach) makes it read Brainstorm · picked from your question with the Brainstorm rules line under the box and the group Product ideas; clicking the chip reads Review · you picked it with the Review rules and the UI group back",
+                modeAsked &&
+                    before?.mode === "Review" &&
+                    before.modeRules === REVIEW_RULES &&
+                    v?.mode === "Brainstorm · picked from your question" &&
+                    v.inComposer.mode === "Brainstorm · picked from your question" &&
+                    v.modeKey === "brainstorm" &&
+                    v.modeTitle === "a goal to reach" &&
+                    v.modeRules === BRAINSTORM_RULES &&
+                    v.group === "Product ideas" &&
+                    flipped?.mode === "Review · you picked it" &&
+                    flipped.modeKey === "review" &&
+                    flipped.modeRules === REVIEW_RULES &&
+                    flipped.group === "Review a UI feature",
+                { before: before?.mode, brainstorm: { mode: v?.mode, title: v?.modeTitle, rules: v?.modeRules, group: v?.group }, flipped: { mode: flipped?.mode, rules: flipped?.modeRules, group: flipped?.group } }
+            );
+
+            // 13. while another council runs Start council reads Queue council, and the start it sends carries the mode and
+            // why: the chip was flipped by hand
+            const idle = (await view())?.start;
+            const runningId = `${ctx.startedId}-queue`;
+            await seedCouncil(h, ctx, "round2", { id: runningId });
+            await until(`(document.querySelector("[data-council-start]")?.textContent ?? "").trim() === "Queue council"`);
+            v = await view();
+            await stubRpc(h, ["CouncilStartCommand"], { CouncilStartCommand: { value: { ...started, id: runningId } } });
+            await h.ev(click("[data-council-start]"));
+            await until(`${present("[data-council-discussion]")}`);
+            const queueCalls = await calls("CouncilStartCommand");
+            const queued = queueCalls[1]?.data;
+            rec(
+                "13. with nothing running the button read Start council; with a council running (seeded) it reads Queue council and stays enabled; clicking it (stubbed) sends the mode review and why picked by hand",
+                idle?.text === "Start council" &&
+                    v?.start?.text === "Queue council" &&
+                    v.start.disabled === false &&
+                    queueCalls.length === 2 &&
+                    queued?.mode === "review" &&
+                    queued.modewhy === "picked by hand" &&
+                    queued.feature === "Rail apps",
+                { idle, start: v?.start, calls: queueCalls.length, queued: { mode: queued?.mode, modewhy: queued?.modewhy } }
             );
         } catch (e) {
             rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
