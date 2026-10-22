@@ -61,6 +61,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Run it again and refuse the card: the agent reports `Not run: …` without retrying, the project has a `Not run`
   council row, and its Discussion's Start council (with the estimate) runs it. `cmd/wsh/cmd/wshcmd-council.go`,
   `skills/council/SKILL.md`, `pkg/tokengate`.
+- [ ] (arcterm) Council started by the agent itself: in a claude session, weigh two options with the agent until
+  neither wins. It should start a council without asking and say so in one line (mode, group, estimate; `Queued after …`
+  when another council runs). Then say "ask a council about this": a council starts at once, and when it ends the agent
+  sums the report up in the chat and carries on. A refused Token burn card must come back as `Not run: …`, never
+  retried. `skills/council/SKILL.md`, `cmd/wsh/cmd/wshcmd-council.go`; spec
+  `docs/superpowers/specs/2026-10-22-council-agent-team-design.md` ("Starting a council").
 - [ ] (arcterm) Ask the council: in a real agent session with an open `question` line in its Ideas, click Ask the
   council. Setup opens with the question filled in, the session's project and a group the coordinator suggests; Start
   council runs it and, after a real run, the directions come back into that session's Ideas (not a copy in another
