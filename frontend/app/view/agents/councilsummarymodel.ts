@@ -302,6 +302,39 @@ export function canRunSummary(c: Council): boolean {
     );
 }
 
+// ---- Was this useful? ----
+
+export type CouncilRating = "useful" | "not";
+
+export interface RatingRow {
+    text: string; // `Was this useful?`, or once rated `Thanks: this goes into the council benchmark`
+    choices: { id: CouncilRating; label: string }[]; // the buttons; none once rated
+    change: string; // the link that asks again: `Change` once rated, else empty
+}
+
+const isRating = (r: string | undefined): r is CouncilRating => r === "useful" || r === "not";
+
+/** Pure: the row under the report that asks for the person's rating, or null when the report shows none: a council
+ *  that is not done or stopped (a running one is re-summarizing over an old summary, a failed one has no report to
+ *  rate), one with no summary, and a benchmark's own. Once rated it thanks the person with a Change link; `changing`
+ *  (the link clicked) asks again. */
+export function ratingRow(c: Council, changing = false): RatingRow | null {
+    if (c.bench === true || c.summary == null || (c.state !== "done" && c.state !== "stopped")) {
+        return null;
+    }
+    if (isRating(c.rating) && !changing) {
+        return { text: "Thanks: this goes into the council benchmark", choices: [], change: "Change" };
+    }
+    return {
+        text: "Was this useful?",
+        choices: [
+            { id: "useful", label: "Useful" },
+            { id: "not", label: "Not really" },
+        ],
+        change: "",
+    };
+}
+
 // ---- the lines under the header ----
 
 function clockTime(ms: number): string {

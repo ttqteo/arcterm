@@ -746,6 +746,12 @@ declare global {
         project?: string;
     };
 
+    // wshrpc.CommandCouncilRateData
+    type CommandCouncilRateData = {
+        id: string;
+        rating: string;
+    };
+
     // wshrpc.CommandCouncilReplyData
     type CommandCouncilReplyData = {
         id: string;
@@ -2283,6 +2289,8 @@ declare global {
         harness?: string;
         bench?: boolean;
         docpath?: string;
+        rating?: string;
+        ratedat?: number;
         experts: CouncilExpert[];
         pauseafterround1?: boolean;
         sessionid?: string;

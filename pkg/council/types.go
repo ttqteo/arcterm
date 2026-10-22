@@ -33,6 +33,13 @@ func ModeOf(c *Council) string {
 	return c.Mode
 }
 
+// The two ratings of a council's report: the person's "Was this useful?" answer. The benchmark's results file takes the
+// same two words (bench.RatingUseful, bench.RatingNot).
+const (
+	RatingUseful = "useful"
+	RatingNot    = "not"
+)
+
 type CouncilStance string
 
 const (
@@ -155,6 +162,8 @@ type Council struct {
 	Harness          string                       `json:"harness,omitempty"`     // HarnessVersion when its run began; empty before it ran, and on a council saved before versions existed
 	Bench            bool                         `json:"bench,omitempty"`       // a council the benchmark started: no document in its project, and the cockpit never lists it
 	DocPath          string                       `json:"docpath,omitempty"`     // the absolute path of the saved document
+	Rating           string                       `json:"rating,omitempty"`      // RatingUseful or RatingNot: the person's latest answer to "Was this useful?"; empty until given
+	RatedAt          int64                        `json:"ratedat,omitempty"`     // when Rating was given, in ms
 	Experts          []CouncilExpert              `json:"experts"`               // the coordinator last
 	PauseAfterRound1 bool                         `json:"pauseafterround1,omitempty"`
 	SessionId        string                       `json:"sessionid,omitempty"` // the agent session that started it

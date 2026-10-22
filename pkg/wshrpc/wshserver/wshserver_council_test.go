@@ -1744,6 +1744,97 @@ func TestCouncilBenchResultsGroupsByHarness(t *testing.T) {
 	}
 }
 
+// ---- "Was this useful?" ----
+
+func TestCouncilRateKeepsTheRatingAndFeedsTheBenchFile(t *testing.T) {
+	events := useCouncilRig(t, newCouncilFake())
+	dataDir := useCouncilBench(t, nil)
+	ws := &WshServer{}
+	ctx := context.Background()
+	saveCouncil(t, &council.Council{
+		Id: "rate-1", Project: `D:\p`, Feature: "Rail apps", Mode: council.ModeBrainstorm, Harness: "2026-10-22.1",
+		State: council.StateDone, Summary: &council.CouncilSummary{Text: "one direction"},
+	})
+
+	if err := ws.CouncilRateCommand(ctx, wshrpc.CommandCouncilRateData{Id: "rate-1", Rating: council.RatingUseful}); err != nil {
+		t.Fatalf("CouncilRateCommand: %v", err)
+	}
+	c, err := council.Load("rate-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Rating != council.RatingUseful || c.RatedAt == 0 {
+		t.Fatalf("council kept rating %q at %d, want useful with its time", c.Rating, c.RatedAt)
+	}
+	_, ratings, err := bench.LoadResults(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ratings) != 1 {
+		t.Fatalf("results file has %d rating lines, want 1: %+v", len(ratings), ratings)
+	}
+	want := bench.CouncilBenchRating{
+		Kind: bench.KindRating, RatedAt: time.UnixMilli(c.RatedAt).UTC().Format(time.RFC3339),
+		Harness: "2026-10-22.1", Mode: council.ModeBrainstorm, Council: "rate-1", Rating: bench.RatingUseful,
+	}
+	if ratings[0] != want {
+		t.Errorf("rating line = %+v, want %+v", ratings[0], want)
+	}
+	if got := events.all(); len(got) == 0 || got[len(got)-1].Id != "rate-1" {
+		t.Errorf("council:changed events = %+v, want one for rate-1 so other views pick the rating up", got)
+	}
+
+	// a changed mind: both lines stay in the file, and the council counts once, by its later rating
+	if err := ws.CouncilRateCommand(ctx, wshrpc.CommandCouncilRateData{Id: "rate-1", Rating: council.RatingNot}); err != nil {
+		t.Fatalf("CouncilRateCommand again: %v", err)
+	}
+	if c, _ = council.Load("rate-1"); c.Rating != council.RatingNot {
+		t.Errorf("council kept rating %q after the change, want not", c.Rating)
+	}
+	_, ratings, _ = bench.LoadResults(dataDir)
+	if len(ratings) != 2 {
+		t.Fatalf("results file has %d rating lines after a change, want both kept", len(ratings))
+	}
+	rows := bench.SummarizeRatings(ratings)
+	if wantRows := []bench.CouncilBenchRatingRow{{Harness: "2026-10-22.1", Mode: council.ModeBrainstorm, Not: 1}}; !reflect.DeepEqual(rows, wantRows) {
+		t.Errorf("ratings table = %+v, want %+v", rows, wantRows)
+	}
+}
+
+func TestCouncilRateRefusalsWriteNothing(t *testing.T) {
+	useCouncilRig(t, newCouncilFake())
+	dataDir := useCouncilBench(t, nil)
+	ws := &WshServer{}
+	ctx := context.Background()
+	saveCouncil(t, &council.Council{Id: "rate-2", Project: `D:\p`, Feature: "x", State: council.StateDone})
+
+	for name, data := range map[string]wshrpc.CommandCouncilRateData{
+		"no id":               {Rating: council.RatingUseful},
+		"a rating of its own": {Id: "rate-2", Rating: "great"},
+		"no rating":           {Id: "rate-2"},
+		"a missing council":   {Id: "gone", Rating: council.RatingUseful},
+	} {
+		if err := ws.CouncilRateCommand(ctx, data); err == nil {
+			t.Errorf("%s: CouncilRateCommand = nil, want a refusal", name)
+		}
+	}
+	if c, _ := council.Load("rate-2"); c.Rating != "" || c.RatedAt != 0 {
+		t.Errorf("a refused rating left %q at %d on the council", c.Rating, c.RatedAt)
+	}
+	if _, ratings, _ := bench.LoadResults(dataDir); len(ratings) != 0 {
+		t.Errorf("a refused rating wrote %d lines to the results file: %+v", len(ratings), ratings)
+	}
+
+	// a council from before harness versions rates under the unknown version, as a Review
+	if err := ws.CouncilRateCommand(ctx, wshrpc.CommandCouncilRateData{Id: "rate-2", Rating: council.RatingNot}); err != nil {
+		t.Fatalf("CouncilRateCommand of an old council: %v", err)
+	}
+	_, ratings, _ := bench.LoadResults(dataDir)
+	if len(ratings) != 1 || ratings[0].Harness != "" || ratings[0].Mode != council.ModeReview {
+		t.Errorf("an old council's rating line = %+v, want harness \"\" and mode review", ratings)
+	}
+}
+
 // ---- the monthly reminder ----
 
 // fakeEfforts is the initiative store of a test: create makes an effort, mutate applies the three ops the reminder uses.

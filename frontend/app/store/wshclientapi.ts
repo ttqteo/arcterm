@@ -342,6 +342,12 @@ export class RpcApiType {
         return client.wshRpcCall("councillist", data, opts);
     }
 
+    // command "councilrate" [call]
+    CouncilRateCommand(client: WshClient, data: CommandCouncilRateData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilrate", data, opts);
+        return client.wshRpcCall("councilrate", data, opts);
+    }
+
     // command "councilreply" [call]
     CouncilReplyCommand(client: WshClient, data: CommandCouncilReplyData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilreply", data, opts);

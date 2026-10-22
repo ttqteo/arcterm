@@ -15,6 +15,7 @@ import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { useEffect } from "react";
 import { councilProjectKey, type CouncilSetupDraft, type CouncilView } from "./councilmodel";
+import type { CouncilRating } from "./councilsummarymodel";
 
 const sameProject = (a: string, b: string) => councilProjectKey(a) === councilProjectKey(b);
 
@@ -204,6 +205,18 @@ export function estimateCouncil(data: CommandCouncilEstimateData): Promise<Counc
 /** Writes the Summary and Matrix as markdown into the project and answers the path. Never commits. */
 export function saveCouncilDoc(id: string, path?: string): Promise<CouncilCall<CouncilSaveDocRtnData>> {
     return call("save doc", () => RpcApi.CouncilSaveDocCommand(TabRpcClient, { id, path }));
+}
+
+/** The person's Useful / Not really on a finished council's report: wavesrv keeps it on the council and adds it to the
+ *  benchmark's results. The command answers nothing, so on success the council's atom is patched from what was sent at
+ *  once and the thanks line does not wait for `council:changed`. A failure leaves the council as it was. */
+export async function rateCouncil(id: string, rating: CouncilRating): Promise<CouncilCall<void>> {
+    const r = await call("rate", () => RpcApi.CouncilRateCommand(TabRpcClient, { id, rating }));
+    const rated = globalStore.get(councilAtom(id));
+    if (r.ok && rated != null) {
+        globalStore.set(councilAtom(id), { ...rated, rating, ratedat: Date.now() });
+    }
+    return r;
 }
 
 /** The role library and the saved groups. */

@@ -19,6 +19,7 @@ import {
     outdatedLabel,
     positionsOf,
     projectNameOf,
+    ratingRow,
     savedLine,
     writtenLine,
 } from "./councilsummarymodel";
@@ -468,6 +469,61 @@ describe("canRunSummary", () => {
         expect(canRunSummary(council({ state: "not-run" }))).toBe(false);
         expect(canRunSummary(council({ proposals: [] }))).toBe(false);
         expect(canRunSummary(council({ proposals: undefined }))).toBe(false);
+    });
+});
+
+describe("ratingRow", () => {
+    it("shows under the report of a council that is done or stopped and has a summary", () => {
+        for (const state of ["done", "stopped"]) {
+            expect(ratingRow(council({ state }))).not.toBeNull();
+        }
+    });
+
+    it("never shows on a running council, a failed one, a bench council, or one with no summary", () => {
+        // a running council with a summary is re-summarizing over the old one
+        expect(ratingRow(council({ state: "running" }))).toBeNull();
+        expect(ratingRow(council({ state: "failed" }))).toBeNull();
+        expect(ratingRow(council({ state: "awaiting-you" }))).toBeNull();
+        expect(ratingRow(council({ state: "queued" }))).toBeNull();
+        expect(ratingRow(council({ state: "not-run" }))).toBeNull();
+        expect(ratingRow(council({ bench: true }))).toBeNull();
+        expect(ratingRow(council({ summary: undefined }))).toBeNull();
+        expect(ratingRow(council({ state: "stopped", summary: undefined }))).toBeNull();
+    });
+
+    it("asks Was this useful? with Useful and Not really while unrated", () => {
+        expect(ratingRow(council())).toEqual({
+            text: "Was this useful?",
+            choices: [
+                { id: "useful", label: "Useful" },
+                { id: "not", label: "Not really" },
+            ],
+            change: "",
+        });
+    });
+
+    it("thanks the person, with a Change link and no buttons, once rated either way", () => {
+        for (const rating of ["useful", "not"]) {
+            expect(ratingRow(council({ rating }))).toEqual({
+                text: "Thanks: this goes into the council benchmark",
+                choices: [],
+                change: "Change",
+            });
+        }
+    });
+
+    it("reads a rating it does not know as unrated", () => {
+        expect(ratingRow(council({ rating: "great" }))?.text).toBe("Was this useful?");
+        expect(ratingRow(council({ rating: "" }))?.text).toBe("Was this useful?");
+    });
+
+    it("asks again, with the buttons and no Change link, once Change is clicked", () => {
+        const again = ratingRow(council({ rating: "useful" }), true);
+        expect(again?.text).toBe("Was this useful?");
+        expect(again?.choices.map((x) => x.label)).toEqual(["Useful", "Not really"]);
+        expect(again?.change).toBe("");
+        // changing never shows a row the rule hides
+        expect(ratingRow(council({ rating: "useful", state: "running" }), true)).toBeNull();
     });
 });
 

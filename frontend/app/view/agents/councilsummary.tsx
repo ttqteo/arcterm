@@ -7,7 +7,8 @@
 // bottom. A finished council opens on it; Summarize on the Discussion opens it too, and Show the discussion goes back.
 // A Brainstorm's report heads its directions "Ideas worth trying, best first" (each with a first step and who had and
 // built on it), keeps the wild ideas aside under them with a count of the rest, and says where the finished council saved
-// itself (docs/council/) with the `⋯` menu opening that document. What it derives from the council is
+// itself (docs/council/) with the `⋯` menu opening that document. Under the directions a quiet row asks "Was this
+// useful?" (Useful / Not really) and feeds the answer to the council benchmark. What it derives from the council is
 // councilsummarymodel.ts (and councilmodel.ts); what it hands on is a saved doc, an initiative, a Setup draft to run
 // again, the Discussion on one direction's thread, and a new agent started on it.
 
@@ -38,6 +39,7 @@ import {
 import {
     councilOpenProposalAtom,
     councilSelAtom,
+    rateCouncil,
     retryExpert,
     saveCouncilDoc,
     summarizeCouncil,
@@ -59,8 +61,10 @@ import {
     outcomeLabel,
     outdatedLabel,
     projectNameOf,
+    ratingRow,
     savedLine,
     writtenLine,
+    type CouncilRating,
     type DirectionRow,
     type KeptRow,
     type Position,
@@ -332,6 +336,72 @@ function KeptCard({ row }: { row: KeptRow }) {
             ) : null}
             {d.reasoning !== "" ? (
                 <span className="text-[12.5px] leading-[1.5] text-secondary">{d.reasoning}</span>
+            ) : null}
+        </div>
+    );
+}
+
+// "Was this useful?" under the report, a quiet row: the question with Useful and Not really, then a thanks line with a
+// Change link that asks again. The answer feeds the council benchmark (rateCouncil); the rule for when it shows is
+// ratingRow's. It is keyed by council, so one council's Change state never carries to another.
+function RatingRow({ c }: { c: Council }) {
+    const [changing, setChanging] = useState(false);
+    const [busy, setBusy] = useState<CouncilRating | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const row = ratingRow(c, changing);
+    if (row == null) {
+        return null;
+    }
+    const rate = async (rating: CouncilRating) => {
+        setBusy(rating);
+        setError(null);
+        const r = await rateCouncil(c.id, rating);
+        setBusy(null);
+        if (r.ok === false) {
+            setError(`Could not save the rating: ${r.error}`);
+        } else {
+            setChanging(false);
+        }
+    };
+    return (
+        <div
+            data-council-rating
+            className="mt-[6px] flex flex-wrap items-center gap-x-[10px] gap-y-[6px] text-[12px] text-muted"
+        >
+            <span
+                role="status"
+                data-council-rating-thanks={row.choices.length === 0 ? "" : undefined}
+                className="text-[12px]"
+            >
+                {row.text}
+            </span>
+            {row.choices.map((choice) => (
+                <button
+                    key={choice.id}
+                    type="button"
+                    data-council-rate={choice.id}
+                    disabled={busy != null}
+                    onClick={() => void rate(choice.id)}
+                    className={cn(BUTTON, "h-[24px] px-[10px] text-[11.5px]")}
+                >
+                    {busy === choice.id ? <Loader2 size={11} aria-hidden className="mr-[6px] animate-spin" /> : null}
+                    {choice.label}
+                </button>
+            ))}
+            {row.change !== "" ? (
+                <button
+                    type="button"
+                    data-council-rating-change
+                    onClick={() => setChanging(true)}
+                    className={cn("cursor-pointer rounded-[4px] text-[12px] text-accent hover:text-accenthover", FOCUS)}
+                >
+                    {row.change}
+                </button>
+            ) : null}
+            {error != null ? (
+                <span role="alert" data-council-rating-error className="text-error-soft">
+                    {error}
+                </span>
             ) : null}
         </div>
     );
@@ -967,6 +1037,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                     {dropped}
                                 </span>
                             ) : null}
+                            <RatingRow key={c.id} c={c} />
                         </div>
                         <Matrix c={c} />
                     </div>

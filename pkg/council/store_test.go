@@ -395,3 +395,58 @@ func TestUpdateMissingIsNotExist(t *testing.T) {
 		t.Fatalf("Update of a missing id = %v, want fs.ErrNotExist", err)
 	}
 }
+
+func TestSetRatingLatestCounts(t *testing.T) {
+	useTempRoot(t)
+	if err := Save(sampleCouncil("c1", `D:\p`)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := SetRating("c1", RatingUseful, 1_000)
+	if err != nil {
+		t.Fatalf("SetRating: %v", err)
+	}
+	if got.Rating != RatingUseful || got.RatedAt != 1_000 {
+		t.Fatalf("first rating = %q at %d, want useful at 1000", got.Rating, got.RatedAt)
+	}
+
+	// changing one's mind: the later rating and its time replace the first
+	if _, err := SetRating("c1", RatingNot, 2_000); err != nil {
+		t.Fatalf("SetRating again: %v", err)
+	}
+	loaded, err := Load("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Rating != RatingNot || loaded.RatedAt != 2_000 {
+		t.Fatalf("saved rating = %q at %d, want not at 2000", loaded.Rating, loaded.RatedAt)
+	}
+	if loaded.Feature != "Idle sleep for services" || loaded.Summary == nil {
+		t.Fatalf("rating changed more than itself: %+v", loaded)
+	}
+}
+
+func TestSetRatingRefusesUnknown(t *testing.T) {
+	useTempRoot(t)
+	if err := Save(sampleCouncil("c1", `D:\p`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetRating("c1", RatingUseful, 1_000); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"", "great", "Useful", "useful "} {
+		if _, err := SetRating("c1", bad, 3_000); err == nil {
+			t.Errorf("SetRating(%q) = nil, want a refusal", bad)
+		}
+	}
+	loaded, err := Load("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Rating != RatingUseful || loaded.RatedAt != 1_000 {
+		t.Errorf("a refused rating left %q at %d, want the earlier useful at 1000", loaded.Rating, loaded.RatedAt)
+	}
+
+	if _, err := SetRating("nope", RatingUseful, 1); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("SetRating of a missing council = %v, want fs.ErrNotExist", err)
+	}
+}

@@ -13,6 +13,9 @@
 // and teardown closes the tab. Save as doc writes into the temp project, and Create initiative makes an initiative that
 // teardown deletes: both are real.
 //
+// Two steps after the failed synthesis are the "Was this useful?" row (docs/superpowers/plans/2026-10-22-council-bench.md,
+// Task 5): CouncilRateCommand is replaced in the page, so no click reaches the data dir's council-bench.jsonl.
+//
 // The last two steps are the Brainstorm report (docs/superpowers/plans/2026-10-22-council-v1-room.md, Task 5): a done
 // fixture seeded as a Brainstorm, with a saved document written into the temp project first so Open the document opens it.
 
@@ -136,6 +139,26 @@ const BRAINSTORM_FACTS = `(() => {
         docSaved: !!root.querySelector("[data-council-doc-saved]"),
     };
 })()`;
+
+// the "Was this useful?" row under the report, and what it shows: its question or thanks line, its buttons as
+// `rate=label`, and its Change link (null where it has none); null for the facts when the row is not drawn
+const RATING = `${SUMMARY} [data-council-rating]`;
+const RATING_THANKS = `${RATING} [data-council-rating-thanks]`;
+const ratingFacts = (h) =>
+    h.ev(`(() => {
+        const row = document.querySelector(${q(RATING)});
+        if (row == null) return null;
+        const t = (el) => el?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
+        return {
+            text: t(row.querySelector("[role='status']")),
+            thanks: !!row.querySelector("[data-council-rating-thanks]"),
+            buttons: [...row.querySelectorAll("[data-council-rate]")].map((b) => b.dataset.councilRate + "=" + t(b)),
+            change: t(row.querySelector("[data-council-rating-change]")),
+        };
+    })()`);
+
+const ASKS = { text: "Was this useful?", thanks: false, buttons: ["useful=Useful", "not=Not really"], change: null };
+const THANKS = { text: "Thanks: this goes into the council benchmark", thanks: true, buttons: [], change: "Change" };
 
 // the tabs of the workspace, to find what a click opened
 async function tabIds(h, ctx) {
@@ -419,6 +442,8 @@ export const councilSummary = {
             });
             await openCouncil(h, again, "summary");
             const bannerShown = await until(h, `!!document.querySelector("[data-council-banner='running']")`);
+            // it is re-summarizing over the old summary, so there is no report to rate yet
+            const ratingWhileRunning = await exists(h, RATING);
             const withOld = await h.ev(`({
                 banner: document.querySelector("[data-council-banner='running']")?.innerText ?? null,
                 outdated: !!document.querySelector("[data-council-banner='outdated']"),
@@ -433,6 +458,7 @@ export const councilSummary = {
             await openCouncil(h, none, "summary");
             const writingShown = await until(h, `!!document.querySelector("[data-council-nosummary]")`);
             const writing = await textOf(h, "[data-council-nosummary]");
+            const ratingWithoutSummary = await exists(h, RATING);
             await openSummary(h, ctx);
             const ok =
                 bannerShown &&
@@ -440,8 +466,10 @@ export const councilSummary = {
                 !withOld.outdated &&
                 withOld.directions === 4 &&
                 writingShown &&
-                writing === "The coordinator is writing the summary…";
-            return { ok, detail: JSON.stringify({ withOld, writing }) };
+                writing === "The coordinator is writing the summary…" &&
+                !ratingWhileRunning &&
+                !ratingWithoutSummary;
+            return { ok, detail: JSON.stringify({ withOld, writing, ratingWhileRunning, ratingWithoutSummary }) };
         });
 
         // after a failed synthesis the council is failed with the old summary kept: Retry reruns the coordinator's call
@@ -459,6 +487,8 @@ export const councilSummary = {
             const shown = await until(h, `!!document.querySelector("[data-council-banner='failed']")`);
             const banner = await textOf(h, "[data-council-banner='failed']");
             const directions = await h.ev(`document.querySelectorAll("[data-council-summary] [data-council-direction]").length`);
+            // a failed council has no report to rate
+            const rating = await exists(h, RATING);
             const clicked = await click(h, "[data-council-action='retry']");
             await callSeen(h, "CouncilRetryCommand", () => true);
             const calls = await rpcCalls(h, "CouncilRetryCommand");
@@ -467,11 +497,95 @@ export const councilSummary = {
                 shown &&
                 banner === "The coordinator failed: the model was overloaded" &&
                 directions === 4 &&
+                !rating &&
                 clicked &&
                 calls.length === 1 &&
                 calls[0].data?.id === failed &&
                 calls[0].data?.expertid === "coordinator";
-            return { ok, detail: JSON.stringify({ banner, directions, calls }) };
+            return { ok, detail: JSON.stringify({ banner, directions, rating, calls }) };
+        });
+
+        // "Was this useful?" (docs/superpowers/plans/2026-10-22-council-bench.md, Task 5). CouncilRateCommand is replaced, so
+        // nothing reaches the data dir's council-bench.jsonl and no click rates a real council; the page puts the rating on
+        // the council from what it sent, and nothing here announces council:changed (a reload would drop the stubbed rating)
+        await step("Was this useful? asks under the report with Useful and Not really; Useful records one rating and thanks, and Change asks again for the other", async () => {
+            await stubRpc(h, ["CouncilRateCommand"]);
+            const id = await seedCouncil(h, ctx, "done", { id: "fx-council-rate" });
+            await openSummary(h, ctx, id);
+            const shown = await until(h, `!!document.querySelector(${q(RATING)})`);
+            const unrated = await ratingFacts(h);
+            await h.ev(`document.querySelector(${q(RATING)})?.scrollIntoView({ block: "center" })`);
+            await h.shot("cdp-shots/council-summary-rating.png");
+
+            await click(h, `${RATING} [data-council-rate="useful"]`);
+            const usefulSent = await callSeen(h, "CouncilRateCommand", (c) => c.data?.rating === "useful");
+            const thanked = await until(h, `!!document.querySelector(${q(RATING_THANKS)})`);
+            const afterUseful = await ratingFacts(h);
+            await h.shot("cdp-shots/council-summary-rating-thanks.png");
+
+            await click(h, `${RATING} [data-council-rating-change]`);
+            const asked = await until(h, `!!document.querySelector(${q(`${RATING} [data-council-rate="not"]`)})`);
+            const again = await ratingFacts(h);
+            await click(h, `${RATING} [data-council-rate="not"]`);
+            const notSent = await callSeen(h, "CouncilRateCommand", (c) => c.data?.rating === "not");
+            const thankedAgain = await until(h, `!!document.querySelector(${q(RATING_THANKS)})`);
+            const afterNot = await ratingFacts(h);
+            const calls = (await rpcCalls(h, "CouncilRateCommand")).map((c) => c.data);
+            await openSummary(h, ctx);
+            const ok =
+                shown &&
+                JSON.stringify(unrated) === JSON.stringify(ASKS) &&
+                usefulSent &&
+                thanked &&
+                JSON.stringify(afterUseful) === JSON.stringify(THANKS) &&
+                asked &&
+                JSON.stringify(again) === JSON.stringify(ASKS) &&
+                notSent &&
+                thankedAgain &&
+                JSON.stringify(afterNot) === JSON.stringify(THANKS) &&
+                JSON.stringify(calls) === JSON.stringify([{ id, rating: "useful" }, { id, rating: "not" }]);
+            return { ok, detail: JSON.stringify({ unrated, afterUseful, again, afterNot, calls }) };
+        });
+
+        await step("a council already rated shows the thanks line at once; a stopped one with a summary shows the row; a benchmark council shows none", async () => {
+            const rated = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-rated",
+                edit: (c) => {
+                    c.rating = "useful";
+                    c.ratedat = Date.now();
+                },
+            });
+            await openSummary(h, ctx, rated);
+            const ratedShown = await until(h, `!!document.querySelector(${q(RATING_THANKS)})`);
+            const ratedFacts = await ratingFacts(h);
+
+            const stopped = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-rate-stopped",
+                edit: (c) => {
+                    c.state = "stopped";
+                },
+            });
+            await openSummary(h, ctx, stopped);
+            const stoppedShown = await until(h, `!!document.querySelector(${q(RATING)})`);
+            const stoppedFacts = await ratingFacts(h);
+
+            // a benchmark council is out of the cockpit's list, but one opened by id must still not ask
+            const bench = await seedCouncil(h, ctx, "done", {
+                id: "fx-council-rate-bench",
+                edit: (c) => {
+                    c.bench = true;
+                },
+            });
+            await openSummary(h, ctx, bench);
+            const benchRating = await exists(h, RATING);
+            await openSummary(h, ctx);
+            const ok =
+                ratedShown &&
+                JSON.stringify(ratedFacts) === JSON.stringify(THANKS) &&
+                stoppedShown &&
+                JSON.stringify(stoppedFacts) === JSON.stringify(ASKS) &&
+                !benchRating;
+            return { ok, detail: JSON.stringify({ ratedFacts, stoppedFacts, benchRating }) };
         });
 
         await step("Ask the experts again on direction 1 opens the Discussion on its first proposal", async () => {

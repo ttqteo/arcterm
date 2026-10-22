@@ -339,6 +339,12 @@ func CouncilListCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilListData, o
 	return resp, err
 }
 
+// command "councilrate", wshserver.CouncilRateCommand
+func CouncilRateCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilRateData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilrate", data, opts)
+	return err
+}
+
 // command "councilreply", wshserver.CouncilReplyCommand
 func CouncilReplyCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilReplyData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "councilreply", data, opts)

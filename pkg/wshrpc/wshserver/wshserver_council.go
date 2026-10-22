@@ -267,6 +267,28 @@ func (ws *WshServer) CouncilSaveGroupCommand(ctx context.Context, data council.C
 	return council.SaveGroup(data)
 }
 
+// CouncilRateCommand keeps the person's "Was this useful?" answer on the council and adds it to the benchmark's results
+// file with the council's harness version and mode. The council is saved first and announced, so the report shows the
+// thanks line; if the file then cannot be written the call fails, and rating again writes it.
+func (ws *WshServer) CouncilRateCommand(ctx context.Context, data wshrpc.CommandCouncilRateData) error {
+	if data.Id == "" {
+		return errors.New("a council id is required")
+	}
+	at := time.Now()
+	c, err := council.SetRating(data.Id, data.Rating, at.UnixMilli())
+	if err != nil {
+		return err
+	}
+	publishCouncilChanged(c)
+	return bench.AppendRating(wavebase.GetWaveDataDir(), bench.CouncilBenchRating{
+		RatedAt: at.UTC().Format(time.RFC3339),
+		Harness: c.Harness,
+		Mode:    council.ModeOf(c),
+		Council: c.Id,
+		Rating:  c.Rating,
+	})
+}
+
 // ---- the benchmark ----
 
 // councilBenchWiring is what bench.Run is given beside the data dir and the options: the real calls. A test replaces

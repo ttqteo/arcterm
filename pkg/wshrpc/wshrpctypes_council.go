@@ -28,6 +28,7 @@ type CouncilCommands interface {
 	CouncilSaveDocCommand(ctx context.Context, data CommandCouncilSaveDocData) (*CouncilSaveDocRtnData, error)
 	CouncilRolesCommand(ctx context.Context) (*CouncilRolesRtnData, error)
 	CouncilSaveGroupCommand(ctx context.Context, data council.CouncilGroup) error
+	CouncilRateCommand(ctx context.Context, data CommandCouncilRateData) error
 	CouncilBenchCommand(ctx context.Context, data CommandCouncilBenchData) (*CouncilBenchRtnData, error)
 	CouncilBenchResultsCommand(ctx context.Context) (*CouncilBenchResultsRtnData, error)
 	CouncilBenchStopCommand(ctx context.Context) (*CouncilBenchStopRtnData, error)
@@ -132,6 +133,15 @@ type CouncilSaveDocRtnData struct {
 type CouncilRolesRtnData struct {
 	Roles  []council.CouncilExpert `json:"roles"`
 	Groups []council.CouncilGroup  `json:"groups"`
+}
+
+// CommandCouncilRateData is the person's answer to "Was this useful?" on a council's report: Rating is
+// council.RatingUseful or council.RatingNot. Any other word is refused. The rating stays on the council and joins the
+// benchmark's results file with the council's harness version and mode; a later rating of the same council replaces the
+// first in the table and leaves its line in the file.
+type CommandCouncilRateData struct {
+	Id     string `json:"id"`
+	Rating string `json:"rating"`
 }
 
 // CommandCouncilBenchData picks a benchmark: the cases (all when empty), the variants (solo and council when empty) and
