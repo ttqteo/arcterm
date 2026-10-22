@@ -15,11 +15,14 @@ import {
     expertsLine,
     expertTone,
     failSuggestion,
+    flipMode,
     groupFromDraft,
     groupName,
     groupSlug,
     initialPanel,
     joinAsk,
+    modeChip,
+    modeRules,
     panelFor,
     pendingRoles,
     readingLine,
@@ -33,6 +36,7 @@ import {
     splitAsk,
     startBlocker,
     startData,
+    startLabel,
     suggestRequest,
     type RoleLibrary,
 } from "./councilsetupmodel";
@@ -55,6 +59,10 @@ const lib: RoleLibrary = {
         role("reviewer-a", "Reviewer A"),
         role("reader", "Reader"),
         role("areachair", "Area chair", { model: "opus", coordinator: true }),
+        role("designer", "Designer"),
+        role("builder", "Builder"),
+        role("contrarian", "Contrarian"),
+        role("facilitator", "Facilitator", { model: "opus", coordinator: true }),
     ],
     groups: [
         {
@@ -64,6 +72,12 @@ const lib: RoleLibrary = {
             coordinator: "coordinator",
         },
         { id: "paper", name: "Paper review", roles: ["reviewer-a", "reader"], coordinator: "areachair" },
+        {
+            id: "product-ideas",
+            name: "Product ideas",
+            roles: ["newuser", "designer", "builder", "contrarian"],
+            coordinator: "facilitator",
+        },
     ],
 };
 
@@ -476,6 +490,8 @@ describe("Start council", () => {
             experts: d.experts,
             pause: true,
             sessionid: "s1",
+            mode: "review",
+            modewhy: "picked by hand",
         });
         expect(data.experts?.at(-1)?.coordinator).toBe(true);
     });
@@ -495,6 +511,146 @@ describe("Start council", () => {
         expect(data.sessionid).toBeUndefined();
         expect(data.files).toEqual([]);
         expect(data.pause).toBe(false);
+    });
+});
+
+describe("the mode", () => {
+    const asking = (extra: Partial<CouncilSetupDraft> = {}) =>
+        beginSuggest(initialPanel(draft({ feature: "Rail apps", files: ["a.ts"], ...extra }), lib));
+    const answer = (mode?: string, group?: string): CouncilSuggestion => ({
+        files: [],
+        roles: [],
+        mode,
+        modewhy: mode ? `why ${mode}` : undefined,
+        group,
+    });
+
+    it("reads Review, and Brainstorm once it is the mode, with no word on where it came from", () => {
+        expect(modeChip(draft())).toBe("Review");
+        expect(modeChip(draft({ mode: "brainstorm" }))).toBe("Brainstorm");
+    });
+
+    it("says the question picked it when the suggestion named a mode", () => {
+        const brainstorm = applySuggestion(asking(), answer("brainstorm"), lib);
+        expect(brainstorm.mode).toBe("brainstorm");
+        expect(modeChip(brainstorm)).toBe("Brainstorm · picked from your question");
+        const review = applySuggestion(asking(), answer("review"), lib);
+        expect(review.mode).toBe("review");
+        expect(modeChip(review)).toBe("Review · picked from your question");
+    });
+
+    it("stays Review, with no word on where it came from, when the suggestion names no mode or an unknown one", () => {
+        expect(modeChip(applySuggestion(asking(), answer(), lib))).toBe("Review");
+        const odd = applySuggestion(asking(), answer("debate"), lib);
+        expect(odd.mode).toBe("review");
+        expect(modeChip(odd)).toBe("Review");
+    });
+
+    it("keeps the suggestion's reason for the Start call and for the chip's title", () => {
+        const d = applySuggestion(asking(), answer("brainstorm"), lib);
+        expect(d.suggestion?.mode).toBe("brainstorm");
+        expect(d.suggestion?.modewhy).toBe("why brainstorm");
+    });
+
+    it("flips with a click, counts as the person's pick, and says so", () => {
+        const flipped = flipMode(draft(), lib);
+        expect(flipped.mode).toBe("brainstorm");
+        expect(flipped.modePicked).toBe(true);
+        expect(modeChip(flipped)).toBe("Brainstorm · you picked it");
+        const back = flipMode(flipped, lib);
+        expect(back.mode).toBe("review");
+        expect(modeChip(back)).toBe("Review · you picked it");
+    });
+
+    it("is never overridden by a later suggestion once the person picked it", () => {
+        const picked = beginSuggest(flipMode(initialPanel(draft({ feature: "Rail apps", files: ["a.ts"] }), lib), lib));
+        expect(picked.mode).toBe("brainstorm");
+        const d = applySuggestion(picked, answer("review"), lib);
+        expect(d.mode).toBe("brainstorm");
+        expect(modeChip(d)).toBe("Brainstorm · you picked it");
+    });
+
+    it("says you picked it for a rerun, which arrives with its mode counted as picked", () => {
+        expect(modeChip(draft({ mode: "brainstorm", modePicked: true }))).toBe("Brainstorm · you picked it");
+    });
+
+    it("has one sentence of rules for each mode", () => {
+        expect(modeRules("brainstorm")).toBe(
+            "Ideas first and no doubts yet; then they build on each other and pick the best."
+        );
+        expect(modeRules("review")).toBe(
+            "Every claim cites a file line or a screenshot, or is marked as citing nothing."
+        );
+    });
+
+    it("moves the default group with the mode: Product ideas for Brainstorm, the suggestion's group or UI for Review", () => {
+        const brainstorm = applySuggestion(asking(), answer("brainstorm", "paper"), lib);
+        expect(brainstorm.group).toBe("product-ideas");
+        expect(ids(brainstorm)).toEqual(["newuser", "designer", "builder", "contrarian", "facilitator"]);
+        expect(brainstorm.groupPicked).toBe(false);
+        // a click on the chip moves it too, and back to the group the suggestion named, else the UI group
+        expect(flipMode(draft({ group: "paper", experts: panelFor(lib, "paper") }), lib).group).toBe("product-ideas");
+        expect(flipMode(brainstorm, lib).group).toBe("paper");
+        const noGroup = flipMode(applySuggestion(asking(), answer("brainstorm"), lib), lib);
+        expect(noGroup.group).toBe("ui-feature");
+        expect(ids(noGroup)).toEqual(["ux", "ram", "newuser", "skeptic", "coordinator"]);
+    });
+
+    it("keeps the group a suggestion with no mode named, so a paper question still gets the paper panel", () => {
+        const d = applySuggestion(asking(), answer(undefined, "paper"), lib);
+        expect(d.mode).toBe("review");
+        expect(d.group).toBe("paper");
+        expect(ids(d)).toEqual(["reviewer-a", "reader", "areachair"]);
+    });
+
+    it("leaves a group the person picked alone, whatever the mode does", () => {
+        const picked = applyGroup(asking(), lib, "paper", true);
+        const d = applySuggestion(picked, answer("brainstorm"), lib);
+        expect(d.mode).toBe("brainstorm");
+        expect(d.group).toBe("paper");
+        expect(flipMode(picked, lib).group).toBe("paper");
+        const edited = removeExpert(asking(), "ux");
+        expect(applySuggestion(edited, answer("brainstorm"), lib).group).toBe("ui-feature");
+    });
+
+    it("leaves the panel alone when the library has no Product ideas group", () => {
+        const old: RoleLibrary = { ...lib, groups: lib.groups.filter((g) => g.id !== "product-ideas") };
+        const d = applySuggestion(asking(), answer("brainstorm"), old);
+        expect(d.mode).toBe("brainstorm");
+        expect(d.group).toBe("ui-feature");
+        expect(flipMode(draft({ group: "ui-feature", experts: panelFor(old, "ui-feature") }), old).group).toBe(
+            "ui-feature"
+        );
+    });
+
+    it("sends the mode and why with Start council: the suggestion's reason, or picked by hand", () => {
+        const suggested = applySuggestion(asking(), answer("brainstorm"), lib);
+        expect(startData(suggested).mode).toBe("brainstorm");
+        expect(startData(suggested).modewhy).toBe("why brainstorm");
+        const flipped = flipMode(suggested, lib);
+        expect(startData(flipped).mode).toBe("review");
+        expect(startData(flipped).modewhy).toBe("picked by hand");
+        expect(startData(draft()).modewhy).toBe("picked by hand");
+        expect(startData(draft({ mode: "brainstorm" })).mode).toBe("brainstorm");
+    });
+});
+
+describe("the Start label", () => {
+    const council = (state: string): Council => ({ id: state, state }) as Council;
+
+    it("is Start council with nothing running", () => {
+        expect(startLabel(null)).toBe("Start council");
+        expect(startLabel(undefined)).toBe("Start council");
+        expect(startLabel([])).toBe("Start council");
+    });
+
+    it("is Queue council while any council runs, in any project", () => {
+        expect(startLabel([council("done"), council("running")])).toBe("Queue council");
+    });
+
+    it("is Start council when the others are waiting on the person, queued, done, stopped, failed or not run", () => {
+        const rest = ["awaiting-you", "queued", "done", "stopped", "failed", "not-run"].map(council);
+        expect(startLabel(rest)).toBe("Start council");
     });
 });
 

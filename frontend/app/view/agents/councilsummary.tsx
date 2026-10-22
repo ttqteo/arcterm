@@ -5,8 +5,11 @@
 // was asked, the answer in one bold sentence, the coordinator's text under it, the directions ranked (a row opens to the
 // coordinator's reasoning and each expert's position), and the matrix of every idea against every expert, folded at the
 // bottom. A finished council opens on it; Summarize on the Discussion opens it too, and Show the discussion goes back.
-// What it derives from the council is councilsummarymodel.ts (and councilmodel.ts); what it hands on is a saved doc,
-// an initiative, a Setup draft to run again, the Discussion on one direction's thread, and a new agent started on it.
+// A Brainstorm's report heads its directions "Ideas worth trying, best first" (each with a first step and who had and
+// built on it), keeps the wild ideas aside under them with a count of the rest, and says where the finished council saved
+// itself (docs/council/) with the `⋯` menu opening that document. What it derives from the council is
+// councilsummarymodel.ts (and councilmodel.ts); what it hands on is a saved doc, an initiative, a Setup draft to run
+// again, the Discussion on one direction's thread, and a new agent started on it.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -20,6 +23,7 @@ import { atomFamily } from "jotai/utils";
 import { Check, ChevronDown, ChevronUp, Code, Ellipsis, Loader2, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { showCouncil, showCouncilSetup } from "./agentcenter";
+import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { avatarTone } from "./councildiscussionmodel";
 import {
@@ -45,14 +49,20 @@ import {
     brainstormPrompt,
     canRunSummary,
     directionRows,
+    directionsHeading,
+    docAction,
     docPathLabel,
+    droppedLine,
     evidenceLabel,
     initiativeSeed,
+    keptRows,
     outcomeLabel,
     outdatedLabel,
     projectNameOf,
+    savedLine,
     writtenLine,
     type DirectionRow,
+    type KeptRow,
     type Position,
 } from "./councilsummarymodel";
 import { CouncilAvatar } from "./councilthread";
@@ -213,6 +223,11 @@ function DirectionCard({
                     <span data-council-title className="text-[13.5px] font-semibold text-primary">
                         {d.title}
                     </span>
+                    {row.firstStep !== "" ? (
+                        <span data-council-first-step className="text-[12px] leading-[1.45] text-secondary">
+                            {row.firstStep}
+                        </span>
+                    ) : null}
                     {row.meta !== "" ? (
                         <span data-council-meta className="text-[11px] text-muted">
                             {row.meta}
@@ -294,6 +309,29 @@ function DirectionCard({
                         ) : null}
                     </div>
                 </div>
+            ) : null}
+        </div>
+    );
+}
+
+// a Brainstorm's wild idea kept aside: not ranked, so a plain row, no stances and nothing to open
+function KeptCard({ row }: { row: KeptRow }) {
+    const d = row.direction;
+    return (
+        <div
+            data-council-kept-idea={d.rank}
+            className="flex flex-col gap-[3px] rounded-[10px] border border-edge-mid bg-surface-raised px-[14px] py-[10px]"
+        >
+            <span data-council-title className="text-[13px] font-semibold text-primary">
+                {d.title}
+            </span>
+            {row.had !== "" ? (
+                <span data-council-meta className="text-[11px] text-muted">
+                    {row.had}
+                </span>
+            ) : null}
+            {d.reasoning !== "" ? (
+                <span className="text-[12.5px] leading-[1.5] text-secondary">{d.reasoning}</span>
             ) : null}
         </div>
     );
@@ -651,6 +689,16 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
             }
         });
 
+    // the document the finished council saved itself, in the Code surface
+    const openDocument = () =>
+        act("open-doc", async () => {
+            try {
+                await openRefInCode(model, { abs: c.docpath ?? "", root: c.project });
+            } catch (e) {
+                throw new Error(`Could not open the document: ${e instanceof Error ? e.message : String(e)}`);
+            }
+        });
+
     const saveDoc = () =>
         act("doc", async () => {
             const r = await saveCouncilDoc(c.id);
@@ -709,6 +757,11 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const written = writtenLine(c);
     const asked = askedLine(c);
     const { answer, rest } = answerParts(c);
+    const heading = directionsHeading(c);
+    const kept = useMemo(() => keptRows(c), [c]);
+    const dropped = droppedLine(c);
+    const saved = savedLine(c);
+    const doc = docAction(c);
     return (
         <>
             <header className="flex flex-none flex-col gap-3 border-b border-edge-faint px-8 pb-[14px] pt-[18px]">
@@ -728,12 +781,19 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                     </button>
                     <ActionsMenu
                         items={[
-                            {
-                                id: "save-doc",
-                                label: "Save as doc",
-                                disabled: summary == null || busy === "doc",
-                                onPick: () => void saveDoc(),
-                            },
+                            doc.id === "open-doc"
+                                ? {
+                                      id: doc.id,
+                                      label: doc.label,
+                                      disabled: busy === "open-doc",
+                                      onPick: () => void openDocument(),
+                                  }
+                                : {
+                                      id: doc.id,
+                                      label: doc.label,
+                                      disabled: summary == null || busy === "doc",
+                                      onPick: () => void saveDoc(),
+                                  },
                             {
                                 id: "initiative",
                                 label: "Create initiative",
@@ -764,9 +824,13 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                         </span>
                     ))}
                 </div>
-                {savedDoc != null || initiative != null || error != null ? (
+                {saved !== "" || savedDoc != null || initiative != null || error != null ? (
                     <div className="flex flex-col gap-1 text-[11.5px]">
-                        {savedDoc != null ? (
+                        {saved !== "" ? (
+                            <span data-council-docpath data-path={c.docpath} className="select-text text-secondary">
+                                {saved}
+                            </span>
+                        ) : savedDoc != null ? (
                             <span data-council-doc-saved data-path={savedDoc} className="text-secondary">
                                 Saved to{" "}
                                 <span className="select-text text-primary">{docPathLabel(c.project, savedDoc)}</span>
@@ -868,6 +932,14 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                     {written}
                                 </span>
                             ) : null}
+                            {heading !== "" && directions.length > 0 ? (
+                                <h2
+                                    data-council-directions-heading
+                                    className="m-0 text-[13px] font-semibold text-primary"
+                                >
+                                    {heading}
+                                </h2>
+                            ) : null}
                             {directions.map((row) => (
                                 <DirectionCard
                                     key={row.direction.rank}
@@ -880,6 +952,21 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                     onAskAgain={() => askAgain(row)}
                                 />
                             ))}
+                            {kept.length > 0 ? (
+                                <section data-council-kept className="mt-[14px] flex flex-col gap-[10px]">
+                                    <h2 className="m-0 text-[13px] font-semibold text-primary">
+                                        Wild ideas kept aside
+                                    </h2>
+                                    {kept.map((row, i) => (
+                                        <KeptCard key={`${row.direction.rank}-${i}`} row={row} />
+                                    ))}
+                                </section>
+                            ) : null}
+                            {dropped !== "" ? (
+                                <span data-council-dropped className="text-[11.5px] text-muted">
+                                    {dropped}
+                                </span>
+                            ) : null}
                         </div>
                         <Matrix c={c} />
                     </div>
