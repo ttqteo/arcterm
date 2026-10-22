@@ -220,7 +220,8 @@ Drawn in the prototype; the board names are given so the builder can match them.
    X but Y" sentences; the missing [removed] baseline; the rest listed once by hand). Unpublished, so no model has seen
    the reviews.
 2. **Code review**: an arcterm feature at the commit before a known `fix(...)` commit; key: the bug that commit fixed.
-   Two or three such cases, picked so the bug is findable by reading.
+   Two or three such cases in the full set (Phase 0's cheap pass has one; the person's call, 2026-10-22), picked so
+   the bug is findable by reading.
 3. **Brainstorm**: "Council is hard for a newcomer: it opens on threads and nobody knows what to do. Fix?" on arcterm at
    commit `0a2c46437`. Key: the ideas reached on 2026-10-21/22: open the report first and move the debate behind it;
    plain words instead of code words; the vote as top-3 picks with agreement as a reaction; an answer-first report;
@@ -231,7 +232,9 @@ Drawn in the prototype; the board names are given so the builder can match them.
 no argue round (Pause after round 1, then Summarize); V2 council v1 as is; V3 the agent-team council; V3 with each cost
 lever turned off, one at a time.
 
-**Scores per run**: recall of the key in the report's top items (top 5 Review, top 3 + kept-aside Brainstorm); wrong or
+**Scores per run**: recall of the key in the report's top items (top 5 Review, top 3 Brainstorm, for every variant);
+matches among a Brainstorm report's Wild ideas kept aside are counted in a column of their own, outside recall, since
+only the agent-team council writes that list (the person's call, 2026-10-22); wrong or
 empty items in the report; tokens; wall time; messages. Matching a report item to a key item is done by an LLM judge
 (opus is fine even though the councils are Claude too; my call) with the key and a fixed rubric, spot-checked by hand
 on the first run. Two runs per variant per case to start; more where two variants are close.
