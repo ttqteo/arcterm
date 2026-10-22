@@ -220,10 +220,8 @@ Drawn in the prototype; the board names are given so the builder can match them.
 
 **Cases** (each with an answer key, all from the person's real work; adding a public set is left open):
 
-1. **Paper review**: [removed] 2027 [removed] [removed] against the real reviews
-   [removed] Key: the points the reviewers raised (prose: undefined internal terms, dense "not
-   X but Y" sentences; the missing [removed] baseline; the rest listed once by hand). Unpublished, so no model has seen
-   the reviews.
+1. A paper-review case was here; removed at the person's request (2026-10-22). A replacement with an answer key from
+   real reviews is open.
 2. **Code review**: an arcterm feature at the commit before a known `fix(...)` commit; key: the bug that commit fixed.
    Two or three such cases in the full set (Phase 0's cheap pass has one; the person's call, 2026-10-22), picked so
    the bug is findable by reading.
@@ -245,8 +243,7 @@ empty items in the report; tokens; wall time; messages. Matching a report item t
 on the first run. Two runs per variant per case to start; more where two variants are close.
 
 **Where the cases live** (my call): in the data dir (`council-bench/cases.json` plus each case's key), not the repo,
-because case 1 points at the thesis folder outside it and a pushed absolute `/Users/...` path is refused by the
-pre-push hook.
+so a case's copies and keys never reach a commit.
 
 **Continuous**: `wsh council bench [--case <c>] [--variant <v>]` runs the set and appends to a results file in the data
 dir (`council-bench.jsonl`): date, harness version, case, variant, scores. It is run by hand after any harness or model
