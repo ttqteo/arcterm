@@ -262,7 +262,7 @@ matches among a Brainstorm report's Wild ideas kept aside are counted in a colum
 only the agent-team council writes that list (the person's call, 2026-10-22); wrong or
 empty items in the report; tokens; wall time; messages. Matching a report item to a key item is done by an LLM judge
 (opus is fine even though the councils are Claude too; my call) with the key and a fixed rubric, spot-checked by hand
-on the first run. A first pass, and any pass where two variants are close, runs each variant twice per case
+on the first run. The full set, and any pass where two variants are close, runs each variant twice per case
 (`wsh council bench --runs 2`); a routine re-run is one run (the person's call, 2026-10-22).
 
 **Where the cases live** (my call): in the data dir (`council-bench/cases.json` plus each case's key), not the repo,
