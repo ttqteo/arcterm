@@ -246,13 +246,15 @@ change; an initiative chunk reminds the person monthly (Phase 3). Real councils 
 with harness version and mode.
 
 **Cost of the benchmark**: about 0.5–1M tokens per run. **The first pass is the cheap one** (the person chose it): cases
-1–3 × V0–V2 × 1 run, roughly 5–9M tokens, repeated only where two variants land close. The full set (4 cases × 2 runs,
+1–3 × V0–V3 × 1 run in Phase 0, with V3 a prompt-only agent team, roughly 8–12M tokens, repeated only where two
+variants land close. The full set (4 cases × 2 runs,
 ~12–24M) comes later. Any pass is said to the person before it runs, per AGENTS.md.
 
 ## Phases
 
-0. **Measure and probe** (no product code): run V0–V2 on cases 1–3 with today's council, by hand with throwaway
-   scripts in a scratch dir, judged by hand plus the LLM judge; probe agent teams: where messages and tasks live,
+0. **Probe agent teams, then benchmark them before building** (no product code; the person wants the agent team, and
+   because it costs more, its worth measured first): prepare the cases and keys, run a prompt-only agent-team council
+   (V3: a lead given the harness as a prompt) against V0–V2 on cases 1–3, one run each, and probe agent teams: where messages and tasks live,
    whether arcterm can read them, in-process vs separate processes, RAM per teammate, whether the lead can be told to
    run phases, whether a message can be put into the lead from outside, and whether an idle teammate can be put to
    sleep and resumed with its context. Output: a findings note
@@ -264,9 +266,9 @@ with harness version and mode.
    project file, the harness v2 (both modes), the cost levers as settings, the mode pick, and the `arc:council` skill
    rewritten so an agent starts a council from the conversation.
 2. **The UI**: Setup, Room, Report for both modes, plain words, tree row states, Needs you entry, toast.
-3. **Benchmark tooling**: `wsh council bench`, the judge, results file, the rating, the monthly chunk. Then V3 is run
-   against V0–V2; v1's one-shot runner is removed only if V3 wins on score per token, otherwise it stays as a "Quick"
-   option and this design is revisited.
+3. **Benchmark tooling**: `wsh council bench`, the judge, results file, the rating, the monthly chunk; then the built
+   council is run against V0–V2 and Phase 0's prompt-only V3. v1's one-shot runner is removed only if the agent-team
+   council wins on score per token, otherwise it stays as a "Quick" option and this design is revisited.
 4. **Later**: harness evolution (propose a harness variant, bench it, keep the better one), mixed runtimes.
 
 ## Left to the builder
