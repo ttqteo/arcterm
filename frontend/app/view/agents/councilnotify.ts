@@ -31,6 +31,15 @@ export function endedNotice(
     return { title, body };
 }
 
+/** Pure: what a notice does. The toast follows Settings → In-app toasts (`toastsOn`); the unread dot marks the council
+ *  whenever there is a notice, whatever that setting says. */
+export function noticeRoute(
+    notice: { title: string; body: string } | null,
+    toastsOn: boolean
+): { toast: boolean; unread: boolean } {
+    return { toast: notice != null && toastsOn, unread: notice != null };
+}
+
 /** Pure: whether the person is looking at council `id`: the Agent surface shows its Discussion or Summary. */
 export function viewingCouncil(
     surface: string,

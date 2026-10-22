@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { endedNotice, markRead, markUnread, viewingCouncil } from "./councilnotify";
+import { endedNotice, markRead, markUnread, noticeRoute, viewingCouncil } from "./councilnotify";
 
 const council = (over: Partial<Council> = {}): Council => ({
     id: "c1",
@@ -63,6 +63,23 @@ describe("endedNotice", () => {
         expect(endedNotice(council(), done, true)).toBeNull();
         expect(endedNotice(council(), council({ state: "awaiting-you" }), false)).toBeNull();
         expect(endedNotice(council({ state: "not-run" }), council(), false)).toBeNull();
+    });
+});
+
+describe("noticeRoute", () => {
+    const notice = { title: "Council done", body: "Use Redis." };
+
+    it("toasts and marks unread with toasts on", () => {
+        expect(noticeRoute(notice, true)).toEqual({ toast: true, unread: true });
+    });
+
+    it("keeps the unread dot but no toast with toasts off", () => {
+        expect(noticeRoute(notice, false)).toEqual({ toast: false, unread: true });
+    });
+
+    it("does nothing without a notice", () => {
+        expect(noticeRoute(null, true)).toEqual({ toast: false, unread: false });
+        expect(noticeRoute(null, false)).toEqual({ toast: false, unread: false });
     });
 });
 
