@@ -228,7 +228,7 @@ later to the `Council benchmark` initiative.
 
 ### Task 6: Changelog, docs and the first reminder
 
-**Depends on:** Task 5
+**Depends on:** Task 4 (documents its command), Task 5 (documents its rating row)
 **Files:** `CHANGELOG.md`, `docs/open-issues.md`, `docs/council-phase0.md`
 
 - [ ] **Step 1:** `CHANGELOG.md` under `## Unreleased`: `Added` lines for "Was this useful?" on a council's report
