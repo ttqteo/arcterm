@@ -12,7 +12,7 @@ is unchanged; it gains `onContextMenu` and a selected fill.
 
 **Tech Stack:** React 19, jotai, Tailwind 4 tokens, vitest, CDP scenarios (`scripts/cdp/scenarios.mjs`).
 
-Spec: `docs/superpowers/specs/2026-10-22-project-overview-design.md`.
+**Spec:** `docs/superpowers/specs/2026-10-22-project-overview-design.md`
 
 **Prototype:** <repo>/.superpowers/design/project-overview/project
 
@@ -23,12 +23,8 @@ Spec: `docs/superpowers/specs/2026-10-22-project-overview-design.md`.
 ---
 
 ### Task 1: The pure model
-
 **Depends on:** none
-
-**Files:**
-- Create: `frontend/app/view/agents/projectoverviewmodel.ts`
-- Test: `frontend/app/view/agents/projectoverviewmodel.test.ts`
+**Files:** `frontend/app/view/agents/projectoverviewmodel.ts`, `frontend/app/view/agents/projectoverviewmodel.test.ts`
 
 **Step 1: Write the failing test**
 
@@ -174,12 +170,12 @@ git commit -m "feat(overview): the project Overview's pure model" -- frontend/ap
 (`git commit -- <paths>` takes new files only once they are known to git: run `git add -N <new files>` first.)
 
 ### Task 2: The `project` centre mode
-
 **Depends on:** none
+**Files:** `frontend/app/view/agents/agentcenter.ts`, `frontend/app/view/agents/agentcenter.test.ts`, `frontend/app/view/agents/agenttree.tsx`
 
-**Files:**
-- Modify: `frontend/app/view/agents/agentcenter.ts`
-- Test: `frontend/app/view/agents/agentcenter.test.ts`
+Besides the mode, this task exports `selectAgentRow` from `agenttree.tsx` (line 262: `function selectAgentRow(` becomes
+`export function selectAgentRow(`), which Task 4's page calls. It lives here so Task 4 and Task 5 never edit
+`agenttree.tsx` at the same time.
 
 **Step 1: Write the failing test** — append to `agentcenter.test.ts`, and add `overviewProjectAtom` and
 `showProjectOverview` to its import from `./agentcenter`:
@@ -244,16 +240,14 @@ to `SessionPane` for an unknown mode, so it still compiles; Task 4 adds the bran
 **Step 5: Commit**
 
 ```bash
-git commit -m "feat(overview): the Agent surface's project centre mode" -- frontend/app/view/agents/agentcenter.ts frontend/app/view/agents/agentcenter.test.ts
+git commit -m "feat(overview): the Agent surface's project centre mode" -- frontend/app/view/agents/agentcenter.ts frontend/app/view/agents/agentcenter.test.ts frontend/app/view/agents/agenttree.tsx
 ```
 
 ### Task 3: Needs you, scoped to one project
-
 **Depends on:** none
+**Files:** `frontend/app/view/agents/needsyou.ts`, `frontend/app/view/agents/needsyoustrip.tsx`
 
-**Files:**
-- Modify: `frontend/app/view/agents/needsyou.ts` (the `useNeedsYou` hook)
-- Modify: `frontend/app/view/agents/needsyoustrip.tsx` (`NeedsYouStrip`, lines 154–261)
+`needsyou.ts` holds the `useNeedsYou` hook; `needsyoustrip.tsx` holds `NeedsYouStrip` (lines 154–261).
 
 **Step 1: Give the hook a project.** In `useNeedsYou(model, onFocusAgent)` add a third parameter and use it in place of
 the app bar's filter. The atom is still read every render (rules of hooks):
@@ -311,18 +305,15 @@ git commit -m "refactor(needs-you): the hook takes a project, the rows render on
 ```
 
 ### Task 4: The Overview page
+**Depends on:** Task 1 (renders overviewRows and its lines), Task 2 (reads overviewProjectAtom and calls the exported selectAgentRow), Task 3 (uses useNeedsYou's project and NeedsYouRows)
+**Files:** `frontend/app/view/agents/projectoverview.tsx`, `frontend/app/view/agents/agentsurface.tsx`
 
-**Depends on:** Task 1, Task 2, Task 3
-
-**Files:**
-- Create: `frontend/app/view/agents/projectoverview.tsx`
-- Modify: `frontend/app/view/agents/agentsurface.tsx` (`AgentCenterPane`, line 870)
-- Modify: `frontend/app/view/agents/agenttree.tsx:262` (export `selectAgentRow`)
+`agentsurface.tsx` holds `AgentCenterPane` (line 870).
 
 The prototype's `Main.dc.html` and `QuietNarrow.dc.html` boards are the target. DESIGN.md applies: tokens only, Inter
 for every name and path, the accent on New agent alone, status as a dot plus a word.
 
-**Step 1:** In `agenttree.tsx` change `function selectAgentRow(` to `export function selectAgentRow(`.
+**Step 1:** `selectAgentRow` is exported by Task 2.
 
 **Step 2: Write `projectoverview.tsx`:**
 
@@ -559,15 +550,14 @@ and `npx prettier --check frontend/app/view/agents/projectoverview.tsx` are clea
 **Step 5: Commit**
 
 ```bash
-git commit -m "feat(overview): the project Overview page" -- frontend/app/view/agents/projectoverview.tsx frontend/app/view/agents/agentsurface.tsx frontend/app/view/agents/agenttree.tsx
+git commit -m "feat(overview): the project Overview page" -- frontend/app/view/agents/projectoverview.tsx frontend/app/view/agents/agentsurface.tsx
 ```
 
 ### Task 5: The folder row's menu and selected fill
-
 **Depends on:** Task 2
+**Files:** `frontend/app/view/agents/agenttree.tsx`
 
-**Files:**
-- Modify: `frontend/app/view/agents/agenttree.tsx` (`FolderRow` at 1961, its call sites at ~2604 and ~2902)
+`FolderRow` is at line 1961, its call sites at ~2604 and ~2902.
 
 **Step 1: The menu.** Above `FolderRow` add:
 
@@ -625,11 +615,10 @@ git commit -m "feat(overview): a project folder's right-click opens its Overview
 ```
 
 ### Task 6: The CDP scenario
+**Depends on:** Task 4 (the page it opens and checks), Task 5 (the folder menu it right-clicks)
+**Files:** `scripts/cdp/scenarios.mjs`
 
-**Depends on:** Task 4, Task 5
-
-**Files:**
-- Modify: `scripts/cdp/scenarios.mjs` (a `project-overview` scenario, registered where the others are)
+A `project-overview` scenario, registered where the others are.
 
 The scenario follows `canvas-gallery` (`scenarios.mjs:27940`) for registering a throwaway project
 (`h.rpc("createproject", …)`, `waitForProjectInConfig`) and `rail-servers` (`scenarios.mjs:29153`, its step 10) for a
@@ -662,12 +651,8 @@ git commit -m "test(cdp): the project-overview scenario" -- scripts/cdp/scenario
 ```
 
 ### Task 7: CHANGELOG and the hand check
-
-**Depends on:** Task 4, Task 5
-
-**Files:**
-- Modify: `CHANGELOG.md`
-- Modify: `docs/open-issues.md` (section "0 · Waiting on a hand check")
+**Depends on:** Task 4 (the page the line announces), Task 5 (the commit the hand-check line names)
+**Files:** `CHANGELOG.md`, `docs/open-issues.md`
 
 **Step 1:** The top section of `CHANGELOG.md` is dated (`## 0.15.17 — 2026-10-21`), so open a new one above it:
 
