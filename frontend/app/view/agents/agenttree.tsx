@@ -144,6 +144,7 @@ import {
     councilSelAtom,
     councilSetupDraftAtom,
     councilSetupProjectAtom,
+    councilUnreadAtom,
     councilViewAtom,
     useCouncils,
 } from "./councilstore";
@@ -2428,7 +2429,7 @@ function CouncilNewRow({ project, root, draft }: { project: string; root: string
 }
 
 // One council: a dot, its feature and its state in a word. The word is in the state's tone token and carries the state
-// whatever the color, `Waiting on you` in the amber one.
+// whatever the color, `Waiting on you` in the amber one. A primary-ink dot before it says it ended while you were away.
 function CouncilRow({ row }: { row: CouncilRowVM }) {
     const center = useAtomValue(centerModeAtom);
     const view = useAtomValue(councilViewAtom);
@@ -2457,6 +2458,14 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
             >
                 {row.feature}
             </span>
+            {row.unread ? (
+                <span
+                    data-council-unread
+                    role="img"
+                    aria-label="Not opened since it ended"
+                    className="h-[6px] w-[6px] flex-none rounded-full bg-primary"
+                />
+            ) : null}
             <span data-council-meta className={cn("flex-none whitespace-nowrap text-[11px]", tone.text)}>
                 {row.meta}
             </span>
@@ -2787,7 +2796,11 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // the councils (councilstore.ts), every project's, filed under the registered project each ran in; and the projects
     // whose Setup holds an unsent draft, which New council says
     const councilList = useCouncils("");
-    const councils = useMemo(() => councilRowsByProject(councilList, roots), [councilList, roots]);
+    const councilUnread = useAtomValue(councilUnreadAtom);
+    const councils = useMemo(
+        () => councilRowsByProject(councilList, roots, councilUnread),
+        [councilList, roots, councilUnread]
+    );
     const draftsAtom = useMemo(
         () =>
             atom(

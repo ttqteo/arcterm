@@ -11,11 +11,15 @@
 
 import { waitFor } from "../attach.mjs";
 import {
+    announceCouncil,
     arrangeCouncilProject,
+    COUNCIL_ID_PREFIX,
     COUNCIL_PROJECT,
     councilFixtureId,
+    openCouncil,
     seedCouncil,
     teardownCouncilProject,
+    writeCouncil,
 } from "./fixtures.mjs";
 
 export const EMPTY_PROJECT = "council-empty";
@@ -27,6 +31,15 @@ const METAS = ["Running", "Waiting on you", "Done", "Not run"];
 
 const ROWS_WAIT_MS = 10_000;
 const UI_WAIT_MS = 5_000;
+const NOTICE_SETTLE_MS = 600;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// the corner toasts whose text holds `text`, and the row's meta and unread dot, as the page shows them
+const toastsWith = (text) =>
+    `[...document.querySelectorAll("[data-notification-toast]")].filter((t) => (t.textContent || "").includes(${JSON.stringify(text)}))`;
+const rowMeta = (id) =>
+    `(document.querySelector(${JSON.stringify(`[data-council-row="${id}"] [data-council-meta]`)})?.textContent ?? "").trim()`;
+const unreadDot = (id) => `!!document.querySelector(${JSON.stringify(`[data-council-row="${id}"] [data-council-unread]`)})`;
 
 // every row of the Active tree in the order drawn, each reduced to what a step reads
 const TREE_ROWS = `(() => {
@@ -249,6 +262,47 @@ export const councilTree = {
             "7. the palette's New council… row (search, Enter) opens Setup",
             back && opened && picked.startsWith("New council") && viaPalette,
             JSON.stringify({ back, opened, picked, viaPalette })
+        );
+
+        // 8. a council that ends while you are on Setup: a toast, an unread dot, and the toast opens its Summary
+        const away = `${COUNCIL_ID_PREFIX}ended-away`;
+        await seedCouncil(h, ctx, "round2", { id: away });
+        const running = await until(`${rowMeta(away)} === "Running"`);
+        const onSetup = await h.ev(present("[data-council-setup]"));
+        writeCouncil(ctx, "done", { id: away });
+        await announceCouncil(h, ctx, away);
+        const toasted = await until(`${toastsWith("Council done")}.length === 1`);
+        const dotted = await until(`${unreadDot(away)} && ${rowMeta(away)} === "Done"`);
+        await h.shot("cdp-shots/council-tree-ended.png");
+        const clicked = await h.ev(`(() => {
+            const t = ${toastsWith("Council done")}[0];
+            if (!t) return false;
+            t.click();
+            return true;
+        })()`);
+        const summary = await until(present("[data-council-summary]"));
+        const read = await until(`!${unreadDot(away)}`);
+        rec(
+            "8. a council that ends while Setup shows raises a Council done toast and an unread dot; the toast opens its Summary and clears the dot",
+            running && onSetup && toasted && dotted && clicked && summary && read,
+            JSON.stringify({ running, onSetup, toasted, dotted, clicked, summary, read })
+        );
+
+        // 9. one that ends while you are looking at it says nothing
+        const seen = `${COUNCIL_ID_PREFIX}ended-seen`;
+        await seedCouncil(h, ctx, "round2", { id: seen });
+        await until(`${rowMeta(seen)} === "Running"`);
+        await openCouncil(h, seen, "discussion");
+        writeCouncil(ctx, "done", { id: seen });
+        await announceCouncil(h, ctx, seen);
+        const ended = await until(`${rowMeta(seen)} === "Done"`);
+        await sleep(NOTICE_SETTLE_MS);
+        const stray = await h.ev(`${toastsWith("Council done")}.length`);
+        const dot = await h.ev(unreadDot(seen));
+        rec(
+            "9. a council that ends while its Discussion is open raises no toast and no dot",
+            ended && stray === 0 && dot === false,
+            JSON.stringify({ ended, stray, dot })
         );
 
         return steps;

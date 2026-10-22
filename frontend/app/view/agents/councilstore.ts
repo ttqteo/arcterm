@@ -224,6 +224,10 @@ export const councilSelAtom = atom<string | null>(null) as PrimitiveAtom<string 
 /** Which view of the open council shows. */
 export const councilViewAtom = atom<CouncilView>("discussion") as PrimitiveAtom<CouncilView>;
 
+/** The councils that ended (done, stopped, failed) while the person was elsewhere and have not been opened since: the
+ *  Agent tree draws a dot on each. Lives for the app session; councilnotifysync.tsx fills and clears it. */
+export const councilUnreadAtom = atom<ReadonlySet<string>>(new Set<string>()) as PrimitiveAtom<ReadonlySet<string>>;
+
 /** The project Setup shows, the one showCouncilSetup last opened: its form is `councilSetupDraftAtom(project)`. */
 export const councilSetupProjectAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
