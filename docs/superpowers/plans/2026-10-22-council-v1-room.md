@@ -15,10 +15,9 @@ rewritten. Agent teams, the RAM awake limit and the cost levers stay out (they w
 **Tech Stack:** Go (`pkg/council`, `pkg/wshrpc`, `cmd/wsh`), React 19 + jotai + Tailwind 4, vitest, CDP scenarios.
 
 **Spec:** `docs/superpowers/specs/2026-10-22-council-agent-team-design.md` ("The two modes", "Starting a council",
-"UI", "Storage", "One council at a time"), applied to v1 as this plan states. Boards (main checkout, gitignored):
-`~/Workspaces/dev/arcterm/.superpowers/design/council-newcomer/project/ReportRunning.dc.html` and `V2Room.dc.html`
-(the feed; v1 has no awake/asleep chips: show each expert's current activity instead), `V2Setup.dc.html` (the mode
-chip), `V2Report.dc.html` (the Brainstorm report), `V2Chat.dc.html` (a council started from a chat, the queued row).
+"UI", "Storage", "One council at a time"), applied to v1 as this plan states. The design boards stayed on the machine
+that drew them, so this plan's words and the spec's "UI" section are the design: v1 has no awake/asleep chips, so
+the feed shows each expert's current activity instead; follow `DESIGN.md` and the existing council views for the rest.
 
 **Verify:** `node scripts/verify.mjs ./pkg/council ./pkg/wshrpc/... ./cmd/wsh/...`
 
@@ -114,7 +113,7 @@ chip), `V2Report.dc.html` (the Brainstorm report), `V2Chat.dc.html` (a council s
   (`2:12 · 18 ideas from 3 experts · now they argue`); Brainstorm labels come out as in the Global Constraints.
   `stepOf` for each round and mode.
 - [ ] **Step 2:** Run `npx vitest run frontend/app/view/agents/councilfeedmodel.test.ts` — Expected: FAIL.
-- [ ] **Step 3:** Implement `councilfeed.tsx` (boards `ReportRunning`, `V2Room`): the 3-part step bar, while running a
+- [ ] **Step 3:** Implement `councilfeed.tsx`: the 3-part step bar, while running a
   line "Nothing to do now. The answer opens here when it finishes; you can leave.", a row of expert chips with their
   current activity, the feed, and the existing "Ask the whole council" composer under it. `councildiscussion.tsx` shows
   the feed as its main body; clicking a proposal in the column filters the feed to that proposal's messages.
@@ -135,7 +134,7 @@ chip), `V2Report.dc.html` (the Brainstorm report), `V2Chat.dc.html` (a council s
   council's report rows carry `FirstStep`; `Kept` becomes the "Wild ideas kept aside" rows; the saved line reads
   `Saved to docs/council/<file> with the whole discussion`.
 - [ ] **Step 2:** Run `npx vitest run frontend/app/view/agents/councilsetupmodel.test.ts frontend/app/view/agents/councilsummarymodel.test.ts` — Expected: FAIL.
-- [ ] **Step 3:** Implement (boards `V2Setup`, `V2Report`): the chip in the composer bar; for Brainstorm the report
+- [ ] **Step 3:** Implement: the chip in the composer bar; for Brainstorm the report
   heads "Ideas worth trying, best first" with "First step:" lines and a "Wild ideas kept aside" section; the saved
   document's path under the report; Save as doc becomes **Open the document** once `DocPath` is set.
 - [ ] **Step 4:** Run the same vitest command — Expected: PASS.

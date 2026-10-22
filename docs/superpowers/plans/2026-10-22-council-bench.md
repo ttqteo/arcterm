@@ -122,9 +122,8 @@ back to the person.
   `councilsummarymodel.test.ts`: a done council shows the rating row; after rating it reads
   `Thanks: this goes into the council benchmark` with a Change link.
 - [ ] **Step 2:** Run `go test ./pkg/council -run Rate` and `npx vitest run frontend/app/view/agents/councilsummarymodel.test.ts` — Expected: FAIL.
-- [ ] **Step 3:** Implement (board `V2Report` in the main checkout's gitignored
-  `~/Workspaces/dev/arcterm/.superpowers/design/council-newcomer/project/`): under the report, "Was this useful?" with
-  **Useful** and **Not really**; run `task generate`.
+- [ ] **Step 3:** Implement: under the report, "Was this useful?" with **Useful** and **Not really**, styled like the
+  report's other quiet rows (`DESIGN.md`); run `task generate`.
 - [ ] **Step 4:** Run the same commands — Expected: PASS.
 - [ ] **Step 5: Scenario.** In `council/summary.mjs` click Useful on a done fixture and assert the thanks line. Shown
   by `council-summary`.
