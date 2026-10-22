@@ -426,3 +426,27 @@ describe("buildNeedsYouRows: a learned rule", () => {
         expect(rows.map((r) => r.key)).toEqual(["learn:skill:notes#short"]);
     });
 });
+
+describe("buildNeedsYouRows: a project's Overview", () => {
+    const attention = [
+        item({ key: "mine", kind: "run-land-held", channelid: "c-mine" }),
+        item({ key: "theirs", kind: "run-land-held", channelid: "c-theirs" }),
+        item({ key: "learn:skill:notes#k", kind: "learn-proposal", channelid: "", learnid: "skill:notes#k" }),
+    ];
+    const channelProject = new Map([
+        ["c-mine", "arc"],
+        ["c-theirs", "other"],
+    ]);
+
+    it("keeps the project's held run and leaves another project's out", () => {
+        const rows = buildNeedsYouRows({ ...base, attention, channelProject, filter: "arc", learn: false });
+        expect(rows.map((r) => r.key)).toEqual(["mine"]);
+    });
+
+    it("leaves learned rules out when told to, and keeps them by default, as the Cockpit does", () => {
+        const keys = (learn?: boolean) =>
+            buildNeedsYouRows({ ...base, attention, channelProject, filter: "arc", learn }).map((r) => r.key);
+        expect(keys(false)).not.toContain("learn:skill:notes#k");
+        expect(keys(undefined)).toContain("learn:skill:notes#k");
+    });
+});

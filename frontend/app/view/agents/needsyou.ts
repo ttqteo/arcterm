@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The "Needs you" rows and what their buttons do, shared by the Cockpit's strip (needsyoustrip.tsx) and the Office's
-// notice board. The rows are needsyoustripmodel.ts's; each act is the Brief's own (attentionact.ts, attentionrun.ts), a
+// The "Needs you" rows and what their buttons do, shared by the Cockpit's strip (needsyoustrip.tsx), the Office's
+// notice board and a project's Overview. The rows are needsyoustripmodel.ts's; each act is the Brief's own (attentionact.ts, attentionrun.ts), a
 // learned rule's is LearnDecide, and Open goes to the agent's card, the initiative or the run. A caller with no mouse
 // event (the board, from a keypress) passes none: a Ctrl-click peek only exists for a click.
 
@@ -41,7 +41,9 @@ export interface NeedsYou {
 export function useNeedsYou(
     model: AgentsViewModel,
     // an escalation's Open, when its asking agent is in the roster: the Cockpit knows where that card is
-    onFocusAgent: (agentId: string) => void
+    onFocusAgent: (agentId: string) => void,
+    // a project's Overview scopes the items to its project; left out, the app bar's filter does, as on the Cockpit
+    project?: string
 ): NeedsYou {
     const live = useAtomValue(attentionAtom);
     const fixture = useAtomValue(attentionFixtureAtom);
@@ -50,13 +52,14 @@ export function useNeedsYou(
     const registry = useAtomValue(projectsAtom);
     const channelMessages = useAtomValue(channelMessagesAtom);
     const roster = useAtomValue(model.agentsAtom);
-    const filter = useAtomValue(model.projectFilterAtom);
+    const appFilter = useAtomValue(model.projectFilterAtom);
+    const filter = project ?? appFilter;
     const now = useAtomValue(model.structuralNowAtom);
     const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
     const channelProject = useMemo(() => channelProjects(channels, registry), [channels, registry]);
     const rows = useMemo(
-        () => buildNeedsYouRows({ attention, filter, channelProject, channelMessages, roster }),
-        [attention, filter, channelProject, channelMessages, roster]
+        () => buildNeedsYouRows({ attention, filter, channelProject, channelMessages, roster, learn: project == null }),
+        [attention, filter, channelProject, channelMessages, roster, project]
     );
 
     const open = (row: StripRow, e?: MouseEvent) => {
