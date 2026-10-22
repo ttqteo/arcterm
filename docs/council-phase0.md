@@ -187,3 +187,11 @@ About **18.8M** tokens, in `pkg/consult`'s count, for codefix and newcomer only 
 | **total** | **18,782,090** |
 
 Newcomer's skipped V3 line in the run log repeats its done figures and is not a second spend.
+
+## The benchmark since
+
+The hand-run benchmark above is now `wsh council bench`: it reads the same cases from the data dir, runs each as V0
+(`solo`) and V2 (`council`), and judges every report with the rubric above. `wsh council bench results` prints the
+table per harness version, with the ratings of real councils beside it, and `--runs 2` is the setting for a first
+pass or a close comparison. `HarnessVersion` (`pkg/council`) must be bumped with any prompt or role change, or the
+results of the old and the new prompts read as one version's.
