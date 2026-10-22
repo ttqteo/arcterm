@@ -40,11 +40,12 @@ One pass, one run per cell, two cases (papercase removed at the person's request
 | | V2 | 3/6 | 0 | 2,878,073 | | | 0.17 |
 | | V3 | 1/6 | 0 | 6,153,258 | | | 0.03 |
 
-The summed rows' last column is recall (key lines matched ÷ 6) per M tokens. Counted in key lines matched per M tokens
+V1's minutes are round 1's slowest expert plus the synthesis, not wall time (the wait for Summarize is left out); the
+other variants' minutes are wall time. The summed rows' last column is recall (key lines matched ÷ 6) per M tokens. Counted in key lines matched per M tokens
 instead (2 ÷ 1.086M for V0), the same rows read 1.84, 0.73, 1.04 and 0.16.
 
 Every cell is "close" in the judge's sense: the whole codefix case (all four found the one bug at rank 1, so recall
-cannot tell them apart; only cost differs), and in newcomer each pair but V2 against V3 differs by one key line. V3's
+cannot tell them apart; only cost differs), and in newcomer each pair but V2 against V3 differs by one key line at most (V0 and V1 tie). V3's
 Wild ideas, kept aside and outside recall, matched K1 (open a finished council on its Summary) once in newcomer; that
 is not in the table.
 
@@ -169,7 +170,7 @@ message above).
 ## Close comparisons
 
 Every comparison but one: all four codefix variants (1/1 each); newcomer V2 vs V0, V2 vs V1, V3 vs V0, V3 vs V1 (one
-key line each). Only newcomer V2 vs V3 (two lines) is not close, and that one is shaded by the stray message.
+key line each) and V0 vs V1 (a tie). Only newcomer V2 vs V3 (two lines) is not close, and that one is shaded by the stray message.
 
 ## Tokens Phase 0 used in total
 
