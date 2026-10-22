@@ -4,19 +4,23 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/council"
+	"github.com/wavetermdev/waveterm/pkg/council/bench"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/tokengate"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -474,5 +478,189 @@ func TestCouncilListLine(t *testing.T) {
 	c := &council.Council{Id: "c1", State: council.StateAwaiting, Round: 1, Feature: "Council\nfor the cockpit"}
 	if got, want := councilListLine(c), "c1\tawaiting-you\tround 1\tCouncil for the cockpit"; got != want {
 		t.Fatalf("list line = %q, want %q", got, want)
+	}
+}
+
+// ---- bench ----
+
+// benchFakes stands in for wavesrv and the person: it records the order of the dry run, the gate and the real call.
+type benchFakes struct {
+	steps   []string
+	data    []wshrpc.CommandCouncilBenchData
+	spawn   tokengate.Spawn
+	verdict tokengate.Verdict
+	gateErr error
+	plan    *wshrpc.CouncilBenchRtnData
+}
+
+func useBenchFakes(t *testing.T, f *benchFakes) {
+	t.Helper()
+	prevCall, prevGate := councilBenchCall, councilBenchGate
+	t.Cleanup(func() { councilBenchCall, councilBenchGate = prevCall, prevGate })
+	councilBenchCall = func(data wshrpc.CommandCouncilBenchData) (*wshrpc.CouncilBenchRtnData, error) {
+		f.data = append(f.data, data)
+		if data.DryRun {
+			f.steps = append(f.steps, "dry run")
+		} else {
+			f.steps = append(f.steps, "start")
+		}
+		return f.plan, nil
+	}
+	councilBenchGate = func(ctx context.Context, s tokengate.Spawn, transcript string, onHold func(any)) (tokengate.Verdict, error) {
+		f.steps = append(f.steps, "gate")
+		f.spawn = s
+		return f.verdict, f.gateErr
+	}
+}
+
+func benchPlan() *wshrpc.CouncilBenchRtnData {
+	return &wshrpc.CouncilBenchRtnData{
+		Items: []bench.CouncilBenchPlanItem{
+			{Case: "alpha", Variant: bench.VariantSolo, Run: 1},
+			{Case: "alpha", Variant: bench.VariantCouncil, Run: 1},
+			{Case: "beta", Variant: bench.VariantSolo, Run: 1},
+			{Case: "beta", Variant: bench.VariantCouncil, Run: 1},
+		},
+		Estimate: 3_900_000,
+		Skipped:  []string{"skipped case gamma: project folder D:/gone is missing"},
+	}
+}
+
+func TestCouncilBenchGateBeforeStart(t *testing.T) {
+	f := &benchFakes{plan: benchPlan(), verdict: tokengate.Verdict{Run: true}}
+	useBenchFakes(t, f)
+	var out, errOut bytes.Buffer
+	asked := wshrpc.CommandCouncilBenchData{Cases: []string{"alpha"}, Runs: 2}
+
+	if err := councilBenchStart(context.Background(), &out, &errOut, asked); err != nil {
+		t.Fatalf("councilBenchStart: %v", err)
+	}
+	if want := []string{"dry run", "gate", "start"}; !reflect.DeepEqual(f.steps, want) {
+		t.Fatalf("steps = %v, want %v: the plan is priced, the gate asked, and only then the bench started", f.steps, want)
+	}
+	if f.spawn.Tool != "Council" || f.spawn.EstimateTokens != 3_900_000 || f.spawn.Agents != 4 {
+		t.Errorf("gate asked about %+v, want the whole plan's 3.9M estimate over its 4 councils", f.spawn)
+	}
+	if got := tokengate.Price(f.spawn, nil).Estimate; got != 3_900_000 {
+		t.Errorf("the gate prices the bench at %d, want the plan's own 3900000", got)
+	}
+	// both calls carry what the person asked for; only the first is a dry run
+	dry, real := f.data[0], f.data[1]
+	if !dry.DryRun || real.DryRun {
+		t.Errorf("dry run flags = %v then %v, want true then false", dry.DryRun, real.DryRun)
+	}
+	dry.DryRun = false
+	if !reflect.DeepEqual(dry, asked) || !reflect.DeepEqual(real, asked) {
+		t.Errorf("calls = %+v and %+v, want the request %+v both times", f.data[0], f.data[1], asked)
+	}
+	if !strings.Contains(out.String(), "bench started: 4 councils over 2 cases") || !strings.Contains(out.String(), "~3.9M tokens") {
+		t.Errorf("output = %q, want the started line with the councils, cases and estimate", out.String())
+	}
+	if !strings.Contains(errOut.String(), "skipped case gamma") {
+		t.Errorf("stderr = %q, want the skipped case named", errOut.String())
+	}
+}
+
+func TestCouncilBenchRefusalStartsNothing(t *testing.T) {
+	refusal := tokengate.VerdictFor(tokengate.OptionDeny, tokengate.Spawn{Tool: "Council", Agents: 4}, 3_900_000)
+	f := &benchFakes{plan: benchPlan(), verdict: refusal}
+	useBenchFakes(t, f)
+	var out, errOut bytes.Buffer
+
+	if err := councilBenchStart(context.Background(), &out, &errOut, wshrpc.CommandCouncilBenchData{}); err != nil {
+		t.Fatalf("a refusal is not an error: %v", err)
+	}
+	if want := []string{"dry run", "gate"}; !reflect.DeepEqual(f.steps, want) {
+		t.Fatalf("steps = %v, want %v: the real call is never made", f.steps, want)
+	}
+	if !strings.Contains(out.String(), "Not run: ") || strings.Count(out.String(), "Not run:") != 1 {
+		t.Errorf("output = %q, want one Not run: line", out.String())
+	}
+	if strings.Contains(out.String(), "bench started") {
+		t.Errorf("output = %q says the bench started", out.String())
+	}
+
+	// a reason that does not open with "Not run:" is given the prefix
+	f.steps, f.verdict, out = nil, tokengate.Verdict{Reason: "the budget is spent"}, bytes.Buffer{}
+	if err := councilBenchStart(context.Background(), &out, &errOut, wshrpc.CommandCouncilBenchData{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "Not run: the budget is spent\n") {
+		t.Errorf("output = %q, want the bare reason prefixed", got)
+	}
+	if slices.Contains(f.steps, "start") {
+		t.Errorf("steps = %v, the bench started after a refusal", f.steps)
+	}
+}
+
+func TestCouncilBenchBrokenGateStartsAnyway(t *testing.T) {
+	f := &benchFakes{plan: benchPlan(), gateErr: errors.New("reading settings: down")}
+	useBenchFakes(t, f)
+	var out, errOut bytes.Buffer
+
+	if err := councilBenchStart(context.Background(), &out, &errOut, wshrpc.CommandCouncilBenchData{}); err != nil {
+		t.Fatalf("councilBenchStart: %v", err)
+	}
+	if want := []string{"dry run", "gate", "start"}; !reflect.DeepEqual(f.steps, want) {
+		t.Errorf("steps = %v, want %v: a broken gate never blocks", f.steps, want)
+	}
+	if !strings.Contains(errOut.String(), "token gate unavailable") {
+		t.Errorf("stderr = %q, want the gate's failure said", errOut.String())
+	}
+}
+
+func TestCouncilBenchPlanFailsBeforeTheGate(t *testing.T) {
+	f := &benchFakes{plan: benchPlan(), verdict: tokengate.Verdict{Run: true}}
+	useBenchFakes(t, f)
+	councilBenchCall = func(data wshrpc.CommandCouncilBenchData) (*wshrpc.CouncilBenchRtnData, error) {
+		return nil, errors.New(`unknown case "x" (cases: alpha) (skipped case x: key file is missing)`)
+	}
+	err := councilBenchStart(context.Background(), io.Discard, io.Discard, wshrpc.CommandCouncilBenchData{Cases: []string{"x"}})
+	if err == nil || !strings.Contains(err.Error(), "skipped case x") {
+		t.Fatalf("error = %v, want the plan's error with the skipped case named", err)
+	}
+	if len(f.steps) != 0 {
+		t.Errorf("steps = %v, the gate is not asked about a plan that failed", f.steps)
+	}
+}
+
+func TestCouncilBenchResultsTable(t *testing.T) {
+	runs := []bench.CouncilBenchResult{
+		{Harness: "2026-10-22.1", Variant: bench.VariantSolo, State: "done", Recall: 2, Keys: 6, Wrong: 1, Tokens: 550_000},
+		{Harness: "2026-10-22.1", Variant: bench.VariantCouncil, State: "done", Recall: 3, Keys: 6, Kept: 1, Tokens: 1_400_000},
+		{Harness: "2026-10-22.1", Variant: bench.VariantCouncil, State: "failed", Tokens: 600_000},
+		{Harness: "2026-10-23.2", Variant: bench.VariantCouncil, State: "done", Recall: 4, Keys: 6, Tokens: 1_000_000},
+		{Harness: "", Variant: bench.VariantSolo, State: "done", Recall: 1, Keys: 6, Tokens: 500_000},
+	}
+	ratings := []bench.CouncilBenchRating{
+		{Harness: "2026-10-22.1", Mode: council.ModeReview, Council: "c1", Rating: bench.RatingUseful},
+		{Harness: "2026-10-22.1", Mode: council.ModeReview, Council: "c2", Rating: bench.RatingNot},
+		{Harness: "2026-10-23.2", Mode: council.ModeBrainstorm, Council: "c3", Rating: bench.RatingUseful},
+	}
+	res := &wshrpc.CouncilBenchResultsRtnData{Runs: bench.Summarize(runs), Ratings: bench.SummarizeRatings(ratings)}
+
+	var lines [][]string
+	for _, l := range strings.Split(strings.TrimRight(councilBenchTable(res), "\n"), "\n") {
+		lines = append(lines, strings.Fields(l))
+	}
+	// the newest harness first, a council from before the version was recorded last; a failed run counts in Runs and in
+	// its tokens, not in the recall it is read against
+	want := [][]string{
+		{"harness", "variant", "scored/runs", "recall", "kept", "wrong", "tokens", "recall/M", "tokens"},
+		{"2026-10-23.2", "council", "1/1", "4/6", "0", "0", "1M", "4.0"},
+		{"2026-10-22.1", "solo", "1/1", "2/6", "0", "1", "0.6M", "3.6"},
+		{"2026-10-22.1", "council", "1/2", "3/6", "1", "0", "2M", "1.5"},
+		{"unknown", "solo", "1/1", "1/6", "0", "0", "0.5M", "2.0"},
+		{},
+		{"harness", "mode", "useful", "not", "really"},
+		{"2026-10-23.2", "brainstorm", "1", "0"},
+		{"2026-10-22.1", "review", "1", "1"},
+	}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("table rows:\n got %q\nwant %q", lines, want)
+	}
+
+	if got := councilBenchTable(&wshrpc.CouncilBenchResultsRtnData{}); !strings.Contains(got, "no bench results yet") {
+		t.Errorf("empty table = %q, want it to say there are no results", got)
 	}
 }

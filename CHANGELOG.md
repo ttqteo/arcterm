@@ -38,6 +38,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent starts a council when the conversation holds a real open question (two directions weighed and neither won,
   a spec or plan just written), and at once when you ask for one; it sums the report up in the chat when the council
   ends.
+- A finished council's report asks "Was this useful?" with Useful and Not really; the answer can be changed later,
+  and the council benchmark counts it beside its own scores.
+- `wsh council bench` runs the council benchmark: each case with a solo agent and with a council, one at a time, and a
+  judge scores every report against the case's key. It prices the plan and asks the Token burn card once before it
+  starts; `wsh council bench results` prints the scores per version of the council's prompts and models, and
+  `wsh council bench stop` ends a run early. What it runs never shows in the app or in the project.
 
 ### Changed
 

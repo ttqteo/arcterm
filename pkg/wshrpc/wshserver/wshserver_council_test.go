@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,7 +20,9 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/council"
+	"github.com/wavetermdev/waveterm/pkg/council/bench"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -102,6 +106,36 @@ func TestCouncilGetAndListByProject(t *testing.T) {
 		if ids := councilIds(list); !reflect.DeepEqual(ids, tc.want) {
 			t.Errorf("list(%q) = %v, want %v", tc.project, ids, tc.want)
 		}
+	}
+}
+
+func TestCouncilListHidesBenchCouncils(t *testing.T) {
+	useCouncilStore(t)
+	ws := &WshServer{}
+	ctx := context.Background()
+	p := t.TempDir()
+	saveCouncil(t, &council.Council{Id: "real", Project: p, Feature: "Idle sleep", State: council.StateDone})
+	saveCouncil(t, &council.Council{Id: "bench-done", Project: p, Feature: "Idle sleep", State: council.StateDone, Bench: true})
+	saveCouncil(t, &council.Council{Id: "bench-queued", Project: p, Feature: "Idle sleep", State: council.StateQueued, Bench: true})
+
+	for _, project := range []string{p, ""} {
+		list, err := ws.CouncilListCommand(ctx, wshrpc.CommandCouncilListData{Project: project})
+		if err != nil {
+			t.Fatalf("CouncilListCommand(%q): %v", project, err)
+		}
+		if ids := councilIds(list); !reflect.DeepEqual(ids, []string{"real"}) {
+			t.Errorf("list(%q) = %v, want only the council the person started", project, ids)
+		}
+	}
+
+	// the filter is the cockpit's list only: a bench council loads by id, and the queue, which reads the store, still sees it
+	got, err := ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: "bench-done"})
+	if err != nil || !got.Bench {
+		t.Errorf("CouncilGetCommand of a bench council = %+v, %v, want it loaded", got, err)
+	}
+	all, err := council.List("")
+	if err != nil || !reflect.DeepEqual(councilIds(all), []string{"bench-done", "bench-queued", "real"}) {
+		t.Errorf("council.List(\"\") = %v, %v, want the store to hold all three", councilIds(all), err)
 	}
 }
 
@@ -1168,5 +1202,754 @@ func TestStartCouncilRunnerMarksCouncilsLeftRunningAsStopped(t *testing.T) {
 	}
 	if got, want := events.all(), []wshrpc.CouncilChangedData{{Id: "left", Project: project}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("events = %+v, want just the council that was marked stopped", got)
+	}
+}
+
+// ---- the benchmark ----
+
+// writeBenchCases writes cases.json under dataDir with one usable case per id (a project folder, a key file with two
+// key lines), and one case named "gamma" whose project folder is gone, which the plan skips.
+func writeBenchCases(t *testing.T, dataDir string, withGone bool, ids ...string) {
+	t.Helper()
+	benchDir := filepath.Join(dataDir, bench.BenchDir)
+	if err := os.MkdirAll(benchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var cases []map[string]string
+	for _, id := range ids {
+		key := filepath.Join(benchDir, id+"-key.md")
+		if err := os.WriteFile(key, []byte("K1: The retry loop never backs off.\nK2: The cache is never cleared.\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cases = append(cases, map[string]string{
+			"id": id, "mode": council.ModeReview, "project": t.TempDir(), "group": "ui-feature", "solo_group": "ui-feature",
+			"feature": "Idle sleep for " + id, "question": "What breaks?", "files": "a.go", "key": key,
+		})
+	}
+	if withGone {
+		cases = append(cases, map[string]string{
+			"id": "gamma", "mode": council.ModeReview, "project": filepath.Join(dataDir, "gone"), "group": "ui-feature",
+			"solo_group": "ui-feature", "feature": "Gone", "key": filepath.Join(benchDir, ids[0]+"-key.md"),
+		})
+	}
+	data, err := json.Marshal(cases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(benchDir, bench.CasesFile), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// useCouncilBench points the data dir at a temp dir and the bench's wiring at wire (nil: any call of it fails the
+// test). At the end a bench still running is stopped and waited for, so nothing writes when the temp dirs go.
+func useCouncilBench(t *testing.T, wire func() councilBenchWiring) string {
+	t.Helper()
+	dataDir := t.TempDir()
+	prevDir, prevWire := wavebase.DataHome_VarCache, councilBenchWire
+	wavebase.DataHome_VarCache = dataDir
+	if wire == nil {
+		wire = func() councilBenchWiring {
+			return councilBenchWiring{
+				start: func(context.Context, *council.Council) (*council.Council, error) {
+					t.Error("the bench started a council")
+					return nil, errors.New("not wired")
+				},
+				wait: func(context.Context, string) (*council.Council, error) {
+					t.Error("the bench waited")
+					return nil, errors.New("not wired")
+				},
+				judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
+					t.Error("the bench judged")
+					return bench.Verdict{}, errors.New("not wired")
+				},
+				remind: func(context.Context) error { t.Error("the bench reminded"); return errors.New("not wired") },
+			}
+		}
+	}
+	councilBenchWire = wire
+	t.Cleanup(func() {
+		(&WshServer{}).CouncilBenchStopCommand(context.Background())
+		councilBenchWire, wavebase.DataHome_VarCache = prevWire, prevDir
+	})
+	return dataDir
+}
+
+// waitBenchIdle waits until no bench runs in this wavesrv.
+func waitBenchIdle(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		councilBenchMu.Lock()
+		idle := councilBenchCur == nil
+		councilBenchMu.Unlock()
+		if idle {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the bench never ended")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// benchFake is the bench's wiring with no council behind it: start numbers the councils it is given, wait ends them done,
+// the judge finds K1, and the hooks let a test hold the bench at its first council.
+type benchFake struct {
+	mu      sync.Mutex
+	started []*council.Council
+	reminds int
+
+	entered chan struct{} // receives once for each council start is given
+	release chan struct{} // start waits for it to close; nil does not wait
+}
+
+func newBenchFake() *benchFake { return &benchFake{entered: make(chan struct{}, 16)} }
+
+func (f *benchFake) wiring() councilBenchWiring {
+	return councilBenchWiring{
+		start: func(ctx context.Context, c *council.Council) (*council.Council, error) {
+			f.mu.Lock()
+			f.started = append(f.started, c)
+			id := fmt.Sprintf("fake%d", len(f.started))
+			f.mu.Unlock()
+			f.entered <- struct{}{}
+			if f.release != nil {
+				select {
+				case <-f.release:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			return &council.Council{Id: id, State: council.StateRunning, Bench: true}, nil
+		},
+		wait: func(ctx context.Context, id string) (*council.Council, error) {
+			return &council.Council{Id: id, State: council.StateDone, Harness: "test.1", Tokens: 100}, nil
+		},
+		judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
+			return bench.Verdict{Matches: map[string]int{"K1": 1}}, nil
+		},
+		remind: func(context.Context) error {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.reminds++
+			return nil
+		},
+	}
+}
+
+func (f *benchFake) startCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.started)
+}
+
+func TestCouncilBenchDryRunStartsNothing(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil) // any call of the wiring fails the test
+	writeBenchCases(t, dataDir, true, "alpha")
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	got, err := ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{DryRun: true})
+	if err != nil {
+		t.Fatalf("CouncilBenchCommand dry run: %v", err)
+	}
+	wantItems := []bench.CouncilBenchPlanItem{{Case: "alpha", Variant: bench.VariantSolo, Run: 1}, {Case: "alpha", Variant: bench.VariantCouncil, Run: 1}}
+	if !reflect.DeepEqual(got.Items, wantItems) {
+		t.Errorf("items = %+v, want %+v", got.Items, wantItems)
+	}
+	if got.Estimate != 550_000+1_400_000 {
+		t.Errorf("estimate = %d, want Phase 0's solo and council figures summed (1950000)", got.Estimate)
+	}
+	if len(got.Skipped) != 1 || !strings.Contains(got.Skipped[0], "gamma") {
+		t.Errorf("skipped = %v, want the one case whose project folder is gone, named", got.Skipped)
+	}
+
+	// --runs multiplies the plan, a variant narrows it
+	got, err = ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{DryRun: true, Variants: []string{bench.VariantCouncil}, Runs: 3})
+	if err != nil || len(got.Items) != 3 || got.Estimate != 3*1_400_000 {
+		t.Errorf("3 runs of the council variant = %+v, %v, want 3 items at 4.2M", got, err)
+	}
+
+	// a case named with --case that was skipped is unknown, and the error says why it was left out
+	if _, err = ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{DryRun: true, Cases: []string{"gamma"}}); err == nil ||
+		!strings.Contains(err.Error(), `unknown case "gamma"`) || !strings.Contains(err.Error(), "skipped case gamma") {
+		t.Errorf("--case gamma = %v, want an unknown-case error with the skipped case beside it", err)
+	}
+	if _, err = ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{DryRun: true, Variants: []string{"v1"}}); err == nil {
+		t.Error("an unknown variant should be refused")
+	}
+
+	// nothing started: no council saved, no line in the results file, nothing running
+	if list, _ := council.List(""); len(list) != 0 {
+		t.Errorf("a dry run saved %d councils", len(list))
+	}
+	if _, err := os.Stat(bench.ResultsPath(dataDir)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a dry run left a results file (%v)", err)
+	}
+	if stopped, _ := ws.CouncilBenchStopCommand(ctx); stopped.Stopped {
+		t.Error("a dry run started a bench")
+	}
+}
+
+func TestCouncilBenchRefusesWithoutCases(t *testing.T) {
+	useCouncilStore(t)
+	useCouncilBench(t, nil)
+	ws := &WshServer{}
+	for _, dry := range []bool{true, false} {
+		if got, err := ws.CouncilBenchCommand(context.Background(), wshrpc.CommandCouncilBenchData{DryRun: dry}); err == nil || !strings.Contains(err.Error(), "no benchmark cases") {
+			t.Errorf("a bench (dry run %v) with no cases.json = %+v, %v, want an error naming the missing cases", dry, got, err)
+		}
+	}
+	waitBenchIdle(t)
+}
+
+func TestCouncilBenchOneAtATime(t *testing.T) {
+	useCouncilStore(t)
+	fake := newBenchFake()
+	fake.release = make(chan struct{})
+	dataDir := useCouncilBench(t, fake.wiring)
+	writeBenchCases(t, dataDir, false, "alpha")
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	first, err := ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{})
+	if err != nil {
+		t.Fatalf("first bench: %v", err)
+	}
+	if len(first.Items) != 2 {
+		t.Errorf("the plan the start returned = %+v, want 2 items", first.Items)
+	}
+	select {
+	case <-fake.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the bench never started its first council")
+	}
+
+	// a second bench is refused and starts nothing; a dry run still answers
+	if _, err := ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{}); err == nil || !strings.Contains(err.Error(), "a bench is already running") {
+		t.Errorf("second bench = %v, want 'a bench is already running'", err)
+	}
+	if dry, err := ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{DryRun: true}); err != nil || len(dry.Items) != 2 {
+		t.Errorf("dry run while a bench runs = %+v, %v, want the plan", dry, err)
+	}
+	if got := fake.startCount(); got != 1 {
+		t.Errorf("councils started = %d, want only the first bench's one in flight", got)
+	}
+
+	// the first bench goes on to the end: both councils scored, the reminder added (a full bench), and the slot is free
+	close(fake.release)
+	waitBenchIdle(t)
+	runs, _, err := bench.LoadResults(dataDir)
+	if err != nil || len(runs) != 2 {
+		t.Fatalf("results = %+v, %v, want one line per council", runs, err)
+	}
+	for _, r := range runs {
+		if r.State != "done" || r.Case != "alpha" || r.Recall != 1 || r.Keys != 2 || r.Harness != "test.1" {
+			t.Errorf("result line = %+v, want a done alpha run with recall 1 of 2 under test.1", r)
+		}
+	}
+	fake.mu.Lock()
+	reminds := fake.reminds
+	fake.mu.Unlock()
+	if reminds != 1 {
+		t.Errorf("reminders = %d, want 1 after a full bench", reminds)
+	}
+	if stopped, _ := ws.CouncilBenchStopCommand(ctx); stopped.Stopped {
+		t.Error("a bench is still running after it finished")
+	}
+	if _, err := ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{DryRun: true}); err != nil {
+		t.Errorf("dry run after the bench: %v", err)
+	}
+}
+
+func TestCouncilBenchOfOneCaseAddsNoReminder(t *testing.T) {
+	useCouncilStore(t)
+	fake := newBenchFake()
+	dataDir := useCouncilBench(t, fake.wiring)
+	writeBenchCases(t, dataDir, false, "alpha", "beta")
+	ws := &WshServer{}
+
+	if _, err := ws.CouncilBenchCommand(context.Background(), wshrpc.CommandCouncilBenchData{Cases: []string{"beta"}, Variants: []string{bench.VariantSolo}}); err != nil {
+		t.Fatalf("bench of one case: %v", err)
+	}
+	waitBenchIdle(t)
+	runs, _, _ := bench.LoadResults(dataDir)
+	if len(runs) != 1 || runs[0].Case != "beta" || runs[0].Variant != bench.VariantSolo {
+		t.Errorf("results = %+v, want one solo run of beta", runs)
+	}
+	if fake.reminds != 0 {
+		t.Errorf("reminders = %d, want none: only a full bench is a measurement worth a monthly reminder", fake.reminds)
+	}
+}
+
+func TestCouncilBenchStop(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil)
+	project := t.TempDir()
+	entered := make(chan struct{}, 1)
+	councilBenchWire = func() councilBenchWiring {
+		return councilBenchWiring{
+			// the council in flight is really saved, as the runner would have: Stop must end it, not just the bench
+			start: func(ctx context.Context, c *council.Council) (*council.Council, error) {
+				saved := &council.Council{Id: "inflight", Project: project, Feature: c.Feature, State: council.StateRunning, Round: 1, Bench: true}
+				return saved, council.Save(saved)
+			},
+			wait: func(ctx context.Context, id string) (*council.Council, error) {
+				entered <- struct{}{}
+				<-ctx.Done()
+				return nil, ctx.Err()
+			},
+			judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
+				t.Error("the stopped council was judged")
+				return bench.Verdict{}, nil
+			},
+			remind: func(context.Context) error { t.Error("a stopped bench reminded"); return nil },
+		}
+	}
+	writeBenchCases(t, dataDir, false, "alpha")
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	if stopped, err := ws.CouncilBenchStopCommand(ctx); err != nil || stopped.Stopped {
+		t.Fatalf("stop with no bench = %+v, %v, want Stopped false", stopped, err)
+	}
+	if _, err := ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{}); err != nil {
+		t.Fatalf("bench: %v", err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the bench never began waiting on its first council")
+	}
+
+	stopped, err := ws.CouncilBenchStopCommand(ctx)
+	if err != nil || !stopped.Stopped {
+		t.Fatalf("stop = %+v, %v, want Stopped true", stopped, err)
+	}
+	// Stop returns once the bench ended: the slot is free, the council in flight is stopped and left no document in the
+	// project, and the interrupted item has no line in the results
+	councilBenchMu.Lock()
+	running := councilBenchCur != nil
+	councilBenchMu.Unlock()
+	if running {
+		t.Error("the bench still holds its slot after Stop returned")
+	}
+	if got, err := council.Load("inflight"); err != nil || got.State != council.StateStopped {
+		t.Errorf("the council in flight = %+v, %v, want stopped", got, err)
+	}
+	if entries, _ := os.ReadDir(project); len(entries) != 0 {
+		t.Errorf("the project holds %d entries after a stopped bench council, want none (no document)", len(entries))
+	}
+	if runs, _, _ := bench.LoadResults(dataDir); len(runs) != 0 {
+		t.Errorf("results = %+v, want no line for the interrupted council", runs)
+	}
+	if again, _ := ws.CouncilBenchStopCommand(ctx); again.Stopped {
+		t.Error("a second stop found a bench to stop")
+	}
+}
+
+// TestCouncilBenchRunsCouncilsThroughTheRunner wires the real start and wait to a runner with a fake caller: the panel
+// is filled from the case's group, the council is a bench one (not listed, no document), and its row carries the harness
+// version and the tokens it spent.
+func TestCouncilBenchRunsCouncilsThroughTheRunner(t *testing.T) {
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	dataDir := useCouncilBench(t, nil)
+	reminds := 0
+	councilBenchWire = func() councilBenchWiring {
+		return councilBenchWiring{
+			start: benchStartCouncil,
+			wait:  benchWaitCouncil,
+			judge: func(context.Context, bench.Case, *council.Council) (bench.Verdict, error) {
+				return bench.Verdict{Matches: map[string]int{"K1": 1}}, nil
+			},
+			remind: func(context.Context) error { reminds++; return nil },
+		}
+	}
+	writeBenchCases(t, dataDir, false, "alpha")
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	if _, err := ws.CouncilBenchCommand(ctx, wshrpc.CommandCouncilBenchData{Variants: []string{bench.VariantCouncil}}); err != nil {
+		t.Fatalf("bench: %v", err)
+	}
+	waitBenchIdle(t)
+
+	runs, _, err := bench.LoadResults(dataDir)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("results = %+v, %v, want one line", runs, err)
+	}
+	row := runs[0]
+	if row.State != "done" || row.Recall != 1 || row.Keys != 2 || row.Harness != council.HarnessVersion || row.Tokens == 0 || row.Council == "" {
+		t.Errorf("result line = %+v, want a done run under harness %s with the council's spend", row, council.HarnessVersion)
+	}
+	c, err := council.Load(row.Council)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Bench || c.State != council.StateDone || len(c.Experts) != 5 || !c.Experts[4].Coordinator || c.Group != "ui-feature" {
+		t.Errorf("bench council = bench %v, %s, %d experts, group %q, want a done bench council on the 5-expert ui-feature panel", c.Bench, c.State, len(c.Experts), c.Group)
+	}
+	if c.PauseAfterRound1 {
+		t.Error("a bench council must never pause: it would wait on a person who is not there")
+	}
+	if c.DocPath != "" {
+		if _, err := os.Stat(c.DocPath); err == nil {
+			t.Errorf("a bench council wrote its document at %s", c.DocPath)
+		}
+	}
+	if entries, _ := os.ReadDir(c.Project); len(entries) != 0 {
+		t.Errorf("the case's project holds %d entries after the bench, want none", len(entries))
+	}
+	if list, _ := ws.CouncilListCommand(ctx, wshrpc.CommandCouncilListData{}); len(list) != 0 {
+		t.Errorf("the cockpit's list holds %v, want no bench council", councilIds(list))
+	}
+	if reminds != 1 {
+		t.Errorf("reminders = %d, want 1: the bench named no case, so it ran them all", reminds)
+	}
+}
+
+// TestStartCouncilRunnerStopsBenchCouncilsLeftQueued: the bench that queued a council ended with wavesrv, so the
+// council must not start by itself at the next launch; the person's own council left queued behind it still does.
+func TestStartCouncilRunnerStopsBenchCouncilsLeftQueued(t *testing.T) {
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	experts, err := council.ExpertsFor("ui-feature")
+	if err != nil {
+		t.Fatalf("ExpertsFor: %v", err)
+	}
+	saveCouncil(t, &council.Council{
+		Id: "bench1", Project: t.TempDir(), Feature: "Bench case", Experts: experts, State: council.StateQueued, QueuedAfter: "gone", Created: 1, Bench: true,
+	})
+	saveCouncil(t, &council.Council{
+		Id: "mine", Project: t.TempDir(), Feature: "Left queued", Experts: experts, State: council.StateQueued, QueuedAfter: "gone", Created: 2,
+	})
+
+	StartCouncilRunner()
+
+	if done := waitCouncil(t, "mine"); done.State != council.StateDone {
+		t.Errorf("the person's council left queued ended %s (%s), want it started by StartCouncilRunner and done", done.State, done.Error)
+	}
+	if got, err := council.Load("bench1"); err != nil || got.State != council.StateStopped || got.Round != 0 {
+		t.Errorf("the bench council left queued = %+v, %v, want it stopped and never run", got, err)
+	}
+	if got := len(fake.calls("r1")); got != 4 {
+		t.Errorf("round 1 calls = %d, want only the person's council's 4", got)
+	}
+}
+
+// TestBenchWaitStopsWhatNobodyReads covers the two councils the bench must not leave alone: one that paused for a
+// person who is not there, and one still queued when the bench is cancelled (a queued council starts on a background
+// context, so it would run later with nobody reading it).
+func TestBenchWaitStopsWhatNobodyReads(t *testing.T) {
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	ctx := context.Background()
+	experts, err := council.ExpertsFor("ui-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newBench := func(pause bool) *council.Council {
+		return &council.Council{Project: t.TempDir(), Feature: "Idle sleep", Experts: experts, Bench: true, PauseAfterRound1: pause}
+	}
+
+	paused, err := councilRunner.Start(ctx, newBench(true))
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	got, err := benchWaitCouncil(ctx, paused.Id)
+	if err != nil || got.State != council.StateStopped {
+		t.Fatalf("a bench council paused after round 1 = %+v, %v, want it stopped", got, err)
+	}
+
+	held := fake.hold("ux/r1")
+	running, err := councilRunner.Start(ctx, newBench(false))
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	<-held
+	queued, err := councilRunner.Start(ctx, newBench(false))
+	if err != nil || queued.State != council.StateQueued {
+		t.Fatalf("second start = %+v, %v, want it queued behind %s", queued, err, running.Id)
+	}
+	waitCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() {
+		_, err := benchWaitCouncil(waitCtx, queued.Id)
+		done <- err
+	}()
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("wait after the bench was cancelled = %v, want the cancellation", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("wait never returned after its context ended")
+	}
+	if got, _ := council.Load(queued.Id); got.State != council.StateStopped || got.Round != 0 {
+		t.Errorf("the queued bench council = %s at round %d, want it stopped and never run", got.State, got.Round)
+	}
+}
+
+func TestCouncilBenchResultsGroupsByHarness(t *testing.T) {
+	useCouncilStore(t)
+	dataDir := useCouncilBench(t, nil)
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	empty, err := ws.CouncilBenchResultsCommand(ctx)
+	if err != nil || empty.Runs == nil || empty.Ratings == nil || len(empty.Runs)+len(empty.Ratings) != 0 {
+		t.Fatalf("results with no file = %+v, %v, want empty lists the frontend can map over", empty, err)
+	}
+
+	for _, r := range []bench.CouncilBenchResult{
+		{Harness: "2026-10-22.1", Case: "alpha", Variant: bench.VariantSolo, Run: 1, State: "done", Recall: 1, Keys: 2, Tokens: 500_000},
+		{Harness: "2026-10-23.1", Case: "alpha", Variant: bench.VariantSolo, Run: 1, State: "done", Recall: 2, Keys: 2, Tokens: 500_000},
+		{Harness: "2026-10-23.1", Case: "alpha", Variant: bench.VariantCouncil, Run: 1, State: "stopped", Tokens: 200_000},
+	} {
+		if err := bench.AppendResult(dataDir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// a council rated twice counts once, by its later rating
+	for _, r := range []bench.CouncilBenchRating{
+		{RatedAt: "2026-10-22T10:00:00Z", Harness: "2026-10-23.1", Mode: council.ModeReview, Council: "c1", Rating: bench.RatingNot},
+		{RatedAt: "2026-10-22T11:00:00Z", Harness: "2026-10-23.1", Mode: council.ModeReview, Council: "c1", Rating: bench.RatingUseful},
+	} {
+		if err := bench.AppendRating(dataDir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := ws.CouncilBenchResultsCommand(ctx)
+	if err != nil {
+		t.Fatalf("CouncilBenchResultsCommand: %v", err)
+	}
+	type key struct{ harness, variant string }
+	var order []key
+	for _, row := range got.Runs {
+		order = append(order, key{row.Harness, row.Variant})
+	}
+	if want := []key{{"2026-10-23.1", bench.VariantSolo}, {"2026-10-23.1", bench.VariantCouncil}, {"2026-10-22.1", bench.VariantSolo}}; !reflect.DeepEqual(order, want) {
+		t.Errorf("rows = %v, want one per harness × variant, the newest harness first", order)
+	}
+	if stoppedRow := got.Runs[1]; stoppedRow.Runs != 1 || stoppedRow.Scored != 0 || stoppedRow.Tokens != 200_000 {
+		t.Errorf("the stopped council's row = %+v, want it counted in runs and tokens but not scored", stoppedRow)
+	}
+	if want := []bench.CouncilBenchRatingRow{{Harness: "2026-10-23.1", Mode: council.ModeReview, Useful: 1}}; !reflect.DeepEqual(got.Ratings, want) {
+		t.Errorf("ratings = %+v, want %+v", got.Ratings, want)
+	}
+}
+
+// ---- "Was this useful?" ----
+
+func TestCouncilRateKeepsTheRatingAndFeedsTheBenchFile(t *testing.T) {
+	events := useCouncilRig(t, newCouncilFake())
+	dataDir := useCouncilBench(t, nil)
+	ws := &WshServer{}
+	ctx := context.Background()
+	saveCouncil(t, &council.Council{
+		Id: "rate-1", Project: `D:\p`, Feature: "Rail apps", Mode: council.ModeBrainstorm, Harness: "2026-10-22.1",
+		State: council.StateDone, Summary: &council.CouncilSummary{Text: "one direction"},
+	})
+
+	if err := ws.CouncilRateCommand(ctx, wshrpc.CommandCouncilRateData{Id: "rate-1", Rating: council.RatingUseful}); err != nil {
+		t.Fatalf("CouncilRateCommand: %v", err)
+	}
+	c, err := council.Load("rate-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Rating != council.RatingUseful || c.RatedAt == 0 {
+		t.Fatalf("council kept rating %q at %d, want useful with its time", c.Rating, c.RatedAt)
+	}
+	_, ratings, err := bench.LoadResults(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ratings) != 1 {
+		t.Fatalf("results file has %d rating lines, want 1: %+v", len(ratings), ratings)
+	}
+	want := bench.CouncilBenchRating{
+		Kind: bench.KindRating, RatedAt: time.UnixMilli(c.RatedAt).UTC().Format(time.RFC3339),
+		Harness: "2026-10-22.1", Mode: council.ModeBrainstorm, Council: "rate-1", Rating: bench.RatingUseful,
+	}
+	if ratings[0] != want {
+		t.Errorf("rating line = %+v, want %+v", ratings[0], want)
+	}
+	if got := events.all(); len(got) == 0 || got[len(got)-1].Id != "rate-1" {
+		t.Errorf("council:changed events = %+v, want one for rate-1 so other views pick the rating up", got)
+	}
+
+	// a changed mind: both lines stay in the file, and the council counts once, by its later rating
+	if err := ws.CouncilRateCommand(ctx, wshrpc.CommandCouncilRateData{Id: "rate-1", Rating: council.RatingNot}); err != nil {
+		t.Fatalf("CouncilRateCommand again: %v", err)
+	}
+	if c, _ = council.Load("rate-1"); c.Rating != council.RatingNot {
+		t.Errorf("council kept rating %q after the change, want not", c.Rating)
+	}
+	_, ratings, _ = bench.LoadResults(dataDir)
+	if len(ratings) != 2 {
+		t.Fatalf("results file has %d rating lines after a change, want both kept", len(ratings))
+	}
+	rows := bench.SummarizeRatings(ratings)
+	if wantRows := []bench.CouncilBenchRatingRow{{Harness: "2026-10-22.1", Mode: council.ModeBrainstorm, Not: 1}}; !reflect.DeepEqual(rows, wantRows) {
+		t.Errorf("ratings table = %+v, want %+v", rows, wantRows)
+	}
+}
+
+func TestCouncilRateRefusalsWriteNothing(t *testing.T) {
+	useCouncilRig(t, newCouncilFake())
+	dataDir := useCouncilBench(t, nil)
+	ws := &WshServer{}
+	ctx := context.Background()
+	saveCouncil(t, &council.Council{Id: "rate-2", Project: `D:\p`, Feature: "x", State: council.StateDone})
+
+	for name, data := range map[string]wshrpc.CommandCouncilRateData{
+		"no id":               {Rating: council.RatingUseful},
+		"a rating of its own": {Id: "rate-2", Rating: "great"},
+		"no rating":           {Id: "rate-2"},
+		"a missing council":   {Id: "gone", Rating: council.RatingUseful},
+	} {
+		if err := ws.CouncilRateCommand(ctx, data); err == nil {
+			t.Errorf("%s: CouncilRateCommand = nil, want a refusal", name)
+		}
+	}
+	if c, _ := council.Load("rate-2"); c.Rating != "" || c.RatedAt != 0 {
+		t.Errorf("a refused rating left %q at %d on the council", c.Rating, c.RatedAt)
+	}
+	if _, ratings, _ := bench.LoadResults(dataDir); len(ratings) != 0 {
+		t.Errorf("a refused rating wrote %d lines to the results file: %+v", len(ratings), ratings)
+	}
+
+	// a council from before harness versions rates under the unknown version, as a Review
+	if err := ws.CouncilRateCommand(ctx, wshrpc.CommandCouncilRateData{Id: "rate-2", Rating: council.RatingNot}); err != nil {
+		t.Fatalf("CouncilRateCommand of an old council: %v", err)
+	}
+	_, ratings, _ := bench.LoadResults(dataDir)
+	if len(ratings) != 1 || ratings[0].Harness != "" || ratings[0].Mode != council.ModeReview {
+		t.Errorf("an old council's rating line = %+v, want harness \"\" and mode review", ratings)
+	}
+}
+
+// ---- the monthly reminder ----
+
+// fakeEfforts is the initiative store of a test: create makes an effort, mutate applies the three ops the reminder uses.
+type fakeEfforts struct {
+	efforts []*waveobj.Effort
+	creates int
+	mutates []wshrpc.CommandEffortMutateData
+
+	listErr, mutateErr error
+}
+
+func (f *fakeEfforts) api() councilBenchEfforts {
+	return councilBenchEfforts{
+		list: func(context.Context) ([]*waveobj.Effort, error) { return f.efforts, f.listErr },
+		create: func(_ context.Context, d wshrpc.CommandEffortCreateData) (*wshrpc.CommandEffortCreateRtnData, error) {
+			f.creates++
+			e := &waveobj.Effort{OID: fmt.Sprintf("e%d", f.creates), Title: d.Title, Status: "active"}
+			f.efforts = append(f.efforts, e)
+			return &wshrpc.CommandEffortCreateRtnData{EffortOID: e.OID}, nil
+		},
+		mutate: func(_ context.Context, d wshrpc.CommandEffortMutateData) (*wshrpc.CommandEffortMutateRtnData, error) {
+			if f.mutateErr != nil {
+				return nil, f.mutateErr
+			}
+			f.mutates = append(f.mutates, d)
+			for _, e := range f.efforts {
+				if e.OID != d.EffortOID {
+					continue
+				}
+				for _, op := range d.Ops {
+					switch op.Op {
+					case "addChunk":
+						e.Chunks = append(e.Chunks, waveobj.EffortChunk{Label: op.Label, Status: "pending", Due: op.Due})
+					case "setChunkDue", "setChunkStatus":
+						for i := range e.Chunks {
+							if e.Chunks[i].Label != op.Chunk {
+								continue
+							}
+							if op.Op == "setChunkDue" {
+								e.Chunks[i].Due = op.Due
+							} else {
+								e.Chunks[i].Status = op.Status
+							}
+						}
+					}
+				}
+				return &wshrpc.CommandEffortMutateRtnData{Effort: e}, nil
+			}
+			return nil, errors.New("no such effort " + d.EffortOID)
+		},
+	}
+}
+
+func TestBenchReminderAddsOneChunk(t *testing.T) {
+	f := &fakeEfforts{}
+	ctx := context.Background()
+	now := time.Date(2026, 10, 22, 15, 0, 0, 0, time.Local)
+
+	if err := addBenchReminder(ctx, f.api(), now); err != nil {
+		t.Fatalf("addBenchReminder: %v", err)
+	}
+	if f.creates != 1 || len(f.efforts) != 1 || f.efforts[0].Title != "Council benchmark" {
+		t.Fatalf("efforts = %+v after %d creates, want the Council benchmark initiative made once", f.efforts, f.creates)
+	}
+	wantChunk := waveobj.EffortChunk{Label: "Re-measure the council: wsh council bench", Status: "pending", Due: "2026-11-21"}
+	if !reflect.DeepEqual(f.efforts[0].Chunks, []waveobj.EffortChunk{wantChunk}) {
+		t.Errorf("chunks = %+v, want %+v (due 30 days later)", f.efforts[0].Chunks, []waveobj.EffortChunk{wantChunk})
+	}
+	if len(f.mutates) != 1 || f.mutates[0].EffortOID != "e1" || f.mutates[0].Note == "" {
+		t.Errorf("mutates = %+v, want one batch on the new initiative with a note saying what decides it", f.mutates)
+	}
+
+	// a second bench finds the initiative by its title and moves the one chunk's due date: it adds no second chunk and
+	// makes no second initiative
+	later := now.AddDate(0, 0, 3)
+	if err := addBenchReminder(ctx, f.api(), later); err != nil {
+		t.Fatalf("second addBenchReminder: %v", err)
+	}
+	if f.creates != 1 || len(f.efforts) != 1 {
+		t.Errorf("the second call made another initiative: %d creates, %d efforts", f.creates, len(f.efforts))
+	}
+	if got := f.efforts[0].Chunks; len(got) != 1 || got[0].Due != "2026-11-24" || got[0].Status != "pending" {
+		t.Errorf("chunks after the second call = %+v, want the one chunk due 2026-11-24", got)
+	}
+
+	// the person closed the reminder when they re-measured: the next bench reopens it with a new date
+	f.efforts[0].Chunks[0].Status = "done"
+	if err := addBenchReminder(ctx, f.api(), later.AddDate(0, 1, 0)); err != nil {
+		t.Fatalf("third addBenchReminder: %v", err)
+	}
+	if got := f.efforts[0].Chunks; len(got) != 1 || got[0].Status != "pending" || got[0].Due != "2026-12-25" {
+		t.Errorf("chunks after the closed one was found = %+v, want it pending again, due 2026-12-25", got)
+	}
+}
+
+func TestBenchReminderIgnoresArchivedAndReportsFailures(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 22, 15, 0, 0, 0, time.Local)
+
+	// an archived initiative of that title takes no new work: a live one is made
+	f := &fakeEfforts{efforts: []*waveobj.Effort{{OID: "old", Title: "Council benchmark", Status: "archived"}}}
+	if err := addBenchReminder(ctx, f.api(), now); err != nil {
+		t.Fatalf("addBenchReminder: %v", err)
+	}
+	if f.creates != 1 || len(f.mutates) != 1 || f.mutates[0].EffortOID == "old" {
+		t.Errorf("creates %d, mutates %+v, want a new initiative and nothing written to the archived one", f.creates, f.mutates)
+	}
+
+	// a failure comes back, so the bench can say its reminder was not added
+	f = &fakeEfforts{listErr: errors.New("vault locked")}
+	if err := addBenchReminder(ctx, f.api(), now); err == nil || !strings.Contains(err.Error(), "vault locked") {
+		t.Errorf("list failure = %v, want it returned", err)
+	}
+	f = &fakeEfforts{mutateErr: errors.New("EC-INVALID-DUE")}
+	if err := addBenchReminder(ctx, f.api(), now); err == nil || !strings.Contains(err.Error(), "EC-INVALID-DUE") {
+		t.Errorf("mutate failure = %v, want it returned", err)
 	}
 }

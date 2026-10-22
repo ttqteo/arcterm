@@ -2307,6 +2307,91 @@ func TestDocPathSavedOnEnd(t *testing.T) {
 	}
 }
 
+// ---- the harness version and the bench mark ----
+
+func TestStartRecordsHarness(t *testing.T) {
+	h := newHarness(t)
+	h.f.gate("ux/r1")
+	saved := h.start(councilAs(t, "a", ""))
+	if saved.Harness != HarnessVersion {
+		t.Errorf("Start returned a council with harness %q, want %q", saved.Harness, HarnessVersion)
+	}
+	h.f.entered(t, "ux/r1")
+	if got := h.load("a"); got.Harness != HarnessVersion {
+		t.Errorf("the running council was saved with harness %q, want %q", got.Harness, HarnessVersion)
+	}
+
+	// a council that waits in the queue records it when its own run begins
+	queued := h.start(councilAs(t, "b", "b-"))
+	if queued.State != StateQueued {
+		t.Fatalf("second Start = %s, want queued", queued.State)
+	}
+	h.f.release("ux/r1")
+	for _, id := range []string{"a", "b"} {
+		if c := h.wait(id); c.State != StateDone || c.Harness != HarnessVersion {
+			t.Errorf("%s ended %s with harness %q, want done with %q", id, c.State, c.Harness, HarnessVersion)
+		}
+	}
+}
+
+func TestStartSavedRecordsHarness(t *testing.T) {
+	h := newHarness(t)
+	rec, err := h.r.Record(councilAs(t, "n", ""))
+	if err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if rec.Harness != "" {
+		t.Errorf("a council that has not run has harness %q, want none: nothing ran it", rec.Harness)
+	}
+	started, err := h.r.StartSaved(context.Background(), "n")
+	if err != nil {
+		t.Fatalf("StartSaved: %v", err)
+	}
+	if started.Harness != HarnessVersion {
+		t.Errorf("StartSaved returned a council with harness %q, want %q", started.Harness, HarnessVersion)
+	}
+	if c := h.wait("n"); c.State != StateDone || c.Harness != HarnessVersion {
+		t.Errorf("after StartSaved: %s with harness %q, want done with %q", c.State, c.Harness, HarnessVersion)
+	}
+}
+
+func TestBenchCouncilSavesNoDocument(t *testing.T) {
+	useDocDay(t)
+	h := newHarness(t)
+
+	// done
+	a := councilAs(t, "a", "")
+	a.Bench = true
+	if c := h.run(a); c.State != StateDone || !c.Bench || c.DocPath != "" {
+		t.Errorf("bench council: %s, bench %v, document at %q; want done, bench, no document", c.State, c.Bench, c.DocPath)
+	}
+	if _, err := os.Stat(filepath.Join(a.Project, "docs")); err == nil {
+		t.Error("a bench council that ended done wrote into its project's docs folder")
+	}
+
+	// stopped
+	b := councilAs(t, "b", "b-")
+	b.Bench = true
+	h.holdFirst(b)
+	if got, err := h.r.Stop("b"); err != nil || got.State != StateStopped || got.DocPath != "" {
+		t.Errorf("Stop of a bench council = %+v, %v, want stopped with no document", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(b.Project, "docs")); err == nil {
+		t.Error("a bench council that was stopped wrote into its project's docs folder")
+	}
+
+	// the same councils without the mark do save one
+	n := councilAs(t, "n", "n-")
+	if c := h.run(n); c.State != StateDone || c.DocPath == "" {
+		t.Errorf("council without the bench mark: %s, document at %q; want done with a document", c.State, c.DocPath)
+	}
+	s := councilAs(t, "s", "s-")
+	h.holdFirst(s)
+	if got, err := h.r.Stop("s"); err != nil || got.State != StateStopped || got.DocPath == "" {
+		t.Errorf("Stop of a council without the bench mark = %+v, %v, want stopped with a document", got, err)
+	}
+}
+
 func TestDocPathWriteErrorStillEndsTheCouncil(t *testing.T) {
 	h := newHarness(t)
 	logs := &syncBuf{}

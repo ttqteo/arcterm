@@ -203,6 +203,19 @@ func Update(id string, fn func(*Council) error) (*Council, error) {
 	return c, nil
 }
 
+// SetRating keeps the person's "Was this useful?" answer on the council: RatingUseful or RatingNot, given at `at` (ms).
+// A later rating replaces the earlier one and its time; any other word is refused and nothing is saved.
+func SetRating(id, rating string, at int64) (*Council, error) {
+	if rating != RatingUseful && rating != RatingNot {
+		return nil, fmt.Errorf("rating %q is not %q or %q", rating, RatingUseful, RatingNot)
+	}
+	return Update(id, func(c *Council) error {
+		c.Rating = rating
+		c.RatedAt = at
+		return nil
+	})
+}
+
 // samePath compares two paths as the OS does: cleaned, and without case on Windows.
 func samePath(a, b string) bool {
 	a, b = filepath.Clean(a), filepath.Clean(b)

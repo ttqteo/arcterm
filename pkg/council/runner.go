@@ -277,8 +277,11 @@ func (r *Runner) stampNew(c *Council) {
 	c.Tokens, c.Calls, c.Started, c.Error = 0, 0, 0, ""
 }
 
+// beginFresh is where a council's run begins, whether Start, StartSaved or the queue starts it, so it is where the
+// council records the harness it runs under.
 func (r *Runner) beginFresh(c *Council) {
 	c.State, c.Round, c.Started, c.Error = StateRunning, 1, r.now(), ""
+	c.Harness = HarnessVersion
 }
 
 // absent is nil when nothing is saved under id yet.
@@ -552,9 +555,10 @@ func (r *Runner) StartNext() {
 
 // saveDocument writes the document of a council that ended done or stopped into its project and keeps the path on the
 // council; it returns the council as saved. A project folder that is not there is not created for it, and a write
-// that fails is logged: the council ends all the same.
+// that fails is logged: the council ends all the same. A bench council saves none: a later bench council on the same
+// project would read it.
 func (r *Runner) saveDocument(c *Council) *Council {
-	if c == nil || (c.State != StateDone && c.State != StateStopped) {
+	if c == nil || c.Bench || (c.State != StateDone && c.State != StateStopped) {
 		return c
 	}
 	if info, err := os.Stat(c.Project); err != nil || !info.IsDir() {

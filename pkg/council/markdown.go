@@ -382,6 +382,9 @@ func writeRunFacts(b *strings.Builder, c *Council) {
 	if len(experts) > 0 {
 		fmt.Fprintf(b, "- Experts: %s\n", strings.Join(experts, ", "))
 	}
+	if c.Harness != "" {
+		fmt.Fprintf(b, "- Harness: %s\n", c.Harness)
+	}
 	fmt.Fprintf(b, "- Tokens: %s in %d calls\n", FormatTokens(c.Tokens), c.Calls)
 	if c.Started > 0 && c.Updated > c.Started {
 		fmt.Fprintf(b, "- Time: %s\n", docDuration(c.Updated-c.Started))

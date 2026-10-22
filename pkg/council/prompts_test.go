@@ -4,9 +4,16 @@
 package council
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
+
+func TestHarnessVersionFormat(t *testing.T) {
+	if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}\.\d+$`).MatchString(HarnessVersion) {
+		t.Errorf("HarnessVersion = %q, want <YYYY-MM-DD>.<n>", HarnessVersion)
+	}
+}
 
 // promptCouncil is a council in the middle of round 2: four proposals and a branch of replies, one cut proposal, one
 // withdrawn, and three of the person's replies.

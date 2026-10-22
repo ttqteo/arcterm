@@ -91,6 +91,19 @@ does not, say what you saw and it becomes a bug row under Actionable.
   checked); Save as doc (in the ⋯ menu) writes `docs/council/YYYY-MM-DD-<feature>.md` and shows the path; Create initiative makes one
   chunk per direction; Ask the experts again opens that direction's thread; a reply after the summary marks the
   Summary `Outdated · N replies since` and Summarize again clears it. `frontend/app/view/agents/councilsummary.tsx`.
+- [ ] (arcterm) Council benchmark, a smoke check (the tests own the logic): once Phase 0b's tasks 1–2 have built the
+  cases, run `wsh council bench --case newcomer` on the installed app and allow the Token burn card. It starts at once
+  and the councils run one at a time, with no row, toast or dot in the app and no `docs/council/` file in the case's
+  project. When it ends, `wsh council bench results` shows the row (council and solo, under the harness version); the
+  judge's matches agree with the newcomer key read by hand (the spec's spot check); and `Council benchmark` gained no
+  chunk (a single case adds no reminder; only a bench with no `--case` moves its re-measure chunk). Refuse the card
+  once: it prints `Not run: …` and nothing is saved. `cmd/wsh/cmd/wshcmd-council.go`, `pkg/council/bench`; spec
+  `docs/superpowers/specs/2026-10-22-council-agent-team-design.md` ("Benchmark").
+- [ ] (arcterm) Council "Was this useful?": on a real finished council's report, click Useful: the row turns into a
+  thanks line with Change. Click Change and answer Not really. `wsh council bench results` then counts that council
+  once, as not really, in the ratings table under its harness version and mode (the file keeps both answers; only the
+  latest counts). The `council-summary` scenario stubs `CouncilRateCommand`, so nothing was rated on a live council.
+  `frontend/app/view/agents/councilsummary.tsx`, `pkg/council/bench`.
 - [ ] (arcterm) Rail commit mode with a real agent and with amend: let a live Claude agent edit two files in a worktree;
   when its turn ends, the rail's Changes tab shows the Uncommitted row without a switch. Open Commit…, untick one file,
   commit: the box closes, the commit tops the Commits list, the unticked file stays uncommitted. Then turn Amend on in

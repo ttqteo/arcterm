@@ -300,6 +300,24 @@ export class RpcApiType {
         return client.wshRpcCall("controllerresync", data, opts);
     }
 
+    // command "councilbench" [call]
+    CouncilBenchCommand(client: WshClient, data: CommandCouncilBenchData, opts?: RpcOpts): Promise<CouncilBenchRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilbench", data, opts);
+        return client.wshRpcCall("councilbench", data, opts);
+    }
+
+    // command "councilbenchresults" [call]
+    CouncilBenchResultsCommand(client: WshClient, opts?: RpcOpts): Promise<CouncilBenchResultsRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilbenchresults", null, opts);
+        return client.wshRpcCall("councilbenchresults", null, opts);
+    }
+
+    // command "councilbenchstop" [call]
+    CouncilBenchStopCommand(client: WshClient, opts?: RpcOpts): Promise<CouncilBenchStopRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilbenchstop", null, opts);
+        return client.wshRpcCall("councilbenchstop", null, opts);
+    }
+
     // command "councilcontinue" [call]
     CouncilContinueCommand(client: WshClient, data: CommandCouncilContinueData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilcontinue", data, opts);
@@ -322,6 +340,12 @@ export class RpcApiType {
     CouncilListCommand(client: WshClient, data: CommandCouncilListData, opts?: RpcOpts): Promise<Council[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councillist", data, opts);
         return client.wshRpcCall("councillist", data, opts);
+    }
+
+    // command "councilrate" [call]
+    CouncilRateCommand(client: WshClient, data: CommandCouncilRateData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilrate", data, opts);
+        return client.wshRpcCall("councilrate", data, opts);
     }
 
     // command "councilreply" [call]

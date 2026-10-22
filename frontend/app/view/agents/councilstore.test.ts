@@ -20,6 +20,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         CouncilSaveDocCommand: vi.fn(),
         CouncilRolesCommand: vi.fn(),
         CouncilSaveGroupCommand: vi.fn(),
+        CouncilRateCommand: vi.fn(),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: { client: true } }));
@@ -46,6 +47,7 @@ import {
     estimateCouncil,
     loadCouncil,
     loadCouncils,
+    rateCouncil,
     replyCouncil,
     retryExpert,
     saveCouncilDoc,
@@ -247,6 +249,49 @@ describe("actions", () => {
             RpcApi.CouncilSummarizeCommand = real;
         }
         expect(stub).toHaveBeenCalledWith(TabRpcClient, { id: "h2" });
+    });
+});
+
+describe("rating", () => {
+    // a command with no answer resolves null over the wire, though its type is void
+    const nullAnswer = null as unknown as void;
+
+    it("sends the rating and puts it on the council's atom at once, without waiting for council:changed", async () => {
+        get.mockResolvedValue(council("r1", "/p/r", { state: "done" }));
+        await loadCouncil("r1");
+        // so the atom is patched from what was sent, not from the answer
+        vi.mocked(RpcApi.CouncilRateCommand).mockResolvedValue(nullAnswer);
+        const before = Date.now();
+        const r = await rateCouncil("r1", "useful");
+        expect(r).toEqual({ ok: true, value: null });
+        expect(RpcApi.CouncilRateCommand).toHaveBeenCalledWith(TabRpcClient, { id: "r1", rating: "useful" });
+        const rated = globalStore.get(councilAtom("r1"));
+        expect(rated?.rating).toBe("useful");
+        expect(rated?.ratedat).toBeGreaterThanOrEqual(before);
+        expect(rated?.state).toBe("done");
+
+        // changing it takes the later one
+        await rateCouncil("r1", "not");
+        expect(globalStore.get(councilAtom("r1"))?.rating).toBe("not");
+    });
+
+    it("leaves the council's atom as it was when the call fails, and says why", async () => {
+        const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+        get.mockResolvedValue(council("r2", "/p/r", { state: "done" }));
+        await loadCouncil("r2");
+        vi.mocked(RpcApi.CouncilRateCommand).mockRejectedValue(new Error("disk full"));
+        const r = await rateCouncil("r2", "not");
+        expect(r).toEqual({ ok: false, error: "disk full" });
+        expect(globalStore.get(councilAtom("r2"))?.rating).toBeUndefined();
+        expect(quiet).toHaveBeenCalled();
+        quiet.mockRestore();
+    });
+
+    it("rates a council that is not loaded without making an atom value out of nothing", async () => {
+        vi.mocked(RpcApi.CouncilRateCommand).mockResolvedValue(nullAnswer);
+        const r = await rateCouncil("r3", "useful");
+        expect(r.ok).toBe(true);
+        expect(globalStore.get(councilAtom("r3"))).toBeNull();
     });
 });
 

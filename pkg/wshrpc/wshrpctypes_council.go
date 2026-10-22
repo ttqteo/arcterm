@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/wavetermdev/waveterm/pkg/council"
+	"github.com/wavetermdev/waveterm/pkg/council/bench"
 )
 
 // CouncilCommands are the Council: a panel of expert agents that reviews one feature in three rounds. The cockpit
@@ -27,6 +28,10 @@ type CouncilCommands interface {
 	CouncilSaveDocCommand(ctx context.Context, data CommandCouncilSaveDocData) (*CouncilSaveDocRtnData, error)
 	CouncilRolesCommand(ctx context.Context) (*CouncilRolesRtnData, error)
 	CouncilSaveGroupCommand(ctx context.Context, data council.CouncilGroup) error
+	CouncilRateCommand(ctx context.Context, data CommandCouncilRateData) error
+	CouncilBenchCommand(ctx context.Context, data CommandCouncilBenchData) (*CouncilBenchRtnData, error)
+	CouncilBenchResultsCommand(ctx context.Context) (*CouncilBenchResultsRtnData, error)
+	CouncilBenchStopCommand(ctx context.Context) (*CouncilBenchStopRtnData, error)
 }
 
 // CommandCouncilStartData starts a council. Id alone starts the saved not-run council of that id and every other
@@ -128,6 +133,47 @@ type CouncilSaveDocRtnData struct {
 type CouncilRolesRtnData struct {
 	Roles  []council.CouncilExpert `json:"roles"`
 	Groups []council.CouncilGroup  `json:"groups"`
+}
+
+// CommandCouncilRateData is the person's answer to "Was this useful?" on a council's report: Rating is
+// council.RatingUseful or council.RatingNot. Any other word is refused. The rating stays on the council and joins the
+// benchmark's results file with the council's harness version and mode; a later rating of the same council replaces the
+// first in the table and leaves its line in the file.
+type CommandCouncilRateData struct {
+	Id     string `json:"id"`
+	Rating string `json:"rating"`
+}
+
+// CommandCouncilBenchData picks a benchmark: the cases (all when empty), the variants (solo and council when empty) and
+// how many runs of each case × variant (1 when 0). DryRun only plans it: it lists the runs and prices them, and starts
+// nothing, so the caller can ask the Token burn gate before the real call.
+type CommandCouncilBenchData struct {
+	Cases    []string `json:"cases,omitempty"`
+	Variants []string `json:"variants,omitempty"`
+	Runs     int      `json:"runs,omitempty"`
+	DryRun   bool     `json:"dryrun,omitempty"`
+}
+
+// CouncilBenchRtnData is a bench's plan: the runs in the order they go, their total estimate in tokens, and the cases
+// left out for a missing project folder or key (one line each). A call without DryRun has started the bench in wavesrv
+// when it returns it; the councils run one at a time and the results file takes each as it ends.
+type CouncilBenchRtnData struct {
+	Items    []bench.CouncilBenchPlanItem `json:"items"`
+	Estimate int64                        `json:"estimate"`
+	Skipped  []string                     `json:"skipped,omitempty"`
+}
+
+// CouncilBenchResultsRtnData is the results file read back: a row per harness version and variant for the bench runs,
+// and per harness version and mode for the ratings, the newest version first, so one version's score is never read as
+// another's.
+type CouncilBenchResultsRtnData struct {
+	Runs    []bench.CouncilBenchRow       `json:"runs"`
+	Ratings []bench.CouncilBenchRatingRow `json:"ratings"`
+}
+
+// CouncilBenchStopRtnData says whether a bench was running to stop.
+type CouncilBenchStopRtnData struct {
+	Stopped bool `json:"stopped"`
 }
 
 // CouncilChangedData is the data of the council:changed event: the council that was saved, and its project.

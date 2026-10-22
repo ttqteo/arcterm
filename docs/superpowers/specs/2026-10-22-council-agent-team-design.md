@@ -20,15 +20,19 @@ Work moves to another machine; the person stopped the runs below on purpose.
 - **Shipped:** run 3f0ba255, the room (the running council as a group chat, Brainstorm mode, one council at a time
   with a Queued row, started by the agent from a chat, saved into `docs/council/`). Its hand checks are in
   `docs/open-issues.md` "0 · Waiting on a hand check".
-- **Next, in this order, each with Arc engine** (`wsh runs start --plan <file> --runtime claude --model opus`):
-  1. `docs/superpowers/plans/2026-10-22-council-bench.md` (`wsh council bench`, "Was this useful?"). Never started.
-  2. `docs/superpowers/plans/2026-10-22-council-phase0b.md` (the stronger benchmark). Cancelled at its task 4 with 9
-     of 12 runs done (services-bugs, agents-bugs and newcomer, each V0, V2, V3; services-sleep not run) and nothing
-     judged. Those results and every bench case live only in the old machine's data dir, so a new machine re-runs the
-     plan from the start; its tasks 1 and 2 rebuild the cases, but the `newcomer` case must be rebuilt by hand first:
-     `git archive 0a2c46437` into `<data dir>/council-bench-projects/newcomer/`, its key the five lines under
-     "Benchmark" item 3, and its entry added to `<data dir>/council-bench/cases.json` (Phase 0's shape).
-- The bench plan (2) also reads `cases.json`, so run 3's tasks 1–2 (or the hand rebuild) before it on a new machine.
+- **Shipped:** run ab534f5b, the benchmark tooling (`wsh council bench` with `--dry-run`, `--runs`, `bench results`
+  and `bench stop`; the opus judge; `council-bench.jsonl`; the harness version on every council; "Was this useful?" on
+  the report; the "Council benchmark" initiative's re-measure chunk). Its hand checks are in `docs/open-issues.md`
+  "0 · Waiting on a hand check".
+- **Next, with Arc engine** (`wsh runs start --plan <file> --runtime claude --model opus`):
+  `docs/superpowers/plans/2026-10-22-council-phase0b.md` (the stronger benchmark). Cancelled at its task 4 with 9
+  of 12 runs done (services-bugs, agents-bugs and newcomer, each V0, V2, V3; services-sleep not run) and nothing
+  judged. Those results and every bench case live only in the old machine's data dir, so a new machine re-runs the
+  plan from the start; its tasks 1 and 2 rebuild the cases, but the `newcomer` case must be rebuilt by hand first:
+  `git archive 0a2c46437` into `<data dir>/council-bench-projects/newcomer/`, its key the five lines under
+  "Benchmark" item 3, and its entry added to `<data dir>/council-bench/cases.json` (Phase 0's shape).
+- The bench's hand check reads `cases.json`, so on a new machine it waits for the phase0b plan's tasks 1–2 (or the
+  hand rebuild).
 
 ## Why
 
@@ -251,16 +255,18 @@ Drawn in the prototype; the board names are given so the builder can match them.
    done and waiting notifications.
 4. One or two past design decisions from `docs/superpowers/specs/` whose outcome is known (left to the builder to pick).
 
-**Variants**: V0 one agent (one sonnet session with all briefs merged, plus the same report step); V1 council v1 with
-no argue round (Pause after round 1, then Summarize); V2 council v1 as is; V3 the agent-team council; V3 with each cost
-lever turned off, one at a time.
+**Variants**: V0 one agent (one sonnet session with all briefs merged, plus the same report step); V2 council v1 as
+is; V3 the agent-team council; V3 with each cost lever turned off, one at a time. V1 (council v1 with no argue round) is
+dropped (the person's call, 2026-10-22): Phase 0 found it costs as much as V2, so neither Phase 0b nor
+`wsh council bench` runs it.
 
 **Scores per run**: recall of the key in the report's top items (top 5 Review, top 3 Brainstorm, for every variant);
 matches among a Brainstorm report's Wild ideas kept aside are counted in a column of their own, outside recall, since
 only the agent-team council writes that list (the person's call, 2026-10-22); wrong or
 empty items in the report; tokens; wall time; messages. Matching a report item to a key item is done by an LLM judge
 (opus is fine even though the councils are Claude too; my call) with the key and a fixed rubric, spot-checked by hand
-on the first run. Two runs per variant per case to start; more where two variants are close.
+on the first run. The full set, and any pass where two variants are close, runs each variant twice per case
+(`wsh council bench --runs 2`); a routine re-run is one run (the person's call, 2026-10-22).
 
 **Where the cases live** (my call): in the data dir (`council-bench/cases.json` plus each case's key), not the repo,
 so a case's copies and keys never reach a commit.
