@@ -9,13 +9,6 @@
 
 import { councilProjectKey, panel, type StanceLabel } from "./councilmodel";
 
-export const STANCE_WORD: Record<StanceLabel, string> = {
-    accept: "Accept",
-    challenge: "Challenge",
-    oppose: "Oppose",
-    proposed: "Proposed",
-};
-
 function asStance(s: string | undefined): Exclude<StanceLabel, "proposed"> | undefined {
     return s === "accept" || s === "challenge" || s === "oppose" ? s : undefined;
 }

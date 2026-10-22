@@ -23,7 +23,7 @@ export const EMPTY_PROJECT = "council-empty";
 // oldest first: the tree lists them newest first, so the order they are written in is not the order they are drawn in
 const SEEDED = ["notrun", "done", "awaiting", "round2"];
 const TREE_ORDER = ["round2", "awaiting", "done", "notrun"];
-const METAS = ["Round 2", "Waiting on you", "Done", "Not run"];
+const METAS = ["Running", "Waiting on you", "Done", "Not run"];
 
 const ROWS_WAIT_MS = 10_000;
 const UI_WAIT_MS = 5_000;
@@ -165,7 +165,7 @@ export const councilTree = {
 
         // 2. their metas
         rec(
-            "2. their metas read Round 2, Waiting on you, Done and Not run",
+            "2. their metas read Running, Waiting on you, Done and Not run",
             councils.length === METAS.length && councils.every((c, i) => c.meta === METAS[i]),
             JSON.stringify(councils.map((c) => ({ id: c.id, meta: c.meta, tone: c.tone })))
         );
@@ -175,7 +175,7 @@ export const councilTree = {
         const working = await h.ev(metaColor(councilFixtureId("round2"), "working"));
         const muted = await h.ev(metaColor(councilFixtureId("done"), "muted"));
         rec(
-            "3. the Waiting on you meta is drawn in the amber token, Round 2 in the working one and Done in the muted one",
+            "3. the Waiting on you meta is drawn in the amber token, Running in the working one and Done in the muted one",
             asking.got != null &&
                 asking.got === asking.want &&
                 working.got === working.want &&
@@ -205,7 +205,7 @@ export const councilTree = {
         const discussion = await until(present("[data-council-discussion]"));
         const afterOpen = (folderRows(await rows(), COUNCIL_PROJECT) ?? []).filter((r) => r.kind === "council");
         rec(
-            "5. clicking the Round 2 row opens that council's Discussion",
+            "5. clicking the Running row opens that council's Discussion",
             discussion && afterOpen.filter((c) => c.current).map((c) => c.id).join() === round2,
             JSON.stringify(afterOpen.map((c) => ({ id: c.id, current: c.current })))
         );

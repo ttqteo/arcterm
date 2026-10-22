@@ -1351,7 +1351,7 @@ describe("councilRowsByProject", () => {
             roots
         );
         expect(rows.get("loom")).toEqual([
-            { id: "run", feature: "feature run", created: 7, meta: "Round 2", tone: "working" },
+            { id: "run", feature: "feature run", created: 7, meta: "Running", tone: "working" },
             { id: "ask", feature: "feature ask", created: 1000, meta: "Waiting on you", tone: "asking" },
             { id: "done", feature: "feature done", created: 1000, meta: "Done", tone: "muted" },
             { id: "nr", feature: "feature nr", created: 1000, meta: "Not run", tone: "muted" },

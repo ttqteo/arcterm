@@ -106,7 +106,7 @@ describe("the fixtures as records", () => {
 
     it("round1 is Running.dc.html: UX and New user done, RAM and Skeptic reading", () => {
         const c = placed("round1");
-        expect(headerChip(c)).toBe("Round 1 of 3 · 2 of 4 experts done");
+        expect(headerChip(c)).toBe("Step 1 of 3 · 2 of 4 experts done");
         expect(callSegments(c)).toEqual(["done", "done", "running", "running", ...Array(5).fill("pending")]);
         expect(expertStat(c, "ux")).toBe("1 min 52 s · 84k tokens");
         expect(expertStat(c, "ram")).toBe("3 min 10 s · 71k tokens");
@@ -114,19 +114,19 @@ describe("the fixtures as records", () => {
         expect(expertStat(c, "skeptic")).toBe("3 min 48 s · 92k tokens");
         expect(c.proposals.map((p) => p.id)).toEqual(["P1", "P2", "P4"]);
         expect(c.activity.ram.text).toBe("Grep \"IdleSleep\" in pkg/services");
-        expect(treeMeta(c)).toEqual({ text: "Round 1", tone: "working" });
+        expect(treeMeta(c)).toEqual({ text: "Running", tone: "working" });
         expect(costLine(c, c.updated)).toBe("3:48 · 0 replies · 0.31M tokens");
         // the runner refuses a running council
         expect(canSummarize(c)).toBe(false);
-        expect(summarizeHold(c)).toBe("Summarize unlocks after round 1");
+        expect(summarizeHold(c)).toBe("Summarize unlocks after the experts' first ideas");
     });
 
     it("round2 is Main.dc.html: the P2 thread, Skeptic typing under UX's revision, the person's reply queued", () => {
         const c = placed("round2");
-        expect(headerChip(c)).toBe("Round 2 of 3 · 2 replying");
+        expect(headerChip(c)).toBe("Step 2 of 3 · 2 replying");
         expect(costLine(c, c.updated)).toBe("7:20 · 19 replies · 0.55M tokens");
         expect(callSegments(c)).toEqual([...Array(6).fill("done"), "running", "running", "pending"]);
-        expect(treeMeta(c)).toEqual({ text: "Round 2", tone: "working" });
+        expect(treeMeta(c)).toEqual({ text: "Running", tone: "working" });
         const counts = Object.fromEntries(c.proposals.map((p) => [p.id, c.replies.filter((r) => r.proposalid === p.id).length]));
         expect(counts).toEqual({ P1: 4, P2: 5, P3: 2, P4: 3, P5: 3, P6: 2 });
         // the ranking puts the withdrawn P6 last
@@ -156,7 +156,7 @@ describe("the fixtures as records", () => {
         expect(c.proposals.find((p) => p.id === "P2").evidence.some((e) => e.weak)).toBe(true);
         // the runner refuses a running council: the synthesis comes by itself when round 2 ends
         expect(canSummarize(c)).toBe(false);
-        expect(summarizeHold(c)).toBe("The summary comes by itself when round 2 ends");
+        expect(summarizeHold(c)).toBe("The summary comes by itself when the experts finish replying");
     });
 
     it("awaiting is Paused.dc.html: six proposals, four calls done, waiting on the person", () => {
@@ -182,7 +182,7 @@ describe("the fixtures as records", () => {
     it("done is Summary.dc.html: four directions, the matrix, a reply after the summary", () => {
         const c = placed("done");
         expect(headerChip(c)).toBe("Done");
-        expect(summaryChip(c, NOW)).toBe("Done · 4 experts · 3 rounds · 11 min · 0.86M tokens");
+        expect(summaryChip(c, NOW)).toBe("Done · 4 experts · 11 min · 0.86M tokens");
         expect(treeMeta(c)).toEqual({ text: "Done", tone: "muted" });
         expect(c.sessionid).toBeTruthy();
         expect(c.summary.directions.map((d) => d.rank)).toEqual([1, 2, 3, 4]);
@@ -272,9 +272,9 @@ describe("placeCouncil", () => {
     it("sorts the tree newest created first: round1, round2, awaiting, failed, done, notrun", () => {
         const order = [...COUNCIL_FIXTURES].sort((a, b) => placed(b).created - placed(a).created);
         expect(order).toEqual(["round1", "round2", "awaiting", "failed", "done", "notrun"]);
-        // the four Task 13 lists keep the plan's order: Round 2, Waiting on you, Done, Not run
+        // the four Task 13 lists keep the plan's order: Running, Waiting on you, Done, Not run
         const four = ["notrun", "done", "awaiting", "round2"].sort((a, b) => placed(b).created - placed(a).created);
-        expect(four.map((n) => treeMeta(placed(n)).text)).toEqual(["Round 2", "Waiting on you", "Done", "Not run"]);
+        expect(four.map((n) => treeMeta(placed(n)).text)).toEqual(["Running", "Waiting on you", "Done", "Not run"]);
     });
 });
 

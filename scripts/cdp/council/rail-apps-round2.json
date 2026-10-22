@@ -310,11 +310,11 @@
   ],
   "activity": {
     "ram": {
-      "text": "Replying on P4",
+      "text": "Replying to New user",
       "proposalid": "P4"
     },
     "skeptic": {
-      "text": "Replying to UX on P2",
+      "text": "Replying to UX",
       "proposalid": "P2",
       "parentid": "r19"
     }

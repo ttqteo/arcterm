@@ -21,7 +21,15 @@ import { useMemo, useState, type ReactNode } from "react";
 import { showCouncil, showCouncilSetup } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { avatarTone } from "./councildiscussionmodel";
-import { draftFromCouncil, matrixRows, outdatedCount, panel, summaryChip, type StanceLabel } from "./councilmodel";
+import {
+    STANCE_WORD,
+    draftFromCouncil,
+    matrixRows,
+    outdatedCount,
+    panel,
+    summaryChip,
+    type StanceLabel,
+} from "./councilmodel";
 import {
     councilOpenProposalAtom,
     councilSelAtom,
@@ -39,7 +47,6 @@ import {
     initiativeSeed,
     outdatedLabel,
     projectNameOf,
-    STANCE_WORD,
     writtenLine,
     type DirectionRow,
     type Position,

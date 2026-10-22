@@ -11,6 +11,8 @@ import {
     expertCard,
     expertDoing,
     failedExperts,
+    failedWhile,
+    foldedCount,
     headerCost,
     initialOf,
     isFollowUp,
@@ -19,6 +21,7 @@ import {
     listNames,
     postFoot,
     proposalLine,
+    reactions,
     replyAddressees,
     replyPills,
     retriedOut,
@@ -133,15 +136,22 @@ describe("isLit and expertDoing", () => {
         expect(expertDoing(running, e("ram"))).toBe("Replying on P4");
     });
 
-    it("says where a resting expert stands in round 2", () => {
-        expect(expertDoing(running, running.experts[0])).toBe("Round 2 done · 2 replies");
-        expect(expertDoing(running, running.experts[2])).toBe("Round 2 done");
-        expect(expertDoing(running, running.experts[4])).toBe("Waits for round 3");
+    it("says where a resting expert stands while the experts argue", () => {
+        expect(expertDoing(running, running.experts[0])).toBe("Replied · 2 replies");
+        expect(expertDoing(running, running.experts[2])).toBe("Replied");
+        expect(expertDoing(running, running.experts[4])).toBe("Waits for the answer");
     });
 
-    it("says where an expert stands in round 1", () => {
+    it("counts no reaction as a reply", () => {
+        const c = council({
+            replies: [reply("r1", "ux", { stance: "accept", text: "" }), reply("r2", "ux", { stance: "accept" })],
+        });
+        expect(expertDoing(c, c.experts[0])).toBe("Replied · 1 reply");
+    });
+
+    it("says where an expert stands while the experts first propose", () => {
         const c = council({ round: 1, stats: { ux: { ms: 1, tokens: 1, calls: 1 } } });
-        expect(expertDoing(c, c.experts[0])).toBe("Round 1 done · 2 proposals");
+        expect(expertDoing(c, c.experts[0])).toBe("Proposed · 2 ideas");
         expect(expertDoing(c, c.experts[1])).toBe("Waits to start");
     });
 
@@ -152,12 +162,24 @@ describe("isLit and expertDoing", () => {
             replies: [reply("r1", "ram", { stance: "accept" })],
             failed: { nu: { round: 1, error: "timed out" } },
         });
-        expect(expertDoing(c, c.experts[0])).toBe("2 proposals");
-        expect(expertDoing(c, c.experts[1])).toBe("1 proposal · 1 reply");
-        expect(expertDoing(c, c.experts[2])).toBe("Failed in round 1");
-        expect(expertDoing(c, c.experts[3])).toBe("1 proposal");
+        expect(expertDoing(c, c.experts[0])).toBe("2 ideas");
+        expect(expertDoing(c, c.experts[1])).toBe("1 idea · 1 reply");
+        expect(expertDoing(c, c.experts[2])).toBe("Failed while proposing");
+        expect(expertDoing(c, c.experts[3])).toBe("1 idea");
         expect(expertDoing(c, c.experts[4])).toBe("Wrote the summary");
         expect(expertDoing({ ...c, proposals: [], replies: [] }, c.experts[3])).toBe("No posts");
+    });
+});
+
+describe("failedWhile", () => {
+    it("says where a call failed, by the step it was in", () => {
+        expect([1, 2, 3, 4, 0].map(failedWhile)).toEqual([
+            "Failed while proposing",
+            "Failed while replying",
+            "Failed while writing the answer",
+            "Failed while answering",
+            "Failed",
+        ]);
     });
 });
 
@@ -171,8 +193,8 @@ describe("expertCard", () => {
 
     it("shows the tool in use, then what a finished expert brought", () => {
         expect(expertCard(c, c.experts[1])).toEqual({ dot: "working", text: 'Grep "IdleSleep" in pkg/services' });
-        expect(expertCard(c, c.experts[0])).toEqual({ dot: "done", text: "Done · 2 proposals" });
-        expect(expertCard(c, c.experts[2])).toEqual({ dot: "done", text: "Done · 1 proposal" });
+        expect(expertCard(c, c.experts[0])).toEqual({ dot: "done", text: "Proposed · 2 ideas" });
+        expect(expertCard(c, c.experts[2])).toEqual({ dot: "done", text: "Proposed · 1 idea" });
         expect(expertCard(c, c.experts[3])).toEqual({ dot: "waiting", text: "Waits to start" });
     });
 
@@ -184,7 +206,7 @@ describe("expertCard", () => {
 
     it("says no proposals for a call that brought none", () => {
         const none = council({ round: 1, proposals: [], stats: { ux: { ms: 1, tokens: 1, calls: 1 } } });
-        expect(expertCard(none, none.experts[0])).toEqual({ dot: "done", text: "Done · no proposals" });
+        expect(expertCard(none, none.experts[0])).toEqual({ dot: "done", text: "Proposed · no ideas" });
     });
 });
 
@@ -254,15 +276,69 @@ describe("scoreSummary and postFoot", () => {
         ],
     });
 
-    it("spells out the score for a screen reader", () => {
+    it("spells out the score of a council with no picks for a screen reader", () => {
         expect(scoreSummary(c, "P2")).toBe("Score 0 so far: 1 accept, 1 oppose, 1 challenge");
         expect(scoreSummary(c, "P1")).toBe("Score 0: no one has taken a stance yet");
+    });
+
+    it("says how many experts picked a proposal once the council has picks", () => {
+        const picked = council({ picks: { ux: ["P2"], ram: ["P2", "P3"] } });
+        expect(scoreSummary(picked, "P2")).toBe("Picked by 2 of 4 experts");
+        expect(scoreSummary(picked, "P3")).toBe("Picked by 1 of 4 experts");
+        expect(scoreSummary(picked, "P1")).toBe("Picked by 0 of 4 experts");
     });
 
     it("counts the replies and the person's own", () => {
         expect(postFoot(c, "P2")).toBe("4 replies · 1 from you");
         expect(postFoot(c, "P1")).toBe("No replies yet");
         expect(postFoot(council({ replies: [reply("r1", "ram")] }), "P2")).toBe("1 reply");
+    });
+
+    it("leaves a reaction out of the reply count", () => {
+        const withReaction = council({
+            replies: [reply("r1", "ram", { stance: "accept", text: "" }), reply("r2", "sk", { stance: "challenge" })],
+        });
+        expect(postFoot(withReaction, "P2")).toBe("1 reply");
+        expect(postFoot(council({ replies: [reply("r1", "ram", { stance: "accept", text: " " })] }), "P2")).toBe(
+            "No replies yet"
+        );
+    });
+});
+
+describe("reactions and foldedCount", () => {
+    const blank = (id: string, author: string, extra: Partial<CouncilReply> = {}) =>
+        reply(id, author, { stance: "accept", text: "", ...extra });
+
+    it("lists an accept with no text as `<name> agrees`, in the order they came", () => {
+        const c = council({ replies: [blank("r1", "nu", { ts: 2 }), blank("r2", "ram", { ts: 1 })] });
+        expect(reactions(c, "P2")).toEqual(["RAM agrees", "New user agrees"]);
+        expect(reactions(c, "P1")).toEqual([]);
+    });
+
+    it("drops one whose author said something else after it, and never lists the person's", () => {
+        const c = council({
+            replies: [
+                blank("r1", "ram", { ts: 1 }),
+                reply("r2", "ram", { stance: "challenge", ts: 2 }),
+                blank("r3", "sk", { ts: 1 }),
+                reply("r4", "sk", { stance: "accept", text: "with a reason", ts: 2 }),
+                blank("r5", "you", { ts: 3 }),
+            ],
+        });
+        expect(reactions(c, "P2")).toEqual([]);
+    });
+
+    it("lists an expert once, and keeps the reaction through a reply with no stance", () => {
+        const c = council({
+            replies: [blank("r1", "ram", { ts: 1 }), blank("r2", "ram", { ts: 2 }), reply("r3", "ram", { ts: 3 })],
+        });
+        expect(reactions(c, "P2")).toEqual(["RAM agrees"]);
+    });
+
+    it("counts the proposals no expert picked, and none for a council with no picks", () => {
+        expect(foldedCount(council())).toBe(0);
+        expect(foldedCount(council({ picks: { ux: ["P2"], ram: ["P2", "P1"] } }))).toBe(2);
+        expect(foldedCount(council({ picks: { ux: ["P1", "P2", "P3"] } }))).toBe(1);
     });
 });
 
@@ -292,12 +368,17 @@ describe("unreviewed", () => {
 describe("replyPills", () => {
     const c = council();
 
-    it("shows an expert's stance, and Revised beside or instead of it", () => {
-        expect(replyPills(c, reply("r1", "ram", { stance: "oppose" }))).toEqual([{ word: "Oppose", tone: "oppose" }]);
-        expect(replyPills(c, reply("r2", "ux", { revised: true }))).toEqual([{ word: "Revised P2", tone: "neutral" }]);
+    it("shows an expert's stance in plain words, and Revised beside or instead of it", () => {
+        expect(replyPills(c, reply("r1", "ram", { stance: "oppose" }))).toEqual([
+            { word: "Is against it", tone: "oppose" },
+        ]);
+        expect(replyPills(c, reply("r1", "ram", { stance: "challenge" }))).toEqual([
+            { word: "Has doubts", tone: "challenge" },
+        ]);
+        expect(replyPills(c, reply("r2", "ux", { revised: true }))).toEqual([{ word: "Revised", tone: "neutral" }]);
         expect(replyPills(c, reply("r3", "ux", { revised: true, stance: "accept" }))).toEqual([
-            { word: "Accept", tone: "accept" },
-            { word: "Revised P2", tone: "neutral" },
+            { word: "Agrees", tone: "accept" },
+            { word: "Revised", tone: "neutral" },
         ]);
         expect(replyPills(c, reply("r4", "ram"))).toEqual([{ word: "Reply", tone: "neutral" }]);
     });
@@ -305,7 +386,7 @@ describe("replyPills", () => {
     it("labels the person's reply until it is answered", () => {
         expect(replyPills(c, reply("r5", "you"))).toEqual([{ word: "Answered after the summary", tone: "neutral" }]);
         expect(replyPills(c, reply("r6", "you", { round: 1 }))).toEqual([
-            { word: "Queued for round 2", tone: "neutral" },
+            { word: "Queued for the next step", tone: "neutral" },
         ]);
         expect(replyPills(c, reply("r7", "you", { answered: true }))).toEqual([]);
     });
@@ -317,21 +398,23 @@ describe("replyPills", () => {
 });
 
 describe("proposalLine", () => {
-    it("reads author, id and replies, with who is replying", () => {
+    it("reads author and replies, with who is replying, and no id", () => {
+        const none = council({ replies: [reply("r0", "ram", { stance: "accept", text: "" })] });
+        expect(proposalLine(none, rankedProposals(none).find((r) => r.proposal.id === "P2")!)).toBe("UX · 0 replies");
         const c = council({
             replies: [reply("r1", "ram")],
             activity: { sk: { text: "x", proposalid: "P2" } },
         });
         const rows = rankedProposals(c);
         const line = (id: string) => proposalLine(c, rows.find((r) => r.proposal.id === id)!);
-        expect(line("P2")).toBe("UX · P2 · 1 reply · 1 replying");
-        expect(line("P3")).toBe("RAM · P3 · 0 replies");
-        expect(line("P6")).toBe("Skeptic · P6 · withdrawn");
+        expect(line("P2")).toBe("UX · 1 reply · 1 replying");
+        expect(line("P3")).toBe("RAM · 0 replies");
+        expect(line("P6")).toBe("Skeptic · withdrawn");
     });
 
     it("says a proposal was cut at the pause", () => {
         const c = council({ proposals: [prop("P1", "ux", { cut: true })] });
-        expect(proposalLine(c, rankedProposals(c)[0])).toBe("UX · P1 · cut at the pause");
+        expect(proposalLine(c, rankedProposals(c)[0])).toBe("UX · cut at the pause");
     });
 });
 
@@ -359,8 +442,10 @@ describe("the composer", () => {
     it("says who answers and when", () => {
         const [ux, ram] = experts;
         expect(composerHint(council({ round: 2 }), [ux, ram])).toBe("UX and RAM answer it after the summary");
-        expect(composerHint(council({ round: 1 }), [ux])).toBe("UX answers it in round 2");
-        expect(composerHint(council({ state: "awaiting-you", round: 1 }), [ux])).toBe("UX answers it in round 2");
+        expect(composerHint(council({ round: 1 }), [ux])).toBe("UX answers it while the experts argue");
+        expect(composerHint(council({ state: "awaiting-you", round: 1 }), [ux])).toBe(
+            "UX answers it while the experts argue"
+        );
         expect(composerHint(council({ round: 2 }), [])).toBe("Name an expert with @ to choose who answers");
     });
 });
