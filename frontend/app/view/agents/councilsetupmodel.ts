@@ -268,13 +268,55 @@ export function retrySuggestion(draft: CouncilSetupDraft): CouncilSetupDraft {
 
 // ---- Start council ----
 
+// ---- the composer ----
+
+/** Pure: the composer's text split the way the draft keeps it: the first non-empty line is the feature, the rest (trimmed,
+ *  its line breaks kept) the question. One line that ends with `?` is both: a question alone names what to review. */
+export function splitAsk(text: string): { feature: string; question: string } {
+    const lines = text.split(/\r?\n/);
+    const at = lines.findIndex((l) => l.trim() !== "");
+    if (at < 0) {
+        return { feature: "", question: "" };
+    }
+    const feature = lines[at].trim();
+    const question = lines
+        .slice(at + 1)
+        .join("\n")
+        .trim();
+    return { feature, question: question === "" && feature.endsWith("?") ? feature : question };
+}
+
+/** Pure: the draft as the composer shows it: the feature, then the question on the next line; the question alone when
+ *  there is no feature or it is the same line. */
+export function joinAsk(draft: CouncilSetupDraft): string {
+    const feature = draft.feature.trim();
+    const question = draft.question.trim();
+    if (feature === "") {
+        return question;
+    }
+    return question === "" || question === feature ? feature : `${feature}\n${question}`;
+}
+
+/** Pure: what the composer shows: the text the person last typed while the draft still reads from it (so a trailing line
+ *  break survives until there is a second line), else the draft's own text (it came from outside: Run again, Ask the
+ *  council, a draft saved before the composer). */
+export function askText(draft: CouncilSetupDraft, typed: string | null): string {
+    if (typed != null) {
+        const s = splitAsk(typed);
+        if (s.feature === draft.feature.trim() && s.question === draft.question.trim()) {
+            return typed;
+        }
+    }
+    return joinAsk(draft);
+}
+
 /** Pure: why Start council is off, or empty when it is on. */
 export function startBlocker(draft: CouncilSetupDraft): string {
     if (draft.project.trim() === "") {
         return "Choose a project first";
     }
-    if (draft.feature.trim() === "") {
-        return "Name the feature to review";
+    if (draft.feature.trim() === "" && draft.question.trim() === "") {
+        return "Say what the council should review";
     }
     if (!draft.experts.some((e) => e.coordinator)) {
         return "Pick a group of experts";
@@ -287,10 +329,12 @@ export function startBlocker(draft: CouncilSetupDraft): string {
 
 /** Pure: what Start council sends: the draft's inputs and its panel, the coordinator last. */
 export function startData(draft: CouncilSetupDraft): CommandCouncilStartData {
+    const question = draft.question.trim();
     return {
         project: draft.project,
-        feature: draft.feature.trim(),
-        question: draft.question.trim() || undefined,
+        // a question from Ask the council stands for the feature until the person names one (as suggestRequest has it)
+        feature: draft.feature.trim() || question,
+        question: question || undefined,
         files: draft.files,
         screenshots: draft.screenshots,
         group: draft.group || undefined,
@@ -312,7 +356,7 @@ export function estimateKey(draft: CouncilSetupDraft): string {
     return `${councilProjectKey(draft.project)}\n${draft.files.join("\n")}\n${n}`;
 }
 
-/** Pure: `4 sonnet experts read the code in round 1; rounds 2 and 3 read only text`; empty with no expert. */
+/** Pure: `4 sonnet experts read the code first; then they argue over text only`; empty with no expert. */
 export function readingLine(draft: CouncilSetupDraft): string {
     const panel = draft.experts.filter((e) => !e.coordinator);
     if (panel.length === 0) {
@@ -326,7 +370,20 @@ export function readingLine(draft: CouncilSetupDraft): string {
     // the model most of them use first; a tie keeps the order the panel names them in
     const parts = [...counts].sort((a, b) => b[1] - a[1]).map(([model, n]) => `${n} ${model}`);
     const who = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
-    return `${who} ${panel.length === 1 ? "expert reads" : "experts read"} the code in round 1; rounds 2 and 3 read only text`;
+    return `${who} ${panel.length === 1 ? "expert reads" : "experts read"} the code first; then they argue over text only`;
+}
+
+/** Pure: the one line under the composer: the group, its experts by name, and the coordinator who writes the answer;
+ *  empty with no expert. */
+export function expertsLine(draft: CouncilSetupDraft, lib: RoleLibrary): string {
+    const names = draft.experts.filter((e) => !e.coordinator).map((e) => e.name);
+    if (names.length === 0) {
+        return "";
+    }
+    const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    const coordinator = draft.experts.find((e) => e.coordinator)?.name;
+    const read = `${who} ${names.length === 1 ? "reads the code from its own side" : "each read the code from their own side"}`;
+    return `${groupName(lib, draft.group)}: ${read}${coordinator != null ? `; the ${coordinator} writes the answer` : ""}.`;
 }
 
 // ---- Save as group ----

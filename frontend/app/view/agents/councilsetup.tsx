@@ -1,11 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The council Setup (board Setup.dc.html, docs/superpowers/specs/2026-10-21-council-design.md "Starting a council"): the
-// feature and the question, what the experts read (files, folders, screenshots), the panel (a group, a row per expert
-// with its model, the roles the coordinator suggests), Pause after round 1, the estimate and Start council. The form is
-// the project's draft in councilSetupDraftAtom, so it survives switching away; councilsetupmodel.ts holds every rule
-// and this file only draws them and calls the store.
+// The council Setup (board ReportSetup.dc.html, docs/superpowers/specs/2026-10-22-council-agent-team-design.md "UI"): one
+// composer for the feature (its first line) and the question (the rest) with the files and screenshots as chips inside it,
+// a bar with Attach, the group, the estimate and Start council, and Options for the panel rows with their models, Save as
+// group and Pause after the first ideas. The form is the project's draft in councilSetupDraftAtom, so it survives
+// switching away; councilsetupmodel.ts holds every rule (the composer's text is `joinAsk` of the draft, written back
+// with `splitAsk`) and this file only draws them and calls the store.
 //
 // The coordinator's suggestion is one model call, asked once when the draft has a feature and a first file (or comes
 // from Ask the council with a question), a moment after the last edit. It lives in askCoordinator below, outside the
@@ -18,7 +19,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { createTempFileFromBlob } from "@/app/view/term/termutil";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { ChevronDown, Image as ImageIcon, X } from "lucide-react";
+import { ChevronDown, Image as ImageIcon, Paperclip, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { showCouncil, showTerminal } from "./agentcenter";
 import { councilProjectKey, estimateLabel, type CouncilSetupDraft } from "./councilmodel";
@@ -28,11 +29,13 @@ import {
     addScreenshot,
     applyGroup,
     applySuggestion,
+    askText,
     basename,
     beginSuggest,
     estimateKey,
     estimateRequest,
     expertInitial,
+    expertsLine,
     expertTone,
     failSuggestion,
     groupFromDraft,
@@ -47,6 +50,7 @@ import {
     retrySuggestion,
     setExpertModel,
     settleRerun,
+    splitAsk,
     startBlocker,
     startData,
     suggestRequest,
@@ -494,17 +498,26 @@ export function CouncilSetup() {
     return <SetupForm key={councilProjectKey(project)} project={project} />;
 }
 
+// a file or screenshot chip inside the composer
+const CHIP =
+    "inline-flex h-[24px] max-w-full items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised pl-[8px] pr-[4px] text-[12px] text-secondary";
+const CHIP_REMOVE =
+    "flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded-[4px] border-0 bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent";
+
 function SetupForm({ project }: { project: string }) {
     const draftAtom = councilSetupDraftAtom(project);
     const draft = useAtomValue(draftAtom);
     const projects = useAtomValue(projectsAtom);
     const { lib, failed: libFailed, reload } = useRoleLibrary();
     const root = useRef<HTMLDivElement>(null);
-    const featureInput = useRef<HTMLInputElement>(null);
+    const askInput = useRef<HTMLTextAreaElement>(null);
     const [starting, setStarting] = useState(false);
     const [startError, setStartError] = useState("");
     const [pasteError, setPasteError] = useState("");
     const [groupNote, setGroupNote] = useState("");
+    const [optionsOpen, setOptionsOpen] = useState(false);
+    // what the person last typed in the composer, kept while the draft still reads from it (askText)
+    const [typed, setTyped] = useState<string | null>(null);
     const { est, failed: estimateFailed } = useEstimate(draft);
 
     const update = (fn: (d: CouncilSetupDraft) => CouncilSetupDraft) => editDraft(project, fn);
@@ -534,10 +547,10 @@ function SetupForm({ project }: { project: string }) {
         }
     }, [needsPanel]);
 
-    // the person lands on the first thing to fill in, once, when Setup opens
+    // the person lands on the composer, once, when Setup opens
     useEffect(() => {
         if (draft != null && draft.feature === "") {
-            featureInput.current?.focus();
+            askInput.current?.focus();
         }
     }, []);
 
@@ -594,6 +607,7 @@ function SetupForm({ project }: { project: string }) {
     const reading = readingLine(draft);
     const pending = pendingRoles(draft);
     const libraryOrEmpty = lib ?? NO_LIBRARY;
+    const who = expertsLine(draft, libraryOrEmpty);
 
     const cancel = () => {
         forgetAsk(project);
@@ -640,6 +654,7 @@ function SetupForm({ project }: { project: string }) {
     };
 
     const estimateText = est != null ? estimateLabel(est) : estimateFailed ? "Estimate unavailable" : "Estimating…";
+    const hasChips = draft.files.length > 0 || draft.screenshots.length > 0;
 
     return (
         <div
@@ -650,50 +665,44 @@ function SetupForm({ project }: { project: string }) {
         >
             <div className="flex flex-none items-center gap-[10px] border-b border-edge-faint px-8 pb-[14px] pt-[18px]">
                 <h1 className="m-0 text-[15px] font-semibold tracking-[-0.01em]">New council</h1>
-                <span className="min-w-0 truncate text-[12px] text-muted">
-                    {projectLabel} · the experts read the code and never edit it
-                </span>
+                <span className="min-w-0 truncate text-[12px] text-muted">{projectLabel}</span>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-8 py-5">
-                <div className="flex max-w-[780px] flex-col gap-5">
-                    <div className="flex gap-[14px]">
-                        <label className="flex min-w-0 flex-1 flex-col gap-[6px]">
-                            <span className={LABEL}>Feature</span>
-                            <input
-                                ref={featureInput}
-                                data-council-input="feature"
-                                value={draft.feature}
-                                placeholder="What to review, like Rail apps"
-                                onChange={(e) => update((d) => ({ ...d, feature: e.target.value }))}
-                                className={INPUT}
-                            />
-                        </label>
-                        <label className="flex min-w-0 flex-1 flex-col gap-[6px]">
-                            <span className={LABEL}>Question</span>
-                            <input
-                                data-council-input="question"
-                                value={draft.question}
-                                placeholder="What you want to know, if anything"
-                                onChange={(e) => update((d) => ({ ...d, question: e.target.value }))}
-                                className={INPUT}
-                            />
-                        </label>
-                    </div>
+                <div className="flex max-w-[780px] flex-col gap-[14px]">
+                    <p className="m-0 text-[13px] leading-[1.5] text-secondary">
+                        A few AI experts read your project, argue over each other's ideas, and give you a ranked answer.
+                        They never edit anything.
+                    </p>
 
-                    <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                            <span className={LABEL}>What the experts read</span>
-                            <span className="text-[11px] text-muted">the coordinator adds more from your feature</span>
-                        </div>
-                        <div className="flex items-stretch gap-3">
-                            <div data-council-files className="flex min-w-0 flex-1 flex-wrap content-start gap-[6px]">
+                    <div
+                        data-council-composer
+                        className="flex flex-col rounded-[10px] border border-edge-mid bg-surface focus-within:border-accent-700"
+                    >
+                        <textarea
+                            ref={askInput}
+                            data-council-input="ask"
+                            aria-label="What should the council review?"
+                            rows={4}
+                            value={askText(draft, typed)}
+                            placeholder="What should the council review? The first line names it; ask a question under it."
+                            onChange={(e) => {
+                                const text = e.target.value;
+                                setTyped(text);
+                                update((d) => ({ ...d, ...splitAsk(text) }));
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+                                    e.preventDefault();
+                                    void start();
+                                }
+                            }}
+                            className="min-h-[96px] w-full min-w-0 resize-none rounded-t-[10px] border-0 bg-transparent px-3 pb-1 pt-[10px] text-[13px] leading-[1.5] text-primary outline-none placeholder:text-ink-faint"
+                        />
+                        {hasChips ? (
+                            <div data-council-files className="flex flex-wrap gap-[6px] px-3 pb-2">
                                 {draft.files.map((f) => (
-                                    <span
-                                        key={f}
-                                        data-council-file={f}
-                                        className="inline-flex h-[26px] max-w-full items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised pl-[9px] pr-[6px] text-[12px] text-secondary"
-                                    >
+                                    <span key={f} data-council-file={f} data-council-file-chip className={CHIP}>
                                         <span className="min-w-0 truncate" title={f}>
                                             {f}
                                         </span>
@@ -702,95 +711,81 @@ function SetupForm({ project }: { project: string }) {
                                             data-council-file-remove={f}
                                             aria-label={`Remove ${f}`}
                                             onClick={() => update((d) => removeFile(d, f))}
-                                            className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded-[4px] border-0 bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                                            className={CHIP_REMOVE}
                                         >
                                             <X size={12} strokeWidth={1.8} aria-hidden />
                                         </button>
                                     </span>
                                 ))}
-                                <MenuButton
-                                    ariaLabel="Add a file or folder"
-                                    itemAttr="data-council-add-item"
-                                    data-council-add
-                                    items={[
-                                        { id: "file", label: "File…" },
-                                        { id: "folder", label: "Folder…" },
-                                    ]}
-                                    onPick={(id) => void addPicked(id === "folder" ? "folder" : "file")}
-                                    className="h-[26px] cursor-pointer rounded-[6px] border border-dashed border-edge-strong bg-transparent px-[10px] text-[12px] text-muted outline-none hover:border-muted hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
-                                >
-                                    + Add a file or folder
-                                </MenuButton>
-                            </div>
-                            <div className="flex w-[200px] flex-none flex-col gap-[6px]">
                                 {draft.screenshots.map((path) => {
                                     const name = basename(path);
                                     const thumb = thumbs.get(path);
                                     return (
-                                        <div
+                                        <span
                                             key={path}
                                             data-council-screenshot={path}
-                                            className="flex flex-col overflow-hidden rounded-[8px] border border-edge-mid bg-surface-code"
+                                            data-council-file-chip
+                                            className={cn(CHIP, "pl-[4px]")}
                                         >
-                                            <div className="flex min-h-[86px] flex-1 items-center justify-center bg-surface text-muted">
-                                                {thumb != null ? (
-                                                    <img
-                                                        src={thumb}
-                                                        alt={`Screenshot ${name}`}
-                                                        className="max-h-[120px] w-full object-contain"
-                                                    />
-                                                ) : (
-                                                    <ImageIcon size={22} strokeWidth={1.5} aria-hidden />
-                                                )}
-                                            </div>
-                                            <div className="flex items-center gap-[6px] py-[4px] pl-[8px] pr-[4px] text-[11px] text-secondary">
-                                                <span className="min-w-0 flex-1 truncate" title={path}>
-                                                    {name}
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    data-council-screenshot-remove={path}
-                                                    aria-label={`Remove ${name}`}
-                                                    onClick={() => update((d) => removeScreenshot(d, path))}
-                                                    className={cn(ICON_BUTTON, "h-[20px] w-[20px]")}
-                                                >
-                                                    <X size={12} strokeWidth={1.8} aria-hidden />
-                                                </button>
-                                            </div>
-                                        </div>
+                                            {thumb != null ? (
+                                                <img
+                                                    src={thumb}
+                                                    alt={`Screenshot ${name}`}
+                                                    className="h-[16px] w-[16px] flex-none rounded-[3px] object-cover"
+                                                />
+                                            ) : (
+                                                <ImageIcon
+                                                    size={14}
+                                                    strokeWidth={1.5}
+                                                    className="ml-[2px]"
+                                                    aria-hidden
+                                                />
+                                            )}
+                                            <span className="min-w-0 truncate" title={path}>
+                                                {name}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                data-council-screenshot-remove={path}
+                                                aria-label={`Remove ${name}`}
+                                                onClick={() => update((d) => removeScreenshot(d, path))}
+                                                className={CHIP_REMOVE}
+                                            >
+                                                <X size={12} strokeWidth={1.8} aria-hidden />
+                                            </button>
+                                        </span>
                                     );
                                 })}
-                                <button
-                                    type="button"
-                                    data-council-paste
-                                    onClick={() => void pickImage()}
-                                    title="Paste an image anywhere in this form, or click to choose a file"
-                                    className="flex cursor-pointer flex-col items-start rounded-[8px] border border-dashed border-edge-strong bg-transparent px-[10px] py-[7px] text-left outline-none hover:border-muted focus-visible:ring-2 focus-visible:ring-accent"
-                                >
-                                    <span className="text-[11.5px] text-secondary">
-                                        {draft.screenshots.length === 0 ? "Paste a screenshot" : "Paste another"}
-                                    </span>
-                                    <span className="text-[10.5px] text-muted">or click to choose an image</span>
-                                </button>
-                                {pasteError !== "" ? (
-                                    <span data-council-paste-error className="text-[11px] text-error">
-                                        {pasteError}
-                                    </span>
-                                ) : null}
                             </div>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                            <span className={LABEL}>Experts</span>
-                            <div className="flex-1" />
-                            <span className="text-[11.5px] text-muted">Group</span>
+                        ) : null}
+                        <div
+                            data-council-composer-bar
+                            className="flex items-center gap-2 rounded-b-[10px] border-t border-edge-faint px-2 py-[6px]"
+                        >
+                            <MenuButton
+                                ariaLabel="Add a file, folder or screenshot"
+                                itemAttr="data-council-add-item"
+                                data-council-attach
+                                data-council-add
+                                items={[
+                                    { id: "file", label: "File…" },
+                                    { id: "folder", label: "Folder…" },
+                                    { id: "image", label: "Screenshot…" },
+                                ]}
+                                onPick={(id) =>
+                                    id === "image"
+                                        ? void pickImage()
+                                        : void addPicked(id === "folder" ? "folder" : "file")
+                                }
+                                className="flex h-[26px] cursor-pointer items-center gap-[5px] rounded-[6px] border border-transparent bg-transparent px-[8px] text-[12px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                            >
+                                <Paperclip size={13} strokeWidth={1.8} aria-hidden />
+                                Attach
+                            </MenuButton>
                             <MenuButton
                                 ariaLabel="Group of experts"
                                 itemAttr="data-council-group-item"
                                 data-council-group
-                                align="right"
                                 items={libraryOrEmpty.groups.map((g) => ({
                                     id: g.id,
                                     label: g.name,
@@ -805,96 +800,73 @@ function SetupForm({ project }: { project: string }) {
                                 {draft.experts.length === 0 ? "Pick a group" : groupName(libraryOrEmpty, draft.group)}
                                 <ChevronDown size={12} strokeWidth={2} className="text-muted" aria-hidden />
                             </MenuButton>
-                            {lib != null && draft.experts.length > 0 ? (
-                                <SaveGroupForm
-                                    draft={draft}
-                                    lib={lib}
-                                    onSaved={(id, note) => {
-                                        setGroupNote(note);
-                                        update((d) => ({ ...d, group: id }));
-                                    }}
-                                />
-                            ) : null}
+                            <div className="flex-1" />
+                            <span data-council-estimate className="flex-none text-[12px] tabular-nums text-secondary">
+                                {estimateText}
+                            </span>
+                            <button
+                                type="button"
+                                data-council-cancel
+                                onClick={cancel}
+                                className="h-[30px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-3 text-[12.5px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                data-council-start
+                                disabled={blocker !== "" || starting}
+                                title={blocker !== "" ? blocker : "Start the council. The estimate is what it will use"}
+                                onClick={() => void start()}
+                                className="h-[30px] cursor-pointer rounded-[6px] border-0 bg-accent px-[14px] text-[12.5px] font-semibold text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-default disabled:opacity-40 disabled:hover:bg-accent"
+                            >
+                                {starting ? "Starting…" : "Start council"}
+                            </button>
                         </div>
+                    </div>
+
+                    <div className="flex flex-col gap-[6px]">
+                        <span
+                            data-council-footnote={blocker !== "" ? "blocked" : "reading"}
+                            className="min-w-0 text-[11.5px] text-muted"
+                        >
+                            {blocker !== "" ? blocker : reading}
+                        </span>
+                        {startError !== "" ? (
+                            <span data-council-error role="alert" className="min-w-0 text-[11.5px] text-error">
+                                {startError}
+                            </span>
+                        ) : null}
+                        {pasteError !== "" ? (
+                            <span data-council-paste-error className="text-[11.5px] text-error">
+                                {pasteError}
+                            </span>
+                        ) : null}
+                        {draft.experts.length === 0 ? (
+                            <div className="flex items-center gap-2 text-[12px] text-muted">
+                                {libFailed ? (
+                                    <>
+                                        <span>Couldn't load the experts.</span>
+                                        <button type="button" onClick={reload} className={GHOST}>
+                                            Try again
+                                        </button>
+                                    </>
+                                ) : lib == null ? (
+                                    <span>Loading experts…</span>
+                                ) : (
+                                    <span>Pick a group to choose the experts.</span>
+                                )}
+                            </div>
+                        ) : (
+                            <span data-council-experts-line className="text-[12.5px] leading-[1.5] text-secondary">
+                                {who}
+                            </span>
+                        )}
                         {groupNote !== "" ? (
                             <span data-council-group-note role="status" className="text-[11.5px] text-muted">
                                 {groupNote}
                             </span>
                         ) : null}
-                        <div
-                            data-council-experts
-                            className="flex flex-col rounded-[10px] border border-border bg-surface"
-                        >
-                            {draft.experts.length === 0 ? (
-                                <div className="flex items-center gap-2 px-3 py-[10px] text-[12px] text-muted">
-                                    {libFailed ? (
-                                        <>
-                                            <span>Couldn't load the experts.</span>
-                                            <button type="button" onClick={reload} className={GHOST}>
-                                                Try again
-                                            </button>
-                                        </>
-                                    ) : lib == null ? (
-                                        <span>Loading experts…</span>
-                                    ) : (
-                                        <span>Pick a group above to choose the experts.</span>
-                                    )}
-                                </div>
-                            ) : (
-                                draft.experts.map((e, i) => (
-                                    <div
-                                        key={e.id}
-                                        data-council-expert={e.id}
-                                        data-council-coordinator={e.coordinator ? "" : undefined}
-                                        className={cn(
-                                            "flex items-center gap-[10px] py-[9px] pl-3 pr-[10px]",
-                                            i > 0 && "border-t border-border"
-                                        )}
-                                    >
-                                        <Avatar expert={e} tone={expertTone(draft.experts, i)} />
-                                        <div className="w-[110px] flex-none truncate text-[12.5px] font-semibold">
-                                            {e.name}
-                                        </div>
-                                        <div
-                                            className="min-w-0 flex-1 truncate text-[12px] text-secondary"
-                                            title={e.brief}
-                                        >
-                                            {e.brief}
-                                        </div>
-                                        <MenuButton
-                                            ariaLabel={`Model for ${e.name}`}
-                                            itemAttr="data-council-model-item"
-                                            data-council-model={e.id}
-                                            align="right"
-                                            items={MODEL_CHOICES.map((m) => ({
-                                                id: m,
-                                                label: m,
-                                                checked: m === e.model,
-                                            }))}
-                                            onPick={(m) => update((d) => setExpertModel(d, e.id, m))}
-                                            className="flex h-6 cursor-pointer items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface-raised px-2 text-[11.5px] text-secondary outline-none hover:border-edge-strong focus-visible:ring-2 focus-visible:ring-accent"
-                                        >
-                                            {e.model}
-                                            <ChevronDown size={10} strokeWidth={2} className="text-muted" aria-hidden />
-                                        </MenuButton>
-                                        {e.coordinator ? (
-                                            <span className="h-6 w-6 flex-none" aria-hidden />
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                data-council-expert-remove={e.id}
-                                                aria-label={`Remove ${e.name}`}
-                                                onClick={() => update((d) => removeExpert(d, e.id))}
-                                                className={ICON_BUTTON}
-                                            >
-                                                <X size={14} strokeWidth={1.8} aria-hidden />
-                                            </button>
-                                        )}
-                                    </div>
-                                ))
-                            )}
-                        </div>
-
                         {draft.suggestState === "asking" ? (
                             <span data-council-suggesting role="status" className="text-[11.5px] text-muted">
                                 Suggesting…
@@ -952,65 +924,142 @@ function SetupForm({ project }: { project: string }) {
                         ) : null}
                     </div>
 
-                    <div className="flex items-center gap-[10px]">
-                        <Toggle
-                            on={draft.pause}
-                            onToggle={() => update((d) => ({ ...d, pause: !d.pause }))}
-                            label="Pause after round 1"
-                            data-council-pause
-                        />
-                        <span
-                            onClick={() => update((d) => ({ ...d, pause: !d.pause }))}
-                            className="flex min-w-0 cursor-pointer items-baseline gap-[10px]"
+                    <div className="flex flex-col gap-3">
+                        <button
+                            type="button"
+                            data-council-options
+                            aria-expanded={optionsOpen}
+                            onClick={() => setOptionsOpen((o) => !o)}
+                            className="flex h-[26px] w-fit cursor-pointer items-center gap-[5px] rounded-[6px] border-0 bg-transparent px-[6px] text-[12px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
                         >
-                            <span className="flex-none text-[12.5px]">Pause after round 1</span>
-                            <span className="min-w-0 text-[11.5px] text-muted">
-                                so you can cut proposals or ask the experts something before they review each other
-                            </span>
-                        </span>
+                            <ChevronDown
+                                size={12}
+                                strokeWidth={2}
+                                className={cn("transition-transform", !optionsOpen && "-rotate-90")}
+                                aria-hidden
+                            />
+                            Options
+                        </button>
+                        {optionsOpen ? (
+                            <div data-council-options-body className="flex flex-col gap-5">
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className={LABEL}>What the experts read</span>
+                                        <span className="text-[11px] text-muted">
+                                            the coordinator adds more from your question; paste an image anywhere here
+                                            to add a screenshot
+                                        </span>
+                                    </div>
+                                    <span className="text-[12px] text-secondary">
+                                        Files and screenshots sit in the box above; Attach adds more, × takes one away.
+                                    </span>
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className={LABEL}>Experts</span>
+                                        <div className="flex-1" />
+                                        {lib != null && draft.experts.length > 0 ? (
+                                            <SaveGroupForm
+                                                draft={draft}
+                                                lib={lib}
+                                                onSaved={(id, note) => {
+                                                    setGroupNote(note);
+                                                    update((d) => ({ ...d, group: id }));
+                                                }}
+                                            />
+                                        ) : null}
+                                    </div>
+                                    <div
+                                        data-council-experts
+                                        className="flex flex-col rounded-[10px] border border-border bg-surface"
+                                    >
+                                        {draft.experts.length === 0 ? (
+                                            <div className="px-3 py-[10px] text-[12px] text-muted">
+                                                Pick a group to choose the experts.
+                                            </div>
+                                        ) : (
+                                            draft.experts.map((e, i) => (
+                                                <div
+                                                    key={e.id}
+                                                    data-council-expert={e.id}
+                                                    data-council-coordinator={e.coordinator ? "" : undefined}
+                                                    className={cn(
+                                                        "flex items-center gap-[10px] py-[9px] pl-3 pr-[10px]",
+                                                        i > 0 && "border-t border-border"
+                                                    )}
+                                                >
+                                                    <Avatar expert={e} tone={expertTone(draft.experts, i)} />
+                                                    <div className="w-[110px] flex-none truncate text-[12.5px] font-semibold">
+                                                        {e.name}
+                                                    </div>
+                                                    <div
+                                                        className="min-w-0 flex-1 truncate text-[12px] text-secondary"
+                                                        title={e.brief}
+                                                    >
+                                                        {e.brief}
+                                                    </div>
+                                                    <MenuButton
+                                                        ariaLabel={`Model for ${e.name}`}
+                                                        itemAttr="data-council-model-item"
+                                                        data-council-model={e.id}
+                                                        align="right"
+                                                        items={MODEL_CHOICES.map((m) => ({
+                                                            id: m,
+                                                            label: m,
+                                                            checked: m === e.model,
+                                                        }))}
+                                                        onPick={(m) => update((d) => setExpertModel(d, e.id, m))}
+                                                        className="flex h-6 cursor-pointer items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface-raised px-2 text-[11.5px] text-secondary outline-none hover:border-edge-strong focus-visible:ring-2 focus-visible:ring-accent"
+                                                    >
+                                                        {e.model}
+                                                        <ChevronDown
+                                                            size={10}
+                                                            strokeWidth={2}
+                                                            className="text-muted"
+                                                            aria-hidden
+                                                        />
+                                                    </MenuButton>
+                                                    {e.coordinator ? (
+                                                        <span className="h-6 w-6 flex-none" aria-hidden />
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            data-council-expert-remove={e.id}
+                                                            aria-label={`Remove ${e.name}`}
+                                                            onClick={() => update((d) => removeExpert(d, e.id))}
+                                                            className={ICON_BUTTON}
+                                                        >
+                                                            <X size={14} strokeWidth={1.8} aria-hidden />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-[10px]">
+                                    <Toggle
+                                        on={draft.pause}
+                                        onToggle={() => update((d) => ({ ...d, pause: !d.pause }))}
+                                        label="Pause after the first ideas"
+                                        data-council-pause
+                                    />
+                                    <span
+                                        onClick={() => update((d) => ({ ...d, pause: !d.pause }))}
+                                        className="flex min-w-0 cursor-pointer items-baseline gap-[10px]"
+                                    >
+                                        <span className="flex-none text-[12.5px]">Pause after the first ideas</span>
+                                        <span className="min-w-0 text-[11.5px] text-muted">
+                                            so you can cut ideas or ask the experts something before they argue
+                                        </span>
+                                    </span>
+                                </div>
+                            </div>
+                        ) : null}
                     </div>
                 </div>
-            </div>
-
-            <div className="flex flex-none items-center gap-3 border-t border-edge-faint bg-surface px-8 py-3">
-                <span data-council-estimate className="flex-none text-[12px] tabular-nums text-secondary">
-                    {estimateText}
-                </span>
-                <span
-                    data-council-footnote={blocker !== "" ? "blocked" : "reading"}
-                    className="min-w-0 truncate text-[11.5px] text-muted"
-                >
-                    {blocker !== "" ? blocker : reading}
-                </span>
-                <div className="flex-1" />
-                {startError !== "" ? (
-                    <span
-                        data-council-error
-                        role="alert"
-                        className="min-w-0 truncate text-[11.5px] text-error"
-                        title={startError}
-                    >
-                        {startError}
-                    </span>
-                ) : null}
-                <button
-                    type="button"
-                    data-council-cancel
-                    onClick={cancel}
-                    className="h-[30px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-3 text-[12.5px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    Cancel
-                </button>
-                <button
-                    type="button"
-                    data-council-start
-                    disabled={blocker !== "" || starting}
-                    title={blocker !== "" ? blocker : "Start the council. The estimate is what it will use"}
-                    onClick={() => void start()}
-                    className="h-[30px] cursor-pointer rounded-[6px] border-0 bg-accent px-[14px] text-[12.5px] font-semibold text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-default disabled:opacity-40 disabled:hover:bg-accent"
-                >
-                    {starting ? "Starting…" : "Start council"}
-                </button>
             </div>
         </div>
     );
