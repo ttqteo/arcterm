@@ -89,7 +89,8 @@ type CouncilDirection struct {
 type CouncilSummary struct {
 	Text       string             `json:"text"`
 	Directions []CouncilDirection `json:"directions"`
-	Outcomes   map[string]string  `json:"outcomes"` // proposal id -> "Direction 1", "Merged into direction 3", "Withdrawn in round 2"
+	Outcomes   map[string]string  `json:"outcomes"`         // proposal id -> "Direction 1", "Merged into direction 3", "Withdrawn in round 2"
+	Answer     string             `json:"answer,omitempty"` // the one-sentence answer to the person's question; empty without a question
 	At         int64              `json:"at"`
 }
 
@@ -133,6 +134,7 @@ type Council struct {
 	Error            string                       `json:"error,omitempty"`
 	Proposals        []CouncilProposal            `json:"proposals,omitempty"`
 	Replies          []CouncilReply               `json:"replies,omitempty"`
+	Picks            map[string][]string          `json:"picks,omitempty"` // expert id -> up to 3 proposal ids, in the order the expert gave them
 	Summary          *CouncilSummary              `json:"summary,omitempty"`
 	Activity         map[string]CouncilActivity   `json:"activity,omitempty"` // expert id -> what it is doing now
 	Failed           map[string]CouncilFailure    `json:"failed,omitempty"`   // expert id -> its failed call
