@@ -135,3 +135,189 @@ func TestMarkdownWithNoProposalsHasNoMatrix(t *testing.T) {
 		t.Errorf("no proposals, no matrix\n%s", md)
 	}
 }
+
+// ---- the saved document ----
+
+// documentCouncil is markdownCouncil with the times, models, evidence and the person's words a document shows.
+func documentCouncil() *Council {
+	c := markdownCouncil()
+	c.Question = "Which direction first?\nKeep to: no new setting."
+	c.Summary.Answer = "Show the sleep state first."
+	c.ModeWhy = "a feature that exists, waiting to be judged"
+	c.Experts[0].Model, c.Experts[1].Model, c.Experts[2].Model, c.Experts[3].Model = "sonnet", "sonnet", "sonnet", "opus"
+	c.Tokens, c.Calls, c.Started, c.Updated, c.State = 820_000, 9, 1_000, 1_000+372_000, StateDone
+	for i := range c.Proposals {
+		c.Proposals[i].Ts = int64(10 * (i + 1))
+	}
+	c.Proposals[0].Argument = "A badge tells people why it is slow.\n\nIt costs one render."
+	c.Proposals[0].Evidence = []CouncilEvidence{{Ref: "a.go:1"}, {Weak: true, Note: `"about 3 s" has no measurement`}}
+	// r3 is the oldest reply, though it sits after r1 and r2 in the list
+	times := map[string]int64{"r1": 60, "r2": 70, "r3": 55, "r4": 80, "r5": 90}
+	for i := range c.Replies {
+		c.Replies[i].Ts = times[c.Replies[i].Id]
+	}
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r6", ProposalId: "P1", Author: "lead", Stance: StanceAccept, Ts: 85},
+		CouncilReply{Id: "r7", Author: YouId, Text: "Anyone against?", To: []string{"ux", "ram", "skeptic"}, Round: 2, Ts: 100},
+	)
+	return c
+}
+
+func TestMarkdownDiscussion(t *testing.T) {
+	c := documentCouncil()
+	doc := Document(c)
+
+	// the report comes first and is what Markdown returns; the discussion and the run facts follow it
+	report := strings.TrimRight(Markdown(c), "\n")
+	if !strings.HasPrefix(doc, report+"\n\n## The discussion\n\n") {
+		t.Errorf("the document does not open with the report then the discussion\n%s", doc)
+	}
+	for _, w := range []string{"You asked: Which direction first? Keep to: no new setting.", "**Show the sleep state first.**"} {
+		if !strings.Contains(doc, w) {
+			t.Errorf("the report lacks %q\n%s", w, doc)
+		}
+	}
+	if strings.Contains(report, "The discussion") || strings.Contains(report, "Run facts") {
+		t.Errorf("Markdown is the report only, but holds\n%s", report)
+	}
+
+	wantLines := []string{
+		"- **You** sets the goal\n  Which direction first? Keep to: no new setting.\n",
+		"- **UX** proposes · P1 · Show the sleep state\n  A badge tells people why it is slow.\n\n  It costs one render.\n  Evidence: a.go:1; weak: \"about 3 s\" has no measurement\n",
+		"- **Skeptic** proposes · P3 · Wake on hover (withdrawn)\n",
+		"- **RAM** proposes · P4 · Poll less (cut at the pause)\n",
+		"- **UX** is against it · on P2 · Sleep after a minute | or two\n",
+		// an accept with words is a reply; one with none is a reaction, which the document keeps as a line of its own
+		"- **RAM** replies · on P1 · Show the sleep state\n  Cheap to do.\n  And clear.\n",
+		"- **Skeptic** has doubts · on P1 · Show the sleep state\n  Costs a | pipe in a cell\n",
+		"- **Lead** agrees · on P1 · Show the sleep state\n",
+		"- **UX** replies · on P1 · Show the sleep state (replying to RAM)\n  a branch reply is not the stance\n",
+		"- **You** replies · on P2 · Sleep after a minute | or two\n  no stance from the person\n",
+		"- **You** steers · to the whole council\n  Anyone against?\n",
+	}
+	for _, w := range wantLines {
+		if !strings.Contains(doc, w) {
+			t.Errorf("the discussion lacks %q\n%s", w, doc)
+		}
+	}
+
+	// every message in the order it was said: proposals by their times, then the replies by theirs (r3 before r1)
+	last := -1
+	for _, w := range []string{
+		"# Council:", "## Directions", "## Matrix", "## The discussion", "sets the goal",
+		"**UX** proposes · P1", "**RAM** proposes · P2", "**Skeptic** proposes · P3", "**RAM** proposes · P4", "**UX** proposes · P5",
+		"**UX** is against it", "**RAM** replies · on P1", "**Skeptic** has doubts", "**UX** replies · on P1", "**Lead** agrees",
+		"**You** replies", "**You** steers", "## Run facts",
+	} {
+		i := strings.Index(doc, w)
+		if i < 0 || i < last {
+			t.Errorf("%q is missing or out of order (at %d after %d) in\n%s", w, i, last, doc)
+		}
+		last = max(last, i)
+	}
+
+	for _, w := range []string{
+		"## Run facts\n\n- Mode: Review · a feature that exists, waiting to be judged\n",
+		"- Experts: UX (sonnet), RAM (sonnet), Skeptic (sonnet), Lead (opus, coordinator)\n",
+		"- Tokens: 0.8M in 9 calls\n",
+		"- Time: 6 min 12 s\n",
+		"- Ended: done\n",
+	} {
+		if !strings.Contains(doc, w) {
+			t.Errorf("the run facts lack %q\n%s", w, doc)
+		}
+	}
+}
+
+func TestMarkdownDiscussionOfAnEmptyCouncil(t *testing.T) {
+	doc := Document(&Council{Id: "c1", Feature: "Nothing yet", State: StateStopped, Experts: []CouncilExpert{{Id: "lead", Name: "Lead", Coordinator: true}}})
+	for _, w := range []string{"_No summary yet._", "## The discussion\n\n_Nothing was said._\n", "## Run facts\n\n- Mode: Review\n", "- Experts: Lead (coordinator)\n", "- Ended: stopped\n"} {
+		if !strings.Contains(doc, w) {
+			t.Errorf("document lacks %q\n%s", w, doc)
+		}
+	}
+	if strings.Contains(doc, "- Time:") {
+		t.Errorf("a council that never started has no time\n%s", doc)
+	}
+}
+
+func savedBrainstorm() *Council {
+	return &Council{
+		Id: "b1", Feature: "Council for newcomers", Question: "Council opens on threads and nobody knows what to do. Fix?",
+		Mode: ModeBrainstorm, ModeWhy: "a goal with no answer yet", State: StateDone, Started: 5_000, Updated: 5_000 + 45_000, Tokens: 1_200_000, Calls: 11,
+		Experts: []CouncilExpert{
+			{Id: "ux", Name: "UX", Model: "sonnet"},
+			{Id: "skeptic", Name: "Skeptic", Model: "sonnet"},
+			{Id: "lead", Name: "Lead", Model: "opus", Coordinator: true},
+		},
+		Proposals: []CouncilProposal{
+			{Id: "P1", Author: "ux", Title: "Open on the report", Argument: "Show the answer first.", Ts: 10},
+			{Id: "P2", Author: "skeptic", Title: "A council as a game", Argument: "Levels and badges.", Wild: true, Ts: 20},
+		},
+		Replies: []CouncilReply{
+			{Id: "r1", ProposalId: "P1", Author: "skeptic", Stance: StanceAccept, Builds: true, Text: "And fold the debate behind a button.", Round: 2, Ts: 30},
+			{Id: "r2", ProposalId: "P1", Author: "ux", ParentId: "r1", Stance: StanceChallenge, Text: "Hidden debates are never read.", Round: 2, Ts: 40},
+		},
+		Summary: &CouncilSummary{
+			Text:   "Move the debate behind the answer.",
+			Answer: "Open the report first.",
+			Directions: []CouncilDirection{
+				{Rank: 1, Title: "Report first", Reasoning: "Newcomers read the answer.", From: []string{"P1"}, FirstStep: "Open the report when a council ends.", Agreed: true},
+			},
+			Kept:     []CouncilDirection{{Rank: 1, Title: "A council as a game", Reasoning: "Might make people curious.", From: []string{"P2"}}},
+			Outcomes: map[string]string{"P1": "Direction 1", "P2": "Kept aside"},
+		},
+	}
+}
+
+func TestMarkdownBrainstorm(t *testing.T) {
+	c := savedBrainstorm()
+	report := Markdown(c)
+	for _, w := range []string{
+		"You asked: Council opens on threads and nobody knows what to do. Fix?",
+		"**Open the report first.**",
+		"## Ideas worth trying\n\n1. **Report first** (Agreed)\n",
+		"   From P1 (UX).\n",
+		"   First step: Open the report when a council ends.\n",
+		"## Wild ideas kept aside\n\n- **A council as a game** (from P2 (Skeptic)): Might make people curious.\n",
+		"| P2 · A council as a game (wild idea) |",
+		"| Kept aside |",
+	} {
+		if !strings.Contains(report, w) {
+			t.Errorf("the report lacks %q\n%s", w, report)
+		}
+	}
+	if strings.Contains(report, "## Directions") {
+		t.Errorf("a Brainstorm's report has ideas worth trying, not directions\n%s", report)
+	}
+
+	doc := Document(c)
+	for _, w := range []string{
+		"- **UX** idea · P1 · Open on the report\n  Show the answer first.\n",
+		"- **Skeptic** wild idea · P2 · A council as a game\n  Levels and badges.\n",
+		"- **Skeptic** builds on it · on P1 · Open on the report\n  And fold the debate behind a button.\n",
+		"- **UX** has doubts · on P1 · Open on the report (replying to Skeptic)\n  Hidden debates are never read.\n",
+		"- **You** sets the goal\n",
+		"- Mode: Brainstorm · a goal with no answer yet\n",
+		"- Tokens: 1.2M in 11 calls\n",
+		"- Time: 45 s\n",
+	} {
+		if !strings.Contains(doc, w) {
+			t.Errorf("the document lacks %q\n%s", w, doc)
+		}
+	}
+	if strings.Contains(doc, "proposes") || strings.Contains(doc, "Evidence:") {
+		t.Errorf("a Brainstorm has ideas and no evidence\n%s", doc)
+	}
+}
+
+func TestMarkdownBrainstormWithNoWildIdeasHasNoKeptSection(t *testing.T) {
+	c := savedBrainstorm()
+	c.Summary.Kept = nil
+	c.Proposals = c.Proposals[:1]
+	for name, md := range map[string]string{"report": Markdown(c), "document": Document(c)} {
+		if strings.Contains(md, "Wild ideas kept aside") || strings.Contains(md, "wild idea") {
+			t.Errorf("the %s shows a wild idea section with none kept\n%s", name, md)
+		}
+	}
+}

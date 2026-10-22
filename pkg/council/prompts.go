@@ -71,10 +71,73 @@ const (
 }`
 )
 
+// answerLine is the line of both synthesis shapes that holds the answer to the person's question.
+const answerLine = "  \"answer\": \"one sentence that answers the person's question directly\",\n"
+
 // synthesisShapeNoQuestion is synthesisShape for a council with no question: there is nothing to answer, so it asks
 // for no answer.
-var synthesisShapeNoQuestion = strings.Replace(synthesisShape,
-	"  \"answer\": \"one sentence that answers the person's question directly\",\n", "", 1)
+var synthesisShapeNoQuestion = strings.Replace(synthesisShape, answerLine, "", 1)
+
+// The Brainstorm shapes. They keep the keys the parsers read ("proposals" holds the ideas, "directions" the ideas worth
+// trying) and add the Brainstorm ones: a wild flag, a build flag, a first step and the ideas kept aside.
+const (
+	brainstormRound1Shape = `{
+  "overview": "two or three sentences: how you see the problem or goal",
+  "proposals": [
+    {
+      "title": "a short title for the idea",
+      "argument": "what the idea is and why it could work, in a short paragraph",
+      "wild": false
+    }
+  ]
+}`
+
+	brainstormRound2Shape = `{
+  "stances": [
+    {
+      "proposalid": "P2",
+      "stance": "accept",
+      "builds": true,
+      "reason": "what you add to the idea"
+    },
+    {
+      "proposalid": "P3",
+      "stance": "accept",
+      "reason": ""
+    }
+  ],
+  "revisions": [
+    {"proposalid": "P1", "withdraw": false, "title": "its new title", "argument": "its new argument"}
+  ],
+  "answers": [
+    {"replyid": "r3", "text": "your answer to the person"}
+  ],
+  "picks": ["P2", "P3", "P4"]
+}`
+
+	brainstormSynthesisShape = `{
+  "answer": "one sentence that answers the person's question directly",
+  "text": "one paragraph for the person: where the panel landed, and who was missing",
+  "directions": [
+    {
+      "rank": 1,
+      "title": "a short title for the idea worth trying",
+      "reasoning": "why it is worth trying",
+      "firststep": "the one thing to do first",
+      "from": ["P2", "P3"],
+      "stances": {"designer": "accept", "contrarian": "challenge"},
+      "agreed": false
+    }
+  ],
+  "kept": [
+    {"title": "a short title for a wild idea kept aside", "reasoning": "why it is worth remembering", "from": ["P5"]}
+  ],
+  "outcomes": {"P1": "Direction 1", "P2": "Merged into direction 1", "P5": "Kept aside", "P6": "Not picked"}
+}`
+)
+
+// brainstormSynthesisShapeNoQuestion is brainstormSynthesisShape for a council with no question.
+var brainstormSynthesisShapeNoQuestion = strings.Replace(brainstormSynthesisShape, answerLine, "", 1)
 
 const (
 	// evidenceRule is in every prompt: a claim without evidence is drawn weak.
@@ -91,7 +154,24 @@ const (
 		"in the fields that hold ids."
 
 	jsonRule = "End your reply with one JSON object in a ```json fence and nothing after it, in this shape:"
+
+	// wildRule is in the Brainstorm's round 1: an idea can be offered wild, and is then kept aside, not ranked.
+	wildRule = `Set "wild" to true on an idea that is far-fetched, risky or off to the side but might open a door. Wild ideas ` +
+		"are not ranked with the others: the coordinator keeps them aside, so offer one whenever you have one."
+
+	// doubtRule is in the Brainstorm's round 2: judging waits until an idea has earned a doubt.
+	doubtRule = `Voice a doubt (a "stance" of "challenge", or "oppose" when you are against the idea, with one line of ` +
+		`reason) only on an idea you build on yourself or put in your picks. A build can carry a doubt: set "builds" to ` +
+		`true and "stance" to "challenge". On every other idea, build on it or accept it; never challenge or oppose it.`
 )
+
+// isBrainstorm says whether c is a Brainstorm; every other council, a council with no mode too, is a Review.
+func isBrainstorm(c *Council) bool { return ModeOf(c) == ModeBrainstorm }
+
+// angleOf is a role's brief without the evidence rule the library ends it with: a Brainstorm asks for no evidence.
+func angleOf(brief string) string {
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(brief), briefEvidenceRule))
+}
 
 // speaker is how a prompt names whoever wrote a proposal or a reply.
 func speaker(c *Council, id string) string {
@@ -114,7 +194,11 @@ func writePicks(b *strings.Builder, c *Council) {
 		b.WriteString("No expert gave picks (this council is from before picks existed): rank on the replies alone.\n\n")
 		return
 	}
-	b.WriteString("In round 2 each expert named the proposals of the others most worth doing. Picks per proposal:\n\n")
+	if isBrainstorm(c) {
+		b.WriteString("In round 2 each expert named the ideas of the others most worth trying. Picks per idea:\n\n")
+	} else {
+		b.WriteString("In round 2 each expert named the proposals of the others most worth doing. Picks per proposal:\n\n")
+	}
 	for _, p := range c.Proposals {
 		var by []string
 		for _, e := range c.Experts {
@@ -184,16 +268,31 @@ func evidenceText(ev []CouncilEvidence) string {
 // writeContext is the lines every prompt opens with: who the model is (role ends in the preposition: "one expert
 // on", "the coordinator of"), and what is under review.
 func writeContext(b *strings.Builder, c *Council, e CouncilExpert, role string) {
-	fmt.Fprintf(b, "You are %s, %s a council that reviews one feature of a project. %s\n\n", e.Name, role, strings.TrimSpace(e.Brief))
-	fmt.Fprintf(b, "Feature: %s\n", c.Feature)
+	if isBrainstorm(c) {
+		fmt.Fprintf(b, "You are %s, %s a council that brainstorms ideas for one problem or goal of a project. %s\n\n", e.Name, role, angleOf(e.Brief))
+		fmt.Fprintf(b, "Problem or goal: %s\n", c.Feature)
+	} else {
+		fmt.Fprintf(b, "You are %s, %s a council that reviews one feature of a project. %s\n\n", e.Name, role, strings.TrimSpace(e.Brief))
+		fmt.Fprintf(b, "Feature: %s\n", c.Feature)
+	}
 	if q := strings.TrimSpace(c.Question); q != "" {
 		fmt.Fprintf(b, "Question for the council: %s\n", q)
 	}
 	fmt.Fprintf(b, "Project folder: %s\n", c.Project)
 }
 
+// writeProposal writes one proposal under a heading of the given level. A Brainstorm's wild idea says so, and its
+// evidence line is left out: a Brainstorm asks for none.
 func writeProposal(b *strings.Builder, c *Council, p CouncilProposal, level string) {
-	fmt.Fprintf(b, "%s %s · %s · %s\n%s\nEvidence: %s\n\n", level, p.Id, speaker(c, p.Author), p.Title, strings.TrimSpace(p.Argument), evidenceText(p.Evidence))
+	title := p.Title
+	if p.Wild && isBrainstorm(c) {
+		title += " (wild idea)"
+	}
+	fmt.Fprintf(b, "%s %s · %s · %s\n%s\n", level, p.Id, speaker(c, p.Author), title, strings.TrimSpace(p.Argument))
+	if !isBrainstorm(c) || len(p.Evidence) > 0 {
+		fmt.Fprintf(b, "Evidence: %s\n", evidenceText(p.Evidence))
+	}
+	b.WriteString("\n")
 }
 
 // Round1Prompt asks one expert for its proposals. The call runs in the project folder with Read, Grep and Glob.
@@ -211,6 +310,17 @@ func Round1Prompt(c *Council, e CouncilExpert) string {
 		for _, s := range c.Screenshots {
 			fmt.Fprintf(&b, "- %s\n", s)
 		}
+	}
+	if isBrainstorm(c) {
+		b.WriteString("\nThis is round 1 of 3: ideas. You have Read, Grep and Glob in the project folder. " +
+			"You brainstorm; you never edit anything.\n\n")
+		b.WriteString("Come up with ideas for the problem or goal from your angle only. Do not judge any idea, yours or " +
+			"anyone's: doubts wait for round 2. A few strong, different ideas beat many that are alike. Each idea is one " +
+			"entry in \"proposals\", with a short title and an argument: what the idea is, and why it could work. An idea " +
+			"may rest on a guess, so it needs no evidence; read the code to ground an idea, not to audit it.\n\n")
+		b.WriteString(wildRule + "\n\n")
+		b.WriteString(jsonRule + "\n```json\n" + brainstormRound1Shape + "\n```\n")
+		return b.String()
 	}
 	b.WriteString("\nThis is round 1 of 3: proposals. You have Read, Grep and Glob in the project folder. " +
 		"You review; you never edit anything.\n\n")
@@ -252,7 +362,11 @@ func askLine(c *Council, r CouncilReply) string {
 func Round2Prompt(c *Council, e CouncilExpert) string {
 	var b strings.Builder
 	writeContext(&b, c, e, "one expert on")
-	b.WriteString("\nThis is round 2 of 3: cross-review. You have no tools in this round: work from the text below.\n\n")
+	if isBrainstorm(c) {
+		b.WriteString("\nThis is round 2 of 3: build on each other. You have no tools in this round: work from the text below.\n\n")
+	} else {
+		b.WriteString("\nThis is round 2 of 3: cross-review. You have no tools in this round: work from the text below.\n\n")
+	}
 
 	b.WriteString("## Proposals to review\n\n")
 	review := 0
@@ -288,6 +402,24 @@ func Round2Prompt(c *Council, e CouncilExpert) string {
 	}
 
 	b.WriteString("## What to do\n\n")
+	if isBrainstorm(c) {
+		b.WriteString(`The proposals under "Proposals to review" are the others' ideas. Your default is to build on them, not ` +
+			"to judge them.\n\n")
+		b.WriteString(`Give every one of them one entry in "stances". ` + stanceRule + "\n")
+		b.WriteString(`- To build on an idea, add to it: a variation, a first step, a cheaper or stranger version, a way to ` +
+			`combine it with another. Write what you add in "reason", set "builds" to true and "stance" to "accept".` + "\n")
+		b.WriteString(`- To agree without adding anything, give "stance" "accept", leave "reason" empty and leave "builds" out.` + "\n")
+		b.WriteString("- " + doubtRule + "\n\n")
+		b.WriteString(`Then name your picks in "picks": the 3 proposals under "Proposals to review" most worth trying, best ` +
+			"first, by proposal id. Never pick one of your own. Name fewer than 3 only when fewer are worth trying.\n\n")
+		b.WriteString(`If reading the others changed your mind about one of your own ideas, add an entry to "revisions": ` +
+			`set "withdraw" to true to drop it, or give its new title and argument. Leave "revisions" empty otherwise.` + "\n\n")
+		b.WriteString(`Answer each question from the person with an entry in "answers", by its replyid. Leave "answers" empty ` +
+			"when there are none.\n\n")
+		b.WriteString(titleRule + "\n\n")
+		b.WriteString(jsonRule + "\n```json\n" + brainstormRound2Shape + "\n```\n")
+		return b.String()
+	}
 	b.WriteString(`Give every proposal under "Proposals to review" one entry in "stances". ` + stanceRule +
 		" Add one line of reason, and the evidence it rests on. An accept needs no reason: leave \"reason\" empty. " +
 		"A challenge or an oppose always needs one. You cannot read the code in this round, so cite " +
@@ -316,6 +448,9 @@ func writeThread(b *strings.Builder, c *Council, proposalId string) {
 		if r.Stance != "" {
 			tags = append(tags, string(r.Stance))
 		}
+		if r.Builds && isBrainstorm(c) {
+			tags = append(tags, "builds on it")
+		}
 		if r.Revised {
 			tags = append(tags, "revised its proposal")
 		}
@@ -342,7 +477,11 @@ func SynthesisPrompt(c *Council) string {
 	}
 	var b strings.Builder
 	writeContext(&b, c, coord, "the coordinator of")
-	b.WriteString("\nThis is round 3 of 3: synthesis. You have no tools: work from the text below.\n\n")
+	if isBrainstorm(c) {
+		b.WriteString("\nThis is round 3 of 3: pick the best. You have no tools: work from the text below.\n\n")
+	} else {
+		b.WriteString("\nThis is round 3 of 3: synthesis. You have no tools: work from the text below.\n\n")
+	}
 
 	b.WriteString("## Experts\n\nUse the id as the key in \"stances\".\n\n")
 	for _, e := range c.Experts {
@@ -390,6 +529,9 @@ func SynthesisPrompt(c *Council) string {
 	}
 
 	b.WriteString("## What to do\n\n")
+	if isBrainstorm(c) {
+		return writeBrainstormSynthesisTask(&b, c)
+	}
 	b.WriteString("1. Merge proposals that say the same thing into one direction, and list their ids in \"from\".\n")
 	b.WriteString("2. Rank the directions, best first, from \"rank\" 1. Put the directions no expert challenges or opposes " +
 		"first; rank the rest by their picks (add up the picks of the proposals a direction merges), most picks first.\n")
@@ -409,6 +551,34 @@ func SynthesisPrompt(c *Council) string {
 	}
 	b.WriteString("\n" + titleRule + "\n\n")
 	b.WriteString(evidenceRule + "\n\n")
+	b.WriteString(jsonRule + "\n```json\n" + shape + "\n```\n")
+	return b.String()
+}
+
+// writeBrainstormSynthesisTask ends a Brainstorm's synthesis prompt: at most 3 ideas worth trying, each with why and a
+// first step, the wild ideas kept aside, and the fate of every idea. It returns the whole prompt.
+func writeBrainstormSynthesisTask(b *strings.Builder, c *Council) string {
+	b.WriteString("1. Merge ideas that say the same thing into one, and list their ids in \"from\".\n")
+	fmt.Fprintf(b, "2. In \"directions\", choose at most %d ideas worth trying, best first, from \"rank\" 1. Rank by picks (add up the "+
+		"picks of the ideas an idea merges), then by how many experts built on it. Leave out an idea nobody picked or built on. "+
+		"A wild idea never takes one of the %d places.\n", maxIdeas, maxIdeas)
+	b.WriteString("3. For each of them, \"reasoning\" says why it is worth trying, and \"firststep\" is its first step: the one " +
+		"thing to do first, small enough to start this week.\n")
+	b.WriteString("4. In \"stances\", give each expert's stance towards the idea, keyed by the expert's id, from the replies " +
+		"above. " + stanceRule + " Leave out the authors of the ideas it merges. \"agreed\" is true when no expert has doubts " +
+		"about it or is against it.\n")
+	b.WriteString("5. In \"kept\", list the wild ideas that were not chosen (the ones marked wild above), each with a title, a " +
+		"line on why it is worth remembering, and its ids in \"from\". Leave \"kept\" empty when there are none.\n")
+	b.WriteString("6. In \"outcomes\", give every idea its fate: \"Direction N\", \"Merged into direction N\", \"Kept aside\", " +
+		"\"Not picked\", \"Withdrawn in round 2\" or \"Cut at the pause\".\n")
+	b.WriteString("7. Treat the person's replies as the person's own view and weigh them.\n")
+	shape := brainstormSynthesisShapeNoQuestion
+	if strings.TrimSpace(c.Question) != "" {
+		b.WriteString("8. In \"answer\", write one sentence that answers the question for the council directly: the " +
+			"answer itself, not a description of the discussion.\n")
+		shape = brainstormSynthesisShape
+	}
+	b.WriteString("\n" + titleRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + shape + "\n```\n")
 	return b.String()
 }
@@ -490,7 +660,9 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 	b.WriteString("Answer every reply above with one entry in \"answers\", by its replyid. If an answer changes your " +
 		"view of the proposal it sits on, add a \"stance\". " + stanceRule + "\n\n")
 	b.WriteString(titleRule + "\n\n")
-	b.WriteString(evidenceRule + "\n\n")
+	if !isBrainstorm(c) { // a Brainstorm asks for no evidence
+		b.WriteString(evidenceRule + "\n\n")
+	}
 	b.WriteString(jsonRule + "\n```json\n" + answersShape + "\n```\n")
 	return b.String()
 }

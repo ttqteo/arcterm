@@ -235,6 +235,95 @@ func TestAnswersPromptSaysWhenToolsAreGiven(t *testing.T) {
 	mustNotContain(t, "answers prompt", p, "no tools")
 }
 
+// brainstormCouncil is promptCouncil as a Brainstorm: the same ideas, the third one wild, and a build among the replies.
+func brainstormCouncil() *Council {
+	c := promptCouncil()
+	c.Mode = ModeBrainstorm
+	c.Proposals[2].Wild = true // P3 by the skeptic
+	c.Replies = append(c.Replies, CouncilReply{Id: "r8", ProposalId: "P2", Author: "ux", Stance: StanceAccept, Builds: true, Text: "Text-r8 add a badge", Round: 2})
+	// the UX brief as the library writes it: the angle, then the evidence rule
+	c.Experts[0].Brief = brief("Can someone use it without being told how?")
+	return c
+}
+
+func TestBrainstormRound1PromptAsksForIdeasWithNoEvidence(t *testing.T) {
+	c := brainstormCouncil()
+	p := Round1Prompt(c, c.Experts[0])
+	mustContain(t, "round 1 prompt", p,
+		"You are UX", "Can someone use it without being told how?", "brainstorms ideas",
+		"Problem or goal: Idle sleep for services", "Which direction first?", `D:\proj`,
+		"pkg/services/idle.go", `D:\shots\tree.png`, "This is round 1 of 3", "Read, Grep and Glob", "never edit",
+		"Do not judge", `"wild"`, brainstormRound1Shape, "```json")
+	mustNotContain(t, "round 1 prompt", p, evidenceRule, round1Shape, briefEvidenceRule, "Feature:", "cites nothing", "Title-one", "Text-r1")
+}
+
+func TestBrainstormRound2PromptBuildsOnTheOthersIdeas(t *testing.T) {
+	c := brainstormCouncil()
+	p := Round2Prompt(c, c.Experts[0]) // UX
+	review := section(t, p, "## Proposals to review")
+	mustContain(t, "review section", review, "P2 · RAM · Title-two", "P3 · Skeptic · Title-three (wild idea)")
+	mustNotContain(t, "review section", review, "Title-one", "Title-four", "Title-two (wild idea)") // its own, the cut one, a tame idea
+	mustContain(t, "round 2 prompt", p, "This is round 2 of 3", "no tools", "Can someone use it without being told how?",
+		`"builds": true`, `"picks"`, "the 3 proposals", "Never pick one of your own", stanceRule, titleRule, doubtRule, brainstormRound2Shape)
+	mustContain(t, "round 2 prompt", p, "only on an idea you build on yourself or put in your picks")
+	mustNotContain(t, "round 2 prompt", p, evidenceRule, round2Shape, briefEvidenceRule)
+	// the person's questions and the expert's own ideas still come through
+	mustContain(t, "round 2 prompt", p, "## Your own proposals", "P1 · UX · Title-one", "Text-r3 why does it break?")
+}
+
+func TestBrainstormSynthesisPromptPicksAtMostThreeIdeasAndKeepsTheWildOnesAside(t *testing.T) {
+	c := brainstormCouncil()
+	c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
+	p := SynthesisPrompt(c)
+	mustContain(t, "synthesis prompt", p, "This is round 3 of 3", "no tools", "at most 3 ideas worth trying", "first step", `"firststep"`,
+		`"kept"`, "wild ideas", "Kept aside", brainstormSynthesisShape, titleRule, "answers the question")
+	mustContain(t, "synthesis prompt", p, "### P3 · Skeptic · Title-three (wild idea)", "- [r8] UX (accept, builds on it): Text-r8 add a badge")
+	mustNotContain(t, "synthesis prompt", p, evidenceRule, synthesisShape, `"weak"`, "marked weak")
+	mustContain(t, "picks section", section(t, p, "## Picks"), "ideas of the others most worth trying", "- P3 (Title-three): 2 (UX, RAM)")
+
+	c.Question = " "
+	p = SynthesisPrompt(c)
+	mustContain(t, "synthesis prompt, no question", p, brainstormSynthesisShapeNoQuestion)
+	mustNotContain(t, "synthesis prompt, no question", p, `"answer"`, brainstormSynthesisShape)
+}
+
+func TestBrainstormAnswersPromptAsksForNoEvidence(t *testing.T) {
+	c := brainstormCouncil()
+	p := AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]})
+	mustContain(t, "answers prompt", p, "The council has already met", "brainstorms ideas", "## Reply r3", answersShape, stanceRule)
+	mustNotContain(t, "answers prompt", p, evidenceRule, briefEvidenceRule)
+}
+
+// Review is the default and the mode of every council saved before modes existed: no word of Brainstorm reaches its
+// prompts, and an empty mode reads the same as an explicit review.
+func TestReviewPromptsUnchanged(t *testing.T) {
+	prompts := func(c *Council) map[string]string {
+		r3 := c.Replies[2]
+		return map[string]string{
+			"round 1":   Round1Prompt(c, c.Experts[0]),
+			"round 2":   Round2Prompt(c, c.Experts[0]),
+			"synthesis": SynthesisPrompt(c),
+			"answers":   AnswersPrompt(c, c.Experts[0], []CouncilReply{r3}),
+		}
+	}
+	plain, explicit := promptCouncil(), promptCouncil()
+	explicit.Mode = ModeReview
+	for name, want := range prompts(plain) {
+		if got := prompts(explicit)[name]; got != want {
+			t.Errorf("%s prompt differs between no mode and review\n got %s\nwant %s", name, got, want)
+		}
+		mustNotContain(t, name+" prompt", want, "brainstorm", "wild", "builds", "firststep", "Problem or goal", "(wild idea)")
+	}
+	mustContain(t, "round 1 prompt", prompts(plain)["round 1"], "Feature: Idle sleep for services", "reviews one feature", evidenceRule, round1Shape)
+	mustContain(t, "round 2 prompt", prompts(plain)["round 2"], "This is round 2 of 3: cross-review", round2Shape)
+	mustContain(t, "synthesis prompt", prompts(plain)["synthesis"], "This is round 3 of 3: synthesis", synthesisShape)
+
+	// the library's brief keeps its evidence rule in a Review
+	withRule := promptCouncil()
+	withRule.Experts[0].Brief = brief("Can someone use it without being told how?")
+	mustContain(t, "round 1 prompt", Round1Prompt(withRule, withRule.Experts[0]), briefEvidenceRule)
+}
+
 func TestAnswersPromptForAWholeCouncilQuestionAndSeveralReplies(t *testing.T) {
 	c := promptCouncil()
 	p := AnswersPrompt(c, c.Experts[1], []CouncilReply{c.Replies[3], c.Replies[5]}) // RAM answers r4 and r6

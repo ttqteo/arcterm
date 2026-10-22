@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"os"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +27,11 @@ import (
 // and returns it at once; the calls run in a goroutine, and Wait or the OnChange events say when they end. A council
 // has at most one such goroutine at a time. Every change goes through the store's package Update.
 //
+// One council runs at a time, across every project: a council that Start or StartSaved is asked to start while a run
+// is on is saved queued, and starts by itself when the runs end (StartNext, which a run's end calls). A council that
+// waits on the person holds no slot, and the person's own actions (Continue, a reply or follow-up, Retry, Summarize)
+// run at once and are never queued.
+//
 // A Runner must not be copied after first use.
 type Runner struct {
 	Caller Caller
@@ -34,7 +41,7 @@ type Runner struct {
 	// Now is the clock in milliseconds; nil is the wall clock.
 	Now func() int64
 
-	mu     sync.Mutex // guards active, and orders a reply against the end of a run
+	mu     sync.Mutex // guards active and the queue, and orders a reply against the end of a run
 	active map[string]*run
 }
 
@@ -226,6 +233,9 @@ func validateCouncil(c *Council) error {
 	if strings.TrimSpace(c.Project) == "" {
 		return errors.New("a council needs a project folder")
 	}
+	if c.Mode != "" && c.Mode != ModeReview && c.Mode != ModeBrainstorm {
+		return fmt.Errorf("unknown council mode %q: use %s or %s", c.Mode, ModeReview, ModeBrainstorm)
+	}
 	seen := map[string]bool{}
 	coordinators, panel := 0, 0
 	for _, e := range c.Experts {
@@ -302,8 +312,10 @@ func (r *Runner) Record(c *Council) (*Council, error) {
 }
 
 // Start saves a new council as running and runs its rounds in the background: round 1, then, unless the council
-// pauses, rounds 2 and 3. It returns the saved council at once. Cancelling ctx stops the council as Stop does; a
-// caller that wants it to outlive the request passes a background context.
+// pauses, rounds 2 and 3. It returns the saved council at once. While another council runs, in any project, the new
+// one is saved queued instead (QueuedAfter names the council that runs) and starts when the runs end. Cancelling ctx
+// stops a council that started at once as Stop does; a caller that wants it to outlive the request passes a
+// background context. A council that was queued starts on a background context.
 func (r *Runner) Start(ctx context.Context, c *Council) (*Council, error) {
 	if r.Caller == nil {
 		return nil, errors.New("the council runner has no caller")
@@ -317,23 +329,43 @@ func (r *Runner) Start(ctx context.Context, c *Council) (*Council, error) {
 		return nil, err
 	}
 	r.mu.Lock()
-	saved, start, err := r.launchLocked(ctx, cp.Id, func() (*Council, error) {
-		r.beginFresh(&cp)
-		if err := Save(&cp); err != nil {
-			return nil, err
+	var (
+		saved *Council
+		start func()
+		err   error
+	)
+	after := r.waitsOnLocked()
+	if after != "" {
+		cp.State, cp.Round, cp.QueuedAfter, cp.Started, cp.Error = StateQueued, 0, after, 0, ""
+		if err = Save(&cp); err == nil {
+			saved = &cp
 		}
-		return &cp, nil
-	}, r.roundsWork(1))
+	} else {
+		saved, start, err = r.launchLocked(ctx, cp.Id, func() (*Council, error) {
+			r.beginFresh(&cp)
+			if err := Save(&cp); err != nil {
+				return nil, err
+			}
+			return &cp, nil
+		}, r.roundsWork(1))
+	}
+	var next pumped
+	if err == nil && after != "" {
+		next = r.pumpLocked() // a queue left behind with nothing running starts here
+	}
 	r.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 	r.changed(saved)
-	start()
+	if start != nil {
+		start()
+	}
+	next.fire(r)
 	return saved, nil
 }
 
-// StartSaved runs a council saved as not-run, as Start does.
+// StartSaved runs a council saved as not-run, as Start does, or queues it while another council runs.
 func (r *Runner) StartSaved(ctx context.Context, id string) (*Council, error) {
 	if r.Caller == nil {
 		return nil, errors.New("the council runner has no caller")
@@ -350,19 +382,203 @@ func (r *Runner) StartSaved(ctx context.Context, id string) (*Council, error) {
 		r.mu.Unlock()
 		return nil, err
 	}
-	saved, start, err := r.launchLocked(ctx, id, func() (*Council, error) {
-		return Update(id, func(c *Council) error {
-			r.beginFresh(c)
+	var (
+		saved *Council
+		start func()
+	)
+	after := r.waitsOnLocked()
+	if after != "" {
+		saved, err = Update(id, func(c *Council) error {
+			// the queue is first come first served by Created, so a council saved earlier takes its place in line now
+			c.State, c.Round, c.QueuedAfter, c.Error, c.Created = StateQueued, 0, after, "", r.now()
 			return nil
 		})
-	}, r.roundsWork(1))
+	} else {
+		saved, start, err = r.launchLocked(ctx, id, func() (*Council, error) {
+			return Update(id, func(c *Council) error {
+				r.beginFresh(c)
+				return nil
+			})
+		}, r.roundsWork(1))
+	}
+	var next pumped
+	if err == nil && after != "" {
+		next = r.pumpLocked()
+	}
 	r.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 	r.changed(saved)
-	start()
+	if start != nil {
+		start()
+	}
+	next.fire(r)
 	return saved, nil
+}
+
+// ---- the queue ----
+
+// holderLocked is the id of the council whose run holds the one slot, "" when no run is on. The person's own actions
+// (a follow-up, Continue, Retry, Summarize) are runs too, so they hold it while they work. When several runs are on at
+// once the oldest council is the holder, so the answer does not depend on map order.
+func (r *Runner) holderLocked() string {
+	best, bestCreated := "", int64(0)
+	for id := range r.active {
+		created := int64(0)
+		if c, err := Load(id); err == nil {
+			created = c.Created
+		}
+		if best == "" || created < bestCreated || (created == bestCreated && id < best) {
+			best, bestCreated = id, created
+		}
+	}
+	return best
+}
+
+// queuedCouncils are the councils saved queued, in the order they were asked to start (Created, then id).
+func queuedCouncils() []*Council {
+	list, err := List("")
+	if err != nil {
+		log.Printf("[council] the queue could not be read: %v", err)
+		return nil
+	}
+	var out []*Council
+	for _, c := range list {
+		if c.State == StateQueued {
+			out = append(out, c)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Created != out[j].Created {
+			return out[i].Created < out[j].Created
+		}
+		return out[i].Id < out[j].Id
+	})
+	return out
+}
+
+// waitsOnLocked is the council that a council asked to start now has to wait for, "" when it can start at once: the
+// council that runs; else the last one already queued, because the queue is first come first served and a council
+// must not jump ahead of those waiting (a queue left behind with nothing running is started by the pump).
+func (r *Runner) waitsOnLocked() string {
+	if id := r.holderLocked(); id != "" {
+		return id
+	}
+	if q := queuedCouncils(); len(q) > 0 {
+		return q[len(q)-1].Id
+	}
+	return ""
+}
+
+// pumped is what the queue did while the caller held r.mu: the councils it saved, to be reported once the lock is
+// let go, and the func that starts the run it launched.
+type pumped struct {
+	saved []*Council
+	start func()
+}
+
+func (p pumped) fire(r *Runner) {
+	for _, c := range p.saved {
+		r.changed(c)
+	}
+	if p.start != nil {
+		p.start()
+	}
+}
+
+// pumpLocked starts the oldest queued council when no run is on, and points the councils still queued at it. It does
+// nothing while a run holds the slot, so a run that ends while another goes on starts nobody. A queued council that
+// can no longer start is saved failed with the reason, rather than left to block the line.
+func (r *Runner) pumpLocked() (p pumped) {
+	if r.Caller == nil || r.holderLocked() != "" {
+		return p
+	}
+	for _, q := range queuedCouncils() {
+		if err := validateCouncil(q); err != nil {
+			failed, ferr := Update(q.Id, func(c *Council) error {
+				if c.State != StateQueued {
+					return errSkip
+				}
+				c.State, c.Round, c.QueuedAfter, c.Error = StateFailed, 0, "", "could not start from the queue: "+errText(err)
+				return nil
+			})
+			if ferr == nil {
+				p.saved = append(p.saved, failed)
+			}
+			continue
+		}
+		saved, start, err := r.launchLocked(context.Background(), q.Id, func() (*Council, error) {
+			return Update(q.Id, func(c *Council) error {
+				if c.State != StateQueued { // stopped while it waited
+					return errSkip
+				}
+				r.beginFresh(c)
+				c.QueuedAfter = ""
+				return nil
+			})
+		}, r.roundsWork(1))
+		switch {
+		case err == nil:
+			p.saved, p.start = append(p.saved, saved), start
+			for _, rest := range queuedCouncils() {
+				if repointed, err := Update(rest.Id, func(c *Council) error {
+					if c.State != StateQueued {
+						return errSkip
+					}
+					c.QueuedAfter = q.Id
+					return nil
+				}); err == nil {
+					p.saved = append(p.saved, repointed)
+				}
+			}
+			return p
+		case errors.Is(err, errSkip):
+		default:
+			log.Printf("[council] %s: not started from the queue: %v", q.Id, err)
+		}
+	}
+	return p
+}
+
+// StartNext starts the oldest queued council when no run is on. A run's end calls it, and wavesrv calls it once at
+// startup after MarkStale, for a council that was queued when arcterm last quit.
+func (r *Runner) StartNext() {
+	r.mu.Lock()
+	next := r.pumpLocked()
+	r.mu.Unlock()
+	next.fire(r)
+}
+
+// saveDocument writes the document of a council that ended done or stopped into its project and keeps the path on the
+// council; it returns the council as saved. A project folder that is not there is not created for it, and a write
+// that fails is logged: the council ends all the same.
+func (r *Runner) saveDocument(c *Council) *Council {
+	if c == nil || (c.State != StateDone && c.State != StateStopped) {
+		return c
+	}
+	if info, err := os.Stat(c.Project); err != nil || !info.IsDir() {
+		log.Printf("[council] %s: document not saved: the project folder %q is not there", c.Id, c.Project)
+		return c
+	}
+	path, err := WriteDocument(c, "")
+	if err != nil {
+		log.Printf("[council] %s: document not saved: %v", c.Id, err)
+		return c
+	}
+	if path == c.DocPath {
+		return c
+	}
+	saved, err := Update(c.Id, func(c *Council) error {
+		c.DocPath = path
+		return nil
+	})
+	if err != nil {
+		log.Printf("[council] %s: document path not kept: %v", c.Id, err)
+		return c
+	}
+	r.changed(saved)
+	return saved
 }
 
 // launchLocked registers a run for id, saves the council as running through persist, and returns the council with the
@@ -388,7 +604,8 @@ func (r *Runner) launchLocked(parent context.Context, id string, persist func() 
 
 // drive is the goroutine of one run: the work, then, while the person has replies nobody answered, an answers pass,
 // then the council's last state. The last check for replies and the end of the run happen under r.mu, so a reply
-// either lands before it and is answered, or finds the run gone and starts a follow-up.
+// either lands before it and is answered, or finds the run gone and starts a follow-up. The run ends by starting the
+// next queued council (under the same lock, so nobody takes the slot in between) and saving its own document.
 func (r *Runner) drive(ctx context.Context, rn *run, id string, w work) {
 	defer close(rn.done)
 	defer rn.cancel()
@@ -409,8 +626,11 @@ func (r *Runner) drive(ctx context.Context, rn *run, id string, w work) {
 			}
 		}
 		final := r.finishLocked(ctx, id, end)
+		next := r.pumpLocked()
 		r.mu.Unlock()
 		r.changed(final)
+		next.fire(r)
+		r.saveDocument(final)
 		return
 	}
 }
@@ -597,9 +817,22 @@ func (r *Runner) round1(ctx context.Context, rn *run, id string, snap *Council, 
 	r.finishCall(ctx, rn, id, e, res, err, 1, func(c *Council) {
 		for _, p := range props {
 			p.Id, p.Author, p.Ts = nextProposalId(c), e.Id, r.now()
+			if isBrainstorm(c) {
+				p.Evidence = withoutNoEvidenceChip(p.Evidence) // a Brainstorm's idea needs none, so it is not drawn weak
+			} else {
+				p.Wild = false // only a Brainstorm has wild ideas
+			}
 			c.Proposals = append(c.Proposals, p)
 		}
 	})
+}
+
+// withoutNoEvidenceChip drops the weak chip ParseRound1 gives a proposal that cites nothing, and keeps real evidence.
+func withoutNoEvidenceChip(ev []CouncilEvidence) []CouncilEvidence {
+	if len(ev) == 1 && ev[0].Weak && ev[0].Ref == "" && ev[0].Note == noEvidenceNote {
+		return nil
+	}
+	return ev
 }
 
 // ---- round 2 ----
@@ -711,8 +944,10 @@ func applyRound2(c *Council, e CouncilExpert, res Round2Result, now int64) {
 		if strings.TrimSpace(s.Reason) == "" && s.Stance != StanceAccept { // an accept needs no words; a doubt or an objection does
 			continue
 		}
+		// a Brainstorm's build is the words it adds; with none it reads as a plain accept, and a Review has no builds
+		builds := s.Builds && isBrainstorm(c) && strings.TrimSpace(s.Reason) != ""
 		c.Replies = append(c.Replies, CouncilReply{
-			Id: nextReplyId(c), ProposalId: p.Id, Author: e.Id, Stance: s.Stance,
+			Id: nextReplyId(c), ProposalId: p.Id, Author: e.Id, Stance: s.Stance, Builds: builds,
 			Text: s.Reason, Evidence: s.Evidence, Round: 2, Ts: now,
 		})
 	}
@@ -997,7 +1232,7 @@ func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool) (*Coun
 	}
 	r.mu.Lock()
 	cur, err := Load(id)
-	if err == nil && cur.State == StateNotRun {
+	if err == nil && (cur.State == StateNotRun || cur.State == StateQueued) {
 		err = fmt.Errorf("council %s has not started: there is nothing to reply to", id)
 	}
 	if err == nil && r.Caller == nil {
@@ -1118,13 +1353,17 @@ func (r *Runner) synthesize(ctx context.Context, rn *run, id string) error {
 	}
 	r.finishCall(ctx, rn, id, coord, res, err, 3, func(c *Council) {
 		c.Summary = &sum
-		MarkWeak(c, weak)
+		if !isBrainstorm(c) { // a Brainstorm marks nothing weak
+			MarkWeak(c, weak)
+		}
 	})
 	return err
 }
 
 // cleanSummary drops what the coordinator named that is not on the council: a proposal that does not exist, an
-// expert that is not on the panel, and a stance from the author of a proposal the direction merges.
+// expert that is not on the panel, and a stance from the author of a proposal the direction merges. A Brainstorm's
+// report holds at most maxIdeas ideas worth trying, then the wild ideas kept aside; a Review's holds neither a first
+// step nor kept ideas, whatever the model wrote.
 func cleanSummary(c *Council, s CouncilSummary) CouncilSummary {
 	if strings.TrimSpace(c.Question) == "" {
 		s.Answer = "" // nothing was asked, so there is nothing to answer
@@ -1133,22 +1372,21 @@ func cleanSummary(c *Council, s CouncilSummary) CouncilSummary {
 	for _, e := range panelOf(c) {
 		panel[e.Id] = true
 	}
+	if isBrainstorm(c) {
+		if len(s.Directions) > maxIdeas {
+			s.Directions = s.Directions[:maxIdeas]
+		}
+	} else {
+		s.Kept = nil
+		for i := range s.Directions {
+			s.Directions[i].FirstStep = ""
+		}
+	}
 	for i := range s.Directions {
-		d := &s.Directions[i]
-		from := make([]string, 0, len(d.From))
-		authors := map[string]bool{}
-		for _, pid := range d.From {
-			if p := findProposal(c, pid); p != nil && !slices.Contains(from, pid) {
-				from = append(from, pid)
-				authors[p.Author] = true
-			}
-		}
-		d.From = from
-		for expert := range d.Stances {
-			if !panel[expert] || authors[expert] {
-				delete(d.Stances, expert)
-			}
-		}
+		cleanDirection(c, &s.Directions[i], panel)
+	}
+	for i := range s.Kept {
+		cleanDirection(c, &s.Kept[i], panel)
 	}
 	outcomes := map[string]string{}
 	for pid, o := range s.Outcomes {
@@ -1158,6 +1396,25 @@ func cleanSummary(c *Council, s CouncilSummary) CouncilSummary {
 	}
 	s.Outcomes = outcomes
 	return s
+}
+
+// cleanDirection keeps the proposal ids of d that are on the council, once each, and the stances of the panel's
+// experts other than the authors of those proposals.
+func cleanDirection(c *Council, d *CouncilDirection, panel map[string]bool) {
+	from := make([]string, 0, len(d.From))
+	authors := map[string]bool{}
+	for _, pid := range d.From {
+		if p := findProposal(c, pid); p != nil && !slices.Contains(from, pid) {
+			from = append(from, pid)
+			authors[p.Author] = true
+		}
+	}
+	d.From = from
+	for expert := range d.Stances {
+		if !panel[expert] || authors[expert] {
+			delete(d.Stances, expert)
+		}
+	}
 }
 
 func titleKey(title string) string { return strings.ToLower(strings.Join(strings.Fields(title), " ")) }
@@ -1359,16 +1616,19 @@ func (r *Runner) retryWork(e CouncilExpert, f CouncilFailure, prev prevState) wo
 
 // Stop cancels the calls in flight, keeps the rounds that finished, and leaves the council stopped. It returns when the
 // run has saved that. A council that is not running comes back as it was, except one paused after round 1, which
-// ends there.
+// ends there, and one that is queued, which leaves the queue stopped and never runs. A paused council that ends here
+// saves its document like one whose run ends.
 func (r *Runner) Stop(id string) (*Council, error) {
 	r.mu.Lock()
 	rn := r.active[id]
 	if rn == nil {
+		wasQueued := false
 		c, err := Update(id, func(c *Council) error {
-			if c.State != StateAwaiting && c.State != StateRunning {
+			if c.State != StateAwaiting && c.State != StateRunning && c.State != StateQueued {
 				return errSkip
 			}
-			c.State, c.Error, c.Activity = StateStopped, "", nil
+			wasQueued = c.State == StateQueued
+			c.State, c.Error, c.Activity, c.QueuedAfter = StateStopped, "", nil, ""
 			return nil
 		})
 		r.mu.Unlock()
@@ -1379,6 +1639,9 @@ func (r *Runner) Stop(id string) (*Council, error) {
 			return nil, err
 		}
 		r.changed(c)
+		if !wasQueued {
+			c = r.saveDocument(c)
+		}
 		return c, nil
 	}
 	rn.cancel()
@@ -1390,8 +1653,8 @@ func (r *Runner) Stop(id string) (*Council, error) {
 	return Load(id)
 }
 
-// MarkStale turns every council left running (wavesrv quit mid-round) into a stopped one that says so. Call it once at
-// startup, before any council runs.
+// MarkStale turns every council left running (wavesrv quit mid-round) into a stopped one that says so. A council left
+// queued stays queued: StartNext starts it. Call it once at startup, before any council runs.
 func (r *Runner) MarkStale() {
 	list, err := List("")
 	if err != nil {
@@ -1423,9 +1686,12 @@ func (r *Runner) MarkStale() {
 	}
 }
 
+// waitQueuedPoll is how often Wait looks again at a council that waits in the queue.
+const waitQueuedPoll = 20 * time.Millisecond
+
 // Wait returns the council once nothing is working on it: its state is done, not-run, stopped, failed or awaiting-you.
-// It returns early with ctx's error when ctx ends, and with an error for a council that is marked running with no run
-// behind it.
+// A queued council is waited through, to the end of its run. It returns early with ctx's error when ctx ends, and with
+// an error for a council that is marked running with no run behind it.
 func (r *Runner) Wait(ctx context.Context, id string) (*Council, error) {
 	for {
 		r.mu.Lock()
@@ -1443,7 +1709,21 @@ func (r *Runner) Wait(ctx context.Context, id string) (*Council, error) {
 		if err != nil {
 			return nil, err
 		}
+		if c.State == StateQueued {
+			select {
+			case <-time.After(waitQueuedPoll):
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		if c.State == StateRunning {
+			r.mu.Lock()
+			live := r.active[id] != nil // the queue may have started it since the check above
+			r.mu.Unlock()
+			if live {
+				continue
+			}
 			return c, fmt.Errorf("council %s is marked running but nothing is running it", id)
 		}
 		return c, nil
@@ -1457,7 +1737,9 @@ const suggestShape = `{
   "roles": [
     {"name": "Mac user", "brief": "the angle this role reviews from, and what counts as evidence", "why": "the frame reload is Windows-only for now"}
   ],
-  "group": "ui-feature"
+  "group": "ui-feature",
+  "mode": "review",
+  "modewhy": "a spec that exists and is waiting to be judged"
 }`
 
 const maxSuggestedRoles = 2
@@ -1468,8 +1750,9 @@ func suggestPrompt(project, feature, question string, files []string, roles []Co
 		names[role.Id] = role.Name
 	}
 	var b strings.Builder
-	b.WriteString("You are the coordinator of a council that is about to review one feature of a project. You have Read, " +
-		"Grep and Glob in the project folder; you review and never edit anything.\n\n")
+	b.WriteString("You are the coordinator of a council that is about to review one feature of a project, or to brainstorm " +
+		"ideas for a problem or goal in it. You have Read, Grep and Glob in the project folder; you read and never edit " +
+		"anything.\n\n")
 	fmt.Fprintf(&b, "Feature: %s\n", feature)
 	if q := strings.TrimSpace(question); q != "" {
 		fmt.Fprintf(&b, "Question for the council: %s\n", q)
@@ -1491,12 +1774,16 @@ func suggestPrompt(project, feature, question string, files []string, roles []Co
 		}
 		fmt.Fprintf(&b, "- %s: %s (%s)\n", g.Id, g.Name, strings.Join(members, ", "))
 	}
-	b.WriteString("\nRead what you need of the files above and the code around them, then do three things.\n\n")
+	b.WriteString("\nRead what you need of the files above and the code around them, then do four things.\n\n")
 	b.WriteString("1. Name the project files the experts should read first, as paths relative to the project folder: the " +
 		"few the review hinges on, at most eight. Name files that exist.\n")
 	fmt.Fprintf(&b, "2. Suggest up to %d extra roles this feature needs that the group lacks, each with a name, a brief "+
 		"(the angle it reviews from and what counts as evidence) and a one-line why. Suggest none when the group fits.\n", maxSuggestedRoles)
-	b.WriteString("3. Name the id of the group above that fits best, or leave it empty when none does.\n\n")
+	b.WriteString("3. Name the id of the group above that fits best, or leave it empty when none does.\n")
+	b.WriteString("4. Name the council's mode in \"mode\", with a one-line reason in \"modewhy\": \"" + ModeBrainstorm + "\" when " +
+		"the feature and the question are a problem or a goal with no answer yet (\"how do we…\", \"what should…\"), \"" +
+		ModeReview + "\" when they are a thing to judge (a feature, a spec, a plan or a draft that exists; \"review this\", " +
+		"\"what's wrong with…\"). A brainstorm fits a group made for ideas, a review one made for judging.\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + suggestShape + "\n```\n")
 	return b.String()
 }
@@ -1527,7 +1814,9 @@ func parseSuggestion(reply string, roles []CouncilExpert, groups []CouncilGroup)
 			Brief string `json:"brief"`
 			Why   string `json:"why"`
 		} `json:"roles"`
-		Group string `json:"group"`
+		Group   string `json:"group"`
+		Mode    string `json:"mode"`
+		ModeWhy string `json:"modewhy"`
 	}
 	if err := decodeReply(reply, "suggestion", &raw); err != nil {
 		return CouncilSuggestion{}, err
@@ -1558,12 +1847,16 @@ func parseSuggestion(reply string, roles []CouncilExpert, groups []CouncilGroup)
 	if g := strings.TrimSpace(raw.Group); slices.ContainsFunc(groups, func(x CouncilGroup) bool { return x.Id == g }) {
 		out.Group = g
 	}
+	// a mode the model made up comes back empty, and a reason with no mode is a reason for nothing
+	if m := strings.ToLower(strings.TrimSpace(raw.Mode)); m == ModeReview || m == ModeBrainstorm {
+		out.Mode, out.ModeWhy = m, strings.Join(strings.Fields(raw.ModeWhy), " ")
+	}
 	return out, nil
 }
 
 // Suggest makes the one sonnet call behind Setup's dashed rows: it reads the project with the read-only tools and
-// names the files the experts should read, up to two extra roles, and the group that fits the feature best. A group
-// it names that does not exist comes back empty.
+// names the files the experts should read, up to two extra roles, the group that fits the feature best, and the mode
+// the question reads as with its reason. A group or a mode it names that does not exist comes back empty.
 func (r *Runner) Suggest(ctx context.Context, project, feature, question string, files []string) (CouncilSuggestion, error) {
 	if r.Caller == nil {
 		return CouncilSuggestion{}, errors.New("the council runner has no caller")

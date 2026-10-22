@@ -17,12 +17,14 @@ import (
 // noEvidenceNote is the note on the weak chip a round 1 proposal gets when it cites nothing.
 const noEvidenceNote = "cites no evidence"
 
-// Round2Stance is one expert's position on another expert's proposal.
+// Round2Stance is one expert's position on another expert's proposal. Builds is a Brainstorm's "builds on it": Reason
+// then holds what the expert adds to the idea.
 type Round2Stance struct {
 	ProposalId string
 	Stance     CouncilStance
 	Reason     string
 	Evidence   []CouncilEvidence
+	Builds     bool
 }
 
 // Round2Revision is an expert's change to one of its own proposals; Withdraw leaves Title and Argument empty.
@@ -51,6 +53,9 @@ type Round2Result struct {
 
 // maxPicks is how many of the others' proposals an expert names in round 2.
 const maxPicks = 3
+
+// maxIdeas is how many ideas worth trying a Brainstorm's report holds.
+const maxIdeas = 3
 
 // WeakNote is the coordinator's remark that a claim does not hold up. Ref names a proposal id, a reply id or an
 // evidence ref; MarkWeak applies it.
@@ -173,7 +178,8 @@ func parseStance(word string) (CouncilStance, error) {
 }
 
 // ParseRound1 reads a round 1 reply into the expert's proposals and its overall view. A proposal that cites no
-// evidence gets one weak chip saying so.
+// evidence gets one weak chip saying so; the runner takes that chip off a Brainstorm's ideas, which need none. A
+// proposal's wild flag is a Brainstorm's, and the runner clears it in a Review.
 func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 	const what = "round 1"
 	var r struct {
@@ -182,6 +188,7 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Title    string       `json:"title"`
 			Argument string       `json:"argument"`
 			Evidence evidenceList `json:"evidence"`
+			Wild     bool         `json:"wild"`
 		} `json:"proposals"`
 	}
 	if err := decodeReply(reply, what, &r); err != nil {
@@ -203,6 +210,7 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Title:    strings.TrimSpace(p.Title),
 			Argument: strings.TrimSpace(p.Argument),
 			Evidence: ev,
+			Wild:     p.Wild,
 		})
 	}
 	return out, strings.TrimSpace(r.Overview), nil
@@ -236,7 +244,7 @@ func convertAnswers(what string, in []answerEntry) ([]Answer, error) {
 }
 
 // ParseRound2 reads a cross-review reply: a stance on each proposal reviewed, revisions of the expert's own, and
-// answers to the person's replies. Only the stances field is required.
+// answers to the person's replies. Only the stances field is required. A stance's builds flag is a Brainstorm's.
 func ParseRound2(reply string) (Round2Result, error) {
 	const what = "round 2"
 	var r struct {
@@ -245,6 +253,7 @@ func ParseRound2(reply string) (Round2Result, error) {
 			Stance     string       `json:"stance"`
 			Reason     string       `json:"reason"`
 			Evidence   evidenceList `json:"evidence"`
+			Builds     bool         `json:"builds"`
 		} `json:"stances"`
 		Revisions []struct {
 			ProposalId string `json:"proposalid"`
@@ -278,6 +287,7 @@ func ParseRound2(reply string) (Round2Result, error) {
 			Stance:     stance,
 			Reason:     strings.TrimSpace(s.Reason),
 			Evidence:   s.Evidence,
+			Builds:     s.Builds,
 		})
 	}
 	for _, rv := range r.Revisions {
@@ -323,7 +333,8 @@ func ParseAnswers(reply string) ([]Answer, error) {
 
 // ParseSynthesis reads the coordinator's round 3 reply into the Summary (its At left for the runner) and the weak
 // notes. Directions come back ranked 1..n; a direction's Agreed is the coordinator's word, or, when it gave none,
-// true when no expert challenges or opposes it.
+// true when no expert challenges or opposes it. A Brainstorm's reply adds each direction's first step and the wild
+// ideas kept aside, numbered 1..n; a kept idea with no title is skipped, since it names nothing.
 func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 	const what = "round 3"
 	var r struct {
@@ -332,10 +343,16 @@ func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 			Rank      int               `json:"rank"`
 			Title     string            `json:"title"`
 			Reasoning string            `json:"reasoning"`
+			FirstStep string            `json:"firststep"`
 			From      []string          `json:"from"`
 			Stances   map[string]string `json:"stances"`
 			Agreed    *bool             `json:"agreed"`
 		} `json:"directions"`
+		Kept []struct {
+			Title     string   `json:"title"`
+			Reasoning string   `json:"reasoning"`
+			From      []string `json:"from"`
+		} `json:"kept"`
 		Outcomes map[string]string `json:"outcomes"`
 		Answer   string            `json:"answer"`
 		Weak     []WeakNote        `json:"weak"`
@@ -359,6 +376,7 @@ func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 			Rank:      d.Rank,
 			Title:     strings.TrimSpace(d.Title),
 			Reasoning: strings.TrimSpace(d.Reasoning),
+			FirstStep: strings.TrimSpace(d.FirstStep),
 			From:      append([]string{}, d.From...),
 			Stances:   map[string]CouncilStance{},
 		}
@@ -394,7 +412,21 @@ func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 			weak = append(weak, w)
 		}
 	}
-	return CouncilSummary{Text: strings.TrimSpace(r.Text), Directions: dirs, Outcomes: outcomes, Answer: strings.TrimSpace(r.Answer)}, weak, nil
+	var kept []CouncilDirection
+	for _, k := range r.Kept {
+		title := strings.TrimSpace(k.Title)
+		if title == "" {
+			continue
+		}
+		kept = append(kept, CouncilDirection{
+			Rank:      len(kept) + 1,
+			Title:     title,
+			Reasoning: strings.TrimSpace(k.Reasoning),
+			From:      append([]string{}, k.From...),
+			Stances:   map[string]CouncilStance{},
+		})
+	}
+	return CouncilSummary{Text: strings.TrimSpace(r.Text), Directions: dirs, Kept: kept, Outcomes: outcomes, Answer: strings.TrimSpace(r.Answer)}, weak, nil
 }
 
 // MarkWeak applies the synthesis's weak notes to c. A note whose ref is the ref of some evidence marks that evidence

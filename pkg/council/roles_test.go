@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -88,14 +89,19 @@ func TestBuiltInGroups(t *testing.T) {
 	if paper.Coordinator != "areachair" {
 		t.Errorf("paper coordinator = %q", paper.Coordinator)
 	}
-	if got := len(Groups()); got != 2 {
-		t.Errorf("Groups() holds %d, want only the two that ship", got)
+	if got := len(Groups()); got != 3 {
+		t.Errorf("Groups() holds %d, want only the three that ship", got)
 	}
 }
 
+// brainstormRoles are the roles of the Product ideas group that no Review uses: a Brainstorm asks for no evidence, so
+// their briefs carry no evidence rule.
+var brainstormRoles = []string{"designer", "builder", "contrarian", "facilitator"}
+
 func TestEveryBuiltInRoleHasANameABriefAndTheEvidenceRule(t *testing.T) {
 	useTempConfig(t)
-	want := []string{"ux", "ram", "newuser", "skeptic", "coordinator", "reviewer-a", "reviewer-b", "reader", "areachair"}
+	want := []string{"ux", "ram", "newuser", "skeptic", "coordinator", "reviewer-a", "reviewer-b", "reader", "areachair",
+		"designer", "builder", "contrarian", "facilitator"}
 	roles := Roles()
 	if got := expertIds(roles); !reflect.DeepEqual(got, want) {
 		t.Fatalf("role ids = %v, want %v", got, want)
@@ -104,7 +110,11 @@ func TestEveryBuiltInRoleHasANameABriefAndTheEvidenceRule(t *testing.T) {
 		if strings.TrimSpace(r.Name) == "" {
 			t.Errorf("%s has no name", r.Id)
 		}
-		if !strings.HasSuffix(r.Brief, evidenceSentence) {
+		if slices.Contains(brainstormRoles, r.Id) {
+			if strings.TrimSpace(r.Brief) == "" || strings.Contains(r.Brief, "path:line") || strings.Contains(r.Brief, "weak") {
+				t.Errorf("%s brief = %q, want an angle with no evidence rule", r.Id, r.Brief)
+			}
+		} else if !strings.HasSuffix(r.Brief, evidenceSentence) {
 			t.Errorf("%s brief does not end with the evidence rule: %q", r.Id, r.Brief)
 		}
 		if r.Model == "" {
@@ -146,6 +156,34 @@ func TestExpertsForUIFeature(t *testing.T) {
 	}
 }
 
+func TestProductIdeasGroup(t *testing.T) {
+	useTempConfig(t)
+	g := groupById(t, "product-ideas")
+	if g.Name != "Product ideas" || g.Coordinator != "facilitator" || !reflect.DeepEqual(g.Roles, []string{"newuser", "designer", "builder", "contrarian"}) {
+		t.Fatalf("product-ideas = %+v", g)
+	}
+	es, err := ExpertsFor("product-ideas")
+	if err != nil {
+		t.Fatalf("ExpertsFor: %v", err)
+	}
+	if want := []string{"newuser", "designer", "builder", "contrarian", "facilitator"}; !reflect.DeepEqual(expertIds(es), want) {
+		t.Fatalf("experts = %v, want %v: no Scout, the facilitator last", expertIds(es), want)
+	}
+	for i, e := range es {
+		last := i == len(es)-1
+		wantModel := "sonnet"
+		if last {
+			wantModel = "opus"
+		}
+		if e.Coordinator != last || e.Model != wantModel || e.Name == "" || e.Brief == "" {
+			t.Errorf("%s = %+v, want coordinator %v on %s", e.Id, e, last, wantModel)
+		}
+	}
+	if got := es[len(es)-1].Name; got != "Facilitator" {
+		t.Errorf("coordinator name = %q", got)
+	}
+}
+
 func TestExpertsForPaperEndsWithTheAreaChair(t *testing.T) {
 	useTempConfig(t)
 	es, err := ExpertsFor("paper")
@@ -180,7 +218,7 @@ func TestUserFileOverridesARoleByIdAndAddsAGroup(t *testing.T) {
 	if ux.Name != "UX" || !strings.HasSuffix(ux.Brief, evidenceSentence) {
 		t.Errorf("ux lost its name or brief by the override: %+v", ux)
 	}
-	if got := len(Roles()); got != 9 {
+	if got := len(Roles()); got != 13 {
 		t.Errorf("an override must not add a role: %d roles", got)
 	}
 
@@ -223,7 +261,7 @@ func TestUserFileCanAddARoleAndReplaceABuiltInGroup(t *testing.T) {
 	if paper.Name != "My paper review" {
 		t.Errorf("a user group of a built-in's id replaces it: %+v", paper)
 	}
-	if got := len(Groups()); got != 2 {
+	if got := len(Groups()); got != 3 {
 		t.Errorf("replacing must not duplicate: %d groups", got)
 	}
 	es, err := ExpertsFor("paper")
@@ -258,11 +296,11 @@ func TestAGroupWithoutAKnownCoordinatorIsAnError(t *testing.T) {
 func TestAMalformedUserFileLeavesTheBuiltIns(t *testing.T) {
 	dir := useTempConfig(t)
 	writeRolesFile(t, dir, `{"roles": [`)
-	if got := len(Roles()); got != 9 {
-		t.Errorf("Roles() = %d with a broken file, want the 9 built-ins", got)
+	if got := len(Roles()); got != 13 {
+		t.Errorf("Roles() = %d with a broken file, want the 13 built-ins", got)
 	}
-	if got := len(Groups()); got != 2 {
-		t.Errorf("Groups() = %d with a broken file, want the 2 built-ins", got)
+	if got := len(Groups()); got != 3 {
+		t.Errorf("Groups() = %d with a broken file, want the 3 built-ins", got)
 	}
 }
 

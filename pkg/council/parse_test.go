@@ -355,4 +355,80 @@ func TestShapesParse(t *testing.T) {
 	if _, _, err := ParseSynthesis(jsonFence(synthesisShapeNoQuestion)); err != nil {
 		t.Errorf("synthesisShapeNoQuestion: %v", err)
 	}
+
+	// the Brainstorm shapes read through the same parsers
+	if props, _, err := ParseRound1(jsonFence(brainstormRound1Shape)); err != nil || len(props) != 1 || props[0].Title == "" {
+		t.Errorf("brainstormRound1Shape: %+v, %v", props, err)
+	}
+	if r, err := ParseRound2(jsonFence(brainstormRound2Shape)); err != nil || len(r.Stances) != 2 || !r.Stances[0].Builds || r.Stances[1].Builds ||
+		len(r.Revisions) != 1 || len(r.Answers) != 1 || len(r.Picks) != 3 {
+		t.Errorf("brainstormRound2Shape: %+v, %v", r, err)
+	}
+	sum, _, err = ParseSynthesis(jsonFence(brainstormSynthesisShape))
+	if err != nil || len(sum.Directions) != 1 || sum.Directions[0].FirstStep == "" || len(sum.Kept) != 1 || sum.Answer == "" {
+		t.Errorf("brainstormSynthesisShape: %+v, %v", sum, err)
+	}
+	sum, _, err = ParseSynthesis(jsonFence(brainstormSynthesisShapeNoQuestion))
+	if err != nil || len(sum.Directions) != 1 || sum.Answer != "" {
+		t.Errorf("brainstormSynthesisShapeNoQuestion: %+v, %v", sum, err)
+	}
+}
+
+func TestParseBrainstorm(t *testing.T) {
+	props, _, err := ParseRound1(jsonFence(`{"overview": "x", "proposals": [
+		{"title": "A tour", "argument": "Walk them through it", "wild": true},
+		{"title": "A badge", "argument": "Say what is asleep"}]}`))
+	if err != nil || len(props) != 2 {
+		t.Fatalf("ParseRound1 = %+v, %v", props, err)
+	}
+	if !props[0].Wild || props[1].Wild {
+		t.Errorf("wild flags = %v, %v, want true then false", props[0].Wild, props[1].Wild)
+	}
+
+	r2, err := ParseRound2(jsonFence(`{"stances": [
+		{"proposalid": "P1", "stance": "accept", "builds": true, "reason": "Add a badge to the tour"},
+		{"proposalid": "P2", "stance": "accept", "reason": ""},
+		{"proposalid": "P3", "stance": "challenge", "reason": "It costs a screen"}],
+		"picks": ["P1"]}`))
+	if err != nil || len(r2.Stances) != 3 {
+		t.Fatalf("ParseRound2 = %+v, %v", r2, err)
+	}
+	if !r2.Stances[0].Builds || r2.Stances[1].Builds || r2.Stances[2].Builds {
+		t.Errorf("builds flags = %v %v %v, want true false false", r2.Stances[0].Builds, r2.Stances[1].Builds, r2.Stances[2].Builds)
+	}
+
+	sum, weak, err := ParseSynthesis(jsonFence(`{"text": "Three ideas.", "answer": "Start with the tour.",
+		"directions": [
+			{"rank": 1, "title": "A tour", "reasoning": "Cheap.", "firststep": "Sketch the first screen", "from": ["P1"], "stances": {"ux": "accept"}},
+			{"rank": 2, "title": "A badge", "reasoning": "Clear.", "firststep": "  Add the label  ", "from": ["P2"]}],
+		"kept": [
+			{"title": "A mascot", "reasoning": "Odd, but it would make people smile.", "from": ["P5", "P6"]},
+			{"title": "  ", "reasoning": "no title, no idea"},
+			{"title": "Remove the pane"}],
+		"outcomes": {"P1": "Direction 1", "P5": "Kept aside"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.Directions) != 2 || sum.Directions[0].FirstStep != "Sketch the first screen" || sum.Directions[1].FirstStep != "Add the label" {
+		t.Errorf("directions = %+v, want the first steps kept and trimmed", sum.Directions)
+	}
+	wantKept := []CouncilDirection{
+		{Rank: 1, Title: "A mascot", Reasoning: "Odd, but it would make people smile.", From: []string{"P5", "P6"}, Stances: map[string]CouncilStance{}},
+		{Rank: 2, Title: "Remove the pane", From: []string{}, Stances: map[string]CouncilStance{}},
+	}
+	if !reflect.DeepEqual(sum.Kept, wantKept) {
+		t.Errorf("kept = %+v\nwant %+v: a kept idea with no title is skipped, the others numbered and never null on the wire", sum.Kept, wantKept)
+	}
+	if weak != nil || sum.Outcomes["P5"] != "Kept aside" {
+		t.Errorf("weak = %+v, outcomes = %v", weak, sum.Outcomes)
+	}
+
+	// a reply with no kept ideas leaves Kept empty, so the report draws no empty section
+	sum, _, err = ParseSynthesis(jsonFence(`{"text": "x", "directions": [{"title": "A"}], "kept": []}`))
+	if err != nil || len(sum.Kept) != 0 {
+		t.Errorf("kept = %+v, %v, want none", sum.Kept, err)
+	}
+	if sum.Directions[0].FirstStep != "" {
+		t.Errorf("first step = %q, want none when the model gave none", sum.Directions[0].FirstStep)
+	}
 }

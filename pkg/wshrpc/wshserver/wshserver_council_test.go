@@ -182,16 +182,21 @@ func TestCouncilEstimateOfASavedCouncil(t *testing.T) {
 	}
 }
 
-func TestCouncilSaveDocDefaultPath(t *testing.T) {
-	useCouncilStore(t)
-	prevDay := councilDocDay
-	t.Cleanup(func() { councilDocDay = prevDay })
-	councilDocDay = func() time.Time { return time.Date(2026, 10, 21, 9, 0, 0, 0, time.Local) }
+// TestCouncilSaveDocWritesTheDocument: the command writes the whole document (report, discussion, run facts) at the
+// default path and keeps that path on the council, so a second save rewrites the same file. The path rules themselves
+// are council.DocPath's tests.
+func TestCouncilSaveDocWritesTheDocument(t *testing.T) {
+	events := useCouncilRig(t, newCouncilFake())
+	prevDay := council.DocDay
+	t.Cleanup(func() { council.DocDay = prevDay })
+	council.DocDay = func() time.Time { return time.Date(2026, 10, 21, 9, 0, 0, 0, time.Local) }
 	ws := &WshServer{}
 	ctx := context.Background()
 	project := t.TempDir()
 	c := saveCouncil(t, &council.Council{
 		Id: "c1", Project: project, Feature: "Idle sleep for services!", State: council.StateDone,
+		Experts:   []council.CouncilExpert{{Id: "ux", Name: "UX", Model: "sonnet"}, {Id: "lead", Name: "Lead", Model: "opus", Coordinator: true}},
+		Proposals: []council.CouncilProposal{{Id: "P1", Author: "ux", Title: "Sleep after a minute", Argument: "It saves RAM.", Ts: 1}},
 		Summary: &council.CouncilSummary{
 			Text:       "Sleep an idle service after a minute.",
 			Directions: []council.CouncilDirection{{Rank: 1, Title: "Sleep after a minute", Reasoning: "It saves RAM.", Agreed: true}},
@@ -210,11 +215,29 @@ func TestCouncilSaveDocDefaultPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the doc was not written: %v", err)
 	}
-	if string(body) != council.Markdown(c) {
-		t.Errorf("the doc is not council.Markdown:\n%s", body)
+	if string(body) != council.Document(c) {
+		t.Errorf("the doc is not council.Document:\n%s", body)
 	}
-	if !strings.Contains(string(body), "# Council: Idle sleep for services!") {
-		t.Errorf("the doc does not name the feature:\n%s", body)
+	for _, w := range []string{"# Council: Idle sleep for services!", "## The discussion", "**UX** proposes", "## Run facts"} {
+		if !strings.Contains(string(body), w) {
+			t.Errorf("the doc lacks %q:\n%s", w, body)
+		}
+	}
+
+	// the default path is kept on the council and announced, and a second save writes the same file
+	saved, err := council.Load("c1")
+	if err != nil || saved.DocPath != want {
+		t.Fatalf("DocPath after the save = %q, %v, want %q", saved.DocPath, err, want)
+	}
+	if evs := events.all(); len(evs) != 1 || evs[0].Id != "c1" {
+		t.Errorf("events = %+v, want one change for c1", evs)
+	}
+	if again, err := ws.CouncilSaveDocCommand(ctx, wshrpc.CommandCouncilSaveDocData{Id: "c1"}); err != nil || again.Path != want {
+		t.Errorf("second save = %+v, %v, want the same file %q", again, err, want)
+	}
+	files, _ := os.ReadDir(filepath.Dir(want))
+	if len(files) != 1 {
+		t.Errorf("docs/council holds %d files after two saves, want 1", len(files))
 	}
 }
 
@@ -237,6 +260,9 @@ func TestCouncilSaveDocPickedPathAndRefusals(t *testing.T) {
 	if got, err = ws.CouncilSaveDocCommand(ctx, wshrpc.CommandCouncilSaveDocData{Id: "c1", Path: inside}); err != nil || got.Path != inside {
 		t.Fatalf("absolute path inside the project = %+v, %v", got, err)
 	}
+	if saved, err := council.Load("c1"); err != nil || saved.DocPath != inside {
+		t.Errorf("DocPath after a save by hand = %q, %v, want the path it was saved at", saved.DocPath, err)
+	}
 
 	outside := filepath.Join(elsewhere, "x.md")
 	for _, path := range []string{outside, filepath.Join("..", filepath.Base(elsewhere), "x.md"), "../x.md", "docs/../../x.md", "..", "."} {
@@ -257,26 +283,6 @@ func TestCouncilSaveDocPickedPathAndRefusals(t *testing.T) {
 	saveCouncil(t, &council.Council{Id: "c2", Feature: "No project", State: council.StateDone})
 	if _, err := ws.CouncilSaveDocCommand(ctx, wshrpc.CommandCouncilSaveDocData{Id: "c2"}); err == nil {
 		t.Error("a council with no project has nowhere to save a doc")
-	}
-}
-
-func TestCouncilFeatureSlug(t *testing.T) {
-	for in, want := range map[string]string{
-		"Idle sleep for services!":    "idle-sleep-for-services",
-		"  --Dark   mode / Light--  ": "dark-mode-light",
-		"Chế độ ngủ cho dịch vụ":      "chế-độ-ngủ-cho-dịch-vụ",
-		"":                            "council",
-		" ?! ":                        "council",
-		strings.Repeat("ab ", 40):     strings.TrimSuffix(strings.Repeat("ab-", 20), "-"),
-		strings.Repeat("a", 100):      strings.Repeat("a", councilDocSlugRunes),
-		"v2.1 release (draft)":        "v2-1-release-draft",
-		"C:\\Users\\me\\proj /x":      "c-users-me-proj-x",
-		"naïve café":                  "naïve-café",
-		"under_score":                 "under-score",
-	} {
-		if got := councilFeatureSlug(in); got != want {
-			t.Errorf("councilFeatureSlug(%q) = %q, want %q", in, got, want)
-		}
 	}
 }
 
@@ -696,6 +702,89 @@ func TestCouncilStartNotRunThenStartById(t *testing.T) {
 	}
 	if _, err := ws.CouncilStartCommand(ctx, wshrpc.CommandCouncilStartData{Id: "missing"}); err == nil {
 		t.Error("starting a council that does not exist should fail")
+	}
+}
+
+func TestCouncilStartWhileAnotherRunsIsQueued(t *testing.T) {
+	fake := newCouncilFake()
+	events := useCouncilRig(t, fake)
+	ws := &WshServer{}
+	ctx := context.Background()
+
+	held := fake.hold("ux/r1")
+	first, err := ws.CouncilStartCommand(ctx, councilStartData(t))
+	if err != nil {
+		t.Fatalf("first start: %v", err)
+	}
+	<-held
+
+	// one council runs at a time across all projects: the second start (another project) is saved queued, and says so
+	second, err := ws.CouncilStartCommand(ctx, councilStartData(t))
+	if err != nil {
+		t.Fatalf("second start: %v", err)
+	}
+	if second.State != council.StateQueued || second.QueuedAfter != first.Id || second.Id == "" {
+		t.Fatalf("second start = %s after %q, want queued after %s", second.State, second.QueuedAfter, first.Id)
+	}
+	found := false
+	for _, ev := range events.all() {
+		found = found || (ev.Id == second.Id && ev.Project == second.Project)
+	}
+	if !found {
+		t.Errorf("no council:changed event for the queued council: %+v", events.all())
+	}
+
+	// a council that is saved as not run is not queued: the gate refused it, and nothing runs for it
+	data := councilStartData(t)
+	data.NotRun = true
+	if saved, err := ws.CouncilStartCommand(ctx, data); err != nil || saved.State != council.StateNotRun || saved.QueuedAfter != "" {
+		t.Errorf("a not-run save while another runs = %+v, %v, want it not-run and not queued", saved, err)
+	}
+
+	// Stop on the queued one removes it; the one running ends, and nothing starts behind it
+	removed, err := ws.CouncilStartCommand(ctx, councilStartData(t))
+	if err != nil || removed.State != council.StateQueued {
+		t.Fatalf("third start = %+v, %v", removed, err)
+	}
+	if err := ws.CouncilStopCommand(ctx, wshrpc.CommandCouncilIdData{Id: removed.Id}); err != nil {
+		t.Fatalf("stop of a queued council: %v", err)
+	}
+	if got, _ := council.Load(removed.Id); got.State != council.StateStopped {
+		t.Errorf("the removed council is %s, want stopped", got.State)
+	}
+
+	if err := ws.CouncilStopCommand(ctx, wshrpc.CommandCouncilIdData{Id: first.Id}); err != nil {
+		t.Fatalf("stop of the running council: %v", err)
+	}
+	if done := waitCouncil(t, second.Id); done.State != council.StateDone || done.DocPath == "" {
+		t.Errorf("the queued council ended %s with the document at %q, want it to have run by itself and saved", done.State, done.DocPath)
+	}
+	if got, _ := council.Load(removed.Id); got.State != council.StateStopped || got.Round != 0 {
+		t.Errorf("the removed council is %s at round %d, want it still stopped and never run", got.State, got.Round)
+	}
+}
+
+func TestStartCouncilRunnerStartsACouncilLeftQueued(t *testing.T) {
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	experts, err := council.ExpertsFor("ui-feature")
+	if err != nil {
+		t.Fatalf("ExpertsFor: %v", err)
+	}
+	saveCouncil(t, &council.Council{
+		Id: "queued1", Project: t.TempDir(), Feature: "Left queued", Experts: experts, State: council.StateQueued, QueuedAfter: "gone", Created: 1,
+	})
+	saveCouncil(t, &council.Council{
+		Id: "stale1", Project: t.TempDir(), Feature: "Left running", Experts: experts, State: council.StateRunning, Round: 2, Created: 1,
+	})
+
+	StartCouncilRunner()
+
+	if got, err := council.Load("stale1"); err != nil || got.State != council.StateStopped {
+		t.Errorf("the council left running = %+v, %v, want it stopped", got, err)
+	}
+	if done := waitCouncil(t, "queued1"); done.State != council.StateDone || done.QueuedAfter != "" {
+		t.Errorf("the council left queued ended %s after %q (%s), want it started by StartCouncilRunner and done", done.State, done.QueuedAfter, done.Error)
 	}
 }
 

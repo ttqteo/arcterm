@@ -20,9 +20,13 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
-// councilDefaultGroup is the group a start or an estimate takes when --group is left out: the UI feature panel, which
-// ships with arcterm and which a councilroles.json group of the same id replaces rather than removes.
-const councilDefaultGroup = "ui-feature"
+// The groups a start or an estimate takes when --group is left out: the UI feature panel for a review and the Product
+// ideas panel for a brainstorm. Both ship with arcterm, and a councilroles.json group of the same id replaces rather
+// than removes them.
+const (
+	councilDefaultGroup    = "ui-feature"
+	councilBrainstormGroup = "product-ideas"
+)
 
 const (
 	councilPollEvery      = 2 * time.Second
@@ -32,11 +36,40 @@ const (
 
 var councilCmd = &cobra.Command{
 	Use:   "council",
-	Short: "have a panel of expert agents review a feature in three rounds, and read the Summary back",
-	Long: `A council is a panel of expert agents that reviews one feature in three rounds, shown in arcterm as a
-Discussion with a Summary of ranked directions. Each start costs roughly 0.5-1.5M tokens: run "wsh council estimate"
-first and start one only when the person picked it. "wsh council start" asks the Token burn gate like a costly
-subagent spawn; a refusal saves the council as not run, and Start council in the app runs it.`,
+	Short: "have a panel of expert agents work a question in three rounds, and read the report back",
+	Long: `A council is a panel of expert agents that works one question in three rounds, shown in arcterm as a group
+chat while it runs and as a report when it is done. It runs in one of two modes: review (a thing that exists, judged,
+and the directions ranked) or brainstorm (a problem or a goal, ideas worth trying with a first step each). Each start
+costs roughly 0.5-1.5M tokens. "wsh council start" asks the Token burn gate like a costly subagent spawn, so start one
+when the conversation is ready or the person asks, without asking first; a refusal saves the council as not run, and
+Start council in the app runs it. One council runs at a time across all projects: a start while another runs is queued
+and begins when it ends. A finished council saves its document, with the whole discussion, under the project's
+docs/council/. "wsh council estimate" prints the group, the models and the cost without starting anything.`,
+}
+
+// ---- mode ----
+
+// councilModeFlag reads --mode: review when it is left out, brainstorm or review in any case, and an error for any
+// other word, so a typo is refused before anything is asked.
+func councilModeFlag(word string) (string, error) {
+	switch mode := strings.ToLower(strings.TrimSpace(word)); mode {
+	case "", council.ModeReview:
+		return council.ModeReview, nil
+	case council.ModeBrainstorm:
+		return council.ModeBrainstorm, nil
+	}
+	return "", fmt.Errorf("unknown --mode %q: use %s or %s", word, council.ModeReview, council.ModeBrainstorm)
+}
+
+// councilGroupFor is the group of a start or an estimate: the one --group names, else the group that fits the mode.
+func councilGroupFor(group, mode string) string {
+	switch {
+	case group != "":
+		return group
+	case mode == council.ModeBrainstorm:
+		return councilBrainstormGroup
+	}
+	return councilDefaultGroup
 }
 
 // ---- pure parts ----
@@ -207,10 +240,19 @@ func councilExpertsText(n int) string {
 	return fmt.Sprintf("%d experts", n)
 }
 
-// councilStartedLine is the line a started council prints.
-func councilStartedLine(id, feature string, n int, est *wshrpc.CouncilEstimateRtnData) string {
-	return fmt.Sprintf("council %s started: %s · %s · ≈ %d calls · ~%s tokens",
-		id, councilOneLine(feature), councilExpertsText(n), est.Calls, council.FormatTokens(est.Tokens))
+// councilStartedLine is the line a started council prints: the mode and the group it works in, then the cost.
+func councilStartedLine(id, feature, mode, group string, n int, est *wshrpc.CouncilEstimateRtnData) string {
+	return fmt.Sprintf("council %s started: %s · %s · %s · %s · ≈ %d calls · ~%s tokens",
+		id, councilOneLine(feature), mode, group, councilExpertsText(n), est.Calls, council.FormatTokens(est.Tokens))
+}
+
+// councilQueuedLine is the line a start prints when another council runs: the council it waits for (running is that
+// council as saved, nil when it could not be read) and the new council's own id, which `wsh council wait` takes.
+func councilQueuedLine(c, running *council.Council) string {
+	if running == nil {
+		return fmt.Sprintf("Queued after %s · council %s starts by itself when it ends", c.QueuedAfter, c.Id)
+	}
+	return fmt.Sprintf("Queued after %s (%s) · council %s starts by itself when it ends", running.Id, councilOneLine(running.Feature), c.Id)
 }
 
 // councilNotRunText is what a refusal prints. The gate's own reason already opens "Not run: " (it is the line the
@@ -223,21 +265,11 @@ func councilNotRunText(reason, id string) string {
 	return reason + "\n" + fmt.Sprintf("council %s saved as not run; Start council in the app runs it\n", id)
 }
 
-// councilRunning is the first council of the list that is running, nil when none is: what --queue waits on. A council
-// waiting on the person spends nothing, so it does not hold the queue.
-func councilRunning(list []*council.Council) *council.Council {
-	for _, c := range list {
-		if c != nil && c.State == council.StateRunning {
-			return c
-		}
-	}
-	return nil
-}
-
-// councilWaitDone says whether wait has something to report: a council that is not running is finished, stopped,
-// failed, never started, or waiting on the person, and none of them moves until someone acts.
+// councilWaitDone says whether wait has something to report: a council that is neither running nor queued is finished,
+// stopped, failed, never started, or waiting on the person, and none of them moves until someone acts. A queued one
+// starts by itself, so wait goes on through it.
 func councilWaitDone(c *council.Council) bool {
-	return c.State != council.StateRunning
+	return c.State != council.StateRunning && c.State != council.StateQueued
 }
 
 // councilWaitText is what wait prints once the council stops moving, and the error to exit non-zero on when it
@@ -289,27 +321,29 @@ func councilListLine(c *council.Council) string {
 
 // ---- commands ----
 
-// councilPlan is a council as priced: the project, the files, the group and its panel, and the estimate.
+// councilPlan is a council as priced: the project, the files, the mode, the group and its panel, and the estimate.
 type councilPlan struct {
 	project string
 	files   []string
+	mode    string
 	group   council.CouncilGroup
 	experts []council.CouncilExpert
 	est     *wshrpc.CouncilEstimateRtnData
 }
 
 func councilPrepare(cmd *cobra.Command) (councilPlan, error) {
+	mode, err := councilModeFlag(mustFlagString(cmd, "mode")) // first: a refused mode asks nothing
+	if err != nil {
+		return councilPlan{}, err
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return councilPlan{}, fmt.Errorf("reading the working directory: %w", err)
 	}
-	var plan councilPlan
+	plan := councilPlan{mode: mode}
 	plan.project = councilProjectFor(mustFlagString(cmd, "project"), cwd)
 	plan.files = councilFiles(splitCouncilList(mustFlagString(cmd, "files")), cwd, plan.project)
-	groupId := mustFlagString(cmd, "group")
-	if groupId == "" {
-		groupId = councilDefaultGroup
-	}
+	groupId := councilGroupFor(mustFlagString(cmd, "group"), mode)
 	roles, err := wshclient.CouncilRolesCommand(RpcClient, nil)
 	if err != nil {
 		return councilPlan{}, fmt.Errorf("reading the council roles: %w", err)
@@ -330,10 +364,11 @@ func councilPrepare(cmd *cobra.Command) (councilPlan, error) {
 
 var councilEstimateCmd = &cobra.Command{
 	Use:   "estimate",
-	Short: "print the group, every expert's model and the cost of a council, and start nothing (for an agent's offer)",
+	Short: "print the group, every expert's model and the cost of a council, and start nothing",
 	Args:  cobra.NoArgs,
-	Long: `Print the one line an agent's offer quotes: the group, each expert's model, and the estimate. It starts nothing and
-asks nothing. The files are the ones the experts would read, whose size is part of the estimate.`,
+	Long: `Print one line: the group, each expert's model, and the estimate. It starts nothing and asks nothing. The files are
+the ones the experts would read, whose size is part of the estimate. With no --group, --mode brainstorm prices the
+product-ideas group and review (the default) the ui-feature one.`,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		plan, err := councilPrepare(cmd)
@@ -349,33 +384,35 @@ var councilStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "start a council on a feature (asks the Token burn gate first; a refusal saves it as not run)",
 	Args:  cobra.NoArgs,
-	Long: `Start a council: the group's experts propose in round 1, review each other in round 2, and the coordinator
-ranks the directions in round 3. Start one only when the person picked it. The start asks the Token burn gate with the
-council's own estimate; when the person refuses, the council is saved as not run, "Not run: <reason>" is printed and the
-command exits 0: do not retry, say so in your report. Read the outcome back with "wsh council wait <id>".
+	Long: `Start a council: the group's experts propose in round 1, react to each other in round 2, and the coordinator
+writes the answer in round 3. Start one when the conversation holds a clear problem or a thing to judge and a real open
+question that more viewpoints would settle, or at once when the person asks for one. The start asks the Token burn gate
+with the council's own estimate; when the person refuses, the council is saved as not run, "Not run: <reason>" is printed
+and the command exits 0: do not retry, say so in your report. Read the outcome back with "wsh council wait <id>".
 
---queue holds the start while another council of this project is running. --pause stops the council after round 1 so
-the person can cut proposals and ask a question before rounds 2 and 3.`,
+--mode says how the council works. review (the default) judges a thing that exists (a feature, a spec, a plan, a draft):
+every claim cites evidence and the report ranks directions. brainstorm takes a problem or a goal: ideas need no
+evidence, judging waits, and the report holds up to three ideas worth trying, each with its first step, and the wild
+ideas kept aside. Pick the mode from the question and say why in one line with --mode-why. With no --group, brainstorm
+takes the product-ideas group and review the ui-feature one.
+
+--question is the person's question in their own words, with the constraints they stated. --files are the files the
+experts read; --screenshot <png> (repeatable) puts a screenshot in front of them, which they open with Read.
+
+One council runs at a time across all projects: a start while another council runs is queued, prints
+"Queued after <id> (<feature>)" with the new council's own id, and starts by itself when the running one ends (a council
+waiting on the person holds no slot). "wsh council wait <id>" waits through the queue. --queue is still accepted and does
+nothing more: every second start is queued now. --pause stops the council after round 1 so the person can cut proposals
+and ask a question before the next rounds.`,
 	PreRunE: preRunSetupRpcClient,
 	RunE:    councilStartRun,
 }
 
-func councilStartRun(cmd *cobra.Command, args []string) error {
-	feature := strings.TrimSpace(mustFlagString(cmd, "feature"))
-	if feature == "" {
-		return errors.New("--feature is required: name the feature the council reviews")
-	}
-	screenshots, err := councilScreenshots(cmd)
-	if err != nil {
-		return err
-	}
-	plan, err := councilPrepare(cmd)
-	if err != nil {
-		return err
-	}
+// councilStartData is the start request of a prepared plan: the plan, the flags that do not change what it costs
+// (question, pause, session, the reason for the mode) and the screenshots.
+func councilStartData(cmd *cobra.Command, plan councilPlan, feature string, screenshots []string) wshrpc.CommandCouncilStartData {
 	pause, _ := cmd.Flags().GetBool("pause")
-	queue, _ := cmd.Flags().GetBool("queue")
-	data := wshrpc.CommandCouncilStartData{
+	return wshrpc.CommandCouncilStartData{
 		Project:     plan.project,
 		Feature:     feature,
 		Question:    strings.TrimSpace(mustFlagString(cmd, "question")),
@@ -385,7 +422,25 @@ func councilStartRun(cmd *cobra.Command, args []string) error {
 		Experts:     plan.experts,
 		Pause:       pause,
 		SessionId:   councilSession(cmd),
+		Mode:        plan.mode,
+		ModeWhy:     councilOneLine(mustFlagString(cmd, "mode-why")),
 	}
+}
+
+func councilStartRun(cmd *cobra.Command, args []string) error {
+	feature := strings.TrimSpace(mustFlagString(cmd, "feature"))
+	if feature == "" {
+		return errors.New("--feature is required: name what the council looks at")
+	}
+	screenshots, err := councilScreenshots(cmd)
+	if err != nil {
+		return err
+	}
+	plan, err := councilPrepare(cmd)
+	if err != nil {
+		return err
+	}
+	data := councilStartData(cmd, plan, feature, screenshots)
 	n := councilPanelSize(plan.experts)
 	verdict, gateErr := tokengateDecide(context.Background(), councilSpawn(plan.experts, plan.est), "", func(hold any) {
 		if h, ok := hold.(tokengate.Hold); ok {
@@ -395,7 +450,7 @@ func councilStartRun(cmd *cobra.Command, args []string) error {
 	startOpts := &wshrpc.RpcOpts{Timeout: councilStartTimeoutMs}
 	switch {
 	case gateErr != nil:
-		// a broken gate never blocks an agent, here as in the Claude mod: the person already picked the council
+		// a broken gate never blocks an agent, here as in the Claude mod: the council is wanted, only its price is unknown
 		fmt.Fprintf(os.Stderr, "token gate unavailable (%v); starting the council anyway\n", gateErr)
 	case !verdict.Run:
 		data.NotRun = true
@@ -406,16 +461,24 @@ func councilStartRun(cmd *cobra.Command, args []string) error {
 		fmt.Print(councilNotRunText(verdict.Reason, c.Id))
 		return nil
 	}
-	if queue {
-		if err := councilWaitForRoom(context.Background(), plan.project); err != nil {
-			return err
-		}
-	}
+	// one council runs at a time across all projects: wavesrv queues this one when another runs, so there is nothing to wait for here
 	c, err := wshclient.CouncilStartCommand(RpcClient, data, startOpts)
 	if err != nil {
 		return fmt.Errorf("starting the council: %w", err)
 	}
-	fmt.Println(councilStartedLine(c.Id, feature, n, plan.est))
+	if c.State == council.StateQueued {
+		var running *council.Council
+		if c.QueuedAfter != "" {
+			running, _ = wshclient.CouncilGetCommand(RpcClient, wshrpc.CommandCouncilIdData{Id: c.QueuedAfter}, nil)
+		}
+		fmt.Println(councilQueuedLine(c, running))
+		return nil
+	}
+	group := plan.group.Name
+	if group == "" {
+		group = plan.group.Id
+	}
+	fmt.Println(councilStartedLine(c.Id, feature, plan.mode, group, n, plan.est))
 	return nil
 }
 
@@ -454,30 +517,6 @@ func councilSession(cmd *cobra.Command) string {
 		return blockSession(blockId)
 	}
 	return ""
-}
-
-// councilWaitForRoom holds a --queue start while another council of the project is running.
-func councilWaitForRoom(ctx context.Context, project string) error {
-	announced := ""
-	for {
-		list, err := wshclient.CouncilListCommand(RpcClient, wshrpc.CommandCouncilListData{Project: project}, nil)
-		if err != nil {
-			return fmt.Errorf("listing the project's councils: %w", err)
-		}
-		busy := councilRunning(list)
-		if busy == nil {
-			return nil
-		}
-		if busy.Id != announced {
-			fmt.Printf("waiting for council %s (%s) to finish before starting\n", busy.Id, councilOneLine(busy.Feature))
-			announced = busy.Id
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(councilPollEvery):
-		}
-	}
 }
 
 var councilListCmd = &cobra.Command{
@@ -532,9 +571,10 @@ var councilWaitCmd = &cobra.Command{
 	Use:   "wait <id>",
 	Short: "wait until a council stops running, then print its Summary and Matrix as markdown",
 	Args:  cobra.ExactArgs(1),
-	Long: `Poll the council every 2 seconds until it is no longer running, then print what it holds. A done council prints
-its markdown; one that paused after round 1 says what the person must do in the app, and a failed one exits non-zero
-with its reason. --timeout bounds the wait (30m by default); on a timeout the council keeps running.`,
+	Long: `Poll the council every 2 seconds until it is no longer running, then print what it holds. A council that is queued
+behind another is waited through, to the end of its own run. A done council prints its markdown; one that paused after
+round 1 says what the person must do in the app, and a failed one exits non-zero with its reason. --timeout bounds the
+wait (30m by default); on a timeout the council keeps running, or stays queued.`,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		timeout, _ := cmd.Flags().GetDuration("timeout")
@@ -549,7 +589,7 @@ with its reason. --timeout bounds the wait (30m by default); on a timeout the co
 			return wshclient.CouncilGetCommand(RpcClient, wshrpc.CommandCouncilIdData{Id: id}, nil)
 		})
 		if errors.Is(err, context.DeadlineExceeded) {
-			return fmt.Errorf("council %s is still running after %s; run `wsh council wait %s` to keep waiting", id, timeout, id)
+			return fmt.Errorf("council %s has not finished after %s (it is running or queued); run `wsh council wait %s` to keep waiting", id, timeout, id)
 		}
 		if err != nil {
 			return err
@@ -565,7 +605,7 @@ with its reason. --timeout bounds the wait (30m by default); on a timeout the co
 
 var councilStopCmd = &cobra.Command{
 	Use:     "stop <id>",
-	Short:   "stop a running council; the rounds that finished stay",
+	Short:   "stop a running or queued council; the rounds that finished stay, and a queued one never runs",
 	Args:    cobra.ExactArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -579,20 +619,28 @@ var councilStopCmd = &cobra.Command{
 
 func addCouncilPanelFlags(cmd *cobra.Command) {
 	f := cmd.Flags()
-	f.String("feature", "", "the feature the council reviews")
+	f.String("feature", "", "what the council looks at: the feature, or the problem or goal")
 	f.String("files", "", "the files or folders the experts read, comma-separated")
-	f.String("group", "", "the expert group (default "+councilDefaultGroup+"; see Setup in the app for the others)")
+	f.String("group", "", "the expert group (default "+councilDefaultGroup+", or "+councilBrainstormGroup+" for --mode brainstorm; see Setup in the app for the others)")
 	f.String("project", "", "the project folder (default: the git top level of the working directory)")
+	f.String("mode", "", "how the council works: "+council.ModeReview+" (default) judges a thing that exists, "+council.ModeBrainstorm+" looks for ideas for a problem or goal")
+}
+
+// addCouncilStartFlags adds the flags that only a start takes, beside the panel flags.
+func addCouncilStartFlags(cmd *cobra.Command) {
+	f := cmd.Flags()
+	f.String("question", "", "a question put to the whole council")
+	f.String("mode-why", "", "one line on why that mode, kept with the council")
+	f.StringArray("screenshot", nil, "a screenshot (png) the experts open with Read; repeat the flag for more")
+	f.Bool("pause", false, "stop after round 1 so the person can cut proposals and ask a question")
+	f.Bool("queue", false, "accepted and ignored: one council runs at a time across all projects, so a start while another runs is always queued")
+	f.String("session", "", "the agent session that starts it, whose Ideas get the directions; defaults to the session in this terminal")
 }
 
 func init() {
 	addCouncilPanelFlags(councilEstimateCmd)
 	addCouncilPanelFlags(councilStartCmd)
-	councilStartCmd.Flags().String("question", "", "a question put to the whole council")
-	councilStartCmd.Flags().StringArray("screenshot", nil, "a screenshot (png) the experts open with Read; repeat the flag for more")
-	councilStartCmd.Flags().Bool("pause", false, "stop after round 1 so the person can cut proposals and ask a question")
-	councilStartCmd.Flags().Bool("queue", false, "wait while another council of this project is running, then start")
-	councilStartCmd.Flags().String("session", "", "the agent session that starts it, whose Ideas get the directions; defaults to the session in this terminal")
+	addCouncilStartFlags(councilStartCmd)
 	councilListCmd.Flags().String("project", "", "the project folder (default: the git top level of the working directory; \"\" lists every council)")
 	councilListCmd.Flags().Bool("json", false, "JSON output")
 	councilShowCmd.Flags().Bool("json", false, "JSON output (the whole council)")

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/council"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/tokengate"
@@ -60,8 +61,12 @@ func TestSplitCouncilList(t *testing.T) {
 }
 
 func TestCouncilFlags(t *testing.T) {
-	if err := councilStartCmd.Flags().Parse([]string{"--files", "a.ts,b.ts", "--feature", "Council", "--pause", "--queue", "--screenshot", "x.png", "--screenshot", "y.png"}); err != nil {
+	if err := councilStartCmd.Flags().Parse([]string{"--files", "a.ts,b.ts", "--feature", "Council", "--pause", "--queue", "--screenshot", "x.png", "--screenshot", "y.png",
+		"--mode", "brainstorm", "--mode-why", "a goal with no answer yet"}); err != nil {
 		t.Fatal(err)
+	}
+	if mustFlagString(councilStartCmd, "mode") != "brainstorm" || mustFlagString(councilStartCmd, "mode-why") != "a goal with no answer yet" {
+		t.Fatalf("--mode %q --mode-why %q", mustFlagString(councilStartCmd, "mode"), mustFlagString(councilStartCmd, "mode-why"))
 	}
 	if got := splitCouncilList(mustFlagString(councilStartCmd, "files")); !reflect.DeepEqual(got, []string{"a.ts", "b.ts"}) {
 		t.Fatalf("--files a.ts,b.ts = %v", got)
@@ -69,12 +74,12 @@ func TestCouncilFlags(t *testing.T) {
 	if shots, _ := councilStartCmd.Flags().GetStringArray("screenshot"); !reflect.DeepEqual(shots, []string{"x.png", "y.png"}) {
 		t.Fatalf("--screenshot twice = %v", shots)
 	}
-	for _, name := range []string{"feature", "files", "group", "project", "question", "screenshot", "pause", "queue", "session"} {
+	for _, name := range []string{"feature", "files", "group", "project", "question", "screenshot", "pause", "queue", "session", "mode", "mode-why"} {
 		if councilStartCmd.Flags().Lookup(name) == nil {
 			t.Errorf("start has no --%s", name)
 		}
 	}
-	for _, name := range []string{"feature", "files", "group", "project"} {
+	for _, name := range []string{"feature", "files", "group", "project", "mode"} {
 		if councilEstimateCmd.Flags().Lookup(name) == nil {
 			t.Errorf("estimate has no --%s", name)
 		}
@@ -90,6 +95,92 @@ func TestCouncilFlags(t *testing.T) {
 		if !found {
 			t.Errorf("%s is not under council", c.Name())
 		}
+	}
+}
+
+func TestCouncilModeDefaultGroup(t *testing.T) {
+	for _, tc := range []struct {
+		name, group, mode, want string
+	}{
+		{"brainstorm with no group", "", council.ModeBrainstorm, "product-ideas"},
+		{"review with no group", "", council.ModeReview, "ui-feature"},
+		{"no mode with no group", "", "", "ui-feature"},
+		{"an explicit group wins over brainstorm", "paper", council.ModeBrainstorm, "paper"},
+		{"an explicit group wins over review", "solo", council.ModeReview, "solo"},
+	} {
+		if got := councilGroupFor(tc.group, tc.mode); got != tc.want {
+			t.Errorf("%s: group = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	for word, want := range map[string]string{
+		"": council.ModeReview, "review": council.ModeReview, " Review ": council.ModeReview,
+		"brainstorm": council.ModeBrainstorm, "BRAINSTORM": council.ModeBrainstorm,
+	} {
+		if got, err := councilModeFlag(word); err != nil || got != want {
+			t.Errorf("--mode %q = %q, %v; want %q", word, got, err, want)
+		}
+	}
+}
+
+func TestCouncilModeRefusesUnknown(t *testing.T) {
+	for _, word := range []string{"fast", "brainstorming", "both"} {
+		_, err := councilModeFlag(word)
+		if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%q", word)) || !strings.Contains(err.Error(), "review") || !strings.Contains(err.Error(), "brainstorm") {
+			t.Errorf("--mode %q = %v, want an error naming the word and the two modes", word, err)
+		}
+	}
+
+	// refused before anything is asked: no roles are read, no estimate is made, and the token gate is not reached.
+	// RpcClient is nil here, so reaching any of them would panic.
+	for name, run := range map[string]func(cmd *cobra.Command) error{
+		"estimate": func(cmd *cobra.Command) error { _, err := councilPrepare(cmd); return err },
+		"start":    func(cmd *cobra.Command) error { return councilStartRun(cmd, nil) },
+	} {
+		cmd := &cobra.Command{Use: name}
+		addCouncilPanelFlags(cmd)
+		addCouncilStartFlags(cmd)
+		if err := cmd.Flags().Parse([]string{"--feature", "A feature", "--mode", "fast"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := run(cmd); err == nil || !strings.Contains(err.Error(), `"fast"`) {
+			t.Errorf("%s with --mode fast = %v, want the refusal", name, err)
+		}
+	}
+}
+
+func TestCouncilStartDataCarriesTheMode(t *testing.T) {
+	cmd := &cobra.Command{Use: "start"}
+	addCouncilPanelFlags(cmd)
+	addCouncilStartFlags(cmd)
+	if err := cmd.Flags().Parse([]string{"--mode-why", "  a goal\n with no answer ", "--question", " How do we fix it? ", "--pause", "--session", "s1"}); err != nil {
+		t.Fatal(err)
+	}
+	_, experts, err := councilPanel(councilTestRoles(), "ui-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := councilPlan{project: "/p", files: []string{"a.md"}, group: council.CouncilGroup{Id: "ui-feature"}, experts: experts, mode: council.ModeBrainstorm}
+	data := councilStartData(cmd, plan, "Council for newcomers", []string{"/s.png"})
+	if data.Mode != council.ModeBrainstorm || data.ModeWhy != "a goal with no answer" {
+		t.Errorf("mode %q why %q, want brainstorm and the reason on one line", data.Mode, data.ModeWhy)
+	}
+	if data.Project != "/p" || data.Feature != "Council for newcomers" || data.Question != "How do we fix it?" || data.Group != "ui-feature" ||
+		!reflect.DeepEqual(data.Files, []string{"a.md"}) || !reflect.DeepEqual(data.Screenshots, []string{"/s.png"}) ||
+		len(data.Experts) != 5 || !data.Pause || data.SessionId != "s1" || data.NotRun {
+		t.Errorf("data = %+v", data)
+	}
+
+	// no --mode: a review, with no reason
+	plan.mode = council.ModeReview
+	cmd = &cobra.Command{Use: "start"}
+	addCouncilPanelFlags(cmd)
+	addCouncilStartFlags(cmd)
+	if err := cmd.Flags().Parse([]string{"--session", "s2"}); err != nil { // --session keeps the test off this terminal's own session
+		t.Fatal(err)
+	}
+	if data = councilStartData(cmd, plan, "F", nil); data.Mode != council.ModeReview || data.ModeWhy != "" {
+		t.Errorf("mode %q why %q, want review and none", data.Mode, data.ModeWhy)
 	}
 }
 
@@ -234,13 +325,31 @@ func TestTokengateCappedLeavesACouncil(t *testing.T) {
 
 func TestCouncilStartedLine(t *testing.T) {
 	est := &wshrpc.CouncilEstimateRtnData{Calls: 9, Tokens: 820_000, Minutes: 6}
-	got := councilStartedLine("abc123", "Council\n  for the cockpit", 4, est)
-	want := "council abc123 started: Council for the cockpit · 4 experts · ≈ 9 calls · ~0.8M tokens"
+	got := councilStartedLine("abc123", "Council\n  for the cockpit", council.ModeReview, "Review a UI feature", 4, est)
+	want := "council abc123 started: Council for the cockpit · review · Review a UI feature · 4 experts · ≈ 9 calls · ~0.8M tokens"
 	if got != want {
 		t.Fatalf("started line\n got %s\nwant %s", got, want)
 	}
-	if got := councilStartedLine("abc123", "f", 1, est); !strings.Contains(got, "· 1 expert ·") {
-		t.Fatalf("one expert = %s", got)
+	if got := councilStartedLine("abc123", "f", council.ModeBrainstorm, "Product ideas", 1, est); !strings.Contains(got, "· brainstorm · Product ideas · 1 expert ·") {
+		t.Fatalf("a brainstorm of one expert = %s", got)
+	}
+}
+
+func TestCouncilQueuedLine(t *testing.T) {
+	queued := &council.Council{Id: "new456", State: council.StateQueued, QueuedAfter: "abc123"}
+	running := &council.Council{Id: "abc123", Feature: "Council\n  for the cockpit", State: council.StateRunning}
+	got := councilQueuedLine(queued, running)
+	want := "Queued after abc123 (Council for the cockpit) · council new456 starts by itself when it ends"
+	if got != want {
+		t.Fatalf("queued line\n got %s\nwant %s", got, want)
+	}
+	// the new council's own id is on the line, so an agent can pass it to `wsh council wait`
+	if !strings.Contains(got, "new456") {
+		t.Errorf("the queued line does not carry the new council's id: %s", got)
+	}
+	// the running council could not be read: the line still names what it waits for
+	if got := councilQueuedLine(queued, nil); got != "Queued after abc123 · council new456 starts by itself when it ends" {
+		t.Errorf("queued line without the running council = %s", got)
 	}
 }
 
@@ -265,28 +374,13 @@ func TestCouncilNotRunText(t *testing.T) {
 	}
 }
 
-func TestCouncilRunningHoldsTheQueueOnlyWhileRunning(t *testing.T) {
-	list := []*council.Council{
-		{Id: "a", State: council.StateDone},
-		{Id: "b", State: council.StateAwaiting},
-		{Id: "c", State: council.StateNotRun},
-		nil,
-	}
-	if busy := councilRunning(list); busy != nil {
-		t.Fatalf("nothing runs, got %s", busy.Id)
-	}
-	list = append(list, &council.Council{Id: "d", State: council.StateRunning})
-	if busy := councilRunning(list); busy == nil || busy.Id != "d" {
-		t.Fatalf("running = %+v, want d", busy)
-	}
-}
-
 func TestCouncilWaitDoneIsEveryStateButRunning(t *testing.T) {
 	for _, tc := range []struct {
 		state council.CouncilState
 		done  bool
 	}{
 		{council.StateRunning, false},
+		{council.StateQueued, false}, // it starts by itself: wait goes on through it
 		{council.StateAwaiting, true},
 		{council.StateDone, true},
 		{council.StateNotRun, true},
@@ -352,6 +446,27 @@ func TestCouncilWaitForPollsUntilItStopsRunning(t *testing.T) {
 	broken := errors.New("no such council")
 	if _, err := councilWaitFor(context.Background(), time.Millisecond, func() (*council.Council, error) { return nil, broken }); !errors.Is(err, broken) {
 		t.Fatalf("a failed read = %v, want it passed on", err)
+	}
+}
+
+func TestCouncilWaitForGoesThroughTheQueue(t *testing.T) {
+	states := []council.CouncilState{council.StateQueued, council.StateQueued, council.StateRunning, council.StateDone}
+	calls := 0
+	get := func() (*council.Council, error) {
+		state := states[min(calls, len(states)-1)]
+		calls++
+		return &council.Council{Id: "c1", State: state}, nil
+	}
+	c, err := councilWaitFor(context.Background(), time.Millisecond, get)
+	if err != nil || c.State != council.StateDone || calls != 4 {
+		t.Fatalf("wait = %+v, %v after %d polls, want it to go through queued and running to done", c, err, calls)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	stuck := func() (*council.Council, error) { return &council.Council{Id: "c1", State: council.StateQueued}, nil }
+	if _, err := councilWaitFor(ctx, time.Millisecond, stuck); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a council that stays queued = %v, want the deadline", err)
 	}
 }
 
