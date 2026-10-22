@@ -16,9 +16,13 @@ is unchanged; it gains `onContextMenu` and a selected fill.
 
 **Prototype:** <repo>/.superpowers/design/project-overview/project
 
-**Verify:** `npx vitest run frontend/app/view/agents`
+**Verify:** `node scripts/verify.mjs ./pkg/waveobj`
 
-**Final:** `node scripts/cdp/final-verify.mjs project-overview`
+**Final:** `node scripts/cdp/final-verify.mjs project-overview needs-you-learn-card run-queue`
+
+(The plan changes no Go: at a merge Verify typechecks and runs the vitest files the merge's paths reach; the final stage
+runs every vitest file. `needs-you-learn-card` and `run-queue` open the Cockpit's Needs you strip, which Task 3
+refactors.)
 
 ---
 
@@ -92,6 +96,9 @@ describe("lines", () => {
         expect(doingLine(vm("a", { activity: "Editing x.ts", task: "t" }))).toBe("Editing x.ts");
         expect(doingLine(vm("a", { task: "Fix the row" }))).toBe("Fix the row");
     });
+    it("reads a running terminal as a terminal: its name is already its command", () => {
+        expect(doingLine(vm("t", { kind: "terminal", name: "sleep 30", running: true }))).toBe("terminal");
+    });
     it("words the change count", () => {
         expect(changesLabel(null)).toBe("");
         expect(changesLabel({ files: 0 })).toBe("no uncommitted changes");
@@ -137,8 +144,11 @@ export function askLine(a: AgentVM): string {
     return a.ask?.questions?.[0]?.question ?? a.activity ?? "";
 }
 
-// what an agent or a terminal is doing now
+// what an agent is doing now; a terminal's name is already the command it runs, so its row says only what it is
 export function doingLine(a: AgentVM): string {
+    if (a.kind === "terminal") {
+        return "terminal";
+    }
     return a.activity || a.task || "";
 }
 
@@ -245,9 +255,46 @@ git commit -m "feat(overview): the Agent surface's project centre mode" -- front
 
 ### Task 3: Needs you, scoped to one project
 **Depends on:** none
-**Files:** `frontend/app/view/agents/needsyou.ts`, `frontend/app/view/agents/needsyoustrip.tsx`
+**Files:** `frontend/app/view/agents/needsyoustripmodel.ts`, `frontend/app/view/agents/needsyoustripmodel.test.ts`, `frontend/app/view/agents/needsyou.ts`, `frontend/app/view/agents/needsyoustrip.tsx`
 
-`needsyou.ts` holds the `useNeedsYou` hook; `needsyoustrip.tsx` holds `NeedsYouStrip` (lines 154–261).
+`needsyou.ts` holds the `useNeedsYou` hook; `needsyoustrip.tsx` holds `NeedsYouStrip` (lines 154–261);
+`needsyoustripmodel.ts` holds the pure `buildNeedsYouRows`, whose project filter keeps a learned rule under any project
+(line 126). A project's Overview must not show learned rules (spec: they belong to a skill or a folder, not a project).
+
+**Step 0: Write the failing test** — append to `needsyoustripmodel.test.ts` (its `item` and `base` helpers are at the top):
+
+```ts
+describe("buildNeedsYouRows: a project's Overview", () => {
+    const attention = [
+        item({ key: "mine", kind: "run-land-held", channelid: "c-mine" }),
+        item({ key: "theirs", kind: "run-land-held", channelid: "c-theirs" }),
+        item({ key: "learn:skill:notes#k", kind: "learn-proposal", channelid: "", learnid: "skill:notes#k" }),
+    ];
+    const channelProject = new Map([
+        ["c-mine", "arc"],
+        ["c-theirs", "other"],
+    ]);
+
+    it("keeps the project's held run and leaves another project's out", () => {
+        const rows = buildNeedsYouRows({ ...base, attention, channelProject, filter: "arc", learn: false });
+        expect(rows.map((r) => r.key)).toEqual(["mine"]);
+    });
+
+    it("leaves learned rules out when told to, and keeps them by default, as the Cockpit does", () => {
+        const keys = (learn?: boolean) =>
+            buildNeedsYouRows({ ...base, attention, channelProject, filter: "arc", learn }).map((r) => r.key);
+        expect(keys(false)).not.toContain("learn:skill:notes#k");
+        expect(keys(undefined)).toContain("learn:skill:notes#k");
+    });
+});
+```
+
+Run `npx vitest run frontend/app/view/agents/needsyoustripmodel.test.ts`: FAIL (the learned rule is kept).
+
+**Step 0b: Implement** — `buildNeedsYouRows`'s input gains
+`learn?: boolean; // false leaves learned rules out (a project's Overview: they belong to no one project); left out, they show`,
+and the loop skips a row with `learnId != null && input.learn === false`. Run the file again: PASS, the existing tests
+too.
 
 **Step 1: Give the hook a project.** In `useNeedsYou(model, onFocusAgent)` add a third parameter and use it in place of
 the app bar's filter. The atom is still read every render (rules of hooks):
@@ -265,7 +312,8 @@ export function useNeedsYou(
     const filter = project ?? appFilter;
 ```
 
-(replace the existing `const filter = useAtomValue(model.projectFilterAtom);` line). Update the file's header comment:
+(replace the existing `const filter = useAtomValue(model.projectFilterAtom);` line), and pass `learn: project == null`
+into `buildNeedsYouRows` (and add `project` to its `useMemo` deps). Update the file's header comment:
 "shared by the Cockpit's strip (needsyoustrip.tsx), the Office's notice board and a project's Overview".
 
 **Step 2: Export the rows.** In `needsyoustrip.tsx`, move the `rows.map(...)` body of `NeedsYouStrip` (the
@@ -295,13 +343,14 @@ and make `NeedsYouStrip` use it:
 Import `type NeedsYou` from `./needsyou`.
 
 **Step 3: Check** — `task check:ts` (5-minute timeout) exits 0, and
-`npx vitest run frontend/app/view/agents/needsyoustripmodel.test.ts` still passes. The Cockpit strip must look the same:
-Final's scenarios that open the Cockpit cover it.
+`npx vitest run frontend/app/view/agents/needsyoustripmodel.test.ts` passes. The Cockpit strip must look and act the
+same: Final runs `needs-you-learn-card` (the learned-rule rows, `LearnRow`) and `run-queue` (its step 1b, a row in
+`[data-cockpit-needs-you]`), which cover both branches of the moved ternary.
 
 **Step 4: Commit**
 
 ```bash
-git commit -m "refactor(needs-you): the hook takes a project, the rows render on their own" -- frontend/app/view/agents/needsyou.ts frontend/app/view/agents/needsyoustrip.tsx
+git commit -m "refactor(needs-you): the hook takes a project, the rows render on their own" -- frontend/app/view/agents/needsyoustripmodel.ts frontend/app/view/agents/needsyoustripmodel.test.ts frontend/app/view/agents/needsyou.ts frontend/app/view/agents/needsyoustrip.tsx
 ```
 
 ### Task 4: The Overview page
@@ -486,6 +535,7 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
                                     <span className="text-[11px] tabular-nums text-ink-faint">{since(a)}</span>
                                     <button
                                         type="button"
+                                        data-overview-answer={a.id}
                                         onClick={() => selectAgentRow(model, a.id)}
                                         className="h-[26px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface px-[10px] text-[12px] text-secondary hover:border-edge-strong"
                                     >
@@ -618,31 +668,73 @@ git commit -m "feat(overview): a project folder's right-click opens its Overview
 **Depends on:** Task 4 (the page it opens and checks), Task 5 (the folder menu it right-clicks)
 **Files:** `scripts/cdp/scenarios.mjs`
 
-A `project-overview` scenario, registered where the others are.
+A `project-overview` scenario (`surface: "agent"`), registered where the others are. It needs no running dev app in
+the worker: do not start `task dev` here (it would collide with the main dev app's Vite and CDP ports and its store).
+Final starts an isolated app and runs it; in the worker, `node --check scripts/cdp/scenarios.mjs` must pass.
 
-The scenario follows `canvas-gallery` (`scenarios.mjs:27940`) for registering a throwaway project
-(`h.rpc("createproject", …)`, `waitForProjectInConfig`) and `rail-servers` (`scenarios.mjs:29153`, its step 10) for a
-throwaway terminal tab whose `cmd:cwd` is the project, which puts the project's folder in the Active section. Teardown
-closes the tab and removes the temp dir as they do. Right-click with a dispatched `contextmenu` event as
-`agent-sleep` does (`scenarios.mjs:34528`) and pick the item with `caMenuHas` / `caMenuClick` (`scenarios.mjs:36017`).
+Patterns to follow, all in `scenarios.mjs`:
+- registering a throwaway project: `canvas-gallery` (:27940, `h.rpc("createproject", …)`, `waitForProjectInConfig`);
+- a throwaway terminal tab whose `cmd:cwd` is the project, and typing into it only once its shell is up:
+  `rail-servers` (:29153, its step 10: `CreateTab`, `setmeta`, `controllerresync`, `uploadsShellUp`, `controllerinput`);
+- a fixture roster (written to `TREE_RAIL_FIXTURE`, read at boot, so a reload follows) whose agents are `fx-` stubs:
+  `agent-sleep` (:34367) and `cockpit-needs-you-cross-channel` (:5103), which also binds channels to project paths with
+  `createchannel`. The fixture replaces only the agent roster; terminals stay live;
+- an attention fixture: `window.__cockpitOfficeAttention(items)` (`cockpitofficedevhooks.ts`), installed when the
+  Cockpit surface first mounts, so `h.goto("cockpit")` once before calling it, then back to `agent`; `null` is live again;
+- a right-click: a dispatched `contextmenu` (`rqContext`, :45638), and the menu's items with `caMenuHas` /
+  `caMenuClick`, closed with Escape as `rqCloseMenu` does;
+- an ended session listed under Conversations: `agent-history` (:14739, `ahSessions` :14529 and its arrange).
 
-Arrange: a temp dir with `git init -b main` and one untracked file, registered as `verify-overview`, and the terminal in
-it (left at its prompt, so nothing runs).
+**Arrange:**
+- temp dir A: `git init -b main`, commit one file `a.txt` holding two lines, then edit it (one line changed, one
+  added), so the header reads one tracked file with `+N −N`. Register A as `verify-overview`.
+- temp dir B, registered as `verify-overview-other`.
+- a channel bound to A and one bound to B (`createchannel` with `projectpath`).
+- a throwaway terminal tab in A, as `rail-servers` does, which puts `verify-overview`'s folder in the Active section.
+- one ended session under `verify-overview` for the Conversations section, as `agent-history` seeds its own.
 
-Steps, each with a `h.shot("cdp-shots/project-overview-*.png")`:
-1. Right-clicking `[data-project-folder="verify-overview"]` shows a menu holding "Open overview" and "Copy Absolute
-   Path"; the shot is the open menu (prototype board FolderRow).
-2. Clicking Open overview shows `[data-project-overview="verify-overview"]` with the branch `main`,
-   `[data-overview-changes]` reading "1 file", the four `[data-overview-action]` buttons, and `[data-overview-quiet]`
-   saying "Nothing needs you and nothing is running in verify-overview." (prototype board QuietNarrow).
-3. The folder row reads as selected (`bg-surface-selected` in its class) while the Overview shows, and clicking it folds
-   it (`aria-expanded` flips) with the Overview still in the centre.
-4. Typing `echo hi && sleep 5` into the terminal (`controllerinput`, as `rail-servers` does) shows it under
-   `[data-overview-running]` within the 5 seconds, and the quiet line is gone (prototype board Main's Running block).
-5. Clicking `[data-overview-running-row]` puts the centre back on the terminal (`[data-project-overview]` is gone).
+Teardown, each part in its own try as the patterns do: the attention fixture back to `null`; the fixture roster file
+restored to what it held before (or removed) and a reload; close the throwaway terminal and any terminal step 6 opened;
+delete both channels, both projects and the seeded session; remove both temp dirs.
 
-**Check:** with the dev app running (`task dev`), `task verify:ui -- project-overview` passes. If the dev app cannot be
-started here, say so and leave the run to Final.
+**Steps**, each with a `h.shot("cdp-shots/project-overview-<n>.png")`:
+1. Right-clicking `[data-agent-folder-section="active"][data-project-folder="verify-overview"]` shows a menu holding
+   "Open overview", "Copy Absolute Path" and "Show in Explorer"; the shot is the open menu (prototype board FolderRow).
+   Close it.
+2. Keyboard: focus that folder row (`.focus()`), then send Shift+F10 with `Input.dispatchKeyEvent` (`key: "F10"`,
+   `code: "F10"`, `windowsVirtualKeyCode: 121`, `modifiers: 8`, keyDown then keyUp): the same menu opens. Close it.
+3. Right-clicking `[data-agent-folder-section="conversations"][data-agent-folder="verify-overview"]` shows the menu
+   with "Open overview". Close it.
+4. From the Active row's menu, Open overview shows `[data-project-overview="verify-overview"]` with the branch `main`,
+   `[data-overview-changes]` whose text starts with "1 file" and holds a `+` and a `−` count, the four
+   `[data-overview-action]` buttons, and `[data-overview-quiet]` reading "Nothing needs you and nothing is running in
+   verify-overview." (prototype board QuietNarrow).
+5. The folder row reads as selected (`bg-surface-selected` in its class) while the Overview shows, and clicking it
+   folds it (`aria-expanded` flips) with the Overview still in the centre. Click it again to open it.
+6. The header buttons, each followed by closing what it opened (Escape for a modal) and reopening the Overview from
+   the menu when the centre left it:
+   a. New agent opens the launcher (`[data-launcher]`) with `verify-overview` as its project (read the shown project
+      in `launchermodal.tsx` and assert on it).
+   b. Run opens the launcher on its run door with `verify-overview` picked.
+   c. Council puts the council setup (`[data-council-setup]`) in the centre.
+   d. Terminal adds a terminal row under the `verify-overview` folder (count the folder's terminal rows before and
+      after); teardown closes it.
+7. Running terminal: once `uploadsShellUp` says the throwaway terminal's shell is up, send `sleep 30\r` with
+   `controllerinput` (valid in PowerShell 5.1, bash and zsh). Within 10s `[data-overview-running]` holds a
+   `[data-overview-running-row]` for that terminal's tab id, reading "terminal", and the quiet line is gone (prototype
+   board Main's Running block). Clicking that row puts the centre back on the terminal (`[data-project-overview]` is
+   gone).
+8. Fixture: write a roster with two `fx-` agents in project `verify-overview` (`fx-ov-ask`: `state: "asking"`,
+   `blockedMs: 60_000`, an `ask` whose first question is "Which port?"; `fx-ov-work`: `state: "working"`, `activity`
+   "Editing overview.tsx", `stateSince` a minute ago) and one asking agent `fx-ov-elsewhere` in `verify-overview-other`;
+   reload, `h.goto("cockpit")`, then call `__cockpitOfficeAttention` with two `run-land-held` items, `ov-mine` in A's
+   channel and `ov-theirs` in B's (fields as `needsyoustripmodel.test.ts`'s `item` helper); back to `agent`, reopen the
+   Overview from the menu. Assert `[data-overview-needs]` holds `[data-overview-asking="fx-ov-ask"]` with "asking" and
+   "Which port?", a `[data-needs-you-row="ov-mine"]`, and neither `fx-ov-elsewhere` nor `ov-theirs`; its count reads 2.
+   `[data-overview-running]` holds `fx-ov-work`'s row with "Editing overview.tsx" and an age. The shot is the whole
+   page (prototype board Main).
+9. Clicking `[data-overview-answer="fx-ov-ask"]` leaves the Overview (`[data-project-overview]` is gone) with
+   `fx-ov-ask` the focused agent (its tree row selected, as `agent-sleep` reads a focused row).
 
 **Commit**
 
@@ -651,7 +743,7 @@ git commit -m "test(cdp): the project-overview scenario" -- scripts/cdp/scenario
 ```
 
 ### Task 7: CHANGELOG and the hand check
-**Depends on:** Task 4 (the page the line announces), Task 5 (the commit the hand-check line names)
+**Depends on:** Task 5 (the commit the hand-check line names)
 **Files:** `CHANGELOG.md`, `docs/open-issues.md`
 
 **Step 1:** The top section of `CHANGELOG.md` is dated (`## 0.15.17 — 2026-10-21`), so open a new one above it:
@@ -665,11 +757,12 @@ git commit -m "test(cdp): the project-overview scenario" -- scripts/cdp/scenario
   you, what is running in it, and buttons to start an agent, a terminal, a run or a council there.
 ```
 
-**Step 2:** Add to "0 · Waiting on a hand check" in `docs/open-issues.md`:
+**Step 2:** Add to "0 · Waiting on a hand check" in `docs/open-issues.md` (the CDP scenario covers the dev app; this is
+the installed build, which no scenario reaches):
 
 ```markdown
-- [ ] In the installed app, right-click a project folder in the Agent tree → Open overview: the page shows that project's
-  asking agents and running work; Tab to a folder row and press Shift+F10: the same menu opens (project Overview, <commit>).
+- [ ] In the installed app, right-click a project folder in the Agent tree → Open overview: the page shows that
+  project's asking agents and running work, and Show in Explorer opens the folder (project Overview, <commit>).
 ```
 
 with `<commit>` the short hash of Task 5's commit.
