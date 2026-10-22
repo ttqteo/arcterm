@@ -1,6 +1,11 @@
 # Council v2: an agent team in one room, Brainstorm and Review, held to a benchmark
 
-Status: design, not built (agreed in chat 2026-10-21/22). Supersedes the "what it is", "Rounds", "Starting a council"
+Status: design, not built (agreed in chat 2026-10-21/22). **Phase 0 done 2026-10-22 (`docs/council-phase0.md`): not
+decided, leaning no-go.** The prompt-only agent team (V3) scored lowest (1/6 key lines over two cases) at about twice
+council v1's tokens; a single agent (V0) was the best value; v1's argue round bought one borderline line. Teammates run
+inside the lead's process (no RAM of their own), and arcterm's own spawn gates (10 Agent calls per session, a Token
+burn card on 3+ spawns that refuses after 30 unanswered minutes) stall a headless team. Phases 1–3 wait on the
+person's call after a stronger re-run. The paper case was removed from the benchmark at the person's request. Supersedes the "what it is", "Rounds", "Starting a council"
 and "Where it lives" parts of `2026-10-21-council-design.md`; the role library, groups, the token gate and the file
 store carry over unless this file says otherwise. Prototype: `.superpowers/design/council-newcomer/project/`
 (gitignored; row C is this design: `V2Setup`, `V2Room`, `V2Report`; row B's `ReportDone` is the Review report).
