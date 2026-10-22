@@ -195,8 +195,7 @@ later to the `Council benchmark` initiative.
 
 ### Task 5: "Was this useful?" on the report
 
-**Depends on:** Task 4 (both edit `wshrpctypes_council.go` and `wshserver_council.go` and regenerate the generated
-files, which cannot be merge-resolved; Task 2's `AppendRating` comes through it)
+**Depends on:** Task 4 (both edit the council rpc files and regenerate the generated files, which cannot be merge-resolved)
 **Files:** `pkg/council/types.go`, `pkg/council/store.go`, `pkg/council/store_test.go`, `pkg/wshrpc/wshrpctypes_council.go`, `pkg/wshrpc/wshserver/wshserver_council.go`, `frontend/app/view/agents/councilstore.ts`, `frontend/app/view/agents/councilstore.test.ts`, `frontend/app/view/agents/councilsummary.tsx`, `frontend/app/view/agents/councilsummarymodel.ts`, `frontend/app/view/agents/councilsummarymodel.test.ts`, `scripts/cdp/council/summary.mjs`, `frontend/types/gotypes.d.ts`, `frontend/app/store/wshclientapi.ts`, `pkg/wshrpc/wshclient/wshclient.go`
 
 **Interfaces:**
