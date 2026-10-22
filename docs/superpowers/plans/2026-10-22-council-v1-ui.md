@@ -96,7 +96,7 @@ the main checkout, gitignored): `~/Workspaces/dev/arcterm/.superpowers/design/co
 
 ### Task 2: Round 2 picks and an answer-first synthesis
 
-**Depends on:** Task 1
+**Depends on:** Task 1 (fills its `Council.Picks` and `CouncilSummary.Answer`)
 **Files:** `pkg/council/prompts.go`, `pkg/council/parse.go`, `pkg/council/runner.go`, `pkg/council/prompts_test.go`, `pkg/council/parse_test.go`, `pkg/council/runner_test.go`
 
 **Interfaces:**
@@ -122,7 +122,7 @@ the main checkout, gitignored): `~/Workspaces/dev/arcterm/.superpowers/design/co
 
 ### Task 3: Plain words, picks and reactions in the Discussion
 
-**Depends on:** Task 1
+**Depends on:** Task 1 (reads the TS `Council.picks` it generates)
 **Files:** `frontend/app/view/agents/councilmodel.ts`, `frontend/app/view/agents/councilmodel.test.ts`, `frontend/app/view/agents/councildiscussionmodel.ts`, `frontend/app/view/agents/councildiscussionmodel.test.ts`, `frontend/app/view/agents/councilsummarymodel.ts`, `frontend/app/view/agents/councilsummarymodel.test.ts`, `frontend/app/view/agents/councilsummary.tsx`, `frontend/app/view/agents/councilthread.tsx`, `frontend/app/view/agents/councildiscussion.tsx`, `scripts/cdp/council/rail-apps-round2.json`, `scripts/cdp/council/fixtures.test.mjs`, `scripts/cdp/council/discussion.mjs`, `scripts/cdp/council/tree.mjs`
 
 **Interfaces:**
