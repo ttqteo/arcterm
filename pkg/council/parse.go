@@ -6,6 +6,7 @@ package council
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -45,7 +46,11 @@ type Round2Result struct {
 	Stances   []Round2Stance
 	Revisions []Round2Revision
 	Answers   []Answer
+	Picks     []string // up to maxPicks proposal ids, best first; applyRound2 checks them
 }
+
+// maxPicks is how many of the others' proposals an expert names in round 2.
+const maxPicks = 3
 
 // WeakNote is the coordinator's remark that a claim does not hold up. Ref names a proposal id, a reply id or an
 // evidence ref; MarkWeak applies it.
@@ -248,6 +253,7 @@ func ParseRound2(reply string) (Round2Result, error) {
 			Argument   string `json:"argument"`
 		} `json:"revisions"`
 		Answers []answerEntry `json:"answers"`
+		Picks   []string      `json:"picks"`
 	}
 	if err := decodeReply(reply, what, &r); err != nil {
 		return Round2Result{}, err
@@ -292,6 +298,11 @@ func ParseRound2(reply string) (Round2Result, error) {
 		return Round2Result{}, err
 	}
 	res.Answers = answers
+	for _, id := range r.Picks {
+		if id = strings.TrimSpace(id); id != "" && !slices.Contains(res.Picks, id) && len(res.Picks) < maxPicks {
+			res.Picks = append(res.Picks, id)
+		}
+	}
 	return res, nil
 }
 
@@ -326,6 +337,7 @@ func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 			Agreed    *bool             `json:"agreed"`
 		} `json:"directions"`
 		Outcomes map[string]string `json:"outcomes"`
+		Answer   string            `json:"answer"`
 		Weak     []WeakNote        `json:"weak"`
 	}
 	if err := decodeReply(reply, what, &r); err != nil {
@@ -382,7 +394,7 @@ func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 			weak = append(weak, w)
 		}
 	}
-	return CouncilSummary{Text: strings.TrimSpace(r.Text), Directions: dirs, Outcomes: outcomes}, weak, nil
+	return CouncilSummary{Text: strings.TrimSpace(r.Text), Directions: dirs, Outcomes: outcomes, Answer: strings.TrimSpace(r.Answer)}, weak, nil
 }
 
 // MarkWeak applies the synthesis's weak notes to c. A note whose ref is the ref of some evidence marks that evidence

@@ -38,7 +38,8 @@ const (
   ],
   "answers": [
     {"replyid": "r3", "text": "your answer to the person"}
-  ]
+  ],
+  "picks": ["P2", "P3", "P4"]
 }`
 
 	answersShape = `{
@@ -53,6 +54,7 @@ const (
 }`
 
 	synthesisShape = `{
+  "answer": "one sentence that answers the person's question directly",
   "text": "one paragraph for the person: where the panel landed, and who was missing",
   "directions": [
     {
@@ -68,6 +70,11 @@ const (
   "weak": [{"ref": "P3", "note": "\"about 3 s\" has no measurement"}]
 }`
 )
+
+// synthesisShapeNoQuestion is synthesisShape for a council with no question: there is nothing to answer, so it asks
+// for no answer.
+var synthesisShapeNoQuestion = strings.Replace(synthesisShape,
+	"  \"answer\": \"one sentence that answers the person's question directly\",\n", "", 1)
 
 const (
 	// evidenceRule is in every prompt: a claim without evidence is drawn weak.
@@ -91,6 +98,31 @@ func speaker(c *Council, id string) string {
 		}
 	}
 	return id
+}
+
+// writePicks lists how many of the experts' picks each proposal got and who gave them. A council from before picks
+// existed has none, and the prompt says so, so the coordinator ranks on the replies alone.
+func writePicks(b *strings.Builder, c *Council) {
+	b.WriteString("## Picks\n\n")
+	if len(c.Picks) == 0 {
+		b.WriteString("No expert gave picks (this council is from before picks existed): rank on the replies alone.\n\n")
+		return
+	}
+	b.WriteString("In round 2 each expert named the proposals of the others most worth doing. Picks per proposal:\n\n")
+	for _, p := range c.Proposals {
+		var by []string
+		for _, e := range c.Experts {
+			if slices.Contains(c.Picks[e.Id], p.Id) {
+				by = append(by, e.Name)
+			}
+		}
+		line := fmt.Sprintf("- %s (%s): %d", p.Id, p.Title, len(by))
+		if len(by) > 0 {
+			line += " (" + strings.Join(by, ", ") + ")"
+		}
+		b.WriteString(line + "\n")
+	}
+	b.WriteString("\n")
 }
 
 func findProposal(c *Council, id string) *CouncilProposal {
@@ -251,8 +283,11 @@ func Round2Prompt(c *Council, e CouncilExpert) string {
 
 	b.WriteString("## What to do\n\n")
 	b.WriteString(`Give every proposal under "Proposals to review" one entry in "stances". ` + stanceRule +
-		" Add one line of reason, and the evidence it rests on. You cannot read the code in this round, so cite " +
+		" Add one line of reason, and the evidence it rests on. An accept needs no reason: leave \"reason\" empty. " +
+		"A challenge or an oppose always needs one. You cannot read the code in this round, so cite " +
 		"only evidence that appears in the text above.\n\n")
+	b.WriteString(`Then name your picks in "picks": the 3 proposals under "Proposals to review" most worth doing, best ` +
+		"first, by proposal id. Never pick one of your own. Name fewer than 3 only when fewer are worth doing.\n\n")
 	b.WriteString(`If reading the others changed your mind about one of your own proposals, add an entry to "revisions": ` +
 		`set "withdraw" to true to drop it, or give its new title and argument. Leave "revisions" empty otherwise.` + "\n\n")
 	b.WriteString(`Answer each question from the person with an entry in "answers", by its replyid. Leave "answers" empty ` +
@@ -321,6 +356,8 @@ func SynthesisPrompt(c *Council) string {
 			"everything below. Say so in \"text\", and do not guess their stance.\n\n")
 	}
 
+	writePicks(&b, c)
+
 	b.WriteString("## Proposals and what was said about them\n\n")
 	if len(c.Proposals) == 0 {
 		b.WriteString("(no expert made a proposal)\n\n")
@@ -347,7 +384,8 @@ func SynthesisPrompt(c *Council) string {
 
 	b.WriteString("## What to do\n\n")
 	b.WriteString("1. Merge proposals that say the same thing into one direction, and list their ids in \"from\".\n")
-	b.WriteString("2. Rank the directions, best first, from \"rank\" 1.\n")
+	b.WriteString("2. Rank the directions, best first, from \"rank\" 1. Put the directions no expert challenges or opposes " +
+		"first; rank the rest by their picks (add up the picks of the proposals a direction merges), most picks first.\n")
 	b.WriteString("3. In \"stances\", give each expert's stance towards the direction, keyed by the expert's id, from the replies " +
 		"above. " + stanceRule + " Leave out the authors of the proposals the direction merges. \"agreed\" is true when no " +
 		"expert challenges or opposes it.\n")
@@ -355,9 +393,15 @@ func SynthesisPrompt(c *Council) string {
 		"\"Withdrawn in round 2\" or \"Cut at the pause\".\n")
 	b.WriteString("5. In \"weak\", mark any claim that cites no evidence, or whose evidence does not show what it says. " +
 		"\"ref\" is a proposal id, a reply id or an evidence ref; \"note\" says what is missing.\n")
-	b.WriteString("6. Treat the person's replies as the person's own view and weigh them.\n\n")
-	b.WriteString(evidenceRule + "\n\n")
-	b.WriteString(jsonRule + "\n```json\n" + synthesisShape + "\n```\n")
+	b.WriteString("6. Treat the person's replies as the person's own view and weigh them.\n")
+	shape := synthesisShapeNoQuestion
+	if strings.TrimSpace(c.Question) != "" {
+		b.WriteString("7. In \"answer\", write one sentence that answers the question for the council directly: the " +
+			"answer itself, not a description of the discussion.\n")
+		shape = synthesisShape
+	}
+	b.WriteString("\n" + evidenceRule + "\n\n")
+	b.WriteString(jsonRule + "\n```json\n" + shape + "\n```\n")
 	return b.String()
 }
 

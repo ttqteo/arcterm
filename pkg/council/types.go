@@ -95,7 +95,7 @@ type CouncilSummary struct {
 }
 
 type CouncilActivity struct {
-	Text       string `json:"text"`                 // `Grep "IdleSleep" in pkg/services`, `Replying to UX on P2`
+	Text       string `json:"text"`                 // `Grep "IdleSleep" in pkg/services`, `Replying to UX`
 	ProposalId string `json:"proposalid,omitempty"` // set while it writes a reply there
 	ParentId   string `json:"parentid,omitempty"`
 }

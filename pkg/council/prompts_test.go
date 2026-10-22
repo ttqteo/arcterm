@@ -120,6 +120,13 @@ func TestRound2PromptCarriesThePersonsUnansweredRepliesToThisExpert(t *testing.T
 	mustNotContain(t, "ram asks", ram, "Text-r3")
 }
 
+func TestRound2PromptAsksForPicksAndNeedsNoReasonForAnAccept(t *testing.T) {
+	c := promptCouncil()
+	p := Round2Prompt(c, c.Experts[0])
+	mustContain(t, "round 2 prompt", p, `"picks"`, "the 3 proposals", "most worth doing, best first", "Never pick one of your own",
+		"An accept needs no reason")
+}
+
 func TestRound2PromptWithNothingToReview(t *testing.T) {
 	c := promptCouncil()
 	c.Proposals, c.Replies = nil, nil
@@ -150,6 +157,30 @@ func TestSynthesisPrompt(t *testing.T) {
 	// who is missing, and the experts the stances are keyed by
 	mustContain(t, "synthesis prompt", p, "Skeptic (its round 1 call failed)", "do not guess their stance", "- ux (UX)", "- ram (RAM)")
 	mustNotContain(t, "synthesis prompt", p, "- lead (Lead)")
+}
+
+func TestSynthesisPromptListsPicksPerProposal(t *testing.T) {
+	c := promptCouncil()
+	c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
+	p := SynthesisPrompt(c)
+	picks := section(t, p, "## Picks")
+	mustContain(t, "picks section", picks, "- P1 (Title-one): 1 (RAM)", "- P2 (Title-two): 1 (UX)", "- P3 (Title-three): 2 (UX, RAM)", "- P4 (Title-four): 0")
+	mustNotContain(t, "picks section", picks, "before picks existed")
+	mustContain(t, "synthesis prompt", p, "rank the rest by their picks")
+}
+
+func TestSynthesisPromptSaysWhenNoPicksWereGiven(t *testing.T) {
+	p := SynthesisPrompt(promptCouncil())
+	mustContain(t, "synthesis prompt", p, "No expert gave picks", "before picks existed")
+}
+
+func TestSynthesisPromptAsksForAnAnswerOnlyWithAQuestion(t *testing.T) {
+	c := promptCouncil()
+	mustContain(t, "synthesis prompt", SynthesisPrompt(c), `"answer"`, "answers the question")
+	c.Question = "  "
+	p := SynthesisPrompt(c)
+	mustNotContain(t, "synthesis prompt", p, `"answer"`, "answers the question", synthesisShape)
+	mustContain(t, "synthesis prompt", p, synthesisShapeNoQuestion)
 }
 
 func TestSynthesisPromptNamesNoMissingExpertWhenNoneFailed(t *testing.T) {

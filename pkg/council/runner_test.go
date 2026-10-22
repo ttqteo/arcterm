@@ -262,7 +262,11 @@ func answersFor(req CallReq, ids []string) []map[string]any {
 
 func round2JSON(req CallReq) string {
 	asks := idsIn(askLineRe, sectionText(req.Prompt, "## What the person asks you"))
-	return fence(mustJSON(map[string]any{"stances": stancesFor(req), "revisions": []any{}, "answers": answersFor(req, asks)}))
+	picks := idsIn(proposalHeadRe, sectionText(req.Prompt, "## Proposals to review"))
+	if len(picks) > 3 {
+		picks = picks[:3]
+	}
+	return fence(mustJSON(map[string]any{"stances": stancesFor(req), "revisions": []any{}, "answers": answersFor(req, asks), "picks": picks}))
 }
 
 func answersJSON(req CallReq) string {
@@ -271,7 +275,8 @@ func answersJSON(req CallReq) string {
 
 func cannedSynthesis(text string) string {
 	return fence(mustJSON(map[string]any{
-		"text": text,
+		"text":   text,
+		"answer": "Show the sleep state first.",
 		"directions": []map[string]any{
 			{
 				"rank": 1, "title": "Show the sleep state", "reasoning": "Cheap and clear. It also helps new users.",
@@ -837,6 +842,88 @@ func TestRepliesPostedAsARunEndsAreNeverLost(t *testing.T) {
 	}
 }
 
+// picksCouncil is a council mid round 2 with five proposals: P1 ux, P2 ram, P3 skeptic, P4 ram (cut), P5 skeptic
+// (withdrawn).
+func picksCouncil() *Council {
+	c := testCouncil("c1")
+	c.Proposals = []CouncilProposal{
+		{Id: "P1", Author: "ux", Title: "One"}, {Id: "P2", Author: "ram", Title: "Two"},
+		{Id: "P3", Author: "skeptic", Title: "Three"}, {Id: "P4", Author: "ram", Title: "Four", Cut: true},
+		{Id: "P5", Author: "skeptic", Title: "Five", Withdrawn: true}, {Id: "P6", Author: "newuser", Title: "Six"},
+		{Id: "P7", Author: "newuser", Title: "Seven"},
+	}
+	return c
+}
+
+func TestARunKeepsEachExpertsPicksAndTheSummarysAnswer(t *testing.T) {
+	h := newHarness(t)
+	c := h.run(testCouncil("c1"))
+	if c.State != StateDone {
+		t.Fatalf("state %s, want done", c.State)
+	}
+	for _, id := range []string{"ux", "ram", "newuser", "skeptic"} {
+		picks := c.Picks[id]
+		if len(picks) == 0 || len(picks) > 3 {
+			t.Errorf("Picks[%s] = %v, want 1 to 3", id, picks)
+		}
+		for _, pid := range picks {
+			if p := findProposal(c, pid); p == nil || p.Author == id {
+				t.Errorf("Picks[%s] holds %s, want another expert's proposal", id, pid)
+			}
+		}
+	}
+	if _, ok := c.Picks["lead"]; ok {
+		t.Errorf("Picks[lead] = %v, want none: the coordinator reviews nothing", c.Picks["lead"])
+	}
+	if c.Summary == nil || c.Summary.Answer != "Show the sleep state first." {
+		t.Errorf("summary = %+v, want the answer kept", c.Summary)
+	}
+}
+
+func TestApplyRound2KeepsOnlyValidPicks(t *testing.T) {
+	c := picksCouncil()
+	ux := c.Experts[0]
+	// its own P1, a ghost, a cut, a withdrawn and a repeat are dropped; the rest keep the expert's order
+	applyRound2(c, ux, Round2Result{Picks: []string{"P3", "P1", "P99", "P4", "P5", "P3", "P2", "P6", "P7"}}, 5)
+	if got, want := c.Picks["ux"], []string{"P3", "P2", "P6"}; !slices.Equal(got, want) {
+		t.Errorf("picks = %v, want %v", got, want)
+	}
+	applyRound2(c, c.Experts[1], Round2Result{Picks: []string{"P2", "P99"}}, 5)
+	if _, ok := c.Picks["ram"]; ok {
+		t.Errorf("Picks[ram] = %v, want no entry when nothing valid is picked", c.Picks["ram"])
+	}
+}
+
+func TestApplyRound2AnAcceptNeedsNoReasonButADoubtDoes(t *testing.T) {
+	c := picksCouncil()
+	applyRound2(c, c.Experts[0], Round2Result{Stances: []Round2Stance{
+		{ProposalId: "P2", Stance: StanceAccept},
+		{ProposalId: "P3", Stance: StanceChallenge, Reason: "  "},
+		{ProposalId: "P6", Stance: StanceOppose},
+		{ProposalId: "P7", Stance: StanceChallenge, Reason: "Breaks."},
+	}}, 5)
+	if len(c.Replies) != 2 {
+		t.Fatalf("replies = %+v, want the empty accept and the reasoned challenge", c.Replies)
+	}
+	if r := c.Replies[0]; r.ProposalId != "P2" || r.Stance != StanceAccept || r.Text != "" {
+		t.Errorf("reply 0 = %+v, want an accept on P2 with no text", r)
+	}
+	if r := c.Replies[1]; r.ProposalId != "P7" || r.Text != "Breaks." {
+		t.Errorf("reply 1 = %+v, want the challenge on P7", r)
+	}
+}
+
+func TestCleanSummaryDropsTheAnswerWhenNothingWasAsked(t *testing.T) {
+	c := picksCouncil()
+	if got := cleanSummary(c, CouncilSummary{Answer: "Do P2."}).Answer; got != "Do P2." {
+		t.Errorf("answer = %q, want it kept with a question", got)
+	}
+	c.Question = ""
+	if got := cleanSummary(c, CouncilSummary{Answer: "Do P2."}).Answer; got != "" {
+		t.Errorf("answer = %q, want none without a question", got)
+	}
+}
+
 func TestRoundTwoRevisionsAndWithdrawals(t *testing.T) {
 	h := newHarness(t)
 	ownIds := func(req CallReq) []string {
@@ -1122,7 +1209,7 @@ func TestActivityShowsWhatAnExpertDoes(t *testing.T) {
 			break
 		}
 	}
-	want := CouncilActivity{Text: "Replying to " + speaker(c, target.Author) + " on " + target.Id, ProposalId: target.Id}
+	want := CouncilActivity{Text: "Replying to " + speaker(c, target.Author), ProposalId: target.Id}
 	if got := c.Activity["skeptic"]; got != want {
 		t.Errorf("Activity[skeptic] = %+v, want %+v", got, want)
 	}
