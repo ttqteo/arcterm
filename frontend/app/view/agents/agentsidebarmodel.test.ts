@@ -1385,6 +1385,72 @@ describe("councilRowsByProject", () => {
         const rows = councilRowsByProject([council("x", "/home/u/loom", { feature: "  " })], roots);
         expect(rows.get("loom")?.[0].feature).toBe(UNTITLED_COUNCIL);
     });
+
+    describe("a queued council", () => {
+        it("reads `Queued · after <feature>` of the council it waits on, in the muted tone, and is marked queued", () => {
+            const rows = councilRowsByProject(
+                [
+                    council("run", "/home/u/loom", { feature: "Rail apps", state: "running" }),
+                    council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "run" }),
+                ],
+                roots
+            );
+            const queued = rows.get("loom")?.find((r) => r.id === "wait");
+            expect(queued).toEqual({
+                id: "wait",
+                feature: "feature wait",
+                created: 1000,
+                meta: "Queued · after Rail apps",
+                tone: "muted",
+                unread: false,
+                queued: true,
+            });
+        });
+
+        it("finds the council it waits on in another project's folder", () => {
+            const rows = councilRowsByProject(
+                [
+                    council("run", "D:\\code\\waveterm", { feature: "Pinned apps", state: "running" }),
+                    council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "run" }),
+                ],
+                roots
+            );
+            expect(rows.get("loom")?.[0].meta).toBe("Queued · after Pinned apps");
+        });
+
+        it("reads `Queued` alone when the council it waits on is not in the list, or none is named", () => {
+            const rows = councilRowsByProject(
+                [
+                    council("gone", "/home/u/loom", { state: "queued", round: 0, queuedafter: "missing" }),
+                    council("none", "/home/u/loom", { state: "queued", round: 0 }),
+                ],
+                roots
+            );
+            expect(rows.get("loom")?.map((r) => [r.id, r.meta, r.queued])).toEqual([
+                ["gone", "Queued", true],
+                ["none", "Queued", true],
+            ]);
+        });
+
+        it("names a blank feature of the council it waits on as the tree does", () => {
+            const rows = councilRowsByProject(
+                [
+                    council("run", "/home/u/loom", { feature: " ", state: "running" }),
+                    council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "run" }),
+                ],
+                roots
+            );
+            expect(rows.get("loom")?.[1].meta).toBe(`Queued · after ${UNTITLED_COUNCIL}`);
+        });
+
+        it("marks no other row queued", () => {
+            const rows = councilRowsByProject(
+                [council("a", "/home/u/loom", { state: "running" }), council("b", "/home/u/loom", { state: "done" })],
+                roots
+            );
+            expect(rows.get("loom")?.some((r) => r.queued)).toBe(false);
+        });
+    });
 });
 
 describe("newCouncilRoot", () => {

@@ -315,13 +315,16 @@ export interface CouncilRowVM {
     tone: CouncilTone;
     /** it ended while the person was elsewhere and they have not opened it since (councilUnreadAtom) */
     unread: boolean;
+    /** it waits for the one council that runs: the row offers Remove from queue. Set only on a queued council. */
+    queued?: true;
 }
 
 /** Pure: the councils (councilListAtom("")) as tree rows, by the registered project each one ran in. The folders of
  *  projectTree are keyed by project name and a council holds the project's path, so each is filed under the name whose
  *  root is the same path (councilProjectKey: separators, trailing slash and a drive path's case aside). A council of a
  *  folder that is no registered project has no folder to sit in and is left out. `null` is a list not loaded yet.
- *  `unread` is the ids of the councils that ended unseen. */
+ *  `unread` is the ids of the councils that ended unseen. A queued council reads `Queued · after <feature>` of the council
+ *  it waits on, found in the whole list (that one may sit in another project's folder), `Queued` when it is not there. */
 export function councilRowsByProject(
     councils: readonly Council[] | null | undefined,
     roots: ReadonlyMap<string, string>,
@@ -335,20 +338,25 @@ export function councilRowsByProject(
             nameOf.set(key, name);
         }
     }
+    const byId = new Map((councils ?? []).map((c) => [c.id, c]));
     for (const c of councils ?? []) {
         const name = nameOf.get(councilProjectKey(c.project));
         if (name == null) {
             continue;
         }
         const { text, tone } = treeMeta(c);
+        const ahead = c.state === "queued" && c.queuedafter ? byId.get(c.queuedafter) : undefined;
         const row: CouncilRowVM = {
             id: c.id,
             feature: c.feature.trim() || UNTITLED_COUNCIL,
             created: c.created,
-            meta: text,
+            meta: ahead != null ? `${text} · after ${ahead.feature.trim() || UNTITLED_COUNCIL}` : text,
             tone,
             unread: unread.has(c.id),
         };
+        if (c.state === "queued") {
+            row.queued = true;
+        }
         const list = out.get(name);
         if (list == null) {
             out.set(name, [row]);

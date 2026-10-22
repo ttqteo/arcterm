@@ -4,7 +4,7 @@
 // council-tree (docs/superpowers/plans/2026-10-21-council.md, Task 13): the council rows in the Agent tree, the New council
 // row and the palette's New council… row. The fixture project holds the round2, awaiting, done and notrun councils and a
 // terminal; a second registered project holds a terminal and no council. Nothing here starts a council or calls a model:
-// New council only opens Setup.
+// New council only opens Setup, and Remove from queue (a queued council, step 10) has its stop command replaced in the page.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). The tree is
 // read as one flat list (the rows of [data-agent-active-rows] in the order they are drawn), cut at each project's folder.
@@ -16,9 +16,13 @@ import {
     COUNCIL_ID_PREFIX,
     COUNCIL_PROJECT,
     councilFixtureId,
+    loadCouncilFixture,
     openCouncil,
+    rpcCalls,
     seedCouncil,
+    stubRpc,
     teardownCouncilProject,
+    unstubRpc,
     writeCouncil,
 } from "./fixtures.mjs";
 
@@ -303,6 +307,45 @@ export const councilTree = {
             "9. a council that ends while its Discussion is open raises no toast and no dot",
             ended && stray === 0 && dot === false,
             JSON.stringify({ ended, stray, dot })
+        );
+
+        // 10. a queued council: its row names the council it waits on, and Remove from queue asks wavesrv to stop it
+        const queued = `${councilFixtureId("round1")}-queued`;
+        const ahead = loadCouncilFixture("round2").feature;
+        await seedCouncil(h, ctx, "round1", {
+            id: queued,
+            edit: (c) => {
+                c.state = "queued";
+                c.round = 0;
+                c.queuedafter = councilFixtureId("round2");
+            },
+        });
+        const wording = `Queued · after ${ahead}`;
+        const worded = await until(`${rowMeta(queued)} === ${JSON.stringify(wording)}`);
+        const queuedRow = (folderRows(await rows(), COUNCIL_PROJECT) ?? []).find((r) => r.kind === "council" && r.id === queued);
+        const removeOf = (id) =>
+            `document.querySelector(${JSON.stringify(`[data-council-row="${id}"]`)})?.parentElement?.querySelector('[data-council-act="remove"]')`;
+        const offered = await h.ev(`!!${removeOf(queued)} && document.querySelectorAll('[data-council-act="remove"]').length === 1`);
+        await h.shot("cdp-shots/council-tree-queued.png");
+        await stubRpc(h, ["CouncilStopCommand"]);
+        const removed = await h.ev(`(() => {
+            const el = ${removeOf(queued)};
+            if (!el) return false;
+            el.click();
+            return true;
+        })()`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilStopCommand").length >= 1`);
+        const stops = await rpcCalls(h, "CouncilStopCommand");
+        await unstubRpc(h);
+        rec(
+            "10. a queued council reads Queued · after <the council it waits on> in the muted tone and offers one Remove from queue, which asks to stop it",
+            worded &&
+                queuedRow?.tone === "muted" &&
+                offered &&
+                removed &&
+                stops.length === 1 &&
+                stops[0].data?.id === queued,
+            JSON.stringify({ wording, queuedRow, offered, removed, stops })
         );
 
         return steps;
