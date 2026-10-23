@@ -245,7 +245,8 @@ Drawn in the prototype; the board names are given so the builder can match them.
   benchmark); the saved file's path. A `⋯` menu holds Create initiative and Run again.
 - The Agent tree keeps v1's Councils label per project; a council row shows its state in words (Running, Waiting on
   you, Done) and the unread dot.
-- The palette's "New council…" stays. Adding Council to the New dialog is left to the builder.
+- The palette's "New council…" stays, and the New dialog has a **Council** row (2026-10-23), which replaced the tree's
+  New council row: a project with no council has no Councils label.
 
 ## Storage
 

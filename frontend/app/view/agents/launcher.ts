@@ -10,14 +10,14 @@ import { isRuntimeOffered, runtimeLaunchLabel, type Runtime } from "./launch";
 import { SHAPE_CARDS, type RunShape } from "./runconfig";
 
 // Which part of the Start list is picked, and which door opened the dialog: a door picks its own part.
-export type LauncherKind = "agent" | "run" | "tool";
-export type StartRowId = Runtime | RunShape | "tool";
+export type LauncherKind = "agent" | "run" | "tool" | "council";
+export type StartRowId = Runtime | RunShape | "tool" | "council";
 
 export interface StartRow {
     id: StartRowId;
     kind: LauncherKind;
     name: string;
-    // a run row's shape description, and the Tool row's examples; agent rows have none
+    // a run row's shape description, the Tool row's examples and the Council row's line; agent rows have none
     desc: string | null;
     key: string;
 }
@@ -39,8 +39,18 @@ const RUN_ROWS: { id: RunShape; name: string }[] = [
 // The one Tool row: it picks a tool from a list of its own, so there is a single row however many tools there are
 const TOOL_ROW: Omit<StartRow, "key"> = { id: "tool", kind: "tool", name: "Tool", desc: "lazygit, yazi, btop…" };
 
-// An uninstalled runtime stays hidden, so the digits follow the visible rows (spec D2). There are at most nine rows, so
-// every row has a digit. The Tool row is last, so it never moves another row's digit.
+// The Council row opens a council's Setup in the picked project, where it is written and started: the one place to start
+// a council by hand besides the palette's New council… (a council costs 0.5–1.5M tokens, so no key starts one)
+const COUNCIL_ROW: Omit<StartRow, "key"> = {
+    id: "council",
+    kind: "council",
+    name: "Council",
+    desc: "a panel of models reviews or brainstorms",
+};
+
+// An uninstalled runtime stays hidden, so the digits follow the visible rows (spec D2). The Tool and Council rows are
+// last, so they never move another row's digit. With every runtime installed there are ten rows: the tenth (Council)
+// has no digit and is picked with the arrows or a click.
 export function startRows(harnesses: { runtime: string; installed?: boolean }[]): StartRow[] {
     const agents: Omit<StartRow, "key">[] = AGENT_ROWS.filter((r) => isRuntimeOffered(r.id, harnesses)).map((r) => ({
         id: r.id,
@@ -54,7 +64,11 @@ export function startRows(harnesses: { runtime: string; installed?: boolean }[])
         name: r.name,
         desc: SHAPE_CARDS.find((c) => c.id === r.id)?.desc ?? null,
     }));
-    return [...agents, ...runs, TOOL_ROW].map((r, i) => ({ ...r, key: String(i + 1) }));
+    return [...agents, ...runs, TOOL_ROW, COUNCIL_ROW].map((r, i) => ({ ...r, key: digitKey(i) }));
+}
+
+function digitKey(i: number): string {
+    return i < 9 ? String(i + 1) : "";
 }
 
 // The agent row on show: the remembered runtime while it is still offered, else the first agent row.
@@ -67,11 +81,17 @@ export function agentRuntime(rows: StartRow[], remembered: Runtime | null): Runt
 }
 
 export function selectedRowId(kind: LauncherKind, runtime: Runtime, shape: RunShape): StartRowId {
-    return kind === "tool" ? "tool" : kind === "run" ? shape : runtime;
+    return kind === "tool" || kind === "council" ? kind : kind === "run" ? shape : runtime;
 }
 
 export function launcherTitle(kind: LauncherKind): string {
-    return kind === "tool" ? "Open a tool" : kind === "run" ? "New run" : "New agent";
+    return kind === "tool"
+        ? "Open a tool"
+        : kind === "run"
+          ? "New run"
+          : kind === "council"
+            ? "New council"
+            : "New agent";
 }
 
 // The primary button. A tool names the one picked ("Open lazygit"); it has no session to resume.
@@ -81,6 +101,9 @@ export function primaryLabel(kind: LauncherKind, runtime: Runtime, resuming = fa
     }
     if (kind === "run") {
         return "Start run";
+    }
+    if (kind === "council") {
+        return "Set up council";
     }
     return resuming ? "Resume agent" : runtimeLaunchLabel(runtime);
 }
@@ -133,6 +156,9 @@ export function footerLine(input: FooterInput): FooterLine {
             tail,
             blocked: false,
         };
+    }
+    if (input.kind === "council") {
+        return { lead: "Sets up a council in ", strong: input.project.name, tail: "", blocked: false };
     }
     if (input.shape === "quick") {
         return { lead: "Quick run in ", strong: input.project.name, tail: "", blocked: false };

@@ -1,10 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// council-tree (docs/superpowers/plans/2026-10-21-council.md, Task 13): the council rows in the Agent tree, the New council
-// row and the palette's New council… row. The fixture project holds the round2, awaiting, done and notrun councils and a
-// terminal; a second registered project holds a terminal and no council. Nothing here starts a council or calls a model:
-// New council only opens Setup, and Remove from queue (a queued council, step 10) has its stop command replaced in the page.
+// council-tree (docs/superpowers/plans/2026-10-21-council.md, Task 13): the council rows in the Agent tree, the New
+// dialog's Council row and the palette's New council… row. The fixture project holds the round2, awaiting, done and notrun
+// councils and a terminal; a second registered project holds a terminal and no council, and so no Councils block. Nothing
+// here starts a council or calls a model: New council only opens Setup, and Remove from queue (a queued council, step 10)
+// has its stop command replaced in the page.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). The tree is
 // read as one flat list (the rows of [data-agent-active-rows] in the order they are drawn), cut at each project's folder.
@@ -18,6 +19,7 @@ import {
     councilFixtureId,
     loadCouncilFixture,
     openCouncil,
+    openSetupFromNew,
     rpcCalls,
     seedCouncil,
     stubRpc,
@@ -53,16 +55,6 @@ const TREE_ROWS = `(() => {
         if (folder) return { kind: "folder", project: folder.dataset.projectFolder };
         const head = w.querySelector("[data-council-head]");
         if (head) return { kind: "head", project: head.dataset.councilHead, text: flat(head) };
-        const added = w.querySelector("[data-council-new]");
-        if (added) {
-            return {
-                kind: "new",
-                project: added.dataset.councilNew,
-                text: flat(added),
-                draft: added.dataset.councilDraft === "true",
-                current: added.getAttribute("aria-current") === "true",
-            };
-        }
         const row = w.querySelector("[data-council-row]");
         if (row) {
             return {
@@ -163,16 +155,14 @@ export const councilTree = {
         // 1. the fixture project's folder
         const mine = folderRows(all, COUNCIL_PROJECT);
         const councils = (mine ?? []).filter((r) => r.kind === "council");
-        const lead = (mine ?? []).slice(0, 2);
-        const tail = (mine ?? []).slice(2 + councils.length);
+        const head = (mine ?? [])[0];
+        const tail = (mine ?? []).slice(1 + councils.length);
         rec(
-            "1. the fixture project's folder lists Councils, New council and four councils newest first, ahead of its terminal",
+            "1. the fixture project's folder lists Councils and four councils newest first, ahead of its terminal, with no New council row",
             mine != null &&
-                lead[0]?.kind === "head" &&
-                lead[0].text === "Councils" &&
-                lead[1]?.kind === "new" &&
-                lead[1].text === "New council" &&
-                !lead[1].draft &&
+                head?.kind === "head" &&
+                head.text === "Councils" &&
+                (mine ?? [])[1]?.kind === "council" &&
                 councils.length === expected.length &&
                 councils.every((c, i) => c.id === expected[i]) &&
                 tail.every((r) => r.kind === "divider" || r.kind === "terminal") &&
@@ -205,14 +195,8 @@ export const councilTree = {
         // 4. the project with no council
         const empty = folderRows(all, EMPTY_PROJECT);
         rec(
-            "4. the project with no council shows Councils and New council only, above its terminal",
-            empty != null &&
-                empty[0]?.kind === "head" &&
-                empty[0].text === "Councils" &&
-                empty[1]?.kind === "new" &&
-                empty[1].text === "New council" &&
-                empty.slice(2).every((r) => r.kind === "divider" || r.kind === "terminal") &&
-                empty.some((r) => r.kind === "terminal"),
+            "4. the project with no council has no Councils block: its folder holds only its terminal",
+            empty != null && empty.length > 0 && empty.every((r) => r.kind === "terminal"),
             JSON.stringify(empty)
         );
 
@@ -227,27 +211,19 @@ export const councilTree = {
             JSON.stringify(afterOpen.map((c) => ({ id: c.id, current: c.current })))
         );
 
-        // 6. New council opens Setup, and the row then says it holds a draft
-        const newRow = `[data-council-new="${COUNCIL_PROJECT}"]`;
-        await h.ev(click(newRow));
-        const setup = await until(present("[data-council-setup]"));
-        const drafted = await until(
-            `(document.querySelector(${JSON.stringify(newRow)})?.textContent ?? "").replace(/\\s+/g, " ").trim() === "New council · draft"`
-        );
-        const afterNew = await rows();
-        const mineNew = (folderRows(afterNew, COUNCIL_PROJECT) ?? []).find((r) => r.kind === "new");
-        const emptyNew = (folderRows(afterNew, EMPTY_PROJECT) ?? []).find((r) => r.kind === "new");
+        // 6. New → Council → the project with no council → Set up council opens Setup there
+        await h.ev(`window.__openLauncher?.("agent")`);
+        await until(present('[data-start-row="council"]'));
+        await h.ev(click('[data-start-row="council"]'));
+        await until(present("[data-launcher-council-note]"));
+        await h.shot("cdp-shots/council-tree-new-dialog.png");
+        const fromNew = await openSetupFromNew(h, EMPTY_PROJECT);
         rec(
-            "6. clicking New council opens Setup and the row then reads New council · draft",
-            setup &&
-                drafted &&
-                mineNew?.draft === true &&
-                mineNew.current === true &&
-                emptyNew?.text === "New council" &&
-                !emptyNew.draft,
-            JSON.stringify({ mineNew, emptyNew })
+            "6. the New dialog's Council row, with a project picked, reads Set up council and opens Setup",
+            fromNew.ok && fromNew.label === "Set up council",
+            JSON.stringify(fromNew)
         );
-        await h.shot("cdp-shots/council-tree-draft.png");
+        await h.shot("cdp-shots/council-tree-setup-from-new.png");
 
         // 7. back on a council, the palette's New council… row opens Setup again
         await h.ev(click(`[data-council-row="${round2}"]`));

@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// New council from outside the Agent tree: the palette's New council… row and the `new-council` binding (so
-// `wsh ui do new-council` too). The tree's own New council row knows its project and calls showCouncilSetup itself.
+// New council with no project picked: the palette's New council… row and the `new-council` binding (so
+// `wsh ui do new-council` too). The New dialog's Council row has a project picked and calls showCouncilSetup itself.
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { globalStore } from "@/app/store/jotaiStore";

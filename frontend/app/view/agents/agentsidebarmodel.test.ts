@@ -658,14 +658,12 @@ describe("projectTree", () => {
     });
     // a row as a short string: "group:<project>:<agents>a:<terminals>t[:closed]", "divider:<project>", "t:<id>",
     // "a:<id>" for a plain agent row, "q:<entry id>:<place>" for a queued entry (place "-" when blocked), and for the
-    // council rows "ch:<project>" (the Councils head), "cn:<project>[:draft]" (New council) and "c:<id>:<meta>"
+    // council rows "ch:<project>" (the Councils head) and "c:<id>:<meta>"
     const shape = (rows: ProjectTreeRow[]) =>
         rows.map((r) => {
             switch (r.kind) {
                 case "councilhead":
                     return `ch:${r.project}`;
-                case "councilnew":
-                    return `cn:${r.project}${r.draft ? ":draft" : ""}`;
                 case "council":
                     return `c:${r.id}:${r.meta}`;
                 case "group":
@@ -909,7 +907,7 @@ describe("projectTree", () => {
             over: Partial<Parameters<typeof projectTree>[0]> = {}
         ) => ({ roots, councils: new Map(Object.entries(byProject)), ...over });
 
-        it("lists Councils, New council and the councils newest first, after the agents and before the divider", () => {
+        it("lists Councils and the councils newest first, after the agents and before the divider", () => {
             const councils = {
                 waveterm: [cvm("old", 1), cvm("new", 3, { meta: "Round 2", tone: "working" }), cvm("mid", 2)],
             };
@@ -917,7 +915,6 @@ describe("projectTree", () => {
                 "group:waveterm:1a:1t",
                 "a:a",
                 "ch:waveterm",
-                "cn:waveterm",
                 "c:new:Round 2",
                 "c:mid:Done",
                 "c:old:Done",
@@ -926,7 +923,7 @@ describe("projectTree", () => {
             ]);
         });
 
-        it("carries what a row draws: the feature, the meta, its tone, and the root New council opens Setup in", () => {
+        it("carries what a row draws: the feature, the meta and its tone", () => {
             const rows = build(
                 [agent("a")],
                 [],
@@ -940,11 +937,6 @@ describe("projectTree", () => {
                 meta: "Waiting on you",
                 tone: "asking",
             });
-            expect(rows.find((r) => r.kind === "councilnew")).toMatchObject({
-                project: "waveterm",
-                root: "D:\\code\\waveterm",
-                draft: false,
-            });
         });
 
         it("breaks a tie in created by id, so the order never depends on the input's", () => {
@@ -952,35 +944,14 @@ describe("projectTree", () => {
             expect(shape(rows).filter((s) => s.startsWith("c:"))).toEqual(["c:a:Done", "c:b:Done", "c:c:Done"]);
         });
 
-        it("marks New council as a draft for the projects whose Setup holds an unsent one", () => {
-            const rows = build([agent("a"), agent("b", undefined, "loom")], [], {
-                ...withCouncils(),
-                councilDrafts: new Set(["waveterm"]),
-            });
-            expect(shape(rows)).toEqual([
-                "group:waveterm:1a:0t",
-                "a:a",
-                "ch:waveterm",
-                "cn:waveterm:draft",
-                "group:loom:1a:0t",
-                "a:b",
-                "ch:loom",
-                "cn:loom",
-            ]);
-        });
-
-        it("gives a project with no council the head and New council only, with the divider above its terminals", () => {
+        it("gives a project with no council no block: New council is in the New dialog, not the tree", () => {
             const rows = build([agent("a")], [term("t2", "loom")], withCouncils({ waveterm: [cvm("c1", 1)] }));
             expect(shape(rows)).toEqual([
                 "group:waveterm:1a:0t",
                 "a:a",
                 "ch:waveterm",
-                "cn:waveterm",
                 "c:c1:Done",
                 "group:loom:0a:1t",
-                "ch:loom",
-                "cn:loom",
-                "divider:loom",
                 "t:t2",
             ]);
         });
@@ -990,11 +961,8 @@ describe("projectTree", () => {
             expect(shape(rows)).toEqual([
                 "group:waveterm:1a:0t",
                 "a:a",
-                "ch:waveterm",
-                "cn:waveterm",
                 "group:ops:0a:0t",
                 "ch:ops",
-                "cn:ops",
                 "c:c1:Done",
                 `group:${HOME_PROJECT}:0a:1t`,
                 "t:h",
@@ -1031,11 +999,14 @@ describe("projectTree", () => {
                 filter: "waveterm",
                 collapsed: ["waveterm"],
             });
-            expect(shape(rows)).toEqual(["a:a", "ch:waveterm", "cn:waveterm", "c:c1:Done", "divider:waveterm", "t:t1"]);
+            expect(shape(rows)).toEqual(["a:a", "ch:waveterm", "c:c1:Done", "divider:waveterm", "t:t1"]);
         });
 
-        it("shows a quiet project its head and New council when the filter narrows to it", () => {
-            expect(shape(build([agent("a")], [], { ...withCouncils(), filter: "ops" }))).toEqual(["ch:ops", "cn:ops"]);
+        it("shows a project its councils when the filter narrows to it, and nothing when it has none", () => {
+            expect(shape(build([agent("a")], [], { ...withCouncils({ ops: [cvm("c1", 1)] }), filter: "ops" }))).toEqual(
+                ["ch:ops", "c:c1:Done"]
+            );
+            expect(shape(build([agent("a")], [], { ...withCouncils(), filter: "ops" }))).toEqual([]);
             // and nothing for a project with no root
             expect(shape(build([agent("a")], [], { ...withCouncils(), filter: "scratch" }))).toEqual([]);
         });
@@ -1635,11 +1606,8 @@ describe("treeNavIds", () => {
                     [{ id: "c1", feature: "f", created: 1, meta: "Done", tone: "muted" as const, unread: false }],
                 ],
             ]),
-            councilDrafts: new Set(["loom"]),
         });
-        expect(
-            rows.filter((r) => r.kind === "council" || r.kind === "councilhead" || r.kind === "councilnew")
-        ).toHaveLength(5);
+        expect(rows.filter((r) => r.kind === "council" || r.kind === "councilhead")).toHaveLength(2);
         expect(treeNavIds(rows)).toEqual(["a", "b", "t1", "c", "t2"]);
     });
     it("walks a split row's cells in reading order where the row sits", () => {

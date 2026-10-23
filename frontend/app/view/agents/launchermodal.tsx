@@ -26,9 +26,9 @@ import { homeFromInfo, projectWhere } from "@/app/view/jarvis/projectpicker";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, House, Network, SquareTerminal, Wrench, X, Zap } from "lucide-react";
+import { Check, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { showSession } from "./agentcenter";
+import { showCouncilSetup, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { SLEEPABLE_AGENTS } from "./agentsleep";
 import { channelsAtom, primeChannels } from "./channelsstore";
@@ -162,6 +162,9 @@ function StartMark({ id }: { id: StartRowId }) {
     if (id === "tool") {
         return <Wrench size={15} strokeWidth={1.8} className="text-ink-mid" />;
     }
+    if (id === "council") {
+        return <Users size={15} strokeWidth={1.8} className="text-ink-mid" />;
+    }
     return (
         <RuntimeMark
             runtime={id}
@@ -235,6 +238,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const isRun = kind === "run";
     const isTool = kind === "tool";
     const isAgent = kind === "agent";
+    const isCouncil = kind === "council";
     // the Tool list: pinned first, then the rest installed, yours, a couple not installed (toolsmodel pickerOrder); null
     // until the first status read lands
     const toolList = useMemo(
@@ -262,7 +266,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const folder = isTool ? toolFolder(tool, project, home) : project;
     const where = isTool ? folder : project;
     const { currentBranch, branches } = useProjectBranches(
-        open && !isRun && !(isTool ? toolAtHome : atHome),
+        open && !isRun && !isCouncil && !(isTool ? toolAtHome : atHome),
         isTool ? (folder?.path ?? "") : projectPath,
         isAgent && runtimeSupportsWorktree(runtime)
     );
@@ -320,14 +324,15 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     // a lead picker never seeds a runtime that cannot lead; memoized, since the seed effect keys on it and a
     // fallback route is a fresh object each call
     const profileRoute = useMemo(() => leadRouteSeed(rawRoute, harnesses), [rawRoute, harnesses]);
-    // a tool is a terminal running one program: it asks for no room
-    const ramWarning = isTool
-        ? null
-        : isRun
-          ? shape === "quick"
-              ? newAgentRamWarning(cap, "run", "worker")
-              : null
-          : newAgentRamWarning(cap, runtime);
+    // a tool is a terminal running one program, and a council's Setup starts nothing: neither asks for room
+    const ramWarning =
+        isTool || isCouncil
+            ? null
+            : isRun
+              ? shape === "quick"
+                  ? newAgentRamWarning(cap, "run", "worker")
+                  : null
+              : newAgentRamWarning(cap, runtime);
     // an image still being written has no path to send yet; one that failed does not hold the launch
     const imagesWriting = isAgent && imagesPending(images);
     const primaryDisabled = where == null || blocker != null || busy || imagesWriting;
@@ -502,8 +507,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             setRunShape(row.id as RunShape);
             return;
         }
-        if (row.kind === "tool") {
-            globalStore.set(launcherKindAtom, "tool");
+        if (row.kind === "tool" || row.kind === "council") {
+            globalStore.set(launcherKindAtom, row.kind);
             return;
         }
         globalStore.set(launcherKindAtom, "agent");
@@ -693,6 +698,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         if (imagesWriting) {
             return;
         }
+        if (isCouncil) {
+            // Setup is where the council is written and started, in the Agent surface's centre
+            close();
+            showCouncilSetup(where.path, undefined, model);
+            return;
+        }
         if (isTool) {
             // a tool that is not on PATH says why in the footer; the button is disabled and Enter does nothing
             if (blocker == null && tool != null) {
@@ -749,8 +760,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             return;
         }
         // the box a letter typed in the Start column starts: an agent's Task, or a run's Goal (none for a terminal, a
-        // tool, or a run from a plan file)
-        const textField = isTool ? null : isRun ? goalRef.current : taskRef.current;
+        // tool, a council, or a run from a plan file)
+        const textField = isTool || isCouncil ? null : isRun ? goalRef.current : taskRef.current;
         const action = launcherKey(
             {
                 zone: zoneOf(e.target),
@@ -970,13 +981,15 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             <ColumnLabel
                                 label="Agent"
                                 focused={startFocused}
-                                hint={startFocused ? `↑↓ · 1–${startList.length}` : ""}
+                                hint={startFocused ? `↑↓ · 1–${Math.min(startList.length, 9)}` : ""}
                             />
                             {startList.filter((r) => r.kind === "agent").map(renderStartRow)}
                             <ColumnLabel label="Run" focused={startFocused} className="pt-[10px]" />
                             {startList.filter((r) => r.kind === "run").map(renderStartRow)}
                             <ColumnLabel label="Tool" focused={startFocused} className="pt-[10px]" />
                             {startList.filter((r) => r.kind === "tool").map(renderStartRow)}
+                            <ColumnLabel label="Council" focused={startFocused} className="pt-[10px]" />
+                            {startList.filter((r) => r.kind === "council").map(renderStartRow)}
                         </div>
                         <div
                             ref={projectRef}
@@ -1143,6 +1156,17 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                         onPick={pickLauncherTool}
                                         onAll={openToolLibrary}
                                     />
+                                ) : isCouncil ? (
+                                    <>
+                                        <ColumnLabel label="Council" focused={false} />
+                                        <span
+                                            data-launcher-council-note
+                                            className="px-2 text-[12px] leading-normal text-muted"
+                                        >
+                                            Setup opens in the Agent surface: write what to review or brainstorm, then
+                                            Start council. A council costs 0.5–1.5M tokens.
+                                        </span>
+                                    </>
                                 ) : thirdList === "resume" ? (
                                     <ResumeList
                                         choices={choices}
@@ -1180,7 +1204,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             />
                         ) : isTool ? (
                             <ToolFields tool={tool} atHome={toolAtHome} />
-                        ) : (
+                        ) : isCouncil ? null : (
                             <AgentFields
                                 runtime={runtime}
                                 currentBranch={currentBranch}
@@ -1246,7 +1270,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                         <DialogButton
                             variant="primary"
                             hint="enter"
-                            title={isTool ? "Enter" : `Enter, or ${formatChordString("Cmd:Enter")} from the Task box`}
+                            title={
+                                isTool || isCouncil
+                                    ? "Enter"
+                                    : `Enter, or ${formatChordString("Cmd:Enter")} from the Task box`
+                            }
                             disabled={primaryDisabled}
                             onClick={launch}
                             className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"

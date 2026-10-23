@@ -236,6 +236,33 @@ export async function openCouncilSetup(h, project, prefill) {
     await showRoot(h, "setup");
 }
 
+/** Opens a project's council Setup the way a person does: New, the Council row, the project, Set up council. Returns
+ *  what each part did, `ok` when Setup shows and the dialog has closed. The dialog is opened through its DEV seam
+ *  (`__openLauncher`), which the app bar's New button calls the same way. */
+export async function openSetupFromNew(h, project) {
+    const until = (expr, ms = 5_000) => waitFor((e) => h.ev(e), expr, ms);
+    const opened =
+        (await h.ev(`(() => {
+            if (typeof window.__openLauncher !== "function") return false;
+            window.__openLauncher("agent");
+            return true;
+        })()`)) && (await until(`!!document.querySelector("[data-launcher]")`));
+    await h.ev(`document.querySelector('[data-start-row="council"]')?.click()`);
+    const picked = await until(`document.querySelector('[data-start-row="council"]')?.getAttribute("aria-checked") === "true"`);
+    await h.ev(`document.querySelector(${JSON.stringify(`[data-project-row="${project}"]`)})?.click()`);
+    const inProject = await until(
+        `document.querySelector(${JSON.stringify(`[data-project-row="${project}"]`)})?.getAttribute("aria-checked") === "true"`
+    );
+    const label = await h.ev(`(() => {
+        const b = [...document.querySelectorAll("[data-launcher] button")].find((x) => (x.textContent ?? "").includes("Set up council"));
+        if (!b) return "";
+        b.click();
+        return (b.textContent ?? "").replace(/\\s+/g, " ").trim();
+    })()`);
+    const setup = await until(`!!document.querySelector("[data-council-setup]") && !document.querySelector("[data-launcher]")`);
+    return { ok: opened && picked && inProject && label !== "" && setup, opened, picked, inProject, label, setup };
+}
+
 // runs `body` in the page with `RpcApi` bound to the instance the app loaded: the module url is the one the app
 // imported, so the import is its instance (dag-peek does the same for DagActionCommand)
 const inPageApi = (body) => `(async () => {

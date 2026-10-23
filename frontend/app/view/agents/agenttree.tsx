@@ -56,7 +56,6 @@ import {
     Pencil,
     PenTool,
     Play,
-    Plus,
     RotateCcw,
     Square,
     SquareTerminal,
@@ -104,7 +103,6 @@ import {
     overviewProjectAtom,
     showCanvases,
     showCouncil,
-    showCouncilSetup,
     showHistory,
     showProjectOverview,
     showSession,
@@ -143,11 +141,9 @@ import {
     type TerminalRowState,
     type TerminalShows,
 } from "./agentsidebarmodel";
-import { councilProjectKey, type CouncilTone } from "./councilmodel";
+import { type CouncilTone } from "./councilmodel";
 import {
     councilSelAtom,
-    councilSetupDraftAtom,
-    councilSetupProjectAtom,
     councilUnreadAtom,
     councilViewAtom,
     stopCouncil,
@@ -2414,7 +2410,7 @@ const COUNCIL_TONE: Record<CouncilTone, { text: string; dot: string }> = {
     error: { text: "text-error", dot: "bg-error" },
 };
 
-// The councils block of a project's folder (projectTree's councilhead, councilnew and council rows), after its agents.
+// The councils block of a project's folder (projectTree's councilhead and council rows), after its agents.
 // None of them is a focus target: a click opens the council centre mode (agentcenter.ts) and j/k, Ctrl+Tab and Alt+digit
 // keep moving between agents and terminals. They read as selected while that mode shows them, which the agent rows
 // cannot (useSelectedRowId shows none while the centre is not a terminal).
@@ -2428,39 +2424,6 @@ function CouncilHeadRow({ project }: { project: string }) {
         >
             Councils
         </div>
-    );
-}
-
-// New council opens Setup in the project's root; `draft` is an unsent form Setup still holds for it
-function CouncilNewRow({ project, root, draft }: { project: string; root: string; draft: boolean }) {
-    const center = useAtomValue(centerModeAtom);
-    const view = useAtomValue(councilViewAtom);
-    const setupProject = useAtomValue(councilSetupProjectAtom);
-    const selected =
-        center === "council" &&
-        view === "setup" &&
-        setupProject != null &&
-        councilProjectKey(setupProject) === councilProjectKey(root);
-    return (
-        <button
-            type="button"
-            data-council-new={project}
-            data-council-draft={draft ? "true" : undefined}
-            aria-current={selected ? "true" : undefined}
-            onClick={() => showCouncilSetup(root)}
-            className={cn(
-                "flex w-full cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] text-left transition-colors duration-[140ms]",
-                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
-            )}
-        >
-            <Slot>
-                <Plus size={13} aria-hidden className="text-muted" />
-            </Slot>
-            <span className={cn("min-w-0 flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}>
-                New council
-                {draft ? <span className="text-muted">{" · draft"}</span> : null}
-            </span>
-        </button>
     );
 }
 
@@ -2895,17 +2858,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         () => councilRowsByProject(councilList, roots, councilUnread),
         [councilList, roots, councilUnread]
     );
-    const draftsAtom = useMemo(
-        () =>
-            atom(
-                (get) =>
-                    new Set(
-                        [...roots].filter(([, root]) => get(councilSetupDraftAtom(root)) != null).map(([name]) => name)
-                    )
-            ),
-        [roots]
-    );
-    const councilDrafts = useAtomValue(draftsAtom);
     const rows = projectTree({
         tree,
         terminals,
@@ -2918,7 +2870,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         splits,
         roster: [...agents, ...terminals],
         councils,
-        councilDrafts,
     });
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));
@@ -3047,11 +2998,6 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                     );
                                 case "councilhead":
                                     return plain(`council-head-${r.project}`, <CouncilHeadRow project={r.project} />);
-                                case "councilnew":
-                                    return plain(
-                                        `council-new-${r.project}`,
-                                        <CouncilNewRow project={r.project} root={r.root} draft={r.draft} />
-                                    );
                                 case "council":
                                     return plain(`council-${r.id}`, <CouncilRow row={r} />);
                                 case "service":

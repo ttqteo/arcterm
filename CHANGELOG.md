@@ -52,6 +52,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   an agent onto a pane holding Alt still types its `@` token to message it.
 - A council that ends shows a toast and an unread dot on its row, and one waiting on you has an item in Needs you that
   opens it.
+- New council moved from every project's folder in the Agent tree to the New dialog: pick **Council** and a project,
+  then Set up council. A project lists Councils only once it has one.
 
 ### Changed
 

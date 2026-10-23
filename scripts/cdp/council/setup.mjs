@@ -6,7 +6,7 @@
 // token: the coordinator's suggestion and Start council are always stubbed in the page (fixtures.mjs stubRpc), and the
 // estimate Setup shows is the real, free RPC.
 //
-// council-setup opens Setup from the fixture project's tree (New council), fills it in, reopens it prefilled through the
+// council-setup opens Setup for the fixture project from New (its Council row), fills it in, reopens it prefilled through the
 // DEV hook window.__arcCouncil (two files and a temp PNG) to see the suggestion pending, resolved, and rejected, and
 // starts a council with the stub. council-ask arranges an agent in the fixture project whose session has one open
 // question in its Ideas, the way the ideas-rail scenario does (a roster fixture, a transcript, the session's ideas via
@@ -28,6 +28,7 @@ import {
     councilFixtureId,
     loadCouncilFixture,
     openCouncilSetup,
+    openSetupFromNew,
     placeCouncil,
     resolveStub,
     rpcCalls,
@@ -208,10 +209,8 @@ export const councilSetup = {
                 CouncilStartCommand: { value: started },
             });
 
-            // 1. New council in the tree opens Setup on the first group
-            const newRow = `[data-council-new="${COUNCIL_PROJECT}"]`;
-            await until(present(newRow), 10_000);
-            await h.ev(click(newRow));
+            // 1. New → Council → the fixture project opens Setup on the first group
+            const fromNew = await openSetupFromNew(h, COUNCIL_PROJECT);
             await until(`(document.querySelector("[data-council-group]")?.textContent ?? "").includes("Review a UI feature")`);
             let v = await view();
             // the rows are folded under Options until it is opened
@@ -221,8 +220,9 @@ export const councilSetup = {
             v = await view();
             const coordinator = v?.experts.find((e) => e.coordinator);
             rec(
-                "1. New council opens Setup: one composer with its placeholder, the group chip reads Review a UI feature and the mode chip Review with its rules line under the box, Setup says the council saves to docs/council/, the rows are folded until Options opens them, then five rows, the coordinator last on opus with no remove",
-                v?.placeholder === "What should the council review? The first line names it; ask a question under it." &&
+                "1. New's Council row opens Setup: one composer with its placeholder, the group chip reads Review a UI feature and the mode chip Review with its rules line under the box, Setup says the council saves to docs/council/, the rows are folded until Options opens them, then five rows, the coordinator last on opus with no remove",
+                fromNew.ok &&
+                    v?.placeholder === "What should the council review? The first line names it; ask a question under it." &&
                     v.ask === "" &&
                     foldedRows === 0 &&
                     v.optionsOpen === "true" &&
@@ -238,7 +238,7 @@ export const councilSetup = {
                     coordinator?.model === "opus" &&
                     coordinator?.remove === false &&
                     v.experts.filter((e) => !e.coordinator).every((e) => e.remove && e.model === "sonnet"),
-                v
+                { fromNew, v }
             );
 
             // 2. the feature and a question on two lines, the estimate in the composer's bar and the button that waits
@@ -501,11 +501,8 @@ export const councilSetup = {
             await until(`${present("[data-council-discussion]")}`);
             const startCalls = await calls("CouncilStartCommand");
             const sent = startCalls[0]?.data;
-            const rowText = `(document.querySelector(${JSON.stringify(newRow)})?.textContent ?? "").replace(/\\s+/g, " ").trim()`;
-            await until(`${rowText} === "New council"`);
-            const newRowText = await h.ev(rowText);
             rec(
-                "11. Start council is drawn in the accent; clicking it (stubbed) sends the draft's feature, question, files, panel and pause once, opens the Discussion, and the tree's New council row no longer reads draft",
+                "11. Start council is drawn in the accent; clicking it (stubbed) sends the draft's feature, question, files, panel and pause once, in the project New picked, and opens the Discussion",
                 fill.got != null &&
                     fill.got === fill.want &&
                     v?.start?.text === "Start council" &&
@@ -518,10 +515,9 @@ export const councilSetup = {
                     sent.pause === true &&
                     sent.group === "ui-feature" &&
                     sent.project === ctx.repo &&
-                    newRowText === "New council" &&
                     sent.mode === "review" &&
                     sent.modewhy === "picked by hand",
-                { fill, calls: startCalls.length, sent, newRowText }
+                { fill, calls: startCalls.length, sent }
             );
 
             // 12. a suggestion that names a mode sets the chip, the rules line and the group; a click on the chip flips it

@@ -46,7 +46,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Copy id: right-click an agent in the Agent sidebar tree, and a segment of a split row: the menu shows
   Copy id with the 8-character id beside it (a # icon, no @), and pasting gives the bare id. Alt-drag onto a Claude
   pane still types `@id `. Commit "feat(agents): the row menu copies an agent's bare id".
-- [ ] (arcterm) Council, a real run: in Agent, New council on a project, a UI feature with a few files, the
+- [ ] (arcterm) Council, a real run: New → Council on a project, a UI feature with a few files, the
   "Review a UI feature" group, Start council. The Discussion at Step 1 of 3 shows each expert's card with
   the line it is reading (`Grep "…" in pkg/…`) and the ideas appear as the experts finish; Summarize stays off until the
   first ideas are in, and Step 2 fills the threads as replies arrive; the chip's step, the clock, the reply count

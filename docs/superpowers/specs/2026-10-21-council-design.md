@@ -63,7 +63,7 @@ the cost label says so, with the higher estimate, before you send.
 
 Two ways, and nothing starts a council by itself: each costs 0.5–1.5M tokens.
 
-1. **By hand.** **New council** under a project's Councils label in the Agent tree, or the palette's "New council…",
+1. **By hand.** New → **Council** (a project picked; 2026-10-23: it replaced the tree's New council row), or the palette's "New council…",
    opens **Setup** (board Setup): feature, question, the files the experts read (the coordinator picks them from the
    spec; you add or remove), a pasted screenshot, the group and each row's model, suggested roles, Pause after round
    1, and the estimate (`≈ 9 calls · ~0.8M tokens · ~6 min`). **Start council** runs it. An open `question` line in
@@ -88,9 +88,10 @@ conversation, and carries on (a spec, a plan) from there.
 
 A council is a centre mode of the Agent surface, `council`, beside `terminal | session | run | history | canvases`
 (`view/agents/agentcenter.ts:23`). The Agent tree lists a project's councils under a **Councils** label inside its
-folder (`projectTree`, `agentsidebarmodel.ts`), after its agents and before its terminals: a **New council** row
-(meta `draft` while Setup holds an unsent draft for that project), then each council with its state (`Round 2`,
-`Waiting on you` in amber, `Done`, `Not run`). A project with a council has a folder even with no agent or terminal.
+folder (`projectTree`, `agentsidebarmodel.ts`), after its agents and before its terminals: each council with its state
+(`Round 2`, `Waiting on you` in amber, `Done`, `Not run`). A project with no council has no Councils label (2026-10-23:
+the tree's New council row moved to New → Council). A project with a council has a folder even with no agent or
+terminal.
 Council rows are not focus targets: `j`/`k` keep moving between agents and terminals.
 No new surface and no nav rail entry.
 
@@ -171,7 +172,7 @@ Opened by Summarize, with a breadcrumb back to the Discussion.
 - **The gate refuses:** `wsh council start` saves the council as `not-run` without running it; its tree row says
   `Not run`, and its Discussion offers **Start council** (with the estimate), which is the yes.
 - **Stop council** keeps whatever rounds finished; Summarize works on them.
-- **Empty state:** a project with no council shows only the **New council** row under Councils.
+- **Empty state:** a project with no council shows no Councils block; New → Council starts one.
 
 ## RAM and cost
 

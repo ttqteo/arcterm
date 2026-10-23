@@ -37,16 +37,17 @@ const claudeOnly = [
 const allFive = ["claude", "codex", "opencode", "pi", "agy"].map((runtime) => ({ runtime, installed: true }));
 
 describe("startRows", () => {
-    it("numbers the visible rows: Claude Code, Terminal, Quick run, Orchestrate, Tool", () => {
+    it("numbers the visible rows: Claude Code, Terminal, Quick run, Orchestrate, Tool, Council", () => {
         expect(startRows(claudeOnly).map((r) => `${r.key} ${r.id}`)).toEqual([
             "1 claude",
             "2 terminal",
             "3 quick",
             "4 orchestrator",
             "5 tool",
+            "6 council",
         ]);
     });
-    it("numbers 1 to 9 with every runtime installed", () => {
+    it("numbers 1 to 9 with every runtime installed, and leaves the tenth row (Council) without a digit", () => {
         const rows = startRows(allFive);
         expect(rows.map((r) => r.id)).toEqual([
             "claude",
@@ -58,11 +59,13 @@ describe("startRows", () => {
             "quick",
             "orchestrator",
             "tool",
+            "council",
         ]);
-        expect(rows.at(-1)?.key).toBe("9");
+        expect(rows.at(-2)?.key).toBe("9");
+        expect(rows.at(-1)?.key).toBe("");
     });
     it("offers every runtime while the harness list has not loaded", () => {
-        expect(startRows([])).toHaveLength(9);
+        expect(startRows([])).toHaveLength(10);
     });
     it("gives run rows their names and shape descriptions, agent rows no description", () => {
         const rows = startRows(claudeOnly);
@@ -71,13 +74,22 @@ describe("startRows", () => {
         expect(rows.find((r) => r.id === "orchestrator")?.desc).toBe("lead plans, workers fan out");
         expect(rows.find((r) => r.id === "claude")?.desc).toBeNull();
     });
-    it("ends with one Tool row after the run rows, so no earlier row changes its digit", () => {
+    it("ends with one Tool row and one Council row after the run rows, so no earlier row changes its digit", () => {
         const rows = startRows(claudeOnly);
         expect(rows.filter((r) => r.kind === "tool")).toEqual([
             { id: "tool", kind: "tool", name: "Tool", desc: "lazygit, yazi, btop…", key: "5" },
         ]);
-        expect(rows.at(-1)?.kind).toBe("tool");
-        expect(rows.slice(0, -1).map((r) => r.key)).toEqual(["1", "2", "3", "4"]);
+        expect(rows.filter((r) => r.kind === "council")).toEqual([
+            {
+                id: "council",
+                kind: "council",
+                name: "Council",
+                desc: "a panel of models reviews or brainstorms",
+                key: "6",
+            },
+        ]);
+        expect(rows.slice(-2).map((r) => r.kind)).toEqual(["tool", "council"]);
+        expect(rows.slice(0, -2).map((r) => r.key)).toEqual(["1", "2", "3", "4"]);
     });
 });
 
@@ -98,6 +110,7 @@ describe("the words for a pick", () => {
         expect(selectedRowId("agent", "terminal", "orchestrator")).toBe("terminal");
         expect(selectedRowId("run", "terminal", "orchestrator")).toBe("orchestrator");
         expect(selectedRowId("tool", "terminal", "orchestrator")).toBe("tool");
+        expect(selectedRowId("council", "terminal", "orchestrator")).toBe("council");
     });
     it("titles and primary labels follow the pick", () => {
         expect(launcherTitle("agent")).toBe("New agent");
@@ -106,6 +119,8 @@ describe("the words for a pick", () => {
         expect(primaryLabel("agent", "claude")).toBe("Launch agent");
         expect(primaryLabel("agent", "terminal")).toBe("Open terminal");
         expect(primaryLabel("run", "claude")).toBe("Start run");
+        expect(launcherTitle("council")).toBe("New council");
+        expect(primaryLabel("council", "claude", true)).toBe("Set up council");
     });
     it("primaryLabel says Resume agent for an agent with a session picked", () => {
         expect(primaryLabel("agent", "claude", true)).toBe("Resume agent");
@@ -207,6 +222,15 @@ describe("footerLine", () => {
             blocked: false,
         });
         expect(footerLine({ ...base, kind: "run", shape: "orchestrator" }).lead).toBe("Orchestrator × 3 in ");
+    });
+    it("names the project a council's Setup opens in, and asks for one when none is picked", () => {
+        expect(footerLine({ ...base, kind: "council" })).toEqual({
+            lead: "Sets up a council in ",
+            strong: "arcterm",
+            tail: "",
+            blocked: false,
+        });
+        expect(footerLine({ ...base, kind: "council", project: null }).blocked).toBe(true);
     });
 });
 
