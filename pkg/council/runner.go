@@ -964,17 +964,24 @@ func applyRound2(c *Council, e CouncilExpert, res Round2Result, now int64) {
 		if rv.Withdraw {
 			p.Withdrawn, text = true, "Withdrawn."
 		} else {
+			// the new argument shows on the proposal itself; the reply says only what changed
 			var parts []string
 			if rv.Title != "" && rv.Title != p.Title {
 				p.Title = rv.Title
 				parts = append(parts, "Retitled: "+rv.Title+".")
 			}
-			if rv.Argument != "" {
+			argued := rv.Argument != "" && rv.Argument != p.Argument
+			if argued {
 				p.Argument = rv.Argument
-				parts = append(parts, rv.Argument)
 			}
-			if len(parts) == 0 {
+			if len(parts) == 0 && !argued {
 				continue
+			}
+			switch {
+			case rv.Change != "":
+				parts = append(parts, rv.Change)
+			case argued:
+				parts = append(parts, "Revised the argument.")
 			}
 			text = strings.Join(parts, " ")
 		}

@@ -13,7 +13,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-10-22.1"
+const HarnessVersion = "2026-10-23.1"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -24,7 +24,7 @@ const (
   "proposals": [
     {
       "title": "a short title for the change you propose",
-      "argument": "why, in a short paragraph",
+      "argument": "why, in at most four sentences",
       "evidence": [{"ref": "pkg/services/idle.go:42"}]
     }
   ]
@@ -40,10 +40,10 @@ const (
     }
   ],
   "revisions": [
-    {"proposalid": "P1", "withdraw": false, "title": "its new title", "argument": "its new argument"}
+    {"proposalid": "P1", "withdraw": false, "title": "its new title", "argument": "its new argument", "change": "one line: what you changed and why"}
   ],
   "answers": [
-    {"replyid": "r3", "text": "your answer to the person"}
+    {"replyid": "r3", "text": "your answer to the person, in at most three sentences"}
   ],
   "picks": ["P2", "P3", "P4"]
 }`
@@ -52,7 +52,7 @@ const (
   "answers": [
     {
       "replyid": "r3",
-      "text": "your answer to the person",
+      "text": "your answer to the person, in at most three sentences",
       "stance": "accept",
       "evidence": [{"ref": "pkg/services/idle.go:42"}]
     }
@@ -60,8 +60,8 @@ const (
 }`
 
 	synthesisShape = `{
-  "answer": "one sentence that answers the person's question directly",
-  "text": "one paragraph for the person: where the panel landed, and who was missing",
+  "answer": "one short sentence that answers the person's question directly",
+  "text": "at most three short sentences for the person: where the panel landed, and who was missing",
   "directions": [
     {
       "rank": 1,
@@ -78,7 +78,7 @@ const (
 )
 
 // answerLine is the line of both synthesis shapes that holds the answer to the person's question.
-const answerLine = "  \"answer\": \"one sentence that answers the person's question directly\",\n"
+const answerLine = "  \"answer\": \"one short sentence that answers the person's question directly\",\n"
 
 // synthesisShapeNoQuestion is synthesisShape for a council with no question: there is nothing to answer, so it asks
 // for no answer.
@@ -92,7 +92,7 @@ const (
   "proposals": [
     {
       "title": "a short title for the idea",
-      "argument": "what the idea is and why it could work, in a short paragraph",
+      "argument": "what the idea is and why it could work, in at most four sentences",
       "wild": false
     }
   ]
@@ -113,17 +113,17 @@ const (
     }
   ],
   "revisions": [
-    {"proposalid": "P1", "withdraw": false, "title": "its new title", "argument": "its new argument"}
+    {"proposalid": "P1", "withdraw": false, "title": "its new title", "argument": "its new argument", "change": "one line: what you changed and why"}
   ],
   "answers": [
-    {"replyid": "r3", "text": "your answer to the person"}
+    {"replyid": "r3", "text": "your answer to the person, in at most three sentences"}
   ],
   "picks": ["P2", "P3", "P4"]
 }`
 
 	brainstormSynthesisShape = `{
-  "answer": "one sentence that answers the person's question directly",
-  "text": "one paragraph for the person: where the panel landed, and who was missing",
+  "answer": "one short sentence that answers the person's question directly",
+  "text": "at most three short sentences for the person: where the panel landed, and who was missing",
   "directions": [
     {
       "rank": 1,
@@ -158,6 +158,23 @@ const (
 	titleRule = "Name a proposal by its title or by what it says, never by its id (\"P2\"), in every sentence the person " +
 		"reads: a reason, an argument, an answer, a note, the reasoning behind a direction, the summary text. Ids go only " +
 		"in the fields that hold ids."
+
+	// summaryRule is in both synthesis prompts with a question: "answer" and "text" sit above the directions and are
+	// read first. summaryRuleNoQuestion is the same for "text" alone.
+	summaryRule = `The person reads "answer" and "text" first, above the directions, so keep them short: "answer" is one ` +
+		`plain sentence of at most 25 words, "text" at most three short sentences (about 60 words) on where the panel ` +
+		`landed, naming any missing expert in one clause. Do not retell the directions in "text", and put no path:line ` +
+		`or other evidence ref in either: the evidence stays with the directions. Write "answer" and "text" in the ` +
+		`language the person's question is written in; every other field stays in English.`
+	summaryRuleNoQuestion = `The person reads "text" first, above the directions, so keep it short: at most three short ` +
+		`sentences (about 60 words) on where the panel landed, naming any missing expert in one clause. Do not retell ` +
+		`the directions, and put no path:line or other evidence ref in it: the evidence stays with the directions. ` +
+		`Write "text" in the language the feature is written in; every other field stays in English.`
+
+	// changeRule is in both round 2 prompts: a revision's reply shows its one-line change, and the new argument only
+	// on the proposal itself.
+	changeRule = `With a new title or argument, say in "change" what you changed and why, in one line: the person reads ` +
+		`that line under the proposal, and the new argument only in the proposal itself.`
 
 	jsonRule = "End your reply with one JSON object in a ```json fence and nothing after it, in this shape:"
 
@@ -419,7 +436,8 @@ func Round2Prompt(c *Council, e CouncilExpert) string {
 		b.WriteString(`Then name your picks in "picks": the 3 proposals under "Proposals to review" most worth trying, best ` +
 			"first, by proposal id. Never pick one of your own. Name fewer than 3 only when fewer are worth trying.\n\n")
 		b.WriteString(`If reading the others changed your mind about one of your own ideas, add an entry to "revisions": ` +
-			`set "withdraw" to true to drop it, or give its new title and argument. Leave "revisions" empty otherwise.` + "\n\n")
+			`set "withdraw" to true to drop it, or give its new title and argument. ` + changeRule + ` Leave "revisions" ` +
+			"empty otherwise.\n\n")
 		b.WriteString(`Answer each question from the person with an entry in "answers", by its replyid. Leave "answers" empty ` +
 			"when there are none.\n\n")
 		b.WriteString(titleRule + "\n\n")
@@ -433,7 +451,8 @@ func Round2Prompt(c *Council, e CouncilExpert) string {
 	b.WriteString(`Then name your picks in "picks": the 3 proposals under "Proposals to review" most worth doing, best ` +
 		"first, by proposal id. Never pick one of your own. Name fewer than 3 only when fewer are worth doing.\n\n")
 	b.WriteString(`If reading the others changed your mind about one of your own proposals, add an entry to "revisions": ` +
-		`set "withdraw" to true to drop it, or give its new title and argument. Leave "revisions" empty otherwise.` + "\n\n")
+		`set "withdraw" to true to drop it, or give its new title and argument. ` + changeRule + ` Leave "revisions" ` +
+		"empty otherwise.\n\n")
 	b.WriteString(`Answer each question from the person with an entry in "answers", by its replyid. Leave "answers" empty ` +
 		"when there are none.\n\n")
 	b.WriteString(titleRule + "\n\n")
@@ -549,13 +568,14 @@ func SynthesisPrompt(c *Council) string {
 	b.WriteString("5. In \"weak\", mark any claim that cites no evidence, or whose evidence does not show what it says. " +
 		"\"ref\" is a proposal id, a reply id or an evidence ref; \"note\" says what is missing.\n")
 	b.WriteString("6. Treat the person's replies as the person's own view and weigh them.\n")
-	shape := synthesisShapeNoQuestion
+	shape, summary := synthesisShapeNoQuestion, summaryRuleNoQuestion
 	if strings.TrimSpace(c.Question) != "" {
 		b.WriteString("7. In \"answer\", write one sentence that answers the question for the council directly: the " +
 			"answer itself, not a description of the discussion.\n")
-		shape = synthesisShape
+		shape, summary = synthesisShape, summaryRule
 	}
 	b.WriteString("\n" + titleRule + "\n\n")
+	b.WriteString(summary + "\n\n")
 	b.WriteString(evidenceRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + shape + "\n```\n")
 	return b.String()
@@ -578,13 +598,14 @@ func writeBrainstormSynthesisTask(b *strings.Builder, c *Council) string {
 	b.WriteString("6. In \"outcomes\", give every idea its fate: \"Direction N\", \"Merged into direction N\", \"Kept aside\", " +
 		"\"Not picked\", \"Withdrawn in round 2\" or \"Cut at the pause\".\n")
 	b.WriteString("7. Treat the person's replies as the person's own view and weigh them.\n")
-	shape := brainstormSynthesisShapeNoQuestion
+	shape, summary := brainstormSynthesisShapeNoQuestion, summaryRuleNoQuestion
 	if strings.TrimSpace(c.Question) != "" {
 		b.WriteString("8. In \"answer\", write one sentence that answers the question for the council directly: the " +
 			"answer itself, not a description of the discussion.\n")
-		shape = brainstormSynthesisShape
+		shape, summary = brainstormSynthesisShape, summaryRule
 	}
 	b.WriteString("\n" + titleRule + "\n\n")
+	b.WriteString(summary + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + shape + "\n```\n")
 	return b.String()
 }

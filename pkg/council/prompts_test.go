@@ -149,7 +149,7 @@ func TestSynthesisPrompt(t *testing.T) {
 	p := SynthesisPrompt(c)
 
 	mustContain(t, "synthesis prompt", p, "You are Lead", "the coordinator", "Merge and rank.", "Idle sleep for services", "Which direction first?", "no tools",
-		evidenceRule, synthesisShape, stanceRule)
+		evidenceRule, synthesisShape, stanceRule, summaryRule)
 	// every proposal, the cut and the withdrawn ones too
 	mustContain(t, "synthesis prompt", p, "Title-one", "Title-two", "Title-three", "Title-four", "Title-five",
 		"The person cut this proposal at the pause", "Its author withdrew it in round 2")
@@ -186,8 +186,22 @@ func TestSynthesisPromptAsksForAnAnswerOnlyWithAQuestion(t *testing.T) {
 	mustContain(t, "synthesis prompt", SynthesisPrompt(c), `"answer"`, "answers the question")
 	c.Question = "  "
 	p := SynthesisPrompt(c)
-	mustNotContain(t, "synthesis prompt", p, `"answer"`, "answers the question", synthesisShape)
-	mustContain(t, "synthesis prompt", p, synthesisShapeNoQuestion)
+	mustNotContain(t, "synthesis prompt", p, `"answer"`, "answers the question", synthesisShape, summaryRule)
+	mustContain(t, "synthesis prompt", p, synthesisShapeNoQuestion, summaryRuleNoQuestion)
+}
+
+// Only the synthesis writes the answer and the summary the person reads first; the experts' rounds stay as they are.
+func TestOnlyTheSynthesisKeepsTheSummaryShortAndInTheQuestionsLanguage(t *testing.T) {
+	c := promptCouncil()
+	for name, p := range map[string]string{
+		"round 1": Round1Prompt(c, c.Experts[0]),
+		"round 2": Round2Prompt(c, c.Experts[0]),
+		"answers": AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}),
+	} {
+		mustNotContain(t, name+" prompt", p, summaryRule)
+	}
+	mustContain(t, "synthesis prompt", summaryRule, "at most 25 words", "at most three short sentences", "no path:line",
+		"the language the person's question is written in", "every other field stays in English")
 }
 
 // The person reads a reason, a summary, an answer and a weak note, and the UI shows no proposal id: every prompt that
@@ -283,7 +297,7 @@ func TestBrainstormSynthesisPromptPicksAtMostThreeIdeasAndKeepsTheWildOnesAside(
 	c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
 	p := SynthesisPrompt(c)
 	mustContain(t, "synthesis prompt", p, "This is round 3 of 3", "no tools", "at most 3 ideas worth trying", "first step", `"firststep"`,
-		`"kept"`, "wild ideas", "Kept aside", brainstormSynthesisShape, titleRule, "answers the question")
+		`"kept"`, "wild ideas", "Kept aside", brainstormSynthesisShape, titleRule, summaryRule, "answers the question")
 	mustContain(t, "synthesis prompt", p, "### P3 · Skeptic · Title-three (wild idea)", "- [r8] UX (accept, builds on it): Text-r8 add a badge")
 	mustNotContain(t, "synthesis prompt", p, evidenceRule, synthesisShape, `"weak"`, "marked weak")
 	mustContain(t, "picks section", section(t, p, "## Picks"), "ideas of the others most worth trying", "- P3 (Title-three): 2 (UX, RAM)")

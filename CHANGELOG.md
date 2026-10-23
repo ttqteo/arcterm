@@ -54,6 +54,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   opens it.
 - New council moved from every project's folder in the Agent tree to the New dialog: pick **Council** and a project,
   then Set up council. A project lists Councils only once it has one.
+- A council reads shorter: its answer is one plain sentence and its summary a few, both in the language you asked in;
+  each proposal keeps to a few sentences, and an expert who revises one says in a line what changed instead of
+  repeating the whole new argument.
 
 ### Changed
 

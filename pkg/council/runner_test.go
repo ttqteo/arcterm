@@ -916,6 +916,34 @@ func TestApplyRound2AnAcceptNeedsNoReasonButADoubtDoes(t *testing.T) {
 	}
 }
 
+// The new argument shows on the proposal; the revision's reply says what changed, never the argument again.
+func TestApplyRound2ARevisionRepliesWithTheChangeNotTheArgument(t *testing.T) {
+	for name, tc := range map[string]struct {
+		rv   Round2Revision
+		want string
+	}{
+		"a new argument with its change":   {Round2Revision{Argument: "New.", Change: "Dropped the Mac case."}, "Dropped the Mac case."},
+		"a new argument with no change":    {Round2Revision{Argument: "New."}, "Revised the argument."},
+		"a new title and argument":         {Round2Revision{Title: "Uno", Argument: "New."}, "Retitled: Uno. Revised the argument."},
+		"the same argument, a change only": {Round2Revision{Argument: "Old.", Change: "Nothing really."}, ""},
+	} {
+		c := picksCouncil()
+		c.Proposals[0].Argument = "Old."
+		tc.rv.ProposalId = "P1"
+		applyRound2(c, c.Experts[0], Round2Result{Revisions: []Round2Revision{tc.rv}}, 5)
+		got := ""
+		if len(c.Replies) == 1 && c.Replies[0].Revised {
+			got = c.Replies[0].Text
+		}
+		if got != tc.want || len(c.Replies) > 1 {
+			t.Errorf("%s: replies %+v, want one reading %q", name, c.Replies, tc.want)
+		}
+		if tc.rv.Argument != "" && c.Proposals[0].Argument != tc.rv.Argument {
+			t.Errorf("%s: argument %q, want it revised in place", name, c.Proposals[0].Argument)
+		}
+	}
+}
+
 func TestCleanSummaryDropsTheAnswerWhenNothingWasAsked(t *testing.T) {
 	c := picksCouncil()
 	if got := cleanSummary(c, CouncilSummary{Answer: "Do P2."}).Answer; got != "Do P2." {
@@ -942,7 +970,7 @@ func TestRoundTwoRevisionsAndWithdrawals(t *testing.T) {
 		return fence(mustJSON(map[string]any{
 			"stances": stances,
 			"revisions": []map[string]any{
-				{"proposalid": own[0], "withdraw": false, "title": "A better title", "argument": "A better argument."},
+				{"proposalid": own[0], "withdraw": false, "title": "A better title", "argument": "A better argument.", "change": "Narrowed it to the Mac."},
 				{"proposalid": "P99", "withdraw": true},
 			},
 		}))
@@ -980,8 +1008,8 @@ func TestRoundTwoRevisionsAndWithdrawals(t *testing.T) {
 		}
 		return nil
 	}
-	if r := revised(uxP); r == nil || r.Text != "Retitled: A better title. A better argument." || r.Stance != "" {
-		t.Errorf("ux's revision reply = %+v, want the author's reply saying what changed", r)
+	if r := revised(uxP); r == nil || r.Text != "Retitled: A better title. Narrowed it to the Mac." || r.Stance != "" {
+		t.Errorf("ux's revision reply = %+v, want the author's reply saying what changed, not the new argument again", r)
 	}
 	if r := revised(ramP); r == nil || r.Text != "Withdrawn." {
 		t.Errorf("ram's withdrawal reply = %+v", r)

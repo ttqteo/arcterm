@@ -33,6 +33,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `wsh getmeta -b 027015dd-4da4-4a42-ae96-bda746661586` has no `agent:sleeping`. Then let a run land while its origin
   sleeps: the origin wakes, gets the `[arc] Run …` message and reads awake. `wshserver_agentsleep.go`, commit
   "fix(agents): a slow wake clears its sleep marks".
+- [ ] (arcterm) A shorter council: on the next council you start with a question in Vietnamese, the bold answer is one
+  plain sentence in Vietnamese with no `path:line`, the summary under it at most three sentences in Vietnamese that
+  do not retell the directions, the directions' titles in English, each proposal a few sentences, and a "Revised"
+  reply one line on what changed rather than the whole argument. `pkg/council/prompts.go` (harness `2026-10-23.1`),
+  commit "feat(council): a shorter answer, summary and thread".
 - [ ] (arcterm) Hide on a service row: in the Agent tree, select a sleeping service (e.g. `portfolio`), right-click →
   Hide; the row leaves the tree and the selection moves to the row beside it. On a running one the item reads Stop
   and hide and does both; on a crashed one it is greyed with a tooltip. `servicemenu.tsx`, commit "feat(agents): Hide on a service row's menu".
