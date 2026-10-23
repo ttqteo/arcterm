@@ -64,6 +64,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - One council runs at a time across all projects. A council started while another runs shows in the Agent tree as
   Queued, can be removed from the queue, and starts when the running one ends or waits on you.
 
+### Fixed
+
+- A sleeping agent that a run's message (or yours) woke no longer stays shown as asleep when it took more than a few
+  seconds to resume: its row and its terminal show it awake. One already stuck that way comes back with Wake, or with
+  a message from its composer, without restarting it.
+
 ## 0.15.17 — 2026-10-21
 
 ### Added

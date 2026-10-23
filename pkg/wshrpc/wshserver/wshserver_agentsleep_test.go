@@ -78,7 +78,11 @@ func newSleepWorld(t *testing.T, meta waveobj.MetaMapType) *sleepWorld {
 		}
 		return cp, nil
 	})
-	swap(t, &updateBlockMeta, func(_ context.Context, _ string, update waveobj.MetaMapType) error {
+	swap(t, &updateBlockMeta, func(ctx context.Context, _ string, update waveobj.MetaMapType) error {
+		// the store refuses a write whose context is over
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		w.mu.Lock()
 		defer w.mu.Unlock()
 		w.events = append(w.events, "meta")
@@ -658,6 +662,104 @@ func TestWakeDeliversTheMessageOnceTheAgentReportsIn(t *testing.T) {
 	}
 	if got := w.eventLog(); got[len(got)-2] != "meta" || got[len(got)-1] != "deliver" {
 		t.Errorf("events = %v, want the sleep keys cleared before the message", got)
+	}
+}
+
+// a resume that takes longer than a settle write may: the marks still go, or the row reads asleep over a running agent
+// and every later Wake or message from the cockpit is refused as "not asleep"
+func TestWakeSlowerThanTheSettleTimeoutStillClearsTheMarks(t *testing.T) {
+	w := newSleepWorld(t, sleepingMeta(time.Now()))
+	installSleeping(w)
+	swap(t, &wakeSettleTimeout, 20*time.Millisecond)
+	start := time.Now()
+	w.status = func(int) baseds.AgentStatusData {
+		if time.Since(start) < 80*time.Millisecond {
+			return staleStatus()
+		}
+		return readyStatus()
+	}
+
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "carry on"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{waveobj.MetaKey_AgentSleeping, waveobj.MetaKey_AgentSleepFreed} {
+		if v := w.metaValue(key); v != nil {
+			t.Errorf("%s = %v, want it deleted: the agent came back", key, v)
+		}
+	}
+	if len(w.deliveries()) != 1 {
+		t.Errorf("delivered %+v, want the message once", w.deliveries())
+	}
+}
+
+// the same for a resume that exits late: the card shows why
+func TestWakeThatExitsAfterTheSettleTimeoutKeepsTheReason(t *testing.T) {
+	w := newSleepWorld(t, sleepingMeta(time.Now()))
+	installSleeping(w)
+	swap(t, &wakeSettleTimeout, 20*time.Millisecond)
+	start := time.Now()
+	w.exited = func() (bool, int) { return time.Since(start) > 80*time.Millisecond, 1 }
+	w.status = func(int) baseds.AgentStatusData { return staleStatus() }
+
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA}); err == nil {
+		t.Fatal("a wake whose agent exited reported success")
+	}
+	if reason, _ := w.metaValue(waveobj.MetaKey_AgentWakeFailed).(string); !strings.Contains(reason, "exited (code 1)") {
+		t.Errorf("agent:wakefailed = %q, want the reason the card shows", reason)
+	}
+}
+
+// an agent whose process runs while its block still says asleep (marks a wake could not clear): Wake, or a message the
+// cockpit sends it as a sleeping agent, clears them and delivers the message, without restarting the process
+func TestWakeOfARunningAgentMarkedAsleepClearsTheMarks(t *testing.T) {
+	w := newSleepWorld(t, sleepingMeta(time.Now()))
+	w.install(&agentRosterFacts{Tabs: []agentTabFacts{idleClaude(writeTranscript(t, "abc"))}})
+
+	if err := (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "carry on"}); err != nil {
+		t.Fatal(err)
+	}
+	if w.resyncs != 0 {
+		t.Error("a running agent was restarted")
+	}
+	for _, key := range []string{waveobj.MetaKey_AgentSleeping, waveobj.MetaKey_AgentSleepFreed} {
+		if v := w.metaValue(key); v != nil {
+			t.Errorf("%s = %v, want it deleted", key, v)
+		}
+	}
+	if got := w.deliveries(); len(got) != 1 || got[0].text != "carry on" {
+		t.Errorf("delivered %+v, want the message once", got)
+	}
+}
+
+// while a wake is in flight its process already runs and its marks are still set: a message then waits for that wake
+// rather than reaching an agent that has not reported in
+func TestAMessageDuringAWakeWaitsForIt(t *testing.T) {
+	w := newSleepWorld(t, sleepingMeta(time.Now()))
+	w.install(&agentRosterFacts{Tabs: []agentTabFacts{idleClaude(writeTranscript(t, "abc"))}})
+	call := &wakeCall{done: make(chan struct{})}
+	wakeMu.Lock()
+	wakeCalls[agentsBlockA] = call
+	wakeMu.Unlock()
+	t.Cleanup(func() {
+		wakeMu.Lock()
+		delete(wakeCalls, agentsBlockA)
+		wakeMu.Unlock()
+	})
+
+	errs := make(chan error, 1)
+	go func() {
+		errs <- (&WshServer{}).AgentsWakeCommand(context.Background(), wshrpc.CommandAgentsWakeData{Tab: agentsTabA, Message: "carry on"})
+	}()
+	time.Sleep(30 * time.Millisecond)
+	if len(w.deliveries()) != 0 {
+		t.Fatal("the message reached an agent whose wake had not finished")
+	}
+	close(call.done)
+	if err := <-errs; err != nil {
+		t.Fatal(err)
+	}
+	if len(w.deliveries()) != 1 || w.resyncs != 0 {
+		t.Errorf("delivered %+v, restarts %d, want the message once the wake ended and no restart", w.deliveries(), w.resyncs)
 	}
 }
 

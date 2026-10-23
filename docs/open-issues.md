@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A slow wake clears its sleep marks: after installing a build with this fix, the `arcterm` tab whose
+  block `027015dd` runs while its meta still holds `agent:sleeping` (a 2026-10-22 20:26 wake whose 10s write clock had
+  run out) shows asleep; click Wake (or send from its composer): the row and terminal read awake, no restart, and
+  `wsh getmeta -b 027015dd-4da4-4a42-ae96-bda746661586` has no `agent:sleeping`. Then let a run land while its origin
+  sleeps: the origin wakes, gets the `[arc] Run …` message and reads awake. `wshserver_agentsleep.go`, commit
+  "fix(agents): a slow wake clears its sleep marks".
 - [ ] (arcterm) Hide on a service row: in the Agent tree, select a sleeping service (e.g. `portfolio`), right-click →
   Hide; the row leaves the tree and the selection moves to the row beside it. On a running one the item reads Stop
   and hide and does both; on a crashed one it is greyed with a tooltip. `servicemenu.tsx`, commit "feat(agents): Hide on a service row's menu".

@@ -104,13 +104,15 @@ var (
 )
 
 // how long sleep waits for a destroyed tree to be gone, how long for the pids it killed, and how often it looks;
-// how long a wake waits for the agent to report in, and how often it looks. Vars so tests shorten them.
+// how long a wake waits for the agent to report in, how often it looks, and how long each of its closing meta writes
+// may take. Vars so tests shorten them.
 var (
-	sleepStopWait    = 3 * time.Second
-	sleepKillWait    = 2 * time.Second
-	sleepPoll        = 100 * time.Millisecond
-	wakeReadyTimeout = 60 * time.Second
-	wakePoll         = 500 * time.Millisecond
+	sleepStopWait     = 3 * time.Second
+	sleepKillWait     = 2 * time.Second
+	sleepPoll         = 100 * time.Millisecond
+	wakeReadyTimeout  = 60 * time.Second
+	wakePoll          = 500 * time.Millisecond
+	wakeSettleTimeout = 10 * time.Second
 )
 
 // sleepMu keeps two sleeps (the loop's, a person's Sleep) from racing on one block.
@@ -315,18 +317,7 @@ func wakeAgent(ctx context.Context, row *agentRow, message string, fresh bool) e
 	wakeMu.Lock()
 	if call, ok := wakeCalls[row.blockId]; ok {
 		wakeMu.Unlock()
-		select {
-		case <-call.done:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-		if call.err != nil {
-			return call.err
-		}
-		if message != "" {
-			deliverAgentMessage(row.blockId, message)
-		}
-		return nil
+		return joinWake(ctx, call, row.blockId, message)
 	}
 	call := &wakeCall{done: make(chan struct{})}
 	wakeCalls[row.blockId] = call
@@ -340,10 +331,56 @@ func wakeAgent(ctx context.Context, row *agentRow, message string, fresh bool) e
 	return call.err
 }
 
+// joinWake waits for a wake in flight and then delivers its own message.
+func joinWake(ctx context.Context, call *wakeCall, blockId, message string) error {
+	select {
+	case <-call.done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if call.err != nil {
+		return call.err
+	}
+	if message != "" {
+		deliverAgentMessage(blockId, message)
+	}
+	return nil
+}
+
+// wakeMarkedAwake is a wake of an agent whose process runs while its block still says asleep: a wake in flight (its
+// process starts before it reports in), which it joins, or marks a wake could not clear, which it clears. The message
+// is delivered as to any awake agent. The cockpit reads the marks, so without this the row reads asleep over a running
+// agent and its Wake and its composer are refused.
+func wakeMarkedAwake(ctx context.Context, row *agentRow, message string) error {
+	wakeMu.Lock()
+	call, waking := wakeCalls[row.blockId]
+	wakeMu.Unlock()
+	if waking {
+		return joinWake(ctx, call, row.blockId, message)
+	}
+	err := updateBlockMeta(ctx, row.blockId, waveobj.MetaMapType{
+		waveobj.MetaKey_AgentSleeping:   nil,
+		waveobj.MetaKey_AgentSleepFreed: nil,
+		waveobj.MetaKey_AgentWakeFailed: nil,
+	})
+	if err != nil {
+		return err
+	}
+	if message != "" {
+		deliverAgentMessage(row.blockId, message)
+	}
+	return nil
+}
+
 func runWake(ctx context.Context, row *agentRow, message string, fresh bool) error {
-	// what happens after the wait must not die with a caller that gave up
-	settle, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer cancel()
+	// what happens after the wait must not die with a caller that gave up, and each write gets its own clock: one
+	// started before the wait (up to wakeReadyTimeout) had run out by the time a slow resume reported in, which left
+	// the marks on a running agent
+	settle := func(meta waveobj.MetaMapType) error {
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), wakeSettleTimeout)
+		defer cancel()
+		return updateBlockMeta(sctx, row.blockId, meta)
+	}
 
 	meta, err := readBlockMeta(ctx, row.blockId)
 	if err != nil {
@@ -360,14 +397,14 @@ func runWake(ctx context.Context, row *agentRow, message string, fresh bool) err
 	}
 	// failed keeps the agent asleep with the reason, which the card shows beside Start fresh and Close
 	failed := func(reason string) error {
-		if err := updateBlockMeta(settle, row.blockId, waveobj.MetaMapType{waveobj.MetaKey_AgentWakeFailed: reason}); err != nil {
+		if err := settle(waveobj.MetaMapType{waveobj.MetaKey_AgentWakeFailed: reason}); err != nil {
 			log.Printf("agent wake: recording why block %s did not wake: %v\n", row.blockId, err)
 		}
 		return fmt.Errorf("agent %q: %s", row.Name, reason)
 	}
 	// awake clears the marks of an agent that is running even though it has not reported in
 	awake := func() {
-		err := updateBlockMeta(settle, row.blockId, waveobj.MetaMapType{
+		err := settle(waveobj.MetaMapType{
 			waveobj.MetaKey_AgentSleeping:   nil,
 			waveobj.MetaKey_AgentSleepFreed: nil,
 		})
@@ -424,6 +461,9 @@ func (ws *WshServer) AgentsWakeCommand(ctx context.Context, data wshrpc.CommandA
 		return err
 	}
 	if target.State != wshrpc.AgentsState_Sleeping {
+		if meta, err := readBlockMeta(ctx, target.blockId); err == nil && metaMillis(meta, waveobj.MetaKey_AgentSleeping) > 0 {
+			return wakeMarkedAwake(ctx, target, strings.TrimSpace(data.Message))
+		}
 		return fmt.Errorf("agent %q is not asleep", target.Name)
 	}
 	if !data.Fresh {
