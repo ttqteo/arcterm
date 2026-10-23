@@ -1,18 +1,23 @@
 # Council v2: an agent team in one room, Brainstorm and Review, held to a benchmark
 
-Status: design, not built (agreed in chat 2026-10-21/22). **Phase 0 done 2026-10-22 (`docs/council-phase0.md`): not
-decided, leaning no-go.** The prompt-only agent team (V3) scored lowest (1/6 key lines over two cases) at about twice
-council v1's tokens; a single agent (V0) was the best value; v1's argue round bought one borderline line. Teammates run
-inside the lead's process (no RAM of their own), and arcterm's own spawn gates (10 Agent calls per session, a Token
-burn card on 3+ spawns that refuses after 30 unanswered minutes) stall a headless team. Phases 1–3 wait on the
-person's call after a stronger re-run. The paper case was removed from the benchmark at the person's request. Supersedes the "what it is", "Rounds", "Starting a council"
-and "Where it lives" parts of `2026-10-21-council-design.md`; the role library, groups, the token gate and the file
-store carry over unless this file says otherwise. Prototype: `.superpowers/design/council-newcomer/project/`
-(gitignored; row C is this design: `V2Setup`, `V2Room`, `V2Report`; row B's `ReportDone` is the Review report).
+Status: design, not built (agreed in chat 2026-10-21/22). **Phase 0 (2026-10-22) and Phase 0b (2026-10-23) done
+(`docs/council-phase0.md`): no-go on the benchmark's terms; by the rule's letter still "not decided".** Phase 0 found
+the prompt-only agent team (V3) lowest (1/6 key lines over two cases) at about twice council v1's tokens. Phase 0b, on
+three stronger cases (a fourth was built and dropped), found V3, v1 (V2) and a single agent (V0) tied on recall, 3, 3
+and 2.5 of 16 key lines, which is inside the judge's noise, at 13.4M, 26.3M and 7.9M tokens: the team is cheaper than
+the panel there and dearer than one agent, and nothing showed it scoring higher. A single agent was the best value in
+both passes. Teammates run inside the lead's process (no RAM of their own), and arcterm's own spawn gates (10 Agent
+calls per session, a Token burn card on 3+ spawns that refuses after 30 unanswered minutes) stall a headless team
+started from a tab. Phases 1–3 are not planned on a benchmark win: v1 stays as the council, and building the room is
+the person's product call (Where it stands). The paper case was removed from the benchmark at the person's request.
+Supersedes the "what it is", "Rounds", "Starting a council" and "Where it lives" parts of
+`2026-10-21-council-design.md`; the role library, groups, the token gate and the file store carry over unless this file
+says otherwise. Prototype: `.superpowers/design/council-newcomer/project/` (gitignored; row C is this design:
+`V2Setup`, `V2Room`, `V2Report`; row B's `ReportDone` is the Review report).
 
-## Where it stands (handoff, 2026-10-22)
+## Where it stands (2026-10-23)
 
-Work moves to another machine; the person stopped the runs below on purpose.
+Work moved to another machine on 2026-10-22, and Phase 0b ran there.
 
 - **Shipped:** run 74b368ce, the readable council on v1 (answer-first report, plain words, top-3 picks with agreement as
   a reaction, done toast and unread dot, a waiting council in Needs you, Setup as one composer). Its hand checks are in
@@ -24,15 +29,25 @@ Work moves to another machine; the person stopped the runs below on purpose.
   and `bench stop`; the opus judge; `council-bench.jsonl`; the harness version on every council; "Was this useful?" on
   the report; the "Council benchmark" initiative's re-measure chunk). Its hand checks are in `docs/open-issues.md`
   "0 · Waiting on a hand check".
-- **Next, with Arc engine** (`wsh runs start --plan <file> --runtime claude --model opus`):
-  `docs/superpowers/plans/2026-10-22-council-phase0b.md` (the stronger benchmark). Cancelled at its task 4 with 9
-  of 12 runs done (services-bugs, agents-bugs and newcomer, each V0, V2, V3; services-sleep not run) and nothing
-  judged. Those results and every bench case live only in the old machine's data dir, so a new machine re-runs the
-  plan from the start; its tasks 1 and 2 rebuild the cases, but the `newcomer` case must be rebuilt by hand first:
-  `git archive 0a2c46437` into `<data dir>/council-bench-projects/newcomer/`, its key the five lines under
-  "Benchmark" item 3, and its entry added to `<data dir>/council-bench/cases.json` (Phase 0's shape).
-- The bench's hand check reads `cases.json`, so on a new machine it waits for the phase0b plan's tasks 1–2 (or the
-  hand rebuild).
+- **Phase 0b, done 2026-10-23** (`docs/council-phase0.md`, "Phase 0b: the stronger pass"; its plan is deleted). Four
+  cases were built (newcomer, services-bugs, services-sleep, agents-bugs) and three ran: services-bugs V2 cost 17.5M
+  tokens against an estimate of about 1M, so the person dropped agents-bugs and capped the benchmark at 50M (49.2M
+  used). V0, V2 and V3 tied on recall (2.5, 3 and 3 of 16 key lines; 11 of the 16 lines were matched by none, and
+  services-bugs scored 0 of 5 for all three, so the code-review comparison has one case and no information). V3 cost
+  half V2's tokens and 1.7 times V0's. Only one of nine second runs fit the cap, so 0b's close rule decided no pair:
+  the verdict is a no-go on the benchmark's terms ("not shown to help"), and by the rule's letter still "not decided".
+- **Next, by that verdict:** v1 stays as the council (Phase 3's "Quick" path) and Phases 1–3 are not planned on a
+  benchmark win. They are revisited if the person wants the room for what it is for, a team to watch and steer (a
+  product choice at about 1.7 times one agent's tokens, not a benchmark result), or if a benchmark that can separate
+  the variants is paid for: it needs cases whose lines one agent misses and a team finds, and more than the 50M this
+  pass used. No date is set. The setup worth questioning is the panel, not the team: in both passes one agent came
+  within a key line of v1's recall at 30 to 40% of its tokens.
+- **For whoever runs the bench next.** Plan a pass on 0b's costs, not Phase 0's: a run cost
+  1.0M to 17.5M in 0b, and v1's cost grows with the case's files (4.4M to 17.5M for V2) while `wsh council start`
+  prints about 1M for it. `wsh council bench` without `--case` runs every case in `cases.json`, agents-bugs (dropped,
+  never run) included, so pass `--case`. The cases and keys are in this machine's data dir only (`council-bench/`,
+  `council-bench-projects/`): another machine can rebuild the snapshots from the commits `docs/council-phase0.md` names,
+  but only newcomer's key (Benchmark item 3) is written down in the repo.
 
 ## Why
 
@@ -276,7 +291,9 @@ dir (`council-bench.jsonl`): date, harness version, case, variant, scores. It is
 change; an initiative chunk reminds the person monthly (Phase 3). Real councils add their Useful / Not really rating
 with harness version and mode.
 
-**Cost of the benchmark**: about 0.5–1M tokens per run. **The first pass is the cheap one** (the person chose it): cases
+**Cost of the benchmark**: Phase 0 measured about 0.5–3M tokens per run; Phase 0b's ran 1–7M, and 17.5M for a
+council on a code case with large files (`docs/council-phase0.md`, Phase 0b tokens). **The first pass is the cheap
+one** (the person chose it): cases
 1–3 × V0–V3 × 1 run in Phase 0, with V3 a prompt-only agent team, roughly 8–12M tokens, repeated only where two
 variants land close. The full set (4 cases × 2 runs,
 ~12–24M) comes later. Any pass is said to the person before it runs, per AGENTS.md.
