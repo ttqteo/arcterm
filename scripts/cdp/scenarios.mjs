@@ -52862,6 +52862,767 @@ const projectOverview = {
     },
 };
 
+// The Overview's two columns (docs/superpowers/specs/2026-10-27-project-overview-history-design.md): Now (what waits on you,
+// what runs, what finished unread) beside History (the project's ended sessions, councils and runs of the last 7 days,
+// searchable). The arrangement: two throwaway projects, the first (A) with a channel and a terminal, the second (B) with a
+// terminal only, so each folder is in the Active section and opens its Overview from the menu. History reads three
+// commands, which a mock RPC client (the document's, so it is installed after each reload) answers: getsessionsactivity,
+// councillist and getchannelruns. Its `mode` is what a step flips (a held council list, a failing runs read, no sessions
+// for B). Step 12 gives the Agent roster a run: the fixture agents carry run ids, and the run and its dag are put into the
+// page's object store the way a pushed `waveobj:update` puts them (eventpublish), since lineageAtom reads them there.
+// Teardown puts the mock, the Needs you list and the roster file back.
+const OVH_A = "verify-ovhistory";
+const OVH_B = "verify-ovhistory-b";
+const OVH_MOCK_KEY = "__arcOverviewHistoryMock";
+const OVH_DAY_MS = 86_400_000;
+const OVH_RUN = "ovh-run"; // the lead's run of step 12
+const OVH_FOLDER = (name) => `[data-agent-folder-section="active"][data-project-folder="${name}"]`;
+const ovhUp = (name) => `(document.querySelector('[data-project-overview="${name}"]') != null)`;
+const ovhCount = (sel) => `document.querySelectorAll(${JSON.stringify(sel)}).length`;
+const ovhText = (sel) => `(document.querySelector(${JSON.stringify(sel)})?.textContent.replace(/\\s+/g, " ").trim() ?? null)`;
+const ovhTabCount = (tab) => ovhText(`[data-history-tab="${tab}"] [data-history-tab-count]`);
+
+// the ended sessions the archive scan finds: A has two in the window (a run's worker, which History leaves to the run,
+// and one 9 days old are filed under it too), B has one
+function ovhSessions(ctx, now) {
+    const session = (id, task, dir, name, agoMs, extra = {}) => ({
+        runtime: "claude",
+        projectpath: dir,
+        projectname: name,
+        branch: "main",
+        model: "opus",
+        tokenstotal: 1200,
+        status: "done",
+        startedts: now - agoMs - 60_000,
+        durationms: 60_000,
+        events: [],
+        id,
+        task,
+        lastactivets: now - agoMs,
+        resumecommand: `claude --resume ${id}`,
+        // outside the project's folder: a file there would be an untracked change in the header's count
+        transcriptpath: join(ctx.base, `${id}.jsonl`),
+        ...extra,
+    });
+    return [
+        session("ovh-s1", "Council store review", ctx.dirA, OVH_A, 30 * 60_000),
+        session("ovh-s2", "Rail rows", ctx.dirA, OVH_A, 2 * 3_600_000),
+        session("ovh-s3", "Rail rows worker", ctx.dirA, OVH_A, 3 * 3_600_000, { runid: "ovh-s-run", role: "worker" }),
+        session("ovh-s4", "Council notes of last week", ctx.dirA, OVH_A, 9 * OVH_DAY_MS),
+        session("ovh-b1", "Quiet notes", ctx.dirB, OVH_B, 5 * 3_600_000),
+    ];
+}
+
+// Runs IN THE PAGE (ovhInstallMock sends its source). Answers getsessionsactivity (a page with a cursor holds nothing, the
+// first page the sessions), councillist (A's one council; B's empty, or held until mode.release()) and getchannelruns (A's
+// channel: one run, or a rejection with mode.runsFail); every other command goes to what was there. `mode` is the steps'.
+async function ovhInstallInPage(cfg) {
+    const mod = await import(cfg.apiUrl);
+    const api = mod.RpcApi;
+    if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+    if (window[cfg.key]) return "already-installed";
+    const prev = api.mockClient ?? null;
+    const norm = (p) => String(p ?? "").replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
+    const held = [];
+    const mode = { holdCouncils: false, runsFail: null, noSessionsB: false, release: null };
+    mode.release = () => {
+        mode.holdCouncils = false;
+        for (const resolve of held.splice(0)) resolve([]);
+    };
+    const mock = {
+        mockWshRpcCall(client, command, data, opts) {
+            if (command === "getsessionsactivity") {
+                if (data?.cursor) return Promise.resolve({ sessions: [] });
+                return Promise.resolve({
+                    sessions: cfg.sessions.filter((s) => !(mode.noSessionsB && norm(s.projectpath) === norm(cfg.dirB))),
+                });
+            }
+            if (command === "councillist") {
+                const project = norm(data?.project);
+                if (project === norm(cfg.dirA)) return Promise.resolve([cfg.council]);
+                if (project === norm(cfg.dirB)) {
+                    return mode.holdCouncils ? new Promise((resolve) => held.push(resolve)) : Promise.resolve([]);
+                }
+            }
+            if (command === "getchannelruns" && data?.channelid === cfg.channelA) {
+                return mode.runsFail ? Promise.reject(new Error(mode.runsFail)) : Promise.resolve({ runs: [cfg.run] });
+            }
+            return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+        },
+        mockWshRpcStream(client, command, data, opts) {
+            return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+        },
+    };
+    window[cfg.key] = { api, prev, mock, mode };
+    api.setMockRpcClient(mock);
+    const probe = await api.GetSessionsActivityCommand(window.TabRpcClient, { windowdays: 30, limit: 100 });
+    return (probe.sessions ?? []).some((s) => s.id === cfg.probeId) ? "ok" : "not-intercepted";
+}
+
+// the modules are resolved again each time: a reload may have moved the dev server's urls
+async function ovhInstallMock(h, ctx) {
+    ctx.modules = await ahResolveModules(h);
+    if (!ctx.modules.urls) return `no-module-url (${ctx.modules.error})`;
+    const cfg = { ...ctx.mockCfg, apiUrl: ctx.modules.urls.api, key: OVH_MOCK_KEY, probeId: "ovh-b1" };
+    return h.ev(`(${ovhInstallInPage.toString()})(${JSON.stringify(cfg)})`);
+}
+
+const removeOvhMock = (h) =>
+    h.ev(`(() => {
+        const f = window.${OVH_MOCK_KEY};
+        if (!f) return "absent";
+        f.api.setMockRpcClient(f.prev);
+        delete window.${OVH_MOCK_KEY};
+        return "restored";
+    })()`);
+
+// Runs IN THE PAGE: puts `ids` into unreadAgentsAtom of the app's own module instance. The url is the one projectnow.tsx
+// imports the store by, read as ahResolveInPage reads one, and the atom is set in the globalStore at `storeUrl`.
+async function ovhSetUnreadInPage(storeUrl, ids) {
+    const from = new URL("../view/agents/projectnow.tsx", storeUrl).href;
+    const res = await fetch(from);
+    if (!res.ok) throw new Error(`${from} answered ${res.status}`);
+    const m = (await res.text()).match(/["']([^"'\s]*\/unreadagentsstore\.ts(?:\?[^"'\s]*)?)["']/);
+    if (!m) throw new Error(`${from} does not import /unreadagentsstore.ts`);
+    const { unreadAgentsAtom } = await import(new URL(m[1], from).href);
+    const { globalStore } = await import(storeUrl);
+    globalStore.set(unreadAgentsAtom, new Map(ids.map((id) => [id, 1])));
+    return globalStore.get(unreadAgentsAtom).size;
+}
+
+// the run `ovh-run` and its dag, as a pushed waveobj:update puts them into the page's object store: the lead is a roster
+// agent whose run it is, the worker one whose run is the child `ovh-child` that t-1 points at
+async function ovhPublishRun(h, ctx, now) {
+    const run = (id, body) => ({
+        otype: "run",
+        oid: id,
+        version: 1,
+        meta: {},
+        id,
+        channeloid: ctx.channelA,
+        goal: "Ship the rail",
+        runtime: "claude",
+        workspaceid: ctx.workspaceId,
+        projectpath: ctx.dirA,
+        status: "executing",
+        phases: [],
+        createdts: now - 3_600_000,
+        dagoref: "ovh-dag",
+        ...body,
+    });
+    const objects = [
+        run(OVH_RUN, { mode: "orchestrator" }),
+        run("ovh-child", { mode: "quick", goal: "Rail rows" }),
+        {
+            otype: "dag",
+            oid: "ovh-dag",
+            version: 1,
+            meta: {},
+            id: "ovh-dag",
+            runid: OVH_RUN,
+            channelid: ctx.channelA,
+            title: "Ship the rail",
+            parallelism: 1,
+            tasks: [
+                { id: "t-1", label: "Rail rows", state: "running", runid: "ovh-child", deps: [] },
+                { id: "t-2", label: "Rail tests", state: "pending", deps: ["t-1"] },
+            ],
+            status: "running",
+            failures: 0,
+            createdts: now - 3_600_000,
+            updatedts: now,
+        },
+    ];
+    for (const o of objects) {
+        await h.rpc("eventpublish", {
+            event: "waveobj:update",
+            scopes: [`${o.otype}:${o.oid}`],
+            data: { updatetype: "update", otype: o.otype, oid: o.oid, obj: o },
+        });
+    }
+}
+
+// the folder row's menu, then Open overview; true once that project's page is in the centre
+async function ovhOpen(h, name) {
+    if (!(await ovContext(h, OVH_FOLDER(name)))) return false;
+    if (!(await polishWaitFor(h, caMenuHas("Open overview"), 3000))) return false;
+    await h.ev(caMenuClick("Open overview"));
+    return polishWaitFor(h, ovhUp(name), 5000);
+}
+
+// History is read when the page mounts, so a step that wants it read again leaves the Overview (A's terminal row takes the
+// centre back) and opens it again
+async function ovhReopen(h, ctx, name) {
+    if (await h.ev(ovHas("[data-project-overview]"))) await ovLeave(h, ctx.term.tabId);
+    return ovhOpen(h, name);
+}
+
+async function ovhTab(h, which) {
+    await h.ev(`document.querySelector('[data-history-tab="${which}"]')?.click()`);
+    return polishWaitFor(h, `document.querySelector('[data-history-tab="${which}"]')?.getAttribute("aria-selected") === "true"`, 3000);
+}
+
+// the search box's value set the way a keystroke sets it: through the native setter, then an input event React reads
+const ovhType = (h, text) =>
+    h.ev(`(() => {
+        const el = document.querySelector("[data-history-search]");
+        if (!el) return false;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, ${JSON.stringify(text)});
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+    })()`);
+
+const projectOverviewHistory = {
+    name: "project-overview-history",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = {
+            base: mkdtempSync(join(tmpdir(), "verify-ovhistory-")),
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+            registered: [],
+            channelIds: [],
+            // every terminal tab this scenario made, for teardown
+            tabs: [],
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            // the centre pane must be wide enough for two columns
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+            ctx.dirA = join(ctx.base, "a");
+            ctx.dirB = join(ctx.base, "b");
+            mkdirSync(ctx.dirA);
+            mkdirSync(ctx.dirB);
+            ovSeedRepo(ctx.dirA);
+            for (const [name, dir] of [
+                [OVH_A, ctx.dirA],
+                [OVH_B, ctx.dirB],
+            ]) {
+                await h.rpc("createproject", { name, path: dir });
+                ctx.registered.push(name);
+                await waitForProjectInConfig(h, name);
+            }
+            // only A has a channel, and its runs are what getchannelruns answers
+            ctx.channelA = (await h.rpc("createchannel", { name: OVH_A, projectpath: ctx.dirA })).oid;
+            ctx.channelIds.push(ctx.channelA);
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            // a terminal in each folder puts it in the Active section, where its menu opens the Overview: B keeps its folder
+            // there when the mock stops answering its sessions
+            ctx.term = await ovTerminalTab(h, ctx, `${OVH_A} terminal`, ctx.dirA);
+            ctx.termB = await ovTerminalTab(h, ctx, `${OVH_B} terminal`, ctx.dirB);
+            const now = Date.now();
+            const sessions = ovhSessions(ctx, now);
+            // the first rows a click opens read their transcripts
+            for (const s of sessions.slice(0, 2)) {
+                writeFileSync(s.transcriptpath, ahTurn("user", s.task) + ahTurn("assistant", [{ type: "text", text: "Done." }]));
+            }
+            ctx.mockCfg = {
+                dirA: ctx.dirA,
+                dirB: ctx.dirB,
+                channelA: ctx.channelA,
+                sessions,
+                council: {
+                    id: "ovh-council-1",
+                    project: ctx.dirA,
+                    feature: "Price a council before it starts",
+                    experts: ["Cost", "Scope", "Risk"].map((name, i) => ({ id: `ovh-e${i + 1}`, name, brief: `${name} lens`, model: "opus" })),
+                    state: "done",
+                    round: 2,
+                    summary: { text: "Price it first.", directions: [], outcomes: {}, answer: "Keep it short.", at: now - 3_600_000 },
+                    tokens: 1200,
+                    calls: 6,
+                    created: now - 2 * 3_600_000,
+                    updated: now - 3_600_000,
+                },
+                // channeloid is what a row's click resolves the run through: the real channel, since the run is no stored object
+                run: {
+                    otype: "run",
+                    oid: "ovh-hist-run",
+                    version: 1,
+                    meta: {},
+                    id: "ovh-hist-run",
+                    channeloid: ctx.channelA,
+                    goal: "Ship the rail",
+                    mode: "orchestrator",
+                    runtime: "claude",
+                    workspaceid: ctx.workspaceId,
+                    projectpath: ctx.dirA,
+                    basebranch: "main",
+                    status: "done",
+                    phases: [],
+                    createdts: now - 3 * 3_600_000,
+                    completedts: now - 2 * 3_600_000,
+                    land: { state: "landed" },
+                    evidence: { verification: { state: "unverified", reasons: ["a", "b"] } },
+                },
+            };
+            // the frontend boots with the projects, the channel and the tabs; the mock is the document's, so it goes in after
+            // this reload, and the runner's entry into Agent starts the scan that reads it
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+            ctx.mock = await ovhInstallMock(h, ctx);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok: !!ok, detail });
+        const shot = (n) => h.shot(`cdp-shots/project-overview-history-${n}.png`);
+        const folderUp = ctx.arrangeError == null && (await polishWaitFor(h, ovHas(OVH_FOLDER(OVH_A)), 20000));
+        rec(
+            "0. the two projects, A's channel, a terminal in each folder and the History mock are in place",
+            folderUp && ctx.mock === "ok",
+            ctx.arrangeError ?? JSON.stringify({ folderUp, mock: ctx.mock })
+        );
+        if (!folderUp || ctx.mock !== "ok") return steps;
+        // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
+        try {
+            // 1. two columns: Now, and History to the right of it
+            const opened1 = await ovhOpen(h, OVH_A);
+            const both = await polishWaitFor(h, `${ovHas("[data-overview-now]")} && ${ovHas("[data-overview-history]")}`, 5000);
+            // the lists read asynchronously: let them in, so the shot shows them
+            await polishWaitFor(h, `/1 council$/.test(${ovhText("[data-overview-counts]")} ?? "")`, 10000);
+            const geo1 = await h.ev(`(() => {
+                const n = document.querySelector("[data-overview-now]")?.getBoundingClientRect();
+                const hist = document.querySelector("[data-overview-history]")?.getBoundingClientRect();
+                return n && hist ? { nowRight: Math.round(n.right), historyLeft: Math.round(hist.left), width: window.innerWidth } : null;
+            })()`);
+            await shot("1");
+            rec(
+                "1. A's Overview shows Now and History side by side: History's left edge is right of Now's right edge",
+                opened1 && both && geo1 != null && geo1.historyLeft >= geo1.nowRight,
+                JSON.stringify({ opened1, both, ...geo1 })
+            );
+
+            // 2. the Sessions tab lists the two ended sessions in the window (not the run's worker, not the 9-day-old one)
+            const countsText = `/2 sessions · 1 run · 1 council$/.test(${ovhText("[data-overview-counts]")} ?? "")`;
+            const rowsUp = await polishWaitFor(h, `${ovhCount("[data-history-row]")} === 2`, 10000);
+            const countsUp = await polishWaitFor(h, countsText, 10000);
+            const rows2 = await h.ev(`[...document.querySelectorAll("[data-history-row]")].map((r) => r.textContent.replace(/\\s+/g, " ").trim())`);
+            const counts2 = await h.ev(ovhText("[data-overview-counts]"));
+            await shot("2");
+            rec(
+                "2. the Sessions tab lists exactly the two ended sessions of the window, and the header reads `2 sessions · 1 run · 1 council`",
+                rowsUp &&
+                    countsUp &&
+                    rows2.length === 2 &&
+                    rows2.some((t) => t.includes("Council store review")) &&
+                    rows2.some((t) => t.includes("Rail rows")),
+                JSON.stringify({ rowsUp, countsUp, rows2, counts2 })
+            );
+
+            // 3. the run count opens Councils & runs: the council with its answer and experts, the run with its land and what is unverified
+            await h.ev(`document.querySelector('[data-overview-count="councils"]')?.click()`);
+            const tab3 = await polishWaitFor(h, `document.querySelector('[data-history-tab="councils"]')?.getAttribute("aria-selected") === "true"`, 3000);
+            const itemsUp = await polishWaitFor(h, `${ovhCount("[data-history-row]")} === 2`, 5000);
+            const page3 = await h.ev(`(() => {
+                const text = (el) => el?.textContent.replace(/\\s+/g, " ").trim() ?? null;
+                const council = document.querySelector('[data-history-kind="council"]');
+                const run = document.querySelector('[data-history-kind="run"]');
+                return { council: text(council), run: text(run), warn: text(run?.querySelector("[data-history-warn]")) };
+            })()`);
+            await shot("3");
+            rec(
+                "3. the `1 run` count selects Councils & runs: the council row reads `Answer: Keep it short.` and `3 experts`, the run row `Landed on main` and `2 not verified`",
+                tab3 &&
+                    itemsUp &&
+                    (page3.council ?? "").includes("Answer: Keep it short.") &&
+                    (page3.council ?? "").includes("3 experts") &&
+                    (page3.run ?? "").includes("Landed on main") &&
+                    page3.warn === "2 not verified",
+                JSON.stringify({ tab3, itemsUp, ...page3 })
+            );
+
+            // 4. / from the page puts the cursor in the search box; `council` narrows both tabs and marks the match
+            const spot = await h.ev(`(() => {
+                const r = document.querySelector("[data-project-overview]").getBoundingClientRect();
+                return { x: Math.round(r.left + 10), y: Math.round(r.top + 10) };
+            })()`);
+            for (const type of ["mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, x: spot.x, y: spot.y, button: "left", clickCount: 1 });
+            }
+            const activeBefore = await h.ev(`document.activeElement?.tagName ?? null`);
+            await ovKey(h, "/", "Slash", 191);
+            const focused4 = await polishWaitFor(h, `document.activeElement === document.querySelector("[data-history-search]")`, 3000);
+            await ovhType(h, "council");
+            const narrowed = await polishWaitFor(h, `${ovhTabCount("sessions")} === "1" && ${ovhTabCount("councils")} === "1"`, 3000);
+            const marks = {};
+            for (const tab of ["councils", "sessions"]) {
+                await ovhTab(h, tab);
+                marks[tab] = await h.ev(`[...document.querySelectorAll("[data-history-row] mark")].map((m) => m.textContent.toLowerCase())`);
+            }
+            const counts4 = { sessions: await h.ev(ovhTabCount("sessions")), councils: await h.ev(ovhTabCount("councils")) };
+            await shot("4");
+            rec(
+                "4. a click on an empty spot, then `/` focuses the search box; typing `council` leaves one session and one council or run, each with `council` marked",
+                activeBefore !== "INPUT" &&
+                    focused4 &&
+                    narrowed &&
+                    counts4.sessions === "1" &&
+                    counts4.councils === "1" &&
+                    marks.councils.length > 0 &&
+                    marks.councils.every((m) => m === "council") &&
+                    marks.sessions.length > 0 &&
+                    marks.sessions.every((m) => m === "council"),
+                JSON.stringify({ activeBefore, focused4, narrowed, counts4, marks })
+            );
+
+            // 5. Escape in the box empties it and the Overview stays
+            await h.ev(`document.querySelector("[data-history-search]")?.focus()`);
+            await ovKey(h, "Escape", "Escape", 27);
+            const cleared = await polishWaitFor(h, `document.querySelector("[data-history-search]")?.value === ""`, 3000);
+            const counts5 = await polishWaitFor(h, `${ovhTabCount("sessions")} === "2" && ${ovhTabCount("councils")} === "2"`, 3000);
+            const still5 = await h.ev(ovhUp(OVH_A));
+            rec(
+                "5. Escape in the search box empties it, both tab counts read `2` again and the Overview is still open",
+                cleared && counts5 && still5 === true,
+                JSON.stringify({ cleared, counts5, still5 })
+            );
+
+            // 6. nothing matches: the note and its Clear button, which brings the rows back
+            await ovhType(h, "zzz");
+            const nomatch = await polishWaitFor(h, ovHas("[data-history-nomatch]"), 3000);
+            const noRows6 = await h.ev(ovhCount("[data-history-row]"));
+            await shot("6");
+            await h.ev(`document.querySelector("[data-history-clear]")?.click()`);
+            const back = await polishWaitFor(h, `${ovhCount("[data-history-row]")} > 0 && document.querySelector("[data-history-search]")?.value === ""`, 3000);
+            rec(
+                "6. a search with no match shows the no-match note with no rows, and Clear search brings the rows back",
+                nomatch && noRows6 === 0 && back,
+                JSON.stringify({ nomatch, noRows6, back })
+            );
+
+            // 7. a row opens its view: a session, a council, a run (its sheet, on the Jarvis surface), and Older opens Conversation History
+            await ovhTab(h, "sessions");
+            await h.ev(`document.querySelector('[data-history-kind="session"]')?.click()`);
+            const session7 = await polishWaitFor(h, `${ovHas("[data-agent-session]")} && !${ovHas("[data-project-overview]")}`, 5000);
+            const reopen7b = await ovhOpen(h, OVH_A);
+            await ovhTab(h, "councils");
+            await h.ev(`document.querySelector('[data-history-kind="council"]')?.click()`);
+            const council7 = await polishWaitFor(h, `(${ovHas("[data-council-discussion]")} || ${ovHas("[data-council-summary]")}) && !${ovHas("[data-project-overview]")}`, 5000);
+            const reopen7c = await ovhOpen(h, OVH_A);
+            await ovhTab(h, "councils");
+            await h.ev(`document.querySelector('[data-history-kind="run"]')?.click()`);
+            // the Agent surface stays mounted, hidden, so the Overview is still in the document: the sheet and the surface say it opened
+            const sheet7 = await polishWaitFor(h, ovHas("[data-jarvis-brief-sheet]"), 8000);
+            const surface7 = await h.activeSurfaceLabel();
+            const run7 = sheet7 && surface7 === "Jarvis";
+            // the sheet is a modal on the Jarvis surface: close it, and enter Agent again
+            await ovKey(h, "Escape", "Escape", 27);
+            const sheetGone = await polishWaitFor(h, `!${ovHas("[data-jarvis-brief-sheet]")}`, 3000);
+            await h.goto("agent");
+            const reopen7d = await ovhOpen(h, OVH_A);
+            await h.ev(`document.querySelector("[data-history-older]")?.click()`);
+            const history7 = await polishWaitFor(h, `${ovHas("[data-agent-history]")} && !${ovHas("[data-project-overview]")}`, 5000);
+            await shot("7");
+            rec(
+                "7. a Sessions row opens the session view, the council row the council view, the run row the run's sheet, and Older: Conversation History opens Conversation History",
+                session7 && reopen7b && council7 && reopen7c && run7 && reopen7d && history7,
+                JSON.stringify({ session7, reopen7b, council7, reopen7c, run7, sheet7, surface7, sheetGone, reopen7d, history7 })
+            );
+
+            // 8. a failed runs read: the error line with Retry, the council still listed; Retry reads the runs
+            await h.ev(`window.${OVH_MOCK_KEY}.mode.runsFail = "boom"`);
+            const reopen8 = await ovhOpen(h, OVH_A);
+            await ovhTab(h, "councils");
+            const error8 = await polishWaitFor(h, ovHas("[data-history-error]"), 5000);
+            const page8 = await h.ev(`(() => ({
+                error: document.querySelector("[data-history-error]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                retry: !!document.querySelector("[data-history-retry]"),
+                council: !!document.querySelector('[data-history-kind="council"]'),
+            }))()`);
+            await shot("8");
+            await h.ev(`window.${OVH_MOCK_KEY}.mode.runsFail = null`);
+            await h.ev(`document.querySelector("[data-history-retry]")?.click()`);
+            const recovered = await polishWaitFor(h, `!${ovHas("[data-history-error]")} && ${ovHas('[data-history-kind="run"]')}`, 5000);
+            rec(
+                "8. a failing runs read shows `Could not read runs: boom.` with Retry and the council still listed; with the read answering, Retry removes the error and lists the run",
+                reopen8 &&
+                    error8 &&
+                    (page8.error ?? "").includes("Could not read runs:") &&
+                    (page8.error ?? "").includes("boom.") &&
+                    page8.retry &&
+                    page8.council &&
+                    recovered,
+                JSON.stringify({ reopen8, error8, ...page8, recovered })
+            );
+
+            // 9. under 1000px the columns stack: Now above History
+            await h.ev(`document.querySelector("[data-project-overview]").style.width = "760px"`);
+            await polishNap(400);
+            const geo9 = await h.ev(`(() => {
+                const n = document.querySelector("[data-overview-now]")?.getBoundingClientRect();
+                const hist = document.querySelector("[data-overview-history]")?.getBoundingClientRect();
+                return n && hist ? { nowBottom: Math.round(n.bottom), historyTop: Math.round(hist.top) } : null;
+            })()`);
+            await shot("9");
+            await h.ev(`document.querySelector("[data-project-overview]").style.width = ""`);
+            rec(
+                "9. at 760px wide the page stacks the columns: Now's bottom is above History's top",
+                geo9 != null && geo9.nowBottom <= geo9.historyTop,
+                JSON.stringify(geo9)
+            );
+
+            // 10. B, whose councils are read for the first time here: loading while the list is held, then the empty line and Older
+            await h.ev(`window.${OVH_MOCK_KEY}.mode.holdCouncils = true`);
+            const opened10 = await ovhReopen(h, ctx, OVH_B);
+            await ovhTab(h, "councils");
+            const loading10 = await polishWaitFor(h, ovHas('[data-history-loading][aria-busy="true"]'), 5000);
+            await shot("10a");
+            await h.ev(`window.${OVH_MOCK_KEY}.mode.release()`);
+            const empty10 = await polishWaitFor(h, ovHas("[data-history-empty]"), 5000);
+            const page10 = await h.ev(`(() => {
+                const empty = document.querySelector("[data-history-empty]");
+                return {
+                    empty: empty?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                    olderAfter: empty?.nextElementSibling?.matches("[data-history-older]") ?? false,
+                };
+            })()`);
+            await shot("10b");
+            rec(
+                `10. B's Councils & runs shows the loading rows while its councils are held, then \`No councils or runs in ${OVH_B} in the last 7 days.\` with the Older link after it`,
+                opened10 &&
+                    loading10 &&
+                    empty10 &&
+                    page10.empty === `No councils or runs in ${OVH_B} in the last 7 days.` &&
+                    page10.olderAfter,
+                JSON.stringify({ opened10, loading10, empty10, ...page10 })
+            );
+
+            // 11. B is quiet: the quiet line in Now, its one session, a header with a session count only
+            await ovhTab(h, "sessions");
+            const quiet11 = await polishWaitFor(h, ovHas("[data-overview-quiet]"), 5000);
+            const rows11 = await polishWaitFor(h, `${ovhCount("[data-history-row]")} === 1`, 5000);
+            const page11 = await h.ev(`(() => ({
+                row: document.querySelector("[data-history-row]")?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                counts: ${ovhText("[data-overview-counts]")},
+                runOrCouncilButton: !!document.querySelector('[data-overview-count="councils"]'),
+                itemsCount: ${ovhTabCount("councils")},
+            }))()`);
+            await shot("11");
+            rec(
+                "11. B's Overview shows the quiet line in Now, its one session `Quiet notes`, a header reading `1 session` with no run or council button, and a Councils & runs count of `0`",
+                quiet11 &&
+                    rows11 &&
+                    (page11.row ?? "").includes("Quiet notes") &&
+                    /1 session$/.test(page11.counts ?? "") &&
+                    !page11.runOrCouncilButton &&
+                    page11.itemsCount === "0",
+                JSON.stringify({ quiet11, rows11, ...page11 })
+            );
+
+            // 11b. with no session of B in the scan either, both tabs say the whole project is empty
+            await h.ev(`window.${OVH_MOCK_KEY}.mode.noSessionsB = true`);
+            const opened11b = await ovhReopen(h, ctx, OVH_B);
+            await ovhTab(h, "sessions");
+            const empty11b = await polishWaitFor(h, ovHas("[data-history-empty]"), 8000);
+            const line = `No sessions, runs or councils in ${OVH_B} in the last 7 days.`;
+            const read11b = () =>
+                h.ev(`(() => {
+                    const empty = document.querySelector("[data-history-empty]");
+                    return {
+                        empty: empty?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                        olderAfter: empty?.nextElementSibling?.matches("[data-history-older]") ?? false,
+                    };
+                })()`);
+            const sessionsTab = await read11b();
+            await ovhTab(h, "councils");
+            const councilsTab = await read11b();
+            await shot("11b");
+            rec(
+                `11b. with the mock answering no session for B, both tabs read \`${line}\` with the Older link after it`,
+                opened11b &&
+                    empty11b &&
+                    sessionsTab.empty === line &&
+                    sessionsTab.olderAfter &&
+                    councilsTab.empty === line &&
+                    councilsTab.olderAfter,
+                JSON.stringify({ opened11b, empty11b, sessionsTab, councilsTab })
+            );
+
+            // 12. a run in Running, and a finished agent: the roster has the lead (idle) and a worker (working, in a worktree
+            // folder) of run ovh-run and a plain idle agent; the roster is read once at boot, so the page is loaded again
+            const now = Date.now();
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        {
+                            id: "ovh-lead",
+                            name: "ovh lead",
+                            project: OVH_A,
+                            task: "Ship the rail",
+                            state: "idle",
+                            agent: "claude",
+                            model: "opus",
+                            idleSince: now - 120_000,
+                            runId: OVH_RUN,
+                            blockId: "fx-blk-ovh-lead",
+                        },
+                        {
+                            id: "ovh-w1",
+                            name: "ovh worker",
+                            project: "a6c8cb9e-t-1",
+                            task: "Rail rows",
+                            state: "working",
+                            agent: "claude",
+                            model: "sonnet",
+                            activity: "Editing the rail rows",
+                            activeMs: 60_000,
+                            stateSince: now - 60_000,
+                            runId: "ovh-child",
+                            blockId: "fx-blk-ovh-w1",
+                        },
+                        {
+                            id: "ovh-done",
+                            name: "ovh done",
+                            project: OVH_A,
+                            task: "wrote the notes",
+                            state: "idle",
+                            agent: "claude",
+                            model: "opus",
+                            idleSince: now - 600_000,
+                            stateSince: now - 600_000,
+                            blockId: "fx-blk-ovh-done",
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            const reloaded12 = await ahReload(h);
+            const mock12 = reloaded12 ? await ovhInstallMock(h, ctx) : "no-reload";
+            await h.goto("agent");
+            const folder12 = await polishWaitFor(h, ovHas(OVH_FOLDER(OVH_A)), 15000);
+            await ovhPublishRun(h, ctx, now);
+            const opened12 = folder12 && (await ovhOpen(h, OVH_A));
+            const runRow = `[data-overview-running-run="${OVH_RUN}"]`;
+            const runUp = await polishWaitFor(h, ovHas(runRow), 10000);
+            const runText = await h.ev(ovhText(runRow));
+            const workerRow = await h.ev(ovHas('[data-overview-running-row="ovh-w1"]'));
+            const unreadSize = await h.ev(`(${ovhSetUnreadInPage.toString()})(${JSON.stringify(ctx.modules.urls.store)}, ["ovh-done"])`);
+            const doneRow = '[data-overview-finished-row="ovh-done"]';
+            const doneUp = await polishWaitFor(h, ovHas(doneRow), 5000);
+            await shot("12");
+            await h.ev(`document.querySelector(${JSON.stringify(doneRow)})?.click()`);
+            const left12 = await polishWaitFor(h, ovDown, 3000);
+            const selected12 = await polishWaitFor(
+                h,
+                `(document.querySelector('[data-agent-row="ovh-done"]')?.className ?? "").includes("bg-surface-selected")`,
+                3000
+            );
+            rec(
+                "12. the run `ovh-run` is one Running row reading `1 at work` with its worker having no row of its own, an unread idle agent is listed under Finished, and its row opens that agent's terminal, selected",
+                reloaded12 &&
+                    mock12 === "ok" &&
+                    opened12 &&
+                    runUp &&
+                    (runText ?? "").includes("1 at work") &&
+                    workerRow === false &&
+                    doneUp &&
+                    left12 &&
+                    selected12,
+                JSON.stringify({
+                    reloaded12,
+                    mock12,
+                    opened12,
+                    runUp,
+                    runText,
+                    workerRow,
+                    unreadSet: unreadSize,
+                    doneUp,
+                    // when the row never shows, the unread tracker may have reset the atom before it was read (useUnreadTracking)
+                    ...(doneUp ? {} : { unreadNow: "the Finished row did not show" }),
+                    left12,
+                    selected12,
+                })
+            );
+
+            // 13. three runs to confirm fold into one group with their ages; it opens to the rows, and a row to its details.
+            // The hook that sets the Needs you list is installed when the Cockpit first mounts, so the Cockpit is entered first
+            const unverified = ["a", "b", "c"].map((k, i) => ({
+                kind: "run-unverified",
+                key: `ovh-unv-${k}`,
+                channelid: ctx.channelA,
+                runid: `run-ovh-unv-${k}`,
+                taskid: "",
+                source: `verify the history ${k}`,
+                text: `Not verified: ${k}`,
+                action: "Accept",
+                phaseidx: 0,
+                // 4 days, 4 days, 5 days
+                waitingsince: now - (i === 2 ? 5 : 4) * OVH_DAY_MS - i * 60_000,
+                why: "Not verified: x; y. Once read, accept it with `wsh runs ack r`.",
+            }));
+            await h.goto("cockpit");
+            const hook13 = await polishWaitFor(h, `typeof window.__cockpitOfficeAttention === "function"`, 10000);
+            if (hook13) await h.ev(`window.__cockpitOfficeAttention(${JSON.stringify(unverified)})`);
+            await h.goto("agent");
+            const opened13 = hook13 && (await ovhOpen(h, OVH_A));
+            const group = '[data-needs-you-group="Run to confirm"]';
+            const groupUp = await polishWaitFor(h, ovHas(group), 10000);
+            const age13 = await h.ev(ovhText(`${group} [data-needs-you-group-age]`));
+            await h.ev(`document.querySelector(${JSON.stringify(`${group} button`)})?.click()`);
+            const rows13 = await polishWaitFor(h, `${ovhCount(`${group} [data-needs-you-row]`)} === 3`, 3000);
+            await h.ev(`document.querySelector(${JSON.stringify(`${group} [data-needs-you-expand]`)})?.click()`);
+            const detail13 = await polishWaitFor(h, ovHas(`${group} [data-needs-you-detail]`), 3000);
+            const lines13 = await h.ev(`[...document.querySelectorAll(${JSON.stringify(`${group} [data-needs-you-detail] li`)})].map((li) => li.textContent.trim().replace(/^·\\s*/, ""))`);
+            await shot("13");
+            rec(
+                "13. three runs to confirm fold into `Run to confirm` aged `4–5d`; a click opens three rows, and the first one's expand lists `x` and `y`",
+                opened13 &&
+                    groupUp &&
+                    age13 === "4–5d" &&
+                    rows13 &&
+                    detail13 &&
+                    lines13.includes("x") &&
+                    lines13.includes("y"),
+                JSON.stringify({ hook13, opened13, groupUp, age13, rows13, detail13, lines13 })
+            );
+        } catch (e) {
+            rec("a call failed before the steps finished", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h, ctx) {
+        // each is its own step: one failing must not skip the rest
+        const step = async (what, run) => {
+            try {
+                await run();
+            } catch (e) {
+                console.error(`project-overview-history teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("clear the viewport override", () => h.cdp("Emulation.clearDeviceMetricsOverride"));
+        await step("put the live Needs you list back", () => h.ev("window.__cockpitOfficeAttention?.(null)"));
+        await step("remove the History mock", () => removeOvhMock(h));
+        for (const tabId of ctx.tabs ?? []) {
+            await step(`close terminal tab ${tabId}`, () => waveService(h, "workspace", "CloseTab", [ctx.workspaceId, tabId, false]));
+        }
+        for (const channelId of ctx.channelIds ?? []) {
+            await step(`delete channel ${channelId}`, () => h.rpc("deletechannel", { channelid: channelId }));
+        }
+        for (const name of ctx.registered ?? []) {
+            await step(`delete project ${name}`, () => h.rpc("deleteproject", { name }));
+        }
+        await step("restore the fixture roster", () => {
+            if (ctx.prevFixture != null) writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture);
+            else rmSync(TREE_RAIL_FIXTURE, { force: true });
+        });
+        // the reload also drops the run and dag objects step 12 put into the page's store
+        await step("reload onto the restored roster", async () => {
+            if (!(await ahReload(h))) throw new Error("the app did not come back within 60s of the reload");
+        });
+        // the terminals' shells can hold the project folder for a moment after their tabs close
+        await step("remove the temp dir", () => rmSync(ctx.base, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -53069,6 +53830,7 @@ export const SCENARIOS = [
     runSheetCardsLook,
     codeStaleBarLook,
     projectOverview,
+    projectOverviewHistory,
     // last: its fixture roster stands in for the live one until its teardown reloads
     agentComposer,
 ];
