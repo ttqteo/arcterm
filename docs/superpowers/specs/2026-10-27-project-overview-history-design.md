@@ -9,6 +9,10 @@ column, at the person's choice (2026-10-27).
 
 Prototype: `.superpowers/design/project-overview-history/project/` (Main, CouncilsRuns, Search, Quiet, States, Narrow).
 
+Superseded in part (2026-10-28, canvas `.superpowers/design/project-overview/project/`): History is one list by
+session, each session's runs and councils nested under it, with no tabs; the header keeps New agent and Terminal and
+has no Run, Council or counts line; an Activity card sits between the header and the columns.
+
 Ideas (`pkg/ideastore`) are left out on purpose: the feature is being removed.
 
 ## The page
