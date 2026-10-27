@@ -10,7 +10,6 @@ import { cacheMissNotice, transcriptEntries } from "./cache-core";
 import { controlMsg, deliver, endTurn, steerNotice, takeLines } from "./control-core";
 import type { Turn } from "./control-core";
 import { denial, isEngineTree } from "./guard-core";
-import { promptNudge } from "./ideas-core";
 import { jobslotArgs, jobslotLine } from "./jobslot-core";
 import { claudeConfigDir, memoryDir, transcriptFile } from "./claudepaths-core";
 import { lintContext, lintMemory, parseMemory, referencedPaths, taskNames } from "./memlint-core";
@@ -324,31 +323,6 @@ async function promptStarted($: EngineInterface, originKind: string) {
     }
 }
 
-// the prompt goes on whatever the tick does. the session's id is passed because a block-targeted tick errors
-// until the block has a transcript path
-async function nudgeIdeas($: EngineInterface) {
-    try {
-        await promptNudge(
-            {
-                run: (argv) => $.process.run(argv),
-                append: async (text) => {
-                    const kept = await $.session.append({
-                        message: { type: "user", content: [{ type: "text", text }] },
-                    });
-                    if (kept.deny !== undefined) {
-                        throw new Error(kept.deny);
-                    }
-                },
-                log: (msg) => $.ui.log(msg, { to: "debug" }),
-            },
-            WSH,
-            await $.session.id()
-        );
-    } catch (err) {
-        $.ui.log(`arc: the ideas nudge failed: ${String(err)}`, { to: "debug" });
-    }
-}
-
 // lints the project's Claude memory dir at session start, so a memory gone stale on any machine is named there;
 // the person gets a toast, the model the list as a row it reads before the first prompt. silent when the dir
 // is clean or there is none. claude's SessionStart additionalContext or a prompt.compose section would be the
@@ -428,9 +402,6 @@ export const register: Register = (on) => {
         const m = active && e.origin.kind === "composer" ? leadingMention(e.text) : null;
         if (m === null) {
             await promptStarted($, e.origin.kind);
-            if (active) {
-                await nudgeIdeas($);
-            }
             return next(e);
         }
         const putBack = () =>

@@ -21,7 +21,6 @@ declare global {
         | "system:slept"
         | "jobqueue"
         | "memorypressure"
-        | "ideas:changed"
         | "council:changed"
         | "storage:scan"
         | "dag:child-done"
@@ -59,7 +58,6 @@ declare global {
         { event: "system:slept"; data?: SleptData; } | 
         { event: "jobqueue"; data?: JobQueueData; } | 
         { event: "memorypressure"; data?: MemoryPressureData; } | 
-        { event: "ideas:changed"; data?: IdeasChangedData; } | 
         { event: "council:changed"; data?: CouncilChangedData; } | 
         { event: "storage:scan"; data?: StorageReport; } | 
         { event: "dag:child-done"; data?: string; } | 

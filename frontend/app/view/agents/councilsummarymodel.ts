@@ -85,7 +85,7 @@ export interface Position {
 
 export interface DirectionRow {
     direction: CouncilDirection;
-    meta: string; // `from UX and RAM · 1 file · 1 weak claim · in Ideas`; a Brainstorm's starts `Had it: UX · built on by RAM`
+    meta: string; // `from UX and RAM · 1 file · 1 weak claim`; a Brainstorm's starts `Had it: UX · built on by RAM`
     firstStep: string; // `First step: Try it on one screen`, or empty when the coordinator gave none
     chips: StanceChip[]; // the experts that proposed or took a stance, in panel order
     tag: string; // `Everyone agrees`, `Reader has doubts`, `RAM is against it` (directionTag)
@@ -222,7 +222,6 @@ export function directionRows(c: Council): DirectionRow[] {
             brainstorm ? hadLine(c, direction.from) : fromLine(c, direction.from),
             files.size > 0 ? plural(files.size, "file", "files") : "",
             weak > 0 ? plural(weak, "weak claim", "weak claims") : "",
-            direction.ideaid ? "in Ideas" : "",
         ].filter((part) => part !== "");
         const firstStep = (direction.firststep ?? "").replace(/\s+/g, " ").trim();
         return {
@@ -408,9 +407,8 @@ const PROMPT_REPLIES = 30;
 const PROMPT_CHARS = 8000;
 
 /** Pure: the first prompt of the agent Start an agent on it opens: the direction, the coordinator's reasoning, the proposals
- *  it came from and their thread, and the ask to record the direction with `wsh idea add` before brainstorming, so the
- *  new session's Ideas holds it. The thread is cut from its oldest end when the whole would be too long for a launch
- *  argument. */
+ *  it came from and their thread, and the ask to start brainstorming it. The thread is cut from its oldest end when the
+ *  whole would be too long for a launch argument. */
 export function brainstormPrompt(c: Council, row: DirectionRow): string {
     const d = row.direction;
     const name = (id: string) => (id === "you" ? "You" : (c.experts.find((e) => e.id === id)?.name ?? id));
@@ -441,10 +439,7 @@ export function brainstormPrompt(c: Council, row: DirectionRow): string {
               ]
             : []),
     ];
-    const tail = [
-        "",
-        `First, record this direction in my Ideas list so this session holds it: run wsh idea add with the direction's title as its one argument, --kind idea and --topic "${c.feature}". Then start brainstorming it with me.`,
-    ];
+    const tail = ["", "Start brainstorming it with me."];
     const lines = thread.slice(-PROMPT_REPLIES);
     const build = (kept: string[]) =>
         [...head, ...(kept.length > 0 ? ["The thread:", ...kept] : []), ...tail].join("\n");

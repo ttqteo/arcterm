@@ -1,4 +1,4 @@
-# Brainstorm ideas — design
+# Brainstorm ideas — design (superseded by Brainstorm mode, 2026-10-27)
 
 While the user brainstorms with an agent, the ideas, decisions and open questions it produces are distilled into a
 list on the Agent details rail, written by the agent as it goes and by the user by hand, so the user can catch up

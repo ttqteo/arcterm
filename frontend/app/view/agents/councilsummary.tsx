@@ -306,11 +306,6 @@ function DirectionCard({
                         <button type="button" data-council-action="ask-again" onClick={onAskAgain} className={BUTTON}>
                             Ask the experts again
                         </button>
-                        {d.ideaid ? (
-                            <span data-council-idea className="text-[11px] text-muted">
-                                In Ideas as {d.ideaid}
-                            </span>
-                        ) : null}
                     </div>
                 </div>
             ) : null}

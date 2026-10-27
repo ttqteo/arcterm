@@ -296,7 +296,7 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify(dirs.map((d) => [d.rank, d.tag, d.chips, d.open])) };
         });
 
-        await step("direction 3 opens to its reasoning, each expert's position, a weak chip, its Ideas line and Start an agent on it", async () => {
+        await step("direction 3 opens to its reasoning, each expert's position, a weak chip and Start an agent on it", async () => {
             await openDirection(h, 3);
             const open = await h.ev(`(() => {
                 const d = document.querySelector(${q(DIRECTION(3))});
@@ -306,7 +306,6 @@ export const councilSummary = {
                     positions: [...body.querySelectorAll("[data-council-position]")].map((p) => p.dataset.councilPosition),
                     weak: [...body.querySelectorAll('[data-council-evidence="weak"]')].map((e) => e.innerText.trim()),
                     refs: [...body.querySelectorAll('[data-council-evidence="ref"]')].map((e) => e.innerText.trim()),
-                    idea: body.querySelector("[data-council-idea]")?.innerText ?? null,
                     brainstorm: body.querySelector('[data-council-action="brainstorm"]')?.innerText ?? null,
                     askAgain: body.querySelector('[data-council-action="ask-again"]')?.innerText ?? null,
                     meta: d.querySelector("[data-council-meta]")?.innerText ?? null,
@@ -319,10 +318,9 @@ export const councilSummary = {
                 open.weak.length === 1 &&
                 open.weak[0] === 'Weak · "about 3 s" has no measurement' &&
                 open.refs.includes("pkg/services/model.go:36") &&
-                open.idea === "In Ideas as fx-idea-3" &&
                 open.brainstorm === "Start an agent on it" &&
                 open.askAgain === "Ask the experts again" &&
-                open.meta === "from UX and RAM · 1 file · 1 weak claim · in Ideas" &&
+                open.meta === "from UX and RAM · 1 file · 1 weak claim" &&
                 // the chip's text starts with the expert's avatar letter
                 open.chips.ram.endsWith(" Is against it") &&
                 open.chips.skeptic.endsWith(" Has doubts") &&
@@ -620,7 +618,7 @@ export const councilSummary = {
                 launch?.data?.meta?.cmd === "claude" &&
                 slashes(launch.data.meta["cmd:cwd"]) === slashes(ctx.repo) &&
                 prompt.includes(TITLES[2]) &&
-                prompt.includes("wsh idea add") &&
+                prompt.includes("Start brainstorming it with me.") &&
                 prompt.includes('"Keep the last-used pinned app awake" by UX') &&
                 (await rpcCalls(h, "AgentSyncApplyCommand")).length >= 1;
             return { ok, detail: JSON.stringify({ clicked, wrote, cmd: launch?.data?.meta?.cmd, cwd: launch?.data?.meta?.["cmd:cwd"], prompt: prompt.slice(0, 160) }) };

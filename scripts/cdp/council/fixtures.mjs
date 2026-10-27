@@ -257,7 +257,10 @@ export async function openSetupFromNew(h, project) {
         const b = [...document.querySelectorAll("[data-launcher] button")].find((x) => (x.textContent ?? "").includes("Set up council"));
         if (!b) return "";
         b.click();
-        return (b.textContent ?? "").replace(/\\s+/g, " ").trim();
+        // the button's key-hint chip (a kbd) is not part of its label
+        const own = b.cloneNode(true);
+        own.querySelectorAll("kbd").forEach((k) => k.remove());
+        return (own.textContent ?? "").replace(/\\s+/g, " ").trim();
     })()`);
     const setup = await until(`!!document.querySelector("[data-council-setup]") && !document.querySelector("[data-launcher]")`);
     return { ok: opened && picked && inProject && label !== "" && setup, opened, picked, inProject, label, setup };

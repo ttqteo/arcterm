@@ -68,7 +68,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `docs/superpowers/specs/2026-10-22-council-agent-team-design.md` (Phases, Ahead of Phase 0b).
 - [ ] (arcterm) Council from an agent: in a claude session, let it start a council (the `arc:council` skill).
   `wsh council start` shows the Token burn gate card with the estimate; allow it and the council runs, and
-  `wsh council wait` prints the Summary and Matrix back into the session, with the directions in that session's Ideas.
+  `wsh council wait` prints the Summary and Matrix back into the session.
   Run it again and refuse the card: the agent reports `Not run: …` without retrying, the project has a `Not run`
   council row, and its Discussion's Start council (with the estimate) runs it. `cmd/wsh/cmd/wshcmd-council.go`,
   `skills/council/SKILL.md`, `pkg/tokengate`.
@@ -86,11 +86,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   starts by itself. The finished council's report reads `Saved to docs/council/….md with the whole discussion`, and
   that file exists. `pkg/council/prompts.go`, `runner.go`, `frontend/app/view/agents/agenttree.tsx`; spec
   `docs/superpowers/specs/2026-10-22-council-agent-team-design.md`.
-- [ ] (arcterm) Ask the council: in a real agent session with an open `question` line in its Ideas, click Ask the
-  council. Setup opens with the question filled in, the session's project and a group the coordinator suggests; Start
-  council runs it and, after a real run, the directions come back into that session's Ideas (not a copy in another
-  session). `frontend/app/view/agents/ideassection.tsx`, `councilsetup.tsx`; the runner files them with the council's
-  `sessionid`.
 - [ ] (arcterm) Council Setup, the parts a person has to try: "+ Add a file or folder" opens the OS pickers and the
   chosen paths show as file chips; a screenshot pasted into Setup shows its thumbnail and reaches round 1 (the experts
   open it with Read); Save as group names the current panel and the group is in the group menu the next time Setup
@@ -250,7 +245,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   the head; with more than six projects the Initiatives filter is one "project" menu in the head; right-click a row
   and the arrows move the menu's highlight, Escape closes it without leaving the Brief. (6a225bc59)
 - [ ] (arcterm) Kael sync: after an agent launch, a new Claude session lists the skills as arc:runs, arc:cockpit,
-  arc:design, arc:initiatives, arc:notes, arc:doc-review, arc:ideas, arc:learn (none twice), ~/.claude/skills no longer
+  arc:design, arc:initiatives, arc:notes, arc:doc-review, arc:learn (none twice), ~/.claude/skills no longer
   holds cockpit-runs and the rest, and Setup → Skills shows them in sync; a rule approved through `wsh learn` for
   cockpit-runs now shows under runs. (1cd40ef02)
 - [ ] (arcterm) Background task Stop inside its card: with a running background task, open the Agent rail's Background
@@ -579,13 +574,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 - [ ] With one agent asking and one run waiting to be confirmed: the Cockpit nav badge says 1, the same as its "need
   you" tab, and Jarvis says 1. Confirm the run in Jarvis and its badge goes away. `attentionstore.ts` `splitAttention`.
-
-**2026-10-14 (brainstorm ideas, run ee18a780)**
-
-- [ ] In an agent tab, type `/idea` (or `/arc:idea`): Claude Code lists the command and runs it, and the idea lands in
-  the rail's Ideas section. `claude plugin validate` does not inspect `commands/`. `claude/arc-mod/commands/idea.md`.
-- [ ] On a Mac, select text in an agent's terminal and press Cmd+Shift+I: a toast with Undo, and the line in Ideas;
-  with nothing selected the Ideas box opens. `ideasstore.ts` `runIdeaCapture`.
 
 **2026-10-14 (Conversations rescan)**
 

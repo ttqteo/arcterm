@@ -2,15 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // council-setup and council-ask (docs/superpowers/plans/2026-10-21-council.md, Task 16): the Setup form, the coordinator's
-// suggestion and Start council; and Ask the council on an Ideas question. Nothing here starts a council or spends a
+// suggestion and Start council; and Setup opened with a question. Nothing here starts a council or spends a
 // token: the coordinator's suggestion and Start council are always stubbed in the page (fixtures.mjs stubRpc), and the
 // estimate Setup shows is the real, free RPC.
 //
 // council-setup opens Setup for the fixture project from New (its Council row), fills it in, reopens it prefilled through the
 // DEV hook window.__arcCouncil (two files and a temp PNG) to see the suggestion pending, resolved, and rejected, and
-// starts a council with the stub. council-ask arranges an agent in the fixture project whose session has one open
-// question in its Ideas, the way the ideas-rail scenario does (a roster fixture, a transcript, the session's ideas via
-// `ideaadd`), and asks the council from that question's row.
+// starts a council with the stub. council-ask opens Setup through the same hook with a question and an agent session, and
+// follows it to the council Start council sends.
 //
 // The mode chip (docs/superpowers/plans/2026-10-22-council-v1-room.md, Task 5) is shown by council-setup: a suggestion that
 // names a mode sets the chip, the rules line and the group, a click flips it, and Start council reads Queue council while
@@ -19,7 +18,7 @@
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx).
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { waitFor } from "../attach.mjs";
 import {
@@ -590,87 +589,14 @@ export const councilSetup = {
 
 // ---- council-ask ----
 
-const ASK_AGENT = "fx-council-ask";
 const ASK_SESSION = "council-ask-fixture";
 const ASK_QUESTION = "Is the rail the right home for pinned apps, or should they live in the Agent tree?";
-const ROSTER_FIXTURE = new URL("../../../public/cockpit-fixtures/active.json", import.meta.url);
-const UI_ROUTE = { route: "cockpit", timeout: 15000 };
-// the page state a known Agent surface with its rail open starts from, put back by teardown (ideas-rail's keys)
-const RAIL_KEYS = [
-    "agent.rail.visible",
-    "cockpit.rail.sections",
-    "agent.rail.tab",
-    "agent.rail.wideWidth",
-    "agent.grids",
-    "agent.tree.collapsed",
-    "agent.tree.sections.collapsed",
-    "agent.tree.conversations.collapsed",
-];
-const ASIDE = `document.querySelector('aside[aria-label="Agent details"]')`;
 
-const transcript = (cwd, prompt) =>
-    JSON.stringify({ cwd, type: "user", message: { role: "user", content: [{ type: "text", text: prompt }] } }) + "\n";
-
+// Setup opened with a question and the agent session that asks it (nothing on screen opens it that way now, so the scenario
+// calls showCouncilSetup through the DEV hook, as council-setup does for its prefills)
 export const councilAsk = {
     async arrange(h, fx) {
-        const ctx = await arrangeCouncilProject(h, fx);
-        try {
-            ctx.prevKeys = {};
-            for (const k of RAIL_KEYS) {
-                ctx.prevKeys[k] = await h.ev(`localStorage.getItem(${JSON.stringify(k)})`);
-            }
-            ctx.prevFixture = existsSync(ROSTER_FIXTURE) ? readFileSync(ROSTER_FIXTURE, "utf8") : null;
-            // the terminal arrangeCouncilProject opened becomes an agent's: its tab is marked, and its block carries the
-            // transcript whose file name is the session the Ideas list belongs to
-            const term = ctx.terminals[0];
-            ctx.transcript = join(ctx.base, `${ASK_SESSION}.jsonl`);
-            writeFileSync(ctx.transcript, transcript(ctx.repo, "weigh the rail apps"));
-            await h.rpc("setmeta", { oref: `tab:${term.tabId}`, meta: { "session:agent": "claude" } });
-            await h.rpc("setmeta", { oref: `block:${term.blockId}`, meta: { "agent:transcriptpath": ctx.transcript } });
-            ctx.dataDir = (await h.rpc("waveinfo", null)).datadir;
-            rmSync(join(ctx.dataDir, "ideas", `${ASK_SESSION}.json`), { force: true });
-            await h.rpc("ideaadd", { sessionid: ASK_SESSION, text: ASK_QUESTION, kind: "question", by: "agent" });
-            ctx.ideasWritten = true;
-            mkdirSync(new URL(".", ROSTER_FIXTURE), { recursive: true });
-            writeFileSync(
-                ROSTER_FIXTURE,
-                JSON.stringify(
-                    [
-                        {
-                            id: ASK_AGENT,
-                            name: "council ask agent",
-                            project: COUNCIL_PROJECT,
-                            task: "weigh the rail apps",
-                            state: "idle",
-                            agent: "claude",
-                            model: "opus",
-                            idleSince: Date.now() - 60_000,
-                            blockId: term.blockId,
-                            transcriptPath: ctx.transcript,
-                        },
-                    ],
-                    null,
-                    2
-                )
-            );
-            ctx.wroteFixture = true;
-            // an open rail on Overview with every section at its default (Ideas is closed), an empty grid, nothing folded
-            await h.ev(`(() => {
-                localStorage.setItem("agent.rail.visible", "true");
-                for (const k of ${JSON.stringify(RAIL_KEYS.filter((k) => k !== "agent.rail.visible" && k !== "agent.grids"))}) localStorage.removeItem(k);
-                localStorage.setItem("agent.grids", ${JSON.stringify(JSON.stringify({ project: null, grids: {} }))});
-            })()`);
-            // the roster fixture is read once at boot
-            await fx.polishReload(h);
-            await h.goto("agent");
-            ctx.inRoster = await waitFor((e) => h.ev(e), present(`[data-agent-terminal="${ASK_AGENT}"]`), 15_000);
-            if (ctx.inRoster) {
-                await h.rpc("uireveal", { address: `agent:${ASK_AGENT}` }, UI_ROUTE);
-            }
-        } catch (e) {
-            ctx.arrangeError = String(e?.message ?? e);
-        }
-        return ctx;
+        return arrangeCouncilProject(h, fx);
     },
 
     async assert(h, ctx) {
@@ -680,13 +606,6 @@ export const councilAsk = {
         const until = (expr, ms = UI_WAIT_MS) => waitFor((e) => h.ev(e), expr, ms);
         const view = () => h.ev(SETUP);
         const calls = (name) => rpcCalls(h, name);
-        const ready = ctx.arrangeError == null && ctx.inRoster === true;
-        rec(
-            "0. the fixture agent is in the roster with one open question in its session's Ideas",
-            ready,
-            ctx.arrangeError ?? JSON.stringify({ inRoster: ctx.inRoster })
-        );
-        if (!ready) return steps;
         const started = placeCouncil(loadCouncilFixture("round2"), "round2", ctx.repo);
 
         try {
@@ -696,48 +615,14 @@ export const councilAsk = {
                 CouncilStartCommand: { value: started },
             });
 
-            // 1. the Ideas section lists the question with Ask the council in its actions
-            const stat = `${ASIDE}?.querySelector('[data-rail-stat="ideas"]')`;
-            await until(`${stat}?.getAttribute("data-count") === "1"`, 10_000);
-            await h.ev(`${stat}?.click()`);
-            await until(`${ASIDE}?.querySelector("[data-ideas-section]") != null`);
-            const rowSel = `${ASIDE}?.querySelector('[data-ideas-section] [data-ideas-row][data-kind="question"]')`;
-            await until(`${rowSel} != null`);
-            // a person reaches the action by pointing at the row: the strip it sits in is shown on hover
-            const box = await h.ev(`(() => {
-                ${rowSel}.scrollIntoView({ block: "nearest" });
-                const r = ${rowSel}.getBoundingClientRect();
-                return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
-            })()`);
-            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
-            await until(`(() => {
-                const b = ${rowSel}?.querySelector('[data-ideas-action="council"]');
-                return b != null && getComputedStyle(b.parentElement).opacity === "1";
-            })()`);
-            const rowFacts = await h.ev(`(() => {
-                const row = ${rowSel};
-                const b = row?.querySelector('[data-ideas-action="council"]');
-                return {
-                    text: row?.querySelector("[data-ideas-text]")?.textContent ?? null,
-                    button: (b?.textContent ?? "").trim(),
-                    shown: b ? getComputedStyle(b.parentElement).opacity : null,
-                };
-            })()`);
-            rec(
-                "1. the agent's Ideas section lists the open question and, pointing at it, its actions include Ask the council",
-                rowFacts.text === ASK_QUESTION && rowFacts.button === "Ask the council" && rowFacts.shown === "1",
-                rowFacts
-            );
-            await h.ev(`${rowSel}?.querySelector('[data-ideas-action="council"]')?.click()`);
-
-            // 2. Setup opens with the question, and the coordinator is asked about it
-            await until(`${present("[data-council-setup]")}`);
+            // 1. Setup opens with the question, and the coordinator is asked about it
+            await openCouncilSetup(h, ctx.repo, { question: ASK_QUESTION, sessionId: ASK_SESSION });
             await until(`(document.querySelector("[data-council-group]")?.textContent ?? "").includes("Review a UI feature")`);
             const asked = await until(`${present("[data-council-suggesting]")}`, SUGGEST_WAIT_MS);
             let v = await view();
             const askCalls = await calls("CouncilSuggestCommand");
             rec(
-                "2. Ask the council opens Setup with the composer holding the Idea's question as its one line, Start council ready without naming a feature, and asks the coordinator once with that question",
+                "1. Setup opened with a question has the composer holding it as its one line, Start council ready without naming a feature, and asks the coordinator once with that question",
                 v?.ask === ASK_QUESTION &&
                     !(v.ask ?? "").includes("\n") &&
                     v.start?.disabled === false &&
@@ -750,7 +635,7 @@ export const councilAsk = {
                 { ask: v?.ask, start: v?.start, footnote: v?.footnote, suggesting: v?.suggesting, calls: askCalls }
             );
 
-            // 3. the answer names the Paper review group: the group button and the rows follow it
+            // 2. the answer names the Paper review group: the group button and the rows follow it
             await resolveStub(h, "CouncilSuggestCommand", { files: [], roles: [], group: "paper" });
             await until(`(document.querySelector("[data-council-group]")?.textContent ?? "").trim() === "Paper review"`);
             await h.ev(OPEN_OPTIONS);
@@ -759,7 +644,7 @@ export const councilAsk = {
             // the runner's own shot of this scenario (council-ask) is taken on arrival, before the question is asked
             await h.shot("cdp-shots/council-ask-paper.png");
             rec(
-                "3. a suggestion naming the paper group makes the group button read Paper review, over the paper panel with its area chair last",
+                "2. a suggestion naming the paper group makes the group button read Paper review, over the paper panel with its area chair last",
                 v?.group === "Paper review" &&
                     v.experts.length === 4 &&
                     v.experts.at(-1)?.id === "areachair" &&
@@ -769,7 +654,7 @@ export const councilAsk = {
                 { group: v?.group, experts: v?.experts.map((e) => e.id) }
             );
 
-            // 4. the session rides along: starting from here sends it, so the directions come back into that session's Ideas
+            // 3. the session rides along: starting from here sends it
             // no feature is named: the question alone starts it, as the question and as the feature the experts review
             await until(`document.querySelector("[data-council-start]")?.disabled === false`);
             await h.ev(click("[data-council-start]"));
@@ -777,7 +662,7 @@ export const councilAsk = {
             const startCalls = await calls("CouncilStartCommand");
             const sent = startCalls[0]?.data;
             rec(
-                "4. Start council from Ask the council (stubbed) sends the Idea's question as the question, the paper group and this agent's session, then opens the Discussion",
+                "3. Start council from a question (stubbed) sends it as the question, the paper group and the asking agent's session, then opens the Discussion",
                 startCalls.length === 1 &&
                     sent?.sessionid === ASK_SESSION &&
                     sent.question === ASK_QUESTION &&
@@ -793,33 +678,6 @@ export const councilAsk = {
     },
 
     async teardown(h, ctx) {
-        const step = async (what, fn) => {
-            try {
-                await fn();
-            } catch (e) {
-                console.error(`council-ask teardown: ${what} failed: ${e?.message ?? e}`);
-            }
-        };
-        if (ctx.wroteFixture) {
-            await step("restore the fixture roster", () =>
-                ctx.prevFixture != null ? writeFileSync(ROSTER_FIXTURE, ctx.prevFixture) : rmSync(ROSTER_FIXTURE, { force: true })
-            );
-        }
-        if (ctx.ideasWritten && ctx.dataDir) {
-            await step("delete the session's ideas", () => rmSync(join(ctx.dataDir, "ideas", `${ASK_SESSION}.json`), { force: true }));
-        }
-        if (ctx.prevKeys) {
-            await step("put the rail's page state back", () =>
-                h.ev(`(() => {
-                    const prev = ${JSON.stringify(ctx.prevKeys)};
-                    for (const [k, v] of Object.entries(prev)) {
-                        if (v == null) localStorage.removeItem(k);
-                        else localStorage.setItem(k, v);
-                    }
-                })()`)
-            );
-        }
-        // this also reloads, onto the roster and the page state put back above
         await teardownCouncilProject(h, ctx);
     },
 };

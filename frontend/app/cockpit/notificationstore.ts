@@ -26,7 +26,7 @@ export interface ToastNotification {
     onOpen?: () => void;
     // a button on the toast ("Undo"): runs, and the toast closes
     action?: { label: string; run: () => void };
-    // a green check before the title of a plain toast: something was done ("Added to Ideas")
+    // a green check before the title of a plain toast: something was done ("Link copied")
     check?: boolean;
     // how long it stays, TOAST_TTL_MS when unset: something waiting on you is given longer to be read
     ttlMs?: number;

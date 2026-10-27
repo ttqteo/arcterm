@@ -47,6 +47,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Ideas are gone, since Brainstorm mode replaces them: an agent's rail has no Ideas count or section, selecting text in
+  a terminal no longer offers **Add as idea** (`Ctrl+Shift+I` does nothing), `wsh idea` and the `/idea` command are
+  removed, and a council keeps its directions in its report rather than adding them to Ideas. The idea files already
+  saved stay on disk, unread.
 - An agent's right-click menu has **Copy id** in place of Copy @mention: it copies the bare id, so pasting it to tell
   an agent about another one keeps the message with the agent you typed to, where a leading `@id` sent it away. Drag
   an agent onto a pane holding Alt still types its `@` token to message it.

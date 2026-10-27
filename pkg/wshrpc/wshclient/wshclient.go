@@ -8,7 +8,6 @@ package wshclient
 import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/council"
-	"github.com/wavetermdev/waveterm/pkg/ideastore"
 	"github.com/wavetermdev/waveterm/pkg/storage"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
@@ -979,30 +978,6 @@ func GitReviewPatchCommand(w *wshutil.WshRpc, data wshrpc.CommandGitReviewPatchD
 func HtmlPreviewServeCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (string, error) {
 	resp, err := sendRpcRequestCallHelper[string](w, "htmlpreviewserve", data, opts)
 	return resp, err
-}
-
-// command "ideaadd", wshserver.IdeaAddCommand
-func IdeaAddCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaAddData, opts *wshrpc.RpcOpts) (*ideastore.Idea, error) {
-	resp, err := sendRpcRequestCallHelper[*ideastore.Idea](w, "ideaadd", data, opts)
-	return resp, err
-}
-
-// command "idealist", wshserver.IdeaListCommand
-func IdeaListCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaTargetData, opts *wshrpc.RpcOpts) (*ideastore.SessionIdeas, error) {
-	resp, err := sendRpcRequestCallHelper[*ideastore.SessionIdeas](w, "idealist", data, opts)
-	return resp, err
-}
-
-// command "ideatick", wshserver.IdeaTickCommand
-func IdeaTickCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaTargetData, opts *wshrpc.RpcOpts) (*wshrpc.CommandIdeaTickRtnData, error) {
-	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandIdeaTickRtnData](w, "ideatick", data, opts)
-	return resp, err
-}
-
-// command "ideaupdate", wshserver.IdeaUpdateCommand
-func IdeaUpdateCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaUpdateData, opts *wshrpc.RpcOpts) error {
-	_, err := sendRpcRequestCallHelper[any](w, "ideaupdate", data, opts)
-	return err
 }
 
 // command "jarvisctx", wshserver.JarvisCtxCommand
