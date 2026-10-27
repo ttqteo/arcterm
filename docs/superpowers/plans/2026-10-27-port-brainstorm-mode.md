@@ -155,8 +155,7 @@ slash-command session).
 
 ### Task 4: The builder check and the judge on the server, and hiding their runs
 
-**Depends on:** Task 1 (fills the brainstorm stubs it declares; uses the judging-session launcher, the prompt delivery,
-`IsBrainstormSession` and the brainstorm meta keys it adds)
+**Depends on:** Task 1 (fills its brainstorm stubs; uses its launcher, prompt delivery, `IsBrainstormSession` and meta keys)
 
 Kael commits: `1e6b9ed00`, `68f515252`, `8d086231f`, `853e3b468`, `5f1f43d91`, `1bc496af7`, `25d78cf94`,
 `37179fd5f`, `f0fda796b`, `276ecc312`, `10cceb237`, `f43f80e38` (server parts, `BrainstormCheckTimesCommand`
@@ -291,8 +290,9 @@ New dialog agent-row line, the pane's footer keys). There is no hand check in th
 
 ### Task 7: The tree rows, the taskbar attention and the launcher handoff
 
-**Depends on:** Task 6 (the chip toggles the pane Task 6 builds, and Task 6's agent-row hint edits the launcher
-files beside the `launcherstore.ts` / `launcherrun.ts` this task changes, `launchermodal.tsx` possibly both)
+**Depends on:** Task 6 (the chip toggles its pane; both may edit `launchermodal.tsx`)
+
+Task 6's agent-row hint edits the launcher files beside the `launcherstore.ts` / `launcherrun.ts` this task changes.
 
 Kael commits: `6fd649cfd` (tree line, `attentionpoller.tsx`, `newrun.ts`), the `attentionpoller.tsx` hunk of
 `2e92db78b` (the asking brainstorm in the outward attention list; the popup itself is out of scope), `79028b2b6`,
@@ -332,9 +332,10 @@ launcher prefilled and the surface stays Agent).
 
 ### Task 8: Remove Ideas
 
-**Depends on:** Task 2 (takes `ideas` off the skills embed line), Task 4 (both rewrite generated wire files; Task 4 is
-the last task before this one to touch the wshrpc and wshserver packages), Task 6 (removes the Ideas keybindings,
-the last importers of `ideasmodel` / `ideasstore` in `bindings.ts`)
+**Depends on:** Task 2 (takes `ideas` off the skills embed line), Task 4 (both touch wshrpc and wshserver), Task 6 (removes the Ideas keybindings)
+
+Task 4 is the last task before this one to touch the wshrpc and wshserver packages, and this task regenerates the wire
+files; Task 6 removes the last importers of `ideasmodel` / `ideasstore` in `bindings.ts`.
 
 Ideas is main's own feature (Kael never had it): `wsh idea`, `pkg/ideastore`, the Ideas section and stat of the
 details rail, the "Add as idea" selection chip, the arc mod's idea nudge and `/idea` command, the council's
@@ -390,8 +391,9 @@ scenarios `council-ask`, `council-summary`, `council-tree` with no Ideas asserti
 
 ### Task 9: Scenarios, docs and changelog
 
-**Depends on:** Task 3, Task 4, Task 6, Task 7, Task 8 (the scenarios drive what they build; Task 8 also edits
-scenarios.mjs)
+**Depends on:** Task 3, Task 4, Task 6, Task 7, Task 8
+
+The scenarios drive what those tasks build; Task 8 also edits `scenarios.mjs`.
 
 Kael commits: `729be3ea3`, `c7809cf5b`, `3b84510da`, `29a76935d`, `71181210f` and every commit to
 `scripts/cdp/scenarios-brainstorm-*.mjs` and to the brainstorm scenarios of `scripts/cdp/scenarios.mjs`; `1aa149b10`.
