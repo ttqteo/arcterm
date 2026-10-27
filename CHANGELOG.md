@@ -99,6 +99,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent's Files tab lists the files of a folder that is not a git repository, as Code does, leaving out
   node_modules, build output and dot-folders. Before, the files flashed up and gave way to a "Not a git repository"
   note.
+- A canvas board no longer flickers between two sizes (86% and 87%) when the pane's width shifts by a few pixels: the
+  board shrinks at once when the pane narrows, and grows again only once it widens by more than a little.
 
 ## 0.15.17 — 2026-10-21
 

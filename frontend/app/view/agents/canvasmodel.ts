@@ -233,6 +233,20 @@ export function fitScale(paneWidth: number, boardWidth: number): number {
     return Math.min(1, paneWidth / boardWidth);
 }
 
+// how much wider the pane must get before a fitted board grows with it
+export const FIT_GROW_SLACK_PX = 32;
+
+// The width a board is fitted to, given the one it was fitted to before. A fit that follows every pixel flickered on a
+// Mac, the board flipping between two sizes (86% and 87%) as the pane's width wobbled by a few pixels; what moved it
+// was not found. Narrowing applies at once, so a board is never cut off; widening only past the slack, so a wobble
+// settles at the narrower fit, the board a few pixels short of the pane's edge.
+export function steadyFitWidth(held: number | null, measured: number): number {
+    if (held == null || measured < held || measured - held > FIT_GROW_SLACK_PX) {
+        return measured;
+    }
+    return held;
+}
+
 // base is where wavesrv serves the project's design folder (CanvasServeCommand)
 export function boardUrl(base: string, topic: string, board: string): string {
     return `${base}/${encodeURIComponent(topic)}/project/${encodeURIComponent(board)}`;

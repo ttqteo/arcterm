@@ -29,6 +29,7 @@ import {
     prototypePath,
     shownBoard,
     shownBoards,
+    steadyFitWidth,
     stepKeys,
     stripWindow,
     tabsFitStrip,
@@ -53,6 +54,17 @@ import { SWAP_BAR, SWAP_BTN, SWAP_BTN_ON, SWAP_LABEL, SWAP_PRIMARY_BTN, SwapTabs
 // room above a board's frame for its label; the scroll pane's top padding
 export const CANVAS_TOP_PAD = 36;
 const LABEL_OFFSET = 22;
+
+// the scroll pane's measured width, held through a wobble of a few pixels so the fitted board does not flicker
+// (steadyFitWidth); set during render, so the held width lands in the same commit as the measurement
+export function useSteadyFitWidth(measured: number): number {
+    const [held, setHeld] = useState<number | null>(null);
+    const fit = steadyFitWidth(held, measured);
+    if (fit !== held) {
+        setHeld(fit);
+    }
+    return fit;
+}
 
 const MARK_CHIP =
     "h-[20px] w-[20px] rounded-full bg-accent text-center text-[11px] font-bold tabular-nums leading-[20px] text-background";
@@ -82,6 +94,7 @@ export function CanvasPane({
     const s = useAtomValue(canvasStateAtom(agent.id));
     const now = useAtomValue(model.nowAtom);
     const [measureRef, scrollRef, rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
+    const fitWidth = useSteadyFitWidth(rect?.width ?? 0);
     const selected = s != null ? shownBoard(s).name : null;
     const tab = s != null ? currentTab(s) : null;
     // a tab, [ or ] can pick a board below the fold. Only its top edge is brought into view, label included:
@@ -102,7 +115,7 @@ export function CanvasPane({
     }
     const pane = paneState(s);
     const board = shownBoard(s);
-    const layout = canvasLayout(shownBoards(s), rect?.width ?? 0);
+    const layout = canvasLayout(shownBoards(s), fitWidth);
     const scale = (layout.frames.find((f) => f.board.name === board.name) ?? layout.frames[0]).scale;
     const all = layout.frames.length > 1;
     const marking = s.marking && pane === "board";

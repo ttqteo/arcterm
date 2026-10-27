@@ -12,12 +12,14 @@ import {
     canvasLayout,
     canvasTabs,
     currentTab,
+    FIT_GROW_SLACK_PX,
     fitScale,
     isUnseen,
     paneState,
     parseCanvasPath,
     prototypePath,
     shownBoards,
+    steadyFitWidth,
     stepKeys,
     stepTab,
     stripWindow,
@@ -385,6 +387,35 @@ describe("fitScale", () => {
     it("is 1 before the pane has a width", () => {
         expect(fitScale(0, 1440)).toBe(1);
         expect(fitScale(1200, 0)).toBe(1);
+    });
+});
+
+describe("steadyFitWidth", () => {
+    it("takes the first width it measures", () => {
+        expect(steadyFitWidth(null, 959)).toBe(959);
+    });
+
+    it("narrows at once, so a board is never cut off", () => {
+        expect(steadyFitWidth(959, 945)).toBe(945);
+    });
+
+    it("holds through a widening of a few pixels, so the fit stops flipping between two sizes", () => {
+        // 959 fits a 1100 board at 87%, 945 at 86%: the wobble that flickered settles at the narrower
+        let held = steadyFitWidth(null, 959);
+        for (const w of [945, 959, 945, 959]) {
+            held = steadyFitWidth(held, w);
+        }
+        expect(held).toBe(945);
+        expect(Math.round(fitScale(held, 1100) * 100)).toBe(86);
+    });
+
+    it("follows a widening past the slack", () => {
+        expect(steadyFitWidth(945, 945 + FIT_GROW_SLACK_PX)).toBe(945);
+        expect(steadyFitWidth(945, 945 + FIT_GROW_SLACK_PX + 1)).toBe(945 + FIT_GROW_SLACK_PX + 1);
+    });
+
+    it("measures afresh after the pane was hidden (width 0)", () => {
+        expect(steadyFitWidth(steadyFitWidth(959, 0), 959)).toBe(959);
     });
 });
 

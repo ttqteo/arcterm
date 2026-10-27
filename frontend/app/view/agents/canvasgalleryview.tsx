@@ -58,7 +58,15 @@ import {
     paneState,
     type CanvasBoard,
 } from "./canvasmodel";
-import { BoardFrameView, CANVAS_TOP_PAD, EdgeState, Removed, ServerDown, StepButton } from "./canvaspane";
+import {
+    BoardFrameView,
+    CANVAS_TOP_PAD,
+    EdgeState,
+    Removed,
+    ServerDown,
+    StepButton,
+    useSteadyFitWidth,
+} from "./canvaspane";
 import { pollCanvasOnce, tauriCanvasIO, type CanvasIO } from "./canvaspoller";
 import type { CanvasState } from "./canvasstore";
 import { maybeCaptureThumb, tauriThumbIO } from "./canvasthumb";
@@ -655,6 +663,7 @@ function CanvasViewer({ model, canvas }: { model: AgentsViewModel; canvas: Galle
     const s = useViewerState(canvas);
     const maker = useCanvasMaker(model, canvas.dir);
     const [measureRef, scrollRef, rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
+    const fitWidth = useSteadyFitWidth(rect?.width ?? 0);
     const tabsRef = useRef<HTMLDivElement>(null);
     const at = Math.min(Math.max(0, g.board), canvas.boards.length - 1);
     const name = canvas.boards[at];
@@ -671,7 +680,7 @@ function CanvasViewer({ model, canvas }: { model: AgentsViewModel; canvas: Galle
                   w: DEFAULT_BOARD_W,
                   h: DEFAULT_BOARD_H,
               });
-    const layout = canvasLayout(board != null ? [board] : [], rect?.width ?? 0);
+    const layout = canvasLayout(board != null ? [board] : [], fitWidth);
     useEffect(() => {
         tabsRef.current
             ?.querySelector('[aria-selected="true"]')
