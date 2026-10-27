@@ -2369,6 +2369,7 @@ declare global {
     type CouncilChangedData = {
         id: string;
         project: string;
+        deleted?: boolean;
     };
 
     // council.CouncilDirection

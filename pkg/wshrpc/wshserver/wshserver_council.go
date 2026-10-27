@@ -158,6 +158,17 @@ func (ws *WshServer) CouncilStopCommand(ctx context.Context, data wshrpc.Command
 	return err
 }
 
+// CouncilDeleteCommand removes an ended council from the list; the runner refuses one still running, waiting on the
+// person or queued.
+func (ws *WshServer) CouncilDeleteCommand(ctx context.Context, data wshrpc.CommandCouncilIdData) error {
+	c, err := councilRunner.Delete(data.Id)
+	if err != nil {
+		return err
+	}
+	wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_CouncilChanged, Data: wshrpc.CouncilChangedData{Id: c.Id, Project: c.Project, Deleted: true}})
+	return nil
+}
+
 func (ws *WshServer) CouncilRetryCommand(ctx context.Context, data wshrpc.CommandCouncilRetryData) error {
 	_, err := councilRunner.Retry(data.Id, data.ExpertId)
 	return err

@@ -1664,6 +1664,29 @@ func (r *Runner) Stop(id string) (*Council, error) {
 	return Load(id)
 }
 
+// Delete removes a council that nothing works on: done, failed, stopped or not-run. A council that is running, waits on
+// the person or waits in the queue is refused; stop it first. It returns the council as it was, for its project. The
+// document a council wrote into the project stays.
+func (r *Runner) Delete(id string) (*Council, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.active[id] != nil {
+		return nil, busy(id)
+	}
+	c, err := Load(id)
+	if err != nil {
+		return nil, err
+	}
+	switch c.State {
+	case StateRunning, StateAwaiting, StateQueued:
+		return nil, fmt.Errorf("council %s is %s: stop it before removing it", id, c.State)
+	}
+	if err := Remove(id); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
 // MarkStale turns every council left running (wavesrv quit mid-round) into a stopped one that says so. A council left
 // queued stays queued: StartNext starts it. Call it once at startup, before any council runs.
 func (r *Runner) MarkStale() {

@@ -142,7 +142,9 @@ import {
     type TerminalShows,
 } from "./agentsidebarmodel";
 import { type CouncilTone } from "./councilmodel";
+import { confirmRemoveCouncil } from "./councilremove";
 import {
+    councilListAtom,
     councilSelAtom,
     councilUnreadAtom,
     councilViewAtom,
@@ -2430,7 +2432,8 @@ function CouncilHeadRow({ project }: { project: string }) {
 // One council: a dot, its feature and its state in a word. The word is in the state's tone token and carries the state
 // whatever the color, `Waiting on you` in the amber one. A primary-ink dot before it says it ended while you were away.
 // A queued council also offers Remove from queue (hover, and the menu): it stops the council before it ever starts, as
-// the queued run's row does. The button cannot hold the action, so a queued row sits in a wrapper beside it.
+// the queued run's row does. An ended one (done, failed, stopped, not run) offers Remove the same way, behind a confirm:
+// its file goes, the document it saved stays. The button cannot hold the action, so such a row sits in a wrapper beside it.
 function CouncilRow({ row }: { row: CouncilRowVM }) {
     const center = useAtomValue(centerModeAtom);
     const view = useAtomValue(councilViewAtom);
@@ -2438,11 +2441,20 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
     const selected = center === "council" && view !== "setup" && open === row.id;
     const tone = COUNCIL_TONE[row.tone];
     const queued = row.queued === true;
-    const remove = () => fireAndForget(() => stopCouncil(row.id));
+    const wrapped = queued || row.removable === true;
+    const remove = () => {
+        if (queued) {
+            fireAndForget(() => stopCouncil(row.id));
+            return;
+        }
+        const c = globalStore.get(councilListAtom(""))?.find((x) => x.id === row.id);
+        if (c != null) {
+            confirmRemoveCouncil(c);
+        }
+    };
+    const removeLabel = queued ? "Remove from queue" : "Remove council";
     const onContextMenu = (e: React.MouseEvent) => {
-        const items: ContextMenuItem[] = [
-            { label: "Remove from queue", icon: <X size={15} />, danger: true, click: remove },
-        ];
+        const items: ContextMenuItem[] = [{ label: removeLabel, icon: <X size={15} />, danger: true, click: remove }];
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
     const button = (
@@ -2455,8 +2467,9 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
             onClick={() => showCouncil(row.id)}
             className={cn(
                 "flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] text-left transition-colors duration-[140ms]",
-                queued ? "min-w-0 flex-1" : "w-full",
-                selected ? "bg-surface-selected" : queued ? null : "hover:bg-surface-hover"
+                // a wrapped row's wrapper holds the hover and selected backgrounds, under the Remove button too
+                wrapped ? "min-w-0 flex-1" : "w-full",
+                wrapped ? null : selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
             <Slot>
@@ -2502,21 +2515,31 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
             )}
         </button>
     );
-    if (!queued) {
+    if (!wrapped) {
         return button;
     }
     return (
         <div
             onContextMenu={onContextMenu}
-            className="group relative flex items-center rounded-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
+            className={cn(
+                "group relative flex items-center rounded-[6px] transition-colors duration-[140ms]",
+                selected ? "bg-surface-selected" : "hover:bg-surface-hover"
+            )}
         >
             {button}
-            <span className="flex flex-none items-center pr-[6px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
+            <span
+                className={cn(
+                    "flex flex-none items-center pr-[6px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100",
+                    // an ended row's state word sits at the right edge: the button covers it on hover instead of
+                    // holding its place, so the feature keeps the room when the row is not hovered
+                    !queued && "absolute inset-y-0 right-0 rounded-r-[6px] bg-inherit pl-[6px]"
+                )}
+            >
                 <button
                     type="button"
                     data-council-act="remove"
-                    title="Remove from queue"
-                    aria-label={`Remove ${row.feature} from the queue`}
+                    title={removeLabel}
+                    aria-label={queued ? `Remove ${row.feature} from the queue` : `Remove council ${row.feature}`}
                     onClick={remove}
                     className="flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-error"
                 >

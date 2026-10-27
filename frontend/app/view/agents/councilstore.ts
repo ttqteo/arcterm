@@ -51,7 +51,9 @@ function subscribeCouncilChanged() {
             if (data == null) {
                 return;
             }
-            if (knownCouncils.has(data.id)) {
+            if (data.deleted) {
+                forgetCouncil(data.id);
+            } else if (knownCouncils.has(data.id)) {
                 void loadCouncil(data.id);
             }
             // the project's own list, and the list of every council (the empty project) if something read it
@@ -106,6 +108,32 @@ export async function loadCouncils(project: string): Promise<void> {
         }
     } catch (err) {
         console.error(`loading the councils of ${project || "every project"} failed`, err);
+    }
+}
+
+// drops a removed council from every atom that holds it, and closes it if it is open; a load of it still in flight is
+// dropped when it answers
+function forgetCouncil(id: string): void {
+    knownCouncils.delete(id);
+    councilSeq.set(id, (councilSeq.get(id) ?? 0) + 1);
+    globalStore.set(councilAtom(id), null);
+    for (const project of knownProjects.values()) {
+        const list = globalStore.get(councilListAtom(project));
+        if (list?.some((c) => c.id === id)) {
+            globalStore.set(
+                councilListAtom(project),
+                list.filter((c) => c.id !== id)
+            );
+        }
+    }
+    const unread = globalStore.get(councilUnreadAtom);
+    if (unread.has(id)) {
+        const next = new Set(unread);
+        next.delete(id);
+        globalStore.set(councilUnreadAtom, next);
+    }
+    if (globalStore.get(councilSelAtom) === id) {
+        globalStore.set(councilSelAtom, null);
     }
 }
 
@@ -184,6 +212,17 @@ export function summarizeCouncil(id: string): Promise<CouncilCall<void>> {
 /** Stops a running council, keeping the rounds that finished. */
 export function stopCouncil(id: string): Promise<CouncilCall<void>> {
     return call("stop", () => RpcApi.CouncilStopCommand(TabRpcClient, { id }));
+}
+
+/** Removes an ended council (canRemoveCouncil): its file goes, the document it wrote into the project stays. wavesrv
+ *  refuses one still running, waiting on the person or queued. On success it leaves every atom at once, without
+ *  waiting for `council:changed`. */
+export async function deleteCouncil(id: string): Promise<CouncilCall<void>> {
+    const r = await call("remove", () => RpcApi.CouncilDeleteCommand(TabRpcClient, { id }));
+    if (r.ok) {
+        forgetCouncil(id);
+    }
+    return r;
 }
 
 /** Reruns a failed expert's call in the round it failed in (the coordinator's: the synthesis). */

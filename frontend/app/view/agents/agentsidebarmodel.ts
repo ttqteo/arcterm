@@ -18,7 +18,7 @@
 import { placesOf, splitGrids, type CellPlacement, type GridState, type ProjectGrids } from "./agentgrid";
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
 import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
-import { councilProjectKey, treeMeta, type CouncilTone } from "./councilmodel";
+import { canRemoveCouncil, councilProjectKey, treeMeta, type CouncilTone } from "./councilmodel";
 import type { RunInfo } from "./runlineage";
 import type { QueuedRow } from "./runqueuemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
@@ -317,6 +317,8 @@ export interface CouncilRowVM {
     unread: boolean;
     /** it waits for the one council that runs: the row offers Remove from queue. Set only on a queued council. */
     queued?: true;
+    /** nothing works on it any more (canRemoveCouncil): the row offers Remove. Set only on such a council. */
+    removable?: true;
 }
 
 /** Pure: the councils (councilListAtom("")) as tree rows, by the registered project each one ran in. The folders of
@@ -356,6 +358,9 @@ export function councilRowsByProject(
         };
         if (c.state === "queued") {
             row.queued = true;
+        }
+        if (canRemoveCouncil(c)) {
+            row.removable = true;
         }
         const list = out.get(name);
         if (list == null) {

@@ -14,6 +14,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         CouncilContinueCommand: vi.fn(),
         CouncilSummarizeCommand: vi.fn(),
         CouncilStopCommand: vi.fn(),
+        CouncilDeleteCommand: vi.fn(),
         CouncilRetryCommand: vi.fn(),
         CouncilSuggestCommand: vi.fn(),
         CouncilEstimateCommand: vi.fn(),
@@ -43,7 +44,9 @@ import {
     councilRoles,
     councilSelAtom,
     councilSetupDraftAtom,
+    councilUnreadAtom,
     councilViewAtom,
+    deleteCouncil,
     estimateCouncil,
     loadCouncil,
     loadCouncils,
@@ -160,6 +163,24 @@ describe("council:changed", () => {
         await settle();
         expect(list).toHaveBeenCalledWith(TabRpcClient, { project: "" });
     });
+
+    it("forgets a deleted council without loading it back, and closes it when it is open", async () => {
+        get.mockResolvedValue(council("k1", "/p/k", { state: "done" }));
+        list.mockResolvedValue([council("k1", "/p/k", { state: "done" }), council("k2", "/p/k")]);
+        await loadCouncil("k1");
+        await loadCouncils("/p/k");
+        globalStore.set(councilSelAtom, "k1");
+        globalStore.set(councilUnreadAtom, new Set(["k1", "k2"]));
+        get.mockClear();
+        list.mockResolvedValue([council("k2", "/p/k")]);
+        emit({ id: "k1", project: "/p/k", deleted: true });
+        expect(globalStore.get(councilAtom("k1"))).toBeNull();
+        expect(globalStore.get(councilListAtom("/p/k"))?.map((c) => c.id)).toEqual(["k2"]);
+        expect(globalStore.get(councilSelAtom)).toBeNull();
+        expect([...globalStore.get(councilUnreadAtom)]).toEqual(["k2"]);
+        await settle();
+        expect(get).not.toHaveBeenCalled();
+    });
 });
 
 describe("actions", () => {
@@ -221,6 +242,21 @@ describe("actions", () => {
         expect(RpcApi.CouncilStopCommand).toHaveBeenCalledWith(TabRpcClient, { id: "h1" });
         expect(RpcApi.CouncilRetryCommand).toHaveBeenCalledWith(TabRpcClient, { id: "h1", expertid: "sk" });
         expect(RpcApi.CouncilSaveGroupCommand).toHaveBeenCalledWith(TabRpcClient, group);
+    });
+
+    it("delete removes the council from its atoms once wavesrv agrees, and leaves it when refused", async () => {
+        get.mockResolvedValue(council("m1", "/p/m", { state: "failed" }));
+        await loadCouncil("m1");
+        const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+        vi.mocked(RpcApi.CouncilDeleteCommand).mockRejectedValueOnce(new Error("council m1 is running"));
+        expect(await deleteCouncil("m1")).toEqual({ ok: false, error: "council m1 is running" });
+        expect(globalStore.get(councilAtom("m1"))?.id).toBe("m1");
+        quiet.mockRestore();
+
+        vi.mocked(RpcApi.CouncilDeleteCommand).mockResolvedValueOnce(undefined);
+        expect(await deleteCouncil("m1")).toEqual({ ok: true, value: undefined });
+        expect(RpcApi.CouncilDeleteCommand).toHaveBeenCalledWith(TabRpcClient, { id: "m1" });
+        expect(globalStore.get(councilAtom("m1"))).toBeNull();
     });
 
     it("answers what the read commands answer", async () => {

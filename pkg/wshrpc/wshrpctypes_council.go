@@ -22,6 +22,7 @@ type CouncilCommands interface {
 	CouncilContinueCommand(ctx context.Context, data CommandCouncilContinueData) error
 	CouncilSummarizeCommand(ctx context.Context, data CommandCouncilIdData) error
 	CouncilStopCommand(ctx context.Context, data CommandCouncilIdData) error
+	CouncilDeleteCommand(ctx context.Context, data CommandCouncilIdData) error
 	CouncilRetryCommand(ctx context.Context, data CommandCouncilRetryData) error
 	CouncilSuggestCommand(ctx context.Context, data CommandCouncilSuggestData) (*council.CouncilSuggestion, error)
 	CouncilEstimateCommand(ctx context.Context, data CommandCouncilEstimateData) (*CouncilEstimateRtnData, error)
@@ -176,8 +177,10 @@ type CouncilBenchStopRtnData struct {
 	Stopped bool `json:"stopped"`
 }
 
-// CouncilChangedData is the data of the council:changed event: the council that was saved, and its project.
+// CouncilChangedData is the data of the council:changed event: the council that was saved, and its project. Deleted
+// says it was removed instead, so there is nothing to load back.
 type CouncilChangedData struct {
 	Id      string `json:"id"`
 	Project string `json:"project"`
+	Deleted bool   `json:"deleted,omitempty"`
 }

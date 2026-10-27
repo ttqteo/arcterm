@@ -203,6 +203,22 @@ func Update(id string, fn func(*Council) error) (*Council, error) {
 	return c, nil
 }
 
+// Remove deletes the council's file, under the id's lock so no save writes it back. A missing council is an error that
+// wraps fs.ErrNotExist.
+func Remove(id string) error {
+	path, err := councilPath(id)
+	if err != nil {
+		return err
+	}
+	mu := idLock(id)
+	mu.Lock()
+	defer mu.Unlock()
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("remove council %s: %w", id, err)
+	}
+	return nil
+}
+
 // SetRating keeps the person's "Was this useful?" answer on the council: RatingUseful or RatingNot, given at `at` (ms).
 // A later rating replaces the earlier one and its time; any other word is refused and nothing is saved.
 func SetRating(id, rating string, at int64) (*Council, error) {

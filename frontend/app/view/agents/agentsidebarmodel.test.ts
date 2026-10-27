@@ -1325,10 +1325,56 @@ describe("councilRowsByProject", () => {
         expect(rows.get("loom")).toEqual([
             { id: "run", feature: "feature run", created: 7, meta: "Running", tone: "working", unread: false },
             { id: "ask", feature: "feature ask", created: 1000, meta: "Waiting on you", tone: "asking", unread: false },
-            { id: "done", feature: "feature done", created: 1000, meta: "Done", tone: "muted", unread: false },
-            { id: "nr", feature: "feature nr", created: 1000, meta: "Not run", tone: "muted", unread: false },
-            { id: "bad", feature: "feature bad", created: 1000, meta: "Failed", tone: "error", unread: false },
+            {
+                id: "done",
+                feature: "feature done",
+                created: 1000,
+                meta: "Done",
+                tone: "muted",
+                unread: false,
+                removable: true,
+            },
+            {
+                id: "nr",
+                feature: "feature nr",
+                created: 1000,
+                meta: "Not run",
+                tone: "muted",
+                unread: false,
+                removable: true,
+            },
+            {
+                id: "bad",
+                feature: "feature bad",
+                created: 1000,
+                meta: "Failed",
+                tone: "error",
+                unread: false,
+                removable: true,
+            },
         ]);
+    });
+
+    it("marks only the councils nothing works on as removable", () => {
+        const states: Council["state"][] = [
+            "running",
+            "awaiting-you",
+            "queued",
+            "done",
+            "failed",
+            "stopped",
+            "not-run",
+        ];
+        const rows = councilRowsByProject(
+            states.map((state) => council(state, "/home/u/loom", { state })),
+            roots
+        );
+        expect(
+            rows
+                .get("loom")
+                ?.filter((r) => r.removable)
+                .map((r) => r.id)
+        ).toEqual(["done", "failed", "stopped", "not-run"]);
     });
 
     it("leaves out a council of a project that is not registered, and has nothing before the list loads", () => {

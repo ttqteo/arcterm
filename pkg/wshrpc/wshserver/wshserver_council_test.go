@@ -690,6 +690,24 @@ func TestCouncilPublishesOneEventPerChange(t *testing.T) {
 	}
 }
 
+func TestCouncilDeleteRemovesItAndSaysSo(t *testing.T) {
+	events := useCouncilRig(t, newCouncilFake())
+	ws := &WshServer{}
+	ctx := context.Background()
+	done := startDoneCouncil(t, ws)
+	if err := ws.CouncilDeleteCommand(ctx, wshrpc.CommandCouncilIdData{Id: done.Id}); err != nil {
+		t.Fatalf("CouncilDeleteCommand: %v", err)
+	}
+	list, err := ws.CouncilListCommand(ctx, wshrpc.CommandCouncilListData{Project: done.Project})
+	if err != nil || len(list) != 0 {
+		t.Errorf("list after delete = %v, %v, want empty", councilIds(list), err)
+	}
+	evs := events.all()
+	if last, want := evs[len(evs)-1], (wshrpc.CouncilChangedData{Id: done.Id, Project: done.Project, Deleted: true}); last != want {
+		t.Errorf("last event = %+v, want %+v", last, want)
+	}
+}
+
 func TestCouncilStartNotRunThenStartById(t *testing.T) {
 	fake := newCouncilFake()
 	events := useCouncilRig(t, fake)

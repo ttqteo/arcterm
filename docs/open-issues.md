@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Remove council: in the Agent tree hover a Failed or Done council row: an × covers its state word;
+  click it (or right-click → Remove council), confirm: the row goes and `wsh council list` no longer has it. Open
+  another ended council and click Remove in its header: the centre moves to the project's Overview. A Running or
+  Waiting on you row has no ×. `pkg/council/runner.go` `Delete`, `councilremove.ts`, commit
 - [ ] (arcterm) A slow wake clears its sleep marks: after installing a build with this fix, the `arcterm` tab whose
   block `027015dd` runs while its meta still holds `agent:sleeping` (a 2026-10-22 20:26 wake whose 10s write clock had
   run out) shows asleep; click Wake (or send from its composer): the row and terminal read awake, no restart, and
