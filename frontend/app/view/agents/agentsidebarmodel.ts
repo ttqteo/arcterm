@@ -407,24 +407,24 @@ export interface SplitRowCell {
     run?: RunInfo;
 }
 
-// the tab a row stands for, when it is one a split cell can hold
+// the tab a row stands for, when it is one a split cell can hold (a brainstorm's check and judge rows are tabs too)
 function rowTabId(r: ProjectTreeRow): string | undefined {
     if (r.kind === "terminal") {
         return r.terminal.id;
     }
-    if (r.kind === "parent" || r.kind === "lead" || r.kind === "stage" || r.kind === "worker") {
+    if (r.kind === "parent" || r.kind === "lead" || r.kind === "stage" || r.kind === "check" || r.kind === "worker") {
         return r.agent?.id;
     }
     return undefined;
 }
 
-// The menu a cell opens: its row's when it has one; with none (a worker of a folded run), a run's tab takes the
-// worker's and any other its kind's.
+// The menu a cell opens: its row's when it has one (a check or judge row has a stage's, the short one); with none
+// (a worker of a folded run), a run's tab takes the worker's and any other its kind's.
 function cellMenu(vm: AgentVM, row: ProjectTreeRow | undefined): Pick<SplitRowCell, "menu" | "run"> {
     if (row?.kind === "lead") {
         return { menu: "lead", run: row.run };
     }
-    if (row?.kind === "worker" || row?.kind === "stage") {
+    if (row?.kind === "worker" || row?.kind === "stage" || row?.kind === "check") {
         return { menu: "task" };
     }
     if (vm.kind === "terminal") {
@@ -728,7 +728,14 @@ export function treeNavIds(rows: ProjectTreeRow[]): string[] {
             }
         } else if (r.kind === "split") {
             ids.push(...r.cells.map((c) => c.id));
-        } else if ((r.kind === "parent" || r.kind === "lead" || r.kind === "worker" || r.kind === "stage") && r.agent) {
+        } else if (
+            (r.kind === "parent" ||
+                r.kind === "lead" ||
+                r.kind === "worker" ||
+                r.kind === "stage" ||
+                r.kind === "check") &&
+            r.agent
+        ) {
             ids.push(r.agent.id);
         }
     }

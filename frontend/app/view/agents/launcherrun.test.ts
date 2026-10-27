@@ -5,7 +5,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { RunConfig } from "@/app/view/jarvis/newrun";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createChannel } from "./channelsstore";
-import { startLauncherRun } from "./launcherrun";
+import { handBackStartedRun, startLauncherRun } from "./launcherrun";
 import { noteRecentProject } from "./projectsstore";
 import { createRun, resolveChannelLaunchRoute, resolvedProfileAtom } from "./runactions";
 import { endRunConfigDraft } from "./runconfigstore";
@@ -98,5 +98,27 @@ describe("startLauncherRun", () => {
         ).rejects.toThrow("Choose a route");
         expect(noteRecentProject).not.toHaveBeenCalled();
         expect(endRunConfigDraft).not.toHaveBeenCalled();
+    });
+});
+
+describe("handBackStartedRun", () => {
+    it("tells the caller that filled the dialog the run's id, and leaves the person where they are", () => {
+        const onStarted = vi.fn();
+        expect(handBackStartedRun(onStarted, "run-1")).toBe("stay");
+        expect(onStarted).toHaveBeenCalledTimes(1);
+        expect(onStarted).toHaveBeenCalledWith("run-1");
+    });
+
+    it("lands a start that nothing follows on its run's Brief", () => {
+        expect(handBackStartedRun(null, "run-1")).toBe("land");
+        expect(handBackStartedRun(undefined, "run-1")).toBe("land");
+    });
+
+    it("stays on the surface even when the handback throws: the run exists, and a throw must not move the person", () => {
+        const onStarted = vi.fn(() => {
+            throw new Error("agent gone");
+        });
+        expect(handBackStartedRun(onStarted, "run-1")).toBe("stay");
+        expect(onStarted).toHaveBeenCalledWith("run-1");
     });
 });

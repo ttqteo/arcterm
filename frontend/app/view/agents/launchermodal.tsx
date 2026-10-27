@@ -74,7 +74,7 @@ import { composeTaskWithImages, imagesPending } from "./launcherimages";
 import { appendPage, pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
 import { ColumnLabel, digitOf, FilterLine, Keycap, rowTone } from "./launcherrows";
-import { startLauncherRun } from "./launcherrun";
+import { handBackStartedRun, startLauncherRun } from "./launcherrun";
 import { RunColumn, RunFields } from "./launcherrunfields";
 import {
     abandonLauncherLaunch,
@@ -111,6 +111,7 @@ import {
     pickLauncherProject,
     pickLauncherRuntime,
     pickLauncherTool,
+    takeLauncherOnStarted,
 } from "./launcherstore";
 import { ToolFields, ToolList } from "./launchertoolfields";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
@@ -649,12 +650,17 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 await cancelRun(started.channelId, started.run.id);
                 return;
             }
+            // read before close(), which drops it: only a start the dialog was still open for belongs to its caller
+            const onStarted = takeLauncherOnStarted();
             endLauncherLaunch();
             endLauncherDraft();
             close();
-            // landing on the run reports its own failures (openTarget toasts); holding the dialog over a run that is
-            // already running would read as a failed launch
-            await openTarget(model, { kind: "channel", channelId: started.channelId, runId: started.run.id });
+            // A caller that filled the dialog (a brainstorm's Approve) hears the run's id and follows the run itself, so
+            // the person stays where they are; any other start lands on the run. Landing reports its own failures
+            // (openTarget toasts); holding the dialog over a run that is already running would read as a failed launch
+            if (handBackStartedRun(onStarted, started.run.id) === "land") {
+                await openTarget(model, { kind: "channel", channelId: started.channelId, runId: started.run.id });
+            }
         });
     };
 

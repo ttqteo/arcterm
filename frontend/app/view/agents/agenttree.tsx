@@ -52,6 +52,7 @@ import {
     LayoutDashboard,
     LayoutGrid,
     Loader2,
+    MessageCircleQuestion,
     Moon,
     Pencil,
     PenTool,
@@ -76,6 +77,9 @@ import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemode
 import { setAgentView } from "./agentview";
 import { waitMap } from "./agentwaits";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
+import { isAsking, treeLine, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
+import { runStepView, runTreeText } from "./brainstormrunmodel";
+import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { laterFirst, laterSince, laterTitle, type LaterMarks } from "./latermodel";
@@ -206,6 +210,7 @@ import {
     toggleTaskExtrasOpen,
     treeFoldsAtom,
     useRunDigests,
+    useRunInfo,
 } from "./runlineagestore";
 import { dagProgressLabel, finishedRunLabel, runComplete, runStatusView } from "./runmodel";
 import { runStage, type StageTone } from "./runstage";
@@ -536,15 +541,20 @@ function FoldChip({
     );
 }
 
-// One click from anywhere on the surface to an agent's canvas, and back to its terminal when that canvas is the
-// one showing: a grid icon beside the name, with the accent dot while it holds boards you have not looked at. The click must not reach the row, which would only focus the agent in whatever mode it was left
-function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
+// One click from anywhere on the surface to an agent's brainstorm or canvas, and back to its terminal when that pane
+// is the one showing: an icon beside the name, with the accent dot while a canvas holds boards you have not looked at.
+// An agent with a brainstorm never shows its canvas (the brainstorm pane opens its boards), so its chip is the
+// brainstorm's. The click must not reach the row, which would only focus the agent in whatever mode it was left
+function PaneTag({ model, id }: { model: AgentsViewModel; id: string }) {
     const canvas = useAtomValue(canvasStateAtom(id));
-    const showing = useSelectedRowId(model) === id && canvas?.mode === "canvas";
-    if (canvas == null) {
+    const brainstorm = useAtomValue(brainstormAtom(id));
+    const selected = useSelectedRowId(model) === id;
+    if (brainstorm == null && canvas == null) {
         return null;
     }
-    const unseen = isUnseen(canvas);
+    const pane = brainstorm != null ? "brainstorm" : "canvas";
+    const showing = selected && (brainstorm != null ? brainstorm.mode === "brainstorm" : canvas?.mode === "canvas");
+    const unseen = brainstorm == null && canvas != null && isUnseen(canvas);
     return (
         <button
             type="button"
@@ -553,23 +563,28 @@ function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
                 e.stopPropagation();
                 globalStore.set(model.focusIdAtom, id);
                 showTerminal();
-                setAgentView(id, showing ? "terminal" : "canvas", Date.now());
+                setAgentView(id, showing ? "terminal" : pane, Date.now());
             }}
             title={
                 showing
                     ? "Back to the terminal"
                     : unseen
                       ? "Show the canvas (updated since you last looked)"
-                      : "Show the canvas"
+                      : `Show the ${pane}`
             }
-            aria-label={showing ? "Back to the terminal" : "Show the canvas"}
-            data-agent-canvas={id}
+            aria-label={showing ? "Back to the terminal" : `Show the ${pane}`}
+            data-agent-canvas={brainstorm == null ? id : undefined}
+            data-agent-brainstorm={brainstorm != null ? id : undefined}
             className={cn(
                 "relative flex h-[16px] w-[16px] flex-none cursor-pointer items-center justify-center rounded-[4px]",
                 showing ? "bg-accentbg text-accent" : "text-accent-soft hover:bg-surface-hover"
             )}
         >
-            <PenTool size={11} strokeWidth={2} aria-hidden />
+            {brainstorm != null ? (
+                <MessageCircleQuestion size={12} strokeWidth={2} aria-hidden />
+            ) : (
+                <PenTool size={11} strokeWidth={2} aria-hidden />
+            )}
             {unseen ? (
                 <span
                     aria-label="updated since you last looked"
@@ -577,6 +592,33 @@ function CanvasTag({ model, id }: { model: AgentsViewModel; id: string }) {
                 />
             ) : null}
         </button>
+    );
+}
+
+// replaces a row's model and branch while the agent brainstorms (its chip names it): the question it asks, or the
+// work it is at; once the person approved, the run it started, the run's own state leading, which links to it
+function BrainstormTreeLine({ model, f, asking }: { model: AgentsViewModel; f: BrainstormFile; asking: boolean }) {
+    const info = useRunInfo(f.run);
+    const view = f.run != null ? runStepView(f.run, info.run, info.loaded) : null;
+    const line = treeLine(f, asking, view ? runTreeText(f.run!, view) : undefined);
+    return (
+        <span data-brainstorm-tree-line className="flex min-w-0 items-baseline">
+            {line.runId != null ? (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        fireAndForget(() => openTarget(model, { kind: "run", runId: line.runId! }));
+                    }}
+                    title="Open the run"
+                    className="min-w-0 cursor-pointer truncate text-left text-ink-mid hover:underline"
+                >
+                    {line.text}
+                </button>
+            ) : (
+                <span className={cn("min-w-0 truncate", asking && "text-warning")}>{line.text}</span>
+            )}
+        </span>
     );
 }
 
@@ -873,6 +915,9 @@ function ParentRow({
     const unread = unreadCount > 0 || step != null;
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
+    // the roster overlay already turned a question the file asks into state "asking"; isAsking says the question is the
+    // brainstorm's, not a permission prompt
+    const brainstormFile = shownBrainstormFile(useAtomValue(brainstormAtom(agent.id)));
     const mark = lead != null ? leadMark(lead.run, agent) : null;
     // its heavy command waiting its turn in the job queue, whose tag takes the working dot's place
     const queued = queuedJobFor(useAtomValue(jobQueueAtom), agent.blockId);
@@ -1081,7 +1126,7 @@ function ParentRow({
                         >
                             {agent.name}
                         </span>
-                        <CanvasTag model={model} id={agent.id} />
+                        <PaneTag model={model} id={agent.id} />
                         {laterAt != null ? <LaterMark title={laterTitle(laterAt, now, formatAgeShort)} /> : null}
                         {/* a lead's second line already holds its workers chip, progress and badges */}
                         {lead ? subsChip : null}
@@ -1102,8 +1147,9 @@ function ParentRow({
                     />
                 ) : (
                     // under the name: the runs it started, its model, a branch other than the default, its subagents
-                    // chip and its badges. @container: the subagents chip drops its word when this line is narrow, and
-                    // the model truncates
+                    // chip and its badges; while it brainstorms, the brainstorm's line in place of the model and the
+                    // branch. @container: the subagents chip drops its word when this line is narrow, and the model
+                    // truncates
                     <div className={cn(CONVERSATION_META, "@container mt-[3px]", UNDER_GLYPH, dim && "text-ink-faint")}>
                         {waitsFor ? (
                             <span className="flex min-w-0 items-center gap-[3px]" title={`Waiting on ${waitsFor}`}>
@@ -1112,13 +1158,23 @@ function ParentRow({
                             </span>
                         ) : null}
                         {originChip}
-                        {shownModel ? <span className="min-w-0 truncate">{shownModel}</span> : null}
-                        {shownModel && shownBranch ? (
-                            <span aria-hidden className="flex-none text-ink-faint">
-                                ·
-                            </span>
-                        ) : null}
-                        {shownBranch ? <BranchLabel branch={shownBranch} /> : null}
+                        {brainstormFile != null ? (
+                            <BrainstormTreeLine
+                                model={model}
+                                f={brainstormFile}
+                                asking={asking && isAsking(brainstormFile)}
+                            />
+                        ) : (
+                            <>
+                                {shownModel ? <span className="min-w-0 truncate">{shownModel}</span> : null}
+                                {shownModel && shownBranch ? (
+                                    <span aria-hidden className="flex-none text-ink-faint">
+                                        ·
+                                    </span>
+                                ) : null}
+                                {shownBranch ? <BranchLabel branch={shownBranch} /> : null}
+                            </>
+                        )}
                         <span className="flex-1" />
                         {subsChip}
                         {badges}
@@ -1360,7 +1416,7 @@ function WorkerRow({
                     </span>
                     {/* its canvas tag and who its ask waits on end the second line, so the title keeps the first */}
                     <span className="flex-1" />
-                    {agent != null ? <CanvasTag model={model} id={agent.id} /> : null}
+                    {agent != null ? <PaneTag model={model} id={agent.id} /> : null}
                     {ask?.owner === "lead" ? (
                         <span className="flex flex-none items-center gap-[3px] whitespace-nowrap text-[10.5px] font-medium text-muted">
                             <ArrowRight size={10} aria-hidden />
@@ -1388,11 +1444,21 @@ const STAGE_OUTCOME_DOT: Record<Exclude<StageOutcome, "passed">, string> = {
     failed: "bg-error",
 };
 
+// a builder check's or judge's record, drawn as a stage's verdict: an answered one is its session's work done
+const CHECK_OUTCOME: Record<BuilderCheckRecord["state"], StageOutcome | undefined> = {
+    reading: undefined,
+    answered: "passed",
+    failed: "failed",
+    stopped: "unverified",
+};
+
+// `verdict` words the second line when the stage's own words differ from its outcome's, as a builder check's do
 function StageRow({
     model,
     agent,
     stageRole,
     outcome,
+    verdict,
     navDigit,
     lens,
 }: {
@@ -1400,6 +1466,7 @@ function StageRow({
     agent: AgentVM;
     stageRole: string;
     outcome?: StageOutcome;
+    verdict?: string;
     navDigit?: number; // its Alt+1..9 digit
     lens?: string;
 }) {
@@ -1416,6 +1483,7 @@ function StageRow({
             onClick={select}
             onContextMenu={onContextMenu}
             data-agent-row={agent.id}
+            data-tree-stage={stageRole}
             {...dragSource(agent, true)}
             className={cn(
                 "relative flex cursor-pointer items-center gap-[9px] rounded-[6px] py-[7px] pl-[28px] pr-[11px] transition-colors duration-[140ms]",
@@ -1439,7 +1507,7 @@ function StageRow({
                     {lens ? `${stageLabel(stageRole)} · ${planReviewLensTitle(lens)}` : stageLabel(stageRole)}
                 </div>
                 <div className="mt-[3px] truncate text-[10.5px] tabular-nums text-muted">
-                    {stageSubline(outcome, formatAgeShort(displayAgeMs(agent, now)))}
+                    {stageSubline(verdict ?? outcome, formatAgeShort(displayAgeMs(agent, now)))}
                 </div>
             </div>
         </div>
@@ -3045,6 +3113,19 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             navDigit={digits.get(r.agent.id)}
                                             nested={r.nested}
                                             waitsFor={r.waitsFor}
+                                        />
+                                    );
+                                    break;
+                                case "check":
+                                    key = r.agent.id;
+                                    body = (
+                                        <StageRow
+                                            model={model}
+                                            agent={r.agent}
+                                            stageRole={r.stageRole}
+                                            outcome={CHECK_OUTCOME[r.state]}
+                                            verdict={r.state}
+                                            navDigit={digits.get(r.agent.id)}
                                         />
                                     );
                                     break;

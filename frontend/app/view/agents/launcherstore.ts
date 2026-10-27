@@ -61,6 +61,12 @@ export const launcherRestoredAtom = atom(false) as PrimitiveAtom<boolean>;
 export const launcherBusyAtom = atom(false) as PrimitiveAtom<boolean>;
 // what the next open fills in, read by the dialog once the project list is in
 export const launcherPrefillAtom = atom<NewRunPrefill | null>(null) as PrimitiveAtom<NewRunPrefill | null>;
+// What the prefill's caller (a brainstorm's Approve) wants told when the run the dialog starts exists (the prefill's
+// onStarted). The prefill itself is cleared when the dialog takes it, so this is kept from then until the run starts
+// (takeLauncherOnStarted) or the dialog closes.
+export const launcherOnStartedAtom = atom<((runId: string) => void) | null>(null) as PrimitiveAtom<
+    ((runId: string) => void) | null
+>;
 // The project this open names for itself (a project Overview's New agent and Run); null on every other open. The dialog
 // starts on it, and the focused row's project does not take its place (launchermodal.tsx), as a prefill's does not.
 export const launcherOwnProjectAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
@@ -99,6 +105,8 @@ export function openLauncher(
     globalStore.set(launcherKindAtom, kind);
     globalStore.set(launcherRestoredAtom, prefill == null && draftShown(keptDraft()));
     globalStore.set(launcherPrefillAtom, prefill ?? null);
+    // the dialog takes a new prefill's handback when it applies it; an earlier open's is no longer this one's
+    globalStore.set(launcherOnStartedAtom, null);
     globalStore.set(launcherOwnProjectAtom, project ?? null);
     if (project != null) {
         pickLauncherProject(project, globalStore.get(launcherProjectAtom));
@@ -111,12 +119,13 @@ export function reopenLauncher(model: LauncherModel): void {
     openLauncher(model, globalStore.get(launcherKindAtom));
 }
 
-// Every way out keeps the draft; that is what lets a click outside close the dialog. An open popover is not draft, and
-// the resume pick is kept only for RESUME_PICK_KEEP_MS.
+// Every way out keeps the draft; that is what lets a click outside close the dialog. An open popover is not draft, the
+// resume pick is kept only for RESUME_PICK_KEEP_MS, and a prefill's handback goes: the next New is no caller's run.
 export function closeLauncher(model: LauncherModel): void {
     closedAt = Date.now();
     globalStore.set(launcherFlagMenuAtom, false);
     globalStore.set(launcherBranchListAtom, false);
+    globalStore.set(launcherOnStartedAtom, null);
     globalStore.set(model.launcherAtom, null);
 }
 
@@ -295,6 +304,9 @@ export function applyLauncherPrefill(projectNames: string[]): boolean {
         return false;
     }
     globalStore.set(launcherPrefillAtom, null);
+    // a function handed to set is read as an updater, so the handback goes in as the updater's result
+    const onStarted = prefill.onStarted;
+    globalStore.set(launcherOnStartedAtom, onStarted != null ? () => onStarted : null);
     const p = prefillToLaunch(prefill, projectNames);
     if (p.picked != null) {
         pickLauncherProject(p.picked, globalStore.get(launcherProjectAtom));
@@ -304,6 +316,13 @@ export function applyLauncherPrefill(projectNames: string[]): boolean {
     globalStore.set(launcherGoalAtom, p.goal);
     globalStore.set(launcherPrototypeAtom, p.prototype);
     return true;
+}
+
+// The prefill's handback, once, when the run it was for has started: a later start from the same dialog is no one's.
+export function takeLauncherOnStarted(): ((runId: string) => void) | null {
+    const onStarted = globalStore.get(launcherOnStartedAtom);
+    globalStore.set(launcherOnStartedAtom, null);
+    return onStarted;
 }
 
 // One launch at a time: a held Enter repeats the keydown, and each would start another agent.
