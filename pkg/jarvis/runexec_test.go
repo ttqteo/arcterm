@@ -579,3 +579,13 @@ func TestMakeWorkerBlockMetaTurnsOffPnpmsInstallBeforeRun(t *testing.T) {
 		t.Fatalf("cmd:env pnpm_config_verify_deps_before_run = %q, want false; meta %#v", got, meta)
 	}
 }
+
+// a run's lead asks through the cockpit, so the brainstorm hook must be able to tell it from a hand-started agent
+func TestMakeWorkerBlockMetaMarksARunAgent(t *testing.T) {
+	for _, keepOnExit := range []bool{true, false} {
+		meta := makeWorkerBlockMeta(RunWorkerSpec{Bin: "claude"}, "/proj", keepOnExit)
+		if got := meta.GetStringMap(waveobj.MetaKey_CmdEnv, false)[RunAgentEnv]; got != "1" {
+			t.Fatalf("keepOnExit=%v: cmd:env %s = %q, want 1", keepOnExit, RunAgentEnv, got)
+		}
+	}
+}

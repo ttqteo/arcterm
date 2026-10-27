@@ -6,6 +6,7 @@ package wstore
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -302,5 +303,35 @@ func TestRunChangedHookIsOptional(t *testing.T) {
 	t.Cleanup(func() { RunChangedHook = old })
 	if err := AppendRun(ctx, ch.OID, waveobj.Run{ID: uuid.NewString(), Status: "planning"}); err != nil {
 		t.Fatalf("AppendRun with no hook: %v", err)
+	}
+}
+
+func TestGetStageRunDurations(t *testing.T) {
+	ctx := context.Background()
+	ch, err := CreateChannel(ctx, "stage-run-durations", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	role := "durations-" + uuid.NewString()
+	for _, r := range []waveobj.Run{
+		{Goal: "finished", StageRole: role, Status: "done", CreatedTs: 1000, CompletedTs: 120_000, Report: "questions"},
+		{Goal: "finished too", StageRole: role, Status: "done", CreatedTs: 5000, CompletedTs: 13_000, Report: "more"},
+		{Goal: "no report", StageRole: role, Status: "done", CreatedTs: 1000, CompletedTs: 9000, Report: "  "},
+		{Goal: "still reading", StageRole: role, Status: "executing", CreatedTs: 1000},
+		{Goal: "lost", StageRole: role, Status: "cancelled", CreatedTs: 1000, CompletedTs: 2_000_000, Report: "x"},
+		{Goal: "another role", StageRole: "verifier", Status: "done", CreatedTs: 1000, CompletedTs: 7000, Report: "x"},
+	} {
+		r.ID = uuid.NewString()
+		if err := AppendRun(ctx, ch.OID, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := GetStageRunDurations(ctx, role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, []int64{8000, 119_000}) {
+		t.Fatalf("want only the two finished, reported runs of the role, got %v", got)
 	}
 }

@@ -80,9 +80,24 @@ type MetaTSType struct {
 	SessionLabel           string           `json:"session:label,omitempty"`           // tab (user-set custom name; overrides the agent-derived row label)
 	SessionProject         string           `json:"session:project,omitempty"`         // tab (launch-time project name; roster group + boot label below the ai-title)
 	SessionEffort          string           `json:"session:effort,omitempty"`          // tab ("effort:<oid>": the initiative the session was launched from, or last read or wrote through `wsh effort`)
+	SessionBrainstorm      string           `json:"session:brainstorm,omitempty"`      // tab (absolute path of the brainstorm.json the session's agent writes)
 	SessionCollapsedGroups []string         `json:"session:collapsedgroups,omitempty"` // workspace
 	SessionLater           map[string]int64 `json:"session:later,omitempty"`           // workspace (session id, its transcript's file stem -> when it was marked for later)
 	SessionHelper          bool             `json:"session:helper,omitempty"`          // tab (a short-lived helper terminal, e.g. the Claude sign-in dialog's; the sidebar skips it)
+
+	// the builder check on a brainstorm (Arc launches the reviewer and owns its state on the agent's tab)
+	BrainstormCheckState   string `json:"brainstorm:checkstate,omitempty"`   // tab ("reading" | "answered" | "failed")
+	BrainstormCheckTs      int64  `json:"brainstorm:checkts,omitempty"`      // tab (UnixMilli of the last state change)
+	BrainstormCheckRun     string `json:"brainstorm:checkrun,omitempty"`     // tab (id of the reviewer's run)
+	BrainstormCheckChannel string `json:"brainstorm:checkchannel,omitempty"` // tab (id of the reviewer's channel)
+	BrainstormCheckReason  string `json:"brainstorm:checkreason,omitempty"`  // tab (why the check failed)
+
+	// the judge of a brainstorm's approach question (Arc launches it and owns its state on the agent's tab)
+	BrainstormJudgeState   string `json:"brainstorm:judgestate,omitempty"`   // tab ("reading" | "answered" | "failed")
+	BrainstormJudgeTs      int64  `json:"brainstorm:judgets,omitempty"`      // tab (UnixMilli of the last state change)
+	BrainstormJudgeRun     string `json:"brainstorm:judgerun,omitempty"`     // tab (id of the judge's run)
+	BrainstormJudgeChannel string `json:"brainstorm:judgechannel,omitempty"` // tab (id of the judge's channel)
+	BrainstormJudgeReason  string `json:"brainstorm:judgereason,omitempty"`  // tab (why the judge failed)
 
 	// for loom git client (Wave Agent Sessions fork)
 	AppLoom bool `json:"app:loom,omitempty"` // block (marks the live loom block for toggle)

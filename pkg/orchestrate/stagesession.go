@@ -51,48 +51,13 @@ func spawnStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 	if pin.Runtime == "" && pin.Model == "" {
 		pin = reviewerRoute(owner, g)
 	}
-	capability, err := runroute.Resolve(pin)
-	if err == nil {
-		err = validateLeadHarness(pin.Runtime)
-	}
+	runID, err := LaunchJudgingSession(spawnCtx, JudgingSession{
+		ChannelId: g.ChannelId, WorkspaceId: owner.WorkspaceId, DagORef: g.OID,
+		Role: s.Role, Label: s.Label, Tree: s.Tree, Prompt: s.Prompt, Route: pin,
+	})
 	if err != nil {
 		return "", err
 	}
-	runID, sessionId := uuid.NewString(), jarvis.WorkerSessionId(pin.Runtime)
-	oref, err := spawnWorker(spawnCtx, capability, owner.WorkspaceId, "", s.Tree, s.Prompt,
-		jarvis.RunWorkerOptions{SessionId: sessionId, RunId: runID, Label: s.Label})
-	if err != nil {
-		return "", err
-	}
-	child := jarvis.NewRun(s.Prompt, owner.WorkspaceId, s.Tree, nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), time.Now().UnixMilli())
-	child.ID = runID
-	child.Runtime, child.Model = pin.Runtime, pin.Model
-	child.DagORef = g.OID
-	child.SessionId = sessionId
-	child.StageRole = s.Role
-	for i := range child.Phases {
-		if child.Phases[i].State == jarvis.PhaseState_Running {
-			child.Phases[i].WorkerOrefs = []string{oref}
-			break
-		}
-	}
-	if err := appendChildRun(spawnCtx, g.ChannelId, child); err != nil {
-		if serr := stopUnrecordedWorker(spawnCtx, oref); serr != nil {
-			log.Printf("dag %s: stopping unrecorded %s %s: %v", g.OID, s.Role, oref, serr)
-		}
-		return "", fmt.Errorf("recording the session: %w", err)
-	}
-	runORef := waveobj.MakeORef(waveobj.OType_Run, runID).String()
-	channelORef := waveobj.MakeORef(waveobj.OType_Channel, g.ChannelId).String()
-	if err := stampSpawnedWorker(spawnCtx, oref, runORef, channelORef); err != nil {
-		log.Printf("dag %s: stamp %s %s: %v", g.OID, s.Role, oref, err)
-	}
-	if err := startWorker(spawnCtx, oref); err != nil {
-		abandonUnstartedWorker(spawnCtx, g.ChannelId, runID, oref)
-		return "", err
-	}
-	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Run, runID))
-	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, g.ChannelId))
 	detail := map[string]any{"role": s.Role, "runid": runID}
 	if s.Lens != "" {
 		detail["lens"] = s.Lens
@@ -101,11 +66,76 @@ func spawnStageSession(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, owne
 	return runID, nil
 }
 
-// stageSessionLost says why a stage session with no verdict is done for, or "" while it is still working. It
+// stageSessionLost is JudgingSessionLost for a session of the dag g.
+func stageSessionLost(ctx context.Context, g *waveobj.TaskGroup, runID string, startedTs, now int64) (reason string, final bool) {
+	return JudgingSessionLost(ctx, g.ChannelId, runID, startedTs, now)
+}
+
+// JudgingSession is one judging session outside any task: a fresh session that reads Tree and ends with a verdict
+// command its Prompt names. DagORef is empty for a session no dag owns. Route must be resolved by the caller.
+type JudgingSession struct {
+	ChannelId, WorkspaceId, DagORef string
+	Role, Label, Tree, Prompt       string
+	Route                           waveobj.RoutePin
+}
+
+// LaunchJudgingSession starts s on its route and records its child run, which carries the session id and Role and
+// no task, so usage counts it under its role and a bare complete is not taken for a worker's. It returns the run id.
+func LaunchJudgingSession(ctx context.Context, s JudgingSession) (string, error) {
+	pin := s.Route
+	if pin.Runtime == "" && pin.Model == "" {
+		return "", fmt.Errorf("judging session %s: no route", s.Role)
+	}
+	capability, err := runroute.Resolve(pin)
+	if err == nil {
+		err = validateLeadHarness(pin.Runtime)
+	}
+	if err != nil {
+		return "", err
+	}
+	runID, sessionId := uuid.NewString(), jarvis.WorkerSessionId(pin.Runtime)
+	oref, err := spawnWorker(ctx, capability, s.WorkspaceId, "", s.Tree, s.Prompt,
+		jarvis.RunWorkerOptions{SessionId: sessionId, RunId: runID, Label: s.Label})
+	if err != nil {
+		return "", err
+	}
+	child := jarvis.NewRun(s.Prompt, s.WorkspaceId, s.Tree, nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), time.Now().UnixMilli())
+	child.ID = runID
+	child.Runtime, child.Model = pin.Runtime, pin.Model
+	child.DagORef = s.DagORef
+	child.SessionId = sessionId
+	child.StageRole = s.Role
+	for i := range child.Phases {
+		if child.Phases[i].State == jarvis.PhaseState_Running {
+			child.Phases[i].WorkerOrefs = []string{oref}
+			break
+		}
+	}
+	if err := appendChildRun(ctx, s.ChannelId, child); err != nil {
+		if serr := stopUnrecordedWorker(ctx, oref); serr != nil {
+			log.Printf("channel %s: stopping unrecorded %s %s: %v", s.ChannelId, s.Role, oref, serr)
+		}
+		return "", fmt.Errorf("recording the session: %w", err)
+	}
+	runORef := waveobj.MakeORef(waveobj.OType_Run, runID).String()
+	channelORef := waveobj.MakeORef(waveobj.OType_Channel, s.ChannelId).String()
+	if err := stampSpawnedWorker(ctx, oref, runORef, channelORef); err != nil {
+		log.Printf("channel %s: stamp %s %s: %v", s.ChannelId, s.Role, oref, err)
+	}
+	if err := startWorker(ctx, oref); err != nil {
+		abandonUnstartedWorker(ctx, s.ChannelId, runID, oref)
+		return "", err
+	}
+	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Run, runID))
+	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, s.ChannelId))
+	return runID, nil
+}
+
+// JudgingSessionLost says why a judging session with no verdict is done for, or "" while it is still working. It
 // is bounded like a task reviewer: judging a plan or a finished run takes minutes too. final is set when its route
 // refused it, which a replacement on the same route would meet too.
-func stageSessionLost(ctx context.Context, g *waveobj.TaskGroup, runID string, startedTs, now int64) (reason string, final bool) {
-	run, err := wstore.GetRun(ctx, g.ChannelId, runID)
+func JudgingSessionLost(ctx context.Context, channelId, runID string, startedTs, now int64) (reason string, final bool) {
+	run, err := wstore.GetRun(ctx, channelId, runID)
 	if err == nil {
 		if failure, refused := routeRefused(run, now); refused {
 			recordRefusedRoute(run, failure, now)

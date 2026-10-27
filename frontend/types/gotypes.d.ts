@@ -281,6 +281,12 @@ declare global {
         workspaceid?: string;
     };
 
+    // wshrpc.BrainstormCheckTimes
+    type BrainstormCheckTimes = {
+        usualms: number;
+        longestms: number;
+    };
+
     // wshrpc.BranchInfo
     type BranchInfo = {
         name: string;
@@ -402,6 +408,12 @@ declare global {
     // wshrpc.CommandAgentControlData
     type CommandAgentControlData = {
         oref: string;
+    };
+
+    // wshrpc.CommandAgentPromptData
+    type CommandAgentPromptData = {
+        blockid: string;
+        text: string;
     };
 
     // wshrpc.CommandAgentSyncAdoptData
@@ -611,6 +623,24 @@ declare global {
         inputdata64?: string;
         signame?: string;
         termsize?: TermSize;
+    };
+
+    // wshrpc.CommandBrainstormCheckData
+    type CommandBrainstormCheckData = {
+        blockid: string;
+        file: string;
+    };
+
+    // wshrpc.CommandBrainstormJudgeData
+    type CommandBrainstormJudgeData = {
+        blockid: string;
+        file: string;
+        line?: string;
+    };
+
+    // wshrpc.CommandBrainstormJudgeStopData
+    type CommandBrainstormJudgeStopData = {
+        blockid: string;
     };
 
     // wshrpc.CommandCancelRadarScanData
@@ -3272,9 +3302,20 @@ declare global {
         "session:label"?: string;
         "session:project"?: string;
         "session:effort"?: string;
+        "session:brainstorm"?: string;
         "session:collapsedgroups"?: string[];
         "session:later"?: {[key: string]: number};
         "session:helper"?: boolean;
+        "brainstorm:checkstate"?: string;
+        "brainstorm:checkts"?: number;
+        "brainstorm:checkrun"?: string;
+        "brainstorm:checkchannel"?: string;
+        "brainstorm:checkreason"?: string;
+        "brainstorm:judgestate"?: string;
+        "brainstorm:judgets"?: number;
+        "brainstorm:judgerun"?: string;
+        "brainstorm:judgechannel"?: string;
+        "brainstorm:judgereason"?: string;
         "app:loom"?: boolean;
         "agent:transcriptpath"?: string;
         "agent:loginemail"?: string;

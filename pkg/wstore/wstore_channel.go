@@ -397,6 +397,20 @@ func GetRunsByStatus(ctx context.Context, statuses ...string) ([]*waveobj.Run, e
 	return selectRunsWhereIn(ctx, "status", statuses)
 }
 
+// GetStageRunDurations returns how long each finished session of the stage role took, completedts - createdts in
+// ms, across channels. A session that finished with no report failed, so it is left out, as is a lost one, which
+// never finishes. Pure read (read pool).
+func GetStageRunDurations(ctx context.Context, role string) ([]int64, error) {
+	return WithReadTxRtn(ctx, func(tx *TxWrap) ([]int64, error) {
+		var rtn []int64
+		tx.Select(&rtn, `SELECT json_extract(data, '$.completedts') - json_extract(data, '$.createdts') FROM db_run
+			WHERE json_extract(data, '$.stagerole') = ? AND json_extract(data, '$.status') = 'done'
+			AND json_extract(data, '$.completedts') > json_extract(data, '$.createdts')
+			AND trim(coalesce(json_extract(data, '$.report'), '')) <> ''`, role)
+		return rtn, nil
+	})
+}
+
 // GetRunsByLandState returns the runs whose land (Run.Land.State) is state, across channels. Pure read (read pool).
 func GetRunsByLandState(ctx context.Context, state string) ([]*waveobj.Run, error) {
 	return selectRuns(ctx, `SELECT oid, version, data FROM db_run WHERE json_extract(data, '$.land.state') = ?`, state)

@@ -52,6 +52,12 @@ func AgentControlCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentControlData,
 	return sendRpcRequestResponseStreamHelper[wshrpc.AgentControlMsg](w, "agentcontrol", data, opts)
 }
 
+// command "agentprompt", wshserver.AgentPromptCommand
+func AgentPromptCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentPromptData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "agentprompt", data, opts)
+	return err
+}
+
 // command "agentslist", wshserver.AgentsListCommand
 func AgentsListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.CommandAgentsListRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandAgentsListRtnData](w, "agentslist", nil, opts)
@@ -194,6 +200,30 @@ func AuthenticateTokenVerifyCommand(w *wshutil.WshRpc, data wshrpc.CommandAuthen
 func BlocksListCommand(w *wshutil.WshRpc, data wshrpc.BlocksListRequest, opts *wshrpc.RpcOpts) ([]wshrpc.BlocksListEntry, error) {
 	resp, err := sendRpcRequestCallHelper[[]wshrpc.BlocksListEntry](w, "blockslist", data, opts)
 	return resp, err
+}
+
+// command "brainstormcheck", wshserver.BrainstormCheckCommand
+func BrainstormCheckCommand(w *wshutil.WshRpc, data wshrpc.CommandBrainstormCheckData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "brainstormcheck", data, opts)
+	return err
+}
+
+// command "brainstormchecktimes", wshserver.BrainstormCheckTimesCommand
+func BrainstormCheckTimesCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.BrainstormCheckTimes, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BrainstormCheckTimes](w, "brainstormchecktimes", nil, opts)
+	return resp, err
+}
+
+// command "brainstormjudge", wshserver.BrainstormJudgeCommand
+func BrainstormJudgeCommand(w *wshutil.WshRpc, data wshrpc.CommandBrainstormJudgeData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "brainstormjudge", data, opts)
+	return err
+}
+
+// command "brainstormjudgestop", wshserver.BrainstormJudgeStopCommand
+func BrainstormJudgeStopCommand(w *wshutil.WshRpc, data wshrpc.CommandBrainstormJudgeStopData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "brainstormjudgestop", data, opts)
+	return err
 }
 
 // command "cancelradarscan", wshserver.CancelRadarScanCommand

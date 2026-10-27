@@ -244,6 +244,26 @@ func TestAgentsSendRefusals(t *testing.T) {
 	}
 }
 
+func TestAgentPromptDeliversTheTextBare(t *testing.T) {
+	sent := scriptAgents(t, threeAgents())
+	ws := &WshServer{}
+	if err := ws.AgentPromptCommand(context.Background(), wshrpc.CommandAgentPromptData{BlockId: agentsBlockB, Text: "  look at x.png\r\n"}); err != nil {
+		t.Fatal(err)
+	}
+	want := []agentsDelivery{{agentsBlockB, "look at x.png"}}
+	if len(*sent) != 1 || (*sent)[0] != want[0] {
+		t.Fatalf("delivered %+v, want %+v", *sent, want)
+	}
+	for _, data := range []wshrpc.CommandAgentPromptData{{BlockId: agentsBlockB, Text: " \n"}, {Text: "hi"}} {
+		if err := ws.AgentPromptCommand(context.Background(), data); err == nil {
+			t.Errorf("%+v: want a refusal", data)
+		}
+	}
+	if len(*sent) != 1 {
+		t.Errorf("a refused prompt delivered %+v", (*sent)[1:])
+	}
+}
+
 func TestAgentsSendDeliversAndLocksSendBack(t *testing.T) {
 	sent := scriptAgents(t, threeAgents())
 	ws := &WshServer{}

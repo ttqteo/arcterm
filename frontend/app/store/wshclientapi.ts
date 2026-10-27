@@ -54,6 +54,12 @@ export class RpcApiType {
         return client.wshRpcStream("agentcontrol", data, opts);
     }
 
+    // command "agentprompt" [call]
+    AgentPromptCommand(client: WshClient, data: CommandAgentPromptData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentprompt", data, opts);
+        return client.wshRpcCall("agentprompt", data, opts);
+    }
+
     // command "agentslist" [call]
     AgentsListCommand(client: WshClient, opts?: RpcOpts): Promise<CommandAgentsListRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentslist", null, opts);
@@ -196,6 +202,30 @@ export class RpcApiType {
     BlocksListCommand(client: WshClient, data: BlocksListRequest, opts?: RpcOpts): Promise<BlocksListEntry[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "blockslist", data, opts);
         return client.wshRpcCall("blockslist", data, opts);
+    }
+
+    // command "brainstormcheck" [call]
+    BrainstormCheckCommand(client: WshClient, data: CommandBrainstormCheckData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "brainstormcheck", data, opts);
+        return client.wshRpcCall("brainstormcheck", data, opts);
+    }
+
+    // command "brainstormchecktimes" [call]
+    BrainstormCheckTimesCommand(client: WshClient, opts?: RpcOpts): Promise<BrainstormCheckTimes> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "brainstormchecktimes", null, opts);
+        return client.wshRpcCall("brainstormchecktimes", null, opts);
+    }
+
+    // command "brainstormjudge" [call]
+    BrainstormJudgeCommand(client: WshClient, data: CommandBrainstormJudgeData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "brainstormjudge", data, opts);
+        return client.wshRpcCall("brainstormjudge", data, opts);
+    }
+
+    // command "brainstormjudgestop" [call]
+    BrainstormJudgeStopCommand(client: WshClient, data: CommandBrainstormJudgeStopData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "brainstormjudgestop", data, opts);
+        return client.wshRpcCall("brainstormjudgestop", data, opts);
     }
 
     // command "cancelradarscan" [call]

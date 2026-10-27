@@ -59,6 +59,50 @@ func TestSpawnStageSessionRecordsARunWithItsRoleAndNoTask(t *testing.T) {
 	}
 }
 
+// a judging session no dag owns (the brainstorm builder check) is a child run with its role and no dag
+func TestLaunchJudgingSessionOutsideADag(t *testing.T) {
+	ctx := context.Background()
+	calls := captureSpawns(t)
+	ch, err := wstore.CreateChannel(ctx, "judging-session-test", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := t.TempDir()
+	route := waveobj.RoutePin{Runtime: "claude", Model: "haiku"}
+	runID, err := LaunchJudgingSession(ctx, JudgingSession{
+		ChannelId: ch.OID, WorkspaceId: "ws-1", Role: jarvis.UsageRole_Verifier, Label: "check", Tree: tree, Prompt: "judge it", Route: route,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := (*calls)[0]
+	if c.cwd != tree || c.prompt != "judge it" || c.opts.RunId != runID || c.opts.SessionId == "" || c.cap.Runtime != "claude" {
+		t.Fatalf("spawned %+v", c)
+	}
+	run, err := wstore.GetRun(ctx, ch.OID, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.StageRole != jarvis.UsageRole_Verifier || run.DagORef != "" || run.SessionId != c.opts.SessionId || run.Runtime != "claude" || run.Model != "haiku" {
+		t.Fatalf("judging run = %+v", run)
+	}
+}
+
+func TestLaunchJudgingSessionNeedsARoute(t *testing.T) {
+	ctx := context.Background()
+	calls := captureSpawns(t)
+	ch, err := wstore.CreateChannel(ctx, "judging-session-test", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LaunchJudgingSession(ctx, JudgingSession{ChannelId: ch.OID, Role: jarvis.UsageRole_Verifier, Tree: t.TempDir()}); err == nil {
+		t.Fatal("an empty route must be an error")
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("nothing is spawned without a route, got %d spawns", len(*calls))
+	}
+}
+
 func TestSpawnStageSessionReportsASpawnFailure(t *testing.T) {
 	ctx, dag := seedPendingDag(t)
 	allowWorkerHarnessForTest(t)
