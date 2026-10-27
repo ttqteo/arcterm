@@ -63,6 +63,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council reads shorter: its answer is one plain sentence and its summary a few, both in the language you asked in;
   each proposal keeps to a few sentences, and an expert who revises one says in a line what changed instead of
   repeating the whole new argument.
+- A row in Needs you unfolds when you click its text: a run to confirm lists each thing it left unverified, so you
+  know what to check before Accept.
 
 ### Changed
 

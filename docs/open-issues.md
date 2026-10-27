@@ -30,6 +30,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Waking holds the controls: click Wake on a sleeping agent's card. Until it is back the card reads
   Waking…, the composer's Send reads Waking… and is off, the header's … and × are dimmed and do nothing (right-click on
   the header opens no menu), and the agent's row menu greys Wake and Close agent. `wakingstore.ts`.
+- [ ] (arcterm) Needs you rows unfold: on a project's Overview (or the Cockpit strip), click the text of a "Run to
+  confirm" row. It shows ▾, the run's full title, then one `·` line per thing not verified, with no `wsh runs ack`
+  hint; a second click folds it. A row with no why (and a learned rule's, which keeps its Why toggle) does not
+  unfold. `needsyoustrip.tsx`.
 - [ ] (arcterm) Open a deck from the File panel: after installing a build with `open_path`, in the SIEM `website`
   agent's "It's in docs/slide/ as Early_Warning_Services_v1.4_271026_Sales.pptx" the bare file name is underlined on
   hover (its folder is read off the line above, `nearbyFolders`); Ctrl+click it: the panel reads "Binary file" with

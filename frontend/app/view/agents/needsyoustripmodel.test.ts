@@ -3,7 +3,14 @@
 
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { buildNeedsYouRows, channelProjects, escalationAgent, stripAge } from "./needsyoustripmodel";
+import {
+    buildNeedsYouRows,
+    channelProjects,
+    escalationAgent,
+    stripAge,
+    whyLines,
+    type StripRow,
+} from "./needsyoustripmodel";
 
 const item = (over: Partial<AttentionItem>): AttentionItem =>
     ({
@@ -448,5 +455,28 @@ describe("buildNeedsYouRows: a project's Overview", () => {
             buildNeedsYouRows({ ...base, attention, channelProject, filter: "arc", learn }).map((r) => r.key);
         expect(keys(false)).not.toContain("learn:skill:notes#k");
         expect(keys(undefined)).toContain("learn:skill:notes#k");
+    });
+});
+
+describe("whyLines", () => {
+    const row = (wireKind: string, why: string) => ({ why, run: { wireKind } as StripRow["run"] });
+
+    it("lists each thing a run left unverified, without the prefix or the wsh runs ack hint", () => {
+        const why =
+            "Not verified: the CDP scenario could not start; the packaged build. Once read, accept it with `wsh runs ack r-1`.";
+        expect(whyLines(row("run-unverified", why))).toEqual([
+            "the CDP scenario could not start",
+            "the packaged build",
+        ]);
+    });
+
+    it("keeps one reason as one line", () => {
+        const why = "Not verified: Final exited 3. Once read, accept it with `wsh runs ack r-1`.";
+        expect(whyLines(row("run-unverified", why))).toEqual(["Final exited 3"]);
+    });
+
+    it("keeps any other kind's why whole, and gives nothing for none", () => {
+        expect(whyLines(row("dag-gate", "a; b."))).toEqual(["a; b."]);
+        expect(whyLines(row("run-unverified", "  "))).toEqual([]);
     });
 });

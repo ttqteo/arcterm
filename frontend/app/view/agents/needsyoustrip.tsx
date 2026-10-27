@@ -13,7 +13,7 @@ import { cn, fireAndForget } from "@/util/util";
 import { useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import { useNeedsYou, type NeedsYou } from "./needsyou";
-import { stripAge, type StripRow } from "./needsyoustripmodel";
+import { stripAge, whyLines, type StripRow } from "./needsyoustripmodel";
 
 const ACT_BTN =
     "min-w-[66px] flex-none cursor-pointer rounded-[6px] border px-2 py-[3px] text-[10.5px] font-semibold hover:border-edge-strong hover:text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
@@ -151,89 +151,122 @@ function LearnRow({
     );
 }
 
+// Any other row: one line, and its act. A row with a why unfolds on a click of its text: the source in full, then
+// each line of the why (a run to confirm lists what it left unverified, so you know what to check before Accept).
+function ActRow({ row, ny }: { row: StripRow; ny: NeedsYou }) {
+    const { now, busy, open, act } = ny;
+    const [expanded, setExpanded] = useState(false);
+    const lines = whyLines(row);
+    return (
+        <div data-needs-you-row={row.key} className={cn("flex flex-col py-1.5 hover:bg-surface-hover", ROW_BORDER)}>
+            <div className="flex items-center gap-[13px]">
+                <span
+                    className={cn(
+                        "w-[116px] flex-none truncate text-[10.5px] font-semibold tracking-[.02em]",
+                        TONE_TEXT[row.tone]
+                    )}
+                >
+                    {row.kindLabel}
+                </span>
+                <span title={row.source} className="w-[140px] flex-none truncate text-[11px] text-ink-mid">
+                    {row.source}
+                </span>
+                {lines.length > 0 ? (
+                    <button
+                        type="button"
+                        data-needs-you-expand
+                        aria-expanded={expanded}
+                        title={expanded ? "Fold" : "Show the details"}
+                        onClick={() => setExpanded((o) => !o)}
+                        className="min-w-0 flex-1 cursor-pointer truncate text-left text-[13px] text-ink-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        <span className="text-ink-mid">{expanded ? "▾" : "▸"} </span>
+                        {row.text}
+                        {expanded ? null : <span className="text-ink-mid"> — {row.why}</span>}
+                    </button>
+                ) : (
+                    <span title={row.text} className="min-w-0 flex-1 truncate text-[13px] text-ink-hi">
+                        {row.text}
+                    </span>
+                )}
+                <span
+                    className={cn(
+                        "w-10 flex-none text-right text-[11px] font-semibold tabular-nums",
+                        TONE_TEXT[row.tone]
+                    )}
+                >
+                    {stripAge(row.waitingSince, now)}
+                </span>
+                <div className="flex flex-none items-center gap-1.5">
+                    {row.act.kind === "open" && row.open == null ? null : (
+                        <button
+                            type="button"
+                            data-needs-you-act={row.act.kind}
+                            data-strip-act={row.act.kind}
+                            title={row.act.kind === "open" ? openTitle(row) : undefined}
+                            disabled={busy.has(row.key)}
+                            onClick={(e) => act(row, row.act, e)}
+                            className={cn(
+                                ACT_BTN,
+                                row.act.label === "Approve"
+                                    ? "border-success/35 bg-success/12 text-success"
+                                    : "border-edge-mid text-secondary"
+                            )}
+                        >
+                            {row.act.label}
+                        </button>
+                    )}
+                    {row.secondAct != null ? (
+                        <button
+                            type="button"
+                            data-strip-act={row.secondAct.kind}
+                            disabled={busy.has(row.key)}
+                            onClick={(e) => act(row, row.secondAct!, e)}
+                            className={cn(ACT_BTN, "border-edge-mid text-secondary")}
+                        >
+                            {row.secondAct.label}
+                        </button>
+                    ) : null}
+                    {row.act.kind !== "open" && row.open != null ? (
+                        <button
+                            type="button"
+                            data-needs-you-open={row.open.kind}
+                            title={openTitle(row)}
+                            onClick={(e) => open(row, e)}
+                            className={SMALL_BTN}
+                        >
+                            Open
+                        </button>
+                    ) : null}
+                </div>
+            </div>
+            {expanded && lines.length > 0 ? (
+                <div data-needs-you-detail className="pb-0.5 pl-[282px] pr-2 pt-1 text-[11.5px] text-ink-mid">
+                    <p className="text-ink-hi">{row.source}</p>
+                    <ul className="mt-1 flex flex-col gap-0.5">
+                        {lines.map((line, i) => (
+                            <li key={i} className="flex gap-1.5">
+                                <span aria-hidden="true">·</span>
+                                <span className="min-w-0 whitespace-pre-wrap break-words">{line}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
 // the strip's rows without its frame, for a page that frames them itself (a project's Overview)
 export function NeedsYouRows({ ny }: { ny: NeedsYou }) {
-    const { rows, now, busy, open, act, decideLearn } = ny;
+    const { rows, now, busy, decideLearn } = ny;
     return (
         <>
             {rows.map((row) =>
                 row.learnId != null ? (
                     <LearnRow key={row.key} row={row} now={now} busy={busy.has(row.key)} onDecide={decideLearn} />
                 ) : (
-                    <div
-                        key={row.key}
-                        data-needs-you-row={row.key}
-                        className={cn("flex items-center gap-[13px] py-1.5 hover:bg-surface-hover", ROW_BORDER)}
-                    >
-                        <span
-                            className={cn(
-                                "w-[116px] flex-none truncate text-[10.5px] font-semibold tracking-[.02em]",
-                                TONE_TEXT[row.tone]
-                            )}
-                        >
-                            {row.kindLabel}
-                        </span>
-                        <span title={row.source} className="w-[140px] flex-none truncate text-[11px] text-ink-mid">
-                            {row.source}
-                        </span>
-                        <span
-                            title={row.why ? `${row.text} — ${row.why}` : row.text}
-                            className="min-w-0 flex-1 truncate text-[13px] text-ink-hi"
-                        >
-                            {row.text}
-                            {row.why ? <span className="text-ink-mid"> — {row.why}</span> : null}
-                        </span>
-                        <span
-                            className={cn(
-                                "w-10 flex-none text-right text-[11px] font-semibold tabular-nums",
-                                TONE_TEXT[row.tone]
-                            )}
-                        >
-                            {stripAge(row.waitingSince, now)}
-                        </span>
-                        <div className="flex flex-none items-center gap-1.5">
-                            {row.act.kind === "open" && row.open == null ? null : (
-                                <button
-                                    type="button"
-                                    data-needs-you-act={row.act.kind}
-                                    data-strip-act={row.act.kind}
-                                    title={row.act.kind === "open" ? openTitle(row) : undefined}
-                                    disabled={busy.has(row.key)}
-                                    onClick={(e) => act(row, row.act, e)}
-                                    className={cn(
-                                        ACT_BTN,
-                                        row.act.label === "Approve"
-                                            ? "border-success/35 bg-success/12 text-success"
-                                            : "border-edge-mid text-secondary"
-                                    )}
-                                >
-                                    {row.act.label}
-                                </button>
-                            )}
-                            {row.secondAct != null ? (
-                                <button
-                                    type="button"
-                                    data-strip-act={row.secondAct.kind}
-                                    disabled={busy.has(row.key)}
-                                    onClick={(e) => act(row, row.secondAct!, e)}
-                                    className={cn(ACT_BTN, "border-edge-mid text-secondary")}
-                                >
-                                    {row.secondAct.label}
-                                </button>
-                            ) : null}
-                            {row.act.kind !== "open" && row.open != null ? (
-                                <button
-                                    type="button"
-                                    data-needs-you-open={row.open.kind}
-                                    title={openTitle(row)}
-                                    onClick={(e) => open(row, e)}
-                                    className={SMALL_BTN}
-                                >
-                                    Open
-                                </button>
-                            ) : null}
-                        </div>
-                    </div>
+                    <ActRow key={row.key} row={row} ny={ny} />
                 )
             )}
         </>

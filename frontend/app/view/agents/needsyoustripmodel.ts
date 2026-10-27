@@ -174,6 +174,28 @@ export function buildNeedsYouRows(input: {
     return rows;
 }
 
+const UNVERIFIED_PREFIX = "Not verified: ";
+const ACK_HINT = /\.? Once read, accept it with `wsh runs ack [^`]*`\.$/;
+
+/** Pure: what a row's expanded detail lists, one line each. A run to confirm names each thing left unverified
+ *  (pkg/jarvis's run-unverified item joins them with "; " behind "Not verified: " and ends on the `wsh runs ack`
+ *  hint, which the row's Accept stands in for); every other kind's why is one line. Empty when there is none. */
+export function whyLines(row: Pick<StripRow, "why" | "run">): string[] {
+    const why = row.why.trim();
+    if (why === "") {
+        return [];
+    }
+    if (row.run.wireKind !== "run-unverified" || !why.startsWith(UNVERIFIED_PREFIX)) {
+        return [why];
+    }
+    return why
+        .slice(UNVERIFIED_PREFIX.length)
+        .replace(ACK_HINT, "")
+        .split("; ")
+        .map((s) => s.trim())
+        .filter((s) => s !== "");
+}
+
 /** Pure: how long an item has waited, as the cockpit's other ages read ("just now", "5m", "3h"). */
 export function stripAge(waitingSince: number | null, now: number): string {
     return waitingSince == null ? "" : formatAge(Math.max(0, now - waitingSince));
