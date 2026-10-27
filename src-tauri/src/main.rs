@@ -362,6 +362,7 @@ fn main() {
             commands::set_window_init_status,
             commands::open_external,
             commands::reveal_path,
+            commands::open_path,
             canvas::capture_webview,
             pagekeys::app_frame_action,
             notify::notify_os,

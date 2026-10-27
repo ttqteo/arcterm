@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A deck, a sheet or a video an agent links to opens: the File panel, which shows only text, PDFs and images, now
+  offers Open (in PowerPoint, Excel or the file's own app) and Show in Explorer instead of a dead end.
 - Remove a council you are done with: hover its row in the Agent tree and click ×, right-click it, or click Remove in
   its header. A council that is running or waits on you has to be stopped first; the document it saved stays.
 - Right-click a project's folder in the Agent tree and pick Open overview: one page with what in the project waits on

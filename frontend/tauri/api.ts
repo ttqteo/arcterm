@@ -61,6 +61,9 @@ export function installTauriApi(init: InitData) {
         revealPath: (path: string) => {
             invoke("reveal_path", { path }).catch(noop);
         },
+        openPath: (path: string) => {
+            invoke("open_path", { path }).catch(noop);
+        },
 
         // --- window chrome ---
         getZoomFactor: () => chrome.getZoomFactor(),

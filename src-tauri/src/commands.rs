@@ -104,9 +104,57 @@ pub fn reveal_path(path: String) {
     });
 }
 
+// The kinds of file the panel cannot show (a deck, a sheet, a PDF, media) that Open hands to the OS's default app. The
+// path comes from model-written terminal output, and ShellExecute "open" runs an .exe, a .bat or a .lnk, so the
+// extension is an allowlist: a document or a media file, never anything that can run.
+const OPENABLE_EXTS: &[&str] = &[
+    "pdf", "ppt", "pptx", "pps", "ppsx", "key", "odp", "doc", "docx", "rtf", "odt", "pages", "xls", "xlsx", "csv",
+    "ods", "numbers", "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "mp4", "mov", "webm", "mkv",
+    "mp3", "wav", "m4a", "flac", "ogg", "epub",
+];
+
+fn is_openable(path: &str) -> bool {
+    let p = std::path::Path::new(path);
+    let Some(ext) = p.extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    p.is_absolute() && OPENABLE_EXTS.contains(&ext.to_ascii_lowercase().as_str())
+}
+
+// Opens a document in the OS's default app (a .pptx in PowerPoint, a .pdf in the PDF reader): the File panel's Open on a
+// file it cannot show. An existing absolute file of an allowlisted kind only; anything else is rejected and logged.
+#[tauri::command]
+pub fn open_path(path: String) {
+    if !is_openable(&path) || !std::path::Path::new(&path).is_file() {
+        log_line(&format!("[open-path] rejected: {}", path));
+        return;
+    }
+    std::thread::spawn(move || {
+        if let Err(e) = open::that(&path) {
+            log_line(&format!("[open-path] failed to open {}: {}", path, e));
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opens_only_absolute_documents_and_media() {
+        assert!(is_openable("C:\\work\\docs\\slide\\Deck_v1.4.pptx"));
+        // an absolute path is the platform's own: a drive on Windows, a leading slash elsewhere
+        #[cfg(windows)]
+        assert!(is_openable("D:/work/report.PDF"));
+        #[cfg(not(windows))]
+        assert!(is_openable("/Users/me/clip.mov"));
+        assert!(!is_openable("docs/slide/Deck.pptx"));
+        assert!(!is_openable("C:\\Windows\\System32\\notepad.exe"));
+        assert!(!is_openable("C:\\x\\run.bat"));
+        assert!(!is_openable("C:\\x\\link.lnk"));
+        assert!(!is_openable("C:\\x\\page.html"));
+        assert!(!is_openable("C:\\x\\noext"));
+    }
 
     #[test]
     fn allows_http_https_mailto() {
