@@ -88,4 +88,5 @@ Everything the page shows is already in the frontend: the agents and terminals p
 ## Out of scope
 
 Recent activity, repository history, initiatives, ideas, notes, canvases, a second column, and an Overview entry in the
-app bar's project switcher. Any of them can come back as a block later if the small page earns it.
+app bar's project switcher. Any of them can come back as a block later if the small page earns it. Recent activity
+and a second column came back on 2026-10-27: `2026-10-27-project-overview-history-design.md`.

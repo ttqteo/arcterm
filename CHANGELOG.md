@@ -53,6 +53,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A project's Overview has a History column beside what needs you: its sessions, councils and runs of the last 7
+  days, searchable with /, and the agents that finished a turn you have not read. Running now lists the project's
+  runs, their workers counted as the Agent tree counts them, and three or more items of one kind in Needs you fold
+  into one row.
 - An agent's right-click menu has **Copy id** in place of Copy @mention: it copies the bare id, so pasting it to tell
   an agent about another one keeps the message with the agent you typed to, where a leading `@id` sent it away. Drag
   an agent onto a pane holding Alt still types its `@` token to message it.
@@ -65,9 +69,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   repeating the whole new argument.
 - A row in Needs you unfolds when you click its text: a run to confirm lists each thing it left unverified, so you
   know what to check before Accept.
-
-### Changed
-
 - A finished council opens on its answer: one sentence first, then the directions.
 - The council speaks in plain words (Agrees, Has doubts, Is against it) and ranks ideas by each expert's top three
   picks; an expert who agrees without a comment shows as a reaction under the idea, not as a reply.

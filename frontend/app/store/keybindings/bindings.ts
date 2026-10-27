@@ -1079,6 +1079,13 @@ const agentNavStrict = (ctx: KeyContext) =>
 // canvasGalleryAtom, so they never share a key.
 const onGallery = (ctx: KeyContext) =>
     ctx.surface === "agent" && globalStore.get(centerModeAtom) === "canvases" && initiativePopoverClosed();
+// A project's Overview covers the terminal too; its one key is `/`, into the History column's search box. Escape inside
+// the box is the box's own: the Escape that leaves the centre is strict, so it stands down while the box holds focus.
+const onOverview = (ctx: KeyContext) =>
+    navigate(ctx) &&
+    ctx.surface === "agent" &&
+    globalStore.get(centerModeAtom) === "project" &&
+    initiativePopoverClosed();
 const galleryNav = (ctx: KeyContext) => navigate(ctx) && onGallery(ctx);
 const galleryView = () => globalStore.get(canvasGalleryAtom).view;
 const inGalleryGrid = (ctx: KeyContext) => galleryNav(ctx) && galleryView() === "grid";
@@ -1255,6 +1262,22 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 }
                 el.focus();
                 el.select(); // typing replaces the last query, as in every editor's search box
+            },
+        },
+        // Agent → a project's Overview
+        {
+            id: "overview:search",
+            keys: "/",
+            group: "Agent",
+            label: "Search the project's history",
+            paletteHidden: true,
+            when: onOverview,
+            run: () => {
+                const el = document.querySelector<HTMLInputElement>("[data-history-search]");
+                if (el == null) {
+                    return false; // an Overview with no project path draws no History
+                }
+                el.focus();
             },
         },
         {

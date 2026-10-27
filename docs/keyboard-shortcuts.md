@@ -277,6 +277,14 @@ gallery is a grid of cards (Today / Yesterday / Earlier); a card opens in a view
 | `Space` | In Clean up: tick or untick the card under the cursor. A click does the same; **Untick all** and **Move to trash** are in the bar |
 | `Esc` | In Clean up: cancel, back to the grid |
 
+### Agent: project Overview
+
+Opened from a project folder's menu, Open overview. It covers the terminal as History does, and `Esc` returns to it.
+
+| Keys | Action |
+|---|---|
+| `/` | Search the project's history (`Esc` in the box clears it) |
+
 ### Agent: terminal grid
 
 A cell is an agent or a terminal (a shell, lazygit beside the agent). Open a split by dragging a live agent or terminal

@@ -7,7 +7,7 @@
 // they stay out of this pure helper.
 
 import { projectOf, type AgentVM } from "./agentsviewmodel";
-import { finalRowFocusId, finalStageView } from "./finalstage";
+import { finalRowFocusId, finalStageView, type FinalStageView } from "./finalstage";
 import {
     endedWorkerId,
     holdsTask,
@@ -106,7 +106,7 @@ const QUEUED = new Set(["pending", "ready"]);
 // settled without landing: nothing more happens to it, so with no tab left it has no row
 const DROPPED = new Set(["skipped", "cancelled"]);
 
-type StageAgent = { agent: AgentVM; stageRole: string };
+export type StageAgent = { agent: AgentVM; stageRole: string };
 
 export type StageOutcome = "passed" | "accepted" | "failed" | "unverified";
 
@@ -163,14 +163,24 @@ export function stageSubline(outcome: StageOutcome | undefined, age: string): st
 const stageRank = (s: StageAgent & { outcome?: StageOutcome }) =>
     (s.stageRole === "plan-reviewer" ? 0 : 2) + (s.outcome === "failed" ? 0 : 1);
 
-function runRows(
-    item: Extract<TopItem, { kind: "lead" | "run" }>,
-    workers: Map<string, AgentVM[]>,
-    stages: StageAgent[],
-    folds: TreeFolds,
-    focusId: string | undefined
-): { rows: AgentTreeRow[]; members: number; attn: number; running: number } {
-    const { run, project } = item;
+type JudgedStage = StageAgent & { outcome?: StageOutcome; lens?: string };
+
+// what a run holds while it is under way, as its tree rows and its running count both read it
+interface RunState {
+    live: TaskNode[];
+    done: TaskNode[];
+    queued: TaskNode[];
+    final: FinalStageView;
+    // the current round's verifier session, while the final stage has a row and that session is in the roster
+    verifier?: AgentVM;
+    finalRunning: boolean;
+    finalPassed: boolean;
+    judged: JudgedStage[];
+    judging: JudgedStage[];
+    finished: JudgedStage[];
+}
+
+function runState(run: RunInfo, workers: Map<string, AgentVM[]>, stages: StageAgent[]): RunState {
     const tasks = run.dag?.tasks ?? [];
     // a task past its worker is still under way: verifying its merge, or failed and waiting on a judgment. Cleanup
     // reaps its worker's tab with the tree, so it keeps its row with no agent
@@ -180,7 +190,6 @@ function runRows(
     const done = tasks.filter((t) => t.state === "done");
     // tasks not dispatched yet have no session to open, so they fold away until asked for
     const queued = tasks.filter((t) => QUEUED.has(t.state) && !workers.has(t.id));
-    const open = !folds.collapsed.has(run.runId);
     // the stage's row is its current verifier's session while that is in the roster, so the session gets no
     // stage row of its own; a tab an earlier round's verifier left stays a failed stage row
     const final = finalStageView(run.dag, [], 0);
@@ -188,11 +197,6 @@ function runRows(
     const verifier = final.visible
         ? stages.find((s) => verifierRunId != null && s.agent.runId === verifierRunId)?.agent
         : undefined;
-    const finalRow: AgentTreeRow | undefined = final.visible
-        ? { kind: "final", project, run, agent: verifier }
-        : undefined;
-    const finalRunning = finalRow != null && final.tone === "run";
-    const finalPassed = finalRow != null && final.tone === "pass";
     const judged = stages
         .filter((s) => s.agent !== verifier)
         .map((s) => ({
@@ -202,8 +206,53 @@ function runRows(
                 s.stageRole === "plan-reviewer" ? planReviewerOf(run.dag?.planreview, s.agent.runId)?.lens : undefined,
         }))
         .sort((a, b) => stageRank(a) - stageRank(b));
-    const judging = judged.filter((s) => s.outcome == null);
-    const finished = judged.filter((s) => s.outcome != null);
+    return {
+        live,
+        done,
+        queued,
+        final,
+        verifier,
+        finalRunning: final.visible && final.tone === "run",
+        finalPassed: final.visible && final.tone === "pass",
+        judged,
+        judging: judged.filter((s) => s.outcome == null),
+        finished: judged.filter((s) => s.outcome != null),
+    };
+}
+
+// the agents of a run the tree counts as running: the first tab of each live task, each stage still judging and the
+// final stage's verifier while it runs, each only while it works. A tab on a done task, a task's other tabs and a stage
+// that has its verdict are not counted, whatever they do
+function runningOf(s: RunState, workers: Map<string, AgentVM[]>): AgentVM[] {
+    const counted = [
+        ...s.live.map((t) => workers.get(t.id)?.[0]),
+        ...s.judging.map((j) => j.agent),
+        ...(s.finalRunning ? [s.verifier] : []),
+    ];
+    return counted.filter((a): a is AgentVM => a?.state === "working");
+}
+
+/** Pure: the agents of one run that the Agent tree's folder badge counts as running (its lead aside, which the
+ *  group counts itself). `workers` holds the run's task tabs by task id, the current attempt's first, and `stages`
+ *  its judging sessions: both as `groupRunAgents` builds them. */
+export function runningAgents(run: RunInfo, workers: Map<string, AgentVM[]>, stages: StageAgent[]): AgentVM[] {
+    return runningOf(runState(run, workers, stages), workers);
+}
+
+function runRows(
+    item: Extract<TopItem, { kind: "lead" | "run" }>,
+    workers: Map<string, AgentVM[]>,
+    stages: StageAgent[],
+    folds: TreeFolds,
+    focusId: string | undefined
+): { rows: AgentTreeRow[]; members: number; attn: number; running: number } {
+    const { run, project } = item;
+    const state = runState(run, workers, stages);
+    const { live, done, queued, final, verifier, finalRunning, finalPassed, judging, finished } = state;
+    const open = !folds.collapsed.has(run.runId);
+    const finalRow: AgentTreeRow | undefined = final.visible
+        ? { kind: "final", project, run, agent: verifier }
+        : undefined;
     const busy = live.length + judging.length + (finalRunning ? 1 : 0);
     const head: AgentTreeRow =
         item.kind === "lead"
@@ -224,7 +273,7 @@ function runRows(
             }
         }
     };
-    const pushStage = ({ agent, stageRole, outcome, lens }: (typeof judged)[number]) =>
+    const pushStage = ({ agent, stageRole, outcome, lens }: JudgedStage) =>
         rows.push({ kind: "stage", agent, project, run, stageRole, outcome, lens });
     if (open) {
         // oldest first: what finished, what is running, what is still to come
@@ -271,12 +320,47 @@ function runRows(
     const attn = live.filter((t) => workerNeedsYou(run, t.id, workers.get(t.id)?.[0])).length;
     const agents =
         live.filter((t) => workers.has(t.id)).length + judging.length + (finalRunning && verifier != null ? 1 : 0);
-    const working = (a: AgentVM | undefined) => (a?.state === "working" ? 1 : 0);
-    const running =
-        live.reduce((n, t) => n + working(workers.get(t.id)?.[0]), 0) +
-        judging.reduce((n, s) => n + working(s.agent), 0) +
-        (finalRunning ? working(verifier) : 0);
-    return { rows, members: agents, attn, running };
+    return { rows, members: agents, attn, running: runningOf(state, workers).length };
+}
+
+export interface RunGroups {
+    leads: Map<string, AgentVM>; // the agent leading each run, by run id
+    workers: Map<string, Map<string, AgentVM[]>>; // each run's task tabs by task id, the task's current attempt first
+    stages: Map<string, StageAgent[]>; // each run's judging sessions
+}
+
+/** Pure: the agents of a lineage's runs sorted into each run's lead, task tabs and stage sessions, in the order
+ *  given. An agent whose run the lineage does not know is in none: it is a plain agent. */
+export function groupRunAgents(agents: readonly AgentVM[], lineage: Lineage): RunGroups {
+    const leads = new Map<string, AgentVM>();
+    const workers = new Map<string, Map<string, AgentVM[]>>();
+    const stages = new Map<string, StageAgent[]>();
+    for (const a of agents) {
+        const role = lineage.roles[a.id];
+        if (role?.kind === "lead" && lineage.runs[role.runId] && !leads.has(role.runId)) {
+            leads.set(role.runId, a);
+        } else if (role?.kind === "stage" && lineage.runs[role.leadRunId]) {
+            stages.set(role.leadRunId, [
+                ...(stages.get(role.leadRunId) ?? []),
+                { agent: a, stageRole: role.stageRole },
+            ]);
+        } else if (role?.kind === "worker" && lineage.runs[role.leadRunId]) {
+            let byTask = workers.get(role.leadRunId);
+            if (!byTask) {
+                byTask = new Map();
+                workers.set(role.leadRunId, byTask);
+            }
+            byTask.set(role.taskId, [...(byTask.get(role.taskId) ?? []), a]);
+        }
+    }
+    // the task's current run leads its agents, so a tab left from an earlier attempt never takes its row
+    for (const [runId, byTask] of workers) {
+        const run = lineage.runs[runId];
+        for (const [taskId, list] of byTask) {
+            list.sort((a, b) => Number(holdsTask(run, taskId, b)) - Number(holdsTask(run, taskId, a)));
+        }
+    }
+    return { leads, workers, stages };
 }
 
 const NO_WAITS: ReadonlyMap<string, string> = new Map();
@@ -302,34 +386,7 @@ export function buildAgentTree(
     const sorted = [...agents].sort(
         (a, b) => (rank.get(a.id) ?? Number.POSITIVE_INFINITY) - (rank.get(b.id) ?? Number.POSITIVE_INFINITY)
     );
-    const leads = new Map<string, AgentVM>();
-    const workers = new Map<string, Map<string, AgentVM[]>>();
-    const stages = new Map<string, StageAgent[]>();
-    for (const a of sorted) {
-        const role = lineage.roles[a.id];
-        if (role?.kind === "lead" && lineage.runs[role.runId] && !leads.has(role.runId)) {
-            leads.set(role.runId, a);
-        } else if (role?.kind === "stage" && lineage.runs[role.leadRunId]) {
-            stages.set(role.leadRunId, [
-                ...(stages.get(role.leadRunId) ?? []),
-                { agent: a, stageRole: role.stageRole },
-            ]);
-        } else if (role?.kind === "worker" && lineage.runs[role.leadRunId]) {
-            let byTask = workers.get(role.leadRunId);
-            if (!byTask) {
-                byTask = new Map();
-                workers.set(role.leadRunId, byTask);
-            }
-            byTask.set(role.taskId, [...(byTask.get(role.taskId) ?? []), a]);
-        }
-    }
-    // the task's current run leads its agents, so a tab left from an earlier attempt never takes its row
-    for (const [runId, byTask] of workers) {
-        const run = lineage.runs[runId];
-        for (const [taskId, list] of byTask) {
-            list.sort((a, b) => Number(holdsTask(run, taskId, b)) - Number(holdsTask(run, taskId, a)));
-        }
-    }
+    const { leads, workers, stages } = groupRunAgents(sorted, lineage);
 
     const groups: { project: string; items: TopItem[] }[] = [];
     const byProject = new Map<string, TopItem[]>();

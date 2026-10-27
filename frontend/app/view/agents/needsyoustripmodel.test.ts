@@ -7,6 +7,8 @@ import {
     buildNeedsYouRows,
     channelProjects,
     escalationAgent,
+    foldNeedsYouRows,
+    groupAge,
     stripAge,
     whyLines,
     type StripRow,
@@ -478,5 +480,52 @@ describe("whyLines", () => {
     it("keeps any other kind's why whole, and gives nothing for none", () => {
         expect(whyLines(row("dag-gate", "a; b."))).toEqual(["a; b."]);
         expect(whyLines(row("run-unverified", "  "))).toEqual([]);
+    });
+});
+
+describe("foldNeedsYouRows", () => {
+    const rows = (kinds: string[]) =>
+        buildNeedsYouRows({
+            ...base,
+            attention: kinds.map((kind, i) => item({ key: `k${i}`, kind })),
+        });
+
+    it("leaves two of a kind as rows", () => {
+        const out = foldNeedsYouRows(rows(["run-unverified", "run-unverified"]));
+        expect(out.map((e) => e.kind)).toEqual(["row", "row"]);
+    });
+
+    it("folds three of a kind into one group where the first stood", () => {
+        const out = foldNeedsYouRows(rows(["dag-gate", "run-unverified", "run-unverified", "run-unverified"]));
+        expect(out.map((e) => e.kind)).toEqual(["row", "group"]);
+        const g = out[1];
+        expect(g.kind === "group" && g.rows.map((r) => r.key)).toEqual(["k1", "k2", "k3"]);
+        expect(g.kind === "group" && g.kindLabel).toBe("Run to confirm");
+    });
+
+    it("never folds a learned rule", () => {
+        const learn = (i: number) =>
+            item({ key: `learn:skill:notes#${i}`, kind: "learn-proposal", channelid: "", learnid: `skill:notes#${i}` });
+        const out = foldNeedsYouRows(buildNeedsYouRows({ ...base, attention: [learn(1), learn(2), learn(3)] }));
+        expect(out.map((e) => e.kind)).toEqual(["row", "row", "row"]);
+    });
+});
+
+describe("groupAge", () => {
+    const day = 86_400_000;
+    const now = 10 * day;
+    const at = (...since: (number | null)[]) => since.map((waitingSince) => ({ waitingSince }));
+
+    it("reads newest to oldest, the unit once when both share it", () => {
+        expect(groupAge(at(now - 4 * day, now - 5 * day), now)).toBe("4–5d");
+    });
+
+    it("keeps both units when they differ", () => {
+        expect(groupAge(at(now - 3 * 3_600_000, now - 2 * day), now)).toBe("3h–2d");
+    });
+
+    it("reads one age when they read the same, and skips rows with no age", () => {
+        expect(groupAge(at(now - 5 * day, now - 5 * day - 1000, null), now)).toBe("5d");
+        expect(groupAge(at(null), now)).toBe("");
     });
 });
