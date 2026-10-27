@@ -2,17 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // A project's Overview, the Agent surface's `project` centre mode (agentcenter.ts): the header with the buttons that
-// start an agent or a terminal there (a run or a council is started by an agent's session, never on its own), then two
-// columns, Now (projectnow.tsx: what waits on you, what runs, what finished unread) and History (projecthistory.tsx: its
-// sessions of the last 7 days, with the runs and councils each started). The page reads the Needs you items
-// (needsyou.ts, scoped to this project) and the project's history once and hands them down. Under 1000px wide the
-// columns stack.
+// start an agent or a terminal there (a run or a council is started by an agent's session, never on its own), the
+// Activity card (projectactivitycard.tsx: its tokens per day over a year), then two columns, Now (projectnow.tsx: what
+// waits on you, what runs, what finished unread) and History (projecthistory.tsx: its sessions of the last 7 days, with
+// the runs and councils each started). The page reads the Needs you items (needsyou.ts, scoped to this project) and
+// the project's history once and hands them down. Under 1000px wide the columns stack.
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useAtomValue } from "jotai";
 import { GitBranch, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { overviewProjectAtom } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { quickTerminal, selectAgentRow } from "./agenttree";
@@ -21,10 +21,11 @@ import { parseGitChanges } from "./gitstatus";
 import type { LauncherKind } from "./launcher";
 import { openLauncher } from "./launcherstore";
 import { useNeedsYou } from "./needsyou";
+import { ActivityCard } from "./projectactivitycard";
 import { HistoryColumn } from "./projecthistory";
 import { useProjectHistory } from "./projecthistorystore";
 import { NowColumn } from "./projectnow";
-import { changesLabel } from "./projectoverviewmodel";
+import { changesLabel, projectSessions } from "./projectoverviewmodel";
 import { projectsAtom } from "./projectsstore";
 
 type ProjectGit = { branch: string; files: number; adds: number; dels: number };
@@ -63,6 +64,12 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
     const git = useProjectGit(path);
     const ny = useNeedsYou(model, (id) => selectAgentRow(model, id), project);
     const history = useProjectHistory(model, path ?? "");
+    const now = useAtomValue(model.nowAtom);
+    // the footer's session count is the one History lists, without the search; null until its sessions load
+    const sessionCount = useMemo(
+        () => (history.sessions == null ? null : projectSessions(history.sessions, path ?? "", now, "").length),
+        [history.sessions, path, now]
+    );
     if (project === "") {
         return null;
     }
@@ -117,6 +124,8 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
                         ) : null}
                     </div>
                 </header>
+
+                {path ? <ActivityCard path={path} sessions={sessionCount} /> : null}
 
                 <div className="flex flex-col gap-6 @min-[1000px]:flex-row @min-[1000px]:items-start">
                     <div className="w-full @min-[1000px]:w-[420px] @min-[1000px]:flex-none">
