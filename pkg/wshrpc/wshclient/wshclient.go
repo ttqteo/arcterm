@@ -794,6 +794,12 @@ func GetMetaCommand(w *wshutil.WshRpc, data wshrpc.CommandGetMetaData, opts *wsh
 	return resp, err
 }
 
+// command "getprojectactivity", wshserver.GetProjectActivityCommand
+func GetProjectActivityCommand(w *wshutil.WshRpc, data wshrpc.CommandGetProjectActivityData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetProjectActivityRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetProjectActivityRtnData](w, "getprojectactivity", data, opts)
+	return resp, err
+}
+
 // command "getrecentsessions", wshserver.GetRecentSessionsCommand
 func GetRecentSessionsCommand(w *wshutil.WshRpc, data wshrpc.CommandGetRecentSessionsData, opts *wshrpc.RpcOpts) (*wshrpc.CommandGetRecentSessionsRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandGetRecentSessionsRtnData](w, "getrecentsessions", data, opts)
