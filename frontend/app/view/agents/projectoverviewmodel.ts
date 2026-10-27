@@ -3,13 +3,15 @@
 //
 // A project's Overview (agentcenter.ts' `project` mode), as data: its agents that ask, what in it is at work (its
 // runs grouped, as the Agent tree groups them), what finished unread, and the History rows (ended sessions, councils
-// and runs of the last 7 days) with the words the header and the rows read. Pure; projectoverview.tsx draws it.
+// and runs of the last 7 days, a session's runs and councils nested under it) with the words the header and the rows
+// read. Pure; projectoverview.tsx draws it.
 
 import { projectOf, sortAgents, type AgentVM } from "./agentsviewmodel";
 import { groupRunAgents, runningAgents, UNGROUPED_PROJECT } from "./agenttreemodel";
 import { normProjectPath } from "./channelderive";
 import { NO_LINEAGE, roleRunId, type Lineage, type RunInfo } from "./runlineage";
 import type { LiveSession } from "./sessionsarchivestore";
+import { sessionKey } from "./sessionsruns";
 
 export interface RunRow {
     run: RunInfo;
@@ -120,8 +122,6 @@ export function changesLabel(stats: { files: number } | null): string {
 
 // History looks back this far; older is Conversation History's
 export const HISTORY_WINDOW_MS = 7 * 86_400_000;
-
-export type HistoryTab = "sessions" | "councils";
 
 const hasText = (text: string, q: string) => q === "" || text.toLowerCase().includes(q.toLowerCase());
 const samePath = (a: string, b: string) => normProjectPath(a).toLowerCase() === normProjectPath(b).toLowerCase();
@@ -254,31 +254,92 @@ function runItem(r: Run): HistoryItem {
     };
 }
 
-// councils and runs in the window, newest first, kept to the query on their title
-export function historyItems(
+// a transcript path as the two sides spell it: a run records the one its origin session was handed, a session the one
+// the archive scanned
+const normPath = (p: string) => p.replace(/\\/g, "/").toLowerCase();
+
+// what the column draws, top to bottom: a session, a run or a council; a nested one sits under its session (parent
+// is that session's row key), the rest are top-level
+export type HistoryRow =
+    | { kind: "session"; key: string; session: LiveSession; ts: number; nested: false }
+    | (HistoryItem & { nested: boolean; parent?: string });
+
+// the line of a run or council that no session started: the cockpit started it, when it names no origin at all
+const COCKPIT_PREFIX = "Started from the cockpit, not a session · ";
+
+// a run the engine launched for another run (a worker, a reviewer, a stage session) is that run's, never a row
+const isChildRun = (r: Run) => !!r.taskid || !!r.stagerole || !!r.parentleadoref;
+
+// the project's ended sessions in the window, each followed by the runs and councils it started (newest first), and
+// the runs and councils no listed session started, placed among the sessions by time. A run belongs to the session
+// whose transcript it was started from, a council to the session whose id it carries; one whose session is older than
+// the window, still live or unnamed is top-level. A session stays for a query when its title or a child's matches (its
+// children all show then); a top-level run or council, when its own title does.
+export function historyRows(
+    sessions: readonly LiveSession[] | null,
     councils: readonly Council[] | null,
     runs: readonly Run[] | null,
+    path: string,
     now: number,
     q: string
-): HistoryItem[] {
-    return [...(councils ?? []).map(councilItem), ...(runs ?? []).map(runItem)]
-        .filter((i) => i.since >= now - HISTORY_WINDOW_MS && hasText(i.title, q))
-        .sort((a, b) => b.ts - a.ts);
-}
-
-// the header's "Last 7 days" line: each non-zero count and the History tab it shows
-export function historyCounts(
-    sessions: number,
-    items: readonly Pick<HistoryItem, "kind">[]
-): { label: string; tab: HistoryTab }[] {
-    const word = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-    const runs = items.filter((i) => i.kind === "run").length;
-    const councils = items.filter((i) => i.kind === "council").length;
-    return [
-        { n: sessions, label: word(sessions, "session"), tab: "sessions" as const },
-        { n: runs, label: word(runs, "run"), tab: "councils" as const },
-        { n: councils, label: word(councils, "council"), tab: "councils" as const },
-    ]
-        .filter((c) => c.n > 0)
-        .map(({ label, tab }) => ({ label, tab }));
+): HistoryRow[] {
+    const listed = projectSessions(sessions, path, now, "");
+    const byTranscript = new Map<string, LiveSession>();
+    const byId = new Map<string, LiveSession>();
+    for (const s of listed) {
+        if (s.transcriptpath) {
+            byTranscript.set(normPath(s.transcriptpath), s);
+        }
+        byId.set(s.id, s);
+    }
+    const children = new Map<string, HistoryItem[]>();
+    const loose: HistoryItem[] = [];
+    const place = (item: HistoryItem, owner: LiveSession | undefined, named: boolean) => {
+        if (owner == null) {
+            loose.push(named ? item : { ...item, line: COCKPIT_PREFIX + item.line });
+            return;
+        }
+        const key = sessionKey(owner);
+        children.set(key, [...(children.get(key) ?? []), item]);
+    };
+    const inWindow = (i: HistoryItem) => i.since >= now - HISTORY_WINDOW_MS;
+    for (const c of councils ?? []) {
+        const item = councilItem(c);
+        if (inWindow(item)) {
+            place(item, c.sessionid ? byId.get(c.sessionid) : undefined, !!c.sessionid);
+        }
+    }
+    for (const r of runs ?? []) {
+        const item = runItem(r);
+        if (!isChildRun(r) && inWindow(item)) {
+            const origin = r.origintranscript ? normPath(r.origintranscript) : "";
+            place(item, origin !== "" ? byTranscript.get(origin) : undefined, origin !== "");
+        }
+    }
+    const top: HistoryRow[] = [];
+    for (const s of listed) {
+        const key = sessionKey(s);
+        const mine = (children.get(key) ?? []).sort((a, b) => b.ts - a.ts);
+        if (hasText(s.task, q) || mine.some((i) => hasText(i.title, q))) {
+            top.push({ kind: "session", key, session: s, ts: s.lastactivets, nested: false });
+            for (const item of mine) {
+                top.push({ ...item, nested: true, parent: key });
+            }
+        }
+    }
+    // the sessions and the loose rows merge by time; a session's children ride along with it
+    const groups: HistoryRow[][] = [];
+    for (const row of top) {
+        if (row.kind === "session") {
+            groups.push([row]);
+        } else {
+            groups[groups.length - 1].push(row);
+        }
+    }
+    for (const item of loose) {
+        if (hasText(item.title, q)) {
+            groups.push([{ ...item, nested: false }]);
+        }
+    }
+    return groups.sort((a, b) => b[0].ts - a[0].ts).flat();
 }

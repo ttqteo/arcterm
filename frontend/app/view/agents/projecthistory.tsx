@@ -1,10 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The Overview's History column: the project's ended sessions, and its councils and runs, of the last 7 days, one tab
-// each, searchable. The rows are projectoverviewmodel.ts's; what is read, and the tab and the query, are
-// projecthistorystore.ts's. The page calls useProjectHistory once and hands the result in, so the header's counts and
-// this column read one list.
+// The Overview's History column: the project's ended sessions of the last 7 days as one searchable list, the runs and
+// councils each session started nested under it, and those no listed session started among them by time. The rows are
+// projectoverviewmodel.ts's; what is read, and the query, are projecthistorystore.ts's. The page calls useProjectHistory
+// once and hands the result in, so the Activity card's session count and this column read one list.
 
 import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
 import { openTarget } from "@/app/view/jarvis/openref";
@@ -14,14 +14,16 @@ import { useMemo, type KeyboardEvent, type ReactNode } from "react";
 import { showHistory, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAgeShort, formatTokens } from "./agentsviewmodel";
-import { historyQueryAtom, historyTabAtom, type ProjectHistory } from "./projecthistorystore";
-import { historyItems, projectSessions, type HistoryItem, type HistoryTab } from "./projectoverviewmodel";
+import { historyQueryAtom, type ProjectHistory } from "./projecthistorystore";
+import { historyRows, projectSessions, type HistoryItem } from "./projectoverviewmodel";
 import { runtimeMeta } from "./runtimemeta";
-import { sessionKey } from "./sessionsruns";
 
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
 const ROW =
     "flex w-full cursor-pointer items-center gap-[10px] border-t border-edge-mid px-3 py-[9px] text-left first:border-t-0 hover:bg-surface-hover";
+// a child row sits 28px in, its divider starting there too
+const NESTED_ROW =
+    "relative flex w-full cursor-pointer items-center gap-[10px] py-[9px] pl-10 pr-3 text-left before:absolute before:left-10 before:right-0 before:top-0 before:h-px before:bg-edge-mid hover:bg-surface-hover";
 const SMALL_BTN =
     "h-[26px] flex-none cursor-pointer rounded-[6px] border border-edge-mid bg-surface px-[10px] text-[12px] text-secondary hover:border-edge-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
@@ -83,6 +85,23 @@ function Note({ attr, children }: { attr: "data-history-empty" | "data-history-n
     );
 }
 
+// a run's rotated square or a council's dot, beside its kind word
+function KindLabel({ kind }: { kind: HistoryItem["kind"] }) {
+    return (
+        <span className="flex w-[68px] flex-none items-center gap-[6px] text-[11px] font-semibold text-ink-mid">
+            <span
+                aria-hidden="true"
+                className={
+                    kind === "run"
+                        ? "h-[7px] w-[7px] flex-none rotate-45 bg-mark-run"
+                        : "h-[7px] w-[7px] flex-none rounded-full bg-mark-council"
+                }
+            />
+            {kind === "council" ? "Council" : "Run"}
+        </span>
+    );
+}
+
 export function HistoryColumn({
     model,
     path,
@@ -95,16 +114,20 @@ export function HistoryColumn({
     history: ProjectHistory;
 }) {
     const h = history;
-    const [tab, setTab] = useAtom(historyTabAtom(path));
     const [q, setQ] = useAtom(historyQueryAtom(path));
     const now = useAtomValue(model.nowAtom);
-    const sessions = useMemo(() => projectSessions(h.sessions, path, now, q), [h.sessions, path, now, q]);
-    const items = useMemo(() => historyItems(h.councils, h.runs.runs, now, q), [h.councils, h.runs.runs, now, q]);
+    const rows = useMemo(
+        () => historyRows(h.sessions, h.councils, h.runs.runs, path, now, q),
+        [h.sessions, h.councils, h.runs.runs, path, now, q]
+    );
+    // the heading's number is the ended sessions in the window, whatever the search keeps
+    const sessionCount = useMemo(() => projectSessions(h.sessions, path, now, "").length, [h.sessions, path, now]);
 
     const runsError = h.runs.error;
-    const sessionsLoading = h.sessions == null && !h.sessionsError;
-    // loading, unless the runs failed to read: the error line shows then, with the councils under it
-    const itemsBusy = runsError == null && (h.councils == null || h.runs.runs == null);
+    // the list waits for all its reads, so rows do not jump as children arrive; a read that failed does not hold it: its
+    // error line shows, with what was read under it
+    const busy =
+        (h.sessions == null && !h.sessionsError) || (runsError == null && (h.councils == null || h.runs.runs == null));
 
     const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key !== "Escape") {
@@ -142,14 +165,9 @@ export function HistoryColumn({
         </button>
     );
 
-    // what a tab with no row says: its own words when only it is empty, the project's when everything in the window is
-    const emptyText = (own: string) =>
-        projectSessions(h.sessions, path, now, "").length + historyItems(h.councils, h.runs.runs, now, "").length === 0
-            ? `No sessions, runs or councils in ${project} in the last 7 days.`
-            : own;
-    const noRows = (own: string) =>
+    const noRows =
         q === "" ? (
-            <Note attr="data-history-empty">{emptyText(own)}</Note>
+            <Note attr="data-history-empty">{`No sessions in ${project} in the last 7 days.`}</Note>
         ) : (
             <Note attr="data-history-nomatch">
                 <p>{`Nothing in the last 7 days matches "${q}".`}</p>
@@ -159,100 +177,84 @@ export function HistoryColumn({
             </Note>
         );
 
-    const sessionsList = sessionsLoading ? (
+    const list = busy ? (
         <Loading />
     ) : (
         <div className={PANEL}>
             {h.sessionsError ? <ErrorRow text="Could not read sessions." onRetry={h.retrySessions} /> : null}
-            {sessions.map((s) => {
-                const key = sessionKey(s);
-                const line = [s.branch, runtimeMeta(s.runtime).label, `${formatTokens(s.tokenstotal)} tokens`]
-                    .filter(Boolean)
-                    .join(" · ");
+            {runsError != null ? <ErrorRow text={`Could not read runs: ${runsError}.`} onRetry={h.retryRuns} /> : null}
+            {rows.map((row) => {
+                if (row.kind === "session") {
+                    const s = row.session;
+                    const line = [s.branch, runtimeMeta(s.runtime).label, `${formatTokens(s.tokenstotal)} tokens`]
+                        .filter(Boolean)
+                        .join(" · ");
+                    return (
+                        <button
+                            key={row.key}
+                            type="button"
+                            data-history-row={row.key}
+                            data-history-kind="session"
+                            onClick={() => showSession(model, row.key)}
+                            className={`${ROW} flex-col items-stretch gap-[2px]`}
+                        >
+                            <span className="flex items-baseline gap-2">
+                                <span className="min-w-0 flex-1 truncate text-[13px] text-primary">
+                                    {marked(s.task || "(untitled session)", q)}
+                                </span>
+                                <span className="flex-none text-[11px] tabular-nums text-ink-faint">
+                                    {formatAgeShort(now - s.lastactivets)}
+                                </span>
+                            </span>
+                            <span className="truncate text-[12px] text-muted">{line}</span>
+                        </button>
+                    );
+                }
                 return (
                     <button
-                        key={key}
+                        key={row.key}
                         type="button"
-                        data-history-row={key}
-                        data-history-kind="session"
-                        onClick={() => showSession(model, key)}
-                        className={`${ROW} flex-col items-stretch gap-[2px]`}
+                        data-history-row={row.key}
+                        data-history-kind={row.kind}
+                        data-history-parent={row.parent}
+                        onClick={() => openItem(row)}
+                        className={row.nested ? NESTED_ROW : ROW}
                     >
-                        <span className="flex items-baseline gap-2">
-                            <span className="min-w-0 flex-1 truncate text-[13px] text-primary">
-                                {marked(s.task || "(untitled session)", q)}
-                            </span>
-                            <span className="flex-none text-[11px] tabular-nums text-ink-faint">
-                                {formatAgeShort(now - s.lastactivets)}
+                        <KindLabel kind={row.kind} />
+                        <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
+                            <span className="truncate text-[13px] text-primary">{marked(row.title, q)}</span>
+                            <span className="truncate text-[12px] text-muted">
+                                {row.line}
+                                {row.warn !== "" ? (
+                                    <>
+                                        {" · "}
+                                        <span data-history-warn className="text-asking">
+                                            {row.warn}
+                                        </span>
+                                    </>
+                                ) : null}
                             </span>
                         </span>
-                        <span className="truncate text-[12px] text-muted">{line}</span>
+                        <span className="flex-none text-[11px] tabular-nums text-ink-faint">
+                            {formatAgeShort(now - row.ts)}
+                        </span>
                     </button>
                 );
             })}
-            {sessions.length === 0 && !h.sessionsError ? noRows(`No sessions in ${project} in the last 7 days.`) : null}
+            {rows.length === 0 && !h.sessionsError && runsError == null ? noRows : null}
             {older}
         </div>
     );
-
-    // a failed read keeps what was read before it: the councils (and any runs) list under the error line
-    const itemsList = itemsBusy ? (
-        <Loading />
-    ) : (
-        <div className={PANEL}>
-            {runsError != null ? <ErrorRow text={`Could not read runs: ${runsError}.`} onRetry={h.retryRuns} /> : null}
-            {h.councils == null ? (
-                <div data-history-loading aria-busy="true" className="px-3 py-[11px]">
-                    <SkeletonLine className="w-[62%]" />
-                </div>
-            ) : null}
-            {items.map((item) => (
-                <button
-                    key={item.key}
-                    type="button"
-                    data-history-row={item.key}
-                    data-history-kind={item.kind}
-                    onClick={() => openItem(item)}
-                    className={ROW}
-                >
-                    <span className="w-[52px] flex-none text-[11px] font-semibold text-ink-mid">
-                        {item.kind === "council" ? "Council" : "Run"}
-                    </span>
-                    <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-                        <span className="truncate text-[13px] text-primary">{marked(item.title, q)}</span>
-                        <span className="truncate text-[12px] text-muted">
-                            {item.line}
-                            {item.warn !== "" ? (
-                                <>
-                                    {" · "}
-                                    <span data-history-warn className="text-asking">
-                                        {item.warn}
-                                    </span>
-                                </>
-                            ) : null}
-                        </span>
-                    </span>
-                    <span className="flex-none text-[11px] tabular-nums text-ink-faint">
-                        {formatAgeShort(now - item.ts)}
-                    </span>
-                </button>
-            ))}
-            {items.length === 0 && runsError == null
-                ? noRows(`No councils or runs in ${project} in the last 7 days.`)
-                : null}
-            {older}
-        </div>
-    );
-
-    const tabs: { key: HistoryTab; label: string; count: number | null }[] = [
-        { key: "sessions", label: "Sessions", count: sessionsLoading ? null : sessions.length },
-        { key: "councils", label: "Councils & runs", count: itemsBusy ? null : items.length },
-    ];
 
     return (
         <section data-overview-history aria-label="History" className="flex min-w-0 flex-1 flex-col gap-[10px]">
             <div className="flex items-center gap-3">
                 <h2 className="text-[11px] font-semibold text-muted">History</h2>
+                {!busy ? (
+                    <span data-history-count className="text-[11px] tabular-nums text-muted">
+                        {sessionCount} {sessionCount === 1 ? "session" : "sessions"}
+                    </span>
+                ) : null}
                 <span className="flex-1" />
                 <input
                     data-history-search
@@ -265,34 +267,7 @@ export function HistoryColumn({
                     className="h-[28px] w-[240px] min-w-0 rounded-[6px] border border-edge-mid bg-surface px-[10px] text-[12px] text-primary outline-none placeholder:text-muted focus-visible:border-accent"
                 />
             </div>
-            <div role="tablist" aria-label="History" className="flex gap-4 border-b border-edge-mid">
-                {tabs.map((t) => (
-                    <button
-                        key={t.key}
-                        type="button"
-                        role="tab"
-                        aria-selected={tab === t.key}
-                        data-history-tab={t.key}
-                        onClick={() => setTab(t.key)}
-                        className={`-mb-px h-[30px] cursor-pointer border-b-2 text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                            tab === t.key
-                                ? "border-primary text-primary"
-                                : "border-transparent text-muted hover:text-secondary"
-                        }`}
-                    >
-                        {t.label}
-                        {t.count != null ? (
-                            <>
-                                {" "}
-                                <span data-history-tab-count className="font-normal tabular-nums text-muted">
-                                    {t.count}
-                                </span>
-                            </>
-                        ) : null}
-                    </button>
-                ))}
-            </div>
-            <div role="tabpanel">{tab === "sessions" ? sessionsList : itemsList}</div>
+            {list}
         </section>
     );
 }

@@ -335,6 +335,11 @@
     /* inline code in markdown + transcript narration (Antigravity's warm gold); theme-agnostic like syntax */
     --color-code-inline: #d7b981;
 
+    /* the marks of a run (rotated square) and a council (dot) in History's rows and the Activity card's footer: identity
+       colours, so theme-agnostic like syntax (not mirrored in themes.ts) */
+    --color-mark-run: #5cc8d8;
+    --color-mark-council: #c58cff;
+
     /* git diff added/removed (diff bands, +N/-N counts). Deliberately not success/error: a deleted
        line is not a failure, and the two need tuning independently. Theme-agnostic like syntax. */
     --color-diff-added: #3fb950;

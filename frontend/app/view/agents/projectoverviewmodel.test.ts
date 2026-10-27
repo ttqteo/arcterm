@@ -9,13 +9,12 @@ import {
     changesLabel,
     doingLine,
     finishedRows,
-    historyCounts,
-    historyItems,
+    historyRows,
     isQuiet,
     overviewRows,
     projectSessions,
     runningCount,
-    type HistoryItem,
+    type HistoryRow,
 } from "./projectoverviewmodel";
 import type { Lineage, RunInfo } from "./runlineage";
 import type { LiveSession } from "./sessionsarchivestore";
@@ -252,9 +251,22 @@ describe("projectSessions", () => {
     });
 });
 
-describe("historyItems", () => {
+describe("historyRows", () => {
     const day = 86_400_000;
     const now = 10 * day;
+    const P = "D:/p";
+    const sess = (over: Partial<LiveSession>) =>
+        ({
+            id: "s",
+            runtime: "claude",
+            projectpath: "D:\\p",
+            task: "A session",
+            lastactivets: now - 1000,
+            transcriptpath: "",
+            live: false,
+            events: [],
+            ...over,
+        }) as LiveSession;
     const council = (over: Partial<Council>) =>
         ({
             id: "c",
@@ -289,33 +301,141 @@ describe("historyItems", () => {
             deltotal: 0,
             verification: { state: "unverified", reasons },
         }) as RunEvidence;
+    const keys = (rows: HistoryRow[]) => rows.map((r) => r.key);
+    const item = (rows: HistoryRow[], key: string) => {
+        const row = rows.find((r) => r.key === key);
+        if (row == null || row.kind === "session") {
+            throw new Error(`no item ${key}`);
+        }
+        return row;
+    };
+    const home = sess({ id: "s1", transcriptpath: "/t/s1.jsonl" });
 
-    it("merges councils and runs newest first, inside the window", () => {
-        const out = historyItems(
-            [council({ id: "c1", updated: now - 100 }), council({ id: "old", updated: now - 8 * day })],
-            [run({ id: "r1", oid: "r1", createdts: now - 50 })],
+    it("nests a run under the session whose transcript it was started from", () => {
+        const rows = historyRows([home], [], [run({ id: "r1", origintranscript: "/t/s1.jsonl" })], P, now, "");
+        expect(keys(rows)).toEqual(["claude:s1", "run:r1"]);
+        expect(item(rows, "run:r1")).toMatchObject({ nested: true, parent: "claude:s1" });
+        expect(item(rows, "run:r1").line).not.toContain("cockpit");
+    });
+
+    it("matches the transcript across slash and case spellings", () => {
+        const win = sess({ id: "s1", transcriptpath: "C:\\Users\\Me\\s1.jsonl" });
+        const rows = historyRows([win], [], [run({ id: "r1", origintranscript: "c:/users/me/s1.jsonl" })], P, now, "");
+        expect(item(rows, "run:r1").parent).toBe("claude:s1");
+    });
+
+    it("nests a council under the session whose id it carries, the children newest first", () => {
+        const rows = historyRows(
+            [home],
+            [council({ id: "c1", sessionid: "s1", updated: now - 500 })],
+            [run({ id: "r1", origintranscript: "/t/s1.jsonl", createdts: now - 50 })],
+            P,
             now,
             ""
         );
-        expect(out.map((i) => i.key)).toEqual(["run:r1", "council:c1"]);
+        expect(keys(rows)).toEqual(["claude:s1", "run:r1", "council:c1"]);
+        expect(item(rows, "council:c1")).toMatchObject({ nested: true, parent: "claude:s1" });
     });
 
-    it("keeps a run to the window by when it was created, not when it ended", () => {
-        const late = run({ id: "late", oid: "late", createdts: now - 9 * day, completedts: now - day });
-        expect(historyItems([], [late], now, "")).toEqual([]);
+    it("places an unattached run among the sessions by time, with its children behind its session", () => {
+        const rows = historyRows(
+            [sess({ id: "new", lastactivets: now - 10 }), home, sess({ id: "old", lastactivets: now - 5000 })],
+            [],
+            [
+                run({ id: "mid", createdts: now - 600, completedts: now - 500 }),
+                run({ id: "kid", origintranscript: "/t/s1.jsonl" }),
+            ],
+            P,
+            now,
+            ""
+        );
+        expect(keys(rows)).toEqual(["claude:new", "run:mid", "claude:s1", "run:kid", "claude:old"]);
+        expect(item(rows, "run:mid").nested).toBe(false);
+        expect(item(rows, "run:mid").parent).toBeUndefined();
+    });
+
+    it("says a run with no origin, or a council with no session, was started from the cockpit", () => {
+        const rows = historyRows([home], [council({ id: "c1" })], [run({ id: "r1" })], P, now, "");
+        const prefix = "Started from the cockpit, not a session · ";
+        expect(item(rows, "run:r1").line).toBe(`${prefix}Done`);
+        expect(item(rows, "council:c1").line).toBe(`${prefix}Done · 3 experts`);
+    });
+
+    it("keeps the usual line when the origin session is older than the window or still live", () => {
+        const rows = historyRows(
+            [
+                sess({ id: "old", transcriptpath: "/t/old.jsonl", lastactivets: now - 9 * day }),
+                sess({ id: "live", transcriptpath: "/t/live.jsonl", live: true }),
+            ],
+            [council({ id: "c1", sessionid: "old" })],
+            [run({ id: "r1", origintranscript: "/t/old.jsonl" }), run({ id: "r2", origintranscript: "/t/live.jsonl" })],
+            P,
+            now,
+            ""
+        );
+        expect(keys(rows).sort()).toEqual(["council:c1", "run:r1", "run:r2"]);
+        for (const k of keys(rows)) {
+            expect(item(rows, k)).toMatchObject({ nested: false });
+            expect(item(rows, k).line).not.toContain("cockpit");
+        }
+    });
+
+    it("drops the engine's child runs", () => {
+        const rows = historyRows(
+            [home],
+            [],
+            [
+                run({ id: "task", taskid: "t1", origintranscript: "/t/s1.jsonl" }),
+                run({ id: "stage", stagerole: "verifier" }),
+                run({ id: "kid", parentleadoref: "tab:1" }),
+                run({ id: "ok", createdts: now - 5000 }),
+            ],
+            P,
+            now,
+            ""
+        );
+        expect(keys(rows)).toEqual(["claude:s1", "run:ok"]);
+    });
+
+    it("keeps a run or council to the window by when it began, not when it ended", () => {
+        const late = run({ id: "late", createdts: now - 9 * day, completedts: now - day });
+        expect(historyRows([], [council({ id: "old", updated: now - 8 * day })], [late], P, now, "")).toEqual([]);
+    });
+
+    it("leaves out another project's sessions and the ended-only rules of projectSessions", () => {
+        const rows = historyRows(
+            [home, sess({ id: "other", projectpath: "D:/q" }), sess({ id: "w", runid: "r9" })],
+            [],
+            [],
+            P,
+            now,
+            ""
+        );
+        expect(keys(rows)).toEqual(["claude:s1"]);
     });
 
     it("reads a council's answer, else its state, and its experts", () => {
-        const [withAnswer] = historyItems(
+        const [withAnswer] = historyRows(
+            [],
             [council({ summary: { answer: "Yes.", text: "", directions: [], outcomes: {}, at: 1 } })],
             [],
+            P,
             now,
             ""
         );
-        expect(withAnswer.line).toBe("Answer: Yes. · 3 experts");
-        const [stopped] = historyItems([council({ state: "stopped", question: "Which db?" })], [], now, "");
-        expect(stopped.title).toBe("Which db?");
-        expect(stopped.line).toBe("Stopped · 3 experts");
+        expect(withAnswer.kind !== "session" && withAnswer.line).toBe(
+            "Started from the cockpit, not a session · Answer: Yes. · 3 experts"
+        );
+        const [stopped] = historyRows(
+            [],
+            [council({ state: "stopped", question: "Which db?", sessionid: "gone" })],
+            [],
+            P,
+            now,
+            ""
+        );
+        expect(stopped.kind !== "session" && stopped.title).toBe("Which db?");
+        expect(stopped.kind !== "session" && stopped.line).toBe("Stopped · 3 experts");
     });
 
     it("reads a run's goal headline, its land, and what it left unverified until acknowledged", () => {
@@ -323,36 +443,49 @@ describe("historyItems", () => {
             basebranch: "main",
             land: { state: "landed", notes: ["a note"] },
             evidence: unverified(["x", "y"]),
+            origintranscript: "/elsewhere.jsonl",
         });
-        const [item] = historyItems([], [landed], now, "");
-        expect(item.title).toBe("Ship it");
-        expect(item.line).toBe("Landed on main");
-        expect(item.warn).toBe("3 not verified");
-        const [acked] = historyItems([], [{ ...landed, verificationackts: 5 }], now, "");
-        expect(acked.warn).toBe("");
+        const [row] = historyRows([], [], [landed], P, now, "");
+        const r = item([row], "run:r");
+        expect(r.title).toBe("Ship it");
+        expect(r.line).toBe("Landed on main");
+        expect(r.warn).toBe("3 not verified");
+        const [acked] = historyRows([], [], [{ ...landed, verificationackts: 5 }], P, now, "");
+        expect(item([acked], "run:r").warn).toBe("");
     });
 
     it("counts the land's notes on a verified run, and warns on a done run only", () => {
         const notesOnly = run({ land: { state: "landed", notes: ["base moved"] } });
-        expect(historyItems([], [notesOnly], now, "")[0].warn).toBe("1 not verified");
+        expect(item(historyRows([], [], [notesOnly], P, now, ""), "run:r").warn).toBe("1 not verified");
         const running = run({ status: "executing", evidence: unverified(["x"]) });
-        expect(historyItems([], [running], now, "")[0].warn).toBe("");
+        expect(item(historyRows([], [], [running], P, now, ""), "run:r").warn).toBe("");
     });
 
-    it("filters on the title", () => {
-        const out = historyItems([council({ feature: "Council store" })], [run({ goal: "Rail" })], now, "council");
-        expect(out.map((i) => i.kind)).toEqual(["council"]);
-    });
-});
-
-describe("historyCounts", () => {
-    const item = (kind: "council" | "run") => ({ kind }) as HistoryItem;
-    it("names the non-zero counts, singular or plural, with the tab each opens", () => {
-        expect(historyCounts(14, [item("run"), item("council"), item("council")])).toEqual([
-            { label: "14 sessions", tab: "sessions" },
-            { label: "1 run", tab: "councils" },
-            { label: "2 councils", tab: "councils" },
-        ]);
-        expect(historyCounts(0, [])).toEqual([]);
+    describe("search", () => {
+        const rows = (q: string) =>
+            historyRows(
+                [home, sess({ id: "s2", task: "Rail work", lastactivets: now - 2000 })],
+                [council({ id: "c1", feature: "Council store", sessionid: "s2" })],
+                [
+                    run({ id: "r1", goal: "Migrate db", origintranscript: "/t/s1.jsonl" }),
+                    run({ id: "r2", goal: "Loose build" }),
+                    run({ id: "r3", goal: "Other loose" }),
+                ],
+                P,
+                now,
+                q
+            );
+        it("keeps a session whose title matches, with its children", () => {
+            expect(keys(rows("rail"))).toEqual(["claude:s2", "council:c1"]);
+        });
+        it("keeps a session whose child's title matches, ignoring case", () => {
+            expect(keys(rows("MIGRATE"))).toEqual(["claude:s1", "run:r1"]);
+        });
+        it("keeps an unattached row by its own title, and nothing else", () => {
+            expect(keys(rows("loose build"))).toEqual(["run:r2"]);
+        });
+        it("is empty when nothing matches", () => {
+            expect(rows("zzz")).toEqual([]);
+        });
     });
 });
