@@ -133,7 +133,7 @@ func tokengateRead(ctx context.Context, transcript string) (tokengate.Reading, [
 	r.Subagents = burn.Subagents
 	costs := make([]tokengate.Cost, len(burn.Costs))
 	for i, c := range burn.Costs {
-		costs[i] = tokengate.Cost{Type: c.Type, Samples: c.Samples, Mean: c.Mean, P25: c.P25, P90: c.P90}
+		costs[i] = tokengate.Cost{Type: c.Type, Samples: c.Samples, Mean: c.Mean, P25: c.P25, P50: c.P50, P90: c.P90}
 	}
 	return r, costs, burn.Session
 }
@@ -199,7 +199,7 @@ func tokengateDecide(ctx context.Context, s tokengate.Spawn, transcript string, 
 			Hold:      true,
 		}, &wshrpc.RpcOpts{Timeout: int64((askWaitTimeout + time.Minute) / time.Millisecond)})
 	})
-	verdict, err := tokengateAnswered(s, priced.Estimate, rtn, err)
+	verdict, err := tokengateAnswered(s, priced.Typical, rtn, err)
 	if err == nil {
 		tokengateLog(session, s, priced, verdict, true)
 	}
@@ -261,7 +261,8 @@ func tokengateReviewText(r *wshrpc.CommandReviewTokenEstimatesRtnData) string {
 	fmt.Fprintf(&b, "Token burn estimates, last %d days: %d logged, %d ran, %d matched to the subagents that ran.\n",
 		r.Days, r.Logged, r.Run, r.Matched)
 	if r.Matched > 0 {
-		fmt.Fprintf(&b, "Actual ÷ estimate: median %.2f×.\n", r.MedianRatio)
+		fmt.Fprintf(&b, "Actual ÷ the card's figure: median %.2f×.\n", r.MedianRatio)
+		fmt.Fprintf(&b, "Their total ÷ the mean estimates' total: %.2f× (the window shares go by the mean).\n", r.TotalRatio)
 	}
 	if r.WithRange > 0 {
 		fmt.Fprintf(&b, "Inside the card's range: %d of %d (%d%%).\n", r.InRange, r.WithRange, r.InRange*100/r.WithRange)
@@ -274,8 +275,8 @@ func tokengateReviewText(r *wshrpc.CommandReviewTokenEstimatesRtnData) string {
 		b.WriteString("  none yet\n")
 	}
 	for _, c := range r.Costs {
-		fmt.Fprintf(&b, "  %s: %d samples, avg %s, range %s–%s\n",
-			c.Type, c.Samples, tokengate.FormatTokens(c.Mean), tokengate.FormatTokens(c.P25), tokengate.FormatTokens(c.P90))
+		fmt.Fprintf(&b, "  %s: %d samples, median %s, avg %s, range %s–%s\n", c.Type, c.Samples, tokengate.FormatTokens(c.P50),
+			tokengate.FormatTokens(c.Mean), tokengate.FormatTokens(c.P25), tokengate.FormatTokens(c.P90))
 	}
 	return b.String()
 }

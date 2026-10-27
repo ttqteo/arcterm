@@ -89,21 +89,22 @@ func TestTokengateFlagsAndReview(t *testing.T) {
 
 func TestTokengateReviewText(t *testing.T) {
 	got := tokengateReviewText(&wshrpc.CommandReviewTokenEstimatesRtnData{
-		Days: 7, Logged: 4, Run: 3, Matched: 2, MedianRatio: 1.5, WithRange: 1, InRange: 0,
+		Days: 7, Logged: 4, Run: 3, Matched: 2, MedianRatio: 1.5, TotalRatio: 1.2, WithRange: 1, InRange: 0,
 		ByType: []wshrpc.TokenEstimateTypeReview{{Type: "Explore", Matched: 1, MedianRatio: 1}, {Type: "general-purpose", Matched: 1, MedianRatio: 2}},
 		Costs: []wshrpc.SubagentCostData{
-			{Type: "general-purpose", Samples: 14, Mean: 2_800_000, P25: 300_000, P90: 6_100_000},
-			{Type: "all", Samples: 31, Mean: 4_800_000, P25: 130_000, P90: 11_700_000},
+			{Type: "general-purpose", Samples: 14, Mean: 2_800_000, P25: 300_000, P50: 900_000, P90: 6_100_000},
+			{Type: "all", Samples: 31, Mean: 4_800_000, P25: 130_000, P50: 300_000, P90: 11_700_000},
 		},
 	})
 	want := "Token burn estimates, last 7 days: 4 logged, 3 ran, 2 matched to the subagents that ran.\n" +
-		"Actual ÷ estimate: median 1.50×.\n" +
+		"Actual ÷ the card's figure: median 1.50×.\n" +
+		"Their total ÷ the mean estimates' total: 1.20× (the window shares go by the mean).\n" +
 		"Inside the card's range: 0 of 1 (0%).\n" +
 		"  Explore: 1 matched, median 1.00×\n" +
 		"  general-purpose: 1 matched, median 2.00×\n" +
 		"Subagent costs now (finished, last 30 days):\n" +
-		"  general-purpose: 14 samples, avg 2.8M, range 300k–6.1M\n" +
-		"  all: 31 samples, avg 4.8M, range 130k–11.7M\n"
+		"  general-purpose: 14 samples, median 900k, avg 2.8M, range 300k–6.1M\n" +
+		"  all: 31 samples, median 300k, avg 4.8M, range 130k–11.7M\n"
 	if got != want {
 		t.Fatalf("review\n%s\nwant\n%s", got, want)
 	}

@@ -299,7 +299,7 @@ func (ws *WshServer) GetWindowTokensCommand(ctx context.Context, data wshrpc.Com
 func costsToWire(costs []usagestats.SubagentCost) []wshrpc.SubagentCostData {
 	out := make([]wshrpc.SubagentCostData, len(costs))
 	for i, c := range costs {
-		out[i] = wshrpc.SubagentCostData{Type: c.Type, Samples: c.Samples, Mean: c.Mean, P25: c.P25, P90: c.P90}
+		out[i] = wshrpc.SubagentCostData{Type: c.Type, Samples: c.Samples, Mean: c.Mean, P25: c.P25, P50: c.P50, P90: c.P90}
 	}
 	return out
 }
@@ -341,6 +341,7 @@ func (ws *WshServer) ReviewTokenEstimatesCommand(ctx context.Context, data wshrp
 		Run:         rev.Run,
 		Matched:     rev.Matched,
 		MedianRatio: rev.MedianRatio,
+		TotalRatio:  rev.TotalRatio,
 		WithRange:   rev.WithRange,
 		InRange:     rev.InRange,
 		ByType:      byType,

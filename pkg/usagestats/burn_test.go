@@ -42,10 +42,10 @@ func TestSubagentCostsByType(t *testing.T) {
 	agent("agent-old", "general-purpose", now.Add(-40*24*time.Hour), 77777) // finished before the 30 days
 	got := subagentCostsIn(root, now)
 	want := []SubagentCost{
-		{Type: "general-purpose", Samples: 3, Mean: 400, P25: 100, P90: 900},
-		{Type: "Explore", Samples: 1, Mean: 5000, P25: 5000, P90: 5000},
-		{Type: SubagentTypeUnknown, Samples: 1, Mean: 50, P25: 50, P90: 50},
-		{Type: SubagentTypeAll, Samples: 5, Mean: 1250, P25: 100, P90: 5000},
+		{Type: "general-purpose", Samples: 3, Mean: 400, P25: 100, P50: 200, P90: 900},
+		{Type: "Explore", Samples: 1, Mean: 5000, P25: 5000, P50: 5000, P90: 5000},
+		{Type: SubagentTypeUnknown, Samples: 1, Mean: 50, P25: 50, P50: 50, P90: 50},
+		{Type: SubagentTypeAll, Samples: 5, Mean: 1250, P25: 100, P50: 200, P90: 5000},
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("costs\n%+v\nwant\n%+v", got, want)

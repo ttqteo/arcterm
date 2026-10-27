@@ -328,6 +328,7 @@ type SubagentCostData struct {
 	Samples int    `json:"samples"`
 	Mean    int64  `json:"mean"`
 	P25     int64  `json:"p25"`
+	P50     int64  `json:"p50"`
 	P90     int64  `json:"p90"`
 }
 
@@ -369,7 +370,8 @@ type CommandReviewTokenEstimatesRtnData struct {
 	Logged      int                       `json:"logged"`
 	Run         int                       `json:"run"`
 	Matched     int                       `json:"matched"`
-	MedianRatio float64                   `json:"medianratio"`
+	MedianRatio float64                   `json:"medianratio"` // actual ÷ the figure the card said
+	TotalRatio  float64                   `json:"totalratio"`  // the matched groups' actual over their mean estimates, both summed
 	WithRange   int                       `json:"withrange"`
 	InRange     int                       `json:"inrange"`
 	ByType      []TokenEstimateTypeReview `json:"bytype"`

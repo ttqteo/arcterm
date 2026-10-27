@@ -126,10 +126,15 @@ Bảng hiện 25 hàng đầu (`Top 25 of 314 · 61% of the window`); **Show all
 Dưới bảng **By session**, thẻ **Subagent cost** liệt kê chi phí các subagent đã chạy xong trong 30 ngày qua, theo loại
 (`general-purpose`, `Explore`, `fork`…): số mẫu, trung bình và khoảng p25–p90, cùng dòng **All types** cho mọi loại.
 Thẻ **Token burn** ước tính một lần spawn từ đúng những con số này: loại có từ 3 mẫu tính theo loại đó, còn lại theo
-**All types** khi nó có từ 5 mẫu, không đủ nữa thì 1.5M mỗi agent. Dòng chưa đủ mẫu hiện mờ.
+**All types** khi nó có từ 5 mẫu, không đủ nữa thì 1.5M mỗi agent. Dòng chưa đủ mẫu hiện mờ. Con số "about" trên thẻ
+là trung vị, chi phí một subagent loại đó thường tốn (chừng một phần ba trung bình, vì vài subagent rất lớn kéo trung
+bình lên); phần trăm cửa sổ và ngưỡng `tokengate:sharepct` vẫn tính theo trung bình, vì qua nhiều lần spawn cửa sổ trả
+đúng trung bình. Trung vị từng loại xem bằng `wsh tokengate review`.
 
 Mỗi lần spawn được ghi vào `~/.arc/tokengate/estimates.jsonl`. `wsh tokengate review` (mặc định 7 ngày, `--days N`)
-so các ước tính đó với các subagent thực sự đã chạy: tỉ lệ thực tế ÷ ước tính và bao nhiêu lần rơi vào khoảng thẻ đã nêu.
+so các ước tính đó với các subagent thực sự đã chạy: tỉ lệ thực tế ÷ con số thẻ đã nêu, tổng thực tế ÷ tổng ước tính
+theo trung bình, và bao nhiêu lần rơi vào khoảng thẻ đã nêu. Một session `claude -p` không được tính: các bản ghi của nó
+bị bỏ qua.
 
 ## Thanh meter quota trên app bar
 

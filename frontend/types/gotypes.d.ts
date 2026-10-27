@@ -1960,6 +1960,7 @@ declare global {
         run: number;
         matched: number;
         medianratio: number;
+        totalratio: number;
         withrange: number;
         inrange: number;
         bytype: TokenEstimateTypeReview[];
@@ -4169,6 +4170,7 @@ declare global {
         samples: number;
         mean: number;
         p25: number;
+        p50: number;
         p90: number;
     };
 

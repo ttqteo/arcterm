@@ -25,7 +25,8 @@ type EstimateLine struct {
 	Tool     string   `json:"tool"`
 	Agents   int      `json:"agents"`
 	Types    []string `json:"types"`
-	Estimate int64    `json:"estimate"`
+	Estimate int64    `json:"estimate"` // the sum of the agents' mean costs, which the window shares weigh
+	Typical  int64    `json:"typical"`  // the sum of their medians, the figure the card said; 0 on a line from before it, whose card said Estimate
 	Low      int64    `json:"low"`
 	High     int64    `json:"high"`    // 0: the card showed no range
 	Verdict  string   `json:"verdict"` // run, allow, allow-turn, allow-session, deny
@@ -36,7 +37,8 @@ type EstimateReview struct {
 	Logged      int          // lines in the period
 	Run         int          // of them, groups that ran (every verdict but deny)
 	Matched     int          // of them, groups whose session had finished subagents start within reviewMatchWindow
-	MedianRatio float64      // actual ÷ estimate over the matched groups; 0 with none
+	MedianRatio float64      // actual ÷ the card's figure over the matched groups; 0 with none
+	TotalRatio  float64      // the matched groups' actual over their Estimate, both summed: how the mean holds up in total
 	WithRange   int          // matched groups whose estimate had a range
 	InRange     int          // of them, those whose actual fell inside it
 	ByType      []TypeReview // matched groups whose agents were all of one type, the most matched first
@@ -74,6 +76,7 @@ func reviewEstimatesIn(root, logPath string, days int, now time.Time) (EstimateR
 	taken := map[string][]bool{}
 	var rev EstimateReview
 	var ratios []float64
+	var actualSum, estimateSum int64
 	typeRatios := map[string][]float64{}
 	for _, l := range lines {
 		rev.Logged++
@@ -111,7 +114,13 @@ func reviewEstimatesIn(root, logPath string, days int, now time.Time) (EstimateR
 			continue
 		}
 		rev.Matched++
-		ratio := float64(actual) / float64(l.Estimate)
+		figure := l.Typical
+		if figure <= 0 {
+			figure = l.Estimate
+		}
+		ratio := float64(actual) / float64(figure)
+		actualSum += actual
+		estimateSum += l.Estimate
 		ratios = append(ratios, ratio)
 		if l.High > 0 {
 			rev.WithRange++
@@ -124,6 +133,9 @@ func reviewEstimatesIn(root, logPath string, days int, now time.Time) (EstimateR
 		}
 	}
 	rev.MedianRatio = median(ratios)
+	if estimateSum > 0 {
+		rev.TotalRatio = float64(actualSum) / float64(estimateSum)
+	}
 	for t, rs := range typeRatios {
 		rev.ByType = append(rev.ByType, TypeReview{Type: t, Matched: len(rs), MedianRatio: median(rs)})
 	}

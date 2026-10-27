@@ -89,14 +89,22 @@ type Cost struct {
 	Samples int
 	Mean    int64
 	P25     int64
+	P50     int64 // 0 from a wavesrv before it: the mean stands in
 	P90     int64
 }
 
-// Priced is a spawn's estimate: the sum of its agents' mean costs, and a range (the sums of their p25 and p90) when
-// every agent was priced from samples. Basis names the rows used, "14 general-purpose" or "31 recent", in the order
-// first used; none means every agent was priced at PerAgentTokens (or the spawn brought its own estimate).
+// Priced is a spawn's estimate: the sum of its agents' mean costs, the sum of their medians, and a range (the sums of
+// their p25 and p90) when every agent was priced from samples. Basis names the rows used, "14 general-purpose" or "31
+// recent", in the order first used; none means every agent was priced at PerAgentTokens (or the spawn brought its own
+// estimate).
+//
+// A few big subagents pull a type's mean far above what most cost: on 2026-10-27's review the card's mean was 3x
+// what its spawns cost (median actual ÷ estimate 0.34), and the median 0.94x. So the card and the note say Typical,
+// what a spawn like this one usually costs, and the window shares and their rules weigh Estimate, which over many
+// spawns is what a window pays (the same nine cost 16.5M against 12.2M by mean and 5.0M by median).
 type Priced struct {
 	Estimate int64
+	Typical  int64
 	Low      int64
 	High     int64 // 0: no range
 	Basis    []string
@@ -192,7 +200,7 @@ func Estimate(s Spawn) int64 {
 // estimate of its own is priced at that, with no range: finished subagents' costs say nothing about its calls.
 func Price(s Spawn, costs []Cost) Priced {
 	if s.EstimateTokens > 0 {
-		return Priced{Estimate: s.EstimateTokens}
+		return Priced{Estimate: s.EstimateTokens, Typical: s.EstimateTokens}
 	}
 	rows := map[string]Cost{}
 	for _, c := range costs {
@@ -214,10 +222,16 @@ func Price(s Spawn, costs []Cost) Priced {
 		}
 		if !ok {
 			p.Estimate += PerAgentTokens
+			p.Typical += PerAgentTokens
 			ranged = false
 			continue
 		}
 		p.Estimate += c.Mean
+		typical := c.P50
+		if typical <= 0 {
+			typical = c.Mean
+		}
+		p.Typical += typical
 		p.Low += c.P25
 		p.High += c.P90
 		if !seen[c.Type] {
@@ -347,10 +361,10 @@ func joinAnd(parts []string) string {
 	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
-// costText is the estimate and what it rests on; long is the card's spelling, else the note's. The card names the
+// costText is the typical cost and what it rests on; long is the card's spelling, else the note's. The card names the
 // finished subagents it priced from as finished: "from 40 Explore subagents" read as forty about to start
 func costText(p Priced, long bool) string {
-	est := FormatTokens(p.Estimate)
+	est := FormatTokens(p.Typical)
 	switch {
 	case len(p.Basis) == 0:
 		return fmt.Sprintf("about %s tokens (rough)", est)
@@ -570,7 +584,8 @@ func Choice(answers []baseds.AgentAnswerItem, cancelled bool) int {
 	return OptionDeny
 }
 
-// VerdictFor turns the person's choice into the line the mod reads; estimate is the spawn's priced tokens
+// VerdictFor turns the person's choice into the line the mod reads; estimate is what the card said the spawn costs
+// (Priced.Typical)
 func VerdictFor(choice int, s Spawn, estimate int64) Verdict {
 	switch choice {
 	case OptionAllow:
@@ -607,6 +622,7 @@ type LogLine struct {
 	Types    []string `json:"types"`
 	Earlier  int      `json:"earlier,omitempty"`
 	Estimate int64    `json:"estimate"`
+	Typical  int64    `json:"typical,omitempty"`
 	Low      int64    `json:"low"`
 	High     int64    `json:"high"`
 	Verdict  string   `json:"verdict"`
@@ -641,6 +657,7 @@ func NewLogLine(now time.Time, session string, s Spawn, p Priced, v Verdict, ask
 		Types:    types,
 		Earlier:  s.Earlier,
 		Estimate: p.Estimate,
+		Typical:  p.Typical,
 		Low:      p.Low,
 		High:     p.High,
 		Verdict:  VerdictName(v, asked),

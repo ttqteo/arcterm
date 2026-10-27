@@ -28,12 +28,14 @@ const (
 	subagentCostDays = 30
 )
 
-// SubagentCost is what finished subagents of one type cost: how many, their mean total, and the p25 and p90 totals
+// SubagentCost is what finished subagents of one type cost: how many, their mean total, and the p25, median and p90
+// totals
 type SubagentCost struct {
 	Type    string
 	Samples int
 	Mean    int64
 	P25     int64
+	P50     int64
 	P90     int64
 }
 
@@ -167,6 +169,7 @@ func costOf(agentType string, totals []int64) SubagentCost {
 		Samples: len(sorted),
 		Mean:    sum / int64(len(sorted)),
 		P25:     nearestRank(sorted, 25),
+		P50:     nearestRank(sorted, 50),
 		P90:     nearestRank(sorted, 90),
 	}
 }

@@ -70,6 +70,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Token burn card (and an Antigravity question that holds its agent) always pops up as a dialog, over the agent's
   own terminal too, instead of sitting above the terminal. Later hides it and leaves a one-line strip above the
   terminal whose Answer brings it back.
+- The Token burn card's "about" figure is what a subagent of that type usually costs (the median), about a third of
+  the average it showed before, which a few very big subagents pulled up; the share of the 5-hour window and the 10%
+  check still go by the average.
 - An agent's right-click menu has **Copy id** in place of Copy @mention: it copies the bare id, so pasting it to tell
   an agent about another one keeps the message with the agent you typed to, where a leading `@id` sent it away. Drag
   an agent onto a pane holding Alt still types its `@` token to message it.

@@ -64,6 +64,12 @@ All token counts are the sum `WindowTokens` uses (input + output + reasoning + c
 - **Group:** estimate = the sum of its agents' means; low = the sum of their p25s, high = the sum of their p90s, both
   only when every agent was priced from a row (otherwise the range is left out). The rules use the estimate.
 - Why the mean for the estimate: it is what a group's total follows; the range carries the skew.
+- **Amended 2026-10-27** (the week-of-v2 re-measure, `wsh tokengate review --days 7`): the card's mean was 3× what its
+  spawns cost (median actual ÷ estimate 0.34; 9 matched, the `claude -p` bench runs unmeasurable), while the mean held
+  in total (the nine cost 16.5M against 12.2M by mean). So each row also carries its median (`P50`), and a group gets a
+  second figure, **typical** = the sum of its agents' medians (the mean when a row has none), which the card, the note
+  and the refusal say. The estimate (the means) still drives the window shares and the rules. The log records both
+  (`typical`), and the review rates each group against the figure its card said and adds the total ÷ the means' total.
 
 ### Windows and the session
 

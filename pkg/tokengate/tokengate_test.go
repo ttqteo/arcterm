@@ -18,16 +18,16 @@ func f64(v float64) *float64 { return &v }
 func i64(v int64) *int64     { return &v }
 func pint(v int) *int        { return &v }
 
-// measured costs as 2026-10-11's transcripts gave them, rounded
+// measured costs as 2026-10-11's transcripts gave them, rounded; the medians as skewed below the means as 2026-10-27's
 var testCosts = []Cost{
-	{Type: "general-purpose", Samples: 14, Mean: 2_800_000, P25: 300_000, P90: 6_100_000},
-	{Type: "Explore", Samples: 3, Mean: 7_000_000, P25: 5_800_000, P90: 11_700_000},
-	{Type: "web-fetch", Samples: 2, Mean: 100_000, P25: 80_000, P90: 420_000},
-	{Type: CostAll, Samples: 31, Mean: 4_800_000, P25: 130_000, P90: 11_700_000},
+	{Type: "general-purpose", Samples: 14, Mean: 2_800_000, P25: 300_000, P50: 900_000, P90: 6_100_000},
+	{Type: "Explore", Samples: 3, Mean: 7_000_000, P25: 5_800_000, P50: 6_500_000, P90: 11_700_000},
+	{Type: "web-fetch", Samples: 2, Mean: 100_000, P25: 80_000, P50: 90_000, P90: 420_000},
+	{Type: CostAll, Samples: 31, Mean: 4_800_000, P25: 130_000, P50: 300_000, P90: 11_700_000},
 }
 
 // the general-purpose row, and an every-type row too thin to price from
-var thinCosts = []Cost{testCosts[0], {Type: CostAll, Samples: 4, Mean: 1, P25: 1, P90: 1}}
+var thinCosts = []Cost{testCosts[0], {Type: CostAll, Samples: 4, Mean: 1, P25: 1, P50: 1, P90: 1}}
 
 func TestEstimateCountsAtLeastOneAgent(t *testing.T) {
 	if got := Estimate(Spawn{Agents: 3}); got != 3*PerAgentTokens {
@@ -44,10 +44,10 @@ func TestCouncilSpawnIsPricedFromItsOwnEstimate(t *testing.T) {
 		t.Fatalf("Estimate = %d, want the council's own 900k, not %d", got, 4*PerAgentTokens)
 	}
 	// measured subagent costs say nothing about a council's one-shot calls: the estimate stands, with no range
-	if got, want := Price(council, testCosts), (Priced{Estimate: 900_000}); !reflect.DeepEqual(got, want) {
+	if got, want := Price(council, testCosts), (Priced{Estimate: 900_000, Typical: 900_000}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Price = %+v, want %+v", got, want)
 	}
-	if got, want := Price(council, nil), (Priced{Estimate: 900_000}); !reflect.DeepEqual(got, want) {
+	if got, want := Price(council, nil), (Priced{Estimate: 900_000, Typical: 900_000}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Price without costs = %+v, want %+v", got, want)
 	}
 	// a spawn with no estimate of its own is still priced per agent
@@ -97,10 +97,10 @@ func TestCouncilSpawnIsNamedOnTheCardTheNoteAndTheVerdict(t *testing.T) {
 	if got := Asking(s).Hold; !strings.Contains(got, "start a Council (4 experts)") {
 		t.Fatalf("hold %q", got)
 	}
-	if v := VerdictFor(OptionDeny, s, p.Estimate); v.Run || !strings.Contains(v.Reason, "start a Council (4 experts)") || !strings.Contains(v.Reason, "about 900k tokens") {
+	if v := VerdictFor(OptionDeny, s, p.Typical); v.Run || !strings.Contains(v.Reason, "start a Council (4 experts)") || !strings.Contains(v.Reason, "about 900k tokens") {
 		t.Fatalf("deny %+v", v)
 	}
-	if got := Question(Spawn{Tool: "Council", Agents: 1, EstimateTokens: 200_000}, Priced{Estimate: 200_000}, Quota{}, time.UTC).Question; !strings.Contains(got, "Council (1 expert)") {
+	if got := Question(Spawn{Tool: "Council", Agents: 1, EstimateTokens: 200_000}, Priced{Estimate: 200_000, Typical: 200_000}, Quota{}, time.UTC).Question; !strings.Contains(got, "Council (1 expert)") {
 		t.Fatalf("one expert: %q", got)
 	}
 	// the estimate log names the spawn "Council", with the council's own estimate
@@ -119,16 +119,20 @@ func TestPrice(t *testing.T) {
 		want  Priced
 	}{
 		{"one general-purpose", Spawn{Agents: 1, Types: []string{gp}}, testCosts,
-			Priced{Estimate: 2_800_000, Low: 300_000, High: 6_100_000, Basis: []string{"14 general-purpose"}}},
+			Priced{Estimate: 2_800_000, Typical: 900_000, Low: 300_000, High: 6_100_000, Basis: []string{"14 general-purpose"}}},
 		{"two general-purpose and an Explore", Spawn{Agents: 3, Types: []string{gp, gp, "Explore"}}, testCosts,
-			Priced{Estimate: 12_600_000, Low: 6_400_000, High: 23_900_000, Basis: []string{"14 general-purpose", "3 Explore"}}},
+			Priced{Estimate: 12_600_000, Typical: 8_300_000, Low: 6_400_000, High: 23_900_000, Basis: []string{"14 general-purpose", "3 Explore"}}},
 		{"a type with too few samples takes the every-type row", Spawn{Agents: 1, Types: []string{"web-fetch"}}, testCosts,
-			Priced{Estimate: 4_800_000, Low: 130_000, High: 11_700_000, Basis: []string{"31 recent"}}},
+			Priced{Estimate: 4_800_000, Typical: 300_000, Low: 130_000, High: 11_700_000, Basis: []string{"31 recent"}}},
 		{"a workflow's agents have no type", Spawn{Tool: "Workflow", Agents: 2, AtLeast: true}, testCosts,
-			Priced{Estimate: 9_600_000, Low: 260_000, High: 23_400_000, Basis: []string{"31 recent"}}},
-		{"no costs at all", Spawn{Agents: 3}, nil, Priced{Estimate: 4_500_000}},
+			Priced{Estimate: 9_600_000, Typical: 600_000, Low: 260_000, High: 23_400_000, Basis: []string{"31 recent"}}},
+		{"no costs at all", Spawn{Agents: 3}, nil, Priced{Estimate: 4_500_000, Typical: 4_500_000}},
 		{"a thin every-type row leaves the rest at the constant, with no range", Spawn{Agents: 2, Types: []string{gp, "web-fetch"}}, thinCosts,
-			Priced{Estimate: 4_300_000, Basis: []string{"14 general-purpose"}}},
+			Priced{Estimate: 4_300_000, Typical: 2_400_000, Basis: []string{"14 general-purpose"}}},
+		// a wavesrv from before the median sends none: its typical is the mean, as the card said then
+		{"a row with no median prices its typical at the mean", Spawn{Agents: 1, Types: []string{gp}},
+			[]Cost{{Type: gp, Samples: 14, Mean: 2_800_000, P25: 300_000, P90: 6_100_000}},
+			Priced{Estimate: 2_800_000, Typical: 2_800_000, Low: 300_000, High: 6_100_000, Basis: []string{"14 general-purpose"}}},
 	}
 	for _, c := range cases {
 		if got := Price(c.s, c.costs); !reflect.DeepEqual(got, c.want) {
@@ -279,13 +283,14 @@ func TestNote(t *testing.T) {
 	}
 	gp := Spawn{Tool: "Agent", Agents: 1, Types: []string{"general-purpose"}}
 	q := Quota{Share: pint(3), WeekShare: pint(0), Session: &SessionUse{FiveHourPct: pint(18), WeekPct: pint(4), Subagents: 4}}
-	want := "Token burn: starting 1 subagent, about 2.8M tokens (300k–6.1M, 14 general-purpose), ~3% of the 5h window, " +
+	// the note says the typical cost (the median); the window shares, worked out from the mean, are the Quota's
+	want := "Token burn: starting 1 subagent, about 900k tokens (300k–6.1M, 14 general-purpose), ~3% of the 5h window, " +
 		"<1% of the week. This session so far: ~18% of 5h, ~4% of the week."
 	if got := Note(gp, Price(gp, testCosts), q); got != want {
 		t.Fatalf("note\n%q\nwant\n%q", got, want)
 	}
 	partly := Spawn{Tool: "Agent", Agents: 2, Types: []string{"general-purpose", "web-fetch"}}
-	if got := Note(partly, Price(partly, thinCosts), Quota{}); got != "Token burn: starting 2 subagents, about 4.3M tokens (rough, partly 14 general-purpose)." {
+	if got := Note(partly, Price(partly, thinCosts), Quota{}); got != "Token burn: starting 2 subagents, about 2.4M tokens (rough, partly 14 general-purpose)." {
 		t.Fatalf("note %q", got)
 	}
 }
@@ -298,7 +303,7 @@ func TestQuestionSaysEveryKnownNumber(t *testing.T) {
 		Session: &SessionUse{FiveHourPct: pint(18), WeekPct: pint(4), Subagents: 4},
 	}, time.UTC)
 	want := "An agent wants to start 3 subagents.\n\n" +
-		"About 12.6M tokens, likely 6.4M–23.9M, going by the cost of 14 finished general-purpose and 3 Explore subagents. " +
+		"About 8.3M tokens, likely 6.4M–23.9M, going by the cost of 14 finished general-purpose and 3 Explore subagents. " +
 		"Its own context is 142k of 200k, and each of its further calls re-reads that.\n\n" +
 		"This session has used about 18% of the 5-hour window and about 4% of the week so far, its 4 subagents included. " +
 		"The 5-hour window is 62% used and resets at 14:20; this would take about 9% more. " +
@@ -324,7 +329,7 @@ func TestQuestionLeavesOutUnknownNumbers(t *testing.T) {
 		t.Fatalf("question\n%q\nwant\n%q", got, want)
 	}
 	partly := Spawn{Tool: "Agent", Agents: 2, Types: []string{"general-purpose", "web-fetch"}}
-	if got := Question(partly, Price(partly, thinCosts), Quota{}, time.UTC).Question; got != "An agent wants to start 2 subagents.\n\nAbout 4.3M tokens (rough, partly going by the cost of 14 finished general-purpose subagents)." {
+	if got := Question(partly, Price(partly, thinCosts), Quota{}, time.UTC).Question; got != "An agent wants to start 2 subagents.\n\nAbout 2.4M tokens (rough, partly going by the cost of 14 finished general-purpose subagents)." {
 		t.Fatalf("question %q", got)
 	}
 }
@@ -374,13 +379,13 @@ func TestQuestionSaysTheAgentsJustStarted(t *testing.T) {
 func TestLogLine(t *testing.T) {
 	line := NewLogLine(time.Unix(1_760_000_000, 0), "s1",
 		Spawn{Tool: "Agent", Agents: 2, Types: []string{"general-purpose", "Explore"}},
-		Priced{Estimate: 9_800_000, Low: 6_100_000, High: 17_800_000},
+		Priced{Estimate: 9_800_000, Typical: 3_000_000, Low: 6_100_000, High: 17_800_000},
 		Verdict{Run: true, Scope: ScopeTurn}, true)
 	data, err := json.Marshal(line)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"ts":1760000000,"session":"s1","tool":"Agent","agents":2,"types":["general-purpose","Explore"],"estimate":9800000,"low":6100000,"high":17800000,"verdict":"allow-turn"}`
+	want := `{"ts":1760000000,"session":"s1","tool":"Agent","agents":2,"types":["general-purpose","Explore"],"estimate":9800000,"typical":3000000,"low":6100000,"high":17800000,"verdict":"allow-turn"}`
 	if string(data) != want {
 		t.Fatalf("line\n%s\nwant\n%s", data, want)
 	}

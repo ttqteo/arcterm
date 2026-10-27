@@ -102,6 +102,45 @@ func TestReviewEstimatesLeavesCouncilSpawnsUnmatched(t *testing.T) {
 	}
 }
 
+// the ratios rate the figure the card said, the typical cost once the log has it (the mean before), and the total
+// rates the mean, which the window shares are worked out from
+func TestReviewEstimatesRatesTheCardsFigure(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().Truncate(time.Second)
+	t0 := now.Add(-2 * time.Hour)
+	sub := filepath.Join(root, "proj", "s1", "subagents")
+	writeJSONL(t, filepath.Join(sub, "agent-a.jsonl"), asstLine("a1", t0.Add(time.Minute), testSonnet, "/w", 2000, 0, 0, 0, 0))
+	writeJSONL(t, filepath.Join(sub, "agent-b.jsonl"), asstLine("b1", t0.Add(31*time.Minute), testSonnet, "/w", 6000, 0, 0, 0, 0))
+	line := func(l EstimateLine) string {
+		data, err := json.Marshal(l)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	logPath := filepath.Join(root, "estimates.jsonl")
+	gp := []string{"general-purpose"}
+	writeJSONL(t, logPath,
+		// the card said 1000 (the median) and the share rule weighed 4000 (the mean): agent-a cost 2000
+		line(EstimateLine{Ts: t0.Unix(), Session: "s1", Tool: "Agent", Agents: 1, Types: gp, Estimate: 4000, Typical: 1000, Verdict: "run"}),
+		// a line from before the typical figure: the card said its mean, 3000; agent-b cost 6000
+		line(EstimateLine{Ts: t0.Add(30 * time.Minute).Unix(), Session: "s1", Tool: "Agent", Agents: 1, Types: gp, Estimate: 3000, Verdict: "run"}),
+	)
+	rev, err := reviewEstimatesIn(root, logPath, 7, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev.Matched != 2 || rev.MedianRatio != 2 {
+		t.Fatalf("matched %d median ratio %v, want 2 and 2 (2000/1000, 6000/3000)", rev.Matched, rev.MedianRatio)
+	}
+	if math.Abs(rev.TotalRatio-8000.0/7000.0) > 1e-9 {
+		t.Fatalf("total ratio %v, want 8000/7000", rev.TotalRatio)
+	}
+	if len(rev.ByType) != 1 || rev.ByType[0].MedianRatio != 2 {
+		t.Fatalf("by type %+v", rev.ByType)
+	}
+}
+
 func TestReviewEstimatesWithNoLogIsEmpty(t *testing.T) {
 	rev, err := reviewEstimatesIn(t.TempDir(), filepath.Join(t.TempDir(), "none.jsonl"), 7, time.Now())
 	if err != nil || rev.Logged != 0 || rev.Matched != 0 {
