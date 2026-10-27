@@ -22,6 +22,29 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- The Token burn card lists each subagent an agent wants to start, with the model it will run on and its task. A
+  subagent given no model says so and names the one it falls back to: this session's (an Explore with no model runs
+  on Opus when the session does). The estimate now says it comes from finished subagents.
+- The Token burn card (and an Antigravity question that holds its agent) always pops up as a dialog, over the agent's
+  own terminal too, instead of sitting above the terminal. Later hides it and leaves a one-line strip above the
+  terminal whose Answer brings it back.
+- The Token burn card's "about" figure is what a subagent of that type usually costs (the median), about a third of
+  the average it showed before, which a few very big subagents pulled up; the share of the 5-hour window and the 10%
+  check still go by the average.
+- The Slate theme is a step lighter: its background, panels and borders lift a little, with the same blue-grey tone.
+
+### Fixed
+
+- An agent's Files tab lists the files of a folder that is not a git repository, as Code does, leaving out
+  node_modules, build output and dot-folders. Before, the files flashed up and gave way to a "Not a git repository"
+  note.
+- A canvas board no longer flickers between two sizes (86% and 87%) when the pane's width shifts by a few pixels: the
+  board shrinks at once when the pane narrows, and grows again only once it widens by more than a little.
+
 ## 0.15.18 — 2026-10-27
 
 ### Added
@@ -64,15 +87,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   days, searchable with /, and the agents that finished a turn you have not read. Running now lists the project's
   runs, their workers counted as the Agent tree counts them, and three or more items of one kind in Needs you fold
   into one row.
-- The Token burn card lists each subagent an agent wants to start, with the model it will run on and its task. A
-  subagent given no model says so and names the one it falls back to: this session's (an Explore with no model runs
-  on Opus when the session does). The estimate now says it comes from finished subagents.
-- The Token burn card (and an Antigravity question that holds its agent) always pops up as a dialog, over the agent's
-  own terminal too, instead of sitting above the terminal. Later hides it and leaves a one-line strip above the
-  terminal whose Answer brings it back.
-- The Token burn card's "about" figure is what a subagent of that type usually costs (the median), about a third of
-  the average it showed before, which a few very big subagents pulled up; the share of the 5-hour window and the 10%
-  check still go by the average.
 - An agent's right-click menu has **Copy id** in place of Copy @mention: it copies the bare id, so pasting it to tell
   an agent about another one keeps the message with the agent you typed to, where a leading `@id` sent it away. Drag
   an agent onto a pane holding Alt still types its `@` token to message it.
@@ -85,10 +99,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   repeating the whole new argument.
 - A row in Needs you unfolds when you click its text: a run to confirm lists each thing it left unverified, so you
   know what to check before Accept.
-
-### Changed
-
-- The Slate theme is a step lighter: its background, panels and borders lift a little, with the same blue-grey tone.
 - A finished council opens on its answer: one sentence first, then the directions.
 - The council speaks in plain words (Agrees, Has doubts, Is against it) and ranks ideas by each expert's top three
   picks; an expert who agrees without a comment shows as a reaction under the idea, not as a reply.
@@ -105,11 +115,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   a message from its composer, without restarting it.
 - While a sleeping agent wakes, what would cut the wake short is off until it is back: Close, the header's … menu,
   Send and Wake everywhere else, and Close agent in its row's menu.
-- An agent's Files tab lists the files of a folder that is not a git repository, as Code does, leaving out
-  node_modules, build output and dot-folders. Before, the files flashed up and gave way to a "Not a git repository"
-  note.
-- A canvas board no longer flickers between two sizes (86% and 87%) when the pane's width shifts by a few pixels: the
-  board shrinks at once when the pane narrows, and grows again only once it widens by more than a little.
 
 ## 0.15.17 — 2026-10-21
 
