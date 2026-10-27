@@ -85,6 +85,7 @@ import { openToolPicker } from "./toolsstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { openLauncher } from "./launcherstore";
+import { useWaking } from "./wakingstore";
 
 export const STATE_COLOR: Record<ShownState, string> = {
     asking: "var(--color-warning)",
@@ -112,6 +113,9 @@ export const ICON_BTN =
     "flex cursor-pointer items-center justify-center rounded-[6px] border border-transparent p-[5px] text-muted hover:bg-surface-hover hover:text-primary";
 // an icon-button that is on (split shown, fullscreen, pinned)
 export const ICON_BTN_ON = "border-accent/50 bg-accentbg text-accent hover:bg-accentbg hover:text-accent";
+// an icon-button that is off for now (Close and More while the agent wakes)
+const ICON_BTN_OFF =
+    "disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted";
 
 // useRunLineage reads what the header says about an agent a run spawned: a lead's run, a worker's task and
 // lead, or a stage session's run and lead.
@@ -467,6 +471,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     // Close the whole session (a tab, per launchAgent) — shared with the double-Ctrl+C handler. The
     // header also fronts background terminals, so the noun follows what is actually focused.
     const closeTerminal = () => confirmCloseSession(agent, model);
+    // a wake relaunching it: Close would kill the process it waits on, and the More menu's Interrupt and Redraw type
+    // into the resuming TUI, so both are off until it is back (or the wake fails)
+    const waking = useWaking(agent.id);
     // its last turn committed, you have read it and no run it started is still going: the header offers Close with the
     // session's token total, the figure its sidebar row shows (donesuggest.ts)
     const done = doneSuggestion(
@@ -490,6 +497,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const openHeaderMenu = (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        if (waking) {
+            return;
+        }
         const items: ContextMenuItem[] = [];
         if (canSplit) {
             // the header is the focused agent's, which is whose folder the picker opens a tool in
@@ -761,8 +771,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         aria-haspopup="menu"
                         aria-label="More"
                         onClick={openHeaderMenu}
-                        title="More: open a tool, float, redraw, interrupt, details"
-                        className={ICON_BTN}
+                        disabled={waking}
+                        title={waking ? "Waking…" : "More: open a tool, float, redraw, interrupt, details"}
+                        className={cn(ICON_BTN, ICON_BTN_OFF)}
                     >
                         <Ellipsis size={15} strokeWidth={1.8} aria-hidden />
                     </button>
@@ -788,8 +799,9 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                                 type="button"
                                 data-agent-header-done
                                 onClick={closeTerminal}
+                                disabled={waking}
                                 title={`${DONE_TITLE} (${formatChordString("Alt:w")})`}
-                                className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success"
+                                className="flex cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-success/45 px-[9px] py-[5px] text-[12px] font-semibold text-success hover:border-success disabled:cursor-default disabled:opacity-40 disabled:hover:border-success/45"
                             >
                                 <Check size={14} strokeWidth={2.2} aria-hidden />
                                 Close
@@ -831,12 +843,15 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <button
                             type="button"
                             onClick={closeTerminal}
+                            disabled={waking}
                             title={
-                                agent.kind === "terminal"
-                                    ? `Close terminal — ends its shell (${formatChordString(closeAgentChord())})`
-                                    : `Close agent — ends its session (${formatChordString(closeAgentChord())})`
+                                waking
+                                    ? "Waking…"
+                                    : agent.kind === "terminal"
+                                      ? `Close terminal — ends its shell (${formatChordString(closeAgentChord())})`
+                                      : `Close agent — ends its session (${formatChordString(closeAgentChord())})`
                             }
-                            className={cn(ICON_BTN, "hover:bg-error/15 hover:text-error")}
+                            className={cn(ICON_BTN, "hover:bg-error/15 hover:text-error", ICON_BTN_OFF)}
                         >
                             <X size={15} strokeWidth={1.9} />
                         </button>

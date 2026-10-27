@@ -7,6 +7,7 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import type { AgentVM } from "./agentsviewmodel";
+import { useWaking } from "./wakingstore";
 
 // one line at 12px (rows={1}: the default two rows would set the floor instead); it grows as text wraps
 const ComposerMinH = 32;
@@ -37,7 +38,9 @@ export const AgentComposer = forwardRef<
     }
 >(function AgentComposer({ blockId, agent, placeholder, className, onEscape }, ref) {
     const [text, setText] = useState("");
-    const [waking, setWaking] = useState(false);
+    const [sending, setSending] = useState(false);
+    // a wake started anywhere else (the card's Wake, a row's menu) holds the box too: a message now would be a second wake
+    const waking = useWaking(agent?.id) || sending;
     const taRef = useRef<HTMLTextAreaElement>(null);
     useImperativeHandle(
         ref,
@@ -63,7 +66,7 @@ export const AgentComposer = forwardRef<
             return;
         }
         if (agent?.sleeping) {
-            setWaking(true);
+            setSending(true);
             fireAndForget(async () => {
                 try {
                     await wakeAgent(agent.id, { message: text.trim() });
@@ -71,7 +74,7 @@ export const AgentComposer = forwardRef<
                 } catch (e) {
                     wakeErrorToast(agent.name, e);
                 } finally {
-                    setWaking(false);
+                    setSending(false);
                 }
             });
             return;

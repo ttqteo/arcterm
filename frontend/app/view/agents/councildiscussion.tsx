@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The council Discussion (Main.dc.html, Running.dc.html, Paused.dc.html): a header in one line (the feature, the step
-// chip, the mode, the experts' avatars, the cost line, Summarize, Stop council), and a body that depends on where the
+// chip, the mode, the experts' avatars, the cost line, Summarize, Stop council, or Remove once it ended), and a body that depends on where the
 // council is. While the experts argue and write the answer it is a group chat (councilfeed.tsx) beside the ideas ranked
 // by the experts' picks, those no expert picked folded away; once the council is over it is one idea as a Reddit-style
 // thread beside the same column (councilthread.tsx); while the experts first read and propose it is each expert's card
@@ -47,6 +47,7 @@ import { ExpertChips, Feed, NothingToDo, StepBar, councilFeedFilterAtom } from "
 import { isQueued, modeWord, showsFeed } from "./councilfeedmodel";
 import {
     callSegments,
+    canRemoveCouncil,
     canSummarize,
     estimateLabel,
     expertStat,
@@ -57,6 +58,7 @@ import {
     type RankedProposal,
     type SegmentState,
 } from "./councilmodel";
+import { confirmRemoveCouncil } from "./councilremove";
 import {
     continueCouncil,
     councilOpenProposalAtom,
@@ -320,6 +322,17 @@ function Header({ c, now, acts }: { c: Council; now: number; acts: Actions }) {
                         className="h-[28px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[12px] text-[12px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
                     >
                         {acts.busy.has("stop") ? "Stopping…" : "Stop council"}
+                    </button>
+                )}
+                {canRemoveCouncil(c) && (
+                    <button
+                        type="button"
+                        data-council-remove
+                        title="Remove this council and its discussion"
+                        onClick={() => confirmRemoveCouncil(c)}
+                        className="h-[28px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[12px] text-[12px] text-muted outline-none hover:text-error focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        Remove
                     </button>
                 )}
             </div>

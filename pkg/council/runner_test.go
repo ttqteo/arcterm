@@ -1670,6 +1670,30 @@ func TestStopEndsAPausedCouncilAndLeavesAFinishedOneAlone(t *testing.T) {
 	}
 }
 
+func TestDeleteRemovesAnEndedCouncilAndRefusesALiveOne(t *testing.T) {
+	h := newHarness(t)
+	c := testCouncil("paused")
+	c.PauseAfterRound1 = true
+	h.run(c)
+	if _, err := h.r.Delete("paused"); err == nil {
+		t.Fatalf("Delete of a council waiting on the person worked")
+	}
+	if _, err := Load("paused"); err != nil {
+		t.Fatalf("a refused Delete removed the council: %v", err)
+	}
+	h.run(testCouncil("done"))
+	got, err := h.r.Delete("done")
+	if err != nil || got.Id != "done" {
+		t.Fatalf("Delete of a done council = %v, %v", got, err)
+	}
+	if _, err := Load("done"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Load after Delete = %v, want not exist", err)
+	}
+	if _, err := h.r.Delete("done"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a second Delete = %v, want not exist", err)
+	}
+}
+
 func TestCancellingTheContextStopsTheCouncil(t *testing.T) {
 	h := newHarness(t)
 	h.f.gate("ux/r1")

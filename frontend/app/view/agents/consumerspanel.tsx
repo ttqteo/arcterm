@@ -68,6 +68,7 @@ import { TickBox } from "./tickbox";
 import { usePlanDonuts } from "./usagemeters";
 import { fmt, usd } from "./usagestats";
 import { formatGB } from "./workercapacity";
+import { useWaking } from "./wakingstore";
 
 // whether `/model` switches a Claude session inside a running turn: the consumers-panel plan's Task 1 could not check
 // it (no tmux), so a mid-turn switch is worded as waiting for the next turn
@@ -192,6 +193,8 @@ function Row({
 }) {
     // the call in flight; a sleep or a wake takes seconds, and a second press would only be refused by the server
     const [pending, setPending] = useState<"sleep" | "wake" | null>(null);
+    // a wake started anywhere else (the sleeping card, the composer) holds this Wake too
+    const waking = useWaking(row.id);
     const run = (kind: "sleep" | "wake", call: () => Promise<void>) => {
         setPending(kind);
         fireAndForget(async () => {
@@ -299,11 +302,11 @@ function Row({
                         type="button"
                         data-consumer-wake
                         title="Relaunch this agent where its conversation left off"
-                        disabled={pending != null}
+                        disabled={pending != null || waking}
                         onClick={wake}
                         className={cn(TEXT_ACTION, "mr-0.5")}
                     >
-                        {pending === "wake" ? "Waking…" : "Wake"}
+                        {pending === "wake" || waking ? "Waking…" : "Wake"}
                     </button>
                 ) : null}
                 <button
@@ -568,17 +571,19 @@ function CompactRow({
     pick: Picking;
 }) {
     const note = useAtomValue(resmonNotesAtom)[row.id];
-    const [waking, setWaking] = useState(false);
+    const [sending, setSending] = useState(false);
+    // a wake started anywhere else holds this Wake too
+    const waking = useWaking(row.id) || sending;
     const cmd = row.work?.command;
     const wake = () => {
-        setWaking(true);
+        setSending(true);
         fireAndForget(async () => {
             try {
                 await wakeAgent(row.id);
             } catch (e) {
                 wakeErrorToast(row.name, e);
             } finally {
-                setWaking(false);
+                setSending(false);
             }
         });
     };

@@ -3,9 +3,11 @@ import {
     STANCE_WORD,
     answerers,
     callSegments,
+    canRemoveCouncil,
     canSummarize,
     costLine,
     councilProjectKey,
+    councilProjectName,
     countTokens,
     draftFromCouncil,
     emptyCouncilDraft,
@@ -855,6 +857,31 @@ describe("draftFromCouncil and emptyCouncilDraft", () => {
             mode: "review",
             modePicked: false,
         });
+    });
+});
+
+describe("councilProjectName", () => {
+    it("names the registered project whose root is the council's path, however it is spelled", () => {
+        const registry = { arc: { path: "D:\\code\\Arc" }, loom: { path: "/home/u/loom" }, bare: {} };
+        expect(councilProjectName(registry, "d:/code/arc/")).toBe("arc");
+        expect(councilProjectName(registry, "/home/u/loom")).toBe("loom");
+        expect(councilProjectName(registry, "/elsewhere")).toBeNull();
+        expect(councilProjectName(null, "/home/u/loom")).toBeNull();
+    });
+});
+
+describe("canRemoveCouncil", () => {
+    it("is true only for a council nothing works on", () => {
+        const states: Council["state"][] = [
+            "running",
+            "awaiting-you",
+            "queued",
+            "done",
+            "failed",
+            "stopped",
+            "not-run",
+        ];
+        expect(states.filter((state) => canRemoveCouncil({ state }))).toEqual(["done", "failed", "stopped", "not-run"]);
     });
 });
 

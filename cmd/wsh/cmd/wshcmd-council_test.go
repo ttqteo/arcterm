@@ -91,7 +91,7 @@ func TestCouncilFlags(t *testing.T) {
 	if f := councilWaitCmd.Flags().Lookup("timeout"); f == nil || f.DefValue != "30m0s" {
 		t.Errorf("wait --timeout = %+v", f)
 	}
-	for _, c := range []interface{ Name() string }{councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilWaitCmd, councilStopCmd} {
+	for _, c := range []interface{ Name() string }{councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilWaitCmd, councilStopCmd, councilRmCmd} {
 		found := false
 		for _, sub := range councilCmd.Commands() {
 			found = found || sub.Name() == c.Name()

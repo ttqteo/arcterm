@@ -58,6 +58,20 @@ export async function toggleTaskInFile(abs: string, line: number, shown: string)
     return true;
 }
 
+// the kinds Open hands to the OS's default app, as src-tauri's open_path allows them (OPENABLE_EXTS): a document or
+// media file, never one that runs
+const OS_OPENABLE = new Set(
+    "pdf ppt pptx pps ppsx key odp doc docx rtf odt pages xls xlsx csv ods numbers png jpg jpeg gif webp bmp tif tiff heic mp4 mov webm mkv mp3 wav m4a flac ogg epub".split(
+        " "
+    )
+);
+
+/** Pure: whether Open can hand the file to the OS's default app (a .pptx to PowerPoint). */
+export function canOpenInOsApp(path: string): boolean {
+    const m = /\.([A-Za-z0-9]+)$/.exec(path);
+    return m != null && OS_OPENABLE.has(m[1].toLowerCase());
+}
+
 export function formatSize(bytes: number): string {
     if (bytes >= 1024 * 1024) {
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

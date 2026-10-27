@@ -27,6 +27,28 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Waking holds the controls: click Wake on a sleeping agent's card. Until it is back the card reads
+  Waking…, the composer's Send reads Waking… and is off, the header's … and × are dimmed and do nothing (right-click on
+  the header opens no menu), and the agent's row menu greys Wake and Close agent. `wakingstore.ts`.
+- [ ] (arcterm) Needs you rows unfold on the Cockpit strip (the Overview's are covered by `project-overview-history`
+  step 13): click the text of a "Run to confirm" row. It shows ▾, the run's full title, then one `·` line per thing
+  not verified, with no `wsh runs ack` hint; a second click folds it. A learned rule keeps its Why toggle.
+  `needsyoustrip.tsx`.
+- [ ] (arcterm) The Overview's Now and History on real data (run a6c8cb9e, 7442e2821; Final saw fixtures only): open
+  arcterm's Overview while a run works. Running has one row per run reading `N at work · done/total tasks`, and its
+  count equals the arcterm folder's green badge in the tree. History's Sessions lists the last 7 days' ended sessions
+  of arcterm (not stuck on grey rows; Final's shots 1 and 13 show the list still loading after a reload), Councils &
+  runs lists the councils and the runs with their land, and `/` focuses the search. The header shows the branch pill
+  and change count (they were missing once on 2026-10-27 with no error logged; `useProjectGit` swallows a failure).
+- [ ] (arcterm) Open a deck from the File panel: after installing a build with `open_path`, in the SIEM `website`
+  agent's "It's in docs/slide/ as Early_Warning_Services_v1.4_271026_Sales.pptx" the bare file name is underlined on
+  hover (its folder is read off the line above, `nearbyFolders`); Ctrl+click it: the panel reads "Binary file" with
+  Open and Show in Explorer; Open starts PowerPoint on it, Show in Explorer
+  selects it. A `.exe` path offers neither. `src-tauri/src/commands.rs` `open_path`, `filetab.tsx`, commit
+- [ ] (arcterm) Remove council: in the Agent tree hover a Failed or Done council row: an × covers its state word;
+  click it (or right-click → Remove council), confirm: the row goes and `wsh council list` no longer has it. Open
+  another ended council and click Remove in its header: the centre moves to the project's Overview. A Running or
+  Waiting on you row has no ×. `pkg/council/runner.go` `Delete`, `councilremove.ts`, commit
 - [ ] (arcterm) A slow wake clears its sleep marks: after installing a build with this fix, the `arcterm` tab whose
   block `027015dd` runs while its meta still holds `agent:sleeping` (a 2026-10-22 20:26 wake whose 10s write clock had
   run out) shows asleep; click Wake (or send from its composer): the row and terminal read awake, no restart, and

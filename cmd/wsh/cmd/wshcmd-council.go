@@ -618,6 +618,20 @@ var councilStopCmd = &cobra.Command{
 	},
 }
 
+var councilRmCmd = &cobra.Command{
+	Use:     "rm <id>",
+	Short:   "remove an ended council (done, failed, stopped or not run) from the list; the document it wrote stays",
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := wshclient.CouncilDeleteCommand(RpcClient, wshrpc.CommandCouncilIdData{Id: args[0]}, nil); err != nil {
+			return err
+		}
+		fmt.Printf("council %s removed\n", args[0])
+		return nil
+	},
+}
+
 // ---- bench ----
 
 // The three calls and the gate of `wsh council bench`, as variables so a test stands in for wavesrv and the person.
@@ -837,6 +851,6 @@ func init() {
 	councilBenchCmd.Flags().Int("runs", 1, "runs of each case × variant (the full first pass uses 2)")
 	councilBenchResultsCmd.Flags().Bool("json", false, "JSON output")
 	councilBenchCmd.AddCommand(councilBenchResultsCmd, councilBenchStopCmd)
-	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilWaitCmd, councilStopCmd, councilBenchCmd)
+	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilWaitCmd, councilStopCmd, councilRmCmd, councilBenchCmd)
 	rootCmd.AddCommand(councilCmd)
 }

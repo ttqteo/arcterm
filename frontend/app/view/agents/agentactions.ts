@@ -13,6 +13,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import { dismissKey, toggleInSet } from "./cockpitsurfacemodel";
 import { noteClosed } from "./recentlyclosed";
 import { leadRunTabIds } from "./runlineage";
+import { isWaking } from "./wakingstore";
 
 // The close-agent chord (bindings.ts), as a terminal app closes its tab: Windows Terminal's Ctrl+Shift+W on Windows,
 // where Ctrl+W is the shell's delete-word, and the same shape on a Mac, ⌘⇧W.
@@ -40,7 +41,9 @@ function closeTabs(workspaceId: string, tabIds: string[]): void {
 // alone leaves those tabs under a lead-less run row, which read as a close that did nothing.
 export function confirmCloseSession(vm: ClosingVM, model?: Pick<AgentsViewModel, "lineageAtom" | "agentsAtom">) {
     const ws = globalStore.get(atoms.workspace);
-    if (ws?.oid == null) {
+    // not while a wake relaunches it: the close would kill the process the wake waits on (every route lands here, the
+    // chord and the row menus included)
+    if (ws?.oid == null || isWaking(vm.id)) {
         return;
     }
     const runTabIds =

@@ -350,6 +350,12 @@ func CouncilContinueCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilContinu
 	return err
 }
 
+// command "councildelete", wshserver.CouncilDeleteCommand
+func CouncilDeleteCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilIdData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councildelete", data, opts)
+	return err
+}
+
 // command "councilestimate", wshserver.CouncilEstimateCommand
 func CouncilEstimateCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilEstimateData, opts *wshrpc.RpcOpts) (*wshrpc.CouncilEstimateRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CouncilEstimateRtnData](w, "councilestimate", data, opts)

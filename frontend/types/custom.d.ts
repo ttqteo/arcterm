@@ -77,6 +77,7 @@ declare global {
         getZoomFactor: () => number;
         openExternal: (url: string) => void;
         revealPath: (path: string) => void; // selects a file or folder in Finder / Explorer
+        openPath: (path: string) => void; // opens a document or media file in the OS's default app (commands.rs allowlist)
         onFullScreenChange: (callback: (isFullScreen: boolean) => void) => void;
         onZoomFactorChange: (callback: (zoomFactor: number) => void) => void;
         onControlShiftStateUpdate: (callback: (state: boolean) => void) => void;

@@ -5,7 +5,7 @@
 // dialog's Council row and the palette's New council… row. The fixture project holds the round2, awaiting, done and notrun
 // councils and a terminal; a second registered project holds a terminal and no council, and so no Councils block. Nothing
 // here starts a council or calls a model: New council only opens Setup, and Remove from queue (a queued council, step 10)
-// has its stop command replaced in the page.
+// and Remove council (an ended one, step 11) have their stop and delete commands replaced in the page.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). The tree is
 // read as one flat list (the rows of [data-agent-active-rows] in the order they are drawn), cut at each project's folder.
@@ -301,7 +301,10 @@ export const councilTree = {
         const queuedRow = (folderRows(await rows(), COUNCIL_PROJECT) ?? []).find((r) => r.kind === "council" && r.id === queued);
         const removeOf = (id) =>
             `document.querySelector(${JSON.stringify(`[data-council-row="${id}"]`)})?.parentElement?.querySelector('[data-council-act="remove"]')`;
-        const offered = await h.ev(`!!${removeOf(queued)} && document.querySelectorAll('[data-council-act="remove"]').length === 1`);
+        // a running or waiting council offers no Remove; an ended one offers Remove council (step 11), not this
+        const offered = await h.ev(
+            `${removeOf(queued)}?.title === "Remove from queue" && !${removeOf(councilFixtureId("round2"))} && !${removeOf(councilFixtureId("awaiting"))}`
+        );
         await h.shot("cdp-shots/council-tree-queued.png");
         await stubRpc(h, ["CouncilStopCommand"]);
         const removed = await h.ev(`(() => {
@@ -322,6 +325,26 @@ export const councilTree = {
                 stops.length === 1 &&
                 stops[0].data?.id === queued,
             JSON.stringify({ wording, queuedRow, offered, removed, stops })
+        );
+
+        // 11. an ended council offers Remove council behind a confirm; confirming asks wavesrv to delete it and the row
+        // goes at once
+        const doneId = councilFixtureId("done");
+        const doneRemove = await h.ev(`${removeOf(doneId)}?.title ?? null`);
+        await stubRpc(h, ["CouncilDeleteCommand"]);
+        await h.ev(`${removeOf(doneId)}?.click()`);
+        const dialog = `[...document.querySelectorAll("h2")].some((e) => e.textContent === "Remove council")`;
+        const asked = await until(dialog);
+        await h.shot("cdp-shots/council-tree-remove.png");
+        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilDeleteCommand").length >= 1`);
+        const deletes = await rpcCalls(h, "CouncilDeleteCommand");
+        const gone = await until(`!document.querySelector(${JSON.stringify(`[data-council-row="${doneId}"]`)})`);
+        await unstubRpc(h);
+        rec(
+            "11. an ended council offers Remove council, which asks first, then deletes it and drops its row",
+            doneRemove === "Remove council" && asked && deletes.length === 1 && deletes[0].data?.id === doneId && gone,
+            JSON.stringify({ doneRemove, asked, deletes, gone })
         );
 
         return steps;

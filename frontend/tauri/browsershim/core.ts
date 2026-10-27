@@ -13,6 +13,7 @@ const NO_OPS = [
     "fe_log",
     "open_external",
     "reveal_path", // a page has no file manager to open
+    "open_path", // nor a default app to hand a document to
     "notify_os",
     "hold_window_frame",
     "redirect_minimize",

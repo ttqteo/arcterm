@@ -29,6 +29,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Brainstorm mode: an agent's brainstorm opens beside its terminal, one question at a time, with a blind judge for
   approach questions and a builder check before you approve the run. Ask an agent to brainstorm a feature and its
   Brainstorm switch appears; Approve opens New run with the design attached. <!-- try: new-agent --> <!-- big -->
+- A file an agent names without its folder ("It's in docs/slide/ as Deck.pptx") is a link again: Ctrl+click finds
+  it in a folder named on the lines around it.
+- A deck, a sheet or a video an agent links to opens: the File panel, which shows only text, PDFs and images, now
+  offers Open (in PowerPoint, Excel or the file's own app) and Show in Explorer instead of a dead end.
+- Remove a council you are done with: hover its row in the Agent tree and click ×, right-click it, or click Remove in
+  its header. A council that is running or waits on you has to be stopped first; the document it saved stays.
 - Right-click a project's folder in the Agent tree and pick Open overview: one page with what in the project waits on
   you, what is running in it, and buttons to start an agent, a terminal, a run or a council there.
 - Right-click an app in the Agent tree and pick Hide (Stop and hide while it runs) to take its row out of the tree;
@@ -54,6 +60,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   a terminal no longer offers **Add as idea** (`Ctrl+Shift+I` does nothing), `wsh idea` and the `/idea` command are
   removed, and a council keeps its directions in its report rather than adding them to Ideas. The idea files already
   saved stay on disk, unread.
+- A project's Overview has a History column beside what needs you: its sessions, councils and runs of the last 7
+  days, searchable with /, and the agents that finished a turn you have not read. Running now lists the project's
+  runs, their workers counted as the Agent tree counts them, and three or more items of one kind in Needs you fold
+  into one row.
 - An agent's right-click menu has **Copy id** in place of Copy @mention: it copies the bare id, so pasting it to tell
   an agent about another one keeps the message with the agent you typed to, where a leading `@id` sent it away. Drag
   an agent onto a pane holding Alt still types its `@` token to message it.
@@ -64,9 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council reads shorter: its answer is one plain sentence and its summary a few, both in the language you asked in;
   each proposal keeps to a few sentences, and an expert who revises one says in a line what changed instead of
   repeating the whole new argument.
-
-### Changed
-
+- A row in Needs you unfolds when you click its text: a run to confirm lists each thing it left unverified, so you
+  know what to check before Accept.
 - A finished council opens on its answer: one sentence first, then the directions.
 - The council speaks in plain words (Agrees, Has doubts, Is against it) and ranks ideas by each expert's top three
   picks; an expert who agrees without a comment shows as a reaction under the idea, not as a reply.
@@ -81,6 +90,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A sleeping agent that a run's message (or yours) woke no longer stays shown as asleep when it took more than a few
   seconds to resume: its row and its terminal show it awake. One already stuck that way comes back with Wake, or with
   a message from its composer, without restarting it.
+- While a sleeping agent wakes, what would cut the wake short is off until it is back: Close, the header's … menu,
+  Send and Wake everywhere else, and Close agent in its row's menu.
 
 ## 0.15.17 — 2026-10-21
 

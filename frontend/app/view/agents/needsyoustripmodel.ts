@@ -174,7 +174,76 @@ export function buildNeedsYouRows(input: {
     return rows;
 }
 
+const UNVERIFIED_PREFIX = "Not verified: ";
+const ACK_HINT = /\.? Once read, accept it with `wsh runs ack [^`]*`\.$/;
+
+/** Pure: what a row's expanded detail lists, one line each. A run to confirm names each thing left unverified
+ *  (pkg/jarvis's run-unverified item joins them with "; " behind "Not verified: " and ends on the `wsh runs ack`
+ *  hint, which the row's Accept stands in for); every other kind's why is one line. Empty when there is none. */
+export function whyLines(row: Pick<StripRow, "why" | "run">): string[] {
+    const why = row.why.trim();
+    if (why === "") {
+        return [];
+    }
+    if (row.run.wireKind !== "run-unverified" || !why.startsWith(UNVERIFIED_PREFIX)) {
+        return [why];
+    }
+    return why
+        .slice(UNVERIFIED_PREFIX.length)
+        .replace(ACK_HINT, "")
+        .split("; ")
+        .map((s) => s.trim())
+        .filter((s) => s !== "");
+}
+
 /** Pure: how long an item has waited, as the cockpit's other ages read ("just now", "5m", "3h"). */
 export function stripAge(waitingSince: number | null, now: number): string {
     return waitingSince == null ? "" : formatAge(Math.max(0, now - waitingSince));
+}
+
+// three or more of a kind read as one row, "Run to confirm · 5 runs", that unfolds to them
+export const FOLD_AT = 3;
+
+export type NeedsYouEntry =
+    | { kind: "row"; row: StripRow }
+    | { kind: "group"; key: string; kindLabel: string; tone: StripRow["tone"]; rows: StripRow[] };
+
+/** Pure: the rows with each kind that has FOLD_AT or more folded into one group, placed where its first row stood; the
+ *  order is otherwise the server's. A learned rule never folds: each is decided on its own. */
+export function foldNeedsYouRows(rows: StripRow[]): NeedsYouEntry[] {
+    const byKind = new Map<string, StripRow[]>();
+    for (const r of rows) {
+        if (r.learnId == null) {
+            byKind.set(r.kindLabel, [...(byKind.get(r.kindLabel) ?? []), r]);
+        }
+    }
+    const out: NeedsYouEntry[] = [];
+    const placed = new Set<string>();
+    for (const r of rows) {
+        const same = r.learnId == null ? (byKind.get(r.kindLabel) ?? []) : [];
+        if (same.length < FOLD_AT) {
+            out.push({ kind: "row", row: r });
+        } else if (!placed.has(r.kindLabel)) {
+            placed.add(r.kindLabel);
+            out.push({ kind: "group", key: `group:${r.kindLabel}`, kindLabel: r.kindLabel, tone: r.tone, rows: same });
+        }
+    }
+    return out;
+}
+
+/** Pure: a group's ages, newest to oldest ("4–5d", "3h–2d"), one age when both read the same; rows with no age are
+ *  left out. */
+export function groupAge(rows: readonly Pick<StripRow, "waitingSince">[], now: number): string {
+    const since = rows.flatMap((r) => (r.waitingSince == null ? [] : [r.waitingSince]));
+    if (since.length === 0) {
+        return "";
+    }
+    const newest = stripAge(Math.max(...since), now);
+    const oldest = stripAge(Math.min(...since), now);
+    if (newest === oldest) {
+        return newest;
+    }
+    const unit = (s: string) => s.match(/[a-z]+$/i)?.[0] ?? "";
+    const head = unit(newest) !== "" && unit(newest) === unit(oldest) ? newest.slice(0, -unit(newest).length) : newest;
+    return `${head}–${oldest}`;
 }

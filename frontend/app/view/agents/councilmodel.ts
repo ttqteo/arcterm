@@ -78,6 +78,26 @@ export function councilProjectKey(project: string): string {
     return /^[a-z]:\//i.test(key) || /^[a-z]:$/i.test(key) ? key.toLowerCase() : key;
 }
 
+/** Pure: the registered project's name whose root is the council's project path, or null when none is. */
+export function councilProjectName(
+    registry: Readonly<Record<string, { path?: string }>> | null | undefined,
+    project: string
+): string | null {
+    const key = councilProjectKey(project);
+    for (const [name, p] of Object.entries(registry ?? {})) {
+        if (p?.path && councilProjectKey(p.path) === key) {
+            return name;
+        }
+    }
+    return null;
+}
+
+/** Pure: a council nothing works on any more (done, failed, stopped, not run), which Remove deletes. One running,
+ *  waiting on the person or queued has to be stopped first; wavesrv refuses it too (Runner.Delete). */
+export function canRemoveCouncil(c: Pick<Council, "state">): boolean {
+    return c.state === "done" || c.state === "failed" || c.state === "stopped" || c.state === "not-run";
+}
+
 // ---- stances, score, ranking ----
 
 /** Pure: per proposal id, each expert's last stance on it, from its replies (the last by time wins). The proposal's

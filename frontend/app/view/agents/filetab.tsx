@@ -8,12 +8,14 @@
 
 import { SkeletonLine } from "@/app/element/skeleton";
 import { ContextMenuModel } from "@/app/store/contextmenu";
+import { getApi } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { isHtmlPath, isMarkdownPath, languageForPath } from "@/app/view/code/codeclassify";
 import { isPinned } from "@/app/view/code/codepins";
 import { codePinsAtom, toggleCodePinIn } from "@/app/view/code/codestore";
 import { toggleWrap, useWrap } from "@/app/view/code/codewrap";
 import { pathMenuItems } from "@/app/view/code/pathmenu";
+import { PLATFORM, PlatformMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { Check, ChevronLeft, ChevronRight, FileCode2, GitCompare, Pin, WrapText } from "lucide-react";
@@ -35,7 +37,7 @@ import { DocFindBar } from "./docfindbar";
 import { OUTLINE_SELECTOR, OutlineButton } from "./docoutlineview";
 import { savedScroll, saveScroll } from "./filescroll";
 import { FileTabDiff } from "./filetabdiff";
-import { formatSize, readPanelFile, type PanelFile } from "./filetabload";
+import { canOpenInOsApp, formatSize, readPanelFile, type PanelFile } from "./filetabload";
 import { HtmlFrame } from "./htmlframe";
 import { ImageFrame } from "./imageframe";
 import { cancelBox, mdCommentAtom } from "./mdcommentstore";
@@ -369,6 +371,8 @@ export function FileTab({
             </Suspense>
         );
     } else {
+        // a deck, a sheet or a media file the panel cannot show opens in the OS's default app instead
+        const osOpen = (state.kind === "binary" || state.kind === "toolarge") && canOpenInOsApp(ref.abs);
         const msg =
             state.kind === "missing"
                 ? { title: "This file no longer exists", body: `${dir}${name} was deleted or moved.`, close: true }
@@ -376,20 +380,40 @@ export function FileTab({
                   ? { title: "Cannot read this file", body: state.message, close: !!ref.live }
                   : {
                         title: `${state.kind === "binary" ? "Binary file" : "Large file"}, ${formatSize(state.size)}`,
-                        body: "The panel shows text files up to 2 MB.",
+                        body: osOpen
+                            ? "The panel shows text files up to 2 MB, PDFs and images. Open it in its own app."
+                            : "The panel shows text files up to 2 MB.",
                         close: !!ref.live,
                     };
         body = (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-10 text-center">
                 <div className="text-[13px] font-semibold text-ink-hi">{msg.title}</div>
                 <div className="text-[12px] leading-[1.5] text-ink-mid">{msg.body}</div>
-                <button
-                    type="button"
-                    onClick={msg.close ? () => closeRailFile(agentId) : openCode}
-                    className={cn(BTN, "mt-1.5")}
-                >
-                    {msg.close ? "Close" : "Open in Code"}
-                </button>
+                <div className="mt-1.5 flex gap-2">
+                    {osOpen ? (
+                        <>
+                            <button
+                                type="button"
+                                data-file-os-open={ref.abs}
+                                onClick={() => getApi().openPath(ref.abs)}
+                                className={BTN}
+                            >
+                                Open
+                            </button>
+                            <button type="button" onClick={() => getApi().revealPath(ref.abs)} className={BTN}>
+                                {PLATFORM === PlatformMacOS ? "Show in Finder" : "Show in Explorer"}
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={msg.close ? () => closeRailFile(agentId) : openCode}
+                            className={BTN}
+                        >
+                            {msg.close ? "Close" : "Open in Code"}
+                        </button>
+                    )}
+                </div>
             </div>
         );
     }
