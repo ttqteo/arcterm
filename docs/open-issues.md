@@ -30,10 +30,16 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Waking holds the controls: click Wake on a sleeping agent's card. Until it is back the card reads
   Waking…, the composer's Send reads Waking… and is off, the header's … and × are dimmed and do nothing (right-click on
   the header opens no menu), and the agent's row menu greys Wake and Close agent. `wakingstore.ts`.
-- [ ] (arcterm) Needs you rows unfold: on a project's Overview (or the Cockpit strip), click the text of a "Run to
-  confirm" row. It shows ▾, the run's full title, then one `·` line per thing not verified, with no `wsh runs ack`
-  hint; a second click folds it. A row with no why (and a learned rule's, which keeps its Why toggle) does not
-  unfold. `needsyoustrip.tsx`.
+- [ ] (arcterm) Needs you rows unfold on the Cockpit strip (the Overview's are covered by `project-overview-history`
+  step 13): click the text of a "Run to confirm" row. It shows ▾, the run's full title, then one `·` line per thing
+  not verified, with no `wsh runs ack` hint; a second click folds it. A learned rule keeps its Why toggle.
+  `needsyoustrip.tsx`.
+- [ ] (arcterm) The Overview's Now and History on real data (run a6c8cb9e, 7442e2821; Final saw fixtures only): open
+  arcterm's Overview while a run works. Running has one row per run reading `N at work · done/total tasks`, and its
+  count equals the arcterm folder's green badge in the tree. History's Sessions lists the last 7 days' ended sessions
+  of arcterm (not stuck on grey rows; Final's shots 1 and 13 show the list still loading after a reload), Councils &
+  runs lists the councils and the runs with their land, and `/` focuses the search. The header shows the branch pill
+  and change count (they were missing once on 2026-10-27 with no error logged; `useProjectGit` swallows a failure).
 - [ ] (arcterm) Open a deck from the File panel: after installing a build with `open_path`, in the SIEM `website`
   agent's "It's in docs/slide/ as Early_Warning_Services_v1.4_271026_Sales.pptx" the bare file name is underlined on
   hover (its folder is read off the line above, `nearbyFolders`); Ctrl+click it: the panel reads "Binary file" with
