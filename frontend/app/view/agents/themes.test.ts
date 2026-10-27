@@ -77,7 +77,7 @@ describe("buildThemeVars — the default preset equals the @theme literals", () 
     }
 });
 
-for (const id of [DEFAULT_THEME_PRESET, "graphite", "spider"]) {
+for (const id of [DEFAULT_THEME_PRESET, "graphite", "slate", "spider"]) {
     describe(`${id} — contrast floor (DESIGN.md)`, () => {
         const p = activePalette(id);
         it("muted clears 4.5:1 on the background and on a hovered row", () => {

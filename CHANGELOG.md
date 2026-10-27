@@ -76,6 +76,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   repeating the whole new argument.
 - A row in Needs you unfolds when you click its text: a run to confirm lists each thing it left unverified, so you
   know what to check before Accept.
+
+### Changed
+
+- The Slate theme is a step lighter: its background, panels and borders lift a little, with the same blue-grey tone.
 - A finished council opens on its answer: one sentence first, then the directions.
 - The council speaks in plain words (Agrees, Has doubts, Is against it) and ranks ideas by each expert's top three
   picks; an expert who agrees without a comment shows as a reaction under the idea, not as a reply.
