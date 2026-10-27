@@ -21,6 +21,7 @@ import { NowTicker } from "@/app/view/agents/nowticker";
 import { setPathLinkModel } from "@/app/view/agents/pathlinkroute";
 import { BackgroundAgentsPoller } from "@/app/view/agents/backgroundagentspoller";
 import { AttentionPoller } from "@/app/view/agents/attentionpoller";
+import { BrainstormPoller } from "@/app/view/agents/brainstormpoller";
 import { LauncherModal } from "@/app/view/agents/launchermodal";
 import { floatNoteOpenAtom } from "@/app/view/agents/floatnotestore";
 import { setupMouseHistoryButtons, setupPageChordKeys, setupPageReloadKey } from "@/app/view/agents/appstore";
@@ -201,7 +202,8 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <NowTicker model={model} />
             <BackgroundAgentsPoller />
-            <AttentionPoller />
+            <AttentionPoller model={model} />
+            <BrainstormPoller model={model} />
             <PulseDriver />
             <PetSources model={model} />
             {/* folded into Sprout: everything else stays mounted under display:none, so the terminal never refits to

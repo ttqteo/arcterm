@@ -16,7 +16,6 @@ import {
     GitBranch,
     LayoutList,
     LayoutTemplate,
-    Lightbulb,
     Paperclip,
     Server,
     SquareTerminal,
@@ -238,7 +237,6 @@ function RailFileTab({
 }
 
 const STAT_ICON: Record<AgentRailStatId, LucideIcon> = {
-    ideas: Lightbulb,
     subagents: GitBranch,
     files: FileDiff,
     artifacts: LayoutTemplate,
@@ -248,7 +246,6 @@ const STAT_ICON: Record<AgentRailStatId, LucideIcon> = {
 };
 
 const STAT_LABEL: Record<AgentRailStatId, string> = {
-    ideas: "Ideas",
     subagents: "Subagents",
     files: "Files changed",
     artifacts: "Artifacts",
@@ -262,10 +259,8 @@ function statTitle(s: AgentRailStat, canAttach: boolean): string {
     switch (railStatAction(s)) {
         case "attach":
             return canAttach ? "Attach files: insert their paths at this agent's prompt" : "No uploads";
-        case "open": {
-            const counted = s.count == null ? label : `${label}: ${s.count}`;
-            return s.fresh && s.newCount ? `${counted}, ${s.newCount} new` : counted;
-        }
+        case "open":
+            return s.count == null ? label : `${label}: ${s.count}`;
         default:
             return `No ${label.toLowerCase()}`;
     }
@@ -322,7 +317,7 @@ export function RailStats({
                             }
                         }}
                         className={cn(
-                            "relative flex h-[26px] shrink-0 items-center gap-[3px] rounded-[6px] px-[5px] text-[11px] font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                            "flex h-[26px] shrink-0 items-center gap-[3px] rounded-[6px] px-[5px] text-[11px] font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
                             action === "open"
                                 ? "cursor-pointer text-muted hover:bg-surface-hover hover:text-primary"
                                 : live
@@ -332,15 +327,6 @@ export function RailStats({
                     >
                         <Icon size={13} strokeWidth={1.8} aria-hidden />
                         {s.count ? <span>{s.count}</span> : null}
-                        {s.fresh ? (
-                            // some of the list is new since the user last looked: a dot on the icon, ringed in the
-                            // strip's own colour so it reads against the count beside it
-                            <span
-                                data-rail-stat-dot
-                                aria-hidden
-                                className="absolute left-[12px] top-[3px] box-content h-[6px] w-[6px] rounded-full border-[1.5px] border-surface bg-primary"
-                            />
-                        ) : null}
                     </button>
                 );
             })}

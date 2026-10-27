@@ -11,7 +11,7 @@ import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget } from "@/util/util";
-import { atom, type Atom, type PrimitiveAtom } from "jotai";
+import { atom, useAtomValue, type Atom, type PrimitiveAtom } from "jotai";
 import { useEffect } from "react";
 import { type AgentVM } from "./agentsviewmodel";
 import { taskFoldKey, type TreeFolds } from "./agenttreemodel";
@@ -22,8 +22,8 @@ import {
     finalStageRoles,
     finalStageVM,
     isEndedWorkerId,
+    runInfoOf,
     runRoleOf,
-    runTitle,
     type Lineage,
     type RunInfo,
     type RunRole,
@@ -84,10 +84,6 @@ export function toggleTaskExtrasOpen(runId: string, taskId: string): void {
     globalStore.set(treeFoldsAtom, (f) => ({ ...f, extrasOpen: toggled(f.extrasOpen, taskFoldKey(runId, taskId)) }));
 }
 
-export function lastPathSegment(path: string | undefined): string {
-    return (path ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
-}
-
 // lineageAtomFor derives the lineage of the agents in agentsAtom. Reading a run or dag atom loads it on
 // first use, so an agent nests as soon as its run and dag arrive.
 export function lineageAtomFor(agentsAtom: Atom<AgentVM[]>): Atom<Lineage> {
@@ -116,24 +112,48 @@ export function lineageAtomFor(agentsAtom: Atom<AgentVM[]>): Atom<Lineage> {
                 continue;
             }
             const leadRun = role.kind === "lead" ? run : runOf(leadRunId);
-            runs[leadRunId] = {
-                runId: leadRunId,
-                channelId: leadRun?.channeloid || run.channeloid || "",
-                title: runTitle(leadRun, dag),
-                project: lastPathSegment(leadRun?.projectpath),
-                projectPath: leadRun?.projectpath || undefined,
-                leadStarted: (leadRun?.phases ?? []).some((p) => (p.workerorefs ?? []).length > 0),
-                originId: leadRun?.origintabid || undefined,
-                createdTs: leadRun?.createdts,
-                status: leadRun?.status,
-                landPath: leadRun?.landpath,
-                land: leadRun?.land,
-                dag,
-                digest: digests[leadRunId],
-            };
+            const info = runInfoOf(leadRunId, leadRun, dag, digests[leadRunId]);
+            runs[leadRunId] = { ...info, channelId: info.channelId || run.channeloid || "" };
         }
         return { roles: { ...roles, ...endedRoles(runs), ...finalStageRoles(runs) }, runs };
     });
+}
+
+export interface RunInfoRead {
+    run: RunInfo | undefined;
+    loaded: boolean;
+}
+
+const runInfoAtoms = new Map<string, Atom<RunInfoRead>>();
+
+// runInfoAtom is one run by its id, whether or not an agent of it is in the roster. A run Arc cannot find reads
+// undefined once loaded; until its dag has loaded too, the run is not loaded, so it never reads as dag-less.
+export function runInfoAtom(runId: string): Atom<RunInfoRead> {
+    let a = runInfoAtoms.get(runId);
+    if (a == null) {
+        a = atom((get) => {
+            const oref = WOS.makeORef("run", runId);
+            const run = get(WOS.getWaveObjectAtom<Run>(oref));
+            const dagOref = run?.dagoref ? WOS.makeORef("dag", run.dagoref) : undefined;
+            const dag = dagOref ? get(WOS.getWaveObjectAtom<TaskGroup>(dagOref)) : undefined;
+            const loaded =
+                !get(WOS.getWaveObjectLoadingAtom(oref)) &&
+                (dagOref == null || !get(WOS.getWaveObjectLoadingAtom(dagOref)));
+            const info = run ? runInfoOf(runId, run, dag, get(runDigestsAtom)[runId]) : undefined;
+            return { run: info, loaded };
+        });
+        runInfoAtoms.set(runId, a);
+    }
+    return a;
+}
+
+const NO_RUN = atom<RunInfoRead>({ run: undefined, loaded: true });
+
+// useRunInfo reads one run by its id and keeps its digest current while the caller is mounted.
+export function useRunInfo(runId: string | null): RunInfoRead {
+    const read = useAtomValue(runId ? runInfoAtom(runId) : NO_RUN);
+    useRunDigests(read.run ? [read.run] : []);
+    return read;
 }
 
 // runTranscriptPathsAtom holds each child run's transcript path once looked up, "" when none was found.

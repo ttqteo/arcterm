@@ -206,6 +206,10 @@ func configureAndStartWorker(ctx context.Context, tabID, blockID string, meta wa
 // environment, never from a project's .npmrc.
 var EngineToolEnv = map[string]string{"pnpm_config_verify_deps_before_run": "false"}
 
+// RunAgentEnv marks an agent a run started. Its questions go through the cockpit's ask tool, so the brainstorm
+// hook leaves it out of arc:brainstorm, which asks in the terminal instead.
+const RunAgentEnv = "ARC_RUN_AGENT"
+
 // makeWorkerBlockMeta builds the block meta for a run worker. keepOnExit is true for
 // orchestrator leads, whose tab must outlive the lead process while DAG children run.
 func makeWorkerBlockMeta(spec RunWorkerSpec, cwd string, keepOnExit bool) waveobj.MetaMapType {
@@ -214,10 +218,11 @@ func makeWorkerBlockMeta(spec RunWorkerSpec, cwd string, keepOnExit bool) waveob
 	if baseArgs == nil {
 		baseArgs = []string{}
 	}
-	env := make(map[string]any, len(EngineToolEnv))
+	env := make(map[string]any, len(EngineToolEnv)+1)
 	for k, v := range EngineToolEnv {
 		env[k] = v
 	}
+	env[RunAgentEnv] = "1"
 	m := waveobj.MetaMapType{
 		waveobj.MetaKey_CmdEnv:     env,
 		waveobj.MetaKey_View:       "term",

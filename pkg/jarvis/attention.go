@@ -304,6 +304,9 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 
 	for _, ch := range in.Channels {
 		for _, run := range ch.Runs {
+			if IsBrainstormSession(run) {
+				continue
+			}
 			if it, ok := landHeldItem(ch, run, in.Dags); ok {
 				gates = append(gates, it)
 			}

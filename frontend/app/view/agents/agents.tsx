@@ -17,6 +17,8 @@ import {
     type PendingLaunch,
 } from "./agentsviewmodel";
 import { answerAgentAsk } from "./askanswer";
+import { withBrainstorm } from "./brainstormmodel";
+import { brainstormsAtom, shownBrainstormFile } from "./brainstormstore";
 import { CockpitSurface } from "./cockpitsurface";
 import { devRosterAtom, loadDevMockRoster } from "./devmock";
 import { diffScopeAtom } from "./diffscopeatom";
@@ -156,8 +158,15 @@ export class AgentsViewModel implements ViewModel {
         }
         const base = this.baseRosterAtom;
         const pendingAtom = this.pendingLaunchesAtom;
-        // Booting launches overlay the roster until the reporter registers them (supersede by tabId).
-        this.agentsAtom = atom((get) => mergePendingLaunches(get(base), get(pendingAtom), Date.now()));
+        // Booting launches overlay the roster until the reporter registers them (supersede by tabId), and an
+        // agent whose brainstorm file holds an open question reads as asking.
+        this.agentsAtom = atom((get) => {
+            const now = Date.now();
+            const brainstorms = get(brainstormsAtom);
+            return mergePendingLaunches(get(base), get(pendingAtom), now).map((agent) =>
+                withBrainstorm(agent, shownBrainstormFile(brainstorms[agent.id]), now)
+            );
+        });
         this.lineageAtom = lineageAtomFor(this.agentsAtom);
         this.endedWorkerAtom = endedWorkerAtomFor(this.focusIdAtom, this.lineageAtom);
         this.finalStageAtom = finalStageAtomFor(this.focusIdAtom, this.lineageAtom);

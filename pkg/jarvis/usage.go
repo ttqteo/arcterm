@@ -29,7 +29,17 @@ const (
 	// UsageRole_LandResolver is a run's StageRole as well: the engine's session merging the base into a run's branch
 	// when a land conflicts.
 	UsageRole_LandResolver = "land-resolver"
+	// UsageRole_BuilderCheck is a run's StageRole as well: the one-shot reviewer of a brainstorm's builder check.
+	UsageRole_BuilderCheck = "builder-check"
+	// UsageRole_BrainstormJudge is a run's StageRole as well: the one-shot judge of a brainstorm's approach question.
+	UsageRole_BrainstormJudge = "brainstorm-judge"
 )
+
+// IsBrainstormSession reports the run of a brainstorm's one-shot session: a builder check or an approach judge. It
+// is bookkeeping for the session's usage and transcript, so the lists and attention a person reads leave it out.
+func IsBrainstormSession(r *waveobj.Run) bool {
+	return r.StageRole == UsageRole_BuilderCheck || r.StageRole == UsageRole_BrainstormJudge
+}
 
 // UsageRole is the part a run played in its dag: a dag-level judging session (its StageRole), the child that
 // reviews a task, the child that works one, or the lead that owns the dag.

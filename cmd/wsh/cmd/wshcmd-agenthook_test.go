@@ -129,6 +129,87 @@ func TestCanvasRevealFor(t *testing.T) {
 	}
 }
 
+func TestBrainstormRevealFor(t *testing.T) {
+	post := func(tool, path string) ccHookEvent {
+		input, _ := json.Marshal(map[string]string{"file_path": path})
+		return ccHookEvent{HookEventName: "PostToolUse", ToolName: tool, ToolInput: input}
+	}
+	root := t.TempDir()
+	file := filepath.Join(root, ".superpowers", "brainstorm", "consumer-lag-alerts", "brainstorm.json")
+	hits := map[string]ccHookEvent{
+		"write":           post("Write", file),
+		"edit":            post("Edit", file),
+		"multiedit":       post("MultiEdit", file),
+		"forward slashes": post("Write", root+"/.superpowers/brainstorm/consumer-lag-alerts/brainstorm.json"),
+	}
+	for name, ev := range hits {
+		address, cwd, ok := brainstormRevealFor(ev)
+		if !ok || address != "brainstorm:consumer-lag-alerts" || cwd != root {
+			t.Errorf("%s: got (%q, %q, %v)", name, address, cwd, ok)
+		}
+	}
+	pre := post("Write", file)
+	pre.HookEventName = "PreToolUse"
+	misses := map[string]ccHookEvent{
+		"before the write lands": pre,
+		"a read":                 post("Read", file),
+		"another file name":      post("Write", filepath.Join(root, ".superpowers", "brainstorm", "t", "notes.json")),
+		"nested under the topic": post("Write", filepath.Join(root, ".superpowers", "brainstorm", "t", "x", "brainstorm.json")),
+		"a relative path":        post("Write", filepath.Join(".superpowers", "brainstorm", "t", "brainstorm.json")),
+		"no file path":           {HookEventName: "PostToolUse", ToolName: "Write"},
+	}
+	for name, ev := range misses {
+		if address, _, ok := brainstormRevealFor(ev); ok {
+			t.Errorf("%s: revealed %q", name, address)
+		}
+	}
+}
+
+func TestBrainstormContextFor(t *testing.T) {
+	skill := func(name string) ccHookEvent {
+		input, _ := json.Marshal(map[string]string{"skill": name})
+		return ccHookEvent{HookEventName: "PostToolUse", ToolName: "Skill", ToolInput: input}
+	}
+	for _, name := range []string{"superpowers:brainstorming", "brainstorming"} {
+		if !brainstormContextFor(skill(name)) {
+			t.Errorf("%s: not ok", name)
+		}
+	}
+	pre := skill("superpowers:brainstorming")
+	pre.HookEventName = "PreToolUse"
+	notSkill := skill("superpowers:brainstorming")
+	notSkill.ToolName = "Read"
+	for name, ev := range map[string]ccHookEvent{
+		"another skill": skill("superpowers:writing-plans"),
+		"another tool":  notSkill,
+		"pre tool use":  pre,
+	} {
+		if brainstormContextFor(ev) {
+			t.Errorf("%s: ok", name)
+		}
+	}
+
+	out := skillContextOutput(skill("superpowers:brainstorming"), false)
+	var parsed struct {
+		HookSpecificOutput struct {
+			HookEventName     string `json:"hookEventName"`
+			AdditionalContext string `json:"additionalContext"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not json: %v", err)
+	}
+	if parsed.HookSpecificOutput.HookEventName != "PostToolUse" || !strings.Contains(parsed.HookSpecificOutput.AdditionalContext, "arc:brainstorm") {
+		t.Errorf("output = %q", out)
+	}
+	if skillContextOutput(skill("superpowers:writing-plans"), false) != "" {
+		t.Error("another skill produced output")
+	}
+	if skillContextOutput(skill("superpowers:brainstorming"), true) != "" {
+		t.Error("a run's agent was sent to arc:brainstorm")
+	}
+}
+
 func TestDetailForToolBashTruncated(t *testing.T) {
 	long := ""
 	for i := 0; i < 100; i++ {
@@ -186,29 +267,49 @@ func TestReadLastTitleMissing(t *testing.T) {
 	}
 }
 
-func TestLastUserPrompt(t *testing.T) {
-	// last user turn with human text wins; assistant/ai-title lines and tool_result-only user turns are ignored
-	lines := []string{
-		`{"type":"assistant","message":{"content":[]}}`,
-		`{"type":"user","message":{"content":"first ask"}}`,
-		`{"type":"user","message":{"content":[{"type":"tool_result","content":"file contents"}]}}`,
-		`{"type":"user","message":{"content":[{"type":"text","text":"/commit stage the diff"}]}}`,
-		`{"type":"ai-title","aiTitle":"x"}`,
+func TestReadLastTitleBeyondTail(t *testing.T) {
+	// a big turn (a skill body, an image) pushes the last ai-title out of the tail window; the row must keep
+	// it rather than fall back to head text
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	big := `{"type":"user","isMeta":true,"message":{"content":"` + strings.Repeat("x", transcriptTailBytes) + `"}}`
+	content := `{"type":"ai-title","aiTitle":"Brainstorm the panel"}` + "\n" + big + "\n" + `{"type":"user","message":{"content":"yes, A"}}` + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if got := lastUserPrompt(lines); got != "/commit stage the diff" {
-		t.Fatalf("lastUserPrompt = %q, want %q", got, "/commit stage the diff")
+	if got := readLastTitle(path); got != "Brainstorm the panel" {
+		t.Fatalf("title = %q, want the ai-title from before the tail", got)
 	}
 }
 
-func TestLastUserPromptStringAndEmpty(t *testing.T) {
-	if got := lastUserPrompt([]string{`{"type":"user","message":{"content":"hi there"}}`}); got != "hi there" {
-		t.Fatalf("string content = %q, want %q", got, "hi there")
+func TestReadFirstUserPrompt(t *testing.T) {
+	// the session's ask: meta turns (caveats, skill bodies) and tool_result-only turns are skipped, and later
+	// answers to the agent never replace it
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	content := strings.Join([]string{
+		`{"type":"user","isMeta":true,"message":{"content":"Caveat: local commands"}}`,
+		`{"type":"assistant","message":{"content":[]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","content":"r"}]}}`,
+		`{"type":"user","message":{"content":"<command-name>/arc:brainstorm</command-name>\n<command-args>add more interaction</command-args>"}}`,
+		`{"type":"user","isMeta":true,"message":{"content":[{"type":"text","text":"Base directory for this skill: C:\\x"}]}}`,
+		`{"type":"user","message":{"content":"Mine by default"}}`,
+		`{"type":"user","message":{"content":"brainstorm: approved"}}`,
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if got := lastUserPrompt([]string{`{"type":"assistant","message":{"content":"x"}}`}); got != "" {
-		t.Fatalf("no user turn -> %q, want empty", got)
+	if got := titleFromPrompt(readFirstUserPrompt(path)); got != "/arc:brainstorm add more interaction" {
+		t.Fatalf("title = %q, want the first human prompt", got)
 	}
-	if got := lastUserPrompt([]string{`{"type":"user","message":{"content":[{"type":"tool_result","content":"r"}]}}`}); got != "" {
-		t.Fatalf("tool_result-only user turn -> %q, want empty", got)
+}
+
+func TestReadFirstUserPromptNone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	os.WriteFile(path, []byte(`{"type":"assistant","message":{"content":"x"}}`+"\n"+`{"type":"user","message":{"content":[{"type":"tool_result","content":"r"}]}}`), 0o644)
+	if got := readFirstUserPrompt(path); got != "" {
+		t.Fatalf("no human turn -> %q, want empty", got)
+	}
+	if got := readFirstUserPrompt("/no/such/file"); got != "" {
+		t.Fatalf("missing file -> %q, want empty", got)
 	}
 }
 

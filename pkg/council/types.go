@@ -108,7 +108,6 @@ type CouncilDirection struct {
 	From      []string                 `json:"from"`    // proposal ids
 	Stances   map[string]CouncilStance `json:"stances"` // expert id -> stance; the authors are left out
 	Agreed    bool                     `json:"agreed"`
-	IdeaId    string                   `json:"ideaid,omitempty"`    // the line ideastore.Add made in the session's Ideas
 	FirstStep string                   `json:"firststep,omitempty"` // Brainstorm: the one thing to do first
 }
 

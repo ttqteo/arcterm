@@ -8,7 +8,6 @@ package wshclient
 import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/council"
-	"github.com/wavetermdev/waveterm/pkg/ideastore"
 	"github.com/wavetermdev/waveterm/pkg/storage"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
@@ -50,6 +49,12 @@ func AgentAskPendingCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts
 // command "agentcontrol", wshserver.AgentControlCommand
 func AgentControlCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentControlData, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[wshrpc.AgentControlMsg] {
 	return sendRpcRequestResponseStreamHelper[wshrpc.AgentControlMsg](w, "agentcontrol", data, opts)
+}
+
+// command "agentprompt", wshserver.AgentPromptCommand
+func AgentPromptCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentPromptData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "agentprompt", data, opts)
+	return err
 }
 
 // command "agentslist", wshserver.AgentsListCommand
@@ -194,6 +199,30 @@ func AuthenticateTokenVerifyCommand(w *wshutil.WshRpc, data wshrpc.CommandAuthen
 func BlocksListCommand(w *wshutil.WshRpc, data wshrpc.BlocksListRequest, opts *wshrpc.RpcOpts) ([]wshrpc.BlocksListEntry, error) {
 	resp, err := sendRpcRequestCallHelper[[]wshrpc.BlocksListEntry](w, "blockslist", data, opts)
 	return resp, err
+}
+
+// command "brainstormcheck", wshserver.BrainstormCheckCommand
+func BrainstormCheckCommand(w *wshutil.WshRpc, data wshrpc.CommandBrainstormCheckData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "brainstormcheck", data, opts)
+	return err
+}
+
+// command "brainstormchecktimes", wshserver.BrainstormCheckTimesCommand
+func BrainstormCheckTimesCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.BrainstormCheckTimes, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BrainstormCheckTimes](w, "brainstormchecktimes", nil, opts)
+	return resp, err
+}
+
+// command "brainstormjudge", wshserver.BrainstormJudgeCommand
+func BrainstormJudgeCommand(w *wshutil.WshRpc, data wshrpc.CommandBrainstormJudgeData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "brainstormjudge", data, opts)
+	return err
+}
+
+// command "brainstormjudgestop", wshserver.BrainstormJudgeStopCommand
+func BrainstormJudgeStopCommand(w *wshutil.WshRpc, data wshrpc.CommandBrainstormJudgeStopData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "brainstormjudgestop", data, opts)
+	return err
 }
 
 // command "cancelradarscan", wshserver.CancelRadarScanCommand
@@ -955,30 +984,6 @@ func GitReviewPatchCommand(w *wshutil.WshRpc, data wshrpc.CommandGitReviewPatchD
 func HtmlPreviewServeCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (string, error) {
 	resp, err := sendRpcRequestCallHelper[string](w, "htmlpreviewserve", data, opts)
 	return resp, err
-}
-
-// command "ideaadd", wshserver.IdeaAddCommand
-func IdeaAddCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaAddData, opts *wshrpc.RpcOpts) (*ideastore.Idea, error) {
-	resp, err := sendRpcRequestCallHelper[*ideastore.Idea](w, "ideaadd", data, opts)
-	return resp, err
-}
-
-// command "idealist", wshserver.IdeaListCommand
-func IdeaListCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaTargetData, opts *wshrpc.RpcOpts) (*ideastore.SessionIdeas, error) {
-	resp, err := sendRpcRequestCallHelper[*ideastore.SessionIdeas](w, "idealist", data, opts)
-	return resp, err
-}
-
-// command "ideatick", wshserver.IdeaTickCommand
-func IdeaTickCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaTargetData, opts *wshrpc.RpcOpts) (*wshrpc.CommandIdeaTickRtnData, error) {
-	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandIdeaTickRtnData](w, "ideatick", data, opts)
-	return resp, err
-}
-
-// command "ideaupdate", wshserver.IdeaUpdateCommand
-func IdeaUpdateCommand(w *wshutil.WshRpc, data wshrpc.CommandIdeaUpdateData, opts *wshrpc.RpcOpts) error {
-	_, err := sendRpcRequestCallHelper[any](w, "ideaupdate", data, opts)
-	return err
 }
 
 // command "jarvisctx", wshserver.JarvisCtxCommand

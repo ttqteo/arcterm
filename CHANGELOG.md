@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Brainstorm mode: an agent's brainstorm opens beside its terminal, one question at a time, with a blind judge for
+  approach questions and a builder check before you approve the run. Ask an agent to brainstorm a feature and its
+  Brainstorm switch appears; Approve opens New run with the design attached. <!-- try: new-agent --> <!-- big -->
 - A file an agent names without its folder ("It's in docs/slide/ as Deck.pptx") is a link again: Ctrl+click finds
   it in a folder named on the lines around it.
 - A deck, a sheet or a video an agent links to opens: the File panel, which shows only text, PDFs and images, now
@@ -53,6 +56,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Ideas are gone, since Brainstorm mode replaces them: an agent's rail has no Ideas count or section, selecting text in
+  a terminal no longer offers **Add as idea** (`Ctrl+Shift+I` does nothing), `wsh idea` and the `/idea` command are
+  removed, and a council keeps its directions in its report rather than adding them to Ideas. The idea files already
+  saved stay on disk, unread.
 - A project's Overview has a History column beside what needs you: its sessions, councils and runs of the last 7
   days, searchable with /, and the agents that finished a turn you have not read. Running now lists the project's
   runs, their workers counted as the Agent tree counts them, and three or more items of one kind in Needs you fold
@@ -669,7 +676,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   too.
 - **Keep a selection as an idea**: select text in an agent's terminal and press `Ctrl+Shift+I` (`Cmd+Shift+I` on a Mac),
   or click **Add as idea** beside the selection, to keep it in the agent's Ideas; the toast has Undo. With nothing
-  selected, the same keys open the Ideas box. <!-- try: idea-capture -->
+  selected, the same keys open the Ideas box.
 - **Setup → Project**: one place to see what shapes Claude in a project: its CLAUDE.md or AGENTS.md, its memory
   grouped by type, its settings and hooks, its skills, agents and commands, and `.arc/setup`. Pick a file to read it
   beside the list. <!-- try: go:setup -->

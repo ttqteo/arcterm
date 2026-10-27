@@ -6,7 +6,7 @@
 // runqueuestore.ts holds the atom and the actions, agenttree.tsx the row.
 
 import { formatAgo } from "./agentsviewmodel";
-import { lastPathSegment } from "./runlineagestore";
+import { lastPathSegment } from "./runlineage";
 
 // RunQueueEntry.state of an entry that can never start by waiting (pkg/wshrpc RunQueueState_Blocked)
 const BLOCKED = "blocked";

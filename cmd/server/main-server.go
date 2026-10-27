@@ -530,6 +530,7 @@ func main() {
 	orchestrate.LaunchLeadHook = wshserver.LaunchPlanLead                // a run submitted with no lead gets one at its first judgment event; before StartWatchdog, whose first tick can deliver one
 	orchestrate.MarkInterruptedRuns(context.Background())                // no worker survives a restart; the previous wavesrv's non-dag runs would otherwise read executing forever
 	orchestrate.ResumeInterruptedLeads(context.Background())             // nor does a dag run's lead, and unlike its workers nothing else restarts it
+	wshserver.ResumeBrainstormSessions(context.Background())             // a brainstorm's builder check or judge was watched by a goroutine the restart ended
 	orchestrate.StartWatchdog(context.Background())                      // dag advance + stall detection tick
 	agentask.AnswerHook = wshserver.RecordAskAnswered                    // one ask lifecycle row per delivered answer, whichever surface delivered it
 	blocklogger.InitBlockLogger()

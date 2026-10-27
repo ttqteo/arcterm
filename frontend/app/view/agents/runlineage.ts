@@ -34,6 +34,8 @@ export interface RunInfo {
     status?: string;
     // the run's own wave/<runId> tree, when its lanes land there instead of the checkout
     landPath?: string;
+    // the branch the run lands back into
+    base?: string;
     // where the run's branch stands on its way back into its base, once the run is done
     land?: RunLand;
     dag?: TaskGroup;
@@ -46,6 +48,36 @@ export interface Lineage {
 }
 
 export const NO_LINEAGE: Lineage = { roles: {}, runs: {} };
+
+export function lastPathSegment(path: string | undefined): string {
+    return (path ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
+}
+
+// runInfoOf is a run as the tree, the header and the brainstorm's Run step show it, from the lead's run, its dag and
+// the engine's digest.
+export function runInfoOf(
+    runId: string,
+    leadRun: Run | undefined,
+    dag: TaskGroup | undefined,
+    digest: DagStatusDigest | undefined
+): RunInfo {
+    return {
+        runId,
+        channelId: leadRun?.channeloid || "",
+        title: runTitle(leadRun, dag),
+        project: lastPathSegment(leadRun?.projectpath),
+        projectPath: leadRun?.projectpath || undefined,
+        leadStarted: (leadRun?.phases ?? []).some((p) => (p.workerorefs ?? []).length > 0),
+        originId: leadRun?.origintabid || undefined,
+        createdTs: leadRun?.createdts,
+        status: leadRun?.status,
+        landPath: leadRun?.landpath,
+        base: leadRun?.basebranch || undefined,
+        land: leadRun?.land,
+        dag,
+        digest,
+    };
+}
 
 // runRoleOf is an agent's part in a run. A dag's owning run is its lead's, a run the engine started for a stage
 // is that stage's, and any other run holding the dag is a task's child run. An orchestrator run with no dag yet,
@@ -314,10 +346,18 @@ export function taskStateLabel(task: TaskNode, now: number): string | undefined 
         : label;
 }
 
+// a brainstorm's builder check runs as a run of its own with this stage role, and no lead
+export const BUILDER_CHECK_ROLE = "builder-check";
+
+// a brainstorm's judge runs the same way: a run of its own, no lead
+export const BRAINSTORM_JUDGE_ROLE = "brainstorm-judge";
+
 const STAGE_LABELS: Record<string, string> = {
     "plan-reviewer": "Plan review",
     verifier: "Final verification",
     "land-resolver": "Conflict resolver",
+    [BUILDER_CHECK_ROLE]: "Builder check",
+    [BRAINSTORM_JUDGE_ROLE]: "Judge",
 };
 
 // stageLabel is what a stage session's row is titled.

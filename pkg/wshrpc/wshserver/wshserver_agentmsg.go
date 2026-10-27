@@ -339,6 +339,17 @@ func (ws *WshServer) AgentsSendCommand(ctx context.Context, data wshrpc.CommandA
 	}, nil
 }
 
+// AgentPromptCommand hands the cockpit's own prompt to a block's session. A session whose mod holds a
+// control stream runs it as a prompt, leaving the composer and the human's draft alone; any other is typed.
+func (ws *WshServer) AgentPromptCommand(ctx context.Context, data wshrpc.CommandAgentPromptData) error {
+	text := strings.TrimSpace(data.Text)
+	if data.BlockId == "" || text == "" {
+		return fmt.Errorf("a block id and a prompt are required")
+	}
+	deliverAgentMessage(data.BlockId, text)
+	return nil
+}
+
 func (ws *WshServer) AgentsReadCommand(ctx context.Context, data wshrpc.CommandAgentsReadData) (*wshrpc.CommandAgentsReadRtnData, error) {
 	facts, err := loadAgentRosterFacts(ctx)
 	if err != nil {

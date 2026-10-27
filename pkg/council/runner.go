@@ -18,8 +18,6 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/wavetermdev/waveterm/pkg/ideastore"
 )
 
 // Runner runs councils: the three rounds, the pause, the person's replies and follow-ups, retry and stop. Every
@@ -1360,7 +1358,6 @@ func (r *Runner) synthesize(ctx context.Context, rn *run, id string) error {
 	if err == nil {
 		sum = cleanSummary(snap, sum)
 		sum.At = at
-		addIdeas(snap, &sum)
 	}
 	r.finishCall(ctx, rn, id, coord, res, err, 3, func(c *Council) {
 		c.Summary = &sum
@@ -1425,65 +1422,6 @@ func cleanDirection(c *Council, d *CouncilDirection, panel map[string]bool) {
 		if !panel[expert] || authors[expert] {
 			delete(d.Stances, expert)
 		}
-	}
-}
-
-func titleKey(title string) string { return strings.ToLower(strings.Join(strings.Fields(title), " ")) }
-
-// firstSentence is text up to its first full stop, question mark or exclamation mark followed by a space, or all of it.
-func firstSentence(text string) string {
-	text = strings.Join(strings.Fields(text), " ")
-	for i, r := range text {
-		if (r == '.' || r == '?' || r == '!') && (i+1 == len(text) || text[i+1] == ' ') {
-			return text[:i+1]
-		}
-	}
-	return text
-}
-
-func ideaText(d CouncilDirection) string {
-	if s := firstSentence(d.Reasoning); s != "" {
-		return d.Title + ": " + s
-	}
-	return d.Title
-}
-
-// ideaTopic is "Council · <feature>", cut to the 40 runes an Ideas topic may hold.
-func ideaTopic(feature string) string {
-	const prefix, limit = "Council · ", 40
-	f := []rune(strings.Join(strings.Fields(feature), " "))
-	if room := limit - utf8.RuneCountInString(prefix); len(f) > room {
-		f = append(f[:room-1], '…')
-	}
-	return prefix + string(f)
-}
-
-// addIdeas files each direction of sum as an idea in the Ideas of the session that started the council, and keeps the
-// id on the direction. A direction whose title the previous Summary already had keeps that idea and adds no new one.
-func addIdeas(snap *Council, sum *CouncilSummary) {
-	if snap.SessionId == "" {
-		return
-	}
-	known := map[string]string{}
-	if snap.Summary != nil {
-		for _, d := range snap.Summary.Directions {
-			if d.IdeaId != "" {
-				known[titleKey(d.Title)] = d.IdeaId
-			}
-		}
-	}
-	for i := range sum.Directions {
-		d := &sum.Directions[i]
-		if ideaId, ok := known[titleKey(d.Title)]; ok {
-			d.IdeaId = ideaId
-			continue
-		}
-		idea, err := ideastore.Add(snap.SessionId, ideaText(*d), ideastore.KindIdea, ideastore.ByAgent, ideaTopic(snap.Feature))
-		if err != nil {
-			log.Printf("[council] %s: idea for %q not added: %v", snap.Id, d.Title, err)
-			continue
-		}
-		d.IdeaId = idea.ID
 	}
 }
 

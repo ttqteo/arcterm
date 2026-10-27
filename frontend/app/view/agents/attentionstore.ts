@@ -11,6 +11,8 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { AgentVM } from "./agentsviewmodel";
+import { asksUser, brainstormAttention } from "./brainstormmodel";
+import { shownBrainstormFile, type BrainstormState } from "./brainstormstore";
 import { needsHuman } from "./jarvisderive";
 
 export const attentionAtom = atom<AttentionItem[]>([]) as PrimitiveAtom<AttentionItem[]>;
@@ -55,6 +57,26 @@ export function cockpitWaitingCount(cockpit: AttentionItem[], agents: AgentVM[],
     const asking = agents.filter((a) => needsHuman(a, answered));
     const askKeys = new Set(asking.filter((a) => a.blockId).map((a) => `ask:block:${a.blockId}`));
     return asking.length + cockpit.filter((i) => !(i.kind === "ask" && askKeys.has(i.key))).length;
+}
+
+// brainstormAttentionItems are the questions asked in brainstorms, for the list the taskbar reads. The server list has
+// no such item: a brainstorm's question lives in the agent's file, which the frontend reads. An agent asks when its file
+// shows a question (a line Arc sent and the agent has not taken counts as it writing) and its turn ended. `roster` is the
+// un-overlaid one: the overlay (withBrainstorm) already reads an asking brainstorm as state "asking", which asksUser
+// would refuse. Roster order, one item per question: a new question number is a new key.
+export function brainstormAttentionItems(
+    roster: readonly AgentVM[],
+    brainstorms: Readonly<Record<string, BrainstormState>>
+): AttentionItem[] {
+    const items: AttentionItem[] = [];
+    for (const agent of roster) {
+        const b = brainstorms[agent.id];
+        const f = shownBrainstormFile(b);
+        if (f != null && asksUser(f, agent)) {
+            items.push(brainstormAttention({ agentId: agent.id, agentName: agent.name, topic: b.topic }, f));
+        }
+    }
+    return items;
 }
 
 // taskbarSignal decides what a new attention list does to the taskbar button. Only an item that was not

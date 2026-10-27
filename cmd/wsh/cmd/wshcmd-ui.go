@@ -43,7 +43,7 @@ var uiActionsCmd = &cobra.Command{
 
 var uiRevealCmd = &cobra.Command{
 	Use:     "reveal <address>",
-	Short:   "take the user to run:<id> channel:<id> agent:<tabid> task:<id> effort:<id> radarreport:<id> surface:<key> canvas:<topic>[/<board>], or show memnote:<id> in the avatar popup",
+	Short:   "take the user to run:<id> channel:<id> agent:<tabid> task:<id> effort:<id> radarreport:<id> surface:<key> canvas:<topic>[/<board>] brainstorm:<topic>, or show memnote:<id> in the avatar popup",
 	Args:    cobra.ExactArgs(1),
 	PreRunE: preRunSetupRpcClient,
 	RunE:    uiRevealRun,

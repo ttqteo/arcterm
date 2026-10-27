@@ -8,6 +8,8 @@
 // flipping diffScopeAtom directly when the picker jumps to a different agent).
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
+import { attachBrainstorm, detachBrainstorm, setBrainstormMode } from "@/app/view/agents/brainstormstore";
 import { attachCanvas, detachCanvas, setCanvasMode } from "@/app/view/agents/canvasstore";
 import { diffScopeAtom } from "@/app/view/agents/diffscopeatom";
 import { setDocReviewMode, syncDocReview } from "@/app/view/agents/docreviewstore";
@@ -153,7 +155,10 @@ describe("watchFocusedAgent", () => {
     });
 
     it("bumps on the focused agent's canvas changes and on a focus switch, and stops when unsubscribed", () => {
-        const model = { focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined> } as any;
+        const model = {
+            focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined>,
+            agentsAtom: atom([]),
+        } as any;
         attachCanvas("a1", A, 0);
         attachCanvas("a2", A, 0);
         const stop = watchFocusedAgent(model);
@@ -184,8 +189,85 @@ describe("watchFocusedAgent", () => {
         expect(globalStore.get(whenVersionAtom)).toBe(before);
     });
 
+    it("bumps on the focused agent's brainstorm changes and follows the focus, and stops when unsubscribed", () => {
+        const model = {
+            focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined>,
+            agentsAtom: atom([]),
+        } as any;
+        attachBrainstorm("a1", { topic: "t1", cwd: "/p" }, 0);
+        attachBrainstorm("a2", { topic: "t2", cwd: "/p" }, 0);
+        const stop = watchFocusedAgent(model);
+        try {
+            let before = globalStore.get(whenVersionAtom);
+            setBrainstormMode("a1", "brainstorm", 1);
+            expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+
+            before = globalStore.get(whenVersionAtom);
+            setBrainstormMode("a2", "brainstorm", 1); // not focused: nothing a predicate reads changed
+            expect(globalStore.get(whenVersionAtom)).toBe(before);
+
+            before = globalStore.get(whenVersionAtom);
+            globalStore.set(model.focusIdAtom, "a2");
+            expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+            before = globalStore.get(whenVersionAtom);
+            setBrainstormMode("a2", "terminal", 2); // now the focused one
+            expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+            before = globalStore.get(whenVersionAtom);
+            setBrainstormMode("a1", "terminal", 2); // the one focus left
+            expect(globalStore.get(whenVersionAtom)).toBe(before);
+            before = globalStore.get(whenVersionAtom);
+            detachBrainstorm("a2"); // the focused one going away is a change too
+            expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+        } finally {
+            stop();
+            detachBrainstorm("a1");
+            detachBrainstorm("a2");
+        }
+        attachBrainstorm("a2", { topic: "t2", cwd: "/p" }, 0);
+        const before = globalStore.get(whenVersionAtom);
+        setBrainstormMode("a2", "brainstorm", 3);
+        globalStore.set(model.focusIdAtom, "a1");
+        expect(globalStore.get(whenVersionAtom)).toBe(before);
+        detachBrainstorm("a2");
+    });
+
+    it("bumps when the focused agent's process exits, and follows the focus to the next agent's block", () => {
+        const model = {
+            focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined>,
+            agentsAtom: atom([
+                { id: "a1", blockId: "b1" },
+                { id: "a2", blockId: "b2" },
+            ]),
+        } as any;
+        const stop = watchFocusedAgent(model);
+        try {
+            let before = globalStore.get(whenVersionAtom);
+            globalStore.set(getProcExitAtom("b1"), { code: 0, at: 1 });
+            expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+
+            before = globalStore.get(whenVersionAtom);
+            globalStore.set(getProcExitAtom("b2"), { code: 0, at: 1 }); // not focused
+            expect(globalStore.get(whenVersionAtom)).toBe(before);
+
+            globalStore.set(model.focusIdAtom, "a2");
+            before = globalStore.get(whenVersionAtom);
+            globalStore.set(getProcExitAtom("b2"), undefined);
+            expect(globalStore.get(whenVersionAtom)).toBeGreaterThan(before);
+            before = globalStore.get(whenVersionAtom);
+            globalStore.set(getProcExitAtom("b1"), undefined); // the one focus left
+            expect(globalStore.get(whenVersionAtom)).toBe(before);
+        } finally {
+            stop();
+            globalStore.set(getProcExitAtom("b1"), undefined);
+            globalStore.set(getProcExitAtom("b2"), undefined);
+        }
+    });
+
     it("bumps on the focused agent's review changes, and not on another agent's", () => {
-        const model = { focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined> } as any;
+        const model = {
+            focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined>,
+            agentsAtom: atom([]),
+        } as any;
         const docAsk = (askId: string) => ({
             askId,
             questions: [{ header: "Doc review", question: "/r/main.tex", options: [{ label: "Approve" }] }],

@@ -321,8 +321,7 @@
           "ram": "accept",
           "newuser": "accept"
         },
-        "agreed": true,
-        "ideaid": "fx-idea-1"
+        "agreed": true
       },
       {
         "rank": 2,
@@ -336,8 +335,7 @@
           "newuser": "accept",
           "skeptic": "challenge"
         },
-        "agreed": true,
-        "ideaid": "fx-idea-2"
+        "agreed": true
       },
       {
         "rank": 3,
@@ -352,8 +350,7 @@
           "skeptic": "challenge",
           "ram": "oppose"
         },
-        "agreed": false,
-        "ideaid": "fx-idea-3"
+        "agreed": false
       },
       {
         "rank": 4,
@@ -367,8 +364,7 @@
           "ram": "accept",
           "skeptic": "oppose"
         },
-        "agreed": false,
-        "ideaid": "fx-idea-4"
+        "agreed": false
       }
     ],
     "outcomes": {

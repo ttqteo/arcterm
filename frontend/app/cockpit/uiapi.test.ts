@@ -191,9 +191,14 @@ describe("revealWaitsForUser", () => {
         expect(revealWaitsForUser("canvas:t/States", "b1")).toBe(false);
     });
 
+    it("lets an agent attach its brainstorm while the user is busy", () => {
+        expect(revealWaitsForUser("brainstorm:consumer-lag-alerts", "b1")).toBe(false);
+    });
+
     it("waits when the reveal moves the user", () => {
-        // with no caller a canvas reveal jumps to the agent that has it open
+        // with no caller a canvas or brainstorm reveal jumps to the agent that has it open
         expect(revealWaitsForUser("canvas:dag-activity-rail", undefined)).toBe(true);
+        expect(revealWaitsForUser("brainstorm:consumer-lag-alerts", undefined)).toBe(true);
         expect(revealWaitsForUser("run:abc", "b1")).toBe(true);
         expect(revealWaitsForUser("surface:files", "b1")).toBe(true);
     });
@@ -201,18 +206,29 @@ describe("revealWaitsForUser", () => {
 
 describe("revealLeavesTrail", () => {
     it("announces a canvas the caller did not have attached", () => {
-        expect(revealLeavesTrail("canvas:t", undefined)).toBe(true);
-        expect(revealLeavesTrail("canvas:t", "other")).toBe(true);
+        expect(revealLeavesTrail("canvas:t", {})).toBe(true);
+        expect(revealLeavesTrail("canvas:t", { canvas: "other" })).toBe(true);
     });
 
     it("stays quiet when the caller reveals the canvas it already has", () => {
-        expect(revealLeavesTrail("canvas:t", "t")).toBe(false);
-        expect(revealLeavesTrail("canvas:t/States", "t")).toBe(false);
+        expect(revealLeavesTrail("canvas:t", { canvas: "t" })).toBe(false);
+        expect(revealLeavesTrail("canvas:t/States", { canvas: "t" })).toBe(false);
+    });
+
+    it("announces a brainstorm the caller did not have attached", () => {
+        expect(revealLeavesTrail("brainstorm:t", {})).toBe(true);
+        expect(revealLeavesTrail("brainstorm:t", { brainstorm: "other" })).toBe(true);
+        // a canvas of the same name is not the brainstorm
+        expect(revealLeavesTrail("brainstorm:t", { canvas: "t" })).toBe(true);
+    });
+
+    it("stays quiet when the caller reveals the brainstorm it already has", () => {
+        expect(revealLeavesTrail("brainstorm:t", { brainstorm: "t" })).toBe(false);
     });
 
     it("announces every other move", () => {
-        expect(revealLeavesTrail("run:t", "t")).toBe(true);
-        expect(revealLeavesTrail("agent:t", "t")).toBe(true);
+        expect(revealLeavesTrail("run:t", { canvas: "t", brainstorm: "t" })).toBe(true);
+        expect(revealLeavesTrail("agent:t", { canvas: "t", brainstorm: "t" })).toBe(true);
     });
 });
 

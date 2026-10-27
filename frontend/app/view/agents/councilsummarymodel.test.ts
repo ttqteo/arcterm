@@ -94,7 +94,7 @@ const council = (extra: Partial<Council> = {}): Council => ({
     summary: {
         text: "",
         directions: [
-            direction(2, ["P5"], { stances: { ux: "accept", ram: "accept", nu: "accept" }, ideaid: "i7" }),
+            direction(2, ["P5"], { stances: { ux: "accept", ram: "accept", nu: "accept" } }),
             direction(1, ["P2", "P3"], { agreed: false, stances: { nu: "accept", sk: "challenge", ram: "oppose" } }),
         ],
         outcomes: {},
@@ -178,23 +178,23 @@ describe("directionRows", () => {
         ]);
     });
 
-    it("says where a direction came from, how many files and weak claims it cites, and that it is in Ideas", () => {
+    it("says where a direction came from, and how many files and weak claims it cites", () => {
         const rows = directionRows(council());
         expect(rows[0].meta).toBe("from UX and RAM · 1 file · 1 weak claim");
-        expect(rows[1].meta).toBe("from Skeptic · 1 file · in Ideas");
+        expect(rows[1].meta).toBe("from Skeptic · 1 file");
     });
 
     it("names no proposal id and no Merged in a line of facts", () => {
         const c = council({
             summary: {
                 text: "",
-                directions: [direction(1, ["P2", "P3"], { ideaid: "i1" })],
+                directions: [direction(1, ["P2", "P3"])],
                 outcomes: {},
                 at: 15,
             },
         });
         const [row] = directionRows(c);
-        expect(row.meta).toBe("from UX and RAM · 1 file · 1 weak claim · in Ideas");
+        expect(row.meta).toBe("from UX and RAM · 1 file · 1 weak claim");
         expect(row.meta).not.toMatch(/\bP\d+\b|Merged/);
     });
 
@@ -282,7 +282,7 @@ describe("a Brainstorm report", () => {
     });
 
     it("keeps the from line, not Had it, in a Review report", () => {
-        expect(directionRows(council())[1].meta).toBe("from Skeptic · 1 file · in Ideas");
+        expect(directionRows(council())[1].meta).toBe("from Skeptic · 1 file");
     });
 
     it("lists the wild ideas kept aside with who had them and why", () => {
@@ -627,7 +627,7 @@ describe("initiativeSeed", () => {
 });
 
 describe("brainstormPrompt", () => {
-    it("holds the direction, its reasoning, its proposals and its thread, and asks to record it first", () => {
+    it("holds the direction, its reasoning, its proposals and its thread, and asks to start brainstorming it", () => {
         const c = council({ question: "What first?" });
         const row = directionRows(c)[0];
         const prompt = brainstormPrompt(c, row);
@@ -639,8 +639,8 @@ describe("brainstormPrompt", () => {
         expect(prompt).toContain('- "title P2" by UX: argument P2.');
         expect(prompt).toContain('- RAM on "title P2" (Is against it): holds a whole dev server');
         expect(prompt).toContain('- You on "title P2": does this change on a Mac?');
-        expect(prompt).toContain("wsh idea add");
-        expect(prompt.indexOf("wsh idea add")).toBeGreaterThan(prompt.indexOf("The thread:"));
+        expect(prompt).toContain("Start brainstorming it with me.");
+        expect(prompt.indexOf("Start brainstorming it with me.")).toBeGreaterThan(prompt.indexOf("The thread:"));
     });
 
     it("names proposals by title and author, never by id", () => {

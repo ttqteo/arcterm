@@ -38,3 +38,22 @@ export async function startLauncherRun(input: LauncherRunInput): Promise<{ chann
     endRunConfigDraft(globalStore.get(resolvedProfileAtom)[channelId]);
     return { channelId, run };
 }
+
+/** A started run's handback: the caller that filled the dialog (a brainstorm's Approve, through the prefill's
+ *  onStarted) hears the run's id and follows the run itself, so the person stays where they are: "stay". With no caller
+ *  the start lands on the run's Brief: "land". A throwing handback still stays: the run exists, and the person was
+ *  working somewhere else. */
+export function handBackStartedRun(
+    onStarted: ((runId: string) => void) | null | undefined,
+    runId: string
+): "stay" | "land" {
+    if (onStarted == null) {
+        return "land";
+    }
+    try {
+        onStarted(runId);
+    } catch (e) {
+        console.warn("the caller that filled the launcher failed to take its run's id", runId, e);
+    }
+    return "stay";
+}

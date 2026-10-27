@@ -90,7 +90,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   `docs/superpowers/specs/2026-10-22-council-agent-team-design.md` (Phases, Ahead of Phase 0b).
 - [ ] (arcterm) Council from an agent: in a claude session, let it start a council (the `arc:council` skill).
   `wsh council start` shows the Token burn gate card with the estimate; allow it and the council runs, and
-  `wsh council wait` prints the Summary and Matrix back into the session, with the directions in that session's Ideas.
+  `wsh council wait` prints the Summary and Matrix back into the session.
   Run it again and refuse the card: the agent reports `Not run: …` without retrying, the project has a `Not run`
   council row, and its Discussion's Start council (with the estimate) runs it. `cmd/wsh/cmd/wshcmd-council.go`,
   `skills/council/SKILL.md`, `pkg/tokengate`.
@@ -108,11 +108,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   starts by itself. The finished council's report reads `Saved to docs/council/….md with the whole discussion`, and
   that file exists. `pkg/council/prompts.go`, `runner.go`, `frontend/app/view/agents/agenttree.tsx`; spec
   `docs/superpowers/specs/2026-10-22-council-agent-team-design.md`.
-- [ ] (arcterm) Ask the council: in a real agent session with an open `question` line in its Ideas, click Ask the
-  council. Setup opens with the question filled in, the session's project and a group the coordinator suggests; Start
-  council runs it and, after a real run, the directions come back into that session's Ideas (not a copy in another
-  session). `frontend/app/view/agents/ideassection.tsx`, `councilsetup.tsx`; the runner files them with the council's
-  `sessionid`.
 - [ ] (arcterm) Council Setup, the parts a person has to try: "+ Add a file or folder" opens the OS pickers and the
   chosen paths show as file chips; a screenshot pasted into Setup shows its thumbnail and reaches round 1 (the experts
   open it with Read); Save as group names the current panel and the group is in the group menu the next time Setup
@@ -272,7 +267,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   the head; with more than six projects the Initiatives filter is one "project" menu in the head; right-click a row
   and the arrows move the menu's highlight, Escape closes it without leaving the Brief. (6a225bc59)
 - [ ] (arcterm) Kael sync: after an agent launch, a new Claude session lists the skills as arc:runs, arc:cockpit,
-  arc:design, arc:initiatives, arc:notes, arc:doc-review, arc:ideas, arc:learn (none twice), ~/.claude/skills no longer
+  arc:design, arc:initiatives, arc:notes, arc:doc-review, arc:learn (none twice), ~/.claude/skills no longer
   holds cockpit-runs and the rest, and Setup → Skills shows them in sync; a rule approved through `wsh learn` for
   cockpit-runs now shows under runs. (1cd40ef02)
 - [ ] (arcterm) Background task Stop inside its card: with a running background task, open the Agent rail's Background
@@ -601,13 +596,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 - [ ] With one agent asking and one run waiting to be confirmed: the Cockpit nav badge says 1, the same as its "need
   you" tab, and Jarvis says 1. Confirm the run in Jarvis and its badge goes away. `attentionstore.ts` `splitAttention`.
-
-**2026-10-14 (brainstorm ideas, run ee18a780)**
-
-- [ ] In an agent tab, type `/idea` (or `/arc:idea`): Claude Code lists the command and runs it, and the idea lands in
-  the rail's Ideas section. `claude plugin validate` does not inspect `commands/`. `claude/arc-mod/commands/idea.md`.
-- [ ] On a Mac, select text in an agent's terminal and press Cmd+Shift+I: a toast with Undo, and the line in Ideas;
-  with nothing selected the Ideas box opens. `ideasstore.ts` `runIdeaCapture`.
 
 **2026-10-14 (Conversations rescan)**
 
@@ -1186,6 +1174,18 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   (`project-overview-8.png`; present in step 4), so check they come back each time the page opens; and the Cockpit's
   Needs you rows inside the Overview's panel keep the strip's small type and fixed label columns, unlike the asking
   rows above them. Say if either reads wrong.
+- [ ] (arcterm) **A real Brainstorm with a Claude agent.** In the dev app, start a Claude agent on a scratch project, ask
+  it to brainstorm a small feature, and drive it only through the pane: the Brainstorm switch appears on the agent's
+  first write of `brainstorm.json`; each answer is one write per turn, with a short terminal reply; an approach question shows "Judge's read" and
+  "Judge's pick" once the real blind Opus judge is done (a tab "Judge" nests under the agent); Check with a builder
+  runs a real reviewer (its "Builder check" row nests under the agent) and its questions come back without a second
+  question from the agent; Approve opens New run prefilled (orchestrator, the project, the spec's path in the goal, the
+  first board as prototype); start the run and `run` is set in the file after it starts, so the tree line and the bar
+  name the run. The scenarios play the agent and the server; none of this ran against a model. `docs/agents/brainstorm.md`
+  "Testing it", `docs/deferred.md` "Builder check end to end" and "Brainstorm judge end to end".
+- [ ] (arcterm) **A real Brainstorm with a pi agent.** The same, with a pi agent: pi has no reveal hook, so the skill has it
+  run `wsh ui reveal brainstorm:<topic>` itself after writing the file; check the pane opens then, and that the
+  judge and the builder check (both Arc's own sessions) work the same.
 
 ---
 
@@ -1483,6 +1483,7 @@ setting; that call is the person's. Layers are the compact RAM popup's.
 
 | Feature | Commit | Layer | Measured | Date | Verdict |
 |---|---|---|---|---|---|
+| Brainstorm: `BrainstormPoller` (`brainstormpoller.ts`), always mounted in the cockpit root, reads every attached brainstorm's `brainstorm.json` every 3 s (`BRAINSTORM_POLL_MS`), one FileInfo and one small read per attached agent, and a pane's boards are live iframes while it is open | `ca4fce1c0` | Interface | Not measured. A timer that stays on for the life of the app and costs one file read per brainstorming agent per tick; the parsed file is held per agent in `brainstormsAtom`. To read: the page's JS heap after a GC and the renderer's CPU over a minute idle with 0, then 4 agents each brainstorming, and with a pane open on boards (the thumbnails are iframes). | 2026-10-27 | pending |
 | Council: round 1 runs one `claude -p` per expert at once (four in the shipped groups), each read-only with `Read, Grep, Glob`; rounds 2 and 3 are text-only calls. A council holds no process between rounds | `7abb6f4ab` | arcterm (wavesrv) and the experts' `claude` processes | Not measured. The runner's own cost is a goroutine per call and one JSON file per council (rewritten on every reply). Each tool call claims 512 MiB from the job queue (`toolSlotBytes` in `pkg/council/caller.go`), a guess for a claude process reading a project. To read: the working set of the four `claude` processes (and wavesrv's) during round 1 of the first real council, and whether the queue held any of them. | 2026-10-21 | pending |
 | Pinned apps: each open app's page kept loaded out of sight for 1 min (`APP_FRAME_IDLE_MS`, `AppFrames` in `apppane.tsx`), so it keeps its page and scroll | uncommitted | Interface | Not measured. One frame, a renderer of its own (127.0.0.1 is cross-site to the cockpit), per app seen in the last minute, where before only the app on screen held one; a guess of 50–150 MB each for a dev page. To read: the WebView2 working set with two apps open, one out of sight, then past the minute. | 2026-10-19 | pending |
 | Held services: wavesrv holds every pinned app's server (`pkg/services`), each one `cmd` terminal block in a tab of its own; only a shown (or just left, or Keep-running) service runs, a sleeping one holds 0 MB | uncommitted | arcterm (wavesrv) and the apps' processes | Not measured. arcterm's own cost is one PTY and one goroutine per running service, a timer per service off screen, and once its minute is up one read of its process tree a minute (`services.Busy`) until it is idle, plus a readiness probe (an HTTP GET every 500 ms, up to 30 s) only while a service is starting; nothing polls while one runs or is shown. A sleeping service has no process. The running services' own RAM is the apps', not arcterm's. To read: wavesrv's working set with 0, 5 and 10 services running. | 2026-10-20 | pending |

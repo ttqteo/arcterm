@@ -509,8 +509,7 @@ func councilScreenshots(cmd *cobra.Command) ([]string, error) {
 	return out, nil
 }
 
-// councilSession is the agent session that starts the council, whose Ideas the directions come back into: --session,
-// else the session of the terminal this runs in.
+// councilSession is the agent session that starts the council: --session, else the session of the terminal this runs in.
 func councilSession(cmd *cobra.Command) string {
 	if s := mustFlagString(cmd, "session"); s != "" {
 		return s
@@ -836,7 +835,7 @@ func addCouncilStartFlags(cmd *cobra.Command) {
 	f.StringArray("screenshot", nil, "a screenshot (png) the experts open with Read; repeat the flag for more")
 	f.Bool("pause", false, "stop after round 1 so the person can cut proposals and ask a question")
 	f.Bool("queue", false, "accepted and ignored: one council runs at a time across all projects, so a start while another runs is always queued")
-	f.String("session", "", "the agent session that starts it, whose Ideas get the directions; defaults to the session in this terminal")
+	f.String("session", "", "the agent session that starts it; defaults to the session in this terminal")
 }
 
 func init() {

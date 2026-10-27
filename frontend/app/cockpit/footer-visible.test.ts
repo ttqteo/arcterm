@@ -11,11 +11,13 @@ import {
 import { listNavAtom } from "@/app/store/keybindings/listnav";
 import type { Binding, KeyContext, SurfaceKey } from "@/app/store/keybindings/types";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
+import { setAgentView } from "@/app/view/agents/agentview";
+import { attachBrainstorm, detachBrainstorm, openBrainstormBoard } from "@/app/view/agents/brainstormstore";
 import { attachCanvas, detachCanvas, setCanvasMode, setMarking, updateCanvas } from "@/app/view/agents/canvasstore";
 import type { OpenTarget } from "@/app/view/jarvis/address";
 import { setPlatform } from "@/util/platformutil";
 import { atom, type PrimitiveAtom } from "jotai";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { heldHints, visibleHints } from "./footer-visible";
 import { GLOBAL_HINTS, SURFACE_HINTS, type FooterHint } from "./footerhints";
 
@@ -148,6 +150,77 @@ describe("agent canvas mode chips", () => {
             setMarking("a1", false);
             setCanvasMode("a1", "terminal", 2);
         }
+    });
+});
+
+describe("agent brainstorm mode chips", () => {
+    const model = {
+        focusIdAtom: atom<string | undefined>("a1") as PrimitiveAtom<string | undefined>,
+        surfaceAtom: atom<SurfaceKey>("agent"),
+        agentsAtom: atom([]),
+    } as any;
+    const real = [...buildGlobalBindings(model), ...buildAgentBindings(model)];
+    const chips = (ctx: KeyContext = rest) =>
+        visibleHints(ctx, real, SURFACE_HINTS.agent!, GLOBAL_HINTS).map((c) => `${c.glyph ?? c.keys} ${c.label}`);
+    const globals = () => visibleHints(rest, real, [], GLOBAL_HINTS).map((c) => `${c.glyph ?? c.keys} ${c.label}`);
+    // the pane's answer box, which holds focus while the question is up
+    const inPane = () =>
+        vi.stubGlobal("document", {
+            activeElement: { closest: (sel: string) => (sel === "[data-brainstorm-pane]" ? {} : null) },
+        });
+
+    beforeEach(() => {
+        attachBrainstorm("a1", { topic: "t", cwd: "/p" }, 0);
+    });
+
+    afterEach(() => {
+        detachBrainstorm("a1");
+        vi.unstubAllGlobals();
+    });
+
+    it("terminal mode with a brainstorm offers b brainstorm, and the chord that works inside the terminal", () => {
+        expect(chips()).toContain("b brainstorm");
+        expect(chips()).toContain("Alt:c switch view");
+        expect(chips({ ...rest, editable: true })).toContain("Ctrl:Shift:b brainstorm");
+        expect(chips({ ...rest, editable: true })).not.toContain("b brainstorm");
+    });
+
+    it("brainstorm mode lists the pane's keys: the way back to the terminal, then the globals", () => {
+        setAgentView("a1", "brainstorm", 1);
+        expect(chips()).toEqual([
+            "↑↓ move",
+            "Alt:c switch view",
+            "Ctrl:Shift:b brainstorm",
+            "Ctrl:Tab switch",
+            "b terminal",
+            ...globals(),
+        ]);
+    });
+
+    it("with a board or the design open over the question, esc back joins the list", () => {
+        setAgentView("a1", "brainstorm", 1);
+        openBrainstormBoard("a1", "Split.dc.html");
+        expect(chips()).toContain("esc back");
+        openBrainstormBoard("a1", null);
+        expect(chips()).not.toContain("esc back");
+    });
+
+    it("typing in the pane's answer box shows Enter send, and the chord that still leaves", () => {
+        setAgentView("a1", "brainstorm", 1);
+        inPane();
+        const typing = chips({ ...rest, editable: true });
+        expect(typing).toContain("⏎ send");
+        expect(typing).toContain("Ctrl:Shift:b brainstorm");
+        expect(typing).not.toContain("b terminal"); // b types a letter there
+    });
+
+    it("Enter send is the pane's alone: not in the terminal, not on another field of the surface", () => {
+        expect(chips({ ...rest, editable: true })).not.toContain("⏎ send"); // terminal mode
+        setAgentView("a1", "brainstorm", 1);
+        vi.stubGlobal("document", { activeElement: { closest: () => null } });
+        expect(chips({ ...rest, editable: true })).not.toContain("⏎ send");
+        inPane();
+        expect(chips(rest)).not.toContain("⏎ send"); // a focused button, not a field
     });
 });
 

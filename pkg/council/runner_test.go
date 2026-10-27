@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/consult"
-	"github.com/wavetermdev/waveterm/pkg/ideastore"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 )
 
@@ -357,7 +356,6 @@ type harness struct {
 	t     *testing.T
 	r     *Runner
 	f     *fakeCaller
-	ideas string // the root the ideas store uses
 	clock int64
 
 	mu   sync.Mutex
@@ -368,8 +366,7 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 	useTempRoot(t)
 	useTempConfig(t)
-	h := &harness{t: t, f: newFake(), ideas: t.TempDir(), clock: 1_700_000_000_000}
-	t.Cleanup(ideastore.UseRootForTest(h.ideas))
+	h := &harness{t: t, f: newFake(), clock: 1_700_000_000_000}
 	h.r = &Runner{Caller: h.f, Now: h.tick, OnChange: func(c *Council) {
 		h.mu.Lock()
 		defer h.mu.Unlock()
@@ -1708,70 +1705,6 @@ func TestCancellingTheContextStopsTheCouncil(t *testing.T) {
 	cancel()
 	if c := h.wait("c1"); c.State != StateStopped || len(c.Failed) != 0 {
 		t.Fatalf("after cancel: %s failed %v, want stopped", c.State, c.Failed)
-	}
-}
-
-// ---- ideas ----
-
-func TestDirectionsBecomeIdeasInTheStartingSession(t *testing.T) {
-	h := newHarness(t)
-	c := testCouncil("c1")
-	c.SessionId = "sess1"
-	c = h.run(c)
-	list, err := ideastore.List("sess1")
-	if err != nil || len(list.Ideas) != 2 {
-		t.Fatalf("ideas = %+v, %v, want one per direction", list.Ideas, err)
-	}
-	want := []string{"Show the sleep state: Cheap and clear.", "Poll less: Saves RAM."}
-	for i, idea := range list.Ideas {
-		if idea.Text != want[i] || idea.Kind != ideastore.KindIdea || idea.By != ideastore.ByAgent || idea.Topic != "Council · Idle sleep for services" {
-			t.Errorf("idea %d = %+v, want %q as an agent's idea under the council topic", i, idea, want[i])
-		}
-		if got := c.Summary.Directions[i].IdeaId; got != idea.ID {
-			t.Errorf("direction %d IdeaId %q, want %q", i, got, idea.ID)
-		}
-	}
-
-	// a second Summarize adds only the directions whose title is new
-	h.f.setText("lead/r3", titledSynthesis("Again.", "SHOW the sleep  state", "Brand new"))
-	if _, err := h.r.Summarize("c1"); err != nil {
-		t.Fatal(err)
-	}
-	c2 := h.wait("c1")
-	list, _ = ideastore.List("sess1")
-	if len(list.Ideas) != 3 || list.Ideas[2].Text != "Brand new: Reason for Brand new." {
-		t.Fatalf("ideas after the second Summarize = %+v, want one new idea", list.Ideas)
-	}
-	if d := c2.Summary.Directions; d[0].IdeaId != list.Ideas[0].ID || d[1].IdeaId != list.Ideas[2].ID {
-		t.Errorf("direction idea ids = %q, %q, want the first kept and the second new", d[0].IdeaId, d[1].IdeaId)
-	}
-}
-
-func TestACouncilWithoutASessionAddsNoIdeas(t *testing.T) {
-	h := newHarness(t)
-	c := h.run(testCouncil("c1"))
-	if c.Summary == nil || c.Summary.Directions[0].IdeaId != "" {
-		t.Fatalf("summary %+v, want directions with no idea id", c.Summary)
-	}
-	if _, err := os.Stat(filepath.Join(h.ideas, ideastore.IdeasDir)); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("the ideas dir exists (%v): a council with no session wrote to some session's Ideas", err)
-	}
-}
-
-func TestIdeaTopicFitsTheLimit(t *testing.T) {
-	long := strings.Repeat("a long feature name ", 10)
-	topic := ideaTopic(long)
-	if n := len([]rune(topic)); n > 40 || !strings.HasPrefix(topic, "Council · a long feature") || !strings.HasSuffix(topic, "…") {
-		t.Errorf("ideaTopic = %q (%d runes), want it cut to 40 with an ellipsis", topic, n)
-	}
-	if got := ideaTopic("  Idle   sleep "); got != "Council · Idle sleep" {
-		t.Errorf("ideaTopic = %q, want whitespace folded", got)
-	}
-	if got := firstSentence("Saves  RAM. It also helps.\nA third."); got != "Saves RAM." {
-		t.Errorf("firstSentence = %q", got)
-	}
-	if got := firstSentence("v1.2 is out and no stop at the end"); got != "v1.2 is out and no stop at the end" {
-		t.Errorf("firstSentence = %q, want a dot inside a word passed over", got)
 	}
 }
 

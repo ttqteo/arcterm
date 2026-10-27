@@ -9,10 +9,31 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { activeNavOrder } from "@/app/view/agents/activenav";
 import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentactions";
 import { centerModeAtom, showCanvases, showHistory, showTerminal } from "@/app/view/agents/agentcenter";
+import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { nextAgentView, setAgentView } from "@/app/view/agents/agentview";
+import {
+    checkMain,
+    checkReview,
+    OPTION_KEYS,
+    optionLetter,
+    paneBack,
+    paneView,
+    pickableOptions,
+    type BrainstormAction,
+    type ReviewRow,
+} from "@/app/view/agents/brainstormmodel";
+import { sendBrainstorm } from "@/app/view/agents/brainstormsend";
+import {
+    focusedBrainstorm,
+    moveReviewCursor,
+    openBrainstormBoard,
+    openBrainstormDesign,
+    shownBrainstormFile,
+    toggleReviewRow,
+} from "@/app/view/agents/brainstormstore";
 import {
     cancelCleanup,
     canvasGalleryAtom,
@@ -45,8 +66,6 @@ import {
     refreshHistory,
 } from "@/app/view/agents/githistorystore";
 import { anyFilterActive } from "@/app/view/agents/historyquery";
-import { sessionIdFromTranscript } from "@/app/view/agents/ideasmodel";
-import { runIdeaCapture } from "@/app/view/agents/ideasstore";
 import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
 import { openLauncher, type LauncherModel } from "@/app/view/agents/launcherstore";
 import { openNewCouncil } from "@/app/view/agents/newcouncil";
@@ -203,9 +222,16 @@ const clickThrough = (selector: string): boolean | void => {
     el.click();
 };
 
-// The focused agent shows its canvas or its Doc review in place of the terminal.
-const terminalSwapped = (model: AgentsViewModel) =>
-    focusedCanvasMode(model) != null || focusedDocReview(model)?.mode === "review";
+// The focused agent shows its brainstorm, its canvas or its Doc review in place of the terminal. An agent with a
+// brainstorm never shows its canvas (agentview.ts): the brainstorm pane opens its boards.
+const terminalSwapped = (model: AgentsViewModel) => {
+    const brainstorm = focusedBrainstorm(model);
+    return (
+        brainstorm?.mode === "brainstorm" ||
+        (brainstorm == null && focusedCanvasMode(model) != null) ||
+        focusedDocReview(model)?.mode === "review"
+    );
+};
 
 // A canvas open in Agent → Canvas gallery pages through its boards with `[` `]` as the agent's canvas does.
 const galleryViewerOpen = () =>
@@ -213,9 +239,10 @@ const galleryViewerOpen = () =>
 
 // `[` `]` belong to the boards in canvas mode (and in the gallery's viewer) and to the tabs in review mode, so the
 // surface switch stands down while the focused agent shows either. The agent switches stay live: the tree stays on
-// screen beside them.
+// screen beside them. The brainstorm pane has no use for them, so its mode leaves the surface switch alone.
 const inAgentSwap = (model: AgentsViewModel, ctx: KeyContext) =>
-    ctx.surface === "agent" && (terminalSwapped(model) || galleryViewerOpen());
+    ctx.surface === "agent" &&
+    ((terminalSwapped(model) && focusedBrainstorm(model)?.mode !== "brainstorm") || galleryViewerOpen());
 
 // The close-agent chord closes the tab the keys were typed in: the pane that took them (paneId), which is not the selected
 // agent when they went to the terminal docked under it (terminaldock.ts); the selected agent when the pane names none. A
@@ -260,13 +287,6 @@ function backOrHome(model: AgentsViewModel): void {
     if (!backToOrigin()) {
         globalStore.set(model.surfaceAtom, "cockpit");
     }
-}
-
-// the agent session in focus (its transcript's name): the Ideas the capture chord opens when nothing is selected; null for
-// a terminal, or an agent that has not reported in
-function focusedSession(model: AgentsViewModel): string | null {
-    const id = globalStore.get(model.focusIdAtom);
-    return sessionIdFromTranscript(globalStore.get(model.agentsAtom).find((a) => a.id === id)?.transcriptPath);
 }
 
 export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
@@ -451,26 +471,6 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             paletteHidden: true, // the palette's own "Open a tool…" row (palette-commands.ts) is the same action
             when: (ctx) => !ctx.modalOpen,
             run: () => openToolPicker(model),
-        },
-        {
-            // Keep what is selected in an agent's terminal as an idea in its Ideas (the "Add as idea" chip beside the
-            // selection is the same action); with nothing selected, open the focused agent's Ideas and focus its input.
-            // A chord, so it works from a focused terminal, where the chip never takes focus. Consumed even where there is
-            // nothing to add (a plain terminal): left to the terminal it would type a Tab. Live on every surface, as a
-            // What's new "Try it" must be (whatsnew.test.ts): from another surface it brings the Agent surface up first, where
-            // the terminals and the Ideas box are.
-            id: "idea-capture",
-            keys: "Mod:Shift:i",
-            group: "Global",
-            label: "Add the selection as an idea",
-            paletteHidden: true, // a palette row has no selection to add; the key and the chip are the way
-            when: (ctx) => !ctx.modalOpen,
-            run: (ctx) => {
-                if (ctx.surface !== "agent") {
-                    globalStore.set(model.surfaceAtom, "agent");
-                }
-                void runIdeaCapture(focusedSession(model));
-            },
         },
         {
             // Reopen the agent closed last, as a browser reopens a closed tab: asleep, its conversation back on the roster
@@ -1112,10 +1112,70 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         const agent = globalStore.get(model.agentsAtom).find((a) => a.id === id);
         return agent != null && parseDocReview(agent.ask) != null ? agent.id : null;
     };
-    // canvas and review mode hide the rail and the terminal, so their keys stand down there
+    const brainstorm = () => focusedBrainstorm(model);
+    const inBrainstorm = (ctx: KeyContext) => agentNav(ctx) && brainstorm()?.mode === "brainstorm";
+    // the exit the pane reads, so an exited agent's card holds the keys as the pane holds the review
+    const exited = () => {
+        const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
+        return agent != null && globalStore.get(getProcExitAtom(agent.blockId ?? "")) != null;
+    };
+    // the check's review fills the main area: j and k move its cursor instead of the agents, and y, u and Enter act
+    // on the cursor row
+    const inBrainstormReview = (ctx: KeyContext) => {
+        if (!inBrainstorm(ctx)) {
+            return false;
+        }
+        const s = brainstorm()!;
+        const f = shownBrainstormFile(s);
+        return f != null && paneView({ ...s, exited: exited() }) === "check" && checkMain(f, s.designOpen) === "review";
+    };
+    const reviewRow = () => {
+        const s = brainstorm();
+        const f = shownBrainstormFile(s);
+        if (s == null || f == null || s.review.cursor == null) {
+            return null;
+        }
+        const r = checkReview(f);
+        return [...r.changed, ...r.fresh].find((x) => x.id === s.review.cursor) ?? null;
+    };
+    const reviewIds = () => {
+        const f = shownBrainstormFile(brainstorm());
+        return f == null ? [] : checkReview(f).cursorIds;
+    };
+    // the row's line goes to the focused agent; with no row or no line for it, or while the agent writes (the row's
+    // buttons are locked then too), the key passes on
+    const sendReviewLine = (action: (row: ReviewRow) => BrainstormAction | null) => {
+        if (shownBrainstormFile(brainstorm())?.working != null) {
+            return false;
+        }
+        const row = reviewRow();
+        const a = row == null ? null : action(row);
+        const agent = globalStore.get(model.agentsAtom).find((x) => x.id === focusId());
+        if (a == null || agent == null) {
+            return false;
+        }
+        sendBrainstorm(agent, a).catch((e) => console.warn("brainstorm review: sending failed", agent.id, a, e));
+    };
+    // the asked question's options the pane draws, each picked by its letter
+    const pickable = () => {
+        const s = brainstorm();
+        return s == null ? 0 : pickableOptions(shownBrainstormFile(s), s);
+    };
+    // the step the brainstorm pane's back control takes, which Esc takes too. A drawn mark's note owns Esc on the
+    // board (it drops the mark there), so the board's step waits for it even while the note's field is unfocused
+    const paneStep = () => {
+        const s = brainstorm();
+        if (s?.mode !== "brainstorm") {
+            return null;
+        }
+        const step = paneBack({ ...s, exited: exited() }, shownBrainstormFile(s));
+        return step === "board" && (focusedCanvas(model)?.marks.length ?? 0) > 0 ? null : step;
+    };
+    // canvas, review and brainstorm mode hide the rail and the terminal, so their keys stand down there
     const noCanvas = () => !terminalSwapped(model);
     const nav = (ctx: KeyContext) => agentNav(ctx) && noCanvas();
-    const canvas = () => focusedCanvas(model);
+    // an agent with a brainstorm never shows its canvas, so the canvas keys stand down for it
+    const canvas = () => (brainstorm() == null ? focusedCanvas(model) : null);
     const inCanvas = (ctx: KeyContext) => agentNav(ctx) && canvas()?.mode === "canvas";
     // fullscreen's chords (F11, Mod+Shift+Enter) stay live in the terminal, unlike its bare `f`
     const fullscreenChordActive = (ctx: KeyContext) =>
@@ -1199,6 +1259,27 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                     globalStore.set(terminalFullscreenAtom, false);
                 } else {
                     backOrHome(model);
+                }
+            },
+        },
+        {
+            // agent:back stands down in brainstorm mode, so this is the pane's Escape: its back control, one level per
+            // press. Guarded as agent:back is, so a focused field keeps its own Esc (the answer box, a row's edit or
+            // rename, the builder-check answer, the mark note), as do an open modal and the subagent's interior
+            id: "agent:brainstorm-back",
+            keys: "Escape",
+            group: "Agent",
+            label: "Back in the brainstorm: from a full-size board, or from the design to the question",
+            when: (ctx) => agentNavStrict(ctx) && globalStore.get(focusSubagentAtom) == null && paneStep() != null,
+            run: () => {
+                const step = paneStep();
+                if (step == null) {
+                    return false;
+                }
+                if (step === "board") {
+                    openBrainstormBoard(focusId(), null);
+                } else {
+                    openBrainstormDesign(focusId(), false);
                 }
             },
         },
@@ -1401,8 +1482,78 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             when: agentNav,
             run: () => step(1),
         },
-        { id: "agent:prev-k", keys: "k", group: "Agent", label: "Previous agent", when: agentNav, run: () => step(-1) },
-        { id: "agent:next-j", keys: "j", group: "Agent", label: "Next agent", when: agentNav, run: () => step(1) },
+        // in the brainstorm check's review j and k move between its decisions; the arrows and Ctrl+Tab still move agents
+        {
+            id: "agent:prev-k",
+            keys: "k",
+            group: "Agent",
+            label: "Previous agent",
+            when: (ctx) => agentNav(ctx) && !inBrainstormReview(ctx),
+            run: () => step(-1),
+        },
+        {
+            id: "agent:next-j",
+            keys: "j",
+            group: "Agent",
+            label: "Next agent",
+            when: (ctx) => agentNav(ctx) && !inBrainstormReview(ctx),
+            run: () => step(1),
+        },
+        {
+            id: "agent:brainstorm-review-next",
+            keys: "j",
+            group: "Agent",
+            label: "Next decision in the check's review",
+            when: inBrainstormReview,
+            run: () => moveReviewCursor(focusId(), reviewIds(), 1),
+        },
+        {
+            id: "agent:brainstorm-review-prev",
+            keys: "k",
+            group: "Agent",
+            label: "Previous decision in the check's review",
+            when: inBrainstormReview,
+            run: () => moveReviewCursor(focusId(), reviewIds(), -1),
+        },
+        {
+            id: "agent:brainstorm-review-open",
+            keys: "Enter",
+            group: "Agent",
+            label: "Show what the review's decision was",
+            when: inBrainstormReview,
+            // a focused button's Enter is its own press
+            run: () => {
+                const row = reviewRow();
+                if (row == null || document.activeElement?.tagName === "BUTTON") {
+                    return false;
+                }
+                toggleReviewRow(focusId(), row.id);
+            },
+        },
+        {
+            id: "agent:brainstorm-review-keep",
+            keys: "y",
+            group: "Agent",
+            label: "Keep the review's change (confirm a guess)",
+            when: inBrainstormReview,
+            run: () =>
+                sendReviewLine((row) =>
+                    row.action === "keep-restore"
+                        ? { kind: "keep", part: row.id }
+                        : row.action === "confirm"
+                          ? { kind: "confirm", part: row.id }
+                          : null
+                ),
+        },
+        {
+            id: "agent:brainstorm-review-restore",
+            keys: "u",
+            group: "Agent",
+            label: "Put mine back in the review",
+            when: inBrainstormReview,
+            run: () =>
+                sendReviewLine((row) => (row.action === "keep-restore" ? { kind: "restore", part: row.id } : null)),
+        },
         {
             id: "agent:toggle-rail",
             keys: "d",
@@ -1555,6 +1706,76 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             when: inCanvas,
             run: () => setAgentView(focusId(), "terminal", Date.now()),
         },
+        // b changes meaning with the brainstorm's state, so it is two bindings with exclusive when()s and every footer
+        // chip keeps a static label. It is an Agent-surface key: the Cockpit's own b (cockpit:background) is live on the
+        // Cockpit surface only, so the two never fire in the same context
+        {
+            id: "agent:brainstorm-open",
+            keys: "b",
+            group: "Agent",
+            label: "Show the agent's brainstorm",
+            when: (ctx) => agentNav(ctx) && brainstorm()?.mode === "terminal",
+            run: () => setAgentView(focusId(), "brainstorm", Date.now()),
+        },
+        {
+            id: "agent:brainstorm-close",
+            keys: "b",
+            group: "Agent",
+            label: "Back to the terminal from the brainstorm",
+            // while the question offers a B, b picks it
+            when: (ctx) => inBrainstorm(ctx) && pickable() < 2,
+            run: () => setAgentView(focusId(), "terminal", Date.now()),
+        },
+        {
+            // b only fires off the terminal, and Ctrl+G b is Code, so this is the one door that works while typing. A
+            // terminal sends it as plain ^B, so no TUI can bind it apart from Ctrl+B. Not gated on editable, like F11.
+            id: "agent:view-chord",
+            keys: "Ctrl:Shift:b",
+            group: "Agent",
+            label: "Switch between the terminal and the agent's brainstorm (works inside the terminal)",
+            when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && centerAtRest() && brainstorm() != null,
+            run: () =>
+                setAgentView(focusId(), brainstorm()?.mode === "brainstorm" ? "terminal" : "brainstorm", Date.now()),
+        },
+        {
+            // Documentation for the footer's "⏎ send" chip, as the Cockpit's doc bindings are: the pane's own fields
+            // (the answer box, an edit box) send on Enter themselves (onEnter in brainstormui.tsx), so run() never
+            // consumes the key. Live only while one of the pane's fields has focus, which is the one time Enter sends.
+            id: "agent:brainstorm-send",
+            keys: "Enter",
+            group: "Agent",
+            label: "Send what you typed in the brainstorm (Shift+Enter is a new line)",
+            paletteHidden: true,
+            when: (ctx) =>
+                ctx.surface === "agent" &&
+                ctx.editable &&
+                !ctx.modalOpen &&
+                centerAtRest() &&
+                brainstorm()?.mode === "brainstorm" &&
+                typeof document !== "undefined" &&
+                document.activeElement?.closest?.("[data-brainstorm-pane]") != null,
+            run: () => false, // never consume: the field sends itself
+        },
+        // a letter focuses its answer row, so Enter, the row's own key, sends it
+        ...OPTION_KEYS.map(
+            (key, i): Binding => ({
+                id: `agent:brainstorm-option-${key}`,
+                keys: key,
+                group: "Agent",
+                label: `Pick answer ${optionLetter(i)} of the brainstorm's question`,
+                paletteHidden: true,
+                when: (ctx) => inBrainstorm(ctx) && pickable() > i,
+                run: () => {
+                    const row = document.querySelector<HTMLElement>(
+                        `[data-brainstorm-pane] [data-brainstorm-option="${i}"]`
+                    );
+                    if (row == null) {
+                        return false;
+                    }
+                    row.focus();
+                },
+            })
+        ),
         {
             // the header's ✓ Close, from inside the terminal too. Whether it is offered is read in run(), not
             // when(): the offer follows the roster, unread counts and runs, none of them a predicate atom
@@ -1573,21 +1794,28 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             },
         },
         {
-            // The bare c and r are typed into the TUI while it holds focus, so the header's Terminal | Canvas | Review
-            // control also has a chord that works from inside the terminal, as Alt+1..9 does for the agents
+            // The bare b, c and r are typed into the TUI while it holds focus, so the header's Terminal | Canvas |
+            // Review control (Brainstorm in the canvas's slot, for an agent with a brainstorm) also has a chord that
+            // works from inside the terminal, as Alt+1..9 does for the agents
             id: "agent:view-cycle",
             keys: "Alt:c",
             group: "Agent",
-            label: "Switch terminal, canvas and review (works inside the terminal)",
+            label: "Switch terminal, canvas, brainstorm and review (works inside the terminal)",
             when: (ctx) =>
                 ctx.surface === "agent" &&
                 !ctx.modalOpen &&
                 centerAtRest() &&
-                (canvas() != null || docReview() != null),
+                (canvas() != null || brainstorm() != null || docReview() != null),
             run: () => {
                 const view =
-                    docReview()?.mode === "review" ? "review" : canvas()?.mode === "canvas" ? "canvas" : "terminal";
-                const next = nextAgentView(view, canvas() != null, docReview() != null);
+                    docReview()?.mode === "review"
+                        ? "review"
+                        : brainstorm()?.mode === "brainstorm"
+                          ? "brainstorm"
+                          : canvas()?.mode === "canvas"
+                            ? "canvas"
+                            : "terminal";
+                const next = nextAgentView(view, canvas() != null, docReview() != null, brainstorm() != null);
                 if (next == null) {
                     return false;
                 }

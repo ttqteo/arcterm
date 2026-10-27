@@ -2,13 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Pure view-model logic for the Agent surface's left tree. No React, no Wave runtime imports.
-// Produces group headers, agent rows, and each orchestrator run's workers nested under its lead; subagent
+// Produces group headers, agent rows, each orchestrator run's workers nested under its lead, and a brainstorm's
+// builder-check reviewer and judge nested under the brainstorming agent; subagent
 // children are read from per-block atoms in the component (they're ephemeral and keyed by block ORef), so
 // they stay out of this pure helper.
 
 import { projectOf, type AgentVM } from "./agentsviewmodel";
+import type { BuilderCheckRecord } from "./brainstormmodel";
 import { finalRowFocusId, finalStageView, type FinalStageView } from "./finalstage";
 import {
+    BRAINSTORM_JUDGE_ROLE,
+    BUILDER_CHECK_ROLE,
     endedWorkerId,
     holdsTask,
     NO_LINEAGE,
@@ -25,6 +29,9 @@ export type AgentTreeRow =
     // a plain agent. `nested`: it waits on the plain agent of its folder just above it, and sits under it; `waitsFor`:
     // the name of the agent it waits on where it cannot nest (another folder, a lead, one that nests itself)
     | { kind: "parent"; agent: AgentVM; project: string; nested?: boolean; waitsFor?: string }
+    // a builder check's reviewer or a judge under the brainstorming agent that started it; `stageRole` is which, and
+    // `state` is that agent's record of it
+    | { kind: "check"; agent: AgentVM; project: string; stageRole: string; state: BuilderCheckRecord["state"] }
     // an orchestrator lead; `live` counts its workers that are not done
     | { kind: "lead"; agent: AgentVM; project: string; run: RunInfo; open: boolean; live: number }
     // a run whose workers are in the roster but whose lead is not: a plan-path run before its first lead
@@ -153,9 +160,10 @@ export function stageOutcome(
     return cur.round > 1 ? "failed" : undefined;
 }
 
-// stageSubline is a stage row's second line: its verdict and age. the row's title already names the role.
-export function stageSubline(outcome: StageOutcome | undefined, age: string): string {
-    return [outcome, age].filter(Boolean).join(" · ");
+// stageSubline is a stage row's second line: its verdict and age. the row's title already names the role. `verdict` is
+// a stage outcome, or a builder check's or judge's own word for its state (reading, answered)
+export function stageSubline(verdict: string | undefined, age: string): string {
+    return [verdict, age].filter(Boolean).join(" · ");
 }
 
 // history order: a plan review came before any task, a final verification after every one, and within a stage an
@@ -373,7 +381,10 @@ const NO_WAITS: ReadonlyMap<string, string> = new Map();
  *
  *  `waits` (waiter id -> the id it waits on, agentwaits.ts) nests a plain agent under the plain agent of its folder it
  *  waits on, after that agent's row, in order; one level deep, so it never nests under one that nests itself: a chain
- *  nests its head and a cycle nests no one. A waiter that cannot nest keeps its place and names whom it waits on. */
+ *  nests its head and a cycle nests no one. A waiter that cannot nest keeps its place and names whom it waits on.
+ *
+ *  A brainstorming agent's builder check and judge sessions (its `builderCheck` and `brainstormJudge` records name their
+ *  runs) are `check` rows right under its row, and count in its folder; with its tab gone they are plain rows. */
 export function buildAgentTree(
     agents: AgentVM[],
     order: string[],
@@ -387,6 +398,37 @@ export function buildAgentTree(
         (a, b) => (rank.get(a.id) ?? Number.POSITIVE_INFINITY) - (rank.get(b.id) ?? Number.POSITIVE_INFINITY)
     );
     const { leads, workers, stages } = groupRunAgents(sorted, lineage);
+
+    // A builder check's reviewer and a judge are runs of their own with no lead, so only the brainstorming agent's
+    // record of one links it to that agent. It nests there while the agent has a plain row, and is a plain row once
+    // that tab is gone. A session another agent's record names owns nothing, so a chain or a cycle of records nests no one.
+    type Owned = { owner: AgentVM; stageRole: string; state: BuilderCheckRecord["state"] };
+    const recordedRuns = new Set<string>();
+    for (const a of sorted) {
+        if (lineage.roles[a.id] == null) {
+            for (const record of [a.builderCheck, a.brainstormJudge]) {
+                if (record?.runId) {
+                    recordedRuns.add(record.runId);
+                }
+            }
+        }
+    }
+    const checkOwners = new Map<string, Owned>(); // by the record's run id
+    for (const a of sorted) {
+        if (lineage.roles[a.id] != null || (a.runId != null && recordedRuns.has(a.runId))) {
+            continue;
+        }
+        for (const [stageRole, record] of [
+            [BUILDER_CHECK_ROLE, a.builderCheck],
+            [BRAINSTORM_JUDGE_ROLE, a.brainstormJudge],
+        ] as const) {
+            if (record?.runId && !checkOwners.has(record.runId)) {
+                checkOwners.set(record.runId, { owner: a, stageRole, state: record.state });
+            }
+        }
+    }
+    type Nested = { agent: AgentVM; stageRole: string; state: BuilderCheckRecord["state"] };
+    const checks = new Map<string, Nested[]>(); // by the brainstorming agent's id
 
     const groups: { project: string; items: TopItem[] }[] = [];
     const byProject = new Map<string, TopItem[]>();
@@ -412,6 +454,9 @@ export function buildAgentTree(
             placedRuns.add(role.leadRunId);
             const run = lineage.runs[role.leadRunId];
             push({ kind: "run", project: run.project || UNGROUPED_PROJECT, run });
+        } else if (a.runId != null && checkOwners.has(a.runId)) {
+            const { owner, stageRole, state } = checkOwners.get(a.runId);
+            checks.set(owner.id, [...(checks.get(owner.id) ?? []), { agent: a, stageRole, state }]);
         } else {
             push({ kind: "parent", agent: a, project: projectOf(a) || UNGROUPED_PROJECT });
         }
@@ -440,19 +485,23 @@ export function buildAgentTree(
                 waiters.set(target, [...(waiters.get(target) ?? []), item.agent]);
             }
         }
+        // the check and judge rows under a brainstorming agent, counted with the agent in its own folder
+        const checkRows = (id: string): AgentTreeRow[] =>
+            (checks.get(id) ?? []).map((n) => ({ kind: "check", project: g.project, ...n }));
         for (const item of g.items) {
             if (item.kind === "parent") {
-                count++;
-                attn += item.agent.state === "asking" ? 1 : 0;
-                running += item.agent.state === "working" ? 1 : 0;
+                const members = [item.agent, ...(checks.get(item.agent.id) ?? []).map((n) => n.agent)];
+                count += members.length;
+                attn += members.filter((a) => a.state === "asking").length;
+                running += members.filter((a) => a.state === "working").length;
                 if (nestsUnder(item.agent.id) != null) {
                     continue;
                 }
                 const target = waits.get(item.agent.id);
                 const waitsFor = target != null ? byId.get(target)?.name : undefined;
-                body.push(waitsFor != null ? { ...item, waitsFor } : item);
+                body.push(waitsFor != null ? { ...item, waitsFor } : item, ...checkRows(item.agent.id));
                 for (const agent of waiters.get(item.agent.id) ?? []) {
-                    body.push({ kind: "parent", agent, project: item.project, nested: true });
+                    body.push({ kind: "parent", agent, project: item.project, nested: true }, ...checkRows(agent.id));
                 }
                 continue;
             }

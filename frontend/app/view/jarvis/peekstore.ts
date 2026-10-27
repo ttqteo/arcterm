@@ -14,7 +14,7 @@ import { petBubbleAtom, petPeekOpenAtom, petUnreadAtom } from "./petstore";
 
 export type PeekTarget = Exclude<
     OpenTarget,
-    { kind: "channel" } | { kind: "canvas" } | { kind: "memhygiene" } | { kind: "council" }
+    { kind: "channel" } | { kind: "canvas" } | { kind: "brainstorm" } | { kind: "memhygiene" } | { kind: "council" }
 >;
 
 export type PeekItem = { target: PeekTarget; status: "loading" | "ready" };

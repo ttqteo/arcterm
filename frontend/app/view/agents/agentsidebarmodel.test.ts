@@ -674,6 +674,8 @@ describe("projectTree", () => {
                     return `t:${r.terminal.id}`;
                 case "parent":
                     return `a:${r.agent.id}`;
+                case "check":
+                    return `check:${r.agent.id}:${r.stageRole}`;
                 case "queuedentry":
                     return `q:${r.entry.id}:${r.place ?? "-"}`;
                 case "split":
@@ -747,6 +749,40 @@ describe("projectTree", () => {
         const asking = { ...agent("a"), state: "asking" as const };
         const rows = build([asking, agent("b")], [term("t1")], { collapsed: ["waveterm"] });
         expect(rows[0]).toMatchObject({ kind: "group", agents: 2, terminals: 1, attn: 1, open: false });
+    });
+
+    describe("a brainstorm's builder check and judge", () => {
+        // the brainstorming agent's tab names the runs of its two sessions; each session's tab is its run's
+        const brainstorming: AgentVM = {
+            ...agent("bs"),
+            builderCheck: { state: "reading", ts: 1, runId: "chk-1" },
+            brainstormJudge: { state: "answered", ts: 2, runId: "jdg-1" },
+        };
+        const checker: AgentVM = { ...agent("rv"), runId: "chk-1" };
+        const judge: AgentVM = { ...agent("jd"), runId: "jdg-1" };
+
+        it("sit right under their agent in its folder, ahead of the divider and the terminals", () => {
+            const rows = build([brainstorming, checker, judge, agent("other")], [term("t1")]);
+            expect(shape(rows)).toEqual([
+                "group:waveterm:4a:1t",
+                "a:bs",
+                "check:rv:builder-check",
+                "check:jd:brainstorm-judge",
+                "a:other",
+                "divider:waveterm",
+                "t:t1",
+            ]);
+        });
+
+        it("stay under their agent when the project filter narrows the tree to it", () => {
+            const rows = build([brainstorming, checker, judge], [], { filter: "waveterm" });
+            expect(shape(rows)).toEqual(["a:bs", "check:rv:builder-check", "check:jd:brainstorm-judge"]);
+        });
+
+        it("go with their agent when its folder is folded, and count in the folder", () => {
+            const rows = build([brainstorming, checker, judge], [], { collapsed: ["waveterm"] });
+            expect(shape(rows)).toEqual(["group:waveterm:3a:0t:closed"]);
+        });
     });
 
     it("narrows to one project's rows with no group row, keeping a terminal that names no project", () => {
@@ -1273,6 +1309,25 @@ describe("projectTree", () => {
                 expect(menus(rows)).toEqual(["l:lead:r1", "w:task:-"]);
             });
         });
+
+        it("pulls a brainstorm's check row out when its session is a cell, with the task menu", () => {
+            const brainstorming: AgentVM = {
+                ...agent("bs"),
+                builderCheck: { state: "reading", ts: 1, runId: "chk-1" },
+            };
+            const checker: AgentVM = { ...agent("rv"), runId: "chk-1" };
+            const rows = withSplits(
+                [brainstorming, checker, agent("a")],
+                [],
+                grids("waveterm", { waveterm: ["a", "rv"] })
+            );
+            expect(shape(rows)).toEqual(["group:waveterm:3a:0t", "a:bs", "split:waveterm:shown:a,rv"]);
+            const split = rows.find((r) => r.kind === "split");
+            expect(split?.kind === "split" ? split.cells.map((c) => `${c.id}:${c.menu}`) : null).toEqual([
+                "a:agent",
+                "rv:task",
+            ]);
+        });
     });
 });
 
@@ -1667,6 +1722,26 @@ describe("treeNavIds", () => {
             roster: [...agents, ...terminals],
         });
         expect(treeNavIds(rows)).toEqual(["t1", "a", "b", "c", "t2"]);
+    });
+    it("reaches a brainstorm's check and judge sessions right after their agent", () => {
+        const brainstorming: AgentVM = {
+            ...agent("bs"),
+            builderCheck: { state: "reading", ts: 1, runId: "chk-1" },
+            brainstormJudge: { state: "reading", ts: 2, runId: "jdg-1" },
+        };
+        const rows = projectTree({
+            tree: treeOf([
+                { ...agent("rv"), runId: "chk-1" },
+                { ...agent("jd"), runId: "jdg-1" },
+                brainstorming,
+                agent("b"),
+            ]),
+            terminals: [],
+            filter: ALL_PROJECTS,
+            collapsed: [],
+            roots: new Map(),
+        });
+        expect(treeNavIds(rows)).toEqual(["bs", "rv", "jd", "b"]);
     });
     it("skips a worker row whose session is gone, and rows that are not a session", () => {
         const gone = { kind: "worker", project: "p", run: {}, task: {} } as unknown as ProjectTreeRow;

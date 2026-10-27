@@ -595,7 +595,7 @@ export interface CouncilSetupDraft {
     group: string; // the group id, empty for none
     experts: CouncilExpert[]; // the panel, the coordinator last
     pause: boolean;
-    sessionId?: string; // the agent session whose Ideas get the directions
+    sessionId?: string; // the agent session that starts the council
     suggestion?: CouncilSuggestion;
     suggestState: "idle" | "asking" | "done" | "failed";
     groupPicked: boolean;

@@ -1,6 +1,7 @@
 // Pure view-model logic for the Agents view. No React, no Wave runtime imports.
 
 import { modelLabel } from "@/app/view/agents/session-models/sessionviewmodel";
+import type { BuilderCheckRecord } from "./brainstormmodel";
 import { sessionIdFromTranscript } from "./launch";
 import { projectNameFromTranscriptPath } from "./projectname";
 
@@ -111,6 +112,9 @@ export interface AgentVM {
     sessionId?: string; // pi control-channel session id (agentstatus --session-id)
     runId?: string; // the run this agent works for, when a run spawned it: a lead's own run, a worker's child run
     effortId?: string; // the initiative this agent works on: launched from it, or last read or wrote through `wsh effort`
+    brainstormFile?: string; // session:brainstorm on the tab: the attached brainstorm.json's absolute path
+    builderCheck?: BuilderCheckRecord; // brainstorm:check* on the tab: Arc's record of the brainstorm's builder check
+    brainstormJudge?: BuilderCheckRecord; // brainstorm:judge* on the tab: Arc's record of the brainstorm's judge
     atPrompt?: boolean; // the raw status was waiting or idle, whatever state it folds to: a lead between wakes
     step?: string; // idle or asking: the "n/m" part its last message or question stopped on ("1/3"), until you reply
     committed?: boolean; // idle: its last turn ended on a git commit, so the cockpit offers to close it (donesuggest.ts)
@@ -511,6 +515,9 @@ export interface LiveAgentInput {
     sessionId?: string; // pi control-channel session id (agentstatus --session-id)
     runORef?: string; // jarvis:runoref on the tab: "run:<id>"
     effortORef?: string; // session:effort on the tab: "effort:<oid>"
+    brainstormFile?: string; // session:brainstorm on the tab
+    builderCheck?: BuilderCheckRecord; // brainstorm:check* on the tab
+    brainstormJudge?: BuilderCheckRecord; // brainstorm:judge* on the tab
     step?: string; // the status event's step: the "n/m" part an idle turn or a pending AskUserQuestion stopped on
     committed?: boolean; // the status event's committed: an idle turn that ended on a git commit
     loginEmail?: string; // the block's agent:loginemail, lowercased; "" when it has none
@@ -555,6 +562,15 @@ export function agentVMFromInput(input: LiveAgentInput, now: number): AgentVM {
     if (input.effortORef?.startsWith("effort:")) {
         vm.effortId = input.effortORef.slice("effort:".length);
     }
+    if (input.brainstormFile) {
+        vm.brainstormFile = input.brainstormFile;
+    }
+    if (input.builderCheck) {
+        vm.builderCheck = input.builderCheck;
+    }
+    if (input.brainstormJudge) {
+        vm.brainstormJudge = input.brainstormJudge;
+    }
     if (input.status === "waiting" || input.status === "idle") {
         vm.atPrompt = true;
     }
@@ -589,6 +605,9 @@ export interface TerminalRowInput {
     projectLabel?: string; // session:project, stamped at launch (launchAgent writes it for a terminal too)
     cwd?: string; // the session terminal's cwd: the registered project it sits in names its project first
     customLabel?: string; // session:label, the user's rename
+    brainstormFile?: string; // session:brainstorm on the tab
+    builderCheck?: BuilderCheckRecord; // brainstorm:check* on the tab
+    brainstormJudge?: BuilderCheckRecord; // brainstorm:judge* on the tab
 }
 
 /** Pure: a terminal's name. A rename wins; otherwise the first line of the command it last ran, which tells two shells
@@ -652,6 +671,9 @@ export function deriveTerminalVMs(
             ...(row.cwd ? { cwd: row.cwd } : {}),
             ...(tool ? { toolId: tool } : {}),
             ...(running(blockId) ? { running: true } : {}),
+            ...(row.brainstormFile ? { brainstormFile: row.brainstormFile } : {}),
+            ...(row.builderCheck ? { builderCheck: row.builderCheck } : {}),
+            ...(row.brainstormJudge ? { brainstormJudge: row.brainstormJudge } : {}),
         });
     }
     return out;

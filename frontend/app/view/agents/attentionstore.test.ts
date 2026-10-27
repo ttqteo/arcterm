@@ -2,7 +2,16 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
-import { attentionAtom, cockpitWaitingCount, loadAttention, splitAttention, taskbarSignal } from "./attentionstore";
+import {
+    attentionAtom,
+    brainstormAttentionItems,
+    cockpitWaitingCount,
+    loadAttention,
+    splitAttention,
+    taskbarSignal,
+} from "./attentionstore";
+import type { BrainstormFile } from "./brainstormmodel";
+import type { BrainstormState } from "./brainstormstore";
 
 vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: { GetAttentionCommand: vi.fn() },
@@ -112,6 +121,99 @@ describe("splitAttention", () => {
         expect(out.cockpit).toHaveLength(0);
         expect(out.jarvis).toHaveLength(0);
         expect(out.radar).toHaveLength(0);
+    });
+});
+
+describe("brainstormAttentionItems", () => {
+    const agent = (over: Partial<AgentVM>): AgentVM =>
+        ({ id: "a1", name: "Planner", task: "", state: "idle", agent: "claude", model: "", ...over }) as AgentVM;
+    const file = (over: Partial<BrainstormFile> = {}): BrainstormFile => ({
+        v: 1,
+        title: "Lag alerts",
+        spec: "",
+        question: { n: 5, text: "Who gets paged?", part: "who" },
+        working: null,
+        parts: [],
+        history: [],
+        done: false,
+        check: null,
+        run: null,
+        ...over,
+    });
+    const state = (over: Partial<BrainstormState> = {}): BrainstormState => ({
+        topic: "lag-alerts",
+        path: "/p/.superpowers/brainstorm/lag-alerts/brainstorm.json",
+        cwd: "/p",
+        mode: "terminal",
+        file: file(),
+        error: null,
+        failedReads: 0,
+        removed: false,
+        modifiedMs: null,
+        lastViewedMs: 0,
+        board: null,
+        showDesign: false,
+        designOpen: false,
+        boards: [],
+        base: null,
+        sent: null,
+        sentCheckAt: null,
+        review: { cursor: null, open: {} },
+        ...over,
+    });
+
+    it("lists an agent whose file holds a question and whose turn ended, with the question's number in its key", () => {
+        const items = brainstormAttentionItems([agent({})], { a1: state() });
+        expect(items).toHaveLength(1);
+        expect(items[0]).toMatchObject({
+            kind: "brainstorm",
+            key: "brainstorm:a1:5",
+            source: "Planner",
+            text: "Who gets paged?",
+            oref: "brainstorm:lag-alerts",
+        });
+    });
+
+    it("reads an agent at its prompt as ended, whatever state its status folds to", () => {
+        const items = brainstormAttentionItems([agent({ state: "working", atPrompt: true })], { a1: state() });
+        expect(items.map((i) => i.key)).toEqual(["brainstorm:a1:5"]);
+    });
+
+    it("lists nothing for an agent still working, or one with no question, a note being written or no file", () => {
+        expect(brainstormAttentionItems([agent({ state: "working" })], { a1: state() })).toEqual([]);
+        expect(brainstormAttentionItems([agent({})], { a1: state({ file: file({ question: null }) }) })).toEqual([]);
+        expect(brainstormAttentionItems([agent({})], { a1: state({ file: file({ working: "Writing" }) }) })).toEqual(
+            []
+        );
+        expect(brainstormAttentionItems([agent({})], { a1: state({ file: null }) })).toEqual([]);
+        expect(brainstormAttentionItems([agent({})], {})).toEqual([]);
+    });
+
+    it("lists nothing while a line Arc sent is not yet taken: the pane shows the agent writing", () => {
+        const sent = { at: 1, modifiedMs: null, kind: "answer" as const };
+        expect(brainstormAttentionItems([agent({})], { a1: state({ sent }) })).toEqual([]);
+    });
+
+    it("keeps the roster's order and skips the agents that have no brainstorm", () => {
+        const items = brainstormAttentionItems(
+            [agent({ id: "a2", name: "Second" }), agent({ id: "a3", name: "Third" }), agent({})],
+            { a1: state(), a2: state({ topic: "two" }) }
+        );
+        expect(items.map((i) => i.key)).toEqual(["brainstorm:a2:5", "brainstorm:a1:5"]);
+    });
+
+    it("a new question flashes the taskbar while Arc is unfocused, and the same one does not flash again", () => {
+        const server = [item({ key: "ask:block:b1" })];
+        const first = [...server, ...brainstormAttentionItems([agent({})], { a1: state() })];
+        expect(taskbarSignal(server, first, false)).toBe("flash");
+        expect(
+            taskbarSignal(first, [...server, ...brainstormAttentionItems([agent({})], { a1: state() })], false)
+        ).toBeNull();
+        const nextFile = file({ question: { n: 6, text: "How often?", part: "rate" } });
+        const next = [...server, ...brainstormAttentionItems([agent({})], { a1: state({ file: nextFile }) })];
+        expect(taskbarSignal(first, next, false)).toBe("flash");
+        // answered: the question leaves the list, and the button clears once nothing else is waiting
+        expect(taskbarSignal(next, [], false)).toBe("clear");
     });
 });
 

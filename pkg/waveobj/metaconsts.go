@@ -76,9 +76,21 @@ const (
 	MetaKey_SessionLabel                     = "session:label"
 	MetaKey_SessionProject                   = "session:project"
 	MetaKey_SessionEffort                    = "session:effort"
+	MetaKey_SessionBrainstorm                = "session:brainstorm"
 	MetaKey_SessionCollapsedGroups           = "session:collapsedgroups"
 	MetaKey_SessionLater                     = "session:later"
 	MetaKey_SessionHelper                    = "session:helper"
+
+	MetaKey_BrainstormCheckState             = "brainstorm:checkstate"
+	MetaKey_BrainstormCheckTs                = "brainstorm:checkts"
+	MetaKey_BrainstormCheckRun               = "brainstorm:checkrun"
+	MetaKey_BrainstormCheckChannel           = "brainstorm:checkchannel"
+	MetaKey_BrainstormCheckReason            = "brainstorm:checkreason"
+	MetaKey_BrainstormJudgeState             = "brainstorm:judgestate"
+	MetaKey_BrainstormJudgeTs                = "brainstorm:judgets"
+	MetaKey_BrainstormJudgeRun               = "brainstorm:judgerun"
+	MetaKey_BrainstormJudgeChannel           = "brainstorm:judgechannel"
+	MetaKey_BrainstormJudgeReason            = "brainstorm:judgereason"
 
 	MetaKey_AppLoom                          = "app:loom"
 

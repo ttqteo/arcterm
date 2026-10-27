@@ -79,9 +79,8 @@ markdown. Sum it up in the conversation in a few lines: for a review, the top di
 the panel disagreed; for a brainstorm, the ideas worth trying with their first steps, and a wild idea only when it
 changes the choice. Then carry on from there with the spec, the plan, the draft or the problem.
 
-A council started from this session puts each direction into this session's Ideas list itself, so do not record them
-again with `wsh idea add`. Its document is saved under the project's `docs/council/` when it ends (done or stopped);
-`wsh council show <id> --json` carries its path as `docpath`.
+A council's directions are only in its report. Its document is saved under the project's `docs/council/` when it ends
+(done or stopped); `wsh council show <id> --json` carries its path as `docpath`.
 
 ## What can come back
 

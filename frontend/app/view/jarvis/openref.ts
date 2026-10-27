@@ -19,6 +19,9 @@ import { showCouncil } from "../agents/agentcenter";
 import { resolveCwd } from "../agents/agentcwdresolve";
 import type { AgentsViewModel } from "../agents/agents";
 import { setAgentView } from "../agents/agentview";
+import { brainstormFilePath } from "../agents/brainstormmodel";
+import { pollBrainstormNow } from "../agents/brainstormpoller";
+import { attachBrainstorm, brainstormOwner, SESSION_BRAINSTORM } from "../agents/brainstormstore";
 import { canvasDir, canvasProjectDir } from "../agents/canvasmodel";
 import { attachCanvas, canvasOwner, getCanvas, selectCanvasBoard } from "../agents/canvasstore";
 import { jumpToAgent } from "../agents/channelsprimitives";
@@ -53,6 +56,7 @@ type ChannelTarget = Extract<OpenTarget, { kind: "channel" }>;
 type RecordTarget = Extract<OpenTarget, { kind: "record" }>;
 type RadarTarget = Extract<OpenTarget, { kind: "radar" }>;
 type CanvasTarget = Extract<OpenTarget, { kind: "canvas" }>;
+type BrainstormTarget = Extract<OpenTarget, { kind: "brainstorm" }>;
 type NoteTarget = Extract<OpenTarget, { kind: "note" }>;
 type MemHygieneTarget = Extract<OpenTarget, { kind: "memhygiene" }>;
 type CouncilTarget = Extract<OpenTarget, { kind: "council" }>;
@@ -89,6 +93,8 @@ function targetName(target: OpenTarget): string {
             return `scan report ${target.reportId}`;
         case "canvas":
             return `canvas ${target.topic}`;
+        case "brainstorm":
+            return `brainstorm ${target.topic}`;
         case "note":
             return `note ${target.noteId}`;
         case "memhygiene":
@@ -152,7 +158,12 @@ export async function openAddress(
 }
 
 export function isPeekable(target: OpenTarget): boolean {
-    return target.kind !== "canvas" && target.kind !== "memhygiene" && target.kind !== "council";
+    return (
+        target.kind !== "canvas" &&
+        target.kind !== "brainstorm" &&
+        target.kind !== "memhygiene" &&
+        target.kind !== "council"
+    );
 }
 
 // an address that does not parse still peeks, so the refusal is the peek's own toast
@@ -168,7 +179,12 @@ export async function peekTarget(
     target: OpenTarget,
     report: ReportOpen = toast
 ): Promise<OpenResult> {
-    if (target.kind === "canvas" || target.kind === "memhygiene" || target.kind === "council") {
+    if (
+        target.kind === "canvas" ||
+        target.kind === "brainstorm" ||
+        target.kind === "memhygiene" ||
+        target.kind === "council"
+    ) {
         return openTarget(model, target, report);
     }
     const current = nextOpen();
@@ -272,6 +288,10 @@ async function land(
             return select(await loadRadar(target, current), (r) => selectRadar(model, r, current));
         case "canvas":
             return select(await loadCanvas(model, target, current, caller), (c) => selectCanvas(model, target, c));
+        case "brainstorm":
+            return select(await loadBrainstorm(model, target, current, caller), (b) =>
+                selectBrainstorm(model, target, b)
+            );
         case "memhygiene":
             return select(await loadMemHygiene(target, current), () => selectMemHygiene(model, target.project));
         case "council":
@@ -289,7 +309,7 @@ async function select<T>(load: Loaded<T>, write: (facts: T) => OpenResult | Prom
 
 async function peek(
     model: AgentsViewModel,
-    target: Exclude<OpenTarget, CanvasTarget | MemHygieneTarget | CouncilTarget>,
+    target: Exclude<OpenTarget, CanvasTarget | BrainstormTarget | MemHygieneTarget | CouncilTarget>,
     current: () => boolean
 ): Promise<OpenResult> {
     const resolved = target.kind === "channel" ? await channelRun(target, current) : loaded<PeekTarget>(target);
@@ -479,6 +499,66 @@ function selectCanvas(model: AgentsViewModel, target: CanvasTarget, landing: Can
     if (landing.show) {
         setAgentView(landing.agentId, "canvas", Date.now());
         jumpToAgent(model, landing.agentId);
+    }
+    return OK;
+}
+
+// A brainstorm lands as a canvas does: an agent's reveal only attaches, and an open with no caller lands on the
+// agent that has the topic, in brainstorm mode. The attach is also written to the tab's meta, which is what
+// re-attaches it after a restart.
+type BrainstormLanding = { owner: string } | { agentId: string; cwd: string; path: string };
+
+async function loadBrainstorm(
+    model: AgentsViewModel,
+    target: BrainstormTarget,
+    current: () => boolean,
+    caller: Caller
+): Promise<Loaded<BrainstormLanding>> {
+    const { topic } = target;
+    // parseAddress refuses path characters, but a target built in code never went through it
+    if (!isCanvasSegment(topic)) {
+        return { ok: false, reason: "unsupported", message: `Not a brainstorm name: ${topic}` };
+    }
+    if (caller == null) {
+        const owner = brainstormOwner(topic);
+        return owner != null ? loaded({ owner }) : unavailable(`No agent has the brainstorm ${topic} open`);
+    }
+    const roster = [...globalStore.get(model.agentsAtom), ...globalStore.get(model.terminalsAtom)];
+    const agent = roster.find((a) => a.blockId != null && a.blockId === caller.blockId);
+    if (agent == null || !caller.cwd) {
+        return unavailable(`Run wsh ui reveal brainstorm:${topic} from the agent's terminal`);
+    }
+    const path = brainstormFilePath(caller.cwd, topic);
+    const info = await RpcApi.FileInfoCommand(TabRpcClient, { info: { path } });
+    if (!current()) {
+        return SUPERSEDED;
+    }
+    if (info == null || info.notfound) {
+        return unavailable(`No brainstorm at ${path}`);
+    }
+    return loaded({ agentId: agent.id, cwd: caller.cwd, path });
+}
+
+async function selectBrainstorm(
+    model: AgentsViewModel,
+    target: BrainstormTarget,
+    landing: BrainstormLanding
+): Promise<OpenResult> {
+    if ("owner" in landing) {
+        setAgentView(landing.owner, "brainstorm", Date.now());
+        jumpToAgent(model, landing.owner);
+        return OK;
+    }
+    attachBrainstorm(landing.agentId, { topic: target.topic, cwd: landing.cwd }, Date.now());
+    pollBrainstormNow(model, landing.agentId);
+    // the attach stands without the meta: it only costs the re-attach after a restart
+    try {
+        await RpcApi.SetMetaCommand(TabRpcClient, {
+            oref: WOS.makeORef("tab", landing.agentId),
+            meta: { [SESSION_BRAINSTORM]: landing.path },
+        });
+    } catch (e) {
+        console.warn("brainstorm reveal: writing session:brainstorm failed", landing.agentId, landing.path, e);
     }
     return OK;
 }

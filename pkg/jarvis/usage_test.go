@@ -142,6 +142,8 @@ func TestUsageRoleOfAStageSession(t *testing.T) {
 		{waveobj.Run{StageRole: UsageRole_PlanReviewer}, UsageRole_PlanReviewer},
 		{waveobj.Run{StageRole: UsageRole_Verifier}, UsageRole_Verifier},
 		{waveobj.Run{StageRole: UsageRole_LandResolver}, UsageRole_LandResolver},
+		{waveobj.Run{StageRole: UsageRole_BuilderCheck}, "builder-check"},
+		{waveobj.Run{StageRole: UsageRole_BrainstormJudge}, "brainstorm-judge"},
 		{waveobj.Run{TaskId: "t-1", Review: true}, UsageRole_Reviewer},
 		{waveobj.Run{TaskId: "t-1"}, UsageRole_Worker},
 		{waveobj.Run{}, UsageRole_Lead},
@@ -149,6 +151,24 @@ func TestUsageRoleOfAStageSession(t *testing.T) {
 	for _, c := range cases {
 		if got := UsageRole(&c.run); got != c.want {
 			t.Errorf("UsageRole(%+v) = %q, want %q", c.run, got, c.want)
+		}
+	}
+}
+
+func TestIsBrainstormSession(t *testing.T) {
+	cases := []struct {
+		run  waveobj.Run
+		want bool
+	}{
+		{waveobj.Run{StageRole: UsageRole_BuilderCheck}, true},
+		{waveobj.Run{StageRole: UsageRole_BrainstormJudge}, true},
+		{waveobj.Run{}, false},
+		{waveobj.Run{StageRole: UsageRole_PlanReviewer}, false},
+		{waveobj.Run{TaskId: "t-1", Review: true}, false},
+	}
+	for _, c := range cases {
+		if got := IsBrainstormSession(&c.run); got != c.want {
+			t.Errorf("IsBrainstormSession(%+v) = %v, want %v", c.run, got, c.want)
 		}
 	}
 }

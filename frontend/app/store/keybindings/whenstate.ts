@@ -26,7 +26,9 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
+import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { brainstormAtom } from "@/app/view/agents/brainstormstore";
 import { canvasGalleryAtom } from "@/app/view/agents/canvasgallerystore";
 import { canvasStateAtom } from "@/app/view/agents/canvasstore";
 import { compareOnAtom } from "@/app/view/agents/comparestore";
@@ -68,7 +70,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     codeTreeFocusedAtom, // buildCodeBindings: inTree
     listNavAtom, // buildListNavBindings: active
     renamingRowAtom, // buildAgentBindings: subagent:back
-    focusSubagentAtom, // buildAgentBindings: subagent:back, agent:back, agent:leave-center
+    focusSubagentAtom, // buildAgentBindings: subagent:back, agent:back, agent:brainstorm-back, agent:leave-center
     centerModeAtom, // buildAgentBindings: agentNav / agentNavStrict (every Agent key), agent:back, agent:leave-center
     canvasGalleryAtom, // buildAgentBindings: the canvases:* keys, agent:leave-center; buildGlobalBindings: surface:next / prev
     tabSwitcherAtom, // buildGlobalBindings: switcher:cancel, and switcher:next / prev under the open switcher
@@ -85,19 +87,23 @@ for (const predicateAtom of PREDICATE_ATOMS) {
     globalStore.sub(predicateAtom, bumpWhenVersion);
 }
 
-// The canvas and review predicates (buildAgentBindings, and the surface/agent switches in buildGlobalBindings)
-// read the focused agent's canvasStateAtom and docReviewStateAtom: one atom per agent, picked by a model-owned
-// focus id, so neither can be a static PREDICATE_ATOMS entry. This follows the focus and re-subscribes; the
-// completeness test counts these three atoms as watched here. Returns the unsubscribe.
+// The canvas, review and brainstorm predicates (buildAgentBindings, and the surface/agent switches in
+// buildGlobalBindings) read the focused agent's canvasStateAtom, docReviewStateAtom, brainstormAtom and its block's
+// exit atom: one atom per agent, picked by a model-owned focus id, so none can be a static PREDICATE_ATOMS entry. This
+// follows the focus and re-subscribes, reading the block id from the roster once per focus; the completeness test
+// counts these atoms and the roster as covered here. Returns the unsubscribe.
 export function watchFocusedAgent(model: AgentsViewModel): () => void {
     let unsubAgent = () => {};
     const follow = () => {
         unsubAgent();
         const id = globalStore.get(model.focusIdAtom);
         if (id) {
+            const agent = globalStore.get(model.agentsAtom).find((a) => a.id === id);
             const unsubs = [
                 globalStore.sub(canvasStateAtom(id), bumpWhenVersion),
                 globalStore.sub(docReviewStateAtom(id), bumpWhenVersion),
+                globalStore.sub(brainstormAtom(id), bumpWhenVersion),
+                globalStore.sub(getProcExitAtom(agent?.blockId ?? ""), bumpWhenVersion),
             ];
             unsubAgent = () => unsubs.forEach((u) => u());
         } else {

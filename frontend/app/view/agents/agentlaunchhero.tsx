@@ -15,6 +15,7 @@ import { useEffect } from "react";
 import { showHistory } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAge, formatTokens } from "./agentsviewmodel";
+import { START_LINE } from "./brainstormhints";
 import type { Runtime } from "./launch";
 import { loadRecentSessions, recentSessionsAtom } from "./recentsessionsstore";
 import { newAgentRamWarning } from "./workercapacity";
@@ -89,6 +90,10 @@ export function AgentLaunchHero({ model }: { model: AgentsViewModel }) {
                 >
                     Conversation History
                 </button>
+                {/* where a brainstorm starts: in the agent, not from a button here */}
+                <p data-brainstorm-start-hint className="mt-4 max-w-[350px] text-[12px] leading-[1.55] text-muted">
+                    {START_LINE}
+                </p>
                 {ramWarning ? (
                     <div
                         data-ram-warn

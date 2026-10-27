@@ -34,6 +34,11 @@ type AgentCommands interface {
 	AgentsListCommand(ctx context.Context) (*CommandAgentsListRtnData, error)                                                             // the live claude and pi agent tabs
 	AgentsSendCommand(ctx context.Context, data CommandAgentsSendData) (*CommandAgentsSendRtnData, error)                                 // hand a prompt from one agent to another's live session
 	AgentsReadCommand(ctx context.Context, data CommandAgentsReadData) (*CommandAgentsReadRtnData, error)                                 // a live agent's state and last answer
+	AgentPromptCommand(ctx context.Context, data CommandAgentPromptData) error                                                            // the cockpit's own prompt to a block's agent session: its mod runs it, or it is typed
+	BrainstormCheckCommand(ctx context.Context, data CommandBrainstormCheckData) error                                                    // run the builder check on a brainstorm.json as a one-shot judging session
+	BrainstormJudgeCommand(ctx context.Context, data CommandBrainstormJudgeData) error                                                    // weigh a brainstorm.json's approach question with a one-shot blind judge
+	BrainstormJudgeStopCommand(ctx context.Context, data CommandBrainstormJudgeStopData) error                                            // stop a reading judge: its run, and its record turns stopped
+	BrainstormCheckTimesCommand(ctx context.Context) (*BrainstormCheckTimes, error)                                                       // how long this machine's past builder checks took, for the pane's clock
 	AgentsSetModelCommand(ctx context.Context, data CommandAgentsSetModelData) (*CommandAgentsSetModelRtnData, error)                     // switch a live Claude session's model with its /model command
 	AgentsSleepCommand(ctx context.Context, data CommandAgentsSleepData) (*CommandAgentsSleepRtnData, error)                              // put an idle agent to sleep: its process ends, its tab and conversation stay
 	AgentsWakeCommand(ctx context.Context, data CommandAgentsWakeData) error                                                              // relaunch a sleeping agent with --resume; with Message, deliver it once the agent reports in
@@ -72,6 +77,38 @@ type CommandAgentsSendData struct {
 	Tab      string `json:"tab"` // a tab id or a unique prefix of one
 	Text     string `json:"text"`
 	FromORef string `json:"fromoref"` // the sender's block oref
+}
+
+// CommandBrainstormCheckData starts the builder check: File is the absolute path of the brainstorm.json, BlockId the
+// brainstorming agent's block.
+type CommandBrainstormCheckData struct {
+	BlockId string `json:"blockid"`
+	File    string `json:"file"`
+}
+
+// CommandBrainstormJudgeData starts the judge of the open approach question: File and BlockId as for the builder
+// check, Line the user's pushback or "double check" as they typed it, on a rerun.
+type CommandBrainstormJudgeData struct {
+	BlockId string `json:"blockid"`
+	File    string `json:"file"`
+	Line    string `json:"line,omitempty"`
+}
+
+// CommandBrainstormJudgeStopData stops the judge reading on the agent's tab: BlockId is the brainstorming agent's block.
+type CommandBrainstormJudgeStopData struct {
+	BlockId string `json:"blockid"`
+}
+
+// BrainstormCheckTimes is how long this machine's finished builder checks took, in ms: the median and the longest,
+// both 0 before the first.
+type BrainstormCheckTimes struct {
+	UsualMs   int64 `json:"usualms"`
+	LongestMs int64 `json:"longestms"`
+}
+
+type CommandAgentPromptData struct {
+	BlockId string `json:"blockid"`
+	Text    string `json:"text"`
 }
 
 type CommandAgentsSendRtnData struct {

@@ -61,7 +61,7 @@ describe("notificationstore", () => {
     it("carries an action the toast offers, such as Undo", () => {
         const run = vi.fn();
         pushToast({
-            title: "Added to Ideas",
+            title: "Link copied",
             message: "",
             level: "info",
             check: true,

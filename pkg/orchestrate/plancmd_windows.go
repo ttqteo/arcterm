@@ -52,7 +52,7 @@ func runShellCmd(c *exec.Cmd, owner jobobject.Owner) error {
 	if err := c.Start(); err != nil {
 		return err
 	}
-	if j, jerr := jobobject.Attach(c.Process); jerr == nil {
+	if j, jerr := jobobject.AttachSealed(c.Process); jerr == nil {
 		job.Store(uint64(j))
 		if owner.Kind != "" {
 			jobobject.Register(j, c.Process.Pid, owner)

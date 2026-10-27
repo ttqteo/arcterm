@@ -186,7 +186,6 @@ describe("the fixtures as records", () => {
         expect(treeMeta(c)).toEqual({ text: "Done", tone: "muted" });
         expect(c.sessionid).toBeTruthy();
         expect(c.summary.directions.map((d) => d.rank)).toEqual([1, 2, 3, 4]);
-        expect(c.summary.directions.every((d) => d.ideaid)).toBe(true);
         expect(c.summary.directions.map((d) => d.agreed)).toEqual([true, true, false, false]);
         expect(c.summary.directions[2].from).toEqual(["P2", "P3"]);
         const proposalIds = c.proposals.map((p) => p.id);

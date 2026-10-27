@@ -819,7 +819,8 @@ func advanceRun(ctx context.Context, data wshrpc.CommandAdvanceRunData) (sealDue
 		// blocking the handler on it surfaced as EC-TIME even though the transition above had already
 		// persisted. It's best-effort and idempotent, with SealRunEvidenceCommand as the backfill — so the
 		// caller dispatches it off-band, except for a lead whose complete waits on its land.
-		sealDue = run.Evidence == nil
+		// a builder check or a judge made no change of its own: a seal would diff the brainstorm's shared checkout
+		sealDue = run.Evidence == nil && !jarvis.IsBrainstormSession(run)
 		// parent-notify stays synchronous: it's a cheap PTY input send, and a child's parent must learn its
 		// child is done as soon as the transition lands, not whenever the background seal happens to finish.
 		if line, ok := jarvis.ParentNotifyLine(run); ok {

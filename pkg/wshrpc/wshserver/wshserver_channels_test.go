@@ -5,8 +5,10 @@ package wshserver
 
 import (
 	"context"
+	"slices"
 	"testing"
 
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
@@ -39,6 +41,50 @@ func TestGetChannelRunsAndMessagesCommands(t *testing.T) {
 	msgRtn, err := ws.GetChannelMessagesCommand(ctx, wshrpc.CommandGetChannelMessagesData{ChannelId: ch.OID})
 	if err != nil || len(msgRtn.Messages) != 1 || msgRtn.Messages[0].Text != "hi" {
 		t.Fatalf("GetChannelMessages wrong: %+v err=%v", msgRtn, err)
+	}
+}
+
+func TestGetChannelRunCommandsLeaveOutABrainstormSession(t *testing.T) {
+	ctx := context.Background()
+	ws := &WshServer{}
+	ch, err := wstore.CreateChannel(ctx, "rpc-check", "/p")
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	for _, run := range []waveobj.Run{
+		{ID: "quick", Goal: "g", Status: "done", CreatedTs: 1},
+		{ID: "plan-rev", Goal: "g", Status: "done", CreatedTs: 2, DagORef: "dag-1", StageRole: jarvis.UsageRole_PlanReviewer},
+		{ID: "check", Goal: "g", Status: "done", CreatedTs: 3, StageRole: jarvis.UsageRole_BuilderCheck},
+		{ID: "judge", Goal: "g", Status: "done", CreatedTs: 4, StageRole: jarvis.UsageRole_BrainstormJudge},
+	} {
+		if err := wstore.AppendRun(ctx, ch.OID, run); err != nil {
+			t.Fatalf("append %s: %v", run.ID, err)
+		}
+	}
+	idsOf := func(runs []*waveobj.Run) []string {
+		var out []string
+		for _, r := range runs {
+			out = append(out, r.ID)
+		}
+		return out
+	}
+	want := []string{"quick", "plan-rev"}
+
+	runsRtn, err := ws.GetChannelRunsCommand(ctx, wshrpc.CommandGetChannelRunsData{ChannelId: ch.OID})
+	if err != nil || !slices.Equal(idsOf(runsRtn.Runs), want) {
+		t.Fatalf("GetChannelRuns = %v err=%v, want %v", idsOf(runsRtn.Runs), err, want)
+	}
+	chgRtn, err := ws.GetChannelRunChangesCommand(ctx, wshrpc.CommandGetChannelRunChangesData{ChannelId: ch.OID})
+	if err != nil || !slices.Equal(chgRtn.RunIds, want) || !slices.Equal(idsOf(chgRtn.Runs), want) {
+		t.Fatalf("GetChannelRunChanges from nothing = ids %v rows %v err=%v, want both %v", chgRtn.RunIds, idsOf(chgRtn.Runs), err, want)
+	}
+	held := map[string]int{}
+	for _, r := range runsRtn.Runs {
+		held[r.ID] = r.Version
+	}
+	chgRtn, err = ws.GetChannelRunChangesCommand(ctx, wshrpc.CommandGetChannelRunChangesData{ChannelId: ch.OID, Known: held})
+	if err != nil || !slices.Equal(chgRtn.RunIds, want) || len(chgRtn.Runs) != 0 {
+		t.Fatalf("GetChannelRunChanges with the rest held = ids %v rows %v err=%v, want ids %v and no rows", chgRtn.RunIds, idsOf(chgRtn.Runs), err, want)
 	}
 }
 
