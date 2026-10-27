@@ -658,7 +658,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   too.
 - **Keep a selection as an idea**: select text in an agent's terminal and press `Ctrl+Shift+I` (`Cmd+Shift+I` on a Mac),
   or click **Add as idea** beside the selection, to keep it in the agent's Ideas; the toast has Undo. With nothing
-  selected, the same keys open the Ideas box. <!-- try: idea-capture -->
+  selected, the same keys open the Ideas box.
 - **Setup → Project**: one place to see what shapes Claude in a project: its CLAUDE.md or AGENTS.md, its memory
   grouped by type, its settings and hooks, its skills, agents and commands, and `.arc/setup`. Pick a file to read it
   beside the list. <!-- try: go:setup -->

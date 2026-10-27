@@ -130,7 +130,14 @@ export function initialPick(names: string[], remembered: string | null): string 
     return names.length === 1 ? names[0] : null;
 }
 
-export type NewRunPrefill = { projectName: string; goal: string; shape: RunShape; prototype?: string };
+// onStarted hears the id of a run this launch starts, so what filled the window can follow it
+export type NewRunPrefill = {
+    projectName: string;
+    goal: string;
+    shape: RunShape;
+    prototype?: string;
+    onStarted?: (runId: string) => void;
+};
 
 // What the window opens on when something filled it (a canvas's Build this…, the palette's Quick and Orchestrate):
 // a goal start in the prefill's shape, except that a prototype only rides an orchestrator run, so one that

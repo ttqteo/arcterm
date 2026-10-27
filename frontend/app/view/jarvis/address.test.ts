@@ -100,6 +100,23 @@ describe("parseAddress", () => {
         });
     });
 
+    describe("brainstorm:", () => {
+        it("reads a topic", () => {
+            expect(parseAddress("brainstorm:consumer-lag-alerts")).toEqual({
+                kind: "brainstorm",
+                topic: "consumer-lag-alerts",
+            });
+        });
+
+        // the topic becomes a path segment, and a brainstorm has no boards to name after it
+        it.each(["brainstorm:", "brainstorm:../x", "brainstorm:a/b", "brainstorm:..", "brainstorm:.hidden"])(
+            "refuses %s",
+            (address) => {
+                expect(parseAddress(address)).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+            }
+        );
+    });
+
     describe("memhygiene:", () => {
         it("reads a project", () => {
             expect(parseAddress("memhygiene:waveterm")).toEqual({ kind: "memhygiene", project: "waveterm" });

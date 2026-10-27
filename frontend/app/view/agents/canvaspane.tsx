@@ -67,7 +67,18 @@ function openBuildRun(model: AgentsViewModel, agent: AgentVM, s: CanvasState): v
     });
 }
 
-export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: AgentVM }) {
+// onBack: shown inside a brainstorm, which owns the way back (backLabel says where to) and the run launch
+export function CanvasPane({
+    model,
+    agent,
+    onBack,
+    backLabel,
+}: {
+    model: AgentsViewModel;
+    agent: AgentVM;
+    onBack?: () => void;
+    backLabel?: string;
+}) {
     const s = useAtomValue(canvasStateAtom(agent.id));
     const now = useAtomValue(model.nowAtom);
     const [measureRef, scrollRef, rect] = useDimensionsWithCallbackRef<HTMLDivElement>();
@@ -100,6 +111,11 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
     return (
         <div data-canvas-pane className="flex min-h-0 flex-1 flex-col">
             <div className={SWAP_BAR}>
+                {onBack != null ? (
+                    <button type="button" onClick={onBack} className={SWAP_BTN}>
+                        {backLabel}
+                    </button>
+                ) : null}
                 <span className={SWAP_LABEL}>{s.topic}</span>
                 {s.boards.length > 0 && !tabsFitStrip(s.boards) ? (
                     <BoardPicker
@@ -150,7 +166,7 @@ export function CanvasPane({ model, agent }: { model: AgentsViewModel; agent: Ag
                                 Open in browser
                             </button>
                         ) : null}
-                        {s.boards.length > 0 ? (
+                        {s.boards.length > 0 && onBack == null ? (
                             <button
                                 type="button"
                                 onClick={() => openBuildRun(model, agent, s)}
@@ -575,7 +591,7 @@ export function EdgeState({ children }: { children: ReactNode }) {
     );
 }
 
-const EXPLAINER = "max-w-[440px] text-[13px] leading-[1.5] text-secondary";
+export const EXPLAINER = "max-w-[440px] text-[13px] leading-[1.5] text-secondary";
 
 // wavesrv serves the canvas itself, so this is a refusal or a dropped request, and the poller's next tick retries
 export function ServerDown() {

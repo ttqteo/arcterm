@@ -242,7 +242,7 @@ function sepOf(path: string): string {
     return path.includes("\\") ? "\\" : "/";
 }
 
-function join(base: string, ...parts: string[]): string {
+export function join(base: string, ...parts: string[]): string {
     const sep = sepOf(base);
     return [base.replace(/[\\/]+$/, ""), ...parts].join(sep);
 }

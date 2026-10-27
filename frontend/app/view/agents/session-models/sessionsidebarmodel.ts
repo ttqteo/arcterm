@@ -23,8 +23,10 @@ import { getAgentStatusAtom, getSubagentExpandAtom } from "./agentstatusstore";
 import { sessionGroupLabelAtom } from "./sessiongroupstore";
 import {
     badgeToStatus,
+    brainstormJudgeOf,
     buildDuplicateBlockMeta,
     buildSessionViewModel,
+    builderCheckOf,
     cwdToServiceLabel,
     findSessionTermBlock,
     reorderWithinGroup,
@@ -125,6 +127,9 @@ export const sessionSidebarViewModelAtom = atom<SidebarViewModel>((get) => {
             projectLabel: meta["session:project"],
             runORef: sessionRunORef(meta, termBlock?.meta),
             effortORef: meta["session:effort"],
+            brainstormFile: meta["session:brainstorm"],
+            builderCheck: builderCheckOf(meta),
+            brainstormJudge: brainstormJudgeOf(meta),
             title,
             pinned: meta["session:pinned"] === true,
             isAgentsTab,

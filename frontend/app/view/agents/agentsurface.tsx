@@ -47,6 +47,9 @@ import { AppPane } from "./apppane";
 import { appStatesAtom } from "./appstore";
 import { ConversationHistory } from "./conversationhistory";
 import { asksInTerminal, projectOf } from "./agentsviewmodel";
+import { compactedSummary } from "./brainstormmodel";
+import { BrainstormPane } from "./brainstormpane";
+import { brainstormAtom } from "./brainstormstore";
 import { CanvasGallery } from "./canvasgalleryview";
 import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
@@ -166,14 +169,20 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         neighbour,
     });
     const showSub = focusSub != null && focusSub.parentId === agent?.id;
-    const canvasMode = useAtomValue(canvasStateAtom(agent?.id ?? ""))?.mode === "canvas";
+    const brainstorm = useAtomValue(brainstormAtom(agent?.id ?? ""));
+    const brainstormMode = brainstorm?.mode === "brainstorm";
+    // an agent with a brainstorm never shows its canvas: the brainstorm pane opens its boards
+    const canvasMode = useAtomValue(canvasStateAtom(agent?.id ?? ""))?.mode === "canvas" && brainstorm == null;
     const reviewMode = useAtomValue(docReviewStateAtom(agent?.id ?? ""))?.mode === "review";
     // a pinned app's page or waiting card (apppane.tsx), over its terminal
     const app = useAtomValue(appStatesAtom)[agent?.kind === "terminal" ? agent.id : ""];
     const appMode = appShows(app) !== "terminal";
-    // what shows in the terminal's place; the canvas and the review are exclusive (agentview.ts), and an app is a
-    // terminal, which has neither
-    const swapped = reviewMode ? "review" : canvasMode ? "canvas" : appMode ? "app" : null;
+    // what shows in the terminal's place; the canvas, the review and the brainstorm are exclusive (agentview.ts), and
+    // an app is a terminal, which has none of them
+    const swapped = reviewMode ? "review" : brainstormMode ? "brainstorm" : canvasMode ? "canvas" : appMode ? "app" : null;
+    // a compaction the user has not seen, said above the terminal; with the pane up the pane says it itself
+    const compacted = brainstorm?.file?.compacted;
+    const showCompacted = swapped == null && compacted != null && compacted > brainstorm!.lastViewedMs;
     useCanvasPoller(model, agent);
 
     // sync focusId to the defaulted agent so the tree highlights it and ←/→ start from the right place
@@ -366,9 +375,10 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
         }
     }, [agent?.id]);
 
-    // canvas and review mode hide the terminal, and a hidden xterm can still hold focus and eat c/[/]/m, so
-    // entering one pulls focus away: into the review (its keys and selection live there), or to the wrapper for a
-    // canvas. Returning to the same agent's terminal hands focus back to its xterm, or the wrapper with none.
+    // canvas, review and brainstorm mode hide the terminal, and a hidden xterm can still hold focus and eat b/c/[/]/m,
+    // so entering one pulls focus away: into the review (its keys and selection live there), or to the wrapper for a
+    // canvas or a brainstorm. Returning to the same agent's terminal hands focus back to its xterm, or the wrapper with
+    // none. The terminal stack above stays mounted and in its grid in all of them; only the grid's class hides it.
     const lastSwap = useRef<{ id: string; on: typeof swapped } | null>(null);
     useEffect(() => {
         const prev = lastSwap.current;
@@ -653,7 +663,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     return (
         <MotionConfig reducedMotion="user">
             <div ref={wrapRef} tabIndex={0} data-cockpit-surface-wrap className="flex h-full w-full bg-background outline-none">
-                {/* the tree stays in canvas and review mode: hiding it made reaching another agent a round trip through the terminal */}
+                {/* the tree stays in canvas, review and brainstorm mode: hiding it made reaching another agent a round trip through the terminal */}
                 {!fullscreen || centerMode !== "terminal" ? <AgentTree model={model} /> : null}
                 <div className="flex min-w-0 flex-1 flex-col">
                     {/* terminal stack stays mounted (hidden) while a subagent interior, a session or History is shown, so
@@ -684,6 +694,17 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                 <HeldAskBar model={model} agent={subject!} />
                                 {/* keyed: the card's pending wake and its failure belong to one agent */}
                                 <SleepingCard key={agent.id} agent={agent} />
+                                {showCompacted ? (
+                                    <div
+                                        data-brainstorm-compacted
+                                        className="mx-[16px] mt-[12px] flex flex-none items-center gap-[10px] rounded-[8px] border border-edge-mid bg-surface-raised px-[12px] py-[10px]"
+                                    >
+                                        <span className="h-[7px] w-[7px] flex-none rounded-full bg-accent" aria-hidden />
+                                        <span className="flex-1 text-[13px] leading-[1.45] text-secondary">
+                                            {compactedSummary(brainstorm!.file!)}
+                                        </span>
+                                    </div>
+                                ) : null}
                             </>
                         )}
                         {/* The grid parent is always rendered: hidden, never unmounted, so no xterm remounts. Tracks
@@ -822,6 +843,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                             <FinalStagePane model={model} run={stage.run} />
                         ) : reviewMode ? (
                             <DocReviewPane model={model} agent={agent} />
+                        ) : brainstormMode ? (
+                            <BrainstormPane model={model} agent={agent} />
                         ) : canvasMode ? (
                             <CanvasPane model={model} agent={agent} />
                         ) : appMode ? (
@@ -839,8 +862,8 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                 </div>
                 {/* a plain terminal alone has no details of its own: no rail, the tree reaches the others. In a split
                     with an agent it keeps that agent's (headSubject). Nor does a maximized dock, which is a terminal on
-                    screen alone. A canvas or a review in the terminal's place keeps it, so swapping never moves the
-                    header's controls. */}
+                    screen alone. A canvas, a review or a brainstorm in the terminal's place keeps it, so swapping never
+                    moves the header's controls. */}
                 {!fullscreen && centerMode === "terminal" && subject!.kind !== "terminal" && !dockMax ? (
                     <AgentDetailsRail model={model} agent={subject!} />
                 ) : null}

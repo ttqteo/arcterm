@@ -17,6 +17,7 @@ import { useAtomValue } from "jotai";
 import { ChevronDown, Loader2, Lock, Plus, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
+import { START_LINE } from "./brainstormhints";
 import {
     ASK_SETTINGS_ARG,
     launcherFlagCatalog,
@@ -277,6 +278,12 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                         className="block field-sizing-content min-h-16 max-h-[240px] w-full grow resize-none overflow-y-auto rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
                     />
                     <TaskImages />
+                    {/* where a brainstorm starts: in the agent, so a newcomer sees it as the agent is being picked */}
+                    {resume == null ? (
+                        <span data-brainstorm-start-hint className="text-[11px] leading-[1.5] text-muted">
+                            {START_LINE}
+                        </span>
+                    ) : null}
                 </div>
             ) : null}
             <div className="flex flex-col gap-2">

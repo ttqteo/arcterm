@@ -48,7 +48,6 @@ Design spec: [`docs/superpowers/specs/2026-07-03-keyboard-operability-design.md`
 | _(no chord)_ | New council: opens the council Setup in the project of the agent in focus, else the first registered project. From Search → Start → "New council…" (or `wsh ui do new-council`), or New → **Council** with a project picked, which opens Setup in that project. No chord: a council costs 0.5–1.5M tokens, so it is never a keystroke away |
 | `Mod`+`Shift`+`T` | Reopen the agent closed last, as a browser reopens a closed tab: its conversation comes back asleep (codex, which cannot sleep, resumes awake), and starts on Wake or a message. Keeps the last 5 closed agents, until arcterm restarts; older ones open from Conversation History. From inside a terminal too |
 | `Mod`+`Shift`+`O` | Open a tool: the picker for lazygit, yazi, btop and your own tools (see below), opening in the focused agent's folder, else the project root. From inside a terminal too. Not bare `Mod`+`O`: on Windows that is `Ctrl`+`O`, which a TUI or the shell may take |
-| `Mod`+`Shift`+`I` | Add as idea: keeps the text selected in an agent's terminal in that agent's Ideas (one line, at most 500 characters), then offers Undo; with nothing selected, opens the focused agent's Ideas and focuses its Add an idea box. The **Add as idea** chip that shows beside a selection does the same on a click, and goes when a key is typed or the terminal scrolls. From inside a terminal too. In the dev build WebView2's DevTools may take this chord first; a release build has none |
 | `Mod`+`G` | Go to…: opens the go-to leader (see below) |
 | `Mod`+`J` | What's waiting: the avatar popup (Jarvis peek), on any surface, from inside a terminal too (on Windows it takes `Ctrl`+`J` there; Shift+Enter is the newline). Hold `Mod` on its own and the creature shows a `J` |
 | `Mod`+`,` | Settings, as in VS Code and every Mac app |
@@ -305,7 +304,7 @@ picker instead of moving through the list. `Shift`+`Esc` goes back to the list.
 | `j` / `k` (or `↓` / `↑`, `→` / `←`) | Next / previous agent or terminal, by the rule above, stopping at the ends of the list; not while a terminal holds focus |
 | `f` / `Mod`+`Shift`+`Enter` / `F11` | Fullscreen shows only the focused cell; the grid returns when you leave it |
 
-Canvas mode, a review, the subagent view, Conversation History, the Canvas gallery and an ended session's or a done
+Canvas mode, a review, a brainstorm, the subagent view, Conversation History, the Canvas gallery and an ended session's or a done
 worker's transcript each show one thing in place of the grid; the grid comes back as it was. A terminal picked from the tree, `j` / `k`,
 `Ctrl`+`Tab` or Search no longer does: it takes a cell by the rule above.
 
@@ -316,7 +315,7 @@ worker's transcript each show one thing in place of the grid; the grid comes bac
 | Keys | Action |
 |---|---|
 | `c` | Show the agent's canvas; from the canvas, back to the terminal |
-| `Alt`+`C` | Switch Terminal → Canvas → Review, skipping the ones the agent doesn't have. Works from inside the terminal, where a bare `c` is typed into it |
+| `Alt`+`C` | Switch Terminal → Canvas → Review, skipping the ones the agent doesn't have (an agent with a brainstorm has Brainstorm in the canvas's place). Works from inside the terminal, where a bare `c` is typed into it |
 | `Alt`+`W` | Close the agent whose header shows **✓ Close · N tok** (its last turn committed and you have read it). Works from inside the terminal; when the header offers no Close, the key goes to the terminal |
 | `[` / `]` or `←` / `→` | Previous / next board |
 | `m` | Mark parts of the board; in mark mode, stop marking |
@@ -329,12 +328,30 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 | Keys | Action |
 |---|---|
 | `r` | Back to the terminal |
-| `Alt`+`C` | Next of Terminal, Canvas, Review (as in canvas mode) |
+| `Alt`+`C` | Next of Terminal, Canvas (or Brainstorm), Review (as in canvas mode) |
 | `[` / `]` | Previous / next tab: Changes, PDF (a `.tex` file only) |
 | `c` | Comment on the selected text |
 | `e` | Suggest an edit: open the selected text's paragraph as source; `Mod`+`Enter` saves the suggestion, `Esc` cancels. The file is not changed; the agent is sent `Edit: replace "…" with "…"` |
 | `Mod`+`Enter` | Approve, while there is no comment and no note to send. Inside a comment being written it adds that comment instead |
 | `Mod`+`Enter` | Request changes, once there is a comment or a note. Inside a comment being written it adds that comment instead |
+
+### Agent: brainstorm mode
+
+`b` works when the focused agent has a brainstorm (the Cockpit's own `b`, Background, is live on the Cockpit surface only, so the two never meet). Such an agent never shows canvas mode, so `c` does nothing for it: the Terminal | Brainstorm | Review control takes the canvas's place. In brainstorm mode, `d`, `f` and `F11` do not do their usual jobs, and `Esc` steps back inside the brainstorm instead of leaving the surface; the agent keys (`j` / `k`, the arrows, `Ctrl`+`Tab`) still move between agents, since the tree stays beside the brainstorm, except that `j` / `k` move between decisions while the builder check's review fills the main area (the arrows and `Ctrl`+`Tab` still move between agents there). The first time a brainstorm pane opens, a card at its top says how to use it; its ✕ keeps it away for good. The footer lists the pane's keys while it is up.
+
+| Keys | Action |
+|---|---|
+| `b` | Show the agent's brainstorm; from the brainstorm, back to the terminal (while the question offers a B, `b` picks it instead) |
+| `Ctrl`+`Shift`+`B` | The same switch, and it also works while typing in the terminal or while `b` picks an answer |
+| `Alt`+`C` | Next of Terminal, Brainstorm, Review |
+| `a` / `b` / `c` / `d` | While the brainstorm asks a question with answers to pick from: focus that answer; `Enter` sends it |
+| `Enter` / `Shift`+`Enter` | In the answer box or an edit box: send / a new line |
+| `Esc` | Back one level, as the pane's back control does: from a full-size board to the question or design it was opened from; from the design opened over the question (or over the agent writing) back to it. A focused field keeps its own `Esc`, and on a board with a drawn mark `Esc` stays the mark note's |
+| `j` / `k` | In the builder check's review: next / previous decision |
+| `Enter` | In the review: show or hide what the cursor decision was (a focused button keeps its own `Enter`) |
+| `y` | In the review: keep the cursor decision's change; on a guess, confirm it |
+| `u` | In the review: put mine back |
+| `Mod`+`Shift`+`W` | Close the agent, from the pane as from the terminal (the chord is live anywhere on the Agent surface, with focus in the pane's answer box too; it asks first) |
 
 ### Jarvis
 

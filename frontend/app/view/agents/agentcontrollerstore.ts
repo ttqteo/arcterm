@@ -17,6 +17,18 @@ export function getLastOutputAtom(blockId: string): PrimitiveAtom<number | undef
     return outputAtom;
 }
 
+// keyed like lastOutputAtoms; set when the block's shell process reports done, cleared when it runs again
+const procExitAtoms = new Map<string, PrimitiveAtom<{ code: number; at: number } | undefined>>();
+
+export function getProcExitAtom(blockId: string): PrimitiveAtom<{ code: number; at: number } | undefined> {
+    let exitAtom = procExitAtoms.get(blockId);
+    if (!exitAtom) {
+        exitAtom = atom(undefined) as PrimitiveAtom<{ code: number; at: number } | undefined>;
+        procExitAtoms.set(blockId, exitAtom);
+    }
+    return exitAtom;
+}
+
 let subscribed = false;
 export function setupControllerStatusSubscription() {
     if (subscribed) {
@@ -27,10 +39,17 @@ export function setupControllerStatusSubscription() {
         eventType: "controllerstatus",
         handler: (event) => {
             const data = event.data;
-            if (!data?.blockid || !data.lastoutputts) {
+            if (!data?.blockid) {
                 return;
             }
-            globalStore.set(getLastOutputAtom(data.blockid), data.lastoutputts);
+            if (data.shellprocstatus === "done") {
+                globalStore.set(getProcExitAtom(data.blockid), { code: data.shellprocexitcode, at: Date.now() });
+            } else if (data.shellprocstatus === "running") {
+                globalStore.set(getProcExitAtom(data.blockid), undefined);
+            }
+            if (data.lastoutputts) {
+                globalStore.set(getLastOutputAtom(data.blockid), data.lastoutputts);
+            }
         },
     });
 }

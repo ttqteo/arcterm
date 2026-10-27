@@ -13,6 +13,8 @@ const rpc = vi.hoisted(() => ({
     SetChannelReadCommand: vi.fn(),
     EffortGetCommand: vi.fn(),
     FileInfoCommand: vi.fn(),
+    FileReadCommand: vi.fn(),
+    SetMetaCommand: vi.fn(),
     ReadVaultNoteCommand: vi.fn(),
     ListMemoryHygieneCommand: vi.fn(),
 }));
@@ -39,6 +41,7 @@ import { atom } from "jotai";
 import { centerModeAtom } from "../agents/agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "../agents/agents";
 import type { AgentVM } from "../agents/agentsviewmodel";
+import { attachBrainstorm, detachBrainstorm, getBrainstorm } from "../agents/brainstormstore";
 import { attachCanvas, detachCanvas, getCanvas, setCanvasMode } from "../agents/canvasstore";
 import { activeChannelIdAtom } from "../agents/channelsstore";
 import { councilSelAtom, councilViewAtom } from "../agents/councilstore";
@@ -69,6 +72,7 @@ function makeModel(roster: string[] = [], terminals: string[] = []): AgentsViewM
         focusIdAtom: atom<string | undefined>(undefined),
         agentsAtom: atom(roster.map(vm)),
         terminalsAtom: atom<AgentVM[]>(terminals.map(vm)),
+        baseRosterAtom: atom(roster.map(vm)),
     } as unknown as AgentsViewModel;
 }
 
@@ -698,6 +702,144 @@ describe("canvas landing", () => {
         expect(result.ok).toBe(false);
         expect(rpc.FileInfoCommand).not.toHaveBeenCalled();
         expect(getCanvas("a1")).toBeNull();
+    });
+});
+
+describe("brainstorm landing", () => {
+    const CWD = "C:\\p";
+    const PATH = "C:\\p\\.superpowers\\brainstorm\\lag\\brainstorm.json";
+    const caller = { blockId: "block-a1", cwd: CWD };
+    const noReport = () => {};
+
+    afterEach(() => {
+        for (const id of ["a1", "a2", "t9"]) {
+            detachBrainstorm(id);
+        }
+    });
+
+    it("refuses a brainstorm file that does not exist, naming it", async () => {
+        const model = makeModel(["a1"]);
+        rpc.FileInfoCommand.mockResolvedValue({ notfound: true });
+        const result = await openAddress(model, "brainstorm:lag", { caller }, noReport);
+        expect(result).toEqual({ ok: false, reason: "unavailable", message: `No brainstorm at ${PATH}` });
+        expect(rpc.FileInfoCommand).toHaveBeenCalledWith(expect.anything(), { info: { path: PATH } });
+        expect(getBrainstorm("a1")).toBeNull();
+        expect(rpc.SetMetaCommand).not.toHaveBeenCalled();
+    });
+
+    it("attaches the caller's brainstorm in terminal mode without moving the user, and records it on the tab", async () => {
+        const model = makeModel(["a1", "a2"]);
+        globalStore.set(model.focusIdAtom, "a2");
+        rpc.FileInfoCommand.mockResolvedValue({ path: PATH });
+        rpc.SetMetaCommand.mockResolvedValue(undefined);
+        expect(await openAddress(model, "brainstorm:lag", { caller }, noReport)).toEqual({ ok: true });
+        expect(getBrainstorm("a1")).toMatchObject({ topic: "lag", path: PATH, cwd: CWD, mode: "terminal" });
+        expect(globalStore.get(model.focusIdAtom)).toBe("a2");
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+        expect(rpc.SetMetaCommand).toHaveBeenCalledWith(expect.anything(), {
+            oref: "tab:a1",
+            meta: { "session:brainstorm": PATH },
+        });
+    });
+
+    it("reads the brainstorm file on each reveal instead of waiting for the next poll", async () => {
+        const model = makeModel(["a1"]);
+        const text = (title: string) =>
+            JSON.stringify({
+                v: 1,
+                title,
+                spec: "",
+                question: null,
+                working: null,
+                parts: [],
+                history: [],
+                done: false,
+            });
+        rpc.SetMetaCommand.mockResolvedValue(undefined);
+        rpc.FileInfoCommand.mockResolvedValue({ path: PATH, modtime: 1 });
+        rpc.FileReadCommand.mockResolvedValue({ data64: btoa(text("first")) });
+        await openAddress(model, "brainstorm:lag", { caller }, noReport);
+        await vi.waitFor(() => expect(getBrainstorm("a1")?.file?.title).toBe("first"));
+        rpc.FileInfoCommand.mockResolvedValue({ path: PATH, modtime: 2 });
+        rpc.FileReadCommand.mockResolvedValue({ data64: btoa(text("second")) });
+        await openAddress(model, "brainstorm:lag", { caller }, noReport);
+        await vi.waitFor(() => expect(getBrainstorm("a1")?.file?.title).toBe("second"));
+    });
+
+    it("still attaches when the tab meta write fails", async () => {
+        const model = makeModel(["a1"]);
+        rpc.FileInfoCommand.mockResolvedValue({ path: PATH });
+        rpc.SetMetaCommand.mockRejectedValue(new Error("no route"));
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        expect(await openAddress(model, "brainstorm:lag", { caller }, noReport)).toEqual({ ok: true });
+        expect(getBrainstorm("a1")?.topic).toBe("lag");
+        expect(warn).toHaveBeenCalled();
+        warn.mockRestore();
+    });
+
+    it("attaches a background terminal as readily as an agent", async () => {
+        const model = makeModel(["a1"], ["t9"]);
+        rpc.FileInfoCommand.mockResolvedValue({ path: PATH });
+        rpc.SetMetaCommand.mockResolvedValue(undefined);
+        const result = await openAddress(
+            model,
+            "brainstorm:lag",
+            { caller: { ...caller, blockId: "block-t9" } },
+            noReport
+        );
+        expect(result).toEqual({ ok: true });
+        expect(getBrainstorm("t9")?.topic).toBe("lag");
+    });
+
+    it("refuses a caller that is no roster agent, and changes nothing", async () => {
+        const model = makeModel(["a1"]);
+        const result = await openAddress(
+            model,
+            "brainstorm:lag",
+            { caller: { ...caller, blockId: "block-x" } },
+            noReport
+        );
+        expect("reason" in result ? result.reason : null).toBe("unavailable");
+        expect("reason" in result ? result.message : "").toContain("wsh ui reveal brainstorm:lag");
+        expect(getBrainstorm("a1")).toBeNull();
+        expect(rpc.FileInfoCommand).not.toHaveBeenCalled();
+    });
+
+    it("without a caller, lands on the agent that has the brainstorm, in brainstorm mode", async () => {
+        const model = makeModel(["a1", "a2"]);
+        attachBrainstorm("a2", { topic: "lag", cwd: CWD }, 1);
+        expect(await openAddress(model, "brainstorm:lag", undefined, noReport)).toEqual({ ok: true });
+        expect(getBrainstorm("a2")?.mode).toBe("brainstorm");
+        expect(globalStore.get(model.focusIdAtom)).toBe("a2");
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(rpc.FileInfoCommand).not.toHaveBeenCalled();
+    });
+
+    it("without a caller or an owner, says no agent has it open", async () => {
+        const model = makeModel(["a1"]);
+        expect(await openAddress(model, "brainstorm:lag", undefined, noReport)).toEqual({
+            ok: false,
+            reason: "unavailable",
+            message: "No agent has the brainstorm lag open",
+        });
+        expect(globalStore.get(model.surfaceAtom)).toBe("cockpit");
+    });
+
+    it("refuses a target built in code with a path in its topic", async () => {
+        const model = makeModel(["a1"]);
+        const result = await openTarget(model, { kind: "brainstorm", topic: ".." }, noReport, caller);
+        expect(result.ok).toBe(false);
+        expect(rpc.FileInfoCommand).not.toHaveBeenCalled();
+        expect(getBrainstorm("a1")).toBeNull();
+    });
+
+    it("is not peekable: a peek opens it", async () => {
+        const model = makeModel(["a1"]);
+        attachBrainstorm("a1", { topic: "lag", cwd: CWD }, 1);
+        expect(isPeekable({ kind: "brainstorm", topic: "lag" })).toBe(false);
+        expect(await peekTarget(model, { kind: "brainstorm", topic: "lag" })).toEqual({ ok: true });
+        expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        expect(globalStore.get(peekItemAtom)).toBeNull();
     });
 });
 

@@ -4,8 +4,16 @@
 import { registerModal } from "@/app/modals/modalstack";
 import { globalStore } from "@/app/store/jotaiStore";
 import { centerModeAtom } from "@/app/view/agents/agentcenter";
+import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
 import type { AgentVM } from "@/app/view/agents/agentsviewmodel";
 import { setAgentView } from "@/app/view/agents/agentview";
+import {
+    attachBrainstorm,
+    brainstormAtom,
+    detachBrainstorm,
+    openBrainstormDesign,
+    updateBrainstorm,
+} from "@/app/view/agents/brainstormstore";
 import { canvasGalleryAtom } from "@/app/view/agents/canvasgallerystore";
 import {
     attachCanvas,
@@ -43,7 +51,10 @@ import { PREDICATE_ATOMS } from "./whenstate";
 
 // the canvas guards read the focused agent id from the model
 function stubModel(focusId?: string): any {
-    return { focusIdAtom: atom<string | undefined>(focusId) as PrimitiveAtom<string | undefined> };
+    return {
+        focusIdAtom: atom<string | undefined>(focusId) as PrimitiveAtom<string | undefined>,
+        agentsAtom: atom([]),
+    };
 }
 
 // where Agent → Canvas gallery is: a view, and the topic folder it has open
@@ -189,6 +200,187 @@ describe("keybinding conflict invariant", () => {
             }
         } finally {
             syncDocReview("a1", undefined);
+            detachCanvas("a1");
+        }
+    });
+
+    // an agent with a brainstorm never shows its canvas, so b takes over and c stands down
+    it("the two b bindings never both match, and every surface's bindings stay conflict-free with a brainstorm", () => {
+        const model = withCanvas();
+        attachBrainstorm("a1", { topic: "bs", cwd: "/p" }, 0);
+        globalStore.set(listNavAtom, null);
+        const askRef = { current: { id: "w1", state: "asking" } as AgentVM };
+        const all = [
+            ...buildGlobalBindings(model),
+            ...buildListNavBindings(model),
+            ...buildChannelsAskBindings(model, askRef),
+            ...buildJarvisBindings(model),
+            ...buildCockpitBindings(),
+            ...buildAgentBindings(model),
+            ...buildFilesBindings(),
+            ...buildCodeBindings(),
+        ];
+        const open = all.find((x) => x.id === "agent:brainstorm-open")!;
+        const close = all.find((x) => x.id === "agent:brainstorm-close")!;
+        const live = (id: string, ctx: KeyContext) => all.find((x) => x.id === id)!.when!(ctx);
+        const agentCtx: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+        try {
+            expect(open.keys).toBe("b");
+            expect(close.keys).toBe("b");
+            for (const mode of ["terminal", "brainstorm"] as const) {
+                setAgentView("a1", mode, 1);
+                for (const ctx of contexts()) {
+                    expect(open.when!(ctx) && close.when!(ctx)).toBe(false);
+                }
+                expect(() => assertNoConflicts(all)).not.toThrow();
+                expect(live("agent:canvas-open", agentCtx)).toBe(false);
+            }
+            setAgentView("a1", "terminal", 2);
+            expect(open.when!(agentCtx)).toBe(true);
+            expect(live("agent:toggle-rail", agentCtx)).toBe(true);
+            setAgentView("a1", "brainstorm", 3);
+            expect(close.when!(agentCtx)).toBe(true);
+            // brainstorm mode stands down what canvas mode does: the rail, fullscreen and Escape
+            expect(live("agent:toggle-rail", agentCtx)).toBe(false);
+            expect(live("agent:fullscreen", agentCtx)).toBe(false);
+            expect(live("agent:back", agentCtx)).toBe(false);
+            // the canvas's own c stays down even when the canvas was left in canvas mode
+            setCanvasMode("a1", "canvas", 4);
+            expect(live("agent:canvas-close", agentCtx)).toBe(false);
+            expect(() => assertNoConflicts(all)).not.toThrow();
+            detachBrainstorm("a1");
+            expect(open.when!(agentCtx) || close.when!(agentCtx)).toBe(false);
+        } finally {
+            detachBrainstorm("a1");
+            detachCanvas("a1");
+        }
+    });
+
+    // b backgrounds an agent on the Cockpit (cockpit:background) and shows its brainstorm on the Agent surface; they
+    // are told apart by the surface, so no context has both live
+    it("the Cockpit's b and the brainstorm's b are never live in the same context", () => {
+        const model = withCanvas();
+        attachBrainstorm("a1", { topic: "bs", cwd: "/p" }, 0);
+        const all = [...buildCockpitBindings(), ...buildAgentBindings(model)];
+        const background = all.find((x) => x.id === "cockpit:background")!;
+        const brainstormKeys = all.filter((x) => x.id === "agent:brainstorm-open" || x.id === "agent:brainstorm-close");
+        try {
+            expect(background.keys).toBe("b");
+            for (const mode of ["terminal", "brainstorm"] as const) {
+                setAgentView("a1", mode, 1);
+                for (const ctx of contexts()) {
+                    for (const bs of brainstormKeys) {
+                        expect(background.when!(ctx) && bs.when!(ctx)).toBe(false);
+                    }
+                }
+            }
+            // each is live on its own surface
+            setAgentView("a1", "terminal", 2);
+            expect(background.when!({ surface: "cockpit", editable: false, modalOpen: false, leader: null })).toBe(
+                true
+            );
+            expect(
+                brainstormKeys.some((x) =>
+                    x.when!({ surface: "cockpit", editable: false, modalOpen: false, leader: null })
+                )
+            ).toBe(false);
+            expect(
+                brainstormKeys.find((x) => x.id === "agent:brainstorm-open")!.when!({
+                    surface: "agent",
+                    editable: false,
+                    modalOpen: false,
+                    leader: null,
+                })
+            ).toBe(true);
+        } finally {
+            detachBrainstorm("a1");
+            detachCanvas("a1");
+        }
+    });
+
+    // r, c, b, [ and ] change hands with the brainstorm beside a review: showing one puts the other back
+    it("global + list-nav + agent bindings do not conflict with a brainstorm and a review on one agent", () => {
+        const model = withCanvas();
+        attachBrainstorm("a1", { topic: "bs", cwd: "/p" }, 0);
+        const all = [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildAgentBindings(model)];
+        try {
+            syncDocReview("a1", docAsk("/r/notes/n.md"));
+            for (const view of ["brainstorm", "review", "brainstorm", "terminal"] as const) {
+                setAgentView("a1", view, 1);
+                expect(() => assertNoConflicts(all)).not.toThrow();
+            }
+            setAgentView("a1", "brainstorm", 2);
+            setAgentView("a1", "review", 3);
+            expect(globalStore.get(brainstormAtom("a1"))!.mode).toBe("terminal");
+            setAgentView("a1", "brainstorm", 4);
+            expect(globalStore.get(docReviewStateAtom("a1"))!.mode).toBe("terminal");
+        } finally {
+            syncDocReview("a1", undefined);
+            detachBrainstorm("a1");
+            detachCanvas("a1");
+        }
+    });
+
+    // a question's options take a-d while the pane draws them, b among them, so b back to the terminal stands down
+    it("the option letters pick while the question shows them, and b picks B instead of leaving", () => {
+        const model = withCanvas();
+        attachBrainstorm("a1", { topic: "bs", cwd: "/p" }, 0);
+        globalStore.set(listNavAtom, null);
+        const all = [...buildGlobalBindings(model), ...buildListNavBindings(model), ...buildAgentBindings(model)];
+        const live = (id: string) => all.find((x) => x.id === id)!.when!(agentCtx);
+        const agentCtx: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+        const ask = (labels: string[]) =>
+            updateBrainstorm("a1", (s) => ({
+                ...s,
+                file: {
+                    v: 1,
+                    title: "T",
+                    spec: "",
+                    question: { n: 1, text: "Q", part: "p", options: labels.map((label) => ({ label, detail: "" })) },
+                    working: null,
+                    parts: [],
+                    history: [],
+                    done: false,
+                    check: null,
+                    run: null,
+                } as any,
+            }));
+        try {
+            setAgentView("a1", "brainstorm", 1);
+            ask(["A", "B", "C"]);
+            expect(["a", "b", "c", "d"].map((k) => live(`agent:brainstorm-option-${k}`))).toEqual([
+                true,
+                true,
+                true,
+                false,
+            ]);
+            expect(live("agent:brainstorm-close")).toBe(false);
+            expect(() => assertNoConflicts(all)).not.toThrow();
+            // while b picks B, the chord still leaves, and from the terminal it comes back
+            const chord = all.find((x) => x.id === "agent:view-chord")!;
+            chord.run(agentCtx);
+            expect(globalStore.get(brainstormAtom("a1"))!.mode).toBe("terminal");
+            expect(chord.when!({ ...agentCtx, editable: true })).toBe(true);
+            chord.run({ ...agentCtx, editable: true });
+            expect(globalStore.get(brainstormAtom("a1"))!.mode).toBe("brainstorm");
+            // a typed answer keeps its letters: the dispatcher leaves an editable target alone
+            expect(all.find((x) => x.id === "agent:brainstorm-option-a")!.when!({ ...agentCtx, editable: true })).toBe(
+                false
+            );
+            ask(["A"]);
+            expect(live("agent:brainstorm-option-a")).toBe(true);
+            expect(live("agent:brainstorm-close")).toBe(true);
+            expect(() => assertNoConflicts(all)).not.toThrow();
+            openBrainstormDesign("a1", true);
+            ask(["A", "B"]);
+            expect(live("agent:brainstorm-option-a")).toBe(false);
+            expect(live("agent:brainstorm-close")).toBe(true);
+            setAgentView("a1", "terminal", 2);
+            openBrainstormDesign("a1", false);
+            expect(live("agent:brainstorm-option-a")).toBe(false);
+            expect(live("agent:brainstorm-open")).toBe(true);
+        } finally {
+            detachBrainstorm("a1");
             detachCanvas("a1");
         }
     });
@@ -553,12 +745,16 @@ describe("PREDICATE_ATOMS completeness (whenstate.ts)", () => {
             detachCanvas("a1");
         }
 
-        // the focus id and the focused agent's canvas and review atoms are watched by watchFocusedAgent, not listed
+        // the focus id, the roster, and the focused agent's canvas, review, brainstorm and exit atoms are watched by
+        // watchFocusedAgent, not listed; a1 is not in the stub roster, so its block id is ""
         const registered = new Set<unknown>([
             ...PREDICATE_ATOMS,
             model.focusIdAtom,
+            model.agentsAtom,
             canvasStateAtom("a1"),
             docReviewStateAtom("a1"),
+            brainstormAtom("a1"),
+            getProcExitAtom(""),
         ]);
         const missing = [...seen].filter((a) => !registered.has(a));
         const unused = PREDICATE_ATOMS.filter((a) => !seen.has(a));

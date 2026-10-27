@@ -14,6 +14,7 @@ import { useEffect } from "react";
 import { showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import type { AgentAsk, AgentVM } from "./agentsviewmodel";
+import { getBrainstorm, setBrainstormMode } from "./brainstormstore";
 import { getCanvas, setCanvasMode } from "./canvasstore";
 import { docReviewAtom, parseDocReview } from "./docreview";
 import type { ProseComment } from "./proseanchor";
@@ -132,14 +133,17 @@ export function useDocReviewSync(model: AgentsViewModel): void {
     }, [key]);
 }
 
-// Review and canvas share the terminal's place, so showing the review puts a showing canvas back (agentview.ts
-// switches all three).
+// Review, canvas and brainstorm share the terminal's place, so showing the review puts a showing canvas or brainstorm
+// back (agentview.ts switches all four).
 export function setDocReviewMode(agentId: string, mode: DocReviewMode, now: number): void {
     if (getDocReview(agentId) == null) {
         return;
     }
     if (mode === "review" && getCanvas(agentId)?.mode === "canvas") {
         setCanvasMode(agentId, "terminal", now);
+    }
+    if (mode === "review" && getBrainstorm(agentId)?.mode === "brainstorm") {
+        setBrainstormMode(agentId, "terminal", now);
     }
     updateDocReview(agentId, (s) => (s.mode === mode ? s : { ...s, mode }));
 }

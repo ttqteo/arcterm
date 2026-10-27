@@ -1,8 +1,39 @@
 // Pure view-model logic for the session sidebar. No React, no Wave runtime imports.
 
+import type { BuilderCheckRecord } from "../brainstormmodel";
 import { versionAfter } from "../modellabel";
 
 export const NO_CWD_LABEL = "ungrouped";
+
+const CHECK_STATES: BuilderCheckRecord["state"][] = ["reading", "answered", "failed"];
+
+// the builder check and the judge keep the same five keys on the tab, under their own prefix
+function sessionRecordOf(tabMeta: Record<string, any>, prefix: string): BuilderCheckRecord | undefined {
+    const state = tabMeta[`${prefix}state`];
+    if (!CHECK_STATES.includes(state)) {
+        return undefined;
+    }
+    const ts = tabMeta[`${prefix}ts`];
+    const runId = tabMeta[`${prefix}run`];
+    const reason = tabMeta[`${prefix}reason`];
+    return {
+        state,
+        ts: typeof ts === "number" ? ts : 0,
+        ...(typeof runId === "string" && runId ? { runId } : {}),
+        ...(typeof reason === "string" && reason ? { reason } : {}),
+    };
+}
+
+/** Pure: Arc's builder-check record from the five brainstorm:check* keys on an agent's tab; an unknown state is
+ *  no record. */
+export function builderCheckOf(tabMeta: Record<string, any>): BuilderCheckRecord | undefined {
+    return sessionRecordOf(tabMeta, "brainstorm:check");
+}
+
+/** Pure: Arc's judge record from the five brainstorm:judge* keys on an agent's tab, read as the check's. */
+export function brainstormJudgeOf(tabMeta: Record<string, any>): BuilderCheckRecord | undefined {
+    return sessionRecordOf(tabMeta, "brainstorm:judge");
+}
 
 export type SessionStatus = "working" | "waiting" | "asking" | "idle";
 
@@ -63,6 +94,9 @@ export interface SessionInput {
     projectLabel?: string; // launch-time project name: a non-sticky default below title, above the agent name
     runORef?: string; // jarvis:runoref, stamped on a run's lead and worker tabs at spawn
     effortORef?: string; // session:effort, the initiative the session was launched from or last touched
+    brainstormFile?: string; // session:brainstorm, the attached brainstorm.json's absolute path
+    builderCheck?: BuilderCheckRecord; // brainstorm:check*, Arc's record of the brainstorm's builder check
+    brainstormJudge?: BuilderCheckRecord; // brainstorm:judge*, Arc's record of the brainstorm's judge
     pinned: boolean;
     isAgentsTab?: boolean;
     cwd?: string;
@@ -84,6 +118,9 @@ export interface SessionRowVM {
     cwd?: string; // the session terminal's cwd; resolves the registered project the agent works in
     runORef?: string; // the run this session works for: a lead's own run, a worker's child run
     effortORef?: string; // the initiative this session works on
+    brainstormFile?: string; // the brainstorm.json attached to this session
+    builderCheck?: BuilderCheckRecord; // Arc's record of that brainstorm's builder check
+    brainstormJudge?: BuilderCheckRecord; // Arc's record of that brainstorm's judge
     agent?: string; // session:agent runtime (claude/codex/…); undefined for plain terminals
     status: SessionStatus;
     active: boolean;
@@ -183,6 +220,9 @@ function toRow(s: SessionInput, includeService: boolean): SessionRowVM {
         cwd: s.cwd,
         runORef: s.runORef,
         effortORef: s.effortORef,
+        brainstormFile: s.brainstormFile,
+        builderCheck: s.builderCheck,
+        brainstormJudge: s.brainstormJudge,
         agent: s.agent,
         status,
         active: s.active,

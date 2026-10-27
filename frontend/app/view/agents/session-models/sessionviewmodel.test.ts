@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
     aggregateStatus,
     badgeToStatus,
+    brainstormJudgeOf,
     buildDuplicateBlockMeta,
+    builderCheckOf,
     buildSessionViewModel,
     cwdToServiceLabel,
     cycleTarget,
@@ -300,6 +302,79 @@ describe("sessionRunORef", () => {
     it("is undefined for a session no run spawned", () => {
         expect(sessionRunORef({}, { "cmd:cwd": "/x" })).toBeUndefined();
         expect(sessionRunORef({}, undefined)).toBeUndefined();
+    });
+});
+
+describe("builderCheckOf", () => {
+    const meta = {
+        "brainstorm:checkstate": "failed",
+        "brainstorm:checkts": 1700,
+        "brainstorm:checkrun": "run-1",
+        "brainstorm:checkchannel": "ch-1",
+        "brainstorm:checkreason": "The builder ended without its questions.",
+    };
+
+    it("reads the five tab keys into one record on the session row", () => {
+        const builderCheck = builderCheckOf(meta);
+        expect(builderCheck).toEqual({
+            state: "failed",
+            ts: 1700,
+            runId: "run-1",
+            reason: "The builder ended without its questions.",
+        });
+        const vm = buildSessionViewModel([input({ tabId: "t1", cwd: "/src/Zeta", builderCheck })]);
+        expect(vm.groups[0].sessions[0].builderCheck).toEqual(builderCheck);
+    });
+
+    it("leaves out the keys the server cleared", () => {
+        expect(builderCheckOf({ "brainstorm:checkstate": "reading", "brainstorm:checkts": 5 })).toEqual({
+            state: "reading",
+            ts: 5,
+        });
+    });
+
+    it("reads an unknown or absent state as no record", () => {
+        expect(builderCheckOf({ ...meta, "brainstorm:checkstate": "queued" })).toBeUndefined();
+        expect(builderCheckOf({})).toBeUndefined();
+    });
+});
+
+describe("brainstormJudgeOf", () => {
+    const meta = {
+        "brainstorm:judgestate": "failed",
+        "brainstorm:judgets": 1800,
+        "brainstorm:judgerun": "run-2",
+        "brainstorm:judgechannel": "ch-2",
+        "brainstorm:judgereason": "The judge's report was not JSON.",
+    };
+
+    it("reads the five judge keys into one record on the session row", () => {
+        const brainstormJudge = brainstormJudgeOf(meta);
+        expect(brainstormJudge).toEqual({
+            state: "failed",
+            ts: 1800,
+            runId: "run-2",
+            reason: "The judge's report was not JSON.",
+        });
+        const vm = buildSessionViewModel([input({ tabId: "t1", cwd: "/src/Zeta", brainstormJudge })]);
+        expect(vm.groups[0].sessions[0].brainstormJudge).toEqual(brainstormJudge);
+    });
+
+    it("ignores the builder check's keys, and the check ignores the judge's", () => {
+        const check = {
+            "brainstorm:checkstate": "reading",
+            "brainstorm:checkts": 5,
+            "brainstorm:checkrun": "run-1",
+        };
+        expect(brainstormJudgeOf(check)).toBeUndefined();
+        expect(builderCheckOf(meta)).toBeUndefined();
+        expect(brainstormJudgeOf({ ...check, ...meta })?.runId).toBe("run-2");
+        expect(builderCheckOf({ ...check, ...meta })?.runId).toBe("run-1");
+    });
+
+    it("reads an unknown or absent state as no record", () => {
+        expect(brainstormJudgeOf({ ...meta, "brainstorm:judgestate": "queued" })).toBeUndefined();
+        expect(brainstormJudgeOf({})).toBeUndefined();
     });
 });
 

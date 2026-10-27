@@ -54,6 +54,8 @@ import type { AgentsViewModel } from "./agents";
 import { askingLabel, askSentKey, formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
 import { setAgentView, type AgentView } from "./agentview";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
+import { isAsking } from "./brainstormmodel";
+import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { DOC_REVIEW_HEADERS, docReviewAtom, parseDocReview } from "./docreview";
@@ -339,7 +341,13 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const railVisible = useAtomValue(railVisibleAtom);
     const fullscreen = useAtomValue(terminalFullscreenAtom);
     const floating = useAtomValue(floatModeAtom);
+    const brainstorm = useAtomValue(brainstormAtom(agent.id));
+    // an agent with a brainstorm never shows its canvas: the brainstorm pane opens its boards, and takes the canvas's slot
     const canvas = useAtomValue(canvasStateAtom(agent.id));
+    const hasCanvas = canvas != null && brainstorm == null;
+    // the roster overlay already turned a question the file asks into state "asking"
+    const brainstormFile = shownBrainstormFile(brainstorm);
+    const brainstormAsking = brainstormFile != null && isAsking(brainstormFile) && agent.state === "asking";
     const lineage = useRunLineage(model, agent);
     const project = agentProject(useAtomValue(model.lineageAtom), useAtomValue(model.agentsAtom), agent);
     const name =
@@ -376,7 +384,16 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const sent = useAtomValue(model.sentIdsAtom).has(askSentKey(agent) ?? "");
     // a Doc review switches in the segmented control below; the amber button opens a Spec or Plan review's dialog
     const showDialogButton = review != null && review.kind !== "doc" && !dialogOpen;
-    const view: AgentView = docReview?.mode === "review" ? "review" : canvas?.mode === "canvas" ? "canvas" : "terminal";
+    const view: AgentView =
+        docReview?.mode === "review"
+            ? "review"
+            : brainstorm?.mode === "brainstorm"
+              ? "brainstorm"
+              : hasCanvas && canvas.mode === "canvas"
+                ? "canvas"
+                : "terminal";
+    // the bare key that goes back to the terminal from the first view the agent has to swap to
+    const swapKey = docReview != null ? "r" : brainstorm != null ? "b" : "c";
 
     // The grid's cells, to tell the Split button whether a split is showing. Only agents and terminals with a terminal
     // can be cells (gridstore.eligibleIds).
@@ -639,35 +656,63 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
                         <ChevronLeft size={12} strokeWidth={2} aria-hidden />
                     </button>
                 ) : null}
-                {canvas != null || docReview != null ? (
-                    // the bare c and r are typed into the TUI while it holds focus, so the chord that switches from
+                {hasCanvas || docReview != null || brainstorm != null ? (
+                    // the bare b, c and r are typed into the TUI while it holds focus, so the chord that switches from
                     // inside it sits on screen beside the control
                     <KeyCap
                         chord="Alt:c"
                         variant="inline"
                         className="cursor-default"
-                        title="Switch Terminal, Canvas and Review, also from inside the terminal"
+                        title={
+                            brainstorm != null
+                                ? "Switch Terminal, Brainstorm and Review, also from inside the terminal"
+                                : "Switch Terminal, Canvas and Review, also from inside the terminal"
+                        }
                     />
                 ) : null}
-                {canvas != null || docReview != null ? (
-                    // one control for whatever can stand in the terminal's place: a canvas, a Doc review, or both
+                {hasCanvas || docReview != null || brainstorm != null ? (
+                    // one control for whatever can stand in the terminal's place: a canvas or a brainstorm (never both), a
+                    // Doc review, or both
                     <Segmented<AgentView>
                         role="group"
                         ariaLabel={
                             docReview == null
-                                ? "Show terminal or canvas"
-                                : canvas == null
-                                  ? "Show terminal or review"
-                                  : "Show terminal, canvas or review"
+                                ? brainstorm != null
+                                    ? "Show terminal or brainstorm"
+                                    : "Show terminal or canvas"
+                                : brainstorm != null
+                                  ? "Show terminal, brainstorm or review"
+                                  : !hasCanvas
+                                    ? "Show terminal or review"
+                                    : "Show terminal, canvas or review"
                         }
                         value={view}
                         options={[
                             {
                                 key: "terminal",
                                 label: "Terminal",
-                                title: `Terminal (${formatChordString(docReview != null ? "r" : "c")}, ${formatChordString("Alt:c")} from the terminal)`,
+                                title: `Terminal (${formatChordString(swapKey)}, ${formatChordString("Alt:c")} from the terminal)`,
                             },
-                            ...(canvas != null
+                            ...(brainstorm != null
+                                ? [
+                                      {
+                                          key: "brainstorm" as const,
+                                          label: (
+                                              <>
+                                                  Brainstorm
+                                                  {brainstormAsking ? (
+                                                      <span
+                                                          aria-label="asking you"
+                                                          className="h-[6px] w-[6px] rounded-full bg-warning"
+                                                      />
+                                                  ) : null}
+                                              </>
+                                          ),
+                                          title: `Brainstorm (${formatChordString("b")}, ${formatChordString("Ctrl:Shift:b")} from the terminal)`,
+                                      },
+                                  ]
+                                : []),
+                            ...(hasCanvas
                                 ? [
                                       {
                                           key: "canvas" as const,

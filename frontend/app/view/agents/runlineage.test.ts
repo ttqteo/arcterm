@@ -21,6 +21,7 @@ import {
     runAgentsOf,
     runEngineBusy,
     runFocusAgent,
+    runInfoOf,
     runProgress,
     runRoleOf,
     runTitle,
@@ -448,5 +449,43 @@ describe("the final stage's own id", () => {
         expect(vm).toMatchObject({ id: finalStageId("r1"), name: stageLabel("verifier"), state: "idle" });
         expect(vm.blockId).toBeUndefined();
         expect(vm.runId).toBeUndefined();
+    });
+});
+
+describe("runInfoOf", () => {
+    it("reads a run's title, project, base and land from the lead's run", () => {
+        const lead = {
+            oid: "r-1",
+            channeloid: "ch-1",
+            goal: "Ship it\nmore",
+            projectpath: "C:\\code\\arc",
+            status: "done",
+            landpath: "C:\\code\\.arc-land\\r-1",
+            basebranch: "main",
+            land: { state: "landed", commit: "7867142abc" },
+            phases: [{ workerorefs: ["run:w"] }],
+        } as unknown as Run;
+        const digest = { dagversion: 3 } as DagStatusDigest;
+        expect(runInfoOf("r-1", lead, dag, digest)).toEqual({
+            runId: "r-1",
+            channelId: "ch-1",
+            title: "Ship it",
+            project: "arc",
+            projectPath: "C:\\code\\arc",
+            leadStarted: true,
+            status: "done",
+            landPath: "C:\\code\\.arc-land\\r-1",
+            base: "main",
+            land: { state: "landed", commit: "7867142abc" },
+            dag,
+            digest,
+        });
+    });
+
+    it("reads a run it has not loaded as an untitled run with no base", () => {
+        const info = runInfoOf("r-2", undefined, undefined, undefined);
+        expect(info).toMatchObject({ runId: "r-2", channelId: "", title: "Orchestrator run", project: "" });
+        expect(info.base).toBeUndefined();
+        expect(info.leadStarted).toBe(false);
     });
 });

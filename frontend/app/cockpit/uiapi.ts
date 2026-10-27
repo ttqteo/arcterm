@@ -148,19 +148,26 @@ export async function waitUntilIdle(deps: IdleDeps): Promise<boolean> {
     return true;
 }
 
-// the busy wait keeps a reveal from moving the view under the user's hands. An agent's canvas reveal moves
-// nothing, it only attaches the canvas to that agent, so it lands at once; without a caller it jumps to the
-// canvas's agent and waits like any other move.
+// the busy wait keeps a reveal from moving the view under the user's hands. An agent's canvas or brainstorm
+// reveal moves nothing, it only attaches it to that agent, so it lands at once; without a caller it jumps to the
+// agent that has it and waits like any other move.
 export function revealWaitsForUser(address: string, callerBlockId: string | undefined): boolean {
-    return !(callerBlockId && parseAddress(address).kind === "canvas");
+    const kind = parseAddress(address).kind;
+    return !(callerBlockId && (kind === "canvas" || kind === "brainstorm"));
 }
 
-// An agent's canvas reveal says so in a toast once. arcterm's own hook reveals on every board the agent writes, and
-// a toast for each would bury the first, so a reveal of the topic the caller already has attached says nothing:
-// the row's canvas tag shows there is something new.
-export function revealLeavesTrail(address: string, attachedTopic: string | undefined): boolean {
+// An agent's canvas or brainstorm reveal says so in a toast once. arcterm's own hook reveals on every write, and a
+// toast for each would bury the first, so a reveal of the topic the caller already has attached says nothing:
+// the row's tag shows there is something new.
+export function revealLeavesTrail(address: string, attached: { canvas?: string; brainstorm?: string }): boolean {
     const target = parseAddress(address);
-    return !(target.kind === "canvas" && target.topic === attachedTopic);
+    if (target.kind === "canvas") {
+        return target.topic !== attached.canvas;
+    }
+    if (target.kind === "brainstorm") {
+        return target.topic !== attached.brainstorm;
+    }
+    return true;
 }
 
 export function callerName(roster: readonly { blockId?: string; name: string }[], blockId: string | undefined): string {

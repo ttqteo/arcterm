@@ -15,6 +15,7 @@ import { RpcResponseHelper, WshClient } from "@/app/store/wshclient";
 import { DefaultRouter } from "@/app/store/wshrpcutil";
 import { showHistory } from "@/app/view/agents/agentcenter";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
+import { getBrainstorm } from "@/app/view/agents/brainstormstore";
 import { getCanvas } from "@/app/view/agents/canvasstore";
 import { currentReportIdAtom } from "@/app/view/agents/radarstore";
 import { briefPeekRecordAtom } from "@/app/view/jarvis/jarvisstore";
@@ -80,7 +81,7 @@ class CockpitUiClient extends WshClient {
         // an empty cwd (Getwd failed) still names the caller, so a canvas reveal says where to run it from
         const caller = data.callerblockid ? { blockId: data.callerblockid, cwd: data.callercwd ?? "" } : undefined;
         // read before the landing attaches it
-        const leavesTrail = revealLeavesTrail(data.address, this.canvasTopic(data.callerblockid));
+        const leavesTrail = revealLeavesTrail(data.address, this.attachedTopics(data.callerblockid));
         const result = await openAddress(
             this.model,
             data.address,
@@ -166,9 +167,9 @@ class CockpitUiClient extends WshClient {
         return callerName(this.roster(), blockId);
     }
 
-    private canvasTopic(blockId: string | undefined): string | undefined {
+    private attachedTopics(blockId: string | undefined): { canvas?: string; brainstorm?: string } {
         const agent = blockId ? this.roster().find((a) => a.blockId === blockId) : undefined;
-        return agent != null ? getCanvas(agent.id)?.topic : undefined;
+        return agent != null ? { canvas: getCanvas(agent.id)?.topic, brainstorm: getBrainstorm(agent.id)?.topic } : {};
     }
 
     // a worker moving the view is never unexplained
