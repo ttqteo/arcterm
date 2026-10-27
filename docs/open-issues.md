@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Waking holds the controls: click Wake on a sleeping agent's card. Until it is back the card reads
+  Waking…, the composer's Send reads Waking… and is off, the header's … and × are dimmed and do nothing (right-click on
+  the header opens no menu), and the agent's row menu greys Wake and Close agent. `wakingstore.ts`.
 - [ ] (arcterm) Open a deck from the File panel: after installing a build with `open_path`, in the SIEM `website`
   agent's "It's in docs/slide/ as Early_Warning_Services_v1.4_271026_Sales.pptx" the bare file name is underlined on
   hover (its folder is read off the line above, `nearbyFolders`); Ctrl+click it: the panel reads "Binary file" with

@@ -8,6 +8,7 @@ import { confirmCloseSession } from "./agentactions";
 import { wakeAgent } from "./agentsleep";
 import type { AgentVM } from "./agentsviewmodel";
 import { ramLabel } from "./consumers";
+import { useWaking } from "./wakingstore";
 
 const BTN =
     "shrink-0 cursor-pointer rounded-sm px-2 py-1 text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-60";
@@ -33,6 +34,9 @@ export function SleepingCard({ agent }: { agent: AgentVM }) {
     // show on the next sleep of the same agent
     const [pending, setPending] = useState<"wake" | "fresh" | null>(null);
     const [failure, setFailure] = useState<{ since: number; reason: string } | null>(null);
+    // a wake started anywhere (the composer below, a row's menu) holds the card's buttons too
+    const waking = useWaking(agent.id);
+    const busy = pending != null || waking;
     const sleeping = agent.sleeping;
     if (!sleeping) {
         return null;
@@ -72,7 +76,7 @@ export function SleepingCard({ agent }: { agent: AgentVM }) {
                     <button
                         type="button"
                         data-sleeping-fresh
-                        disabled={pending != null}
+                        disabled={busy}
                         onClick={() => wake(true)}
                         className={BTN_PRIMARY}
                     >
@@ -81,7 +85,7 @@ export function SleepingCard({ agent }: { agent: AgentVM }) {
                     <button
                         type="button"
                         data-sleeping-close
-                        disabled={pending != null}
+                        disabled={busy}
                         onClick={() => confirmCloseSession(agent)}
                         className={BTN_QUIET}
                     >
@@ -98,11 +102,11 @@ export function SleepingCard({ agent }: { agent: AgentVM }) {
                     <button
                         type="button"
                         data-sleeping-wake
-                        disabled={pending != null}
+                        disabled={busy}
                         onClick={() => wake(false)}
                         className={BTN_PRIMARY}
                     >
-                        {pending === "wake" ? "Waking…" : "Wake"}
+                        {busy ? "Waking…" : "Wake"}
                     </button>
                 </>
             )}

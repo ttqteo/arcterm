@@ -80,6 +80,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A sleeping agent that a run's message (or yours) woke no longer stays shown as asleep when it took more than a few
   seconds to resume: its row and its terminal show it awake. One already stuck that way comes back with Wake, or with
   a message from its composer, without restarting it.
+- While a sleeping agent wakes, what would cut the wake short is off until it is back: Close, the header's … menu,
+  Send and Wake everywhere else, and Close agent in its row's menu.
 
 ## 0.15.17 — 2026-10-21
 

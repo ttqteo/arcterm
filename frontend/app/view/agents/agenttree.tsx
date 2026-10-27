@@ -234,6 +234,7 @@ import { toolIcon, toolTerminalName, type ToolIconName } from "./toolsmodel";
 import { failedAtom, installingAtom, loadTools, toolsStatusAtom } from "./toolsstore";
 import { folderName } from "./worktreegone";
 import { goneTerminalIdsAtom } from "./worktreegonestore";
+import { isWaking } from "./wakingstore";
 
 const SUB_COLOR: Record<SubagentState, string> = {
     working: "var(--color-working)",
@@ -406,8 +407,9 @@ function sleepMenuItems(agent: AgentVM): ContextMenuItem[] {
     if (agent.sleeping) {
         return [
             {
-                label: "Wake",
+                label: isWaking(agent.id) ? "Waking…" : "Wake",
                 icon: <Sun size={15} />,
+                enabled: !isWaking(agent.id),
                 click: () =>
                     fireAndForget(async () => {
                         try {
@@ -459,6 +461,8 @@ function agentRowMenuItems(
             label: "Close agent",
             icon: <X size={15} />,
             danger: true,
+            // not while a wake relaunches it (confirmCloseSession refuses then too)
+            enabled: !isWaking(agent.id),
             click: () => confirmCloseSession(agent, model),
         },
     ];

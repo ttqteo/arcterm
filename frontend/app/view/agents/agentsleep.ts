@@ -22,6 +22,7 @@ import { formatAgeShort, type AgentVM } from "./agentsviewmodel";
 import { ramLabel } from "./consumers";
 import { agentGridAtom } from "./gridstore";
 import { viewingIds } from "./unreadagents";
+import { whileWaking } from "./wakingstore";
 
 // the server holds a wake with a message until the resumed agent reports in, for up to 60 s; the call outlives that
 const WAKE_TIMEOUT_MS = 70_000;
@@ -152,10 +153,12 @@ export function backgroundConfirmText(name: string, labels: string[]): string {
  *  message, the server delivers it once the agent reports in. Resolves when the agent is back; rejects with the server's
  *  reason (the session file is gone, it did not report in within 60 s), which the caller shows. */
 export async function wakeAgent(tabId: string, opts: { message?: string; fresh?: boolean } = {}): Promise<void> {
-    await RpcApi.AgentsWakeCommand(
-        TabRpcClient,
-        { tab: tabId, message: opts.message, fresh: opts.fresh },
-        { timeout: WAKE_TIMEOUT_MS }
+    await whileWaking(tabId, () =>
+        RpcApi.AgentsWakeCommand(
+            TabRpcClient,
+            { tab: tabId, message: opts.message, fresh: opts.fresh },
+            { timeout: WAKE_TIMEOUT_MS }
+        )
     );
 }
 
