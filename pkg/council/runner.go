@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -1368,10 +1369,14 @@ func (r *Runner) synthesize(ctx context.Context, rn *run, id string) error {
 	return err
 }
 
+// directionOutcome reads the direction number of a proposal's outcome: "Direction 4", "Merged into direction 4".
+var directionOutcome = regexp.MustCompile(`(?i)^(?:merged into )?direction (\d+)$`)
+
 // cleanSummary drops what the coordinator named that is not on the council: a proposal that does not exist, an
 // expert that is not on the panel, and a stance from the author of a proposal the direction merges. A Brainstorm's
-// report holds at most maxIdeas ideas worth trying, then the wild ideas kept aside; a Review's holds neither a first
-// step nor kept ideas, whatever the model wrote.
+// report holds at most maxDirections ideas worth trying, then the wild ideas kept aside. A Review's holds at most
+// maxDirections directions too, each with its first step, then Also raised (Kept): a direction past the cap moves there
+// as one line, ahead of the ones the model put there, and an outcome naming a direction past the cap reads Also raised.
 func cleanSummary(c *Council, s CouncilSummary) CouncilSummary {
 	if strings.TrimSpace(c.Question) == "" {
 		s.Answer = "" // nothing was asked, so there is nothing to answer
@@ -1381,13 +1386,18 @@ func cleanSummary(c *Council, s CouncilSummary) CouncilSummary {
 		panel[e.Id] = true
 	}
 	if isBrainstorm(c) {
-		if len(s.Directions) > maxIdeas {
-			s.Directions = s.Directions[:maxIdeas]
+		if len(s.Directions) > maxDirections {
+			s.Directions = s.Directions[:maxDirections]
 		}
-	} else {
-		s.Kept = nil
-		for i := range s.Directions {
-			s.Directions[i].FirstStep = ""
+	} else if len(s.Directions) > maxDirections {
+		var moved []CouncilDirection
+		for _, d := range s.Directions[maxDirections:] {
+			moved = append(moved, CouncilDirection{Title: d.Title, Reasoning: d.Reasoning, From: d.From, Stances: map[string]CouncilStance{}})
+		}
+		s.Directions = s.Directions[:maxDirections]
+		s.Kept = append(moved, s.Kept...)
+		for i := range s.Kept {
+			s.Kept[i].Rank = i + 1
 		}
 	}
 	for i := range s.Directions {
@@ -1399,6 +1409,11 @@ func cleanSummary(c *Council, s CouncilSummary) CouncilSummary {
 	outcomes := map[string]string{}
 	for pid, o := range s.Outcomes {
 		if o = strings.TrimSpace(o); o != "" && findProposal(c, pid) != nil {
+			if m := directionOutcome.FindStringSubmatch(o); m != nil && !isBrainstorm(c) {
+				if n, _ := strconv.Atoi(m[1]); n > maxDirections {
+					o = "Also raised"
+				}
+			}
 			outcomes[pid] = o
 		}
 	}

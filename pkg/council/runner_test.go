@@ -2672,9 +2672,9 @@ func TestBrainstormRunLeavesNoKeptSectionWhenThereAreNoWildIdeas(t *testing.T) {
 	}
 }
 
-func TestAReviewKeepsNothingOfABrainstorm(t *testing.T) {
+func TestAReviewDropsTheBrainstormFlags(t *testing.T) {
 	h := newHarness(t)
-	// a Review model that wanders into Brainstorm words: the flags and fields are dropped, the weak chip stays
+	// a Review model that wanders into Brainstorm words: the wild and builds flags are dropped, the weak chip stays
 	h.f.setFn("ux/r1", func(CallReq) string {
 		return fence(`{"overview": "x", "proposals": [{"title": "Idea from ux", "argument": "a", "wild": true}]}`)
 	})
@@ -2698,8 +2698,8 @@ func TestAReviewKeepsNothingOfABrainstorm(t *testing.T) {
 			t.Errorf("%s evidence = %+v, want the weak chip a Review gives", p.Id, p.Evidence)
 		}
 	}
-	if c.Summary == nil || len(c.Summary.Kept) != 0 || c.Summary.Directions[0].FirstStep != "" {
-		t.Errorf("summary = %+v, want no kept ideas and no first step in a Review", c.Summary)
+	if c.Summary == nil || c.Summary.Directions[0].FirstStep != "Start" || len(c.Summary.Kept) != 1 || c.Summary.Kept[0].Title != "A mascot" {
+		t.Errorf("summary = %+v, want the first step and the direction also raised kept in a Review", c.Summary)
 	}
 }
 
@@ -2748,8 +2748,8 @@ func TestCleanSummaryForABrainstorm(t *testing.T) {
 		},
 	}
 	got := cleanSummary(c, in)
-	if len(got.Directions) != maxIdeas || got.Directions[2].Title != "c" {
-		t.Errorf("directions = %+v, want the first %d", got.Directions, maxIdeas)
+	if len(got.Directions) != maxDirections || got.Directions[2].Title != "c" {
+		t.Errorf("directions = %+v, want the first %d", got.Directions, maxDirections)
 	}
 	if len(got.Kept) != 2 || !slices.Equal(got.Kept[0].From, []string{"P2"}) || len(got.Kept[1].From) != 0 {
 		t.Errorf("kept = %+v, want the known ids once; a kept idea that cites nothing real stays (it is the model's idea)", got.Kept)
@@ -2758,10 +2758,31 @@ func TestCleanSummaryForABrainstorm(t *testing.T) {
 		t.Errorf("kept stances = %v, want %v", got.Kept[0].Stances, want)
 	}
 
-	c.Mode = ModeReview
-	got = cleanSummary(c, in)
-	if len(got.Directions) != 4 || len(got.Kept) != 0 || got.Directions[0].FirstStep != "" {
-		t.Errorf("review summary = %+v, want no cap, no kept ideas and no first steps", got)
+}
+
+func TestCleanSummaryForAReview(t *testing.T) {
+	c := fixtureCouncil("c1", StateDone, 3) // P1 by ux, P2 by ram
+	dir := func(title, from string) CouncilDirection {
+		return CouncilDirection{
+			Title: title, Reasoning: "why " + title, From: []string{from}, FirstStep: "Start " + title,
+			Stances: map[string]CouncilStance{"ram": StanceChallenge},
+		}
+	}
+	in := CouncilSummary{
+		Directions: []CouncilDirection{dir("a", "P1"), dir("b", "P1"), dir("c", "P1"), dir("d", "P2")},
+		Kept:       []CouncilDirection{{Title: "wording", Reasoning: "rename the chip", From: []string{"P1"}}},
+		Outcomes:   map[string]string{"P1": "Direction 1", "P2": "Merged into direction 4"},
+	}
+	got := cleanSummary(c, in)
+	if len(got.Directions) != maxDirections || got.Directions[2].Title != "c" || got.Directions[0].FirstStep != "Start a" {
+		t.Errorf("directions = %+v, want the first %d with their first steps", got.Directions, maxDirections)
+	}
+	if len(got.Kept) != 2 || got.Kept[0].Title != "d" || got.Kept[0].Rank != 1 || got.Kept[0].Reasoning != "why d" ||
+		got.Kept[0].FirstStep != "" || len(got.Kept[0].Stances) != 0 || got.Kept[1].Title != "wording" || got.Kept[1].Rank != 2 {
+		t.Errorf("kept = %+v, want the direction past the cap as one line, ahead of the model's own", got.Kept)
+	}
+	if got.Outcomes["P1"] != "Direction 1" || got.Outcomes["P2"] != "Also raised" {
+		t.Errorf("outcomes = %v, want a direction past the cap to read Also raised", got.Outcomes)
 	}
 }
 

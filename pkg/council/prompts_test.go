@@ -333,11 +333,12 @@ func TestReviewPromptsUnchanged(t *testing.T) {
 		if got := prompts(explicit)[name]; got != want {
 			t.Errorf("%s prompt differs between no mode and review\n got %s\nwant %s", name, got, want)
 		}
-		mustNotContain(t, name+" prompt", want, "brainstorm", "wild", "builds", "firststep", "Problem or goal", "(wild idea)")
+		mustNotContain(t, name+" prompt", want, "brainstorm", "wild", "builds", "Problem or goal", "(wild idea)")
 	}
 	mustContain(t, "round 1 prompt", prompts(plain)["round 1"], "Feature: Idle sleep for services", "reviews one feature", evidenceRule, round1Shape)
 	mustContain(t, "round 2 prompt", prompts(plain)["round 2"], "This is round 2 of 3: cross-review", round2Shape)
-	mustContain(t, "synthesis prompt", prompts(plain)["synthesis"], "This is round 3 of 3: synthesis", synthesisShape)
+	mustContain(t, "synthesis prompt", prompts(plain)["synthesis"], "This is round 3 of 3: synthesis", synthesisShape,
+		"keep at most 3", "only changes wording, names or formatting", `"firststep" is its first step`, "Also raised")
 
 	// the library's brief keeps its evidence rule in a Review
 	withRule := promptCouncil()

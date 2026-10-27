@@ -7,7 +7,8 @@
 // bottom. A finished council opens on it; Summarize on the Discussion opens it too, and Show the discussion goes back.
 // A Brainstorm's report heads its directions "Ideas worth trying, best first" (each with a first step and who had and
 // built on it), keeps the wild ideas aside under them with a count of the rest, and says where the finished council saved
-// itself (docs/council/) with the `⋯` menu opening that document. Under the directions a quiet row asks "Was this
+// itself (docs/council/) with the `⋯` menu opening that document. A Review's report gives its first three directions a
+// first step each and lists the rest under Also raised, one line each. Under the directions a quiet row asks "Was this
 // useful?" (Useful / Not really) and feeds the answer to the council benchmark. What it derives from the council is
 // councilsummarymodel.ts (and councilmodel.ts); what it hands on is a saved doc, an initiative, a Setup draft to run
 // again, the Discussion on one direction's thread, and a new agent started on it.
@@ -57,6 +58,7 @@ import {
     droppedLine,
     evidenceLabel,
     initiativeSeed,
+    keptHeading,
     keptRows,
     outcomeLabel,
     outdatedLabel,
@@ -313,7 +315,8 @@ function DirectionCard({
     );
 }
 
-// a Brainstorm's wild idea kept aside: not ranked, so a plain row, no stances and nothing to open
+// a Brainstorm's wild idea kept aside, or a Review's direction also raised: not ranked, so a plain row, no stances and
+// nothing to open
 function KeptCard({ row }: { row: KeptRow }) {
     const d = row.direction;
     return (
@@ -324,9 +327,9 @@ function KeptCard({ row }: { row: KeptRow }) {
             <span data-council-title className="text-[13px] font-semibold text-primary">
                 {d.title}
             </span>
-            {row.had !== "" ? (
+            {row.meta !== "" ? (
                 <span data-council-meta className="text-[11px] text-muted">
-                    {row.had}
+                    {row.meta}
                 </span>
             ) : null}
             {d.reasoning !== "" ? (
@@ -1019,9 +1022,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                             ))}
                             {kept.length > 0 ? (
                                 <section data-council-kept className="mt-[14px] flex flex-col gap-[10px]">
-                                    <h2 className="m-0 text-[13px] font-semibold text-primary">
-                                        Wild ideas kept aside
-                                    </h2>
+                                    <h2 className="m-0 text-[13px] font-semibold text-primary">{keptHeading(c)}</h2>
                                     {kept.map((row, i) => (
                                         <KeptCard key={`${row.direction.rank}-${i}`} row={row} />
                                     ))}

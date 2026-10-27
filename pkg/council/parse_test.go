@@ -349,7 +349,8 @@ func TestShapesParse(t *testing.T) {
 		t.Errorf("answersShape: %+v, %v", a, err)
 	}
 	sum, weak, err := ParseSynthesis(jsonFence(synthesisShape))
-	if err != nil || len(sum.Directions) != 1 || len(sum.Outcomes) != 3 || len(weak) != 1 || sum.Directions[0].Agreed || sum.Answer == "" {
+	if err != nil || len(sum.Directions) != 1 || sum.Directions[0].FirstStep == "" || len(sum.Kept) != 1 || len(sum.Outcomes) != 4 ||
+		len(weak) != 1 || sum.Directions[0].Agreed || sum.Answer == "" {
 		t.Errorf("synthesisShape: %+v, %+v, %v", sum, weak, err)
 	}
 	if _, _, err := ParseSynthesis(jsonFence(synthesisShapeNoQuestion)); err != nil {

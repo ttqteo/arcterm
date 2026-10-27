@@ -87,6 +87,21 @@ func TestJudgePrompt(t *testing.T) {
 		}
 	})
 
+	t.Run("review: Also raised fills the top 5 after the directions", func(t *testing.T) {
+		report := judgeReport(council.ModeReview, 3, "Also one", "Also two", "Also three")
+		p := judgePrompt(judgeCase(council.ModeReview), report)
+		if !strings.Contains(p, "3. Direction title 3") || !strings.Contains(p, "4. Also one") || !strings.Contains(p, "5. Also two") {
+			t.Errorf("prompt lacks the directions then Also raised as items 4 and 5:\n%s", p)
+		}
+		if strings.Contains(p, "Also three") || strings.Contains(strings.ToLower(p), "kept aside") {
+			t.Errorf("a Review is cut at 5 items and has no kept list apart:\n%s", p)
+		}
+		v, err := parseVerdict(`{"matches":{"K1":5,"K2":6},"items":[{"rank":5,"verdict":"key:K1"}]}`, judgeCase(council.ModeReview), report)
+		if err != nil || len(v.Matches) != 1 || v.Matches["K1"] != 5 || len(v.Items) != 1 {
+			t.Errorf("verdict = %+v, %v, want the match at item 5 kept and the one past the cut dropped", v, err)
+		}
+	})
+
 	t.Run("a report with fewer items than the cut", func(t *testing.T) {
 		p := judgePrompt(judgeCase(council.ModeReview), judgeReport(council.ModeReview, 2))
 		if !strings.Contains(p, "2. Direction title 2") || strings.Contains(p, "3. Direction title 3") {

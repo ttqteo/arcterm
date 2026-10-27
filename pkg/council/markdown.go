@@ -12,9 +12,9 @@ import (
 const matrixReasonRunes = 120 // a matrix cell keeps one line of the reason, cut here
 
 // Markdown is the report as a document, what `wsh council wait` and `show` print: the feature, the question and its
-// one-sentence answer, the coordinator's paragraph, the directions in rank order (a Brainstorm's ideas worth trying,
-// each with its first step) with each expert's stance, the wild ideas kept aside when there are any, then
-// proposals × experts. Document adds the whole discussion and the run facts to it.
+// one-sentence answer, the coordinator's paragraph, the directions in rank order (a Brainstorm's ideas worth trying),
+// each with its first step and each expert's stance, then one line each for a Brainstorm's wild ideas kept aside or a
+// Review's directions also raised, then proposals × experts. Document adds the whole discussion and the run facts to it.
 func Markdown(c *Council) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Council: %s\n\n", c.Feature)
@@ -40,8 +40,12 @@ func Markdown(c *Council) string {
 				writeDirection(&b, c, i+1, d)
 			}
 		}
-		if isBrainstorm(c) && len(c.Summary.Kept) > 0 {
-			b.WriteString("## Wild ideas kept aside\n\n")
+		if len(c.Summary.Kept) > 0 {
+			if isBrainstorm(c) {
+				b.WriteString("## Wild ideas kept aside\n\n")
+			} else {
+				b.WriteString("## Also raised\n\n")
+			}
 			for _, d := range c.Summary.Kept {
 				writeKept(&b, c, d)
 			}
@@ -91,7 +95,8 @@ func writeDirection(b *strings.Builder, c *Council, n int, d CouncilDirection) {
 	b.WriteString("\n")
 }
 
-// writeKept is one wild idea kept aside: its title, who it came from, and why it is worth remembering.
+// writeKept is one line of Kept (a wild idea kept aside, or a direction also raised): its title, who it came from, and
+// its line of reasoning.
 func writeKept(b *strings.Builder, c *Council, d CouncilDirection) {
 	fmt.Fprintf(b, "- **%s**", d.Title)
 	if len(d.From) > 0 {

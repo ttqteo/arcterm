@@ -13,7 +13,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-10-23.1"
+const HarnessVersion = "2026-10-28.1"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -67,12 +67,16 @@ const (
       "rank": 1,
       "title": "a short title for the direction",
       "reasoning": "why it ranks here",
+      "firststep": "the one thing to do first",
       "from": ["P2", "P3"],
       "stances": {"ux": "accept", "skeptic": "challenge"},
       "agreed": false
     }
   ],
-  "outcomes": {"P1": "Direction 1", "P2": "Merged into direction 1", "P4": "Withdrawn in round 2"},
+  "kept": [
+    {"title": "a short title for a direction also raised", "reasoning": "one line: what it asks for", "from": ["P5"]}
+  ],
+  "outcomes": {"P1": "Direction 1", "P2": "Merged into direction 1", "P4": "Withdrawn in round 2", "P5": "Also raised"},
   "weak": [{"ref": "P3", "note": "\"about 3 s\" has no measurement"}]
 }`
 )
@@ -560,17 +564,24 @@ func SynthesisPrompt(c *Council) string {
 	b.WriteString("1. Merge proposals that say the same thing into one direction, and list their ids in \"from\".\n")
 	b.WriteString("2. Rank the directions, best first, from \"rank\" 1. Put the directions no expert challenges or opposes " +
 		"first; rank the rest by their picks (add up the picks of the proposals a direction merges), most picks first.\n")
-	b.WriteString("3. In \"stances\", give each expert's stance towards the direction, keyed by the expert's id, from the replies " +
+	fmt.Fprintf(&b, "3. In \"directions\", keep at most %d: the best of that ranking, read in full. A direction that only "+
+		"changes wording, names or formatting takes one of the %d places only when no direction of another kind is left.\n",
+		maxDirections, maxDirections)
+	b.WriteString("4. For each of them, \"reasoning\" says why it ranks here, and \"firststep\" is its first step: the one " +
+		"thing to do first, a text edit to make now or the first piece of new work, small enough to start this week.\n")
+	b.WriteString("5. In \"kept\", list every other direction, best first, each with a title, one line on what it asks for, " +
+		"and its ids in \"from\". The person reads them as Also raised. Leave \"kept\" empty when there are none.\n")
+	b.WriteString("6. In \"stances\", give each expert's stance towards the direction, keyed by the expert's id, from the replies " +
 		"above. " + stanceRule + " Leave out the authors of the proposals the direction merges. \"agreed\" is true when no " +
 		"expert challenges or opposes it.\n")
-	b.WriteString("4. In \"outcomes\", give every proposal its fate: \"Direction N\", \"Merged into direction N\", " +
-		"\"Withdrawn in round 2\" or \"Cut at the pause\".\n")
-	b.WriteString("5. In \"weak\", mark any claim that cites no evidence, or whose evidence does not show what it says. " +
+	b.WriteString("7. In \"outcomes\", give every proposal its fate: \"Direction N\", \"Merged into direction N\", " +
+		"\"Also raised\", \"Withdrawn in round 2\" or \"Cut at the pause\".\n")
+	b.WriteString("8. In \"weak\", mark any claim that cites no evidence, or whose evidence does not show what it says. " +
 		"\"ref\" is a proposal id, a reply id or an evidence ref; \"note\" says what is missing.\n")
-	b.WriteString("6. Treat the person's replies as the person's own view and weigh them.\n")
+	b.WriteString("9. Treat the person's replies as the person's own view and weigh them.\n")
 	shape, summary := synthesisShapeNoQuestion, summaryRuleNoQuestion
 	if strings.TrimSpace(c.Question) != "" {
-		b.WriteString("7. In \"answer\", write one sentence that answers the question for the council directly: the " +
+		b.WriteString("10. In \"answer\", write one sentence that answers the question for the council directly: the " +
 			"answer itself, not a description of the discussion.\n")
 		shape, summary = synthesisShape, summaryRule
 	}
@@ -587,7 +598,7 @@ func writeBrainstormSynthesisTask(b *strings.Builder, c *Council) string {
 	b.WriteString("1. Merge ideas that say the same thing into one, and list their ids in \"from\".\n")
 	fmt.Fprintf(b, "2. In \"directions\", choose at most %d ideas worth trying, best first, from \"rank\" 1. Rank by picks (add up the "+
 		"picks of the ideas an idea merges), then by how many experts built on it. Leave out an idea nobody picked or built on. "+
-		"A wild idea never takes one of the %d places.\n", maxIdeas, maxIdeas)
+		"A wild idea never takes one of the %d places.\n", maxDirections, maxDirections)
 	b.WriteString("3. For each of them, \"reasoning\" says why it is worth trying, and \"firststep\" is its first step: the one " +
 		"thing to do first, small enough to start this week.\n")
 	b.WriteString("4. In \"stances\", give each expert's stance towards the idea, keyed by the expert's id, from the replies " +

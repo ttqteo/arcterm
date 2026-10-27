@@ -10,7 +10,7 @@ expert proposes, the experts react to each other's proposals, and a coordinator 
 two modes, which you pick:
 
 - **`review`** — a thing to judge (a spec, a plan, a design, a draft, two directions already on the table). The report
-  ranks the directions.
+  ranks up to three directions, each with its first step, and lists the rest under Also raised, one line each.
 - **`brainstorm`** — a problem or a goal with no answer yet. The report holds up to three ideas worth trying, each with
   its why and a first step, plus the wild ideas kept aside.
 
@@ -75,8 +75,8 @@ wsh council wait <id>
 
 `<id>` is the new council's own id; when the printed line does not carry it, `wsh council list` shows it (newest
 first). `wait` polls until the council stops running (a queued one included), then prints the report and the matrix as
-markdown. Sum it up in the conversation in a few lines: for a review, the top direction, why it ranked there and where
-the panel disagreed; for a brainstorm, the ideas worth trying with their first steps, and a wild idea only when it
+markdown. Sum it up in the conversation in a few lines: for a review, the top direction, why it ranked there, its first
+step and where the panel disagreed; for a brainstorm, the ideas worth trying with their first steps, and a wild idea only when it
 changes the choice. Then carry on from there with the spec, the plan, the draft or the problem.
 
 A council's directions are only in its report. Its document is saved under the project's `docs/council/` when it ends
