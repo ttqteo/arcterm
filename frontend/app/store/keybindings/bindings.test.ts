@@ -2076,6 +2076,42 @@ describe("Agent → Canvas gallery keys", () => {
     });
 });
 
+describe("Agent → project Overview keys", () => {
+    const agentCtx: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+    const find = (id: string) => buildAgentBindings(stubModel()).find((b) => b.id === id)!;
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        globalStore.set(centerModeAtom, "terminal");
+    });
+
+    it("claims / only in the project centre mode, and not while a field has focus", () => {
+        const search = find("overview:search");
+        expect(search.keys).toBe("/");
+        expect(search.when!(agentCtx)).toBe(false);
+        globalStore.set(centerModeAtom, "project");
+        expect(search.when!(agentCtx)).toBe(true);
+        expect(search.when!({ ...agentCtx, editable: true })).toBe(false);
+        expect(search.when!({ ...agentCtx, surface: "jarvis" })).toBe(false);
+        // the gallery's / is its own: the two never share the key
+        expect(find("canvases:search").when!(agentCtx)).toBe(false);
+        globalStore.set(centerModeAtom, "canvases");
+        expect(search.when!(agentCtx)).toBe(false);
+    });
+
+    it("lets / pass when History is not drawn, and focuses the box when it is", () => {
+        const search = find("overview:search");
+        vi.stubGlobal("document", { querySelector: () => null });
+        expect(search.run(agentCtx)).toBe(false);
+        const input = { focus: vi.fn() };
+        const querySelector = vi.fn(() => input);
+        vi.stubGlobal("document", { querySelector });
+        search.run(agentCtx);
+        expect(querySelector).toHaveBeenCalledWith("[data-history-search]");
+        expect(input.focus).toHaveBeenCalled();
+    });
+});
+
 describe("g w: what's waiting", () => {
     afterEach(() => globalStore.set(petPeekOpenAtom, false));
 
