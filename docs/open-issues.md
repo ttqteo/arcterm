@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Open a deck from the File panel: after installing a build with `open_path`, in the SIEM `website`
+  agent's "It's in docs/slide/ as Early_Warning_Services_v1.4_271026_Sales.pptx" the bare file name is underlined on
+  hover (its folder is read off the line above, `nearbyFolders`); Ctrl+click it: the panel reads "Binary file" with
+  Open and Show in Explorer; Open starts PowerPoint on it, Show in Explorer
+  selects it. A `.exe` path offers neither. `src-tauri/src/commands.rs` `open_path`, `filetab.tsx`, commit
 - [ ] (arcterm) Remove council: in the Agent tree hover a Failed or Done council row: an × covers its state word;
   click it (or right-click → Remove council), confirm: the row goes and `wsh council list` no longer has it. Open
   another ended council and click Remove in its header: the centre moves to the project's Overview. A Running or

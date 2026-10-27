@@ -11,6 +11,8 @@ import { fileExists, homeDir } from "@/app/view/agents/pathlinkroute";
 import {
     findPathCandidates,
     findSpanningPaths,
+    isBareName,
+    nearbyFolders,
     resolvePath,
     type RowCell,
     type TermRow,
@@ -52,21 +54,35 @@ export function hintFor(ref: FileRef): string {
 
 type Touched = PathLinkHooks["touched"];
 
-// the existing file a path names: under the cwd, else the one file the agent touched that the path is the tail of
-async function locate(path: string, cwd: string | null, touched: Touched): Promise<string | null> {
-    const abs = resolvePath(cwd, path, await homeDir());
+// the existing file a path names: under the cwd, else the one file the agent touched that the path is the tail of, else
+// for a bare file name the first of `folders` (the ones named on the rows around it, nearbyFolders) that holds it
+async function locate(path: string, cwd: string | null, touched: Touched, folders: readonly string[] = []) {
+    const home = await homeDir();
+    const abs = resolvePath(cwd, path, home);
     if (abs != null && (await exists(abs))) {
         return abs;
     }
     const hit = await touched(cwd, path);
-    return hit != null && (await exists(hit)) ? hit : null;
+    if (hit != null && (await exists(hit))) {
+        return hit;
+    }
+    if (!isBareName(path)) {
+        return null;
+    }
+    for (const folder of folders) {
+        const inFolder = resolvePath(cwd, `${folder}/${path}`, home);
+        if (inFolder != null && (await exists(inFolder))) {
+            return inFolder;
+        }
+    }
+    return null;
 }
 
 // the existing files a line names, as references
-async function refsForLine(text: string, cwd: string | null, touched: Touched) {
+async function refsForLine(text: string, cwd: string | null, touched: Touched, folders: readonly string[] = []) {
     const out: { text: string; start: number; end: number; ref: FileRef }[] = [];
     for (const c of findPathCandidates(text)) {
-        const abs = await locate(c.path, cwd, touched);
+        const abs = await locate(c.path, cwd, touched, folders);
         if (abs == null) {
             continue;
         }
@@ -80,11 +96,12 @@ async function refsForLine(text: string, cwd: string | null, touched: Touched) {
     return out;
 }
 
-// how many rows either side of the hovered one a path broken across rows is looked for in
+// how many rows either side of the hovered one a path broken across rows, or the folder of a bare file name, is looked
+// for in
 const SPAN_ROWS = 3;
 
-// the existing files named by paths that run across rows and touch row `y` (0-based), with their ranges in buffer rows
-async function spanningRefsAt(term: Terminal, y: number, cwd: string | null, touched: Touched) {
+// the rows around buffer row `y` (0-based), from `from`
+function rowsAround(term: Terminal, y: number): { from: number; rows: TermRow[] } {
     const buf = term.buffer.active;
     const from = Math.max(0, y - SPAN_ROWS);
     const to = Math.min(buf.length - 1, y + SPAN_ROWS);
@@ -93,12 +110,37 @@ async function spanningRefsAt(term: Terminal, y: number, cwd: string | null, tou
         const line = buf.getLine(i);
         rows.push({ text: line?.translateToString(true) ?? "", wrapped: line?.isWrapped ?? false });
     }
+    return { from, rows };
+}
+
+// the folders named around buffer row `y`, nearest first: where a bare file name on it is looked for
+function foldersIn(around: { from: number; rows: TermRow[] }, y: number): string[] {
+    return nearbyFolders(
+        around.rows.map((r) => r.text),
+        y - around.from
+    );
+}
+
+function foldersAt(term: Terminal, y: number): string[] {
+    return foldersIn(rowsAround(term, y), y);
+}
+
+// the existing files named by paths that run across rows and touch row `y` (0-based), with their ranges in buffer rows
+async function spanningRefsAt(
+    term: Terminal,
+    y: number,
+    cwd: string | null,
+    touched: Touched,
+    around: { from: number; rows: TermRow[] },
+    folders: readonly string[]
+) {
+    const { from, rows } = around;
     const out: { text: string; start: RowCell; end: RowCell; ref: FileRef }[] = [];
     for (const s of findSpanningPaths(rows, term.cols)) {
         if (s.start.row + from > y || s.end.row + from < y) {
             continue;
         }
-        const abs = await locate(s.path, cwd, touched);
+        const abs = await locate(s.path, cwd, touched, folders);
         if (abs == null) {
             continue;
         }
@@ -133,9 +175,11 @@ export function makePathLinkProvider(term: Terminal, hooks: PathLinkHooks): ILin
                 return;
             }
             const cwd = hooks.cwd();
+            const around = rowsAround(term, y - 1);
+            const folders = foldersIn(around, y - 1);
             void Promise.all([
-                refsForLine(text, cwd, hooks.touched),
-                spanningRefsAt(term, y - 1, cwd, hooks.touched),
+                refsForLine(text, cwd, hooks.touched, folders),
+                spanningRefsAt(term, y - 1, cwd, hooks.touched, around, folders),
             ]).then(([found, spanning]) => {
                 // xterm ranges are 1-based and inclusive
                 const links: ILink[] = spanning.map((s) =>
@@ -175,7 +219,7 @@ export function trackForDev(blockId: string, term: Terminal, hooks: PathLinkHook
             const found = [];
             for (let i = 0; i < buf.length; i++) {
                 const text = buf.getLine(i)?.translateToString(true) ?? "";
-                for (const f of await refsForLine(text, t.hooks.cwd(), t.hooks.touched)) {
+                for (const f of await refsForLine(text, t.hooks.cwd(), t.hooks.touched, foldersAt(t.term, i))) {
                     found.push({ text: f.text, abs: f.ref.abs, line: f.ref.line ?? null });
                 }
             }
@@ -237,7 +281,9 @@ export function trackForDev(blockId: string, term: Terminal, hooks: PathLinkHook
             const buf = t.term.buffer.active;
             for (let i = buf.length - 1; i >= 0; i--) {
                 const text = buf.getLine(i)?.translateToString(true) ?? "";
-                const hit = (await refsForLine(text, t.hooks.cwd(), t.hooks.touched)).find((f) => f.text === linkText);
+                const hit = (await refsForLine(text, t.hooks.cwd(), t.hooks.touched, foldersAt(t.term, i))).find(
+                    (f) => f.text === linkText
+                );
                 if (hit != null) {
                     t.hooks.activate(hit.ref);
                     return true;

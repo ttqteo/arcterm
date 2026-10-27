@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A file an agent names without its folder ("It's in docs/slide/ as Deck.pptx") is a link again: Ctrl+click finds
+  it in a folder named on the lines around it.
 - A deck, a sheet or a video an agent links to opens: the File panel, which shows only text, PDFs and images, now
   offers Open (in PowerPoint, Excel or the file's own app) and Show in Explorer instead of a dead end.
 - Remove a council you are done with: hover its row in the Agent tree and click ×, right-click it, or click Remove in

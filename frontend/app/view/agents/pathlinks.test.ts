@@ -2,7 +2,43 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { findPathCandidates, findSpanningPaths, inlinePathOf, matchKnownPath, resolvePath } from "./pathlinks";
+import {
+    findPathCandidates,
+    findSpanningPaths,
+    inlinePathOf,
+    isBareName,
+    matchKnownPath,
+    nearbyFolders,
+    resolvePath,
+} from "./pathlinks";
+
+describe("nearbyFolders", () => {
+    it("finds the folder a line above names for a bare file name, as an agent's report puts it", () => {
+        const rows = [
+            "● I've made v1.4 for the sales team. It's in docs/slide/ as",
+            "  Early_Warning_Services_v1.4_271026_Sales.pptx and .pdf, 22 slides. There's no BigLabs logo",
+        ];
+        expect(nearbyFolders(rows, 1)).toEqual(["docs/slide"]);
+    });
+
+    it("takes the folder of a file path, the nearest row first, each once and at most max", () => {
+        const rows = ["see a/b and c/d.ts", "here x/y.go and a/b", "then e/f"];
+        expect(nearbyFolders(rows, 1)).toEqual(["x", "a/b", "c", "e/f"]);
+        expect(nearbyFolders(rows, 1, 2)).toEqual(["x", "a/b"]);
+    });
+
+    it("has nothing when no row names a folder", () => {
+        expect(nearbyFolders(["just deck.pptx here", ""], 0)).toEqual([]);
+    });
+});
+
+describe("isBareName", () => {
+    it("is a name with no folder, not one from home", () => {
+        expect(isBareName("Deck_v1.4.pptx")).toBe(true);
+        expect(isBareName("docs/Deck.pptx")).toBe(false);
+        expect(isBareName("~")).toBe(false);
+    });
+});
 
 const paths = (line: string) => findPathCandidates(line).map((c) => [c.path, c.line, c.col]);
 

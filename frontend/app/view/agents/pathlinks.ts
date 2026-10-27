@@ -147,6 +147,40 @@ export function findSpanningPaths(rows: readonly TermRow[], cols: number): Spann
     return out;
 }
 
+/** Pure: the folders `rows` name, nearest to row `at` first (its own, then one above, one below, ...), once each and at
+ *  most `max`: a path with a separator, or the folder of one that names a file. A bare file name an agent gives is often
+ *  in one it named a line before ("It's in docs/slide/ as Deck.pptx"). */
+export function nearbyFolders(rows: readonly string[], at: number, max = 6): string[] {
+    const out: string[] = [];
+    const order = [at];
+    for (let d = 1; d < rows.length; d++) {
+        order.push(at - d, at + d);
+    }
+    for (const i of order) {
+        if (i < 0 || i >= rows.length) {
+            continue;
+        }
+        for (const c of findPathCandidates(rows[i])) {
+            if (!SEP_RE.test(c.path)) {
+                continue;
+            }
+            const folder = EXT_RE.test(c.path) ? c.path.replace(/[\\/][^\\/]*$/, "") : c.path;
+            if (folder !== "" && !out.includes(folder)) {
+                out.push(folder);
+                if (out.length >= max) {
+                    return out;
+                }
+            }
+        }
+    }
+    return out;
+}
+
+/** Pure: a file name with no folder, which nearbyFolders can place. */
+export function isBareName(path: string): boolean {
+    return !SEP_RE.test(path) && !path.startsWith("~");
+}
+
 export function isAbsolutePath(p: string): boolean {
     return /^(?:[A-Za-z]:[\\/]|[\\/])/.test(p);
 }
