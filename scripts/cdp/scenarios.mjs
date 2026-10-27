@@ -27844,17 +27844,31 @@ const bsRead = (h, ctx) =>
             rail: flat(pane?.querySelector("[data-brainstorm-rail] h2")),
             railText: flat(pane?.querySelector("[data-brainstorm-rail]")),
             why: flat(pane?.querySelector("[data-brainstorm-why]")),
-            // the asked part's mockups in the question view: each thumbnail, its label, and whether it sits right of the answers
+            // the asked part's mockups in the question view: each thumbnail, its label, whether it sits right of the answers
+            // or under them (flex-wrap drops the boards under the answers when the row is too narrow for both side by side),
+            // and whether the pane holds it
             qBoards: [...(pane?.querySelectorAll("[data-brainstorm-question] [data-brainstorm-thumb]") ?? [])].map((t) => {
                 const answers = pane.querySelector("[data-brainstorm-question-boards] [data-brainstorm-option]")?.parentElement;
+                const a = answers?.getBoundingClientRect();
+                const r = t.getBoundingClientRect();
+                const p = pane.getBoundingClientRect();
                 return {
                     name: t.getAttribute("data-brainstorm-thumb"),
                     frame: !!t.querySelector("iframe"),
                     label: flat(t.nextElementSibling?.firstElementChild),
                     open: flat(t.nextElementSibling?.querySelector("[data-brainstorm-open-board]")),
-                    besideAnswers: answers ? answers.getBoundingClientRect().right <= t.getBoundingClientRect().left : null,
+                    besideAnswers: a ? a.right <= r.left : null,
+                    underAnswers: a ? a.bottom <= r.top && Math.abs(a.left - r.left) <= 1 : null,
+                    inPane: r.left >= p.left && r.right <= p.right,
                 };
             }),
+            // the row that holds the answers and the boards: its width, the answers' least width (min-w-[360px] in
+            // QuestionMain), the row's gap and a board's width decide whether both fit side by side
+            qRow: (() => {
+                const row = pane?.querySelector("[data-brainstorm-question-boards]");
+                const thumb = row?.querySelector("[data-brainstorm-thumb]");
+                return row && thumb ? { w: Math.round(row.getBoundingClientRect().width), thumbW: Math.round(thumb.getBoundingClientRect().width) } : null;
+            })(),
             options: [...(pane?.querySelectorAll("[data-brainstorm-option]") ?? [])].map((o) => ({
                 text: flat(o),
                 pick: o.hasAttribute("data-pick"),
@@ -27890,6 +27904,10 @@ async function bsUntil(h, ctx, want, ms = BS_POLL_WAIT_MS) {
     return { ...s, ok: false, ms: Date.now() - start };
 }
 
+// QuestionMain's board row: the answers' min-w-[360px] and the row's gap-[24px]
+const BS_ANSWERS_MIN_W = 360;
+const BS_BOARDS_GAP = 24;
+
 const bsStates = (s) => Object.fromEntries((s?.parts ?? []).map((p) => [p.id, p.state]));
 const bsPart = (s, id) => s?.parts?.find((p) => p.id === id);
 const bsBrief = (s) => ({ ok: s.ok, ms: s.ms, view: s.view, error: s.error, text: (s.text ?? "").slice(0, 300) });
@@ -27905,19 +27923,59 @@ const bsClick = (h, scope, label) =>
         return "clicked";
     })()`);
 
-// a real click, which puts the page in focus: CDP key and text input reach nothing without it
+// a real click, which puts the page in focus: CDP key and text input reach nothing without it. The press lands only on a
+// point where the element itself is the topmost thing: main's Jarvis creature is fixed over the window and wanders across
+// the bottom of the Agent surface, so a press at the centre can click the creature (which opens the Jarvis popup, a modal
+// that kills the new-agent chord) instead of the element. With no such point the element is focused and clicked in the
+// page, and no mouse press is made. Says what it did: "mouse", "focus", or false when the element is missing or has no box
 async function bsMouseClick(h, elExpr) {
-    const box = await h.ev(`(() => {
+    const hit = await h.ev(`(() => {
         const el = ${elExpr};
-        el?.scrollIntoView({ block: "center" });
-        const r = el?.getBoundingClientRect();
-        return r && r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+        if (!el) return null;
+        el.scrollIntoView({ block: "center" });
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return null;
+        const own = (x, y) => {
+            const top = document.elementFromPoint(x, y);
+            return top != null && (top === el || el.contains(top));
+        };
+        // the centre first, then points across the box (an inset keeps off the rounded corners and the border)
+        const fx = [0.5, 0.25, 0.75, 0.1, 0.9];
+        const fy = [0.5, 0.25, 0.75, 0.1, 0.9];
+        for (const dy of fy) {
+            for (const dx of fx) {
+                const x = Math.round(r.x + r.width * dx);
+                const y = Math.round(r.y + r.height * dy);
+                if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) continue;
+                if (own(x, y)) return { x, y };
+            }
+        }
+        return { focus: true };
     })()`);
-    if (!box) return false;
-    for (const type of ["mousePressed", "mouseReleased"]) {
-        await h.cdp("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 });
+    if (!hit) return false;
+    if (hit.focus) {
+        await h.ev(`(() => {
+            const el = ${elExpr};
+            el?.focus?.();
+            el?.click?.();
+            return true;
+        })()`);
+        return "focus";
     }
-    return true;
+    for (const type of ["mousePressed", "mouseReleased"]) {
+        await h.cdp("Input.dispatchMouseEvent", { type, x: hit.x, y: hit.y, button: "left", clickCount: 1 });
+    }
+    return "mouse";
+}
+
+// closes the Jarvis popup when it is open: its close button, else Escape. The popup is a modal (petPeekOpenAtom), so one
+// left open silently turns off the global chords and the footer's keys for every step after it. True once it is closed
+async function bsClosePeek(h) {
+    if (!(await h.ev(`!!document.querySelector("[data-pet-peek]")`))) return true;
+    await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
+    if (await polishWaitFor(h, `!document.querySelector("[data-pet-peek]")`, 2000)) return true;
+    await h.ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }))`);
+    return polishWaitFor(h, `!document.querySelector("[data-pet-peek]")`, 2000);
 }
 
 // Shift is bound nowhere, so the probe seeing it proves key events reach the page
@@ -28108,18 +28166,30 @@ async function bsCloseDesign(h) {
 const BS_HINTS_SEEN_KEY = "brainstorm.hintsSeen";
 const bsSeeHints = (h) => h.ev(`(() => { try { localStorage.setItem(${JSON.stringify(BS_HINTS_SEEN_KEY)}, "1"); return true; } catch { return false; } })()`);
 
-// Shows or hides the agent's details rail (the `d` binding's atom), returning what it was. The rail stays beside a
-// brainstorm on main, so the pane is narrower than the full-width one these boards were drawn for: a step that judges
-// how the pane lays out its columns hides the rail while it reads, and puts it back.
-const bsRail = (h, visible) =>
+// Whether the agent's details rail (the `d` binding's atom) is open. It stays beside a brainstorm on main, as it does
+// beside a canvas, so at the dev window's 1600×950 the pane is about 514px wide and its rows stack: a step that judges a
+// row's layout reads this with the row, so it proves the layout with the rail open, never with it hidden.
+const bsRailOpen = (h) =>
     lookEval(h, `
         const { globalStore } = await mod("app/store/jotaiStore.ts");
         const { railVisibleAtom } = await mod("app/view/agents/railstore.ts");
-        const was = globalStore.get(railVisibleAtom);
-        globalStore.set(railVisibleAtom, ${visible});
-        await nap(300);
-        return was;
+        return globalStore.get(railVisibleAtom) === true;
     `);
+
+// The box of the element a JS expression finds, as numbers, and whether it lies wholly inside the box of the element
+// `withinExpr` finds, the pane's own by default (a button the pane clips has its right edge past it). A bar sits in the
+// pane's main column, which the rail beside it overlays or clips, so a bar's step names the bar. null when either is missing.
+const bsBox = (elExpr, withinExpr = BS_PANE) => `(() => {
+    const el = ${elExpr};
+    const within = ${withinExpr};
+    if (!el || !within) return null;
+    const r = el.getBoundingClientRect();
+    const p = within.getBoundingClientRect();
+    return {
+        x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height),
+        inside: r.left >= p.left && r.right <= p.right && r.top >= p.top && r.bottom <= p.bottom,
+    };
+})()`;
 
 async function bsShowPane(h) {
     if (await h.ev(`!!${BS_PANE}`)) return true;
@@ -28186,6 +28256,7 @@ const brainstormMode = {
         const ctx = { cwd, file: join(cwd, ".superpowers", "brainstorm", BS_TOPIC, "brainstorm.json") };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
+            await bsClosePeek(h);
             await bsSeeHints(h);
             // the New run window approve opens needs a registered project; the agent's project label names it
             await h.rpc("createproject", { name: BS_TOPIC, path: cwd });
@@ -28597,22 +28668,25 @@ const brainstormMode = {
             { q4: s2.qBoards, q5: s2q.qBoards }
         );
         bsWrite(ctx, BS_FILES.layout);
-        // answers (360px at least) and two thumbnails side by side need the width the pane has with the rail hidden
-        const railWas = await bsRail(h, false);
         const s2o = await bsUntil(
             h,
             ctx,
             (s) => s.question.includes(BS_Q5_LAYOUT.text) && s.options.length === 2 && s.qBoards.filter((b) => b.frame).length === 2
         );
         await h.shot("cdp-shots/brainstorm-mode-2-layout-question.png");
-        await bsRail(h, railWas);
+        // The details rail stays beside a brainstorm, so the pane's question column is what the window leaves it: the boards go
+        // to the answers' right when the row holds the answers' least width (360px), the 24px gap and a board, and under the
+        // answers, in the pane, when it does not (at the dev window's 1600×950 with the rail open it does not).
+        const fitsBeside = s2o.qRow != null && s2o.qRow.w >= BS_ANSWERS_MIN_W + BS_BOARDS_GAP + s2o.qRow.thumbW;
+        const railOpen2l3 = await bsRailOpen(h);
         rec(
-            "2l3. a question between the part's layouts: the two answers, and beside them, to their right, the two boards to compare",
+            "2l3. a question between the part's layouts: the two answers, and the two boards to compare: to their right when the row has room for both, under them when it has not, inside the pane either way",
             s2o.ok &&
+                railOpen2l3 === true &&
                 JSON.stringify(s2o.options.map((o) => o.text)) === JSON.stringify(BS_Q5_LAYOUT.options.map(optionText)) &&
                 JSON.stringify(s2o.qBoards.map((b) => b.label)) === JSON.stringify(boardLabels) &&
-                s2o.qBoards.every((b) => b.besideAnswers === true),
-            { ...bsBrief(s2o), options: s2o.options, boards: s2o.qBoards }
+                s2o.qBoards.every((b) => (fitsBeside ? b.besideAnswers === true : b.underAnswers === true) && b.inPane === true),
+            { ...bsBrief(s2o), railOpen: railOpen2l3, fitsBeside, row: s2o.qRow, options: s2o.options, boards: s2o.qBoards }
         );
         await h.ev(`${BS_PANE}?.querySelector("[data-brainstorm-question] [data-brainstorm-open-board]")?.click()`);
         const s2f = await bsUntil(h, ctx, (s) => s.view === "board", 3000);
@@ -29027,6 +29101,7 @@ async function bsArrangeAgent(h, topic, file) {
     const cwd = mkdtempSync(join(tmpdir(), "verify-bs-reasons-"));
     const ctx = { cwd, topic, file: join(cwd, ".superpowers", "brainstorm", topic, "brainstorm.json") };
     try {
+        await bsClosePeek(h);
         await bsSeeHints(h);
         mkdirSync(dirname(ctx.file), { recursive: true });
         bsWrite(ctx, file);
@@ -29342,6 +29417,28 @@ const BSR_READ_REVIEW = `(() => {
     };
 })()`;
 
+// Each row's gist against its buttons, in the pane as it stands: the details rail stays beside a brainstorm, so at the dev
+// window's 1600×950 the design's column is about 660px wide and a row stacks its title, gist, source and buttons. A button
+// whose right edge is past its row's, or the pane's, is clipped.
+const BSR_READ_FIT = `(() => {
+    const pane = ${BS_PANE};
+    const p = pane?.getBoundingClientRect();
+    return [...(pane?.querySelectorAll("[data-brainstorm-part]") ?? [])].map((row) => {
+        const rr = row.getBoundingClientRect();
+        const gist = row.querySelector("[data-brainstorm-gist]")?.getBoundingClientRect();
+        const btns = [...row.querySelectorAll("button:not([data-brainstorm-row-toggle])")].map((b) => b.getBoundingClientRect());
+        const left = Math.min(...btns.map((b) => b.left));
+        const right = Math.max(...btns.map((b) => b.right));
+        return {
+            id: row.getAttribute("data-brainstorm-part"),
+            gist: Math.round(gist?.width ?? 0),
+            gistH: Math.round(gist?.height ?? 0),
+            buttons: btns.length > 0 ? Math.round(right - left) : 0,
+            inside: p != null && btns.every((b) => b.right <= rr.right && b.left >= rr.left && b.right <= p.right && b.left >= p.left),
+        };
+    });
+})()`;
+
 const brainstormReviewSkim = bsBoardScenario("brainstorm-review-skim", "detector-engine-models", bsrReviewFile(false), async (h, ctx, rec) => {
     const drawn = await bsUntil(h, ctx, (s) => s.parts.length === BSR_DECISIONS.length + BSR_NOTES.length);
     const opened = await bsOpenRow(h, "model");
@@ -29363,6 +29460,14 @@ const brainstormReviewSkim = bsBoardScenario("brainstorm-review-skim", "detector
             r.decisions.every((d, i) => JSON.stringify(d.buttons) === JSON.stringify(wantRight(shown[i]))) &&
             r.progress === "4 of 9 parts yours",
         { ...bsBrief(drawn), line: r.line, confirmAll: r.confirmAll, head: r.decisionsHead, decisions: r.decisions.map((d) => [d.id, d.state, d.gist, d.buttons]), progress: r.progress }
+    );
+    const fitted = await h.ev(BSR_READ_FIT);
+    rec(
+        "1b. with the details rail open, each row keeps its gist wider than its buttons and at least 200px wide, and its buttons lie inside the pane",
+        (await bsRailOpen(h)) === true &&
+            fitted.length === BSR_DECISIONS.length + BSR_NOTES.length &&
+            fitted.every((x) => x.gist >= 200 && x.gist > x.buttons && x.inside),
+        { rows: fitted }
     );
     const model = r.decisions.find((d) => d.id === "model");
     const closedBody = r.decisions.filter((d) => d.id !== "model").every((d) => d.open === "false" && d.body === "");
@@ -29584,6 +29689,25 @@ const brainstormApproveRun = {
             approve: ready.approve,
             approveReason: ready.approveReason,
         });
+        // the bar at the pane's own width, the details rail open: its title on one line, and both buttons whole inside the bar
+        // and the pane
+        const approveBox = await h.ev(bsBox(`${BS_APPROVE_BAR}?.querySelector("[data-brainstorm-approve]")`, BS_APPROVE_BAR));
+        const approveInPane = await h.ev(bsBox(`${BS_APPROVE_BAR}?.querySelector("[data-brainstorm-approve]")`));
+        const keepBox = await h.ev(bsBox(`[...(${BS_APPROVE_BAR}?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Keep talking")`, BS_APPROVE_BAR));
+        const titleBox = await h.ev(bsBox(`${BS_APPROVE_BAR}?.querySelector("span")`, BS_APPROVE_BAR));
+        const approveText = await h.ev(`(() => { const b = ${BS_APPROVE_BAR}?.querySelector("[data-brainstorm-approve]"); return b ? { scroll: b.scrollWidth, client: b.clientWidth } : null; })()`);
+        rec(
+            "1b. with the details rail open, the approve bar keeps its title on one line and both buttons whole inside the bar and the pane, Approve and start run not clipped",
+            (await bsRailOpen(h)) === true &&
+                approveBox?.inside === true &&
+                approveInPane?.inside === true &&
+                keepBox?.inside === true &&
+                titleBox != null &&
+                titleBox.h < 24 &&
+                approveText != null &&
+                approveText.scroll <= approveText.client,
+            { approveBox, approveInPane, keepBox, titleBox, approveText }
+        );
 
         const spec = join(ctx.cwd, ...BS_SPEC.split("/"));
         const prototype = join(ctx.cwd, ".superpowers", "design", BAR_TOPIC, "project", BS_BOARDS[0]);
@@ -29649,6 +29773,10 @@ const brainstormHints = {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
         await h.ev(`localStorage.removeItem(${JSON.stringify(BS_HINTS_SEEN_KEY)})`);
+        // an earlier scenario can leave the Jarvis popup open, and it is a modal: the new-agent chord and the footer's keys
+        // read nothing while it is up
+        const peekClosed = await bsClosePeek(h);
+        if (!peekClosed) return [skipStep("brainstorm-hints", "could not verify: the Jarvis popup would not close")];
 
         // 1. the zero-agent state and the New dialog's agent row
         await h.goto("agent");
@@ -47825,7 +47953,8 @@ const BS_KIT = {
     bsPartSel,
     bsOpenRow,
     bsToggleRow,
-    bsRail,
+    bsRailOpen,
+    bsBox,
     polishWaitFor,
     polishNap,
     skipStep,

@@ -188,7 +188,7 @@ const CR_KEYS = {
 };
 
 export default function (kit) {
-    const { bsArrangeAgent, bsShowFile, bsTeardownAgent, skipStep, bsWrite, bsUntil, bsBrief, bsClick, bsMouseClick, bsKeysArrive, bsMark, bsTyped, bsAgentTook, bsRail } = kit;
+    const { bsArrangeAgent, bsShowFile, bsTeardownAgent, skipStep, bsWrite, bsUntil, bsBrief, bsClick, bsMouseClick, bsKeysArrive, bsMark, bsTyped, bsAgentTook, bsRailOpen } = kit;
     const { bsOpenDesign, bsTermText, polishWaitFor, polishNap, BS_PANE, BS_POLL_WAIT_MS } = kit;
     const ROW = (id) => `${BS_PANE}?.querySelector('[data-brainstorm-review-row="${id}"]')`;
     const REVIEW = `${BS_PANE}?.querySelector("[data-brainstorm-review]")`;
@@ -241,6 +241,36 @@ export default function (kit) {
                 question: !!pane?.querySelector("[data-brainstorm-question]"),
                 back: !!pane?.querySelector("[data-brainstorm-back]"),
                 success: getComputedStyle(document.documentElement).getPropertyValue("--color-success").trim(),
+            };
+        })()`);
+
+    // Each changed row's text against its two buttons, measured in the pane as it stands: the details rail stays beside a
+    // brainstorm, so at the dev window's 1600×950 the review column is about 514px wide and a row stacks. A button's right
+    // edge past its row's or the pane's means it is clipped; the text is the gist's box, the buttons the two action buttons' union.
+    const fit = (h) =>
+        h.ev(`(() => {
+            const pane = ${BS_PANE};
+            const p = pane?.getBoundingClientRect();
+            const rows = [...(${REVIEW}?.querySelectorAll('[data-brainstorm-review-section="changed"] [data-brainstorm-review-row]') ?? [])];
+            return {
+                pane: p ? { x: Math.round(p.x), w: Math.round(p.width) } : null,
+                rows: rows.map((r) => {
+                    const rr = r.getBoundingClientRect();
+                    const gist = r.querySelector("[data-brainstorm-gist]")?.getBoundingClientRect();
+                    const cause = r.querySelector("[data-brainstorm-review-cause]")?.getBoundingClientRect();
+                    const btns = [...r.querySelectorAll("button")]
+                        .filter((b) => ["Keep the change", "Put mine back"].includes((b.textContent ?? "").trim()))
+                        .map((b) => b.getBoundingClientRect());
+                    const left = Math.min(...btns.map((b) => b.left));
+                    const right = Math.max(...btns.map((b) => b.right));
+                    return {
+                        id: r.getAttribute("data-brainstorm-review-row"),
+                        gist: Math.round(gist?.width ?? 0),
+                        cause: Math.round(cause?.width ?? 0),
+                        buttons: btns.length === 2 ? Math.round(right - left) : 0,
+                        inside: p != null && btns.length === 2 && right <= rr.right && left >= rr.left && right <= p.right && left >= p.left,
+                    };
+                }),
             };
         })()`);
 
@@ -336,6 +366,16 @@ export default function (kit) {
                 { torch, changedSaid: r.changed.map((x) => x.said) }
             );
 
+            const railOpen = await bsRailOpen(h);
+            const fitted = await fit(h);
+            rec(
+                "1c. with the details rail open, each of the 8 changed rows keeps its text wider than its buttons, its cause line has width, and both buttons lie inside the pane",
+                railOpen === true &&
+                    fitted.rows.length === CR_CHANGED.length &&
+                    fitted.rows.every((x) => x.gist > x.buttons && x.buttons > 0 && x.cause > 0 && x.inside),
+                { railOpen, ...fitted }
+            );
+
             await h.ev(`${ROW("constraints")}?.querySelector("[data-brainstorm-review-toggle]")?.click()`);
             await polishNap(300);
             const d = await readDiff(h, "constraints");
@@ -354,10 +394,7 @@ export default function (kit) {
             );
             await h.ev(`${ROW("constraints")}?.querySelector("[data-brainstorm-review-toggle]")?.click()`);
 
-            // a real click on the row's cause line, which also gives the page focus for the keys. With the details rail open
-            // (it stays beside a brainstorm on main) the review column is too narrow for a row's text: its buttons take the
-            // row and the cause line draws no width, so the rail is hidden for the click and the keys, then put back
-            const railWas = await bsRail(h, false);
+            // a real click on the row's cause line, which also gives the page focus for the keys
             const clicked = await bsMouseClick(h, `${ROW("direction")}?.querySelector("[data-brainstorm-review-cause]")`);
             const clickCursor = await cursorOn(h, "direction");
             const keysArrive = clicked && (await bsKeysArrive(h));
@@ -384,7 +421,6 @@ export default function (kit) {
                     { prompt, clickCursor, jCursor, entered, y: yTyped.detail, jCursor2, u: uTyped.detail }
                 );
             }
-            await bsRail(h, railWas);
 
             const keep = await sends(h, ctx, "brainstorm: keep damping", () => bsClick(h, ROW("damping"), "Keep the change"));
             const restore = await sends(h, ctx, "brainstorm: restore model", () => bsClick(h, ROW("model"), "Put mine back"));

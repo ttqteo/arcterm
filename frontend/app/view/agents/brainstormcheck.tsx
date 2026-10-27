@@ -313,50 +313,56 @@ function ApproveBar({
     const act = useAction();
     const working = f.working != null;
     const blocker = approveBlocker(f);
+    // @container: the title column (240 at least), the blocker's reason and the two buttons need ~700px in one line, so
+    // a narrower bar (the builder rail takes 460px of the pane) stacks them: the run, the reason, the buttons at the end
     return (
         <div
             data-brainstorm-approve-bar
-            className="flex flex-none items-center gap-[14px] border-t border-border bg-surface px-[22px] py-[12px]"
+            className="@container flex-none border-t border-border bg-surface px-[22px] py-[12px]"
         >
-            <div className="flex min-w-[240px] flex-1 flex-col gap-[3px]">
-                <span className="whitespace-nowrap text-[13px] font-semibold text-primary">
-                    Approve and start an orchestrator run
-                </span>
-                <span className="truncate font-mono text-[11px] text-muted">
-                    {runLine(projectOf(agent))} ·{" "}
-                    <button type="button" onClick={() => openRunLauncher(model, agent, s)} className={LINK}>
-                        Change
+            <div className="flex items-center gap-[14px] @max-[700px]:flex-col @max-[700px]:items-stretch @max-[700px]:gap-[10px]">
+                <div className="flex min-w-[240px] flex-1 flex-col gap-[3px] @max-[700px]:min-w-0 @max-[700px]:flex-none">
+                    <span className="whitespace-nowrap text-[13px] font-semibold text-primary">
+                        Approve and start an orchestrator run
+                    </span>
+                    <span className="truncate font-mono text-[11px] text-muted">
+                        {runLine(projectOf(agent))} ·{" "}
+                        <button type="button" onClick={() => openRunLauncher(model, agent, s)} className={LINK}>
+                            Change
+                        </button>
+                    </span>
+                    {act.error != null ? <span className={ERROR_LINE}>{act.error}</span> : null}
+                </div>
+                {blocker != null ? (
+                    <span
+                        data-brainstorm-approve-reason
+                        className="min-w-0 text-right text-[12px] leading-[1.45] text-warning @max-[700px]:text-left"
+                    >
+                        {blocker}
+                    </span>
+                ) : null}
+                <div className="flex flex-none items-center gap-[14px] @max-[700px]:flex-wrap @max-[700px]:justify-end @max-[700px]:gap-[10px]">
+                    <button
+                        type="button"
+                        disabled={working || act.busy}
+                        title={working ? WORKING_TITLE : undefined}
+                        onClick={() => void act.run(() => sendBrainstorm(agent, { kind: "keep-talking" }))}
+                        className={cn(SWAP_BTN, "disabled:cursor-default disabled:opacity-50")}
+                    >
+                        Keep talking
                     </button>
-                </span>
-                {act.error != null ? <span className={ERROR_LINE}>{act.error}</span> : null}
+                    <button
+                        type="button"
+                        data-brainstorm-approve
+                        disabled={blocker != null || act.busy}
+                        title={blocker ?? undefined}
+                        onClick={() => void act.run(() => approveAndOpenRun(model, agent, s))}
+                        className={SWAP_PRIMARY_BTN}
+                    >
+                        Approve and start run
+                    </button>
+                </div>
             </div>
-            {blocker != null ? (
-                <span
-                    data-brainstorm-approve-reason
-                    className="min-w-0 text-right text-[12px] leading-[1.45] text-warning"
-                >
-                    {blocker}
-                </span>
-            ) : null}
-            <button
-                type="button"
-                disabled={working || act.busy}
-                title={working ? WORKING_TITLE : undefined}
-                onClick={() => void act.run(() => sendBrainstorm(agent, { kind: "keep-talking" }))}
-                className={cn(SWAP_BTN, "disabled:cursor-default disabled:opacity-50")}
-            >
-                Keep talking
-            </button>
-            <button
-                type="button"
-                data-brainstorm-approve
-                disabled={blocker != null || act.busy}
-                title={blocker ?? undefined}
-                onClick={() => void act.run(() => approveAndOpenRun(model, agent, s))}
-                className={SWAP_PRIMARY_BTN}
-            >
-                Approve and start run
-            </button>
         </div>
     );
 }

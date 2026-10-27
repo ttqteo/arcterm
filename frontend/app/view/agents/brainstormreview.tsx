@@ -42,8 +42,11 @@ import {
     WORKING_TITLE,
 } from "./brainstormui";
 
+// A row under 760px of its review column (@container on CheckReview's column: the builder rail takes 460px of the pane)
+// stacks: dot, title and arrow on the first line, then what it says now with its cause, then its buttons, all in one
+// column under the title; the five-column line leaves the text a sliver once the buttons take theirs
 const ROW_GRID =
-    "grid grid-cols-[7px_minmax(120px,190px)_minmax(0,1fr)_max-content_12px] items-start gap-x-[12px] gap-y-[6px] border-t border-edge-faint px-[14px] py-[9px]";
+    "grid grid-cols-[7px_minmax(120px,190px)_minmax(0,1fr)_max-content_12px] items-start gap-x-[12px] gap-y-[6px] border-t border-edge-faint px-[14px] py-[9px] @max-[760px]:grid-cols-[7px_minmax(0,1fr)_12px]";
 const ROW_CURSOR = "rounded-[8px] bg-surface-selected outline outline-1 -outline-offset-1 outline-accent";
 // a decision the check rewrote waits on keep or put back: an accent ring until it is yours again
 const REVIEW_DOT: Record<PartView, string> = {
@@ -56,7 +59,10 @@ const REVIEW_DOT: Record<PartView, string> = {
 };
 const QUIET_BTN =
     "cursor-pointer whitespace-nowrap border-0 bg-transparent px-[2px] py-[4px] text-[12px] text-ink-mid hover:text-secondary disabled:cursor-default disabled:opacity-50";
-const UNDER_ROW = "col-[3/-1] flex flex-col gap-[4px]";
+const UNDER_ROW = "col-[3/-1] flex flex-col gap-[4px] @max-[760px]:col-[2/-1]";
+// what a row asks you to do, in the fourth column; stacked, the third line of the column under the title
+const RIGHT_STACK = "@max-[760px]:col-start-2 @max-[760px]:row-start-3 @max-[760px]:mt-0";
+const RIGHT = cn(RIGHT_STACK, "-mt-[3px] @max-[760px]:flex-wrap @max-[760px]:justify-start");
 const REVIEW_KEYS: [string, string][] = [
     ["j k", "Next or previous decision"],
     ["Enter", "Show what it was"],
@@ -99,7 +105,7 @@ export function CheckReview({
     );
     return (
         <div ref={scrollRef} data-brainstorm-review className="min-h-0 flex-1 overflow-y-auto bg-background">
-            <div className="flex flex-col gap-[16px] px-[22px] pb-[30px] pt-[22px]">
+            <div className="@container flex flex-col gap-[16px] px-[22px] pb-[30px] pt-[22px]">
                 <div className="flex flex-col gap-[3px] px-[14px]">
                     <h1 className="m-0 text-[18px] font-bold text-primary">Review what the check changed</h1>
                     {r.summary ? (
@@ -110,8 +116,11 @@ export function CheckReview({
                 </div>
                 {r.changed.length > 0 ? (
                     <section aria-label="Changed" data-brainstorm-review-section="changed" className="flex flex-col">
-                        <div className="flex items-baseline gap-[8px] px-[14px] pb-[6px]">
-                            <h2 className={SECTION_HEAD}>Changed since you confirmed · {r.changed.length}</h2>
+                        {/* flex-wrap: a narrow column puts Keep all on a line of its own instead of folding the heading */}
+                        <div className="flex flex-wrap items-baseline gap-x-[8px] gap-y-[4px] px-[14px] pb-[6px]">
+                            <h2 className={cn(SECTION_HEAD, "whitespace-nowrap")}>
+                                Changed since you confirmed · {r.changed.length}
+                            </h2>
                             <span className="text-[12px] text-muted">open one to see what it was</span>
                             {r.pending > 1 ? <KeepAll agent={agent} f={f} pending={r.pending} /> : null}
                         </div>
@@ -189,7 +198,7 @@ function ReviewRowView({
     let right = null;
     if (row.action === "keep-restore") {
         right = (
-            <span className="-mt-[3px] flex items-center justify-end gap-[12px]">
+            <span className={cn(RIGHT, "flex items-center justify-end gap-[12px]")}>
                 <button
                     type="button"
                     disabled={locked}
@@ -212,9 +221,9 @@ function ReviewRowView({
         );
     } else if (row.action === "confirm") {
         right = editing ? (
-            <span />
+            <span className="@max-[760px]:hidden" />
         ) : (
-            <span className="-mt-[3px] flex items-center justify-end gap-[12px]">
+            <span className={cn(RIGHT, "flex items-center justify-end gap-[12px]")}>
                 <button
                     type="button"
                     disabled={locked}
@@ -231,7 +240,7 @@ function ReviewRowView({
         );
     } else if (row.action === "answer") {
         right = (
-            <span className="-mt-[3px] flex justify-end">
+            <span className={cn(RIGHT, "flex justify-end")}>
                 <button
                     type="button"
                     onClick={() => openBrainstormDesign(agent.id, false)}
@@ -242,9 +251,13 @@ function ReviewRowView({
             </span>
         );
     } else if (row.view === "yours") {
-        right = <span className="mt-[2px] text-right text-[11.5px] text-success">Yours</span>;
+        right = (
+            <span className={cn(RIGHT_STACK, "mt-[2px] text-right text-[11.5px] text-success @max-[760px]:text-left")}>
+                Yours
+            </span>
+        );
     } else {
-        right = <span />;
+        right = <span className="@max-[760px]:hidden" />;
     }
     return (
         <div
@@ -267,7 +280,7 @@ function ReviewRowView({
             ) : (
                 <span className="text-[13.5px] font-semibold leading-[1.45] text-primary">{row.title}</span>
             )}
-            <span className="flex min-w-0 flex-col gap-[2px]">
+            <span className="flex min-w-0 flex-col gap-[2px] @max-[760px]:col-start-2 @max-[760px]:row-start-2">
                 <span
                     data-brainstorm-gist
                     className={cn(
@@ -293,7 +306,7 @@ function ReviewRowView({
                     aria-expanded={open}
                     onClick={toggle}
                     className={cn(
-                        "mt-[4px] flex w-[12px] cursor-pointer border-0 bg-transparent p-0 text-muted",
+                        "mt-[4px] flex w-[12px] cursor-pointer border-0 bg-transparent p-0 text-muted @max-[760px]:col-start-3 @max-[760px]:row-start-1",
                         open && "rotate-180"
                     )}
                 >
@@ -302,7 +315,7 @@ function ReviewRowView({
                     </svg>
                 </button>
             ) : (
-                <span />
+                <span className="@max-[760px]:hidden" />
             )}
             {open && expandable ? (
                 <div data-brainstorm-review-diff className={UNDER_ROW}>
@@ -353,13 +366,15 @@ function ReviewRowView({
                 <div
                     key={i}
                     data-brainstorm-review-call
-                    className="col-[3/-1] flex items-baseline gap-[8px] rounded-[6px] bg-accentbg px-[10px] py-[5px] text-[12.5px] leading-[1.5] text-secondary"
+                    className="col-[3/-1] flex items-baseline gap-[8px] rounded-[6px] bg-accentbg px-[10px] py-[5px] text-[12.5px] leading-[1.5] text-secondary @max-[760px]:col-[2/-1]"
                 >
                     <span className="flex-none text-[11px] font-semibold text-accent-soft">Agent’s call</span>
                     {c}
                 </div>
             ))}
-            {act.error != null ? <span className={cn(ERROR_LINE, "col-[3/-1]")}>{act.error}</span> : null}
+            {act.error != null ? (
+                <span className={cn(ERROR_LINE, "col-[3/-1] @max-[760px]:col-[2/-1]")}>{act.error}</span>
+            ) : null}
         </div>
     );
 }

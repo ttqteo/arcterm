@@ -531,14 +531,15 @@ function ReviewHead({ agent, f, check }: { agent: AgentVM; f: BrainstormFile; ch
     );
 }
 
-function Chevron({ open, onClick }: { open: boolean; onClick: () => void }) {
+function Chevron({ open, onClick, className }: { open: boolean; onClick: () => void; className?: string }) {
     return (
         <span
             aria-hidden="true"
             onClick={onClick}
             className={cn(
                 "flex h-[20px] w-[12px] flex-none cursor-pointer items-center text-muted",
-                open && "rotate-180"
+                open && "rotate-180",
+                className
             )}
         >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -647,25 +648,34 @@ function PartRow({
     const dim = view === "open" && !note;
     const said = partAnswer(f, part);
 
+    // @container: the row's columns (title 200, source 120, buttons 150) leave the gist a sliver below ~780px, so a
+    // narrower row (the details rail and the tree set the pane's width, not the window) stacks them in one column:
+    // dot, title, gist, source, then the buttons, with the arrow beside the title
     return (
         <div
             data-brainstorm-part={part.id}
             data-state={note ? "note" : view}
             data-unseen={unseen ? "" : undefined}
-            className="flex scroll-mt-[20px] flex-col border-t border-edge-faint"
+            className="@container flex scroll-mt-[20px] flex-col border-t border-edge-faint"
         >
-            <div className={cn("flex items-start gap-[12px] px-[14px]", note ? "py-[8px]" : "py-[9px]")}>
+            <div
+                className={cn(
+                    "flex items-start gap-[12px] px-[14px]",
+                    "@max-[780px]:grid @max-[780px]:grid-cols-[auto_minmax(0,1fr)_auto] @max-[780px]:gap-y-[6px]",
+                    note ? "py-[8px]" : "py-[9px]"
+                )}
+            >
                 <span className={cn(note ? NOTE_DOT : PART_DOT[view], "mt-[6px]")} />
                 <button
                     type="button"
                     data-brainstorm-row-toggle
                     aria-expanded={open}
                     onClick={() => setOpen(!open)}
-                    className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-[14px] border-0 bg-transparent p-0 text-left"
+                    className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-[14px] border-0 bg-transparent p-0 text-left @max-[780px]:flex-col @max-[780px]:items-stretch @max-[780px]:gap-[2px]"
                 >
                     <span
                         className={cn(
-                            "w-[200px] flex-none font-semibold",
+                            "w-[200px] flex-none font-semibold @max-[780px]:w-auto",
                             note ? "text-[13px] text-secondary" : "text-[13.5px]",
                             !note && (dim ? "text-ink-mid" : "text-primary")
                         )}
@@ -686,18 +696,28 @@ function PartRow({
                         {said != null ? <SaidLine said={said} open={open} /> : null}
                     </span>
                     {/* the answer line under the gist names the answer, so the column would only repeat it */}
-                    <span title={part.from} className="w-[120px] flex-none truncate font-mono text-[10.5px] text-muted">
+                    <span
+                        title={part.from}
+                        className="w-[120px] flex-none truncate font-mono text-[10.5px] text-muted @max-[780px]:w-auto @max-[780px]:empty:hidden"
+                    >
                         {said != null ? null : part.from}
                     </span>
                 </button>
-                <span className="flex h-[20px] min-w-[150px] flex-none items-center justify-end gap-[8px]">
+                <span className="flex h-[20px] min-w-[150px] flex-none items-center justify-end gap-[8px] @max-[780px]:col-start-2 @max-[780px]:row-start-2 @max-[780px]:h-auto @max-[780px]:min-w-0 @max-[780px]:flex-wrap @max-[780px]:justify-start @max-[780px]:empty:hidden">
                     {unseen ? <span className="text-[11px] font-semibold text-accent-soft">New</span> : null}
                     {right}
                 </span>
-                <Chevron open={open} onClick={() => setOpen(!open)} />
+                <Chevron
+                    open={open}
+                    onClick={() => setOpen(!open)}
+                    className="@max-[780px]:col-start-3 @max-[780px]:row-start-1"
+                />
             </div>
             {open ? (
-                <div data-brainstorm-row-body className="mb-[12px] ml-[233px] mr-[14px] flex flex-col gap-[8px]">
+                <div
+                    data-brainstorm-row-body
+                    className="mb-[12px] ml-[233px] mr-[14px] flex flex-col gap-[8px] @max-[780px]:ml-[33px]"
+                >
                     {editing ? (
                         <>
                             <textarea
