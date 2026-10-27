@@ -45,6 +45,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   check still go by the average.
 - Jarvis's Waiting on you opens the rows past its first three with "+2 more" (the count it hides) and folds them with
   "Show less", as the other regions do, instead of "Show all 5", which read like a cap of five.
+- The how-to hint at the top of a brainstorm is one slim row instead of a four-line card, so the question sits higher.
 
 ### Fixed
 

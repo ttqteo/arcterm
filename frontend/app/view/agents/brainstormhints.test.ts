@@ -69,10 +69,10 @@ describe("brainstorm hints: whether the first-open card shows", () => {
 });
 
 describe("brainstorm hints: the words", () => {
-    it("is four short lines, one per thing a newcomer has to know", () => {
+    it("is four short parts, one per thing a newcomer has to know, short enough to share one row", () => {
         expect(HINT_LINES).toHaveLength(4);
         for (const line of HINT_LINES) {
-            expect(line.length).toBeLessThan(100);
+            expect(line.length).toBeLessThan(50);
         }
         expect(HINT_LINES[0]).toMatch(/Enter sends/);
         expect(HINT_LINES[1]).toMatch(/Guess for me/);

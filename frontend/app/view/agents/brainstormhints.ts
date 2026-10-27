@@ -14,12 +14,12 @@ export type HintStore = {
     setItem(key: string, value: string): void;
 };
 
-// four short lines, plain words
+// four short parts, plain words, that the card runs together on one row
 export const HINT_LINES: readonly string[] = [
-    "Answer in the box, or pick an option. Enter sends it.",
-    "Not sure? Press “Guess for me” and the agent guesses; confirm each guess with “That’s right”.",
-    "Press b or Ctrl+Shift+B to flip back to the terminal.",
-    "When every part is yours, use “Check with a builder”, then Approve starts the run.",
+    "Enter sends your answer",
+    "Not sure? “Guess for me”, then “That’s right”",
+    "b or Ctrl+Shift+B: back to terminal",
+    "“Check with a builder”, then Approve runs it",
 ];
 
 // the line the Agent surface's empty state and the New dialog's agent row show

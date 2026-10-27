@@ -29863,9 +29863,9 @@ const brainstormHints = {
         const card = await h.ev(flatText(BH_PANE_HINTS));
         await h.shot("cdp-shots/brainstorm-hints-2.png");
         rec(
-            "2. the first pane to open shows the hint card: four lines, answer in the box, Guess for me, b or Ctrl+Shift+B, Check with a builder",
+            "2. the first pane to open shows the hint strip: Enter sends, Guess for me, b or Ctrl+Shift+B, Check with a builder",
             shown &&
-                card.includes("Answer in the box") &&
+                card.includes("Enter sends") &&
                 card.includes("Guess for me") &&
                 card.includes("Ctrl+Shift+B") &&
                 card.includes("Check with a builder"),
