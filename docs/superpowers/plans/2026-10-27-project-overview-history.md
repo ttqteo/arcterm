@@ -34,10 +34,7 @@ Conventions that bite here:
 ### Task 1: Fold same-kind Needs you rows
 
 **Depends on:** none
-
-**Files:**
-- Modify: `frontend/app/view/agents/needsyoustripmodel.ts` (append after `whyLines`)
-- Test: `frontend/app/view/agents/needsyoustripmodel.test.ts` (append)
+**Files:** `frontend/app/view/agents/needsyoustripmodel.ts`, `frontend/app/view/agents/needsyoustripmodel.test.ts`
 
 **Step 1: Write the failing test** — append to `needsyoustripmodel.test.ts` (add `foldNeedsYouRows` to the existing
 import from `./needsyoustripmodel`):
@@ -123,10 +120,7 @@ export function foldNeedsYouRows(rows: StripRow[]): NeedsYouEntry[] {
 ### Task 2: The Overview's pure model (Finished, sessions, councils and runs, counts)
 
 **Depends on:** none
-
-**Files:**
-- Modify: `frontend/app/view/agents/projectoverviewmodel.ts`
-- Test: `frontend/app/view/agents/projectoverviewmodel.test.ts`
+**Files:** `frontend/app/view/agents/projectoverviewmodel.ts`, `frontend/app/view/agents/projectoverviewmodel.test.ts`
 
 Read first: `projectoverviewmodel.ts` (48 lines), `sessionsarchivestore.ts` (`LiveSession`, `overlayLive`),
 `channelderive.ts:25` (`normProjectPath`), and the generated types `Council`, `Run`, `RunLand`, `RunEvidence`,
@@ -410,9 +404,7 @@ Update the file's header comment to say it also derives the History rows.
 ### Task 3: The project history store
 
 **Depends on:** none
-
-**Files:**
-- Create: `frontend/app/view/agents/projecthistorystore.ts`
+**Files:** `frontend/app/view/agents/projecthistorystore.ts`
 
 Read first: `channelsstore.ts` (`channelsAtom`, `loadChannels`), `runoriginstore.ts:57-80` (the same per-channel
 `GetChannelRunsCommand` fan-out), `sessionsarchivestore.ts` (`sessionsArchiveAtom`, `sessionsErrorAtom`,
@@ -528,11 +520,8 @@ not the project path (read `councilProjectKey` in `councilstore.ts` and how `pro
 
 ### Task 4: The Now column
 
-**Depends on:** Task 1, Task 2
-
-**Files:**
-- Create: `frontend/app/view/agents/projectnow.tsx`
-- Modify: `frontend/app/view/agents/needsyoustrip.tsx` (export `openTitle`; add `CompactNeedsYouRows`)
+**Depends on:** Task 1 (uses foldNeedsYouRows), Task 2 (uses finishedRows)
+**Files:** `frontend/app/view/agents/projectnow.tsx`, `frontend/app/view/agents/needsyoustrip.tsx`
 
 The prototype's Main board (left column) and Narrow board show it. Read `projectoverview.tsx` (the asking and Running
 blocks move here unchanged in behaviour) and `needsyoustrip.tsx` (`ActRow`, `LearnRow`, `whyLines`).
@@ -574,8 +563,8 @@ Cockpit strip.
   `selectAgentRow(model, a.id)`.
 - Each block is drawn only when it has rows. With none, one line: `<p data-overview-quiet …>Nothing needs you and
   nothing is running in {project}.</p>` (the existing scenario looks for `data-overview-quiet`).
-- Reuse the panel and row classes from `projectoverview.tsx` (`PANEL`, `ROW`, `SectionHead`): move them into
-  `projectnow.tsx` and export them, or into a small shared module; the page imports them back.
+- Reuse the panel and row classes from `projectoverview.tsx` (`PANEL`, `ROW`, `SectionHead`): copy them into
+  `projectnow.tsx` and export them. Do not edit `projectoverview.tsx` (Task 6 owns it and drops its copies).
 
 **Step 3:** `task check:ts` → exit 0; `npx prettier --check` the two files; `npx eslint` them.
 
@@ -586,10 +575,8 @@ Cockpit strip.
 
 ### Task 5: The History column
 
-**Depends on:** Task 2, Task 3
-
-**Files:**
-- Create: `frontend/app/view/agents/projecthistory.tsx`
+**Depends on:** Task 2 (uses projectSessions and historyItems and historyCounts), Task 3 (uses useProjectHistory and the tab and query atoms)
+**Files:** `frontend/app/view/agents/projecthistory.tsx`
 
 The prototype's Main (right column), CouncilsRuns, Search, Quiet and States boards show it.
 
@@ -636,11 +623,8 @@ The prototype's Main (right column), CouncilsRuns, Search, Quiet and States boar
 
 ### Task 6: The two-column page
 
-**Depends on:** Task 4, Task 5
-
-**Files:**
-- Modify: `frontend/app/view/agents/projectoverview.tsx`
-- Modify: `CHANGELOG.md` (top `## Unreleased`, `### Changed`)
+**Depends on:** Task 4 (renders NowColumn and its shared row classes), Task 5 (renders HistoryColumn and useHistoryCounts)
+**Files:** `frontend/app/view/agents/projectoverview.tsx`, `CHANGELOG.md`
 
 **Step 1:** In `ProjectOverview`:
 - Root keeps `data-project-overview={project}`; it becomes `@container min-h-0 flex-1 overflow-y-auto px-8 py-6`, inner
@@ -651,7 +635,8 @@ The prototype's Main (right column), CouncilsRuns, Search, Quiet and States boar
 - Under the header: `<div className="flex flex-col gap-6 @min-[1000px]:flex-row @min-[1000px]:items-start">` holding
   `<div className="w-full @min-[1000px]:w-[420px] @min-[1000px]:flex-none"><NowColumn …/></div>` and, when `path` is
   set, `<HistoryColumn model={model} path={path} project={project} />`. With no `path`, Now spans the width.
-- Remove the old asking / Running / quiet markup now in `NowColumn`; keep `useNeedsYou` here and pass `ny` down.
+- Remove the old asking / Running / quiet markup now in `NowColumn`, and the `PANEL` / `ROW` / `SectionHead` copies
+  (import them from `projectnow.tsx`); keep `useNeedsYou` here and pass `ny` down.
 - Update the file's header comment.
 
 **Step 2:** `CHANGELOG.md`, under the top `## Unreleased` → `### Changed`:
@@ -667,11 +652,8 @@ frontend/app/view/agents/needsyoustripmodel.test.ts` → pass; prettier and esli
 
 ### Task 7: CDP scenario `project-overview-history`
 
-**Depends on:** Task 6
-
-**Files:**
-- Modify: `scripts/cdp/scenarios.mjs` (add the scenario next to `projectOverview`, ~line 52410, and register it where
-  `projectOverview` is registered)
+**Depends on:** Task 6 (drives the two-column page it builds)
+**Files:** `scripts/cdp/scenarios.mjs`
 
 Model it on `projectOverview` (arrange at ~52413; the helpers `ovSeedRepo`, `ovTerminalTab`, `ahReload`,
 `ahResolveModules`, `ovSession`, `ovOpenFromMenu`, `ovHas`, `polishWaitFor`, `ovHeldRun`, `window.__cockpitOfficeAttention`
