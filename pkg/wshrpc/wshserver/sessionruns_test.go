@@ -53,6 +53,42 @@ func TestLinkSessionsToRunsLeadSessionIds(t *testing.T) {
 	}
 }
 
+// A brainstorm's builder check or judge has no dag: its session links to its own run, under its stage role.
+func TestLinkSessionsToRunsBrainstormOneShot(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "bos-ch", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles := []string{jarvis.UsageRole_BuilderCheck, jarvis.UsageRole_BrainstormJudge}
+	runs := make([]waveobj.Run, len(roles))
+	sessions := make([]wshrpc.SessionActivity, len(roles))
+	for i, role := range roles {
+		runs[i] = waveobj.Run{ID: uuid.NewString(), Mode: "quick", SessionId: "bos-" + role, StageRole: role}
+		if err := wstore.AppendRun(ctx, ch.OID, runs[i]); err != nil {
+			t.Fatal(err)
+		}
+		sessions[i] = wshrpc.SessionActivity{ID: runs[i].SessionId}
+	}
+	plain := waveobj.Run{ID: uuid.NewString(), Mode: "quick", SessionId: "bos-plain"}
+	if err := wstore.AppendRun(ctx, ch.OID, plain); err != nil {
+		t.Fatal(err)
+	}
+	sessions = append(sessions, wshrpc.SessionActivity{ID: plain.SessionId})
+	if err := linkSessionsToRuns(ctx, sessions); err != nil {
+		t.Fatal(err)
+	}
+	for i, role := range roles {
+		s := sessions[i]
+		if s.RunId != runs[i].ID || s.ChannelId != ch.OID || s.Role != role || s.TaskId != "" {
+			t.Errorf("a %s session links to its own run by its stage role, got %+v", role, s)
+		}
+	}
+	if s := sessions[len(roles)]; s.RunId != "" || s.Role != "" {
+		t.Errorf("a plain quick run's session stays unlinked, got %+v", s)
+	}
+}
+
 func TestRunLinkOf(t *testing.T) {
 	dag := &waveobj.TaskGroup{RunID: "lead", ChannelId: "ch", Tasks: []waveobj.TaskNode{
 		{ID: "t-1", RunID: "w1-retry"},

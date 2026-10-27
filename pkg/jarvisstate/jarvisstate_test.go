@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/jarvisdossier"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -244,6 +245,25 @@ func TestShippedLeavesOutDagWorkers(t *testing.T) {
 	items := Shipped(dagRuns(), 0)
 	if len(items) != 1 || items[0].RunOID != "solo" || items[0].Mode != "quick" {
 		t.Fatalf("items=%+v want only the solo quick run, with its mode", items)
+	}
+}
+
+func TestBrainstormSessionRunIsNoRunYouStarted(t *testing.T) {
+	check := &waveobj.Run{OID: "check", Goal: "builder check", Status: "done", CompletedTs: 5, CreatedTs: 4,
+		StageRole: jarvis.UsageRole_BuilderCheck, Evidence: &waveobj.RunEvidence{}}
+	running := *check
+	running.OID, running.Status = "check-live", "executing"
+	judge := *check
+	judge.OID, judge.StageRole = "judge", jarvis.UsageRole_BrainstormJudge
+	runs := []*waveobj.Run{check, &running, &judge}
+	if got := ActiveWork(runs, nil, nil, nil); len(got) != 0 {
+		t.Fatalf("active work = %+v, want none", got)
+	}
+	if got := Shipped(runs, 0); len(got) != 0 {
+		t.Fatalf("shipped = %+v, want none", got)
+	}
+	if got := Timeline(runs, nil, nil, nil, nil, 0); len(got) != 0 {
+		t.Fatalf("timeline = %+v, want none", got)
 	}
 }
 

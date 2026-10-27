@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/jarvisdossier"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -50,9 +51,10 @@ func sortedUnique(orefs []string) []string {
 }
 
 // isDagWorker reports a run the engine launched for one task of an orchestrator's DAG. Its lead's run
-// stands for it in the ledger; listed on its own it reads as a run you started, one per task.
+// stands for it in the ledger; listed on its own it reads as a run you started, one per task. A brainstorm
+// session's run (builder check, approach judge) has no lead, but is no run you started either.
 func isDagWorker(r *waveobj.Run) bool {
-	return r.DagORef != "" && r.Mode != "orchestrator"
+	return (r.DagORef != "" && r.Mode != "orchestrator") || jarvis.IsBrainstormSession(r)
 }
 
 func ActiveWork(runs []*waveobj.Run, sessions []agentsessions.SessionInfo, attention []wshrpc.AttentionItem, dossiers []jarvisdossier.Dossier) []wshrpc.ActiveWorkItem {

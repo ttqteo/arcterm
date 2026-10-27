@@ -960,3 +960,39 @@ func TestCompleteStopsOnlyAStageSession(t *testing.T) {
 		t.Fatalf("stopped %v, want only the stage session %s", stopped, stage.ID)
 	}
 }
+
+func TestBrainstormSessionRunLeavesSealDueFalse(t *testing.T) {
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, "builder-check-seal", t.TempDir())
+	if err != nil {
+		t.Fatalf("CreateChannel: %v", err)
+	}
+	check := jarvis.NewRun("read the spec", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), 1)
+	check.StageRole = jarvis.UsageRole_BuilderCheck
+	judge := jarvis.NewRun("weigh the approaches", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), 1)
+	judge.StageRole = jarvis.UsageRole_BrainstormJudge
+	plain := jarvis.NewRun("finish it", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Quick, jarvis.QuickPlaybook(), 1)
+	for _, r := range []waveobj.Run{check, judge, plain} {
+		if err := wstore.AppendRun(ctx, ch.OID, r); err != nil {
+			t.Fatalf("AppendRun: %v", err)
+		}
+	}
+	oldStop := stopStageSession
+	stopStageSession = func(waveobj.Run) {}
+	t.Cleanup(func() { stopStageSession = oldStop })
+
+	for _, tc := range []struct {
+		id   string
+		want bool
+	}{{check.ID, false}, {judge.ID, false}, {plain.ID, true}} {
+		sealDue, err := advanceRun(ctx, wshrpc.CommandAdvanceRunData{
+			ChannelId: ch.OID, RunId: tc.id, PhaseIdx: 0, Action: jarvis.RunAction_Complete, Report: "done",
+		})
+		if err != nil {
+			t.Fatalf("advanceRun %s: %v", tc.id, err)
+		}
+		if sealDue != tc.want {
+			t.Fatalf("run %s: sealDue = %v, want %v", tc.id, sealDue, tc.want)
+		}
+	}
+}

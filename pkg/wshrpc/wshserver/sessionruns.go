@@ -92,7 +92,8 @@ func runsBySession(ctx context.Context, ids []string) (map[string]*waveobj.Run, 
 
 // linkSessionsToRuns stamps each session an orchestrator run launched with its place in that run: from the run
 // recorded under its session id (its current one or an earlier lead session), else from what its transcript says
-// (orchestrate.LaunchOriginOf), which places it in the run with no channel when this store never saw the run.
+// (orchestrate.LaunchOriginOf), which places it in the run with no channel when this store never saw the run. A
+// brainstorm's one-shot builder check or judge is placed in its own run, with its stage role.
 func linkSessionsToRuns(ctx context.Context, sessions []wshrpc.SessionActivity) error {
 	defer func() {
 		linkSessionsByOrigin(sessions)
@@ -125,7 +126,11 @@ func linkSessionsToRuns(ctx context.Context, sessions []wshrpc.SessionActivity) 
 		}
 		link, ok := runLinkOf(run, dag)
 		if !ok {
-			continue
+			if !jarvis.IsBrainstormSession(run) {
+				continue
+			}
+			// a brainstorm's one-shot builder check or judge has no dag: its own run is its place
+			link = sessionRunLink{RunId: run.OID, ChannelId: run.ChannelOID, Role: run.StageRole}
 		}
 		sessions[i].RunId, sessions[i].ChannelId = link.RunId, link.ChannelId
 		sessions[i].TaskId, sessions[i].Role, sessions[i].StageRunId = link.TaskId, link.Role, link.StageRunId
