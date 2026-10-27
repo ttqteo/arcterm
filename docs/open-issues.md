@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A council's row copies its id: right-click a running council in the Agent tree. The menu holds Copy id
+  with the 16-character id beside it, and pasting gives that id (`wsh council show <id>` takes it). A queued or ended
+  council's menu holds Copy id, a separator, then Remove. `agenttree.tsx` `CouncilRow`, 6eb54c303.
 - [ ] (arcterm) Waking holds the controls: click Wake on a sleeping agent's card. Until it is back the card reads
   Waking…, the composer's Send reads Waking… and is off, the header's … and × are dimmed and do nothing (right-click on
   the header opens no menu), and the agent's row menu greys Wake and Close agent. `wakingstore.ts`.
