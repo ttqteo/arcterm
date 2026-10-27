@@ -206,6 +206,14 @@ describe("finishedRows", () => {
         ]);
         expect(finishedRows(agents, "p", unread).map((x) => x.id)).toEqual(["new", "old"]);
     });
+    it("orders by idleSince when the idle agents carry no stateSince, as agentVMFromInput builds them", () => {
+        const agents = [a({ id: "old", idleSince: 100 }), a({ id: "new", idleSince: 500 })];
+        const unread = new Map([
+            ["old", 1],
+            ["new", 1],
+        ]);
+        expect(finishedRows(agents, "p", unread).map((x) => x.id)).toEqual(["new", "old"]);
+    });
 });
 
 describe("projectSessions", () => {

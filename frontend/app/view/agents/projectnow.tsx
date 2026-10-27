@@ -10,7 +10,7 @@ import { fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useMemo } from "react";
 import type { AgentsViewModel } from "./agents";
-import { formatAge, type AgentVM } from "./agentsviewmodel";
+import { displayAgeMs, formatAge, type AgentVM } from "./agentsviewmodel";
 import { selectAgentRow } from "./agenttree";
 import type { NeedsYou } from "./needsyou";
 import { CompactNeedsYouRows } from "./needsyoustrip";
@@ -55,7 +55,11 @@ export function NowColumn({ model, project, ny }: { model: AgentsViewModel; proj
         [agents, terminals, project, lineage]
     );
     const finished = useMemo(() => finishedRows(agents, project, unread), [agents, project, unread]);
-    const since = (a: AgentVM) => (a.stateSince != null ? formatAge(Math.max(0, now - a.stateSince)) : "");
+    // the age the Agent tree shows: the field the agent's state populates; "" when it has none, never "just now"
+    const since = (a: AgentVM) => {
+        const ms = displayAgeMs(a, now);
+        return ms != null ? formatAge(ms) : "";
+    };
     const waiting = rows.asking.length + ny.rows.length;
     const running = runningCount(rows) + rows.terminals.length;
     const openRun = ({ run, lead }: RunRow) =>

@@ -141,7 +141,7 @@ export function finishedRows(
                 a.state !== "working" &&
                 (unread.get(a.id) ?? 0) > 0
         )
-        .sort((x, y) => (y.stateSince ?? 0) - (x.stateSince ?? 0));
+        .sort((x, y) => (y.idleSince ?? y.stateSince ?? 0) - (x.idleSince ?? x.stateSince ?? 0));
 }
 
 // the project's ended sessions in the window, newest first; a run's worker is left to its run, a live one to Now

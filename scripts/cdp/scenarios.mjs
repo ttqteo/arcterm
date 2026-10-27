@@ -53486,7 +53486,6 @@ const projectOverviewHistory = {
                             agent: "claude",
                             model: "opus",
                             idleSince: now - 600_000,
-                            stateSince: now - 600_000,
                             blockId: "fx-blk-ovh-done",
                         },
                     ],
@@ -53508,6 +53507,7 @@ const projectOverviewHistory = {
             const unreadSize = await h.ev(`(${ovhSetUnreadInPage.toString()})(${JSON.stringify(ctx.modules.urls.store)}, ["ovh-done"])`);
             const doneRow = '[data-overview-finished-row="ovh-done"]';
             const doneUp = await polishWaitFor(h, ovHas(doneRow), 5000);
+            const doneText = doneUp ? await h.ev(ovhText(doneRow)) : null;
             await shot("12");
             await h.ev(`document.querySelector(${JSON.stringify(doneRow)})?.click()`);
             const left12 = await polishWaitFor(h, ovDown, 3000);
@@ -53523,8 +53523,10 @@ const projectOverviewHistory = {
                     opened12 &&
                     runUp &&
                     (runText ?? "").includes("1 at work") &&
+                    (runText ?? "").includes("2m") &&
                     workerRow === false &&
                     doneUp &&
+                    (doneText ?? "").includes("10m") &&
                     left12 &&
                     selected12,
                 JSON.stringify({
@@ -53536,6 +53538,7 @@ const projectOverviewHistory = {
                     workerRow,
                     unreadSet: unreadSize,
                     doneUp,
+                    doneText,
                     // when the row never shows, the unread tracker may have reset the atom before it was read (useUnreadTracking)
                     ...(doneUp ? {} : { unreadNow: "the Finished row did not show" }),
                     left12,
