@@ -23,13 +23,23 @@ const jobsSupported = true
 // handle (Close) terminates the entire process tree rooted at proc, not just proc itself.
 // BREAKAWAY_OK lets a descendant that asks for it (StartDetached) leave the job; every other one stays in.
 func Attach(proc *os.Process) (uintptr, error) {
+	return attach(proc, windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE|windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK)
+}
+
+// AttachSealed is Attach without BREAKAWAY_OK, for a command whose kill must take every descendant:
+// Git Bash's sleep asks to break away when the job allows it, and then outlives a timed-out Verify.
+func AttachSealed(proc *os.Process) (uintptr, error) {
+	return attach(proc, windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
+}
+
+func attach(proc *os.Process, limits uint32) (uintptr, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return 0, fmt.Errorf("CreateJobObject: %w", err)
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{
-			LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+			LimitFlags: limits,
 		},
 	}
 	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {

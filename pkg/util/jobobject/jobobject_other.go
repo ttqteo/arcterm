@@ -14,6 +14,10 @@ func Attach(proc *os.Process) (uintptr, error) {
 	return 0, nil
 }
 
+func AttachSealed(proc *os.Process) (uintptr, error) {
+	return 0, nil
+}
+
 func KillTree(job uintptr) {}
 
 func KillTreeKeeping(job uintptr) {}

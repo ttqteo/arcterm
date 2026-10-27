@@ -525,7 +525,7 @@ func execEngine(ctx context.Context, c engineCmd) (string, error) {
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
-	if j, err := jobobject.Attach(cmd.Process); err == nil {
+	if j, err := jobobject.AttachSealed(cmd.Process); err == nil {
 		job.Store(uint64(j))
 	}
 	err := cmd.Wait()
