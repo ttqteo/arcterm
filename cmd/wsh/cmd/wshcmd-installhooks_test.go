@@ -16,6 +16,21 @@ import (
 
 const testWsh = `C:\a\bin\wsh-0.14.5-windows.x64.exe`
 
+func TestManagedHooksSkillContext(t *testing.T) {
+	var found []managedHook
+	for _, mh := range managedHooks {
+		if mh.Event == "PostToolUse" && mh.Matcher == "Skill" {
+			found = append(found, mh)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("PostToolUse Skill hooks = %d, want 1", len(found))
+	}
+	if found[0].Args != "agent-hook --skill-context" || found[0].Async {
+		t.Errorf("hook = %+v, want synchronous agent-hook --skill-context", found[0])
+	}
+}
+
 // count managed command entries across all events in a merged config
 func countManaged(t *testing.T, cfg map[string]any) int {
 	t.Helper()
@@ -44,6 +59,7 @@ func TestIsManagedCommand(t *testing.T) {
 		`"C:\a\bin\wsh.exe" ask`:                           true,
 		`"/usr/local/bin/wsh" ask --clear`:                 true,
 		`wsh agent-hook`:                                   true,
+		`"C:\a\bin\wsh.exe" agent-hook --skill-context`:    true,
 		`"C:\a\bin\wsh.exe" agent-memory-hook`:             true,
 		`"C:\a\bin\wsh.exe" ask --other`:                   false,
 		`node /x/ask-hook.js`:                              false,

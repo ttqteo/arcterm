@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,6 +32,12 @@ const canvasRevealTimeoutMs = 2000
 // a design-local board: <project>/.superpowers/design/<topic>/project/<Board>.dc.html. Mirrors BOARD_PATH in
 // frontend/app/view/agents/canvasmodel.ts.
 var canvasBoardPathRe = regexp.MustCompile(`(?i)^(.+?)[\\/]\.superpowers[\\/]design[\\/]([^\\/]+)[\\/]project[\\/][^\\/]+\.dc\.html$`)
+
+// a brainstorm state file: <project>/.superpowers/brainstorm/<topic>/brainstorm.json. Mirrors
+// parseBrainstormPath in frontend/app/view/agents/brainstormmodel.ts.
+var brainstormFilePathRe = regexp.MustCompile(`(?i)^(.+?)[\\/]\.superpowers[\\/]brainstorm[\\/]([^\\/]+)[\\/]brainstorm\.json$`)
+
+const brainstormContextText = "You are inside Arc. Also follow the arc:brainstorm skill for this brainstorm: keep its state in .superpowers/brainstorm/<topic>/brainstorm.json, where Arc shows it, instead of long playbacks in the terminal; use arc:design boards instead of the visual companion's server."
 
 const bashDetailMax = 60
 const titleMax = 72 // fallback head-text length cap (rune-safe)
@@ -288,6 +295,54 @@ func canvasRevealFor(ev ccHookEvent) (address string, cwd string, ok bool) {
 	return "canvas:" + m[2], m[1], true
 }
 
+// brainstormRevealFor names the brainstorm an agent just wrote the state file of, and the project it sits
+// in, so the cockpit attaches it without the agent asking. ok is false for every other event.
+func brainstormRevealFor(ev ccHookEvent) (address string, cwd string, ok bool) {
+	if ev.HookEventName != "PostToolUse" {
+		return "", "", false
+	}
+	switch ev.ToolName {
+	case "Write", "Edit", "MultiEdit":
+	default:
+		return "", "", false
+	}
+	m := brainstormFilePathRe.FindStringSubmatch(stringField(ev.ToolInput, "file_path"))
+	if m == nil || !filepath.IsAbs(m[1]) {
+		return "", "", false
+	}
+	return "brainstorm:" + m[2], m[1], true
+}
+
+// brainstormContextFor reports whether the event is the superpowers brainstorming skill starting, the
+// moment the arc:brainstorm skill's instructions are injected beside it.
+func brainstormContextFor(ev ccHookEvent) bool {
+	if ev.HookEventName != "PostToolUse" || ev.ToolName != "Skill" {
+		return false
+	}
+	switch stringField(ev.ToolInput, "skill") {
+	case "superpowers:brainstorming", "brainstorming":
+		return true
+	}
+	return false
+}
+
+// skillContextOutput is the hook output that adds the brainstorm context to the turn, "" when the event
+// is not a brainstorming skill start, or the agent is a run's: its prompt routes every question through the
+// cockpit's ask tool, and arc:brainstorm would ask in the terminal instead.
+func skillContextOutput(ev ccHookEvent, runAgent bool) string {
+	if runAgent || !brainstormContextFor(ev) {
+		return ""
+	}
+	out, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]string{
+		"hookEventName":     "PostToolUse",
+		"additionalContext": brainstormContextText,
+	}})
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
 func stringField(raw json.RawMessage, field string) string {
 	if len(raw) == 0 {
 		return ""
@@ -381,13 +436,28 @@ func readLastModel(path string) string {
 	return model
 }
 
+// readLastTitle returns the last ai-title in the transcript. Claude Code rewrites it every few turns, but one
+// big turn (a skill body, an image) can push it past the tail, so a miss there reads the whole file.
 func readLastTitle(path string) string {
+	lines, whole := tailLinesN(path, transcriptTailBytes)
+	if title := lastTitle(lines); title != "" || whole {
+		return title
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return lastTitle(strings.Split(string(data), "\n"))
+}
+
+func lastTitle(lines []string) string {
 	title := ""
-	for _, ln := range tailLines(path) {
-		ln = strings.TrimSpace(ln)
-		if ln == "" {
+	for _, ln := range lines {
+		// cheap prefilter: a whole-file read would otherwise unmarshal every multi-KB message
+		if !strings.Contains(ln, `"aiTitle"`) {
 			continue
 		}
+		ln = strings.TrimSpace(ln)
 		var rec struct {
 			Type    string `json:"type"`
 			AiTitle string `json:"aiTitle"`
@@ -426,33 +496,35 @@ func userText(raw json.RawMessage) string {
 	return ""
 }
 
-// lastUserPrompt returns the text of the most recent user turn that carries human prose. Drives the
-// head-text fallback when a turn (e.g. a skill/slash-command dispatch) produced no ai-title record.
-func lastUserPrompt(lines []string) string {
-	prompt := ""
-	for _, ln := range lines {
-		ln = strings.TrimSpace(ln)
-		if ln == "" {
-			continue
-		}
+// readFirstUserPrompt returns the text of the first user turn the human typed: the session's ask, for the
+// head-text fallback when there is no ai-title (Claude Code writes none for a session opened with a slash
+// command). Not the latest turn: in a brainstorm that is an answer to the agent. Meta turns (caveats, skill
+// bodies) are skipped.
+func readFirstUserPrompt(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	r := bufio.NewReader(f)
+	for {
+		ln, err := r.ReadBytes('\n')
 		var rec struct {
 			Type    string `json:"type"`
+			IsMeta  bool   `json:"isMeta"`
 			Message struct {
 				Content json.RawMessage `json:"content"`
 			} `json:"message"`
 		}
-		if json.Unmarshal([]byte(ln), &rec) != nil || rec.Type != "user" {
-			continue
+		if json.Unmarshal(ln, &rec) == nil && rec.Type == "user" && !rec.IsMeta {
+			if txt := userText(rec.Message.Content); txt != "" {
+				return txt
+			}
 		}
-		if txt := userText(rec.Message.Content); txt != "" {
-			prompt = txt
+		if err != nil {
+			return ""
 		}
 	}
-	return prompt
-}
-
-func readLastUserPrompt(path string) string {
-	return lastUserPrompt(tailLines(path))
 }
 
 // shadowSessionRecord is the `session` line of an opencode shadow transcript.
@@ -574,6 +646,8 @@ var (
 	agentHookShadow string
 	agentHookState  string
 	agentHookGate   bool
+
+	agentHookSkillContext bool
 )
 
 func init() {
@@ -582,6 +656,7 @@ func init() {
 	agentHookCmd.Flags().StringVar(&agentHookShadow, "shadow", "", "opencode shadow transcript path to report as the transcript")
 	agentHookCmd.Flags().StringVar(&agentHookState, "state", "", "explicit agent state (opencode path; claude derives it from the hook payload)")
 	agentHookCmd.Flags().BoolVar(&agentHookGate, "gate", false, "decide a subagent dispatch (cap, then ask) and report nothing")
+	agentHookCmd.Flags().BoolVar(&agentHookSkillContext, "skill-context", false, "print the context a started skill adds to the turn, and report nothing")
 }
 
 // hookDebugLine appends one diagnostic line to ~/.claude/arc-hook-debug.log when WAVETERM_HOOK_DEBUG
@@ -638,6 +713,13 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 			hookDebugLine("denied subagent past the cap session=" + ev.SessionID)
 		} else if subagentNeedsApproval(ev) {
 			os.Stdout.Write(subagentApprovalAsk(ev))
+		}
+		return nil
+	}
+	// the synchronous skill hook only adds context to the turn: stdout carries it, and nothing is reported
+	if agentHookSkillContext {
+		if out := skillContextOutput(ev, os.Getenv(jarvis.RunAgentEnv) != ""); out != "" {
+			_, _ = os.Stdout.WriteString(out + "\n")
 		}
 		return nil
 	}
@@ -720,10 +802,10 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		} else {
 			data.Model = readLastModel(transcriptPath)
 			data.Title = readLastTitle(transcriptPath)
-			// no ai-title yet (e.g. a skill/slash-command turn) -> fall back to the user's prompt so
+			// no ai-title (a session opened with a slash command) -> the session's first prompt, so
 			// the row still gets a head-text summary instead of the bare agent name
 			if data.Title == "" {
-				data.Title = titleFromPrompt(readLastUserPrompt(transcriptPath))
+				data.Title = titleFromPrompt(readFirstUserPrompt(transcriptPath))
 			}
 		}
 	}
@@ -747,6 +829,16 @@ func agentHookRun(cmd *cobra.Command, args []string) error {
 		}, &wshrpc.RpcOpts{Route: wshutil.RouteId_Cockpit, Timeout: canvasRevealTimeoutMs})
 		if err != nil {
 			hookDebugLine("canvas reveal failed address=" + address + " err=" + err.Error())
+		}
+	}
+	if address, cwd, ok := brainstormRevealFor(ev); ok {
+		_, err := wshclient.UiRevealCommand(RpcClient, wshrpc.CommandUiRevealData{
+			Address:       address,
+			CallerBlockId: os.Getenv("WAVETERM_BLOCKID"),
+			CallerCwd:     cwd,
+		}, &wshrpc.RpcOpts{Route: wshutil.RouteId_Cockpit, Timeout: canvasRevealTimeoutMs})
+		if err != nil {
+			hookDebugLine("brainstorm reveal failed address=" + address + " err=" + err.Error())
 		}
 	}
 	hookDebugLine("published event=" + ev.HookEventName + " state=" + em.State + " oref=" + oref.String())
