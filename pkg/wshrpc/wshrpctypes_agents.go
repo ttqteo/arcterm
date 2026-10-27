@@ -505,6 +505,7 @@ type CommandAgentsSleepData struct {
 type CommandAgentsSleepRtnData struct {
 	FreedBytes uint64   `json:"freedbytes,omitempty"`
 	Background []string `json:"background,omitempty"` // set, and nothing slept, when it has running background work and Force is false
+	Compacting bool     `json:"compacting,omitempty"` // set, and nothing slept yet, when it compacts first: the sleep loop sleeps it once the summary lands
 }
 
 type CommandAgentsWakeData struct {

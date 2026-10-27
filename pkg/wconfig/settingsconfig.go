@@ -116,6 +116,8 @@ type SettingsType struct {
 	AgentsClear         bool   `json:"agents:*,omitempty"`
 	AgentsSleepIdle     *bool  `json:"agents:sleepidle,omitempty"`
 	AgentsSleepAfterMin *int64 `json:"agents:sleepaftermin,omitempty"`
+	AgentsCompactIdle   *bool  `json:"agents:compactidle,omitempty"`
+	AgentsCompactAtK    *int64 `json:"agents:compactatk,omitempty"`
 
 	RadarAuditRuntime  string `json:"radar:auditruntime,omitempty"`
 	RadarAuditModel    string `json:"radar:auditmodel,omitempty"`

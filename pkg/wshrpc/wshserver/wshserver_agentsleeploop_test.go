@@ -6,6 +6,8 @@ package wshserver
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -316,21 +318,190 @@ func TestSleepTickSurvivesARosterError(t *testing.T) {
 
 func TestSleepSettingsFromConfig(t *testing.T) {
 	yes, no := true, false
-	ten, one, zero := int64(10), int64(1), int64(0)
+	ten, one, zero, k250 := int64(10), int64(1), int64(0), int64(250)
 	cases := []struct {
 		name string
 		in   wconfig.SettingsType
 		want agentsleep.Settings
 	}{
-		{"unset is on at 30 minutes", wconfig.SettingsType{}, agentsleep.Settings{Enabled: true, After: 30 * time.Minute}},
-		{"off", wconfig.SettingsType{AgentsSleepIdle: &no}, agentsleep.Settings{Enabled: false, After: 30 * time.Minute}},
-		{"on at ten minutes", wconfig.SettingsType{AgentsSleepIdle: &yes, AgentsSleepAfterMin: &ten}, agentsleep.Settings{Enabled: true, After: 10 * time.Minute}},
-		{"one minute is raised to the floor of five", wconfig.SettingsType{AgentsSleepAfterMin: &one}, agentsleep.Settings{Enabled: true, After: 5 * time.Minute}},
-		{"zero is raised to the floor too", wconfig.SettingsType{AgentsSleepAfterMin: &zero}, agentsleep.Settings{Enabled: true, After: 5 * time.Minute}},
+		{"unset is on at 30 minutes", wconfig.SettingsType{}, agentsleep.Settings{Enabled: true, After: 30 * time.Minute, Compact: true, CompactAt: 100_000}},
+		{"off", wconfig.SettingsType{AgentsSleepIdle: &no}, agentsleep.Settings{Enabled: false, After: 30 * time.Minute, Compact: true, CompactAt: 100_000}},
+		{"on at ten minutes", wconfig.SettingsType{AgentsSleepIdle: &yes, AgentsSleepAfterMin: &ten}, agentsleep.Settings{Enabled: true, After: 10 * time.Minute, Compact: true, CompactAt: 100_000}},
+		{"one minute is raised to the floor of five", wconfig.SettingsType{AgentsSleepAfterMin: &one}, agentsleep.Settings{Enabled: true, After: 5 * time.Minute, Compact: true, CompactAt: 100_000}},
+		{"zero is raised to the floor too", wconfig.SettingsType{AgentsSleepAfterMin: &zero}, agentsleep.Settings{Enabled: true, After: 5 * time.Minute, Compact: true, CompactAt: 100_000}},
+		{"compaction off", wconfig.SettingsType{AgentsCompactIdle: &no}, agentsleep.Settings{Enabled: true, After: 30 * time.Minute, CompactAt: 100_000}},
+		{"compaction at 250k", wconfig.SettingsType{AgentsCompactAtK: &k250}, agentsleep.Settings{Enabled: true, After: 30 * time.Minute, Compact: true, CompactAt: 250_000}},
+		{"ten thousand is raised to the floor of 25k", wconfig.SettingsType{AgentsCompactAtK: &ten}, agentsleep.Settings{Enabled: true, After: 30 * time.Minute, Compact: true, CompactAt: 25_000}},
 	}
 	for _, tc := range cases {
 		if got := sleepSettings(tc.in); got != tc.want {
 			t.Errorf("%s: sleepSettings = %+v, want %+v", tc.name, got, tc.want)
 		}
+	}
+}
+
+// usageLine is a main-thread request at ts that carried tokens of context and wrote an hour-long cache.
+func usageLine(ts time.Time, tokens int) string {
+	return fmt.Sprintf(`{"type":"assistant","isSidechain":false,"timestamp":%q,"message":{"usage":{"input_tokens":1,"cache_read_input_tokens":%d,"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_1h_input_tokens":1000}}}}`,
+		ts.Format(time.RFC3339Nano), tokens-1001)
+}
+
+const compactBoundaryLine = `{"type":"system","subtype":"compact_boundary","content":"Conversation compacted","isSidechain":false}`
+
+// compactWorld is a loop world whose one agent is a Claude session with a stream and 150k of context, its last turn at
+// minute 0, with compaction on; it records the compactions the loop sends.
+func compactWorld(t *testing.T) (*loopWorld, *[]string) {
+	t.Helper()
+	tf := agentFacts(agentsTabA, "design", agentsBlockA, "claude", baseds.AgentState_Idle)
+	tf.HasStream = true
+	w := newLoopWorld(t, tf)
+	w.facts.Tabs[0].Status.TranscriptPath = writeTranscript(t, "session-design", usageLine(w.start, 150_000))
+	w.loop.settings = func() agentsleep.Settings {
+		return agentsleep.Settings{Enabled: w.enabled, After: w.after, Compact: true, CompactAt: 100_000}
+	}
+	swap(t, &compacts, map[string]pendingCompact{})
+	sent := &[]string{}
+	swap(t, &sendCompact, func(blockId string) bool { *sent = append(*sent, blockId); return true })
+	return w, sent
+}
+
+func appendLine(t *testing.T, path, line string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(line + "\n"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSleepTickCompactsThenSleeps(t *testing.T) {
+	w, sent := compactWorld(t)
+	w.tickTo(30)
+	if !slices.Equal(*sent, []string{agentsBlockA}) || len(w.slept) != 0 {
+		t.Fatalf("at 30 min sent %v, slept %v; want a compaction and no sleep yet", *sent, w.slept)
+	}
+	// the compaction runs: the session reads working, then idle once the summary lands
+	w.facts.Tabs[0].Status.State = baseds.AgentState_Working
+	w.tickAt(31)
+	if len(*sent) != 1 || len(w.slept) != 0 {
+		t.Fatalf("while compacting sent %v, slept %v; want no second compaction and no sleep", *sent, w.slept)
+	}
+	appendLine(t, w.facts.Tabs[0].Status.TranscriptPath, compactBoundaryLine)
+	w.facts.Tabs[0].Status.State = baseds.AgentState_Idle
+	w.tickAt(32)
+	if !slices.Equal(w.slept, []string{agentsBlockA}) {
+		t.Fatalf("after the summary landed slept %v, want the agent asleep without another 30 minutes", w.slept)
+	}
+	if compactsWaiting() {
+		t.Errorf("compactions still waiting after the sleep: %v", compacts)
+	}
+}
+
+func TestSleepTickCompactsAViewedAgentAsItsCacheRunsOut(t *testing.T) {
+	w, sent := compactWorld(t)
+	swap(t, &viewing, viewingPush{tabs: []string{agentsTabA}, at: w.start.Add(2 * time.Hour)}) // on screen all along
+	w.tickTo(54)
+	if len(*sent) != 0 {
+		t.Fatalf("sent %v with 6 min of cache left, want nothing yet", *sent)
+	}
+	w.tickTo(56)
+	if !slices.Equal(*sent, []string{agentsBlockA}) || len(w.slept) != 0 {
+		t.Fatalf("with 5 min of cache left sent %v, slept %v; want one compaction and no sleep", *sent, w.slept)
+	}
+	appendLine(t, w.facts.Tabs[0].Status.TranscriptPath, compactBoundaryLine)
+	w.tickTo(70)
+	if len(*sent) != 1 || len(w.slept) != 0 {
+		t.Fatalf("after it landed sent %v, slept %v; want nothing more", *sent, w.slept)
+	}
+	if compactsWaiting() {
+		t.Errorf("a landed compaction still waits: %v", compacts)
+	}
+}
+
+func TestSleepTickCompactsWithSleepOff(t *testing.T) {
+	w, sent := compactWorld(t)
+	w.enabled = false
+	w.tickTo(56)
+	if !slices.Equal(*sent, []string{agentsBlockA}) || len(w.slept) != 0 {
+		t.Fatalf("sleep off: sent %v, slept %v; want one compaction at 5 min of cache left and no sleep", *sent, w.slept)
+	}
+}
+
+func TestSleepTickSleepsASmallContextWithoutCompacting(t *testing.T) {
+	w, sent := compactWorld(t)
+	w.facts.Tabs[0].Status.TranscriptPath = writeTranscript(t, "session-small", usageLine(w.start, 60_000))
+	w.tickTo(30)
+	if len(*sent) != 0 || !slices.Equal(w.slept, []string{agentsBlockA}) {
+		t.Fatalf("60k of context: sent %v, slept %v; want it asleep with no compaction", *sent, w.slept)
+	}
+}
+
+func TestPersonSleepCompactsFirst(t *testing.T) {
+	now := time.Now()
+	swap(t, &compacts, map[string]pendingCompact{})
+	sent := 0
+	swap(t, &sendCompact, func(string) bool { sent++; return true })
+	swap(t, &currentSleepSettings, func() agentsleep.Settings {
+		return agentsleep.Settings{Enabled: true, After: 30 * time.Minute, Compact: true, CompactAt: 100_000}
+	})
+	tf := idleClaude(writeTranscript(t, "abc", usageLine(now.Add(-2*time.Minute), 150_000)))
+	tf.HasStream = true
+	row := rowOf(t, tf)
+
+	rtn := sleepAfterCompaction(context.Background(), row, false, now)
+	if rtn == nil || !rtn.Compacting || sent != 1 {
+		t.Fatalf("got %+v after %d sends, want Compacting after one", rtn, sent)
+	}
+	if pc, ok := compactPending(agentsBlockA, now); !ok || pc.then != agentsleep.SleepAfterPerson {
+		t.Fatalf("pending %+v (%v), want a sleep for the person once it lands", pc, ok)
+	}
+	// a second click waits on the same compaction
+	if rtn := sleepAfterCompaction(context.Background(), row, true, now); rtn == nil || !rtn.Compacting || sent != 1 {
+		t.Fatalf("second click got %+v after %d sends, want Compacting and no new send", rtn, sent)
+	}
+	if pc, _ := compactPending(agentsBlockA, now); !pc.force {
+		t.Error("the confirmed second click did not carry its force")
+	}
+}
+
+func TestPersonSleepAsksAboutBackgroundWorkBeforeCompacting(t *testing.T) {
+	now := time.Now()
+	swap(t, &compacts, map[string]pendingCompact{})
+	sent := 0
+	swap(t, &sendCompact, func(string) bool { sent++; return true })
+	swap(t, &currentSleepSettings, func() agentsleep.Settings {
+		return agentsleep.Settings{Enabled: true, After: 30 * time.Minute, Compact: true, CompactAt: 100_000}
+	})
+	tf := idleClaude(writeTranscript(t, "abc", backgroundTaskLine, usageLine(now.Add(-2*time.Minute), 150_000)))
+	tf.HasStream = true
+	rtn := sleepAfterCompaction(context.Background(), rowOf(t, tf), false, now)
+	if rtn == nil || len(rtn.Background) == 0 || rtn.Compacting || sent != 0 {
+		t.Fatalf("got %+v after %d sends, want the background work asked about and nothing sent", rtn, sent)
+	}
+}
+
+func TestPersonSleepGoesStraightToSleepWithoutAPayingCompaction(t *testing.T) {
+	now := time.Now()
+	swap(t, &compacts, map[string]pendingCompact{})
+	swap(t, &sendCompact, func(string) bool { t.Error("sent a compaction"); return true })
+	swap(t, &currentSleepSettings, func() agentsleep.Settings {
+		return agentsleep.Settings{Enabled: true, After: 30 * time.Minute, Compact: true, CompactAt: 100_000}
+	})
+	for name, line := range map[string]string{
+		"small": usageLine(now.Add(-2*time.Minute), 60_000),
+		"cold":  usageLine(now.Add(-61*time.Minute), 150_000),
+	} {
+		tf := idleClaude(writeTranscript(t, "abc", line))
+		tf.HasStream = true
+		if rtn := sleepAfterCompaction(context.Background(), rowOf(t, tf), false, now); rtn != nil {
+			t.Errorf("%s: got %+v, want the Sleep to go ahead", name, rtn)
+		}
+	}
+	tf := idleClaude(writeTranscript(t, "abc", usageLine(now.Add(-2*time.Minute), 150_000)))
+	if rtn := sleepAfterCompaction(context.Background(), rowOf(t, tf), false, now); rtn != nil {
+		t.Errorf("no stream: got %+v, want the Sleep to go ahead", rtn)
 	}
 }

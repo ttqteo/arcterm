@@ -296,7 +296,49 @@ func (ws *WshServer) AgentsSleepCommand(ctx context.Context, data wshrpc.Command
 	if err := sleepRefusal(target); err != nil {
 		return nil, err
 	}
+	if rtn := sleepAfterCompaction(ctx, target, data.Force, time.Now()); rtn != nil {
+		return rtn, nil
+	}
 	return sleepAgent(ctx, target, data.Force)
+}
+
+// sleepAfterCompaction starts the person's Sleep with a compaction when one pays off (agentsleep.CompactBeforeSleep),
+// so waking the agent later reads a summary instead of the whole conversation. Background work is asked about first,
+// as a sleep would; the sleep loop puts the agent to sleep once the summary lands. nil when the Sleep goes ahead as it
+// is, sleepAgent reporting any trouble.
+func sleepAfterCompaction(ctx context.Context, row *agentRow, force bool, now time.Time) *wshrpc.CommandAgentsSleepRtnData {
+	if row.Harness != "claude" || !row.hasStream {
+		return nil
+	}
+	if pc, ok := compactPending(row.blockId, now); ok {
+		// a compaction is already on its way (the loop's, or a second click): this Sleep waits on it too
+		pc.then, pc.force = agentsleep.SleepAfterPerson, pc.force || force
+		setCompactPending(row.blockId, pc)
+		return &wshrpc.CommandAgentsSleepRtnData{Compacting: true}
+	}
+	tpath, err := agentTranscriptPath(ctx, row)
+	if err != nil || tpath == "" {
+		return nil
+	}
+	lines, err := readTranscriptEnd(tpath, cacheTailBytes)
+	if err != nil {
+		return nil
+	}
+	c := agentsleep.Candidate{Harness: row.Harness, HasStream: true, Cache: agentsleep.ReadCacheState(lines)}
+	if !agentsleep.CompactBeforeSleep(c, now, currentSleepSettings()) {
+		return nil
+	}
+	if !force {
+		if work := backgroundWork(tpath); len(work) > 0 {
+			return &wshrpc.CommandAgentsSleepRtnData{Background: work}
+		}
+	}
+	if !sendCompact(row.blockId) {
+		return nil
+	}
+	setCompactPending(row.blockId, pendingCompact{sent: now, then: agentsleep.SleepAfterPerson, force: force})
+	log.Printf("agent sleep: compacting %q (block %s) before the person's Sleep\n", row.Name, row.blockId)
+	return &wshrpc.CommandAgentsSleepRtnData{Compacting: true}
 }
 
 // wakeCall is a wake in flight for a block: a second wake of it (a double click, a message sent while the

@@ -81,6 +81,8 @@ const (
 	ConfigKey_AgentsClear                    = "agents:*"
 	ConfigKey_AgentsSleepIdle                = "agents:sleepidle"
 	ConfigKey_AgentsSleepAfterMin            = "agents:sleepaftermin"
+	ConfigKey_AgentsCompactIdle              = "agents:compactidle"
+	ConfigKey_AgentsCompactAtK               = "agents:compactatk"
 
 	ConfigKey_RadarAuditRuntime              = "radar:auditruntime"
 	ConfigKey_RadarAuditModel                = "radar:auditmodel"

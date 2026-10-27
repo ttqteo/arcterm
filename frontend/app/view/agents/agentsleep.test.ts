@@ -3,6 +3,7 @@ import { EMPTY_GRID } from "./agentgrid";
 import {
     asleepLaunchMeta,
     backgroundConfirmText,
+    compactingToastText,
     rosterStatus,
     sleepingAge,
     sleepingOf,
@@ -282,6 +283,16 @@ describe("sleepWithConfirm", () => {
         await vi.waitFor(() => expect(sleepCmd).toHaveBeenCalledTimes(2));
         expect(sleepCmd.mock.calls[1][1]).toEqual({ tab: "tab-1", force: true });
         await vi.waitFor(() => expect(pushToast).toHaveBeenCalledTimes(1));
+    });
+
+    it("says the agent compacts first when the server compacts before the sleep", async () => {
+        sleepCmd.mockResolvedValue({ compacting: true });
+        await sleepWithConfirm(agent);
+        expect(pushModal).not.toHaveBeenCalled();
+        expect(pushToast).toHaveBeenCalledWith(
+            expect.objectContaining({ title: compactingToastText("Lumen"), level: "info" })
+        );
+        expect(compactingToastText("Lumen")).toBe("Compacting Lumen first · it sleeps once the summary lands");
     });
 
     it("toasts the server's error and never throws", async () => {

@@ -98,6 +98,15 @@ export function stepSleepAfter(current: number, dir: -1 | 1): number {
     return Math.min(SLEEP_AFTER_MIN.max, Math.max(SLEEP_AFTER_MIN.min, current + dir * SLEEP_AFTER_MIN.step));
 }
 
+// agents:compactatk, the least context (thousands of tokens) an idle agent is compacted at: the stepper moves by 25
+// within [25, 800] (pkg/wshrpc/wshserver's compactAtFloorK is the floor), and the shipped default is
+// pkg/wconfig/defaultconfig/settings.json's
+export const COMPACT_AT_K = { step: 25, min: 25, max: 800, default: 100 };
+
+export function stepCompactAt(current: number, dir: -1 | 1): number {
+    return Math.min(COMPACT_AT_K.max, Math.max(COMPACT_AT_K.min, current + dir * COMPACT_AT_K.step));
+}
+
 // A stepper's bounds: it moves by `step` and stays inside [min, max].
 export type StepBounds = { step: number; min: number; max: number };
 
@@ -321,6 +330,22 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             title: "After idle for",
                             desc: "Minutes an agent stays idle before it sleeps.",
                             key: "agents:sleepaftermin",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "agents.compactidle",
+                            title: "Compact before the cache goes cold",
+                            desc: "Compact a Claude agent just before it sleeps, or when it sits idle with 5 minutes of prompt cache left, so the turn that wakes it reads a summary instead of the whole conversation.",
+                            key: "agents:compactidle",
+                            scope: "synced",
+                            config: true,
+                        },
+                        {
+                            id: "agents.compactatk",
+                            title: "When context is over",
+                            desc: "A smaller context is left whole: waking it costs little.",
+                            key: "agents:compactatk",
                             scope: "synced",
                             config: true,
                         },

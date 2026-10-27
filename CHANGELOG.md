@@ -24,6 +24,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- A Claude agent with a large context (100k tokens or more) is compacted while its prompt cache is still warm: just
+  before it sleeps, and, when it stays awake, once it has sat idle with 5 minutes of cache left. Waking it later reads
+  the summary instead of re-reading the whole conversation at twice the input price. Sleep on such an agent compacts
+  it first and puts it to sleep once the summary lands. Settings → Agents → Sleep idle agents turns it off or moves
+  the threshold.
+
 ### Changed
 
 - The Token burn card lists each subagent an agent wants to start, with the model it will run on and its task. A

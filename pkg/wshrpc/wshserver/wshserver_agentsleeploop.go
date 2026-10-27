@@ -6,11 +6,16 @@ package wshserver
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"math"
+	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
+	"github.com/wavetermdev/waveterm/pkg/agentctl"
 	"github.com/wavetermdev/waveterm/pkg/agentsleep"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
@@ -29,7 +34,103 @@ const (
 	// put an agent to sleep
 	sleepAfterFloorMin = 5
 	sleepAfterDefault  = 30
+	// compactAtFloorK is the least context, in thousands of tokens, the loop compacts: under it a compaction loses
+	// detail for little
+	compactAtFloorK = 25
+	// cacheTailBytes is how much of a transcript's end the cache read takes: the last request and any compaction after
+	// it sit there, while a whole transcript runs to tens of MB
+	cacheTailBytes = 4 << 20
 )
+
+// pendingCompact is a compaction the loop or a person's Sleep asked for that has not landed yet.
+type pendingCompact struct {
+	sent  time.Time
+	then  agentsleep.SleepAfter
+	force bool // the person confirmed the Sleep over running background work
+}
+
+// compacts holds the compactions waiting to land, by block id. The loop and a person's Sleep both write it.
+var (
+	compactsMu sync.Mutex
+	compacts   = map[string]pendingCompact{}
+)
+
+// compactPending is blockId's compaction that has not landed, dropping one older than agentsleep.CompactGiveUp: a
+// compaction that never lands holds nothing up for longer.
+func compactPending(blockId string, now time.Time) (pendingCompact, bool) {
+	compactsMu.Lock()
+	defer compactsMu.Unlock()
+	pc, ok := compacts[blockId]
+	if ok && now.Sub(pc.sent) > agentsleep.CompactGiveUp {
+		delete(compacts, blockId)
+		return pendingCompact{}, false
+	}
+	return pc, ok
+}
+
+func setCompactPending(blockId string, pc pendingCompact) {
+	compactsMu.Lock()
+	defer compactsMu.Unlock()
+	compacts[blockId] = pc
+}
+
+func dropCompactPending(blockId string) {
+	compactsMu.Lock()
+	defer compactsMu.Unlock()
+	delete(compacts, blockId)
+}
+
+// forgetCompacts drops the compactions of blocks no longer live, and reports whether any still wait.
+func forgetCompacts(keep map[string]bool) bool {
+	compactsMu.Lock()
+	defer compactsMu.Unlock()
+	for id := range compacts {
+		if !keep[id] {
+			delete(compacts, id)
+		}
+	}
+	return len(compacts) > 0
+}
+
+func compactsWaiting() bool {
+	compactsMu.Lock()
+	defer compactsMu.Unlock()
+	return len(compacts) > 0
+}
+
+// sendCompact asks a session's mod for a compaction over its control stream, which leaves the composer and any draft in
+// it alone; false when the session has no stream. The typed text is for a mod older than the Compact field. A var so
+// tests need no stream.
+var sendCompact = func(blockId string) bool {
+	return agentctl.Send(blockId, agentctl.Msg{
+		Text:    "/compact " + agentsleep.CompactInstructions,
+		Compact: agentsleep.CompactInstructions,
+	})
+}
+
+// readTranscriptEnd is the lines in the last maxBytes of a transcript, the first one dropped when the read starts inside
+// it. A var so tests script it.
+var readTranscriptEnd = func(path string, maxBytes int64) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	start := max(0, info.Size()-maxBytes)
+	buf := make([]byte, info.Size()-start)
+	if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
+		return nil, err
+	}
+	lines := strings.Split(string(buf), "\n")
+	if start > 0 {
+		lines = lines[1:]
+	}
+	return lines, nil
+}
 
 // treeCPUms is the CPU time (ms, user plus system) a block's whole process tree has used so far, and whether
 // there is a tree to read. A var so tests script it.
@@ -65,28 +166,39 @@ type sleepLoop struct {
 
 func newSleepLoop(notify func(wshrpc.NotifyCommandData)) *sleepLoop {
 	return &sleepLoop{
-		idle: agentsleep.NewIdleTracker(),
-		cpu:  agentsleep.NewCPURing(),
-		now:  time.Now,
-		settings: func() agentsleep.Settings {
-			return sleepSettings(wconfig.GetWatcher().GetFullConfig().Settings)
-		},
-		notify: notify,
-		sleep:  sleepAgent,
+		idle:     agentsleep.NewIdleTracker(),
+		cpu:      agentsleep.NewCPURing(),
+		now:      time.Now,
+		settings: func() agentsleep.Settings { return currentSleepSettings() },
+		notify:   notify,
+		sleep:    sleepAgent,
 	}
 }
 
-// sleepSettings reads the person's two settings: Sleep idle agents (default on) and After idle for (default 30
-// minutes, never under sleepAfterFloorMin).
+// currentSleepSettings is sleepSettings over the settings in force. A var so tests set them.
+var currentSleepSettings = func() agentsleep.Settings {
+	return sleepSettings(wconfig.GetWatcher().GetFullConfig().Settings)
+}
+
+// sleepSettings reads the person's settings: Sleep idle agents (default on), After idle for (default 30 minutes, never
+// under sleepAfterFloorMin), Compact before the cache goes cold (default on) and its least context (default 100k,
+// never under compactAtFloorK).
 func sleepSettings(st wconfig.SettingsType) agentsleep.Settings {
 	after := int64(sleepAfterDefault)
 	if st.AgentsSleepAfterMin != nil {
 		after = *st.AgentsSleepAfterMin
 	}
 	after = max(after, sleepAfterFloorMin)
+	atK := int64(agentsleep.CompactAtDefault / 1000)
+	if st.AgentsCompactAtK != nil {
+		atK = *st.AgentsCompactAtK
+	}
+	atK = max(atK, compactAtFloorK)
 	return agentsleep.Settings{
-		Enabled: st.AgentsSleepIdle == nil || *st.AgentsSleepIdle,
-		After:   time.Duration(after) * time.Minute,
+		Enabled:   st.AgentsSleepIdle == nil || *st.AgentsSleepIdle,
+		After:     time.Duration(after) * time.Minute,
+		Compact:   st.AgentsCompactIdle == nil || *st.AgentsCompactIdle,
+		CompactAt: int(atK) * 1000,
 	}
 }
 
@@ -100,7 +212,10 @@ func (l *sleepLoop) tick(ctx context.Context) {
 		// for that stretch, whatever the trackers last saw
 		l.idle.Forget(nil)
 		l.cpu.Forget(nil)
-		return
+		// compaction still runs without sleep, and a person's Sleep waiting on one still ends in a sleep
+		if !s.Compact && !compactsWaiting() {
+			return
+		}
 	}
 	facts, err := loadAgentRosterFacts(ctx)
 	if err != nil {
@@ -131,6 +246,11 @@ func (l *sleepLoop) tick(ctx context.Context) {
 			IdleSince: l.idle.Observe(row.blockId, idle, now),
 			RunOwned:  row.RunId != "",
 			Viewing:   viewing[row.TabId],
+			HasStream: row.hasStream,
+		}
+		pc, pending := compactPending(row.blockId, now)
+		if pending {
+			c.CompactSent, c.AfterCompact = pc.sent, pc.then
 		}
 		// every live agent, idle or not: a quiet tree is one whose last 5 minutes were quiet, which an agent that
 		// only just stopped working has not had yet
@@ -140,13 +260,21 @@ func (l *sleepLoop) tick(ctx context.Context) {
 			c.CPUIdle = l.cpu.Idle(row.blockId, now)
 		}
 		// the transcript reads are the costly facts; an agent that fails a cheap rule is spared whatever they say
-		if idle && !c.RunOwned && !c.Viewing && c.CPUIdle {
-			l.readTranscriptFacts(ctx, row, &c)
+		sleepFacts := s.Enabled && idle && !c.RunOwned && !c.Viewing && c.CPUIdle
+		cacheFacts := idle && !c.RunOwned && c.HasStream && row.Harness == "claude" && (s.Compact || pending)
+		if sleepFacts || cacheFacts {
+			l.readTranscriptFacts(ctx, row, &c, sleepFacts, cacheFacts)
+		}
+		if pending && pc.then == agentsleep.SleepAfterNone && c.Cache.Compacted {
+			// an awake agent's compaction landed, and no sleep waits on it
+			dropCompactPending(row.blockId)
+			c.CompactSent = time.Time{}
 		}
 		cands = append(cands, c)
 	}
 	l.idle.Forget(live)
 	l.cpu.Forget(sampled)
+	forgetCompacts(live)
 
 	free := uint64(math.MaxUint64) // free RAM that could not be read does not trigger the RAM path
 	if vm, err := virtualMemory(ctx); err != nil {
@@ -155,14 +283,32 @@ func (l *sleepLoop) tick(ctx context.Context) {
 		free = vm.Available
 	}
 
+	plan := agentsleep.Decide(cands, now, s, free)
+	for _, cp := range plan.Compact {
+		row := rows[cp.TabId]
+		if !sendCompact(row.blockId) {
+			log.Printf("agent sleep: %q (block %s) took no compaction over its stream\n", row.Name, row.blockId)
+			continue
+		}
+		pc := pendingCompact{sent: now}
+		why := "its cache is about to go cold"
+		if cp.ThenSleep {
+			pc.then, why = agentsleep.SleepAfterLoop, "it sleeps"
+		}
+		setCompactPending(row.blockId, pc)
+		log.Printf("agent sleep: compacting %q (block %s) before %s\n", row.Name, row.blockId, why)
+	}
+
 	var slept int
 	var freed uint64
-	for _, tabId := range agentsleep.Pick(cands, now, s, free) {
+	for _, tabId := range plan.Sleep {
 		if ctx.Err() != nil {
 			break
 		}
 		row := rows[tabId]
-		rtn, err := l.sleep(ctx, row, false)
+		pc, _ := compactPending(row.blockId, now)
+		dropCompactPending(row.blockId)
+		rtn, err := l.sleep(ctx, row, pc.force)
 		switch {
 		case err != nil:
 			log.Printf("agent sleep: %q (block %s): %v\n", row.Name, row.blockId, err)
@@ -183,18 +329,25 @@ func (l *sleepLoop) tick(ctx context.Context) {
 	}
 }
 
-// readTranscriptFacts fills in what only the agent's transcript says: whether there is a session to resume, and
-// whether background tasks or subagents still run under it.
-func (l *sleepLoop) readTranscriptFacts(ctx context.Context, row *agentRow, c *agentsleep.Candidate) {
+// readTranscriptFacts fills in what only the agent's transcript says. For sleep: whether there is a session to resume,
+// and whether background tasks or subagents still run under it. For compaction: the state of its prompt cache.
+func (l *sleepLoop) readTranscriptFacts(ctx context.Context, row *agentRow, c *agentsleep.Candidate, sleep, cache bool) {
 	tpath, err := agentTranscriptPath(ctx, row)
 	if err != nil {
 		log.Printf("agent sleep: reading the transcript path of %q: %v\n", row.Name, err)
 		return
 	}
-	c.SessionKnown = sessionKey(row.Harness, tpath, row.status.SessionID) != ""
-	background, subagents := runningWork(tpath)
-	c.BackgroundRunning = len(background) > 0
-	c.SubagentsRunning = len(subagents) > 0
+	if sleep {
+		c.SessionKnown = sessionKey(row.Harness, tpath, row.status.SessionID) != ""
+		background, subagents := runningWork(tpath)
+		c.BackgroundRunning = len(background) > 0
+		c.SubagentsRunning = len(subagents) > 0
+	}
+	if cache && tpath != "" {
+		if lines, err := readTranscriptEnd(tpath, cacheTailBytes); err == nil {
+			c.Cache = agentsleep.ReadCacheState(lines)
+		}
+	}
 }
 
 func plural(n int, one, many string) string {

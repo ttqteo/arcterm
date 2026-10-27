@@ -33,7 +33,7 @@ import {
     savedRateLimitsAtom,
     setClaudeIdentity,
 } from "../ratelimitstore";
-import { flagRowId, SLEEP_AFTER_MIN, stepSleepAfter } from "../settingsmodel";
+import { COMPACT_AT_K, flagRowId, SLEEP_AFTER_MIN, stepCompactAt, stepSleepAfter } from "../settingsmodel";
 import {
     CardFooter,
     FLAG_RUNTIMES,
@@ -139,6 +139,8 @@ function SleepRows() {
     const on = (useAtomValue(getSettingsKeyAtom("agents:sleepidle")) as boolean | undefined) ?? true;
     const after =
         (useAtomValue(getSettingsKeyAtom("agents:sleepaftermin")) as number | undefined) ?? SLEEP_AFTER_MIN.default;
+    const compact = (useAtomValue(getSettingsKeyAtom("agents:compactidle")) as boolean | undefined) ?? true;
+    const atK = (useAtomValue(getSettingsKeyAtom("agents:compactatk")) as number | undefined) ?? COMPACT_AT_K.default;
     return (
         <>
             <SettingRow id="agents.sleepidle">
@@ -157,6 +159,28 @@ function SleepRows() {
                         ariaLabel="minutes before an idle agent sleeps"
                     />
                     <span className="text-[12px] text-muted">min</span>
+                </div>
+            </SettingRow>
+            <SettingRow id="agents.compactidle">
+                <Toggle
+                    on={compact}
+                    onToggle={() => writeConfig({ "agents:compactidle": !compact })}
+                    label="Compact before the cache goes cold"
+                />
+            </SettingRow>
+            <SettingRow id="agents.compactatk">
+                <div className={cn("flex items-center gap-2", !compact && "opacity-50")}>
+                    <Stepper
+                        value={atK}
+                        onStep={(dir) => {
+                            const next = stepCompactAt(atK, dir);
+                            if (next !== atK) {
+                                writeConfig({ "agents:compactatk": next });
+                            }
+                        }}
+                        ariaLabel="thousands of tokens of context before an idle agent is compacted"
+                    />
+                    <span className="text-[12px] text-muted">k tokens</span>
                 </div>
             </SettingRow>
         </>

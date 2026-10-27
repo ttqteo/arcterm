@@ -19,6 +19,8 @@
     "harness:updatecheck": true,
     "agents:sleepidle": true,
     "agents:sleepaftermin": 30,
+    "agents:compactidle": true,
+    "agents:compactatk": 100,
     "runs:maxactive": 3,
     "runs:wakeorigin": true,
     "jobs:mode": "auto",

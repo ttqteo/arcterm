@@ -140,6 +140,8 @@ Gồm ba thẻ: **Claude account**, **Sleep idle agents** và **Launch flags**. 
 
 **Sleep idle agents** (bật sẵn, 30 phút): agent rảnh quá số phút này thì ngủ, tức tiến trình dừng để trả RAM nhưng hàng và hội thoại vẫn còn; **Wake**, hoặc một tin gửi tới nó, cho nó làm tiếp từ chỗ cũ. Khi RAM thiếu, agent rảnh lâu nhất ngủ sớm hơn. Không bao giờ ngủ: agent bạn đang xem, agent của run, agent còn việc chạy nền.
 
+**Compact before the cache goes cold** (bật sẵn, từ 100k token): agent Claude có context lớn được compact lúc prompt cache còn nóng: ngay trước khi ngủ, hoặc, nếu nó không ngủ, khi nó rảnh và cache chỉ còn 5 phút. Lượt đánh thức nó sau đó chỉ đọc bản tóm tắt thay vì ghi lại cả cuộc hội thoại với giá gấp đôi input. Bấm Sleep trên agent như vậy thì nó compact trước, rồi ngủ khi bản tóm tắt xong. Lệnh compact đi qua kênh của Claude mod, không gõ vào ô nhập, nên chữ bạn đang gõ dở không bị đụng tới; agent không có kênh đó thì không bị compact. **When context is over** đặt ngưỡng (bước 25k).
+
 ### Runs & limits
 
 Route mà run mới đi, bao nhiêu thứ chạy cùng lúc, và khi nào một lần spawn tốn kém phải hỏi bạn trước. Các mục có mặc định riêng, nên để trống thì không có chấm thay đổi; cột Mặc định là giá trị arcterm dùng khi bạn chưa đặt.

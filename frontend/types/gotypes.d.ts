@@ -558,6 +558,7 @@ declare global {
     type CommandAgentsSleepRtnData = {
         freedbytes?: number;
         background?: string[];
+        compacting?: boolean;
     };
 
     // wshrpc.CommandAgentsWakeData
@@ -4023,6 +4024,8 @@ declare global {
         "agents:*"?: boolean;
         "agents:sleepidle"?: boolean;
         "agents:sleepaftermin"?: number;
+        "agents:compactidle"?: boolean;
+        "agents:compactatk"?: number;
         "radar:auditruntime"?: string;
         "radar:auditmodel"?: string;
         "radar:classifymodel"?: string;

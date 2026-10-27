@@ -18,9 +18,11 @@ import {
     rowKeys,
     rowMatches,
     RUNS_MAX_ACTIVE,
+    COMPACT_AT_K,
     sectionRows,
     settingsSections,
     SLEEP_AFTER_MIN,
+    stepCompactAt,
     stepSleepAfter,
     stepWithin,
     TOKENGATE_AGENTS,
@@ -43,6 +45,8 @@ describe("sleep idle agents rows", () => {
         expect(card.rows.map((r) => [r.id, r.key, r.config, r.scope])).toEqual([
             ["agents.sleepidle", "agents:sleepidle", true, "synced"],
             ["agents.sleepaftermin", "agents:sleepaftermin", true, "synced"],
+            ["agents.compactidle", "agents:compactidle", true, "synced"],
+            ["agents.compactatk", "agents:compactatk", true, "synced"],
         ]);
         expect(card.rows[1].title).toBe("After idle for");
     });
@@ -54,6 +58,13 @@ describe("sleep idle agents rows", () => {
         expect(stepSleepAfter(SLEEP_AFTER_MIN.max, 1)).toBe(240);
         expect(stepSleepAfter(238, 1)).toBe(240);
         expect(stepSleepAfter(7, -1)).toBe(5);
+    });
+
+    it("steps the compaction threshold by 25k and keeps it between 25k and 800k", () => {
+        expect(stepCompactAt(COMPACT_AT_K.default, 1)).toBe(125);
+        expect(stepCompactAt(COMPACT_AT_K.default, -1)).toBe(75);
+        expect(stepCompactAt(COMPACT_AT_K.min, -1)).toBe(25);
+        expect(stepCompactAt(COMPACT_AT_K.max, 1)).toBe(800);
     });
 });
 
@@ -211,6 +222,8 @@ describe("settingsSections", () => {
             "notify:reply",
             "agents:sleepidle",
             "agents:sleepaftermin",
+            "agents:compactidle",
+            "agents:compactatk",
             "runs:maxactive",
             "runs:wakeorigin",
             "power:keepawake",
@@ -341,7 +354,12 @@ describe("settings pages", () => {
             "appearance.rowmodel", "appearance.rowbranch", "appearance.rowtokens", "appearance.rowage",
         ]);
         expect(cards["agents/claudeaccount"]).toEqual([]);
-        expect(cards["agents/sleep"]).toEqual(["agents.sleepidle", "agents.sleepaftermin"]);
+        expect(cards["agents/sleep"]).toEqual([
+            "agents.sleepidle",
+            "agents.sleepaftermin",
+            "agents.compactidle",
+            "agents.compactatk",
+        ]);
         expect(cards["agents/flags"].slice(0, 2)).toEqual(["newagent.remember", "newagent.runtime"]);
         expect(cards["runs/runs"]).toEqual(["run.route", "runs.maxactive", "runs.wakeorigin"]);
         expect(cards["runs/whilework"]).toEqual(["runs.keepawake", "runs.heavyjobs"]);
@@ -376,8 +394,8 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        // today's 60 plus the nine new rows
-        expect(ids).toHaveLength(69 + RUNTIME_FLAGS.claude.length);
+        // today's 60, the nine rows the reorganization added, and the two compaction rows
+        expect(ids).toHaveLength(71 + RUNTIME_FLAGS.claude.length);
     });
 
     it("finds moved rows by search", () => {

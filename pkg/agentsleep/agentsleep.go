@@ -40,12 +40,21 @@ type Candidate struct {
 	BackgroundRunning       bool      // a Claude background shell task or Monitor is alive under it
 	SubagentsRunning        bool      // a subagent is alive under it
 	CPUIdle                 bool      // CPURing.Idle over CPUWindow
+
+	// what Decide's compaction rules read (compact.go)
+	Cache        CacheState // from the transcript's tail; zero when it was not read
+	HasStream    bool       // its session's mod takes a compaction over the control stream, leaving the composer alone
+	CompactSent  time.Time  // when a compaction asked for earlier was sent; zero when none waits to land
+	AfterCompact SleepAfter // who wants it asleep once that compaction lands
 }
 
-// Settings are the person's two settings: Sleep idle agents, and After idle for.
+// Settings are the person's settings: Sleep idle agents and After idle for, then Compact before the cache goes
+// cold and the least context worth it.
 type Settings struct {
-	Enabled bool
-	After   time.Duration
+	Enabled   bool
+	After     time.Duration
+	Compact   bool
+	CompactAt int // tokens
 }
 
 // canSleep is the whole eligibility rule: every condition holds.

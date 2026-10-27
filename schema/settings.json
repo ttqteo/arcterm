@@ -198,6 +198,12 @@
         "agents:sleepaftermin": {
           "type": "integer"
         },
+        "agents:compactidle": {
+          "type": "boolean"
+        },
+        "agents:compactatk": {
+          "type": "integer"
+        },
         "radar:auditruntime": {
           "type": "string"
         },

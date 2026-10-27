@@ -142,6 +142,11 @@ export function sleepToastText(name: string, freedBytes: number | undefined): st
     return freedBytes ? `Put ${name} to sleep · freed ${ramLabel(freedBytes)}` : `Put ${name} to sleep`;
 }
 
+/** Pure: the toast when the Sleep compacts the agent first: the server sleeps it once the summary lands. */
+export function compactingToastText(name: string): string {
+    return `Compacting ${name} first · it sleeps once the summary lands`;
+}
+
 /** Pure: what the confirm says when background work runs under the agent: sleeping ends its process and so the work. */
 export function backgroundConfirmText(name: string, labels: string[]): string {
     const one = labels.length === 1;
@@ -191,6 +196,10 @@ async function sleepNow(agent: Pick<AgentVM, "id" | "name">, force: boolean): Pr
                 destructive: true,
                 onConfirm: () => fireAndForget(() => sleepNow(agent, true)),
             });
+            return;
+        }
+        if (rtn?.compacting) {
+            pushToast({ title: compactingToastText(agent.name), message: "", level: "info" });
             return;
         }
         pushToast({ title: sleepToastText(agent.name, rtn?.freedbytes), message: "", level: "info" });
