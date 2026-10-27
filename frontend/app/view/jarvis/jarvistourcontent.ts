@@ -59,11 +59,11 @@ export const TOUR_TRACKS: TourTrack[] = [
                 target: ['[data-jarvis-brief-region="waiting"]', '[data-jarvis-brief-band="waiting"]'],
                 vi: {
                     title: "Việc đang chờ bạn",
-                    body: "Câu hỏi của lead và worker, cổng duyệt, task bị chặn và run cần accept gom về đây. Ba việc gấp nhất hiện sẵn, Show all mở phần còn lại. Khi không có gì chờ, chỉ còn chip «all clear» trên header. Huy hiệu Jarvis trên nav rail đếm cùng các mục này.",
+                    body: "Câu hỏi của lead và worker, cổng duyệt, task bị chặn và run cần accept gom về đây. Ba việc gấp nhất hiện sẵn, «+N more» mở phần còn lại. Khi không có gì chờ, chỉ còn chip «all clear» trên header. Huy hiệu Jarvis trên nav rail đếm cùng các mục này.",
                 },
                 en: {
                     title: "What waits on you",
-                    body: "Questions from leads and workers, review gates, blocked tasks and runs to accept gather here. The first three show here, Show all opens the rest. With nothing waiting, only the «all clear» chip in the header shows. The Jarvis badge on the nav rail counts the same items.",
+                    body: "Questions from leads and workers, review gates, blocked tasks and runs to accept gather here. The first three show here, «+N more» opens the rest. With nothing waiting, only the «all clear» chip in the header shows. The Jarvis badge on the nav rail counts the same items.",
                 },
             },
             {

@@ -1120,7 +1120,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         pendingDeletes,
     ]);
     const staleCount = lines.sessions.filter((l) => l.stale).length;
-    // Waiting's window: the first three rows, the rest behind Show all; a filter shows every match
+    // Waiting's window: the first three rows, the rest behind "+N more"; a filter shows every match
     const waitingWindow = useMemo(
         () => capRegion(lines.waiting, WAITING_CAP, waitingOpen || filtering),
         [lines.waiting, waitingOpen, filtering]
@@ -2326,8 +2326,8 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                             className={cn(LINK_BTN, "mx-2 mb-1.5 mt-1")}
                                                         >
                                                             {waitingOpen
-                                                                ? "Show fewer"
-                                                                : `Show all ${lines.waiting.length}`}
+                                                                ? "Show less"
+                                                                : `+${lines.waiting.length - WAITING_CAP} more`}
                                                         </button>
                                                     ) : null}
                                                 </div>

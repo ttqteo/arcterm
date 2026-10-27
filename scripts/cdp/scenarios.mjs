@@ -397,7 +397,7 @@ async function cacheMissNoticeSteps(h, ctx) {
 
 // --- brief surface: the Brief is the Jarvis surface ----------------------------------------------
 // B5 retired the three-pane composition, so the Brief is the whole surface. Against the briefing fixtures
-// this walks its five regions, Waiting's first three rows and the Show all that reveals the rest (each row
+// this walks its five regions, Waiting's first three rows and the "+N more" that reveals the rest (each row
 // opens what it names and carries the design's one action), the j/k cursor, an initiative expanding in
 // place, and a blocked chunk opening its initiative's sheet.
 
@@ -453,7 +453,7 @@ const briefSurface = {
             detail: JSON.stringify(regions),
         });
 
-        // Waiting draws its first three rows, and Show all N folds the rest in. The
+        // Waiting draws its first three rows, and "+N more" folds the rest in. The
         // fold is module state, so it is normalized closed first, and N is read off the toggle rather than
         // hard-coded: the attention fixture is what makes it overflow.
         await h.ev(`document.querySelector('[data-briefing-fixture="attention"]')?.click()`);
@@ -471,11 +471,11 @@ const briefSurface = {
                 rows: m,
                 toggle: toggle != null,
                 open: toggle?.getAttribute('aria-expanded') ?? null,
-                n: Number(/Show all (\\d+)/.exec(toggle?.textContent ?? '')?.[1] ?? 0),
+                more: Number(/\\+(\\d+) more/.exec(toggle?.textContent ?? '')?.[1] ?? 0),
                 queueRows: document.querySelectorAll('[data-jarvis-brief-row="queue"]').length,
             };
         })()`);
-        const waitingN = seeded.n;
+        const waitingN = seeded.queueRows + seeded.more;
         steps.push({
             step: "3. Waiting shows its first three rows while the other seeded regions stay visible",
             ok:
@@ -490,7 +490,7 @@ const briefSurface = {
                     : `the attention fixture no longer overflows Waiting: ${JSON.stringify(seeded)}`,
         });
 
-        // Show all N reveals the rest of the actionable rows; the fold changes presentation, not where a
+        // "+N more" reveals the rest of the actionable rows; the fold changes presentation, not where a
         // decision lands. A row opens what it names, and carries the design's one action (Approve, Open,
         // Retry, Accept) as its only control. Accept replaced Acknowledge, so no act may read it.
         await h.ev(`document.querySelector('[data-jarvis-brief-attention-summary]')?.click()`);
@@ -510,7 +510,7 @@ const briefSurface = {
             };
         })()`);
         steps.push({
-            step: "4. Show all reveals every queue row, each opening what it names with its one action; Accept, never Acknowledge",
+            step: "4. +N more reveals every queue row, each opening what it names with its one action; Accept, never Acknowledge",
             ok:
                 q.expanded === "true" &&
                 q.rows === waitingN &&
@@ -921,7 +921,7 @@ const briefLayout = {
             JSON.stringify(chips)
         );
 
-        // 6. the first-visit offer sits where it covers no control: bottom right, clear of Waiting's Show all
+        // 6. the first-visit offer sits where it covers no control: bottom right, clear of Waiting's +N more
         await h.ev(`localStorage.removeItem("jarvis.tour.offered")`);
         await briefReload(h);
         await briefFixture(h, "attention", 900);
@@ -940,7 +940,7 @@ const briefLayout = {
             };
         })()`);
         rec(
-            "6. the tour offer covers no control: Show all stays hittable and clear of it",
+            "6. the tour offer covers no control: +N more stays hittable and clear of it",
             offer.offer === true && offer.toggle === true && offer.hit === true && offer.overlap === false,
             JSON.stringify(offer)
         );
