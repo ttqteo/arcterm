@@ -37,8 +37,9 @@ History. A count of 0 is left out; with all three 0 the line is left out.
 - **Sessions** — the project's ended sessions, newest first: the task as the title; branch · runtime · tokens under it;
   the age. A click opens the transcript (`showSession`, `agentcenter.ts`).
 - **Councils & runs** — merged, newest first. A council: its question (or feature), "Answer: " + `summary.answer` when
-  it has one, else its state, and its expert count. A run: its goal headline, "Landed on <branch> · N tasks", and
-  "M not verified" in the asking colour when its result was unverified and not acknowledged. A click opens it through
+  it has one, else its state, and its expert count. A run: its goal headline, its state ("Landed on <base branch>", "Land held", "Running", "Cancelled"…),
+  and "M not verified" in the asking colour when its result was unverified and not acknowledged (M counts the
+  reasons and land notes, as the Needs you item does). A click opens it through
   `openTarget` (`view/jarvis/openref.ts`).
 - The window is 7 days. The list's last row reads "Older: Conversation History", which opens `showHistory`. That page
   has only a status filter (`sessionsStatusFilterAtom`), no project or text filter, so it opens unfiltered; giving it a
@@ -48,13 +49,16 @@ History. A count of 0 is left out; with all three 0 the line is left out.
 
 All from commands and stores the frontend already has; no new backend command.
 
-- Sessions: `GetRecentSessionsCommand { projectpath, windowdays: 7, query }`. The search box passes its text as `query`,
-  debounced ~250ms.
+- Sessions: the scanned archive Conversation History and the sidebar already hold (`sessionsArchiveAtom`,
+  `loadSessionsArchive`, `sessionsarchivestore.ts`), overlaid with the roster (`overlayLive`) so a live one is left out,
+  kept to the project's path, the window, and sessions that are no run's worker (`runid` empty: the run stands for
+  them). It covers every runtime, where `GetRecentSessionsCommand` reads Claude's only. Search filters the task on the
+  client.
 - Councils: `CouncilListCommand { project: path }`; they also update on the `council` event `councilstore.ts` already
   follows.
-- Runs: `GetChannelRunsCommand` for each channel of the project (`channelProjects` in `needsyoustripmodel.ts` joins a
-  channel to its project), kept to runs created in the window. Search filters councils and runs on the client, on
-  their title.
+- Runs: `GetChannelRunsCommand` for each channel bound to the project's path (`Channel.projectpath`), kept to runs
+  created in the window. A run opens as the Needs you rows open one: `{ kind: "channel", channelId, runId }`. Search
+  filters councils and runs on the client, on their title.
 - The header's counts come from the same lists.
 - History is read when the Overview opens and when its project changes, not polled.
 
@@ -63,17 +67,19 @@ All from commands and stores the frontend already has; no new backend command.
 - Loading: grey skeleton rows in the History list; Now is drawn at once from the roster.
 - A project with no history: "No sessions, runs or councils in <project> in the last 7 days." plus the Older row.
 - A search with no match: "Nothing in the last 7 days matches "<q>"." with **Clear search**.
-- A source that fails to load: one line in its tab, "Could not read <sessions | councils | runs>: <error>." with
-  **Retry**; the other source in a merged tab still shows.
+- A source that fails to load: one line in its tab, "Could not read sessions." (`sessionsErrorAtom`) or "Could not
+  read runs: <error>.", with **Retry**; in Councils & runs the councils still show. `councilstore.ts` logs a failed
+  list and keeps no error, so councils have no error line.
 - No project path: History is not drawn and Now takes the page width (as Terminal and Council are hidden today).
 
 ## Shape of the code
 
 - `needsyoustripmodel.ts`: `foldNeedsYouRows(rows)` groups three or more rows of one `kindLabel` into a group row.
-- `projectoverviewmodel.ts`: `finished` rows from the roster and the unread set; `historyItems(councils, runs, q)` merges
-  and sorts councils and runs; `historyCounts(...)` for the header line. Tests beside it.
-- `projecthistorystore.ts`: loads the three lists for a project, holds their loading and error states, the query and
-  the tab, per project in jotai atoms (the Agent surface's centre modes unmount).
+- `projectoverviewmodel.ts`: `finished` rows from the roster and the unread set; `projectSessions(...)` picks and sorts
+  the sessions; `historyItems(councils, runs, q)` merges and sorts councils and runs; `historyCounts(...)` for the
+  header line. Tests beside it.
+- `projecthistorystore.ts`: loads a project's runs (sessions and councils have their stores), holds the runs' loading
+  and error state, the query and the tab, per project in jotai atoms (the Agent surface's centre modes unmount).
 - `projectoverview.tsx`: the two-column page; `projecthistory.tsx`: the History column.
 - `CHANGELOG.md`: one `Changed` line.
 
