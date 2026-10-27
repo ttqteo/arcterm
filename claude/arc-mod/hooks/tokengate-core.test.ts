@@ -13,27 +13,50 @@ import type { Group, SpawnVerdict } from "./tokengate-core";
 
 describe("spawnCount", () => {
     it("counts one agent per Agent or Task call, of its subagent type", () => {
-        expect(spawnCount("Agent", { prompt: "x", subagent_type: "Explore" })).toEqual({ agents: 1, atLeast: false, types: ["Explore"] });
-        expect(spawnCount("Agent", { prompt: "x" })).toEqual({ agents: 1, atLeast: false, types: ["general-purpose"] });
-        expect(spawnCount("Task", {})).toEqual({ agents: 1, atLeast: false, types: ["general-purpose"] });
+        expect(spawnCount("Agent", { prompt: "x", subagent_type: "Explore" })).toEqual({
+            agents: 1, atLeast: false, types: ["Explore"], calls: [{ type: "Explore" }],
+        });
+        expect(spawnCount("Agent", { prompt: "x" })).toEqual({
+            agents: 1, atLeast: false, types: ["general-purpose"], calls: [{ type: "general-purpose" }],
+        });
+        expect(spawnCount("Task", {})).toEqual({
+            agents: 1, atLeast: false, types: ["general-purpose"], calls: [{ type: "general-purpose" }],
+        });
+    });
+    it("names each call's model, task and background for the card, only when the call sets them", () => {
+        const input = { prompt: "x", subagent_type: "Explore", model: "haiku", description: "Find the hook", run_in_background: true };
+        expect(spawnCount("Agent", input).calls).toEqual([
+            { type: "Explore", model: "haiku", description: "Find the hook", background: true },
+        ]);
+        expect(spawnCount("Agent", { model: "", description: "", run_in_background: false }).calls).toEqual([
+            { type: "general-purpose" },
+        ]);
     });
     it("counts a workflow's agent( call sites, at least one, with no types", () => {
-        expect(spawnCount("Workflow", { script: "agent('a'); agent ('b'); subagent('c')" })).toEqual({ agents: 2, atLeast: true, types: [] });
-        expect(spawnCount("Workflow", { script: "phase('x')" })).toEqual({ agents: 1, atLeast: true, types: [] });
-        expect(spawnCount("Workflow", { name: "review" })).toEqual({ agents: 1, atLeast: true, types: [] });
+        expect(spawnCount("Workflow", { script: "agent('a'); agent ('b'); subagent('c')" })).toEqual({ agents: 2, atLeast: true, types: [], calls: [] });
+        expect(spawnCount("Workflow", { script: "phase('x')" })).toEqual({ agents: 1, atLeast: true, types: [], calls: [] });
+        expect(spawnCount("Workflow", { name: "review" })).toEqual({ agents: 1, atLeast: true, types: [], calls: [] });
     });
 });
 
 describe("joinGroup", () => {
     it("sums parallel spawns and their types, and any workflow makes the group a workflow", () => {
-        const gp = { agents: 1, atLeast: false, types: ["general-purpose"] };
-        const g = joinGroup(joinGroup(null, "Agent", gp), "Agent", { agents: 1, atLeast: false, types: ["Explore"] });
-        expect(g).toEqual({ tool: "Agent", agents: 2, atLeast: false, types: ["general-purpose", "Explore"] });
-        expect(joinGroup(g, "Workflow", { agents: 3, atLeast: true, types: [] })).toEqual({
+        const gp = { agents: 1, atLeast: false, types: ["general-purpose"], calls: [{ type: "general-purpose" }] };
+        const ex = { agents: 1, atLeast: false, types: ["Explore"], calls: [{ type: "Explore", model: "haiku" }] };
+        const g = joinGroup(joinGroup(null, "Agent", gp), "Agent", ex);
+        expect(g).toEqual({
+            tool: "Agent",
+            agents: 2,
+            atLeast: false,
+            types: ["general-purpose", "Explore"],
+            calls: [{ type: "general-purpose" }, { type: "Explore", model: "haiku" }],
+        });
+        expect(joinGroup(g, "Workflow", { agents: 3, atLeast: true, types: [], calls: [] })).toEqual({
             tool: "Workflow",
             agents: 5,
             atLeast: true,
             types: ["general-purpose", "Explore"],
+            calls: [{ type: "general-purpose" }, { type: "Explore", model: "haiku" }],
         });
     });
 });
@@ -41,22 +64,28 @@ describe("joinGroup", () => {
 describe("tokengateArgs", () => {
     it("passes the group, its types, and the context when known", () => {
         expect(
-            tokengateArgs({ tool: "Agent", agents: 2, atLeast: false, types: ["general-purpose", "Explore"] }, { tokens: 142000.4, window: 200000 })
+            tokengateArgs({ tool: "Agent", agents: 2, atLeast: false, types: ["general-purpose", "Explore"], calls: [] }, { tokens: 142000.4, window: 200000 })
         ).toEqual([
             "tokengate", "--tool", "Agent", "--agents", "2", "--types", "general-purpose,Explore",
             "--context-tokens", "142000", "--context-max", "200000",
         ]);
-        expect(tokengateArgs({ tool: "Workflow", agents: 1, atLeast: true, types: [] }, null)).toEqual([
+        expect(tokengateArgs({ tool: "Workflow", agents: 1, atLeast: true, types: [], calls: [] }, null)).toEqual([
             "tokengate", "--tool", "Workflow", "--agents", "1", "--at-least",
         ]);
     });
     it("passes the session's transcript when known", () => {
-        expect(tokengateArgs({ tool: "Agent", agents: 1, atLeast: false, types: [] }, null, "/h/.claude/projects/p/s1.jsonl")).toEqual([
+        expect(tokengateArgs({ tool: "Agent", agents: 1, atLeast: false, types: [], calls: [] }, null, "/h/.claude/projects/p/s1.jsonl")).toEqual([
             "tokengate", "--tool", "Agent", "--agents", "1", "--transcript", "/h/.claude/projects/p/s1.jsonl",
         ]);
     });
+    it("passes each call as JSON, for the card to name its model and task", () => {
+        const calls = [{ type: "Explore", model: "haiku", description: "Find, then read" }, { type: "general-purpose" }];
+        expect(tokengateArgs({ tool: "Agent", agents: 2, atLeast: false, types: ["Explore", "general-purpose"], calls }, null)).toEqual([
+            "tokengate", "--tool", "Agent", "--agents", "2", "--types", "Explore,general-purpose", "--calls", JSON.stringify(calls),
+        ]);
+    });
     it("passes the agents started just before, when there were some", () => {
-        const g: Group = { tool: "Agent", agents: 1, atLeast: false, types: [] };
+        const g: Group = { tool: "Agent", agents: 1, atLeast: false, types: [], calls: [] };
         expect(tokengateArgs(g, null, null, 2)).toEqual([
             "tokengate", "--tool", "Agent", "--agents", "1", "--earlier", "2",
         ]);
@@ -130,7 +159,15 @@ describe("createSpawnGate", () => {
         const b = gate.check("Agent", {}, ask);
         wake();
         expect(await Promise.all([a, b])).toEqual([null, null]);
-        expect(asked).toEqual([{ tool: "Agent", agents: 2, atLeast: false, types: ["general-purpose", "general-purpose"] }]);
+        expect(asked).toEqual([
+            {
+                tool: "Agent",
+                agents: 2,
+                atLeast: false,
+                types: ["general-purpose", "general-purpose"],
+                calls: [{ type: "general-purpose" }, { type: "general-purpose" }],
+            },
+        ]);
     });
 
     it("gives a spawn that arrives while the card waits the same verdict", async () => {
@@ -157,7 +194,7 @@ describe("createSpawnGate", () => {
         const call = { tool_use_id: "toolu_1", subagent_type: "Explore" };
         expect(await gate.check("Agent", call, ask)).toBeNull();
         expect(await gate.check("Task", call, ask)).toBeNull();
-        expect(asked).toEqual([{ tool: "Agent", agents: 1, atLeast: false, types: ["Explore"] }]);
+        expect(asked).toEqual([{ tool: "Agent", agents: 1, atLeast: false, types: ["Explore"], calls: [{ type: "Explore" }] }]);
     });
 
     it("counts a call once when its two hooks arrive while the gate gathers", async () => {
@@ -169,7 +206,9 @@ describe("createSpawnGate", () => {
         const b = gate.check("Task", call, ask);
         wake();
         expect(await Promise.all([a, b])).toEqual([null, null]);
-        expect(asked).toEqual([{ tool: "Agent", agents: 1, atLeast: false, types: ["general-purpose"] }]);
+        expect(asked).toEqual([
+            { tool: "Agent", agents: 1, atLeast: false, types: ["general-purpose"], calls: [{ type: "general-purpose" }] },
+        ]);
     });
 
     // one message's Agent calls reach the gate spread out as claude writes them (0.3 s and 0.8 s apart, seen live)

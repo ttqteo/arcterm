@@ -3,26 +3,37 @@
 // can run it, the gate's gathering and decisions included; register.ts only wires the tool.call hooks to it.
 
 export type SpawnTool = "Agent" | "Task" | "Workflow";
-export type SpawnCount = { agents: number; atLeast: boolean; types: string[] };
+const filled = (v: unknown): v is string => typeof v === "string" && v !== "";
+
+// one Agent or Task call as the card names it: wsh's tokengate.Call
+export type SpawnCall = { type: string; model?: string; description?: string; background?: boolean };
+export type SpawnCount = { agents: number; atLeast: boolean; types: string[]; calls: SpawnCall[] };
 export type Group = { tool: SpawnTool } & SpawnCount;
 export type SpawnVerdict = { run: boolean; scope: "turn" | "session" | null; reason: string | null; note: string | null };
 export type Decision = "allow-turn" | "allow-session" | "deny-turn" | null;
 
 // a call's agents and the subagent types known of them: Agent and Task start one, of the input's subagent_type
-// (general-purpose, Claude Code's default, when absent). a workflow's agents are its agent( call sites, a floor: a
-// loop or parallel() over a list multiplies them, and their types are unknown; one named or read from a file is at
-// least one
+// (general-purpose, Claude Code's default, when absent), and the card names its model and task. a workflow's agents
+// are its agent( call sites, a floor: a loop or parallel() over a list multiplies them, and their types are unknown;
+// one named or read from a file is at least one
 export function spawnCount(tool: SpawnTool, input: Record<string, unknown>): SpawnCount {
     if (tool !== "Workflow") {
-        const type =
-            typeof input.subagent_type === "string" && input.subagent_type !== ""
-                ? input.subagent_type
-                : "general-purpose";
-        return { agents: 1, atLeast: false, types: [type] };
+        const type = filled(input.subagent_type) ? input.subagent_type : "general-purpose";
+        const call: SpawnCall = { type };
+        if (filled(input.model)) {
+            call.model = input.model;
+        }
+        if (filled(input.description)) {
+            call.description = input.description;
+        }
+        if (input.run_in_background === true) {
+            call.background = true;
+        }
+        return { agents: 1, atLeast: false, types: [type], calls: [call] };
     }
     const script = typeof input.script === "string" ? input.script : "";
     const sites = script.match(/\bagent\s*\(/g)?.length ?? 0;
-    return { agents: Math.max(1, sites), atLeast: true, types: [] };
+    return { agents: Math.max(1, sites), atLeast: true, types: [], calls: [] };
 }
 
 // parallel spawns in one message ask on one card
@@ -35,6 +46,7 @@ export function joinGroup(g: Group | null, tool: SpawnTool, c: SpawnCount): Grou
         agents: g.agents + c.agents,
         atLeast: g.atLeast || c.atLeast,
         types: [...g.types, ...c.types],
+        calls: [...g.calls, ...c.calls],
     };
 }
 
@@ -54,6 +66,9 @@ export function tokengateArgs(
     if (g.types.length > 0) {
         args.push("--types", g.types.join(","));
     }
+    if (g.calls.length > 0) {
+        args.push("--calls", JSON.stringify(g.calls));
+    }
     if (context) {
         args.push("--context-tokens", String(Math.round(context.tokens)), "--context-max", String(context.window));
     }
@@ -65,8 +80,6 @@ export function tokengateArgs(
     }
     return args;
 }
-
-const filled = (v: unknown): v is string => typeof v === "string" && v !== "";
 
 // one stdout line: a hold to show while the card waits, or the verdict, last. anything else, wsh's errors
 // included, is no line at all: a broken gate never blocks an agent

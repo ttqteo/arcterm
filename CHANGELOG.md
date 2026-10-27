@@ -64,6 +64,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   days, searchable with /, and the agents that finished a turn you have not read. Running now lists the project's
   runs, their workers counted as the Agent tree counts them, and three or more items of one kind in Needs you fold
   into one row.
+- The Token burn card lists each subagent an agent wants to start, with the model it will run on and its task. A
+  subagent given no model says so and names the one it falls back to: this session's (an Explore with no model runs
+  on Opus when the session does). The estimate now says it comes from finished subagents.
+- The Token burn card (and an Antigravity question that holds its agent) always pops up as a dialog, over the agent's
+  own terminal too, instead of sitting above the terminal. Later hides it and leaves a one-line strip above the
+  terminal whose Answer brings it back.
 - An agent's right-click menu has **Copy id** in place of Copy @mention: it copies the bare id, so pasting it to tell
   an agent about another one keeps the message with the agent you typed to, where a leading `@id` sent it away. Drag
   an agent onto a pane holding Alt still types its `@` token to message it.

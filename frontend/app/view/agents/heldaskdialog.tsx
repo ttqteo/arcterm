@@ -1,9 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// A held command's card (the Token burn card, an Antigravity question) as a dialog over any surface. Mounted once in CockpitShell; it pops
-// for the first held ask whose card is not already on screen (heldaskpopup.ts). Later hides it and leaves the ask open
-// on the agent's own card; answering or clearing it closes the dialog by itself.
+// A held command's card (the Token burn card, an Antigravity question) as a dialog over any surface, the agent's own
+// included. Mounted once in CockpitShell; it pops for the first held ask not hidden (heldaskpopup.ts). Later hides it and
+// leaves the ask open in the strip above the agent's terminal; answering or clearing it closes the dialog by itself.
 
 import { ModalShell } from "@/app/modals/modalshell";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -47,7 +47,9 @@ export function HeldAskDialog({ model }: { model: AgentsViewModel }) {
     const dismissed = useAtomValue(heldAskDismissedAtom);
     const surface = useAtomValue(model.surfaceAtom);
     const focusId = useAtomValue(model.focusIdAtom);
-    const agent = heldAskToPop(agents, dismissed, surface === "agent" ? focusId : null);
+    const agent = heldAskToPop(agents, dismissed);
+    // Open agent goes nowhere when the agent is already the one on screen
+    const onScreen = agent != null && surface === "agent" && focusId === agent.id;
 
     const key = agent ? heldAskKey(agent) : null;
     const shownAt = useRef(0);
@@ -84,17 +86,19 @@ export function HeldAskDialog({ model }: { model: AgentsViewModel }) {
                             <span className="text-ink-faint"> · </span>
                             {agent.name}
                         </span>
+                        {onScreen ? null : (
+                            <button
+                                type="button"
+                                onClick={() => jumpToAgent(model, agent.id)}
+                                className="inline-flex cursor-pointer items-center gap-[4px] rounded-[6px] px-[8px] py-[4px] text-[11.5px] font-medium text-secondary hover:bg-surface-hover hover:text-primary"
+                            >
+                                Open agent
+                                <ArrowUpRight size={12} aria-hidden />
+                            </button>
+                        )}
                         <button
                             type="button"
-                            onClick={() => jumpToAgent(model, agent.id)}
-                            className="inline-flex cursor-pointer items-center gap-[4px] rounded-[6px] px-[8px] py-[4px] text-[11.5px] font-medium text-secondary hover:bg-surface-hover hover:text-primary"
-                        >
-                            Open agent
-                            <ArrowUpRight size={12} aria-hidden />
-                        </button>
-                        <button
-                            type="button"
-                            title="Hide this card; it stays on the agent's own card (Esc)"
+                            title="Hide this card; it stays above the agent's terminal (Esc)"
                             onClick={() => later(agent)}
                             className="cursor-pointer rounded-[6px] px-[8px] py-[4px] text-[11.5px] font-medium text-muted hover:bg-surface-hover hover:text-primary"
                         >

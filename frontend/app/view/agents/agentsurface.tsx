@@ -691,7 +691,7 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
                                     </div>
                                 )}
                                 <DivergenceBanner decision={decision} onRejoin={rejoin} />
-                                <HeldAskBar model={model} agent={subject!} />
+                                <HeldAskBar agent={subject!} />
                                 {/* keyed: the card's pending wake and its failure belong to one agent */}
                                 <SleepingCard key={agent.id} agent={agent} />
                                 {showCompacted ? (

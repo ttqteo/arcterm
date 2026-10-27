@@ -26,10 +26,12 @@ const tokengateReadTimeoutMs = 5000
 
 var tokengateSpawn tokengate.Spawn
 
-// the asking session's transcript and each agent's subagent type, which the Claude mod passes
+// the asking session's transcript, each agent's subagent type and each Agent or Task call (JSON), which the Claude
+// mod passes
 var (
 	tokengateTranscript string
 	tokengateTypes      string
+	tokengateCalls      string
 	tokengateReviewDays int
 )
 
@@ -60,6 +62,7 @@ func init() {
 	tokengateCmd.Flags().Int64Var(&tokengateSpawn.ContextMax, "context-max", 0, "the agent's context window")
 	tokengateCmd.Flags().StringVar(&tokengateTranscript, "transcript", "", "the asking session's transcript")
 	tokengateCmd.Flags().StringVar(&tokengateTypes, "types", "", "each agent's subagent type, comma-separated, in order")
+	tokengateCmd.Flags().StringVar(&tokengateCalls, "calls", "", `each Agent or Task call, a JSON list of {"type","model","description","background"}`)
 	tokengateReviewCmd.Flags().IntVar(&tokengateReviewDays, "days", 7, "how many days back")
 	tokengateCmd.AddCommand(tokengateReviewCmd)
 	rootCmd.AddCommand(tokengateCmd)
@@ -69,6 +72,9 @@ func tokengateRun(cmd *cobra.Command, args []string) error {
 	out := json.NewEncoder(os.Stdout)
 	s := tokengateSpawn
 	s.Types = splitTypes(tokengateTypes)
+	s.Calls = parseCalls(tokengateCalls)
+	// a call that sets no model runs on the session's: its transcript's latest turn names it
+	s.SessionModel = readLastModel(tokengateTranscript)
 	verdict, err := tokengateDecide(context.Background(), s, tokengateTranscript, func(hold any) { _ = out.Encode(hold) })
 	if err != nil {
 		return err
@@ -82,6 +88,18 @@ func splitTypes(flag string) []string {
 		return nil
 	}
 	return strings.Split(flag, ",")
+}
+
+// parseCalls reads --calls; a missing or unreadable list is no calls, and the card names none
+func parseCalls(flag string) []tokengate.Call {
+	if flag == "" {
+		return nil
+	}
+	var calls []tokengate.Call
+	if json.Unmarshal([]byte(flag), &calls) != nil {
+		return nil
+	}
+	return calls
 }
 
 // tokengateRead reads the quota and wavesrv's counts for a spawn: both windows, the session's share of them, the

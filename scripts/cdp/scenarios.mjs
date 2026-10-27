@@ -5222,12 +5222,21 @@ const cockpitNeedsYouCrossChannel = {
 };
 
 // A held Token burn card (a costly Agent/Task/Workflow spawn waiting on the person) is headed by its own card, not the
-// "Low RAM" of memgate's removed card: the popup over a non-Agent surface reads "Token burn · <agent>", and opening
-// the agent hands the card to the bar above its terminal. A fixture roster holds the working agent and the asking one.
+// "Low RAM" of memgate's removed card: the popup reads "Token burn · <agent>", names each subagent's model and task, and
+// stays up over the agent's own terminal when the agent is opened; Later leaves a strip above the terminal whose Answer
+// brings the popup back. A fixture roster holds the working agent and the asking one.
 const TOKEN_BURN_AGENT_ID = "fx-token-burn";
 const TOKEN_BURN_AGENT_NAME = "token-burn worker";
 const TOKEN_BURN_ASK_ID = "fx-token-burn-ask";
 const TOKEN_BURN_OPTIONS = ["Allow", "Allow this turn", "Allow this session", "Don't spawn"];
+// as pkg/tokengate's Question writes it: what would start, a call a line, then the cost and the windows
+const TOKEN_BURN_QUESTION =
+    "An agent wants to start 3 subagents:\n" +
+    '• Explore on haiku: "Find the hook"\n' +
+    "• Explore on opus 5.5 (no model set, so it takes this session's): \"Read the card\"\n" +
+    "• general-purpose on sonnet, in the background\n\n" +
+    "About 4.5M tokens (rough).\n\n" +
+    "The 5-hour window is 71% used and resets at 20:10.";
 
 const tokenBurnCard = {
     name: "token-burn-card",
@@ -5268,7 +5277,7 @@ const tokenBurnCard = {
                                 questions: [
                                     {
                                         header: "Token burn",
-                                        question: "An agent wants to start 3 subagents, about 4.5M tokens (rough).",
+                                        question: TOKEN_BURN_QUESTION,
                                         options: TOKEN_BURN_OPTIONS.map((label) => ({ label })),
                                     },
                                 ],
@@ -5306,10 +5315,14 @@ const tokenBurnCard = {
                 if (!d) return null;
                 const head = d.querySelector('span.truncate');
                 const text = (d.textContent || '');
+                const detail = [...d.querySelectorAll('div.text-secondary')].map((x) => x.textContent || '');
                 return {
                     head: head ? head.textContent.replace(/\\s+/g, ' ').trim() : null,
                     options: ${JSON.stringify(TOKEN_BURN_OPTIONS)}.filter((o) => text.includes(o)),
                     lowRam: /low ram/i.test(text),
+                    models: ['Explore on haiku', 'Explore on opus 5.5', 'general-purpose on sonnet'].filter((m) => text.includes(m)),
+                    detail: detail.some((x) => x.startsWith('About 4.5M tokens')),
+                    openAgent: [...d.querySelectorAll('button')].some((x) => (x.textContent || '').trim() === 'Open agent'),
                 };
             })()`);
         let shown = await popup();
@@ -5320,12 +5333,18 @@ const tokenBurnCard = {
         const headOk = shown?.head === `Token burn · ${TOKEN_BURN_AGENT_NAME}`;
         rec(
             popupStep,
-            shown != null && headOk && !shown.lowRam && shown.options.length === TOKEN_BURN_OPTIONS.length,
+            shown != null &&
+                headOk &&
+                !shown.lowRam &&
+                shown.options.length === TOKEN_BURN_OPTIONS.length &&
+                shown.models.length === 3 &&
+                shown.detail === true,
             JSON.stringify(shown)
         );
         await h.shot("cdp-shots/token-burn-card-popup.png");
 
-        // 2. Open agent routes to the Agent surface: the popup closes and the bar above the terminal takes the card
+        // 2. Open agent routes to the Agent surface: the popup stays up over the agent's own terminal, with no Open
+        // agent, and no strip shows above the terminal while it is up
         const opened = await h.ev(`(() => {
             const d = document.querySelector('[data-held-ask-dialog="${TOKEN_BURN_AGENT_ID}"]');
             const b = d && [...d.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === 'Open agent');
@@ -5334,25 +5353,62 @@ const tokenBurnCard = {
             return true;
         })()`);
         await settle(1200);
-        const bar = () =>
+        const strip = () =>
             h.ev(`(() => {
                 const b = document.querySelector('[data-held-ask="${TOKEN_BURN_AGENT_ID}"]');
                 if (!b) return null;
-                const text = b.textContent || '';
-                return { options: ${JSON.stringify(TOKEN_BURN_OPTIONS)}.filter((o) => text.includes(o)) };
+                const text = (b.textContent || '').replace(/\\s+/g, ' ').trim();
+                return { text, answer: [...b.querySelectorAll('button')].some((x) => (x.textContent || '').trim() === 'Answer') };
             })()`);
-        let barState = await bar();
-        for (let i = 0; i < 10 && barState == null; i++) {
+        const onAgent = await popup();
+        const stripWhileUp = await strip();
+        rec(
+            "2. opening the agent keeps the popup up over its terminal, without Open agent, and no strip shows",
+            opened === true && onAgent != null && onAgent.openAgent === false && stripWhileUp == null,
+            JSON.stringify({ opened, onAgent, stripWhileUp })
+        );
+        await h.shot("cdp-shots/token-burn-card-on-agent.png");
+
+        // 3. Later hides the popup and leaves a strip above the terminal
+        const hid = await h.ev(`(() => {
+            const d = document.querySelector('[data-held-ask-dialog="${TOKEN_BURN_AGENT_ID}"]');
+            const b = d && [...d.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === 'Later');
+            if (!b) return false;
+            b.click();
+            return true;
+        })()`);
+        await settle(800);
+        let stripState = await strip();
+        for (let i = 0; i < 10 && stripState == null; i++) {
             await settle(300);
-            barState = await bar();
+            stripState = await strip();
         }
         const popupGone = await h.ev(`!document.querySelector('[data-held-ask-dialog]')`);
         rec(
-            "2. opening the agent closes the popup and the bar above its terminal shows the 4 options",
-            opened === true && popupGone === true && barState?.options?.length === TOKEN_BURN_OPTIONS.length,
-            JSON.stringify({ opened, popupGone, bar: barState })
+            "3. Later hides the popup and the strip above the terminal says Token burn is waiting, with Answer",
+            hid === true &&
+                popupGone === true &&
+                stripState?.answer === true &&
+                stripState.text.startsWith("Token burn is waiting for your answer"),
+            JSON.stringify({ hid, popupGone, strip: stripState })
         );
-        await h.shot("cdp-shots/token-burn-card-bar.png");
+        await h.shot("cdp-shots/token-burn-card-strip.png");
+
+        // 4. Answer on the strip brings the popup back, and the strip goes
+        await h.ev(`(() => {
+            const b = document.querySelector('[data-held-ask="${TOKEN_BURN_AGENT_ID}"]');
+            const a = b && [...b.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === 'Answer');
+            if (a) a.click();
+        })()`);
+        await settle(800);
+        const back = await popup();
+        const stripAfter = await strip();
+        rec(
+            "4. Answer on the strip brings the popup back and the strip goes",
+            back != null && back.options.length === TOKEN_BURN_OPTIONS.length && stripAfter == null,
+            JSON.stringify({ back, stripAfter })
+        );
+        await h.shot("cdp-shots/token-burn-card-back.png");
         return steps;
     },
     async teardown(h, ctx) {

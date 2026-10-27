@@ -87,7 +87,7 @@ func TestCouncilSpawnAsksLikeAnAgentSpawnOfThatSize(t *testing.T) {
 func TestCouncilSpawnIsNamedOnTheCardTheNoteAndTheVerdict(t *testing.T) {
 	s := Spawn{Tool: "Council", Agents: 4, EstimateTokens: 900_000}
 	p := Price(s, testCosts)
-	wantCard := "An agent wants to start a Council (4 experts), about 900k tokens (rough)."
+	wantCard := "An agent wants to start a Council (4 experts).\n\nAbout 900k tokens (rough)."
 	if got := Question(s, p, Quota{}, time.UTC).Question; got != wantCard {
 		t.Fatalf("question\n%q\nwant\n%q", got, wantCard)
 	}
@@ -297,8 +297,9 @@ func TestQuestionSaysEveryKnownNumber(t *testing.T) {
 		WeekPct: f64(31), WeekReset: i64(time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC).Unix()), WeekShare: pint(1),
 		Session: &SessionUse{FiveHourPct: pint(18), WeekPct: pint(4), Subagents: 4},
 	}, time.UTC)
-	want := "An agent wants to start 3 subagents, about 12.6M tokens, likely 6.4M–23.9M (from 14 general-purpose and 3 Explore subagents). " +
-		"Its own context is 142k of 200k, and each of its further calls re-reads that. " +
+	want := "An agent wants to start 3 subagents.\n\n" +
+		"About 12.6M tokens, likely 6.4M–23.9M, going by the cost of 14 finished general-purpose and 3 Explore subagents. " +
+		"Its own context is 142k of 200k, and each of its further calls re-reads that.\n\n" +
 		"This session has used about 18% of the 5-hour window and about 4% of the week so far, its 4 subagents included. " +
 		"The 5-hour window is 62% used and resets at 14:20; this would take about 9% more. " +
 		"The week is 31% used and resets Mon 09:00; this would take about 1% of it."
@@ -312,18 +313,18 @@ func TestQuestionSaysEveryKnownNumber(t *testing.T) {
 
 func TestQuestionLeavesOutUnknownNumbers(t *testing.T) {
 	wf := Spawn{Tool: "Workflow", Agents: 4, AtLeast: true}
-	if got := Question(wf, Price(wf, nil), Quota{}, time.UTC).Question; got != "An agent wants to run a workflow with at least 4 agents, about 6M tokens (rough)." {
+	if got := Question(wf, Price(wf, nil), Quota{}, time.UTC).Question; got != "An agent wants to run a workflow with at least 4 agents.\n\nAbout 6M tokens (rough)." {
 		t.Fatalf("question %q", got)
 	}
 	// a Team seat (no week), and a session whose only known share is a sliver of the 5h window, with no subagents
 	one := Spawn{Tool: "Agent", Agents: 1}
-	want := "An agent wants to start 1 subagent, about 1.5M tokens (rough). " +
+	want := "An agent wants to start 1 subagent.\n\nAbout 1.5M tokens (rough).\n\n" +
 		"This session has used less than 1% of the 5-hour window so far. The 5-hour window is 40% used."
 	if got := Question(one, Price(one, nil), Quota{FiveHourPct: f64(40), Session: &SessionUse{FiveHourPct: pint(0)}}, time.UTC).Question; got != want {
 		t.Fatalf("question\n%q\nwant\n%q", got, want)
 	}
 	partly := Spawn{Tool: "Agent", Agents: 2, Types: []string{"general-purpose", "web-fetch"}}
-	if got := Question(partly, Price(partly, thinCosts), Quota{}, time.UTC).Question; got != "An agent wants to start 2 subagents, about 4.3M tokens (rough, partly from 14 general-purpose subagents)." {
+	if got := Question(partly, Price(partly, thinCosts), Quota{}, time.UTC).Question; got != "An agent wants to start 2 subagents.\n\nAbout 4.3M tokens (rough, partly going by the cost of 14 finished general-purpose subagents)." {
 		t.Fatalf("question %q", got)
 	}
 }
@@ -364,7 +365,7 @@ func TestVerdictFor(t *testing.T) {
 
 func TestQuestionSaysTheAgentsJustStarted(t *testing.T) {
 	s := Spawn{Tool: "Agent", Agents: 1, Earlier: 2}
-	want := "An agent wants to start 1 subagent, about 1.5M tokens (rough). It started 2 more in the last few seconds."
+	want := "An agent wants to start 1 subagent.\n\nAbout 1.5M tokens (rough). It started 2 more in the last few seconds."
 	if got := Question(s, Price(s, nil), Quota{}, time.UTC).Question; got != want {
 		t.Fatalf("question\n%q\nwant\n%q", got, want)
 	}
@@ -409,5 +410,60 @@ func TestLogLine(t *testing.T) {
 	}
 	if got := LogPath("/h"); got != filepath.Join("/h", ".arc", "tokengate", "estimates.jsonl") {
 		t.Fatalf("log path %q", got)
+	}
+}
+
+func TestQuestionListsEachCallWithItsModelAndTask(t *testing.T) {
+	s := Spawn{Tool: "Agent", Agents: 4, SessionModel: "claude-opus-5-5", Calls: []Call{
+		{Type: "Explore", Model: "haiku", Description: "Find the hook"},
+		{Type: "Explore", Description: "Tìm yêu cầu báo cáo"},
+		{Type: "Plan", Model: "claude-sonnet-5-5", Background: true},
+		{Type: "code-reviewer", Description: "Review the diff"},
+	}}
+	head, _, _ := strings.Cut(Question(s, Price(s, nil), Quota{}, time.UTC).Question, "\n\n")
+	want := "An agent wants to start 4 subagents:\n" +
+		"• Explore on haiku: \"Find the hook\"\n" +
+		"• Explore on opus 5.5 (no model set, so it takes this session's): \"Tìm yêu cầu báo cáo\"\n" +
+		"• Plan on sonnet 5.5, in the background\n" +
+		"• code-reviewer (no model set: its type's own model, or this session's opus 5.5): \"Review the diff\""
+	if head != want {
+		t.Fatalf("head\n%s\nwant\n%s", head, want)
+	}
+}
+
+func TestQuestionCallsWithNoSessionModelOrNoType(t *testing.T) {
+	s := Spawn{Tool: "Agent", Agents: 2, Calls: []Call{{}, {Type: "web-fetch"}}}
+	head, _, _ := strings.Cut(Question(s, Price(s, nil), Quota{}, time.UTC).Question, "\n\n")
+	want := "An agent wants to start 2 subagents:\n" +
+		"• general-purpose on this session's model (no model set)\n" +
+		"• web-fetch (no model set: its type's own model, or this session's model)"
+	if head != want {
+		t.Fatalf("head\n%s\nwant\n%s", head, want)
+	}
+}
+
+func TestQuestionCountsTheCallsPastSix(t *testing.T) {
+	s := Spawn{Tool: "Agent", Agents: 8}
+	for i := 0; i < 8; i++ {
+		s.Calls = append(s.Calls, Call{Type: "Explore", Model: "haiku"})
+	}
+	head, _, _ := strings.Cut(Question(s, Price(s, nil), Quota{}, time.UTC).Question, "\n\n")
+	lines := strings.Split(head, "\n")
+	if len(lines) != 8 || lines[7] != "• and 2 more" {
+		t.Fatalf("lines %q", lines)
+	}
+}
+
+func TestModelName(t *testing.T) {
+	for in, want := range map[string]string{
+		"haiku":                     "haiku",
+		"claude-opus-5-5":           "opus 5.5",
+		"claude-haiku-4-5-20251001": "haiku 4.5",
+		"claude-opus-4-8":           "opus 4.8",
+		"fable":                     "fable",
+	} {
+		if got := modelName(in); got != want {
+			t.Errorf("modelName(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

@@ -50,6 +50,20 @@ func TestTokengateAnsweredMapsTheCardsOutcome(t *testing.T) {
 	}
 }
 
+func TestParseCalls(t *testing.T) {
+	if got := parseCalls(""); got != nil {
+		t.Fatalf("no flag = %v", got)
+	}
+	if got := parseCalls("not json"); got != nil {
+		t.Fatalf("unreadable = %v", got)
+	}
+	got := parseCalls(`[{"type":"Explore","model":"haiku","description":"Find, then read","background":true},{"type":"general-purpose"}]`)
+	want := []tokengate.Call{{Type: "Explore", Model: "haiku", Description: "Find, then read", Background: true}, {Type: "general-purpose"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("calls = %+v", got)
+	}
+}
+
 func TestSplitTypes(t *testing.T) {
 	if got := splitTypes(""); got != nil {
 		t.Fatalf("no flag = %v", got)

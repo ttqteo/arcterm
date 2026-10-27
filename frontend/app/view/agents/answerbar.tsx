@@ -136,6 +136,9 @@ function QuestionGroup({
     // preview mode (pi): a single-select question with preview markdown renders side-by-side, the
     // panel showing the hovered/focused option (rpiv's rule: single-select only).
     const withPreview = previewMode(question);
+    // a question in paragraphs (the Token burn card's what, cost and windows) leads with the first; the rest reads as
+    // its detail
+    const [questionLead, ...questionDetail] = (question.question ?? "").split(/\n\s*\n/);
     const [focusIndex, setFocusIndex] = useState(0);
     const preview = withPreview ? activePreview(question, focusIndex) : undefined;
     const optionList = (
@@ -218,9 +221,12 @@ function QuestionGroup({
                             {question.header}
                         </div>
                     ) : null}
-                    <div className="whitespace-pre-line text-[13px] font-semibold text-primary">
-                        {question.question}
-                    </div>
+                    <div className="whitespace-pre-line text-[13px] font-semibold text-primary">{questionLead}</div>
+                    {questionDetail.map((para, i) => (
+                        <div key={i} className="mt-2 whitespace-pre-line text-[12.5px] leading-[1.5] text-secondary">
+                            {para}
+                        </div>
+                    ))}
                 </>
             )}
             {options.length === 0 ? null : withPreview ? (

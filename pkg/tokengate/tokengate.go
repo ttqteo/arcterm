@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -61,7 +62,26 @@ type Spawn struct {
 	// agents the same agent started in the seconds before, which count toward the agents rule: one message's spawns
 	// reach the gate spread out as Claude writes them, so the mod chains the groups that come within seconds
 	Earlier int
+	// each Agent or Task call as the agent wrote it, which the card lists; none for a Workflow or a Council
+	Calls []Call
+	// the model the asking session runs on, which a call that sets none takes; "" is unknown
+	SessionModel string
 }
+
+// Call is one Agent or Task call: what the card names of the subagent it would start
+type Call struct {
+	Type        string `json:"type"`
+	Model       string `json:"model,omitempty"` // the call's own model; "" when it sets none
+	Description string `json:"description,omitempty"`
+	Background  bool   `json:"background,omitempty"`
+}
+
+// the built-in subagent types with no model of their own, so a call that sets none runs on the session's model. In
+// 2026-10's transcripts every Explore and general-purpose call with no model ran on the session's; a fork always does
+var inheritsModel = map[string]bool{"general-purpose": true, "Explore": true, "Plan": true, "fork": true}
+
+// the card lists this many calls, then counts the rest
+const maxCallLines = 6
 
 // Cost is what finished subagents of one type cost, as wavesrv measures them on their transcripts
 type Cost struct {
@@ -327,21 +347,97 @@ func joinAnd(parts []string) string {
 	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
-// costText is the estimate and what it rests on; long is the card's spelling, else the note's
+// costText is the estimate and what it rests on; long is the card's spelling, else the note's. The card names the
+// finished subagents it priced from as finished: "from 40 Explore subagents" read as forty about to start
 func costText(p Priced, long bool) string {
 	est := FormatTokens(p.Estimate)
 	switch {
 	case len(p.Basis) == 0:
 		return fmt.Sprintf("about %s tokens (rough)", est)
 	case p.High == 0 && long:
-		return fmt.Sprintf("about %s tokens (rough, partly from %s subagents)", est, joinAnd(p.Basis))
+		return fmt.Sprintf("about %s tokens (rough, partly going by the cost of %s subagents)", est, finished(p.Basis))
 	case p.High == 0:
 		return fmt.Sprintf("about %s tokens (rough, partly %s)", est, strings.Join(p.Basis, ", "))
 	case long:
-		return fmt.Sprintf("about %s tokens, likely %s–%s (from %s subagents)",
-			est, FormatTokens(p.Low), FormatTokens(p.High), joinAnd(p.Basis))
+		return fmt.Sprintf("about %s tokens, likely %s–%s, going by the cost of %s subagents",
+			est, FormatTokens(p.Low), FormatTokens(p.High), finished(p.Basis))
 	}
 	return fmt.Sprintf("about %s tokens (%s–%s, %s)", est, FormatTokens(p.Low), FormatTokens(p.High), strings.Join(p.Basis, ", "))
+}
+
+// finished lists the rows priced from as finished ones: "14 finished general-purpose and 3 Explore"
+func finished(basis []string) string {
+	parts := slices.Clone(basis)
+	if n, rest, ok := strings.Cut(parts[0], " "); ok {
+		parts[0] = n + " finished " + rest
+	}
+	return joinAnd(parts)
+}
+
+// modelName is a model as the card names it: an alias as the call wrote it ("haiku"), an id as the agent header
+// does ("claude-opus-5-5" → "opus 5.5", a dated "claude-haiku-4-5-20251001" → "haiku 4.5")
+func modelName(m string) string {
+	m = strings.TrimPrefix(m, "claude-")
+	if i := strings.LastIndex(m, "-"); i >= 0 && len(m)-i-1 == 8 && strings.Trim(m[i+1:], "0123456789") == "" {
+		m = m[:i]
+	}
+	family, version, ok := strings.Cut(m, "-")
+	if !ok {
+		return m
+	}
+	return family + " " + strings.ReplaceAll(version, "-", ".")
+}
+
+// callLine is one call as the card lists it: `• Explore on haiku, in the background: "Find the hook"`. A call that
+// sets no model says what it falls to, the session's model, unless its type may set one of its own
+func callLine(c Call, sessionModel string) string {
+	t := c.Type
+	if t == "" {
+		t = "general-purpose"
+	}
+	session := "this session's model"
+	if sessionModel != "" {
+		session = "this session's " + modelName(sessionModel)
+	}
+	line := "• " + t
+	switch {
+	case c.Model != "":
+		line += " on " + modelName(c.Model)
+	case inheritsModel[t] && sessionModel != "":
+		line += fmt.Sprintf(" on %s (no model set, so it takes this session's)", modelName(sessionModel))
+	case inheritsModel[t]:
+		line += " on this session's model (no model set)"
+	default:
+		line += fmt.Sprintf(" (no model set: its type's own model, or %s)", session)
+	}
+	if c.Background {
+		line += ", in the background"
+	}
+	if c.Description != "" {
+		line += `: "` + c.Description + `"`
+	}
+	return line
+}
+
+// callLines lists the spawn's calls, a line each, the ones past maxCallLines counted
+func callLines(calls []Call, sessionModel string) string {
+	var lines []string
+	for i, c := range calls {
+		if i == maxCallLines {
+			lines = append(lines, fmt.Sprintf("• and %d more", len(calls)-maxCallLines))
+			break
+		}
+		lines = append(lines, callLine(c, sessionModel))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// sentence starts a clause as a sentence: "about 1.5M tokens" → "About 1.5M tokens"
+func sentence(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // approx is a derived percent as the note says it: "~9%", or "<1%" below one
@@ -401,17 +497,24 @@ func ing(verb string) string {
 	return verb + "ing"
 }
 
-// Question is the card. loc is where the reset times are read; the caller passes time.Local
+// Question is the card, in up to three paragraphs: what would start (each call on a line of its own, its model
+// and task), what it would cost, and where the session and the windows stand. loc is where the reset times are
+// read; the caller passes time.Local
 func Question(s Spawn, p Priced, q Quota, loc *time.Location) baseds.AgentAskQuestion {
-	var b strings.Builder
-	fmt.Fprintf(&b, "An agent wants to %s, %s.", what(s), costText(p, true))
+	head := fmt.Sprintf("An agent wants to %s.", what(s))
+	if len(s.Calls) > 0 {
+		head = fmt.Sprintf("An agent wants to %s:\n%s", what(s), callLines(s.Calls, s.SessionModel))
+	}
+	var c strings.Builder
+	fmt.Fprintf(&c, "%s.", sentence(costText(p, true)))
 	if s.Earlier > 0 {
-		fmt.Fprintf(&b, " It started %d more in the last few seconds.", s.Earlier)
+		fmt.Fprintf(&c, " It started %d more in the last few seconds.", s.Earlier)
 	}
 	if s.ContextTokens > 0 && s.ContextMax > 0 {
-		fmt.Fprintf(&b, " Its own context is %s of %s, and each of its further calls re-reads that.",
+		fmt.Fprintf(&c, " Its own context is %s of %s, and each of its further calls re-reads that.",
 			FormatTokens(s.ContextTokens), FormatTokens(s.ContextMax))
 	}
+	var b strings.Builder
 	if parts := sessionParts(q.Session, about, "the 5-hour window"); len(parts) > 0 {
 		fmt.Fprintf(&b, " This session has used %s so far", strings.Join(parts, " and "))
 		if n := q.Session.Subagents; n > 0 {
@@ -439,9 +542,13 @@ func Question(s Spawn, p Priced, q Quota, loc *time.Location) baseds.AgentAskQue
 		}
 		b.WriteString(".")
 	}
+	paras := []string{head, c.String()}
+	if b.Len() > 0 {
+		paras = append(paras, strings.TrimPrefix(b.String(), " "))
+	}
 	return baseds.AgentAskQuestion{
 		Header:   "Token burn",
-		Question: b.String(),
+		Question: strings.Join(paras, "\n\n"),
 		Options: []baseds.AgentAskOption{
 			OptionAllow:        {Label: "Allow", Description: "Start this one. A later costly spawn asks again."},
 			OptionAllowTurn:    {Label: "Allow this turn", Description: "Start this and every later spawn until your next prompt, without asking."},
