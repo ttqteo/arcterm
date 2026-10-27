@@ -269,12 +269,6 @@ export function RailTreePane({
                 </button>
             </div>
         );
-    } else if (status === "notrepo") {
-        body = (
-            <div data-rail-tree-notrepo className="px-3 py-3 text-[11.5px] leading-[1.5] text-muted">
-                Not a git repository — the Files tab lists a git worktree.
-            </div>
-        );
     } else if (firstLoad) {
         body = (
             <div aria-hidden="true" className="flex flex-col gap-2 px-3 py-3">
@@ -315,6 +309,15 @@ export function RailTreePane({
                     {rows.map(renderRow)}
                     {rows.length === 0 ? <div className="px-3 py-2 text-[11.5px] text-muted">No files</div> : null}
                 </div>
+                {/* no .gitignore to honor here, so the walk's fixed skip set is stated, as under the Code tree */}
+                {listing?.plain ? (
+                    <div
+                        data-rail-tree-plain
+                        className="flex-none border-t border-border px-3 py-1.5 text-[11px] leading-[1.5] text-muted"
+                    >
+                        Not a git repository. Skipping node_modules, dist, target, dot-folders and other build output.
+                    </div>
+                ) : null}
             </>
         );
     }

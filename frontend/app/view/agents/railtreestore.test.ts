@@ -168,10 +168,23 @@ describe("reloadTree", () => {
         expect(listing()).toMatchObject({ status: "error", error: "fatal: bad index file", files: [] });
     });
 
-    it("says a directory that is not a repository is one", async () => {
-        mocks.list.mockResolvedValue({ files: [], isrepo: false });
+    it("lists a directory that is not a repository from the disk, marked plain", async () => {
+        mocks.list.mockResolvedValue({ files: ["notes.md", "slides/a.pdf"], isrepo: false });
         await reloadTree(CWD, AGENT);
-        expect(listing()).toMatchObject({ status: "notrepo", files: [] });
+        expect(mocks.list).toHaveBeenCalledWith(expect.anything(), { cwd: CWD, allowplain: true }, expect.anything());
+        expect(listing()).toMatchObject({ status: "ready", files: ["notes.md", "slides/a.pdf"], plain: true });
+    });
+
+    it("keeps the top level it showed early when the plain walk lands, never a blank note", async () => {
+        const git = deferred<unknown>();
+        mocks.list.mockReturnValueOnce(git.promise);
+        mocks.top.mockResolvedValue({ entries: ["notes.md", "slides/"] });
+        const pending = reloadTree(CWD, AGENT);
+        await vi.waitFor(() => expect(listing()?.partial).toBe(true));
+        git.resolve({ files: ["notes.md", "slides/a.pdf"], isrepo: false });
+        await pending;
+        expect(listing()).toMatchObject({ status: "ready", files: ["notes.md", "slides/a.pdf"], plain: true });
+        expect(listing()?.partial).toBeUndefined();
     });
 
     it("drops the agent's expanded and selected paths that the reload removed", async () => {

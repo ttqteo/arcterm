@@ -14,7 +14,7 @@ import { atom, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { EMPTY_RAIL_TREE, pruneExpanded, type RailTreeState } from "./railtree";
 
-export type RailListingStatus = "loading" | "ready" | "error" | "notrepo";
+export type RailListingStatus = "loading" | "ready" | "error";
 
 export interface RailListing {
     status: RailListingStatus;
@@ -27,6 +27,9 @@ export interface RailListing {
     // the folder read level by level from the disk while git walks, before any listing of it was kept: its directories
     // end in "/" in `files` and are read as they open (listIgnoredDirs). Only ever with status "loading"
     partial?: true;
+    // the folder is not a git repository: `files` is a walk of the disk that skips build output and dot-folders
+    // (gitinfo.WalkFiles), as the Code surface lists one
+    plain?: true;
 }
 
 // the listing of a worktree nobody has loaded yet
@@ -102,7 +105,11 @@ export async function reloadTree(cwd: string, agentId: string): Promise<void> {
     }
     let res: CommandGitListFilesRtnData;
     try {
-        res = await RpcApi.GitListFilesCommand(TabRpcClient, { cwd }, { timeout: LIST_RPC_TIMEOUT_MS });
+        res = await RpcApi.GitListFilesCommand(
+            TabRpcClient,
+            { cwd, allowplain: true },
+            { timeout: LIST_RPC_TIMEOUT_MS }
+        );
     } catch (e) {
         if (loadSeq.get(cwd) === seq) {
             putListing(cwd, { ...NO_ROWS, status: "error", error: e instanceof Error ? e.message : String(e) });
@@ -112,15 +119,12 @@ export async function reloadTree(cwd: string, agentId: string): Promise<void> {
     if (loadSeq.get(cwd) !== seq) {
         return;
     }
-    if (!res.isrepo) {
-        putListing(cwd, { ...NO_ROWS, status: "notrepo" });
-        return;
-    }
     putListing(cwd, {
         status: "ready",
         files: res.files ?? [],
         ignored: res.ignored ?? [],
         truncated: res.truncated ?? false,
+        ...(res.isrepo ? {} : { plain: true as const }),
     });
     pruneAgentTree(agentId, cwd);
     // the directories opened before may hold other files now; the old entries show until the new ones land

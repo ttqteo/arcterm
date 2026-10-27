@@ -30,7 +30,9 @@ and the drop types their paths at the prompt, so pointing an agent at `src/foo.t
 2. **Root = the agent's cwd.** The tree lists what `GitListFilesCommand({cwd})` returns: tracked and untracked files
    under the cwd, plus ignored entries dimmed; a wholly ignored directory (`node_modules/`) lists only when expanded
    (`GitListIgnoredDirCommand`). Directories first, then files, by name (`codetree.ts`). A cwd that is not a git repo
-   shows "Not a git repository — the Files tab lists a git worktree." and nothing else.
+   lists a walk of the disk (`allowplain`, `gitinfo.WalkFiles`, as the Code surface does), with a note under the tree
+   naming the skipped build output and dot-folders (amended 2026-10-27: the note alone, which replaced the top level
+   read early from the disk, read as files flashing up and vanishing).
 3. **Loading and refresh.** The listing loads the first time the tab shows for a cwd and is cached per cwd in a
    module-scoped atom family (the rail unmounts with the surface). It reloads when the tab is shown again, when the
    agent's state changes (a turn ending may have created files), and from a Refresh button in the tab's header. A load
@@ -69,7 +71,7 @@ and the drop types their paths at the prompt, so pointing an agent at `src/foo.t
     with a `console.warn` and a toast "Could not read the dragged paths"; a paste that fails toasts its error. Nothing
     is swallowed.
 11. **Out of scope (YAGNI):** creating, renaming or deleting files from the rail (the Code surface does that); a
-    filter box; git status glyphs on rows; non-git directories; drops onto the composer or answer bar.
+    filter box; git status glyphs on rows; drops onto the composer or answer bar.
 
 ## Units
 
@@ -78,7 +80,7 @@ and the drop types their paths at the prompt, so pointing an agent at `src/foo.t
 | `frontend/app/view/agents/pathdrop.ts` (+ test) | pure | `RAIL_PATHS_MIME`, `encodePathsDrag`, `decodePathsDrag`, `isPathsDrag(types)`, `formatDroppedPaths` |
 | `frontend/app/view/agents/railtree.ts` (+ test) | pure | `RailTreeState` (expanded, selected, anchor, cursor), `clickRow` (plain/ctrl/shift), `dragPaths`, `pruneExpanded` |
 | `frontend/app/view/agents/railtreestore.ts` | glue | per-cwd listing atoms, load/reload/lazy ignored dirs, per-agent `RailTreeState` atoms |
-| `frontend/app/view/agents/railtreepane.tsx` | view | the tab body: header (root name, Refresh), rows, states (loading, error, not a repo, truncated) |
+| `frontend/app/view/agents/railtreepane.tsx` | view | the tab body: header (root name, Refresh), rows, states (loading, error, truncated, plain folder) |
 | `agentrailtabs.ts`, `agentrailpanel.tsx`, `agentdetailsrail.tsx` | edit | the `tree` tab in the model, the strip and the body |
 | `frontend/app/cockpit/focus-pane.tsx` | edit | accepting the paths drag |
 

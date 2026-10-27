@@ -96,6 +96,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   a message from its composer, without restarting it.
 - While a sleeping agent wakes, what would cut the wake short is off until it is back: Close, the header's … menu,
   Send and Wake everywhere else, and Close agent in its row's menu.
+- An agent's Files tab lists the files of a folder that is not a git repository, as Code does, leaving out
+  node_modules, build output and dot-folders. Before, the files flashed up and gave way to a "Not a git repository"
+  note.
 
 ## 0.15.17 — 2026-10-21
 

@@ -34283,6 +34283,11 @@ function rwfFixture(base) {
     mkdirSync(join(repo, "build"));
     writeFileSync(join(repo, "build", "out.js"), "console.log(1);\n");
 
+    // no git: the tree walks the disk, and leaves node_modules out
+    writeFileSync(join(plain, "notes.md"), "notes\n");
+    mkdirSync(join(plain, "node_modules"));
+    writeFileSync(join(plain, "node_modules", "dep.js"), "module.exports = 1;\n");
+
     git(big, "init", "-q", "--initial-branch=main");
     writeFileSync(join(big, "README.md"), "# Big\n");
     // Under one directory, so the tree draws one row for them while the listing is cut at its cap. They are committed:
@@ -34813,13 +34818,15 @@ const agentRailWorktreeFiles = {
             // --- 16. a directory that is not a repository ------------------------------------------------------------
             const shownB = await rwfShow(h, RWF_AGENT_B);
             const tabB = shownB && (await rwfOpenFilesTab(h));
-            const notRepo = tabB && (await polishWaitFor(h, `!!${RWF_ASIDE}?.querySelector("[data-rail-tree-notrepo]")`, 20000));
-            const textB = await h.ev(`${RWF_ASIDE}?.querySelector("[data-rail-tree-notrepo]")?.textContent ?? null`);
+            const plainB = tabB && (await polishWaitFor(h, `!!${RWF_ASIDE}?.querySelector("[data-rail-tree-plain]")`, 20000));
+            const textB = await h.ev(`${RWF_ASIDE}?.querySelector("[data-rail-tree-plain]")?.textContent ?? null`);
+            const rowsB = rwfPaths(await snap());
             await shot("16-not-a-repo");
             rec(
-                "16. an agent in a directory that is not a git repository shows the not-a-repo note",
-                notRepo && /Not a git repository/.test(textB ?? ""),
-                { shownB, tabB, notRepo, textB }
+                "16. an agent in a directory that is not a git repository lists its files, without node_modules, under a plain-folder note",
+                plainB && /Not a git repository/.test(textB ?? "") && rowsB.includes("notes.md") &&
+                    !rowsB.some((p) => p.startsWith("node_modules")),
+                { shownB, tabB, plainB, textB, rowsB }
             );
 
             // --- 17. the listing cap ---------------------------------------------------------------------------------
