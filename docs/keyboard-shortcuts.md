@@ -283,6 +283,8 @@ Opened from a project folder's menu, Open overview. It covers the terminal as Hi
 | Keys | Action |
 |---|---|
 | `/` | Search the project's history (`Esc` in the box clears it) |
+| `←` / `→` | In the Activity card (`Tab` onto its grid, which starts on today): move the cursor a week back or on, showing that day's tip |
+| `↑` / `↓` | In the Activity card: move the cursor a day back or on |
 
 ### Agent: terminal grid
 

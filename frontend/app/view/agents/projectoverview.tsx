@@ -2,17 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // A project's Overview, the Agent surface's `project` centre mode (agentcenter.ts): the header with the buttons that
-// start work there and its last-7-days counts, then two columns, Now (projectnow.tsx: what waits on you, what runs, what
-// finished unread) and History (projecthistory.tsx: its sessions, councils and runs of the last 7 days). The page reads
-// the Needs you items (needsyou.ts, scoped to this project) and the project's history once and hands them down, so the
-// header's counts and the History column read one list. Under 1000px wide the columns stack.
+// start an agent or a terminal there (a run or a council is started by an agent's session, never on its own), the
+// Activity card (projectactivitycard.tsx: its tokens per day over a year), then two columns, Now (projectnow.tsx: what
+// waits on you, what runs, what finished unread) and History (projecthistory.tsx: its sessions of the last 7 days, with
+// the runs and councils each started). The page reads the Needs you items (needsyou.ts, scoped to this project) and
+// the project's history once and hands them down. Under 1000px wide the columns stack.
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue } from "jotai";
 import { GitBranch, Plus } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
-import { overviewProjectAtom, showCouncilSetup } from "./agentcenter";
+import { useEffect, useMemo, useState } from "react";
+import { overviewProjectAtom } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { quickTerminal, selectAgentRow } from "./agenttree";
 import { diffStatsFromChanges } from "./cardgitstore";
@@ -20,10 +21,11 @@ import { parseGitChanges } from "./gitstatus";
 import type { LauncherKind } from "./launcher";
 import { openLauncher } from "./launcherstore";
 import { useNeedsYou } from "./needsyou";
+import { ActivityCard } from "./projectactivitycard";
 import { HistoryColumn } from "./projecthistory";
-import { historyTabAtom, useProjectHistory } from "./projecthistorystore";
+import { useProjectHistory } from "./projecthistorystore";
 import { NowColumn } from "./projectnow";
-import { changesLabel, historyCounts, historyItems, projectSessions } from "./projectoverviewmodel";
+import { changesLabel, projectSessions } from "./projectoverviewmodel";
 import { projectsAtom } from "./projectsstore";
 
 type ProjectGit = { branch: string; files: number; adds: number; dels: number };
@@ -59,19 +61,14 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
     const project = useAtomValue(overviewProjectAtom);
     const registry = useAtomValue(projectsAtom);
     const path = registry?.[project]?.path;
-    const now = useAtomValue(model.nowAtom);
     const git = useProjectGit(path);
     const ny = useNeedsYou(model, (id) => selectAgentRow(model, id), project);
     const history = useProjectHistory(model, path ?? "");
-    const setTab = useSetAtom(historyTabAtom(path ?? ""));
-    // the header's counts are the unfiltered lists: they do not move while the History search is typed into
-    const counts = useMemo(
-        () =>
-            historyCounts(
-                projectSessions(history.sessions, path ?? "", now, "").length,
-                historyItems(history.councils, history.runs.runs, now, "")
-            ),
-        [history.sessions, history.councils, history.runs.runs, path, now]
+    const now = useAtomValue(model.nowAtom);
+    // the footer's session count is the one History lists, without the search; null until its sessions load
+    const sessionCount = useMemo(
+        () => (history.sessions == null ? null : projectSessions(history.sessions, path ?? "", now, "").length),
+        [history.sessions, path, now]
     );
     if (project === "") {
         return null;
@@ -125,44 +122,10 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
                                 Terminal
                             </button>
                         ) : null}
-                        <button
-                            type="button"
-                            data-overview-action="run"
-                            onClick={() => launch("run")}
-                            className={SECONDARY_BTN}
-                        >
-                            Run
-                        </button>
-                        {path ? (
-                            <button
-                                type="button"
-                                data-overview-action="council"
-                                onClick={() => showCouncilSetup(path)}
-                                className={SECONDARY_BTN}
-                            >
-                                Council
-                            </button>
-                        ) : null}
                     </div>
-                    {path && counts.length > 0 ? (
-                        <div data-overview-counts className="text-[12px] text-muted">
-                            Last 7 days:{" "}
-                            {counts.map((entry, i) => (
-                                <Fragment key={entry.label}>
-                                    {i > 0 ? " · " : null}
-                                    <button
-                                        type="button"
-                                        data-overview-count={entry.tab}
-                                        onClick={() => setTab(entry.tab)}
-                                        className="cursor-pointer text-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                    >
-                                        {entry.label}
-                                    </button>
-                                </Fragment>
-                            ))}
-                        </div>
-                    ) : null}
                 </header>
+
+                {path ? <ActivityCard path={path} sessions={sessionCount} /> : null}
 
                 <div className="flex flex-col gap-6 @min-[1000px]:flex-row @min-[1000px]:items-start">
                     <div className="w-full @min-[1000px]:w-[420px] @min-[1000px]:flex-none">

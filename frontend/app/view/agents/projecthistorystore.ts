@@ -3,7 +3,7 @@
 //
 // What a project's Overview History column reads (projecthistory.tsx): the project's runs, read from each channel bound
 // to its path, with their loading and error state; the sessions archive, read back far enough to cover the window; and
-// the column's tab and search, per project, since the centre mode unmounts. Councils are councilstore.ts's; the rows
+// the column's search, per project, since the centre mode unmounts. Councils are councilstore.ts's; the rows
 // they all make are projectoverviewmodel.ts's.
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -17,7 +17,7 @@ import type { AgentsViewModel } from "./agents";
 import { normProjectPath } from "./channelderive";
 import { channelsAtom, loadChannels } from "./channelsstore";
 import { useCouncils } from "./councilstore";
-import { HISTORY_WINDOW_MS, type HistoryTab } from "./projectoverviewmodel";
+import { HISTORY_WINDOW_MS } from "./projectoverviewmodel";
 import {
     loadMoreSessionsArchive,
     loadSessionsArchive,
@@ -30,7 +30,6 @@ import {
 
 export type RunsState = { runs: Run[] | null; error: string | null };
 
-export const historyTabAtom = atomFamily((_path: string) => atom<HistoryTab>("sessions") as PrimitiveAtom<HistoryTab>);
 export const historyQueryAtom = atomFamily((_path: string) => atom("") as PrimitiveAtom<string>);
 export const projectRunsAtom = atomFamily(
     (_path: string) => atom<RunsState>({ runs: null, error: null }) as PrimitiveAtom<RunsState>

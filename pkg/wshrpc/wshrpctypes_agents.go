@@ -15,6 +15,7 @@ type AgentCommands interface {
 	GetUsageInsightsCommand(ctx context.Context) (*UsageInsights, error)                                                 // the last saved usage analysis; the zero value when there is none
 	GetRecentSessionsCommand(ctx context.Context, data CommandGetRecentSessionsData) (*CommandGetRecentSessionsRtnData, error)
 	GetSessionsActivityCommand(ctx context.Context, data CommandGetSessionsActivityData) (*CommandGetSessionsActivityRtnData, error)
+	GetProjectActivityCommand(ctx context.Context, data CommandGetProjectActivityData) (*CommandGetProjectActivityRtnData, error) // a project's per-day tokens, sessions, runs and councils for the Overview's Activity card
 	GetTranscriptUsageCommand(ctx context.Context, data CommandGetTranscriptUsageData) (*CommandGetTranscriptUsageRtnData, error)
 	GetWindowTokensCommand(ctx context.Context, data CommandGetWindowTokensData) (*CommandGetWindowTokensRtnData, error)
 	GetSessionBurnCommand(ctx context.Context, data CommandGetSessionBurnData) (*CommandGetSessionBurnRtnData, error)                   // a spawn's weighing for the Token burn card
@@ -291,6 +292,25 @@ type CommandGetRecentSessionsData struct {
 type CommandGetRecentSessionsRtnData struct {
 	Sessions   []SessionInfo `json:"sessions"`
 	NextCursor string        `json:"nextcursor,omitempty"` // "" when no older session is left
+}
+
+type CommandGetProjectActivityData struct {
+	Path  string `json:"path"`  // the project folder
+	Weeks int    `json:"weeks"` // the window starts this many weeks back from the start of the current Monday-first week; <= 0 means 53
+}
+
+type CommandGetProjectActivityRtnData struct {
+	Days     []ProjectActivityDay `json:"days"`     // one entry per local day in the window with anything on it; a day with nothing is left out
+	FirstDay string               `json:"firstday"` // the earliest local day (YYYY-MM-DD) the daily tally holds for any project; days before it have no record. "" when the tally is empty
+	Sessions int                  `json:"sessions"` // the distinct (harness, session) pairs across the window; summing Days would count a session once per day it ran
+}
+
+type ProjectActivityDay struct {
+	Day      string `json:"day"`      // the local day, YYYY-MM-DD
+	Tokens   int64  `json:"tokens"`   // input + output + reasoning + cache-read + cache-create of the sessions whose cwd is at or under the project path
+	Sessions int    `json:"sessions"` // the distinct (harness, session) pairs that ran that day
+	Runs     int    `json:"runs"`     // the top-level runs (no TaskId, StageRole or ParentLeadORef) whose CreatedTs falls on that local day
+	Councils int    `json:"councils"` // the councils without Bench whose Created falls on that local day
 }
 
 type CommandGetSessionsActivityData struct {

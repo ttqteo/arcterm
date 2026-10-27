@@ -1268,6 +1268,19 @@ declare global {
         oref: ORef;
     };
 
+    // wshrpc.CommandGetProjectActivityData
+    type CommandGetProjectActivityData = {
+        path: string;
+        weeks: number;
+    };
+
+    // wshrpc.CommandGetProjectActivityRtnData
+    type CommandGetProjectActivityRtnData = {
+        days: ProjectActivityDay[];
+        firstday: string;
+        sessions: number;
+    };
+
     // wshrpc.CommandGetRTInfoData
     type CommandGetRTInfoData = {
         oref: ORef;
@@ -3423,6 +3436,15 @@ declare global {
         lightreviewerroute?: RoutePin;
         landing?: string;
         autonomous?: boolean;
+    };
+
+    // wshrpc.ProjectActivityDay
+    type ProjectActivityDay = {
+        day: string;
+        tokens: number;
+        sessions: number;
+        runs: number;
+        councils: number;
     };
 
     // wshrpc.ProjectFolderData

@@ -31,6 +31,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/memhygiene"
 	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/projectactivity"
 	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
 	"github.com/wavetermdev/waveterm/pkg/reporadar"
 	"github.com/wavetermdev/waveterm/pkg/secretstore"
@@ -520,6 +521,8 @@ func main() {
 	}()
 	// trashed sessions older than 7 days are removed: now, then daily
 	sessiontrash.StartPurgeLoop(context.Background())
+	// the daily token tally behind a project's Activity card: a scan after a short delay, then every 30 minutes
+	projectactivity.StartLoop(context.Background())
 	// Settings → Storage: a scan after a short delay, then the daily auto-clean when storage:autoclean is on
 	wshserver.StartStorage(context.Background())
 	// the machine slept: the pet says so when agents were working through it
