@@ -31,6 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the summary instead of re-reading the whole conversation at twice the input price. Sleep on such an agent compacts
   it first and puts it to sleep once the summary lands. Settings → Agents → Sleep idle agents turns it off or moves
   the threshold.
+- Right-clicking a council in the Agent tree offers Copy id, a running council's too, so `wsh council show <id>` and
+  the other council commands no longer need the id typed out.
 
 ### Changed
 

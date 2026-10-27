@@ -2506,6 +2506,7 @@ function CouncilHeadRow({ project }: { project: string }) {
 // A queued council also offers Remove from queue (hover, and the menu): it stops the council before it ever starts, as
 // the queued run's row does. An ended one (done, failed, stopped, not run) offers Remove the same way, behind a confirm:
 // its file goes, the document it saved stays. The button cannot hold the action, so such a row sits in a wrapper beside it.
+// Every row's menu starts with Copy id, the full id `wsh council show|wait|stop|rm` take.
 function CouncilRow({ row }: { row: CouncilRowVM }) {
     const center = useAtomValue(centerModeAtom);
     const view = useAtomValue(councilViewAtom);
@@ -2526,7 +2527,20 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
     };
     const removeLabel = queued ? "Remove from queue" : "Remove council";
     const onContextMenu = (e: React.MouseEvent) => {
-        const items: ContextMenuItem[] = [{ label: removeLabel, icon: <X size={15} />, danger: true, click: remove }];
+        const items: ContextMenuItem[] = [
+            {
+                label: "Copy id",
+                sublabel: row.id,
+                icon: <Hash size={15} />,
+                click: () => void navigator.clipboard.writeText(row.id),
+            },
+            ...(wrapped
+                ? [
+                      { type: "separator" } as const,
+                      { label: removeLabel, icon: <X size={15} />, danger: true, click: remove },
+                  ]
+                : []),
+        ];
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
     const button = (
@@ -2537,6 +2551,8 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
             title={`${row.feature} · ${row.meta}`}
             aria-current={selected ? "true" : undefined}
             onClick={() => showCouncil(row.id)}
+            // a wrapped row's wrapper holds the menu, over its Remove button too
+            onContextMenu={wrapped ? undefined : onContextMenu}
             className={cn(
                 "flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] text-left transition-colors duration-[140ms]",
                 // a wrapped row's wrapper holds the hover and selected backgrounds, under the Remove button too
