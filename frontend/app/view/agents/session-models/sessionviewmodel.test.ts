@@ -360,6 +360,13 @@ describe("brainstormJudgeOf", () => {
         expect(vm.groups[0].sessions[0].brainstormJudge).toEqual(brainstormJudge);
     });
 
+    it("reads a stopped judge as a record", () => {
+        expect(brainstormJudgeOf({ "brainstorm:judgestate": "stopped", "brainstorm:judgets": 1900 })).toEqual({
+            state: "stopped",
+            ts: 1900,
+        });
+    });
+
     it("ignores the builder check's keys, and the check ignores the judge's", () => {
         const check = {
             "brainstorm:checkstate": "reading",

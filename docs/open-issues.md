@@ -1152,6 +1152,18 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   (`project-overview-8.png`; present in step 4), so check they come back each time the page opens; and the Cockpit's
   Needs you rows inside the Overview's panel keep the strip's small type and fixed label columns, unlike the asking
   rows above them. Say if either reads wrong.
+- [ ] (arcterm) **A real Brainstorm with a Claude agent.** In the dev app, start a Claude agent on a scratch project, ask
+  it to brainstorm a small feature, and drive it only through the pane: the Brainstorm switch appears on the agent's
+  first write of `brainstorm.json`; each answer is one write per turn, with a short terminal reply; an approach question shows "Judge's read" and
+  "Judge's pick" once the real blind Opus judge is done (a tab "Judge" nests under the agent); Check with a builder
+  runs a real reviewer (its "Builder check" row nests under the agent) and its questions come back without a second
+  question from the agent; Approve opens New run prefilled (orchestrator, the project, the spec's path in the goal, the
+  first board as prototype); start the run and `run` is set in the file after it starts, so the tree line and the bar
+  name the run. The scenarios play the agent and the server; none of this ran against a model. `docs/agents/brainstorm.md`
+  "Testing it", `docs/deferred.md` "Builder check end to end" and "Brainstorm judge end to end".
+- [ ] (arcterm) **A real Brainstorm with a pi agent.** The same, with a pi agent: pi has no reveal hook, so the skill has it
+  run `wsh ui reveal brainstorm:<topic>` itself after writing the file; check the pane opens then, and that the
+  judge and the builder check (both Arc's own sessions) work the same.
 
 ---
 
@@ -1449,6 +1461,7 @@ setting; that call is the person's. Layers are the compact RAM popup's.
 
 | Feature | Commit | Layer | Measured | Date | Verdict |
 |---|---|---|---|---|---|
+| Brainstorm: `BrainstormPoller` (`brainstormpoller.ts`), always mounted in the cockpit root, reads every attached brainstorm's `brainstorm.json` every 3 s (`BRAINSTORM_POLL_MS`), one FileInfo and one small read per attached agent, and a pane's boards are live iframes while it is open | `ca4fce1c0` | Interface | Not measured. A timer that stays on for the life of the app and costs one file read per brainstorming agent per tick; the parsed file is held per agent in `brainstormsAtom`. To read: the page's JS heap after a GC and the renderer's CPU over a minute idle with 0, then 4 agents each brainstorming, and with a pane open on boards (the thumbnails are iframes). | 2026-10-27 | pending |
 | Council: round 1 runs one `claude -p` per expert at once (four in the shipped groups), each read-only with `Read, Grep, Glob`; rounds 2 and 3 are text-only calls. A council holds no process between rounds | `7abb6f4ab` | arcterm (wavesrv) and the experts' `claude` processes | Not measured. The runner's own cost is a goroutine per call and one JSON file per council (rewritten on every reply). Each tool call claims 512 MiB from the job queue (`toolSlotBytes` in `pkg/council/caller.go`), a guess for a claude process reading a project. To read: the working set of the four `claude` processes (and wavesrv's) during round 1 of the first real council, and whether the queue held any of them. | 2026-10-21 | pending |
 | Pinned apps: each open app's page kept loaded out of sight for 1 min (`APP_FRAME_IDLE_MS`, `AppFrames` in `apppane.tsx`), so it keeps its page and scroll | uncommitted | Interface | Not measured. One frame, a renderer of its own (127.0.0.1 is cross-site to the cockpit), per app seen in the last minute, where before only the app on screen held one; a guess of 50–150 MB each for a dev page. To read: the WebView2 working set with two apps open, one out of sight, then past the minute. | 2026-10-19 | pending |
 | Held services: wavesrv holds every pinned app's server (`pkg/services`), each one `cmd` terminal block in a tab of its own; only a shown (or just left, or Keep-running) service runs, a sleeping one holds 0 MB | uncommitted | arcterm (wavesrv) and the apps' processes | Not measured. arcterm's own cost is one PTY and one goroutine per running service, a timer per service off screen, and once its minute is up one read of its process tree a minute (`services.Busy`) until it is idle, plus a readiness probe (an HTTP GET every 500 ms, up to 30 s) only while a service is starting; nothing polls while one runs or is shown. A sleeping service has no process. The running services' own RAM is the apps', not arcterm's. To read: wavesrv's working set with 0, 5 and 10 services running. | 2026-10-20 | pending |

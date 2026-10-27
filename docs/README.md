@@ -18,7 +18,8 @@ lists what each version changed for the user.
 | Path | What's in it |
 | --- | --- |
 | `reference/` | `architecture.md` (the full three-layer map extracted from `AGENTS.md`), `motion-system.md` (motion principles and tokens), and protocol references cited from source comments. |
-| `agents/` | Integration notes for the agent reporters: tab auto-naming, usage reporting, and [Antigravity](agents/antigravity.md); plus the [research and writing briefs](agents/subagent-briefs.md) a lead pastes into subagent prompts. |
+| `agents/` | Integration notes for the agent reporters: tab auto-naming, usage reporting, and [Antigravity](agents/antigravity.md); [Brainstorm mode](agents/brainstorm.md) (how an agent's brainstorm is drawn, what each action sends, how it is tested); plus the [research and writing briefs](agents/subagent-briefs.md) a lead pastes into subagent prompts. |
+| `images/` | Screenshots the docs outside `guide/` show (`images/brainstorm/` for Brainstorm mode). |
 | `superpowers/specs/` | Design docs — the **why** behind each feature. Written before implementation, kept after. |
 | `superpowers/plans/` | Implementation plans while their work is in flight. Deleted once shipped; git history keeps them. |
 | `superpowers/briefs/` | Findings reports, roadmaps and decision briefs, kept only while something live cites them. |
