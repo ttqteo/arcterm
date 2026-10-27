@@ -494,6 +494,12 @@ func DagAsksCommand(w *wshutil.WshRpc, data wshrpc.CommandDagStatusData, opts *w
 	return resp, err
 }
 
+// command "daggoalpost", wshserver.DagGoalpostCommand
+func DagGoalpostCommand(w *wshutil.WshRpc, data wshrpc.CommandDagGoalpostData, opts *wshrpc.RpcOpts) (*wshrpc.CommandDagGoalpostRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandDagGoalpostRtnData](w, "daggoalpost", data, opts)
+	return resp, err
+}
+
 // command "dagmerge", wshserver.DagMergeCommand
 func DagMergeCommand(w *wshutil.WshRpc, data wshrpc.CommandDagMergeData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "dagmerge", data, opts)

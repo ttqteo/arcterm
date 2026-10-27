@@ -946,6 +946,81 @@ var dagReviewCmd = &cobra.Command{
 	},
 }
 
+// what `dag goalpost` prints: arc-mod reads the line to pick the note it gives Claude
+const (
+	goalpostRecorded      = "recorded"
+	goalpostNotTaskWorker = "not a task worker"
+)
+
+// parseGoalposts reads `dag goalpost`'s one argument, a JSON array of arc-mod's findings.
+func parseGoalposts(raw string) ([]wshrpc.GoalpostFinding, error) {
+	var findings []wshrpc.GoalpostFinding
+	if err := json.Unmarshal([]byte(raw), &findings); err != nil {
+		return nil, fmt.Errorf("findings must be a JSON array of {rule, file, title, before, after}: %w", err)
+	}
+	if len(findings) == 0 {
+		return nil, fmt.Errorf("no findings")
+	}
+	for i, f := range findings {
+		if f.Rule == "" || f.Title == "" {
+			return nil, fmt.Errorf("finding %d has no rule or title", i+1)
+		}
+	}
+	return findings, nil
+}
+
+// sendDagGoalpost is the goalpost call. A var so a test can stand in for wavesrv.
+var sendDagGoalpost = func(data wshrpc.CommandDagGoalpostData) (*wshrpc.CommandDagGoalpostRtnData, error) {
+	return wshclient.DagGoalpostCommand(RpcClient, data, &wshrpc.RpcOpts{Timeout: dagRpcTimeoutMs})
+}
+
+// dagGoalpostLine records the findings against the caller's own run and returns the line to print. Unlike
+// dagIds, a caller with no run context is an answer, not an error: arc-mod reports from any session.
+func dagGoalpostLine(cmd *cobra.Command, raw string) (string, error) {
+	findings, err := parseGoalposts(raw)
+	if err != nil {
+		return "", err
+	}
+	channelId, _ := cmd.Flags().GetString("channel")
+	runId, _ := cmd.Flags().GetString("runid")
+	if channelId == "" || runId == "" {
+		if RpcClient == nil {
+			return "", fmt.Errorf("--channel/--runid required outside a wave session")
+		}
+		rtn, err := lookupRunCtx(dagRpcTimeoutMs)
+		if err != nil {
+			return "", fmt.Errorf("resolving this session's run (nothing was sent): %w", err)
+		}
+		if rtn.RunId == "" {
+			return goalpostNotTaskWorker, nil
+		}
+		channelId, runId = rtn.ChannelId, rtn.RunId
+	}
+	rtn, err := sendDagGoalpost(wshrpc.CommandDagGoalpostData{ChannelId: channelId, RunId: runId, Findings: findings})
+	if err != nil {
+		return "", err
+	}
+	if rtn == nil || !rtn.Recorded {
+		return goalpostNotTaskWorker, nil
+	}
+	return goalpostRecorded, nil
+}
+
+var dagGoalpostCmd = &cobra.Command{
+	Use:     "goalpost <findings-json>",
+	Short:   "for arc-mod: record check-lowering edits a task worker made, for its reviewer; prints recorded or not a task worker",
+	Args:    cobra.ExactArgs(1),
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		line, err := dagGoalpostLine(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Println(line)
+		return nil
+	},
+}
+
 // dagPlanReviewData is the payload of a plan review verdict, or of the lead's accept. RunId resolves to the
 // caller's own run: the plan reviewer's for pass and fail, which is how the server knows the verdict is its.
 func dagPlanReviewData(cmd *cobra.Command, args []string) (wshrpc.CommandDagActionData, error) {
@@ -1265,7 +1340,7 @@ func leadTree() string {
 }
 
 func init() {
-	jarvisDagCmd.AddCommand(dagSubmitCmd, dagStatusCmd, dagMergeCmd, dagAsksCmd, dagAnswerCmd, dagForwardCmd, dagRulesCmd, dagReportCmd, dagReviewCmd, dagPlanReviewCmd, dagFinalCmd, dagAmendCmd, dagTellCmd)
+	jarvisDagCmd.AddCommand(dagSubmitCmd, dagStatusCmd, dagMergeCmd, dagAsksCmd, dagAnswerCmd, dagForwardCmd, dagRulesCmd, dagReportCmd, dagReviewCmd, dagPlanReviewCmd, dagFinalCmd, dagAmendCmd, dagTellCmd, dagGoalpostCmd)
 	jarvisDagCmd.AddCommand(dagAction("approve"), dagSendbackCmd, dagAction("retry"), dagAction("skip"), dagActionWithin("stop", 60_000), dagEscalateCmd, dagAction("cancel"), dagActionWithin("retry-cleanup", 60_000))
 	for _, c := range jarvisDagCmd.Commands() {
 		c.Flags().String("runid", "", "run id")
