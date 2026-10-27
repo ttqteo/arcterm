@@ -56,8 +56,9 @@ type Round2Result struct {
 // maxPicks is how many of the others' proposals an expert names in round 2.
 const maxPicks = 3
 
-// maxIdeas is how many ideas worth trying a Brainstorm's report holds.
-const maxIdeas = 3
+// maxDirections is how many directions a report holds in full: a Brainstorm's ideas worth trying, a Review's directions
+// (the rest of a Review's go under Also raised, one line each).
+const maxDirections = 3
 
 // WeakNote is the coordinator's remark that a claim does not hold up. Ref names a proposal id, a reply id or an
 // evidence ref; MarkWeak applies it.

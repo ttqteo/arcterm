@@ -77,6 +77,27 @@ func TestMarkdown(t *testing.T) {
 	}
 }
 
+func TestMarkdownReviewAlsoRaised(t *testing.T) {
+	c := markdownCouncil()
+	c.Summary.Directions[0].FirstStep = "Add the state word to the tree row."
+	c.Summary.Kept = []CouncilDirection{{Rank: 1, Title: "Poll less", Reasoning: "Halves the wakeups.", From: []string{"P5"}}}
+	md := Markdown(c)
+	for _, w := range []string{
+		"   First step: Add the state word to the tree row.\n",
+		"## Also raised\n\n- **Poll less** (from P5 (UX)): Halves the wakeups.\n",
+	} {
+		if !strings.Contains(md, w) {
+			t.Errorf("markdown lacks %q\n---\n%s", w, md)
+		}
+	}
+	if strings.Index(md, "## Also raised") < strings.Index(md, "2. **Sleep sooner**") || strings.Index(md, "## Also raised") > strings.Index(md, "## Matrix") {
+		t.Errorf("Also raised must sit between the directions and the matrix\n%s", md)
+	}
+	if strings.Contains(md, "Wild ideas kept aside") {
+		t.Errorf("a Review's Kept is Also raised, not wild ideas\n%s", md)
+	}
+}
+
 func TestMarkdownMatrixRows(t *testing.T) {
 	md := Markdown(markdownCouncil())
 	rows := map[string]string{}

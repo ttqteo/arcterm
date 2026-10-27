@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -77,6 +78,17 @@ func topItems(c Case) int {
 	return TopReview
 }
 
+// judgedItems is the report's items the judge scores, cut at topItems: the directions, then for a Review its Also
+// raised, which holds the directions past the first three, so a Review is judged on the same five items as before the
+// cap. A Brainstorm's Kept is judged apart.
+func judgedItems(c Case, s *council.CouncilSummary) []council.CouncilDirection {
+	items := s.Directions
+	if c.Mode != council.ModeBrainstorm {
+		items = append(slices.Clone(s.Directions), s.Kept...)
+	}
+	return items[:min(topItems(c), len(items))]
+}
+
 // Judge scores a done council's report against the case's key with one opus call and no tools. A call that fails, and a
 // reply that does not hold the verdict JSON, are errors: the run is then not scored, never scored as nothing found.
 func Judge(ctx context.Context, c Case, report *council.Council) (Verdict, error) {
@@ -93,8 +105,8 @@ func Judge(ctx context.Context, c Case, report *council.Council) (Verdict, error
 	return parseVerdict(reply, c, report)
 }
 
-// judgePrompt is the whole of the judge's input: the rubric, the key, the report cut to its top items, and for a
-// Brainstorm the Kept list apart from them. The report is built as Phase 0 built it: the Summary's answer and text, then
+// judgePrompt is the whole of the judge's input: the rubric, the key, the report cut to its top items (judgedItems), and
+// for a Brainstorm the Kept list apart from them. The report is built as Phase 0 built it: the Summary's answer and text, then
 // each direction's rank, title and reasoning.
 func judgePrompt(c Case, report *council.Council) string {
 	top := topItems(c)
@@ -117,9 +129,8 @@ func judgePrompt(c Case, report *council.Council) string {
 	if t := strings.TrimSpace(s.Text); t != "" {
 		b.WriteString(t + "\n\n")
 	}
-	shown := min(top, len(s.Directions))
 	b.WriteString("Items:\n")
-	for i, d := range s.Directions[:shown] {
+	for i, d := range judgedItems(c, s) {
 		writeJudged(&b, i+1, d)
 	}
 	if brainstorm && len(s.Kept) > 0 {
@@ -192,7 +203,7 @@ func parseVerdict(reply string, c Case, report *council.Council) (Verdict, error
 	for _, k := range c.KeyLines {
 		known[k.Id] = true
 	}
-	shown := min(topItems(c), len(report.Summary.Directions))
+	shown := len(judgedItems(c, report.Summary))
 
 	v := Verdict{Matches: map[string]int{}, Kept: map[string]int{}}
 	for id, rank := range raw.Matches {

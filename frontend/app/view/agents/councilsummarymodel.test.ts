@@ -14,6 +14,7 @@ import {
     droppedLine,
     evidenceLabel,
     initiativeSeed,
+    keptHeading,
     keptRows,
     outcomeLabel,
     outdatedLabel,
@@ -289,10 +290,28 @@ describe("a Brainstorm report", () => {
         const rows = keptRows(brainstorm());
         expect(rows).toHaveLength(1);
         expect(rows[0].direction.reasoning).toBe("too big for now");
-        expect(rows[0].had).toBe("Had it: New user");
+        expect(rows[0].meta).toBe("Had it: New user");
+        expect(keptHeading(brainstorm())).toBe("Wild ideas kept aside");
     });
 
-    it("shows no kept section when nothing was kept, or the council is not a Brainstorm", () => {
+    it("lists a Review's directions also raised by rank, with the from line", () => {
+        const c = council({
+            summary: {
+                ...council().summary!,
+                kept: [
+                    direction(2, ["P1"], { title: "Rename the chip" }),
+                    direction(1, ["P5"], { title: "Cap the list" }),
+                ],
+            },
+        });
+        expect(keptRows(c).map((r) => [r.direction.title, r.meta])).toEqual([
+            ["Cap the list", "from Skeptic"],
+            ["Rename the chip", "from UX"],
+        ]);
+        expect(keptHeading(c)).toBe("Also raised");
+    });
+
+    it("shows no kept section when nothing was kept or before a summary", () => {
         expect(keptRows(brainstorm({ summary: { ...brainstorm().summary!, kept: [] } }))).toEqual([]);
         expect(keptRows(brainstorm({ summary: { ...brainstorm().summary!, kept: undefined } }))).toEqual([]);
         expect(keptRows(council())).toEqual([]);

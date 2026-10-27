@@ -246,15 +246,26 @@ export function directionRows(c: Council): DirectionRow[] {
 }
 
 export interface KeptRow {
-    direction: CouncilDirection; // its title is the idea, its reasoning why it was kept aside
-    had: string; // `Had it: New user`, with `· built on by …` when any reply built on it
+    direction: CouncilDirection; // its title is the idea, its reasoning why it was kept aside or what it asks for
+    meta: string; // a Brainstorm's `Had it: New user` (`· built on by …` when any reply built on it), a Review's `from UX`
 }
 
-/** Pure: a Brainstorm's wild ideas kept aside, by rank; empty when the coordinator kept none. */
+/** Pure: what heads the one-line rows under the directions: a Brainstorm's wild ideas kept aside, or a Review's
+ *  directions past the first three. */
+export function keptHeading(c: Council): string {
+    return isBrainstorm(c) ? "Wild ideas kept aside" : "Also raised";
+}
+
+/** Pure: the one-line rows under the directions, by rank: a Brainstorm's wild ideas kept aside, a Review's directions
+ *  also raised; empty when there are none. */
 export function keptRows(c: Council): KeptRow[] {
+    const brainstorm = isBrainstorm(c);
     return [...(c.summary?.kept ?? [])]
         .sort((a, b) => a.rank - b.rank)
-        .map((direction) => ({ direction, had: hadLine(c, direction.from) }));
+        .map((direction) => ({
+            direction,
+            meta: brainstorm ? hadLine(c, direction.from) : fromLine(c, direction.from),
+        }));
 }
 
 /** Pure: `3 more ideas merged or dropped`: a Brainstorm's proposals that are in no direction and not kept; empty at 0,

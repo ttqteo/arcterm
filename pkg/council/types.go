@@ -108,13 +108,13 @@ type CouncilDirection struct {
 	From      []string                 `json:"from"`    // proposal ids
 	Stances   map[string]CouncilStance `json:"stances"` // expert id -> stance; the authors are left out
 	Agreed    bool                     `json:"agreed"`
-	FirstStep string                   `json:"firststep,omitempty"` // Brainstorm: the one thing to do first
+	FirstStep string                   `json:"firststep,omitempty"` // the one thing to do first
 }
 
 type CouncilSummary struct {
 	Text       string             `json:"text"`
 	Directions []CouncilDirection `json:"directions"`
-	Kept       []CouncilDirection `json:"kept,omitempty"`   // Brainstorm: the wild ideas kept aside
+	Kept       []CouncilDirection `json:"kept,omitempty"`   // one line each: a Brainstorm's wild ideas kept aside, a Review's Also raised
 	Outcomes   map[string]string  `json:"outcomes"`         // proposal id -> "Direction 1", "Merged into direction 3", "Withdrawn in round 2"
 	Answer     string             `json:"answer,omitempty"` // the one-sentence answer to the person's question; empty without a question
 	At         int64              `json:"at"`

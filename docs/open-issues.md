@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A council review holds three directions: start a Review council (or wait for the next one) and open
+  its report. At most three direction cards, each with a "First step:" line, then an "Also raised" heading with one row
+  each for the rest (`from <expert>` under the title, no stances); its saved doc has `## Also raised` between the
+  directions and the Matrix, and those proposals' Outcome reads Also raised. `councilsummary.tsx` `KeptCard`, bc7a8f934.
 - [ ] (arcterm) A council's row copies its id: right-click a running council in the Agent tree. The menu holds Copy id
   with the 16-character id beside it, and pasting gives that id (`wsh council show <id>` takes it). A queued or ended
   council's menu holds Copy id, a separator, then Remove. `agenttree.tsx` `CouncilRow`, 6eb54c303.
