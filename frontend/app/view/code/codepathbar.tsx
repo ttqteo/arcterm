@@ -28,6 +28,7 @@ import {
     codeTexPdfAtom,
     codeViewModeAtom,
     draftKey,
+    enterDiff,
     NOT_TRACKED,
     openPath,
     refreshTexPdf,
@@ -138,6 +139,10 @@ function ViewModeToggle(p: { path: string; abs: string; hasPdf: boolean; preview
                     disabled={plain && m === "diff"}
                     title={plain && m === "diff" ? NOT_TRACKED : undefined}
                     onClick={() => {
+                        if (m === "diff") {
+                            enterDiff();
+                            return;
+                        }
                         setMode(m);
                         if (m === "pdf") {
                             fireAndForget(() => refreshTexPdf(abs));

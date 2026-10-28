@@ -20,6 +20,7 @@ import { atom, type Getter, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { debounce } from "throttle-debounce";
 import { classifyFile, hasNulByte, isTexPath, MAX_VIEW_BYTES, type ViewMode } from "./codeclassify";
+import { diffBaseOf, nextDiffStep, type DiffBase, type DiffStep } from "./codedifftarget";
 import {
     conflictMessage,
     conflictOf,
@@ -217,14 +218,22 @@ export async function refreshTexPdf(abs: string): Promise<void> {
 
 // The left-hand side of the diff. One union rather than parallel booleans, for the same reason
 // CodeFile is one: the pane renders an exhaustive switch and cannot land in a contradictory pair.
+// `ref` is what the copy was read at ("HEAD" or the base's sha), so a read for the other target
+// never renders under this one's header.
 export type HeadText =
     | { kind: "idle" }
-    | { kind: "loading"; path: string }
-    | { kind: "text"; path: string; text: string }
-    | { kind: "absent"; path: string } // the file is new since HEAD, so the whole file reads as added
-    | { kind: "error"; path: string; message: string };
+    | { kind: "loading"; path: string; ref: string }
+    | { kind: "text"; path: string; ref: string; text: string }
+    | { kind: "absent"; path: string; ref: string } // the file is new since ref, so the whole file reads as added
+    | { kind: "error"; path: string; ref: string; message: string };
 
 export const codeHeadAtom = atom<HeadText>({ kind: "idle" }) as PrimitiveAtom<HeadText>;
+
+// Which commit Diff compares against. Only meaningful while codeViewModeAtom is "diff"; entering diff
+// always starts on HEAD.
+export const codeDiffTargetAtom = atom<"head" | "base">("head") as PrimitiveAtom<"head" | "base">;
+// The base the last head→base step resolved: usable or an error, never "skip" (a skip never lands on base).
+export const codeDiffBaseAtom = atom<DiffBase | null>(null) as PrimitiveAtom<DiffBase | null>;
 
 // Set when the open file's bytes moved on disk since we read them. Never auto-reloads: the caret,
 // the scroll offset and the selection would jump under a reader's eyes with no action of theirs.
@@ -326,6 +335,8 @@ export async function selectProject(p: CodeProject | null): Promise<void> {
     globalStore.set(codeStatusAtom, null);
     globalStore.set(codeStatusErrorAtom, null);
     globalStore.set(codeHeadAtom, { kind: "idle" });
+    globalStore.set(codeDiffTargetAtom, "head");
+    globalStore.set(codeDiffBaseAtom, null);
     globalStore.set(codeStaleAtom, null);
     globalStore.set(codeWorktreesAtom, []);
     resetSearch(); // results belong to the repository they were found in
@@ -563,18 +574,18 @@ async function loadWorktrees(): Promise<void> {
 // Binary and too-large are answers rather than failures, but from the diff's point of view both
 // mean the same thing — there is nothing to render on the left — so they land in `error` with an
 // honest message rather than earning their own variants.
-export async function loadHead(rel: string): Promise<void> {
+export async function loadCommitted(rel: string, ref: string): Promise<void> {
     const project = globalStore.get(codeProjectAtom);
     if (project == null) {
         return;
     }
-    const token = `head:${rel}`;
+    const token = `head:${rel}:${ref}`;
     current.headToken = token;
-    globalStore.set(codeHeadAtom, { kind: "loading", path: rel });
+    globalStore.set(codeHeadAtom, { kind: "loading", path: rel, ref });
     try {
         const res = await RpcApi.GitFileAtRefCommand(TabRpcClient, {
             cwd: project.path,
-            ref: "HEAD",
+            ref,
             path: rel,
             maxbytes: MAX_VIEW_BYTES,
         });
@@ -582,13 +593,14 @@ export async function loadHead(rel: string): Promise<void> {
             return;
         }
         if (res?.missing) {
-            globalStore.set(codeHeadAtom, { kind: "absent", path: rel });
+            globalStore.set(codeHeadAtom, { kind: "absent", path: rel, ref });
             return;
         }
         if (res?.binary) {
             globalStore.set(codeHeadAtom, {
                 kind: "error",
                 path: rel,
+                ref,
                 message: "The committed copy is a binary blob.",
             });
             return;
@@ -597,11 +609,12 @@ export async function loadHead(rel: string): Promise<void> {
             globalStore.set(codeHeadAtom, {
                 kind: "error",
                 path: rel,
+                ref,
                 message: "The committed copy is larger than the 2 MB view limit.",
             });
             return;
         }
-        globalStore.set(codeHeadAtom, { kind: "text", path: rel, text: res?.content ?? "" });
+        globalStore.set(codeHeadAtom, { kind: "text", path: rel, ref, text: res?.content ?? "" });
     } catch (e) {
         if (current.headToken !== token) {
             return;
@@ -609,9 +622,65 @@ export async function loadHead(rel: string): Promise<void> {
         globalStore.set(codeHeadAtom, {
             kind: "error",
             path: rel,
+            ref,
             message: e instanceof Error ? e.message : String(e),
         });
     }
+}
+
+// The merge-base of HEAD with the default branch ListBranches resolves. Resolved on every head→base
+// step rather than cached: a commit or a branch switch moves it, and two git calls are cheap. A failed
+// RPC is an error the base step shows, never a silent skip.
+export async function resolveDiffBase(): Promise<DiffBase> {
+    const project = globalStore.get(codeProjectAtom);
+    if (project == null) {
+        return { kind: "skip" };
+    }
+    let def = "";
+    try {
+        const branches = await RpcApi.ListBranchesCommand(TabRpcClient, { projectpath: project.path });
+        def = branches?.default ?? "";
+        if (def === "") {
+            return diffBaseOf(def, null);
+        }
+        const div = await RpcApi.GitDivergenceCommand(TabRpcClient, { cwd: project.path, base: def, head: "HEAD" });
+        return diffBaseOf(def, div);
+    } catch (e) {
+        const what = def === "" ? "Could not list branches" : `Could not compare HEAD with ${def}`;
+        return { kind: "error", message: `${what}: ${errorText(e)}` };
+    }
+}
+
+export function enterDiff(): void {
+    globalStore.set(codeDiffTargetAtom, "head");
+    globalStore.set(codeViewModeAtom, "diff");
+}
+
+// The `d` cycle: off → HEAD → base → off, skipping a base that does not apply. Leaving diff returns
+// to source, as the toggle always did.
+export async function cycleDiff(): Promise<void> {
+    const step = (): DiffStep =>
+        globalStore.get(codeViewModeAtom) === "diff" ? globalStore.get(codeDiffTargetAtom) : "off";
+    const cur = step();
+    let base: DiffBase | null = null;
+    if (cur === "head") {
+        base = await resolveDiffBase();
+        if (step() !== cur) {
+            return; // the view moved while the base resolved; a late answer must not yank it
+        }
+    }
+    // an error lands on the base step so it is seen; only a skip passes over it
+    const next = nextDiffStep(cur, base != null && base.kind !== "skip");
+    if (next === "off") {
+        globalStore.set(codeViewModeAtom, "source");
+        return;
+    }
+    if (next === "head") {
+        enterDiff();
+        return;
+    }
+    globalStore.set(codeDiffBaseAtom, base);
+    globalStore.set(codeDiffTargetAtom, "base");
 }
 
 // A re-stat of the ONE open file, on window focus and on tree focus. No watcher, by design: a

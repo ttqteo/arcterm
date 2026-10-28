@@ -407,7 +407,7 @@ Review mode shows the focused agent's `Doc review` in place of its terminal; `r`
 |---|---|
 | `Alt`+`Z` | Toggle word wrap for the open file, also while typing in it. Every file wraps by default |
 | `Mod`+`\` | Open the file in a read-only side column (a `.tex` file on its PDF, a document on its preview), or close the side column. Dragging a file from the tree onto the right half of the editor does the same for that file |
-| `d` | Toggle the diff against HEAD |
+| `d` | Cycle the diff: HEAD, branch base, off |
 | `r` | Refresh the file index |
 | `Alt`+`←` / `Alt`+`→` | Back / forward through opened files |
 | `Mod`+`S` | Save the open file |
