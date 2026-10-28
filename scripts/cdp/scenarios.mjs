@@ -25468,12 +25468,28 @@ const paletteScopeIndicator = {
             );
 
             await h.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+            // motion reads reduced motion only from the media query's change event, which fires on the next frame
+            const reducedSeen = await h.ev(`new Promise((resolve) => {
+                const mq = matchMedia("(prefers-reduced-motion)");
+                const t0 = performance.now();
+                const poll = () => {
+                    if (mq.matches) requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+                    else if (performance.now() - t0 > 2000) resolve(false);
+                    else requestAnimationFrame(poll);
+                };
+                poll();
+            })`);
             const reduced = await sampleIndicator(h, paletteKey("Tab"), "commands");
-            const firstNew = reduced.find((f) => f.pressed === "commands");
+            const onCommands = reduced.filter((f) => f.pressed === "commands").slice(0, 2);
+            // the sampler's rAF can run before motion applies the projection in that frame, reading a DOM that never paints
             rec(
-                "6. reduced motion: Tab from Files snaps the bar to Commands, no frame in flight",
-                firstNew != null && barMatches(firstNew) && !reduced.some(barMidFlight),
-                JSON.stringify({ sample: sampleSummary(reduced), firstNew: firstNew && { t: firstNew.t, bar: roundRect(firstNew.bar), target: roundRect(firstNew.target) } })
+                "6. reduced motion: Tab from Files snaps the bar to Commands by its second frame, no frame in flight",
+                onCommands.some(barMatches) && !reduced.some(barMidFlight),
+                JSON.stringify({
+                    reducedSeen,
+                    sample: sampleSummary(reduced),
+                    onCommands: onCommands.map((f) => ({ t: f.t, bar: roundRect(f.bar), target: roundRect(f.target) })),
+                })
             );
         } catch (e) {
             rec("scenario aborted", false, String(e?.message ?? e));
