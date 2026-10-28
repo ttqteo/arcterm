@@ -19942,6 +19942,173 @@ async function dagPeekMouse(h, type, pt, buttons = 0) {
     });
 }
 
+// --- dag-motion: a task finishing settles its card, and only live lifecycle rows fade in ----------------------
+// t-1 dispatches; t-3 is seeded done before the DAG opens, so its card mounts finished and must stay still. With the
+// modal open t-2 is seeded done (its card settles and its glyph cross-fades) and a run event is published (its new
+// row fades in, no other row does). One in-page sampler watches every frame, since a CDP round trip per sample is
+// slower than the micro fade it measures.
+const DAG_MOTION_TASKS = [
+    { id: "t-1", label: "noop", description: "do nothing, stop immediately", deps: [], state: "" },
+    { id: "t-2", label: "noop 2", description: "do nothing, stop immediately", deps: ["t-1"], state: "" },
+    { id: "t-3", label: "noop 3", description: "do nothing, stop immediately", deps: ["t-1"], state: "" },
+];
+const DAG_MOTION_LIVE_EVENT = [["task-verify-started", { taskid: "t-3" }, 0]];
+const dagMotionPrint = (dag) => JSON.stringify((dag?.tasks ?? []).map((t) => [t.id, t.state]));
+const dagMotionSeed = (doneIds) => (dag) => ({
+    ...dag,
+    tasks: dag.tasks.map((t) => (doneIds.includes(t.id) ? { ...t, state: "done" } : t)),
+});
+// every frame: which cards wore the settle class, which glyphs were caught mid-fade, which rows were seen below
+// full opacity. A row's motion root is its button's grandparent (GroupRow).
+const DAG_MOTION_SAMPLER = `(() => {
+    const obs = { settle: {}, glyphFade: {}, rowFade: {}, frames: 0, on: true };
+    window.__dagMotion = obs;
+    const tick = () => {
+        obs.frames++;
+        for (const n of document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]')) {
+            const id = n.getAttribute('data-dag-node');
+            if (/animate-\\[settle/.test(n.className)) obs.settle[id] = true;
+            for (const s of n.querySelectorAll('[data-crossfade]')) {
+                const o = parseFloat(getComputedStyle(s).opacity);
+                if (o > 0.01 && o < 0.99) obs.glyphFade[id] = s.getAttribute('data-crossfade');
+            }
+        }
+        for (const b of document.querySelectorAll('[data-dag-modal-kind] [data-timeline-row]')) {
+            const root = b.parentElement?.parentElement;
+            if (root && parseFloat(getComputedStyle(root).opacity) < 0.99) {
+                obs.rowFade[(b.innerText || '').split('\\n')[0].trim()] = true;
+            }
+        }
+        if (obs.on) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    return true;
+})()`;
+const DAG_MOTION_READ = `(() => {
+    const o = window.__dagMotion;
+    return o ? { settle: o.settle, glyphFade: o.glyphFade, rowFade: o.rowFade, frames: o.frames } : null;
+})()`;
+const DAG_MOTION_RESET = `(() => {
+    const o = window.__dagMotion;
+    if (o) { o.settle = {}; o.glyphFade = {}; o.rowFade = {}; }
+    return !!o;
+})()`;
+const DAG_MOTION_ROWS = `[...document.querySelectorAll('[data-dag-modal-kind] [data-timeline-row]')].map((b) => (b.innerText || '').split('\\n')[0].trim())`;
+// the glyph a card shows now: during a swap the leaving copy is popped out of flow ahead of the new one
+const dagMotionGlyph = (id) =>
+    `[...document.querySelectorAll('[data-dag-modal-kind] [data-dag-node="${id}"] [data-crossfade]')].at(-1)?.getAttribute('data-crossfade') ?? null`;
+
+const dagMotionScenario = {
+    name: "dag-motion",
+    surface: "jarvis",
+    async arrange(h) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", DAG_PEEK_VIEWPORT);
+        const ctx = await arrangeSheetDagRun(h, "dag-motion", DAG_MOTION_TASKS);
+        if (ctx.arrangeError != null) return ctx;
+        try {
+            await waitForDispatch(h, ctx, "t-1");
+            ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group.id;
+            await seedDag(h, ctx, dagMotionSeed(["t-3"]), dagMotionPrint);
+            ctx.seeded = true;
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail: JSON.stringify(detail) });
+
+        // the sampler starts before Open DAG, so the open itself is watched
+        await h.ev(DAG_MOTION_SAMPLER);
+        const openDag = `[...(document.querySelector("[data-run-sheet]")?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Open DAG")`;
+        const sheet = await polishWaitFor(h, `!!${openDag}`, 15000);
+        if (sheet) await h.ev(`${openDag}.click()`);
+        const graph = await polishWaitFor(
+            h,
+            `document.querySelectorAll('[data-dag-modal-kind] [data-dag-node]').length >= 3 && document.querySelectorAll('[data-dag-modal-kind] [data-timeline-row]').length > 0`,
+            15000
+        );
+        await polishNap(1500);
+        const opened = await h.ev(DAG_MOTION_READ);
+        const t3Glyph = await h.ev(dagMotionGlyph("t-3"));
+        rec(
+            "1. opening the DAG plays nothing: t-3, mounted done, does not settle, and no lifecycle row fades in",
+            ctx.arrangeError == null &&
+                ctx.seeded &&
+                graph &&
+                t3Glyph === "done" &&
+                opened != null &&
+                opened.frames > 10 &&
+                Object.keys(opened.settle).length === 0 &&
+                Object.keys(opened.glyphFade).length === 0 &&
+                Object.keys(opened.rowFade).length === 0,
+            ctx.arrangeError ?? { sheet, graph, t3Glyph, opened }
+        );
+        if (!graph) return steps;
+        await h.shot("cdp-shots/dag-motion-open.png");
+
+        // 2. t-2 finishes while the DAG is open
+        await h.ev(DAG_MOTION_RESET);
+        await seedDag(h, ctx, dagMotionSeed(["t-2", "t-3"]), dagMotionPrint);
+        const t2Done = await polishWaitFor(h, `${dagMotionGlyph("t-2")} === "done"`, 10000);
+        await polishNap(700);
+        const flipped = await h.ev(DAG_MOTION_READ);
+        const settleGone = await h.ev(
+            `!/animate-\\[settle/.test(document.querySelector('[data-dag-modal-kind] [data-dag-node="t-2"]')?.className ?? '')`
+        );
+        rec(
+            "2. t-2 turning done settles its card once and cross-fades its glyph; no other card moves",
+            t2Done &&
+                flipped?.settle["t-2"] === true &&
+                flipped.glyphFade["t-2"] != null &&
+                Object.keys(flipped.settle).every((id) => id === "t-2") &&
+                settleGone,
+            { t2Done, flipped, settleGone }
+        );
+        await h.shot("cdp-shots/dag-motion-settled.png");
+
+        // 3. a lifecycle event arriving live
+        const rowsBefore = await h.ev(DAG_MOTION_ROWS);
+        await h.ev(DAG_MOTION_RESET);
+        await dagPeekPublish(h, ctx, DAG_MOTION_LIVE_EVENT);
+        const grew = await polishWaitFor(h, `${DAG_MOTION_ROWS}.length > ${rowsBefore.length}`, 10000);
+        await polishNap(800);
+        const live = await h.ev(DAG_MOTION_READ);
+        const rowsAfter = await h.ev(DAG_MOTION_ROWS);
+        const added = rowsAfter.filter((r) => !rowsBefore.includes(r));
+        const faded = Object.keys(live?.rowFade ?? {});
+        rec(
+            "3. a live lifecycle event's new row fades in, and none of the rows already there does",
+            grew && added.length > 0 && faded.length > 0 && faded.every((r) => added.includes(r)),
+            { rowsBefore, rowsAfter, added, faded }
+        );
+        await h.shot("cdp-shots/dag-motion-live-row.png");
+
+        // 4. switching the filter away and back re-renders every row without a cascade
+        await h.ev(DAG_MOTION_RESET);
+        await h.ev(`(async () => {
+            const pick = (label) => [...document.querySelectorAll('[data-dag-modal-kind] [data-timeline-rail] button[aria-pressed]')]
+                .find((b) => b.textContent.trim().startsWith(label))?.click();
+            pick("Attention");
+            await new Promise((r) => setTimeout(r, 400));
+            pick("All");
+            await new Promise((r) => setTimeout(r, 800));
+        })()`);
+        const refiltered = await h.ev(DAG_MOTION_READ);
+        rec(
+            "4. a filter change brings rows back without fading any in",
+            refiltered != null && Object.keys(refiltered.rowFade).length === 0,
+            refiltered
+        );
+        await h.ev(`window.__dagMotion && (window.__dagMotion.on = false)`);
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await teardownFixtureRun(h, ctx, "dag-motion");
+    },
+};
+
 const dagPeekScenario = {
     name: "dag-peek",
     surface: "jarvis",
@@ -56924,6 +57091,7 @@ export const SCENARIOS = [
     runCost,
     dagObservability,
     dagPeekScenario,
+    dagMotionScenario,
     recordBandDetachRestore,
     agentRailFileLink,
     finalShotsScenario,

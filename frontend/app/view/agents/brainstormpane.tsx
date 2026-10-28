@@ -6,7 +6,7 @@
 // current), and every action is one line typed into the agent (brainstormsend).
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
-import { cardVariants, viewFade } from "@/app/element/motiontokens";
+import { cardVariants, turnTransition, viewFade } from "@/app/element/motiontokens";
 import { PaneReveal } from "@/app/element/panereveal";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -576,8 +576,9 @@ function Chevron({ open, onClick, className }: { open: boolean; onClick: () => v
         <span
             aria-hidden="true"
             onClick={onClick}
+            style={turnTransition}
             className={cn(
-                "flex h-[20px] w-[12px] flex-none cursor-pointer items-center text-muted transition-transform",
+                "flex h-[20px] w-[12px] flex-none cursor-pointer items-center text-muted transition-transform motion-reduce:transition-none",
                 open && "rotate-180",
                 className
             )}

@@ -6,6 +6,7 @@
 // is reused from the run body's runtimeline.ts, so the two timelines cannot describe the same row
 // differently.
 
+import { computeEntrances, initialEntranceState, viewFade } from "@/app/element/motiontokens";
 import { PaneReveal } from "@/app/element/panereveal";
 import { SkeletonLine } from "@/app/element/skeleton";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -14,7 +15,8 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { retryRunEvents, useRunEventsState } from "../agents/runeventstore";
 import { eventTitle, planReviewLensTitle, planReviewReviewers, toneFor, tsLabel } from "../agents/runtimeline";
 import { setActiveRunId } from "../jarvis/jarvissubjectstore";
@@ -76,6 +78,17 @@ export function TimelineRail({ channelId, runId, layout }: TimelineRailProps) {
     const open = layout === "rail" || drawerOpen;
 
     const groups = useMemo(() => groupEvents(events), [events]);
+    // no-cascade guard over every group, not the filtered rows, so a filter change never fades anything in. The
+    // load status is in the key: the first load and a retry reseed silently, and only a group arriving while the
+    // rail is live fades in.
+    const groupIds = groups.map((g) => g.id);
+    const entranceKey = `${runId}:${status}`;
+    const entranceRef = useRef(initialEntranceState());
+    const { animate: entering } = computeEntrances(entranceRef.current, entranceKey, groupIds);
+    const groupIdsKey = groupIds.join(",");
+    useLayoutEffect(() => {
+        entranceRef.current = computeEntrances(entranceRef.current, entranceKey, groupIds).state;
+    }, [entranceKey, groupIdsKey]);
     const shown = filterGroups(groups, filter, selectedTaskId);
     const rows = railRows(shown);
     const graphHoverId = hovered?.from === "graph" ? hovered.id : null;
@@ -155,34 +168,39 @@ export function TimelineRail({ channelId, runId, layout }: TimelineRailProps) {
                         {rows.length === 0 ? (
                             <EmptyRows filter={filter} status={status} hasTask={selectedTaskId != null} />
                         ) : (
-                            rows.map((row, i) =>
-                                row.kind === "gap" ? (
-                                    <GapRow key={`gap:${i}`} minutes={row.minutes} />
-                                ) : (
-                                    <GroupRow
-                                        key={row.group.id}
-                                        group={row.group}
-                                        events={events}
-                                        open={row.group.id === openGroupId}
-                                        selected={selectedTaskId != null && row.group.taskId === selectedTaskId}
-                                        graphHovered={graphHoverId != null && row.group.taskId === graphHoverId}
-                                        relaunching={relaunching}
-                                        relaunchError={relaunchError}
-                                        onRelaunch={() => void relaunchLead()}
-                                        onToggle={() => {
-                                            setOpenGroupId((id) => (id === row.group.id ? null : row.group.id));
-                                            applyTarget(eventClickTarget(row.group.head), channelId);
-                                        }}
-                                        onEnter={() => {
-                                            if (row.group.taskId) {
-                                                setHovered({ id: row.group.taskId, from: "timeline" });
-                                            }
-                                        }}
-                                        // a graph hover that began meanwhile is not the rail's to clear
-                                        onLeave={() => setHovered((h) => (h?.from === "timeline" ? null : h))}
-                                    />
-                                )
-                            )
+                            // the list's own presence scope: PaneReveal's initial={false} would otherwise reach every
+                            // row through the presence context and block a live row's entrance too
+                            <AnimatePresence initial={false}>
+                                {rows.map((row, i) =>
+                                    row.kind === "gap" ? (
+                                        <GapRow key={`gap:${i}`} minutes={row.minutes} />
+                                    ) : (
+                                        <GroupRow
+                                            key={row.group.id}
+                                            group={row.group}
+                                            enter={entering.has(row.group.id)}
+                                            events={events}
+                                            open={row.group.id === openGroupId}
+                                            selected={selectedTaskId != null && row.group.taskId === selectedTaskId}
+                                            graphHovered={graphHoverId != null && row.group.taskId === graphHoverId}
+                                            relaunching={relaunching}
+                                            relaunchError={relaunchError}
+                                            onRelaunch={() => void relaunchLead()}
+                                            onToggle={() => {
+                                                setOpenGroupId((id) => (id === row.group.id ? null : row.group.id));
+                                                applyTarget(eventClickTarget(row.group.head), channelId);
+                                            }}
+                                            onEnter={() => {
+                                                if (row.group.taskId) {
+                                                    setHovered({ id: row.group.taskId, from: "timeline" });
+                                                }
+                                            }}
+                                            // a graph hover that began meanwhile is not the rail's to clear
+                                            onLeave={() => setHovered((h) => (h?.from === "timeline" ? null : h))}
+                                        />
+                                    )
+                                )}
+                            </AnimatePresence>
                         )}
                     </div>
                 </div>
@@ -417,6 +435,7 @@ export function groupTime(group: EventGroup): string {
 
 function GroupRow({
     group,
+    enter,
     events,
     open,
     selected,
@@ -429,6 +448,7 @@ function GroupRow({
     onLeave,
 }: {
     group: EventGroup;
+    enter: boolean;
     events: RunEvent[];
     open: boolean;
     selected: boolean;
@@ -449,8 +469,15 @@ function GroupRow({
     } else if (group.attention) {
         rowTone = "border-warning/30 bg-warning/5 hover:bg-surface-hover";
     }
+    // a motion root whatever `enter` says: `initial` is read only at mount, so a row re-rendering never replays.
+    // Reduced motion comes from PaneReveal's MotionConfig, which reaches these rows.
     return (
-        <div className="relative flex gap-2 py-0.5 pr-2.5 pl-[11px]">
+        <motion.div
+            variants={viewFade}
+            initial={enter ? "initial" : false}
+            animate="animate"
+            className="relative flex gap-2 py-0.5 pr-2.5 pl-[11px]"
+        >
             <SpineGlyph kind={group.head.kind} attention={group.attention} />
             <div className="flex min-w-0 flex-1 flex-col">
                 <button
@@ -525,7 +552,7 @@ function GroupRow({
                     />
                 )}
             </div>
-        </div>
+        </motion.div>
     );
 }
 

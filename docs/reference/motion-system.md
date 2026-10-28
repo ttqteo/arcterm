@@ -27,7 +27,9 @@ work: the north star, the shared primitives, the moments, and the guardrails.
 
 | Artifact | Role |
 |---|---|
-| `frontend/app/element/motiontokens.ts` | Durations (`durMacro`/`durMicro`/`durExit`), `easeFluid`, variant presets (`cardVariants`, `reorderLift`, `composerReveal`, `paneReveal`, `popoverReveal`, `reflowProps`, `indicatorSlide`) + the `shouldFadeEntry` burst guard. **Import from here; do not inline motion values.** |
+| `frontend/app/element/motiontokens.ts` | Durations (`durMacro`/`durMicro`/`durExit`), `easeFluid`, variant presets (`cardVariants`, `reorderLift`, `composerReveal`, `paneReveal`, `popoverReveal`, `microFade`, `reflowProps`, `indicatorSlide`), `turnTransition` (chevron turn timing), `settleClass` (moment 4), `computeEntrances` (no-cascade guard) + the `shouldFadeEntry` burst guard. **Import from here; do not inline motion values.** |
+| `frontend/app/element/crossfade.tsx` | Micro cross-fade for a mark swapping in place (DAG state glyph, copy -> copied); never plays on mount. |
+| `frontend/app/element/copyfeedback.ts` | `useCopyFeedback`: the one copy-to-clipboard outcome (copied / failed) and its hold, for every copy affordance. |
 | `frontend/app/element/popoverreveal.tsx` | Shared dropdown/popover reveal. Wraps the panel only; callers own positioning + backdrop. Adopted across all live cockpit popovers. |
 | `frontend/tailwindsetup.css` | CSS-only ambient loops: `@keyframes pulseDot`, `breatheGlow`, `settle`. Token-colored via `color-mix(... var(--color-*) ...)` — no raw hex. |
 | `frontend/app/element/motiontokens.test.ts` | Guards token values + the burst-guard helper. |

@@ -4,6 +4,10 @@
 // The Route DAG's rendered pieces as ReactFlow node and edge types: the task card, the final stage's card,
 // the dashed lane band, and the routed edge. Ported from the design canvas (dag-visualizer/Main.dc.html).
 
+import { CrossFade } from "@/app/element/crossfade";
+import { useSettle } from "@/app/element/motionhooks";
+import { settleClass } from "@/app/element/motiontokens";
+import { cn } from "@/util/util";
 import { Handle, Position, useInternalNode, type EdgeProps, type NodeProps } from "@xyflow/react";
 import { createContext, useContext } from "react";
 import type { FinalStageView, FinalTone } from "../agents/finalstage";
@@ -79,21 +83,23 @@ export function StateGlyph({ kind }: { kind: GlyphKind }) {
             {kind === "running" ? (
                 <span className="absolute -inset-[3px] rounded-full border-[1.5px] border-working pulse-soft" />
             ) : null}
-            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" className="relative block">
-                <circle cx="7" cy="7" r="5.25" style={{ fill: g.fill, stroke: g.ring, strokeWidth: 1.5 }} />
-                {g.mark ? (
-                    <path
-                        d={g.mark}
-                        style={{
-                            fill: g.markFill,
-                            stroke: g.markStroke,
-                            strokeWidth: 1.6,
-                            strokeLinecap: "round",
-                            strokeLinejoin: "round",
-                        }}
-                    />
-                ) : null}
-            </svg>
+            <CrossFade swapKey={kind} className="relative">
+                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" className="block">
+                    <circle cx="7" cy="7" r="5.25" style={{ fill: g.fill, stroke: g.ring, strokeWidth: 1.5 }} />
+                    {g.mark ? (
+                        <path
+                            d={g.mark}
+                            style={{
+                                fill: g.markFill,
+                                stroke: g.markStroke,
+                                strokeWidth: 1.6,
+                                strokeLinecap: "round",
+                                strokeLinejoin: "round",
+                            }}
+                        />
+                    ) : null}
+                </svg>
+            </CrossFade>
         </span>
     );
 }
@@ -105,6 +111,9 @@ export function DagCardNode({ data }: NodeProps) {
     const kind = kindOf(task);
     const look = LOOK.get(kind) ?? LOOK.get("waiting");
     const word = wordOf(task);
+    const glyph = glyphKind(task);
+    // m4: one-shot settle when the task finishes either way; a node mounted already finished stays still
+    const settling = useSettle(glyph === "done" || glyph === "failed");
     const bg = hovered && !selected && kind !== "attention" ? "bg-surface-hover" : look.bg;
     const border = selected ? "border-accent ring-1 ring-accent" : hovered ? "border-edge-strong" : look.border;
     return (
@@ -117,13 +126,17 @@ export function DagCardNode({ data }: NodeProps) {
             onPointerEnter={() => d.onHover(task.id)}
             onPointerLeave={() => d.onHover(null)}
             style={{ width: CARD_W, height: CARD_H }}
-            className={`flex cursor-grab select-none flex-col justify-between rounded-[11px] border px-2.5 py-[7px] shadow-popover-line ${bg} ${border} ${
-                dimmed ? "opacity-40" : ""
-            }`}
+            className={cn(
+                "flex cursor-grab select-none flex-col justify-between rounded-[11px] border px-2.5 py-[7px] shadow-popover-line",
+                bg,
+                border,
+                dimmed && "opacity-40",
+                settling && settleClass
+            )}
         >
             <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" />
             <div className="flex w-full items-start gap-2">
-                <StateGlyph kind={glyphKind(task)} />
+                <StateGlyph kind={glyph} />
                 <span className={`line-clamp-2 min-w-0 text-[12.5px] font-semibold leading-[17px] ${look.label}`}>
                     {view.label}
                 </span>
