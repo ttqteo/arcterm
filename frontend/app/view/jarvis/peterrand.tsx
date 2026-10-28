@@ -11,6 +11,9 @@
 // petPeekDestAtom. It states where the reply lands exactly once: the old footer said it three times ("No
 // channel selected", "Select a channel to ask Jarvis", "No destination") inside a 90px band.
 
+import { useSettle } from "@/app/element/motionhooks";
+import { composerReveal, viewFade } from "@/app/element/motiontokens";
+import { globalStore } from "@/app/store/jotaiStore";
 import { HarnessPicker } from "@/app/view/agents/harnesspicker";
 import { harnessPreferenceAtom, harnessesAtom } from "@/app/view/agents/harnessstore";
 import { MarkdownMessage } from "@/app/view/agents/markdownmessage";
@@ -18,14 +21,15 @@ import { channelProjectLabel } from "@/app/view/agents/projectlabel";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { sendErrand } from "./petactrun";
 import { petErrandState } from "./peterrandmodel";
 import { petErrandAtom, type PetErrand as PetErrandState } from "./petstore";
 
 const REPLY_STATUS: Record<PetErrandState["status"], { dot: string; word: string }> = {
-    streaming: { dot: "bg-working", word: "thinking" },
+    streaming: { dot: "bg-working pulse-dot", word: "thinking" },
     done: { dot: "bg-success", word: "replied" },
     error: { dot: "bg-error", word: "failed" },
 };
@@ -34,11 +38,45 @@ const REPLY_STATUS: Record<PetErrandState["status"], { dot: string; word: string
 // not grow the popover, and the queue above must keep its scroll position.
 function ErrandReply({ errand }: { errand: PetErrandState }) {
     const status = REPLY_STATUS[errand.status];
+    const streaming = errand.status === "streaming";
+    const settling = useSettle(errand.status === "done");
     return (
-        <div className="rounded-[8px] border border-border bg-surface px-[9px] py-[7px]">
+        <motion.div
+            variants={composerReveal}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className={cn(
+                "relative overflow-hidden rounded-[8px] border border-border bg-surface px-[9px] py-[7px]",
+                settling && "animate-[settle_0.5s_ease-out] motion-reduce:animate-none"
+            )}
+        >
+            {/* the streaming flow bar, as on a working agent card: absolute so its leaving never moves the reply */}
+            {streaming ? (
+                <div className="absolute inset-x-0 top-0 h-[2px] overflow-hidden">
+                    <div className="h-full w-[26%] bg-gradient-to-r from-transparent via-accent to-transparent animate-[flowBar_1.9s_linear_infinite] motion-reduce:animate-none" />
+                </div>
+            ) : null}
             <div className="mb-[3px] flex items-center gap-1.5 text-[9.5px] text-muted">
-                <span className={cn("h-[5px] w-[5px] flex-none rounded-full", status.dot)} />
-                {errand.runtime} · {status.word}
+                <span className={cn("h-[5px] w-[5px] flex-none rounded-full transition-colors", status.dot)} />
+                <span className="flex-1">
+                    {errand.runtime} ·{" "}
+                    <motion.span key={errand.status} variants={viewFade} initial="initial" animate="animate">
+                        {status.word}
+                    </motion.span>
+                </span>
+                {/* not while streaming: the next chunk would write the reply straight back */}
+                {!streaming ? (
+                    <button
+                        type="button"
+                        data-pet-errand-dismiss
+                        aria-label="Dismiss reply"
+                        onClick={() => globalStore.set(petErrandAtom, null)}
+                        className="-my-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-[5px] text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        <X aria-hidden="true" size={12} strokeWidth={2} />
+                    </button>
+                ) : null}
             </div>
             <div className="max-h-[180px] overflow-y-auto text-[11.5px] leading-[1.5] text-secondary [overflow-wrap:anywhere]">
                 {errand.status === "error" ? (
@@ -46,11 +84,11 @@ function ErrandReply({ errand }: { errand: PetErrandState }) {
                 ) : (
                     <>
                         <MarkdownMessage text={errand.text} />
-                        {errand.status === "streaming" ? <span className="text-accent">▍</span> : null}
+                        {streaming ? <span className="pulse-soft font-mono text-accent">▍</span> : null}
                     </>
                 )}
             </div>
-        </div>
+        </motion.div>
     );
 }
 
@@ -118,7 +156,10 @@ export function PetErrand({
                     {errand.prompt}
                 </div>
             ) : null}
-            {errand != null ? <ErrandReply errand={errand} /> : null}
+            {/* initial={false}: opening the peek on a standing reply shows it, only a new ask reveals one */}
+            <AnimatePresence initial={false}>
+                {errand != null ? <ErrandReply key="reply" errand={errand} /> : null}
+            </AnimatePresence>
 
             {askable ? (
                 <>
