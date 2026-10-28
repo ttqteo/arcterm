@@ -118,8 +118,6 @@ export interface FooterInput {
     branchNote: string;
     // a run's launchBlocker or a tool's toolBlocker; always null for an agent
     blocker: string | null;
-    // the session an agent launch resumes; null or left out starts a new one
-    resume?: { title: string; branch: string } | null;
     // the Claude account a claude launch runs on (launchAccountName); "" or left out names none
     account?: string;
 }
@@ -131,7 +129,8 @@ export interface FooterLine {
     blocked: boolean;
 }
 
-// The footer's one line: what is missing when something is, else what the launch will do.
+// The footer's one line: what is missing when something is, else what the launch will do. An agent's names only the
+// Claude account, new session or resumed alike: the columns above already show the project and the session.
 export function footerLine(input: FooterInput): FooterLine {
     if (input.project == null) {
         return { lead: "Pick a project", strong: "", tail: "", blocked: true };
@@ -139,21 +138,14 @@ export function footerLine(input: FooterInput): FooterLine {
     if (input.blocker != null) {
         return { lead: input.blocker, strong: "", tail: "", blocked: true };
     }
-    const accountTail = input.kind === "agent" && input.account ? ` · Claude: ${input.account}` : "";
-    if (input.kind === "agent" && input.resume) {
-        return {
-            lead: "Resumes ",
-            strong: input.resume.title,
-            tail: (input.resume.branch ? ` · ${input.resume.branch}` : "") + accountTail,
-            blocked: false,
-        };
+    if (input.kind === "agent") {
+        return { lead: input.account ? `Claude: ${input.account}` : "", strong: "", tail: "", blocked: false };
     }
-    if (input.kind === "agent" || input.kind === "tool") {
-        const tail = (input.branchNote ? ` · ${input.branchNote}` : "") + accountTail;
+    if (input.kind === "tool") {
         return {
-            lead: input.kind === "tool" ? "Opens in " : "Starts in ",
+            lead: "Opens in ",
             strong: input.project.path,
-            tail,
+            tail: input.branchNote ? ` · ${input.branchNote}` : "",
             blocked: false,
         };
     }
@@ -312,11 +304,13 @@ export function draftShown(draft: LauncherDraft): boolean {
 // dialog's. "tools" is the Tool column (launchertoolfields), picked by letters.
 export type FocusZone = "start" | "project" | "tools" | "resume" | "textarea" | "input" | "other";
 
-// What an Escape can close before the dialog, innermost first
-export type LauncherInner = "flags" | "branches" | "filter";
+// What an Escape can close before the dialog, innermost first; "start" folds the open Start column
+export type LauncherInner = "flags" | "branches" | "filter" | "start";
 
 export interface LauncherKeyCtx {
     zone: FocusZone;
+    // the Start column is unfolded and shown, not folded into its chip
+    startOpen: boolean;
     startCount: number;
     // the visible project rows, Home not counted: Home is 0, so a project added never moves its digit
     projectCount: number;
@@ -359,6 +353,8 @@ export type LauncherKeyAction =
     | { kind: "launch" }
     | { kind: "resume-secondary" }
     | { kind: "dismiss-inner"; what: LauncherInner }
+    // fold the open Start column, keeping the row under the cursor
+    | { kind: "fold" }
     | { kind: "close" };
 
 const NONE: LauncherKeyAction = { kind: "none" };
@@ -377,7 +373,10 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
             return { kind: "dismiss-inner", what: "branches" };
         }
         // the filter clears when focus leaves the Project column, so a filter means focus is there
-        return ctx.filter !== "" ? { kind: "dismiss-inner", what: "filter" } : { kind: "close" };
+        if (ctx.filter !== "") {
+            return { kind: "dismiss-inner", what: "filter" };
+        }
+        return ctx.startOpen ? { kind: "dismiss-inner", what: "start" } : { kind: "close" };
     }
     // a paste outside a text field goes to the Task or Goal box: focus moves there and the browser's paste lands in it,
     // images included. A text field takes its own paste.
@@ -390,6 +389,11 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
     if (k.key === "Enter") {
         if (zone !== "start" && zone !== "project" && zone !== "tools" && zone !== "resume" && zone !== "input") {
             return NONE;
+        }
+        // Enter in the open Start column keeps the row ↑↓ picked and folds it; it never launches, so launching takes a
+        // second Enter
+        if (zone === "start") {
+            return { kind: "fold" };
         }
         // opening a session asleep (or reading it back, for an agent that cannot sleep) costs nothing; resuming it
         // starts the agent and reloads its whole context. The footer's second button names Shift+Enter, so it holds

@@ -303,7 +303,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         project: where,
         branchNote,
         blocker,
-        resume: resume && { title: resume.task || "(untitled session)", branch: resume.branch },
         account: isAgent && runtime === "claude" ? launchAccountName(activeAccount, claudeIdentity) : "",
     });
     const config: RunConfig = {
@@ -771,6 +770,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         const action = launcherKey(
             {
                 zone: zoneOf(e.target),
+                startOpen: false,
                 startCount: startList.length,
                 projectCount: visible.length,
                 homeShown: picks.includes(HOME_PICK),
@@ -873,9 +873,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     globalStore.set(launcherFlagMenuAtom, false);
                 } else if (action.what === "branches") {
                     globalStore.set(launcherBranchListAtom, false);
-                } else {
+                } else if (action.what === "filter") {
                     applyFilter("");
                 }
+                return;
+            case "fold":
                 return;
             case "close":
                 // the dialog's own close; ModalShell's listener would only do it again
