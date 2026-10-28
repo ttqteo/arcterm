@@ -202,6 +202,42 @@ func TestRunsMainCheckoutPathMapsWorktreesOntoTheMainCheckout(t *testing.T) {
 	}
 }
 
+// A start from a linked worktree sends that worktree, so the run branches from and lands back into it; a start
+// from the main checkout or outside a repository sends none and the run works in the registered project.
+func TestRunsWorktreeAtNamesOnlyALinkedWorktree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	main := t.TempDir()
+	git := func(dir string, args ...string) {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git(main, "init", "-q")
+	git(main, "commit", "-q", "--allow-empty", "-m", "init")
+	wt := filepath.Join(t.TempDir(), "wt")
+	git(main, "worktree", "add", "-q", wt)
+	sub := filepath.Join(wt, "src", "app")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	for _, dir := range []string{wt, sub} {
+		if got, err := runsWorktreeAt(ctx, dir); err != nil || got != dir {
+			t.Fatalf("from %s: got %q, %v; want the directory itself", dir, got, err)
+		}
+	}
+	for _, dir := range []string{main, t.TempDir()} {
+		if got, err := runsWorktreeAt(ctx, dir); err != nil || got != "" {
+			t.Fatalf("from %s: got %q, %v; want no worktree", dir, got, err)
+		}
+	}
+}
+
 // A monorepo registers projects at subfolders, so the deepest registered path holding the directory wins,
 // and a sibling that merely shares a name prefix is not inside.
 func TestRunsResolveProjectPicksTheDeepestContainingPath(t *testing.T) {

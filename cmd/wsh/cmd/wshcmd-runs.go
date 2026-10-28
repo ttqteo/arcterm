@@ -59,8 +59,10 @@ var runsStartCmd = &cobra.Command{
 
 A quick run takes a goal. An orchestrator run takes a goal, or --plan with a plan file (the goal then
 defaults to the plan's name). The project is the git repository holding the current directory (or
---project); a worktree resolves to its main checkout. The lead route is --runtime/--model, else the
-project's saved route, else the harness preference in settings.
+--project); a worktree resolves to its main checkout's project. Started from a linked worktree, the run
+works in that worktree: it branches from the worktree's head and lands back into its branch, and the main
+checkout is left alone (not with --channel). The lead route is --runtime/--model, else the project's saved
+route, else the harness preference in settings.
 
 A launch can take minutes. If it reports no reply, the run may still have started: check
 'wsh runs list' before starting it again.
@@ -258,6 +260,12 @@ func runsStartRun(cmd *cobra.Command, args []string) error {
 	}
 	if data.WorkspaceId, err = runsWorkspaceId(); err != nil {
 		return err
+	}
+	// not for an agent a run started: its worktree is the engine's own tree, which a new run must not land into
+	if flag("channel") == "" && os.Getenv(jarvis.RunAgentEnv) == "" {
+		if data.Worktree, err = runsWorktreeAt(context.Background(), flag("project")); err != nil {
+			return err
+		}
 	}
 	data.ChannelId = ch.OID
 	data.OriginTabId = getTabIdFromEnv()
@@ -737,6 +745,29 @@ func runsNormPath(p string) string {
 func runsPathWithin(dir, root string) bool {
 	d, r := runsNormPath(dir), runsNormPath(root)
 	return r != "" && (d == r || strings.HasPrefix(d, r+"/"))
+}
+
+// runsWorktreeAt is dir (the current directory when empty) when it is in a linked worktree, which a run started
+// from there works in; empty in the main checkout or outside a repository
+func runsWorktreeAt(ctx context.Context, dir string) (string, error) {
+	if dir == "" {
+		var err error
+		if dir, err = os.Getwd(); err != nil {
+			return "", err
+		}
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	here, err := runsMainCheckoutPath(ctx, abs)
+	if err != nil {
+		return "", err
+	}
+	if runsNormPath(here) == runsNormPath(abs) {
+		return "", nil
+	}
+	return abs, nil
 }
 
 // runsMainCheckoutPath is dir's place in the repository's main checkout: projects are registered there, so

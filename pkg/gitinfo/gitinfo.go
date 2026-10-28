@@ -362,6 +362,66 @@ func CurrentBranch(ctx context.Context, cwd string) (string, error) {
 	return "", nil
 }
 
+// ProjectInCheckout is projectPath's place in the checkout holding dir, which must be a checkout of the same
+// repository: a run started from a linked worktree works there, not in the checkout the project is registered
+// at. A project in a subfolder (a monorepo service) maps to the same subfolder. A dir in the project's own
+// checkout returns projectPath unchanged.
+func ProjectInCheckout(ctx context.Context, projectPath, dir string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	proj, err := checkoutOf(ctx, projectPath)
+	if err != nil {
+		return "", fmt.Errorf("reading the project at %s: %w", projectPath, err)
+	}
+	here, err := checkoutOf(ctx, dir)
+	if err != nil {
+		return "", fmt.Errorf("reading %s: %w", dir, err)
+	}
+	if !samePath(here.commonDir, proj.commonDir) {
+		return "", fmt.Errorf("%s is not a checkout of the repository at %s", dir, projectPath)
+	}
+	if samePath(here.top, proj.top) {
+		return projectPath, nil
+	}
+	out := filepath.Join(here.top, proj.prefix)
+	if fi, err := os.Stat(out); err != nil || !fi.IsDir() {
+		return "", fmt.Errorf("the checkout at %s has no %s", here.top, filepath.ToSlash(proj.prefix))
+	}
+	return out, nil
+}
+
+// checkout is the checkout holding a directory: its root, the repository's shared git dir, and the
+// directory's path below the root
+type checkout struct{ top, commonDir, prefix string }
+
+func checkoutOf(ctx context.Context, dir string) (checkout, error) {
+	out, err := run(ctx, dir, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir", "--show-prefix")
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return checkout{}, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exit.Stderr)))
+		}
+		return checkout{}, err
+	}
+	// one line per flag; the prefix line is empty at the root, so the output is not trimmed first
+	lines := strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n")
+	if len(lines) < 3 {
+		return checkout{}, fmt.Errorf("unexpected git rev-parse output %q", out)
+	}
+	return checkout{top: filepath.FromSlash(lines[0]), commonDir: filepath.FromSlash(lines[1]), prefix: filepath.FromSlash(lines[2])}, nil
+}
+
+// samePath compares by file identity, since git and the caller can spell one directory differently (case,
+// short names, symlinks)
+func samePath(a, b string) bool {
+	ai, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bi, err := os.Stat(b)
+	return err == nil && os.SameFile(ai, bi)
+}
+
 // CommitBefore resolves the commit that was HEAD at the given time — the newest first-parent commit
 // on HEAD's history with committer-date at or before beforeUnixSec. It anchors an agent's live diff
 // to its session start, so the diff reflects only that session's work (commits since start +

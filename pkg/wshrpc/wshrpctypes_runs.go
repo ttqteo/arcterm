@@ -64,6 +64,9 @@ type CommandCreateRunData struct {
 	// Autonomous is the Approvals setting; nil = the resolved profile's. An orchestrator run only: an explicit
 	// true on a quick run is refused.
 	Autonomous *bool `json:"autonomous,omitempty"`
+	// Worktree is a directory in a linked worktree of the channel's repository: the run works in the project's
+	// place in that checkout, branches from its head and lands back into its branch. Empty = the channel's project.
+	Worktree string `json:"worktree,omitempty"`
 }
 
 type CommandCreateRunRtnData struct {

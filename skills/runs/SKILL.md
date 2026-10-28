@@ -45,8 +45,12 @@ Rules:
   no question. When a default is saved, use it without asking.
 - A launch can take minutes. If `start` reports no reply, the run may have started anyway:
   `wsh runs list` first, and start it again only when it is not there. A retry is a second full run.
-- The project is the git repository you are in; a worktree resolves to its main checkout. It must be
-  a project in the cockpit already, otherwise pass `--channel <id>`.
+- The project is the git repository you are in; a worktree resolves to its main checkout's project. It must
+  be a project in the cockpit already, otherwise pass `--channel <id>`.
+- Started from a linked worktree, the run works in that worktree: it branches from your branch's head and
+  lands back into your branch, never the main checkout. Commit first (uncommitted work is not in the base),
+  and leave the files the run changes alone until it lands: the land holds on edits to them. `--channel`
+  turns this off.
 - The lead route is the project's saved route unless you pass `--runtime`/`--model`. Pass one only
   when the user asked for it. With no saved route `start` fails with "no route": ask the user for the
   harness and model (it is their cost to choose), pass what they pick, and suggest saving a route for

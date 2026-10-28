@@ -598,6 +598,79 @@ func TestCreateRunLandsOnItsOwnBranch(t *testing.T) {
 	}
 }
 
+// an agent fanning out from its own worktree gets a run that branches from that worktree's branch and lands
+// back into it, while the project's main checkout is left alone
+func TestCreateRunFromAWorktree(t *testing.T) {
+	ctx := context.Background()
+	create := func(t *testing.T, projectDir, worktree string) (*waveobj.Channel, *waveobj.Run, error) {
+		t.Helper()
+		stubRunServer(t, "pi", nil)
+		ch, err := wstore.CreateChannel(ctx, "worktree-run", projectDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rtn, err := (&WshServer{}).CreateRunCommand(ctx, wshrpc.CommandCreateRunData{
+			ChannelId: ch.OID, WorkspaceId: "ws", Goal: "g", Runtime: "pi", Mode: jarvis.RunMode_Orchestrator,
+			DeferStart: true, Worktree: worktree,
+		})
+		if err != nil {
+			return ch, nil, err
+		}
+		return ch, rtn.Run, nil
+	}
+
+	t.Run("the run works in the worktree and lands on its branch", func(t *testing.T) {
+		projectDir, execGit := newLandingRepo(t)
+		mainHead := execGit("rev-parse", "HEAD")
+		wt := filepath.Join(t.TempDir(), "wt")
+		execGit("worktree", "add", "-b", "feat", wt)
+		if err := os.WriteFile(filepath.Join(wt, "feat.txt"), []byte("feat\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		execGit("-C", wt, "add", ".")
+		execGit("-C", wt, "commit", "-m", "feat work")
+		featHead := execGit("-C", wt, "rev-parse", "HEAD")
+
+		_, run, err := create(t, projectDir, wt)
+		if err != nil {
+			t.Fatalf("CreateRunCommand: %v", err)
+		}
+		if a, aerr := os.Stat(run.ProjectPath); aerr != nil || !os.SameFile(a, mustStat(t, wt)) {
+			t.Fatalf("projectpath = %q, want the worktree %s", run.ProjectPath, wt)
+		}
+		if run.BaseBranch != "feat" || run.BaseCommit != featHead {
+			t.Fatalf("base = %s@%s, want feat@%s", run.BaseBranch, run.BaseCommit, featHead)
+		}
+		if got := execGit("rev-parse", "wave/"+run.ID); got != featHead {
+			t.Fatalf("landing branch starts at %s, want the worktree's head %s", got, featHead)
+		}
+		if got := execGit("rev-parse", "--abbrev-ref", "HEAD"); got != "main" || execGit("rev-parse", "HEAD") != mainHead {
+			t.Fatalf("the main checkout moved to %s", got)
+		}
+	})
+
+	t.Run("a worktree of another repository is refused before anything persists", func(t *testing.T) {
+		projectDir, _ := newLandingRepo(t)
+		other, _ := newLandingRepo(t)
+		ch, _, err := create(t, projectDir, other)
+		if err == nil || !strings.Contains(err.Error(), "not a checkout of") {
+			t.Fatalf("error %v should refuse the worktree", err)
+		}
+		if runs, _ := wstore.GetChannelRuns(ctx, ch.OID); len(runs) != 0 {
+			t.Fatalf("a refused worktree left runs behind: %+v", runs)
+		}
+	})
+}
+
+func mustStat(t *testing.T, path string) os.FileInfo {
+	t.Helper()
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fi
+}
+
 // the run's own --landing wins over the profile, a landing no one chose is a branch, and the run records
 // the branch it will merge back into
 func TestCreateRunLandingRequest(t *testing.T) {

@@ -793,6 +793,50 @@ func TestListWorktreesNotARepo(t *testing.T) {
 	}
 }
 
+// a run started from a linked worktree works there, so a project registered at a subfolder of the main
+// checkout maps onto the same subfolder of the worktree
+func TestProjectInCheckout(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	git(t, repo, "init", "-b", "main")
+	writeFile(t, repo, "root.txt", "r\n")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-m", "before svc")
+	svc := filepath.Join(repo, "svc")
+	if err := os.MkdirAll(filepath.Join(svc, "deep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, svc, filepath.Join("deep", "x.txt"), "x\n")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-m", "add svc")
+	wt := filepath.Join(t.TempDir(), "wt")
+	git(t, repo, "worktree", "add", "-b", "feat", wt)
+	old := filepath.Join(t.TempDir(), "old")
+	git(t, repo, "worktree", "add", "-b", "old", old, "HEAD~1")
+
+	for _, dir := range []string{wt, filepath.Join(wt, "svc", "deep")} {
+		got, err := ProjectInCheckout(ctx, svc, dir)
+		if err != nil {
+			t.Fatalf("from %s: %v", dir, err)
+		}
+		if !sameDir(t, got, filepath.Join(wt, "svc")) {
+			t.Fatalf("from %s: got %s, want the worktree's svc", dir, got)
+		}
+	}
+	if got, err := ProjectInCheckout(ctx, svc, filepath.Join(repo, "svc", "deep")); err != nil || got != svc {
+		t.Fatalf("the project's own checkout keeps the project path: got %q, %v", got, err)
+	}
+	if _, err := ProjectInCheckout(ctx, svc, initRepo(t)); err == nil || !strings.Contains(err.Error(), "not a checkout of") {
+		t.Fatalf("another repository must be refused, got %v", err)
+	}
+	if _, err := ProjectInCheckout(ctx, svc, old); err == nil || !strings.Contains(err.Error(), "has no svc") {
+		t.Fatalf("a checkout without the project's folder must be refused, got %v", err)
+	}
+	if _, err := ProjectInCheckout(ctx, svc, t.TempDir()); err == nil {
+		t.Fatal("a directory outside any repository must be refused")
+	}
+}
+
 func TestListBranches(t *testing.T) {
 	dir := repoWithChange(t)
 	branches, err := ListBranches(context.Background(), dir, false)

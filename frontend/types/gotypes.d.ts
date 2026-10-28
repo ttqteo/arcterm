@@ -895,6 +895,7 @@ declare global {
         origintabid?: string;
         afterrunid?: string;
         autonomous?: boolean;
+        worktree?: string;
     };
 
     // wshrpc.CommandCreateRunRtnData

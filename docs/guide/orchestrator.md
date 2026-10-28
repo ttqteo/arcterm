@@ -32,6 +32,8 @@ Mặc định một run orchestrator **đáp xuống branch riêng**:
 - Khi run hoàn tất, **engine tự merge branch về base** ([Land về base](#land-về-base)).
 - Với repo arcterm có thêm một lý do: dev app phục vụ frontend từ checkout chính, nên merge rơi thẳng vào đó sẽ kích hoạt HMR giữa chừng.
 
+**Run khởi chạy từ một linked worktree** (`wsh runs start` chạy bên trong nó, không có `--channel`) làm việc trong worktree đó thay vì checkout của project. Nó vẫn thuộc project, base là branch và head của worktree, các cây rẽ ra từ đó và land về lại worktree, nên một agent trên feature branch giao plan cho engine và nhận kết quả trên chính branch của mình, checkout chính không bị đụng. Project monorepo ở một thư mục con ánh xạ sang cùng thư mục con trong worktree. Agent do một run khởi chạy (có `ARC_RUN_AGENT`) không được ánh xạ này: cây của nó là cây tạm của engine, run mới vẫn đi theo checkout của project.
+
 Để đáp xuống chính checkout, đặt **Runs land on → Project checkout** trong profile (toàn cục hoặc theo project, mục [Profile](jarvis.md#profile-mặc-định-của-run-và-nguyên-tắc)), hoặc chạy `wsh runs start --landing checkout`. Cờ thắng profile; profile rỗng nghĩa là branch. Khi đó:
 
 - các lane merge vào branch nào checkout đang đứng, đường merge từ chối index đã staged, và không có gì để merge về;
