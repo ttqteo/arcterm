@@ -13,8 +13,9 @@ import { ContextMenuModel } from "@/app/store/contextmenu";
 import { joinRepoPath } from "@/util/paths";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Check, Columns2, Pin, WrapText } from "lucide-react";
+import { Check, Columns2, GitCommitHorizontal, Pin, WrapText } from "lucide-react";
 import { useState } from "react";
+import { codeBlameOnAtom, toggleBlame } from "./codeblamestore";
 import { resolveViewMode, viewModesFor } from "./codeclassify";
 import { isPinned } from "./codepins";
 import { isPreviewable } from "./codepreviewable";
@@ -113,6 +114,7 @@ export function CodePathBar({ sideHidden }: { sideHidden?: string | null }) {
                     <span className="truncate">Side: {sideHidden.split("/").pop()}</span>
                 </button>
             ) : null}
+            {file.kind === "text" ? <BlameToggle /> : null}
             {file.kind === "text" ? <WrapToggle on={wrap} onToggle={() => toggleWrap(abs)} /> : null}
             <PinToggle on={isPinned(pins, project.path, file.path)} onToggle={() => toggleCodePin(file.path)} />
         </div>
@@ -157,6 +159,26 @@ function ViewModeToggle(p: { path: string; abs: string; hasPdf: boolean; preview
                 </button>
             ))}
         </div>
+    );
+}
+
+// Blame draws a column beside the source editor (b does the same); in a plain directory there is no history to blame
+function BlameToggle() {
+    const on = useAtomValue(codeBlameOnAtom);
+    const plain = useAtomValue(codePlainAtom);
+    return (
+        <button
+            type="button"
+            data-code-blame-toggle
+            aria-pressed={on}
+            aria-label="Blame"
+            disabled={plain}
+            title={plain ? NOT_TRACKED : "Toggle the blame column (b)"}
+            onClick={toggleBlame}
+            className={cn(ICON_BTN, on && !plain && ICON_ON, "disabled:cursor-default disabled:opacity-40")}
+        >
+            <GitCommitHorizontal size={13} aria-hidden />
+        </button>
     );
 }
 

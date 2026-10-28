@@ -10462,6 +10462,15 @@ const codePlainDir = {
         rec("opening a file mounts the editor", editor === true, `editor=${editor}`);
         const diff = await h.ev(`document.querySelector('[data-code-view-mode="diff"]')?.disabled ?? null`);
         rec("the Diff toggle is disabled", diff === true, `disabled=${diff}`);
+        const blame = await h.ev(`(() => {
+            const b = document.querySelector('[data-code-blame-toggle]');
+            return b ? { disabled: b.disabled, title: b.title } : null;
+        })()`);
+        rec(
+            "the Blame toggle is disabled with its reason",
+            blame?.disabled === true && /no change tracking/.test(blame?.title ?? ""),
+            JSON.stringify(blame)
+        );
         await h.shot("cdp-shots/code-plain-dir.png");
 
         await h.ev(`document.querySelector('[data-code-column-tab="search"]')?.click()`);
@@ -10744,6 +10753,185 @@ const codeDiff = {
             } catch {
                 /* a leftover temp repo is cheaper than a failed teardown */
             }
+        }
+    },
+};
+
+// the Code picker row of one registered project, by name
+const chooseProjectNamed = (h, name) =>
+    h.ev(`(() => {
+        const chip = document.querySelector('[data-code-project-picker]');
+        const scope = chip && chip.parentElement;
+        if (!scope) return false;
+        const row = [...scope.querySelectorAll('button')].find(
+            (b) => b !== chip && (b.textContent || '').includes(${JSON.stringify(name)})
+        );
+        if (!row) return false;
+        row.click();
+        return true;
+    })()`);
+
+// --- code: blame -------------------------------------------------------------------------------
+// A deferred orchestrator run gives a real run id, a BaseCommit and a live wave/<runId> landing tree, which is
+// what the backend credits a branch's commits to. The tree is the Code project: one commit on main, one on the
+// run's branch, one uncommitted line, so the column shows a seed row, a credited run row and "not committed".
+const BLAME_FILE = "blame.txt";
+const BLAME_SEED = "seed the file";
+const BLAME_RUN_COMMIT = "run commit";
+const BLAME_GOAL = "verify code-blame: do nothing, make no file changes, stop immediately";
+const blameLines = (edits = {}) =>
+    ["one", "two", "three", "four", "five", "six"].map((l, i) => edits[i + 1] ?? l).join("\n") + "\n";
+const BLAME_ENTRIES = `[...document.querySelectorAll('[data-code-blame-column] [data-code-blame-entry]')]`;
+const BLAME_ROWS = `${BLAME_ENTRIES}.map((r) => ({
+    sha: r.getAttribute('data-code-blame-entry'),
+    run: r.getAttribute('data-code-blame-run'),
+    title: r.getAttribute('title') || '',
+    text: (r.textContent || '').trim(),
+}))`;
+const blameRow = (subject) =>
+    `${BLAME_ENTRIES}.find((r) => (r.getAttribute('title') || '').startsWith(${JSON.stringify(subject)}))`;
+
+const codeBlame = {
+    name: "code-blame",
+    surface: "code",
+    async arrange(h) {
+        const cwd = mkdtempSync(join(tmpdir(), "verify-code-blame-"));
+        const name = "verify-code-blame";
+        const ctx = { cwd, name };
+        try {
+            git(cwd, "init", "-q", "--initial-branch=main");
+            writeFileSync(join(cwd, BLAME_FILE), blameLines());
+            git(cwd, "add", ".");
+            git(cwd, "commit", "-q", "-m", BLAME_SEED);
+            const wslist = await h.rpc("workspacelist", null);
+            const ch = await h.rpc("createchannel", { name, projectpath: cwd });
+            ctx.channelId = ch.oid;
+            const created = await h.rpc("createrun", {
+                channelid: ctx.channelId,
+                workspaceid: wslist[0].workspacedata.oid,
+                goal: BLAME_GOAL,
+                runtime: "claude",
+                mode: "orchestrator",
+                deferstart: true,
+            });
+            ctx.runId = created.run.id;
+            // createrun already checked wave/<runId> out here, at BaseCommit
+            ctx.landPath = created.run.landpath;
+            if (!ctx.landPath) throw new Error("createrun made no landing tree");
+            writeFileSync(join(ctx.landPath, BLAME_FILE), blameLines({ 3: "THREE", 4: "FOUR" }));
+            git(ctx.landPath, "commit", "-q", "-am", BLAME_RUN_COMMIT);
+            writeFileSync(join(ctx.landPath, BLAME_FILE), blameLines({ 3: "THREE", 4: "FOUR", 6: "six, edited" }));
+            await h.rpc("createproject", { name, path: ctx.landPath });
+            ctx.project = true;
+            await waitForProjectInConfig(h, name);
+            await h.reload();
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        if (ctx.arrangeError) return [{ step: "arrange the run's landing tree", ok: false, detail: ctx.arrangeError }];
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        await h.goto("code");
+        if ((await openProjectPicker(h)) === true) {
+            await sleep(300);
+            await chooseProjectNamed(h, ctx.name);
+        }
+        const TREE_ROW = `[...document.querySelectorAll('[data-code-tree] [role="treeitem"]')].find((r) => r.textContent.includes(${JSON.stringify(BLAME_FILE)}))`;
+        await polishWaitFor(h, `!!${TREE_ROW}`, 10000);
+        await h.ev(`${TREE_ROW}?.click()`);
+        const editor = await polishWaitFor(
+            h,
+            `document.querySelector('[data-code-path]')?.getAttribute('data-code-path') === ${JSON.stringify(BLAME_FILE)} && !!document.querySelector('.monaco-editor')`,
+            10000
+        );
+        rec("open the file in the run's landing tree", editor === true, `editor=${editor}`);
+
+        await h.ev(`document.querySelector('[data-code-blame-toggle]')?.click()`);
+        // the first blame after launch reads every landed run's commits to credit them
+        await polishWaitFor(h, `${BLAME_ENTRIES}.length >= 3`, 40000);
+        const rows = (await h.ev(BLAME_ROWS)) ?? [];
+        rec(
+            "the toggle mounts the column with three or more entries, one not committed",
+            rows.length >= 3 && rows.some((r) => r.text === "not committed"),
+            JSON.stringify(rows.map((r) => r.text))
+        );
+        await h.shot("cdp-shots/code-blame.png");
+
+        const seed = rows.find((r) => r.title.startsWith(BLAME_SEED));
+        const ran = rows.find((r) => r.title.startsWith(BLAME_RUN_COMMIT));
+        rec(
+            "a committed row's title names its commit subject and author",
+            seed != null && seed.title.endsWith(" — dana k"),
+            `title=${JSON.stringify(seed?.title)}`
+        );
+        rec(
+            "the run commit's row links the run and shows its goal",
+            ran?.run === ctx.runId && ran.text.includes(BLAME_GOAL),
+            JSON.stringify(ran)
+        );
+        rec("the seed row has no run link", seed != null && seed.run == null, JSON.stringify(seed));
+
+        // the clipboard is stubbed: a CDP session does not give the page the focus a real write needs
+        const copied = await h.ev(`(async () => {
+            const clip = navigator.clipboard;
+            let wrote = null;
+            Object.defineProperty(clip, 'writeText', { configurable: true, value: (t) => { wrote = t; return Promise.resolve(); } });
+            ${blameRow(BLAME_SEED)}?.click();
+            let state = null;
+            for (let i = 0; i < 20 && state == null; i++) {
+                await new Promise((r) => setTimeout(r, 50));
+                state = ${blameRow(BLAME_SEED)}?.getAttribute('data-code-blame-copied') ?? null;
+            }
+            delete clip.writeText;
+            return { state, wrote };
+        })()`);
+        rec(
+            "clicking the seed row copies its sha and says so on the row",
+            copied?.state === "copied" && copied.wrote === seed?.sha,
+            JSON.stringify(copied)
+        );
+
+        await h.ev(`${blameRow(BLAME_RUN_COMMIT)}?.click()`);
+        const opened = await polishWaitFor(
+            h,
+            `document.querySelector('[data-jarvis-brief-sheet] [data-run-id]')?.getAttribute('data-run-id') === ${JSON.stringify(ctx.runId)}`,
+            10000
+        );
+        const surface = await h.activeSurfaceLabel();
+        rec(
+            "clicking the run row leaves Code and opens that run",
+            opened === true && surface !== SURFACE_LABEL.code,
+            `surface=${surface} opened=${opened}`
+        );
+        await h.shot("cdp-shots/code-blame-run.png");
+
+        await h.goto("code");
+        await polishWaitFor(h, `!!document.querySelector('[data-code-blame-column]')`, 5000);
+        await h.ev(`document.querySelector('[data-code-tree]')?.focus()`);
+        await h.ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', code: 'KeyB', bubbles: true }))`);
+        const gone = await polishWaitFor(h, `!document.querySelector('[data-code-blame-column]')`, 5000);
+        rec("b with the tree focused hides the column", gone === true, `gone=${gone}`);
+        return steps;
+    },
+    // the run first, which ends its hold on the landing tree, then the project and channel, then the dirs
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`code-blame teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("leave Code", () => h.goto("cockpit"));
+        if (ctx?.runId) await step("cancel the run", () => h.rpc("cancelrun", { channelid: ctx.channelId, runid: ctx.runId }));
+        if (ctx?.project) await step("delete the project", () => h.rpc("deleteproject", { name: ctx.name }));
+        if (ctx?.channelId) await step("delete the channel", () => h.rpc("deletechannel", { channelid: ctx.channelId }));
+        for (const dir of [ctx?.landPath, ctx?.cwd].filter(Boolean)) {
+            await step(`remove ${dir}`, () => rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
         }
     },
 };
@@ -57303,6 +57491,7 @@ export const SCENARIOS = [
     codeGitStatus,
     codePlainDir,
     codeDiff,
+    codeBlame,
     codeMarkdown,
     codeTexPdf,
     codeSideColumn,

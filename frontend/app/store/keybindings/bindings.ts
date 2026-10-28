@@ -91,9 +91,11 @@ import { runningBackgroundTasks } from "@/app/view/agents/transcriptprojection";
 import { toggleTranslate } from "@/app/view/agents/translatestore";
 import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
 import { panelShownFoldedAtom, refreshSidebar } from "@/app/view/agents/worktreesidebarstore";
+import { toggleBlame } from "@/app/view/code/codeblamestore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
 import {
     codeCursorAtom,
+    codePlainAtom,
     codeRowsAtom,
     codeTreeFocusedAtom,
     confirmDelete,
@@ -2422,6 +2424,19 @@ export function buildCodeBindings(): Binding[] {
             label: "Open the file to the side, or close the side column",
             when: (ctx) => ctx.surface === "code" && !ctx.modalOpen,
             run: () => (toggleSide() ? undefined : false),
+        },
+        {
+            id: "code:blame",
+            keys: "b",
+            group: "Code",
+            label: "Toggle the blame column",
+            when: on,
+            run: () => {
+                // a plain directory has no history, as its disabled Blame button says
+                if (!globalStore.get(codePlainAtom)) {
+                    toggleBlame();
+                }
+            },
         },
         {
             id: "code:save",

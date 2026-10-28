@@ -22,10 +22,12 @@ import { CodeEditor } from "@/app/view/codeeditor/codeeditor";
 import { formatChordString } from "@/util/keysym";
 import { joinRepoPath } from "@/util/paths";
 import { fireAndForget } from "@/util/util";
-import { useAtomValue } from "jotai";
+import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { OUTLINE_SELECTOR, WithOutline } from "../agents/docoutlineview";
+import { CodeBlameColumn, type EditorLineLayout } from "./codeblamecolumn";
+import { codeBlameOnAtom } from "./codeblamestore";
 import { isHtmlPath, isMarkdownPath, isTexPath, languageForPath, resolveViewMode } from "./codeclassify";
 import { CodeDiffView } from "./codediffview";
 import { remember } from "./codeeditorcache";
@@ -37,6 +39,7 @@ import {
     codeDraftsAtom,
     codeFileAtom,
     codePendingLineAtom,
+    codePlainAtom,
     codeProjectAtom,
     codeTexPdfAtom,
     codeViewModeAtom,
@@ -65,6 +68,15 @@ function sizeLabel(bytes: number): string {
 // Module-scoped rather than a ref: the store's caret-line reader needs the same instance, and the
 // surface unmounts on every nav switch. Cleared by the cleanup CodeEditor invokes on unmount.
 let editor: MonacoTypes.editor.IStandaloneCodeEditor | null = null;
+// the same instance as an atom, for the one consumer that must re-render when it changes: the line layout
+const editorAtom = atom<MonacoTypes.editor.IStandaloneCodeEditor | null>(
+    null
+) as PrimitiveAtom<MonacoTypes.editor.IStandaloneCodeEditor | null>;
+
+function setEditor(ed: MonacoTypes.editor.IStandaloneCodeEditor | null): void {
+    editor = ed;
+    globalStore.set(editorAtom, ed);
+}
 
 setCaretLineReader(() => editor?.getPosition()?.lineNumber ?? null);
 
@@ -171,6 +183,46 @@ function KeptScroll({ id, children }: { id: string; children: ReactNode }) {
     );
 }
 
+// Where the open editor draws a line, in pixels from its top edge, so a column beside it can line up with
+// the code. `version` changes on every scroll, layout and content change, which is when those answers move.
+export function useEditorLineLayout(): EditorLineLayout | null {
+    const ed = useAtomValue(editorAtom);
+    const [version, setVersion] = useState(0);
+    useEffect(() => {
+        if (ed == null) {
+            return;
+        }
+        const bump = () => setVersion((v) => v + 1);
+        const subs = [
+            ed.onDidScrollChange(bump),
+            ed.onDidLayoutChange(bump),
+            ed.onDidChangeModelContent(bump),
+            ed.onDidChangeHiddenAreas(bump),
+            ed.onDidChangeModel(bump),
+        ];
+        return () => subs.forEach((d) => d.dispose());
+    }, [ed]);
+    return useMemo(() => {
+        if (ed == null) {
+            return null;
+        }
+        const top = (line: number) => ed.getTopForLineNumber(line) - ed.getScrollTop();
+        return {
+            top,
+            // bottom of the last line rather than top of the next, which Monaco clamps at the file's end
+            height: (start: number, lines: number) =>
+                ed.getBottomForLineNumber(start + lines - 1) - ed.getTopForLineNumber(start),
+            version,
+        };
+    }, [ed, version]);
+}
+
+// Its own component so a scroll re-renders the column, not the editor beside it.
+function BlameGutter(props: { model: AgentsViewModel; path: string; modtime: number; text: string }) {
+    const layout = useEditorLineLayout();
+    return <CodeBlameColumn {...props} layout={layout} />;
+}
+
 export function CodeViewer({ model }: { model: AgentsViewModel }) {
     const file = useAtomValue(codeFileAtom);
     const project = useAtomValue(codeProjectAtom);
@@ -183,6 +235,8 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
     const previewable = file.kind === "text" ? isPreviewable(file.path, drafts.get(shownAbs)?.text ?? file.text) : true;
     const mode =
         file.kind === "none" ? chosenMode : resolveViewMode(file.path, chosenMode, texPdf != null, previewable);
+    const blameOn = useAtomValue(codeBlameOnAtom);
+    const plain = useAtomValue(codePlainAtom);
 
     // Two paths, both needed. Monaco is keyed by file path, so opening a DIFFERENT file remounts it
     // and onMount is the only hook that runs late enough to reveal a line. Jumping to another line
@@ -376,7 +430,7 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
                     </KeptScroll>
                 );
             }
-            return (
+            const source = (
                 // keyed and named by absolute path: kept models outlive a project switch, so two
                 // projects' same relative path must not share a model URI
                 <CodeEditor
@@ -390,17 +444,26 @@ export function CodeViewer({ model }: { model: AgentsViewModel }) {
                     keepModel
                     onChange={editDraft}
                     onMount={(ed) => {
-                        editor = ed;
+                        setEditor(ed);
                         restoreKept(ed, abs);
                         applyPendingLine(ed);
                         return () => {
                             if (editor === ed) {
-                                editor = null;
+                                setEditor(null);
                             }
                             keepEditor(ed, abs);
                         };
                     }}
                 />
+            );
+            // one tree shape whether blame is on or off, so toggling it never remounts the editor
+            return (
+                <div className="flex h-full">
+                    {blameOn && !plain ? (
+                        <BlameGutter model={model} path={file.path} modtime={file.modtime} text={file.text} />
+                    ) : null}
+                    <div className="h-full min-w-0 flex-1">{source}</div>
+                </div>
             );
         }
     }
