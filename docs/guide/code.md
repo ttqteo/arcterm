@@ -86,7 +86,7 @@ Một danh sách phẳng, chữ trạng thái, đường dẫn, và `+/−`. B�
 
 ## Đọc và sửa một file
 
-Thanh đường dẫn phía trên trình soạn thảo cho biết file đang mở, có chấm tròn khi file có sửa đổi chưa lưu, rồi đến công tắc chế độ xem và ba nút icon: **Wrap** (bật/tắt xuống dòng, `Alt+Z`), **Pin** (ghim file lên đầu tab Files; ghim rồi thì icon tô đặc màu accent) và **Copy path** (chép đường dẫn tuyệt đối).
+Thanh đường dẫn phía trên trình soạn thảo cho biết file đang mở, có chấm tròn khi file có sửa đổi chưa lưu, rồi đến công tắc chế độ xem và bốn nút icon: **Blame** (cột blame bên trái trình soạn thảo, `b`; xem [Ai viết dòng này](#ai-viết-dòng-này)), **Wrap** (bật/tắt xuống dòng, `Alt+Z`), **Pin** (ghim file lên đầu tab Files; ghim rồi thì icon tô đặc màu accent) và **Copy path** (chép đường dẫn tuyệt đối).
 
 ### Chế độ xem
 
@@ -106,7 +106,7 @@ Chế độ bạn chọn áp dụng cho mọi file; file nào không có chế �
 - **preview** của `.tex` hiện tiêu đề và tác giả, các đề mục đánh số, đoạn văn với khóa `\cite` / `\ref` và công thức đã dựng. Bấm đúp một câu để chuyển sang **source** tại dòng đó. Chế độ **PDF** hiện PDF đã build gần nhất (từ Doc review, hoặc file PDF cạnh file chính) cùng ghi chú nó cũ bao nhiêu; Code không tự biên dịch.
 - **preview** của HTML hiện chính trang đó, như trong trình duyệt: ảnh, CSS và script nằm cạnh file đều tải, nên một deck slide xuất ra HTML (Marp chẳng hạn) hiện và chuyển trang được. Nó hiện bản đã lưu trên đĩa, không phải chữ đang soạn; file HTML quá 2 MB vẫn preview được dù không mở được ở source. Trang chỉ đọc được các file trong thư mục của nó, trừ file và thư mục bắt đầu bằng dấu chấm (`.env`, `.git`).
 - **source** là Monaco: tô màu theo ngôn ngữ, gồm cả LaTeX và BibTeX. Trình soạn thảo giữ lại con trỏ, vùng chọn, vị trí cuộn và lịch sử undo của mỗi file khi bạn đổi file hay rời surface.
-- **diff** đặt file với `HEAD`, xem [phần so sánh](#diff-của-code-và-surface-diff).
+- **diff** đặt file với `HEAD` hoặc với branch base, xem [phần so sánh](#diff-của-code-và-surface-diff).
 
 **Wrap** (`Alt+Z`, hoạt động cả khi bạn đang gõ trong trình soạn thảo) bật tắt việc bọc dòng dài, riêng cho từng file. Mọi file đều bọc dòng mặc định.
 
@@ -150,9 +150,17 @@ Cột phụ mở một file ở chế độ preview, source hoặc PDF (tự ch�
 
 Chế độ **diff** (công tắc trên thanh đường dẫn, hoặc `d` khi không đang gõ) đặt file đang mở cạnh bản `HEAD` của nó trong chính chỗ bạn đang sửa. Phía phải là **bản nháp chưa lưu của bạn**, nên bạn thấy đúng câu hỏi "tôi sắp commit gì": thay đổi chưa lưu cũng hiện ra. Hai cột song song khi trình xem rộng từ 900 px; hẹp hơn là một cột. File chưa có trong `HEAD` thì phía trái trống.
 
-Chế độ này chỉ so với `HEAD` và chỉ một file. Để so với commit tùy ý, so hai nhánh, đọc cả repository hay để lại comment cho agent, dùng surface [Diff](diff.md). Quy tắc thực dụng: viết code thì xem diff trong Code, review thì sang Diff.
+Nhấn `d` lần nữa để so với **branch base**: merge-base của `HEAD` với branch mặc định, tức mọi thứ branch này (hay run này) đã đổi trong file. Nhấn tiếp thì tắt diff. Bước base bị bỏ qua khi không có gì đi trước branch mặc định (bạn đang đứng trên nó); dòng đầu của diff ghi nó đang so với gì. Không đọc được base (không có branch mặc định nào giải được) thì bước base hiện lỗi chứ không lặng lẽ hiện diff với `HEAD`. Nút diff trên thanh đường dẫn luôn vào ở `HEAD`.
+
+Chế độ này chỉ so với `HEAD` hoặc branch base, và chỉ một file. Để so với commit tùy ý, so hai nhánh, đọc cả repository hay để lại comment cho agent, dùng surface [Diff](diff.md). Quy tắc thực dụng: viết code thì xem diff trong Code, review thì sang Diff.
 
 ![Code ở chế độ diff: thanh đường dẫn với "diff" đang sáng, hai cột HEAD và bản nháp, vài dòng đã thêm tô xanh](images/code-diff-mode.png)
+
+## Ai viết dòng này
+
+Nút **Blame** trên thanh đường dẫn (hoặc `b` khi không đang gõ) mở một cột bên trái trình soạn thảo: mỗi đoạn dòng liên tiếp từ cùng một commit là một ô, có sha ngắn, tuổi, và khi commit đó do một run land thì có cả goal của run. Di chuột lên ô để xem subject và tác giả. Bấm ô có run thì mở run đó; bấm ô commit khác thì chép sha. Dòng chưa commit ghi "not committed". Blame mô tả file đã lưu, nên đọc lại sau mỗi lần lưu. Thư mục không phải git thì nút bị tắt và `b` không làm gì.
+
+Một run được ghi công cho commit khi: run đã land bằng merge (`--no-ff`) và commit nằm ở nhánh thứ hai của merge đó, run land kiểu fast-forward và commit nằm trên first-parent từ base của run, hoặc bạn đang ở chính `wave/<runId>` của một run đang chạy.
 
 ## Các đường dẫn vào Code
 
@@ -184,7 +192,8 @@ Các phím này hoạt động khi Code đang hiện và bạn không gõ trong 
 | `Alt+Z` | Bọc dòng cho file đang mở (cũng hoạt động khi đang gõ) |
 | `Ctrl+\` | Mở/đóng cột phụ (cũng hoạt động khi đang gõ) |
 | `Alt+←` / `Alt+→` | Back / Forward |
-| `d` | Bật/tắt chế độ diff với `HEAD` |
+| `d` | Xoay vòng diff: với `HEAD`, với branch base, tắt |
+| `b` | Bật/tắt cột blame |
 | `r` | Đọc lại danh sách file (Refresh index) |
 | `j` `k` `↑` `↓` `←` `→` `Enter` `n` `Shift+N` `F2` `Delete` | Trong cây, xem bảng ở trên |
 | `Esc` | Về Cockpit |
