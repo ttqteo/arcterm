@@ -105,6 +105,22 @@ func TestBlameUntracked(t *testing.T) {
 	}
 }
 
+func TestBlameNoCommits(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "staged.txt", "x\n")
+	gitRun(t, dir, "add", "staged.txt")
+	writeFile(t, dir, "loose.txt", "y\n")
+	for _, file := range []string{"staged.txt", "loose.txt"} {
+		res, err := Blame(context.Background(), dir, file)
+		if err != nil {
+			t.Fatalf("%s: a repo with no commits is an answer, not an error: %v", file, err)
+		}
+		if !res.IsRepo || !res.Untracked || len(res.Hunks) != 0 {
+			t.Fatalf("%s: res = %+v, want untracked with no hunks", file, res)
+		}
+	}
+}
+
 func TestBlameNotRepo(t *testing.T) {
 	res, err := Blame(context.Background(), t.TempDir(), "a.txt")
 	if err != nil {

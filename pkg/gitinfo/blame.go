@@ -51,6 +51,10 @@ func Blame(ctx context.Context, cwd, path string) (*BlameResult, error) {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("git blame %s: %w", path, ctx.Err())
 		}
+		// with no commits yet, git blame fails even for a staged file ("no such ref: HEAD").
+		if _, herr := run(ctx, cwd, "rev-parse", "--verify", "-q", "HEAD"); herr != nil {
+			return &BlameResult{IsRepo: true, Untracked: true}, nil
+		}
 		if _, lerr := run(ctx, cwd, "ls-files", "--error-unmatch", "--", path); lerr != nil {
 			return &BlameResult{IsRepo: true, Untracked: true}, nil
 		}
