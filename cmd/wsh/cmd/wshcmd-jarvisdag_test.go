@@ -915,19 +915,31 @@ func TestDagStatusTellsAFailedPlanReviewFromOneInProgress(t *testing.T) {
 
 func TestPlanReviewLineListsReviewers(t *testing.T) {
 	now := time.Now().UnixMilli()
-	pr := &waveobj.PlanReviewStage{State: orchestrate.PlanReviewState_Reviewing, Round: 1, Reviewers: []waveobj.PlanReviewer{
+	live := &waveobj.PlanReviewStage{State: orchestrate.PlanReviewState_Reviewing, Round: 1, Reviewers: []waveobj.PlanReviewer{
+		{Lens: orchestrate.PlanReviewLens_Full, State: orchestrate.PlanReviewerState_Reviewing, StartedTs: now - 60_000},
+		{Lens: orchestrate.PlanReviewLens_Second, State: orchestrate.PlanReviewerState_Passed, StartedTs: now - 120_000},
+	}}
+	// a round stored by a build that split the checklist into lenses still names them
+	stored := &waveobj.PlanReviewStage{State: orchestrate.PlanReviewState_Reviewing, Round: 1, Reviewers: []waveobj.PlanReviewer{
 		{Lens: orchestrate.PlanReviewLens_Full, State: orchestrate.PlanReviewerState_Reviewing, StartedTs: now - 60_000},
 		{Lens: orchestrate.PlanReviewLens_Spec, State: orchestrate.PlanReviewerState_Passed, StartedTs: now - 120_000},
 		{Lens: orchestrate.PlanReviewLens_Order, State: orchestrate.PlanReviewerState_Failed, StartedTs: now - 90_000},
 		{Lens: orchestrate.PlanReviewLens_Tests, State: orchestrate.PlanReviewerState_Lost},
 		{Lens: orchestrate.PlanReviewLens_Final, State: orchestrate.PlanReviewerState_Reviewing, StartedTs: now - 30_000},
 	}}
-	want := "plan review  reviewing  round=1  for 2m  reviewers: Full review reviewing · Spec coverage passed · Task order and files failed · Tests and commands lost · Final coverage reviewing"
-	if got := planReviewLine(pr, now); !strings.HasPrefix(got, want) {
-		t.Fatalf("got  %q\nwant %q...", got, want)
+	for _, tc := range []struct {
+		pr   *waveobj.PlanReviewStage
+		want string
+	}{
+		{live, "plan review  reviewing  round=1  for 2m  reviewers: Full review reviewing · Second pass passed"},
+		{stored, "plan review  reviewing  round=1  for 2m  reviewers: Full review reviewing · Spec coverage passed · Task order and files failed · Tests and commands lost · Final coverage reviewing"},
+	} {
+		if got := planReviewLine(tc.pr, now); !strings.HasPrefix(got, tc.want) {
+			t.Fatalf("got  %q\nwant %q...", got, tc.want)
+		}
 	}
-	pr.State = orchestrate.PlanReviewState_Failed
-	if got := planReviewLine(pr, now); strings.Contains(got, "reviewers:") {
+	live.State = orchestrate.PlanReviewState_Failed
+	if got := planReviewLine(live, now); strings.Contains(got, "reviewers:") {
 		t.Fatalf("a settled round lists no reviewers, got %q", got)
 	}
 }

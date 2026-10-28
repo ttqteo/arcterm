@@ -306,7 +306,7 @@ type Run struct {
 	// ReviewerRoute is the route task reviewers and stage sessions run on (nil = the lead's route). Only the
 	// human sets it; a submit carries it onto the group.
 	ReviewerRoute *RoutePin `json:"reviewerroute,omitempty"`
-	// LightReviewerRoute is the route the plan review's lens and follow-up reviewers run on (nil = claude/sonnet).
+	// LightReviewerRoute is the route the plan review's second pass and follow-up reviewers run on (nil = claude/sonnet).
 	// Only the human sets it; a submit carries it onto the group.
 	LightReviewerRoute *RoutePin `json:"lightreviewerroute,omitempty"`
 	// Autonomous is the Approvals setting: the lead answers what would otherwise reach the human. Pending
@@ -516,7 +516,7 @@ type TaskGroup struct {
 	WorkerRoute   *RoutePin  `json:"workerroute,omitempty"`   // default worker route (nil = inherit owner); task RunSpec wins
 	ReviewerPicks bool       `json:"reviewerpicks,omitempty"` // the plan reviewer picks task models (false = the WorkerRoute rule stands)
 	ReviewerRoute *RoutePin  `json:"reviewerroute,omitempty"` // route for task reviewers and stage sessions (nil = the lead's route)
-	// route for the plan review's lens and follow-up reviewers (nil = claude/sonnet)
+	// route for the plan review's second pass and follow-up reviewers (nil = claude/sonnet)
 	LightReviewerRoute *RoutePin   `json:"lightreviewerroute,omitempty"`
 	Autonomous         bool        `json:"autonomous,omitempty"` // the lead answers what would otherwise reach the human
 	MergeRequired      bool        `json:"mergerequired,omitempty"`
@@ -599,7 +599,7 @@ type PlanReviewStage struct {
 
 // PlanReviewer is one reviewer session of a plan review round.
 type PlanReviewer struct {
-	Lens      string `json:"lens"`           // full | spec | order | tests | final | followup
+	Lens      string `json:"lens"`           // full | second | followup; spec | order | tests | final in stored older rounds
 	State     string `json:"state"`          // reviewing | passed | failed | lost
 	Text      string `json:"text,omitempty"` // its verdict text, or why it was lost
 	RunID     string `json:"runid,omitempty"`
@@ -853,7 +853,7 @@ type JarvisProfile struct {
 	ReviewerPicks bool `json:"reviewerpicks,omitempty"`
 	// ReviewerRoute is the default route for a new run's task reviewers and stage sessions (nil = the lead's route).
 	ReviewerRoute *RoutePin `json:"reviewerroute,omitempty"`
-	// LightReviewerRoute is the default route for a new run's plan review lens and follow-up reviewers (nil = claude/sonnet).
+	// LightReviewerRoute is the default route for a new run's plan review second pass and follow-up reviewers (nil = claude/sonnet).
 	LightReviewerRoute *RoutePin `json:"lightreviewerroute,omitempty"`
 	// Landing is where an engine run's lanes land: checkout | branch (empty = branch).
 	Landing string `json:"landing,omitempty"`

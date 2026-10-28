@@ -32,10 +32,12 @@ const (
 	PlanReviewState_Accepted  = "accepted" // failed, and the lead proceeded on the human's word
 )
 
-// Plan reviewer lenses (PlanReviewer.Lens): full is today's reviewer, the next four split its checklist, and
-// followup is round 2's one reviewer.
+// Plan reviewer lenses (PlanReviewer.Lens): round 1 runs full, the reviewer that picks models, beside second, an
+// independent pass over the same checklist; followup is round 2's one reviewer. Spec, order, tests and final split
+// the checklist in an older round 1: stored rounds carry them, so they keep their titles.
 const (
 	PlanReviewLens_Full     = "full"
+	PlanReviewLens_Second   = "second"
 	PlanReviewLens_Spec     = "spec"
 	PlanReviewLens_Order    = "order"
 	PlanReviewLens_Tests    = "tests"
@@ -53,6 +55,7 @@ const (
 
 var planReviewLensTitles = map[string]string{
 	PlanReviewLens_Full:     "Full review",
+	PlanReviewLens_Second:   "Second pass",
 	PlanReviewLens_Spec:     "Spec coverage",
 	PlanReviewLens_Order:    "Task order and files",
 	PlanReviewLens_Tests:    "Tests and commands",
@@ -68,16 +71,14 @@ func PlanReviewLensTitle(lens string) string {
 	return lens
 }
 
-// planRoundOneLenses are round 1's reviewers, in the order the merged findings list them.
-var planRoundOneLenses = []string{PlanReviewLens_Full, PlanReviewLens_Spec, PlanReviewLens_Order, PlanReviewLens_Tests, PlanReviewLens_Final}
+// planRoundOneLenses are round 1's reviewers, in the order the merged findings list them. The gain is in the
+// independent pass, not in splitting the checklist (docs/superpowers/specs/2026-10-14-wider-plan-review-design.md).
+var planRoundOneLenses = []string{PlanReviewLens_Full, PlanReviewLens_Second}
 
 // planReviewerPicks reports the reviewer whose verdict carries the model picks and whose loss fails the round.
 func planReviewerPicks(lens string) bool {
 	return lens == PlanReviewLens_Full || lens == PlanReviewLens_Followup
 }
-
-// planReviewItem is one checklist item, worded as the full reviewer's prompt has it, and the lens that owns it.
-type planReviewItem struct{ lens, text string }
 
 // planReviewBoardItem applies only with a Prototype; %s is the canvas path.
 const planReviewBoardItem = "every `.dc.html` board in the folder of %s has a step in a scenario Final runs that renders what the board shows; each board without one is a finding."
@@ -92,49 +93,41 @@ const planReviewDependsReasonItem = "each reason a Depends line gives in parenth
 // planReviewSpecGap closes the checklist as a sentence of its own, not a bullet.
 const planReviewSpecGap = "Also report gaps in the spec, and places where the spec and the plan contradict each other."
 
-// planReviewChecklist is the one source of the checklist: the full prompt lists every item in this order, a lens
-// prompt only its own.
-var planReviewChecklist = []planReviewItem{
-	{PlanReviewLens_Spec, "every requirement in the spec has a task;"},
-	{PlanReviewLens_Order, "no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time. Submit already refused any path two such tasks both list on their Files lines, so look for what those lines leave out: a task with no Files line, and a file a task's text edits that its Files line omits;"},
-	{PlanReviewLens_Order, "types, functions and flags have the same names in every task that mentions them;"},
-	{PlanReviewLens_Order, "no task waits for another's long implementation when it needs only that task's interface (a type, a wire field, a table, a function's signature): the interface can land first as its own small task, so the implementation and the tasks that use it run beside each other;"},
-	{PlanReviewLens_Order, planReviewDependsReasonItem},
-	{PlanReviewLens_Tests, "each task states its acceptance criteria and names the tests that prove them;"},
-	{PlanReviewLens_Tests, "the commands the plan names (its Verify, Setup, Check and Final lines, and those in its tasks) exist;"},
+// planReviewChecklist is the one source of the checklist every plan reviewer's brief lists, in this order.
+var planReviewChecklist = []string{
+	"every requirement in the spec has a task;",
+	"no two tasks edit the same file without a Depends between them, since tasks with nothing between them run at the same time. Submit already refused any path two such tasks both list on their Files lines, so look for what those lines leave out: a task with no Files line, and a file a task's text edits that its Files line omits;",
+	"types, functions and flags have the same names in every task that mentions them;",
+	"no task waits for another's long implementation when it needs only that task's interface (a type, a wire field, a table, a function's signature): the interface can land first as its own small task, so the implementation and the tasks that use it run beside each other;",
+	planReviewDependsReasonItem,
+	"each task states its acceptance criteria and names the tests that prove them;",
+	"the commands the plan names (its Verify, Setup, Check and Final lines, and those in its tasks) exist;",
 	// SIEM's leads wrapped every vitest call in a fresh worktree plus pnpm install: 109 s a call against vitest's 11 s (run 313fb392)
-	{PlanReviewLens_Tests, "no Verify, Check or Final command, and no task step, rebuilds the environment on every call (a scratch worktree, or a package install per call): the engine already prepares each tree, with the plan's Setup or, with none, the main checkout's linked `node_modules`;"},
-	{PlanReviewLens_Tests, planReviewManifestItem},
-	{PlanReviewLens_Final, "the Final command checks the running app: every task that adds or changes a rendered view, a visual state (loading, empty, error, gone) or an interaction names in its acceptance the scenario step that shows that view or performs that interaction, and Final runs that scenario. A scenario that only opens the surface or panel the view sits in does not count. A check left to a person has no owner in a run, so a plan that leaves one is a finding."},
+	"no Verify, Check or Final command, and no task step, rebuilds the environment on every call (a scratch worktree, or a package install per call): the engine already prepares each tree, with the plan's Setup or, with none, the main checkout's linked `node_modules`;",
+	planReviewManifestItem,
+	"the Final command checks the running app: every task that adds or changes a rendered view, a visual state (loading, empty, error, gone) or an interaction names in its acceptance the scenario step that shows that view or performs that interaction, and Final runs that scenario. A scenario that only opens the surface or panel the view sits in does not count. A check left to a person has no owner in a run, so a plan that leaves one is a finding.",
 	// the final verifier judges only screenshots, so a board no scenario renders ends the run unverified
-	{PlanReviewLens_Final, planReviewBoardItem},
-	{PlanReviewLens_Spec, planReviewSpecGap},
+	planReviewBoardItem,
 }
 
-// writeChecklist writes "Check that:" and the items keep accepts, the spec-gap sentence last.
-func writeChecklist(b *strings.Builder, g *waveobj.TaskGroup, tree string, keep func(lens string) bool) {
+// writeChecklist writes "Check that:", the items that apply to g, and the spec-gap sentence last.
+func writeChecklist(b *strings.Builder, g *waveobj.TaskGroup, tree string) {
 	b.WriteString("Check that:\n")
-	gap := false
 	for _, it := range planReviewChecklist {
 		switch {
-		case !keep(it.lens):
-		case it.text == planReviewSpecGap:
-			gap = true
-		case it.text == planReviewBoardItem:
+		case it == planReviewBoardItem:
 			if g.Prototype != "" {
 				fmt.Fprintf(b, "- "+planReviewBoardItem+"\n", DocPath(g, tree, g.Prototype))
 			}
-		case it.text == planReviewManifestItem:
+		case it == planReviewManifestItem:
 			if g.Setup == "" {
-				b.WriteString("- " + it.text + "\n")
+				b.WriteString("- " + it + "\n")
 			}
 		default:
-			b.WriteString("- " + it.text + "\n")
+			b.WriteString("- " + it + "\n")
 		}
 	}
-	if gap {
-		b.WriteString(planReviewSpecGap + "\n")
-	}
+	b.WriteString(planReviewSpecGap + "\n")
 }
 
 // The plan reviewer's model picks (DagModelPick.Model) on a Reviewer picks run: sonnet puts a task on
@@ -219,8 +212,8 @@ func readPlanReviewDoc(g *waveobj.TaskGroup, tree, p string) string {
 	return string(data)
 }
 
-// planReviewSession is the session of the reviewer with lens: the full reviewer on the reviewer route, a lens and
-// the follow-up on the Light reviewers route.
+// planReviewSession is the session of the reviewer with lens: the full reviewer on the reviewer route, the second
+// pass and the follow-up on the Light reviewers route.
 func planReviewSession(ctx context.Context, g *waveobj.TaskGroup, tree, lens string) (StageSession, error) {
 	s := StageSession{Role: jarvis.UsageRole_PlanReviewer, Label: "plan review", Tree: tree, Lens: lens}
 	if lens == PlanReviewLens_Full {
@@ -230,7 +223,7 @@ func planReviewSession(ctx context.Context, g *waveobj.TaskGroup, tree, lens str
 	s.Label += ": " + PlanReviewLensTitle(lens)
 	s.Route = lightReviewerRoute(g)
 	if lens != PlanReviewLens_Followup {
-		s.Prompt = planLensPrompt(g, tree, lens)
+		s.Prompt = planSecondPassPrompt(g, tree)
 		return s, nil
 	}
 	prompt, err := planFollowupPrompt(ctx, g, tree)
@@ -268,20 +261,13 @@ func writePlanReviewVerdict(b *strings.Builder, pickArgs string) {
 	fmt.Fprintf(b, "Keep the text within %d characters; a longer one is refused.", MaxReviewNoteLen)
 }
 
-// planLensPrompt is a lens reviewer's brief: its own checklist items, and the verdict without picks, which are
-// the full reviewer's.
-func planLensPrompt(g *waveobj.TaskGroup, tree, lens string) string {
+// planSecondPassPrompt is the second pass's brief: the full reviewer's whole checklist, and the verdict without
+// picks, which are the full reviewer's.
+func planSecondPassPrompt(g *waveobj.TaskGroup, tree string) string {
 	var b strings.Builder
 	writePlanReviewOpening(&b, g, tree)
-	fmt.Fprintf(&b, "You are one of %d plan reviewers working at the same time. Yours is %s. ", len(planRoundOneLenses), PlanReviewLensTitle(lens))
-	writeChecklist(&b, g, tree, func(l string) bool { return l == lens })
-	var others []string
-	for _, l := range planRoundOneLenses {
-		if l != lens && l != PlanReviewLens_Full {
-			others = append(others, PlanReviewLensTitle(l))
-		}
-	}
-	fmt.Fprintf(&b, "Report only problems in your area; the full reviewer and the other lens reviewers cover %s. A plan with no problem in your area passes.\n", joinAnd(others))
+	b.WriteString("You are one of two plan reviewers working independently at the same time, so judge the whole plan yourself. ")
+	writeChecklist(&b, g, tree)
 	b.WriteString(planReviewReadOnly)
 	writePlanReviewVerdict(&b, "")
 	return b.String()
@@ -292,7 +278,7 @@ func planLensPrompt(g *waveobj.TaskGroup, tree, lens string) string {
 func planReviewPrompt(g *waveobj.TaskGroup, tree string) string {
 	var b strings.Builder
 	writePlanReviewOpening(&b, g, tree)
-	writeChecklist(&b, g, tree, func(string) bool { return true })
+	writeChecklist(&b, g, tree)
 	b.WriteString(planReviewReadOnly)
 	writePlanReviewVerdict(&b, writePlanReviewPicks(&b, g, nil))
 	return b.String()
@@ -361,7 +347,7 @@ func planFollowupPrompt(ctx context.Context, g *waveobj.TaskGroup, tree string) 
 	b.WriteString("Do two things, and do not re-review text the diffs leave unchanged:\n")
 	b.WriteString("1. For each round-1 finding, confirm the revised plan fixes it, or explicitly and soundly declines it. A finding that is neither is a finding again.\n")
 	b.WriteString("2. Check only the changed lines against the round-1 checklist, and report any problem they introduce or still carry. ")
-	writeChecklist(&b, g, tree, func(string) bool { return true })
+	writeChecklist(&b, g, tree)
 	b.WriteString(planReviewReadOnly)
 	pickArgs := writePlanReviewPicks(&b, g, prior.Picks)
 	b.WriteString("Write the verdict's text as one line per round-1 finding (fixed, declined or not fixed, and why), then any new findings: each problem, where it is, and the fix.\n")
@@ -567,8 +553,8 @@ func reviewingReviewer(pr *waveobj.PlanReviewStage, runID string) *waveobj.PlanR
 
 // settlePlanReviewRound ends the round once no reviewer is still reviewing; it is the only place a round ends, so
 // the round's event, wake and handoff go out once. The round passes when the reviewer that picks passed and every
-// other passed or was lost: the full reviewer covers a lost lens's area. Otherwise it fails with the attributed
-// findings of every reviewer, whole, for the lead to revise from.
+// other passed or was lost: a lost second pass leaves the full reviewer's verdict on the same checklist. Otherwise
+// it fails with the attributed findings of every reviewer, whole, for the lead to revise from.
 func settlePlanReviewRound(ctx context.Context, g *waveobj.TaskGroup, pr *waveobj.PlanReviewStage, afterCommit *[]func()) {
 	if pr.State != PlanReviewState_Reviewing || len(pr.Reviewers) == 0 {
 		return
@@ -617,8 +603,8 @@ func settlePlanReviewRound(ctx context.Context, g *waveobj.TaskGroup, pr *waveob
 	})
 }
 
-// passedPlanReviewSummary is a passed round's text: the required reviewer's summary, and each lens that did not
-// finish.
+// passedPlanReviewSummary is a passed round's text: the required reviewer's summary, and each other reviewer that
+// did not finish.
 func passedPlanReviewSummary(required *waveobj.PlanReviewer, reviewers []waveobj.PlanReviewer) string {
 	lines := []string{required.Text}
 	for _, r := range reviewers {
@@ -630,7 +616,7 @@ func passedPlanReviewSummary(required *waveobj.PlanReviewer, reviewers []waveobj
 }
 
 // mergedPlanReviewFindings is a failed round's text: each failing reviewer's findings as a block attributed to its
-// title, then a block naming the required reviewer if it was lost, the reviewers that passed, and the lenses that
+// title, then a block naming the required reviewer if it was lost, the reviewers that passed, and the others that
 // did not finish. Nothing is clipped or merged across reviewers: the lead dedups.
 func mergedPlanReviewFindings(reviewers []waveobj.PlanReviewer) string {
 	var blocks, tail, passed, lost []string

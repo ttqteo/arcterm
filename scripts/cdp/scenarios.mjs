@@ -26624,15 +26624,12 @@ async function waitDagTask(h, ctx, id, ok) {
 const taskFacts = (t) =>
     t && { state: t.state, modelsource: t.modelsource ?? "", runtime: t.runspec?.runtime ?? "", model: t.runspec?.model ?? "" };
 
-// the plan review's reviewers are real sessions; haiku keeps the five of a round cheap
+// the plan review's reviewers are real sessions; haiku keeps a round's two cheap
 const HAIKU_ROUTE = { runtime: "claude", model: "haiku" };
-const ROUND_ONE_LENSES = ["full", "spec", "order", "tests", "final"];
+const ROUND_ONE_LENSES = ["full", "second"];
 const LENS_TITLE = {
     full: "Full review",
-    spec: "Spec coverage",
-    order: "Task order and files",
-    tests: "Tests and commands",
-    final: "Final coverage",
+    second: "Second pass",
     followup: "Round-2 follow-up",
 };
 const PLAN_REVIEWER_WAIT_MS = 90000;
@@ -26737,14 +26734,11 @@ const modelPicks = {
                 { channelid: ctx.channelId, runid: ctx.runId, parallelism: 1, planpath: MODELS_PLAN },
                 MODELS_RPC
             );
-            // the five reviewers are real sessions, spawned after the submit returns: a pass from each lens, then
+            // the two reviewers are real sessions, spawned after the submit returns: the second pass's pass, then
             // the full reviewer's with the picks
             const pass = { verdict: "pass", notes: "verify model-picks: three noops" };
             await recordPlanReviewRound(h, ctx, 1, {
-                spec: pass,
-                order: pass,
-                tests: pass,
-                final: pass,
+                second: pass,
                 full: { ...pass, picks: MODEL_PICKS },
             });
             // the Brief reads a boot-primed snapshot, so the RPC-created channel needs a reload
@@ -26873,7 +26867,7 @@ const modelPicks = {
         const chips = await h.ev(PLAN_REVIEWER_CHIPS);
         await h.shot("cdp-shots/model-picks-3-reviewers.png");
         rec(
-            "6. the graph's stage line shows five plan reviewers, each passed",
+            "6. the graph's stage line shows two plan reviewers, each passed",
             sameSet(
                 chips.map((c) => c.lens),
                 ROUND_ONE_LENSES
@@ -26884,7 +26878,7 @@ const modelPicks = {
         const reviewed = await h.ev(railGroupExpr("Plan reviewed"));
         await h.shot("cdp-shots/model-picks-4-plan-reviewed.png");
         rec(
-            "7. the timeline's Plan reviewed row lists five reviewers",
+            "7. the timeline's Plan reviewed row lists two reviewers",
             reviewed.found &&
                 sameSet(
                     reviewed.reviewers.map((r) => r.lens),
@@ -27180,7 +27174,7 @@ const codexWorkerRoute = {
     },
 };
 
-// --- plan-review-rounds: round 1's five reviewers, one failing, then round 2's follow-up on a resubmit
+// --- plan-review-rounds: round 1's two reviewers, the second pass failing, then round 2's follow-up on a resubmit
 // (docs/superpowers/specs/2026-10-14-wider-plan-review-design.md). The failed round launches a real lead: its run
 // is on haiku, and the finding it is woken with tells it to leave the plan alone, so the scenario's resubmit is the
 // only one.
@@ -27201,11 +27195,11 @@ const PLAN_REVIEW_TREE_ROWS = `(async () => {
     const titles = () => [...(tree()?.querySelectorAll('div') ?? [])].filter(
         (d) => d.children.length === 0 && flat(d).startsWith(${JSON.stringify(PLAN_REVIEW_TITLE)})
     );
-    for (let i = 0; i < 40 && folds().length === 0 && titles().length < 5; i++) {
+    for (let i = 0; i < 40 && folds().length === 0 && titles().length < ${ROUND_ONE_LENSES.length}; i++) {
         await new Promise((r) => setTimeout(r, 250));
     }
     folds().forEach((f) => f.click());
-    for (let i = 0; i < 20 && titles().length < 5; i++) await new Promise((r) => setTimeout(r, 250));
+    for (let i = 0; i < 20 && titles().length < ${ROUND_ONE_LENSES.length}; i++) await new Promise((r) => setTimeout(r, 250));
     return {
         tree: tree() != null,
         rows: titles().map((t) => ({ title: flat(t), sub: flat(t.nextElementSibling) })),
@@ -27270,10 +27264,7 @@ const planReviewRounds = {
             );
             const pass = { verdict: "pass", notes: "verify plan-review-rounds: three noops" };
             await recordPlanReviewRound(h, ctx, 1, {
-                spec: pass,
-                order: pass,
-                final: pass,
-                tests: { verdict: "fail", notes: ROUNDS_FINDING },
+                second: { verdict: "fail", notes: ROUNDS_FINDING },
                 full: pass,
             });
             ctx.graph = await openRunGraph(h, ctx);
@@ -27286,21 +27277,21 @@ const planReviewRounds = {
         const steps = [];
         const rec = (step, ok, detail) => steps.push({ step, ok, detail });
         if (ctx.arrangeError != null) {
-            rec("0. round 1's five reviewers recorded their verdicts, tests failing", false, ctx.arrangeError);
+            rec("0. round 1's two reviewers recorded their verdicts, the second pass failing", false, ctx.arrangeError);
             return steps;
         }
         rec("0. the run's graph opened with its 3 tasks", ctx.graph.ok, JSON.stringify({ runId: ctx.runId, ...ctx.graph }));
         if (!ctx.graph.ok) return steps;
 
-        await polishWaitFor(h, `${PLAN_REVIEWER_CHIPS}.filter((c) => c.state !== 'reviewing').length === 5`, 5000);
+        await polishWaitFor(h, `${PLAN_REVIEWER_CHIPS}.filter((c) => c.state !== 'reviewing').length === ${ROUND_ONE_LENSES.length}`, 5000);
         const chips = await h.ev(PLAN_REVIEWER_CHIPS);
         await h.shot("cdp-shots/plan-review-rounds-1-chips.png");
         rec(
-            "1. round 1: five chips, four passed and tests failed",
+            "1. round 1: two chips, full passed and the second pass failed",
             sameSet(
                 chips.map((c) => c.lens),
                 ROUND_ONE_LENSES
-            ) && chips.every((c) => c.state === (c.lens === "tests" ? "failed" : "passed")),
+            ) && chips.every((c) => c.state === (c.lens === "second" ? "failed" : "passed")),
             JSON.stringify(chips)
         );
 
@@ -27308,14 +27299,14 @@ const planReviewRounds = {
         const findings = (await planReviewOf(h, ctx))?.findings ?? "";
         await h.shot("cdp-shots/plan-review-rounds-2-plan-reviewed.png");
         rec(
-            "2. the Plan reviewed row lists five reviewers, and the findings begin with [Tests and commands]",
+            "2. the Plan reviewed row lists two reviewers, and the findings begin with [Second pass]",
             reviewed.found &&
                 sameSet(
                     reviewed.reviewers.map((r) => r.lens),
                     ROUND_ONE_LENSES
                 ) &&
-                reviewed.reviewers.every((r) => r.text === `${LENS_TITLE[r.lens]} · ${r.lens === "tests" ? "failed" : "passed"}`) &&
-                findings.startsWith("[Tests and commands]"),
+                reviewed.reviewers.every((r) => r.text === `${LENS_TITLE[r.lens]} · ${r.lens === "second" ? "failed" : "passed"}`) &&
+                findings.startsWith("[Second pass]"),
             JSON.stringify({ ...reviewed, findings: findings.slice(0, 200) })
         );
 
@@ -27333,11 +27324,11 @@ const planReviewRounds = {
         await h.shot("cdp-shots/plan-review-rounds-4-tree.png");
         const wantRows = ROUND_ONE_LENSES.map((l) => ({
             title: `${PLAN_REVIEW_TITLE}${LENS_TITLE[l]}`,
-            verdict: l === "tests" ? "failed" : "passed",
+            verdict: l === "second" ? "failed" : "passed",
         }));
         rec(
             "4. the agent tree's plan-reviewer rows name their lens and verdict",
-            tree.rows.length === 5 &&
+            tree.rows.length === ROUND_ONE_LENSES.length &&
                 wantRows.every((w) => tree.rows.some((r) => r.title === w.title && r.sub.split(" · ")[0] === w.verdict)),
             tree.rows.length === 0
                 ? `no plan-reviewer rows in the tree: the run's reviewer tabs were reaped or never joined the roster (${JSON.stringify(tree)})`

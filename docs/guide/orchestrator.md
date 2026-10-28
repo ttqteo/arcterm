@@ -79,7 +79,7 @@ Một run orchestrator có bốn route, chọn ở hộp New (**Lead**, **Worker
   - **một route**: mọi task chạy trên route đó.
   - **Reviewer picks**: mỗi task chạy trên dòng `**Model:**` của plan nếu có (dòng này có thể nêu cả harness, như `codex:gpt-5.5`: xem [Plan file](plan-format.md#các-dòng-đầu-task)), nếu không thì trên model plan reviewer chọn cho nó, `sonnet` hoặc model của lead ([Model picks](#model-picks)). Reviewer picks và một route là **một** cài đặt, nên run không bao giờ có cả hai; server từ chối request gửi cả hai.
 - **Reviewers**: nơi các session xét của engine chạy: reviewer từng task, reviewer **Full review** của plan review, final verifier. Mặc định là route của lead. Chỉ bạn đặt (hộp New, profile, `wsh runs start`, hoặc **Adjust** trên run đang chạy); lead không có lệnh nào ghi nó.
-- **Light reviewers**: bốn reviewer theo lens của plan review vòng 1 và reviewer follow-up của vòng 2 ([Review plan](#review-plan)). Không đặt thì là Claude Code · `sonnet` trên mọi runtime. Đặt ở hộp New, profile hoặc run sheet; `wsh runs start` không có cờ cho nó.
+- **Light reviewers**: Second pass của plan review vòng 1 và reviewer follow-up của vòng 2 ([Review plan](#review-plan)). Không đặt thì là Claude Code · `sonnet` trên mọi runtime. Đặt ở hộp New, profile hoặc run sheet; `wsh runs start` không có cờ cho nó.
 
 Engine tìm route của từng task bằng một quy tắc (`effectiveTaskRoute`, `pkg/orchestrate/modelroute.go`), lấy nấc đầu tiên áp dụng được:
 
@@ -223,16 +223,9 @@ Mỗi reviewer là một session mới trong cây nơi lane đáp xuống. Nó �
 
 Reviewer cũng báo các lỗ hổng trong spec và chỗ spec với plan mâu thuẫn nhau. Nó chỉ đọc, và kết thúc bằng `wsh jarvis dag planreview pass "<tóm tắt>"` hoặc `wsh jarvis dag planreview fail "<phát hiện>"`. Reviewer kết thúc không có kết luận, hoặc chạy quá 20 phút, được thay **một lần**; mất hai lần thì nó **lost**.
 
-**Vòng 1 chạy năm reviewer cùng lúc.** **Full review** chạy cả checklist trên route reviewer và là reviewer duy nhất chọn model ([Model picks](#model-picks)). Bốn reviewer theo lens chạy trên route Light reviewers, mỗi cái chỉ kiểm phần của nó:
+**Vòng 1 chạy hai reviewer cùng lúc, độc lập.** **Full review** chạy cả checklist trên route reviewer và là reviewer duy nhất chọn model ([Model picks](#model-picks)). **Second pass** chạy cùng checklist đó (cùng mục, thứ tự và chữ) trên route Light reviewers, không chọn model. Đo ngày 2026-10-28 trên 47 vòng 1 (fork kaeltran16): bốn reviewer theo lens trước đây tốn xấp xỉ token của Full review Opus và thêm bốn tiến trình claude, nhưng chỉ đổi kết quả 3/47 vòng, phần lớn lặp lại phát hiện của Full review; cái lợi nằm ở một lượt độc lập, không ở việc chia checklist. Vòng cũ đã lưu vẫn hiện tên lens của nó (Spec coverage, Task order and files, Tests and commands, Final coverage).
 
-| Lens | Kiểm |
-|---|---|
-| **Spec coverage** | mọi yêu cầu có một task; lỗ hổng spec và chỗ spec/plan mâu thuẫn |
-| **Task order and files** | chồng lấn Files/Depends; lý do của Depends đúng; tên nhất quán giữa các task |
-| **Tests and commands** | tiêu chí chấp nhận và test được nêu; các lệnh được nêu tồn tại |
-| **Final coverage** | mỗi thay đổi UI có một bước scenario Final; có Prototype thì mỗi board có một bước |
-
-Vòng chốt khi không còn reviewer nào đang review: một sự kiện `plan-reviewed`, một wake. Vòng qua khi Full review qua và mọi lens qua hoặc lost. Lens lost không làm hỏng vòng (Full review đã phủ phần của nó); text của vòng ghi `Did not finish: <lens> (<lý do>).` Full review lost thì vòng hỏng; nếu không gì hỏng mà chỉ Full review lost, lead được dặn submit lại đúng plan đó. **Phát hiện gộp** là text của mọi reviewer hỏng, nguyên văn và ghi tên (`[Full review] …`, `[Tests and commands] …`), theo thứ tự bảng, rồi dòng `Passed: …`; engine không gộp trùng giữa các reviewer, lead làm việc đó.
+Vòng chốt khi không còn reviewer nào đang review: một sự kiện `plan-reviewed`, một wake. Vòng qua khi Full review qua và Second pass qua hoặc lost. Second pass lost không làm hỏng vòng (Full review đã chạy cùng checklist); text của vòng ghi `Did not finish: Second pass (<lý do>).` Full review lost thì vòng hỏng; nếu không gì hỏng mà chỉ Full review lost, lead được dặn submit lại đúng plan đó. **Phát hiện gộp** là text của mọi reviewer hỏng, nguyên văn và ghi tên (`[Full review] …`, `[Second pass] …`), Full review trước, rồi dòng `Passed: …`; engine không gộp trùng giữa các reviewer, lead làm việc đó.
 
 - **Pass:** worker bắt đầu, lead nhận một dòng yên lặng `plan review passed; workers are starting: …`. Một reviewer qua trong khi các reviewer khác còn đang review thì chưa làm gì.
 - **Fail:** lead được đánh thức với các phát hiện gộp. Nó sửa plan, đưa thay đổi spec cho bạn quyết, rồi chạy lại `wsh jarvis dag submit`. Khi chưa task nào được dispatch, lần submit lại thay thế plan hỏng và mở **vòng review 2**. Run bắt đầu từ plan file mà chưa có lead thì được mở một lead bởi lần đánh thức này.

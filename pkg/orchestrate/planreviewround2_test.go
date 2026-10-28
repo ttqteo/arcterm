@@ -175,8 +175,8 @@ func TestFollowupPromptCarriesFindingsAndDiff(t *testing.T) {
 		}
 	}
 	for _, it := range planReviewChecklist {
-		if it.text != planReviewBoardItem && !strings.Contains(prompt, it.text) {
-			t.Errorf("the follow-up checks the changed lines against every item, missing %q", it.text)
+		if it != planReviewBoardItem && !strings.Contains(prompt, it) {
+			t.Errorf("the follow-up checks the changed lines against every item, missing %q", it)
 		}
 	}
 	if got, want := diffLines(t, prompt), []string{"-### Task 1: a", "+### Task 1: a, with TestCoupons"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
