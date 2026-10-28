@@ -204,7 +204,12 @@ func init() {
 	f.Bool("json", false, "JSON output")
 	for _, c := range []*cobra.Command{runsStartCmd, runsListCmd, runsShowCmd, runsAnswerCmd, runsCancelCmd, runsEndFinalCmd, runsLandCmd, runsAckCmd} {
 		c.Flags().String("project", "", "project directory (default: the current directory)")
-		c.Flags().String("channel", "", "channel id, instead of resolving the project")
+		channelUsage := "channel id, instead of resolving the project"
+		if c == runsStartCmd {
+			// the worktree base hangs off the directory, so naming the channel drops it
+			channelUsage += "; the run then works in the project's checkout even when started from a linked worktree"
+		}
+		c.Flags().String("channel", "", channelUsage)
 	}
 	runsListCmd.Flags().Bool("all", false, "every project, not just this one")
 	runsListCmd.Flags().Bool("tasks", false, "include the runs that work one task of another run (engine workers and reviewers, lead-spawned children)")
