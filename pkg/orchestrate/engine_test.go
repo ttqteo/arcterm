@@ -164,6 +164,14 @@ func TestWorkerContractKeepsATestsExitCodeThroughAPipe(t *testing.T) {
 	}
 }
 
+// workers wrote a test and its code in one step and never saw the test fail (workflow scan p5)
+func TestWorkerContractRunsTheFailingTestFirst(t *testing.T) {
+	c := workerContract(&waveobj.TaskGroup{}, &waveobj.TaskNode{ID: "t-3"}, "claude", "")
+	if !strings.Contains(c, "run it before you write the code it tests") {
+		t.Fatalf("contract must have the worker run a test it should watch fail before writing the code:\n%s", c)
+	}
+}
+
 func TestWorkerContractNamesPlanSpecVerifyAndTool(t *testing.T) {
 	g := &waveobj.TaskGroup{PlanPath: "C:/p/plan.md", SpecPath: "C:/p/spec.md", Verify: "go test ./..."}
 	c := workerContract(g, &waveobj.TaskNode{ID: "t-3"}, "pi", "")

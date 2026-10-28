@@ -206,6 +206,13 @@ func TestPlanFormatKeepsTaskTestsFocused(t *testing.T) {
 	}
 }
 
+// leads left off the tests and callers a task breaks, and the plan review sent the plan back for them (workflow scan p1)
+func TestPlanFormatFilesLineListsWhatTheChangeBreaks(t *testing.T) {
+	if !strings.Contains(PlanFormat, "every test or caller the change breaks") {
+		t.Fatalf("the Files line must name the tests and callers a task's change breaks:\n%s", PlanFormat)
+	}
+}
+
 func node(id string, deps ...string) waveobj.TaskNode {
 	return waveobj.TaskNode{ID: id, Label: id, Deps: deps}
 }

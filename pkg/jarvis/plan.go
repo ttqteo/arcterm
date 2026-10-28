@@ -56,7 +56,7 @@ const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before
 	"(`codex:gpt-5.5`, `agy:<model>`), or a harness alone for its default model (`codex`, `agy`); it is the model its worker " +
 	"runs on, used when the run's workers setting is Reviewer picks and ignored otherwise. Workers can be claude, pi, agy or codex. " +
 	"A task should also carry a **Files:** line in that same place: every repo-relative path the task creates, edits or deletes, " +
-	"generated files included, each in backticks and separated by commas (files, not directories or globs; a second Files line " +
+	"generated files and every test or caller the change breaks included, each in backticks and separated by commas (files, not directories or globs; a second Files line " +
 	"continues the list). Submit refuses a plan in which two tasks that can run at the same time list the same path. A task " +
 	"without the line takes no part in that check, so list every task's files. " +
 	"Number tasks 1, 2, 3... in order under `##` or `###` headings. A Depends on line must be the first line under its heading: " +
