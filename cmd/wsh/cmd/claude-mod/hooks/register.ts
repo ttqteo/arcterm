@@ -497,7 +497,7 @@ export const register: Register = (on) => {
 
     on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
         const notice = await read($, cacheMiss);
-        return notice && !e.hasSurvey ? drawCacheMiss($.ui.resolve(e), notice) : next(e);
+        return notice && !e.props.hasSurvey ? drawCacheMiss($.ui.resolve(e), notice) : next(e);
     });
 
     // a tool's result means another request follows, and it carries every row joined so far.

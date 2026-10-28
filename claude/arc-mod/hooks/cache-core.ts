@@ -131,11 +131,12 @@ function cause(miss: Miss): string {
 // one notice a turn; null when the turn re-billed nothing worth saying
 export function cacheMissNotice(entries: readonly TranscriptEntry[]): string | null {
     const misses = turnMisses(entries).filter((m) => m.missedTokens >= NOTICE_MIN_TOKENS);
-    if (misses.length === 0) {
+    const [first] = misses;
+    if (!first) {
         return null;
     }
     const total = formatTokens(misses.reduce((sum, m) => sum + m.missedTokens, 0));
     return misses.length === 1
-        ? `Cache miss: ${total} re-billed${cause(misses[0])}`
+        ? `Cache miss: ${total} re-billed${cause(first)}`
         : `${misses.length} cache misses: ${total} re-billed`;
 }
