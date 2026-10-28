@@ -1,11 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The New launcher's details for an agent row: the task, the command with its flags, and the worktree. Moved out of
-// the old New agent dialog. The task field is always there (it hid behind "+ Start with a task") so Tab lands in it.
-// Whether the flag menu or the branch list is open lives in launcherstore, so the dialog's one key handler closes the
-// open one on Escape wherever focus is, and the dialog stays. Images pasted or dropped into the task show as a row of
-// tiles under it (launcherimages.ts holds the rules, launcherstore.ts the temp writes).
+// The New launcher's details for an agent row: one Task row (the task field, + Flag, the enabled flags, the worktree
+// switch and a Command › toggle), with the branch row, the command strip and the notes under it. The task field is
+// always there (it hid behind "+ Start with a task") so Tab lands in it. The command shows only while Command › is open,
+// which is this component's state, so every opening of the dialog starts folded; a terminal has no task and shows it
+// open. Whether the flag menu or the branch list is open lives in launcherstore, so the dialog's one key handler closes
+// the open one on Escape wherever focus is, and the dialog stays. Images pasted or dropped into the task show as a row
+// of tiles inside the Task row (launcherimages.ts holds the rules, launcherstore.ts the temp writes).
 
 import { composerReveal } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
@@ -14,10 +16,9 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { ChevronDown, Loader2, Lock, Plus, TriangleAlert, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Lock, Plus, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
-import { START_LINE } from "./brainstormhints";
 import {
     ASK_SETTINGS_ARG,
     launcherFlagCatalog,
@@ -135,7 +136,7 @@ function TaskImages() {
     const shown = images.find((i) => i.id === openId);
     const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
     return (
-        <>
+        <div className="flex flex-col gap-2 pb-2 pr-2">
             <div className="flex flex-wrap gap-2">
                 {images.map((img) => {
                     const state = img.error != null ? "error" : img.path != null ? "ready" : "pending";
@@ -196,7 +197,7 @@ function TaskImages() {
                     </span>
                 ) : null
             )}
-        </>
+        </div>
     );
 }
 
@@ -224,6 +225,8 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
     const branchListOpen = useAtomValue(launcherBranchListAtom);
     const setFlagMenuOpen = (open: boolean) => globalStore.set(launcherFlagMenuAtom, open);
     const setBranchListOpen = (open: boolean) => globalStore.set(launcherBranchListAtom, open);
+    // Command › is folded on every opening: the dialog unmounts this component when it closes
+    const [commandOpen, setCommandOpen] = useState(false);
     // another runtime has other flags and maybe no worktree: start it with both popovers shut
     useEffect(() => {
         globalStore.set(launcherFlagMenuAtom, false);
@@ -247,253 +250,298 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
     const taskHint = resume
         ? "optional · sent as the next message · paste or drop images"
         : "optional · sent as the first prompt · paste or drop images";
-    // the worktree switch shares the Command row, so the dialog fits without scrolling
+    const showTask = runtimeShowsTask(runtime);
     const showWorktree = runtimeSupportsWorktree(runtime) && resume == null && !home;
+    const outcome = worktreeOutcome({ branch: effectiveBranch, currentBranch, branchNames });
+    // a terminal has no Task row to hold the toggle, so its command is always shown
+    const showCommand = !showTask || commandOpen;
     return (
         <>
-            {runtimeShowsTask(runtime) ? (
-                <div className="flex min-w-0 flex-col gap-2">
-                    <div className="flex items-baseline gap-2">
-                        <label htmlFor="launcher-task" className={LAUNCHER_LABEL}>
+            {showTask ? (
+                <div
+                    data-launcher-task-row
+                    className="flex min-w-0 flex-col rounded-[10px] border border-edge-mid bg-surface pl-3 focus-within:border-accent-700"
+                >
+                    <div className="flex min-w-0 items-start gap-1 py-[3px] pr-1">
+                        <label
+                            htmlFor="launcher-task"
+                            className={cn(LAUNCHER_LABEL, "flex h-[31px] shrink-0 items-center pr-1")}
+                        >
                             Task
                         </label>
-                        <span title={taskHint} className="min-w-0 truncate text-[11px] text-muted">
-                            {taskHint}
-                        </span>
-                    </div>
-                    {/* grows with what is typed, up to about eleven lines, then scrolls */}
-                    <textarea
-                        ref={taskRef}
-                        id="launcher-task"
-                        value={task}
-                        onChange={(e) => globalStore.set(launcherTaskAtom, e.target.value)}
-                        onPaste={pasteIntoTask}
-                        onDragOver={(e) => {
-                            if (dragHasFiles(e.dataTransfer)) {
-                                e.preventDefault();
-                            }
-                        }}
-                        onDrop={dropIntoTask}
-                        placeholder="What should it work on? Leave empty to just open the session."
-                        className="block field-sizing-content min-h-16 max-h-[240px] w-full grow resize-none overflow-y-auto rounded-[10px] border border-edge-mid bg-surface px-3 py-[10px] text-[13px] leading-normal text-primary outline-none placeholder:text-muted focus:border-accent-700"
-                    />
-                    <TaskImages />
-                    {/* where a brainstorm starts: in the agent, so a newcomer sees it as the agent is being picked */}
-                    {resume == null ? (
-                        <span data-brainstorm-start-hint className="text-[11px] leading-[1.5] text-muted">
-                            {START_LINE}
-                        </span>
-                    ) : null}
-                </div>
-            ) : null}
-            <div className="flex flex-col gap-2">
-                <label htmlFor="launcher-cmd" className={LAUNCHER_LABEL}>
-                    Command
-                </label>
-                <div className="flex items-center gap-3">
-                    {/* The input is only as wide as its text, so a click anywhere on the box's own surface focuses it. */}
-                    <div
-                        onMouseDown={(e) => {
-                            if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset.cmdPrompt) {
-                                return;
-                            }
-                            e.preventDefault();
-                            const input = e.currentTarget.querySelector("input");
-                            input?.focus();
-                            input?.setSelectionRange(input.value.length, input.value.length);
-                        }}
-                        className="flex min-h-[38px] min-w-0 flex-1 cursor-text flex-wrap items-center gap-[6px] rounded-[8px] border border-edge-mid bg-surface py-[5px] pl-3 pr-[6px] focus-within:border-accent-700"
-                    >
-                        <span data-cmd-prompt="1" className="font-mono text-[12.5px] font-semibold text-success">
-                            ›
-                        </span>
-                        <input
-                            id="launcher-cmd"
-                            value={startup}
-                            readOnly={resume != null}
-                            onChange={(e) => setStartup(e.target.value)}
-                            placeholder={runtime === "terminal" ? "default shell" : runtimeStartupCommand(runtime)}
-                            style={{
-                                width: `${Math.max(startup.length + 1, runtime === "terminal" && !startup ? 14 : 4)}ch`,
+                        {/* one line when empty, grows as the text wraps, up to about eleven lines, then scrolls */}
+                        <textarea
+                            ref={taskRef}
+                            id="launcher-task"
+                            rows={1}
+                            value={task}
+                            onChange={(e) => globalStore.set(launcherTaskAtom, e.target.value)}
+                            onPaste={pasteIntoTask}
+                            onDragOver={(e) => {
+                                if (dragHasFiles(e.dataTransfer)) {
+                                    e.preventDefault();
+                                }
                             }}
-                            className="bg-transparent font-mono text-[12.5px] text-secondary outline-none"
+                            onDrop={dropIntoTask}
+                            placeholder={taskHint}
+                            title={task === "" ? taskHint : undefined}
+                            className={cn(
+                                "block field-sizing-content max-h-[240px] min-w-[140px] flex-1 resize-none bg-transparent px-1 py-[6px] text-[13px] leading-[19px] text-primary outline-none placeholder:truncate placeholder:text-muted",
+                                // the placeholder would size the field and wrap it; empty, it is one line
+                                task === "" ? "h-[31px] overflow-hidden" : "overflow-y-auto"
+                            )}
                         />
-                        {enabledFlags.map((f) => (
-                            <span
-                                key={f.id}
-                                title={f.desc}
-                                className="flex items-center gap-0.5 rounded-[6px] border border-accent-700 bg-accentbg py-0.5 pl-2 pr-0.5"
-                            >
-                                <span className="font-mono text-[11.5px] font-semibold text-accent-soft">{f.flag}</span>
+                        <div className="flex min-h-[31px] min-w-0 flex-wrap items-center justify-end gap-1">
+                            {flagCatalog.length > 0 ? (
                                 <button
                                     type="button"
-                                    aria-label={`Remove ${f.flag}`}
-                                    onClick={() => setFlag(f.id, false)}
-                                    className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary"
+                                    aria-expanded={flagMenuOpen}
+                                    title="Add a flag"
+                                    onClick={() => setFlagMenuOpen(!flagMenuOpen)}
+                                    className={cn(
+                                        "flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-[6px] px-2 text-[11.5px] font-semibold",
+                                        flagMenuOpen
+                                            ? "bg-accentbg text-accent-soft"
+                                            : "text-ink-mid hover:bg-surface-hover hover:text-primary"
+                                    )}
                                 >
-                                    <X size={11} strokeWidth={2.4} />
+                                    <Plus size={12} strokeWidth={2.2} />
+                                    <span>Flag</span>
                                 </button>
-                            </span>
-                        ))}
-                        <div className="flex-1" />
-                        {flagCatalog.length > 0 ? (
+                            ) : null}
+                            {enabledFlags.map((f) => (
+                                <span
+                                    key={f.id}
+                                    data-launcher-flag-chip={f.flag}
+                                    title={`${f.flag} · ${f.desc}`}
+                                    className="flex min-w-0 max-w-[200px] items-center gap-0.5 rounded-[6px] border border-accent-700 bg-accentbg py-0.5 pl-2 pr-0.5"
+                                >
+                                    <span className="min-w-0 truncate font-mono text-[11px] font-semibold text-accent-soft">
+                                        {f.flag}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        aria-label={`Remove ${f.flag}`}
+                                        onClick={() => setFlag(f.id, false)}
+                                        className="flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary"
+                                    >
+                                        <X size={10} strokeWidth={2.4} />
+                                    </button>
+                                </span>
+                            ))}
+                            {showWorktree ? (
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={worktreeOn}
+                                    title="Run in an isolated git worktree"
+                                    onClick={() => globalStore.set(launcherWorktreeAtom, (v) => !v)}
+                                    className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] px-2 hover:bg-surface-hover"
+                                >
+                                    <span
+                                        className={cn(
+                                            "relative h-4 w-[26px] shrink-0 rounded-full transition-colors",
+                                            worktreeOn ? "bg-accent" : "bg-edge-strong"
+                                        )}
+                                    >
+                                        <span
+                                            className={cn(
+                                                "absolute top-[3px] h-[10px] w-[10px] rounded-full bg-background transition-all",
+                                                worktreeOn ? "left-[13px]" : "left-[3px]"
+                                            )}
+                                        />
+                                    </span>
+                                    <span className="whitespace-nowrap text-[11.5px] font-semibold text-ink-mid">
+                                        Worktree
+                                    </span>
+                                </button>
+                            ) : null}
                             <button
                                 type="button"
-                                aria-expanded={flagMenuOpen}
-                                onClick={() => setFlagMenuOpen(!flagMenuOpen)}
+                                data-launcher-command-toggle
+                                aria-expanded={commandOpen}
+                                title="Show the command it runs"
+                                onClick={() => setCommandOpen((v) => !v)}
                                 className={cn(
-                                    "flex cursor-pointer items-center gap-[5px] rounded-[6px] px-2 py-1 text-[11.5px] font-semibold",
-                                    flagMenuOpen
-                                        ? "bg-accentbg text-accent-soft"
+                                    "flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-[6px] px-2 text-[11.5px] font-semibold",
+                                    commandOpen
+                                        ? "bg-surface-hover text-primary"
                                         : "text-ink-mid hover:bg-surface-hover hover:text-primary"
                                 )}
                             >
-                                <Plus size={12} strokeWidth={2.2} />
-                                <span>Flag</span>
+                                <span>Command</span>
+                                <ChevronRight
+                                    size={11}
+                                    strokeWidth={2.2}
+                                    className={cn("transition-transform", commandOpen && "rotate-90")}
+                                />
                             </button>
-                        ) : null}
+                        </div>
                     </div>
-                    {showWorktree ? (
-                        <>
+                    <TaskImages />
+                </div>
+            ) : null}
+            <AnimatePresence>
+                {flagMenuOpen && flagCatalog.length > 0 && (
+                    <motion.div
+                        variants={composerReveal}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className="flex shrink-0 flex-col overflow-hidden rounded-[10px] border border-edge-mid bg-surface p-1"
+                    >
+                        {flagCatalog.map((f) => {
+                            const on = !!runtimeFlags[f.id];
+                            return (
+                                <label
+                                    key={f.id}
+                                    className={cn(
+                                        "flex cursor-pointer items-center gap-[10px] rounded-[7px] px-2 py-[6px]",
+                                        on ? "bg-accentbg" : "hover:bg-surface-hover"
+                                    )}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={on}
+                                        onChange={() => setFlag(f.id, !on)}
+                                        className="m-0 h-[13px] w-[13px] cursor-pointer accent-accent"
+                                    />
+                                    <span
+                                        className={cn(
+                                            "shrink-0 font-mono text-[11.5px] font-semibold",
+                                            on ? "text-accent-soft" : "text-muted-foreground"
+                                        )}
+                                    >
+                                        {f.flag}
+                                    </span>
+                                    <span className="flex-1 truncate text-right text-[11px] text-muted">{f.desc}</span>
+                                </label>
+                            );
+                        })}
+                        <label className="-mx-1 -mb-1 mt-1 flex cursor-pointer items-center gap-1.5 border-t border-border px-3 py-[7px] text-[11.5px] text-muted">
+                            <input
+                                type="checkbox"
+                                checked={remember}
+                                onChange={() => globalStore.set(naRememberFlagsAtom, (v) => !v)}
+                                className="m-0 h-[13px] w-[13px] cursor-pointer accent-accent"
+                            />
+                            <span>Remember these flags for the next agent</span>
+                        </label>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+            {showWorktree && worktreeOn ? (
+                <div data-launcher-branch-row className="flex min-w-0 items-center gap-[10px]">
+                    <label htmlFor="launcher-branch" className="shrink-0 text-[11.5px] text-muted">
+                        Branch
+                    </label>
+                    <div className="relative flex w-[240px] flex-none items-center rounded-[8px] border border-edge-mid bg-surface focus-within:border-accent-700">
+                        <input
+                            id="launcher-branch"
+                            aria-label="Branch"
+                            value={effectiveBranch}
+                            onChange={(e) => globalStore.set(launcherBranchAtom, e.target.value)}
+                            onFocus={() => setBranchListOpen(true)}
+                            placeholder={currentBranch || "feat/new-agent"}
+                            className="min-w-0 flex-1 bg-transparent px-[10px] py-[6px] text-[12.5px] text-secondary outline-none"
+                        />
+                        {branches.length > 0 ? (
                             <button
                                 type="button"
-                                role="switch"
-                                aria-checked={worktreeOn}
-                                onClick={() => globalStore.set(launcherWorktreeAtom, (v) => !v)}
-                                className="flex cursor-pointer items-center gap-[10px]"
+                                aria-label="Show branches"
+                                onClick={() => setBranchListOpen(!branchListOpen)}
+                                className="cursor-pointer px-[10px] py-[6px] text-muted hover:text-primary"
                             >
-                                <span
+                                <ChevronDown size={12} />
+                            </button>
+                        ) : null}
+                        <PopoverReveal
+                            open={branchListOpen && branches.length > 0}
+                            origin="bottom left"
+                            className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-[168px] overflow-y-auto rounded border border-edge-mid bg-modalbg py-1 shadow-popover"
+                        >
+                            {branches.map((b) => (
+                                <button
+                                    key={b.name}
+                                    type="button"
+                                    onClick={() => {
+                                        globalStore.set(launcherBranchAtom, b.name);
+                                        setBranchListOpen(false);
+                                    }}
                                     className={cn(
-                                        "relative h-[20px] w-[34px] shrink-0 rounded-full transition-colors",
-                                        worktreeOn ? "bg-accent" : "bg-edge-strong"
+                                        "flex w-full cursor-pointer items-center gap-2 px-3 py-[7px] text-left hover:bg-surface-hover",
+                                        b.name === effectiveBranch ? "text-primary" : "text-secondary"
                                     )}
                                 >
                                     <span
                                         className={cn(
-                                            "absolute top-[3px] h-[14px] w-[14px] rounded-full bg-background transition-all",
-                                            worktreeOn ? "left-[18px]" : "left-[2px]"
+                                            "h-[6px] w-[6px] shrink-0 rounded-full",
+                                            b.name === effectiveBranch ? "bg-accent" : "bg-muted"
                                         )}
                                     />
-                                </span>
-                                <span className="whitespace-nowrap text-[12.5px] font-medium text-secondary">
-                                    Isolated git worktree
-                                </span>
-                            </button>
-                            {worktreeOn ? (
-                                <div className="relative flex w-[240px] flex-none items-center gap-2">
-                                    <span className="text-[11.5px] text-muted">on</span>
-                                    <div className="flex min-w-0 flex-1 items-center rounded-[8px] border border-edge-mid bg-surface focus-within:border-accent-700">
-                                        <input
-                                            aria-label="Branch"
-                                            value={effectiveBranch}
-                                            onChange={(e) => globalStore.set(launcherBranchAtom, e.target.value)}
-                                            onFocus={() => setBranchListOpen(true)}
-                                            placeholder={currentBranch || "feat/new-agent"}
-                                            className="min-w-0 flex-1 bg-transparent px-[10px] py-[7px] text-[12.5px] text-secondary outline-none"
-                                        />
-                                        {branches.length > 0 ? (
-                                            <button
-                                                type="button"
-                                                aria-label="Show branches"
-                                                onClick={() => setBranchListOpen(!branchListOpen)}
-                                                className="cursor-pointer px-[10px] py-[7px] text-muted hover:text-primary"
-                                            >
-                                                <ChevronDown size={12} />
-                                            </button>
-                                        ) : null}
-                                    </div>
-                                    <PopoverReveal
-                                        open={branchListOpen && branches.length > 0}
-                                        origin="bottom left"
-                                        className="absolute bottom-full left-[20px] right-0 z-10 mb-1 max-h-[168px] overflow-y-auto rounded border border-edge-mid bg-modalbg py-1 shadow-popover"
-                                    >
-                                        {branches.map((b) => (
-                                            <button
-                                                key={b.name}
-                                                type="button"
-                                                onClick={() => {
-                                                    globalStore.set(launcherBranchAtom, b.name);
-                                                    setBranchListOpen(false);
-                                                }}
-                                                className={cn(
-                                                    "flex w-full cursor-pointer items-center gap-2 px-3 py-[7px] text-left hover:bg-surface-hover",
-                                                    b.name === effectiveBranch ? "text-primary" : "text-secondary"
-                                                )}
-                                            >
-                                                <span
-                                                    className={cn(
-                                                        "h-[6px] w-[6px] shrink-0 rounded-full",
-                                                        b.name === effectiveBranch ? "bg-accent" : "bg-muted"
-                                                    )}
-                                                />
-                                                <span className="flex-1 truncate text-[12px]">{b.name}</span>
-                                                {b.age ? (
-                                                    <span className="shrink-0 text-[10.5px] text-muted">{b.age}</span>
-                                                ) : null}
-                                            </button>
-                                        ))}
-                                    </PopoverReveal>
-                                </div>
-                            ) : null}
-                        </>
-                    ) : null}
+                                    <span className="flex-1 truncate text-[12px]">{b.name}</span>
+                                    {b.age ? <span className="shrink-0 text-[10.5px] text-muted">{b.age}</span> : null}
+                                </button>
+                            ))}
+                        </PopoverReveal>
+                    </div>
+                    <span
+                        data-launcher-branch-hint
+                        title={outcome}
+                        className="min-w-0 truncate text-[11.5px] text-muted"
+                    >
+                        {outcome}
+                    </span>
                 </div>
-                <AnimatePresence>
-                    {flagMenuOpen && flagCatalog.length > 0 && (
-                        <motion.div
-                            variants={composerReveal}
-                            initial="initial"
-                            animate="animate"
-                            exit="exit"
-                            className="flex flex-col overflow-hidden rounded-[10px] border border-edge-mid bg-surface p-1"
+            ) : null}
+            {showCommand ? (
+                // The input is only as wide as its text, so a click anywhere on the strip's own surface focuses it.
+                <div
+                    data-launcher-command
+                    onMouseDown={(e) => {
+                        if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset.cmdPrompt) {
+                            return;
+                        }
+                        e.preventDefault();
+                        const input = e.currentTarget.querySelector("input");
+                        input?.focus();
+                        input?.setSelectionRange(input.value.length, input.value.length);
+                    }}
+                    className="flex min-h-[34px] min-w-0 shrink-0 cursor-text flex-wrap items-center gap-[6px] rounded-[8px] border border-transparent bg-surface-code py-1 pl-3 pr-[6px] focus-within:border-accent-700"
+                >
+                    <span data-cmd-prompt="1" className="font-mono text-[12px] font-semibold text-success">
+                        ›
+                    </span>
+                    <input
+                        id="launcher-cmd"
+                        aria-label="Command"
+                        value={startup}
+                        readOnly={resume != null}
+                        onChange={(e) => setStartup(e.target.value)}
+                        placeholder={runtime === "terminal" ? "default shell" : runtimeStartupCommand(runtime)}
+                        style={{
+                            width: `${Math.max(startup.length + 1, runtime === "terminal" && !startup ? 14 : 4)}ch`,
+                        }}
+                        className="max-w-full bg-transparent font-mono text-[12px] text-secondary outline-none"
+                    />
+                    {enabledFlags.map((f) => (
+                        <span
+                            key={f.id}
+                            title={f.desc}
+                            className="flex items-center gap-0.5 rounded-[6px] border border-accent-700 bg-accentbg py-0.5 pl-2 pr-0.5"
                         >
-                            {flagCatalog.map((f) => {
-                                const on = !!runtimeFlags[f.id];
-                                return (
-                                    <label
-                                        key={f.id}
-                                        className={cn(
-                                            "flex cursor-pointer items-center gap-[10px] rounded-[7px] px-2 py-[6px]",
-                                            on ? "bg-accentbg" : "hover:bg-surface-hover"
-                                        )}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={on}
-                                            onChange={() => setFlag(f.id, !on)}
-                                            className="m-0 h-[13px] w-[13px] cursor-pointer accent-accent"
-                                        />
-                                        <span
-                                            className={cn(
-                                                "shrink-0 font-mono text-[11.5px] font-semibold",
-                                                on ? "text-accent-soft" : "text-muted-foreground"
-                                            )}
-                                        >
-                                            {f.flag}
-                                        </span>
-                                        <span className="flex-1 truncate text-right text-[11px] text-muted">
-                                            {f.desc}
-                                        </span>
-                                    </label>
-                                );
-                            })}
-                            <label className="-mx-1 -mb-1 mt-1 flex cursor-pointer items-center gap-1.5 border-t border-border px-3 py-[7px] text-[11.5px] text-muted">
-                                <input
-                                    type="checkbox"
-                                    checked={remember}
-                                    onChange={() => globalStore.set(naRememberFlagsAtom, (v) => !v)}
-                                    className="m-0 h-[13px] w-[13px] cursor-pointer accent-accent"
-                                />
-                                <span>Remember these flags for the next agent</span>
-                            </label>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </div>
-            {showWorktree && worktreeOn ? (
-                <span className="-mt-1.5 text-[11.5px] text-muted">
-                    {worktreeOutcome({ branch: effectiveBranch, currentBranch, branchNames })}
-                </span>
+                            <span className="font-mono text-[11px] font-semibold text-accent-soft">{f.flag}</span>
+                            <button
+                                type="button"
+                                aria-label={`Remove ${f.flag}`}
+                                onClick={() => setFlag(f.id, false)}
+                                className="flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary"
+                            >
+                                <X size={10} strokeWidth={2.4} />
+                            </button>
+                        </span>
+                    ))}
+                </div>
             ) : null}
             {home && runtime === "claude" ? (
                 <span data-launcher-ask className="flex items-start gap-1.5 text-[11.5px] leading-normal text-muted">
