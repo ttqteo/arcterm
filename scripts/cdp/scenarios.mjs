@@ -25108,6 +25108,222 @@ const paletteActions = {
     },
 };
 
+// --- palette-scope-indicator: the active scope's bar slides between tabs
+// (docs/superpowers/specs/2026-10-28-palette-scope-indicator-design.md)
+// One in-page promise samples every animation frame: a CDP round trip per sample is too slow to see a front-loaded
+// 360 ms ease. The bar is compared to its target button in the same frame, so the modal's open scale cannot skew it.
+const PALETTE_SCOPE_BTN = (scope) => `${PALETTE}?.querySelector('[data-palette-scope=${JSON.stringify(scope)}]')`;
+const PALETTE_PRESSED_SCOPE = `(${PALETTE}?.querySelector('[data-palette-scope][aria-pressed="true"]')?.getAttribute('data-palette-scope') ?? null)`;
+
+// each frame: { t, pressed, bar, target, source }, rects as { left, width }; source is the scope pressed before actionExpr
+async function sampleIndicator(h, actionExpr, targetScope, ms = 600) {
+    return h.ev(`new Promise((resolve) => {
+        const rect = (el) => {
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return { left: r.left, width: r.width };
+        };
+        const sourceScope = ${PALETTE_PRESSED_SCOPE};
+        const frames = [];
+        const t0 = performance.now();
+        ${actionExpr};
+        const tick = () => {
+            frames.push({
+                t: Math.round(performance.now() - t0),
+                pressed: ${PALETTE_PRESSED_SCOPE},
+                bar: rect(${PALETTE}?.querySelector('[data-palette-scope-indicator]')),
+                target: rect(${PALETTE_SCOPE_BTN(targetScope)}),
+                source: sourceScope == null ? null : rect(${PALETTE}?.querySelector('[data-palette-scope="' + sourceScope + '"]')),
+            });
+            if (performance.now() - t0 < ${ms}) requestAnimationFrame(tick);
+            else resolve(frames);
+        };
+        requestAnimationFrame(tick);
+    })`);
+}
+
+const barMatches = (f) =>
+    f?.bar != null && f.target != null && Math.abs(f.bar.left - f.target.left) <= 1 && Math.abs(f.bar.width - f.target.width) <= 1;
+const barMidFlight = (f) => {
+    if (f?.bar == null || f.source == null || f.target == null) return false;
+    const lo = Math.min(f.source.left, f.target.left);
+    const hi = Math.max(f.source.left, f.target.left);
+    return f.bar.left > lo + 2 && f.bar.left < hi - 2;
+};
+const barDistance = (f) => Math.abs(f.bar.left - f.target.left) + Math.abs(f.bar.width - f.target.width);
+const roundRect = (r) => (r == null ? null : { left: Math.round(r.left * 10) / 10, width: Math.round(r.width * 10) / 10 });
+// the numbers a step's detail carries: frame count, how many were mid-flight, and the first and last frames
+const sampleSummary = (frames) => ({
+    n: frames.length,
+    mid: frames.filter(barMidFlight).length,
+    first: frames[0] && { t: frames[0].t, pressed: frames[0].pressed, bar: roundRect(frames[0].bar), target: roundRect(frames[0].target) },
+    last: frames.at(-1) && {
+        t: frames.at(-1).t,
+        pressed: frames.at(-1).pressed,
+        bar: roundRect(frames.at(-1).bar),
+        target: roundRect(frames.at(-1).target),
+        source: roundRect(frames.at(-1).source),
+    },
+});
+const slidOk = (frames) => frames.some(barMidFlight) && barMatches(frames.at(-1));
+
+async function settleIndicator(h, scope) {
+    const settled = await polishWaitFor(
+        h,
+        `(() => {
+            const bar = ${PALETTE}?.querySelector('[data-palette-scope-indicator]')?.getBoundingClientRect();
+            const btn = ${PALETTE_SCOPE_BTN(scope)}?.getBoundingClientRect();
+            return !!bar && !!btn && Math.abs(bar.left - btn.left) <= 1 && Math.abs(bar.width - btn.width) <= 1;
+        })()`,
+        3000
+    );
+    // the last pixel of the ease can still be moving when the poll first matches
+    await polishNap(400);
+    return settled;
+}
+
+const paletteScopeIndicator = {
+    name: "palette-scope-indicator",
+    surface: "jarvis",
+    async arrange() {
+        return {};
+    },
+    async assert(h) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        try {
+            await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
+            await h.goto("jarvis");
+            const opened = await openPalette(h);
+            const startScope = opened ? await h.ev(PALETTE_PRESSED_SCOPE) : null;
+            if (!opened || startScope !== "all") {
+                rec("1. Ctrl+P opens the palette on All", false, JSON.stringify({ opened, startScope }));
+                return steps;
+            }
+
+            const toNeeds = await sampleIndicator(h, paletteKey("Tab"), "needs");
+            await settleIndicator(h, "needs");
+            const one = await h.ev(`(() => {
+                const bars = [...(${PALETTE}?.querySelectorAll('[data-palette-scope-indicator]') ?? [])];
+                return { count: bars.length, inPressed: bars[0]?.closest('[data-palette-scope]')?.getAttribute('aria-pressed') ?? null };
+            })()`);
+            await h.shot("cdp-shots/palette-scope-indicator-rest.png");
+            rec(
+                "1. Tab from All slides the bar to Needs you; one bar, inside the pressed tab",
+                slidOk(toNeeds) && one.count === 1 && one.inPressed === "true",
+                JSON.stringify({ sample: sampleSummary(toNeeds), one })
+            );
+
+            const back = await sampleIndicator(h, paletteKey("Tab", { shiftKey: true }), "all");
+            const wrap = await sampleIndicator(h, paletteKey("Tab", { shiftKey: true }), "commands");
+            const bksp = await sampleIndicator(h, paletteKey("Backspace"), "all");
+            await h.ev(paletteKey("Tab", { shiftKey: true }));
+            const capture = await h.ev(`({
+                bar: ${PALETTE}?.querySelector('[data-palette-scope-indicator]')?.getBoundingClientRect().left ?? null,
+                all: ${PALETTE_SCOPE_BTN("all")}?.getBoundingClientRect().left ?? null,
+                commands: ${PALETTE_SCOPE_BTN("commands")}?.getBoundingClientRect().left ?? null,
+            })`);
+            await h.shot("cdp-shots/palette-scope-indicator-midslide.png");
+            await settleIndicator(h, "commands");
+            await h.ev(paletteKey("Backspace"));
+            await settleIndicator(h, "all");
+            rec(
+                "2. Shift+Tab back to All lands; Shift+Tab wraps to Commands and Backspace drops to All, both sliding",
+                barMatches(back.at(-1)) && slidOk(wrap) && slidOk(bksp),
+                JSON.stringify({
+                    back: sampleSummary(back),
+                    wrap: sampleSummary(wrap),
+                    backspace: sampleSummary(bksp),
+                    midSlideShot: capture,
+                })
+            );
+
+            await h.ev(`${PALETTE_SCOPE_BTN("goto")}?.click()`);
+            await settleIndicator(h, "goto");
+            const clicked = await sampleIndicator(h, `${PALETTE_SCOPE_BTN("files")}?.click()`, "files");
+            const last = clicked.at(-1);
+            await h.ev(paletteKey("Backspace"));
+            await settleIndicator(h, "all");
+            const typed = await sampleIndicator(h, setInputExpr(PALETTE_INPUT, "f:"), "files");
+            const token = (await h.ev(PALETTE_STATE))?.token ?? null;
+            await h.ev(paletteKey("Backspace"));
+            await settleIndicator(h, "all");
+            rec(
+                "3. clicking Files from Go to lands at Files' width; typing f: from All slides to Files",
+                barMatches(last) &&
+                    last.source != null &&
+                    Math.abs(last.target.width - last.source.width) > 1 &&
+                    token === "Files" &&
+                    slidOk(typed),
+                JSON.stringify({ click: sampleSummary(clicked), typed: sampleSummary(typed), token })
+            );
+
+            // one press per frame, each read by the render the previous one committed
+            const held = await sampleIndicator(
+                h,
+                `(() => {
+                    let n = 0;
+                    const press = () => {
+                        ${paletteKey("Tab")};
+                        if (++n < 4) requestAnimationFrame(press);
+                    };
+                    press();
+                })()`,
+                "runs",
+                900
+            );
+            const afterLast = held.filter((f) => f.pressed === "runs" && f.bar != null && f.target != null);
+            const pressT = afterLast[0]?.t ?? null;
+            const landedIdx = afterLast.findIndex((_, i) => afterLast.slice(i).every(barMatches));
+            const landedT = landedIdx < 0 ? null : afterLast[landedIdx].t;
+            const awayFrames = afterLast.filter((f, i) => i > 0 && barDistance(f) > barDistance(afterLast[i - 1]) + 1).map((f) => f.t);
+            rec(
+                "4. four Tabs a frame apart: the bar lands on Runs within 600 ms of the last press, never moving away",
+                pressT != null && landedT != null && landedT - pressT <= 600 && awayFrames.length === 0,
+                JSON.stringify({ sample: sampleSummary(held), pressT, landedT, awayFrames })
+            );
+
+            const reopened = await openPalette(h);
+            await h.ev(setInputExpr(PALETTE_INPUT, "r:"));
+            const onRuns = (await paletteStateWhen(h, (s) => s.token === "Runs", 2000))?.token === "Runs";
+            await h.ev(PEEKS_ESC);
+            const closed = await polishWaitFor(h, `!${PALETTE_INPUT}`, 2000);
+            await h.goto("code");
+            const reopen = await sampleIndicator(h, PALETTE_TOGGLE, "files", 800);
+            const both = reopen.filter((f) => f.bar != null && f.target != null);
+            const offFrames = both.filter((f) => !barMatches(f)).map((f) => ({ t: f.t, pressed: f.pressed, bar: roundRect(f.bar) }));
+            await settleIndicator(h, "files");
+            await h.shot("cdp-shots/palette-scope-indicator-reopen.png");
+            rec(
+                "5. closed on Runs, reopened on Code: the bar is under Files from its first frame, never sliding from Runs",
+                reopened && onRuns && closed && both.length > 0 && offFrames.length === 0,
+                JSON.stringify({ reopened, onRuns, closed, frames: both.length, first: sampleSummary(reopen).first, offFrames: offFrames.slice(0, 5) })
+            );
+
+            await h.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+            const reduced = await sampleIndicator(h, paletteKey("Tab"), "commands");
+            const firstNew = reduced.find((f) => f.pressed === "commands");
+            rec(
+                "6. reduced motion: Tab from Files snaps the bar to Commands, no frame in flight",
+                firstNew != null && barMatches(firstNew) && !reduced.some(barMidFlight),
+                JSON.stringify({ sample: sampleSummary(reduced), firstNew: firstNew && { t: firstNew.t, bar: roundRect(firstNew.bar), target: roundRect(firstNew.target) } })
+            );
+        } catch (e) {
+            rec("scenario aborted", false, String(e?.message ?? e));
+        }
+        return steps;
+    },
+    async teardown(h) {
+        // reset whatever failed: an emulation left on would turn off motion for every later scenario
+        await h.cdp("Emulation.setEmulatedMedia", { features: [] }).catch((e) => {
+            console.error(`palette-scope-indicator teardown: clear the media emulation failed: ${e?.message ?? e}`);
+        });
+        if (await h.ev(`!!${PALETTE_INPUT}`).catch(() => false)) {
+            await h.ev(PEEKS_ESC).catch(() => {});
+        }
+    },
+};
+
 // --- autonomous-runs: the Approvals setting on each of its boards (docs/orchestrator-guide.md, Autonomous runs)
 // One project with one orchestrator run held by deferstart. Its lead is a seeded tab, linked as the lead by a tab oref
 // on the running phase, whose block runs a stdin sink: the server's switch finds the lead's Spec review question
@@ -56722,6 +56938,7 @@ export const SCENARIOS = [
     historyOlder,
     launcherImages,
     paletteActions,
+    paletteScopeIndicator,
     autonomousRuns,
     paletteGoal,
     paletteNotes,
