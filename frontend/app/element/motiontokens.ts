@@ -82,6 +82,11 @@ export const foldReveal: Variants = {
     },
 };
 
+// Indicator slide: a shared-layout (layoutId) bar moving between sibling tabs. durMacro because easeFluid
+// front-loads the travel, so the bar arrives in the first frames and the rest is settle; durMicro over a long
+// jump reads as a snap. Named for the pattern so another tab strip can reuse it.
+export const indicatorSlide: Transition = { duration: MOTION.durMacro, ease: MOTION.easeFluid };
+
 // View swap: a pane trading what it shows (the next question, the design, another step). Opacity only, since a
 // whole pane scaling reads as a zoom; no exit, so the old view leaves at once and two never stack in the flow.
 export const viewFade: Variants = {

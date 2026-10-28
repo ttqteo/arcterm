@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { MOTION, cardVariants, composerReveal, computeEntrances, easeFluidCss, initialEntranceState, modalBackdrop, modalPanel, paneReveal, popoverReveal, sheetPanel, shouldFadeEntry, reflowProps, viewFade } from "./motiontokens";
+import { MOTION, cardVariants, composerReveal, computeEntrances, easeFluidCss, indicatorSlide, initialEntranceState, modalBackdrop, modalPanel, paneReveal, popoverReveal, sheetPanel, shouldFadeEntry, reflowProps, viewFade } from "./motiontokens";
 
 describe("motiontokens", () => {
     it("uses the Fluid feel: macro ~360ms on the chosen ease curve", () => {
@@ -142,5 +142,12 @@ describe("paneReveal", () => {
 
     it("leaves a touch quicker than it arrives, like every other exit", () => {
         expect((paneReveal.exit as any).transition.duration).toBe(MOTION.durExit);
+    });
+});
+
+describe("indicatorSlide", () => {
+    it("moves a shared-layout indicator on the macro duration and the fluid ease", () => {
+        expect(indicatorSlide).toEqual({ duration: MOTION.durMacro, ease: MOTION.easeFluid });
+        expect(indicatorSlide.duration).toBeCloseTo(0.36);
     });
 });
