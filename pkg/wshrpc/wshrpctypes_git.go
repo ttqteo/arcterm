@@ -28,6 +28,7 @@ type GitCommands interface {
 	GitCommitMessageCommand(ctx context.Context, data CommandGitCommitMessageData) (*CommandGitCommitMessageRtnData, error)
 	GitPullCommand(ctx context.Context, data CommandGitSyncData) (*CommandGitSyncRtnData, error)
 	GitPushCommand(ctx context.Context, data CommandGitSyncData) (*CommandGitSyncRtnData, error)
+	GitBlameCommand(ctx context.Context, data CommandGitBlameData) (*CommandGitBlameRtnData, error)
 }
 
 type CommandGitHistoryData struct {
@@ -270,4 +271,32 @@ type CommandGitSyncRtnData struct {
 	Moved   int                 `json:"moved"`
 	Branch  string              `json:"branch,omitempty"` // a push's branch, so a publish can name what it created
 	Failure *gitinfo.GitFailure `json:"failure,omitempty"`
+}
+
+type CommandGitBlameData struct {
+	Cwd  string `json:"cwd"`
+	Path string `json:"path"` // cwd-relative, forward slashes, like GitFileAtRefCommand
+}
+
+type GitBlameHunk struct {
+	Start      int    `json:"start"` // 1-based line in the working-tree file
+	Lines      int    `json:"lines"`
+	Sha        string `json:"sha"` // full; all zeros = not committed
+	Author     string `json:"author"`
+	AuthorTime int64  `json:"authortime"` // unix seconds
+	Subject    string `json:"subject"`
+}
+
+type GitBlameRun struct {
+	RunId string `json:"runid"`
+	Goal  string `json:"goal"`
+}
+
+// Mirrors gitinfo.BlameResult, plus Runs. Blame walks history, so a caller must raise opts.timeout past
+// gitinfo's own blameTimeout or the read is cancelled underneath it.
+type CommandGitBlameRtnData struct {
+	Hunks     []GitBlameHunk         `json:"hunks"`          // porcelain groups in file order, unmerged
+	Runs      map[string]GitBlameRun `json:"runs,omitempty"` // sha -> crediting run
+	IsRepo    bool                   `json:"isrepo"`
+	Untracked bool                   `json:"untracked,omitempty"`
 }

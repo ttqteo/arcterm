@@ -37,6 +37,7 @@ type WshRpcInterface interface {
 	ProjectCommands
 	GitCommands
 	DevServerCommands
+	CodeCommands
 	AgentCommands
 	AgentSyncCommands
 	LearnCommands
