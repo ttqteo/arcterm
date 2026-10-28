@@ -22490,8 +22490,13 @@ const newRunWindow = {
         const listed = await h.ev(launcherState);
         await h.shot("cdp-shots/new-run-window-1-picker.png");
         rec(
-            "2. New run opens on a run row, with the recent project first in the project column",
-            listed != null && ["quick", "orchestrator"].includes(listed.start) && listed.projects[0] === NEW_RUN_PROJECT,
+            "2. Mod+Shift+R opens folded on Project, the chip on a run row, with the recent project first in the project column",
+            listed != null &&
+                ["quick", "orchestrator"].includes(listed.start) &&
+                !listed.startOpen &&
+                listed.chip?.id === listed.start &&
+                listed.focus === "project" &&
+                listed.projects[0] === NEW_RUN_PROJECT,
             JSON.stringify(listed)
         );
 
@@ -22510,9 +22515,7 @@ const newRunWindow = {
         const picked = await h.ev(launcherState);
         rec("4. its digit picks the project", picked?.project === NEW_RUN_PROJECT, JSON.stringify(picked));
 
-        await h.ev(
-            `${NEW_RUN}?.querySelector('[data-start-row="orchestrator"]')?.click()`
-        );
+        await launcherClickStart(h, "orchestrator");
         await polishNap(200);
         await h.ev(
             `[...(${NEW_RUN}?.querySelectorAll('[role="group"][aria-label="Start from"] button') ?? [])].find((b) => b.textContent.trim() === 'A plan file')?.click()`
@@ -22573,6 +22576,25 @@ const newRunWindow = {
             closed && runsAfter === runsBefore,
             JSON.stringify({ closed, runsBefore, runsAfter })
         );
+
+        // the DEV seam opens it at the run door as Mod+Shift+R does: folded, on Project, the chip on the run
+        await h.ev(`window.__openLauncher?.('run')`);
+        await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
+        await polishNap(400);
+        const seamOpened = await h.ev(launcherState);
+        await h.shot("cdp-shots/new-run-window-1b-seam.png");
+        rec(
+            "8b. __openLauncher at the run door opens folded on Project with the run's chip",
+            seamOpened != null &&
+                ["quick", "orchestrator"].includes(seamOpened.start) &&
+                !seamOpened.startOpen &&
+                seamOpened.chip?.id === seamOpened.start &&
+                ["Quick run", "Orchestrate"].includes(seamOpened.chip.text) &&
+                seamOpened.focus === "project",
+            JSON.stringify(seamOpened)
+        );
+        await h.ev(`[...(${NEW_RUN}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
+        await polishWaitFor(h, `!${NEW_RUN}`, 3000);
 
         const created = await newRunWithLightReviewers(h, ctx);
         rec(
@@ -22646,22 +22668,30 @@ const newRunWindow = {
     },
 };
 
-// --- launcher: the one New dialog for agents and runs (docs/superpowers/specs/2026-10-08-new-launcher-design.md).
+// --- launcher: the one New dialog for agents and runs (docs/superpowers/specs/2026-10-08-new-launcher-design.md,
+// decluttered by 2026-10-28-new-launcher-declutter-design.md: the Start column folds into a chip, focus opens on Project).
 // One step per board of the design canvas, plus the keys, the error line, the Prototype chip and the kept draft.
 const LAUNCHER = NEW_RUN;
 const LAUNCHER_PROJECT = "verify-launcher";
 const LAUNCHER_PROJECT_B = "verify-launcher-b";
 
-// what the dialog shows, read in one evaluate
+// what the dialog shows, read in one evaluate. The pick (start) is the open Start column's checked row, or the chip's
+// while the column is folded; startRows is empty while it is folded, since its rows are not drawn
 const launcherState = `(() => {
     const d = ${LAUNCHER};
     if (!d) return null;
     const flat = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
     const active = document.activeElement;
     const primary = [...d.querySelectorAll('button')].find((b) => /^(Launch agent|Open terminal|Start run|Starting…)/.test(flat(b)));
+    const chip = d.querySelector('[data-launcher-chip]');
+    const startCol = d.querySelector('[data-launcher-column="start"]');
     return {
         title: flat(d.querySelector('h2')),
-        start: d.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute('data-start-row') ?? null,
+        start: (startCol
+            ? startCol.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute('data-start-row')
+            : chip?.getAttribute('data-launcher-chip')) ?? null,
+        startOpen: !!startCol,
+        chip: chip ? { id: chip.getAttribute('data-launcher-chip'), text: flat(chip), expanded: chip.getAttribute('aria-expanded') } : null,
         startRows: [...d.querySelectorAll('[data-start-row]')].map((r) => r.getAttribute('data-start-row')),
         project: d.querySelector('[data-project-row][aria-checked="true"]')?.getAttribute('data-project-row') ?? null,
         projects: [...d.querySelectorAll('[data-project-row]')].map((r) => r.getAttribute('data-project-row')),
@@ -22693,6 +22723,8 @@ const LAUNCHER_KEYS = {
     Enter: { code: "Enter", keyCode: 13 },
     ArrowUp: { code: "ArrowUp", keyCode: 38 },
     ArrowDown: { code: "ArrowDown", keyCode: 40 },
+    ArrowLeft: { code: "ArrowLeft", keyCode: 37 },
+    ArrowRight: { code: "ArrowRight", keyCode: 39 },
     "-": { code: "Minus", keyCode: 189 },
 };
 // Input.dispatchKeyEvent's modifiers bit for Shift
@@ -22741,6 +22773,85 @@ const OPEN_NEW_RUN = modChord("R", "KeyR", true);
 const NEW_BUTTON = `document.querySelector('[data-launcher-open]')`;
 const focusColumn = (name) => `${LAUNCHER}?.querySelector('[data-launcher-column="${name}"]')?.focus()`;
 
+// The dialog opens with its Start column folded into a chip (docs/superpowers/specs/2026-10-28-new-launcher-declutter-design.md
+// D1, D7): folded, the Start rows are not drawn, so every step that reads, clicks or keys a Start row opens it first,
+// here. A click on the chip draws the column, which then takes focus; an open column is only focused. Resolves to
+// whether its rows are drawn and it has focus. The council scenarios get it through their fx.
+async function openLauncherStart(h) {
+    await h.ev(`(() => {
+        const d = ${LAUNCHER};
+        const col = d?.querySelector('[data-launcher-column="start"]');
+        if (col) col.focus();
+        else d?.querySelector('[data-launcher-chip]')?.click();
+        return true;
+    })()`);
+    return polishWaitFor(
+        h,
+        `!!${LAUNCHER}?.querySelector('[data-start-row]') && document.activeElement?.getAttribute('data-launcher-column') === 'start'`,
+        3000
+    );
+}
+
+// the Start rows' ids in their digit order, read with the column opened (and left open)
+async function launcherStartRows(h) {
+    await openLauncherStart(h);
+    return (await h.ev(`[...(${LAUNCHER}?.querySelectorAll('[data-start-row]') ?? [])].map((r) => r.getAttribute('data-start-row'))`)) ?? [];
+}
+
+// Picks a Start row by its digit, which folds the column and puts focus back on Project; false when the row is not
+// offered. The rows are read at each press: the Start list drops a runtime whose CLI is missing once the harness catalog
+// loads, which can land after the first read and renumber them. A row past the ninth has no digit, so it is clicked.
+async function launcherPickStart(h, id) {
+    const at = (await launcherStartRows(h)).indexOf(id);
+    if (at < 0) return false;
+    if (at > 8) return launcherClickStart(h, id);
+    await launcherPress(h, String(at + 1));
+    return true;
+}
+
+// Clicks a Start row, which folds the column too; resolves when the chip names it
+async function launcherClickStart(h, id) {
+    await openLauncherStart(h);
+    await h.ev(`${LAUNCHER}?.querySelector('[data-start-row="${id}"]')?.click()`);
+    return polishWaitFor(h, `${LAUNCHER}?.querySelector('[data-launcher-chip]')?.getAttribute('data-launcher-chip') === ${JSON.stringify(id)}`, 3000);
+}
+
+// the band's geometry: the band (360px tall, folded or open), its columns and the chip line, rounded to whole pixels
+const launcherBandExpr = `(() => {
+    const d = ${LAUNCHER};
+    if (!d) return null;
+    const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height), left: Math.round(r.left), top: Math.round(r.top) };
+    };
+    const project = d.querySelector('[data-launcher-column="project"]');
+    let band = project;
+    while (band && band !== d && !band.classList.contains('h-[360px]')) band = band.parentElement;
+    return {
+        band: band === d ? null : box(band),
+        start: box(d.querySelector('[data-launcher-column="start"]')),
+        project: box(project),
+        third: box(d.querySelector('[data-launcher-column="third"]')),
+        chip: box(d.querySelector('[data-launcher-chip]')),
+    };
+})()`;
+// folded, the third column takes the band's width past Project's 172px (a pixel of rounding either way)
+const thirdTakesRest = (g) =>
+    g?.band != null && g.project?.w === 172 && g.third != null && Math.abs(g.project.w + g.third.w - g.band.w) <= 2;
+
+// every row of every column, checked for a drawn key: the old keycap was a font-mono box holding one digit
+const launcherNoKeycapExpr = `(() => {
+    const d = ${LAUNCHER};
+    if (!d) return null;
+    const rows = [...d.querySelectorAll('[data-start-row], [data-project-row], [data-launcher-home], [data-resume-new], [data-resume-id], [data-launcher-tool]')];
+    const keyed = rows.filter((r) =>
+        !!r.querySelector('.font-mono') || [...r.querySelectorAll('span')].some((s) => /^[0-9]$/.test(s.textContent.trim()))
+    );
+    const hints = [...d.querySelectorAll('[data-launcher-column] span')].map((s) => s.textContent.trim()).filter((t) => /(↑↓|1–\\d|a–z|type to filter)/.test(t));
+    return { rows: rows.length, keyed: keyed.map((r) => r.outerHTML.slice(0, 120)), hints };
+})()`;
+
 const launcherScenario = {
     name: "launcher",
     surface: "cockpit",
@@ -22784,77 +22895,162 @@ const launcherScenario = {
         let s = await state();
         await h.shot("cdp-shots/launcher-1-agent.png");
         rec(
-            "1. New agent opens the dialog titled New agent, focus on Start, an agent row picked, the recent project selected",
+            "1. Mod+N opens the dialog titled New agent folded: the chip names an agent row, no Start row is drawn, focus is on Project and the recent project is selected",
             s != null &&
                 s.title === "New agent" &&
-                s.focus === "start" &&
+                !s.startOpen &&
+                s.chip != null &&
+                s.chip.expanded === "false" &&
+                s.startRows.length === 0 &&
                 !["quick", "orchestrator"].includes(s.start) &&
+                s.focus === "project" &&
                 s.project === LAUNCHER_PROJECT,
             JSON.stringify(s)
         );
         if (s == null) return steps;
-        // read from the dialog at each press: the Start list drops a runtime whose CLI is missing once the harness
-        // catalog loads, which can land after the first read and renumber the rows
-        const digit = async (id) => String(((await state())?.startRows ?? []).indexOf(id) + 1);
 
-        // before any draft exists, so no Clear button of a restored note sits between Start and the primary button
+        const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+        const projectRows = await h.ev(`[...(${LAUNCHER}?.querySelectorAll('[data-project-row]') ?? [])].map((r) => ({
+            name: r.getAttribute('data-project-row'),
+            text: (r.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+            spans: r.querySelectorAll('span').length,
+            title: r.getAttribute('title') ?? '',
+        }))`);
+        const ours = [LAUNCHER_PROJECT, LAUNCHER_PROJECT_B].map((name, i) => ({ dir: ctx.dirs[i], row: projectRows.find((r) => r.name === name) }));
+        rec(
+            "1b. Project rows are names only, the path in their title",
+            ours.every((o) => o.row != null && o.row.text === o.row.name && o.row.spans === 1 && norm(o.row.title) === norm(o.dir)),
+            JSON.stringify(ours)
+        );
+
+        // before any draft exists, so no Clear button of a restored note sits before the chip, the dialog's first stop
+        const onChip = `document.activeElement?.hasAttribute('data-launcher-chip') ?? false`;
+        await launcherPress(h, "Tab", { shift: true });
+        const toChip = await h.ev(onChip);
         await launcherPress(h, "Tab", { shift: true });
         const back = await state();
         await launcherPress(h, "Tab");
-        const wrapped = await state();
+        const wrapped = await h.ev(onChip);
         rec(
-            "2. Shift+Tab from the Start column lands on the primary button, and Tab from there wraps back to Start",
-            !s.restored && back?.focusPrimary === true && wrapped?.focus === "start",
-            JSON.stringify({ restored: s.restored, back: back?.focusPrimary, wrapped: wrapped?.focus })
-        );
-
-        await launcherPress(h, "1");
-        await launcherPress(h, "ArrowUp");
-        const up = await state();
-        await launcherPress(h, "ArrowDown");
-        const down = await state();
-        rec(
-            "3. in Start, ArrowUp from the first row picks the last (Tool, titled Open a tool) and ArrowDown wraps back to the first",
-            up?.start === "tool" &&
-                up.title === "Open a tool" &&
-                down?.start === s.startRows[0] &&
-                down.title === "New agent",
-            JSON.stringify({ up: [up?.start, up?.title], down: [down?.start, down?.title] })
+            "2. Shift+Tab from Project lands on the chip, Shift+Tab again wraps to the primary button, and Tab from there wraps back to the chip",
+            !s.restored && toChip && back?.focusPrimary === true && wrapped,
+            JSON.stringify({ restored: s.restored, toChip, back: back?.focusPrimary, wrapped })
         );
 
         await h.ev(focusColumn("project"));
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-chip]')?.click()`);
+        await polishWaitFor(h, `document.activeElement?.getAttribute('data-launcher-column') === 'start'`, 3000);
+        await polishNap(200);
+        s = await state();
+        let band = await h.ev(launcherBandExpr);
+        await h.shot("cdp-shots/launcher-1c-columns.png");
+        rec(
+            "3. the chip opens the three columns with focus on Start: Start 236px, Project and the third column sharing the rest, the band 360px",
+            s.startOpen &&
+                s.chip === null &&
+                s.focus === "start" &&
+                s.startRows.length > 0 &&
+                band?.band?.h === 360 &&
+                band.start?.w === 236 &&
+                band.project != null &&
+                band.third != null &&
+                Math.abs(band.project.w - band.third.w) <= 2,
+            JSON.stringify({ start: s.start, startOpen: s.startOpen, focus: s.focus, ...band })
+        );
+        const keycaps = await h.ev(launcherNoKeycapExpr);
+        rec(
+            "3b. no keycap is drawn in any column, and no key hint beside a column label",
+            keycaps != null && keycaps.rows > 0 && keycaps.keyed.length === 0 && keycaps.hints.length === 0,
+            JSON.stringify(keycaps)
+        );
+
+        const from = s.start;
+        await launcherPress(h, "ArrowDown");
+        const down = await state();
+        await launcherPress(h, "ArrowUp");
+        const up = await state();
+        rec(
+            "4. ↑↓ in the open Start column move the pick without folding it",
+            down?.startOpen &&
+                down.focus === "start" &&
+                down.start !== from &&
+                up?.startOpen &&
+                up.focus === "start" &&
+                up.start === from,
+            JSON.stringify({ from, down: [down?.start, down?.startOpen, down?.focus], up: [up?.start, up?.startOpen, up?.focus] })
+        );
+
+        await launcherPress(h, "Enter");
+        await polishNap(200);
+        s = await state();
+        rec(
+            "4b. Enter in the open Start column folds it on the row ↑↓ left picked and launches nothing: the dialog stays, focus on Project",
+            s != null && !s.startOpen && s.start === from && s.focus === "project",
+            JSON.stringify(s)
+        );
+
         await launcherPress(h, "ArrowDown");
         const projDown = await state();
         await launcherPress(h, "ArrowUp");
         const projUp = await state();
         rec(
-            "4. in Project, ArrowDown moves the pick to the next project and ArrowUp puts it back",
+            "5. in Project, ArrowDown moves the pick to the next project and ArrowUp puts it back",
             projDown?.project === LAUNCHER_PROJECT_B && projUp?.project === LAUNCHER_PROJECT,
             JSON.stringify({ down: projDown?.project, up: projUp?.project })
         );
 
-        await h.ev(focusColumn("start"));
-        await launcherPress(h, await digit("terminal"));
+        await launcherPress(h, "ArrowLeft");
+        await polishWaitFor(h, `document.activeElement?.getAttribute('data-launcher-column') === 'start'`, 3000);
         s = await state();
-        await h.shot("cdp-shots/launcher-2-terminal.png");
         rec(
-            "5. Terminal's digit picks it: Open terminal, and no task field",
-            s.start === "terminal" && s.primary?.text.startsWith("Open terminal") && s.task === null,
-            JSON.stringify(s)
+            "5b. ← from Project opens the Start column and focuses it",
+            s.startOpen && s.focus === "start" && s.startRows.length > 0,
+            JSON.stringify({ startOpen: s.startOpen, focus: s.focus, startRows: s.startRows })
         );
 
-        await launcherPress(h, await digit("quick"));
+        const terminalPicked = await launcherPickStart(h, "terminal");
         s = await state();
+        const terminalCmd = await h.ev(`({
+            strip: !!${LAUNCHER}?.querySelector('[data-launcher-command] #launcher-cmd'),
+            toggle: !!${LAUNCHER}?.querySelector('[data-launcher-command-toggle]'),
+        })`);
+        await h.shot("cdp-shots/launcher-2-terminal.png");
         rec(
-            "6. Quick run's digit picks it: the title turns New run, and with no goal Start run waits on Write the goal",
-            s.start === "quick" && s.title === "New run" && s.primary?.disabled === true && s.footer === "Write the goal",
-            JSON.stringify(s)
+            "6. a digit in Start picks Terminal and folds: the chip names it, focus back on Project, Open terminal, no task field, and the command shows open with no Command › toggle",
+            terminalPicked &&
+                s.start === "terminal" &&
+                !s.startOpen &&
+                s.chip?.id === "terminal" &&
+                s.focus === "project" &&
+                s.primary?.text.startsWith("Open terminal") &&
+                s.task === null &&
+                terminalCmd.strip &&
+                !terminalCmd.toggle,
+            JSON.stringify({ ...s, ...terminalCmd })
+        );
+
+        const quickClicked = await launcherClickStart(h, "quick");
+        await polishNap(200);
+        s = await state();
+        band = await h.ev(launcherBandExpr);
+        rec(
+            "7. a click on the Quick run row picks and folds, focus back on Project: the chip names Quick run, the title turns New run, the third column takes the rest, and with no goal Start run waits on Write the goal",
+            quickClicked &&
+                s.start === "quick" &&
+                !s.startOpen &&
+                s.chip?.text === "Quick run" &&
+                s.focus === "project" &&
+                s.title === "New run" &&
+                thirdTakesRest(band) &&
+                s.primary?.disabled === true &&
+                s.footer === "Write the goal",
+            JSON.stringify({ ...s, ...band })
         );
 
         await launcherPress(h, "Enter");
         s = await state();
         rec(
-            "7. Enter on a run that cannot start goes to the goal field and starts nothing",
+            "8. Enter from Project on a run that cannot start goes to the goal field and starts nothing",
             s != null && s.focus === "launcher-goal",
             JSON.stringify(s)
         );
@@ -22864,25 +23060,41 @@ const launcherScenario = {
         s = await state();
         await h.shot("cdp-shots/launcher-3-quick.png");
         rec(
-            "8. with a goal, the footer reads Quick run in the project and Start run is live",
+            "9. with a goal, the footer reads Quick run in the project and Start run is live",
             s.footer === `Quick run in ${LAUNCHER_PROJECT}` && s.primary?.disabled === false,
             JSON.stringify(s)
         );
 
-        await h.ev(focusColumn("start"));
-        await launcherPress(h, await digit("orchestrator"));
+        const councilClicked = await launcherClickStart(h, "council");
+        await polishNap(200);
+        s = await state();
+        band = await h.ev(launcherBandExpr);
+        const councilNote = await h.ev(`!!${LAUNCHER}?.querySelector('[data-launcher-column="third"] [data-launcher-council-note]')`);
+        await h.shot("cdp-shots/launcher-3b-council.png");
+        rec(
+            "10. the chip names Council for the Council pick, and the third column, its note, takes the rest",
+            councilClicked && s.start === "council" && !s.startOpen && s.chip?.text === "Council" && councilNote && thirdTakesRest(band),
+            JSON.stringify({ start: s.start, chip: s.chip, councilNote, ...band })
+        );
+
+        const orchestratePicked = await launcherPickStart(h, "orchestrator");
         await polishNap(300);
         s = await state();
+        band = await h.ev(launcherBandExpr);
         const startFrom = await h.ev(`!!${LAUNCHER}?.querySelector('[role="group"][aria-label="Start from"]')`);
         await h.shot("cdp-shots/launcher-4-orchestrate.png");
         rec(
-            "9. Orchestrate's digit picks it, keeps the goal, and shows Start from, Workers at once and the three models",
-            s.start === "orchestrator" &&
+            "11. Orchestrate's digit picks and folds it, keeps the goal, and shows Start from, Workers at once and the three models; its column takes the rest",
+            orchestratePicked &&
+                s.start === "orchestrator" &&
+                !s.startOpen &&
+                s.chip?.text === "Orchestrate" &&
+                thirdTakesRest(band) &&
                 startFrom &&
                 s.goal === "verify launcher: do nothing" &&
                 s.footer.startsWith("Orchestrator × ") &&
                 s.footer.endsWith(` in ${LAUNCHER_PROJECT}`),
-            JSON.stringify({ ...s, startFrom })
+            JSON.stringify({ ...s, startFrom, ...band })
         );
 
         await h.ev(
@@ -22894,18 +23106,43 @@ const launcherScenario = {
         const plan = await h.ev(NEW_RUN_PLAN);
         await h.shot("cdp-shots/launcher-5-plan.png");
         rec(
-            "10. a plan file shows its parsed tasks in the dialog",
+            "12. a plan file shows its parsed tasks in the dialog",
             plan?.rows?.length === 3,
             JSON.stringify({ plan: MODELS_PLAN, ...plan })
         );
 
-        await h.ev(focusColumn("start"));
+        // Tab, → and a mouse click on Project each leave the open Start column, which folds with the pick unchanged
+        const leaves = {};
+        await openLauncherStart(h);
         await launcherPress(h, "Tab");
+        leaves.tab = await state();
+        await openLauncherStart(h);
+        await launcherPress(h, "ArrowRight");
+        leaves.right = await state();
+        await openLauncherStart(h);
+        leaves.mouse = await bsMouseClick(
+            h,
+            `${LAUNCHER}?.querySelector('[data-launcher-column="project"]')?.firstElementChild?.firstElementChild`
+        );
+        await polishNap(200);
+        leaves.click = await state();
+        const foldedOnProject = (x) => x != null && !x.startOpen && x.start === "orchestrator" && x.focus === "project";
+        rec(
+            "13. Tab, → and a click on another column each fold the open Start column with no pick, focus on Project",
+            foldedOnProject(leaves.tab) && foldedOnProject(leaves.right) && leaves.mouse === "mouse" && foldedOnProject(leaves.click),
+            JSON.stringify(
+                Object.fromEntries(
+                    Object.entries(leaves).map(([k, v]) => [k, v && typeof v === "object" ? [v.start, v.startOpen, v.focus] : v])
+                )
+            )
+        );
+
+        await h.ev(focusColumn("project"));
         for (const ch of "r-b") await launcherPress(h, ch);
         s = await state();
         await h.shot("cdp-shots/launcher-6-filter.png");
         rec(
-            "11. Tab moves to the Project column, and typing filters it to the matching project",
+            "14. typing in the Project column filters it to the matching project",
             s.focus === "project" &&
                 s.filter?.startsWith("r-b") &&
                 s.projects.includes(LAUNCHER_PROJECT_B) &&
@@ -22921,7 +23158,7 @@ const launcherScenario = {
         );
         await h.shot("cdp-shots/launcher-7-nomatch.png");
         rec(
-            "12. a filter nothing matches lists no project and says Esc clears it",
+            "15. a filter nothing matches lists no project and says Esc clears it",
             s.projects.length === 0 && noMatch === "No project matches “r-bzz”. Esc clears the filter.",
             JSON.stringify({ noMatch, ...s })
         );
@@ -22929,27 +23166,28 @@ const launcherScenario = {
         await launcherPress(h, "Escape");
         s = await state();
         rec(
-            "13. Escape clears the filter and leaves the dialog open on the project it picked",
+            "16. Escape clears the filter and leaves the dialog open on the project it picked",
             s != null && s.filter === null && s.project === LAUNCHER_PROJECT_B,
             JSON.stringify(s)
         );
 
-        await h.ev(focusColumn("start"));
-        const agentRow = s.startRows.includes("claude") ? "claude" : s.startRows[0];
-        await launcherPress(h, await digit(agentRow));
-        await launcherPress(h, "Tab");
+        // the agent row's fields sit under a project with no session, so the third column holds a note and no stop
+        const offered = await launcherStartRows(h);
+        const agentRow = offered.includes("claude") ? "claude" : offered[0];
+        await launcherPickStart(h, agentRow);
         await launcherPress(h, "Tab");
         const tabbedTo = (await state()).focus;
+        const FLAG_BUTTON = `${LAUNCHER}?.querySelector('[data-launcher-task-row] button[title="Add a flag"]')`;
         await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, "verify launcher: kept draft"));
-        await h.ev(`${LAUNCHER}?.querySelector('button[role="switch"]')?.click()`);
-        const hasFlags = await h.ev(`!!${LAUNCHER}?.querySelector('button[aria-expanded]')`);
-        if (hasFlags) await h.ev(`${LAUNCHER}?.querySelector('button[aria-expanded]')?.click()`);
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-task-row] button[role="switch"]')?.click()`);
+        const hasFlags = await h.ev(`!!${FLAG_BUTTON}`);
+        if (hasFlags) await h.ev(`${FLAG_BUTTON}?.click()`);
         await polishNap(400);
         s = await state();
         const worktree = await h.ev(`${LAUNCHER}?.querySelector('button[role="switch"]')?.getAttribute('aria-checked')`);
         await h.shot("cdp-shots/launcher-8-agent-options.png");
         rec(
-            "14. on an agent row, Tab, Tab lands in Task; a task, the worktree switch and the flag menu all take",
+            "17. on an agent row, Tab from Project lands in Task; a task, the worktree switch and the flag menu all take",
             tabbedTo === "launcher-task" && s.task === "verify launcher: kept draft" && worktree === "true",
             JSON.stringify({ tabbedTo, worktree, hasFlags, ...s })
         );
@@ -22958,14 +23196,99 @@ const launcherScenario = {
         if (hasFlags) {
             await launcherPress(h, "Escape");
             const menu = await h.ev(
-                `({ open: !!${LAUNCHER}, expanded: ${LAUNCHER}?.querySelector('button[aria-expanded]')?.getAttribute('aria-expanded'), focus: document.activeElement?.id || null })`
+                `({ open: !!${LAUNCHER}, expanded: ${FLAG_BUTTON}?.getAttribute('aria-expanded'), focus: document.activeElement?.id || null })`
             );
             rec(
-                "15. Escape in the Task box with the flag menu open closes the menu, not the dialog",
+                "18. Escape in the Task box with the flag menu open closes the menu, not the dialog",
                 menu.open && menu.expanded === "false",
                 JSON.stringify(menu)
             );
         }
+
+        // the Task row: the field, then + Flag, the flag chips, Worktree and Command ›, on the field's own line
+        const taskRow = `(() => {
+            const d = ${LAUNCHER};
+            const row = d?.querySelector('[data-launcher-task-row]');
+            if (!row) return null;
+            const field = row.querySelector('#launcher-task');
+            const top = field?.getBoundingClientRect().top ?? 0;
+            const offset = (el) => (el ? Math.round(el.getBoundingClientRect().top - top) : null);
+            const toggle = row.querySelector('[data-launcher-command-toggle]');
+            return {
+                field: offset(field),
+                flag: offset(row.querySelector('button[title="Add a flag"]')),
+                worktree: offset(row.querySelector('button[role="switch"]')),
+                command: offset(toggle),
+                commandText: (toggle?.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+                expanded: toggle?.getAttribute('aria-expanded') ?? null,
+                chips: [...row.querySelectorAll('[data-launcher-flag-chip]')].map((c) => c.getAttribute('data-launcher-flag-chip')),
+                strip: !!d.querySelector('[data-launcher-command]'),
+                cmd: d.querySelector('#launcher-cmd')?.value ?? null,
+            };
+        })()`;
+        const onLine = (v) => v != null && Math.abs(v) <= 6;
+        const row = await h.ev(taskRow);
+        await h.shot("cdp-shots/launcher-8b-task-row.png");
+        rec(
+            "18b. the Task row holds the field, + Flag, Worktree and Command › on one line, the command folded",
+            row != null &&
+                row.field === 0 &&
+                (!hasFlags || onLine(row.flag)) &&
+                onLine(row.worktree) &&
+                onLine(row.command) &&
+                row.commandText === "Command" &&
+                row.expanded === "false" &&
+                !row.strip &&
+                row.cmd === null,
+            JSON.stringify({ hasFlags, ...row })
+        );
+
+        // a flag turned on in the menu shows as a chip on the row, while Command stays folded; its ✕ there turns it off
+        if (hasFlags) {
+            await h.ev(`${FLAG_BUTTON}?.click()`);
+            await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('input[type="checkbox"]')`, 3000);
+            const flagName = await h.ev(`(() => {
+                const box = ${LAUNCHER}?.querySelector('input[type="checkbox"]');
+                if (!box) return null;
+                if (!box.checked) box.click();
+                return (box.parentElement?.querySelector('.font-mono')?.textContent ?? '').trim();
+            })()`);
+            await polishNap(250);
+            await h.ev(`${FLAG_BUTTON}?.click()`);
+            await polishNap(300);
+            const withFlag = await h.ev(taskRow);
+            await h.shot("cdp-shots/launcher-8c-flag-chip.png");
+            await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-task-row] button[aria-label=${JSON.stringify(`Remove ${flagName}`)}]')?.click()`);
+            await polishNap(250);
+            const removed = await h.ev(taskRow);
+            rec(
+                "18c. an enabled flag shows as a chip on the Task row with Command folded, and its ✕ takes it off",
+                !!flagName &&
+                    withFlag?.chips.length === 1 &&
+                    withFlag.chips[0] === flagName &&
+                    !withFlag.strip &&
+                    removed?.chips.length === 0,
+                JSON.stringify({ flagName, withFlag, removed })
+            );
+        }
+
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-command-toggle]')?.click()`);
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('#launcher-cmd')`, 3000);
+        const opened = await h.ev(taskRow);
+        await h.shot("cdp-shots/launcher-8d-command.png");
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-command-toggle]')?.click()`);
+        await polishNap(250);
+        const refolded = await h.ev(taskRow);
+        rec(
+            "18d. Command › opens the command strip under the row with the agent's command, and folds it again",
+            opened?.expanded === "true" &&
+                opened.strip &&
+                typeof opened.cmd === "string" &&
+                opened.cmd.trim() !== "" &&
+                refolded?.expanded === "false" &&
+                !refolded.strip,
+            JSON.stringify({ agentRow, opened, refolded })
+        );
 
         // a worktree with no branch is refused before anything starts, so the error line shows without a launch
         await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('input[aria-label="Branch"]')`, ""));
@@ -22977,14 +23300,22 @@ const launcherScenario = {
         s = await state();
         await h.shot("cdp-shots/launcher-9-error.png");
         rec(
-            "16. Launch agent with the worktree on and no branch puts the error in the footer and starts nothing",
+            "19. Launch agent with the worktree on and no branch puts the error in the footer and starts nothing",
             s != null && s.footerError && s.footer === "Enter a branch name or turn off the worktree option.",
             JSON.stringify(s)
         );
 
+        await openLauncherStart(h);
+        await launcherPress(h, "Escape");
+        await polishNap(200);
+        const escFolded = await state();
         await launcherPress(h, "Escape");
         const escClosed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
-        rec("17. Escape with nothing open inside closes the dialog", escClosed, `closed=${escClosed}`);
+        rec(
+            "20. Escape folds the open Start column, focus back on Project, and a second Escape closes the dialog",
+            escFolded != null && !escFolded.startOpen && escFolded.focus === "project" && escClosed,
+            JSON.stringify({ folded: escFolded && [escFolded.startOpen, escFolded.focus], closed: escClosed })
+        );
 
         await h.ev(OPEN_NEW_AGENT);
         await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
@@ -22992,8 +23323,8 @@ const launcherScenario = {
         s = await state();
         await h.shot("cdp-shots/launcher-10-restored.png");
         rec(
-            "18. reopened, it says draft restored and the task is still there",
-            s != null && s.restored && s.task === "verify launcher: kept draft",
+            "21. reopened folded on Project, it says draft restored and the task is still there",
+            s != null && !s.startOpen && s.focus === "project" && s.restored && s.task === "verify launcher: kept draft",
             JSON.stringify(s)
         );
 
@@ -23003,7 +23334,7 @@ const launcherScenario = {
             return !!backdrop;
         })()`);
         const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
-        rec("19. a mousedown outside the dialog closes it", closed, `closed=${closed}`);
+        rec("22. a mousedown outside the dialog closes it", closed, `closed=${closed}`);
 
         // the Prototype chip rides a canvas's Build this… prefill, which only an agent's design canvas sends; the
         // dialog's DEV seam sends the same prefill
@@ -23018,9 +23349,11 @@ const launcherScenario = {
         const chip = await h.ev(`(${LAUNCHER}?.querySelector('[data-launcher-prototype]')?.textContent ?? '').trim()`);
         await h.shot("cdp-shots/launcher-11-prototype.png");
         rec(
-            "20. a canvas's Build this… prefill opens on Orchestrate in its project, with its goal and the Prototype chip",
+            "23. a canvas's Build this… prefill opens folded on Orchestrate in its project, with its goal and the Prototype chip",
             seam &&
                 s?.start === "orchestrator" &&
+                !s.startOpen &&
+                s.chip?.id === "orchestrator" &&
                 s.project === LAUNCHER_PROJECT &&
                 s.goal === "verify launcher: build the canvas" &&
                 chip.startsWith("Prototype · ") &&
@@ -23030,9 +23363,9 @@ const launcherScenario = {
 
         await h.ev(`[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
         const cancelled = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
-        rec("21. Cancel closes the dialog", cancelled, `closed=${cancelled}`);
+        rec("24. Cancel closes the dialog", cancelled, `closed=${cancelled}`);
 
-        // the task kept since step 14 still shows the note; Clear takes it away
+        // the task kept since step 17 still shows the note; Clear takes it away
         await h.ev(OPEN_NEW_AGENT);
         await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
         await polishNap(400);
@@ -23041,14 +23374,15 @@ const launcherScenario = {
         );
         await polishNap(250);
         s = await state();
-        rec("22. Clear empties the kept task and drops the note", s != null && !s.restored && s.task === "", JSON.stringify(s));
+        rec("25. Clear empties the kept task and drops the note", s != null && !s.restored && s.task === "", JSON.stringify(s));
         if (s == null) return steps;
 
-        // a real launch: a task and the worktree switch go into the draft on an agent row, then Terminal's Enter starts a
-        // terminal (no agent) that takes the centre and the keyboard, and the launch must empty both
-        const agentPick = s.startRows.includes("claude") ? "claude" : s.startRows[0];
-        await h.ev(focusColumn("start"));
-        await launcherPress(h, String(s.startRows.indexOf(agentPick) + 1));
+        // a real launch: a task and the worktree switch go into the draft on an agent row, then Terminal's Enter (from
+        // Project, where its digit leaves focus) starts a terminal (no agent) that takes the centre and the keyboard, and
+        // the launch must empty both
+        const launchRows = await launcherStartRows(h);
+        const agentPick = launchRows.includes("claude") ? "claude" : launchRows[0];
+        await launcherPickStart(h, agentPick);
         await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, "verify launcher: launched task"));
         // React commits the click's update after the evaluated script returns, so the read is a second evaluate
         await h.ev(`(() => {
@@ -23059,8 +23393,7 @@ const launcherScenario = {
         const switchOn = await h.ev(`${LAUNCHER}?.querySelector('button[role="switch"]')?.getAttribute('aria-checked') ?? null`);
         const blocksBefore = await launcherBlockIds(h);
         const tabsBefore = (await caTabIds(h)).tabIds;
-        await h.ev(focusColumn("start"));
-        await launcherPress(h, String(s.startRows.indexOf("terminal") + 1));
+        await launcherPickStart(h, "terminal");
         await launcherPress(h, "Enter");
         const launchClosed = await polishWaitFor(h, `!${LAUNCHER}`, 5000);
         let blocksAfter = blocksBefore;
@@ -23072,7 +23405,7 @@ const launcherScenario = {
         // the new block rides ctx so teardown deletes it, even when a later step throws
         ctx.terminalBlocks = added;
         rec(
-            "23. Open terminal with a task and the worktree switch set closes the dialog and opens one terminal block",
+            "26. Open terminal with a task and the worktree switch set closes the dialog and opens one terminal block",
             switchOn === "true" && launchClosed && added.length === 1 && blocksAfter.length === blocksBefore.length + 1,
             JSON.stringify({ switchOn, launchClosed, before: blocksBefore.length, after: blocksAfter.length, added })
         );
@@ -23084,7 +23417,7 @@ const launcherScenario = {
         const surfaceAfterLaunch = await h.activeSurfaceLabel();
         await h.shot("cdp-shots/launcher-11b-terminal-centre.png");
         rec(
-            "23b. the new terminal opens on the Agent surface with the keyboard in its xterm",
+            "26b. the new terminal opens on the Agent surface with the keyboard in its xterm",
             tookKeyboard && surfaceAfterLaunch === SURFACE_LABEL.agent,
             JSON.stringify({ newTab, typingIn: await h.ev(typingIn), surface: surfaceAfterLaunch })
         );
@@ -23092,25 +23425,22 @@ const launcherScenario = {
         await h.ev(OPEN_NEW_AGENT);
         await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
         await polishNap(400);
-        const reopened = await state();
-        if (reopened != null && reopened.startRows.length > 0) {
-            const pick = reopened.startRows.includes(agentPick) ? agentPick : reopened.startRows[0];
-            await h.ev(focusColumn("start"));
-            await launcherPress(h, String(reopened.startRows.indexOf(pick) + 1));
+        const reopenedRows = (await h.ev(`!!${LAUNCHER}`)) ? await launcherStartRows(h) : [];
+        if (reopenedRows.length > 0) {
+            await launcherPickStart(h, reopenedRows.includes(agentPick) ? agentPick : reopenedRows[0]);
         }
         s = await state();
         const worktreeAfter = await h.ev(`${LAUNCHER}?.querySelector('button[role="switch"]')?.getAttribute('aria-checked') ?? null`);
         await h.shot("cdp-shots/launcher-12-after-launch.png");
         rec(
-            "24. after the launch, New agent opens with no draft restored, an empty task and the worktree switch off",
+            "27. after the launch, New agent opens with no draft restored, an empty task and the worktree switch off",
             s != null && !s.restored && s.task === "" && worktreeAfter === "false",
             JSON.stringify({ worktreeAfter, ...s })
         );
         if (s == null) return steps;
 
         // the app bar's one New button has no door of its own: it reopens on the last pick, here Quick run
-        await h.ev(focusColumn("start"));
-        await launcherPress(h, String(s.startRows.indexOf("quick") + 1));
+        await launcherPickStart(h, "quick");
         await h.ev(`[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
         await polishWaitFor(h, `!${LAUNCHER}`, 3000);
         const appBar = await h.ev(`({
@@ -23123,8 +23453,14 @@ const launcherScenario = {
         s = await state();
         await h.shot("cdp-shots/launcher-13-new-button.png");
         rec(
-            "25. the app bar has one New button and no New run button, and New reopens on the last pick",
-            appBar.newButton.startsWith("+New") && !appBar.newRunButton && s?.start === "quick" && s.title === "New run",
+            "28. the app bar has one New button and no New run button, and New reopens folded on Project, the chip on the last pick",
+            appBar.newButton.startsWith("+New") &&
+                !appBar.newRunButton &&
+                s?.start === "quick" &&
+                !s.startOpen &&
+                s.chip?.text === "Quick run" &&
+                s.focus === "project" &&
+                s.title === "New run",
             JSON.stringify({ ...appBar, ...s })
         );
         return steps;
@@ -23138,7 +23474,7 @@ const launcherScenario = {
                 console.error(`launcher teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
-        // the terminal step 23 started: its block goes before the reload, so no shell outlives the scenario
+        // the terminal step 26 started: its block goes before the reload, so no shell outlives the scenario
         for (const blockid of ctx.terminalBlocks ?? []) {
             await step(`delete the launched terminal ${blockid}`, () => h.rpc("deleteblock", { blockid }));
         }
@@ -23261,9 +23597,17 @@ const launcherResumeState = `(() => {
     const primary = [...d.querySelectorAll('button')].find((b) =>
         /^(Launch agent|Resume agent|Open terminal|Start run|Starting…)/.test(flat(b))
     );
+    const chip = d.querySelector('[data-launcher-chip]');
+    const startCol = d.querySelector('[data-launcher-column="start"]');
     return {
         startRows: [...d.querySelectorAll('[data-start-row]')].map((r) => r.getAttribute('data-start-row')),
-        start: d.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute('data-start-row') ?? null,
+        // the open column's checked row, else the chip's pick
+        start: (startCol
+            ? startCol.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute('data-start-row')
+            : chip?.getAttribute('data-launcher-chip')) ?? null,
+        startOpen: !!startCol,
+        chip: chip ? flat(chip) : null,
+        focus: active?.getAttribute('data-launcher-column') ?? (active?.id || null),
         project: d.querySelector('[data-project-row][aria-checked="true"]')?.getAttribute('data-project-row') ?? null,
         list: !!list,
         newPicked: list?.querySelector('[data-resume-new]')?.getAttribute('aria-checked') === 'true',
@@ -23275,12 +23619,95 @@ const launcherResumeState = `(() => {
         focusRow: active?.hasAttribute('data-resume-new') ? 'new' : (active?.getAttribute('data-resume-id') ?? null),
         primary: primary ? { text: flat(primary), disabled: primary.disabled } : null,
         footer: flat(d.querySelector('[data-launcher-footer]')),
+        // the command input is drawn only while Command › is open (launcherOpenCommand)
         cmd: d.querySelector('#launcher-cmd')?.value ?? null,
         cmdReadOnly: d.querySelector('#launcher-cmd')?.readOnly ?? null,
-        taskHint: flat(d.querySelector('label[for="launcher-task"]')?.parentElement),
-        worktreeSwitch: /Isolated git worktree/.test(flat(d)),
+        taskHint: d.querySelector('#launcher-task')?.placeholder ?? null,
+        worktreeSwitch: !!d.querySelector('[data-launcher-task-row] button[role="switch"]'),
     };
 })()`;
+
+// opens the Task row's Command › strip, where the command input is drawn; an open one stays open
+async function launcherOpenCommand(h) {
+    await h.ev(`(() => {
+        const t = ${LAUNCHER}?.querySelector('[data-launcher-command-toggle]');
+        if (t && t.getAttribute('aria-expanded') !== 'true') t.click();
+        return true;
+    })()`);
+    return polishWaitFor(h, `!!${LAUNCHER}?.querySelector('#launcher-cmd')`, 3000);
+}
+
+// an agent footer names the account alone, or nothing: never where it starts, what it resumes or a branch (spec
+// 2026-10-28 D6)
+const agentFooterShort = (footer) =>
+    (footer === "" || /^Claude: \S/.test(footer)) && !/(Starts in|Resumes| on )/.test(footer);
+
+// The session rows as drawn: each one's height, its title span (cut or not) and its age span (cut or not), and whether a
+// row holds a token count or a keycap
+const launcherSessionRowsExpr = `(() => {
+    const list = ${LAUNCHER}?.querySelector('[data-launcher-resume]');
+    if (!list) return null;
+    return [...list.querySelectorAll('[data-resume-id]')].map((r) => {
+        const title = r.firstElementChild;
+        const age = r.querySelector('[data-resume-age]');
+        const box = r.getBoundingClientRect();
+        const ageBox = age?.getBoundingClientRect();
+        return {
+            id: r.getAttribute('data-resume-id'),
+            spans: r.children.length,
+            h: Math.round(box.height),
+            title: title?.textContent ?? '',
+            titleCut: !!title && title.scrollWidth > title.clientWidth,
+            ellipsis: !!title && getComputedStyle(title).textOverflow === 'ellipsis',
+            tooltip: r.getAttribute('title') ?? '',
+            age: age?.textContent ?? null,
+            ageCut: !age || age.scrollWidth > age.clientWidth,
+            ageInside: !!ageBox && ageBox.right <= box.right + 0.5 && ageBox.left >= box.left,
+            tok: /\\btok\\b/.test(r.textContent ?? ''),
+            keycap: !!r.querySelector('.font-mono'),
+        };
+    });
+})()`;
+
+// Counts the frontend's RPC calls that read a transcript, from now until removed: every call still goes to what was
+// there (the page's client, or a mock already installed). apiUrl is found with ahResolveModules. Resolves to "ok", or
+// why it did not install.
+const TRANSCRIPT_COUNT_KEY = "__arcTranscriptCount";
+async function installTranscriptCounter(h, apiUrl) {
+    return h.ev(`(async () => {
+        const mod = await import(${JSON.stringify(apiUrl)});
+        const api = mod.RpcApi;
+        if (!api || typeof api.setMockRpcClient !== "function") return "no-api";
+        if (window.${TRANSCRIPT_COUNT_KEY}) return "already-installed";
+        const prev = api.mockClient ?? null;
+        const state = { reads: [], commands: [] };
+        const note = (command) => {
+            if (!state.commands.includes(command)) state.commands.push(command);
+            if (/transcript/.test(command)) state.reads.push(command);
+        };
+        api.setMockRpcClient({
+            mockWshRpcCall(client, command, data, opts) {
+                note(command);
+                return prev ? prev.mockWshRpcCall(client, command, data, opts) : client.wshRpcCall(command, data, opts);
+            },
+            mockWshRpcStream(client, command, data, opts) {
+                note(command);
+                return prev ? prev.mockWshRpcStream(client, command, data, opts) : client.wshRpcStream(command, data, opts);
+            },
+        });
+        window.${TRANSCRIPT_COUNT_KEY} = { api, prev, state };
+        return "ok";
+    })()`);
+}
+const transcriptCount = (h) => h.ev(`window.${TRANSCRIPT_COUNT_KEY}?.state ?? null`);
+const removeTranscriptCounter = (h) =>
+    h.ev(`(() => {
+        const f = window.${TRANSCRIPT_COUNT_KEY};
+        if (!f) return "absent";
+        f.api.setMockRpcClient(f.prev);
+        delete window.${TRANSCRIPT_COUNT_KEY};
+        return "restored";
+    })()`);
 
 const launcherResume = {
     name: "launcher-resume",
@@ -23321,6 +23748,8 @@ const launcherResume = {
             ctx.prevFlags = await h.ev(`localStorage.getItem(${JSON.stringify(NA_FLAGS_KEY)})`);
             await h.ev(`localStorage.setItem(${JSON.stringify(NA_FLAGS_KEY)}, "{}")`);
             await polishReload(h);
+            // the module url the transcript counter wraps (step 1d)
+            ctx.modules = await ahResolveModules(h);
         } catch (e) {
             ctx.arrangeError = String(e?.message ?? e);
         }
@@ -23337,45 +23766,94 @@ const launcherResume = {
         await h.cdp("Emulation.setDeviceMetricsOverride", MODELS_VIEWPORT);
         await h.goto("cockpit");
 
+        // every transcript read from here to the pick in step 2 is counted (spec 2026-10-28 D5: none)
+        ctx.counter = ctx.modules?.urls
+            ? await installTranscriptCounter(h, ctx.modules.urls.api)
+            : `no-module-url (${ctx.modules?.error})`;
         await h.ev(OPEN_NEW_AGENT);
         await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
         await polishNap(400);
-        let s = await state();
-        if (s == null || !s.startRows.includes("claude")) {
-            rec("0. the dialog opens with Claude offered", false, JSON.stringify(s));
+        const opened = await state();
+        const offered = opened == null ? [] : await launcherStartRows(h);
+        if (opened == null || !offered.includes("claude")) {
+            rec("0. the dialog opens with Claude offered", false, JSON.stringify({ opened, offered }));
             return steps;
         }
-        // read from the dialog at each press: the Start list drops a runtime whose CLI is missing once the harness
-        // catalog loads, which can land after the first read and renumber the rows
-        const digit = async (id) => String(((await state())?.startRows ?? []).indexOf(id) + 1);
-        await h.ev(focusColumn("start"));
-        await launcherPress(h, await digit("claude"));
+        // the dialog may open on another agent: Claude's digit picks it, which folds the column back onto Project
+        await launcherPickStart(h, "claude");
         await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-resume]')`, 8000);
         await polishNap(300);
-        s = await state();
+        let s = await state();
         await h.shot("cdp-shots/launcher-resume-1-list.png");
         rec(
-            "1. New agent with the verify project and Claude picked lists the verify session under Resume, New session picked",
-            s.start === "claude" &&
+            "1. New agent opens folded with focus on Project; with Claude picked the chip shows Claude Code, and the verify project lists the verify session, New session picked",
+            !opened.startOpen &&
+                opened.chip != null &&
+                opened.focus === "project" &&
+                s.start === "claude" &&
+                !s.startOpen &&
+                (s.chip ?? "").endsWith("Claude Code") &&
+                s.focus === "project" &&
                 s.project === LAUNCHER_RESUME_PROJECT &&
                 s.list &&
                 s.newPicked &&
                 s.rows.some((r) => r.id === ctx.sessionId && r.text.includes(LAUNCHER_RESUME_TASK)),
-            JSON.stringify(s)
+            JSON.stringify({ opened: [opened.start, opened.startOpen, opened.chip, opened.focus], ...s })
+        );
+        const newFooter = s.footer;
+
+        const sessionRows = await h.ev(launcherSessionRowsExpr);
+        const ours = sessionRows?.find((r) => r.id === ctx.sessionId) ?? null;
+        const keycaps = await h.ev(launcherNoKeycapExpr);
+        rec(
+            "1b. a session row is one line: title and age, no token count, no keycap",
+            ours != null &&
+                ours.spans === 2 &&
+                ours.title === LAUNCHER_RESUME_TASK &&
+                /^(just now|\d+[mhd])$/.test(ours.age ?? "") &&
+                !ours.ageCut &&
+                ours.ageInside &&
+                ours.h <= 40 &&
+                !ours.tok &&
+                !ours.keycap &&
+                keycaps?.keyed.length === 0 &&
+                keycaps.hints.length === 0,
+            JSON.stringify({ ours, keycaps })
         );
 
         await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')?.click()`);
         await polishNap(300);
         s = await state();
+        const band = await h.ev(launcherBandExpr);
         await h.shot("cdp-shots/launcher-resume-2-picked.png");
         rec(
-            "2. clicking the session: Resume agent, the footer starts Resumes, the command is claude --resume <id>, the Task hint says next message, and there is no worktree switch",
+            "1c. a session picked: Project 172px, the third column takes the rest, the band 360px",
+            s.picked === ctx.sessionId && !s.startOpen && band?.band?.h === 360 && thirdTakesRest(band),
+            JSON.stringify({ picked: s.picked, ...band })
+        );
+        const reads = await transcriptCount(h);
+        await removeTranscriptCounter(h);
+        rec(
+            "1d. picking a session row reads no transcript: no transcript RPC from opening the dialog to the pick",
+            ctx.counter === "ok" && reads != null && reads.reads.length === 0,
+            JSON.stringify({ counter: ctx.counter, ...reads })
+        );
+        rec(
+            "1e. the agent footer reads Claude: <account> only, for a new session and for a picked one",
+            agentFooterShort(newFooter) && agentFooterShort(s.footer),
+            JSON.stringify({ newFooter, picked: s.footer })
+        );
+
+        const cmdShown = await launcherOpenCommand(h);
+        s = await state();
+        rec(
+            "2. the picked session: Resume agent, Command › shows claude --resume <id>, read-only, the Task hint (the field's placeholder) says next message, and there is no worktree switch",
             s.picked === ctx.sessionId &&
                 s.primary?.text.startsWith("Resume agent") &&
-                s.footer.startsWith("Resumes") &&
+                cmdShown &&
                 s.cmd === `claude --resume ${ctx.sessionId}` &&
                 s.cmdReadOnly === true &&
-                s.taskHint.includes("optional · sent as the next message") &&
+                (s.taskHint ?? "").includes("optional · sent as the next message") &&
                 !s.worktreeSwitch,
             JSON.stringify(s)
         );
@@ -23419,12 +23897,37 @@ const launcherResume = {
             JSON.stringify({ down, up })
         );
 
-        await h.ev(focusColumn("start"));
-        await launcherPress(h, await digit("terminal"));
+        // New session with the worktree on: the branch row opens under the Task row (board NewSession)
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-task-row] button[role="switch"]')?.click()`);
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-branch-row]')`, 3000);
+        await polishNap(300);
+        const branchRow = await h.ev(`(() => {
+            const d = ${LAUNCHER};
+            const task = d?.querySelector('[data-launcher-task-row]')?.getBoundingClientRect();
+            const row = d?.querySelector('[data-launcher-branch-row]');
+            const r = row?.getBoundingClientRect();
+            return {
+                on: d?.querySelector('[data-launcher-task-row] button[role="switch"]')?.getAttribute('aria-checked') ?? null,
+                row: !!row,
+                below: !!task && !!r && r.top >= task.bottom - 0.5,
+                branch: !!row?.querySelector('input[aria-label="Branch"]'),
+                hint: (d?.querySelector('[data-launcher-branch-hint]')?.textContent ?? '').trim(),
+            };
+        })()`);
+        await h.shot("cdp-shots/launcher-resume-4c-worktree.png");
+        rec(
+            "4c. New session with Worktree on shows the branch row, with its field and hint, under the Task row",
+            branchRow.on === "true" && branchRow.row && branchRow.below && branchRow.branch && branchRow.hint !== "",
+            JSON.stringify(branchRow)
+        );
+        await h.ev(`${LAUNCHER}?.querySelector('[data-launcher-task-row] button[role="switch"]')?.click()`);
+        await polishNap(200);
+
+        await launcherPickStart(h, "terminal");
         await polishNap(300);
         s = await state();
         rec("5a. picking Terminal removes the Resume list", s.start === "terminal" && !s.list, JSON.stringify(s));
-        await launcherPress(h, await digit("claude"));
+        await launcherPickStart(h, "claude");
         await polishNap(300);
         s = await state();
         rec(
@@ -23432,10 +23935,10 @@ const launcherResume = {
             s.start === "claude" && s.list && s.newPicked,
             JSON.stringify(s)
         );
-        // Escape from the Start column closes the dialog; Launch and Resume are never pressed
+        // the digit left focus on Project, where Escape closes the dialog; Launch and Resume are never pressed
         await launcherPress(h, "Escape");
         const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
-        rec("5c. Escape closes the dialog", closed, `closed=${closed}`);
+        rec("5c. Escape from Project closes the dialog", closed, `closed=${closed}`);
 
         // 6. Open asleep (Shift+Enter on the picked session): a new agent on the roster, asleep, its conversation and the
         // box under it in its cell, and no process started (the server lists it as sleeping, which it does only for a
@@ -23450,8 +23953,7 @@ const launcherResume = {
         await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
         await polishNap(400);
         if ((await state())?.start !== "claude") {
-            await h.ev(focusColumn("start"));
-            await launcherPress(h, await digit("claude"));
+            await launcherPickStart(h, "claude");
         }
         await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')`, 8000);
         await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.sessionId}"]')?.click()`);
@@ -23667,6 +24169,8 @@ function removeTrashedSession(id) {
 const LAUNCHER_OLDER_PROJECT = "verify-launcher-older";
 const LAUNCHER_OLDER_PROJECT_B = "verify-launcher-older-b";
 const LAUNCHER_OLDER_NEW = 40;
+// wide words, so the title runs past the ~650px Session column whatever the font; no "older" in it (step 6 types that)
+const LAUNCHER_OLDER_LONG = "verify lazy 1 WWW MMM wide headline words that make this session title run far past the row WWWW MMMM WWWW";
 
 // The Session column as the page draws it: its rows, the hint beside its label, whether its last row is the loading row,
 // and the scroll position of the list.
@@ -23707,11 +24211,14 @@ const launcherResumeOlder = {
                 ctx.projects.push(name);
                 await waitForProjectInConfig(h, name);
             }
-            // the first project's own folder of transcripts: 40 sessions 1 to 40 hours old, and one 10 days old
+            // the first project's own folder of transcripts: 40 sessions 1 to 40 hours old, and one 10 days old. The
+            // newest one's title is too long for its row (step 1b), under the scan's 120-character cut (maxTaskLen)
             ctx.transcriptDir = join(homedir(), ".claude", "projects", `verify-lazy-${randomUUID().slice(0, 8)}`);
             mkdirSync(ctx.transcriptDir, { recursive: true });
             for (let n = 1; n <= LAUNCHER_OLDER_NEW; n++) {
-                seedOlderSession(ctx.transcriptDir, ctx.dirs[0], `verify lazy ${n}`, n * 3_600_000);
+                const title = n === 1 ? LAUNCHER_OLDER_LONG : `verify lazy ${n}`;
+                const seeded = seedOlderSession(ctx.transcriptDir, ctx.dirs[0], title, n * 3_600_000);
+                if (n === 1) ctx.longId = seeded.id;
             }
             ctx.olderTitle = `verify-older-${randomUUID().slice(0, 8)}`;
             ctx.olderId = seedOlderSession(ctx.transcriptDir, ctx.dirs[0], ctx.olderTitle, 10 * 86_400_000).id;
@@ -23757,13 +24264,12 @@ const launcherResumeOlder = {
             await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
             await polishNap(400);
             let rs = await resumeState();
-            if (rs == null || !rs.startRows.includes("claude")) {
-                rec("0. the dialog opens with Claude offered", false, JSON.stringify(rs));
+            const offered = rs == null ? [] : await launcherStartRows(h);
+            if (rs == null || !offered.includes("claude")) {
+                rec("0. the dialog opens with Claude offered", false, JSON.stringify({ rs, offered }));
                 return steps;
             }
-            const digit = async (id) => String(((await resumeState())?.startRows ?? []).indexOf(id) + 1);
-            await h.ev(focusColumn("start"));
-            await launcherPress(h, await digit("claude"));
+            await launcherPickStart(h, "claude");
             await polishWaitFor(h, `${rowCount} > 0`, 8000);
             await polishNap(300);
             let s = await state();
@@ -23773,6 +24279,22 @@ const launcherResumeOlder = {
                 "1. the first project on Claude lists 30 session rows, and the Session column's hint reads 30+ · newest first",
                 rs.project === LAUNCHER_OLDER_PROJECT && s.ids.length === 30 && s.hint === "30+ · newest first",
                 JSON.stringify({ project: rs.project, rows: s.ids.length, hint: s.hint })
+            );
+
+            const long = ((await h.ev(launcherSessionRowsExpr)) ?? []).find((r) => r.id === ctx.longId) ?? null;
+            await h.shot("cdp-shots/launcher-resume-older-1b-long-title.png");
+            rec(
+                "1b. a long title ends in … (cut, the whole title in the row's tooltip) and its age is not cut",
+                long != null &&
+                    long.title === LAUNCHER_OLDER_LONG &&
+                    long.titleCut &&
+                    long.ellipsis &&
+                    long.tooltip.startsWith(LAUNCHER_OLDER_LONG) &&
+                    long.age === "1h" &&
+                    !long.ageCut &&
+                    long.ageInside &&
+                    long.h <= 40,
+                JSON.stringify(long)
             );
 
             // 2. the end of the list asks for the next page
@@ -23865,7 +24387,7 @@ const launcherResumeOlder = {
             );
 
             // 6. a row only a search can reach resumes like a loaded one
-            await h.ev(focusColumn("start"));
+            await h.ev(focusColumn("project"));
             await launcherPress(h, "Escape");
             const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
             await h.ev(OPEN_NEW_AGENT);
@@ -23882,9 +24404,10 @@ const launcherResumeOlder = {
             const beforeClick = { rows: s.ids.length, scrollTop: s.scrollTop };
             await h.ev(`${LAUNCHER}?.querySelector('[data-resume-id="${ctx.olderId}"]')?.click()`);
             await polishNap(300);
+            await launcherOpenCommand(h);
             rs = await resumeState();
             rec(
-                "6. closed and reopened, typing older shows the 10-day-old row before any scroll; clicking it makes the button read Resume agent and the command claude --resume <its id>",
+                "6. closed and reopened, typing older shows the 10-day-old row before any scroll; clicking it makes the button read Resume agent and the command (under Command ›) claude --resume <its id>",
                 closed &&
                     found &&
                     beforeClick.scrollTop === 0 &&
@@ -24221,7 +24744,10 @@ const launcherImagesState = `(() => {
         })),
         restored: !!d.querySelector('[data-launcher-restored]'),
         task: box?.value ?? null,
-        hint: flat(d.querySelector('label[for="launcher-task"]')?.parentElement),
+        // the Task hint is the field's placeholder
+        hint: box?.placeholder ?? '',
+        boxH: Math.round(box?.getBoundingClientRect().height ?? 0),
+        rowH: Math.round(d.querySelector('[data-launcher-task-row]')?.getBoundingClientRect().height ?? 0),
         primary: primary ? { text: flat(primary), disabled: primary.disabled } : null,
     };
 })()`;
@@ -24289,26 +24815,34 @@ const launcherImages = {
         await h.ev(OPEN_NEW_AGENT);
         await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
         await polishNap(400);
-        let s = await h.ev(launcherState);
-        if (s == null) {
+        if (!(await h.ev(`!!${LAUNCHER}`))) {
             rec("0. the dialog opens", false, "no dialog");
             return steps;
         }
         // any agent row with a Task box will do; Terminal has none
-        const agent = ["claude", "codex", "opencode", "pi", "agy"].find((id) => s.startRows.includes(id));
+        const offered = await launcherStartRows(h);
+        const agent = ["claude", "codex", "opencode", "pi", "agy"].find((id) => offered.includes(id));
         if (agent == null) {
-            rec("0. an agent with a Task box is offered", false, JSON.stringify(s.startRows));
+            rec("0. an agent with a Task box is offered", false, JSON.stringify(offered));
             return steps;
         }
-        await h.ev(focusColumn("start"));
-        await launcherPress(h, String(s.startRows.indexOf(agent) + 1));
+        await launcherPickStart(h, agent);
         await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('#launcher-task')`, 5000);
         await polishNap(300);
-        s = await state();
+        let s = await state();
         if (!s?.box || s.tiles.length !== 0) {
             rec("0. the Task box is there and holds no image yet", false, JSON.stringify(s));
             return steps;
         }
+        // the field's height, empty and with three lines; it is emptied again, as step 7 reads an empty task
+        const empty = { boxH: s.boxH, rowH: s.rowH };
+        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, "verify line 1\nverify line 2\nverify line 3"));
+        await polishNap(250);
+        const lines = await state();
+        await h.shot("cdp-shots/launcher-images-0-lines.png");
+        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, ""));
+        await polishNap(250);
+        const emptied = await state();
 
         // 1. one pasted image
         const first = await h.ev(pasteImageExpr({ hue: 200 }));
@@ -24316,13 +24850,24 @@ const launcherImages = {
         s = await state();
         await h.shot("cdp-shots/launcher-images-1-one.png");
         rec(
-            "1. pasting one image shows one tile that reaches ready, and the hint says paste or drop images",
+            "1. pasting one image shows one tile that reaches ready, and the hint (the field's placeholder) says paste or drop images",
             first.notPrevented === false &&
                 settled1 &&
                 s.tiles.length === 1 &&
                 s.tiles[0] === "ready" &&
                 s.hint.includes("paste or drop images"),
             JSON.stringify({ first, s })
+        );
+        rec(
+            "1b. the empty Task field is one line (31px), and grows with multi-line text and an attached image",
+            empty.boxH === 31 &&
+                lines.boxH > 31 &&
+                lines.rowH > empty.rowH &&
+                emptied.boxH === 31 &&
+                emptied.task === "" &&
+                s.boxH === 31 &&
+                s.rowH > empty.rowH,
+            JSON.stringify({ empty, lines: { boxH: lines.boxH, rowH: lines.rowH }, emptied: { boxH: emptied.boxH, task: emptied.task }, image: { boxH: s.boxH, rowH: s.rowH } })
         );
 
         // 2. a text-only paste is left to the browser
@@ -24409,7 +24954,7 @@ const launcherImages = {
 
         // 7. a close keeps the images
         const before = s.tiles.join();
-        await h.ev(focusColumn("start"));
+        await h.ev(focusColumn("project"));
         await launcherPress(h, "Escape");
         const closed = await polishWaitFor(h, `!${LAUNCHER}`, 3000);
         await h.ev(OPEN_NEW_AGENT);
@@ -26280,7 +26825,7 @@ const codexWorkerRoute = {
         } else {
             await h.ev(OPEN_NEW_RUN);
             const dialog = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
-            await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="orchestrator"]')?.click()`);
+            await launcherClickStart(h, "orchestrator");
             const trigger = await polishWaitFor(h, `!!${NEW_RUN_WORKERS}`, 5000);
             const offered = trigger
                 ? await agyReadPicker(h, NEW_RUN_WORKERS, "codex")
@@ -29699,9 +30244,13 @@ const BAR_LAUNCHER = `(() => {
     const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
     const root = document.querySelector("[data-launcher]");
     if (!root) return null;
+    const chip = root.querySelector("[data-launcher-chip]");
     return {
         title: flat(root.closest('[role="dialog"]')?.querySelector("h2") ?? root.querySelector("h2")),
-        shape: root.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute("data-start-row") ?? null,
+        // the dialog opens folded: the pick is the chip's
+        shape: chip?.getAttribute("data-launcher-chip") ?? null,
+        chip: flat(chip),
+        startOpen: !!root.querySelector('[data-launcher-column="start"]'),
         project: root.querySelector('[data-project-row][aria-checked="true"]')?.getAttribute("data-project-row") ?? null,
         goal: root.querySelector('textarea[aria-label="Goal"]')?.value ?? null,
         prototype: flat(root.querySelector("[data-launcher-prototype]")),
@@ -29777,10 +30326,12 @@ const brainstormApproveRun = {
         const launcher = await h.ev(BAR_LAUNCHER);
         await h.shot("cdp-shots/brainstorm-approve-run-2.png");
         rec(
-            "3. New run is open on the run half: orchestrator, the agent's project, a goal naming the spec's absolute path, the first board as the prototype",
+            "3. New run is open on the run half, folded, the chip naming Orchestrate: the agent's project, a goal naming the spec's absolute path, the first board as the prototype",
             launcher != null &&
                 launcher.title === "New run" &&
                 launcher.shape === "orchestrator" &&
+                launcher.chip === "Orchestrate" &&
+                !launcher.startOpen &&
                 launcher.project === BAR_TOPIC &&
                 launcher.goal === goal &&
                 launcher.prototype.includes(`Prototype · ${prototype}`),
@@ -29811,8 +30362,8 @@ const brainstormApproveRun = {
 
 // --- brainstorm-hints: how a newcomer learns brainstorm mode from the app itself -----------------------------------
 // The first-open hint card (key brainstorm.hintsSeen) is the one thing every other brainstorm scenario turns off. Here it
-// starts cleared: the card shows, its dismissal survives a reload, the Agent surface's zero-agent state and the New
-// dialog's agent row say where a brainstorm starts, and the footer lists the pane's keys. The empty-state steps come
+// starts cleared: the card shows, its dismissal survives a reload, the Agent surface's zero-agent state says where a
+// brainstorm starts (the New dialog no longer does), and the footer lists the pane's keys. The empty-state steps come
 // first: the scenario's own agent is made after them, because an agent in the roster hides the zero-agent state.
 const BH_TOPIC = "hints-lag-alerts";
 const BH_START_HINT = (scope) => `${scope}?.querySelector("[data-brainstorm-start-hint]")`;
@@ -29834,7 +30385,7 @@ const brainstormHints = {
         const peekClosed = await bsClosePeek(h);
         if (!peekClosed) return [skipStep("brainstorm-hints", "could not verify: the Jarvis popup would not close")];
 
-        // 1. the zero-agent state and the New dialog's agent row
+        // 1. the zero-agent state, and the New dialog without the line
         await h.goto("agent");
         const hero = await polishWaitFor(h, `!!${BH_START_HINT("document")}`, 4000);
         if (!hero) {
@@ -29846,10 +30397,13 @@ const brainstormHints = {
             // the global new-agent chord: the hero's own button launches a terminal, not the dialog
             await h.ev(OPEN_NEW_AGENT);
             const opened = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
-            const inDialog = await polishWaitFor(h, `!!${BH_START_HINT(`document.querySelector("[data-launcher]")`)}`, 3000);
-            const dialogText = await h.ev(flatText(BH_START_HINT(`document.querySelector("[data-launcher]")`)));
+            // the line left the dialog (spec 2026-10-28 D6): once its columns are drawn, no start hint is in it
+            const drawn = await polishWaitFor(h, `!!document.querySelector('[data-launcher] [data-launcher-column="project"]')`, 3000);
+            await polishNap(300);
+            const taskRow = await h.ev(`!!document.querySelector("[data-launcher] [data-launcher-task-row]")`);
+            const inDialog = await h.ev(`!!${BH_START_HINT(`document.querySelector("[data-launcher]")`)}`);
             await h.shot("cdp-shots/brainstorm-hints-1-dialog.png");
-            rec("1b. the New dialog's agent row shows the same start line", opened && inDialog && dialogText.includes("superpowers:brainstorming"), { opened, dialogText });
+            rec("1b. the New dialog carries no brainstorm start hint", opened && drawn && !inDialog, { opened, drawn, taskRow, inDialog });
             await h.ev(PEEKS_ESC);
             await polishWaitFor(h, `!document.querySelector("[data-launcher]")`, 3000);
         }
@@ -38054,7 +38608,7 @@ const capacityWarn = {
             await h.ev(OPEN_NEW_RUN);
             const opened = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
             if (opened) {
-                await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="orchestrator"]')?.click()`);
+                await launcherClickStart(h, "orchestrator");
                 await polishWaitFor(h, `!!${CAPACITY_PLUS(NEW_RUN)}`, 3000);
                 await polishNap(300);
                 newRun = await h.ev(launcherWarnExpr);
@@ -38072,14 +38626,14 @@ const capacityWarn = {
         // CAPACITY_FULL has room for no more worker, so a Quick run's one worker and one more agent both warn
         let ram = null;
         try {
-            await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="quick"]')?.click()`);
+            await launcherClickStart(h, "quick");
             await polishNap(300);
             const quick = await h.ev(ramWarnText(NEW_RUN));
             await h.shot("cdp-shots/capacity-warn-quick-ram.png");
-            const agentRow = await h.ev(
-                `[...(${NEW_RUN}?.querySelectorAll('[data-start-row]') ?? [])].map((r) => r.getAttribute('data-start-row')).find((id) => !['terminal', 'quick', 'orchestrator'].includes(id)) ?? null`
-            );
-            await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="${agentRow}"]')?.click()`);
+            // an agent row: none of terminal, the runs, the tool and the council, which ask for no room
+            const agentRow =
+                (await launcherStartRows(h)).find((id) => !["terminal", "quick", "orchestrator", "tool", "council"].includes(id)) ?? null;
+            await launcherClickStart(h, agentRow);
             await polishNap(300);
             const agent = await h.ev(ramWarnText(NEW_RUN));
             await h.shot("cdp-shots/capacity-warn-agent-ram.png");
@@ -41789,14 +42343,17 @@ const agyHarness = {
             // 1. the New dialog offers Antigravity, and picking it fills the startup command
             await h.ev(OPEN_NEW_AGENT);
             const modalOpen = await polishWaitFor(h, `!!${LAUNCHER}`, 4000);
+            // the Start rows are drawn once the chip opens the column; the command shows under Command ›
+            await openLauncherStart(h);
             const runtimeNames = await h.ev(
                 `[...(${LAUNCHER}?.querySelectorAll('[data-start-row]') ?? [])].map((r) => r.textContent.replace(/\\s+/g, ' ').trim())`
             );
-            await h.ev(`${LAUNCHER}?.querySelector('[data-start-row="agy"]')?.click()`);
+            await launcherClickStart(h, "agy");
             await polishNap(300);
+            await launcherOpenCommand(h);
             const modal = await h.ev(`({
                 command: ${LAUNCHER}?.querySelector('#launcher-cmd')?.value ?? null,
-                checked: ${LAUNCHER}?.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute('data-start-row') ?? null,
+                checked: ${LAUNCHER}?.querySelector('[data-launcher-chip]')?.getAttribute('data-launcher-chip') ?? null,
             })`);
             await shot("1-new-agent");
             rec(
@@ -41912,7 +42469,7 @@ const agyHarness = {
             const runOpen = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
             await h.ev(`${NEW_RUN}?.querySelector('[data-project-row="${AGY_PROJECT}"]')?.click()`);
             await polishNap(300);
-            await h.ev(`${NEW_RUN}?.querySelector('[data-start-row="orchestrator"]')?.click()`);
+            await launcherClickStart(h, "orchestrator");
             await polishWaitFor(h, `!!${NEW_RUN_WORKERS}`, 3000);
 
             const workers = await agyReadPicker(h, NEW_RUN_WORKERS, "agy");
@@ -45676,9 +46233,9 @@ const toolsApp = {
         await h.ev(OPEN_NEW_AGENT);
         const dialogUp = await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
         await polishNap(400);
-        const startRows = (await h.ev(launcherState))?.startRows ?? [];
+        const startRows = dialogUp ? await launcherStartRows(h) : [];
         const toolDigit = startRows.indexOf("tool") + 1;
-        if (toolDigit > 0) await launcherPress(h, String(toolDigit));
+        if (toolDigit > 0) await launcherPickStart(h, "tool");
         await polishWaitFor(h, `!!${LAUNCHER}?.querySelector('[data-launcher-tool="arc-app"]')`, 5000);
         await ttClick(h, '[data-launcher-tool="arc-app"]');
         await polishNap(300);
@@ -47401,10 +47958,10 @@ const toolsPicker = {
     },
 };
 
-// --- tools-launcher: the New dialog's Tool row (board Launcher). Picking it by its digit retitles the dialog Open a
-// tool; Tab twice reaches the Tool list, a letter picks a row and the primary button (its text carries the enter key's
-// hint) reads Open <tool>; All tools in
-// Setup closes the dialog and shows the library.
+// --- tools-launcher: the New dialog's Tool row (board Launcher). Picking it by its digit (in the Start column the chip
+// opens) retitles the dialog Open a tool and folds the column, the Tool list taking the rest; Tab from Project reaches
+// the Tool list, a letter picks a row and the primary button (its text carries the enter key's hint) reads Open <tool>;
+// All tools in Setup closes the dialog and shows the library.
 const toolsLauncher = {
     name: "tools-launcher",
     surface: "cockpit",
@@ -47433,19 +47990,27 @@ const toolsLauncher = {
         await h.ev(OPEN_NEW_AGENT);
         const up = await polishWaitFor(h, `!!${LAUNCHER}`, 5000);
         await polishNap(400);
-        const rows = (await h.ev(launcherState))?.startRows ?? [];
+        const rows = up ? await launcherStartRows(h) : [];
         const digit = rows.indexOf("tool") + 1;
-        if (digit > 0) await launcherPress(h, String(digit));
-        const tool = await polishWaitFor(h, `${LAUNCHER}?.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute("data-start-row") === "tool"`, 3000);
+        if (digit > 0) await launcherPickStart(h, "tool");
+        const tool = await polishWaitFor(h, `${LAUNCHER}?.querySelector('[data-launcher-chip]')?.getAttribute("data-launcher-chip") === "tool"`, 3000);
+        await polishWaitFor(h, `!!${LAUNCHER}?.querySelector("[data-launcher-tool]")`, 5000);
         const state = await h.ev(launcherState);
+        const band = await h.ev(launcherBandExpr);
+        const listIn = await h.ev(`!!${LAUNCHER}?.querySelector('[data-launcher-column="third"] [data-launcher-tool-list]')`);
         await h.shot("cdp-shots/tools-launcher-1-tool-row.png");
         rec(
             "1. title: the Tool start row, picked by its digit, retitles the dialog Open a tool",
             up && digit > 0 && tool && state.title === "Open a tool",
             JSON.stringify({ up, startRows: rows, digit, title: state.title })
         );
+        rec(
+            "1b. the chip names Tool and the Tool list takes the rest of the width",
+            tool && !state.startOpen && state.chip?.text === "Tool" && listIn && thirdTakesRest(band),
+            JSON.stringify({ chip: state.chip, startOpen: state.startOpen, listIn, ...band })
+        );
 
-        await launcherPress(h, "Tab");
+        // the digit left focus on Project, and the Tool list is the next stop
         await launcherPress(h, "Tab");
         const inList = await polishWaitFor(h, `document.activeElement?.hasAttribute("data-launcher-tool-list") === true`, 3000);
         await polishWaitFor(h, `!!${LAUNCHER}?.querySelector("[data-launcher-tool]")`, 5000);
@@ -47462,7 +48027,7 @@ const toolsLauncher = {
         const fixture = await h.ev(primary);
         await h.shot("cdp-shots/tools-launcher-2-list.png");
         rec(
-            "2. Tab twice reaches the Tool list, a letter picks its row and the primary reads Open <tool>",
+            "2. Tab from Project reaches the Tool list, a letter picks its row and the primary reads Open <tool>",
             inList && picked.selected === 0 && first?.text.startsWith("Open ") && fixture?.text.startsWith("Open arc-fixture") && fixture.disabled === false,
             JSON.stringify({ inList, picked, first, letter, fixture })
         );
@@ -47981,6 +48546,7 @@ const councilScenarios = makeCouncilScenarios({
     openRailTerminal,
     openPalette,
     waveService,
+    openLauncherStart,
 });
 
 // the brainstorm helpers the scenario modules build on: passed in, since a module importing this file back would

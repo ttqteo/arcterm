@@ -184,7 +184,7 @@ export const councilSetup = {
         return ctx;
     },
 
-    async assert(h, ctx) {
+    async assert(h, ctx, fx) {
         const steps = [];
         const rec = (step, ok, detail) =>
             steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
@@ -209,7 +209,7 @@ export const councilSetup = {
             });
 
             // 1. New → Council → the fixture project opens Setup on the first group
-            const fromNew = await openSetupFromNew(h, COUNCIL_PROJECT);
+            const fromNew = await openSetupFromNew(h, COUNCIL_PROJECT, fx);
             await until(`(document.querySelector("[data-council-group]")?.textContent ?? "").includes("Review a UI feature")`);
             let v = await view();
             // the rows are folded under Options until it is opened

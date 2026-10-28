@@ -213,11 +213,14 @@ export const councilTree = {
 
         // 6. New → Council → the project with no council → Set up council opens Setup there
         await h.ev(`window.__openLauncher?.("agent")`);
+        // the dialog opens with its Start column folded into a chip: open it to reach the Council row
+        await until(present("[data-launcher]"));
+        await fx.openLauncherStart(h);
         await until(present('[data-start-row="council"]'));
         await h.ev(click('[data-start-row="council"]'));
         await until(present("[data-launcher-council-note]"));
         await h.shot("cdp-shots/council-tree-new-dialog.png");
-        const fromNew = await openSetupFromNew(h, EMPTY_PROJECT);
+        const fromNew = await openSetupFromNew(h, EMPTY_PROJECT, fx);
         rec(
             "6. the New dialog's Council row, with a project picked, reads Set up council and opens Setup",
             fromNew.ok && fromNew.label === "Set up council",
