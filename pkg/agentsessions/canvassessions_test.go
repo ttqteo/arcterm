@@ -4,6 +4,7 @@
 package agentsessions
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,11 +14,17 @@ import (
 
 // a claude transcript line: one assistant tool call at ts, in cwd
 func claudeToolLine(cwd, ts, name, input string) string {
-	return `{"type":"assistant","cwd":"` + cwd + `","timestamp":"` + ts + `","message":{"role":"assistant","content":[{"type":"tool_use","name":"` + name + `","input":` + input + `}]}}`
+	return `{"type":"assistant","cwd":` + jsonCwd(cwd) + `,"timestamp":"` + ts + `","message":{"role":"assistant","content":[{"type":"tool_use","name":"` + name + `","input":` + input + `}]}}`
 }
 
 func claudeTaskLine(cwd, task string) string {
-	return `{"type":"user","cwd":"` + cwd + `","message":{"role":"user","content":"` + task + `"}}`
+	return `{"type":"user","cwd":` + jsonCwd(cwd) + `,"message":{"role":"user","content":"` + task + `"}}`
+}
+
+// cwd as a JSON string literal: a Windows path holds backslashes
+func jsonCwd(cwd string) string {
+	b, _ := json.Marshal(cwd)
+	return string(b)
 }
 
 func canvasIDs(got []CanvasSession) []string {
@@ -30,29 +37,30 @@ func canvasIDs(got []CanvasSession) []string {
 
 func TestCanvasSessions_listsTheSessionsThatWroteIntoTheTopicLatestWriterFirst(t *testing.T) {
 	root := t.TempDir()
-	project := "/work/web"
+	// absolute on every OS: on Windows "/work/web" has no drive, so a write under it reads as relative to cwd
+	project := filepath.Join(t.TempDir(), "work", "web")
 	topic := filepath.Join(project, ".superpowers", "design", "rail")
 	board := filepath.Join(topic, "project", "Main.dc.html")
 	writeJSONL(t, root, "made.jsonl",
 		claudeTaskLine(project, "Draw the rail"),
-		claudeToolLine(project, "2026-10-15T08:00:00Z", "Write", `{"file_path":"`+board+`","content":"<html>"}`),
+		claudeToolLine(project, "2026-10-15T08:00:00Z", "Write", `{"file_path":`+jsonString(t, board)+`,"content":"<html>"}`),
 	)
 	writeJSONL(t, root, "edited.jsonl",
 		claudeTaskLine(project, "Tweak the rail"),
 		claudeToolLine(project, "2026-10-15T09:30:00Z", "Edit",
-			`{"file_path":"`+filepath.Join(topic, "project", "canvas.json")+`","old_string":"a","new_string":"b"}`),
+			`{"file_path":`+jsonString(t, filepath.Join(topic, "project", "canvas.json"))+`,"old_string":"a","new_string":"b"}`),
 	)
 	// reading the canvas, or naming it in a shell command, is not making it
 	writeJSONL(t, root, "looked.jsonl",
 		claudeTaskLine(project, "Why no thumbnail"),
-		claudeToolLine(project, "2026-10-15T10:00:00Z", "Read", `{"file_path":"`+board+`"}`),
-		claudeToolLine(project, "2026-10-15T10:01:00Z", "Bash", `{"command":"grep -l rail `+topic+`/project"}`),
+		claudeToolLine(project, "2026-10-15T10:00:00Z", "Read", `{"file_path":`+jsonString(t, board)+`}`),
+		claudeToolLine(project, "2026-10-15T10:01:00Z", "Bash", `{"command":`+jsonString(t, "grep -l rail "+topic+"/project")+`}`),
 	)
 	// another topic whose name starts the same
 	writeJSONL(t, root, "other.jsonl",
 		claudeTaskLine(project, "Draw the rail sections"),
 		claudeToolLine(project, "2026-10-15T11:00:00Z", "Write",
-			`{"file_path":"`+filepath.Join(project, ".superpowers", "design", "rail-sections", "project", "Main.dc.html")+`","content":"x"}`),
+			`{"file_path":`+jsonString(t, filepath.Join(project, ".superpowers", "design", "rail-sections", "project", "Main.dc.html"))+`,"content":"x"}`),
 	)
 
 	got := canvasSessions([]provider{claudeProvider(root)}, topic, time.Time{})
@@ -118,10 +126,10 @@ func TestCanvasSessions_resolvesPiRelativeWritesAgainstTheHeaderCwd(t *testing.T
 // a transcript last touched before the canvas's oldest file cannot hold a write that is still there
 func TestCanvasSessions_skipsTranscriptsOlderThanSince(t *testing.T) {
 	root := t.TempDir()
-	project := "/work/web"
+	project := filepath.Join(t.TempDir(), "work", "web")
 	topic := filepath.Join(project, ".superpowers", "design", "rail")
 	line := claudeToolLine(project, "2026-10-01T08:00:00Z", "Write",
-		`{"file_path":"`+filepath.Join(topic, "project", "Main.dc.html")+`","content":"x"}`)
+		`{"file_path":`+jsonString(t, filepath.Join(topic, "project", "Main.dc.html"))+`,"content":"x"}`)
 	old := writeJSONL(t, root, "old.jsonl", claudeTaskLine(project, "old"), line)
 	writeJSONL(t, root, "new.jsonl", claudeTaskLine(project, "new"), line)
 	since := time.Now().Add(-time.Hour)
