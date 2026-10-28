@@ -82,6 +82,13 @@ export const foldReveal: Variants = {
     },
 };
 
+// View swap: a pane trading what it shows (the next question, the design, another step). Opacity only, since a
+// whole pane scaling reads as a zoom; no exit, so the old view leaves at once and two never stack in the flow.
+export const viewFade: Variants = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1, transition: { duration: MOTION.durMacro, ease: MOTION.easeFluid } },
+};
+
 // Popover / dropdown reveal. Opacity + scale only (never x/y — consistent with cardVariants); the
 // panel scales from its anchor corner via a per-site transform-origin. Snappy in and out — a dropdown
 // dismiss should not linger.

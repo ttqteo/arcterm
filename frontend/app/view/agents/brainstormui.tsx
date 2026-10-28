@@ -969,7 +969,7 @@ export function JudgingMain({
                     aria-live="polite"
                     className="flex items-center gap-[12px] rounded-[10px] border border-edge-faint bg-surface px-[16px] py-[11px] text-[13px] font-semibold text-success"
                 >
-                    <span className={cn(SMALL_DOT, "bg-success")} />
+                    <span className={cn(SMALL_DOT, "pulse-dot bg-success")} />
                     {f.working}
                 </div>
                 <div className="flex flex-col gap-[8px]">
@@ -1131,7 +1131,7 @@ export function WorkingMain({ f, openDesign }: { f: BrainstormFile; openDesign: 
             <MainBody>
                 <div className="flex flex-col gap-[14px]">
                     <span className="flex items-center gap-[8px] text-[13px] font-semibold text-success">
-                        <span className={cn(SMALL_DOT, "bg-success")} />
+                        <span className={cn(SMALL_DOT, "pulse-dot bg-success")} />
                         Working
                     </span>
                     <p className="m-0 text-[22px] font-semibold leading-[1.4] text-primary">{f.working}</p>

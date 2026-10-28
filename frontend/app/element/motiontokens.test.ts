@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { MOTION, cardVariants, composerReveal, computeEntrances, easeFluidCss, initialEntranceState, modalBackdrop, modalPanel, paneReveal, popoverReveal, sheetPanel, shouldFadeEntry, reflowProps } from "./motiontokens";
+import { MOTION, cardVariants, composerReveal, computeEntrances, easeFluidCss, initialEntranceState, modalBackdrop, modalPanel, paneReveal, popoverReveal, sheetPanel, shouldFadeEntry, reflowProps, viewFade } from "./motiontokens";
 
 describe("motiontokens", () => {
     it("uses the Fluid feel: macro ~360ms on the chosen ease curve", () => {
@@ -44,6 +44,16 @@ describe("motiontokens", () => {
         expect((sheetPanel.animate as any).transition.duration).toBeCloseTo(MOTION.durMacro);
         expect((sheetPanel.exit as any).transition.duration).toBeCloseTo(MOTION.durExit);
         expect((sheetPanel.animate as any).transition.ease).toEqual(MOTION.easeFluid);
+    });
+});
+
+describe("viewFade", () => {
+    it("fades opacity only on the macro duration, with no exit so swapped views never stack", () => {
+        expect(viewFade.initial).toEqual({ opacity: 0 });
+        expect((viewFade.animate as any).opacity).toBe(1);
+        expect((viewFade.animate as any).transition.duration).toBeCloseTo(MOTION.durMacro);
+        expect((viewFade.animate as any).transition.ease).toEqual(MOTION.easeFluid);
+        expect(viewFade).not.toHaveProperty("exit");
     });
 });
 
