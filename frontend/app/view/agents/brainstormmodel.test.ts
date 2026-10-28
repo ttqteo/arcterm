@@ -642,6 +642,15 @@ describe("treeLine", () => {
         expect(treeLine(file({ working: "Writing" }), false).text).toBe("writing up your answer");
         expect(treeLine(file(), false)).toEqual({ text: "in progress" });
     });
+
+    it("names the judge's wait, not an answer being written up", () => {
+        expect(treeLine(waitFile(), false).text).toBe("judge weighing question 4");
+    });
+
+    it("reads a kept question with work underway as working, nothing answered", () => {
+        const s = shownFile(file({ question: { n: 3, text: "?", part: "a" } }), { at: 1, modifiedMs: 1, kind: "line" });
+        expect(treeLine(s, false).text).toBe("working");
+    });
 });
 
 describe("brainstormLine", () => {

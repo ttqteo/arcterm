@@ -540,8 +540,12 @@ export function treeLine(f: BrainstormFile, asking: boolean, runText?: string): 
     if (f.check != null) {
         return { text: "builder check" };
     }
+    if (judgeWait(f, false)) {
+        return { text: `judge weighing question ${f.question!.n}` };
+    }
+    // only a closed question means the agent is writing up an answer; a kept one is a change being taken in
     if (f.working != null) {
-        return { text: "writing up your answer" };
+        return { text: f.question == null ? "writing up your answer" : "working" };
     }
     return { text: "in progress" };
 }
