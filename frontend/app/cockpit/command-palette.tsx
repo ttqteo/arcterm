@@ -71,7 +71,7 @@ import {
     Users,
     type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { THING_KINDS } from "./actions";
 import {
     verbRows,
@@ -363,8 +363,9 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     // the active project, else the one last used, else the only one
     const homeChannel = palettePickChannel(channel, projectRows, recentProjects[0] ?? null);
 
-    // Each open starts fresh on the surface's own scope, and focuses the input after paint.
-    useEffect(() => {
+    // Each open starts fresh on the surface's own scope, and focuses the input after paint. a layout effect, so
+    // the reset nav and the new openGen commit before the open's first paint: no frame shows the last open's scope.
+    useLayoutEffect(() => {
         if (!open) {
             return;
         }
@@ -1699,7 +1700,9 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                         aria-label="Scope"
                         className="flex shrink-0 items-stretch gap-1 border-b border-border px-2.5"
                     >
-                        <LayoutGroup id={`palette-scope-${openGen}`}>
+                        {/* keyed: LayoutGroup reads its id only on mount, so each open remounts it with no snapshot and the bar
+                            draws in place instead of sliding from the last open's scope */}
+                        <LayoutGroup key={openGen} id={`palette-scope-${openGen}`}>
                             {SCOPES.map((s) => {
                                 const on = s.id === nav.scope;
                                 const count = s.id === "needs" ? needs.length : 0;
