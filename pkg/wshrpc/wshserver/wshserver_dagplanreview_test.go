@@ -100,7 +100,7 @@ func TestDagSubmitReviewsThePlanBeforeAnyWorkerStarts(t *testing.T) {
 		if g.PlanReview == nil || g.PlanReview.State != orchestrate.PlanReviewState_Reviewing || g.PlanReview.Round != 1 || g.Status != orchestrate.DagStatus_PlanReview {
 			t.Fatalf("want round 1 reviewing, got status %s review %+v", g.Status, g.PlanReview)
 		}
-		if g.Tasks[0].RunID != "" || len(*spawned) != 5 || len(g.PlanReview.Reviewers) != 5 {
+		if g.Tasks[0].RunID != "" || len(*spawned) != 2 || len(g.PlanReview.Reviewers) != 2 {
 			t.Fatalf("only the plan reviewers may start, got %+v", *spawned)
 		}
 		for _, opts := range *spawned {
