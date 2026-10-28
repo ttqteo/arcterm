@@ -25270,8 +25270,7 @@ const autonomousRuns = {
                 goal: `verify ${stamp}: do nothing, make no file changes, stop immediately`,
                 runtime: "claude",
                 mode: "orchestrator",
-                // a width, as the launcher always sends: a run stored at 0 cannot save its settings until submit
-                parallelism: 2,
+                // no width, so the run is stored at 0 until submit: the Approvals saves below must leave it there
                 deferstart: true,
             });
             ctx.runId = created.run.id;
@@ -25423,9 +25422,13 @@ const autonomousRuns = {
         }
         const runOn = (await channelRuns(h, ctx.channelId)).find((r) => r.id === ctx.runId);
         rec(
-            "run-sheet 3. the lead's Spec review is answered, and the run is stored autonomous",
-            askBefore != null && askAfter == null && runOn?.autonomous === true,
-            JSON.stringify({ pending: askAfter?.questions?.[0]?.header ?? null, autonomous: runOn?.autonomous ?? null })
+            "run-sheet 3. the lead's Spec review is answered, and the run is stored autonomous with its width still 0",
+            askBefore != null && askAfter == null && runOn?.autonomous === true && (runOn?.parallelism ?? 0) === 0,
+            JSON.stringify({
+                pending: askAfter?.questions?.[0]?.header ?? null,
+                autonomous: runOn?.autonomous ?? null,
+                parallelism: runOn?.parallelism ?? null,
+            })
         );
         // the lead has its answer, so it is working again
         await patchFixtureLead(h, ctx, false);
@@ -25467,21 +25470,25 @@ const autonomousRuns = {
 
         await h.ev(paletteKey("Enter"));
         let runAuto = null;
+        let runWidth = null;
         for (let i = 0; i < 20 && runAuto !== true; i++) {
             await polishNap(250);
-            runAuto = (await channelRuns(h, ctx.channelId)).find((r) => r.id === ctx.runId)?.autonomous ?? null;
+            const r = (await channelRuns(h, ctx.channelId)).find((r) => r.id === ctx.runId);
+            runAuto = r?.autonomous ?? null;
+            runWidth = r?.parallelism ?? 0;
         }
         const onToggle = await openRunToggle(h, ctx, "Ask me again");
         const onState = onToggle.state;
         await h.shot("cdp-shots/autonomous-runs-5-palette-on.png");
         rec(
-            "palette 2. Enter turns the run autonomous, and its actions then read Ask me again, autonomous, Enter Ask me, and the on echo",
+            "palette 2. Enter turns the run autonomous with its width still 0, and its actions then read Ask me again, autonomous, Enter Ask me, and the on echo",
             runAuto === true &&
+                runWidth === 0 &&
                 onToggle.opened &&
                 (onState?.selected ?? "").startsWith("Ask me againautonomous") &&
                 (onState.selected ?? "").includes("Ask me ⏎") &&
                 onState.text.includes(AUTONOMOUS_BACK_TO_ASK),
-            JSON.stringify({ autonomous: runAuto, selected: onState?.selected, footer: onState?.text.slice(-200) })
+            JSON.stringify({ autonomous: runAuto, parallelism: runWidth, selected: onState?.selected, footer: onState?.text.slice(-200) })
         );
         await h.ev(PEEKS_ESC);
         return steps;
