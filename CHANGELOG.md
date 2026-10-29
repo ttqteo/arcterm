@@ -74,6 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run's route takes a pi model from a provider whose own ids carry an org, such as
+  `river/deepseek-ai/DeepSeek-V4.1-Flash`. Before, the route was refused as the wrong namespace.
 - A message typed under a sleeping agent stays in its box while the agent wakes, even if you open another agent and
   come back. Before, the box came back empty, so the message read as lost, though it still reached the agent.
 - Vietnamese in the Hack and Fira Code fonts no longer breaks apart: letters such as ả, ị and ở drew with a gap after
