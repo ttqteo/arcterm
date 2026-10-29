@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Option boards: in a fresh plain Claude session (after a launch re-seeds the skills), ask a UI question
+  with two layouts. You should see it draw `A-…` and `B-…` boards, reveal the canvas beside its terminal and ask by
+  label; after you pick, the other board sits in `.superpowers/design/<topic>/unchosen/`. Ask for a one-line status
+  mockup: it should ask "draw a board, or keep it as text?" first. `skills/design`, `skills/brainstorm`, c6a622510.
 - [ ] (arcterm) The Transcript tab reads a real compacted session back: wake a sleeping Claude agent whose transcript is
   55 MB or more (it was compacted before it slept), open the agent's panel on Transcript (Ctrl+Shift+F in its terminal),
   then press Compactions until it says No earlier compactions. You should see the conversation from its first prompt,
