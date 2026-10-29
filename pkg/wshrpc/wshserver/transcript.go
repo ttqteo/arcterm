@@ -20,32 +20,160 @@ import (
 
 const defaultTranscriptTailLines = 200
 
-// readTranscriptLines returns all non-empty lines of the JSONL transcript at path. The whole file
-// is read into memory; session transcripts are MB-scale at most, so this stays simple (KISS) —
-// switch to a streamed read only if a real file proves too large.
-func readTranscriptLines(path string) ([]string, error) {
+// statTranscript checks that path names a transcript file that exists and returns its size.
+func statTranscript(path string) (int64, error) {
 	if path == "" {
-		return nil, fmt.Errorf("transcript path is required")
+		return 0, fmt.Errorf("transcript path is required")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, fmt.Errorf("stat transcript: %w", err)
+		return 0, fmt.Errorf("stat transcript: %w", err)
 	}
 	if info.IsDir() {
-		return nil, fmt.Errorf("transcript path is a directory: %s", path)
+		return 0, fmt.Errorf("transcript path is a directory: %s", path)
+	}
+	return info.Size(), nil
+}
+
+// splitTranscriptData splits JSONL data into its non-empty newline-terminated lines and rest, the text after the
+// last newline (empty when data ends with one): an unfinished line that has no newline yet.
+func splitTranscriptData(data []byte) (lines []string, rest string) {
+	parts := strings.Split(string(data), "\n")
+	rest = parts[len(parts)-1]
+	for _, ln := range parts[:len(parts)-1] {
+		if strings.TrimSpace(ln) != "" {
+			lines = append(lines, ln)
+		}
+	}
+	return lines, rest
+}
+
+// readTranscriptFile returns all non-empty lines of the JSONL transcript at path, numbered from 0 by their position,
+// with the byte offset past the last newline-terminated line and whether the last line has no newline yet (it is
+// included in lines). The whole file is read into memory; session transcripts are MB-scale at most, so this stays
+// simple (KISS) — switch to a streamed read only if a real file proves too large.
+func readTranscriptFile(path string) (lines []string, end int64, partial bool, err error) {
+	if _, err := statTranscript(path); err != nil {
+		return nil, 0, false, err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		return nil, 0, false, fmt.Errorf("read transcript: %w", err)
+	}
+	lines, rest := splitTranscriptData(data)
+	end = int64(len(data) - len(rest))
+	if strings.TrimSpace(rest) != "" {
+		lines = append(lines, rest)
+		partial = true
+	}
+	return lines, end, partial, nil
+}
+
+// sliceTranscriptLines picks the window of lines a read asks for and the file index of its first line:
+//   - before > 0: the last maxLines lines of lines[:before], before clamped to len(lines);
+//   - fromStart: the first maxLines lines;
+//   - otherwise: the last maxLines lines.
+//
+// maxLines == 0 keeps the default size. A negative maxLines returns every line up to before (or the end) — the
+// full-history read Pi alone requests, since its parent-linked active branch can't be reconstructed from a bounded
+// tail — except for a head read, where it means the default as it always has.
+func sliceTranscriptLines(lines []string, maxLines, before int, fromStart bool) ([]string, int) {
+	if fromStart {
+		if maxLines <= 0 {
+			maxLines = defaultTranscriptTailLines
+		}
+		if len(lines) > maxLines {
+			lines = lines[:maxLines]
+		}
+		return lines, 0
+	}
+	if before > 0 && before < len(lines) {
+		lines = lines[:before]
+	}
+	if maxLines == 0 {
+		maxLines = defaultTranscriptTailLines
+	}
+	start := 0
+	if maxLines > 0 && len(lines) > maxLines {
+		start = len(lines) - maxLines
+	}
+	return lines[start:], start
+}
+
+// readTranscriptSlice answers a line-index read of the transcript at path: the window sliceTranscriptLines picks,
+// where it starts, how many lines the file holds, the offset past its last newline-terminated line, and whether the
+// window's last line is that unterminated one.
+func readTranscriptSlice(path string, maxLines, before int, fromStart bool) (*wshrpc.CommandGetAgentTranscriptRtnData, error) {
+	all, end, partial, err := readTranscriptFile(path)
+	if err != nil {
+		return nil, err
+	}
+	lines, start := sliceTranscriptLines(all, maxLines, before, fromStart)
+	return &wshrpc.CommandGetAgentTranscriptRtnData{
+		Lines:   lines,
+		Start:   start,
+		Total:   len(all),
+		End:     end,
+		Partial: partial && start+len(lines) == len(all),
+	}, nil
+}
+
+// readTranscriptFrom answers an append read: only the bytes of the transcript at path from fromByte on, never the ones
+// before it. It returns their complete non-empty lines and the offset past the last newline; an unfinished last line
+// is left for the next read. A file now shorter than fromByte (replaced or truncated) answers Reset with no lines.
+func readTranscriptFrom(path string, fromByte int64) (*wshrpc.CommandGetAgentTranscriptRtnData, error) {
+	size, err := statTranscript(path)
+	if err != nil {
+		return nil, err
+	}
+	if size < fromByte {
+		return &wshrpc.CommandGetAgentTranscriptRtnData{Lines: []string{}, Reset: true}, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open transcript: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.Seek(fromByte, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("seek transcript: %w", err)
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
 		return nil, fmt.Errorf("read transcript: %w", err)
 	}
-	var lines []string
-	for _, ln := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(ln) == "" {
-			continue
-		}
-		lines = append(lines, ln)
+	lines, rest := splitTranscriptData(data)
+	if lines == nil {
+		lines = []string{}
 	}
-	return lines, nil
+	return &wshrpc.CommandGetAgentTranscriptRtnData{Lines: lines, End: fromByte + int64(len(data)-len(rest))}, nil
+}
+
+// readAgentTranscript answers a getagenttranscript request: an append read (FromByte), an earlier-chunk read (Before),
+// a head read (FromStart) or, with none of them set, a tail read.
+func readAgentTranscript(data wshrpc.CommandGetAgentTranscriptData) (*wshrpc.CommandGetAgentTranscriptRtnData, error) {
+	if data.Before < 0 {
+		return nil, fmt.Errorf("before must not be negative: %d", data.Before)
+	}
+	if data.FromByte < 0 {
+		return nil, fmt.Errorf("frombyte must not be negative: %d", data.FromByte)
+	}
+	var set []string
+	if data.Before > 0 {
+		set = append(set, "before")
+	}
+	if data.FromByte > 0 {
+		set = append(set, "frombyte")
+	}
+	if data.FromStart {
+		set = append(set, "fromstart")
+	}
+	if len(set) > 1 {
+		return nil, fmt.Errorf("set only one of before, frombyte and fromstart, not %s", strings.Join(set, " and "))
+	}
+	if data.FromByte > 0 {
+		return readTranscriptFrom(data.Path, data.FromByte)
+	}
+	return readTranscriptSlice(data.Path, data.MaxLines, data.Before, data.FromStart)
 }
 
 // readTranscriptTail returns the last maxLines non-empty lines of the transcript at path.
@@ -53,34 +181,22 @@ func readTranscriptLines(path string) ([]string, error) {
 // full-history read Pi alone requests — its parent-linked active branch can't be reconstructed
 // from a bounded tail).
 func readTranscriptTail(path string, maxLines int) ([]string, error) {
-	lines, err := readTranscriptLines(path)
+	rtn, err := readTranscriptSlice(path, maxLines, 0, false)
 	if err != nil {
 		return nil, err
 	}
-	if maxLines == 0 {
-		maxLines = defaultTranscriptTailLines
-	}
-	if maxLines > 0 && len(lines) > maxLines {
-		lines = lines[len(lines)-maxLines:]
-	}
-	return lines, nil
+	return rtn.Lines, nil
 }
 
 // readTranscriptHead returns the first maxLines non-empty lines of the transcript at path. Codex's
 // cwd lives only on the first-line session_meta record, so the head read resolves cwd for Codex
 // sessions too long to fit the tail (see docs/deferred.md, Files surface).
 func readTranscriptHead(path string, maxLines int) ([]string, error) {
-	lines, err := readTranscriptLines(path)
+	rtn, err := readTranscriptSlice(path, maxLines, 0, true)
 	if err != nil {
 		return nil, err
 	}
-	if maxLines <= 0 {
-		maxLines = defaultTranscriptTailLines
-	}
-	if len(lines) > maxLines {
-		lines = lines[:maxLines]
-	}
-	return lines, nil
+	return rtn.Lines, nil
 }
 
 // transcriptTailer reads only the lines appended to a file since the last call.

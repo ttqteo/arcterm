@@ -10,6 +10,7 @@ import { activeNavOrder } from "@/app/view/agents/activenav";
 import { closeAgentChord, confirmCloseSession } from "@/app/view/agents/agentactions";
 import { centerModeAtom, showCanvases, showHistory, showTerminal } from "@/app/view/agents/agentcenter";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
+import { openRailTranscript } from "@/app/view/agents/agentrailstore";
 import { AgentsViewModel, SURFACE_ORDER, type SurfaceKey } from "@/app/view/agents/agents";
 import { AGENT_DIGITS } from "@/app/view/agents/agentsidebarmodel";
 import { answerDigitTarget, canSubmitAsk, moveCursor, type AgentVM } from "@/app/view/agents/agentsviewmodel";
@@ -1665,6 +1666,24 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             label: "Fold or open the terminal panel",
             when: (ctx) => ctx.surface === "agent" && !ctx.modalOpen && globalStore.get(dockedTerminalAtom) != null,
             run: () => globalStore.set(terminalDockFoldedAtom, !globalStore.get(terminalDockFoldedAtom)),
+        },
+        {
+            // The focused agent's conversation in the rail's Transcript tab. Deliberately NOT gated on !editable, like
+            // fullscreen's chords: it is reached from inside the terminal. The agent is in the model's atoms, which a
+            // when() cannot read (whenstate.ts), so run() looks it up and lets the key pass when it has no transcript
+            // (a plain terminal, or an agent that is not writing one yet).
+            id: "agent:transcript",
+            keys: "Mod:Shift:f",
+            group: "Agent",
+            label: "Open the transcript",
+            when: fullscreenChordActive,
+            run: () => {
+                const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
+                if (!agent?.transcriptPath) {
+                    return false;
+                }
+                openRailTranscript(agent.id);
+            },
         },
         {
             // The header menu's Redraw on a key: the terminal holding the keys (the panel's, or the agent's), else the

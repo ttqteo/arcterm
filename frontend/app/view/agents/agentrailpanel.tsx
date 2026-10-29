@@ -17,6 +17,7 @@ import {
     LayoutList,
     LayoutTemplate,
     Paperclip,
+    ScrollText,
     Server,
     SquareTerminal,
     X,
@@ -58,10 +59,20 @@ interface TabProps {
     onClick: () => void;
 }
 
-export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; panel: PanelState; hasTree: boolean }) {
-    const keys = stripKeys(panel, hasTree);
-    const shown = shownTab(panel, hasTree);
-    const current = shownKey(panel, hasTree);
+export function RailTabStrip({
+    agentId,
+    panel,
+    hasTree,
+    hasTranscript,
+}: {
+    agentId: string;
+    panel: PanelState;
+    hasTree: boolean;
+    hasTranscript: boolean;
+}) {
+    const keys = stripKeys(panel, hasTree, hasTranscript);
+    const shown = shownTab(panel, hasTree, hasTranscript);
+    const current = shownKey(panel, hasTree, hasTranscript);
     const ref = useRef<HTMLDivElement>(null);
     // The file on show stays in sight when more tabs are open than the strip has room for. Only the strip scrolls:
     // scrollIntoView would also scroll the panel's clipping boxes while it slides open.
@@ -86,7 +97,7 @@ export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; pan
         e.preventDefault();
         e.stopPropagation();
         const next = nextTab(keys, current, e.key);
-        selectRailKey(agentId, next, hasTree);
+        selectRailKey(agentId, next, hasTree, hasTranscript);
         requestAnimationFrame(() =>
             ref.current?.querySelector<HTMLElement>(`[data-rail-key="${next}"]`)?.focus({ preventScroll: true })
         );
@@ -97,7 +108,7 @@ export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; pan
         tabIndex: current === key ? 0 : -1,
         "data-rail-tab": tab,
         "data-rail-key": key,
-        onClick: () => selectRailKey(agentId, key, hasTree),
+        onClick: () => selectRailKey(agentId, key, hasTree, hasTranscript),
     });
     const active = activeFile(panel);
     // on File every open file is a tab; elsewhere they fold into the one on show, with how many are open
@@ -145,6 +156,17 @@ export function RailTabStrip({ agentId, panel, hasTree }: { agentId: string; pan
             >
                 <FileDiff size={16} strokeWidth={1.8} aria-hidden />
             </button>
+            {hasTranscript ? (
+                <button
+                    type="button"
+                    {...tabProps("transcript")}
+                    aria-label="Transcript"
+                    title="Transcript"
+                    className={cn(TAB, current === "transcript" ? TAB_ON : TAB_OFF)}
+                >
+                    <ScrollText size={16} strokeWidth={1.8} aria-hidden />
+                </button>
+            ) : null}
             {fileTabs.map((f) =>
                 f.current == null ? null : (
                     <RailFileTab

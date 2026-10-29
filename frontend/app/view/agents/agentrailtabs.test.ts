@@ -22,6 +22,7 @@ import {
     panelFor,
     RAIL_WIDE_DEFAULT_PX,
     RAIL_WIDE_MIN_PX,
+    RAIL_WIDTHS,
     selectFile,
     selectKey,
     selectTab,
@@ -38,14 +39,15 @@ const b = { abs: "D:/repo/src/b.ts", root: "D:/repo" };
 const c = { abs: "D:/repo/src/c.ts", root: "D:/repo" };
 
 describe("panelFor", () => {
-    it("starts an unseen agent on the default tab, never on File or Files", () => {
+    it("starts an unseen agent on the default tab, never on File, Files or Transcript", () => {
         expect(panelFor({}, "x", "overview").tab).toBe("overview");
         expect(panelFor({}, "x", "file").tab).toBe("overview");
         expect(panelFor({}, "x", "tree").tab).toBe("overview");
+        expect(panelFor({}, "x", "transcript").tab).toBe("overview");
     });
 
     it("keeps the panel an agent already has", () => {
-        const p = selectTab(panelFor({}, "x", "overview"), "tree", true);
+        const p = selectTab(panelFor({}, "x", "overview"), "tree", true, false);
         expect(panelFor({ x: p }, "x", "overview")).toBe(p);
     });
 });
@@ -53,34 +55,68 @@ describe("panelFor", () => {
 describe("the tabs", () => {
     it("lists Overview, then Files while there is a worktree, then Changes, then File while a file is open", () => {
         const p = panelFor({}, "x", "overview");
-        expect(visibleTabs(p, false)).toEqual(["overview", "changes"]);
-        expect(visibleTabs(p, true)).toEqual(["overview", "tree", "changes"]);
+        expect(visibleTabs(p, false, false)).toEqual(["overview", "changes"]);
+        expect(visibleTabs(p, true, false)).toEqual(["overview", "tree", "changes"]);
         const withFile = openFile(p, a);
-        expect(visibleTabs(withFile, false)).toEqual(["overview", "changes", "file"]);
-        expect(visibleTabs(withFile, true)).toEqual(["overview", "tree", "changes", "file"]);
+        expect(visibleTabs(withFile, false, false)).toEqual(["overview", "changes", "file"]);
+        expect(visibleTabs(withFile, true, false)).toEqual(["overview", "tree", "changes", "file"]);
+    });
+
+    it("puts Transcript after Changes and before File while the agent has a transcript", () => {
+        const p = panelFor({}, "x", "overview");
+        expect(visibleTabs(p, true, true)).toEqual(["overview", "tree", "changes", "transcript"]);
+        expect(visibleTabs(p, false, true)).toEqual(["overview", "changes", "transcript"]);
+        const withFile = openFile(p, a);
+        expect(visibleTabs(withFile, true, true)).toEqual(["overview", "tree", "changes", "transcript", "file"]);
+        expect(visibleTabs(withFile, false, true)).toEqual(["overview", "changes", "transcript", "file"]);
     });
 
     it("selects Files and remembers the tab it came from", () => {
-        const p = selectTab(panelFor({}, "x", "overview"), "tree", true);
+        const p = selectTab(panelFor({}, "x", "overview"), "tree", true, false);
         expect(p).toMatchObject({ tab: "tree", prevTab: "overview" });
     });
 
     it("does not select Files without a worktree", () => {
         const p = panelFor({}, "x", "overview");
-        expect(selectTab(p, "tree", false)).toBe(p);
+        expect(selectTab(p, "tree", false, false)).toBe(p);
+    });
+
+    it("selects Transcript with or without a worktree, and remembers the tab it came from", () => {
+        const p = selectTab(panelFor({}, "x", "overview"), "changes", true, true);
+        expect(selectTab(p, "transcript", true, true)).toMatchObject({ tab: "transcript", prevTab: "changes" });
+        expect(selectTab(p, "transcript", false, true)).toMatchObject({ tab: "transcript", prevTab: "changes" });
+    });
+
+    it("does not select Transcript while the agent has no transcript", () => {
+        const p = panelFor({}, "x", "overview");
+        expect(selectTab(p, "transcript", true, false)).toBe(p);
+        expect(selectTab(p, "transcript", false, false)).toBe(p);
     });
 
     it("draws Overview for a Files tab that has no worktree to list, and keeps the stored tab", () => {
-        const p = selectTab(panelFor({}, "x", "overview"), "tree", true);
-        expect(shownTab(p, true)).toBe("tree");
-        expect(shownTab(p, false)).toBe("overview");
+        const p = selectTab(panelFor({}, "x", "overview"), "tree", true, false);
+        expect(shownTab(p, true, false)).toBe("tree");
+        expect(shownTab(p, false, false)).toBe("overview");
         expect(p.tab).toBe("tree");
-        expect(shownTab(openFile(p, a), false)).toBe("file");
+        expect(shownTab(openFile(p, a), false, false)).toBe("file");
+    });
+
+    it("draws Overview for a Transcript tab that has no transcript, and keeps the stored tab", () => {
+        const p = selectTab(panelFor({}, "x", "overview"), "transcript", true, true);
+        expect(shownTab(p, true, true)).toBe("transcript");
+        expect(shownTab(p, true, false)).toBe("overview");
+        expect(shownTab(p, false, true)).toBe("transcript");
+        expect(p.tab).toBe("transcript");
     });
 
     it("leaves Files for Overview when Files has no worktree", () => {
-        const p = selectTab(panelFor({}, "x", "overview"), "tree", true);
-        expect(selectTab(p, "overview", false)).toMatchObject({ tab: "overview", prevTab: "tree" });
+        const p = selectTab(panelFor({}, "x", "overview"), "tree", true, false);
+        expect(selectTab(p, "overview", false, false)).toMatchObject({ tab: "overview", prevTab: "tree" });
+    });
+
+    it("leaves Transcript for Overview when the agent has no transcript", () => {
+        const p = selectTab(panelFor({}, "x", "overview"), "transcript", true, true);
+        expect(selectTab(p, "overview", true, false)).toMatchObject({ tab: "overview", prevTab: "transcript" });
     });
 });
 
@@ -89,11 +125,11 @@ describe("the File tab", () => {
         const p = openFile(panelFor({}, "x", "overview"), a);
         expect(p).toMatchObject({ tab: "file", prevTab: "overview" });
         expect(activeFile(p)?.current).toEqual(a);
-        expect(visibleTabs(p, false)).toEqual(["overview", "changes", "file"]);
+        expect(visibleTabs(p, false, false)).toEqual(["overview", "changes", "file"]);
     });
 
     it("opens a file from Files and closes back to Files", () => {
-        const onTree = selectTab(panelFor({}, "x", "overview"), "tree", true);
+        const onTree = selectTab(panelFor({}, "x", "overview"), "tree", true, false);
         const opened = openFile(onTree, a);
         expect(opened).toMatchObject({ tab: "file", prevTab: "tree" });
         expect(closeFile(opened).tab).toBe("tree");
@@ -161,14 +197,21 @@ describe("the File tab", () => {
         expect(activeFile(p)?.current?.line).toBe(9);
     });
 
+    it("opens a file from Transcript and closes back to Transcript", () => {
+        const onTranscript = selectTab(panelFor({}, "x", "overview"), "transcript", true, true);
+        const opened = openFile(onTranscript, a);
+        expect(opened).toMatchObject({ tab: "file", prevTab: "transcript" });
+        expect(closeFile(opened).tab).toBe("transcript");
+    });
+
     it("selects another file's tab and keeps where File was opened from", () => {
-        const onTree = selectTab(panelFor({}, "x", "overview"), "tree", true);
+        const onTree = selectTab(panelFor({}, "x", "overview"), "tree", true, false);
         const p = openFile(openFile(onTree, a), b);
         const back = selectFile(p, p.files[0].id);
         expect(back).toMatchObject({ tab: "file", prevTab: "tree", active: 0 });
         expect(selectFile(back, back.files[0].id)).toBe(back);
         expect(selectFile(back, 999)).toBe(back);
-        const fromOverview = selectFile(selectTab(p, "overview", true), p.files[0].id);
+        const fromOverview = selectFile(selectTab(p, "overview", true, false), p.files[0].id);
         expect(fromOverview).toMatchObject({ tab: "file", prevTab: "overview", active: 0 });
     });
 
@@ -193,13 +236,14 @@ describe("the File tab", () => {
         expect(p.tab).toBe("overview");
         expect(p.files).toEqual([]);
         expect(activeFile(p)).toBeNull();
-        expect(visibleTabs(p, false)).toEqual(["overview", "changes"]);
+        expect(visibleTabs(p, false, false)).toEqual(["overview", "changes"]);
     });
 
     it("does not select File while no file is open", () => {
         const p = panelFor({}, "x", "overview");
-        expect(selectTab(p, "file", false)).toBe(p);
-        expect(selectTab(p, "file", true)).toBe(p);
+        expect(selectTab(p, "file", false, false)).toBe(p);
+        expect(selectTab(p, "file", true, false)).toBe(p);
+        expect(selectTab(p, "file", true, true)).toBe(p);
     });
 
     it("names the tab by the title it was opened with, else by the file name", () => {
@@ -257,6 +301,15 @@ describe("widths", () => {
         expect(clampWideWidth(2000, 900)).toBe(900);
         expect(clampWideWidth(Number.NaN, 900)).toBe(RAIL_WIDE_DEFAULT_PX);
     });
+
+    it("gives Transcript File's minimum and default", () => {
+        expect(clampWideWidth(200, 900, "transcript")).toBe(RAIL_WIDE_MIN_PX);
+        expect(clampWideWidth(2000, 900, "transcript")).toBe(900);
+        expect(clampWideWidth(Number.NaN, 900, "transcript")).toBe(RAIL_WIDE_DEFAULT_PX);
+        expect(clampWideWidth(Number.NaN, 300, "transcript")).toBe(RAIL_WIDE_MIN_PX);
+        expect(clampWideWidth(700, 900, "transcript")).toBe(clampWideWidth(700, 900, "file"));
+        expect(RAIL_WIDTHS.transcript).toEqual(RAIL_WIDTHS.file);
+    });
 });
 
 describe("nextTab", () => {
@@ -305,18 +358,48 @@ describe("the strip's keys", () => {
     it("lists every file on File, and folds them into the one on show elsewhere", () => {
         const p = openFile(openFile(panelFor({}, "x", "overview"), a), b);
         const [ka, kb] = p.files.map((f) => fileKey(f.id));
-        expect(stripKeys(p, true)).toEqual(["overview", "tree", "changes", ka, kb]);
-        expect(shownKey(p, true)).toBe(kb);
-        const onTree = selectTab(p, "tree", true);
-        expect(stripKeys(onTree, true)).toEqual(["overview", "tree", "changes", kb]);
-        expect(shownKey(onTree, true)).toBe("tree");
-        expect(stripKeys(panelFor({}, "x", "overview"), false)).toEqual(["overview", "changes"]);
+        expect(stripKeys(p, true, false)).toEqual(["overview", "tree", "changes", ka, kb]);
+        expect(shownKey(p, true, false)).toBe(kb);
+        const onTree = selectTab(p, "tree", true, false);
+        expect(stripKeys(onTree, true, false)).toEqual(["overview", "tree", "changes", kb]);
+        expect(shownKey(onTree, true, false)).toBe("tree");
+        expect(stripKeys(panelFor({}, "x", "overview"), false, false)).toEqual(["overview", "changes"]);
+    });
+
+    it("puts Transcript between Changes and the file tabs, with no tree too", () => {
+        const p = openFile(openFile(panelFor({}, "x", "overview"), a), b);
+        const [ka, kb] = p.files.map((f) => fileKey(f.id));
+        expect(stripKeys(p, true, true)).toEqual(["overview", "tree", "changes", "transcript", ka, kb]);
+        expect(stripKeys(p, false, true)).toEqual(["overview", "changes", "transcript", ka, kb]);
+        const onTranscript = selectTab(p, "transcript", true, true);
+        expect(stripKeys(onTranscript, true, true)).toEqual(["overview", "tree", "changes", "transcript", kb]);
+        expect(shownKey(onTranscript, true, true)).toBe("transcript");
+        expect(shownKey(onTranscript, true, false)).toBe("overview");
+        expect(stripKeys(panelFor({}, "x", "overview"), true, true)).toEqual([
+            "overview",
+            "tree",
+            "changes",
+            "transcript",
+        ]);
     });
 
     it("selects a tab or a file by its key", () => {
         const p = openFile(openFile(panelFor({}, "x", "overview"), a), b);
-        expect(activeFile(selectKey(p, fileKey(p.files[0].id), true))?.current).toEqual(a);
-        expect(selectKey(p, "overview", true).tab).toBe("overview");
-        expect(nextTab(stripKeys(p, true), shownKey(p, true), "ArrowLeft")).toBe(fileKey(p.files[0].id));
+        expect(activeFile(selectKey(p, fileKey(p.files[0].id), true, false))?.current).toEqual(a);
+        expect(selectKey(p, "overview", true, false).tab).toBe("overview");
+        expect(nextTab(stripKeys(p, true, false), shownKey(p, true, false), "ArrowLeft")).toBe(fileKey(p.files[0].id));
+    });
+
+    it("selects Transcript by its key only while there is a transcript", () => {
+        const p = panelFor({}, "x", "overview");
+        expect(selectKey(p, "transcript", true, true).tab).toBe("transcript");
+        expect(selectKey(p, "transcript", true, false)).toBe(p);
+    });
+
+    it("walks the arrows through Transcript on the way to File", () => {
+        const p = openFile(selectTab(panelFor({}, "x", "overview"), "changes", true, true), a);
+        const keys = stripKeys(p, true, true);
+        expect(nextTab(keys, "changes", "ArrowRight")).toBe("transcript");
+        expect(nextTab(keys, "transcript", "ArrowRight")).toBe(fileKey(p.files[0].id));
     });
 });

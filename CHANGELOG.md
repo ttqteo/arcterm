@@ -42,6 +42,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A brainstorm question says over its answers whether you pick one or more. When the answers can be combined, each row
   has a tick box: tick several and Send gives them to the agent together, while clicking a row still sends it alone.
   Every approach in the judge's list now has its letter, the fifth and later ones included.
+- Read back a whole conversation beside the terminal: the Transcript tab on the agent's panel (Ctrl+Shift+F, ⌘⇧F on a
+  Mac, from anywhere on Agent) draws it as the sleeping view does, loads the earlier part as you scroll up, and keeps up
+  with what the agent writes while you read. Its Compactions button steps back through each compaction, so what a
+  compaction dropped from the terminal can be read again. Esc returns to the terminal.
 
 ### Changed
 

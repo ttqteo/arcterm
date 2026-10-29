@@ -111,7 +111,8 @@ put unless you are at the bottom, where the view follows the newest turn.
   under "RAM watch" in `docs/open-issues.md`.
 - A CDP scenario in `scripts/cdp/scenarios.mjs` that opens the tab on a compacted fixture, scrolls to the top to load an
   earlier chunk, and steps to a compaction marker before the loaded part.
-- A `CHANGELOG.md` line under Added, with the `<!-- try: ... -->` hook for the new binding.
+- A `CHANGELOG.md` line under Added that names the keys in its text. It has no `<!-- try: ... -->` hook: Try it takes
+  only a global binding, and `Mod+Shift+F` is the Agent surface's own (Code binds it to search).
 - A `- [ ]` line under "0 · Waiting on a hand check" in `docs/open-issues.md` for anything not tried in the running app.
 
 ## Out of scope

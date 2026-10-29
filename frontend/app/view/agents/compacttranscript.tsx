@@ -5,21 +5,34 @@
 // prose as plain text, one "Worked for 24s" line for everything it did between two pieces of prose, and an
 // "N files changed +a −d" bar for what that stretch edited. The grouping is compacttimeline.ts; the pieces that
 // are the same as the live feed's (a tool line, a command chip, a compaction marker) are narrationtimeline.tsx's.
+// Only the last RENDER_CAP items are in the DOM at first; reaching the top draws that many more, and once all are drawn
+// it asks its caller for earlier entries (compactwindow.ts holds the decisions).
 
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { composerReveal } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { Check, ChevronDown, ChevronRight, Copy, FileDiff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { burstRenderMode, conversationText, type AgentEntry, type EditFile } from "./agentsviewmodel";
 import {
     filesChangedLabel,
     groupCompact,
     toolCountLabel,
     workedFor,
+    type CompactItem,
     type WorkItem,
 } from "./compacttimeline";
+import {
+    drawnToReach,
+    firstDrawn,
+    grownDrawn,
+    holdingItem,
+    itemSpan,
+    keyFor,
+    topAction,
+    windowStart,
+} from "./compactwindow";
 import { splitAttachedImages } from "./launcherimages";
 import { MarkdownMessage } from "./markdownmessage";
 import {
@@ -32,10 +45,11 @@ import {
     ToolDetailBody,
     ToolLine,
 } from "./narrationtimeline";
-import { PinnedPromptBar, usePinnedPrompt } from "./pinnedpromptbar";
+import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
 
-// items kept in the DOM; an older transcript past this drops its oldest items, as the live feed does
-const RENDER_CAP = 200;
+// the top of the list counts as reached this far before it is in view, so the earlier items are drawn (or asked for) by
+// the time the reader gets there
+const REACH_TOP_PX = 200;
 
 function Caret({ open }: { open: boolean }) {
     const Icon = open ? ChevronDown : ChevronRight;
@@ -213,21 +227,127 @@ export function CompactTranscript({
     active,
     onReview,
     className,
+    onReachStart,
+    keyOffset = 0,
+    scrollTo,
 }: {
     entries: AgentEntry[];
     active?: boolean;
     // opens the changes in the Diff surface; without it the files bar has no Review button
     onReview?: () => void;
     className?: string;
+    // every item is drawn and the top of the list is in view: the caller may load earlier entries. Called once per item
+    // count, so a caller with nothing earlier to give is not asked again until the items change
+    onReachStart?: () => void;
+    // how many entries the caller has put in front of the first one it passed at the start: an item's key, and its fold,
+    // are its entry index less this, so a load that prepends entries keeps every drawn item mounted and as it was
+    keyOffset?: number;
+    // on each new nonce, draws back to the item holding entry `index` (an index into `entries`) and scrolls it to the
+    // top of the scroll container; an index no item holds does nothing
+    scrollTo?: { index: number; nonce: number };
 }) {
     const [opened, setOpened] = useState<Set<number>>(new Set());
     const items = useMemo(() => groupCompact(entries), [entries]);
-    const visible = items.length > RENDER_CAP ? items.slice(items.length - RENDER_CAP) : items;
+    const spans = useMemo(() => items.map((item) => itemSpan(item, keyOffset)), [items, keyOffset]);
+    // the drawn window is remembered as the key of its first item (compactwindow.ts), set on the first render with items
+    const [anchor, setAnchor] = useState<number | null>(null);
+    const first = windowStart(spans, anchor);
+    if (spans.length > 0 && anchor !== spans[first].start) {
+        setAnchor(spans[first].start);
+    }
+    const visible = items.slice(first);
     const rootRef = useRef<HTMLDivElement>(null);
     const pinned = usePinnedPrompt(rootRef);
     const prompts = visible.flatMap((item) =>
         item.kind === "user" ? [splitAttachedImages(item.text).text || "Image"] : []
     );
+    // usePinnedPrompt counts the prompts in the DOM a frame after the DOM changes, so right after items are drawn in
+    // front its index still counts the old ones: the text is looked up in the list the index last changed against
+    const [seen, setSeen] = useState({ pinned, prompts });
+    if (seen.pinned !== pinned) {
+        setSeen({ pinned, prompts });
+    }
+    const topRef = useRef<HTMLDivElement>(null);
+    const live = useRef({ spans, first, onReachStart });
+    const reachedAt = useRef<number | null>(null); // the item count onReachStart was last called at
+    const heightBeforeGrow = useRef<{ top: number; height: number } | null>(null);
+    const wanted = useRef<number | null>(null); // the key of the item scrollTo wants at the top, until it is there
+    const handledNonce = useRef<number | null>(null);
+
+    // the top of the list: draw earlier items while some are hidden, ask the caller for earlier ones once all are drawn.
+    // Measured, not observed: after a draw-back the sentinel may stay in view and fire nothing new, so this also runs
+    // whenever the items change
+    const checkTop = useCallback(() => {
+        const sentinel = topRef.current?.getBoundingClientRect();
+        if (sentinel == null) {
+            return;
+        }
+        const scroller = scrollParent(rootRef.current);
+        const viewTop = scroller?.getBoundingClientRect().top ?? 0;
+        const viewBottom = scroller?.getBoundingClientRect().bottom ?? window.innerHeight;
+        const { spans: now, first: start, onReachStart: reach } = live.current;
+        const action = topAction({
+            topInView: sentinel.bottom >= viewTop - REACH_TOP_PX && sentinel.top <= viewBottom,
+            first: start,
+            itemCount: now.length,
+            reachedAt: reachedAt.current,
+        });
+        if (action === "grow") {
+            heightBeforeGrow.current = scroller ? { top: scroller.scrollTop, height: scroller.scrollHeight } : null;
+            const drawn = grownDrawn(now.length, now.length - start);
+            setAnchor(now[firstDrawn(now.length, drawn)].start);
+        } else if (action === "reach") {
+            reachedAt.current = now.length;
+            reach?.();
+        }
+    }, []);
+
+    useLayoutEffect(() => {
+        live.current = { spans, first, onReachStart };
+    });
+    // items drawn in front push what the reader is looking at down by their height: scroll by it, so it stays put (the
+    // browser's own scroll anchoring does not act at scrollTop 0)
+    useLayoutEffect(() => {
+        const before = heightBeforeGrow.current;
+        heightBeforeGrow.current = null;
+        const scroller = scrollParent(rootRef.current);
+        if (before != null && scroller != null) {
+            scroller.scrollTop = before.top + (scroller.scrollHeight - before.height);
+        }
+    }, [first]);
+    useLayoutEffect(() => {
+        if (scrollTo != null && handledNonce.current !== scrollTo.nonce) {
+            handledNonce.current = scrollTo.nonce;
+            const held = holdingItem(spans, keyFor(scrollTo.index, keyOffset));
+            wanted.current = held < 0 ? null : spans[held].start;
+        }
+        if (wanted.current == null) {
+            return;
+        }
+        const at = holdingItem(spans, wanted.current);
+        if (at < 0) {
+            wanted.current = null;
+        } else if (at < first) {
+            // hidden: the window counts from the end, so it needs every item from this one on; this runs again once drawn
+            setAnchor(spans[firstDrawn(spans.length, drawnToReach(spans.length, at))].start);
+        } else {
+            wanted.current = null;
+            const el = rootRef.current?.querySelectorAll<HTMLElement>(":scope > [data-compact-item]")[at - first];
+            const scroller = scrollParent(rootRef.current);
+            if (el != null && scroller != null) {
+                scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+            }
+        }
+    }, [scrollTo?.nonce, first]);
+    useEffect(() => {
+        checkTop();
+    }, [checkTop, first, items.length]);
+    useEffect(() => {
+        const scroller = scrollParent(rootRef.current);
+        scroller?.addEventListener("scroll", checkTop, { passive: true });
+        return () => scroller?.removeEventListener("scroll", checkTop);
+    }, [checkTop]);
+
     const copyMenu = (text: string) => (e: React.MouseEvent) =>
         ContextMenuModel.getInstance().showContextMenu(
             [
@@ -240,74 +360,74 @@ export function CompactTranscript({
             ],
             e
         );
-    const toggle = (startIndex: number) =>
+    // a fold is kept by its key, not its entry index, so it stays with its item when entries are put in front
+    const toggle = (key: number) =>
         setOpened((prev) => {
             const next = new Set(prev);
-            if (!next.delete(startIndex)) {
-                next.add(startIndex);
+            if (!next.delete(key)) {
+                next.add(key);
             }
             return next;
         });
+    const drawItem = (item: CompactItem, idx: number): ReactNode => {
+        switch (item.kind) {
+            case "user":
+                return <UserMessage text={item.text} images={item.images} onContextMenu={copyMenu(item.text)} />;
+            case "message":
+                return <AssistantMessage text={item.text} onContextMenu={copyMenu(item.text)} />;
+            case "work": {
+                const key = keyFor(item.startIndex, keyOffset);
+                return (
+                    <>
+                        <WorkLine
+                            work={item}
+                            open={opened.has(key)}
+                            autoOpen={!!active && idx === visible.length - 1}
+                            onToggle={() => toggle(key)}
+                        />
+                        {item.files.length > 0 ? (
+                            <FilesChangedBar files={item.files} adds={item.adds} dels={item.dels} onReview={onReview} />
+                        ) : null}
+                    </>
+                );
+            }
+            case "command":
+                return <CommandChip name={item.name} args={item.args} isSkill={item.isSkill} />;
+            case "compaction":
+                return (
+                    <CompactionDivider
+                        trigger={item.trigger}
+                        preTokens={item.preTokens}
+                        postTokens={item.postTokens}
+                        summary={item.summary}
+                    />
+                );
+            case "notification":
+                return <TaskNotificationRow summary={item.summary} status={item.status} result={item.result} />;
+            case "interrupted":
+                return <InterruptedDivider />;
+        }
+    };
 
     return (
         <div
             ref={rootRef}
             data-compact-transcript
-            className={cn("mx-auto w-full max-w-[760px] pb-2 leading-relaxed", className)}
+            className={cn("relative mx-auto w-full max-w-[760px] pb-2 leading-relaxed", className)}
         >
-            <PinnedPromptBar rootRef={rootRef} index={pinned} text={prompts[pinned]} bg="bg-background" />
-            {visible.map((item, idx) => {
-                switch (item.kind) {
-                    case "user":
-                        return (
-                            <UserMessage
-                                key={item.index}
-                                text={item.text}
-                                images={item.images}
-                                onContextMenu={copyMenu(item.text)}
-                            />
-                        );
-                    case "message":
-                        return <AssistantMessage key={item.index} text={item.text} onContextMenu={copyMenu(item.text)} />;
-                    case "work":
-                        return (
-                            <Fragment key={"w" + item.startIndex}>
-                                <WorkLine
-                                    work={item}
-                                    open={opened.has(item.startIndex)}
-                                    autoOpen={!!active && idx === visible.length - 1}
-                                    onToggle={() => toggle(item.startIndex)}
-                                />
-                                {item.files.length > 0 ? (
-                                    <FilesChangedBar files={item.files} adds={item.adds} dels={item.dels} onReview={onReview} />
-                                ) : null}
-                            </Fragment>
-                        );
-                    case "command":
-                        return <CommandChip key={item.index} name={item.name} args={item.args} isSkill={item.isSkill} />;
-                    case "compaction":
-                        return (
-                            <CompactionDivider
-                                key={item.index}
-                                trigger={item.trigger}
-                                preTokens={item.preTokens}
-                                postTokens={item.postTokens}
-                                summary={item.summary}
-                            />
-                        );
-                    case "notification":
-                        return (
-                            <TaskNotificationRow
-                                key={item.index}
-                                summary={item.summary}
-                                status={item.status}
-                                result={item.result}
-                            />
-                        );
-                    case "interrupted":
-                        return <InterruptedDivider key={item.index} />;
-                }
-            })}
+            <PinnedPromptBar rootRef={rootRef} index={pinned} text={seen.prompts[pinned]} bg="bg-background" />
+            {/* the top of the list, for checkTop to measure; out of the flow so it adds no height */}
+            <div ref={topRef} aria-hidden className="pointer-events-none absolute left-0 top-0 h-px w-full" />
+            {/* one wrapper per item, keyed by its first entry's key: the scroll to an item and the marker for a compaction find it */}
+            {visible.map((item, idx) => (
+                <div
+                    key={spans[first + idx].start}
+                    data-compact-item
+                    data-compact-compaction={item.kind === "compaction" ? "" : undefined}
+                >
+                    {drawItem(item, idx)}
+                </div>
+            ))}
         </div>
     );
 }

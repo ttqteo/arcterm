@@ -10,8 +10,9 @@ import { normalizeRepoPath } from "@/util/paths";
 
 // "tree" is the Files tab, the agent's worktree (docs/superpowers/specs/2026-10-08-rail-worktree-files-design.md); it is
 // "tree" because "files" already names the Files changed count. "changes" is the Changes tab: the Files changed list on
-// a tab of its own, every file of it rather than Overview's first few
-export type RailTab = "overview" | "tree" | "changes" | "file";
+// a tab of its own, every file of it rather than Overview's first few. "transcript" is the agent's conversation, drawn
+// beside its terminal (docs/superpowers/specs/2026-10-29-rail-transcript-tab-design.md)
+export type RailTab = "overview" | "tree" | "changes" | "transcript" | "file";
 
 // a file opened into the panel: its absolute path, the directory it was resolved against, and the line to show
 export interface FileRef {
@@ -83,10 +84,12 @@ const CENTRE_MIN_PX = 640; // DESIGN.md's stage-min
 const AGENT_TREE_PX = 248; // agenttree.tsx's column
 
 export function panelFor(panels: Record<string, PanelState>, agentId: string, defaultTab: RailTab): PanelState {
-    // File and Files are never defaults: an unseen agent has no file open, and Files needs a cwd it may not have
+    // File, Files and Transcript are never defaults: an unseen agent has no file open, Files needs a cwd it may not have,
+    // and Transcript needs a transcript it may not have
     return (
         panels[agentId] ?? {
-            tab: defaultTab === "file" || defaultTab === "tree" ? "overview" : defaultTab,
+            tab:
+                defaultTab === "file" || defaultTab === "tree" || defaultTab === "transcript" ? "overview" : defaultTab,
             prevTab: "overview",
             files: [],
             active: 0,
@@ -99,13 +102,17 @@ export function activeFile(p: PanelState): FileTab | null {
     return p.files[p.active] ?? null;
 }
 
-// hasTree: the agent has a cwd to list and is not showing a subagent's interior
-export function visibleTabs(p: PanelState, hasTree: boolean): RailTab[] {
+// hasTree: the agent has a cwd to list and is not showing a subagent's interior. hasTranscript: the agent itself has a
+// transcript file (its own, so it stays true while a subagent's interior is open)
+export function visibleTabs(p: PanelState, hasTree: boolean, hasTranscript: boolean): RailTab[] {
     const tabs: RailTab[] = ["overview"];
     if (hasTree) {
         tabs.push("tree");
     }
     tabs.push("changes");
+    if (hasTranscript) {
+        tabs.push("transcript");
+    }
     if (p.files.length > 0) {
         tabs.push("file");
     }
@@ -113,13 +120,14 @@ export function visibleTabs(p: PanelState, hasTree: boolean): RailTab[] {
 }
 
 // the tab a panel draws: Files with no worktree to list (the cwd is not resolved yet, or a subagent's interior is open)
-// falls back to Overview, while the stored tab stays Files for when the worktree is back
-export function shownTab(p: PanelState, hasTree: boolean): RailTab {
-    return p.tab === "tree" && !hasTree ? "overview" : p.tab;
+// falls back to Overview, while the stored tab stays Files for when the worktree is back; Transcript does the same
+// with no transcript
+export function shownTab(p: PanelState, hasTree: boolean, hasTranscript: boolean): RailTab {
+    return (p.tab === "tree" && !hasTree) || (p.tab === "transcript" && !hasTranscript) ? "overview" : p.tab;
 }
 
-export function selectTab(p: PanelState, tab: RailTab, hasTree: boolean): PanelState {
-    if (p.tab === tab || !visibleTabs(p, hasTree).includes(tab)) {
+export function selectTab(p: PanelState, tab: RailTab, hasTree: boolean, hasTranscript: boolean): PanelState {
+    if (p.tab === tab || !visibleTabs(p, hasTree, hasTranscript).includes(tab)) {
         return p;
     }
     return { ...p, tab, prevTab: p.tab };
@@ -225,27 +233,31 @@ export function closeFile(p: PanelState, id: number | undefined = activeFile(p)?
 
 // The strip's tabs in order, as keys, for the arrow keys: on File each open file is a tab of its own; elsewhere the
 // files fold into one tab, the file on show, so Overview's 300px keeps room for the counts.
-export function stripKeys(p: PanelState, hasTree: boolean): string[] {
-    const keys: string[] = visibleTabs(p, hasTree).filter((t) => t !== "file");
+export function stripKeys(p: PanelState, hasTree: boolean, hasTranscript: boolean): string[] {
+    const keys: string[] = visibleTabs(p, hasTree, hasTranscript).filter((t) => t !== "file");
     const f = activeFile(p);
     if (f == null) {
         return keys;
     }
-    return shownTab(p, hasTree) === "file" ? [...keys, ...p.files.map((x) => fileKey(x.id))] : [...keys, fileKey(f.id)];
+    return shownTab(p, hasTree, hasTranscript) === "file"
+        ? [...keys, ...p.files.map((x) => fileKey(x.id))]
+        : [...keys, fileKey(f.id)];
 }
 
 export function fileKey(id: number): string {
     return `file:${id}`;
 }
 
-export function shownKey(p: PanelState, hasTree: boolean): string {
-    const tab = shownTab(p, hasTree);
+export function shownKey(p: PanelState, hasTree: boolean, hasTranscript: boolean): string {
+    const tab = shownTab(p, hasTree, hasTranscript);
     const f = activeFile(p);
     return tab === "file" && f != null ? fileKey(f.id) : tab;
 }
 
-export function selectKey(p: PanelState, key: string, hasTree: boolean): PanelState {
-    return key.startsWith("file:") ? selectFile(p, Number(key.slice(5))) : selectTab(p, key as RailTab, hasTree);
+export function selectKey(p: PanelState, key: string, hasTree: boolean, hasTranscript: boolean): PanelState {
+    return key.startsWith("file:")
+        ? selectFile(p, Number(key.slice(5)))
+        : selectTab(p, key as RailTab, hasTree, hasTranscript);
 }
 
 // the widest a wide tab may be: what leaves the centre its minimum beside the nav rail and the tree
@@ -253,11 +265,13 @@ export function wideWidthMax(windowWidth: number, navWidth: number): number {
     return Math.max(RAIL_WIDE_MIN_PX, windowWidth - navWidth - AGENT_TREE_PX - CENTRE_MIN_PX);
 }
 
-// the panel tabs that take a dragged width: File (a page of text). Overview, Files and Changes are fixed at Overview's
-export type ResizableTab = "file";
+// the panel tabs that take a dragged width: File (a page of text) and Transcript (the conversation), which share one
+// remembered width. Overview, Files and Changes are fixed at Overview's
+export type ResizableTab = "file" | "transcript";
 
 export const RAIL_WIDTHS: Record<ResizableTab, { min: number; def: number }> = {
     file: { min: RAIL_WIDE_MIN_PX, def: RAIL_WIDE_DEFAULT_PX },
+    transcript: { min: RAIL_WIDE_MIN_PX, def: RAIL_WIDE_DEFAULT_PX },
 };
 
 export function clampWideWidth(value: number, max: number, tab: ResizableTab = "file"): number {

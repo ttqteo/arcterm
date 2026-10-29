@@ -1139,11 +1139,18 @@ declare global {
         path: string;
         maxlines?: number;
         fromstart?: boolean;
+        before?: number;
+        frombyte?: number;
     };
 
     // wshrpc.CommandGetAgentTranscriptRtnData
     type CommandGetAgentTranscriptRtnData = {
         lines: string[];
+        start: number;
+        total: number;
+        end: number;
+        partial?: boolean;
+        reset?: boolean;
     };
 
     // wshrpc.CommandGetAttentionRtnData

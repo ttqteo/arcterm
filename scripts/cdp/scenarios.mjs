@@ -47,6 +47,7 @@ import brainstormFindingsScenarios from "./scenarios-brainstorm-findings.mjs";
 import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
 import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
+import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import {
     arrangeSetupFixture,
     assertSetupFixtureInstalled,
@@ -32621,8 +32622,8 @@ const agentRailTabs = {
         const w1 = await h.ev(railTabsWidth);
         await h.shot("cdp-shots/agent-rail-tabs-overview.png");
         rec(
-            "1. Overview, Files and Changes are the tabs, Overview selected and 300px wide, and Files changed lists a.txt",
-            JSON.stringify(tabs1) === JSON.stringify(["Overview*", "Files", "Changes"]) && Math.abs(w1 - 300) <= 2 && listed,
+            "1. Overview, Files, Changes and Transcript are the tabs, Overview selected and 300px wide, and Files changed lists a.txt",
+            JSON.stringify(tabs1) === JSON.stringify(["Overview*", "Files", "Changes", "Transcript"]) && Math.abs(w1 - 300) <= 2 && listed,
             JSON.stringify({ tabs1, w1, listed })
         );
 
@@ -32653,7 +32654,7 @@ const agentRailTabs = {
         await h.shot("cdp-shots/agent-rail-tabs-file.png");
         rec(
             "2. a.txt in the Cockpit card's tool row opens the Agent surface with a.txt on the File tab, at the wide width",
-            clicked2 && editor2 && surface2 === "Agent" && JSON.stringify(tabs2) === JSON.stringify(["Overview", "Files", "Changes", "File a.txt*"]) && Math.abs(w2 - wide) <= 2,
+            clicked2 && editor2 && surface2 === "Agent" && JSON.stringify(tabs2) === JSON.stringify(["Overview", "Files", "Changes", "Transcript", "File a.txt*"]) && Math.abs(w2 - wide) <= 2,
             JSON.stringify({ clicked2, editor2, surface2, tabs2, w2, wide })
         );
 
@@ -32675,9 +32676,9 @@ const agentRailTabs = {
         const gone = await polishWaitFor(h, `${railTabsFileText}.includes("This file no longer exists")`, 8000);
         await h.shot("cdp-shots/agent-rail-tabs-file-states.png");
         rec(
-            "4. a 3 MB file says Large file, a binary says Binary file, each in a tab of its own beside a.txt's; blob.bin's tab shows it again, and a file deleted since it opened says so",
+            "4. a 3 MB file says Large file, a binary says Binary file, each in a tab of its own beside a.txt's (after Transcript); blob.bin's tab shows it again, and a file deleted since it opened says so",
             big && blob && cOpen && back && gone &&
-                tabs4.includes("File a.txt") && tabs4.includes("File big.txt") && tabs4.includes("File blob.bin") && tabs4.includes("File c.txt*"),
+                tabs4.includes("Transcript") && tabs4.includes("File a.txt") && tabs4.includes("File big.txt") && tabs4.includes("File blob.bin") && tabs4.includes("File c.txt*"),
             JSON.stringify({ big, blob, cOpen, tabs4, back, gone })
         );
         // a.txt alone again, for the steps that follow
@@ -32695,6 +32696,8 @@ const agentRailTabs = {
         await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
         const tabs5c = await h.ev(railTabLabels);
         await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
+        const tabs5t = await h.ev(railTabLabels);
+        await railTabsKey(h, "ArrowRight", "ArrowRight", 39);
         const tabs5 = await h.ev(railTabLabels);
         const surface5a = await h.activeSurfaceLabel();
         await h.ev(`${RAIL_TABS_ASIDE}?.querySelector("[data-rail-file] [data-file-open-code]")?.focus()`);
@@ -32702,12 +32705,13 @@ const agentRailTabs = {
         const tabs5b = await h.ev(railTabLabels);
         const surface5b = await h.activeSurfaceLabel();
         rec(
-            "5. → in the tab strip selects Files, then Changes, then File, without leaving the agent, and Esc in the File tab closes the file back to Changes (the tab → came from), not the surface",
-            JSON.stringify(tabs5a) === JSON.stringify(["Overview", "Files*", "Changes", "File a.txt"]) &&
-                JSON.stringify(tabs5c) === JSON.stringify(["Overview", "Files", "Changes*", "File a.txt"]) &&
-                JSON.stringify(tabs5) === JSON.stringify(["Overview", "Files", "Changes", "File a.txt*"]) && surface5a === "Agent" &&
-                JSON.stringify(tabs5b) === JSON.stringify(["Overview", "Files", "Changes*"]) && surface5b === "Agent",
-            JSON.stringify({ tabs5a, tabs5c, tabs5, surface5a, tabs5b, surface5b })
+            "5. → in the tab strip selects Files, then Changes, then Transcript, then File, without leaving the agent, and Esc in the File tab closes the file back to Transcript (the tab → came from), not the surface",
+            JSON.stringify(tabs5a) === JSON.stringify(["Overview", "Files*", "Changes", "Transcript", "File a.txt"]) &&
+                JSON.stringify(tabs5c) === JSON.stringify(["Overview", "Files", "Changes*", "Transcript", "File a.txt"]) &&
+                JSON.stringify(tabs5t) === JSON.stringify(["Overview", "Files", "Changes", "Transcript*", "File a.txt"]) &&
+                JSON.stringify(tabs5) === JSON.stringify(["Overview", "Files", "Changes", "Transcript", "File a.txt*"]) && surface5a === "Agent" &&
+                JSON.stringify(tabs5b) === JSON.stringify(["Overview", "Files", "Changes", "Transcript*"]) && surface5b === "Agent",
+            JSON.stringify({ tabs5a, tabs5c, tabs5t, tabs5, surface5a, tabs5b, surface5b })
         );
 
         // 6. the grip: drag left widens, keys reach both ends
@@ -32743,14 +32747,25 @@ const agentRailTabs = {
         const w7 = await h.ev(railTabsWidth);
         const strip7 = await h.ev(`[...(${RAIL_TABS_ASIDE}?.querySelectorAll("button[aria-label]") ?? [])].map((b) => b.getAttribute("aria-label"))`);
         await h.shot("cdp-shots/agent-rail-tabs-strip.png");
+        // the Transcript icon opens the panel on Transcript; then the panel folds again for the file's icon
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('button[aria-label="Transcript"]')?.click()`);
+        await railTabsNap(700);
+        const tabs7t = await h.ev(railTabLabels);
+        const w7t = await h.ev(railTabsWidth);
+        await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('button[aria-label="Collapse panel"]')?.click()`);
+        await railTabsNap(700);
         await h.ev(`${RAIL_TABS_ASIDE}?.querySelector('button[aria-label^="File "]')?.click()`);
         await railTabsNap(700);
         const tabs7 = await h.ev(railTabLabels);
+        const w7f = await h.ev(railTabsWidth);
         rec(
-            "7. collapsed, the strip shows Overview, Files and the open file; the file's icon opens the panel on File",
-            Math.abs(w7 - 44) <= 2 && strip7.includes("Overview") && strip7.includes("Files") && strip7.some((l) => l === "File a.txt") &&
-                JSON.stringify(tabs7) === JSON.stringify(["Overview", "Files", "Changes", "File a.txt*"]),
-            JSON.stringify({ w7, strip7, tabs7 })
+            "7. collapsed, the strip shows Overview, Files, Changes, Transcript and the open file; the Transcript icon opens the panel on Transcript and the file's icon on File, both at the same wide width",
+            Math.abs(w7 - 44) <= 2 &&
+                ["Overview", "Files", "Changes", "Transcript", "File a.txt"].every((l) => strip7.includes(l)) &&
+                JSON.stringify(tabs7t) === JSON.stringify(["Overview", "Files", "Changes", "Transcript*", "File a.txt"]) &&
+                w7t > 302 && Math.abs(w7t - w7f) <= 2 &&
+                JSON.stringify(tabs7) === JSON.stringify(["Overview", "Files", "Changes", "Transcript", "File a.txt*"]),
+            JSON.stringify({ w7, strip7, tabs7t, w7t, tabs7, w7f })
         );
 
         // 8. the palette: a file of the focused agent's repo opens in its panel. On the Agent surface the palette
@@ -48675,6 +48690,20 @@ const BS_KIT = {
     flatText,
 };
 
+// what the Transcript tab's scenario (scenarios-rail-transcript.mjs) needs of this file: the fixture roster file, the real
+// terminal block behind a fixture agent, the reload, and the key chord
+const RT_KIT = {
+    waveService,
+    polishWaitFor,
+    polishNap,
+    openRailTerminal,
+    ahReload,
+    waitForProjectInConfig,
+    TREE_RAIL_FIXTURE,
+    UI_ROUTE,
+    MOD_BIT,
+};
+
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
 // nothing mocked. `runs:maxactive` is 1 and a run held by deferstart (it spawns nothing) is active, so no entry has room
@@ -56804,6 +56833,7 @@ export const SCENARIOS = [
     agentGrid,
     agentUploads,
     agentRailTabs,
+    ...railTranscriptScenarios(RT_KIT),
     agentRailWorktreeFiles,
     agentRailChangesCommits,
     agentRailCommitMode,
