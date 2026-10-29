@@ -31,7 +31,7 @@ import (
 var councilRunner = newCouncilRunner(council.ConsultCaller{})
 
 func newCouncilRunner(caller council.Caller) *council.Runner {
-	return &council.Runner{Caller: caller, OnChange: publishCouncilChanged}
+	return &council.Runner{Caller: caller, Agents: council.AgentCaller{Link: liveAgentLink{}}, OnChange: publishCouncilChanged}
 }
 
 // publishCouncilChanged tells the cockpit and `wsh council wait` that a council was saved.

@@ -313,30 +313,48 @@ func (ws *WshServer) AgentsSendCommand(ctx context.Context, data wshrpc.CommandA
 	if text == "" {
 		return nil, fmt.Errorf("the message is empty")
 	}
-	if target.State == wshrpc.AgentsState_Asking && !target.hasStream {
-		return nil, fmt.Errorf("agent %q has a question open in its terminal, and a typed message would answer it; send again once it is answered", target.Name)
-	}
 	// the envelope's header is one line, and a tab name is whatever the user typed
 	senderName := strings.Join(strings.Fields(sender.Name), " ")
 	envelope := agentmsg.Envelope(senderName, sender.OID, text)
-	if target.State == wshrpc.AgentsState_Sleeping {
-		// the one path wsh agents send and Jarvis take: a message wakes the agent and is delivered once it reports in
-		if err := heldElsewhere(rows, target); err != nil {
-			return nil, err
-		}
-		if err := wakeAgent(ctx, target, envelope, false); err != nil {
-			return nil, err
-		}
-		agentmsg.NoteSent(senderBlock, target.blockId)
-		return &wshrpc.CommandAgentsSendRtnData{TabId: target.TabId, SentTs: time.Now().UnixMilli()}, nil
+	noteSent := func() { agentmsg.NoteSent(senderBlock, target.blockId) }
+	if err := deliverToAgent(ctx, rows, target, envelope, noteSent); err != nil {
+		return nil, err
 	}
-	agentmsg.NoteSent(senderBlock, target.blockId)
-	deliverAgentMessage(target.blockId, envelope)
 	return &wshrpc.CommandAgentsSendRtnData{
-		TabId:   target.TabId,
-		SentTs:  time.Now().UnixMilli(),
-		MidTurn: target.State != wshrpc.AgentsState_Idle,
+		TabId:  target.TabId,
+		SentTs: time.Now().UnixMilli(),
+		// a woken agent starts from rest: the message is its turn, not an addition to one
+		MidTurn: target.State != wshrpc.AgentsState_Idle && target.State != wshrpc.AgentsState_Sleeping,
 	}, nil
+}
+
+// deliverToAgent puts message into target's session, the one path wsh agents send and a council seat's turn take: a
+// sleeping agent is woken and given it once it reports in, an awake one is handed it at once. A typed message would
+// answer a question open in the agent's terminal, so one with no control stream to carry it is refused. rows is the
+// roster target came from, for the check that no other tab runs a sleeper's conversation. noteSent, when set, records
+// the send for the send-back lock: ahead of the hand-over to an awake agent, so its answer cannot beat the record, and
+// after the wake of a sleeping one, so a wake that failed leaves no lock.
+func deliverToAgent(ctx context.Context, rows []agentRow, target *agentRow, message string, noteSent func()) error {
+	if target.State == wshrpc.AgentsState_Asking && !target.hasStream {
+		return fmt.Errorf("agent %q has a question open in its terminal, and a typed message would answer it; send again once it is answered", target.Name)
+	}
+	if target.State == wshrpc.AgentsState_Sleeping {
+		if err := heldElsewhere(rows, target); err != nil {
+			return err
+		}
+		if err := wakeAgent(ctx, target, message, false); err != nil {
+			return err
+		}
+		if noteSent != nil {
+			noteSent()
+		}
+		return nil
+	}
+	if noteSent != nil {
+		noteSent()
+	}
+	deliverAgentMessage(target.blockId, message)
+	return nil
 }
 
 // AgentPromptCommand hands the cockpit's own prompt to a block's session. A session whose mod holds a

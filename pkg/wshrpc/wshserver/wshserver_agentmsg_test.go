@@ -353,6 +353,21 @@ func TestAgentsSendMidTurn(t *testing.T) {
 	}
 }
 
+// the send-back lock is recorded before an awake agent is handed the message, so its answer cannot beat the record
+func TestAgentsSendLocksBeforeDelivering(t *testing.T) {
+	scriptAgents(t, threeAgents())
+	var lockedAtDelivery []bool
+	swap(t, &deliverAgentMessage, func(blockId, text string) {
+		lockedAtDelivery = append(lockedAtDelivery, agentmsg.SendBackLocked(blockId, agentsBlockA))
+	})
+	if _, err := (&WshServer{}).AgentsSendCommand(context.Background(), wshrpc.CommandAgentsSendData{Tab: agentsTabB, Text: "hi", FromORef: blockORef(agentsBlockA)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(lockedAtDelivery) != 1 || !lockedAtDelivery[0] {
+		t.Errorf("send-back locked at delivery = %v, want the one delivery to find it set", lockedAtDelivery)
+	}
+}
+
 func TestAgentsRead(t *testing.T) {
 	tpath := filepath.Join(t.TempDir(), "session.jsonl")
 	lines := []string{

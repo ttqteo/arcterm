@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/agentmsg"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/memusage"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
@@ -896,6 +897,40 @@ func TestSendToASleepingAgentThatDoesNotComeBackReportsIt(t *testing.T) {
 	if len(w.deliveries()) != 0 {
 		t.Errorf("delivered %+v, want nothing", w.deliveries())
 	}
+}
+
+// a send to a sleeping agent locks it from answering by message only once the wake has delivered, so a wake that failed
+// leaves no lock, and its result does not call the message mid-turn
+func TestAgentsSleepingSendLocksOnlyOnceWoken(t *testing.T) {
+	send := func(w *sleepWorld) (*wshrpc.CommandAgentsSendRtnData, error) {
+		sender := agentFacts(agentsTabB, "lead", agentsBlockB, "claude", baseds.AgentState_Working)
+		w.install(&agentRosterFacts{Tabs: []agentTabFacts{sleepingClaude(time.Now()), sender}})
+		return (&WshServer{}).AgentsSendCommand(context.Background(), wshrpc.CommandAgentsSendData{Tab: agentsTabA, Text: "hi", FromORef: blockORef(agentsBlockB)})
+	}
+	t.Run("woken", func(t *testing.T) {
+		w := newSleepWorld(t, sleepingMeta(time.Now()))
+		w.status = func(int) baseds.AgentStatusData { return readyStatus() }
+		rtn, err := send(w)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rtn.MidTurn {
+			t.Errorf("result = %+v, want a message that woke its agent not to be mid-turn", rtn)
+		}
+		if !agentmsg.SendBackLocked(agentsBlockA, agentsBlockB) {
+			t.Error("the woken agent may message its sender back this turn")
+		}
+	})
+	t.Run("did not wake", func(t *testing.T) {
+		w := newSleepWorld(t, sleepingMeta(time.Now()))
+		w.exited = func() (bool, int) { return true, 1 }
+		if _, err := send(w); err == nil {
+			t.Fatal("a send to an agent that did not wake reported success")
+		}
+		if agentmsg.SendBackLocked(agentsBlockA, agentsBlockB) {
+			t.Error("a message that was never delivered locked the agent from messaging its sender")
+		}
+	})
 }
 
 func TestSetModelRefusesASleepingAgent(t *testing.T) {
