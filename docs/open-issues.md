@@ -48,6 +48,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Its rendered check so far is the Transcript tab's scenario (`rail-transcript-tab`, steps 2, 3, 4 and 6); nothing has run
   `agy-harness` or the sleeping overlay on it. (commit "feat(agents): the compact reader draws earlier items on reaching
   the top, and scrolls to an entry")
+- [ ] (arcterm) The Transcript tab's scenarios pass on `main`: once memory allows, run
+  `node scripts/cdp/final-verify.mjs rail-transcript-tab agent-rail-tabs surface-smoke`. Run 66c39bd5 landed without
+  them: its final stage ran out of RAM, so no scenario ran on the merged result, and the last Transcript edit (a
+  Compactions jump leaves the marker just below the pinned prompt's band, step 4) never ran at all. (commit
+  "feat(agents): the Transcript tab reads the whole conversation back, with its scenario and docs")
 - [ ] (arcterm) A wake message survives switching agents: open a sleeping agent, type a line in the box under its
   conversation, press Enter, then pick another agent and come back before it is awake. The box still shows the line
   (read-only, Waking…), the agent receives it, and the box is empty once it is awake.
