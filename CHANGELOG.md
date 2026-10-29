@@ -74,6 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- While the brainstorm judge weighs a question's approaches, an approach's "N facts" opens the facts under its row.
+  Before, only the count showed, and clicking the row sent the approach as your answer.
 - A run's route takes a pi model from a provider whose own ids carry an org, such as
   `river/deepseek-ai/DeepSeek-V4.1-Flash`. Before, the route was refused as the wrong namespace.
 - A message typed under a sleeping agent stays in its box while the agent wakes, even if you open another agent and

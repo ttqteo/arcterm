@@ -28,6 +28,7 @@ import {
     spikeUrl,
     togglePick,
     type AnswerOption,
+    type Approach,
     type BrainstormAction,
     type BrainstormFile,
     type BrainstormPart,
@@ -871,6 +872,68 @@ function QuestionHead({ f, goTo, children }: { f: BrainstormFile; goTo: (id: str
     );
 }
 
+// one approach the judge is weighing: the row sends it as the answer; its facts stay behind their own toggle, closed
+// until opened, so reading them never answers
+function ApproachRow({
+    a,
+    i,
+    multi,
+    picks,
+    ans,
+}: {
+    a: Approach;
+    i: number;
+    multi: boolean;
+    picks: ReturnType<typeof usePicks>;
+    ans: Answer;
+}) {
+    const [open, setOpen] = useState(false);
+    const n = a.facts.length;
+    return (
+        <div className={cn(OPTION_ROW, OPTION_ROW_PLAIN, "flex flex-col")}>
+            <div className="flex">
+                {multi ? <TickBox i={i} picks={picks} ans={ans} compact /> : null}
+                <button
+                    type="button"
+                    data-brainstorm-approach
+                    data-brainstorm-option={i}
+                    disabled={ans.act.busy}
+                    onClick={() => void ans.sendText(a.name)}
+                    className={cn(OPTION_BTN, "gap-[14px] px-[12px] py-[9px]")}
+                >
+                    <span className={cn(OPTION_LETTER, "h-[24px] w-[24px] text-[11.5px]")}>{optionLetter(i)}</span>
+                    <span className="w-[190px] flex-none text-[13.5px] font-semibold leading-[1.4] text-primary">
+                        {a.name}
+                    </span>
+                    <span className="min-w-0 flex-1 text-[12.5px] leading-[1.45] text-ink-mid">{a.description}</span>
+                </button>
+                {n > 0 ? (
+                    <button
+                        type="button"
+                        data-brainstorm-facts-toggle={i}
+                        aria-expanded={open}
+                        onClick={() => setOpen(!open)}
+                        className="flex-none cursor-pointer border-0 bg-transparent px-[14px] text-[12px] text-accent-soft outline-none hover:text-accent"
+                    >
+                        {open ? `Hide ${plural(n, "fact", "facts")}` : plural(n, "fact", "facts")}
+                    </button>
+                ) : null}
+            </div>
+            {open && n > 0 ? (
+                <ul
+                    data-brainstorm-facts={i}
+                    aria-label={`Facts for ${a.name}`}
+                    className="m-0 flex list-disc flex-col gap-[4px] border-t border-edge-faint py-[10px] pl-[70px] pr-[16px] text-[12.5px] leading-[1.5] text-secondary"
+                >
+                    {a.facts.map((fact, k) => (
+                        <li key={k}>{fact}</li>
+                    ))}
+                </ul>
+            ) : null}
+        </div>
+    );
+}
+
 // the judge weighing the question's approaches: its status where the options will go, and the approaches as the
 // answers, any one sent as typed. Guess for me is left out, since the judge's pick is coming; a rerun's earlier
 // options, read and judge are left out too
@@ -922,32 +985,7 @@ export function JudgingMain({
                     </div>
                     <div role="group" aria-label="Approaches" className="flex flex-col gap-[6px]">
                         {approaches.map((a, i) => (
-                            <div key={i} className={cn(OPTION_ROW, OPTION_ROW_PLAIN, "flex")}>
-                                {multi ? <TickBox i={i} picks={picks} ans={ans} compact /> : null}
-                                <button
-                                    type="button"
-                                    data-brainstorm-approach
-                                    data-brainstorm-option={i}
-                                    disabled={ans.act.busy}
-                                    onClick={() => void ans.sendText(a.name)}
-                                    className={cn(OPTION_BTN, "gap-[14px] px-[12px] py-[9px]")}
-                                >
-                                    <span className={cn(OPTION_LETTER, "h-[24px] w-[24px] text-[11.5px]")}>
-                                        {optionLetter(i)}
-                                    </span>
-                                    <span className="w-[190px] flex-none text-[13.5px] font-semibold leading-[1.4] text-primary">
-                                        {a.name}
-                                    </span>
-                                    <span className="min-w-0 flex-1 text-[12.5px] leading-[1.45] text-ink-mid">
-                                        {a.description}
-                                    </span>
-                                    {a.facts.length > 0 ? (
-                                        <span className="flex-none text-[12px] text-accent-soft">
-                                            {plural(a.facts.length, "fact", "facts")}
-                                        </span>
-                                    ) : null}
-                                </button>
-                            </div>
+                            <ApproachRow key={i} a={a} i={i} multi={multi} picks={picks} ans={ans} />
                         ))}
                     </div>
                     {multi ? <SendPicked picks={picks} ans={ans} /> : null}

@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A brainstorm approach's facts: while the judge weighs a question's approaches, click "3 facts" at the
+  right of a row; the facts list opens under that row and the label reads "Hide 3 facts", with nothing sent to the
+  agent. Clicking the rest of the row still answers with that approach. (commit "fix(brainstorm): show an approach's
+  facts behind their count")
 - [ ] (arcterm) Quick translate on the nav rail: click the Translate button above Setup (or Ctrl+Shift+D, also from a
   focused terminal). A narrow panel slides out beside the rail, the box focused; typing translates after a pause, a
   single word shows its phonetic and word class, ⇄ moves the translation into the box, Esc or an outside click closes
