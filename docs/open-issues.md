@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Replay at the drawn size: start an engine run and open its lead only after it has drawn a
+  question or a few turns (the pane never shown before). The terminal should read cleanly, its text in the left
+  80 columns, with no second frame of another width over it. `frontend/app/view/term/termwrap.ts`
+  (`writeAtSize`).
 - [ ] (arcterm) Option boards: in a fresh plain Claude session (after a launch re-seeds the skills), ask a UI question
   with two layouts. You should see it draw `A-…` and `B-…` boards, reveal the canvas beside its terminal and ask by
   label; after you pick, the other board sits in `.superpowers/design/<topic>/unchosen/`. Ask for a one-line status

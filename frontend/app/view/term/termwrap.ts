@@ -771,6 +771,21 @@ export class TermWrap {
         return prtn;
     }
 
+    // Write saved output at the size it was drawn at, then give the pane its size back. xterm parses a write on a
+    // later tick: resizing back before it lands parses the output at the current size.
+    private async writeAtSize(data: Uint8Array, setPtyOffset: number, size: TermSize | null) {
+        const cur: TermSize = { rows: this.terminal.rows, cols: this.terminal.cols };
+        const resize = size?.rows > 0 && size?.cols > 0 && (size.rows != cur.rows || size.cols != cur.cols);
+        if (resize) {
+            console.log("terminal restore size mismatch, temp resize", size, cur);
+            this.terminal.resize(size.cols, size.rows);
+        }
+        await this.doTerminalWrite(data, setPtyOffset);
+        if (resize) {
+            this.terminal.resize(cur.cols, cur.rows);
+        }
+    }
+
     // true when it wrote any saved output into the terminal
     async loadInitialTerminalData(): Promise<boolean> {
         const startTs = Date.now();
@@ -782,23 +797,7 @@ export class TermWrap {
             ptyOffset = cacheFile.meta["ptyoffset"] ?? 0;
             if (cacheData.byteLength > 0) {
                 replayed = true;
-                const curTermSize: TermSize = { rows: this.terminal.rows, cols: this.terminal.cols };
-                const fileTermSize: TermSize = cacheFile.meta["termsize"];
-                let didResize = false;
-                if (
-                    fileTermSize != null &&
-                    (fileTermSize.rows != curTermSize.rows || fileTermSize.cols != curTermSize.cols)
-                ) {
-                    console.log("terminal restore size mismatch, temp resize", fileTermSize, curTermSize);
-                    this.terminal.resize(fileTermSize.cols, fileTermSize.rows);
-                    didResize = true;
-                }
-                // xterm parses a write on a later tick: resizing back before it lands parsed the cache at the
-                // current size, not the one it was saved at
-                await this.doTerminalWrite(cacheData, ptyOffset);
-                if (didResize) {
-                    this.terminal.resize(curTermSize.cols, curTermSize.rows);
-                }
+                await this.writeAtSize(cacheData, ptyOffset, cacheFile.meta["termsize"]);
             }
         }
         const { data: mainData, fileInfo: mainFile } = await fetchWaveFile(zoneId, TermFileName, ptyOffset);
@@ -806,7 +805,12 @@ export class TermWrap {
             `terminal loaded cachefile:${cacheData?.byteLength ?? 0} main:${mainData?.byteLength ?? 0} bytes, ${Date.now() - startTs}ms`
         );
         if (mainFile != null) {
-            await this.doTerminalWrite(mainData, null);
+            // the output after the cache was drawn at the PTY's size, which the block keeps from its last resize. A
+            // worker the engine started runs with no pane, at the backend's 25x80, until one first shows it: written
+            // at that pane's width, its TUI's cursor moves landed on the wrong rows and garbled the frame
+            const block = WOS.getObjectValue<Block>(WOS.makeORef("block", this.blockId));
+            const unshownWorker = block?.meta?.["agent:runid"] != null ? { rows: 25, cols: 80 } : null;
+            await this.writeAtSize(mainData, null, block?.runtimeopts?.termsize ?? unshownWorker);
             replayed ||= mainData.byteLength > 0;
         }
         return replayed;

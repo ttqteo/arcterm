@@ -83,6 +83,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run's lead or worker you open for the first time after it has been working no longer shows its terminal
+  garbled, two frames of different widths over each other. Its output now replays at the size it was drawn at.
 - While the brainstorm judge weighs a question's approaches, an approach's "N facts" opens the facts under its row.
   Before, only the count showed, and clicking the row sent the approach as your answer.
 - A run's route takes a pi model from a provider whose own ids carry an org, such as
