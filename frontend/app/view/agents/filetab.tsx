@@ -18,7 +18,7 @@ import { pathMenuItems } from "@/app/view/code/pathmenu";
 import { PLATFORM, PlatformMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { Check, ChevronLeft, ChevronRight, FileCode2, GitCompare, Pin, WrapText } from "lucide-react";
+import { ArrowUpToLine, Check, ChevronLeft, ChevronRight, FileCode2, GitCompare, Pin, WrapText } from "lucide-react";
 import type * as MonacoTypes from "monaco-editor";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { agentDiffScope, openDiff } from "./agentdiffnav";
@@ -38,7 +38,7 @@ import { OUTLINE_SELECTOR, OutlineButton } from "./docoutlineview";
 import { savedScroll, saveScroll } from "./filescroll";
 import { FileTabDiff } from "./filetabdiff";
 import { canOpenInOsApp, formatSize, readPanelFile, type PanelFile } from "./filetabload";
-import { HtmlFrame } from "./htmlframe";
+import { frameToTop, HtmlFrame } from "./htmlframe";
 import { ImageFrame } from "./imageframe";
 import { cancelBox, mdCommentAtom } from "./mdcommentstore";
 import { MdCommentTray } from "./mdcommenttray";
@@ -179,6 +179,16 @@ export function FileTab({
     const findable = markdown && preview && state.kind === "text";
     const finding = findOpen && findable;
     const mdDoc = () => bodyRef.current?.querySelector<HTMLElement>("[data-md-doc]") ?? null;
+    // a Preview's Top button: Source and Diff have Monaco's Ctrl+Home
+    const topable = preview && (state.kind === "text" || (html && state.kind === "toolarge"));
+    const toTop = () => {
+        const frame = bodyRef.current?.querySelector<HTMLIFrameElement>("iframe[data-file-html]");
+        if (frame != null) {
+            frameToTop(frame);
+            return;
+        }
+        mdDoc()?.scrollTo({ top: 0, behavior: "smooth" });
+    };
     const closeFind = () => {
         setFindOpen(false);
         // the caret was in the bar, which is gone now
@@ -511,6 +521,18 @@ export function FileTab({
                         textKey={state.text}
                         iconOnly
                     />
+                ) : null}
+                {topable ? (
+                    <button
+                        type="button"
+                        data-file-top
+                        aria-label="Back to the top"
+                        title="Back to the top"
+                        onClick={toTop}
+                        className={ICON_BTN}
+                    >
+                        <ArrowUpToLine size={13} aria-hidden />
+                    </button>
                 ) : null}
                 {diffable || (state.kind === "text" && !preview) ? (
                     <button

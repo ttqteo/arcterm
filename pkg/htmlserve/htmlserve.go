@@ -148,8 +148,8 @@ func isHTMLName(name string) bool {
 // was. The page runs at this listener's origin, which arcterm's window cannot reach into, so the page reports its own
 // scroll to the frame's parent and takes a kept one back (frontend htmlframe.tsx). After </html> the parser still runs
 // it, as part of the body. A restore waits for the page to grow tall enough (images, fonts) for about half a second,
-// and gives way to the reader's first wheel, key or click. A page whose own Content-Security-Policy refuses inline
-// scripts simply opens at the top.
+// and gives way to the reader's first wheel, key or click. The File tab's Top button sends arc-html-top. A page whose
+// own Content-Security-Policy refuses inline scripts simply opens at the top.
 const scrollScript = `<script>(function () {
   var p = window.parent;
   if (p === window) return;
@@ -163,7 +163,9 @@ const scrollScript = `<script>(function () {
   }, { passive: true });
   addEventListener("message", function (e) {
     var d = e.data;
-    if (e.source !== p || !d || d.type !== "arc-html-restore" || !(d.y > 0)) return;
+    if (e.source !== p || !d) return;
+    if (d.type === "arc-html-top") { scrollTo({ top: 0, behavior: "smooth" }); return; }
+    if (d.type !== "arc-html-restore" || !(d.y > 0)) return;
     var n = 0, stop = false;
     var halt = function () { stop = true; };
     addEventListener("wheel", halt, { once: true, passive: true });

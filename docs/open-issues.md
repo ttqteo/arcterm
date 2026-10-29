@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The File tab's Back to the top button: open a long `.md` file in an agent's File tab (Preview), scroll
+  down and press the arrow-to-line button in the header; the document glides back to its top. Do the same with a long
+  `.html` file (needs a wavesrv built after this change). Source and Diff show no such button.
 - [ ] (arcterm) A wake message survives switching agents: open a sleeping agent, type a line in the box under its
   conversation, press Enter, then pick another agent and come back before it is awake. The box still shows the line
   (read-only, Waking…), the agent receives it, and the box is empty once it is awake.

@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A Markdown or HTML file's Preview in an agent's File tab has a Back to the top button in its header, beside the
+  outline.
 - A Claude agent with a large context (100k tokens or more) is compacted while its prompt cache is still warm: just
   before it sleeps, and, when it stays awake, once it has sat idle with 5 minutes of cache left. Waking it later reads
   the summary instead of re-reading the whole conversation at twice the input price. Sleep on such an agent compacts
