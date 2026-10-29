@@ -49,6 +49,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- When an agent offers you options that differ in UI, in a brainstorm or a plain chat, it draws each one as its own
+  board on a canvas beside its terminal (Option A, Option B…) instead of ASCII boxes, and asks first before drawing
+  a mockup only a few lines tall. In a brainstorm the boards sit beside the question in the options' order; after you
+  pick, the boards you passed over move out of the canvas into an `unchosen/` folder, so a run only builds the one you
+  chose.
 - In a float, the Translate tab shows the Translate panel over the terminal (Ctrl+Shift+D opens it there too) instead of
   opening translate-shell, so it works without installing anything. A translate-shell terminal opened from Setup →
   Tools is an ordinary tab in the float.
