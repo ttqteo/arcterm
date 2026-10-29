@@ -5,28 +5,26 @@ package cmd
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"regexp"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/translate"
 )
 
 // wsh trans is the Translate tool (pkg/arctools): a prompt that hands each line to translate-shell and prints its
 // answer short. trans's own shell prints a word's whole dictionary entry, each meaning on two lines; this prints the
 // translation with the word's phonetics, then one line per word class. translate-shell still does the fetching
-// (trans -dump), so a change on Google's side is fixed by upgrading it.
+// (trans -dump), so a change on Google's side is fixed by upgrading it; translate.Parse reads what it dumps.
 
 const transDefaultTarget = "vi"
 
@@ -132,101 +130,14 @@ func transLangName(trans, code string) (string, error) {
 	return first, nil
 }
 
-func transLookup(trans, target, text string) (transAnswer, error) {
+func transLookup(trans, target, text string) (translate.Answer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, trans, "-no-warn", "-dump", ":"+target, "--", text).Output()
 	if err != nil {
-		return transAnswer{}, err
+		return translate.Answer{}, err
 	}
-	return parseTransDump(out)
-}
-
-type transAnswer struct {
-	Translation string
-	Phonetics   string // of the text typed
-	Classes     []transClass
-}
-
-type transClass struct {
-	Pos   string // "noun", "verb"…
-	Words []string
-}
-
-// parseTransDump reads trans -dump: Google's answer, a JSON array, as it came over the wire, so either the array itself
-// or the array in HTTP chunks (a hex size line before each piece, a 0 after the last).
-func parseTransDump(raw []byte) (transAnswer, error) {
-	body := bytes.TrimSpace(raw)
-	if len(body) > 0 && body[0] != '[' {
-		var err error
-		if body, err = dechunk(body); err != nil {
-			return transAnswer{}, err
-		}
-	}
-	var top []json.RawMessage
-	if err := json.Unmarshal(body, &top); err != nil {
-		return transAnswer{}, fmt.Errorf("unreadable answer: %v", err)
-	}
-	var a transAnswer
-	// [0]: the translation in segments, ["vàng","gold",…]; one segment [null,null,…,"ɡōld"] holds the phonetics
-	var segs [][]any
-	if len(top) > 0 {
-		json.Unmarshal(top[0], &segs)
-	}
-	var sb strings.Builder
-	for _, s := range segs {
-		if len(s) > 0 {
-			if t, ok := s[0].(string); ok {
-				sb.WriteString(t)
-				continue
-			}
-		}
-		if len(s) > 3 {
-			if p, ok := s[3].(string); ok {
-				a.Phonetics = p
-			}
-		}
-	}
-	a.Translation = strings.TrimSpace(sb.String())
-	// [1]: the dictionary, one entry per word class, ["noun",["kim","màu vàng",…],…]
-	var dict [][]any
-	if len(top) > 1 {
-		json.Unmarshal(top[1], &dict)
-	}
-	for _, e := range dict {
-		if len(e) < 2 {
-			continue
-		}
-		pos, _ := e[0].(string)
-		words, _ := e[1].([]any)
-		c := transClass{Pos: pos}
-		for _, w := range words {
-			if s, ok := w.(string); ok {
-				c.Words = append(c.Words, s)
-			}
-		}
-		if len(c.Words) > 0 {
-			a.Classes = append(a.Classes, c)
-		}
-	}
-	return a, nil
-}
-
-func dechunk(b []byte) ([]byte, error) {
-	var out []byte
-	for {
-		// the last size line, 0, may end the dump with no newline after it
-		line, rest, _ := bytes.Cut(b, []byte("\n"))
-		n, err := strconv.ParseInt(string(bytes.TrimSpace(line)), 16, 64)
-		if err != nil || n < 0 || n > int64(len(rest)) {
-			return nil, fmt.Errorf("unreadable answer: bad chunk size %q", bytes.TrimSpace(line))
-		}
-		if n == 0 {
-			return out, nil
-		}
-		out = append(out, rest[:n]...)
-		b = bytes.TrimLeft(rest[n:], "\r\n")
-	}
+	return translate.Parse(out)
 }
 
 var transPosShort = map[string]string{
@@ -236,7 +147,7 @@ var transPosShort = map[string]string{
 
 // formatTransAnswer is what a lookup prints: the translation in bold with the phonetics after it, then one line per
 // word class with its meanings, wrapped to width (0 does not wrap) under the first meaning.
-func formatTransAnswer(a transAnswer, width int) string {
+func formatTransAnswer(a translate.Answer, width int) string {
 	var sb strings.Builder
 	sb.WriteString("\x1b[1m" + a.Translation + "\x1b[22m")
 	if a.Phonetics != "" {
