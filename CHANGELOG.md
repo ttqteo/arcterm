@@ -77,6 +77,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Brainstorm mode: an agent's brainstorm opens beside its terminal, one question at a time, with a blind judge for
   approach questions and a builder check before you approve the run. Ask an agent to brainstorm a feature and its
   Brainstorm switch appears; Approve opens New run with the design attached. <!-- try: new-agent --> <!-- big -->
+  <!-- shot: 0.15.18-brainstorm.webp -->
 - A file an agent names without its folder ("It's in docs/slide/ as Deck.pptx") is a link again: Ctrl+click finds
   it in a folder named on the lines around it.
 - A deck, a sheet or a video an agent links to opens: the File panel, which shows only text, PDFs and images, now
@@ -90,6 +91,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - **Brainstorm**: a council has a second mode beside Review. Ask it about a problem or a goal and its experts offer
   ideas, build on each other's and keep the wild ones aside; the report ranks up to three ideas worth trying, each with
   a first step. arcterm picks the mode from your question, and the chip in New council flips it. <!-- try: new-council --> <!-- big -->
+  <!-- shot: 0.15.18-council-brainstorm.webp -->
 - Every finished council is saved in its project as `docs/council/<date>-<feature>.md` with its whole discussion, and
   the report shows the path and opens the file.
 - An agent starts a council when the conversation holds a real open question (two directions weighed and neither won,
