@@ -30,19 +30,15 @@ interface ToolListProps {
     onAll: () => void;
 }
 
-// a row's letter; the list can run past z, and a row with no letter is reached by the arrows and the mouse
-function letterOf(i: number): string {
-    return i < 26 ? String.fromCharCode(97 + i) : "";
-}
-
-// The third column: the tools scroll, All tools in Setup stays pinned under them
+// The third column: the tools scroll, All tools in Setup stays pinned under them. A letter picks the nth tool and ↑↓
+// walk the list (launcherKey); neither is drawn.
 export function ToolList({ tools, error, tool, focused, listRef, onFocus, onBlur, onPick, onAll }: ToolListProps) {
     useEffect(() => {
         listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
     }, [tool?.id, listRef]);
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            <ColumnLabel label="Tool" hint={focused ? "a–z · ↑↓" : ""} focused={focused} />
+            <ColumnLabel label="Tool" focused={focused} />
             <div
                 ref={listRef}
                 role="listbox"
@@ -61,7 +57,7 @@ export function ToolList({ tools, error, tool, focused, listRef, onFocus, onBlur
                         {error != null ? `Could not read the tool list: ${error}` : "Reading the tool list…"}
                     </span>
                 ) : (
-                    tools.map((t, i) => {
+                    tools.map((t) => {
                         const selected = t.id === tool?.id;
                         return (
                             <div
@@ -72,15 +68,6 @@ export function ToolList({ tools, error, tool, focused, listRef, onFocus, onBlur
                                 onClick={() => onPick(t.id)}
                                 className={cn(rowTone(selected, focused), "shrink-0 gap-[10px] py-2")}
                             >
-                                <span
-                                    aria-hidden
-                                    className={cn(
-                                        "w-[18px] shrink-0 text-center font-mono text-[10.5px]",
-                                        focused ? "text-ink-hi" : "text-muted"
-                                    )}
-                                >
-                                    {letterOf(i)}
-                                </span>
                                 <span
                                     className={cn(
                                         "min-w-0 truncate text-[12.5px]",
@@ -102,7 +89,7 @@ export function ToolList({ tools, error, tool, focused, listRef, onFocus, onBlur
                 type="button"
                 data-launcher-tool-all
                 onClick={onAll}
-                className="flex shrink-0 cursor-pointer items-center rounded-[7px] py-2 pl-[36px] pr-2 text-left text-[12.5px] text-accent-soft hover:bg-surface-hover hover:text-accent"
+                className="flex shrink-0 cursor-pointer items-center rounded-[7px] px-2 py-2 text-left text-[12.5px] text-accent-soft hover:bg-surface-hover hover:text-accent"
             >
                 All tools in Setup
             </button>

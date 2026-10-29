@@ -62,24 +62,27 @@ Setup and Settings have no `Mod`+number slot — the positions are bound to `SUR
 
 ## The New dialog (New agent, New run, Open a tool)
 
-One dialog starts an agent, a terminal, a run or a tool. It opens with focus on the Start column. Three columns sit
-side by side: Start, Project, and the pick's own list (an agent's sessions, the tools; a run's model, or its start and
-width). They keep one height: a long Project, Session or Tool list scrolls inside its column. The Tool row is the last
-in Start, so the other rows keep their digits.
+One dialog starts an agent, a terminal, a run or a tool. It opens with the Start column folded into a chip (`Claude
+Code ▾`, `Quick run ▾`, `Tool ▾`) and focus on the Project column. Folded, two columns sit side by side: Project (names
+only), and the pick's own list (an agent's sessions, the tools; a run's model, or its start and width) taking the rest.
+The chip, or `←` from Project, opens the Start column beside them; a pick there (a click, a digit or `Enter`) or `Esc`
+folds it and focus returns to Project, and so does focus leaving it (`Tab`, `→`, a click on another column). The
+columns keep one height: a long Project, Session or Tool list scrolls inside its column. The Tool row is the last in
+Start, so the other rows keep their digits. No row shows its key; the keys below all work.
 
 | Keys | Action |
 |---|---|
-| `1`…`9` | Pick that row in the focused column (Start, Project or Session); in Session `1` is New session |
+| `1`…`9` | Pick that row in the focused column (Start, Project or Session); in Session `1` is New session. In Start it also folds the column |
 | `0` | In the Project column: Home, pinned under the projects |
-| `↑` / `↓` | Move in the focused column |
-| `→` / `←` | Step Start, Project, then the Session or Tool column, and back |
-| letters | In the Start column, start typing the task (or a run's goal): focus moves to that box with the letter in it (not with the Tool row picked, which has no task box). In the Project or Session column, filter it by name; `Backspace` shortens the filter |
+| `↑` / `↓` | Move in the focused column (in the open Start column, without folding it) |
+| `→` / `←` | Step Project, then the Session or Tool column, and back; `←` from Project opens the Start column |
+| letters | In the Project or Session column, filter it by name; `Backspace` shortens the filter. In the open Start column, start typing the task (or a run's goal): focus moves to that box with the letter in it (not with the Tool row picked, which has no task box) |
 | `a`…`z` | In the Tool column (with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
-| `Tab` / `Shift`+`Tab` | Next / previous: Start, Project, the Session or Tool column, each field, Cancel, the launch button, and round again |
-| `Enter` | Launch, from a column, the Tool list or a one-line field; in the task or goal box it starts a new line |
+| `Tab` / `Shift`+`Tab` | Next / previous: the Start chip, Project, the Session or Tool column, each field, Cancel, the launch button, and round again |
+| `Enter` | Launch, from a column, the Tool list or a one-line field; in the open Start column it folds the column and does not launch; in the task or goal box it starts a new line |
 | `Shift`+`Enter` | With a session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
-| `Esc` | Close the open menu or a column's filter first, then the dialog. What you typed is kept for the next open |
+| `Esc` | Close the open menu or a column's filter first, then fold the open Start column, then the dialog. What you typed is kept for the next open |
 
 ## Open a tool (`Mod`+`Shift`+`O`)
 

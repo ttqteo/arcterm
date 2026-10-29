@@ -7,7 +7,8 @@
 // shared fixtures (a temp project, the six rail-apps councils, the RpcApi stand-ins) are ./council/fixtures.mjs.
 //
 // `fx` is the helpers scenarios.mjs owns that the fixtures need: waitForProjectInConfig, polishReload, openRailTerminal,
-// waveService, and openPalette for the scenario that drives the palette. No scenario here spends tokens or starts an
+// waveService, openPalette for the scenario that drives the palette, and openLauncherStart, which opens the New dialog's
+// folded Start column before a Council row is clicked. No scenario here spends tokens or starts an
 // agent: an action that would call a model has its RpcApi command replaced in the page (fixtures.mjs stubRpc).
 
 import { councilDiscussion } from "./council/discussion.mjs";

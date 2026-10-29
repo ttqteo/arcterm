@@ -3,11 +3,14 @@
 //
 // The New launcher: one dialog that starts an agent, a terminal, a run or a tool
 // (docs/superpowers/specs/2026-10-08-new-launcher-design.md). It replaced the New agent dialog and the New run window.
-// Three columns: Start picks what, Project where, and the third holds the pick's own list (an agent's sessions, the
-// tools, a run's model or start and width); the details below fill in the rest. The columns are as tall as the Start
-// list and never grow: a long Project, Session or Tool list scrolls inside its column, so the dialog keeps its height
-// however many projects and sessions there are. Digits pick in the focused column (0 is Home), → and ← step between the
-// columns, and Tab walks the dialog without leaving it. Every close keeps the draft (launcherstore), which is what lets
+// Start picks what, Project where, and the third column holds the pick's own list (an agent's sessions, the tools, a
+// run's model or start and width); the details below fill in the rest. Start opens folded into a chip over two columns,
+// Project (names only) and the pick's own list taking the rest of the width; the chip, or ← from Project, opens it as a
+// column beside them, and a pick, Enter, Escape or focus leaving it folds it again
+// (docs/superpowers/specs/2026-10-28-new-launcher-declutter-design.md). The band is 360px tall either way: a long
+// Project, Session or Tool list scrolls inside its column, so the dialog keeps its height however many projects and
+// sessions there are. Digits pick in the focused column (0 is Home), → and ← step between the columns, and Tab walks
+// the dialog without leaving it; no row draws its key. Every close keeps the draft (launcherstore), which is what lets
 // a click outside close it.
 //
 // The open state is model.launcherAtom, so deriveKeyContext counts the dialog as a modal. The app bar's one New button
@@ -22,11 +25,11 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { resolveChannelTarget, type NewRunPrefill, type RunConfig } from "@/app/view/jarvis/newrun";
 import { openTarget } from "@/app/view/jarvis/openref";
-import { homeFromInfo, projectWhere } from "@/app/view/jarvis/projectpicker";
+import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
+import { Check, ChevronDown, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { showCouncilSetup, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -73,7 +76,7 @@ import { AgentFields, useProjectBranches } from "./launcheragentfields";
 import { composeTaskWithImages, imagesPending } from "./launcherimages";
 import { appendPage, pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
-import { ColumnLabel, digitOf, FilterLine, Keycap, rowTone } from "./launcherrows";
+import { ColumnLabel, FilterLine, rowTone } from "./launcherrows";
 import { handBackStartedRun, startLauncherRun } from "./launcherrun";
 import { RunColumn, RunFields } from "./launcherrunfields";
 import {
@@ -222,6 +225,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const routeTouched = useAtomValue(routeTouchedAtom);
     const cap = useWorkerCapacity();
     const [zone, setZone] = useState<"start" | "project" | "tools" | null>(null);
+    // the Start column is open beside Project, not folded into its chip; folded on every opening
+    const [startOpen, setStartOpen] = useState(false);
     const [filter, setFilter] = useState("");
     const [home, setHome] = useState("");
     const [error, setError] = useState<string | null>(null);
@@ -283,12 +288,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const chosenBranch = (branchPick ?? currentBranch).trim();
     // git can't reuse the checked-out branch for a worktree; branch a fresh one off it instead
     const landingBranch = chosenBranch === currentBranch ? deriveBranch(currentBranch, branchNames) : chosenBranch;
-    let branchNote = wantsWorktree
-        ? chosenBranch && `worktree on ${landingBranch}`
-        : currentBranch && `on ${currentBranch}`;
-    if (isTool ? toolAtHome : atHome) {
-        branchNote = !isTool && runtime === "claude" ? "ask-only" : "";
-    }
+    // only a tool's footer names the branch; an agent's names the account alone
+    const branchNote = isTool && !toolAtHome && currentBranch ? `on ${currentBranch}` : "";
     const blocker = isRun
         ? launchBlocker({ shape, start, goal, planPath, preview })
         : isTool
@@ -303,7 +304,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         project: where,
         branchNote,
         blocker,
-        resume: resume && { title: resume.task || "(untitled session)", branch: resume.branch },
         account: isAgent && runtime === "claude" ? launchAccountName(activeAccount, claudeIdentity) : "",
     });
     const config: RunConfig = {
@@ -355,15 +355,29 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
     }, [open, pref, harnesses]);
 
-    // focus opens on the Start column, so a digit picks at once and Enter launches the defaults. ModalShell's own
-    // focus effect runs first (a child's effects do), so this one wins.
+    // every opening starts with Start folded and focus on the Project column, so letters filter the projects and a digit
+    // picks one. ModalShell's own focus effect runs first (a child's effects do), so this one wins.
     useEffect(() => {
         if (open) {
-            startRef.current?.focus();
+            projectRef.current?.focus();
+        } else {
+            setStartOpen(false);
         }
     }, [open]);
 
-    // home turns a project's path into the folder it sits in (projectWhere)
+    // the chip and ← from Project open the Start column to step into it
+    useEffect(() => {
+        if (startOpen) {
+            startRef.current?.focus();
+        }
+    }, [startOpen]);
+
+    // the Start column scrolls inside the band, so the row ↑↓ picked stays in sight
+    useEffect(() => {
+        startRef.current?.querySelector('[role="radio"][aria-checked="true"]')?.scrollIntoView({ block: "nearest" });
+    }, [selectedRow, startOpen]);
+
+    // home names Home's folder in its tooltip, and offers Home only once it is known (homeOffered)
     useEffect(() => {
         if (!open || home !== "") {
             return;
@@ -514,6 +528,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
         globalStore.set(launcherKindAtom, "agent");
         pickLauncherRuntime(row.id as Runtime);
+    };
+
+    // the Start column folds back into its chip and focus returns to Project; moving focus there is enough while the
+    // column has it (its blur folds it), and the state is set too for an Escape from elsewhere
+    const foldStart = () => {
+        projectRef.current?.focus();
+        setStartOpen(false);
     };
 
     const pickProject = (key: string) => pickLauncherProject(key, pickKey);
@@ -771,6 +792,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         const action = launcherKey(
             {
                 zone: zoneOf(e.target),
+                startOpen,
                 startCount: startList.length,
                 projectCount: visible.length,
                 homeShown: picks.includes(HOME_PICK),
@@ -806,6 +828,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         switch (action.kind) {
             case "pick-start":
                 pickRow(startList[action.index]);
+                foldStart();
                 return;
             case "pick-project":
                 pickProject(visible[action.index].name);
@@ -845,8 +868,15 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 return;
             }
             case "column":
-                if (action.to !== "third") {
-                    (action.to === "project" ? projectRef : startRef).current?.focus();
+                if (action.to === "start") {
+                    // a folded Start column opens first; the effect on startOpen focuses it once it is drawn
+                    if (startOpen) {
+                        startRef.current?.focus();
+                    } else {
+                        setStartOpen(true);
+                    }
+                } else if (action.to === "project") {
+                    projectRef.current?.focus();
                 } else if (thirdList === "tools") {
                     toolListRef.current?.focus();
                 } else {
@@ -873,9 +903,15 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     globalStore.set(launcherFlagMenuAtom, false);
                 } else if (action.what === "branches") {
                     globalStore.set(launcherBranchListAtom, false);
-                } else {
+                } else if (action.what === "filter") {
                     applyFilter("");
+                } else if (action.what === "start") {
+                    foldStart();
                 }
+                return;
+            case "fold":
+                // Enter keeps the row ↑↓ already picked
+                foldStart();
                 return;
             case "close":
                 // the dialog's own close; ModalShell's listener would only do it again
@@ -888,17 +924,14 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const startFocused = zone === "start";
     const projectFocused = zone === "project";
     const toolsFocused = zone === "tools";
+    // the order, not a key: the folded Project column is too narrow for the count beside it
     let projectHint = "";
-    if (projectFocused) {
-        projectHint =
-            filter === "" && visible.length > 0
-                ? `type to filter · 1–${Math.min(9, visible.length)}${picks.includes(HOME_PICK) ? ", 0 Home" : ""}`
-                : "";
-    } else if (candidates.length > 9) {
+    if (candidates.length > 9 && startOpen) {
         projectHint = `${candidates.length} · last used first`;
     } else if (candidates.length > 1) {
         projectHint = "last used first";
     }
+    const startPick = startList.find((r) => r.id === selectedRow);
 
     const renderStartRow = (row: StartRow) => {
         const selected = row.id === selectedRow;
@@ -909,10 +942,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 aria-checked={selected}
                 data-start-row={row.id}
                 title={row.desc ?? undefined}
-                onClick={() => pickRow(row)}
-                className={cn(rowTone(selected, startFocused), "gap-[9px] py-2")}
+                onClick={() => {
+                    pickRow(row);
+                    foldStart();
+                }}
+                className={cn(rowTone(selected, startFocused), "shrink-0 gap-[9px] py-2")}
             >
-                <Keycap k={row.key} lit={startFocused} />
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                     <StartMark id={row.id} />
                 </span>
@@ -972,231 +1007,266 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             <X size={15} strokeWidth={2} />
                         </button>
                     </div>
-                    {/* the Start column sets the band's height; the other two lay out inside it and scroll */}
-                    <div className="grid shrink-0 grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)] border-b border-border">
+                    {/* The band keeps 360px folded or open, so nothing below it moves: folded, the chip line and two
+                        columns (Project, then the pick's own list taking the rest); open, the chip gives way to the
+                        Start column and the three columns fill it. Each column scrolls inside it. The Start column
+                        sits in a slot of its own, so Project and the third column stay mounted (and focused) across
+                        a fold. */}
+                    <div className="flex h-[360px] shrink-0 flex-col border-b border-border">
+                        {startOpen ? null : (
+                            <div className="flex h-[38px] shrink-0 items-center border-b border-border px-[10px]">
+                                <button
+                                    type="button"
+                                    data-launcher-chip={selectedRow}
+                                    aria-expanded={false}
+                                    title="Change what starts"
+                                    onClick={() => setStartOpen(true)}
+                                    className="flex h-[26px] cursor-pointer items-center gap-[7px] rounded-[7px] border border-edge-mid bg-surface px-2 text-[12.5px] font-semibold text-primary hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"
+                                >
+                                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                                        <StartMark id={selectedRow} />
+                                    </span>
+                                    {startPick?.name ?? selectedRow}
+                                    <ChevronDown size={12} strokeWidth={2.2} className="text-muted" />
+                                </button>
+                            </div>
+                        )}
                         <div
-                            ref={startRef}
-                            role="radiogroup"
-                            aria-label="Start"
-                            tabIndex={0}
-                            data-launcher-column="start"
-                            onFocus={() => setZone("start")}
-                            onBlur={() => setZone(null)}
-                            className="flex min-h-[300px] flex-col gap-px border-r border-border px-2 py-3 outline-none"
+                            className={cn(
+                                "grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)]",
+                                startOpen
+                                    ? "grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)]"
+                                    : "grid-cols-[172px_minmax(0,1fr)]"
+                            )}
                         >
-                            <ColumnLabel
-                                label="Agent"
-                                focused={startFocused}
-                                hint={startFocused ? `↑↓ · 1–${Math.min(startList.length, 9)}` : ""}
-                            />
-                            {startList.filter((r) => r.kind === "agent").map(renderStartRow)}
-                            <ColumnLabel label="Run" focused={startFocused} className="pt-[10px]" />
-                            {startList.filter((r) => r.kind === "run").map(renderStartRow)}
-                            <ColumnLabel label="Tool" focused={startFocused} className="pt-[10px]" />
-                            {startList.filter((r) => r.kind === "tool").map(renderStartRow)}
-                            <ColumnLabel label="Council" focused={startFocused} className="pt-[10px]" />
-                            {startList.filter((r) => r.kind === "council").map(renderStartRow)}
-                        </div>
-                        <div
-                            ref={projectRef}
-                            role="radiogroup"
-                            aria-label="Project"
-                            tabIndex={0}
-                            data-launcher-column="project"
-                            onFocus={() => setZone("project")}
-                            onBlur={() => {
-                                // a list narrowed by a query you can no longer see reads as projects gone missing
-                                setZone(null);
-                                setFilter("");
-                            }}
-                            className="relative min-w-0 border-r border-border outline-none"
-                        >
-                            <div className="absolute inset-0 flex flex-col px-2 py-3">
-                                <ColumnLabel
-                                    label="Project"
-                                    focused={projectFocused}
-                                    hint={ownFolder ? "" : projectHint}
-                                />
-                                {ownFolder ? (
-                                    <div
-                                        data-launcher-project-unused
-                                        className="px-2 pb-2 text-[11.5px] leading-normal text-muted"
-                                    >
-                                        Not used: {tool!.name} runs in its own folder.
-                                    </div>
-                                ) : null}
-                                {filter !== "" ? (
-                                    <FilterLine
-                                        query={filter}
-                                        shown={visible.length}
-                                        total={candidates.length}
-                                        attr="data-launcher-filter"
+                            {startOpen ? (
+                                <div
+                                    ref={startRef}
+                                    role="radiogroup"
+                                    aria-label="Start"
+                                    tabIndex={0}
+                                    data-launcher-column="start"
+                                    onFocus={() => setZone("start")}
+                                    onBlur={(e) => {
+                                        setZone(null);
+                                        // Tab, →, a click on another column or a typed letter moving to the Task box:
+                                        // focus leaving the column folds it, with or without a pick
+                                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                                            setStartOpen(false);
+                                        }
+                                    }}
+                                    className="flex min-h-0 flex-col gap-px overflow-y-auto border-r border-border px-2 py-3 outline-none"
+                                >
+                                    <ColumnLabel label="Agent" focused={startFocused} />
+                                    {startList.filter((r) => r.kind === "agent").map(renderStartRow)}
+                                    <ColumnLabel label="Run" focused={startFocused} className="pt-[10px]" />
+                                    {startList.filter((r) => r.kind === "run").map(renderStartRow)}
+                                    <ColumnLabel label="Tool" focused={startFocused} className="pt-[10px]" />
+                                    {startList.filter((r) => r.kind === "tool").map(renderStartRow)}
+                                    <ColumnLabel label="Council" focused={startFocused} className="pt-[10px]" />
+                                    {startList.filter((r) => r.kind === "council").map(renderStartRow)}
+                                </div>
+                            ) : null}
+                            <div
+                                ref={projectRef}
+                                role="radiogroup"
+                                aria-label="Project"
+                                tabIndex={0}
+                                data-launcher-column="project"
+                                onFocus={() => setZone("project")}
+                                onBlur={() => {
+                                    // a list narrowed by a query you can no longer see reads as projects gone missing
+                                    setZone(null);
+                                    setFilter("");
+                                }}
+                                className="relative min-w-0 border-r border-border outline-none"
+                            >
+                                <div className="absolute inset-0 flex flex-col px-2 py-3">
+                                    <ColumnLabel
+                                        label="Project"
+                                        focused={projectFocused}
+                                        hint={ownFolder ? "" : projectHint}
                                     />
-                                ) : null}
-                                {candidates.length === 0 ? (
-                                    <div className="flex flex-col items-start gap-2.5 px-2 py-1">
-                                        <span data-launcher-empty className="text-[12.5px] leading-normal text-ink-mid">
-                                            No projects yet. Agents and runs start in a project folder.
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={register}
-                                            className="cursor-pointer rounded-[7px] border border-accent/30 bg-accentbg px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-soft hover:bg-accent/20"
-                                        >
-                                            Register a project
-                                        </button>
-                                    </div>
-                                ) : null}
-                                {candidates.length > 0 || picks.length > 0 ? (
-                                    <>
+                                    {ownFolder ? (
                                         <div
-                                            className={cn(
-                                                "flex min-h-0 flex-1 flex-col gap-px overflow-y-auto",
-                                                ownFolder && "opacity-40"
-                                            )}
+                                            data-launcher-project-unused
+                                            className="px-2 pb-2 text-[11.5px] leading-normal text-muted"
                                         >
-                                            {visible.map((p, i) => {
-                                                const selected = p.name === pickKey;
-                                                return (
-                                                    <div
-                                                        key={p.name}
-                                                        role="radio"
-                                                        aria-checked={selected}
-                                                        data-project-row={p.name}
-                                                        title={p.path}
-                                                        onClick={() => pickProject(p.name)}
-                                                        className={cn(
-                                                            rowTone(selected, projectFocused),
-                                                            "shrink-0 gap-[10px] py-2"
-                                                        )}
-                                                    >
-                                                        <Keycap k={digitOf(i)} lit={projectFocused} />
-                                                        <span
+                                            Not used: {tool!.name} runs in its own folder.
+                                        </div>
+                                    ) : null}
+                                    {filter !== "" ? (
+                                        <FilterLine
+                                            query={filter}
+                                            shown={visible.length}
+                                            total={candidates.length}
+                                            attr="data-launcher-filter"
+                                        />
+                                    ) : null}
+                                    {candidates.length === 0 ? (
+                                        <div className="flex flex-col items-start gap-2.5 px-2 py-1">
+                                            <span
+                                                data-launcher-empty
+                                                className="text-[12.5px] leading-normal text-ink-mid"
+                                            >
+                                                No projects yet. Agents and runs start in a project folder.
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={register}
+                                                className="cursor-pointer rounded-[7px] border border-accent/30 bg-accentbg px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-soft hover:bg-accent/20"
+                                            >
+                                                Register a project
+                                            </button>
+                                        </div>
+                                    ) : null}
+                                    {candidates.length > 0 || picks.length > 0 ? (
+                                        <>
+                                            <div
+                                                className={cn(
+                                                    "flex min-h-0 flex-1 flex-col gap-px overflow-y-auto",
+                                                    ownFolder && "opacity-40"
+                                                )}
+                                            >
+                                                {visible.map((p) => {
+                                                    const selected = p.name === pickKey;
+                                                    return (
+                                                        <div
+                                                            key={p.name}
+                                                            role="radio"
+                                                            aria-checked={selected}
+                                                            data-project-row={p.name}
+                                                            title={p.path}
+                                                            onClick={() => pickProject(p.name)}
                                                             className={cn(
-                                                                "shrink-0 text-[12.5px] font-semibold",
-                                                                selected ? "text-primary" : "text-muted-foreground"
+                                                                rowTone(selected, projectFocused),
+                                                                "shrink-0 gap-[10px] py-2"
                                                             )}
                                                         >
-                                                            {p.name}
-                                                        </span>
-                                                        <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted">
-                                                            {projectWhere(p.path, home)}
-                                                        </span>
-                                                    </div>
-                                                );
-                                            })}
-                                            {picks.length === 0 && filter !== "" ? (
-                                                <span
-                                                    data-launcher-nomatch
-                                                    className="px-2 py-1.5 text-[12px] text-muted"
-                                                >
-                                                    No project matches “{filter}”. Esc clears the filter.
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                        {picks.includes(HOME_PICK) ? (
-                                            <>
-                                                {visible.length > 0 ? (
-                                                    <div aria-hidden className="mx-2 my-1 h-px shrink-0 bg-border" />
-                                                ) : null}
-                                                {/* pinned under the list, and 0 in place of a digit, so a project added
-                                                    never moves it; its own data attribute, since Home is no registered
-                                                    project and the scenarios that count data-project-row count those */}
-                                                <div
-                                                    role="radio"
-                                                    aria-checked={atHome}
-                                                    data-launcher-home
-                                                    title={
-                                                        runtime === "claude"
-                                                            ? `${home}: no project. Claude Code starts ask-only under ~/.arc/claude-ask.json.`
-                                                            : `${home}: no project.`
-                                                    }
-                                                    onClick={() => pickProject(HOME_PICK)}
-                                                    className={cn(
-                                                        rowTone(atHome, projectFocused),
-                                                        "shrink-0 gap-[10px] py-2",
-                                                        ownFolder && "opacity-40"
-                                                    )}
-                                                >
-                                                    <Keycap k="0" lit={projectFocused} />
-                                                    <House
-                                                        size={13}
-                                                        strokeWidth={2}
-                                                        className={cn(
-                                                            "shrink-0",
-                                                            atHome ? "text-primary" : "text-muted"
-                                                        )}
-                                                    />
+                                                            <span
+                                                                className={cn(
+                                                                    "min-w-0 flex-1 truncate text-[12.5px] font-semibold",
+                                                                    selected ? "text-primary" : "text-muted-foreground"
+                                                                )}
+                                                            >
+                                                                {p.name}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {picks.length === 0 && filter !== "" ? (
                                                     <span
+                                                        data-launcher-nomatch
+                                                        className="px-2 py-1.5 text-[12px] text-muted"
+                                                    >
+                                                        No project matches “{filter}”. Esc clears the filter.
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                            {picks.includes(HOME_PICK) ? (
+                                                <>
+                                                    {visible.length > 0 ? (
+                                                        <div
+                                                            aria-hidden
+                                                            className="mx-2 my-1 h-px shrink-0 bg-border"
+                                                        />
+                                                    ) : null}
+                                                    {/* pinned under the list, and 0 in place of a digit, so a project added
+                                                    never moves it; its own data attribute, since Home is no registered
+                                                    project and the scenarios that count data-project-row count those.
+                                                    Its folder and ask-only are in the tooltip, as a project's path is */}
+                                                    <div
+                                                        role="radio"
+                                                        aria-checked={atHome}
+                                                        data-launcher-home
+                                                        title={
+                                                            runtime === "claude"
+                                                                ? `${home}: no project. Claude Code starts ask-only under ~/.arc/claude-ask.json.`
+                                                                : `${home}: no project.`
+                                                        }
+                                                        onClick={() => pickProject(HOME_PICK)}
                                                         className={cn(
-                                                            "shrink-0 text-[12.5px] font-semibold",
-                                                            atHome ? "text-primary" : "text-muted-foreground"
+                                                            rowTone(atHome, projectFocused),
+                                                            "shrink-0 gap-[10px] py-2",
+                                                            ownFolder && "opacity-40"
                                                         )}
                                                     >
-                                                        {HOME_NAME}
-                                                    </span>
-                                                    <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted">
-                                                        {runtime === "claude" ? "ask-only · ~" : "~"}
-                                                    </span>
-                                                </div>
-                                            </>
-                                        ) : null}
-                                    </>
-                                ) : null}
+                                                        <House
+                                                            size={13}
+                                                            strokeWidth={2}
+                                                            className={cn(
+                                                                "shrink-0",
+                                                                atHome ? "text-primary" : "text-muted"
+                                                            )}
+                                                        />
+                                                        <span
+                                                            className={cn(
+                                                                "min-w-0 flex-1 truncate text-[12.5px] font-semibold",
+                                                                atHome ? "text-primary" : "text-muted-foreground"
+                                                            )}
+                                                        >
+                                                            {HOME_NAME}
+                                                        </span>
+                                                    </div>
+                                                </>
+                                            ) : null}
+                                        </>
+                                    ) : null}
+                                </div>
                             </div>
-                        </div>
-                        {/* the pick's own list: an agent's sessions, the tools, or a run's model, start and width */}
-                        <div data-launcher-column="third" className="relative min-w-0">
-                            <div className="absolute inset-0 flex flex-col px-2 py-3">
-                                {isRun ? (
-                                    <RunColumn />
-                                ) : isTool ? (
-                                    <ToolList
-                                        tools={toolList}
-                                        error={toolsError}
-                                        tool={tool}
-                                        focused={toolsFocused}
-                                        listRef={toolListRef}
-                                        onFocus={() => setZone("tools")}
-                                        onBlur={() => setZone(null)}
-                                        onPick={pickLauncherTool}
-                                        onAll={openToolLibrary}
-                                    />
-                                ) : isCouncil ? (
-                                    <>
-                                        <ColumnLabel label="Council" focused={false} />
-                                        <span
-                                            data-launcher-council-note
-                                            className="px-2 text-[12px] leading-normal text-muted"
-                                        >
-                                            Setup opens in the Agent surface: write what to review or brainstorm, then
-                                            Start council. A council costs 0.5–1.5M tokens.
-                                        </span>
-                                    </>
-                                ) : thirdList === "resume" ? (
-                                    <ResumeList
-                                        choices={choices}
-                                        scopeKey={scopeKey}
-                                        pickedId={resume?.id ?? null}
-                                        onBack={() => projectRef.current?.focus()}
-                                    />
-                                ) : (
-                                    <>
-                                        <ColumnLabel label="Session" focused={false} />
-                                        <span
-                                            data-launcher-session-note
-                                            className="px-2 text-[12px] leading-normal text-muted"
-                                        >
-                                            {runtime === "terminal"
-                                                ? "A plain shell has no session to resume."
-                                                : atHome
-                                                  ? "Home starts a new session. Pick a project to resume one of its sessions."
-                                                  : sessions == null
-                                                    ? "Reading sessions…"
-                                                    : "No session of this agent here yet: it starts a new one."}
-                                        </span>
-                                    </>
-                                )}
+                            {/* the pick's own list: an agent's sessions, the tools, or a run's model, start and width */}
+                            <div data-launcher-column="third" className="relative min-w-0">
+                                <div className="absolute inset-0 flex flex-col px-2 py-3">
+                                    {isRun ? (
+                                        <RunColumn />
+                                    ) : isTool ? (
+                                        <ToolList
+                                            tools={toolList}
+                                            error={toolsError}
+                                            tool={tool}
+                                            focused={toolsFocused}
+                                            listRef={toolListRef}
+                                            onFocus={() => setZone("tools")}
+                                            onBlur={() => setZone(null)}
+                                            onPick={pickLauncherTool}
+                                            onAll={openToolLibrary}
+                                        />
+                                    ) : isCouncil ? (
+                                        <>
+                                            <ColumnLabel label="Council" focused={false} />
+                                            <span
+                                                data-launcher-council-note
+                                                className="px-2 text-[12px] leading-normal text-muted"
+                                            >
+                                                Setup opens in the Agent surface: write what to review or brainstorm,
+                                                then Start council. A council costs 0.5–1.5M tokens.
+                                            </span>
+                                        </>
+                                    ) : thirdList === "resume" ? (
+                                        <ResumeList
+                                            choices={choices}
+                                            scopeKey={scopeKey}
+                                            pickedId={resume?.id ?? null}
+                                            onBack={() => projectRef.current?.focus()}
+                                        />
+                                    ) : (
+                                        <>
+                                            <ColumnLabel label="Session" focused={false} />
+                                            <span
+                                                data-launcher-session-note
+                                                className="px-2 text-[12px] leading-normal text-muted"
+                                            >
+                                                {runtime === "terminal"
+                                                    ? "A plain shell has no session to resume."
+                                                    : atHome
+                                                      ? "Home starts a new session. Pick a project to resume one of its sessions."
+                                                      : sessions == null
+                                                        ? "Reading sessions…"
+                                                        : "No session of this agent here yet: it starts a new one."}
+                                            </span>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>

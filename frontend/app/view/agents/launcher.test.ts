@@ -144,36 +144,29 @@ describe("footerLine", () => {
         branchNote: "on main",
         blocker: null,
     };
-    it("says where an agent starts and on which branch", () => {
-        expect(footerLine(base)).toEqual({
-            lead: "Starts in ",
-            strong: "/Users/me/arcterm",
-            tail: " · on main",
+    it("an agent's footer names only the Claude account it runs on, new session or resumed alike", () => {
+        expect(footerLine({ ...base, account: "Max 2" })).toEqual({
+            lead: "Claude: Max 2",
+            strong: "",
+            tail: "",
             blocked: false,
         });
-    });
-    it("drops the branch part when the branch is unknown", () => {
-        expect(footerLine({ ...base, branchNote: "" }).tail).toBe("");
-    });
-    it("says which session a resume picks up, and on which branch", () => {
-        expect(footerLine({ ...base, resume: { title: "fix the build", branch: "main" } })).toEqual({
-            lead: "Resumes ",
-            strong: "fix the build",
-            tail: " · main",
-            blocked: false,
-        });
-        expect(footerLine({ ...base, resume: { title: "fix the build", branch: "" } }).tail).toBe("");
-    });
-    it("names the Claude account an agent launch runs on, when there is one to name", () => {
-        expect(footerLine({ ...base, account: "Max 2" }).tail).toBe(" · on main · Claude: Max 2");
-        expect(footerLine({ ...base, branchNote: "", account: "Max 2" }).tail).toBe(" · Claude: Max 2");
-        expect(footerLine({ ...base, account: "Max 2", resume: { title: "x", branch: "main" } }).tail).toBe(
-            " · main · Claude: Max 2"
+        // the folder, the branch and the session title stay in the columns above, not the footer
+        expect(footerLine({ ...base, branchNote: "worktree on main-agent", account: "Max 2" })).toEqual(
+            footerLine({ ...base, branchNote: "", account: "Max 2" })
         );
-        expect(footerLine({ ...base, account: "" }).tail).toBe(" · on main");
     });
-    it("a resume does not hide a missing project", () => {
-        expect(footerLine({ ...base, project: null, resume: { title: "x", branch: "" } }).blocked).toBe(true);
+    it("an agent with no account to name has an empty footer line", () => {
+        expect(footerLine(base)).toEqual({ lead: "", strong: "", tail: "", blocked: false });
+        expect(footerLine({ ...base, account: "" })).toEqual({ lead: "", strong: "", tail: "", blocked: false });
+    });
+    it("an agent's account does not hide a missing project", () => {
+        expect(footerLine({ ...base, project: null, account: "Max 2" })).toEqual({
+            lead: "Pick a project",
+            strong: "",
+            tail: "",
+            blocked: true,
+        });
     });
     it("asks for a project before anything else", () => {
         expect(footerLine({ ...base, project: null })).toEqual({
@@ -322,9 +315,11 @@ describe("launcherKey", () => {
     const at = (
         zone: LauncherKeyCtx["zone"],
         filter = "",
-        open: { flagMenuOpen?: boolean; branchListOpen?: boolean; resumePicked?: boolean } = {}
+        open: { flagMenuOpen?: boolean; branchListOpen?: boolean; resumePicked?: boolean; startOpen?: boolean } = {}
     ): LauncherKeyCtx => ({
         zone,
+        // focus can sit in the Start column only while it is open
+        startOpen: open.startOpen ?? zone === "start",
         startCount: 4,
         projectCount: 2,
         toolCount: 3,
@@ -408,11 +403,25 @@ describe("launcherKey", () => {
         expect(launcherKey(at("project"), key("Backspace"))).toEqual({ kind: "none" });
     });
     it("Enter launches from a column or a one-line field, not from a textarea or a button", () => {
-        expect(launcherKey(at("start"), key("Enter"))).toEqual({ kind: "launch" });
         expect(launcherKey(at("project"), key("Enter"))).toEqual({ kind: "launch" });
         expect(launcherKey(at("input"), key("Enter"))).toEqual({ kind: "launch" });
         expect(launcherKey(at("textarea"), key("Enter"))).toEqual({ kind: "none" });
         expect(launcherKey(at("other"), key("Enter"))).toEqual({ kind: "none" });
+    });
+    it("Enter and Shift+Enter in the open Start column fold it, keeping the row ↑↓ picked, and never launch", () => {
+        expect(launcherKey(at("start"), key("Enter"))).toEqual({ kind: "fold" });
+        expect(launcherKey(at("start"), key("Enter", { shift: true }))).toEqual({ kind: "fold" });
+        expect(launcherKey(at("start", "", { resumePicked: true }), key("Enter"))).toEqual({ kind: "fold" });
+        expect(launcherKey(at("start", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
+            kind: "fold",
+        });
+    });
+    it("in the open Start column a digit picks and ↑↓ only move, and ← from Project goes to Start", () => {
+        expect(launcherKey(at("start"), key("2"))).toEqual({ kind: "pick-start", index: 1 });
+        expect(launcherKey(at("start"), key("ArrowDown"))).toEqual({ kind: "move", column: "start", delta: 1 });
+        expect(launcherKey(at("start"), key("ArrowUp"))).toEqual({ kind: "move", column: "start", delta: -1 });
+        // folded, ← still means "go to the Start column": the dialog unfolds it, then focuses it
+        expect(launcherKey(at("project"), key("ArrowLeft"))).toEqual({ kind: "column", to: "start" });
     });
     it("Enter in the resume zone launches", () => {
         expect(launcherKey(at("resume"), key("Enter"))).toEqual({ kind: "launch" });
@@ -429,9 +438,6 @@ describe("launcherKey", () => {
         expect(launcherKey(at("resume"), key("Enter", { shift: true }))).toEqual({ kind: "launch" });
         // wherever Enter launches, as the footer's second button says; the Task box keeps it as its newline
         expect(launcherKey(at("project", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
-            kind: "resume-secondary",
-        });
-        expect(launcherKey(at("start", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
             kind: "resume-secondary",
         });
         expect(launcherKey(at("textarea", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
@@ -495,6 +501,27 @@ describe("launcherKey", () => {
         expect(launcherKey(at("project"), key("Escape"))).toEqual({ kind: "close" });
         expect(launcherKey(at("textarea"), key("Escape"))).toEqual({ kind: "close" });
         expect(launcherKey(at("other"), key("Escape"))).toEqual({ kind: "close" });
+    });
+    it("Escape folds an open Start column after a flag menu, branch list or filter, and before closing the dialog", () => {
+        expect(launcherKey(at("start"), key("Escape"))).toEqual({ kind: "dismiss-inner", what: "start" });
+        expect(launcherKey(at("other", "", { startOpen: true }), key("Escape"))).toEqual({
+            kind: "dismiss-inner",
+            what: "start",
+        });
+        expect(launcherKey(at("start", "", { flagMenuOpen: true }), key("Escape"))).toEqual({
+            kind: "dismiss-inner",
+            what: "flags",
+        });
+        expect(launcherKey(at("start", "", { branchListOpen: true }), key("Escape"))).toEqual({
+            kind: "dismiss-inner",
+            what: "branches",
+        });
+        expect(launcherKey(at("project", "oki", { startOpen: true }), key("Escape"))).toEqual({
+            kind: "dismiss-inner",
+            what: "filter",
+        });
+        // folded, Escape closes the dialog
+        expect(launcherKey(at("project", "", { startOpen: false }), key("Escape"))).toEqual({ kind: "close" });
     });
     it("leaves modified keys alone: Mod+Enter is the dialog's submit, Mod+digit and Mod+Tab are not picks", () => {
         expect(launcherKey(at("start"), key("Enter", { mod: true }))).toEqual({ kind: "none" });
