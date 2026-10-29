@@ -37,6 +37,7 @@ import { SetupSurface } from "./setupsurface";
 import { useSleeperTitles } from "./sleepertitles";
 import { StorageNudge } from "./storagenudge";
 import { ToolPicker } from "./toolpicker";
+import { TranslateRailPanel } from "./translatepanel";
 import { UsageSurface } from "./usagesurface";
 
 // One always-mounted synchronization hook: seed the shared preferred-harness state from the persisted
@@ -178,6 +179,10 @@ export function CockpitShell({ model, tabId }: { model: AgentsViewModel; tabId: 
                 {/* the pinned apps' pages, over the Agent surface's slot for the one on screen: here, where no surface
                     switch hides them with display:none, so a page out of sight keeps its place and its scroll */}
                 <AppFrames />
+                {/* the rail's Translate panel: here, not in <nav> (its isolate would put the panel under this area), and
+                    not in a surface, so it stays over whichever one shows and keeps its text across a switch. Float hides
+                    the rail and shows the same body on its own. */}
+                {floating ? null : <TranslateRailPanel />}
             </div>
             {/* outside the surface switch: a lead's review opens over whichever surface is showing */}
             <DocReviewDialog model={model} />

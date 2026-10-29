@@ -32807,7 +32807,7 @@ const agentRailTabs = {
         );
 
         // 10. the nav
-        const nav = await h.ev(`[...document.querySelectorAll("nav button:not([data-nav-app])")].map((b) => ({ label: b.getAttribute("aria-label"), h: Math.round(b.getBoundingClientRect().height) }))`);
+        const nav = await h.ev(`[...document.querySelectorAll("nav button:not([data-nav-app]):not([data-nav-translate])")].map((b) => ({ label: b.getAttribute("aria-label"), h: Math.round(b.getBoundingClientRect().height) }))`);
         const divider = await h.ev(`!!document.querySelector("nav [data-nav-divider]")`);
         const height = (label) => nav.find((n) => n.label === label)?.h ?? 0;
         await h.ev(`document.activeElement?.blur?.()`);
@@ -43295,11 +43295,11 @@ const floatMini = {
 // --- Float's Note and Translate tabs ----------------------------------------------------------------------------
 // docs/superpowers/specs/2026-10-17-float-note-translate-design.md. In a float, the ledge's Note tab covers the
 // terminal with the one global markdown note (typing, Preview, a failed save, every way it closes), and its Translate
-// tab opens wsh trans (translate-shell, answered short), or its install when the tool is missing. It asserts the DOM
-// and the PTY size only, so the browser app runs it too. Needs translate-shell on the PATH of the app's wavesrv for
-// step 8.
+// tab covers it with the Translate panel the rail opens (docs/superpowers/specs/2026-10-29-rail-translate-design.md):
+// typing, Note over Translate, and every way the panel closes, floating and leaving Float included. Google never answers
+// here: steps 7-8 use window.__arcTranslateStub, as rail-translate does. It asserts the DOM and the PTY size only, so the
+// browser app runs it too.
 const FLOAT_NOTE_PROJECT = "verify-float-note";
-const FLOAT_NOTE_INSTALL_TAB = "Install translate-shell";
 
 // a printable key through the real input pipeline: a keyDown with its text, then a keyUp; a capital adds Shift
 async function floatNoteKey(h, key) {
@@ -43327,21 +43327,6 @@ async function floatNoteChord(h, ctx) {
     await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base });
 }
 
-// the workspace's tabs the scenario can have made: the trans terminals (block meta tool:id) and the install terminals
-async function floatNoteTabs(h, ctx) {
-    const ws = await waveService(h, "object", "GetObject", [`workspace:${ctx.workspaceId}`]);
-    const found = [];
-    for (const tabId of ws?.tabids ?? []) {
-        const tab = await waveService(h, "object", "GetObject", [`tab:${tabId}`]);
-        const blockId = tab?.blockids?.[0] ?? null;
-        const block = blockId ? await waveService(h, "object", "GetObject", [`block:${blockId}`]) : null;
-        const isTrans = block?.meta?.["tool:id"] === "trans";
-        const isInstall = tab?.meta?.["session:label"] === FLOAT_NOTE_INSTALL_TAB;
-        if (isTrans || isInstall) found.push({ tabId, blockId, isTrans, isInstall });
-    }
-    return found;
-}
-
 // whether a terminal's pane is the one showing
 const floatNoteShowing = (tabId) =>
     `document.querySelector('[data-agent-terminal="${tabId}"]')?.checkVisibility() === true`;
@@ -43350,17 +43335,18 @@ const floatNote = {
     name: "float-note",
     surface: "agent",
     async arrange(h) {
-        const ctx = { terminals: [], preexisting: new Set() };
+        const ctx = { terminals: [] };
         try {
             const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
             const wslist = await h.rpc("workspacelist", null);
             const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
             ctx.workspaceId = ws.workspacedata.oid;
             ctx.modBit = (await h.ev("/Mac/i.test(navigator.platform)")) ? 4 : 2;
-            for (const t of await floatNoteTabs(h, ctx)) ctx.preexisting.add(t.tabId);
             await openRailTerminal(h, ctx, FLOAT_NOTE_PROJECT);
             ctx.prevNote = await h.rpc("notescratchread", null);
-            ctx.prevTrans = (await h.rpc("getfullconfig", null))?.tools?.trans ?? null;
+            // the pair the Translate store holds is the one it read from here at boot, and teardown puts it back
+            ctx.prevPair = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_TRANSLATE_PAIR_KEY)})`);
+            await h.ev(RAIL_TRANSLATE_STUB);
             await h.rpc("notescratchwrite", { body: "" });
             // the app's own notes folder: an app started with ARC_DEV_NO_GLOBAL_INSTALL keeps its vault in its store, not
             // where notes-wsh.mjs's vaultRoot points, and a folder outside the store is never chmodded
@@ -43572,101 +43558,174 @@ const floatNote = {
         const noteBack = await h.ev(`!!document.querySelector("[data-float-note]")`);
         rec("6f. floating again shows the terminal, not the note", again && !noteBack, JSON.stringify({ again, noteBack }));
 
-        // 7. board TranslateInstall: with the tool missing, Translate runs its install and shows that terminal
-        await h.rpc("toolssetuser", {
-            id: "trans",
-            tool: {
-                command: "arc-no-such-trans",
-                "install:darwin": "echo Installing translate-shell; sleep 6",
-                "install:windows": "echo Installing translate-shell && ping -n 7 127.0.0.1 > nul",
-            },
-        });
-        let missing = false;
-        for (let i = 0; i < 40 && !missing; i++) {
-            missing = ((await h.rpc("toolsstatus", null))?.tools ?? []).some((t) => t.id === "trans" && t.found === false);
-            if (!missing) await polishNap(250);
-        }
-        await polishNap(1500);
-        await click('[data-float-fixed="translate"]');
-        const installShown = await wait(
-            `[...document.querySelectorAll("[data-float-tab]")].some((b) => b.getAttribute("aria-label") === ${JSON.stringify(FLOAT_NOTE_INSTALL_TAB)} && b.getAttribute("aria-pressed") === "true")`,
-            3000
-        );
-        const install = await h.ev(`({
-            translate: document.querySelector('[data-float-fixed="translate"]')?.getAttribute("aria-pressed") ?? null,
-            title: document.querySelector("[data-float-title]")?.textContent ?? null,
-        })`);
-        await h.shot("cdp-shots/float-note-install.png");
-        rec(
-            "7. Translate with no trans installs it: the install terminal shows, its own tab pressed, Translate not",
-            missing && installShown && install.translate === "false" && install.title === FLOAT_NOTE_INSTALL_TAB,
-            JSON.stringify({ missing, installShown, ...install })
-        );
-
-        // 8. board Translate: the trans terminal, its prompt naming the languages; with step 7's entry gone it is the
-        // built-in, wsh trans :vi
-        await h.rpc("toolssetuser", { id: "trans" });
-        let found = false;
-        for (let i = 0; i < 40 && !found; i++) {
-            found = ((await h.rpc("toolsstatus", null))?.tools ?? []).some((t) => t.id === "trans" && t.found === true);
-            if (!found) await polishNap(250);
-        }
-        if (!found) {
-            rec("8. Translate opens translate-shell, its prompt naming the languages", false, "translate-shell is not installed");
-            return steps;
-        }
-        await polishNap(1500);
-        await click('[data-float-fixed="translate"]');
-        let trans = null;
-        for (let i = 0; i < 40 && trans == null; i++) {
-            trans = (await floatNoteTabs(h, ctx)).find((t) => t.isTrans && !ctx.preexisting.has(t.tabId)) ?? null;
-            if (trans == null) await polishNap(250);
-        }
-        if (trans == null) {
-            rec("8. Translate opens translate-shell, its prompt naming the languages", false, "no terminal with tool:id trans appeared");
-            return steps;
-        }
-        ctx.transTab = trans.tabId;
-        await wait(floatNoteShowing(trans.tabId), 5000);
-        const open = await h.ev(`({
-            showing: ${floatNoteShowing(trans.tabId)},
-            pressed: document.querySelector('[data-float-fixed="translate"]')?.getAttribute("aria-pressed") ?? null,
-            tab: !!document.querySelector('[data-float-tab="${trans.tabId}"]'),
-            title: document.querySelector("[data-float-title]")?.textContent ?? null,
-            icon: !!document.querySelector("[data-float-bar] svg.lucide-square-terminal"),
-        })`);
-        await h.ev(
-            `document.querySelector('[data-agent-terminal="${trans.tabId}"] .xterm-helper-textarea')?.focus({ preventScroll: true })`
-        );
-        // trans starts after its shell: typed before its banner the word would reach the shell instead
-        await uploadsTermHas(h, trans.blockId, "(:q quits");
-        for (const ch of "deploy") await floatNoteKey(h, ch);
-        await floatNoteSpecial(h, "Enter", "Enter", 13, "\r");
-        await polishNap(4000);
-        const prompt = await uploadsTermHas(h, trans.blockId, "→ Tiếng Việt ❯");
+        // 7. board TranslatePanel: the Translate tab covers the terminal with the Translate panel, pressed, the caret in
+        // its empty box, and the PTY size never moves. The rail's panel is not drawn in Float
+        const translateFloat = `!!document.querySelector("[data-translate-float] [data-translate-panel]")`;
+        const translateGone = `!document.querySelector("[data-translate-panel]")`;
+        const translateTab = '[data-float-fixed="translate"]';
+        const termFocus = () =>
+            h.ev(`(() => {
+                const t = document.querySelector('${termSel} .xterm-helper-textarea');
+                t?.focus({ preventScroll: true });
+                return !!t && document.activeElement === t;
+            })()`);
+        const termHasKeys = async () => {
+            await h.ev("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
+            return h.ev(`(() => {
+                const a = document.activeElement;
+                return a?.classList.contains("xterm-helper-textarea") === true && a.closest(${JSON.stringify(termSel)}) != null;
+            })()`);
+        };
+        const sizeBefore7 = await floatMiniTermSize(h, term.blockId);
+        await click(translateTab);
+        const panelUp = await wait(`${translateFloat} && ${RAIL_TRANSLATE_INPUT_FOCUSED}`, 3000);
+        // the pair the scenario tests, whatever the last run of the app left
+        await railTranslateSelect(h, "source", "en");
+        await railTranslateSelect(h, "target", "vi");
+        await h.ev("new Promise((r) => setTimeout(r, 700))");
+        const seven = await h.ev(`(() => {
+            const panel = document.querySelector("[data-translate-float]")?.getBoundingClientRect();
+            const area = document.querySelector(${JSON.stringify(termSel)})?.getBoundingClientRect();
+            const pressedOf = (sel) => document.querySelector(sel)?.getAttribute("aria-pressed") ?? null;
+            return {
+                over: !!panel && !!area && panel.left <= area.left + 1 && panel.right >= area.right - 1 && panel.top <= area.top + 1 && panel.bottom >= area.bottom - 1,
+                termMounted: !!document.querySelector(${JSON.stringify(termSel)}),
+                railPanel: !!document.querySelector("[data-translate-rail]"),
+                translate: pressedOf('[data-float-fixed="translate"]'),
+                note: pressedOf('[data-float-fixed="note"]'),
+                termTab: pressedOf('[data-float-tab="${term.tabId}"]'),
+                focused: ${RAIL_TRANSLATE_INPUT_FOCUSED},
+                pair: [document.querySelector("[data-translate-source]")?.value, document.querySelector("[data-translate-target]")?.value],
+                empty: ${RAIL_TRANSLATE_OUTPUT} === "" && !document.querySelector("[data-translate-details]") && !document.querySelector("[data-translate-error]"),
+            };
+        })()`);
+        const sizePanel = await floatMiniTermSize(h, term.blockId);
         await h.shot("cdp-shots/float-note-translate.png");
         rec(
-            "8a. Translate opens the trans terminal: pressed, no tab of its own, named translate-shell, and its prompt names the languages",
-            open.showing && open.pressed === "true" && !open.tab && open.title === "translate-shell" && open.icon && prompt.seen,
-            JSON.stringify({ ...open, prompt })
+            "7. the Translate tab shows the panel over the terminal, pressed, with the caret in the empty box, and the PTY size never moves",
+            panelUp &&
+                seven.over &&
+                seven.termMounted &&
+                !seven.railPanel &&
+                seven.translate === "true" &&
+                seven.note === "false" &&
+                seven.termTab === "false" &&
+                seven.focused &&
+                seven.pair[0] === "en" &&
+                seven.pair[1] === "vi" &&
+                seven.empty &&
+                JSON.stringify(sizePanel) === JSON.stringify(sizeBefore7),
+            JSON.stringify({ panelUp, ...seven, sizeBefore7, sizePanel })
+        );
+        // the steps below type into the panel: without it they would throw and lose the steps above
+        if (!panelUp) return steps;
+
+        // 8a. typing a word shows its translation, with the phonetic and word class under the box
+        await railTranslateType(h, RAIL_TRANSLATE_WORD);
+        const wordShown = await wait(`${RAIL_TRANSLATE_OUTPUT} === "sự nén"`, 5000);
+        const eightA = await h.ev(`({
+            details: document.querySelector("[data-translate-details]")?.textContent ?? null,
+            requests: ${RAIL_TRANSLATE_SEEN}.filter((r) => r.text === ${JSON.stringify(RAIL_TRANSLATE_WORD)}),
+        })`);
+        await h.shot("cdp-shots/float-note-translate-word.png");
+        rec(
+            "8a. typing a word shows its translation after one request, and the row under the box reads the word, its phonetic and Noun",
+            wordShown &&
+                eightA.requests.length === 1 &&
+                eightA.requests[0].source === "en" &&
+                eightA.requests[0].target === "vi" &&
+                eightA.details === "compaction·kəmˈpakSHən·Noun",
+            JSON.stringify({ wordShown, ...eightA })
         );
 
+        // 8b. the Note tab over Translate shows the note, closes the panel and unpresses Translate
         await click('[data-float-fixed="note"]');
-        const overTrans = await wait(noteUp, 3000);
-        const transOff = await pressed('[data-float-fixed="translate"]');
-        rec("8b. Note over Translate shows the note and unpresses Translate", overTrans && transOff === "false", JSON.stringify({ overTrans, transOff }));
-
-        await click('[data-float-fixed="translate"]');
-        const noteClosed = await wait(noteGone, 3000);
-        await polishNap(600);
-        const after = await floatNoteTabs(h, ctx);
-        const transBlocks = after.filter((t) => t.isTrans && !ctx.preexisting.has(t.tabId));
-        const stillShowing = await h.ev(floatNoteShowing(trans.tabId));
-        const transOn = await pressed('[data-float-fixed="translate"]');
+        const overTranslate = await wait(`${noteUp} && ${translateGone}`, 3000);
+        const translateOff = await pressed(translateTab);
         rec(
-            "8c. Translate again shows the same terminal, and there is still exactly one",
-            noteClosed && stillShowing && transBlocks.length === 1 && transBlocks[0].tabId === trans.tabId && transOn === "true",
-            JSON.stringify({ noteClosed, stillShowing, trans: transBlocks.length, transOn })
+            "8b. Note over Translate shows the note, closes the panel and unpresses Translate",
+            overTranslate && translateOff === "false",
+            JSON.stringify({ overTranslate, translateOff })
+        );
+
+        // 8c. Translate again closes the note and shows the panel with the same text and translation
+        await click(translateTab);
+        const noteClosed = await wait(`${noteGone} && ${translateFloat}`, 3000);
+        const eightC = await h.ev(`({
+            input: ${RAIL_TRANSLATE_INPUT},
+            output: ${RAIL_TRANSLATE_OUTPUT},
+            translate: document.querySelector('[data-float-fixed="translate"]')?.getAttribute("aria-pressed") ?? null,
+            note: document.querySelector('[data-float-fixed="note"]')?.getAttribute("aria-pressed") ?? null,
+        })`);
+        rec(
+            "8c. Translate again closes the note and shows the panel with the same text and translation, pressed",
+            noteClosed &&
+                eightC.input === RAIL_TRANSLATE_WORD &&
+                eightC.output === "sự nén" &&
+                eightC.translate === "true" &&
+                eightC.note === "false",
+            JSON.stringify({ noteClosed, ...eightC })
+        );
+
+        // 8d. Esc closes the panel at once and the terminal has the keyboard
+        await wait(RAIL_TRANSLATE_INPUT_FOCUSED, 2000);
+        await floatNoteSpecial(h, "Escape", "Escape", 27);
+        const panelEscGone = await wait(translateGone, 2000);
+        const termKeys = await termHasKeys();
+        rec(
+            "8d. Escape closes the panel, unpresses Translate, and the keyboard goes back to the terminal",
+            panelEscGone && termKeys && (await pressed(translateTab)) === "false",
+            JSON.stringify({ panelEscGone, termKeys })
+        );
+
+        // 8e. a tab, the terminal's own included, closes the panel
+        await click(translateTab);
+        const reopened = await wait(`${translateFloat} && ${RAIL_TRANSLATE_INPUT_FOCUSED}`, 3000);
+        await click(`[data-float-tab="${term.tabId}"]`);
+        const tabCloses = await wait(translateGone, 3000);
+        rec(
+            "8e. the terminal's own tab closes the panel",
+            reopened && tabCloses && (await pressed(translateTab)) === "false",
+            JSON.stringify({ reopened, tabCloses })
+        );
+
+        // 8f. Mod+Shift+D from the focused terminal opens the panel with the caret in the box, and again closes it and
+        // returns the keys to the terminal
+        const termFocusedF = await termFocus();
+        await railTranslateChord(h);
+        const chordOpens = await wait(`${translateFloat} && ${RAIL_TRANSLATE_INPUT_FOCUSED}`, 3000);
+        await railTranslateChord(h);
+        const chordCloses = await wait(translateGone, 3000);
+        const termBack = await termHasKeys();
+        rec(
+            "8f. Mod+Shift+D opens the panel from the terminal, and again closes it and returns the keys to the terminal",
+            termFocusedF && chordOpens && chordCloses && termBack,
+            JSON.stringify({ termFocusedF, chordOpens, chordCloses, termBack })
+        );
+
+        // 8g. one open flag serves both panels: floating hides the rail's, and leaving Float hides Float's, so neither
+        // reappears over the other (step 6d's rule for the note)
+        await click(translateTab);
+        await wait(translateFloat, 3000);
+        await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
+        const leftWithFloatPanel = await wait(`!document.querySelector("[data-float-bar]") && ${translateGone}`, 5000);
+        await wait(floatNoteShowing(term.tabId), 3000);
+        await ttMouse(h, "[data-nav-translate]");
+        const railUp = await wait(`!!document.querySelector("[data-translate-rail] [data-translate-panel]")`, 3000);
+        // not the header menu: a press outside the rail's panel closes it, and the plain terminal has no menu to float
+        await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
+        await floatNoteKey(h, "F");
+        const floatedWithRailPanel = await wait(`!!document.querySelector("[data-float-bar]") && ${translateGone}`, 5000);
+        await h.ev("new Promise((r) => setTimeout(r, 600))");
+        const stillGone = await h.ev(translateGone);
+        await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
+        const leftAgain = await wait(`!document.querySelector("[data-float-bar]")`, 5000);
+        await h.ev("new Promise((r) => setTimeout(r, 600))");
+        const railStaysGone = await h.ev(translateGone);
+        rec(
+            "8g. Float ending closes Float's panel, floating closes the rail's, and neither comes back over the other",
+            leftWithFloatPanel && railUp && floatedWithRailPanel && stillGone && leftAgain && railStaysGone,
+            JSON.stringify({ leftWithFloatPanel, railUp, floatedWithRailPanel, stillGone, leftAgain, railStaysGone })
         );
         return steps;
     },
@@ -43686,22 +43745,11 @@ const floatNote = {
         if (ctx.prevNote != null) {
             await step("write the note back", () => h.rpc("notescratchwrite", { body: ctx.prevNote }));
         }
-        // prevTrans is undefined until arrange read tools.json (null: no entry); before that nothing was changed
-        if (ctx.prevTrans !== undefined) {
-            await step("restore the trans tool", () =>
-                h.rpc("toolssetuser", ctx.prevTrans != null ? { id: "trans", tool: ctx.prevTrans } : { id: "trans" })
-            );
+        // prevPair is undefined until arrange read it (null: nothing stored); before that nothing was changed
+        if (ctx.prevPair !== undefined) {
+            await step("empty the Translate box and restore its pair", () => railTranslateReset(h, ctx.prevPair));
         }
-        if (ctx.workspaceId != null) {
-            await step("close the terminals the scenario made", async () => {
-                for (const t of await floatNoteTabs(h, ctx)) {
-                    if (ctx.preexisting.has(t.tabId)) continue;
-                    await step(`close the tab ${t.tabId}`, () =>
-                        waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
-                    );
-                }
-            });
-        }
+        await step("clear the Translate stub", () => h.ev(RAIL_TRANSLATE_CLEANUP));
         for (const t of ctx.terminals ?? []) {
             await step(`close the terminal tab ${t.tabId}`, () =>
                 waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
@@ -56283,6 +56331,378 @@ const projectOverviewHistory = {
     },
 };
 
+// --- Quick translate on the nav rail -------------------------------------------------------------------------------
+// docs/superpowers/specs/2026-10-29-rail-translate-design.md. The rail's Translate button, and Mod+Shift+D from a focused
+// terminal, open a panel beside the rail: typing, a word's details, swap, the remembered pair, copy, clear, the error
+// line, and every way the panel closes. Google never answers here: window.__arcTranslateStub (translateengine.ts, read in
+// dev builds only) returns a fixed answer and records each request, and the error line is the real Translate RPC
+// refusing text over 5,000 characters. It asserts the DOM only, so the browser app runs it too.
+const RAIL_TRANSLATE_PROJECT = "verify-rail-translate";
+const RAIL_TRANSLATE_PAIR_KEY = "translate.pair";
+const RAIL_TRANSLATE_WORD = "compaction";
+const RAIL_TRANSLATE_SENTENCE = "Compaction keeps the cache warm.";
+const RAIL_TRANSLATE_SENTENCE_VI = "Việc nén giữ cho bộ nhớ đệm luôn nóng.";
+
+// the stub: the two texts the scenario types have a Vietnamese answer, anything else is echoed behind its target; only
+// the word carries a phonetic and a word class. Every request lands in window.__railTranslateSeen, which survives
+// the stub being cleared and set again.
+const RAIL_TRANSLATE_STUB = `(() => {
+    const vi = ${JSON.stringify({ [RAIL_TRANSLATE_WORD]: "sự nén", [RAIL_TRANSLATE_SENTENCE]: RAIL_TRANSLATE_SENTENCE_VI })};
+    window.__railTranslateSeen = window.__railTranslateSeen ?? [];
+    window.__arcTranslateStub = (req) => {
+        window.__railTranslateSeen.push(req);
+        return {
+            translation: (req.target === "vi" && vi[req.text]) || "[" + req.target + "] " + req.text,
+            source: req.source === "auto" ? "en" : req.source,
+            ...(req.text === ${JSON.stringify(RAIL_TRANSLATE_WORD)} ? { phonetics: "kəmˈpakSHən", classes: [{ pos: "noun", words: ["sự nén"] }] } : {}),
+        };
+    };
+    return true;
+})()`;
+// an own property over Clipboard.prototype's, for the reason notesClipStub gives
+const RAIL_TRANSLATE_CLIP = `(() => {
+    window.__railTranslateClip = [];
+    navigator.clipboard.writeText = (text) => { window.__railTranslateClip.push(text); return Promise.resolve(); };
+    return true;
+})()`;
+const RAIL_TRANSLATE_CLEANUP = `(() => {
+    delete window.__arcTranslateStub;
+    delete window.__railTranslateSeen;
+    delete window.__railTranslateClip;
+    delete navigator.clipboard.writeText;
+    return true;
+})()`;
+
+const railTranslateQ = (sel) => `document.querySelector(${JSON.stringify(sel)})`;
+const RAIL_TRANSLATE_UP = `!!${railTranslateQ("[data-translate-panel]")}`;
+const RAIL_TRANSLATE_GONE = `!${railTranslateQ("[data-translate-panel]")}`;
+const RAIL_TRANSLATE_OUTPUT = `(${railTranslateQ("[data-translate-output]")}?.textContent ?? null)`;
+const RAIL_TRANSLATE_INPUT = `(${railTranslateQ("[data-translate-input]")}?.value ?? null)`;
+const RAIL_TRANSLATE_PRESSED = `${railTranslateQ("[data-nav-translate]")}?.getAttribute("aria-pressed")`;
+const RAIL_TRANSLATE_INPUT_FOCUSED = `document.activeElement === ${railTranslateQ("[data-translate-input]")}`;
+const RAIL_TRANSLATE_SEEN = `(window.__railTranslateSeen ?? [])`;
+
+// a select's value through the setter React does not wrap, then the change event it listens for
+const railTranslateSelect = (h, which, value) =>
+    h.ev(`(() => {
+        const sel = ${railTranslateQ(`[data-translate-${which}]`)};
+        if (!sel) return false;
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(sel, ${JSON.stringify(value)});
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+        return sel.value === ${JSON.stringify(value)};
+    })()`);
+
+// the text in the input replaced by `text`, as a paste or typing would
+async function railTranslateType(h, text) {
+    await h.ev(`(() => { const i = ${railTranslateQ("[data-translate-input]")}; i.focus(); i.select(); return true; })()`);
+    await h.cdp("Input.insertText", { text });
+}
+
+// Leaves the Translate store as a scenario found it: the text emptied (the store outlives a scenario, so the next one
+// would open the panel on it), then the pair put back (prevPair: localStorage's string, null for none) through the rail's
+// panel, from outside Float, so the store's copy and localStorage agree. The text goes first, so the pair change
+// translates nothing.
+async function railTranslateReset(h, prevPair) {
+    const prev = prevPair != null ? JSON.parse(prevPair) : { source: "en", target: "vi" };
+    if (!(await h.ev(RAIL_TRANSLATE_UP))) await ttMouse(h, "[data-nav-translate]");
+    await h.ev(`${railTranslateQ("[data-translate-clear]")}?.click() ?? false`);
+    await railTranslateSelect(h, "source", prev.source);
+    await railTranslateSelect(h, "target", prev.target);
+    await ttMouse(h, "[data-nav-translate]");
+    await h.ev(
+        prevPair != null
+            ? `localStorage.setItem(${JSON.stringify(RAIL_TRANSLATE_PAIR_KEY)}, ${JSON.stringify(prevPair)})`
+            : `localStorage.removeItem(${JSON.stringify(RAIL_TRANSLATE_PAIR_KEY)})`
+    );
+}
+
+// Mod+Shift+D: Cmd on a Mac, Ctrl elsewhere
+async function railTranslateChord(h) {
+    const base = { key: "D", code: "KeyD", windowsVirtualKeyCode: 68, modifiers: MOD_BIT | 8 };
+    await h.cdp("Input.dispatchKeyEvent", { type: "rawKeyDown", ...base });
+    await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+}
+
+const railTranslate = {
+    name: "rail-translate",
+    surface: "agent",
+    async arrange(h) {
+        const ctx = { terminals: [] };
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, RAIL_TRANSLATE_PROJECT);
+            // the pair the store holds is the one it read from here at boot, and teardown puts it back
+            ctx.prevPair = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_TRANSLATE_PAIR_KEY)})`);
+            await h.ev(RAIL_TRANSLATE_STUB);
+            await h.ev(RAIL_TRANSLATE_CLIP);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        if (ctx.arrangeError) {
+            rec("0. arrange", false, ctx.arrangeError);
+            return steps;
+        }
+        const wait = (expr, ms = 5000) => polishWaitFor(h, expr, ms);
+        const term = ctx.terminals[0];
+        const termSel = `[data-agent-terminal="${term.tabId}"]`;
+        const open = async () => {
+            await ttMouse(h, "[data-nav-translate]");
+            return wait(`${RAIL_TRANSLATE_UP} && ${RAIL_TRANSLATE_INPUT_FOCUSED}`, 3000);
+        };
+
+        await h.goto("agent");
+        await wait(`!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
+        await wait(`${railTranslateQ(termSel)}?.checkVisibility() === true`, 5000);
+
+        // a. the rail's Translate button opens the panel beside the rail, over the surface that stays as it is
+        const noPanel = await h.ev(RAIL_TRANSLATE_GONE);
+        const opened = await open();
+        // the pair the scenario tests, whatever the last run of the app left
+        await railTranslateSelect(h, "source", "en");
+        await railTranslateSelect(h, "target", "vi");
+        await polishNap(700);
+        const a = await h.ev(`(() => {
+            const panel = document.querySelector("[data-translate-rail]")?.getBoundingClientRect();
+            const nav = document.querySelector("nav")?.getBoundingClientRect();
+            const button = document.querySelector("[data-nav-translate]");
+            const options = (sel) => [...(document.querySelector(sel)?.options ?? [])].map((o) => o.textContent);
+            return {
+                pressed: button?.getAttribute("aria-pressed"),
+                accent: (button?.className ?? "").includes("text-accent-soft"),
+                besideRail: !!panel && !!nav && panel.left >= nav.right - 1 && panel.right <= innerWidth && panel.bottom <= innerHeight,
+                focused: ${RAIL_TRANSLATE_INPUT_FOCUSED},
+                pair: [document.querySelector("[data-translate-source]")?.value, document.querySelector("[data-translate-target]")?.value],
+                sourceFirst: options("[data-translate-source]")[0],
+                targetHasDetect: options("[data-translate-target]").includes("Detect language"),
+                empty: ${RAIL_TRANSLATE_OUTPUT} === "" && !document.querySelector("[data-translate-details]") && !document.querySelector("[data-translate-error]"),
+            };
+        })()`);
+        const surfaceA = await h.activeSurfaceLabel();
+        await h.shot("cdp-shots/rail-translate-open.png");
+        rec(
+            "a. the rail's Translate button opens the panel beside the rail, pressed in grey, with the caret in the empty box and Agent still showing",
+            noPanel &&
+                opened &&
+                a.pressed === "true" &&
+                !a.accent &&
+                a.besideRail &&
+                a.focused &&
+                a.pair[0] === "en" &&
+                a.pair[1] === "vi" &&
+                a.sourceFirst === "Detect language" &&
+                !a.targetHasDetect &&
+                a.empty &&
+                surfaceA === "Agent",
+            JSON.stringify({ noPanel, opened, ...a, surfaceA })
+        );
+
+        // b. a word: its translation, and the row with its phonetic and word class
+        await railTranslateType(h, RAIL_TRANSLATE_WORD);
+        const wordShown = await wait(`${RAIL_TRANSLATE_OUTPUT} === "sự nén"`);
+        const b = await h.ev(`({
+            details: document.querySelector("[data-translate-details]")?.textContent ?? null,
+            requests: ${RAIL_TRANSLATE_SEEN}.filter((r) => r.text === ${JSON.stringify(RAIL_TRANSLATE_WORD)}),
+            clear: !!document.querySelector("[data-translate-clear]"),
+            copy: !!document.querySelector("[data-translate-copy]"),
+        })`);
+        await h.shot("cdp-shots/rail-translate-word.png");
+        rec(
+            "b. typing a word shows its translation after one request, and the row under the box reads the word, its phonetic and Noun",
+            wordShown &&
+                b.requests.length === 1 &&
+                b.requests[0].source === "en" &&
+                b.requests[0].target === "vi" &&
+                b.details === "compaction·kəmˈpakSHən·Noun" &&
+                b.clear &&
+                b.copy,
+            JSON.stringify({ wordShown, ...b })
+        );
+
+        // c. a sentence: a translation, and no details row
+        await railTranslateType(h, RAIL_TRANSLATE_SENTENCE);
+        const sentenceShown = await wait(`${RAIL_TRANSLATE_OUTPUT} === ${JSON.stringify(RAIL_TRANSLATE_SENTENCE_VI)}`);
+        const detailsC = await h.ev(`!!document.querySelector("[data-translate-details]")`);
+        rec(
+            "c. a sentence shows its translation and no details row",
+            sentenceShown && !detailsC,
+            JSON.stringify({ sentenceShown, detailsC, output: await h.ev(RAIL_TRANSLATE_OUTPUT) })
+        );
+
+        // d. swap: the pair flips, the translation becomes the input, and it is translated back
+        await ttMouse(h, "[data-translate-swap]");
+        const swapped = await wait(`${RAIL_TRANSLATE_OUTPUT} === ${JSON.stringify("[en] " + RAIL_TRANSLATE_SENTENCE_VI)}`);
+        const d = await h.ev(`({
+            pair: [document.querySelector("[data-translate-source]")?.value, document.querySelector("[data-translate-target]")?.value],
+            input: ${RAIL_TRANSLATE_INPUT},
+            last: ${RAIL_TRANSLATE_SEEN}.at(-1),
+        })`);
+        rec(
+            "d. swap flips the pair to vi → en, moves the translation into the box and translates it back",
+            swapped &&
+                d.pair[0] === "vi" &&
+                d.pair[1] === "en" &&
+                d.input === RAIL_TRANSLATE_SENTENCE_VI &&
+                d.last?.source === "vi" &&
+                d.last?.target === "en" &&
+                d.last?.text === RAIL_TRANSLATE_SENTENCE_VI,
+            JSON.stringify({ swapped, ...d })
+        );
+
+        // e. a new target translates the text into it at once, and is remembered
+        const seenBefore = await h.ev(`${RAIL_TRANSLATE_SEEN}.length`);
+        await railTranslateSelect(h, "target", "fr");
+        const refetched = await wait(`${RAIL_TRANSLATE_OUTPUT} === ${JSON.stringify("[fr] " + RAIL_TRANSLATE_SENTENCE_VI)}`);
+        const e = await h.ev(`({
+            seen: ${RAIL_TRANSLATE_SEEN}.slice(${seenBefore}),
+            stored: JSON.parse(localStorage.getItem(${JSON.stringify(RAIL_TRANSLATE_PAIR_KEY)}) ?? "null"),
+        })`);
+        rec(
+            "e. changing the target translates the current text into it at once, and localStorage holds the new pair",
+            refetched &&
+                e.seen.length === 1 &&
+                e.seen[0].target === "fr" &&
+                e.seen[0].text === RAIL_TRANSLATE_SENTENCE_VI &&
+                e.stored?.source === "vi" &&
+                e.stored?.target === "fr",
+            JSON.stringify({ refetched, ...e })
+        );
+
+        // f. copy: the button shows copied for a moment, and the translation is what was copied
+        const outputF = await h.ev(RAIL_TRANSLATE_OUTPUT);
+        await ttMouse(h, "[data-translate-copy]");
+        const copiedShown = await wait(`${railTranslateQ("[data-translate-copy]")}?.hasAttribute("data-copied") === true`, 2000);
+        const clip = await h.ev(`window.__railTranslateClip ?? null`);
+        const copiedGone = await wait(`${railTranslateQ("[data-translate-copy]")}?.hasAttribute("data-copied") === false`, 3000);
+        rec(
+            "f. copy writes the translation to the clipboard and shows copied until it fades",
+            copiedShown && JSON.stringify(clip) === JSON.stringify([outputF]) && copiedGone,
+            JSON.stringify({ copiedShown, clip, outputF, copiedGone })
+        );
+
+        // g. the × empties the box and the translation, and the caret stays in the box
+        await ttMouse(h, "[data-translate-clear]");
+        await polishNap(600);
+        const g = await h.ev(`({
+            input: ${RAIL_TRANSLATE_INPUT},
+            output: ${RAIL_TRANSLATE_OUTPUT},
+            clear: !!document.querySelector("[data-translate-clear]"),
+            copy: !!document.querySelector("[data-translate-copy]"),
+            details: !!document.querySelector("[data-translate-details]"),
+            focused: ${RAIL_TRANSLATE_INPUT_FOCUSED},
+        })`);
+        rec(
+            "g. the clear × empties the input and the translation and keeps the caret in the box",
+            g.input === "" && g.output === "" && !g.clear && !g.copy && !g.details && g.focused,
+            JSON.stringify(g)
+        );
+
+        // h. the error line, through the real RPC: text over 5,000 characters is refused without a request to Google
+        await h.ev("delete window.__arcTranslateStub");
+        const long = "a".repeat(5001);
+        await railTranslateType(h, long);
+        const errorShown = await wait(`!!${railTranslateQ("[data-translate-error]")}`, 8000);
+        const h1 = await h.ev(`({
+            error: document.querySelector("[data-translate-error]")?.textContent.trim() ?? null,
+            length: ${RAIL_TRANSLATE_INPUT}?.length ?? null,
+            output: !!document.querySelector("[data-translate-output]"),
+        })`);
+        await h.shot("cdp-shots/rail-translate-error.png");
+        await h.ev(RAIL_TRANSLATE_STUB);
+        await railTranslateType(h, "hello");
+        const errorGone = await wait(`!${railTranslateQ("[data-translate-error]")} && ${RAIL_TRANSLATE_OUTPUT} === "[fr] hello"`, 5000);
+        rec(
+            "h. 5,001 characters show the error line in the translation's place and keep the text; shortening it clears the line",
+            errorShown && h1.error?.startsWith("Couldn't translate") === true && h1.length === 5001 && !h1.output && errorGone,
+            JSON.stringify({ errorShown, ...h1, errorGone })
+        );
+
+        // i. Esc closes the panel, and opening it again finds the text and the translation as they were
+        await floatNoteSpecial(h, "Escape", "Escape", 27);
+        const escClosed = await wait(RAIL_TRANSLATE_GONE, 2000);
+        const unpressed = await h.ev(RAIL_TRANSLATE_PRESSED);
+        const reopened = await open();
+        const i = await h.ev(`({ input: ${RAIL_TRANSLATE_INPUT}, output: ${RAIL_TRANSLATE_OUTPUT} })`);
+        rec(
+            "i. Esc closes the panel and unpresses the button, and reopening it keeps the text and the translation",
+            escClosed && unpressed === "false" && reopened && i.input === "hello" && i.output === "[fr] hello",
+            JSON.stringify({ escClosed, unpressed, reopened, ...i })
+        );
+
+        // j. Mod+Shift+D from a focused terminal opens the panel, and again closes it and gives the terminal its keys back
+        await floatNoteSpecial(h, "Escape", "Escape", 27);
+        await wait(RAIL_TRANSLATE_GONE, 2000);
+        const termFocused = await h.ev(`(() => {
+            const t = document.querySelector('${termSel} .xterm-helper-textarea');
+            t?.focus();
+            return !!t && document.activeElement === t;
+        })()`);
+        await railTranslateChord(h);
+        const chordOpens = await wait(`${RAIL_TRANSLATE_UP} && ${RAIL_TRANSLATE_INPUT_FOCUSED}`, 3000);
+        await polishNap(600);
+        await h.shot("cdp-shots/rail-translate-shortcut.png");
+        await railTranslateChord(h);
+        const chordCloses = await wait(RAIL_TRANSLATE_GONE, 3000);
+        const termBack = await wait(`document.activeElement === ${railTranslateQ(`${termSel} .xterm-helper-textarea`)}`, 2000);
+        rec(
+            "j. Mod+Shift+D from a focused terminal opens the panel with the caret in the box, and again closes it and returns the keys to the terminal",
+            termFocused && chordOpens && chordCloses && termBack,
+            JSON.stringify({ termFocused, chordOpens, chordCloses, termBack })
+        );
+
+        // k. a click on the surface outside closes the panel; a click on the rail's own button toggles it, never closing
+        // and reopening in one press
+        const openedK = await open();
+        const outside = await h.ev(`(() => {
+            const r = document.querySelector('${termSel}')?.getBoundingClientRect();
+            return r && r.width > 0 ? { x: Math.round(r.x + r.width * 0.75), y: Math.round(r.y + r.height * 0.25) } : null;
+        })()`);
+        let outsideCloses = false;
+        if (outside != null) {
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...outside });
+            for (const type of ["mousePressed", "mouseReleased"]) {
+                await h.cdp("Input.dispatchMouseEvent", { type, ...outside, button: "left", clickCount: 1 });
+            }
+            outsideCloses = await wait(RAIL_TRANSLATE_GONE, 2000);
+        }
+        const openedAgain = await open();
+        await ttMouse(h, "[data-nav-translate]");
+        const buttonCloses = await wait(RAIL_TRANSLATE_GONE, 2000);
+        await polishNap(400);
+        const stays = await h.ev(RAIL_TRANSLATE_GONE);
+        rec(
+            "k. a click on the surface outside closes the panel, and the rail's button closes it in one press",
+            openedK && outside != null && outsideCloses && openedAgain && buttonCloses && stays,
+            JSON.stringify({ openedK, outside, outsideCloses, openedAgain, buttonCloses, stays })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`rail-translate teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("empty the box and restore the pair", () => railTranslateReset(h, ctx.prevPair));
+        await step("clear the stubs", () => h.ev(RAIL_TRANSLATE_CLEANUP));
+        for (const t of ctx.terminals ?? []) {
+            await step(`close the terminal tab ${t.tabId}`, () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+            );
+        }
+    },
+};
+
 export const SCENARIOS = [
     cockpitKeysOnArrival,
     agentTerminalOnArrival,
@@ -56504,6 +56924,7 @@ export const SCENARIOS = [
     codeStaleBarLook,
     projectOverview,
     projectOverviewHistory,
+    railTranslate,
     // last: its fixture roster stands in for the live one until its teardown reloads
     agentComposer,
 ];

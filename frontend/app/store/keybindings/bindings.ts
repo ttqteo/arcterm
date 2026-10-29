@@ -86,6 +86,7 @@ import { backgroundTasksByIdAtom, focusSubagentAtom } from "@/app/view/agents/su
 import { closeSwitcher, switcherKey, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { openToolPicker } from "@/app/view/agents/toolsstore";
 import { runningBackgroundTasks } from "@/app/view/agents/transcriptprojection";
+import { toggleTranslate } from "@/app/view/agents/translatestore";
 import { unreadAgentsAtom } from "@/app/view/agents/unreadagentsstore";
 import { panelShownFoldedAtom, refreshSidebar } from "@/app/view/agents/worktreesidebarstore";
 import { codeSearchModeAtom } from "@/app/view/code/codesearchstore";
@@ -461,6 +462,16 @@ export function buildGlobalBindings(model: AgentsViewModel): Binding[] {
             label: "Float the note",
             when: (ctx) => !ctx.modalOpen,
             run: () => void toggleFloatNote(model),
+        },
+        {
+            // The rail's Translate panel (translatestore.ts): opens it with the caret in the box, closes it again. A chord,
+            // so it works from a focused terminal, and never a bare key, which would type into the box.
+            id: "translate",
+            keys: "Mod:Shift:d",
+            group: "Global",
+            label: "Translate",
+            when: (ctx) => !ctx.modalOpen,
+            run: () => toggleTranslate(),
         },
         {
             // Open a tool (lazygit, yazi, btop…) in the focused agent's folder, from a focused terminal too. Not bare

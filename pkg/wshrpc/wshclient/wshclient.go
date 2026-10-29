@@ -1601,6 +1601,12 @@ func ToolsStatusCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.Comman
 	return resp, err
 }
 
+// command "translate", wshserver.TranslateCommand
+func TranslateCommand(w *wshutil.WshRpc, data wshrpc.CommandTranslateData, opts *wshrpc.RpcOpts) (*wshrpc.CommandTranslateRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandTranslateRtnData](w, "translate", data, opts)
+	return resp, err
+}
+
 // command "uiinvoke", wshserver.UiInvokeCommand
 func UiInvokeCommand(w *wshutil.WshRpc, data wshrpc.CommandUiInvokeData, opts *wshrpc.RpcOpts) (string, error) {
 	resp, err := sendRpcRequestCallHelper[string](w, "uiinvoke", data, opts)

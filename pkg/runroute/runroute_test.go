@@ -145,10 +145,25 @@ func TestResolveRejectsCrossRuntimeNamespace(t *testing.T) {
 		{Runtime: "claude", Model: "gpt-5.4"},
 		{Runtime: "claude", Model: "opencode/deepseek-v4-pro"},
 		{Runtime: "pi", Model: "has space/deepseek"},
+		{Runtime: "pi", Model: "river/deepseek-ai/"},
+		{Runtime: "pi", Model: "river//DeepSeek-V4.1-Flash"},
 	} {
 		if _, err := Resolve(pin); err == nil {
 			t.Errorf("expected reject for %+v", pin)
 		}
+	}
+}
+
+// A provider whose own ids carry an org (River serves deepseek-ai/DeepSeek-V4.1-Flash) gives pi a
+// two-slash id; it must resolve as is.
+func TestResolvePiOrgNamespacedModel(t *testing.T) {
+	model := "river/deepseek-ai/DeepSeek-V4.1-Flash"
+	cap, err := Resolve(waveobj.RoutePin{Runtime: "pi", Model: model})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cap.ModelArgs, []string{"--model", model}) || !IsValid(cap) {
+		t.Fatalf("org-namespaced pi model resolved wrong: %+v", cap)
 	}
 }
 

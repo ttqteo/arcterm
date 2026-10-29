@@ -53,6 +53,21 @@ does not, say what you saw and it becomes a bug row under Actionable.
   them: its final stage ran out of RAM, so no scenario ran on the merged result, and the last Transcript edit (a
   Compactions jump leaves the marker just below the pinned prompt's band, step 4) never ran at all. (commit
   "feat(agents): the Transcript tab reads the whole conversation back, with its scenario and docs")
+- [ ] (arcterm) A brainstorm approach's facts: while the judge weighs a question's approaches, click "3 facts" at the
+  right of a row; the facts list opens under that row and the label reads "Hide 3 facts", with nothing sent to the
+  agent. Clicking the rest of the row still answers with that approach. (commit "fix(brainstorm): show an approach's
+  facts behind their count")
+- [ ] (arcterm) Quick translate on the nav rail: click the Translate button above Setup (or Ctrl+Shift+D, also from a
+  focused terminal). A narrow panel slides out beside the rail, the box focused; typing translates after a pause, a
+  single word shows its phonetic and word class, ⇄ moves the translation into the box, Esc or an outside click closes
+  it and the keyboard goes back to the terminal. In Float, the Translate tab shows the same panel over the terminal,
+  and the Note tab or any agent tab closes it. Check the dark-mode select popup too. CDP: `task verify:ui --
+  rail-translate float-note agent-rail-tabs surface-smoke` (never ran: the run's Final dev app did not finish
+  building). Cmd+Shift+D on a Mac is untried. (commit "feat(translate): the Translate panel on the rail, and
+  Ctrl+Shift+D")
+- [ ] (arcterm) The File tab's Back to the top button: open a long `.md` file in an agent's File tab (Preview), scroll
+  down and press the arrow-to-line button in the header; the document glides back to its top. Do the same with a long
+  `.html` file (needs a wavesrv built after this change). Source and Diff show no such button.
 - [ ] (arcterm) A wake message survives switching agents: open a sleeping agent, type a line in the box under its
   conversation, press Enter, then pick another agent and come back before it is awake. The box still shows the line
   (read-only, Waking…), the agent receives it, and the box is empty once it is awake.
@@ -75,6 +90,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Closing a brainstorming agent closes its judge: start a judge on a brainstorm question (or a builder
   check), then close the agent while it reads (Ctrl+Shift+W). Its "Judge · …" / "Builder check · …" row leaves the
   Agent tree with it and its claude process ends, instead of staying as a plain row that keeps reading. (uncommitted)
+- [ ] (arcterm) A second judge leaves no stray session: in a brainstorm, let a judge finish on one question, then
+  start a judge on the next. The first "Judge · <title>" tab closes as the second starts, so the Agent tree shows one
+  Judge row under the agent and no "Judge · …" row of its own in the project folder; the same for a second builder
+  check. Rows left over from before this fix stay until closed by hand. (commit "fix(brainstorm): a new judge or
+  builder check closes the one before it")
 - [ ] (arcterm) A council review holds three directions: start a Review council (or wait for the next one) and open
   its report. At most three direction cards, each with a "First step:" line, then an "Also raised" heading with one row
   each for the rest (`from <expert>` under the title, no stances); its saved doc has `## Also raised` between the

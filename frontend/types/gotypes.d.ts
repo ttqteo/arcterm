@@ -2202,6 +2202,21 @@ declare global {
         tools: ToolStatus[];
     };
 
+    // wshrpc.CommandTranslateData
+    type CommandTranslateData = {
+        source: string;
+        target: string;
+        text: string;
+    };
+
+    // wshrpc.CommandTranslateRtnData
+    type CommandTranslateRtnData = {
+        translation: string;
+        source: string;
+        phonetics?: string;
+        classes?: TranslateClass[];
+    };
+
     // wshrpc.CommandUiInvokeData
     type CommandUiInvokeData = {
         actionid: string;
@@ -4406,6 +4421,12 @@ declare global {
         detected?: boolean;
         found: boolean;
         path?: string;
+    };
+
+    // wshrpc.TranslateClass
+    type TranslateClass = {
+        pos: string;
+        words: string[];
     };
 
     // waveobj.UIContext

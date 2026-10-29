@@ -1,19 +1,18 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-// The Float ledge's Note and Translate tabs: the global scratch note's state (its body, the save error, Edit or Preview,
-// and whether the overlay is up), its debounced save over wshrpc, and what the Translate tab does. Module-level atoms:
-// the overlay unmounts with Float, and the text must outlive it. Called by float-ledge.tsx, FloatNote and the
-// `float-note` binding; the pure parts are floatnote.ts.
+// The Float ledge's Note tab: the global scratch note's state (its body, the save error, Edit or Preview, and whether
+// the overlay is up) and its debounced save over wshrpc. Module-level atoms: the overlay unmounts with Float, and the
+// text must outlive it. Called by float-ledge.tsx, FloatNote and the `float-note` binding; the pure parts are
+// floatnote.ts. The ledge's Translate tab is translatestore.ts.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { AgentsViewModel } from "./agents";
-import { SCRATCH_SAVE_MS, scratchErrorLine, translateStep } from "./floatnote";
+import { SCRATCH_SAVE_MS, scratchErrorLine } from "./floatnote";
 import { enterFloat, floatModeAtom } from "./floatstore";
-import { installTool, loadTools, openTool, showInstall, toolsStatusAtom } from "./toolsstore";
 
 // whether FloatNote covers the terminal area; Float ending or any focus change closes it, so re-entering shows the terminal
 export const floatNoteOpenAtom = atom(false) as PrimitiveAtom<boolean>;
@@ -125,52 +124,4 @@ export async function toggleFloatNote(model: AgentsViewModel): Promise<void> {
         return;
     }
     await openFloatNote(model);
-}
-
-// ---- Translate ----
-
-/** The Translate tab: the trans terminal if one is open, else the tool opened, else its install. */
-export async function showTranslate(model: AgentsViewModel): Promise<void> {
-    closeFloatNote();
-    let tools = globalStore.get(toolsStatusAtom);
-    if (tools == null) {
-        try {
-            await loadTools();
-        } catch (err) {
-            console.warn("reading the tool catalog failed", err);
-        }
-        tools = globalStore.get(toolsStatusAtom);
-    }
-    const step = translateStep(globalStore.get(model.terminalsAtom), tools);
-    switch (step.kind) {
-        case "show":
-            model.openTerminal(step.id);
-            return;
-        case "open": {
-            const res = await openTool(model, step.tool, { place: "centre" });
-            if (res.ok === false) {
-                console.warn("opening translate-shell failed:", res.reason);
-            }
-            return;
-        }
-        case "install":
-            // an install already running, or one that failed and was kept, is what the tab shows: a second would refuse
-            // (already installing) or leave the failed terminal open
-            if (showInstall(model, step.tool.id)) {
-                return;
-            }
-            try {
-                const res = await installTool(model, step.tool);
-                if (res.ok === false) {
-                    console.warn("installing translate-shell failed:", res.reason);
-                } else {
-                    model.openTerminal(res.tabId);
-                }
-            } catch (err) {
-                console.warn("installing translate-shell failed:", err);
-            }
-            return;
-        case "missing":
-            console.warn("translate-shell is not in the tool catalog");
-    }
 }

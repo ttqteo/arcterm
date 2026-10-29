@@ -173,7 +173,9 @@ agents behave the same.
   questions to a report and runs `wsh jarvis complete --report`, which ends it. Its run has
   `StageRole: builder-check`. In the Agent tree its tab is a "Builder check" row nested under the
   brainstorming agent whose `brainstorm:checkrun` names its run, reading the record's state; with that
-  tab gone it is a top-level row of its own (`buildAgentTree`).
+  tab gone it is a top-level row of its own (`buildAgentTree`). A new check takes the record, so it closes
+  the tab of the check before it (`startBrainstormSession`), which would otherwise be such a row; a new judge
+  does the same to the judge before it.
 - **The route.** The run settings' reviewer route (with a per-project override), else the brainstorming
   agent's runtime with its default model, else the default runtime.
 - **The tab record.** The server alone writes `brainstorm:checkstate` (`reading`, `answered`, `failed`)

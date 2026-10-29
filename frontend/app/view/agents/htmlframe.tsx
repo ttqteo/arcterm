@@ -11,7 +11,14 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { PAGE_RESTORE, keepScroll, keptScroll, pageScrollReport, scrollKey } from "@/app/view/code/codescroll";
+import {
+    PAGE_RESTORE,
+    PAGE_TOP,
+    keepScroll,
+    keptScroll,
+    pageScrollReport,
+    scrollKey,
+} from "@/app/view/code/codescroll";
 import { getWebServerEndpoint } from "@/util/endpoints";
 import { useEffect, useRef, useState } from "react";
 
@@ -27,6 +34,13 @@ function servedPath(path: string): Promise<string> {
         served.set(path, p);
     }
     return p;
+}
+
+// back to the top of a frame's page, which only the page itself can scroll
+export function frameToTop(frame: HTMLIFrameElement): void {
+    if (frame.src !== "") {
+        frame.contentWindow?.postMessage({ type: PAGE_TOP }, new URL(frame.src).origin);
+    }
 }
 
 // `version` reloads the page when the file is rewritten at the same path; data-* attributes pass through so each

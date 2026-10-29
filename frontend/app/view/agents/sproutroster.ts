@@ -5,7 +5,6 @@
 // on the ledge under the terminal, and the folded Sprout's hover list. Pure.
 
 import type { AgentState, AgentVM } from "./agentsviewmodel";
-import { isTranslateTerminal } from "./floatnote";
 import { NO_LINEAGE, type Lineage } from "./runlineage";
 
 export interface RosterCut {
@@ -96,8 +95,8 @@ function tabsThatFit(room: number, count: number): number {
 
 /** The float's tabs: what Float can switch to, the plain terminals included and a run as its lead, cut at what fits in
  *  room (the px the ledge leaves them; unmeasured, FLOAT_TAB_MAX) with the one in view always among those shown. The
- *  Translate terminal is left out, its tab is the ledge's fixed Translate; the ledge's Note and Translate tabs are
- *  always there, so even one agent shows its tab, the way back. None only when nothing at all floats. */
+ *  ledge's Note and Translate tabs are always there, so even one agent shows its tab, the way back. None only when
+ *  nothing at all floats. */
 export function floatTabs(
     agents: readonly AgentVM[],
     terminals: readonly AgentVM[],
@@ -105,7 +104,7 @@ export function floatTabs(
     lineage: Lineage = NO_LINEAGE,
     room = Infinity
 ): FloatTabs {
-    const order = floatTabOrder(agents, terminals, focusId, lineage).filter((x) => !isTranslateTerminal(x));
+    const order = floatTabOrder(agents, terminals, focusId, lineage);
     if (order.length < 1) {
         return { shown: [], rest: [] };
     }

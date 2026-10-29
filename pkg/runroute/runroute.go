@@ -19,9 +19,10 @@ const operatorDefault = "operator default"
 const defaultRuntime = "claude"
 
 var (
-	claudeAliasRe   = regexp.MustCompile(`^(opus|sonnet|haiku|fable|best)(\[[0-9]+m\])?$`)
-	claudeFullRe    = regexp.MustCompile(`^claude-[a-zA-Z0-9-]+$`)
-	providerModelRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+/[a-zA-Z0-9._:+-]+$`)
+	claudeAliasRe = regexp.MustCompile(`^(opus|sonnet|haiku|fable|best)(\[[0-9]+m\])?$`)
+	claudeFullRe  = regexp.MustCompile(`^claude-[a-zA-Z0-9-]+$`)
+	// a provider's own id may be org-namespaced (river/deepseek-ai/DeepSeek-V4.1-Flash)
+	providerModelRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+(/[a-zA-Z0-9._:+-]+)+$`)
 	agySlugRe       = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
 	codexModelRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 )
