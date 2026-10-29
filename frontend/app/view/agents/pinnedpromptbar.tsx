@@ -14,7 +14,8 @@ import { pinnedPromptIndex, PROMPT_JUMP_EVENT } from "./pinnedprompt";
 
 const PROMPT_SELECTOR = "[data-user-prompt]";
 
-function scrollParent(el: HTMLElement | null): HTMLElement | null {
+/** The nearest ancestor of el that scrolls vertically, or null. */
+export function scrollParent(el: HTMLElement | null): HTMLElement | null {
     for (let p = el?.parentElement; p != null; p = p.parentElement) {
         const oy = getComputedStyle(p).overflowY;
         if (oy === "auto" || oy === "scroll") {
