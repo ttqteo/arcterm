@@ -22,6 +22,7 @@ import {
     GitBranch,
     LayoutList,
     LayoutTemplate,
+    ScrollText,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, type ReactNode } from "react";
@@ -51,7 +52,7 @@ import {
     type BgTaskLabel,
 } from "./agentrailsections";
 import { openFileInPanel, railPanelsAtom, railTabDefaultAtom, selectRailTab } from "./agentrailstore";
-import { activeFile, fileTabLabel, panelFor, RAIL_OVERVIEW_PX, shownTab } from "./agentrailtabs";
+import { activeFile, fileTabLabel, panelFor, RAIL_OVERVIEW_PX, shownTab, type ResizableTab } from "./agentrailtabs";
 import type { AgentsViewModel } from "./agents";
 import { displayAgeMs, formatAgeShort, recentActions, summarizeActions, type AgentVM } from "./agentsviewmodel";
 import { setAgentView } from "./agentview";
@@ -101,6 +102,7 @@ import {
     rereadsOnState,
     type RailChangesRange,
 } from "./railstore";
+import { RailTranscript } from "./railtranscript";
 import { RailTreePane } from "./railtreepane";
 import { UploadsSection } from "./railuploads";
 import { agentProject, roleRunId } from "./runlineage";
@@ -686,11 +688,14 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
     const agentCwd = useAtomValue(railCwdsAtom)[agent.id] ?? null;
     const treeCwd = sub == null ? agentCwd : null;
     const hasTree = treeCwd != null;
-    const shown = shownTab(panel, hasTree);
-    // File keeps a dragged width; Overview, Files and Changes share one fixed width, so moving between them never
-    // resizes the panel
-    const fixedWidth = shown !== "file";
-    const wide = useWideWidth("file");
+    // the Transcript tab reads the agent's own transcript, so it stays while a subagent's interior is open
+    const hasTranscript = !!agent.transcriptPath;
+    const shown = shownTab(panel, hasTree, hasTranscript);
+    // File and Transcript keep a dragged width (one, shared); Overview, Files and Changes share one fixed width, so
+    // moving between them never resizes the panel
+    const wideTab: ResizableTab = shown === "transcript" ? "transcript" : "file";
+    const fixedWidth = shown !== "file" && shown !== "transcript";
+    const wide = useWideWidth(wideTab);
     const openTab = activeFile(panel);
     const fileRef = openTab?.current ?? null;
     const railVisible = useAtomValue(railVisibleAtom);
@@ -890,7 +895,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
 
     // opens the rail on Overview with a section open, then brings it into view once it has rendered
     const revealSection = (id: AgentRailSectionId) => {
-        selectRailTab(agent.id, "overview", hasTree);
+        selectRailTab(agent.id, "overview", hasTree, hasTranscript);
         showRail();
         globalStore.set(railSectionOpenAtom, (prev) => ({ ...prev, [id]: true }));
         requestAnimationFrame(() => {
@@ -1330,7 +1335,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
             widthKey={shown}
             tabs={
                 <>
-                    <RailTabStrip agentId={agent.id} panel={panel} hasTree={hasTree} />
+                    <RailTabStrip agentId={agent.id} panel={panel} hasTree={hasTree} hasTranscript={hasTranscript} />
                     <RailStats
                         stats={planRailStats(railInput)}
                         canAttach={agent.blockId != null}
@@ -1381,16 +1386,18 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                             />
                         ) : null}
                     </div>
+                ) : shown === "transcript" ? (
+                    <RailTranscript agent={agent} />
                 ) : undefined
             }
-            edge={!fixedWidth ? <RailResizeGrip tab="file" width={wide.width} max={wide.max} /> : undefined}
+            edge={!fixedWidth ? <RailResizeGrip tab={wideTab} width={wide.width} max={wide.max} /> : undefined}
             stripTabs={[
                 {
                     key: "overview",
                     icon: <LayoutList size={17} strokeWidth={1.8} aria-hidden />,
                     ariaLabel: "Overview",
                     onClick: () => {
-                        selectRailTab(agent.id, "overview", hasTree);
+                        selectRailTab(agent.id, "overview", hasTree, hasTranscript);
                         showRail();
                     },
                 },
@@ -1401,7 +1408,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               icon: <FolderTree size={17} strokeWidth={1.8} aria-hidden />,
                               ariaLabel: "Files",
                               onClick: () => {
-                                  selectRailTab(agent.id, "tree", hasTree);
+                                  selectRailTab(agent.id, "tree", hasTree, hasTranscript);
                                   showRail();
                               },
                           },
@@ -1412,10 +1419,23 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                     icon: <FileDiff size={17} strokeWidth={1.8} aria-hidden />,
                     ariaLabel: "Changes",
                     onClick: () => {
-                        selectRailTab(agent.id, "changes", hasTree);
+                        selectRailTab(agent.id, "changes", hasTree, hasTranscript);
                         showRail();
                     },
                 },
+                ...(hasTranscript
+                    ? [
+                          {
+                              key: "transcript",
+                              icon: <ScrollText size={17} strokeWidth={1.8} aria-hidden />,
+                              ariaLabel: "Transcript",
+                              onClick: () => {
+                                  selectRailTab(agent.id, "transcript", hasTree, hasTranscript);
+                                  showRail();
+                              },
+                          },
+                      ]
+                    : []),
                 ...(fileRef != null
                     ? [
                           {
@@ -1423,7 +1443,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                               icon: <FileText size={17} strokeWidth={1.8} aria-hidden />,
                               ariaLabel: `File ${fileTabLabel(fileRef)}`,
                               onClick: () => {
-                                  selectRailTab(agent.id, "file", hasTree);
+                                  selectRailTab(agent.id, "file", hasTree, hasTranscript);
                                   showRail();
                               },
                           },

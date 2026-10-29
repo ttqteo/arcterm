@@ -237,6 +237,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Ctrl`+`Shift`+`R` (Windows) | Redraw the terminal, from inside it too |
 | `Ctrl`+`R`, `Ctrl`+`Shift`+`R` or `F5` in a pinned app's page (Windows) | Reload the page where it is, as a browser does. These keys never reload arcterm itself; **Reload the window** in the palette does |
 | `d` | Toggle the agent rail |
+| `Mod`+`Shift`+`F` | Open the focused agent's transcript in the rail's Transcript tab (opening the rail), from inside the terminal too. An agent with no transcript yet leaves the key to the terminal |
 | `i` | The focused agent's initiative: opens a popover on the header (its progress, the chunk this agent is on, what is next, a note). An agent with no initiative opens Link to initiative instead. Inside the popover: `m` Mark done (the next chunk starts), `n` Add note, `↑` / `↓` move over the chunks, `Enter` opens a chunk's status menu, `Esc` or `i` closes it |
 | `f` | Toggle terminal fullscreen |
 | `Mod`+`Shift`+`Enter` (or `F11`) | Toggle terminal fullscreen from inside the terminal too. A Mac keyboard has no `F11` of its own, so `Cmd`+`Shift`+`Enter` is the one to use there |
@@ -246,7 +247,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Esc` | Back to where you jumped from, else to Cockpit; exits fullscreen first; from Conversation History, the Canvas gallery grid or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
 | `Ctrl`+`C` | In a terminal on Windows: copy while text is selected (the selection goes with it), else the interrupt as always. `Cmd`+`C` copies on a Mac. `Ctrl`+`Shift`+`C` copies too |
-| `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, Files, File) while its tab strip has focus; the agent keys stand down there |
+| `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, Files, Changes, Transcript, File) while its tab strip has focus; the agent keys stand down there |
 | `↑` / `↓`, `←` / `→`, `Enter` | In the panel's Files tab: move the cursor, collapse / expand a folder, open a folder or open a file in the File tab |
 | `Esc` | In the panel's File tab: cancel the comment being written, else close the find bar, else close the file's tab |
 | `Mod`+`F` | In the File tab: find in the file. In a markdown Preview a find bar opens with the selected words; `Enter` / `Shift`+`Enter` step to the next / previous match and `Esc` closes it. In Source and Diff, the editor's own find |

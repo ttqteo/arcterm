@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { focusSubagentAtom } from "@/app/view/agents/subagentsstore";
 import { activeChannelRunsAtom } from "@/app/view/agents/channelsstore";
 import { getProcExitAtom } from "@/app/view/agents/agentcontrollerstore";
+import { railPanelsAtom, railTranscriptFocusAtom } from "@/app/view/agents/agentrailstore";
 import type { BrainstormFile } from "@/app/view/agents/brainstormmodel";
 import { sendBrainstorm } from "@/app/view/agents/brainstormsend";
 import {
@@ -41,7 +42,12 @@ import type { LineComment } from "@/app/view/agents/linecomments";
 import { activeReviewKeyAtom, lineReviewsAtom, type LineReviewState } from "@/app/view/agents/linecommentstore";
 import { confirmCloseSession } from "@/app/view/agents/agentactions";
 import { floatModeAtom, minimizeRequested } from "@/app/view/agents/floatstore";
-import { dockedTerminalAtom, terminalDockFoldedAtom, terminalFullscreenAtom } from "@/app/view/agents/railstore";
+import {
+    dockedTerminalAtom,
+    railVisibleAtom,
+    terminalDockFoldedAtom,
+    terminalFullscreenAtom,
+} from "@/app/view/agents/railstore";
 import { NO_LINEAGE } from "@/app/view/agents/runlineage";
 import { closeSwitcher, tabSwitcherAtom } from "@/app/view/agents/tabswitcherstore";
 import { activeReviewAtom } from "@/app/view/agents/reviewmarks";
@@ -1299,6 +1305,65 @@ describe("leader reachability and the fullscreen chord", () => {
         } finally {
             globalStore.set(dockedTerminalAtom, null);
         }
+    });
+});
+
+describe("agent:transcript", () => {
+    const inTerm: KeyContext = { surface: "agent", editable: true, modalOpen: false, leader: null };
+    const modelWith = (focus: string | undefined, agents: any[]) => ({ ...stubModel(focus), agentsAtom: atom(agents) });
+    const find = (model: any) => buildAgentBindings(model).find((x) => x.id === "agent:transcript")!;
+    const withTranscript = { id: "a1", transcriptPath: "C:/s/a1.jsonl" };
+
+    beforeEach(() => {
+        globalStore.set(centerModeAtom, "terminal");
+        globalStore.set(railVisibleAtom, false);
+        globalStore.set(railPanelsAtom, {});
+        globalStore.set(railTranscriptFocusAtom, 0);
+    });
+    afterEach(() => {
+        globalStore.set(railVisibleAtom, false);
+        globalStore.set(railPanelsAtom, {});
+        globalStore.set(railTranscriptFocusAtom, 0);
+    });
+
+    it("is Mod+Shift+F, Open the transcript", () => {
+        const b = find(modelWith("a1", [withTranscript]));
+        expect(b.keys).toBe("Mod:Shift:f");
+        expect(b.group).toBe("Agent");
+        expect(b.label).toBe("Open the transcript");
+    });
+
+    it("is live while the terminal holds focus, on the Agent surface only, and stands down for a modal or the centre's other modes", () => {
+        const b = find(modelWith("a1", [withTranscript]));
+        expect(b.when!(inTerm)).toBe(true);
+        expect(b.when!({ ...inTerm, editable: false })).toBe(true);
+        expect(b.when!({ ...inTerm, surface: "cockpit" })).toBe(false);
+        expect(b.when!({ ...inTerm, modalOpen: true })).toBe(false);
+        globalStore.set(centerModeAtom, "history");
+        expect(b.when!(inTerm)).toBe(false);
+    });
+
+    it("opens the rail on the focused agent's Transcript tab and asks the tab for focus", () => {
+        const b = find(modelWith("a1", [{ id: "a0" }, withTranscript]));
+        expect(b.run(inTerm)).not.toBe(false);
+        expect(globalStore.get(railPanelsAtom).a1?.tab).toBe("transcript");
+        expect(globalStore.get(railPanelsAtom).a0).toBeUndefined();
+        expect(globalStore.get(railVisibleAtom)).toBe(true);
+        expect(globalStore.get(railTranscriptFocusAtom)).toBe(1);
+        // pressed again with the tab already shown: the rail stays open and the tab is asked again
+        b.run(inTerm);
+        expect(globalStore.get(railPanelsAtom).a1?.tab).toBe("transcript");
+        expect(globalStore.get(railTranscriptFocusAtom)).toBe(2);
+    });
+
+    it("lets the key pass when the focused agent has no transcript, or the focus is on no agent", () => {
+        expect(find(modelWith("a1", [{ id: "a1" }])).run(inTerm)).toBe(false);
+        expect(find(modelWith("a1", [{ id: "a1", transcriptPath: "" }])).run(inTerm)).toBe(false);
+        expect(find(modelWith("t1", [withTranscript])).run(inTerm)).toBe(false); // a plain terminal
+        expect(find(modelWith(undefined, [withTranscript])).run(inTerm)).toBe(false);
+        expect(globalStore.get(railPanelsAtom)).toEqual({});
+        expect(globalStore.get(railVisibleAtom)).toBe(false);
+        expect(globalStore.get(railTranscriptFocusAtom)).toBe(0);
     });
 });
 

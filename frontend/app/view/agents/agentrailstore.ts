@@ -29,8 +29,8 @@ import type { AgentsViewModel } from "./agents";
 import { jumpToAgent } from "./channelsprimitives";
 import { railVisibleAtom } from "./railstore";
 
-// the tab an agent not seen yet opens on: the last one chosen. Files and File are never stored (a new agent has no
-// file open, and may have no worktree)
+// the tab an agent not seen yet opens on: the last one chosen. Files, File and Transcript are never stored (a new agent
+// has no file open, and may have no worktree or transcript)
 export const railTabDefaultAtom = atomWithStorage<RailTab>("agent.rail.tab", "overview", undefined, {
     getOnInit: true,
 }) as PrimitiveAtom<RailTab>;
@@ -49,9 +49,15 @@ export const railMdModeAtom = atomWithStorage<"preview" | "source">("agent.rail.
 // back on, since showing the change is why that file was clicked; session-scoped like the panels
 export const railDiffOnAtom = atom(true);
 
+// File and Transcript are both wide and read and write the one remembered width
 export const railWidthAtoms: Record<ResizableTab, PrimitiveAtom<number>> = {
     file: railWideWidthAtom,
+    transcript: railWideWidthAtom,
 };
+
+// bumped each time the Transcript tab is asked for by key (openRailTranscript): the tab's body moves focus to its
+// scroller on every bump, so the arrows and PageUp / PageDown scroll it at once
+export const railTranscriptFocusAtom = atom(0) as PrimitiveAtom<number>;
 
 // the width while a grip is dragged: committed to that tab's width atom on release (one grip shows at a time)
 export const railWideDragAtom = atom<number | null>(null) as PrimitiveAtom<number | null>;
@@ -64,19 +70,27 @@ function update(agentId: string, fn: (p: PanelState) => PanelState): void {
     globalStore.set(railPanelsAtom, { ...panels, [agentId]: next });
 }
 
-export function selectRailTab(agentId: string, tab: RailTab, hasTree: boolean): void {
-    update(agentId, (p) => selectTab(p, tab, hasTree));
+export function selectRailTab(agentId: string, tab: RailTab, hasTree: boolean, hasTranscript: boolean): void {
+    update(agentId, (p) => selectTab(p, tab, hasTree, hasTranscript));
     if (tab === "overview") {
         globalStore.set(railTabDefaultAtom, tab);
     }
 }
 
-// a strip key (agentrailtabs.ts stripKeys): Overview, Files, or one open file's tab
-export function selectRailKey(agentId: string, key: string, hasTree: boolean): void {
-    update(agentId, (p) => selectKey(p, key, hasTree));
+// a strip key (agentrailtabs.ts stripKeys): Overview, Files, Changes, Transcript, or one open file's tab
+export function selectRailKey(agentId: string, key: string, hasTree: boolean, hasTranscript: boolean): void {
+    update(agentId, (p) => selectKey(p, key, hasTree, hasTranscript));
     if (key === "overview") {
         globalStore.set(railTabDefaultAtom, key);
     }
+}
+
+// Opens the rail on the agent's Transcript tab and asks its body for focus. The caller has checked that the agent has a
+// transcript; Transcript's place in the strip does not depend on a worktree, so `hasTree` is false here.
+export function openRailTranscript(agentId: string): void {
+    update(agentId, (p) => selectTab(p, "transcript", false, true));
+    globalStore.set(railVisibleAtom, true);
+    globalStore.set(railTranscriptFocusAtom, (n) => n + 1);
 }
 
 // Shows the agent on the Agent surface with its panel open on the file, in a tab of its own. `follow`: a link followed
