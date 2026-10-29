@@ -7,6 +7,7 @@ import { buildAgentTree } from "./agenttreemodel";
 import {
     askLine,
     changesLabel,
+    councilPeek,
     doingLine,
     finishedRows,
     historyRows,
@@ -434,8 +435,59 @@ describe("historyRows", () => {
             now,
             ""
         );
-        expect(stopped.kind !== "session" && stopped.title).toBe("Which db?");
+        expect(stopped.kind !== "session" && stopped.title).toBe("f");
         expect(stopped.kind !== "session" && stopped.line).toBe("Stopped · 3 experts");
+        const [noFeature] = historyRows(
+            [],
+            [council({ feature: " ", question: "Which db?", sessionid: "gone" })],
+            [],
+            P,
+            now,
+            ""
+        );
+        expect(noFeature.kind !== "session" && noFeature.title).toBe("Which db?");
+    });
+
+    it("unfolds a council into its question, answer and first three directions by rank", () => {
+        const dir = (rank: number) => ({
+            rank,
+            title: ` D${rank} `,
+            reasoning: "",
+            from: [],
+            stances: {},
+            agreed: true,
+        });
+        const peek = councilPeek(
+            council({
+                question: " Which db? ",
+                error: "",
+                summary: {
+                    answer: "Postgres.",
+                    text: "",
+                    directions: [dir(4), dir(2), dir(1), dir(3)],
+                    outcomes: {},
+                    at: 1,
+                },
+            })
+        );
+        expect(peek).toEqual({
+            question: "Which db?",
+            answer: "Postgres.",
+            error: "",
+            directions: [
+                { rank: 1, title: "D1" },
+                { rank: 2, title: "D2" },
+                { rank: 3, title: "D3" },
+            ],
+            more: 1,
+        });
+        expect(councilPeek(council({ state: "failed", error: "no model" }))).toEqual({
+            question: "",
+            answer: "",
+            error: "no model",
+            directions: [],
+            more: 0,
+        });
     });
 
     it("reads a run's goal headline, its land, and what it left unverified until acknowledged", () => {

@@ -55694,7 +55694,16 @@ const projectOverviewHistory = {
                     experts: ["Cost", "Scope", "Risk"].map((name, i) => ({ id: `ovh-e${i + 1}`, name, brief: `${name} lens`, model: "opus" })),
                     state: "done",
                     round: 2,
-                    summary: { text: "Price it first.", directions: [], outcomes: {}, answer: "Keep it short.", at: now - 3_600_000 },
+                    summary: {
+                        text: "Price it first.",
+                        directions: [
+                            { rank: 2, title: "Cap the rounds", reasoning: "Fewer calls.", from: ["ovh-e2"], stances: {}, agreed: true },
+                            { rank: 1, title: "Price it before it starts", reasoning: "No surprise bill.", from: ["ovh-e1"], stances: {}, agreed: true },
+                        ],
+                        outcomes: {},
+                        answer: "Keep it short.",
+                        at: now - 3_600_000,
+                    },
                     tokens: 1200,
                     calls: 6,
                     created: now - 2 * 3_600_000,
@@ -55904,8 +55913,25 @@ const projectOverviewHistory = {
             await h.ev(`document.querySelector('[data-history-kind="session"]')?.click()`);
             const session7 = await polishWaitFor(h, `${ovHas("[data-agent-session]")} && !${ovHas("[data-project-overview]")}`, 5000);
             const reopen7b = await ovhOpen(h, OVH_A);
+            // a council opens in two steps: its row unfolds in place (the answer, its directions by rank, Open council), and
+            // only Open council leaves the Overview
             await h.ev(`document.querySelector('[data-history-kind="council"]')?.click()`);
-            const council7 = await polishWaitFor(h, `(${ovHas("[data-council-discussion]")} || ${ovHas("[data-council-summary]")}) && !${ovHas("[data-project-overview]")}`, 5000);
+            const peek7 = await polishWaitFor(
+                h,
+                `${ovHas("[data-history-peek]")} && ${ovHas("[data-project-overview]")} &&
+                 document.querySelector('[data-history-kind="council"]')?.getAttribute("aria-expanded") === "true"`,
+                3000
+            );
+            const peekText7 = await h.ev(ovhText("[data-history-peek]"));
+            await shot("7-peek");
+            await h.ev(`document.querySelector("[data-history-open]")?.click()`);
+            const council7 =
+                peek7 &&
+                (peekText7 ?? "").includes("Keep it short.") &&
+                // by rank, though the summary lists rank 2 first
+                (peekText7 ?? "").indexOf("Price it before it starts") >= 0 &&
+                (peekText7 ?? "").indexOf("Price it before it starts") < (peekText7 ?? "").indexOf("Cap the rounds") &&
+                (await polishWaitFor(h, `(${ovHas("[data-council-discussion]")} || ${ovHas("[data-council-summary]")}) && !${ovHas("[data-project-overview]")}`, 5000));
             const reopen7c = await ovhOpen(h, OVH_A);
             await h.ev(`document.querySelector('[data-history-kind="run"]')?.click()`);
             // the Agent surface stays mounted, hidden, so the Overview is still in the document: the sheet and the surface say it opened
@@ -55921,9 +55947,9 @@ const projectOverviewHistory = {
             const history7 = await polishWaitFor(h, `${ovHas("[data-agent-history]")} && !${ovHas("[data-project-overview]")}`, 5000);
             await shot("7");
             rec(
-                "7. a session row opens the session view, the nested council row the council view, the nested run row the run's sheet, and Older: Conversation History opens Conversation History",
+                "7. a session row opens the session view; the nested council row unfolds in place (`Keep it short.`, then its directions by rank) and its Open council opens the council view; the nested run row opens the run's sheet, and Older: Conversation History opens Conversation History",
                 session7 && reopen7b && council7 && reopen7c && run7 && reopen7d && history7,
-                JSON.stringify({ session7, reopen7b, council7, reopen7c, run7, sheet7, surface7, sheetGone, reopen7d, history7 })
+                JSON.stringify({ session7, reopen7b, peek7, peekText7, council7, reopen7c, run7, sheet7, surface7, sheetGone, reopen7d, history7 })
             );
 
             // 8. a failed runs read: the error line with Retry first in the list, the sessions and their councils still listed (no

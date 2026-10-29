@@ -174,6 +174,8 @@ export type HistoryItem =
           ts: number;
           since: number;
           councilId: string;
+          /** what the row shows when it unfolds, before Open council takes the person to it */
+          peek: CouncilPeek;
       }
     | {
           kind: "run";
@@ -206,6 +208,30 @@ const RUN_STATUS: Record<string, string> = {
     cancelled: "Cancelled",
 };
 
+// A History council row unfolded: the question it was asked, its answer, its error, and its ranked directions (the
+// first PEEK_DIRECTIONS; `more` counts the rest). Every field may be empty: a council that never ran has only its
+// question, and one asked no question only its feature, which the row's title already shows.
+export interface CouncilPeek {
+    question: string;
+    answer: string;
+    error: string;
+    directions: { rank: number; title: string }[];
+    more: number;
+}
+
+const PEEK_DIRECTIONS = 3;
+
+export function councilPeek(c: Council): CouncilPeek {
+    const ranked = [...(c.summary?.directions ?? [])].sort((a, b) => a.rank - b.rank);
+    return {
+        question: c.question?.trim() ?? "",
+        answer: c.summary?.answer?.trim() ?? "",
+        error: c.error?.trim() ?? "",
+        directions: ranked.slice(0, PEEK_DIRECTIONS).map((d) => ({ rank: d.rank, title: d.title.trim() })),
+        more: Math.max(0, ranked.length - PEEK_DIRECTIONS),
+    };
+}
+
 function councilItem(c: Council): HistoryItem {
     const answer = c.summary?.answer?.trim();
     const n = c.experts?.length ?? 0;
@@ -213,12 +239,14 @@ function councilItem(c: Council): HistoryItem {
     return {
         kind: "council",
         key: `council:${c.id}`,
-        title: c.question?.trim() || c.feature,
+        // its feature, as the Agent tree's row names it, so the two read as one council
+        title: c.feature.trim() || c.question?.trim() || "(untitled council)",
         line: `${state} · ${n} ${n === 1 ? "expert" : "experts"}`,
         warn: "",
         ts: c.updated,
         since: c.updated,
         councilId: c.id,
+        peek: councilPeek(c),
     };
 }
 

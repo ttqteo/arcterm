@@ -39,6 +39,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A project's Overview shows a year of activity as a calendar in your theme's colour, and its History lists each
   session with the runs and councils it started under it. The Run and Council buttons are gone from its header: an
   agent session starts those.
+- A council in a project Overview's History is named as in the Agent tree, and a click unfolds it in place (its
+  question, answer and top directions) instead of leaving the Overview: Open council takes you to it.
 - The Token burn card lists each subagent an agent wants to start, with the model it will run on and its task. A
   subagent given no model says so and names the one it falls back to: this session's (an Explore with no model runs
   on Opus when the session does). The estimate now says it comes from finished subagents.

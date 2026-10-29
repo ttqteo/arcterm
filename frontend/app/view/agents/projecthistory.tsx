@@ -8,14 +8,15 @@
 
 import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
 import { openTarget } from "@/app/view/jarvis/openref";
-import { fireAndForget } from "@/util/util";
+import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { useMemo, type KeyboardEvent, type ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
+import { Fragment, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { showHistory, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAgeShort, formatTokens } from "./agentsviewmodel";
 import { historyQueryAtom, type ProjectHistory } from "./projecthistorystore";
-import { historyRows, projectSessions, type HistoryItem } from "./projectoverviewmodel";
+import { historyRows, projectSessions, type CouncilPeek, type HistoryItem } from "./projectoverviewmodel";
 import { runtimeMeta } from "./runtimemeta";
 
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
@@ -102,6 +103,46 @@ function KindLabel({ kind }: { kind: HistoryItem["kind"] }) {
     );
 }
 
+// A council row unfolded: what it was asked, its answer or its error, its top directions, then Open council, which is
+// what takes the person to it (the Agent centre and its tree row). It lines up under the row's title.
+function CouncilPeekBody({ peek, nested, onOpen }: { peek: CouncilPeek; nested: boolean; onOpen: () => void }) {
+    const empty = peek.question === "" && peek.answer === "" && peek.error === "" && peek.directions.length === 0;
+    return (
+        <div
+            data-history-peek
+            className={cn("flex flex-col items-start gap-[10px] pb-3 pr-3", nested ? "pl-[118px]" : "pl-[90px]")}
+        >
+            {peek.question !== "" ? (
+                <p className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-secondary">
+                    {peek.question}
+                </p>
+            ) : null}
+            {peek.answer !== "" ? (
+                <p className="break-words text-[12.5px] leading-[1.5] text-primary">
+                    <span className="font-semibold">Answer: </span>
+                    {peek.answer}
+                </p>
+            ) : null}
+            {peek.error !== "" ? <p className="break-words text-[12px] text-error">{peek.error}</p> : null}
+            {peek.directions.length > 0 ? (
+                <ol className="flex flex-col gap-[3px] text-[12px] text-secondary">
+                    {peek.directions.map((d) => (
+                        <li key={d.rank} className="flex gap-2">
+                            <span className="w-[14px] flex-none tabular-nums text-muted">{d.rank}.</span>
+                            <span className="min-w-0 break-words">{d.title}</span>
+                        </li>
+                    ))}
+                    {peek.more > 0 ? <li className="pl-[22px] text-muted">{`+${peek.more} more`}</li> : null}
+                </ol>
+            ) : null}
+            {empty ? <p className="text-[12px] text-muted">No answer yet.</p> : null}
+            <button type="button" data-history-open onClick={onOpen} className={SMALL_BTN}>
+                Open council
+            </button>
+        </div>
+    );
+}
+
 export function HistoryColumn({
     model,
     path,
@@ -116,6 +157,8 @@ export function HistoryColumn({
     const h = history;
     const [q, setQ] = useAtom(historyQueryAtom(path));
     const now = useAtomValue(model.nowAtom);
+    // the one council row unfolded: a council opens in two steps, the row's peek, then its Open council
+    const [unfolded, setUnfolded] = useState<string | null>(null);
     const rows = useMemo(
         () => historyRows(h.sessions, h.councils, h.runs.runs, path, now, q),
         [h.sessions, h.councils, h.runs.runs, path, now, q]
@@ -210,15 +253,17 @@ export function HistoryColumn({
                         </button>
                     );
                 }
-                return (
+                const isCouncil = row.kind === "council";
+                const open = isCouncil && unfolded === row.key;
+                const button = (
                     <button
-                        key={row.key}
                         type="button"
                         data-history-row={row.key}
                         data-history-kind={row.kind}
                         data-history-parent={row.parent}
-                        onClick={() => openItem(row)}
-                        className={row.nested ? NESTED_ROW : ROW}
+                        aria-expanded={isCouncil ? open : undefined}
+                        onClick={() => (isCouncil ? setUnfolded(open ? null : row.key) : openItem(row))}
+                        className={cn(row.nested ? NESTED_ROW : ROW, open && "hover:bg-transparent")}
                     >
                         <KindLabel kind={row.kind} />
                         <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
@@ -238,7 +283,25 @@ export function HistoryColumn({
                         <span className="flex-none text-[11px] tabular-nums text-ink-faint">
                             {formatAgeShort(now - row.ts)}
                         </span>
+                        {isCouncil ? (
+                            <ChevronRight
+                                size={14}
+                                aria-hidden="true"
+                                className={cn(
+                                    "flex-none text-muted transition-transform duration-[140ms]",
+                                    open && "rotate-90"
+                                )}
+                            />
+                        ) : null}
                     </button>
+                );
+                return (
+                    <Fragment key={row.key}>
+                        {button}
+                        {open ? (
+                            <CouncilPeekBody peek={row.peek} nested={row.nested} onOpen={() => openItem(row)} />
+                        ) : null}
+                    </Fragment>
                 );
             })}
             {rows.length === 0 && !h.sessionsError && runsError == null ? noRows : null}

@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A council in a project Overview's History unfolds before it opens: open a project's Overview (its row
+  in the Agent tree) and click a Council row in History. It is titled as in the Agent tree's Councils, and it unfolds in
+  place (question, answer, up to three directions by rank, a chevron turned down) without leaving the Overview; Open
+  council opens it and selects its tree row. CDP: `task verify:ui -- project-overview-history` step 7. (commit "feat(overview): a History
+  council unfolds before it opens")
 - [ ] (arcterm) Closing a brainstorming agent closes its judge: start a judge on a brainstorm question (or a builder
   check), then close the agent while it reads (Ctrl+Shift+W). Its "Judge · …" / "Builder check · …" row leaves the
   Agent tree with it and its claude process ends, instead of staying as a plain row that keeps reading. (uncommitted)
