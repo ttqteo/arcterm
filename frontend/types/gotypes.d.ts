@@ -757,6 +757,14 @@ declare global {
         question?: string;
     };
 
+    // wshrpc.CommandCouncilDraftData
+    type CommandCouncilDraftData = {
+        id: string;
+        itemid: string;
+        action: string;
+        text?: string;
+    };
+
     // wshrpc.CommandCouncilEstimateData
     type CommandCouncilEstimateData = {
         project?: string;
@@ -765,6 +773,7 @@ declare global {
         id?: string;
         followup?: number;
         tools?: boolean;
+        rounds?: number;
     };
 
     // wshrpc.CommandCouncilIdData
@@ -819,6 +828,7 @@ declare global {
         notrun?: boolean;
         mode?: string;
         modewhy?: string;
+        rounds?: number;
     };
 
     // wshrpc.CommandCouncilSuggestData
@@ -2328,6 +2338,7 @@ declare global {
         ratedat?: number;
         experts: CouncilExpert[];
         pauseafterround1?: boolean;
+        rounds?: number;
         sessionid?: string;
         state: string;
         round: number;
@@ -2338,6 +2349,7 @@ declare global {
         summary?: CouncilSummary;
         activity?: {[key: string]: CouncilActivity};
         failed?: {[key: string]: CouncilFailure};
+        skips?: CouncilSkip[];
         stats?: {[key: string]: CouncilExpertStat};
         tokens: number;
         calls: number;
@@ -2423,6 +2435,7 @@ declare global {
         calls: number;
         tokens: number;
         minutes: number;
+        agenttokens?: number;
     };
 
     // council.CouncilEvidence
@@ -2440,6 +2453,9 @@ declare global {
         model: string;
         coordinator?: boolean;
         why?: string;
+        agent?: string;
+        harness?: string;
+        context?: number;
     };
 
     // council.CouncilExpertStat
@@ -2474,6 +2490,8 @@ declare global {
         withdrawn?: boolean;
         cut?: boolean;
         wild?: boolean;
+        draft?: string;
+        edited?: boolean;
     };
 
     // council.CouncilReply
@@ -2492,6 +2510,8 @@ declare global {
         answered?: boolean;
         round: number;
         ts: number;
+        draft?: string;
+        edited?: boolean;
     };
 
     // wshrpc.CouncilRolesRtnData
@@ -2503,6 +2523,14 @@ declare global {
     // wshrpc.CouncilSaveDocRtnData
     type CouncilSaveDocRtnData = {
         path: string;
+    };
+
+    // council.CouncilSkip
+    type CouncilSkip = {
+        expert: string;
+        round: number;
+        reason: string;
+        ts: number;
     };
 
     // council.CouncilSuggestion

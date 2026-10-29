@@ -281,7 +281,7 @@ func TestCouncilEstimateLine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	est := council.Estimate(experts, 0)
+	est := council.Estimate(experts, 0, 0)
 	rtn := &wshrpc.CouncilEstimateRtnData{Calls: est.Calls, Tokens: est.Tokens, Minutes: est.Minutes}
 	want := `group "Review a UI feature": UX, RAM, New user, Skeptic on sonnet, Coordinator on opus · ≈ 9 calls · ~0.8M tokens · ~6 min`
 	if got := councilEstimateLine(group, experts, rtn); got != want {

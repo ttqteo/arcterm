@@ -14,7 +14,7 @@ func uiGroup() []CouncilExpert {
 
 func TestEstimateMatchesTheCanvas(t *testing.T) {
 	// board Setup: "≈ 9 calls · ~0.8M tokens · ~6 min"
-	got := Estimate(uiGroup(), 0)
+	got := Estimate(uiGroup(), 0, 0)
 	want := CouncilEstimate{Calls: 9, Tokens: 820_000, Minutes: 6}
 	if got != want {
 		t.Fatalf("Estimate = %+v, want %+v", got, want)
@@ -25,7 +25,7 @@ func TestEstimateMatchesTheCanvas(t *testing.T) {
 }
 
 func TestEstimateCountsFileBytesAsAQuarterTokenEachForEveryExpert(t *testing.T) {
-	got := Estimate(uiGroup(), 40_000) // 10k tokens a file read, four experts
+	got := Estimate(uiGroup(), 40_000, 0) // 10k tokens a file read, four experts
 	if want := int64(820_000 + 4*10_000); got.Tokens != want {
 		t.Errorf("tokens = %d, want %d", got.Tokens, want)
 	}
@@ -36,12 +36,12 @@ func TestEstimateCountsFileBytesAsAQuarterTokenEachForEveryExpert(t *testing.T) 
 
 func TestEstimateGrowsWithThePanel(t *testing.T) {
 	paper := []CouncilExpert{{Id: "a"}, {Id: "b"}, {Id: "c"}, {Id: "chair", Coordinator: true}}
-	got := Estimate(paper, 0)
+	got := Estimate(paper, 0, 0)
 	want := CouncilEstimate{Calls: 7, Tokens: 3*(140_000+45_000) + 80_000, Minutes: 6}
 	if got != want {
 		t.Errorf("Estimate = %+v, want %+v", got, want)
 	}
-	if got := Estimate(nil, 0); got.Calls != 1 || got.Tokens != 80_000 {
+	if got := Estimate(nil, 0, 0); got.Calls != 1 || got.Tokens != 80_000 {
 		t.Errorf("no panel is the synthesis alone: %+v", got)
 	}
 }
@@ -85,7 +85,7 @@ func TestEstimateFollowup(t *testing.T) {
 func TestEstimateIgnoresTheModel(t *testing.T) {
 	a := []CouncilExpert{{Id: "a", Model: "haiku"}, {Id: "chair", Model: "haiku", Coordinator: true}}
 	b := []CouncilExpert{{Id: "a", Model: "opus"}, {Id: "chair", Model: "opus", Coordinator: true}}
-	if Estimate(a, 1000) != Estimate(b, 1000) {
+	if Estimate(a, 1000, 0) != Estimate(b, 1000, 0) {
 		t.Error("the model changed the token estimate: tokens are counted, not priced")
 	}
 }

@@ -104,6 +104,7 @@ func (ws *WshServer) CouncilStartCommand(ctx context.Context, data wshrpc.Comman
 		ModeWhy:          data.ModeWhy,
 		Experts:          experts,
 		PauseAfterRound1: data.Pause,
+		Rounds:           data.Rounds,
 		SessionId:        data.SessionId,
 	}
 	if data.NotRun {
@@ -143,6 +144,12 @@ func (ws *WshServer) CouncilReplyCommand(ctx context.Context, data wshrpc.Comman
 
 func (ws *WshServer) CouncilContinueCommand(ctx context.Context, data wshrpc.CommandCouncilContinueData) error {
 	_, err := councilRunner.Continue(data.Id, data.Cut, data.Question)
+	return err
+}
+
+// CouncilDraftCommand sends, edits or drops one held draft; the runner checks the council, the item and the action.
+func (ws *WshServer) CouncilDraftCommand(ctx context.Context, data wshrpc.CommandCouncilDraftData) error {
+	_, err := councilRunner.Draft(data.Id, data.ItemId, data.Action, data.Text)
 	return err
 }
 
@@ -195,9 +202,9 @@ func (ws *WshServer) CouncilEstimateCommand(ctx context.Context, data wshrpc.Com
 		}
 		est = council.EstimateRemaining(c)
 	default:
-		est = council.Estimate(data.Experts, councilFileBytes(data.Project, data.Files))
+		est = council.Estimate(data.Experts, councilFileBytes(data.Project, data.Files), data.Rounds)
 	}
-	return &wshrpc.CouncilEstimateRtnData{Calls: est.Calls, Tokens: est.Tokens, Minutes: est.Minutes}, nil
+	return &wshrpc.CouncilEstimateRtnData{Calls: est.Calls, Tokens: est.Tokens, Minutes: est.Minutes, AgentTokens: est.AgentTokens}, nil
 }
 
 // councilSkipDirs are folders a council's file list never reads into: a folder in the list counts the files in it,

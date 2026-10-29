@@ -27,9 +27,10 @@ const (
 // CouncilEstimate is what a council, or part of one, is expected to cost. Tokens are counted, not priced: the
 // model an expert runs on does not enter the number.
 type CouncilEstimate struct {
-	Calls   int   `json:"calls"`
-	Tokens  int64 `json:"tokens"`
-	Minutes int   `json:"minutes"`
+	Calls       int   `json:"calls"`
+	Tokens      int64 `json:"tokens"`
+	Minutes     int   `json:"minutes"`
+	AgentTokens int64 `json:"agenttokens,omitempty"` // the share of Tokens the seated agents' turns take
 }
 
 // panelSize counts the experts that propose and review, which is all but the coordinator.
@@ -45,8 +46,8 @@ func panelSize(experts []CouncilExpert) int {
 
 // Estimate prices a whole council of n non-coordinator experts: one round 1 call each, which also reads the
 // fileBytes of input as about fileBytes/4 tokens, one round 2 call each, and the synthesis. Tokens are counted, not
-// priced, so the experts' models do not change it.
-func Estimate(experts []CouncilExpert, fileBytes int64) CouncilEstimate {
+// priced, so the experts' models do not change it. rounds is the council's Rounds; it is not counted yet.
+func Estimate(experts []CouncilExpert, fileBytes int64, rounds int) CouncilEstimate {
 	n := int64(panelSize(experts))
 	return CouncilEstimate{
 		Calls:   int(2*n + 1),

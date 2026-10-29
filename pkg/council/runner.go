@@ -34,6 +34,8 @@ import (
 // A Runner must not be copied after first use.
 type Runner struct {
 	Caller Caller
+	// Agents is the caller for the seats with Agent set, an AgentCaller over the live agents; Caller serves the rest.
+	Agents Caller
 	// OnChange is told after each save, with the council as saved. It may be called from several goroutines at once, and
 	// the council is the callee's to read, not to change.
 	OnChange func(c *Council)
@@ -1502,6 +1504,14 @@ func (r *Runner) summarizeWork(prev prevState) work {
 			answers: prev.state != StateAwaiting,
 		}
 	}
+}
+
+// ---- held drafts ----
+
+// Draft settles one held draft: action is "send", "edit" (replace the text with text and send it) or "drop". Not built
+// yet; the held-draft work fills it in.
+func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
+	return nil, errors.New("held drafts are not built yet")
 }
 
 // ---- retry and stop ----

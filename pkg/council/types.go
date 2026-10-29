@@ -6,6 +6,8 @@
 // Every type that crosses the wire is prefixed Council, so the generated TypeScript does not collide.
 package council
 
+import "slices"
+
 type CouncilState string
 
 const (
@@ -56,7 +58,18 @@ type CouncilExpert struct {
 	Brief       string `json:"brief"`
 	Model       string `json:"model"`
 	Coordinator bool   `json:"coordinator,omitempty"`
-	Why         string `json:"why,omitempty"` // a suggested role's reason, Setup only
+	Why         string `json:"why,omitempty"`     // a suggested role's reason, Setup only
+	Agent       string `json:"agent,omitempty"`   // a live agent seat: the seated agent's tab id; empty for a role expert
+	Harness     string `json:"harness,omitempty"` // an agent seat's harness, claude or pi
+	Context     int64  `json:"context,omitempty"` // an agent seat's context tokens when it was seated, for the estimate
+}
+
+// IsAgent says a seat is a live agent's, not a role expert's.
+func IsAgent(e CouncilExpert) bool { return e.Agent != "" }
+
+// HasAgents says at least one live agent is seated: the council then holds every answer as a draft.
+func HasAgents(c *Council) bool {
+	return c != nil && slices.ContainsFunc(c.Experts, IsAgent)
 }
 
 type CouncilGroup struct {
@@ -80,9 +93,21 @@ type CouncilProposal struct {
 	Evidence  []CouncilEvidence `json:"evidence,omitempty"`
 	Ts        int64             `json:"ts"`
 	Withdrawn bool              `json:"withdrawn,omitempty"`
-	Cut       bool              `json:"cut,omitempty"`  // unticked by the person at the pause
-	Wild      bool              `json:"wild,omitempty"` // a Brainstorm wild idea
+	Cut       bool              `json:"cut,omitempty"`    // unticked by the person at the pause
+	Wild      bool              `json:"wild,omitempty"`   // a Brainstorm wild idea
+	Draft     string            `json:"draft,omitempty"`  // DraftHeld or DraftDropped; empty once sent, and on an idea that was never held
+	Edited    bool              `json:"edited,omitempty"` // the person edited it before sending
 }
+
+// The two states of a held draft. A proposal or reply with no Draft is sent (Sent), and only a sent one reaches a seat's
+// prompt or the synthesis.
+const (
+	DraftHeld    = "held"
+	DraftDropped = "dropped"
+)
+
+// Sent says an idea or reply is out in the room: it was never held, or the person sent it.
+func Sent(draft string) bool { return draft == "" }
 
 type CouncilReply struct {
 	Id         string            `json:"id"` // r1, r2, ...
@@ -97,8 +122,10 @@ type CouncilReply struct {
 	To         []string          `json:"to,omitempty"`    // the person's reply: the experts who answer it
 	Tools      bool              `json:"tools,omitempty"` // the person's follow-up: Let them read code was on
 	Answered   bool              `json:"answered,omitempty"`
-	Round      int               `json:"round"` // the round it was posted in; 4+ for follow-ups after done
+	Round      int               `json:"round"` // the round it was posted in; FirstFollowRound and up for follow-ups after done
 	Ts         int64             `json:"ts"`
+	Draft      string            `json:"draft,omitempty"`  // DraftHeld or DraftDropped; empty once sent, and on a reply that was never held
+	Edited     bool              `json:"edited,omitempty"` // the person edited it before sending
 }
 
 type CouncilDirection struct {
@@ -129,6 +156,15 @@ type CouncilActivity struct {
 type CouncilFailure struct {
 	Round int    `json:"round"`
 	Error string `json:"error"`
+}
+
+// CouncilSkip is one agent turn that did not happen: the seat was busy too long or gave no answer. The chat draws it as
+// a line with Open its terminal.
+type CouncilSkip struct {
+	Expert string `json:"expert"` // the seat's expert id
+	Round  int    `json:"round"`
+	Reason string `json:"reason"` // "still working on its own task after 10 min"
+	Ts     int64  `json:"ts"`
 }
 
 type CouncilExpertStat struct {
@@ -165,6 +201,7 @@ type Council struct {
 	RatedAt          int64                        `json:"ratedat,omitempty"`     // when Rating was given, in ms
 	Experts          []CouncilExpert              `json:"experts"`               // the coordinator last
 	PauseAfterRound1 bool                         `json:"pauseafterround1,omitempty"`
+	Rounds           int                          `json:"rounds,omitempty"`    // 1 to 3 seat rounds, the ideas round included; 0 reads as 2 (RoundsOf)
 	SessionId        string                       `json:"sessionid,omitempty"` // the agent session that started it
 	State            CouncilState                 `json:"state"`
 	Round            int                          `json:"round"`
@@ -175,6 +212,7 @@ type Council struct {
 	Summary          *CouncilSummary              `json:"summary,omitempty"`
 	Activity         map[string]CouncilActivity   `json:"activity,omitempty"` // expert id -> what it is doing now
 	Failed           map[string]CouncilFailure    `json:"failed,omitempty"`   // expert id -> its failed call
+	Skips            []CouncilSkip                `json:"skips,omitempty"`    // the agent turns that did not happen
 	Stats            map[string]CouncilExpertStat `json:"stats,omitempty"`    // expert id -> time and tokens so far
 	Tokens           int64                        `json:"tokens"`
 	Calls            int                          `json:"calls"`
@@ -182,3 +220,24 @@ type Council struct {
 	Created          int64                        `json:"created"`
 	Updated          int64                        `json:"updated"`
 }
+
+// The rounds a council with agents may run: the ideas round and up to two reply passes. A council with no Rounds, and
+// every council saved before the field, runs two: today's ideas round and one reply pass.
+const (
+	DefaultRounds = 2
+	MaxRounds     = 3
+)
+
+// RoundsOf is how many rounds the seats answer before the summary: Rounds, with 0 or a number out of range read as 2.
+func RoundsOf(c *Council) int {
+	if c == nil || c.Rounds < 1 || c.Rounds > MaxRounds {
+		return DefaultRounds
+	}
+	return c.Rounds
+}
+
+// SynthesisRound is the round number of the coordinator's summary, the one after the last seat round: 3 for 2 rounds.
+func SynthesisRound(c *Council) int { return RoundsOf(c) + 1 }
+
+// FirstFollowRound is the round number of the first follow-up after done: 4 for 2 rounds. Each later one is one more.
+func FirstFollowRound(c *Council) int { return RoundsOf(c) + 2 }
