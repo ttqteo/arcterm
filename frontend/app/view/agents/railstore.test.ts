@@ -40,9 +40,10 @@ async function railVisibleAtStartup(stored?: string): Promise<boolean> {
 describe("railVisibleAtom", () => {
     beforeEach(() => lsMock.clear());
 
+    // the first fresh import of the module, which pays the cold transform of its graph
     it("is on for a profile that never stored a choice", async () => {
         expect(await railVisibleAtStartup()).toBe(true);
-    });
+    }, 30000);
     it("keeps a stored off: anyone who turned the rail off still has it off", async () => {
         expect(await railVisibleAtStartup("false")).toBe(false);
     });

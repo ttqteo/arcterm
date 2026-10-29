@@ -42,9 +42,10 @@ async function gridAtStartup(stored?: string) {
 describe("agentGridAtom storage", () => {
     beforeEach(() => lsMock.clear());
 
+    // the first fresh import of the module, which pays the cold transform of its graph
     it("starts empty for a profile that never stored a grid", async () => {
         expect(await gridAtStartup()).toEqual({ ids: [], focused: null });
-    });
+    }, 30000);
     it("reads back the shown project's stored grid on the first read", async () => {
         const stored = '{"project":"x","grids":{"x":{"ids":["a","b"],"focused":"b"},"y":{"ids":["c"],"focused":"c"}}}';
         expect(await gridAtStartup(stored)).toEqual({ ids: ["a", "b"], focused: "b" });
