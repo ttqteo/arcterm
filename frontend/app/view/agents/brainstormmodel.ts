@@ -40,7 +40,8 @@ export type Approach = { name: string; description: string; facts: string[] };
 export type JudgeRecord =
     | { kind: "weighed"; added: string[]; dropped: { name: string; reason: string }[] }
     | { kind: "failed"; reason: string };
-// read is the one-line comparison of the options: the judge's on a weighed question, else the agent's
+// read is the one-line comparison of the options: the judge's on a weighed question, else the agent's. multi says
+// the user may take more than one option together
 export type BrainstormQuestion = {
     n: number;
     text: string;
@@ -48,11 +49,13 @@ export type BrainstormQuestion = {
     why?: string;
     read?: string;
     options?: AnswerOption[];
+    multi?: true;
     approaches?: Approach[];
     judge?: JudgeRecord;
 };
-// picked is the option's index, absent when the answer was typed in the user's own words. A superseded question was
-// dropped after pushback, unanswered: part is the part it was asked for, which stays open
+// picked is the option's index, or their indexes when the user took several, absent when the answer was typed in the
+// user's own words. A superseded question was dropped after pushback, unanswered: part is the part it was asked for,
+// which stays open
 export type HistoryEntry = {
     kind: "question" | "recon";
     n?: number;
@@ -62,7 +65,7 @@ export type HistoryEntry = {
     a: string;
     into: string[];
     options?: AnswerOption[];
-    picked?: number;
+    picked?: number | number[];
     part?: string;
     superseded?: true;
     judge?: JudgeRecord;
@@ -214,9 +217,26 @@ function parseQuestion(raw: unknown): BrainstormQuestion | null {
         ...(str(raw.why) ? { why: str(raw.why) } : {}),
         ...(str(raw.read) ? { read: str(raw.read) } : {}),
         ...(options.length > 0 ? { options } : {}),
+        ...(raw.multi === true ? { multi: true as const } : {}),
         ...(approaches.length > 0 ? { approaches } : {}),
         ...(judge != null ? { judge } : {}),
     };
+}
+
+// an index past the options it names reads as an answer in the user's own words; a list keeps the indexes that name
+// one, once each, and one left reads as a single pick
+function parsePicked(raw: unknown, n: number): number | number[] | undefined {
+    const ok = (i: unknown): i is number => Number.isInteger(i) && (i as number) >= 0 && (i as number) < n;
+    if (!Array.isArray(raw)) {
+        return ok(raw) ? raw : undefined;
+    }
+    const list = [...new Set(raw.filter(ok))];
+    return list.length === 0 ? undefined : list.length === 1 ? list[0] : list;
+}
+
+// the indexes of the options the user picked, none for an answer in their own words
+export function pickedIndexes(h: Pick<HistoryEntry, "picked">): number[] {
+    return h.picked == null ? [] : Array.isArray(h.picked) ? h.picked : [h.picked];
 }
 
 function parseHistory(raw: unknown): HistoryEntry[] {
@@ -225,8 +245,7 @@ function parseHistory(raw: unknown): HistoryEntry[] {
     }
     return raw.filter(isRecord).map((h) => {
         const options = parseOptions(h.options);
-        // an index past the options it names reads as an answer in the user's own words
-        const picked = Number.isInteger(h.picked) && (h.picked as number) >= 0 && (h.picked as number) < options.length;
+        const picked = parsePicked(h.picked, options.length);
         const recon = h.kind === "recon";
         const judge = parseJudge(h.judge);
         return {
@@ -237,7 +256,7 @@ function parseHistory(raw: unknown): HistoryEntry[] {
             a: str(h.a) ?? "",
             into: strings(h.into),
             ...(options.length > 0 ? { options } : {}),
-            ...(picked ? { picked: h.picked as number } : {}),
+            ...(picked != null ? { picked } : {}),
             ...(str(h.part) ? { part: str(h.part) } : {}),
             ...(!recon && h.superseded === true ? { superseded: true as const } : {}),
             ...(judge != null ? { judge } : {}),
@@ -643,10 +662,11 @@ export type HistoryRow = {
 };
 
 function historyRow(f: BrainstormFile, h: HistoryEntry, i: number, unseen: Unseen): HistoryRow {
+    const picked = pickedIndexes(h);
     const options = (h.options ?? []).map((o, j) => ({
         label: o.label,
         detail: o.detail,
-        picked: j === h.picked,
+        picked: picked.includes(j),
         agentPick: o.pick === true,
     }));
     const recon = h.kind === "recon";
@@ -689,6 +709,21 @@ export function hasProsCons(q: BrainstormQuestion): boolean {
 
 export function optionLetter(i: number): string {
     return String.fromCharCode("A".charCodeAt(0) + i);
+}
+
+// several picked options reach the agent as their labels joined by " + ", one as its label alone
+export function pickedLine(labels: string[]): string {
+    return labels.join(" + ");
+}
+
+// the ticked rows of a question that takes more than one option, kept in the order the options are listed
+export function togglePick(picked: number[], i: number): number[] {
+    return picked.includes(i) ? picked.filter((j) => j !== i) : [...picked, i].sort((a, b) => a - b);
+}
+
+// what the send button for the ticked rows says: "Send B + D"
+export function sendPickedLabel(picked: number[]): string {
+    return `Send ${pickedLine(picked.map(optionLetter))}`;
 }
 
 export type JudgeWork = { line: string; judged: boolean; dropped: { name: string; reason: string }[] };
@@ -1059,7 +1094,7 @@ export function partAnswer(f: BrainstormFile, p: BrainstormPart): PartAnswer | n
     const h = answeredQuestions(f)
         .filter((e) => e.n === n && e.into.includes(p.id))
         .pop();
-    const text = h == null ? "" : h.a || (h.picked != null ? h.options![h.picked].label : "");
+    const text = h == null ? "" : h.a || pickedLine(pickedIndexes(h).map((i) => h.options![i].label));
     return text ? { n, text } : null;
 }
 

@@ -80,18 +80,22 @@ type judgeDrop struct {
 	Reason string `json:"reason"`
 }
 
-// judgeResult is the one JSON object the judge writes to its report.
+// judgeResult is the one JSON object the judge writes to its report. Multi says the user may take more than one
+// option together.
 type judgeResult struct {
 	Options []JudgeOption `json:"options"`
 	Read    string        `json:"read"`
+	Multi   bool          `json:"multi"`
 	Added   []string      `json:"added"`
 	Dropped []judgeDrop   `json:"dropped"`
 }
 
-// judgeFile is judge.json, in the shape the agent merges onto question as is.
+// judgeFile is judge.json, in the shape the agent merges onto question as is. Multi is always written, so a rerun's
+// false replaces an earlier judge's true.
 type judgeFile struct {
 	Options []JudgeOption `json:"options"`
 	Read    string        `json:"read"`
+	Multi   bool          `json:"multi"`
 	Judge   judgeWork     `json:"judge"`
 }
 
@@ -290,6 +294,7 @@ func judgeFileBytes(report string) ([]byte, error) {
 	return json.Marshal(judgeFile{
 		Options: r.Options,
 		Read:    r.Read,
+		Multi:   r.Multi,
 		Judge:   judgeWork{Added: orEmpty(r.Added), Dropped: orEmpty(r.Dropped)},
 	})
 }

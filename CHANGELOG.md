@@ -33,6 +33,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the threshold.
 - Right-clicking a council in the Agent tree offers Copy id, a running council's too, so `wsh council show <id>` and
   the other council commands no longer need the id typed out.
+- A brainstorm question says over its answers whether you pick one or more. When the answers can be combined, each row
+  has a tick box: tick several and Send gives them to the agent together, while clicking a row still sends it alone.
+  Every approach in the judge's list now has its letter, the fifth and later ones included.
 
 ### Changed
 

@@ -13,18 +13,20 @@ import {
     designLabel,
     hasProsCons,
     judgeWork,
-    OPTION_KEYS,
     optionLetter,
     partBoards,
     partSpikes,
     partTitle,
     phaseSteps,
+    pickedLine,
     plural,
     progressView,
     questionBoards,
     questionTrack,
+    sendPickedLabel,
     sentenceDiff,
     spikeUrl,
+    togglePick,
     type AnswerOption,
     type BrainstormAction,
     type BrainstormFile,
@@ -68,13 +70,16 @@ export const CHIP =
 export const FIELD =
     "resize-none rounded-[8px] border border-border bg-background px-[12px] py-[9px] text-[13px] leading-[1.5] text-primary outline-none placeholder:text-muted focus:border-warning/60";
 export const LINK = "cursor-pointer text-accent-soft hover:underline";
+const PRIMARY_BTN =
+    "flex-none cursor-pointer rounded-[7px] bg-accent px-[14px] py-[7px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50";
 export const CARD_LABEL = "font-mono text-[11px] font-semibold";
 export const ERROR_LINE = "text-[12px] text-error";
 export const SECTION_HEAD = "m-0 text-[13px] font-semibold text-secondary";
-// an answer row, and the approach rows the judge weighs, which answer the same way
+// an answer row, and the approach rows the judge weighs, which answer the same way; on a question that takes more
+// than one option, a tick box sits before the row's button
 const OPTION_ROW =
-    "overflow-hidden rounded-[10px] border has-[>button:disabled]:opacity-50 has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-accent";
-const OPTION_ROW_PLAIN = "border-edge-mid bg-surface has-[>button:enabled:hover]:border-edge-strong";
+    "overflow-hidden rounded-[10px] border has-[button:disabled]:opacity-50 has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-accent";
+const OPTION_ROW_PLAIN = "border-edge-mid bg-surface has-[button:enabled:hover]:border-edge-strong";
 const OPTION_BTN =
     "flex w-full cursor-pointer items-center border-0 bg-transparent text-left outline-none disabled:cursor-default";
 const OPTION_LETTER =
@@ -317,7 +322,14 @@ export function QuestionAnswers({ q, ans, compact }: { q: BrainstormQuestion; an
     const work = judgeWork(q);
     const who = work?.judged ? "Judge’s" : "Agent’s";
     const options = (
-        <Options options={q.options} ans={ans} compact={compact} reasons={reasons && shown} pickLabel={`${who} pick`} />
+        <Options
+            options={q.options}
+            ans={ans}
+            compact={compact}
+            reasons={reasons && shown}
+            pickLabel={`${who} pick`}
+            multi={q.multi === true}
+        />
     );
     if (!q.read && !reasons && work == null) {
         return options;
@@ -415,92 +427,214 @@ function JudgeWorkLine({ work, compact, lineText }: { work: JudgeWork; compact: 
     );
 }
 
-// a letter key focuses its row (bindings.ts), so Enter, the row's own key, sends it
+// the rows ticked on a question that takes more than one option, sent together as one answer
+function usePicks(ans: Answer, labels: string[]) {
+    const [picked, setPicked] = useState<number[]>([]);
+    return {
+        picked,
+        toggle: (i: number) => setPicked((p) => togglePick(p, i)),
+        clear: () => setPicked([]),
+        send: () => {
+            if (picked.length > 0 && !ans.act.busy) {
+                void ans.sendText(pickedLine(picked.map((i) => labels[i])));
+            }
+        },
+    };
+}
+
+type Picks = ReturnType<typeof usePicks>;
+
+// says whether the question takes one option or several, so a row's click is never a guess
+function PickHint({ multi }: { multi: boolean }) {
+    return (
+        <span data-brainstorm-pick-hint={multi ? "multi" : "one"} className="text-[12px] text-muted">
+            {multi ? "Pick one or more: click a row to send it alone, or tick rows to send them together" : "Pick one"}
+        </span>
+    );
+}
+
+// the box before a row's button; ticking only collects the row, the send under the rows sends
+function TickBox({ i, picks, ans, compact }: { i: number; picks: Picks; ans: Answer; compact: boolean }) {
+    const on = picks.picked.includes(i);
+    return (
+        <button
+            type="button"
+            role="checkbox"
+            aria-checked={on}
+            aria-label={`Combine ${optionLetter(i)}`}
+            data-brainstorm-tick={i}
+            disabled={ans.act.busy}
+            onClick={() => picks.toggle(i)}
+            className={cn(
+                "flex flex-none cursor-pointer items-center border-0 bg-transparent outline-none disabled:cursor-default",
+                compact ? "pl-[12px]" : "pl-[20px]"
+            )}
+        >
+            <span
+                className={cn(
+                    "flex h-[16px] w-[16px] items-center justify-center rounded-[4px] border",
+                    on ? "border-accent bg-accent text-background" : "border-edge-strong text-transparent"
+                )}
+            >
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M2.5 6.5l2.5 2.5 4.5-6" />
+                </svg>
+            </span>
+        </button>
+    );
+}
+
+// under the rows once any is ticked: the one send for them, and a way to untick them all
+function SendPicked({ picks, ans }: { picks: Picks; ans: Answer }) {
+    if (picks.picked.length === 0) {
+        return null;
+    }
+    return (
+        <div className="flex items-center gap-[10px]">
+            <button
+                type="button"
+                data-brainstorm-send-picked
+                disabled={ans.act.busy}
+                onClick={picks.send}
+                className={PRIMARY_BTN}
+            >
+                {sendPickedLabel(picks.picked)}
+            </button>
+            <button type="button" disabled={ans.act.busy} onClick={picks.clear} className={CHIP}>
+                Clear
+            </button>
+        </div>
+    );
+}
+
+// a letter key focuses its row (bindings.ts), so Enter, the row's own key, sends it; a question that takes more than
+// one option adds a tick box per row
 export function Options({
     options,
     ans,
     compact,
     reasons,
     pickLabel,
+    multi,
 }: {
     options: AnswerOption[];
     ans: Answer;
     compact: boolean;
     reasons: boolean;
     pickLabel: string;
+    multi: boolean;
 }) {
+    const picks = usePicks(
+        ans,
+        options.map((o) => o.label)
+    );
     return (
-        <div role="group" aria-label="Answers" className={cn("flex flex-col", compact ? "gap-[6px]" : "gap-[10px]")}>
-            {options.map((o, i) => (
-                <div
-                    key={i}
-                    className={cn(
-                        OPTION_ROW,
-                        o.pick
-                            ? "border-accent/55 bg-accent/8 has-[>button:enabled:hover]:bg-accentbg"
-                            : OPTION_ROW_PLAIN
-                    )}
-                >
-                    <button
-                        type="button"
-                        data-brainstorm-option={i}
-                        data-pick={o.pick ? "" : undefined}
-                        disabled={ans.act.busy}
-                        onClick={() => void ans.sendText(o.label)}
-                        className={cn(
-                            OPTION_BTN,
-                            compact ? "gap-[12px] px-[12px] py-[9px]" : "gap-[18px] px-[20px] py-[16px]"
-                        )}
-                    >
-                        <span
-                            className={cn(
-                                OPTION_LETTER,
-                                compact ? "h-[24px] w-[24px] text-[11.5px]" : "h-[30px] w-[30px] text-[13px]"
-                            )}
-                        >
-                            {optionLetter(i)}
-                        </span>
-                        <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                            <span
-                                className={cn(
-                                    "font-semibold text-primary",
-                                    compact ? "text-[13.5px] leading-[1.4]" : "text-[17px] leading-[1.35]"
-                                )}
-                            >
-                                {o.label}
-                            </span>
-                            {o.detail ? (
-                                <span
-                                    className={cn(
-                                        "text-ink-mid",
-                                        compact ? "text-[12.5px] leading-[1.45]" : "text-[14px]"
-                                    )}
-                                >
-                                    {o.detail}
-                                </span>
-                            ) : null}
-                        </span>
-                        {o.pick ? (
-                            <span className="flex-none text-[12px] font-semibold text-accent-soft">{pickLabel}</span>
-                        ) : null}
-                    </button>
-                    {reasons && (o.pros != null || o.cons != null) ? <ProsCons o={o} compact={compact} /> : null}
-                </div>
-            ))}
+        <div className={cn("flex flex-col", compact ? "gap-[6px]" : "gap-[10px]")}>
+            <PickHint multi={multi} />
+            <div
+                role="group"
+                aria-label="Answers"
+                className={cn("flex flex-col", compact ? "gap-[6px]" : "gap-[10px]")}
+            >
+                {options.map((o, i) => (
+                    <OptionRow key={i} o={o} i={i} ans={ans} compact={compact} reasons={reasons} pickLabel={pickLabel}>
+                        {multi ? <TickBox i={i} picks={picks} ans={ans} compact={compact} /> : null}
+                    </OptionRow>
+                ))}
+            </div>
+            {multi ? <SendPicked picks={picks} ans={ans} /> : null}
         </div>
     );
 }
 
-// indented to the label, under the letter; a narrow column stacks the two lists
-function ProsCons({ o, compact }: { o: AnswerOption; compact: boolean }) {
+// one answer row: its tick box (children) before the button that sends it alone, and its pros and cons under both
+function OptionRow({
+    o,
+    i,
+    ans,
+    compact,
+    reasons,
+    pickLabel,
+    children,
+}: {
+    o: AnswerOption;
+    i: number;
+    ans: Answer;
+    compact: boolean;
+    reasons: boolean;
+    pickLabel: string;
+    children?: ReactNode;
+}) {
+    return (
+        <div
+            data-brainstorm-option-row={i}
+            className={cn(
+                OPTION_ROW,
+                o.pick ? "border-accent/55 bg-accent/8 has-[button:enabled:hover]:bg-accentbg" : OPTION_ROW_PLAIN
+            )}
+        >
+            <div className="flex">
+                {children}
+                <button
+                    type="button"
+                    data-brainstorm-option={i}
+                    data-pick={o.pick ? "" : undefined}
+                    disabled={ans.act.busy}
+                    onClick={() => void ans.sendText(o.label)}
+                    className={cn(
+                        OPTION_BTN,
+                        compact ? "gap-[12px] px-[12px] py-[9px]" : "gap-[18px] px-[20px] py-[16px]"
+                    )}
+                >
+                    <span
+                        className={cn(
+                            OPTION_LETTER,
+                            compact ? "h-[24px] w-[24px] text-[11.5px]" : "h-[30px] w-[30px] text-[13px]"
+                        )}
+                    >
+                        {optionLetter(i)}
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                        <span
+                            className={cn(
+                                "font-semibold text-primary",
+                                compact ? "text-[13.5px] leading-[1.4]" : "text-[17px] leading-[1.35]"
+                            )}
+                        >
+                            {o.label}
+                        </span>
+                        {o.detail ? (
+                            <span
+                                className={cn("text-ink-mid", compact ? "text-[12.5px] leading-[1.45]" : "text-[14px]")}
+                            >
+                                {o.detail}
+                            </span>
+                        ) : null}
+                    </span>
+                    {o.pick ? (
+                        <span className="flex-none text-[12px] font-semibold text-accent-soft">{pickLabel}</span>
+                    ) : null}
+                </button>
+            </div>
+            {reasons && (o.pros != null || o.cons != null) ? (
+                <ProsCons o={o} compact={compact} ticked={children != null} />
+            ) : null}
+        </div>
+    );
+}
+
+// indented to the label, under the letter, and past the tick box when the row has one; a narrow column stacks the two
+// lists
+function ProsCons({ o, compact, ticked }: { o: AnswerOption; compact: boolean; ticked: boolean }) {
     return (
         <div
             data-brainstorm-proscons
             className={cn(
                 "grid",
                 compact
-                    ? "grid-cols-1 gap-[6px] pb-[10px] pl-[48px] pr-[12px]"
-                    : "grid-cols-2 gap-[24px] pb-[16px] pl-[68px] pr-[20px] pt-[2px]"
+                    ? "grid-cols-1 gap-[6px] pb-[10px] pr-[12px]"
+                    : "grid-cols-2 gap-[24px] pb-[16px] pr-[20px] pt-[2px]",
+                compact ? (ticked ? "pl-[76px]" : "pl-[48px]") : ticked ? "pl-[104px]" : "pl-[68px]"
             )}
         >
             <ReasonList label={`${o.label}: for`} mark="+" tone="text-success" items={o.pros} compact={compact} />
@@ -575,7 +709,7 @@ export function AnswerBox({
                 data-brainstorm-ok
                 disabled={ans.draft.trim() === "" || ans.act.busy || locked}
                 onClick={ans.sendDraft}
-                className="flex-none cursor-pointer rounded-[7px] bg-accent px-[14px] py-[7px] text-[12.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50"
+                className={PRIMARY_BTN}
             >
                 OK
             </button>
@@ -756,7 +890,12 @@ export function JudgingMain({
 }) {
     const q = f.question!;
     const approaches = q.approaches!;
+    const multi = q.multi === true;
     const ans = useAnswer(agent);
+    const picks = usePicks(
+        ans,
+        approaches.map((a) => a.name)
+    );
     return (
         <div data-brainstorm-question data-brainstorm-judging className="flex min-h-0 flex-1 flex-col">
             <Track segments={questionTrack(f)} />
@@ -775,14 +914,16 @@ export function JudgingMain({
                         <h2 data-brainstorm-judge-list className={SECTION_HEAD}>
                             What the judge is weighing · {approaches.length}
                         </h2>
-                        <span className="text-[12px] text-muted">
-                            the agent’s list, unranked; click one to answer now, or wait for the judge’s options and
-                            pick
+                        <span data-brainstorm-pick-hint={multi ? "multi" : "one"} className="text-[12px] text-muted">
+                            {multi
+                                ? "the agent’s list, unranked; pick one or more: click a row to send it alone, tick rows to send them together, or wait for the judge’s options"
+                                : "the agent’s list, unranked; pick one: click it to answer now, or wait for the judge’s options and pick"}
                         </span>
                     </div>
                     <div role="group" aria-label="Approaches" className="flex flex-col gap-[6px]">
                         {approaches.map((a, i) => (
-                            <div key={i} className={cn(OPTION_ROW, OPTION_ROW_PLAIN)}>
+                            <div key={i} className={cn(OPTION_ROW, OPTION_ROW_PLAIN, "flex")}>
+                                {multi ? <TickBox i={i} picks={picks} ans={ans} compact /> : null}
                                 <button
                                     type="button"
                                     data-brainstorm-approach
@@ -791,13 +932,9 @@ export function JudgingMain({
                                     onClick={() => void ans.sendText(a.name)}
                                     className={cn(OPTION_BTN, "gap-[14px] px-[12px] py-[9px]")}
                                 >
-                                    {i < OPTION_KEYS.length ? (
-                                        <span className={cn(OPTION_LETTER, "h-[24px] w-[24px] text-[11.5px]")}>
-                                            {optionLetter(i)}
-                                        </span>
-                                    ) : (
-                                        <span aria-hidden="true" className="h-[24px] w-[24px] flex-none" />
-                                    )}
+                                    <span className={cn(OPTION_LETTER, "h-[24px] w-[24px] text-[11.5px]")}>
+                                        {optionLetter(i)}
+                                    </span>
                                     <span className="w-[190px] flex-none text-[13.5px] font-semibold leading-[1.4] text-primary">
                                         {a.name}
                                     </span>
@@ -813,6 +950,7 @@ export function JudgingMain({
                             </div>
                         ))}
                     </div>
+                    {multi ? <SendPicked picks={picks} ans={ans} /> : null}
                 </div>
                 <AnswerBox ans={ans} options={true} placeholder="Or answer now in your own words…" />
                 <div className="flex flex-col gap-[10px]">

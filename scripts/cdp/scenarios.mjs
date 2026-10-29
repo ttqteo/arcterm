@@ -29881,7 +29881,7 @@ const BSR_READ_OPTIONS = `(() => {
         read: flat(pane?.querySelector("[data-brainstorm-read]")),
         toggle: toggle ? { text: flat(toggle), expanded: toggle.getAttribute("aria-expanded") } : null,
         options: [...(pane?.querySelectorAll("[data-brainstorm-option]") ?? [])].map((b) => {
-            const card = b.parentElement;
+            const card = b.closest("[data-brainstorm-option-row]");
             const list = (label) => [...(card.querySelector('ul[aria-label$="' + label + '"]')?.querySelectorAll("li") ?? [])].map(flat);
             return { text: flat(b), pick: b.hasAttribute("data-pick"), pros: list(": for"), cons: list(": against") };
         }),
@@ -29910,7 +29910,7 @@ const brainstormQuestionReasons = bsBoardScenario("brainstorm-question-reasons",
         { ...bsBrief(drawn), shown, why: drawn.why }
     );
     const grid = await h.ev(`(() => {
-        const ul = ${BS_PANE}?.querySelector('[data-brainstorm-option="0"]')?.parentElement?.querySelectorAll("ul");
+        const ul = ${BS_PANE}?.querySelector('[data-brainstorm-option-row="0"]')?.querySelectorAll("ul");
         if (!ul || ul.length !== 2) return null;
         const a = ul[0].getBoundingClientRect();
         const b = ul[1].getBoundingClientRect();

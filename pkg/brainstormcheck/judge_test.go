@@ -356,8 +356,11 @@ func TestDecideJudge(t *testing.T) {
 			if err := json.Unmarshal(out, &file); err != nil {
 				t.Fatalf("judge.json is not an object: %v (%s)", err, out)
 			}
-			if keys := sortedKeys(file); !reflect.DeepEqual(keys, []string{"judge", "options", "read"}) {
-				t.Fatalf("judge.json keys = %v, want judge, options, read", keys)
+			if keys := sortedKeys(file); !reflect.DeepEqual(keys, []string{"judge", "multi", "options", "read"}) {
+				t.Fatalf("judge.json keys = %v, want judge, multi, options, read", keys)
+			}
+			if string(file["multi"]) != "false" {
+				t.Errorf("multi = %s, want false for a report that leaves it out", file["multi"])
 			}
 			var judge map[string]json.RawMessage
 			if err := json.Unmarshal(file["judge"], &judge); err != nil {
@@ -393,6 +396,16 @@ func TestDecideJudge(t *testing.T) {
 			if want := []map[string]string{{"name": "Tail the transcript", "reason": "A transcript lags the file."}}; !reflect.DeepEqual(parsed.Judge.Dropped, want) {
 				t.Errorf("dropped = %v, want %v", parsed.Judge.Dropped, want)
 			}
+		}
+	})
+
+	t.Run("a report whose options combine says so in judge.json", func(t *testing.T) {
+		got, out := DecideJudge(done(judgeReport(t, func(r map[string]any) { r["multi"] = true })), "")
+		if got.Kind != Deliver {
+			t.Fatalf("DecideJudge = %+v, want Deliver", got)
+		}
+		if !strings.Contains(string(out), `"multi":true`) {
+			t.Fatalf("judge.json = %s, want multi true", out)
 		}
 	})
 

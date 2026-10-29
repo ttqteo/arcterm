@@ -32,6 +32,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   place (question, answer, up to three directions by rank, a chevron turned down) without leaving the Overview; Open
   council opens it and selects its tree row. CDP: `task verify:ui -- project-overview-history` step 7. (commit "feat(overview): a History
   council unfolds before it opens")
+- [ ] (arcterm) A brainstorm question says whether you pick one or more: in a brainstorm, a question whose answers
+  exclude each other reads "Pick one" over them and has no tick boxes; one marked `multi` (the agent's, or the judge's
+  `multi` in judge.json) reads "Pick one or more", each row has a tick box, ticking B and D shows "Send B + D" and
+  Clear, and Send hands the agent "<B label> + <D label>", which it records with `picked: [1, 3]` (the Decided rail
+  ticks both). Clicking a row still sends it alone. In the judge's wait, every approach row has its letter (E, F …),
+  with tick boxes when the question is `multi`. Not tried in the dev app; no CDP step drives the tick boxes yet.
+  (commit "feat(brainstorm): a question says whether you pick one or more, and sends ticked answers together")
 - [ ] (arcterm) Closing a brainstorming agent closes its judge: start a judge on a brainstorm question (or a builder
   check), then close the agent while it reads (Ctrl+Shift+W). Its "Judge · …" / "Builder check · …" row leaves the
   Agent tree with it and its claude process ends, instead of staying as a plain row that keeps reading. (uncommitted)

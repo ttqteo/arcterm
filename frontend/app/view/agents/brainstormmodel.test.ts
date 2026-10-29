@@ -57,6 +57,7 @@ import {
     partView,
     phaseSteps,
     pickableOptions,
+    pickedLine,
     progressView,
     questionBoards,
     questionTrack,
@@ -66,6 +67,7 @@ import {
     runPrefill,
     seenMark,
     sendBlocker,
+    sendPickedLabel,
     sentKind,
     sentenceDiff,
     settleSent,
@@ -73,6 +75,7 @@ import {
     spikeUrl,
     stopsJudge,
     terminalAnswer,
+    togglePick,
     treeLine,
     unseenSince,
     withBrainstorm,
@@ -760,6 +763,15 @@ describe("historyRows", () => {
         expect([r.why, r.reasons]).toEqual([null, false]);
     });
 
+    it("marks every option a multi pick took, with no separate answer", () => {
+        const f = file({
+            history: [{ kind: "question", n: 1, q: "q", a: "", into: [], options: opts, picked: [0, 2] }],
+        });
+        const [r] = historyRows(f);
+        expect(r.options.map((o) => o.picked)).toEqual([true, false, true]);
+        expect([r.answer, r.ownWords]).toEqual([null, false]);
+    });
+
     it("an answer typed instead of an option is drawn after them, in your words", () => {
         const f = file({ history: [{ kind: "question", n: 1, q: "q", a: "Only at night.", into: [], options: opts }] });
         const [r] = historyRows(f);
@@ -879,8 +891,38 @@ describe("question options", () => {
         expect(r.ok && r.file.history[0].options).toEqual(opts);
     });
 
+    it("keep a list of picked indexes, each once, dropping the ones that name no option", () => {
+        const entry = (picked: unknown) =>
+            parseBrainstorm(
+                raw({ history: [{ kind: "question", n: 1, q: "q", a: "a", into: [], options: opts, picked }] })
+            );
+        const picked = (r: ParseResult) => (r.ok ? r.file.history[0].picked : "error");
+        expect(picked(entry([0, 1]))).toEqual([0, 1]);
+        expect(picked(entry([1, 1, 5, "0"]))).toBe(1);
+        expect(picked(entry([]))).toBeUndefined();
+        expect(picked(entry([7]))).toBeUndefined();
+    });
+
+    it("read multi only as true", () => {
+        const q = (multi: unknown) => parseBrainstorm(raw({ question: { n: 1, text: "Q", multi } }));
+        const yes = q(true);
+        expect(yes.ok && yes.file.question?.multi).toBe(true);
+        for (const v of [false, "true", 1, undefined]) {
+            const r = q(v);
+            expect(r.ok && "multi" in r.file.question!).toBe(false);
+        }
+    });
+
     it("letter the options A, B, C", () => {
         expect([0, 1, 2, 3].map(optionLetter)).toEqual(["A", "B", "C", "D"]);
+    });
+
+    it("tick rows in the options' order, and name them on the send button", () => {
+        expect(togglePick([], 3)).toEqual([3]);
+        expect(togglePick([3], 1)).toEqual([1, 3]);
+        expect(togglePick([1, 3], 3)).toEqual([1]);
+        expect(sendPickedLabel([1, 3])).toBe("Send B + D");
+        expect(pickedLine(["Messages-only RPC", "Incremental index"])).toBe("Messages-only RPC + Incremental index");
     });
 });
 
@@ -2046,6 +2088,8 @@ describe("partAnswer", () => {
             ],
         });
         expect(partAnswer(f, f.parts[0])).toEqual({ n: 2, text: "Two" });
+        f.history[0].picked = [0, 1];
+        expect(partAnswer(f, f.parts[0])).toEqual({ n: 2, text: "One + Two" });
     });
 
     it("is none for a from that names no answer, or an answer that did not go into the part", () => {
