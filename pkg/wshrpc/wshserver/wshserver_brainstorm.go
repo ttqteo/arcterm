@@ -239,14 +239,32 @@ func stopBrainstormRun(ctx context.Context, k *sessionKind, channelId, runId str
 	}
 }
 
+// closeBrainstormSessionTabs closes a session's tab once its agent's tab is gone. A var so tests close no tab.
+var closeBrainstormSessionTabs = jarvis.CloseRunWorkerTabs
+
+// closeBrainstormRun closes a session's run and its tab, whatever its state.
+func closeBrainstormRun(ctx context.Context, k *sessionKind, channelId, runId string) {
+	run, err := readBrainstormRun(ctx, channelId, runId)
+	if err != nil || run == nil {
+		log.Printf("%s: closing run %s: could not load it: %v", k.what, runId, err)
+		return
+	}
+	if err := closeBrainstormSessionTabs(ctx, run); err != nil {
+		log.Printf("%s: closing run %s: %v", k.what, runId, err)
+	}
+}
+
 // ownsBrainstormRecord reports whether the tab's record is still s's reading one: a stop, or a new session
-// started after it, takes it. The caller holds s.Kind.mu.
+// started after it, takes it, and closing the agent's tab takes it with the tab. The caller holds s.Kind.mu.
 func ownsBrainstormRecord(ctx context.Context, s brainstormSession) bool {
 	k := s.Kind
+	tab, err := wstore.DBMustGet[*waveobj.Tab](ctx, s.TabId)
+	if errors.Is(err, wstore.ErrNotFound) {
+		return false
+	}
 	if !k.stoppable {
 		return true
 	}
-	tab, err := wstore.DBMustGet[*waveobj.Tab](ctx, s.TabId)
 	if err != nil {
 		log.Printf("%s: loading tab %s: %v", k.what, s.TabId, err)
 		return false
@@ -443,6 +461,11 @@ func launchSessionRun(ctx context.Context, s *brainstormSession) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if !ownsBrainstormRecord(ctx, *s) {
+		if _, err := wstore.DBMustGet[*waveobj.Tab](ctx, s.TabId); errors.Is(err, wstore.ErrNotFound) {
+			// the agent's tab closed while this launched, too soon for its close to see the run: it goes the same way
+			closeBrainstormRun(ctx, k, s.ChannelId, s.RunId)
+			return nil
+		}
 		stopBrainstormRun(ctx, k, s.ChannelId, s.RunId)
 		return nil
 	}

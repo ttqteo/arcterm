@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Closing a brainstorming agent closes its judge: start a judge on a brainstorm question (or a builder
+  check), then close the agent while it reads (Ctrl+Shift+W). Its "Judge · …" / "Builder check · …" row leaves the
+  Agent tree with it and its claude process ends, instead of staying as a plain row that keeps reading. (uncommitted)
 - [ ] (arcterm) A council review holds three directions: start a Review council (or wait for the next one) and open
   its report. At most three direction cards, each with a "First step:" line, then an "Also raised" heading with one row
   each for the rest (`from <expert>` under the title, no stances); its saved doc has `## Also raised` between the

@@ -13,6 +13,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/bgagents"
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
+	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/tsgen/tsgenmeta"
 	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
@@ -114,11 +115,36 @@ func tabSessionIds(ctx context.Context, tabId string, blockIds []string) []strin
 	return out
 }
 
+// closeBrainstormSessions closes the tabs of the one-shot sessions the tab's brainstorm started, its builder check
+// and its judge, whatever their state: the Agent tree nests them under the brainstorming agent, so they go with it
+// instead of reading on as orphans. Each kind's record names its run.
+func closeBrainstormSessions(ctx context.Context, tab *waveobj.Tab) {
+	for _, keys := range [][2]string{
+		{waveobj.MetaKey_BrainstormCheckChannel, waveobj.MetaKey_BrainstormCheckRun},
+		{waveobj.MetaKey_BrainstormJudgeChannel, waveobj.MetaKey_BrainstormJudgeRun},
+	} {
+		channelId, runId := tab.Meta.GetString(keys[0], ""), tab.Meta.GetString(keys[1], "")
+		if channelId == "" || runId == "" {
+			continue
+		}
+		run, err := wstore.GetRun(ctx, channelId, runId)
+		if err != nil {
+			log.Printf("CloseTab %s: loading its brainstorm session %s: %v\n", tab.OID, runId, err)
+			continue
+		}
+		if err := jarvis.CloseRunWorkerTabs(ctx, run); err != nil {
+			log.Printf("CloseTab %s: closing its brainstorm session %s: %v\n", tab.OID, runId, err)
+		}
+	}
+}
+
 // returns the new active tabid
 func (svc *WorkspaceService) CloseTab(ctx context.Context, workspaceId string, tabId string) (*CloseTabRtnType, waveobj.UpdatesRtnType, error) {
 	ctx = waveobj.ContextWithUpdates(ctx)
 	tab, err := wstore.DBGet[*waveobj.Tab](ctx, tabId)
 	if err == nil && tab != nil {
+		// before the tab itself, so the last tab's close still closes the window
+		closeBrainstormSessions(ctx, tab)
 		// read before DeleteTab removes the blocks
 		sessionIds := tabSessionIds(ctx, tabId, tab.BlockIds)
 		go func() {

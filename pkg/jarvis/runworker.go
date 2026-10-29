@@ -7,10 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wcore"
+	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
@@ -62,6 +65,37 @@ func StopRunWorkers(ctx context.Context, run *waveobj.Run) error {
 		for _, workerORef := range run.Phases[i].WorkerOrefs {
 			if err := StopRunWorker(ctx, workerORef); err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", workerORef, err))
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// CloseRunWorkerTabs stops each of run's workers and deletes its tab, so its row leaves the cockpit with it. A tab
+// already closed is skipped. The workspace updates go out with ctx's when it collects them, else on their own.
+func CloseRunWorkerTabs(ctx context.Context, run *waveobj.Run) error {
+	if waveobj.ContextGetUpdates(ctx) == nil {
+		ctx = waveobj.ContextWithUpdates(ctx)
+		defer func() { wps.Broker.SendUpdateEvents(waveobj.ContextGetUpdatesRtn(ctx)) }()
+	}
+	var errs []error
+	for i := range run.Phases {
+		for _, workerORef := range run.Phases[i].WorkerOrefs {
+			if err := StopRunWorker(ctx, workerORef); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", workerORef, err))
+				continue
+			}
+			tabId := strings.TrimPrefix(workerORef, "tab:")
+			workspaceId, err := wstore.DBFindWorkspaceForTabId(ctx, tabId)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("finding the workspace of tab %s: %w", tabId, err))
+				continue
+			}
+			if workspaceId == "" {
+				continue
+			}
+			if _, err := wcore.DeleteTab(ctx, workspaceId, tabId, false); err != nil {
+				errs = append(errs, fmt.Errorf("closing tab %s: %w", tabId, err))
 			}
 		}
 	}

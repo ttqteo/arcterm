@@ -700,6 +700,75 @@ func TestJudgeLaunchAfterStopStopsItsRun(t *testing.T) {
 	}
 }
 
+func stubCloseBrainstormSessionTabs(t *testing.T) *[]string {
+	t.Helper()
+	var closed []string
+	old := closeBrainstormSessionTabs
+	closeBrainstormSessionTabs = func(_ context.Context, r *waveobj.Run) error {
+		closed = append(closed, r.ID)
+		return nil
+	}
+	t.Cleanup(func() { closeBrainstormSessionTabs = old })
+	return &closed
+}
+
+// closing the brainstorming agent's tab closes its sessions' tabs too (workspaceservice.CloseTab), so a watcher
+// left on one settles without a word, a builder check's included, which no stop takes
+func TestWatcherSettlesQuietlyWhenTheAgentsTabCloses(t *testing.T) {
+	ctx := context.Background()
+	for _, k := range []*sessionKind{builderCheckKind, judgeKind} {
+		t.Run(k.what, func(t *testing.T) {
+			_, file := seedJudgeBrainstorm(t, 5)
+			stopped := stubStopStageSession(t)
+			stubReadBrainstormRun(t, &waveobj.Run{ID: "run-1", Status: jarvis.RunStatus_Done, Report: goodJudgeReport})
+			delivered := stubDeliver(t)
+
+			c := brainstormSession{Kind: k, TabId: uuid.NewString(), BlockId: "block-1", File: file, RunId: "run-1", ChannelId: "ch-1", StartedTs: 42}
+			if !tickBrainstormSession(ctx, c, time.Now().UnixMilli()) {
+				t.Fatal("the watcher of a closed agent's session did not settle")
+			}
+			if len(*delivered) != 0 || len(*stopped) != 0 {
+				t.Fatalf("sent %+v and stopped %v, want nothing", *delivered, *stopped)
+			}
+			for _, path := range []string{brainstormcheck.ReportPath(file), brainstormcheck.JudgeResultPath(file)} {
+				if _, err := os.Stat(path); err == nil {
+					t.Fatalf("wrote %s for a closed agent", path)
+				}
+			}
+		})
+	}
+}
+
+func TestLaunchAfterTheAgentsTabClosedClosesTheSession(t *testing.T) {
+	ctx := context.Background()
+	stopped := stubStopStageSession(t)
+	closed := stubCloseBrainstormSessionTabs(t)
+	stubReadBrainstormRun(t, &waveobj.Run{ID: "run-1", Status: jarvis.RunStatus_Executing})
+	_, file := seedBrainstorm(t, testSpecRel, true)
+	tabId, blockId := seedAgentTab(t, ctx, nil)
+	old := launchBrainstormSession
+	launchBrainstormSession = func(ctx context.Context, _ orchestrate.JudgingSession) (string, error) {
+		// the user closes the agent while the builder's session starts
+		if err := wstore.DBDelete(ctx, waveobj.OType_Tab, tabId); err != nil {
+			t.Errorf("DBDelete: %v", err)
+		}
+		return "run-1", nil
+	}
+	t.Cleanup(func() { launchBrainstormSession = old })
+	c, err := readBrainstormForCheck(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.TabId, c.BlockId = tabId, blockId
+
+	if err := launchSessionRun(ctx, &c); err != nil {
+		t.Fatalf("launchSessionRun: %v", err)
+	}
+	if len(*closed) != 1 || (*closed)[0] != "run-1" || len(*stopped) != 0 {
+		t.Fatalf("closed %v and stopped %v, want run-1 closed", *closed, *stopped)
+	}
+}
+
 func TestStaleJudgeWatcherLeavesNewJudge(t *testing.T) {
 	ctx := context.Background()
 	armed := stubArmBrainstormSession(t)

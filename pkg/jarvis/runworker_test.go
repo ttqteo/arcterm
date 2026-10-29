@@ -100,6 +100,48 @@ func TestStopRunWorkersJoinsErrors(t *testing.T) {
 	}
 }
 
+// a brainstorm's builder check or judge whose agent closes goes with it: its worker stops and its tab leaves the
+// workspace; a worker tab already closed is no error
+func TestCloseRunWorkerTabsStopsAndDeletesTheTab(t *testing.T) {
+	ctx := context.Background()
+	var destroyed []string
+	oldDestroy := destroyBlockController
+	destroyBlockController = func(id string) { destroyed = append(destroyed, id) }
+	t.Cleanup(func() { destroyBlockController = oldDestroy })
+	wsId := "2b3c4d5e-0001-4000-8000-000000000001"
+	workerTab, workerBlock := "2b3c4d5e-0002-4000-8000-000000000002", "2b3c4d5e-0003-4000-8000-000000000003"
+	otherTab := "2b3c4d5e-0004-4000-8000-000000000004"
+	for _, obj := range []waveobj.WaveObj{
+		&waveobj.Workspace{OID: wsId, TabIds: []string{otherTab, workerTab}, ActiveTabId: otherTab},
+		&waveobj.Tab{OID: workerTab, BlockIds: []string{workerBlock}},
+		&waveobj.Block{OID: workerBlock, ParentORef: "tab:" + workerTab, Meta: waveobj.MetaMapType{waveobj.MetaKey_Controller: "cmd"}},
+		&waveobj.Tab{OID: otherTab},
+	} {
+		if err := wstore.DBInsert(ctx, obj); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := NewRun("judge", wsId, "/tmp", nil, RunMode_Quick, QuickPlaybook(), 1)
+	run.Phases[0].WorkerOrefs = []string{"tab:" + workerTab, "tab:2b3c4d5e-0005-4000-8000-000000000005"}
+
+	if err := CloseRunWorkerTabs(ctx, &run); err != nil {
+		t.Fatalf("CloseRunWorkerTabs: %v", err)
+	}
+	if len(destroyed) != 1 || destroyed[0] != workerBlock {
+		t.Fatalf("destroyed %v, want the worker's block", destroyed)
+	}
+	if tab, _ := wstore.DBGet[*waveobj.Tab](ctx, workerTab); tab != nil {
+		t.Fatal("the worker's tab is still in the store")
+	}
+	ws, err := wstore.DBMustGet[*waveobj.Workspace](ctx, wsId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ws.TabIds) != 1 || ws.TabIds[0] != otherTab || ws.ActiveTabId != otherTab {
+		t.Fatalf("workspace tabs %v active %s, want only %s, still active", ws.TabIds, ws.ActiveTabId, otherTab)
+	}
+}
+
 // A stop that only clears runonstart is not durable: the block keeps its controller name, so the next
 // ResyncController builds a fresh controller and runs the command again (a forced resync does not even
 // consult runonstart). Clearing the controller makes resync destroy instead of create.
