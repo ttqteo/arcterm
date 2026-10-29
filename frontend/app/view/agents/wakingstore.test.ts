@@ -3,7 +3,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { describe, expect, it } from "vitest";
-import { bumpWaking, isWaking, wakingAtom, whileWaking } from "./wakingstore";
+import { bumpWaking, isWaking, wakingAtom, whileWaking, withWakeDraft } from "./wakingstore";
 
 describe("bumpWaking", () => {
     it("counts two wakes of one agent and drops it at zero", () => {
@@ -14,6 +14,17 @@ describe("bumpWaking", () => {
         expect(m.get("a")).toBe(1);
         m = bumpWaking(m, "a", -1);
         expect(m.has("a")).toBe(false);
+    });
+});
+
+describe("withWakeDraft", () => {
+    it("keeps each agent's draft apart and drops an emptied one", () => {
+        let m = withWakeDraft(new Map(), "a", "push the docs");
+        m = withWakeDraft(m, "b", "hi");
+        expect(m.get("a")).toBe("push the docs");
+        m = withWakeDraft(m, "a", "");
+        expect(m.has("a")).toBe(false);
+        expect(m.get("b")).toBe("hi");
     });
 });
 

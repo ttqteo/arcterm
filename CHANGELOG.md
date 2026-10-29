@@ -30,6 +30,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   rail. Type or paste text and its translation shows below, from English to Vietnamese or any other pair (⇄ swaps them,
   and Detect language reads the source for you), with the phonetic and word classes for a single word. Nothing needs
   installing, and the text stays when you close the panel. <!-- try: translate -->
+- A Markdown or HTML file's Preview in an agent's File tab has a Back to the top button in its header, beside the
+  outline.
 - A Claude agent with a large context (100k tokens or more) is compacted while its prompt cache is still warm: just
   before it sleeps, and, when it stays awake, once it has sat idle with 5 minutes of cache left. Waking it later reads
   the summary instead of re-reading the whole conversation at twice the input price. Sleep on such an agent compacts
@@ -37,6 +39,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   the threshold.
 - Right-clicking a council in the Agent tree offers Copy id, a running council's too, so `wsh council show <id>` and
   the other council commands no longer need the id typed out.
+- A brainstorm question says over its answers whether you pick one or more. When the answers can be combined, each row
+  has a tick box: tick several and Send gives them to the agent together, while clicking a row still sends it alone.
+  Every approach in the judge's list now has its letter, the fifth and later ones included.
 
 ### Changed
 
@@ -69,8 +74,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A message typed under a sleeping agent stays in its box while the agent wakes, even if you open another agent and
+  come back. Before, the box came back empty, so the message read as lost, though it still reached the agent.
+- Vietnamese in the Hack and Fira Code fonts no longer breaks apart: letters such as ả, ị and ở drew with a gap after
+  them ("ả nh"), in monospace labels and in the terminal. They now come from JetBrains Mono at the same width.
 - Closing a brainstorming agent closes its builder check and its judge with it. Before, they kept reading in tabs of
   their own, and stayed in the Agent tree after the agent was gone.
+- A brainstorm's earlier judge or builder check no longer turns up as a separate session in the Agent tree when the
+  agent asks for a new one: the earlier one's tab closes as the new one starts.
 - An agent's Files tab lists the files of a folder that is not a git repository, as Code does, leaving out
   node_modules, build output and dot-folders. Before, the files flashed up and gave way to a "Not a git repository"
   note.

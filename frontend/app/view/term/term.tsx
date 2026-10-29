@@ -6,7 +6,7 @@ import { Search, useSearch } from "@/app/element/search";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useTabModel } from "@/app/store/tab-model";
-import { DEFAULT_TERM_FONT, MONO_FONTS, stackOf } from "@/app/view/agents/fonts";
+import { termFontStack } from "@/app/view/agents/fonts";
 import { activePalette, deriveTermTheme } from "@/app/view/agents/themes";
 import { themeOverridesAtom, themePresetAtom } from "@/app/view/agents/themestore";
 import type { TermViewModel } from "@/app/view/term/term-model";
@@ -153,8 +153,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
             {
                 theme: termTheme,
                 fontSize: termFontSize,
-                fontFamily:
-                    termSettings?.["term:fontfamily"] ?? connFontFamily ?? stackOf(MONO_FONTS, DEFAULT_TERM_FONT),
+                fontFamily: termFontStack(termSettings?.["term:fontfamily"] ?? connFontFamily),
                 drawBoldTextInBrightColors: false,
                 // TUIs paint their own backgrounds (Claude Code's prompt row is #373737) and can land a palette
                 // grey on them at ~1.6:1; xterm lifts any cell below this ratio. 4.5 is WCAG AA, VS Code's default.

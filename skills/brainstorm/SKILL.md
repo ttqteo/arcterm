@@ -99,10 +99,10 @@ Everything else is optional and read leniently, but write every field as describ
 |---|---|
 | `spec` | The spec path, relative to the project (or absolute). You write the spec there on `brainstorm: check`. |
 | `canvas` | The `arc:design` topic whose boards and spikes the parts list: boards live in `.superpowers/design/<canvas>/project/`, spikes anywhere under `.superpowers/design/<canvas>/`. Omit it when there are no mockups. |
-| `question` | `{ "n", "text", "part", "why", "read", "options", "approaches", "judge" }`: the question you are waiting on, its number (1, 2, 3, ...), the id of the part it is for, why you ask it, your one-line read of the options, and the answers you offer (below). On an approach question, `approaches` is the list you made for the judge, and `read`, `options` and `judge` come from the judge (**Approach questions go to the judge**, below). Leave `part` out for a question about no part (below). `null` while you are not asking. |
+| `question` | `{ "n", "text", "part", "why", "read", "options", "multi", "approaches", "judge" }`: the question you are waiting on, its number (1, 2, 3, ...), the id of the part it is for, why you ask it, your one-line read of the options, the answers you offer, and `multi: true` when the user may take more than one of them (below). On an approach question, `approaches` is the list you made for the judge, and `read`, `options` and `judge` come from the judge (**Approach questions go to the judge**, below). Leave `part` out for a question about no part (below). `null` while you are not asking. |
 | `working` | One short line on what is still underway, set only when a turn ends with work running in the background (below). Arc shows it in place of the question and locks the pane's controls while it is set. `null` otherwise. |
 | `parts[]` | The design, in display order. `title`; `state`; `kind` (`"note"` for background, below; leave it out for a decision); `gist` (the part in one line, below); `body` (the part's text); `from` (where it came from: `answer 2`, `mockup`, `recon`); `boards` (board file names under the canvas's `project/`); `spikes` (live spike pages, as paths under the canvas folder, below); `was` / `why` (below). |
-| `history[]` | Every finished exchange, oldest first: `kind` (`question` or `recon`), `n` (the question's number), `q`, `why` (the question's `why`), `a`, `into` (the part ids it went into), and for a question that offered answers, `options` and `picked`, and the question's `judge` when it had one (below). A question dropped after pushback has `superseded: true`, `part` (the part it was asked for) and no `a` (below). |
+| `history[]` | Every finished exchange, oldest first: `kind` (`question` or `recon`), `n` (the question's number), `q`, `why` (the question's `why`), `a`, `into` (the part ids it went into), and for a question that offered answers, `options` and `picked` (an index, or a list of indexes when the user took several), and the question's `judge` when it had one (below). A question dropped after pushback has `superseded: true`, `part` (the part it was asked for) and no `a` (below). |
 | `done` | `true` only when nothing is left to ask. |
 | `check` | The builder check's result (below), else `null`. |
 | `run` | The run id once a run started from this brainstorm, else `null`. |
@@ -134,7 +134,9 @@ terminal.
 
 ## The lines Arc sends
 
-An answer arrives as the user's own text, on one line; a picked option arrives as its `label`. So does
+An answer arrives as the user's own text, on one line; a picked option arrives as its `label`, and
+options picked together on a `multi` question arrive as their labels joined by ` + ` (`Owning team
+first + Both at once`): the answer is all of them, combined. So does
 anything else the user types in the answer box: a pushback, a question back, a request for more. Arc
 keeps the box when no question is open too, and a line typed there arrives the same way (**A line
 with no question open**, below).
@@ -191,8 +193,9 @@ in any other harness run `wsh ui reveal brainstorm:<topic>` from your terminal.
 
 **On an answer**, in that one write: append the exchange to `history` (with `n`, `q`, the question's `why`, `a`
 and `into`; when the question offered `options`, copy them into the entry, with the question's `judge`
-beside them when it has one, and set `picked` to the index of the one the user's answer is, or leave
-`picked` out when they answered in their own words), write the part (`guess`, or `yours` when the user's own words are the part), and set the
+beside them when it has one, and set `picked` to the index of the one the user's answer is, to the
+list of indexes when they took several together, or leave `picked` out when they answered in their
+own words), write the part (`guess`, or `yours` when the user's own words are the part), and set the
 next `question` (its part created as `asked` if new). End the turn with the question in the
 terminal too.
 
@@ -271,7 +274,11 @@ your reasons for and against it, one short sentence each (what it gains and lose
 whether it fits what is there today). Mark your recommendation with `"pick": true` on exactly one
 option, and say how the options compare in `read`: one line, the reason for your pick included. Arc
 shows the options as lettered rows the user picks from, each with its pros and cons under it, and
-`read` above them; the free-text box stays for any other answer. Write pros and cons whenever the
+`read` above them; the free-text box stays for any other answer. Set `"multi": true` on the
+question when the options add up rather than rule each other out (which checks to run, what a page
+shows), so the user may take more than one; leave it out when they exclude each other (dark or
+light, one threshold or one per group). Arc says "Pick one" or "Pick one or more" over the options
+and, on a `multi` question, gives each row a tick box. Write pros and cons whenever the
 choice is a trade-off; a question whose answers need no weighing leaves them and `read` out. An open question (a story, a moment, a number only the user knows) has no
 `options`. An approach question is the exception: the judge writes its options, pick and `read`
 (below).
@@ -312,8 +319,10 @@ script, never by retyping it; it sets `working` to `null` in the same write:
 node -e "const fs=require('fs'),[f,j]=process.argv.slice(1),b=JSON.parse(fs.readFileSync(f));Object.assign(b.question,JSON.parse(fs.readFileSync(j)));b.working=null;fs.writeFileSync(f,JSON.stringify(b,null,2))" "<absolute path of brainstorm.json>" "<path>"
 ```
 
-`<path>` is `judge.json` beside `brainstorm.json`: `{ "options", "read", "judge": { "added",
-"dropped" } }`. `approaches` stays in the question for a rerun.
+`<path>` is `judge.json` beside `brainstorm.json`: `{ "options", "read", "multi", "judge": {
+"added", "dropped" } }`. `approaches` stays in the question for a rerun. The judge's `multi`
+replaces yours: set `multi` on the approach question only for the wait, when the approaches could be
+taken together.
 
 **While the judge weighs.** Arc shows the question, the approach list and an open answer box while
 the judge runs, and stops the judge itself before it sends an answer or Skip; you never stop it. A

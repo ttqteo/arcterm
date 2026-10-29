@@ -35,14 +35,36 @@ does not, say what you saw and it becomes a bug row under Actionable.
   rail-translate float-note agent-rail-tabs surface-smoke` (never ran: the run's Final dev app did not finish
   building). Cmd+Shift+D on a Mac is untried. (commit "feat(translate): the Translate panel on the rail, and
   Ctrl+Shift+D")
+- [ ] (arcterm) The File tab's Back to the top button: open a long `.md` file in an agent's File tab (Preview), scroll
+  down and press the arrow-to-line button in the header; the document glides back to its top. Do the same with a long
+  `.html` file (needs a wavesrv built after this change). Source and Diff show no such button.
+- [ ] (arcterm) A wake message survives switching agents: open a sleeping agent, type a line in the box under its
+  conversation, press Enter, then pick another agent and come back before it is awake. The box still shows the line
+  (read-only, Waking…), the agent receives it, and the box is empty once it is awake.
 - [ ] (arcterm) A council in a project Overview's History unfolds before it opens: open a project's Overview (its row
   in the Agent tree) and click a Council row in History. It is titled as in the Agent tree's Councils, and it unfolds in
   place (question, answer, up to three directions by rank, a chevron turned down) without leaving the Overview; Open
   council opens it and selects its tree row. CDP: `task verify:ui -- project-overview-history` step 7. (commit "feat(overview): a History
   council unfolds before it opens")
+- [ ] (arcterm) Vietnamese draws whole in Hack: with Settings → Appearance mono font (and the terminal font) set to
+  Hack, a brainstorm part's `from` column and a terminal line holding "ảnh Google Dịch ở" show no gap after ả, ị or
+  ở. Checked in headless Edge with the bundled font files, not yet in the app. (commit "fix(fonts): Vietnamese letters
+  draw whole in Hack and Fira Code")
+- [ ] (arcterm) A brainstorm question says whether you pick one or more: in a brainstorm, a question whose answers
+  exclude each other reads "Pick one" over them and has no tick boxes; one marked `multi` (the agent's, or the judge's
+  `multi` in judge.json) reads "Pick one or more", each row has a tick box, ticking B and D shows "Send B + D" and
+  Clear, and Send hands the agent "<B label> + <D label>", which it records with `picked: [1, 3]` (the Decided rail
+  ticks both). Clicking a row still sends it alone. In the judge's wait, every approach row has its letter (E, F …),
+  with tick boxes when the question is `multi`. Not tried in the dev app; no CDP step drives the tick boxes yet.
+  (commit "feat(brainstorm): a question says whether you pick one or more, and sends ticked answers together")
 - [ ] (arcterm) Closing a brainstorming agent closes its judge: start a judge on a brainstorm question (or a builder
   check), then close the agent while it reads (Ctrl+Shift+W). Its "Judge · …" / "Builder check · …" row leaves the
   Agent tree with it and its claude process ends, instead of staying as a plain row that keeps reading. (uncommitted)
+- [ ] (arcterm) A second judge leaves no stray session: in a brainstorm, let a judge finish on one question, then
+  start a judge on the next. The first "Judge · <title>" tab closes as the second starts, so the Agent tree shows one
+  Judge row under the agent and no "Judge · …" row of its own in the project folder; the same for a second builder
+  check. Rows left over from before this fix stay until closed by hand. (commit "fix(brainstorm): a new judge or
+  builder check closes the one before it")
 - [ ] (arcterm) A council review holds three directions: start a Review council (or wait for the next one) and open
   its report. At most three direction cards, each with a "First step:" line, then an "Also raised" heading with one row
   each for the rest (`from <expert>` under the title, no stances); its saved doc has `## Also raised` between the

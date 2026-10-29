@@ -621,6 +621,46 @@ func TestJudgeStartsAfterStop(t *testing.T) {
 	}
 }
 
+// a new session takes the record, so the one it names before is no longer nested under the agent: its tab closes
+// instead of staying as a row of its own in the Agent tree
+func TestNewSessionClosesThePreviousOnesTab(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		k                            *sessionKind
+		stateKey, runKey, channelKey string
+		start                        func(blockId, file string) error
+	}{
+		{builderCheckKind, waveobj.MetaKey_BrainstormCheckState, waveobj.MetaKey_BrainstormCheckRun, waveobj.MetaKey_BrainstormCheckChannel,
+			func(blockId, file string) error {
+				return (&WshServer{}).BrainstormCheckCommand(ctx, wshrpc.CommandBrainstormCheckData{BlockId: blockId, File: file})
+			}},
+		{judgeKind, waveobj.MetaKey_BrainstormJudgeState, waveobj.MetaKey_BrainstormJudgeRun, waveobj.MetaKey_BrainstormJudgeChannel,
+			func(blockId, file string) error {
+				return (&WshServer{}).BrainstormJudgeCommand(ctx, wshrpc.CommandBrainstormJudgeData{BlockId: blockId, File: file})
+			}},
+	} {
+		t.Run(tc.k.what, func(t *testing.T) {
+			stubArmBrainstormSession(t)
+			closed := stubCloseBrainstormSessionTabs(t)
+			stubReadBrainstormRun(t, &waveobj.Run{ID: "run-1", Status: jarvis.RunStatus_Done})
+			_, file := seedJudgeBrainstorm(t, 5)
+			if tc.k == builderCheckKind {
+				_, file = seedBrainstorm(t, testSpecRel, true)
+			}
+			_, blockId := seedAgentTab(t, ctx, waveobj.MetaMapType{
+				tc.stateKey: brainstormAnswered, tc.runKey: "run-1", tc.channelKey: "ch-1",
+			})
+
+			if err := tc.start(blockId, file); err != nil {
+				t.Fatalf("starting a new session: %v", err)
+			}
+			if len(*closed) != 1 || (*closed)[0] != "run-1" {
+				t.Fatalf("closed %v, want the previous session run-1", *closed)
+			}
+		})
+	}
+}
+
 // readingJudge is a judge's reading record at ts: the record a watcher armed at ts owns.
 func readingJudge(ts int64) waveobj.MetaMapType {
 	return waveobj.MetaMapType{waveobj.MetaKey_BrainstormJudgeState: brainstormReading, waveobj.MetaKey_BrainstormJudgeTs: ts}

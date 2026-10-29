@@ -328,7 +328,7 @@ function judgeWaitScenario(kit) {
                 back: flat(pane?.querySelector("[data-brainstorm-back]")),
             };
         })()`);
-    const rowText = (a, i) => `${i < 4 ? String.fromCharCode(65 + i) + " " : ""}${a.name} ${a.description} ${a.facts.length} ${a.facts.length === 1 ? "fact" : "facts"}`;
+    const rowText = (a, i) => `${String.fromCharCode(65 + i)} ${a.name} ${a.description} ${a.facts.length} ${a.facts.length === 1 ? "fact" : "facts"}`;
     const wantRows = WAIT_APPROACHES.map((a, i) => ({ option: String(i), text: rowText(a, i) }));
     const drawn = (w) => w.judging && w.status === WAIT_WORKING && eqJson(w.rows, wantRows);
     const ROW = (i) => `${BS_PANE}?.querySelector('[data-brainstorm-approach][data-brainstorm-option="${i}"]')`;

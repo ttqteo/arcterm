@@ -42,6 +42,7 @@ export function applyScroll(
 // the messages pkg/htmlserve's scrollScript sends and takes
 export const PAGE_SCROLL = "arc-html-scroll";
 export const PAGE_RESTORE = "arc-html-restore";
+export const PAGE_TOP = "arc-html-top";
 
 // the offset an HTML preview reported, or null for any other message a page posts to its parent
 export function pageScrollReport(data: unknown): number | null {
