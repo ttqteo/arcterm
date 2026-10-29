@@ -73,6 +73,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   them ("ả nh"), in monospace labels and in the terminal. They now come from JetBrains Mono at the same width.
 - Closing a brainstorming agent closes its builder check and its judge with it. Before, they kept reading in tabs of
   their own, and stayed in the Agent tree after the agent was gone.
+- A brainstorm's earlier judge or builder check no longer turns up as a separate session in the Agent tree when the
+  agent asks for a new one: the earlier one's tab closes as the new one starts.
 - An agent's Files tab lists the files of a folder that is not a git repository, as Code does, leaving out
   node_modules, build output and dot-folders. Before, the files flashed up and gave way to a "Not a git repository"
   note.

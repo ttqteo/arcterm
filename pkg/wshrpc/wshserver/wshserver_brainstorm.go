@@ -291,9 +291,14 @@ func startBrainstormSession(ctx context.Context, blockId string, s brainstormSes
 	if tab.Meta.GetString(k.stateKey, "") == brainstormReading {
 		return errors.New(k.busy)
 	}
+	prevRun, prevChannel := tab.Meta.GetString(k.runKey, ""), tab.Meta.GetString(k.channelKey, "")
 	s.StartedTs = time.Now().UnixMilli()
 	if err := setBrainstormRecord(ctx, k, s.TabId, brainstormReading, s.StartedTs, "", "", ""); err != nil {
 		return err
+	}
+	// the record no longer names the previous session, so the Agent tree would draw its tab as a row of its own
+	if prevRun != "" {
+		closeBrainstormRun(ctx, k, prevChannel, prevRun)
 	}
 	armBrainstormSession(s)
 	return nil
