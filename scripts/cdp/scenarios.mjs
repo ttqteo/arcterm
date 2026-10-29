@@ -47,6 +47,7 @@ import brainstormFindingsScenarios from "./scenarios-brainstorm-findings.mjs";
 import brainstormJudgeScenarios from "./scenarios-brainstorm-judge.mjs";
 import brainstormReviewScenarios from "./scenarios-brainstorm-review.mjs";
 import brainstormRunScenarios from "./scenarios-brainstorm-run.mjs";
+import railTranscriptScenarios from "./scenarios-rail-transcript.mjs";
 import {
     arrangeSetupFixture,
     assertSetupFixtureInstalled,
@@ -48641,6 +48642,20 @@ const BS_KIT = {
     flatText,
 };
 
+// what the Transcript tab's scenario (scenarios-rail-transcript.mjs) needs of this file: the fixture roster file, the real
+// terminal block behind a fixture agent, the reload, and the key chord
+const RT_KIT = {
+    waveService,
+    polishWaitFor,
+    polishNap,
+    openRailTerminal,
+    ahReload,
+    waitForProjectInConfig,
+    TREE_RAIL_FIXTURE,
+    UI_ROUTE,
+    MOD_BIT,
+};
+
 // --- run-queue: plans queued to start are rows on the Agent tree, with Start now, Run next and Remove ---------------------
 // (docs/superpowers/specs/2026-10-14-run-handoff-lifecycle-design.md, decision 4.) A real queue in wavesrv and real rows,
 // nothing mocked. `runs:maxactive` is 1 and a run held by deferstart (it spawns nothing) is active, so no entry has room
@@ -56398,6 +56413,7 @@ export const SCENARIOS = [
     agentGrid,
     agentUploads,
     agentRailTabs,
+    ...railTranscriptScenarios(RT_KIT),
     agentRailWorktreeFiles,
     agentRailChangesCommits,
     agentRailCommitMode,

@@ -1387,7 +1387,7 @@ export function AgentDetailsRail({ model, agent }: { model: AgentsViewModel; age
                         ) : null}
                     </div>
                 ) : shown === "transcript" ? (
-                    <RailTranscript agent={agent} />
+                    <RailTranscript agent={agent} surfaceAtom={model.surfaceAtom} />
                 ) : undefined
             }
             edge={!fixedWidth ? <RailResizeGrip tab={wideTab} width={wide.width} max={wide.max} /> : undefined}

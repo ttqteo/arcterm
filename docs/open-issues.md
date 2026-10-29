@@ -27,6 +27,27 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The Transcript tab reads a real compacted session back: wake a sleeping Claude agent whose transcript is
+  55 MB or more (it was compacted before it slept), open the agent's panel on Transcript (Ctrl+Shift+F in its terminal),
+  then press Compactions until it says No earlier compactions. You should see the conversation from its first prompt,
+  each compaction marker with its summary, and the page you were reading stay put while earlier parts load. Note the
+  renderer's RAM then (the compact RAM popup's Interface layer) in the RAM watch row for the Transcript tab. Only the
+  generated fixture (`task verify:ui -- rail-transcript-tab`) has been through it. (commit "feat(agents): the Transcript
+  tab reads the whole conversation back, with its scenario and docs")
+- [ ] (arcterm) The agent panel's strip still fits at Overview's 300px: on an agent that has a worktree, a transcript,
+  an open file and counts (subagents, files changed, uploads), stay on Overview and look at the strip. Overview, Files,
+  Changes and Transcript show their icons, the open file folds into one tab (its icon, a count when several are open),
+  and the counts keep their icons after the short rule, with nothing clipped, overlapping or scrolling. Narrow the window
+  until the nav rail collapses and look again. Four icons were added to a strip that held three; only the CDP scenario
+  `agent-rail-tabs` (steps 1, 5, 7, tab names and widths, not the pixels) has been through it. (commit "feat(agents): a
+  Transcript tab on the agent rail strip, its width and Mod+Shift+F")
+- [ ] (arcterm) The compact reader's draw-earlier step shows in the other places that use it: run
+  `task verify:ui -- agy-harness` once memory allows (it opens a past session in `CompactTranscript` and its folds), then
+  open Conversation History on a past session of more than 200 items and a sleeping agent with a long conversation, and
+  scroll each to the top. More items draw each time the top is reached, and the item you were reading stays where it was.
+  Its rendered check so far is the Transcript tab's scenario (`rail-transcript-tab`, steps 2, 3, 4 and 6); nothing has run
+  `agy-harness` or the sleeping overlay on it. (commit "feat(agents): the compact reader draws earlier items on reaching
+  the top, and scrolls to an entry")
 - [ ] (arcterm) A wake message survives switching agents: open a sleeping agent, type a line in the box under its
   conversation, press Enter, then pick another agent and come back before it is awake. The box still shows the line
   (read-only, Waking…), the agent receives it, and the box is empty once it is awake.
@@ -1517,4 +1538,5 @@ setting; that call is the person's. Layers are the compact RAM popup's.
 | Pinned apps: each open app's page kept loaded out of sight for 1 min (`APP_FRAME_IDLE_MS`, `AppFrames` in `apppane.tsx`), so it keeps its page and scroll | uncommitted | Interface | Not measured. One frame, a renderer of its own (127.0.0.1 is cross-site to the cockpit), per app seen in the last minute, where before only the app on screen held one; a guess of 50–150 MB each for a dev page. To read: the WebView2 working set with two apps open, one out of sight, then past the minute. | 2026-10-19 | pending |
 | Held services: wavesrv holds every pinned app's server (`pkg/services`), each one `cmd` terminal block in a tab of its own; only a shown (or just left, or Keep-running) service runs, a sleeping one holds 0 MB | uncommitted | arcterm (wavesrv) and the apps' processes | Not measured. arcterm's own cost is one PTY and one goroutine per running service, a timer per service off screen, and once its minute is up one read of its process tree a minute (`services.Busy`) until it is idle, plus a readiness probe (an HTTP GET every 500 ms, up to 30 s) only while a service is starting; nothing polls while one runs or is shown. A sleeping service has no process. The running services' own RAM is the apps', not arcterm's. To read: wavesrv's working set with 0, 5 and 10 services running. | 2026-10-20 | pending |
 | Pinned apps: the page's iframe in the centre, and the app's own dev server | uncommitted | Interface, and the app's process | Not measured. No frame until an app is opened; open, the frame (no second webview). The app's server is a held service (row above): it runs while the app is used and for a minute after (always, with Keep running), and its RAM is the app's, not arcterm's. | 2026-10-19 | pending |
+| Agent → Transcript tab on the rail (`railtranscript.tsx`): the last 2,000 transcript lines of the focused agent projected and drawn, every earlier chunk the reader loads kept as lines and projected entries until the tab unmounts (closing the rail or leaving the tab drops them), and a live stream while the tab is shown | uncommitted | Interface | The page's JS heap after a GC, from `task verify:ui -- rail-transcript-tab` on a generated 8,404-line, ~50 MB Claude session (large tool results, 26 base64 images): 50 MB before the tab opens, 83 MB after its first read (the last 2,000 lines, 750 items, 200 drawn), 226 MB after Compactions loaded it back to the start (all 8,404 lines held as strings and entries; a tool result is kept whole in its entry). Not measured: the WebView2 working set, and a real 55 MB+ session (hand check in section 0). Loading back is the reader's act, so the cost is paid only on a long read; the first read alone is the cost of opening it. | 2026-10-29 | pending |
 | Agent → Canvas gallery: the grid of lazy `<img>` previews, and the viewer's one board iframe | `75278d142` | Interface | The page's JS heap after a GC, from Final's `canvas-gallery` steps 1 (grid) and 3 (viewer) on a 3-canvas fixture: 41.6 MB and 41.8 MB (43.4 and 43.4 in an earlier run). Not measured: the WebView2 working set, and the 17-canvas case. The heap figure is the page's own JS and says nothing of the board iframe. Between visits only the list (a row per canvas) and the folder-URL cache stay. | 2026-10-14 | pending |
