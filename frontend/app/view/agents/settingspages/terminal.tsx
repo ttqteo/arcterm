@@ -6,7 +6,7 @@
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { useAtomValue } from "jotai";
 import { coerceFontSize, coerceScrollback } from "../cockpitprefsstore";
-import { DEFAULT_TERM_FONT, MONO_FONTS, stackOf } from "../fonts";
+import { DEFAULT_TERM_FONT, MONO_FONTS, monoFontOf, stackOf } from "../fonts";
 import { Segmented, SettingCard, SettingRow, Stepper, Toggle, writeConfig } from "../settingsui";
 
 export function TerminalPage() {
@@ -18,7 +18,7 @@ export function TerminalPage() {
     const rightClickPaste = (useAtomValue(getSettingsKeyAtom("term:rightclickpaste")) as boolean) ?? true;
     // the terminal face is stored as the full stack string; match it back to a catalog id for the control
     const termFontStack = (useAtomValue(getSettingsKeyAtom("term:fontfamily")) as string) ?? "";
-    const termFontId = MONO_FONTS.find((f) => f.stack === termFontStack)?.id ?? DEFAULT_TERM_FONT;
+    const termFontId = monoFontOf(termFontStack)?.id ?? DEFAULT_TERM_FONT;
     // each option draws in the face it names, so the choice is judged by looking at it
     const monoOpts = MONO_FONTS.map((f) => ({ id: f.id, label: f.label, fontFamily: f.stack }));
 

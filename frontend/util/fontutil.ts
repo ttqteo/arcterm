@@ -27,6 +27,11 @@ function loadJetBrainsMonoFont() {
     jbmFont.load();
 }
 
+// Hack Nerd Font Mono has no Vietnamese letters (ả, ị) but has the combining marks, each a full cell wide: Chromium
+// splits a missing letter into its base and mark and draws both in Hack, so "ảnh" drew as "ả nh". Leaving the marks
+// (U+0300-036F) out of its range sends the whole letter to the next face in the stack (fonts.ts: JetBrains Mono).
+const HACK_RANGE = "U+0000-02FF, U+0370-10FFFF";
+
 function loadHackNerdFont() {
     if (isHackNerdFontLoaded) {
         return;
@@ -35,18 +40,22 @@ function loadHackNerdFont() {
     const hackRegular = new FontFace("Hack", "url('fonts/hacknerdmono-regular.ttf')", {
         style: "normal",
         weight: "400",
+        unicodeRange: HACK_RANGE,
     });
     const hackBold = new FontFace("Hack", "url('fonts/hacknerdmono-bold.ttf')", {
         style: "normal",
         weight: "700",
+        unicodeRange: HACK_RANGE,
     });
     const hackItalic = new FontFace("Hack", "url('fonts/hacknerdmono-italic.ttf')", {
         style: "italic",
         weight: "400",
+        unicodeRange: HACK_RANGE,
     });
     const hackBoldItalic = new FontFace("Hack", "url('fonts/hacknerdmono-bolditalic.ttf')", {
         style: "italic",
         weight: "700",
+        unicodeRange: HACK_RANGE,
     });
     addToFontFaceSet(document.fonts, hackRegular);
     addToFontFaceSet(document.fonts, hackBold);

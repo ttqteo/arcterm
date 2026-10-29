@@ -32,6 +32,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   place (question, answer, up to three directions by rank, a chevron turned down) without leaving the Overview; Open
   council opens it and selects its tree row. CDP: `task verify:ui -- project-overview-history` step 7. (commit "feat(overview): a History
   council unfolds before it opens")
+- [ ] (arcterm) Vietnamese draws whole in Hack: with Settings → Appearance mono font (and the terminal font) set to
+  Hack, a brainstorm part's `from` column and a terminal line holding "ảnh Google Dịch ở" show no gap after ả, ị or
+  ở. Checked in headless Edge with the bundled font files, not yet in the app. (commit "fix(fonts): Vietnamese letters
+  draw whole in Hack and Fira Code")
 - [ ] (arcterm) A brainstorm question says whether you pick one or more: in a brainstorm, a question whose answers
   exclude each other reads "Pick one" over them and has no tick boxes; one marked `multi` (the agent's, or the judge's
   `multi` in judge.json) reads "Pick one or more", each row has a tick box, ticking B and D shows "Send B + D" and

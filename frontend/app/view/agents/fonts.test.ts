@@ -2,7 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { applyFontVars, DEFAULT_MONO, DEFAULT_SANS, DEFAULT_TERM_FONT, MONO_FONTS, SANS_FONTS, stackOf } from "./fonts";
+import {
+    applyFontVars,
+    DEFAULT_MONO,
+    DEFAULT_SANS,
+    DEFAULT_TERM_FONT,
+    MONO_FONTS,
+    monoFontOf,
+    SANS_FONTS,
+    stackOf,
+    termFontStack,
+} from "./fonts";
 
 describe("font catalog", () => {
     it("sans list has unique ids and includes the default", () => {
@@ -51,6 +61,25 @@ describe("applyFontVars", () => {
         const root = { style: { setProperty: (k: string, v: string) => (set[k] = v) } };
         applyFontVars(root as unknown as HTMLElement, "inter", "firacode");
         expect(set["--font-sans"]).toBe('"Inter", system-ui, sans-serif');
-        expect(set["--font-mono"]).toBe('"Fira Code", monospace');
+        expect(set["--font-mono"]).toBe('"Fira Code", "JetBrains Mono", monospace');
+    });
+});
+
+describe("Vietnamese in the faces that lack it", () => {
+    it("Hack and Fira Code fall to JetBrains Mono before the system monospace", () => {
+        expect(stackOf(MONO_FONTS, "hack")).toBe('"Hack", "JetBrains Mono", monospace');
+        expect(stackOf(MONO_FONTS, "firacode")).toBe('"Fira Code", "JetBrains Mono", monospace');
+    });
+    it("reads a stack saved before the fallback as its face, and a stack of the user's own as none", () => {
+        expect(monoFontOf('"Hack", monospace')?.id).toBe("hack");
+        expect(monoFontOf("'Fira Code', monospace")?.id).toBe("firacode");
+        expect(monoFontOf('"JetBrains Mono", monospace')?.id).toBe("jetbrains");
+        expect(monoFontOf('"Cascadia Code", monospace')).toBeUndefined();
+    });
+    it("draws a terminal with its face's current stack, a stack of the user's own as written, else the default", () => {
+        expect(termFontStack('"Hack", monospace')).toBe('"Hack", "JetBrains Mono", monospace');
+        expect(termFontStack('"Cascadia Code", monospace')).toBe('"Cascadia Code", monospace');
+        expect(termFontStack(undefined)).toBe('"JetBrains Mono", monospace');
+        expect(termFontStack("")).toBe('"JetBrains Mono", monospace');
     });
 });

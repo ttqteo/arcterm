@@ -18,10 +18,15 @@ export const SANS_FONTS: FontDef[] = [
     { id: "system", label: "System UI", stack: "system-ui, sans-serif" },
 ];
 
+// Hack and Fira Code have no Vietnamese Extended letters (ả, ị, ở): those fall to JetBrains Mono, which has them at the
+// same 0.6em advance, rather than to a system monospace of another width. Hack also needs its range cut
+// (util/fontutil.ts), or Chromium draws the letter from Hack's own full-width combining marks.
+const VI_MONO_FALLBACK = '"JetBrains Mono", monospace';
+
 export const MONO_FONTS: FontDef[] = [
     { id: "jetbrains", label: "JetBrains Mono", stack: '"JetBrains Mono", monospace' },
-    { id: "hack", label: "Hack", stack: '"Hack", monospace' },
-    { id: "firacode", label: "Fira Code", stack: '"Fira Code", monospace' },
+    { id: "hack", label: "Hack", stack: `"Hack", ${VI_MONO_FALLBACK}` },
+    { id: "firacode", label: "Fira Code", stack: `"Fira Code", ${VI_MONO_FALLBACK}` },
 ];
 
 export const DEFAULT_SANS = "inter";
@@ -31,6 +36,25 @@ export const DEFAULT_TERM_FONT = "jetbrains"; // matches term.tsx's fallback and
 // Look up a font's stack by id, falling back to the list's first entry for an unknown id.
 export function stackOf(list: FontDef[], id: string): string {
     return (list.find((f) => f.id === id) ?? list[0]).stack;
+}
+
+// The catalog face a saved mono stack names. term:fontfamily keeps the whole stack string, so one saved before its
+// fallback changed still names its face first; each label is its face's family name.
+export function monoFontOf(stack: string): FontDef | undefined {
+    const lead = stack
+        .split(",")[0]
+        .trim()
+        .replace(/^["']|["']$/g, "");
+    return MONO_FONTS.find((f) => f.stack === stack || f.label === lead);
+}
+
+// The stack a terminal draws with: a catalog face's current stack, a stack of the user's own as written, the default
+// terminal face when none is set.
+export function termFontStack(saved: string | undefined): string {
+    if (!saved) {
+        return stackOf(MONO_FONTS, DEFAULT_TERM_FONT);
+    }
+    return monoFontOf(saved)?.stack ?? saved;
 }
 
 // Write the sans/mono font vars onto a root element's inline style (highest specificity — beats the
