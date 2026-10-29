@@ -1,8 +1,9 @@
 # New dialog, decluttered — design
 
-Date: 2026-10-28. Status: approved design, not yet planned.
-Mockup: `.superpowers/design/new-launcher-declutter/project/Main.dc.html` (gitignored; interactive) plus four state
-boards beside it (BottomB is a rejected option, kept only for reference; NewSession, ProjectFocus, Columns).
+Date: 2026-10-28. Status: shipped (run d0dcd0fb, 2026-10-28).
+Mockup: `.superpowers/design/new-launcher-declutter/project/Main.dc.html` (gitignored; interactive) plus three state
+boards beside it (NewSession, ProjectFocus, Columns). BottomB, a rejected option kept only for reference, is in the
+sibling `rejected/` folder.
 Brainstorm: `.superpowers/brainstorm/new-launcher-declutter/brainstorm.json`.
 
 Amends `2026-10-08-new-launcher-design.md` (the New dialog, `launchermodal.tsx`) and
