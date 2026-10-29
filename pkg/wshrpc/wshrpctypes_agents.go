@@ -144,10 +144,31 @@ type CommandGetAgentTranscriptData struct {
 	// FromStart reads the first MaxLines lines (head) instead of the last (tail); used to resolve
 	// Codex cwd, which lives only on the first-line session_meta record.
 	FromStart bool `json:"fromstart,omitempty"`
+	// Before > 0 reads the last MaxLines lines of [0, Before) by line index (the earlier chunk a tab scrolls back
+	// to); a Before past the file's line count clamps to it. Lines are numbered from 0 over the non-empty ones.
+	Before int `json:"before,omitempty"`
+	// FromByte > 0 reads only the bytes from that offset on (the End an earlier answer gave) and returns the complete
+	// lines in them, so an append never re-reads the file. MaxLines is ignored; Start and Total come back 0.
+	// Setting more than one of Before, FromByte and FromStart is an error, as is a negative Before or FromByte.
+	FromByte int64 `json:"frombyte,omitempty"`
 }
 
 type CommandGetAgentTranscriptRtnData struct {
 	Lines []string `json:"lines"`
+	// Start is the file index of Lines[0]; Total is the file's non-empty line count. Both are 0 on a FromByte read.
+	// A Before read's Total and End describe the file at that read, which may have grown since the tab's first read,
+	// so the tab ignores them there: only tail and FromByte answers move the end of its window.
+	Start int `json:"start"`
+	Total int `json:"total"`
+	// End is the byte offset just past the last newline-terminated line the file held at this read; send it back as
+	// FromByte to read what was appended after it.
+	End int64 `json:"end"`
+	// Partial says the last line a tail, head or Before read returned has no newline yet (still being written). End
+	// stays before it, so the next FromByte read returns it whole; a FromByte read itself leaves such a line out.
+	Partial bool `json:"partial,omitempty"`
+	// Reset says the file is now shorter than FromByte (replaced or truncated): no lines are returned and the caller
+	// reads the tail again.
+	Reset bool `json:"reset,omitempty"`
 }
 
 type CommandGetSubagentsData struct {

@@ -37,15 +37,11 @@ func (ws *WshServer) GetSessionGroupCommand(ctx context.Context, data wshrpc.Com
 }
 
 func (ws *WshServer) GetAgentTranscriptCommand(ctx context.Context, data wshrpc.CommandGetAgentTranscriptData) (*wshrpc.CommandGetAgentTranscriptRtnData, error) {
-	read := readTranscriptTail
-	if data.FromStart {
-		read = readTranscriptHead
-	}
-	lines, err := read(data.Path, data.MaxLines)
+	rtn, err := readAgentTranscript(data)
 	if err != nil {
 		return nil, fmt.Errorf("reading agent transcript: %w", err)
 	}
-	return &wshrpc.CommandGetAgentTranscriptRtnData{Lines: lines}, nil
+	return rtn, nil
 }
 
 func (ws *WshServer) GetSubagentsCommand(ctx context.Context, data wshrpc.CommandGetSubagentsData) (*wshrpc.CommandGetSubagentsRtnData, error) {
