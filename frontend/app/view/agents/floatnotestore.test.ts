@@ -11,22 +11,10 @@ vi.mock("./floatstore", async () => {
     const { atom } = await import("jotai");
     return { enterFloat: vi.fn(), floatModeAtom: atom(false) };
 });
-vi.mock("./toolsstore", async () => {
-    const { atom } = await import("jotai");
-    return {
-        toolsStatusAtom: atom(null),
-        loadTools: vi.fn(),
-        openTool: vi.fn(),
-        installTool: vi.fn(),
-        showInstall: vi.fn(),
-    };
-});
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
-import { atom } from "jotai";
 import type { AgentsViewModel } from "./agents";
-import type { AgentVM } from "./agentsviewmodel";
 import { SCRATCH_SAVE_MS, scratchErrorLine } from "./floatnote";
 import {
     closeFloatNote,
@@ -37,11 +25,9 @@ import {
     scratchBodyAtom,
     scratchErrorAtom,
     scratchPreviewAtom,
-    showTranslate,
     toggleFloatNote,
 } from "./floatnotestore";
 import { enterFloat, floatModeAtom } from "./floatstore";
-import { installTool, loadTools, openTool, showInstall, toolsStatusAtom } from "./toolsstore";
 
 const read = vi.mocked(RpcApi.NoteScratchReadCommand);
 const write = vi.mocked(RpcApi.NoteScratchWriteCommand);
@@ -232,69 +218,5 @@ describe("toggleFloatNote", () => {
         globalStore.set(floatModeAtom, true);
         await toggleFloatNote(model);
         expect(globalStore.get(floatNoteOpenAtom)).toBe(true);
-    });
-});
-
-describe("showTranslate", () => {
-    const terminals = atom<AgentVM[]>([]);
-    const m = (list: Partial<AgentVM>[]) => {
-        globalStore.set(terminals, list as AgentVM[]);
-        return {
-            openTerminal: vi.fn(),
-            terminalsAtom: terminals,
-            focusIdAtom: atom(null),
-        } as unknown as AgentsViewModel;
-    };
-    const trans = (found: boolean) => ({ id: "trans", name: "translate-shell", found }) as ToolStatus;
-    it("closes the note and focuses the trans terminal", async () => {
-        globalStore.set(floatNoteOpenAtom, true);
-        globalStore.set(toolsStatusAtom, [trans(true)]);
-        const mm = m([{ id: "t1", toolId: "trans" }]);
-        await showTranslate(mm);
-        expect(globalStore.get(floatNoteOpenAtom)).toBe(false);
-        expect(mm.openTerminal).toHaveBeenCalledWith("t1");
-    });
-    it("opens the tool in the centre when there is no trans terminal", async () => {
-        globalStore.set(toolsStatusAtom, [trans(true)]);
-        vi.mocked(openTool).mockResolvedValue({ ok: true, tabId: "t9" });
-        const mm = m([]);
-        await showTranslate(mm);
-        expect(openTool).toHaveBeenCalledWith(mm, trans(true), { place: "centre" });
-    });
-    it("installs, then shows the install terminal", async () => {
-        globalStore.set(toolsStatusAtom, [trans(false)]);
-        vi.mocked(installTool).mockResolvedValue({ ok: true, tabId: "inst" });
-        const mm = m([]);
-        await showTranslate(mm);
-        expect(installTool).toHaveBeenCalledWith(mm, trans(false));
-        expect(mm.openTerminal).toHaveBeenCalledWith("inst");
-    });
-    it("shows an install already running or failed instead of starting another", async () => {
-        globalStore.set(toolsStatusAtom, [trans(false)]);
-        vi.mocked(showInstall).mockReturnValue(true);
-        const mm = m([]);
-        await showTranslate(mm);
-        expect(showInstall).toHaveBeenCalledWith(mm, "trans");
-        expect(installTool).not.toHaveBeenCalled();
-    });
-    it("reads the catalog first when it is unread", async () => {
-        globalStore.set(toolsStatusAtom, null);
-        vi.mocked(loadTools).mockImplementation(async () => {
-            globalStore.set(toolsStatusAtom, [trans(true)]);
-        });
-        vi.mocked(openTool).mockResolvedValue({ ok: true, tabId: "t9" });
-        const mm = m([]);
-        await showTranslate(mm);
-        expect(loadTools).toHaveBeenCalled();
-        expect(openTool).toHaveBeenCalled();
-    });
-    it("only warns when the catalog has no trans", async () => {
-        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-        globalStore.set(toolsStatusAtom, []);
-        const mm = m([]);
-        await showTranslate(mm);
-        expect(warn).toHaveBeenCalled();
-        expect(openTool).not.toHaveBeenCalled();
-        warn.mockRestore();
     });
 });

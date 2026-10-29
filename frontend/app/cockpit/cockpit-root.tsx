@@ -31,6 +31,8 @@ import { InitiativeProjectPicker } from "@/app/view/jarvis/initiativeprojectpick
 import { NewProjectModal } from "@/app/view/agents/newprojectmodal";
 import { trackRecentTabs } from "@/app/view/agents/tabswitcherstore";
 import { TabSwitcher } from "@/app/view/agents/tabswitcherview";
+import { TranslateFloatPanel } from "@/app/view/agents/translatepanel";
+import { translateOpenAtom } from "@/app/view/agents/translatestore";
 import { PetSources } from "@/app/view/jarvis/petsources";
 import { PetView } from "@/app/view/jarvis/petview";
 import { WaveEnv, WaveEnvContext } from "@/app/waveenv/waveenv";
@@ -121,6 +123,7 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
     const floating = useAtomValue(floatModeAtom);
     const folded = useAtomValue(floatMiniAtom);
     const noteOpen = useAtomValue(floatNoteOpenAtom);
+    const translateOpen = useAtomValue(translateOpenAtom);
     // remember every switch, so the next launch can reopen where this one left off
     useEffect(
         () =>
@@ -218,6 +221,9 @@ function CockpitBody({ waveEnv }: { waveEnv: WaveEnv }) {
                     <CockpitShell model={model} tabId={tabIdRef.current} />
                     {/* Float's Note tab: over the terminal area, which stays mounted under it (float-note.tsx) */}
                     {floating && noteOpen ? <FloatNote model={model} /> : null}
+                    {/* Float's Translate tab: the same panel the rail opens, over the terminal area the same way; the rail
+                        is hidden in Float, so this is where it shows (translatestore.ts keeps it and the note apart) */}
+                    {floating && translateOpen ? <TranslateFloatPanel model={model} /> : null}
                 </div>
                 {floating ? <FloatLedge model={model} /> : <HintsFooter model={model} />}
                 {/* opened from the app bar's usage button (free RAM and plan meters) */}

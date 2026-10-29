@@ -3,7 +3,7 @@
 
 // The strip under the terminal in Float (docs/superpowers/specs/2026-10-10-jarvis-modes-design.md §2), 52px, tall enough
 // to hold the whole 48px sprite so Sprout never stands on the terminal's prompt (petledge.ts LedgeBox.holds). On its
-// left, the two fixed tabs, Note (the global scratch note over the terminal) and Translate (the translate-shell
+// left, the two fixed tabs, Note (the global scratch note over the terminal) and Translate (the Translate panel over the
 // terminal), a divider, then the tabs Float can switch to, plain terminals included and a run as its lead
 // (sproutroster.ts floatTabs), their dots pulsing while that agent works or asks; the fixed tabs are always there, so
 // even one agent shows its tab, the way back from the note. On its right, the plan usage (usagemeters.tsx FloatUsage),
@@ -18,10 +18,10 @@ import { useBindingKeys } from "@/app/store/keybindings/store";
 import { STATE_LABEL } from "@/app/view/agents/agentheader";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askingLabel, type AgentVM } from "@/app/view/agents/agentsviewmodel";
-import { isTranslateTerminal } from "@/app/view/agents/floatnote";
-import { closeFloatNote, floatNoteOpenAtom, showTranslate, toggleFloatNote } from "@/app/view/agents/floatnotestore";
+import { closeFloatNote, floatNoteOpenAtom, toggleFloatNote } from "@/app/view/agents/floatnotestore";
 import { floatTabs } from "@/app/view/agents/sproutroster";
 import { StatusDot } from "@/app/view/agents/statusdot";
+import { closeTranslate, toggleTranslate, translateOpenAtom } from "@/app/view/agents/translatestore";
 import { FloatUsage } from "@/app/view/agents/usagemeters";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
@@ -54,6 +54,9 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
     const noteOpen = useAtomValue(floatNoteOpenAtom);
     const noteKeys = useBindingKeys("float-note");
     const noteTitle = noteKeys != null ? `Note (${formatChordString(noteKeys)})` : "Note";
+    const translateOpen = useAtomValue(translateOpenAtom);
+    const translateKeys = useBindingKeys("translate");
+    const translateTitle = translateKeys != null ? `Translate (${formatChordString(translateKeys)})` : "Translate";
     const agents = useAtomValue(model.agentsAtom);
     const terminals = useAtomValue(model.terminalsAtom);
     const lineage = useAtomValue(model.lineageAtom);
@@ -64,10 +67,11 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
         () => floatTabs(agents, terminals, focusId ?? null, lineage, room),
         [agents, terminals, focusId, lineage, room]
     );
-    const focused = agents.find((a) => a.id === focusId) ?? terminals.find((a) => a.id === focusId);
-    // a tab shows that agent's or terminal's terminal: Float shows the focused one; it closes the note first
+    // a tab shows that agent's or terminal's terminal: Float shows the focused one; it closes the note and the Translate
+    // panel first, the focused agent's own tab included (no focus change then, so nothing else would close them)
     const show = (id: string) => {
         closeFloatNote();
+        closeTranslate();
         model.openTerminal(id);
     };
     const showRest = (e: MouseEvent) =>
@@ -93,10 +97,10 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                     type="button"
                     data-float-fixed="translate"
                     aria-label="Translate"
-                    aria-pressed={!noteOpen && focused != null && isTranslateTerminal(focused)}
-                    title="Translate"
-                    onClick={() => fireAndForget(() => showTranslate(model))}
-                    className={fixedTabClass(!noteOpen && focused != null && isTranslateTerminal(focused))}
+                    aria-pressed={translateOpen}
+                    title={translateTitle}
+                    onClick={toggleTranslate}
+                    className={fixedTabClass(translateOpen)}
                 >
                     <Languages size={14} strokeWidth={2} />
                 </button>
@@ -106,7 +110,7 @@ export function FloatLedge({ model }: { model: AgentsViewModel }) {
                 {tabs.shown.length > 0 ? (
                     <div data-float-tabs data-tauri-drag-region className="flex min-w-0 items-center gap-1 pl-1">
                         {tabs.shown.map((a) => {
-                            const on = a.id === focusId && !noteOpen;
+                            const on = a.id === focusId && !noteOpen && !translateOpen;
                             return (
                                 <button
                                     key={a.id}

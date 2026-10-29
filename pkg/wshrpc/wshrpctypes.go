@@ -66,6 +66,7 @@ type WshRpcInterface interface {
 	DocCommands
 	ResMonCommands
 	MemHygieneCommands
+	TranslateCommands
 	WshRpcRemoteFileInterface
 	WshRpcFileInterface
 }

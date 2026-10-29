@@ -1608,6 +1608,12 @@ export class RpcApiType {
         return client.wshRpcCall("toolsstatus", null, opts);
     }
 
+    // command "translate" [call]
+    TranslateCommand(client: WshClient, data: CommandTranslateData, opts?: RpcOpts): Promise<CommandTranslateRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "translate", data, opts);
+        return client.wshRpcCall("translate", data, opts);
+    }
+
     // command "uiinvoke" [call]
     UiInvokeCommand(client: WshClient, data: CommandUiInvokeData, opts?: RpcOpts): Promise<string> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "uiinvoke", data, opts);

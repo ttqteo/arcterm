@@ -4,6 +4,8 @@
 import { digitHintAtom } from "@/app/cockpit/digithints";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
+import { useBindingKeys } from "@/app/store/keybindings/store";
+import { formatChordString } from "@/util/keysym";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -14,6 +16,7 @@ import {
     FileCog,
     Gauge,
     GitCompare,
+    Languages,
     LayoutDashboard,
     Radar,
     Settings,
@@ -33,6 +36,7 @@ import { appSurfaceIdAtom, moveRailPin, railPinsAtom, setRailPinned } from "./ra
 import { ensureServicesFeed, servicesAtom } from "./servicesstore";
 import { focusSubagentAtom } from "./subagentsstore";
 import { PanelWeb } from "./themedecorview";
+import { toggleTranslate, translateOpenAtom } from "./translatestore";
 import { latestUnreadId, unreadLabel } from "./unreadagents";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 
@@ -186,6 +190,8 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
     const pinIds = useAtomValue(railPinsAtom);
     const pinned = services == null ? [] : railPins(pinIds, services);
     const appId = useAtomValue(appSurfaceIdAtom);
+    const translateOpen = useAtomValue(translateOpenAtom);
+    const translateKeys = useBindingKeys("translate");
     useEffect(() => {
         ensureServicesFeed();
     }, []);
@@ -284,6 +290,23 @@ export function NavRail({ model }: { model: AgentsViewModel }) {
                 </>
             ) : null}
             <div className="flex-1" />
+            {/* not a surface: it opens the Translate panel over the current one (translatepanel.tsx), so it takes the
+                grey pressed state, never the surfaces' accent, and CDP's surface helpers skip it by data-nav-translate */}
+            <button
+                type="button"
+                data-nav-translate
+                onClick={toggleTranslate}
+                aria-label="Translate"
+                aria-pressed={translateOpen}
+                title={translateKeys != null ? `Translate (${formatChordString(translateKeys)})` : "Translate"}
+                className={cn(
+                    "relative mx-2 flex cursor-pointer flex-col items-center gap-[5px] rounded-[10px] border-0 bg-transparent py-[8px] text-muted hover:text-muted-foreground",
+                    translateOpen && "bg-surface-selected text-primary hover:text-primary"
+                )}
+            >
+                <Languages size={16} strokeWidth={1.8} />
+                {narrow ? null : <span className="text-[10px] font-semibold">Translate</span>}
+            </button>
             {renderItem("setup", "Setup")}
             {renderItem("settings", "Settings")}
         </nav>

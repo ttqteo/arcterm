@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Quick translate on the nav rail: click the Translate button above Setup (or Ctrl+Shift+D, also from a
+  focused terminal). A narrow panel slides out beside the rail, the box focused; typing translates after a pause, a
+  single word shows its phonetic and word class, ⇄ moves the translation into the box, Esc or an outside click closes
+  it and the keyboard goes back to the terminal. In Float, the Translate tab shows the same panel over the terminal,
+  and the Note tab or any agent tab closes it. Check the dark-mode select popup too. CDP: `task verify:ui --
+  rail-translate float-note agent-rail-tabs surface-smoke` (never ran: the run's Final dev app did not finish
+  building). Cmd+Shift+D on a Mac is untried. (commit "feat(translate): the Translate panel on the rail, and
+  Ctrl+Shift+D")
 - [ ] (arcterm) The File tab's Back to the top button: open a long `.md` file in an agent's File tab (Preview), scroll
   down and press the arrow-to-line button in the header; the document glides back to its top. Do the same with a long
   `.html` file (needs a wavesrv built after this change). Source and Diff show no such button.

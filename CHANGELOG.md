@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Translate**: a button above Setup on the nav rail, or Ctrl+Shift+D (⌘⇧D on a Mac), opens a small panel beside the
+  rail. Type or paste text and its translation shows below, from English to Vietnamese or any other pair (⇄ swaps them,
+  and Detect language reads the source for you), with the phonetic and word classes for a single word. Nothing needs
+  installing, and the text stays when you close the panel. <!-- try: translate -->
 - A Markdown or HTML file's Preview in an agent's File tab has a Back to the top button in its header, beside the
   outline.
 - A Claude agent with a large context (100k tokens or more) is compacted while its prompt cache is still warm: just
@@ -41,6 +45,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- In a float, the Translate tab shows the Translate panel over the terminal (Ctrl+Shift+D opens it there too) instead of
+  opening translate-shell, so it works without installing anything. A translate-shell terminal opened from Setup →
+  Tools is an ordinary tab in the float.
 - A project's Overview shows a year of activity as a calendar in your theme's colour, and its History lists each
   session with the runs and councils it started under it. The Run and Council buttons are gone from its header: an
   agent session starts those.
