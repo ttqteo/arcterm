@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A wake message survives switching agents: open a sleeping agent, type a line in the box under its
+  conversation, press Enter, then pick another agent and come back before it is awake. The box still shows the line
+  (read-only, Waking…), the agent receives it, and the box is empty once it is awake.
 - [ ] (arcterm) A council in a project Overview's History unfolds before it opens: open a project's Overview (its row
   in the Agent tree) and click a Council row in History. It is titled as in the Agent tree's Councils, and it unfolds in
   place (question, answer, up to three directions by rank, a chevron turned down) without leaving the Overview; Open

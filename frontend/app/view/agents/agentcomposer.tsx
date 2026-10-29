@@ -7,7 +7,7 @@ import { cn, fireAndForget, stringToBase64 } from "@/util/util";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { wakeAgent, wakeErrorToast } from "./agentsleep";
 import type { AgentVM } from "./agentsviewmodel";
-import { useWaking } from "./wakingstore";
+import { setWakeDraft, useWakeDraft, useWaking } from "./wakingstore";
 
 // one line at 12px (rows={1}: the default two rows would set the floor instead); it grows as text wraps
 const ComposerMinH = 32;
@@ -26,7 +26,8 @@ export interface AgentComposerHandle {
 // Sends free text to an agent's terminal block. "\r" submits (the PTY treats CR as Enter), mirroring
 // how term-model writes xterm input via ControllerInputCommand. A sleeping agent has no process to type into: given
 // its agent, the message goes through Wake instead, which delivers it once the agent is back, and the text stays in
-// the box until then (and for good when the wake fails).
+// the box until then (and for good when the wake fails). A sleeping agent's text is its wake draft (wakingstore), so
+// it outlives the box: picking another agent mid-wake and coming back still shows what is being sent.
 export const AgentComposer = forwardRef<
     AgentComposerHandle,
     {
@@ -37,7 +38,11 @@ export const AgentComposer = forwardRef<
         onEscape?: () => void;
     }
 >(function AgentComposer({ blockId, agent, placeholder, className, onEscape }, ref) {
-    const [text, setText] = useState("");
+    const draftId = agent?.sleeping ? agent.id : undefined;
+    const draft = useWakeDraft(draftId);
+    const [localText, setLocalText] = useState("");
+    const text = draftId != null ? draft : localText;
+    const setText = (t: string) => (draftId != null ? setWakeDraft(draftId, t) : setLocalText(t));
     const [sending, setSending] = useState(false);
     // a wake started anywhere else (the card's Wake, a row's menu) holds the box too: a message now would be a second wake
     const waking = useWaking(agent?.id) || sending;
@@ -50,7 +55,7 @@ export const AgentComposer = forwardRef<
                 taRef.current?.focus();
             },
         }),
-        []
+        [draftId]
     );
     useLayoutEffect(() => {
         const el = taRef.current;
@@ -66,11 +71,12 @@ export const AgentComposer = forwardRef<
             return;
         }
         if (agent?.sleeping) {
+            const id = agent.id;
             setSending(true);
             fireAndForget(async () => {
                 try {
-                    await wakeAgent(agent.id, { message: text.trim() });
-                    setText("");
+                    await wakeAgent(id, { message: text.trim() });
+                    setWakeDraft(id, "");
                 } catch (e) {
                     wakeErrorToast(agent.name, e);
                 } finally {

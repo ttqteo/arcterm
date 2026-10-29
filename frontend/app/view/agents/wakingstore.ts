@@ -42,3 +42,28 @@ export function useWaking(id: string | undefined): boolean {
     const m = useAtomValue(wakingAtom);
     return id != null && m.has(id);
 }
+
+// tab id -> what is typed in a sleeping agent's message box. Here, not in the box's state: the box unmounts when the
+// person picks another agent, which mid-wake dropped the message being sent (it still arrived, but read as lost), and a
+// failed wake's message is kept to send again. Cleared once the wake delivers it.
+export const wakeDraftsAtom = atom<ReadonlyMap<string, string>>(new Map());
+
+/** Pure: the drafts with id's set to text; an empty text drops it. */
+export function withWakeDraft(m: ReadonlyMap<string, string>, id: string, text: string): ReadonlyMap<string, string> {
+    const next = new Map(m);
+    if (text !== "") {
+        next.set(id, text);
+    } else {
+        next.delete(id);
+    }
+    return next;
+}
+
+export function setWakeDraft(id: string, text: string): void {
+    globalStore.set(wakeDraftsAtom, withWakeDraft(globalStore.get(wakeDraftsAtom), id, text));
+}
+
+export function useWakeDraft(id: string | undefined): string {
+    const m = useAtomValue(wakeDraftsAtom);
+    return (id != null ? m.get(id) : undefined) ?? "";
+}

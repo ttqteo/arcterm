@@ -65,6 +65,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A message typed under a sleeping agent stays in its box while the agent wakes, even if you open another agent and
+  come back. Before, the box came back empty, so the message read as lost, though it still reached the agent.
 - Vietnamese in the Hack and Fira Code fonts no longer breaks apart: letters such as ả, ị and ở drew with a gap after
   them ("ả nh"), in monospace labels and in the terminal. They now come from JetBrains Mono at the same width.
 - Closing a brainstorming agent closes its builder check and its judge with it. Before, they kept reading in tabs of
