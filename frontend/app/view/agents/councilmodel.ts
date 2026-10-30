@@ -619,9 +619,10 @@ export function outdatedCount(c: Council): number {
 
 /** Pure: whether Summarize is on: exactly when Runner.summarizeLocked takes it. It refuses a council the runner is
  *  running (in round 2 the synthesis comes by itself when the round ends) and accepts one at rest in any round, so a
- *  council stopped at the pause or failed in round 1 can still be summarized; it needs a proposal to summarize. */
+ *  council stopped at the pause or failed in round 1 can still be summarized; it needs a sent idea to summarize (a held
+ *  draft and a dropped one reached no seat, and the runner refuses a council with only those). */
 export function canSummarize(c: Council): boolean {
-    if ((c.proposals ?? []).length === 0) {
+    if (sentProposals(c).length === 0) {
         return false;
     }
     switch (c.state) {
@@ -648,7 +649,10 @@ export function summarizeHold(c: Council): string {
             ? "The summary comes by itself when the experts finish replying"
             : "Summarize unlocks after the experts' first ideas";
     }
-    return "There is no proposal to summarize";
+    // no sent idea: an idea still held waits on the person, else there is nothing to send
+    return (c.proposals ?? []).some((p) => p.draft === DRAFT_HELD)
+        ? "Send or drop the drafts first"
+        : "There is no proposal to summarize";
 }
 
 export interface MatrixCell {

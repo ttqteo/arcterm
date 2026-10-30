@@ -18,6 +18,7 @@ import {
     type AgentTreeRow,
 } from "./agenttreemodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
+import { seatableAgents } from "./councilsetupmodel";
 import { endedWorkerId, type Lineage, type RunInfo } from "./runlineage";
 
 function vm(id: string, state: AgentVM["state"], path?: string): AgentVM {
@@ -1205,6 +1206,26 @@ describe("Discuss together", () => {
             expect(seatableOf(live("a", { project: "elsewhere", cwd: "/work/x" }), roots)?.project).toBe("/work/x");
             expect(seatableOf(live("a", { project: "elsewhere" }), roots)).toBeNull();
             expect(seatableOf(live("a", { project: undefined }), roots)).toBeNull();
+        });
+
+        // one seat rule: Setup's seatableAgents, which the tree asks with no council project to fall back on
+        it("seats what Setup's rule seats, with the same project path", () => {
+            const registry = Object.fromEntries([...roots].map(([name, path]) => [name, { path }]));
+            const cases = [
+                live("reg"),
+                live("cwd", { project: "elsewhere", cwd: "/work/x" }),
+                live("both", { cwd: "/work/y" }),
+                live("none", { project: "elsewhere" }),
+                live("term", { kind: "terminal" }),
+                // no project name of its own: the one its transcript sits under
+                live("tp", { project: undefined, transcriptPath: "/home/u/.claude/projects/home-u-loom/def.jsonl" }),
+            ];
+            for (const a of cases) {
+                const [setup] = seatableAgents([a], registry, "");
+                expect(seatableOf(a, roots)).toEqual(setup?.project ? setup : null);
+            }
+            expect(seatableOf(cases[2], roots)?.project).toBe("D:\\code\\waveterm");
+            expect(seatableOf(cases[5], roots)?.project).toBe("/home/u/loom");
         });
     });
 

@@ -18,6 +18,7 @@ import {
     panel,
     readableReplies,
     roundsOf,
+    sentProposals,
     synthesisRound,
     type SegmentState,
 } from "./councilmodel";
@@ -106,7 +107,7 @@ export function isLit(c: Council, id: string): boolean {
     return c.state === "running" && c.activity?.[id] != null;
 }
 
-const proposalsBy = (c: Council, id: string) => (c.proposals ?? []).filter((p) => p.author === id).length;
+const proposalsBy = (c: Council, id: string) => sentProposals(c).filter((p) => p.author === id).length;
 const repliesBy = (c: Council, id: string) => readableReplies(c).filter((r) => r.author === id).length;
 
 /** Pure: where a failed call failed, in words: round 1 proposing, a later seat round replying, the round after them

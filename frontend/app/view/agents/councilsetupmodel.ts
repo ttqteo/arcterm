@@ -8,7 +8,7 @@
 // alone, and returns that same object when nothing changed so an atom set from it does not rerender. Pure, no React, no
 // Wave runtime imports (councilsetupmodel.test.ts).
 
-import { formatTokens, type AgentVM } from "./agentsviewmodel";
+import { formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
 import {
     agentSeat,
     councilProjectKey,
@@ -272,7 +272,8 @@ export function setRounds(draft: CouncilSetupDraft, rounds: number): CouncilSetu
 
 /** Pure: the roster's agents a council can seat: a claude or pi agent (not a terminal, a background agent or another
  *  harness), with the project's path (the registered one, else where it runs, else `fallbackProject`) and the context it
- *  holds now, which is what each of its turns re-reads. */
+ *  holds now, which is what each of its turns re-reads. This is the one seat rule: the agent tree's Discuss together
+ *  asks it too (`seatableOf`), with an empty `fallbackProject` when there is no council project yet. */
 export function seatableAgents(
     roster: readonly AgentVM[],
     registry: Readonly<Record<string, { path?: string }>> | null | undefined,
@@ -287,7 +288,7 @@ export function seatableAgents(
         seatable.push({
             id: vm.id,
             name: vm.name,
-            project: (vm.project != null ? registry?.[vm.project]?.path : undefined) || vm.cwd || fallbackProject,
+            project: registry?.[projectOf(vm)]?.path || vm.cwd || fallbackProject,
             harness: vm.agent ?? "",
             context: usage?.contextmax ? Math.round(((usage.contextpct ?? 0) / 100) * usage.contextmax) : 0,
         });

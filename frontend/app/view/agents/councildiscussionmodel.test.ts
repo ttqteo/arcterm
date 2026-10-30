@@ -162,6 +162,21 @@ describe("isLit and expertDoing", () => {
         expect(expertDoing(c, c.experts[4])).toBe("Wrote the summary");
         expect(expertDoing({ ...c, proposals: [], replies: [] }, c.experts[3])).toBe("No posts");
     });
+
+    it("counts the ideas that were sent: a held draft and a dropped one are not a post yet", () => {
+        const c = council({
+            state: "awaiting-you",
+            proposals: [
+                prop("P1", "ux"),
+                prop("P2", "ux", { draft: "held" }),
+                prop("P3", "ram", { draft: "dropped" }),
+                prop("P4", "nu", { draft: "held" }),
+            ],
+        });
+        expect(expertDoing(c, c.experts[0])).toBe("1 idea");
+        expect(expertDoing(c, c.experts[1])).toBe("No posts");
+        expect(expertDoing(c, c.experts[2])).toBe("No posts");
+    });
 });
 
 describe("failedWhile", () => {
@@ -217,6 +232,16 @@ describe("expertCard", () => {
     it("says no proposals for a call that brought none", () => {
         const none = council({ round: 1, proposals: [], stats: { ux: { ms: 1, tokens: 1, calls: 1 } } });
         expect(expertCard(none, none.experts[0])).toEqual({ dot: "done", text: "Proposed · no ideas" });
+    });
+
+    it("counts the ideas that were sent, not the held or dropped drafts", () => {
+        const drafts = council({
+            round: 1,
+            proposals: [prop("P1", "ux"), prop("P2", "ux", { draft: "held" }), prop("P3", "nu", { draft: "dropped" })],
+            stats: { ux: { ms: 1, tokens: 1, calls: 1 }, nu: { ms: 1, tokens: 1, calls: 1 } },
+        });
+        expect(expertCard(drafts, drafts.experts[0])).toEqual({ dot: "done", text: "Proposed · 1 idea" });
+        expect(expertCard(drafts, drafts.experts[2])).toEqual({ dot: "done", text: "Proposed · no ideas" });
     });
 });
 

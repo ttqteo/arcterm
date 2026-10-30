@@ -955,6 +955,10 @@ async function roomAwaiting(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-room-awaiting.png");
 
+    // a sent idea is something to summarize: the held drafts around it do not switch Summarize off
+    const withSent = await h.ev(`document.querySelector("[data-council-summarize]")?.disabled === false`);
+    rec("room waiting on drafts: with the sent P1 among the drafts, Summarize is enabled", withSent, `enabled: ${withSent}`);
+
     await stubRpc(h, ["CouncilDraftCommand"]);
     const calls = () => rpcCalls(h, "CouncilDraftCommand");
     await click(h, '[data-council-draft="P2"] [data-council-draft-send]');
@@ -987,6 +991,24 @@ async function roomAwaiting(h, ctx, rec) {
             got[2].data.action === "drop" &&
             got[2].data.text === undefined,
         got
+    );
+
+    // every idea held: none reached a seat, so there is nothing to summarize (the runner refuses it) and Summarize is
+    // off. The fixture keeps P1 sent, so this is its copy with P1 held too.
+    await unstubRpc(h);
+    await openFixture(h, ctx, "room-awaiting", {
+        id: `${councilFixtureId("room-awaiting")}-all-held`,
+        edit: (c) => c.proposals.forEach((p) => void (p.draft = "held")),
+    });
+    await settledText(h, "[data-council-chip]", "Round 1 of 2 · 3 drafts wait for you");
+    const allHeld = await h.ev(`(() => {
+        const b = document.querySelector("[data-council-summarize]");
+        return b ? { disabled: b.disabled === true, title: b.getAttribute("title") } : null;
+    })()`);
+    rec(
+        "room waiting on drafts, every idea held: Summarize is disabled, and its title says to send or drop the drafts first",
+        allHeld?.disabled === true && allHeld.title === "Send or drop the drafts first",
+        allHeld
     );
 }
 

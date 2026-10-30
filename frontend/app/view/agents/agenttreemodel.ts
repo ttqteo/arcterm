@@ -10,6 +10,7 @@
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
 import { isAgentSeat, type SeatableAgent } from "./councilmodel";
+import { seatableAgents } from "./councilsetupmodel";
 import { finalRowFocusId, finalStageView, type FinalStageView } from "./finalstage";
 import {
     BRAINSTORM_JUDGE_ROLE,
@@ -593,27 +594,13 @@ export function pickedRowIds(sel: RowSelection, focusId: string | null | undefin
     return focusId != null && rows.includes(focusId) ? [focusId] : [];
 }
 
-const SEATABLE_HARNESSES = new Set(["claude", "pi"]);
-
-/** Pure: an agent as a council seat, or null when it cannot sit in one: only a claude or pi agent (not a terminal, a
- *  background agent or another harness) can be messaged, and the council needs the path of the project it works in (the
- *  registered one in `roots`, project name -> root, else where it runs). `context` is the tokens in its context now. */
+/** Pure: an agent as a council seat, or null when it cannot sit in one: Setup's seat rule (`seatableAgents`: only a
+ *  claude or pi agent can be messaged), and the council needs the path of the project it works in (the registered one in
+ *  `roots`, project name -> root, else where it runs). No council exists yet, so an agent with no path is refused. */
 export function seatableOf(a: AgentVM, roots: ReadonlyMap<string, string>): SeatableAgent | null {
-    if ((a.kind != null && a.kind !== "agent") || !SEATABLE_HARNESSES.has(a.agent ?? "")) {
-        return null;
-    }
-    const project = roots.get(projectOf(a)) || a.cwd;
-    if (!project) {
-        return null;
-    }
-    const usage = a.usage;
-    return {
-        id: a.id,
-        name: a.name,
-        project,
-        harness: a.agent ?? "",
-        context: usage?.contextmax ? Math.round(((usage.contextpct ?? 0) / 100) * usage.contextmax) : 0,
-    };
+    const registry = Object.fromEntries([...roots].map(([name, path]) => [name, { path }]));
+    const [seat] = seatableAgents([a], registry, "");
+    return seat?.project ? seat : null;
 }
 
 /** Pure: the seats Discuss together opens council Setup with: the picked agents that can sit in a council, in the order

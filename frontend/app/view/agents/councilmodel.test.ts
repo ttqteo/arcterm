@@ -1025,6 +1025,24 @@ describe("outdatedCount and canSummarize", () => {
         expect(canSummarize(council({ state: "stopped", round: 1, proposals: [] }))).toBe(false);
         expect(canSummarize(council({ state: "awaiting-you", round: 1, proposals: [] }))).toBe(false);
     });
+
+    // Runner.summarizeLocked refuses a council with no sent idea: a held draft and a dropped one reached no seat
+    it("holds Summarize while every idea is a held or dropped draft", () => {
+        const held = [prop("P1", "ux", { draft: "held" }), prop("P2", "ram", { draft: "held" })];
+        for (const state of ["awaiting-you", "done", "stopped", "failed"] as const) {
+            expect(canSummarize(council({ state, round: 2, proposals: held }))).toBe(false);
+        }
+        const dropped = [prop("P1", "ux", { draft: "dropped" }), prop("P2", "ram", { draft: "held" })];
+        expect(canSummarize(council({ state: "awaiting-you", round: 2, proposals: dropped }))).toBe(false);
+    });
+
+    it("lets Summarize through with one sent idea among the drafts", () => {
+        const mixed = [prop("P1", "ux", { draft: "held" }), prop("P2", "ram", { draft: "dropped" }), prop("P3", "sk")];
+        expect(canSummarize(council({ state: "awaiting-you", round: 2, proposals: mixed }))).toBe(true);
+        expect(canSummarize(council({ state: "done", round: 3, proposals: [prop("P1", "ux", { draft: "" })] }))).toBe(
+            true
+        );
+    });
 });
 
 describe("summarizeHold", () => {
@@ -1060,6 +1078,25 @@ describe("summarizeHold", () => {
             "This council has not run"
         );
         expect(summarizeHold(council({ state: "stopped", round: 1, proposals: [] }))).toBe(
+            "There is no proposal to summarize"
+        );
+    });
+
+    it("says to send or drop the drafts when every idea is a held draft", () => {
+        const held = [prop("P1", "ux", { draft: "held" }), prop("P2", "ram", { draft: "held" })];
+        expect(summarizeHold(council({ state: "awaiting-you", round: 2, proposals: held }))).toBe(
+            "Send or drop the drafts first"
+        );
+        // a held draft among dropped ones still waits for the person
+        const some = [prop("P1", "ux", { draft: "dropped" }), prop("P2", "ram", { draft: "held" })];
+        expect(summarizeHold(council({ state: "awaiting-you", round: 2, proposals: some }))).toBe(
+            "Send or drop the drafts first"
+        );
+    });
+
+    it("says there is no proposal when the drafts are all dropped: nothing is left to send", () => {
+        const dropped = [prop("P1", "ux", { draft: "dropped" })];
+        expect(summarizeHold(council({ state: "awaiting-you", round: 2, proposals: dropped }))).toBe(
             "There is no proposal to summarize"
         );
     });
