@@ -355,7 +355,8 @@ func BuildAttention(in AttentionInput) []wshrpc.AttentionItem {
 
 	for _, g := range in.Dags {
 		owner := findRun(in.Channels, g.RunID)
-		// a lead can finish its run past a gate or a failed final stage, and nothing moves the dag off it then
+		// a run's end settles its blocked dag (orchestrate.endedRunSettles), but on the tick its completion pokes,
+		// which lands after the run's own update: until then the dag is not the human's
 		if owner != nil && (owner.Status == RunStatus_Done || owner.Status == RunStatus_Cancelled) {
 			continue
 		}

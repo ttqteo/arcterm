@@ -64,8 +64,10 @@ var (
 				// just rewrite the row every interval — a version bump the UI reads as a change, on
 				// exactly the dags a human is sitting and looking at.
 				// an open plan review has no task at work, but its reviewer still needs its timeout watched. A
-				// finalizing dag is ticked so a final stage the server lost starts again.
-				if status != DagStatus_Running && status != DagStatus_Finalizing && len(busyTaskIDs(g)) == 0 && !planReviewOpen(g) {
+				// finalizing dag is ticked so a final stage the server lost starts again, and a dag whose run ended so
+				// the tick settles it (endedRunSettles).
+				if status != DagStatus_Running && status != DagStatus_Finalizing && len(busyTaskIDs(g)) == 0 && !planReviewOpen(g) &&
+					!ownerEndedSettles(ctx, g) {
 					continue
 				}
 				tickDag(ctx, g)

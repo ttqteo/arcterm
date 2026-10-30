@@ -91,10 +91,8 @@ func (impl *WshRouterControlImpl) AuthenticateCommand(ctx context.Context, data 
 
 	rtnData := wshrpc.CommandAuthenticateRtnData{RouteId: routeId}
 	if newCtx.IsRouter {
-		log.Printf("wshrouter authenticate success linkid=%d (router)", linkId)
 		impl.Router.trustLink(linkId, LinkKind_Router)
 	} else {
-		log.Printf("wshrouter authenticate success linkid=%d routeid=%q", linkId, routeId)
 		impl.Router.trustLink(linkId, LinkKind_Leaf)
 		impl.Router.bindRoute(linkId, routeId, true)
 	}

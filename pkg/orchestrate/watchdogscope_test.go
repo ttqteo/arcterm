@@ -141,3 +141,118 @@ func TestWatchdogTickSkipsTerminalDags(t *testing.T) {
 		t.Fatal("a cancelled dag must not be advanced by the watchdog")
 	}
 }
+
+func TestEndedRunSettles(t *testing.T) {
+	landed := &waveobj.RunLand{State: LandState_Landed}
+	held := &waveobj.RunLand{State: LandState_Held}
+	cases := []struct {
+		name       string
+		dag, run   string
+		land       *waveobj.RunLand
+		wantSettle bool
+	}{
+		{"done run, failed final", DagStatus_Blocked, jarvis.RunStatus_Done, held, true},
+		{"done run, landed past a pending final", DagStatus_Finalizing, jarvis.RunStatus_Done, landed, true},
+		{"done run, final still deciding its held land", DagStatus_Finalizing, jarvis.RunStatus_Done, held, false},
+		{"done run, children still working", DagStatus_Running, jarvis.RunStatus_Done, landed, false},
+		{"cancelled run", DagStatus_Running, jarvis.RunStatus_Cancelled, nil, true},
+		{"cancelled run, finalizing", DagStatus_Finalizing, jarvis.RunStatus_Cancelled, nil, true},
+		{"live run, blocked", DagStatus_Blocked, jarvis.RunStatus_Executing, nil, false},
+		{"done dag", DagStatus_Done, jarvis.RunStatus_Done, landed, false},
+		{"cancelled dag", DagStatus_Cancelled, jarvis.RunStatus_Cancelled, nil, false},
+	}
+	for _, c := range cases {
+		g := &waveobj.TaskGroup{Status: c.dag}
+		owner := &waveobj.Run{Status: c.run, Land: c.land}
+		if got := endedRunSettles(g, owner); got != c.wantSettle {
+			t.Errorf("%s: endedRunSettles = %v, want %v", c.name, got, c.wantSettle)
+		}
+	}
+}
+
+// endedRunDag stores a one-task dag whose task landed, with final as its final stage, owned by a done run whose land
+// is land. Returns the dag id and the owner's id.
+func endedRunDag(t *testing.T, name string, final *waveobj.FinalStage, land *waveobj.RunLand) (string, string, string) {
+	t.Helper()
+	ctx := context.Background()
+	ch, err := wstore.CreateChannel(ctx, name, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := jarvis.NewRun("owner", "ws-1", ch.ProjectPath, nil, jarvis.RunMode_Orchestrator, jarvis.DefaultOrchestratorPlaybook(), 1)
+	owner.Status = jarvis.RunStatus_Done
+	owner.Land = land
+	if err := wstore.AppendRun(ctx, ch.OID, owner); err != nil {
+		t.Fatal(err)
+	}
+	g, err := NewTaskGroup(owner.ID, ch.OID, name, 1, false, []waveobj.TaskNode{{ID: "t-0", Label: "a"}}, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Tasks[0].State = TaskState_Done
+	g.Final = final
+	RecomputeDagStatus(&g)
+	if err := wstore.AppendDag(ctx, &g); err != nil {
+		t.Fatal(err)
+	}
+	return g.OID, ch.OID, owner.ID
+}
+
+// A lead that completes its run past a failed final stage, or a run that lands while a later round's final is
+// pending, leaves a dag nothing else moves: the watchdog's pass settles it, which is also what clears the dags
+// already stuck in a store.
+func TestWatchdogTickSettlesDagOfEndedRun(t *testing.T) {
+	ctx := context.Background()
+	var sources []any
+	oldAppend := appendRunEvent
+	appendRunEvent = func(ctx context.Context, channelID, runID, kind string, phase *int, detail any) {
+		if m, ok := detail.(map[string]any); ok && kind == waveobj.RunEventKindDagCancelled {
+			sources = append(sources, m["source"])
+		}
+		oldAppend(ctx, channelID, runID, kind, phase, detail)
+	}
+	restoreAfterStages(t, func() { appendRunEvent = oldAppend })
+
+	failed, failedCh, failedOwner := endedRunDag(t, "ended-final-failed",
+		&waveobj.FinalStage{Round: 1, State: FinalState_Failed, Detail: "Verify failed"}, &waveobj.RunLand{State: LandState_Held})
+	pending, _, _ := endedRunDag(t, "ended-final-pending",
+		&waveobj.FinalStage{Round: 2, State: FinalState_Checking}, &waveobj.RunLand{State: LandState_Landed})
+	if g, _ := wstore.GetDag(ctx, failed); g.Status != DagStatus_Blocked {
+		t.Fatalf("fixture: failed-final dag = %q, want blocked", g.Status)
+	}
+
+	watchdogTick(ctx)
+
+	for _, id := range []string{failed, pending} {
+		got, err := wstore.GetDag(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Status != DagStatus_Cancelled {
+			t.Fatalf("dag %s = %q, want cancelled once its run ended", id, got.Status)
+		}
+	}
+	got, _ := wstore.GetDag(ctx, failed)
+	if got.Final == nil || got.Final.State != FinalState_Failed || got.Final.Detail != "Verify failed" {
+		t.Fatalf("settling must keep what the final stage found, got %+v", got.Final)
+	}
+	if got.Tasks[0].State != TaskState_Done {
+		t.Fatalf("a landed task stays done, got %q", got.Tasks[0].State)
+	}
+	owner, err := wstore.GetRun(ctx, failedCh, failedOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner.Status != jarvis.RunStatus_Done {
+		t.Fatalf("the owner run stays done, got %q", owner.Status)
+	}
+	runEnded := 0
+	for _, s := range sources {
+		if s == "run-ended" {
+			runEnded++
+		}
+	}
+	if runEnded < 2 {
+		t.Fatalf("dag-cancelled sources = %v, want run-ended for both settled dags", sources)
+	}
+}

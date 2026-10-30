@@ -505,16 +505,56 @@ type cancelledDag struct {
 }
 
 func Cancel(ctx context.Context, dagID string) error {
+	_, err := cancelDag(ctx, dagID, false)
+	return err
+}
+
+// endedRunSettles reports whether g must be cancelled because its owner run ended. Nothing else moves such a dag:
+// its lead is gone, and a landed run deleted the branch every tick reads. Cancelled, not done, for a done run too:
+// done is the final stage's verdict, which a failed or unfinished final never gave; the run records that it was
+// completed anyway, and g.Final keeps what the stage found. A done run's finalizing dag is left to finish until the
+// run lands, since the held land waits on its verdict, and a running one keeps its children (ShouldCloseOrchestratorLead).
+func endedRunSettles(g *waveobj.TaskGroup, owner *waveobj.Run) bool {
+	if g.Status == DagStatus_Done || g.Status == DagStatus_Cancelled {
+		return false
+	}
+	switch owner.Status {
+	case jarvis.RunStatus_Cancelled:
+		return true
+	case jarvis.RunStatus_Done:
+		landed := owner.Land != nil && owner.Land.State == LandState_Landed
+		return g.Status == DagStatus_Blocked || (g.Status == DagStatus_Finalizing && landed)
+	}
+	return false
+}
+
+// ownerEndedSettles is endedRunSettles for a stored dag, read without the dag lock. A run that cannot be read
+// answers false: the tick reads the same run and reports the error.
+func ownerEndedSettles(ctx context.Context, g *waveobj.TaskGroup) bool {
+	owner, err := wstore.GetRun(ctx, g.ChannelId, g.RunID)
+	return err == nil && endedRunSettles(g, owner)
+}
+
+// settleEndedRun cancels a dag endedRunSettles still holds once the dag lock is taken, and reports whether it did.
+func settleEndedRun(ctx context.Context, dagID string) (bool, error) {
+	return cancelDag(ctx, dagID, true)
+}
+
+// cancelDag is Cancel, or settleEndedRun with runEnded, and reports whether it cancelled the dag.
+func cancelDag(ctx context.Context, dagID string, runEnded bool) (bool, error) {
 	// the lock can be held for minutes (Setup) and the wait spends the caller's rpc budget; a cancel must still
 	// land after its caller stops waiting, or the run keeps going
 	ctx = context.WithoutCancel(ctx)
 	var c *cancelledDag
 	if err := withDagMutation(dagID, func() error {
 		var err error
-		c, err = cancelLocked(ctx, dagID)
+		c, err = cancelLocked(ctx, dagID, runEnded)
 		return err
 	}); err != nil {
-		return err
+		return false, err
+	}
+	if c == nil {
+		return false, nil
 	}
 	// cancelled work is abandoned, so every task's tree goes through the same durable cleanup path, outside the
 	// lock: each removal takes tens of seconds and the workers stopped above exit into that lock.
@@ -528,7 +568,10 @@ func Cancel(ctx context.Context, dagID string) error {
 			taskID := c.g.Tasks[i].ID
 			// a lane's tasks share one key: the first removes the tree, the rest find nothing left to do
 			key := LaneWorktreeKey(c.g, taskID)
-			DumpRecoveryPatch(removeCtx, c.projectPath, key, landHead) // best effort
+			// a merged task's work is the ended run's, not abandoned
+			if !runEnded || !c.g.Tasks[i].Merged {
+				DumpRecoveryPatch(removeCtx, c.projectPath, key, landHead) // best effort
+			}
 			if err := removeTaskTree(removeCtx, dagID, taskID, true); err != nil {
 				errs = append(errs, fmt.Errorf("worktree %s: %w", key, err))
 			}
@@ -540,12 +583,14 @@ func Cancel(ctx context.Context, dagID string) error {
 			wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Channel, c.g.ChannelId))
 		}
 	}
-	return errors.Join(errs...)
+	return true, errors.Join(errs...)
 }
 
 // cancelLocked writes the cancelled state and stops every worker; its error is only the state write's, and the
-// worker stops' errors ride on the result for Cancel to return.
-func cancelLocked(ctx context.Context, dagID string) (*cancelledDag, error) {
+// worker stops' errors ride on the result for Cancel to return. With runEnded it cancels only a dag endedRunSettles
+// holds, returning nil otherwise, and leaves the owner's own worker alone: its run ended by itself, and a done lead
+// may still be in its complete, waiting on the land.
+func cancelLocked(ctx context.Context, dagID string, runEnded bool) (*cancelledDag, error) {
 	var gCopy *waveobj.TaskGroup
 	var runIDs []string
 	var projectPath string
@@ -559,6 +604,9 @@ func cancelLocked(ctx context.Context, dagID string) (*cancelledDag, error) {
 		owner, err := wstore.GetRun(txCtx, g.ChannelId, g.RunID)
 		if err != nil {
 			return err
+		}
+		if runEnded && !endedRunSettles(g, owner) {
+			return nil
 		}
 		projectPath, landOwner = owner.ProjectPath, owner
 		CancelGroup(g)
@@ -595,17 +643,24 @@ func cancelLocked(ctx context.Context, dagID string) (*cancelledDag, error) {
 	}); err != nil {
 		return nil, err
 	}
+	if gCopy == nil {
+		return nil, nil
+	}
 
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Dag, dagID))
+	source := "cancel"
+	if runEnded {
+		source = "run-ended"
+	}
 	// dag-cancelled: the terminal lifecycle boundary, recorded only after the cancelled state persists.
-	appendRunEvent(ctx, gCopy.ChannelId, gCopy.RunID, waveobj.RunEventKindDagCancelled, nil, map[string]any{"source": "cancel"})
+	appendRunEvent(ctx, gCopy.ChannelId, gCopy.RunID, waveobj.RunEventKindDagCancelled, nil, map[string]any{"source": source})
 	stopDagVerify(dagID)
 	stopDagFinal(dagID)
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cancelCleanupTimeout)
 	defer cancel()
 	var errs []error
 	for _, runID := range runIDs {
-		if runID == "" {
+		if runID == "" || (runEnded && runID == gCopy.RunID) {
 			continue
 		}
 		run, err := wstore.GetRun(cleanupCtx, gCopy.ChannelId, runID)

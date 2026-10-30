@@ -431,7 +431,7 @@ func (s *FileStore) runFlusher() {
 	}()
 	for {
 		stats, err := s.runFlushWithNewContext()
-		if err != nil || stats.NumDirtyEntries > 0 {
+		if err != nil || stats.NumCommitted < stats.NumDirtyEntries {
 			log.Printf("filestore flush: %d/%d entries flushed, err:%v\n", stats.NumCommitted, stats.NumDirtyEntries, err)
 		}
 		if stopFlush.Load() {

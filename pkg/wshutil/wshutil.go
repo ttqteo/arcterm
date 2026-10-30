@@ -172,7 +172,6 @@ func RunWshRpcOverListener(listener net.Listener, readCallback func()) {
 			log.Printf("error accepting connection: %v\n", err)
 			break
 		}
-		log.Print("got domain socket connection\n")
 		go handleDomainSocketClient(conn, readCallback)
 	}
 }

@@ -400,6 +400,17 @@ func Schedule(ctx context.Context, dagID string) error {
 	ctx = context.WithoutCancel(ctx)
 	ctx, cancel := context.WithTimeout(ctx, scheduleTickTimeout)
 	defer cancel()
+	// first, and outside the lock Cancel takes: the tick reads the run's branch, which a landed run deleted
+	if g, err := wstore.GetDag(ctx, dagID); err == nil && ownerEndedSettles(ctx, g) {
+		settled, serr := settleEndedRun(ctx, dagID)
+		if settled {
+			log.Printf("dag %s: its run %s ended, so the dag is cancelled", dagID, g.RunID)
+			closeLeadAfterSettle(ctx, g)
+		}
+		if settled || serr != nil {
+			return serr
+		}
+	}
 	// before the tick, not inside it: the merge takes the same lock and it is not reentrant. A
 	// landed merge is what makes a dependent's dep satisfied, so merging first lets one tick both
 	// land the predecessor and dispatch what it unblocked.
@@ -410,6 +421,18 @@ func Schedule(ctx context.Context, dagID string) error {
 		retryCleanupDebt(ctx, g)
 	}
 	return runTick(ctx, dagID)
+}
+
+// closeLeadAfterSettle closes the lead tab a settled dag kept open, as a cancelled run's does (MaybeCloseOrchestratorLead
+// leaves a lead still in its turn alone). Best effort, like the tick's own close.
+func closeLeadAfterSettle(ctx context.Context, g *waveobj.TaskGroup) {
+	run, err := wstore.GetRun(ctx, g.ChannelId, g.RunID)
+	if err != nil {
+		return
+	}
+	if dag, err := wstore.GetDag(ctx, g.OID); err == nil {
+		_, _ = MaybeCloseOrchestratorLead(ctx, run, dag)
+	}
 }
 
 // runTick runs one scheduling pass under the dag lock, then retries the tasks it found stalled with nobody to judge

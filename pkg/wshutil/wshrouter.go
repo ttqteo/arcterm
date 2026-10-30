@@ -482,7 +482,6 @@ func (router *WshRouter) RegisterUntrustedLink(client AbstractRpcClient) baseds.
 		trusted: false,
 		client:  client,
 	}
-	log.Printf("wshrouter register link %s", lm.Name())
 	router.linkMap[linkId] = lm
 	go router.runLinkClientRecvLoop(linkId, client)
 	return linkId
@@ -495,7 +494,6 @@ func (router *WshRouter) trustLink(linkId baseds.LinkId, linkKind string) {
 	if lm == nil {
 		return
 	}
-	log.Printf("wshrouter trust link %s kind=%s", lm.Name(), linkKind)
 	lm.trusted = true
 	lm.linkKind = linkKind
 }
@@ -504,18 +502,9 @@ func (router *WshRouter) runLinkClientRecvLoop(linkId baseds.LinkId, client Abst
 	defer func() {
 		panichandler.PanicHandler("WshRouter:runLinkClientRecvLoop", recover())
 	}()
-	exitReason := "unknown"
-	lmForLog := router.getLinkMeta(linkId)
-	linkName := fmt.Sprintf("%d", linkId)
-	if lmForLog != nil {
-		linkName = lmForLog.Name()
-	}
-	log.Printf("link recvloop start for %s", linkName)
-	defer log.Printf("link recvloop done for %s (%s)", linkName, exitReason)
 	for {
 		msgBytes, ok := client.RecvRpcMessage()
 		if !ok {
-			exitReason = "recv-eof"
 			// the client's input closed, so the connection is gone. Unregister here rather than
 			// trusting every teardown path to: a link left registered keeps receiving replies, and a
 			// failed send is backlogged and retried every 50ms for the server's lifetime.
@@ -529,7 +518,6 @@ func (router *WshRouter) runLinkClientRecvLoop(linkId baseds.LinkId, client Abst
 		}
 		lm := router.getLinkMeta(linkId)
 		if lm == nil {
-			exitReason = "link-gone"
 			break
 		}
 		if rpcMsg.IsRpcRequest() {
@@ -550,7 +538,6 @@ func (router *WshRouter) runLinkClientRecvLoop(linkId baseds.LinkId, client Abst
 					sendControlUnauthenticatedErrorResponse(rpcMsg, *lm, router)
 					continue
 				}
-				log.Printf("wshrouter control-msg route=%s link=%s command=%s source=%s", rpcMsg.Route, lm.Name(), rpcMsg.Command, rpcMsg.Source)
 			}
 		} else {
 			// non-request messages (responses)
@@ -694,10 +681,6 @@ func (router *WshRouter) UnregisterLink(linkId baseds.LinkId) {
 	}
 	router.lock.Lock()
 	defer router.lock.Unlock()
-	lm := router.linkMap[linkId]
-	if lm != nil {
-		log.Printf("wshrouter unregister link %s", lm.Name())
-	}
 	delete(router.linkMap, linkId)
 	if router.upstreamLinkId == linkId {
 		router.upstreamLinkId = baseds.NoLinkId
@@ -727,10 +710,6 @@ func (router *WshRouter) unbindRoute(linkId baseds.LinkId, routeId string) error
 	err := router.unbindRouteLocally(linkId, routeId)
 	if err != nil {
 		return err
-	}
-	lm := router.getLinkMeta(linkId)
-	if lm != nil {
-		log.Printf("wshrouter unbind route %q from %s", routeId, lm.Name())
 	}
 	router.unannounceUpstream(routeId)
 	if router.IsRootRouter() {
@@ -776,10 +755,6 @@ func (router *WshRouter) bindRoute(linkId baseds.LinkId, routeId string, isSourc
 	err := router.bindRouteLocally(linkId, routeId, isSourceRoute)
 	if err != nil {
 		return err
-	}
-	lm := router.getLinkMeta(linkId)
-	if lm != nil {
-		log.Printf("wshrouter bind route %q to %s", routeId, lm.Name())
 	}
 	// don't announce control routes upstream (they are local only)
 	if !strings.HasPrefix(routeId, ControlPrefix) {
