@@ -25,6 +25,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { resolveChannelTarget, type NewRunPrefill, type RunConfig } from "@/app/view/jarvis/newrun";
 import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
+import { getApi } from "@/store/global";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Check, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
@@ -149,6 +150,33 @@ import { useWorkerCapacity } from "./workercapacitystore";
 // Tab's stops, in DOM order; the close button is tabIndex -1 because Esc does the same
 const FOCUSABLE =
     'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), textarea:not([disabled]), [tabindex="0"]';
+
+// On the Mac app, Tab from the Task box went straight to the Start column for one person (2026-10-30), and no WebKit
+// reproduction showed why (docs/open-issues.md). While the dialog is open, each Tab writes its modifiers, where focus
+// was, whether the key was taken and where focus landed to waveapp.log as `[launcher-tab]`, a few lines per app run.
+// Remove once the cause is known.
+const MaxTabDiagLines = 24;
+let tabDiagLines = 0;
+
+function tabDiag(msg: string) {
+    if (tabDiagLines < MaxTabDiagLines) {
+        tabDiagLines++;
+        getApi().sendLog(`[launcher-tab] ${msg}`);
+    }
+}
+
+function tabDiagName(el: EventTarget | null): string {
+    if (!(el instanceof Element)) {
+        return el == null ? "none" : "window";
+    }
+    const name =
+        el.id ||
+        el.getAttribute("data-launcher-column") ||
+        el.getAttribute("title") ||
+        el.getAttribute("aria-label") ||
+        (el.textContent ?? "").trim().slice(0, 16);
+    return `${el.tagName.toLowerCase()}(${name.slice(0, 24)})`;
+}
 
 function StartMark({ id }: { id: StartRowId }) {
     if (id === "terminal") {
@@ -361,6 +389,44 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         const box = isTool || isCouncil ? null : isRun ? (goalRef.current ?? planRef.current) : taskRef.current;
         (box ?? startRef.current)?.focus();
         // once per opening: a pick made later keeps its own focus
+    }, [open]);
+
+    // the [launcher-tab] lines (tabDiag above): before every handler (capture), after them (bubble), and where focus lands
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        let tabAt = 0;
+        const before = (e: globalThis.KeyboardEvent) => {
+            if (e.key !== "Tab") {
+                return;
+            }
+            tabAt = performance.now();
+            const stops = Array.from(rootRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+            tabDiag(
+                `key shift=${e.shiftKey} meta=${e.metaKey} ctrl=${e.ctrlKey} alt=${e.altKey} composing=${e.isComposing} ` +
+                    `target=${tabDiagName(e.target)} active=${tabDiagName(document.activeElement)} ` +
+                    `at=${stops.indexOf(document.activeElement as HTMLElement)} stops=${stops.map(tabDiagName).join(",")}`
+            );
+        };
+        const after = (e: globalThis.KeyboardEvent) => {
+            if (e.key === "Tab") {
+                tabDiag(`after prevented=${e.defaultPrevented} active=${tabDiagName(document.activeElement)}`);
+            }
+        };
+        const landed = (e: FocusEvent) => {
+            if (tabAt !== 0 && performance.now() - tabAt < 500) {
+                tabDiag(`focus -> ${tabDiagName(e.target)} from ${tabDiagName(e.relatedTarget)}`);
+            }
+        };
+        window.addEventListener("keydown", before, true);
+        window.addEventListener("keydown", after);
+        window.addEventListener("focusin", landed, true);
+        return () => {
+            window.removeEventListener("keydown", before, true);
+            window.removeEventListener("keydown", after);
+            window.removeEventListener("focusin", landed, true);
+        };
     }, [open]);
 
     // home names Home's folder in its tooltip, and offers Home only once it is known (homeOffered)
