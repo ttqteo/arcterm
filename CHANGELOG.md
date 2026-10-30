@@ -96,6 +96,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run held because the checkout was in the middle of a merge, rebase or cherry-pick now lands by itself once
+  that operation is finished or aborted, instead of waiting for you to land it by hand.
 - A run's lead or worker you open for the first time after it has been working no longer shows its terminal
   garbled, two frames of different widths over each other. Its output now replays at the size it was drawn at.
 - While the brainstorm judge weighs a question's approaches, an approach's "N facts" opens the facts under its row.

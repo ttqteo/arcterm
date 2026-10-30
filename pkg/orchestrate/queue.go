@@ -76,7 +76,7 @@ func landBlockerLines(ctx context.Context, run *waveobj.Run) string {
 	if hold := landPrecheck(ctx, run); hold != nil {
 		switch {
 		case hold.Dirty:
-			lines = append(lines, fmt.Sprintf("The land will hold: %s. Those changes are not yours: they belong to another session or the human. Do not commit, stash, restore or delete them; say in your report that the land waits on them. The engine lands the run by itself once they are gone.", hold.Reason))
+			lines = append(lines, fmt.Sprintf("The land will hold: %s. That is not yours: it belongs to another session or the human. Do not commit, stash, restore, delete, continue or abort anything in the checkout; say in your report that the land waits on it. The engine lands the run by itself once it is gone.", hold.Reason))
 		default:
 			lines = append(lines, fmt.Sprintf("The land will hold: %s. That is the human's to clear, not yours: leave the checkout as it is and say it in your report.", hold.Reason))
 		}

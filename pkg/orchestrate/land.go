@@ -146,9 +146,10 @@ func landRunLocked(ctx context.Context, channelID, runID string, force, haveTurn
 	return land, nil
 }
 
-// retryDirtyLands queues again each run held only by uncommitted changes in its checkout (RunLand.Dirty), once the
-// land's own checkout check passes; the land driver lands it in its turn. The changes are another session's or the
-// human's, so the engine waits for them to be committed, stashed or moved aside instead of asking anyone to retry.
+// retryDirtyLands queues again each run held only by another session's or the human's work in its checkout
+// (RunLand.Dirty: uncommitted changes, or a merge, rebase or cherry-pick stopped in the middle), once the land's own
+// checkout check passes; the land driver lands it in its turn. The engine waits for that work to be committed,
+// stashed, finished or aborted instead of asking anyone to retry.
 // The watchdog calls it every tick. A dismissed hold is the human's to retry, and a run whose land is already under
 // way is skipped.
 func retryDirtyLands(ctx context.Context) {
@@ -377,9 +378,9 @@ func finalHold(g *waveobj.TaskGroup) string {
 
 // checkoutHold is why the project checkout cannot take the merge now: it is on another branch, stopped inside a
 // git operation, has staged changes the merge commit would sweep in, has unstaged edits the merge would overwrite,
-// or has an untracked file where the branch adds a different one. dirty is set when only uncommitted changes stand
-// in the way. Those belong to another session or the human, so nothing of the engine's touches them: the land
-// retries by itself once they are gone (retryDirtyLands). The exception is an edit to a file .arc/union-merge lists
+// or has an untracked file where the branch adds a different one. dirty is set when only another session's or the
+// human's work in the checkout stands in the way: uncommitted changes, or a merge, rebase or cherry-pick it stopped
+// in the middle of. Nothing of the engine's touches it: the land retries by itself once it is gone (retryDirtyLands). The exception is an edit to a file .arc/union-merge lists
 // that goes on top of the run's version: the land carries it across the merge (carriedEdit).
 func checkoutHold(ctx context.Context, run *waveobj.Run) (reason string, dirty bool) {
 	project, branch := run.ProjectPath, "wave/"+run.ID
@@ -404,7 +405,7 @@ func checkoutHold(ctx context.Context, run *waveobj.Run) (reason string, dirty b
 			p = filepath.Join(project, p)
 		}
 		if _, err := os.Stat(p); err == nil && i < len(inProgressOps) {
-			return "the checkout is stopped mid-operation: " + inProgressOps[i].what, false
+			return "the checkout is stopped mid-operation: " + inProgressOps[i].what, true
 		}
 	}
 	if clean, _ := IndexClean(ctx, project); !clean {

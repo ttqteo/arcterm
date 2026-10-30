@@ -1046,6 +1046,32 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 			t.Fatalf("land = %+v, want landed", got)
 		}
 	})
+	// run 229ef9cd: another session stopped mid-cherry-pick in the checkout, and the run sat held after it ended
+	t.Run("a cherry-pick another session then finishes", func(t *testing.T) {
+		f, _ := landFixture(t)
+		sha := gitCmd(t, f.project, "rev-parse", "HEAD")
+		pick := filepath.Join(f.project, ".git", "CHERRY_PICK_HEAD")
+		writeFile(t, pick, sha+"\n")
+		head := gitCmd(t, f.project, "rev-parse", "main")
+		land := f.landRun(t, false)
+		f.assertHeld(t, land, head, "a cherry-pick is in progress")
+		if !land.Dirty {
+			t.Fatalf("land = %+v, want a dirty hold", land)
+		}
+
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		f.assertHeld(t, f.owner(t).Land, head, "a cherry-pick is in progress")
+
+		if err := os.Remove(pick); err != nil {
+			t.Fatal(err)
+		}
+		retryDirtyLands(f.ctx)
+		waitStages(t)
+		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed", got)
+		}
+	})
 	t.Run("a forced land keeps its force", func(t *testing.T) {
 		f, _ := landFixture(t)
 		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Failed, Round: 2, Detail: "Check failed"})

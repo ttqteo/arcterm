@@ -434,7 +434,8 @@ Gaps and fixes:
   `held: <reason>`. `--force-land` and the failed-final hold are unchanged.
 - **A dirty-checkout hold waited for a human.** **Fixed:** such a hold is marked `RunLand.Dirty`, and the watchdog
   (`retryDirtyLands`) lands the run once the land's checkout check passes, keeping its force. The land-held
-  attention item says so.
+  attention item says so. A merge, rebase or cherry-pick another session stopped in the middle of is the same kind
+  of hold since run 229ef9cd sat held after the cherry-pick that held it had ended.
 - **The unstaged-edit check could miss an edit.** Found while testing: the engine's `git` helper read combined
   output, so an autocrlf warning on stderr ran into the `git diff --name-only` list, and an LF-edited file was not
   matched. The land then re-ran Check and Verify only for `git merge` to refuse. **Fixed:** `git` returns stdout
