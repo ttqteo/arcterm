@@ -43,6 +43,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   killing arcterm's helper (`~/.arc/bin/wsh`): opening arcterm replaces a copy that no longer runs.
 - The Agent badge no longer counts a brainstorm's Judge and Builder check sessions as unread: their answer goes to the
   brainstorming agent, so the badge had a number no row in the tree showed.
+- Images in a Markdown Preview (the File tab, Code) show: a figure on disk beside the file, PNG, SVG or any other,
+  drew as an empty box with only its caption.
 
 ## 0.15.19 — 2026-10-30
 

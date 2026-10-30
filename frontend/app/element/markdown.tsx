@@ -4,6 +4,7 @@
 import { CopyButton } from "@/app/element/copybutton";
 import { createContentBlockPlugin } from "@/app/element/markdown-contentblock-plugin";
 import {
+    cachedLocalImage,
     MarkdownContentBlockType,
     resolveRemoteFile,
     resolveSrcSet,
@@ -255,10 +256,13 @@ const MarkdownImg = ({
     props: React.ImgHTMLAttributes<HTMLImageElement>;
     resolveOpts: MarkdownResolveOpts;
 }) => {
-    const [resolvedSrc, setResolvedSrc] = useState<string>(props.src);
+    // every render of Markdown remounts its images: one read before draws at once from its blob:, checked again below
+    // (not with a srcset, whose own paths wait for the read)
+    const [cached] = useState(() => (props.srcSet ? null : cachedLocalImage(props.src, resolveOpts)));
+    const [resolvedSrc, setResolvedSrc] = useState<string>(cached ?? props.src);
     const [resolvedSrcSet, setResolvedSrcSet] = useState<string>(props.srcSet);
     const [resolvedStr, setResolvedStr] = useState<string>(null);
-    const [resolving, setResolving] = useState<boolean>(true);
+    const [resolving, setResolving] = useState<boolean>(cached == null);
 
     useEffect(() => {
         if (props.src.startsWith("data:image/")) {

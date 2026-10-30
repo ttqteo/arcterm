@@ -1,11 +1,13 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { getApi } from "@/app/store/global";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { getWebServerEndpoint } from "@/util/endpoints";
 import { formatRemoteUri } from "@/util/waveutil";
 import parseSrcSet from "parse-srcset";
+import { BlobCache } from "./markdown-imagecache";
 
 export type MarkdownContentBlockType = {
     type: string;
@@ -154,23 +156,75 @@ export function transformBlocks(content: string): { content: string; blocks: Map
     };
 }
 
+// about the figures of a long report; past it the least recently drawn are read again when next drawn
+const LOCAL_IMAGE_BUDGET = 32 * 1024 * 1024;
+// long enough for an <img> still loading a dropped URL to finish with it
+const RETIRE_MS = 30_000;
+const localImages = new BlobCache(LOCAL_IMAGE_BUDGET, (url) => setTimeout(() => URL.revokeObjectURL(url), RETIRE_MS));
+// one read per file and stamp, however many <img>s ask for it at once
+const reading = new Map<string, Promise<string | null>>();
+
+const isWebSrc = (src: string) => src.startsWith("http://") || src.startsWith("https://");
+const localImageKey = (filepath: string, resolveOpts: MarkdownResolveOpts) =>
+    `${resolveOpts.connName ?? ""}|${resolveOpts.baseDir}|${filepath}`;
+
+// the blob: URL a local image was last drawn from, for the first render of a remounted <img>; resolveRemoteFile then
+// checks the file again
+export function cachedLocalImage(filepath: string, resolveOpts: MarkdownResolveOpts): string | null {
+    if (!filepath || resolveOpts == null || isWebSrc(filepath) || filepath.startsWith("data:")) {
+        return null;
+    }
+    return localImages.get(localImageKey(filepath, resolveOpts))?.url ?? null;
+}
+
+// A web image's URL as it is. A local one is read through wavesrv into a blob: URL, as ImageFrame's are (useBlobSrc):
+// the packaged app's CSP keeps an <img> off wavesrv, and /wave/stream-file wants the auth key an <img> can't send.
 export const resolveRemoteFile = async (filepath: string, resolveOpts: MarkdownResolveOpts): Promise<string | null> => {
-    if (!filepath || filepath.startsWith("http://") || filepath.startsWith("https://")) {
+    if (!filepath || isWebSrc(filepath)) {
         return filepath;
     }
     try {
         const baseDirUri = formatRemoteUri(resolveOpts.baseDir, resolveOpts.connName);
         const fileInfo = await RpcApi.FileJoinCommand(TabRpcClient, [baseDirUri, filepath]);
-        const remoteUri = formatRemoteUri(fileInfo.path, resolveOpts.connName);
-        // console.log("markdown resolve", resolveOpts, filepath, "=>", baseDirUri, remoteUri);
-        const usp = new URLSearchParams();
-        usp.set("path", remoteUri);
-        return getWebServerEndpoint() + "/wave/stream-file?" + usp.toString();
+        if (fileInfo == null || fileInfo.notfound || fileInfo.isdir) {
+            return null;
+        }
+        const key = localImageKey(filepath, resolveOpts);
+        const modtime = fileInfo.modtime ?? 0;
+        const stamp = `${fileInfo.size ?? 0}:${modtime}`;
+        const hit = localImages.get(key, stamp);
+        if (hit != null) {
+            return hit.url;
+        }
+        const id = `${key}|${stamp}`;
+        let read = reading.get(id);
+        if (read == null) {
+            const usp = new URLSearchParams();
+            usp.set("path", formatRemoteUri(fileInfo.path, resolveOpts.connName));
+            usp.set("authkey", getApi().getAuthKey());
+            usp.set("v", String(modtime)); // the route allows caching: a rewritten file is another URL
+            read = readBlob(getWebServerEndpoint() + "/wave/stream-file?" + usp.toString(), key, stamp).finally(() =>
+                reading.delete(id)
+            );
+            reading.set(id, read);
+        }
+        return await read;
     } catch (err) {
         console.warn("Failed to resolve remote file:", filepath, err);
         return null;
     }
 };
+
+async function readBlob(url: string, key: string, stamp: string): Promise<string | null> {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+        return null;
+    }
+    const blob = await resp.blob();
+    const src = URL.createObjectURL(blob);
+    localImages.put(key, { stamp, url: src, bytes: blob.size });
+    return src;
+}
 
 export const resolveSrcSet = async (srcSet: string, resolveOpts: MarkdownResolveOpts): Promise<string> => {
     if (!srcSet) return null;
