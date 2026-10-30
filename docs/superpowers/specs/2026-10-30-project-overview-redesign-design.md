@@ -14,9 +14,9 @@ Mockup: `.superpowers/design/overview-redesign/project/B-activity-top.dc.html` (
 2. `ActivityCard` (`projectactivitycard.tsx`), a look-only calendar of tokens per day over 53 weeks, with
    totals, a last-7-days line and a tooltip for each day;
 3. `GraphCard` (`projectgraphcard.tsx`, the Branches card): the newest 20 commits of every branch over the
-   commit graph's lanes, with the uncommitted row on top. It is not committed yet: it is this session's own
-   uncommitted work (`projectgraph.ts`, `projectgraph.test.ts`, `projectgraphcard.tsx`, and the edits to
-   `projectoverview.tsx`), alongside History's lazy paging (`projecthistory.tsx`, `projectoverviewmodel.ts`);
+   commit graph's lanes, with the uncommitted row on top. When this spec was written it was uncommitted work in the main checkout
+   (`projectgraph.ts`, `projectgraph.test.ts`, `projectgraphcard.tsx`, and the edits to `projectoverview.tsx`),
+   alongside History's lazy paging (`projecthistory.tsx`, `projectoverviewmodel.ts`); run 229ef9cd shipped it;
 4. at a container width of 1000px and up, two columns: `NowColumn` (`projectnow.tsx`) fixed at 420px and
    `HistoryColumn` (`projecthistory.tsx`, 7 days of sessions, shown 15 top-level rows at a time). Below
    1000px they stack.

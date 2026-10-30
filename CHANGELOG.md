@@ -58,7 +58,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - A project's Overview fills the centre pane: Now and the Branches card sit in a column beside History, which loads
   more sessions as you scroll.
-
 - A click on a project's folder in the Agent sidebar opens its Overview; the chevron before it folds and unfolds the
   folder.
 - When an agent offers you options that differ in UI, in a brainstorm or a plain chat, it draws each one as its own
