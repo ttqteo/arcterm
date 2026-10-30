@@ -53,6 +53,7 @@ import {
     LayoutGrid,
     Loader2,
     MessageCircleQuestion,
+    MessagesSquare,
     Moon,
     Pencil,
     PenTool,
@@ -73,7 +74,20 @@ import { DONE_TITLE, doneSuggestion } from "./donesuggest";
 import { beginAgentDrag, endAgentDrag } from "./agentdragstore";
 import { shortTabId } from "./agentrowmodel";
 import type { AgentsViewModel } from "./agents";
-import { buildAgentTree, stageSubline, type StageOutcome } from "./agenttreemodel";
+import {
+    agentsInCouncil,
+    buildAgentTree,
+    discussTogetherSeats,
+    extendRow,
+    NO_ROW_SELECTION,
+    pickedRowIds,
+    selectableRowIds,
+    selectOnly,
+    stageSubline,
+    toggleRow,
+    type RowSelection,
+    type StageOutcome,
+} from "./agenttreemodel";
 import { setAgentView } from "./agentview";
 import { waitMap } from "./agentwaits";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
@@ -107,6 +121,7 @@ import {
     overviewProjectAtom,
     showCanvases,
     showCouncil,
+    showCouncilSetupWithAgents,
     showHistory,
     showProjectOverview,
     showSession,
@@ -268,8 +283,14 @@ function showLessConversations(project: string): void {
     });
 }
 
+// The agent rows picked with Ctrl/Cmd+click or Shift+click (agenttreemodel.ts), beside focusIdAtom, which stays the one
+// selected agent: with none picked the focused agent is the selection. A plain click on any row empties it
+// (selectAgentRow). Not persisted.
+export const rowSelectionAtom = atom<RowSelection>(NO_ROW_SELECTION) as PrimitiveAtom<RowSelection>;
+
 // choosing an agent's row brings its terminal back from a session, History or one of its subagents
 export function selectAgentRow(model: AgentsViewModel, id: string): void {
+    globalStore.set(rowSelectionAtom, selectOnly(id));
     globalStore.set(model.focusIdAtom, id);
     globalStore.set(model.focusReplyAtom, false);
     globalStore.set(focusSubagentAtom, null);
@@ -439,15 +460,18 @@ function sleepMenuItems(agent: AgentVM): ContextMenuItem[] {
 
 // An agent's row menu, which ParentRow and the agent's cell in a split row (SplitCell) share. A lead's row is also its
 // run's: with `lead` the run's items follow the agent's, and Cancel run sits beside Close agent. The lead's terminal is
-// the row itself. `later` is whether its transcript is marked to read later.
+// the row itself. `later` is whether its transcript is marked to read later. `selection` is what the row's menu offers for
+// the agents picked with it (Discuss together, from two).
 function agentRowMenuItems(
     model: AgentsViewModel,
     agent: AgentVM,
     lead: RunInfo | undefined,
-    later: boolean
+    later: boolean,
+    selection: ContextMenuItem[] = []
 ): ContextMenuItem[] {
     const runMenu = lead != null ? runMenuItems(model, lead.runId, ["run:lead-terminal"]) : null;
     return [
+        ...selection,
         { label: "Rename", icon: <Pencil size={15} />, click: () => startRowRename(agent.id) },
         { label: "Duplicate", icon: <CopyPlus size={15} />, click: () => duplicateSession(model, agent.id) },
         ...splitMenuItem(model, agent),
@@ -881,6 +905,16 @@ function RunSubline({
     );
 }
 
+// What the tree hands an agent row so it can take part in the multi-selection: whether it is picked, whether any row is
+// (then only the picked rows read as selected, the focused one included), the click that picks (Ctrl/Cmd toggles, Shift
+// ranges) and the menu items the pick adds for this row.
+interface RowPicks {
+    picked: boolean;
+    any: boolean;
+    pick: (e: React.MouseEvent) => void;
+    menu: () => ContextMenuItem[];
+}
+
 function ParentRow({
     model,
     agent,
@@ -890,6 +924,8 @@ function ParentRow({
     navDigit,
     nested,
     waitsFor,
+    picks,
+    inCouncil,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
@@ -899,6 +935,8 @@ function ParentRow({
     navDigit?: number; // its Alt+1..9 digit
     nested?: boolean; // it waits on the agent just above it, and sits under it on a tree guide
     waitsFor?: string; // the name of the agent it waits on where it cannot nest under it
+    picks?: RowPicks; // the tree's multi-selection, where this row takes part in it
+    inCouncil?: boolean; // it is seated in a council that is running or waiting on you: its state is followed by `in council`
 }) {
     // the meta the person chose to see on a row (Settings → Appearance → Agent sidebar)
     const fields = useAtomValue(rowFieldsAtom);
@@ -911,7 +949,8 @@ function ParentRow({
     const subs = visibleSubagents(useAtomValue(subagentsByIdAtom)[agent.id] ?? []);
     const expandOverride = useAtomValue(getSubagentExpandAtom(oref));
     const expanded = subagentExpanded(subs, expandOverride);
-    const selected = focusId === agent.id;
+    // with rows picked (Ctrl/Cmd+click, Shift+click) the picked rows are the selection; else the focused agent's is
+    const selected = picks?.any ? picks.picked : focusId === agent.id;
     // how many turns it finished that you have not looked at (unreadagents.ts): a count at the row's end, as a chat
     // list shows unread messages, and the name reads bold
     const unreadCount = useAtomValue(unreadAgentsAtom).get(agent.id) ?? 0;
@@ -958,8 +997,20 @@ function ParentRow({
     const laterAt = laterSince(useAtomValue(laterMarksAtom), agent.transcriptPath);
 
     const select = () => selectAgentRow(model, agent.id);
+    // Ctrl/Cmd+click toggles the row in the multi-selection and Shift+click ranges to it; neither moves focus. Any other
+    // click is a plain selection, which empties it.
+    const onClick = (e: React.MouseEvent) => {
+        if (picks != null && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+            picks.pick(e);
+        } else {
+            select();
+        }
+    };
     const onContextMenu = (e: React.MouseEvent) => {
-        ContextMenuModel.getInstance().showContextMenu(agentRowMenuItems(model, agent, lead?.run, laterAt != null), e);
+        ContextMenuModel.getInstance().showContextMenu(
+            agentRowMenuItems(model, agent, lead?.run, laterAt != null, picks?.menu()),
+            e
+        );
     };
 
     const subsChip =
@@ -1001,6 +1052,15 @@ function ParentRow({
             {/* a row names its state in words only when it wants something; otherwise its glyph says working, idle or
                 sleeping, and a count says how many finished turns you have not read, or the part a turn stopped on
                 waiting for your reply */}
+            {inCouncil ? (
+                <span
+                    data-agent-in-council
+                    title="Seated in a council that is running or waiting on you"
+                    className="flex-none whitespace-nowrap text-[10.5px] font-semibold text-ink-mid"
+                >
+                    in council
+                </span>
+            ) : null}
             {review ? (
                 // a Spec or Plan review opens its dialog over whatever agent is focused, and a Doc review
                 // focuses its agent in review mode itself, so the click must not reach the row either way
@@ -1090,11 +1150,12 @@ function ParentRow({
             {/* the runtime and name, then its model, a branch other than the default, its subagents, state, tokens
                 and age (a lead's second line: its workers chip and progress, then its state, tokens and age) */}
             <div
-                onClick={select}
+                onClick={onClick}
                 onDoubleClick={openRow}
                 onMouseDown={keepSelection}
                 onContextMenu={onContextMenu}
                 data-agent-row={agent.id}
+                data-agent-picked={picks?.picked ? "" : undefined}
                 {...dragSource(agent, !renaming)}
                 className={cn(
                     "relative flex min-w-0 cursor-pointer flex-col rounded-[6px] px-[10px] py-[8px] transition-colors duration-[140ms]",
@@ -2565,7 +2626,8 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
             </Slot>
             {queued ? (
                 // `Queued · after <feature>` is too long to share a line with the feature in a narrow sidebar, so
-                // the queued run's row's two lines are used: the feature, then the word under it
+                // the queued run's row's two lines are used: the feature, then the word under it, which wraps (to
+                // three lines at most) rather than cutting off the agent it names (`· waiting for Witness synthesis`)
                 <div className="min-w-0 flex-1">
                     <div
                         data-council-feature
@@ -2573,7 +2635,7 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
                     >
                         {row.feature}
                     </div>
-                    <div data-council-meta className={cn("truncate text-[11px]", tone.text)}>
+                    <div data-council-meta title={row.meta} className={cn("line-clamp-3 text-[11px]", tone.text)}>
                         {row.meta}
                     </div>
                 </div>
@@ -2984,6 +3046,50 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     });
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));
+    // The multi-selection: Ctrl/Cmd+click and Shift+click pick agent rows (agenttreemodel.ts) beside the focused agent.
+    // A row that leaves the tree (closed, folded, filtered out) leaves the selection; the right-click menu of a picked
+    // row offers Discuss together from two claude or pi agents. The seats go in the order they were picked.
+    const sel = useAtomValue(rowSelectionAtom);
+    const selectable = selectableRowIds(rows);
+    const selectableKey = selectable.join(",");
+    useEffect(() => {
+        const cur = globalStore.get(rowSelectionAtom);
+        const live = cur.ids.filter((id) => selectable.includes(id));
+        if (live.length !== cur.ids.length) {
+            globalStore.set(rowSelectionAtom, { ...cur, ids: live });
+        }
+    }, [selectableKey]);
+    // the focused agent, as far as its row reads as selected (useSelectedRowId): not while the centre shows a session,
+    // a council or History instead of its terminal
+    const shownFocus = () =>
+        globalStore.get(centerModeAtom) === "terminal" ? globalStore.get(model.focusIdAtom) : undefined;
+    const picksFor = (id: string): RowPicks => ({
+        picked: sel.ids.includes(id),
+        any: sel.ids.length > 0,
+        pick: (e) => {
+            const cur = globalStore.get(rowSelectionAtom);
+            globalStore.set(
+                rowSelectionAtom,
+                e.shiftKey ? extendRow(cur, id, shownFocus(), selectable) : toggleRow(cur, id, shownFocus(), selectable)
+            );
+        },
+        menu: () => {
+            const picked = pickedRowIds(globalStore.get(rowSelectionAtom), shownFocus(), selectable);
+            const seats = picked.includes(id) ? discussTogetherSeats(picked, agents, roots) : [];
+            return seats.length === 0
+                ? []
+                : [
+                      {
+                          label: "Discuss together",
+                          icon: <MessagesSquare size={15} />,
+                          click: () => showCouncilSetupWithAgents(seats, model),
+                      },
+                      { type: "separator" },
+                  ];
+        },
+    });
+    // the agents seated in a council that runs or waits on you: their rows read `in council`
+    const seated = useMemo(() => agentsInCouncil(councilList), [councilList]);
     // what the filter hides: the row under the tree says how many agents are in other projects and how many are asking
     const elsewhere = agentsElsewhere(tree, filter);
     // every project's, whatever the filter: it lights the spider, so an agent asking in a project the filter hides is
@@ -3156,6 +3262,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             navDigit={digits.get(r.agent.id)}
                                             nested={r.nested}
                                             waitsFor={r.waitsFor}
+                                            picks={picksFor(r.agent.id)}
+                                            inCouncil={seated.has(r.agent.id)}
                                         />
                                     );
                                     break;
@@ -3182,6 +3290,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             tokens={tokens.get(r.agent.id)}
                                             lead={{ run: r.run, open: r.open, live: r.live }}
                                             navDigit={digits.get(r.agent.id)}
+                                            picks={picksFor(r.agent.id)}
+                                            inCouncil={seated.has(r.agent.id)}
                                         />
                                     );
                                     break;

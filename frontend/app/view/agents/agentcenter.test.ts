@@ -11,13 +11,14 @@ import {
     showCanvases,
     showCouncil,
     showCouncilSetup,
+    showCouncilSetupWithAgents,
     showHistory,
     showProjectOverview,
     showSession,
     showTerminal,
 } from "./agentcenter";
 import type { AgentsViewModel, SurfaceKey } from "./agents";
-import { emptyCouncilDraft } from "./councilmodel";
+import { draftWithAgents, emptyCouncilDraft } from "./councilmodel";
 import {
     councilAtom,
     councilListAtom,
@@ -215,6 +216,46 @@ describe("council openers", () => {
         expect(globalStore.get(councilSetupDraftAtom("/work/a"))).toEqual({
             ...emptyCouncilDraft("/work/a"),
             question: "Why?",
+        });
+    });
+
+    describe("showCouncilSetupWithAgents (Discuss together)", () => {
+        const witness = {
+            id: "t-1",
+            name: "Witness synthesis",
+            project: "/work/a",
+            harness: "claude",
+            context: 625_000,
+        };
+        const audit = { id: "t-2", name: "UX audit", project: "/work/b", harness: "pi", context: 210_000 };
+
+        it("opens Setup in the first agent's project with every agent seated, in the order given", () => {
+            showCouncilSetupWithAgents([audit, witness]);
+            expect(globalStore.get(councilViewAtom)).toBe("setup");
+            expect(globalStore.get(centerModeAtom)).toBe("council");
+            expect(globalStore.get(councilSetupProjectAtom)).toBe("/work/b");
+            expect(globalStore.get(councilSetupDraftAtom("/work/b"))).toEqual(draftWithAgents([audit, witness]));
+            expect(globalStore.get(councilSetupDraftAtom("/work/b"))?.agents.map((a) => a.seat.agent)).toEqual([
+                "t-2",
+                "t-1",
+            ]);
+            // the other project's draft is not touched
+            expect(globalStore.get(councilSetupDraftAtom("/work/a"))).toBeNull();
+        });
+
+        it("starts again over a draft the person left in that project, and lands on Agent with a model", () => {
+            const model = stub();
+            showCouncilSetup("/work/a", { feature: "Old", question: "Why?" });
+            showCouncilSetupWithAgents([witness, audit], model);
+            const draft = globalStore.get(councilSetupDraftAtom("/work/a"));
+            expect(draft?.feature).toBe("");
+            expect(draft?.question).toBe("");
+            expect(draft?.agents).toHaveLength(2);
+            expect(globalStore.get(model.surfaceAtom)).toBe("agent");
+        });
+
+        it("needs an agent to open", () => {
+            expect(() => showCouncilSetupWithAgents([])).toThrow("at least one agent");
         });
     });
 

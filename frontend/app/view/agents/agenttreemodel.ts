@@ -9,6 +9,7 @@
 
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
+import { isAgentSeat, type SeatableAgent } from "./councilmodel";
 import { finalRowFocusId, finalStageView, type FinalStageView } from "./finalstage";
 import {
     BRAINSTORM_JUDGE_ROLE,
@@ -520,6 +521,131 @@ export function buildAgentTree(
         rows.push({ kind: "group", project: g.project, count, attn, running }, ...body);
     }
     return rows;
+}
+
+// ---- multi-select ----
+
+/** What the tree has multi-selected: the agent rows picked with Ctrl/Cmd+click or a Shift+click range, in the order they
+ *  were picked (the first is the council's project in Discuss together), and the row the next Shift+click extends from.
+ *  `focusIdAtom` stays the one selected agent: with no `ids` the focused agent is the selection. */
+export interface RowSelection {
+    ids: readonly string[];
+    anchor: string | null;
+}
+
+export const NO_ROW_SELECTION: RowSelection = { ids: [], anchor: null };
+
+/** Pure: a plain click: that row alone (focus moves to it; `ids` empties) and the anchor for the next Shift+click. */
+export function selectOnly(id: string): RowSelection {
+    return { ids: [], anchor: id };
+}
+
+// the rows a selection ranges over: any row that names a plain agent or a lead (ProjectTreeRow's agent rows fit)
+type AgentRowLike = { kind: string; agent?: { id: string } };
+
+/** Pure: the ids of the tree's agent rows (a plain agent's, a lead's) in the order they are drawn: the rows Ctrl/Cmd+click
+ *  toggles and Shift+click ranges over. A worker, a stage, a terminal and a folded project's rows are not among them. */
+export function selectableRowIds(rows: readonly AgentRowLike[]): string[] {
+    return rows.flatMap((r) => ((r.kind === "parent" || r.kind === "lead") && r.agent ? [r.agent.id] : []));
+}
+
+/** Pure: Ctrl/Cmd+click on `id`: toggles it in the selection, which the first time starts from the focused agent's row
+ *  (the one already highlighted) so adding a second row makes two. The row becomes the anchor. A row that is no agent row
+ *  changes nothing. `rows` is selectableRowIds. */
+export function toggleRow(
+    sel: RowSelection,
+    id: string,
+    focusId: string | null | undefined,
+    rows: readonly string[]
+): RowSelection {
+    if (!rows.includes(id)) {
+        return sel;
+    }
+    const live = sel.ids.filter((x) => rows.includes(x));
+    const base = live.length === 0 && focusId != null && focusId !== id && rows.includes(focusId) ? [focusId] : live;
+    return { ids: base.includes(id) ? base.filter((x) => x !== id) : [...base, id], anchor: id };
+}
+
+/** Pure: Shift+click on `id`: the agent rows from the anchor (else the focused agent, else the row itself) through `id`,
+ *  in the order drawn. The anchor stays, so the next Shift+click ranges from the same row. */
+export function extendRow(
+    sel: RowSelection,
+    id: string,
+    focusId: string | null | undefined,
+    rows: readonly string[]
+): RowSelection {
+    const to = rows.indexOf(id);
+    if (to < 0) {
+        return sel;
+    }
+    const start = [sel.anchor, focusId].find((x) => x != null && rows.includes(x)) ?? id;
+    const from = rows.indexOf(start);
+    return { ids: rows.slice(Math.min(from, to), Math.max(from, to) + 1), anchor: start };
+}
+
+/** Pure: the agent rows that count as selected: the multi-selection's rows still in the tree, else the focused agent's
+ *  alone, else none. */
+export function pickedRowIds(sel: RowSelection, focusId: string | null | undefined, rows: readonly string[]): string[] {
+    const live = sel.ids.filter((x) => rows.includes(x));
+    if (live.length > 0) {
+        return live;
+    }
+    return focusId != null && rows.includes(focusId) ? [focusId] : [];
+}
+
+const SEATABLE_HARNESSES = new Set(["claude", "pi"]);
+
+/** Pure: an agent as a council seat, or null when it cannot sit in one: only a claude or pi agent (not a terminal, a
+ *  background agent or another harness) can be messaged, and the council needs the path of the project it works in (the
+ *  registered one in `roots`, project name -> root, else where it runs). `context` is the tokens in its context now. */
+export function seatableOf(a: AgentVM, roots: ReadonlyMap<string, string>): SeatableAgent | null {
+    if ((a.kind != null && a.kind !== "agent") || !SEATABLE_HARNESSES.has(a.agent ?? "")) {
+        return null;
+    }
+    const project = roots.get(projectOf(a)) || a.cwd;
+    if (!project) {
+        return null;
+    }
+    const usage = a.usage;
+    return {
+        id: a.id,
+        name: a.name,
+        project,
+        harness: a.agent ?? "",
+        context: usage?.contextmax ? Math.round(((usage.contextpct ?? 0) / 100) * usage.contextmax) : 0,
+    };
+}
+
+/** Pure: the seats Discuss together opens council Setup with: the picked agents that can sit in a council, in the order
+ *  picked. Empty (so no menu item) below two: one agent is no discussion. */
+export function discussTogetherSeats(
+    picked: readonly string[],
+    agents: readonly AgentVM[],
+    roots: ReadonlyMap<string, string>
+): SeatableAgent[] {
+    const byId = new Map(agents.map((a) => [a.id, a] as const));
+    const seats = picked.flatMap((id) => {
+        const a = byId.get(id);
+        const seat = a != null ? seatableOf(a, roots) : null;
+        return seat != null ? [seat] : [];
+    });
+    return seats.length >= 2 ? seats : [];
+}
+
+/** Pure: the tab ids of the agents seated in a council that is running or waiting on the person: the rows that read
+ *  `in council`. A queued council has not started, and an ended one has let its seats go. */
+export function agentsInCouncil(councils: readonly Council[] | null | undefined): Set<string> {
+    const out = new Set<string>();
+    for (const c of councils ?? []) {
+        if (c.state === "running" || c.state === "awaiting-you") {
+            for (const e of c.experts) {
+                if (isAgentSeat(e)) {
+                    out.add(e.agent);
+                }
+            }
+        }
+    }
+    return out;
 }
 
 /** Pure: the tree with each collapsed project's body rows removed. Its group row stays, carrying the count

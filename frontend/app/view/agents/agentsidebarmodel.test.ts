@@ -1522,6 +1522,117 @@ describe("councilRowsByProject", () => {
             );
             expect(rows.get("loom")?.some((r) => r.queued)).toBe(false);
         });
+
+        it("names the agent the council it waits on is waiting for, as queuedLine does", () => {
+            const rows = councilRowsByProject(
+                [
+                    council("run", "/home/u/loom", {
+                        feature: "Rail apps",
+                        state: "running",
+                        activity: {
+                            uxaudit: { text: "Replying to Security", proposalid: "P1" },
+                            witness: { text: "Waiting for Witness synthesis to finish its task" },
+                        },
+                    }),
+                    council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "run" }),
+                ],
+                roots
+            );
+            const queued = rows.get("loom")?.find((r) => r.id === "wait");
+            expect(queued?.meta).toBe("Queued · after Rail apps · waiting for Witness synthesis");
+            expect(queued?.tone).toBe("muted");
+            expect(queued?.queued).toBe(true);
+        });
+
+        it("names two busy agents, and reads the plain line once that council waits on none", () => {
+            const run = (activity: Council["activity"]) =>
+                councilRowsByProject(
+                    [
+                        council("run", "/home/u/loom", { feature: "Rail apps", state: "running", activity }),
+                        council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "run" }),
+                    ],
+                    roots
+                )
+                    .get("loom")
+                    ?.find((r) => r.id === "wait")?.meta;
+            expect(
+                run({
+                    a: { text: "Waiting for Witness synthesis to finish its task" },
+                    b: { text: "Waiting for UX audit to finish its task" },
+                })
+            ).toBe("Queued · after Rail apps · waiting for Witness synthesis and UX audit");
+            expect(run({ a: { text: "Reading pkg/services" } })).toBe("Queued · after Rail apps");
+            expect(run(undefined)).toBe("Queued · after Rail apps");
+        });
+
+        it("reads the plain line when the council it waits on waits on you instead of an agent", () => {
+            const rows = councilRowsByProject(
+                [
+                    council("held", "/home/u/loom", {
+                        feature: "Rail apps",
+                        state: "awaiting-you",
+                        activity: { w: { text: "Waiting for Witness synthesis to finish its task" } },
+                    }),
+                    council("wait", "/home/u/loom", { state: "queued", round: 0, queuedafter: "held" }),
+                ],
+                roots
+            );
+            expect(rows.get("loom")?.find((r) => r.id === "wait")?.meta).toBe("Queued · after Rail apps");
+        });
+    });
+
+    describe("a council with held drafts", () => {
+        const idea = (id: string, draft?: string): CouncilProposal => ({
+            id,
+            author: "skeptic",
+            title: id,
+            argument: "arg",
+            ts: 10,
+            draft,
+        });
+        const reply = (id: string, draft?: string): CouncilReply => ({
+            id,
+            proposalid: "P1",
+            author: "skeptic",
+            text: "t",
+            round: 2,
+            ts: 20,
+            draft,
+        });
+
+        it("reads `N drafts wait for you` in the asking tone, whether it runs, waits or is done", () => {
+            const rows = councilRowsByProject(
+                [
+                    council("run", "/home/u/loom", {
+                        state: "running",
+                        proposals: [idea("P1", "held"), idea("P2")],
+                        replies: [reply("r1", "held")],
+                    }),
+                    council("ask", "/home/u/loom", { state: "awaiting-you", proposals: [idea("P1", "held")] }),
+                    council("done", "/home/u/loom", { state: "done", round: 3, replies: [reply("r1", "held")] }),
+                ],
+                roots
+            );
+            expect(rows.get("loom")?.map((r) => [r.id, r.meta, r.tone])).toEqual([
+                ["run", "2 drafts wait for you", "asking"],
+                ["ask", "1 draft waits for you", "asking"],
+                ["done", "1 draft waits for you", "asking"],
+            ]);
+        });
+
+        it("does not count a sent or dropped draft", () => {
+            const rows = councilRowsByProject(
+                [
+                    council("run", "/home/u/loom", {
+                        state: "running",
+                        proposals: [idea("P1", "dropped"), idea("P2")],
+                        replies: [reply("r1")],
+                    }),
+                ],
+                roots
+            );
+            expect(rows.get("loom")?.[0]).toMatchObject({ meta: "Running", tone: "working" });
+        });
     });
 });
 

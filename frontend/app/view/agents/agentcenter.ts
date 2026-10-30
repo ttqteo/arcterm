@@ -22,7 +22,13 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { landOn } from "@/app/view/jarvis/returnsurface";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { AgentsViewModel } from "./agents";
-import { emptyCouncilDraft, type CouncilSetupDraft, type CouncilView } from "./councilmodel";
+import {
+    draftWithAgents,
+    emptyCouncilDraft,
+    type CouncilSetupDraft,
+    type CouncilView,
+    type SeatableAgent,
+} from "./councilmodel";
 import {
     councilAtom,
     councilListAtom,
@@ -113,6 +119,16 @@ export function showCouncilSetup(
     if (model != null) {
         landOn(model.surfaceAtom, "agent");
     }
+}
+
+/** Discuss together: open council Setup with `agents` seated (two or more live agents the tree has selected), in the first
+ *  one's project, over a fresh draft: the panel is empty for Setup to fill and the person writes the question there. */
+export function showCouncilSetupWithAgents(
+    agents: readonly SeatableAgent[],
+    model?: Pick<AgentsViewModel, "surfaceAtom">
+): void {
+    const draft = draftWithAgents(agents);
+    showCouncilSetup(draft.project, draft, model);
 }
 
 /** Open one session in the Agent surface: its own transcript, or its run's detail. `member` is the run member in
