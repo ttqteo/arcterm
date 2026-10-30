@@ -3,8 +3,8 @@
 //
 // The council Setup's pure rules (councilsetup.tsx draws them): the panel a group makes, editing a draft's panel, files
 // and screenshots, the mode (Review or Brainstorm) and its chip, the live agents seated beside the experts and the Rounds
-// they answer, when the coordinator's suggestion is asked and how it lands, what Start council sends and what the button
-// reads, and the footer's words. The draft type is councilmodel.ts's; every function here returns the next draft and leaves the one it was given
+// they answer, when the coordinator's suggestion is asked and how it lands, when Auto-generate asks and how its answer
+// lands on the composer, what Start council sends and what the button reads, and the footer's words. The draft type is councilmodel.ts's; every function here returns the next draft and leaves the one it was given
 // alone, and returns that same object when nothing changed so an atom set from it does not rerender. Pure, no React, no
 // Wave runtime imports (councilsetupmodel.test.ts).
 
@@ -110,10 +110,14 @@ function suggestedMode(draft: CouncilSetupDraft): CouncilMode | undefined {
 }
 
 /** Pure: the mode chip in the composer's bar: the mode, and whose pick it is: `Brainstorm · picked from your question`
- *  when the coordinator named it, `Review · you picked it` once the person flipped the chip (or a rerun carried it). A
- *  draft whose suggestion named no mode reads the mode alone. */
+ *  when the coordinator named it, `Review · picked from the conversation` when Auto-generate did, `Review · you picked
+ *  it` once the person flipped the chip (or a rerun carried it). A draft whose suggestion named no mode reads the mode
+ *  alone. */
 export function modeChip(draft: CouncilSetupDraft): string {
     const name = MODE_NAME[draft.mode];
+    if (draft.modeFrom === "conversation") {
+        return `${name} · picked from the conversation`;
+    }
     if (draft.modePicked) {
         return `${name} · you picked it`;
     }
@@ -125,17 +129,19 @@ export function modeRules(mode: CouncilMode): string {
     return MODE_RULES[mode];
 }
 
-/** Pure: the suggestion's one-line reason for the mode, empty when the person picked it or it named none. */
+/** Pure: the suggestion's one-line reason for the mode, empty when the person picked it, Auto-generate did or it named
+ *  none. */
 export function modeReason(draft: CouncilSetupDraft): string {
-    return draft.modePicked || suggestedMode(draft) == null ? "" : (draft.suggestion?.modewhy ?? "").trim();
+    if (draft.modePicked || draft.modeFrom != null || suggestedMode(draft) == null) {
+        return "";
+    }
+    return (draft.suggestion?.modewhy ?? "").trim();
 }
 
-/** Pure: the draft in the other mode, counted as the person's pick (a later suggestion no longer changes it). Its
- *  group follows the mode unless the person picked or edited one: Product ideas for Brainstorm, the suggestion's group
- *  or the UI group for Review. */
-export function flipMode(draft: CouncilSetupDraft, lib: RoleLibrary): CouncilSetupDraft {
-    const mode: CouncilMode = draft.mode === "brainstorm" ? "review" : "brainstorm";
-    const next: CouncilSetupDraft = { ...draft, mode, modePicked: true };
+// the draft in `mode`, its group following unless the person picked or edited one: Product ideas for Brainstorm, the
+// suggestion's group or the UI group for Review. Whose pick the mode is stays the caller's to say
+function followMode(draft: CouncilSetupDraft, mode: CouncilMode, lib: RoleLibrary): CouncilSetupDraft {
+    const next: CouncilSetupDraft = { ...draft, mode };
     if (draft.groupPicked) {
         return next;
     }
@@ -145,6 +151,14 @@ export function flipMode(draft: CouncilSetupDraft, lib: RoleLibrary): CouncilSet
         mode === "brainstorm" ? BRAINSTORM_GROUP : draft.suggestion?.group || REVIEW_GROUP,
         false
     );
+}
+
+/** Pure: the draft in the other mode, counted as the person's pick (a later suggestion no longer changes it, and the
+ *  chip stops saying Auto-generate picked it). Its group follows the mode unless the person picked or edited one:
+ *  Product ideas for Brainstorm, the suggestion's group or the UI group for Review. */
+export function flipMode(draft: CouncilSetupDraft, lib: RoleLibrary): CouncilSetupDraft {
+    const { modeFrom: _modeFrom, ...rest } = draft;
+    return followMode({ ...rest, modePicked: true }, draft.mode === "brainstorm" ? "review" : "brainstorm", lib);
 }
 
 /** Pure: whether a council runs (any project: one runs at a time, and a council waiting on the person holds no slot),
@@ -508,6 +522,90 @@ export function failSuggestion(draft: CouncilSetupDraft): CouncilSetupDraft {
 /** Pure: a failed suggestion may be asked again. */
 export function retrySuggestion(draft: CouncilSetupDraft): CouncilSetupDraft {
     return draft.suggestState === "failed" ? { ...draft, suggestState: "idle" } : draft;
+}
+
+// ---- Auto-generate ----
+
+/** Pure: whether Setup offers Auto-generate: at least one live agent is seated, whose conversation it reads. */
+export function autoGenerateShown(draft: CouncilSetupDraft): boolean {
+    return draftHasAgents(draft);
+}
+
+/** Pure: the request that has wavesrv write the topic, a question and the mode from the seated agents' conversations
+ *  (their tab ids, in seat order), or null when it is not time: one is already out, no agent is seated or there is no
+ *  project to read from. */
+export function autoGenerateRequest(draft: CouncilSetupDraft): CommandCouncilAutoGenerateData | null {
+    const agents = draft.agents.map((a) => a.seat.agent ?? "").filter((id) => id !== "");
+    if (draft.autoState === "asking" || agents.length === 0 || draft.project.trim() === "") {
+        return null;
+    }
+    return { project: draft.project, agents };
+}
+
+// the draft with Auto-generate's state cleared: nothing out, no reason held, no answer waiting. `autoLast` and
+// `modeFrom` belong to the composer and the mode, not to a press
+function withoutAutoState(draft: CouncilSetupDraft): CouncilSetupDraft {
+    const { autoState: _state, autoError: _error, autoPending: _pending, ...rest } = draft;
+    return rest;
+}
+
+/** Pure: the press: the draft waits on the answer, with an earlier failure or waiting answer forgotten. A draft that
+ *  already waits is left as it is. */
+export function beginAutoGenerate(draft: CouncilSetupDraft): CouncilSetupDraft {
+    return draft.autoState === "asking" ? draft : { ...withoutAutoState(draft), autoState: "asking" };
+}
+
+// the answer written into the draft: the topic is the feature, the question the question, and `autoLast` the composer
+// text that makes. The mode and group stay when the person picked the mode; otherwise (never picked, or picked by an
+// earlier Auto-generate, which is not a pick) the mode is the answer's, counted as picked from the conversation, and the
+// group follows it as a flip does. An answer with no mode of the two leaves the mode alone
+function applyAutoGenerate(draft: CouncilSetupDraft, result: CouncilAutoGenerate, lib: RoleLibrary): CouncilSetupDraft {
+    const written: CouncilSetupDraft = { ...withoutAutoState(draft), feature: result.topic, question: result.question };
+    const next: CouncilSetupDraft = { ...written, autoLast: joinAsk(written) };
+    const named = asMode(result.mode);
+    if (named == null || (draft.modePicked && draft.modeFrom !== "conversation")) {
+        return next;
+    }
+    return followMode({ ...next, modePicked: true, modeFrom: "conversation" }, named, lib);
+}
+
+/** Pure: the answer landed. It is decided here, not at the press, so text typed during the call is seen: an empty
+ *  composer, or one still exactly the last answer, takes it at once; any other text waits on Replace / Keep, the answer
+ *  held in `autoPending`. Lands only on a draft that waits for it. */
+export function settleAutoGenerate(
+    draft: CouncilSetupDraft,
+    result: CouncilAutoGenerate,
+    lib: RoleLibrary
+): CouncilSetupDraft {
+    if (draft.autoState !== "asking") {
+        return draft;
+    }
+    const text = joinAsk(draft);
+    if (text === "" || text === draft.autoLast) {
+        return applyAutoGenerate(draft, result, lib);
+    }
+    return { ...withoutAutoState(draft), autoState: "confirm", autoPending: result };
+}
+
+/** Pure: Replace: the waiting answer is written over the composer's text. */
+export function replaceAutoGenerate(draft: CouncilSetupDraft, lib: RoleLibrary): CouncilSetupDraft {
+    if (draft.autoState !== "confirm" || draft.autoPending == null) {
+        return draft;
+    }
+    return applyAutoGenerate(draft, draft.autoPending, lib);
+}
+
+/** Pure: Keep: the waiting answer is dropped and every other field stays as it was. */
+export function keepAutoGenerate(draft: CouncilSetupDraft): CouncilSetupDraft {
+    return draft.autoState === "confirm" ? withoutAutoState(draft) : draft;
+}
+
+/** Pure: the call failed, or nothing could be read: the reason is kept for the line under the composer and the
+ *  composer is left as it was. A press clears it. Lands only on a draft that waits for an answer. */
+export function failAutoGenerate(draft: CouncilSetupDraft, reason: string): CouncilSetupDraft {
+    return draft.autoState === "asking"
+        ? { ...withoutAutoState(draft), autoState: "failed", autoError: reason }
+        : draft;
 }
 
 // ---- Start council ----

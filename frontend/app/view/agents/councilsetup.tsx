@@ -15,6 +15,11 @@
 // from Ask the council with a question), a moment after the last edit. It lives in askCoordinator below, outside the
 // component, so leaving Setup while it runs still lets the answer land in the draft. A Run again draft arrives with its
 // panel set and its group counted as picked: it is not asked (settleRerun), so opening a rerun spends nothing.
+//
+// With an agent seated the bar also holds Auto-generate, which asks wavesrv for a topic, a question and the mode from the
+// seated agents' recent conversations when it is pressed, and never otherwise. It lives in autoGenerate below with its
+// own press counter, and the model decides when the answer lands whether it may replace what the composer holds (Replace
+// and Keep) or fails (the line under the box).
 
 import { pushToast } from "@/app/cockpit/notificationstore";
 import { PopoverReveal } from "@/app/element/popoverreveal";
@@ -22,7 +27,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { createTempFileFromBlob } from "@/app/view/term/termutil";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { ChevronDown, Image as ImageIcon, Paperclip, Plus, X } from "lucide-react";
+import { ChevronDown, Image as ImageIcon, Loader2, Paperclip, Plus, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { showCouncil, showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -39,7 +44,10 @@ import {
     applyGroup,
     applySuggestion,
     askText,
+    autoGenerateRequest,
+    autoGenerateShown,
     basename,
+    beginAutoGenerate,
     beginSuggest,
     draftHasAgents,
     estimateKey,
@@ -48,11 +56,13 @@ import {
     expertInitial,
     expertsLine,
     expertTone,
+    failAutoGenerate,
     failSuggestion,
     flipMode,
     groupFromDraft,
     groupName,
     initialPanel,
+    keepAutoGenerate,
     modeChip,
     MODEL_CHOICES,
     modeReason,
@@ -64,6 +74,7 @@ import {
     removeExpert,
     removeFile,
     removeScreenshot,
+    replaceAutoGenerate,
     retrySuggestion,
     ROUND_CHOICES,
     seatableAgents,
@@ -71,6 +82,7 @@ import {
     seatsOf,
     setExpertModel,
     setRounds,
+    settleAutoGenerate,
     settleRerun,
     setupEstimate,
     splitAsk,
@@ -83,6 +95,7 @@ import {
     type RoleLibrary,
 } from "./councilsetupmodel";
 import {
+    autoGenerateCouncil,
     councilRoles,
     councilSetupDraftAtom,
     councilSetupProjectAtom,
@@ -108,6 +121,12 @@ const INPUT =
     "h-8 w-full min-w-0 rounded-[6px] border border-edge-mid bg-surface px-[10px] text-[13px] text-primary outline-none placeholder:text-ink-faint focus:border-accent-700 focus-visible:ring-2 focus-visible:ring-accent";
 const GHOST =
     "h-[26px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[10px] text-[12px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
+// a ghost button in the composer's bar: Attach, and Auto-generate beside it
+const BAR_GHOST =
+    "flex h-[26px] cursor-pointer items-center gap-[5px] rounded-[6px] border border-transparent bg-transparent px-[8px] text-[12px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted";
+// the small Replace and Keep that answer Auto-generate's "Replace the text?"
+const MINI =
+    "h-[22px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-2 text-[11.5px] text-primary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent";
 const SECONDARY =
     "flex h-[26px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[12px] text-primary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent";
 const ICON_BUTTON =
@@ -192,10 +211,42 @@ async function askCoordinator(project: string): Promise<void> {
     );
 }
 
-/** Drops the answer to an ask that is still out (Cancel, Start). */
+// Auto-generate counts its presses apart from askSeq: a Suggest that fires during the call (a file attached) bumps askSeq,
+// and sharing it would drop the answer and leave the button spinning for good. Only a press and forgetAsk bump this.
+const autoSeq = new Map<string, number>();
+
+// the error's first line, which is all the line under the composer has room for
+const reasonLine = (error: string): string => error.split(/\r?\n/)[0].trim() || "Auto-generate failed";
+
+/** Has wavesrv write the topic, a question and the mode from the seated agents' conversations, and puts the answer in the
+ *  project's draft. Whether it replaces the composer's text is settled when the answer lands (settleAutoGenerate). */
+async function autoGenerate(project: string): Promise<void> {
+    const before = globalStore.get(councilSetupDraftAtom(project));
+    // the request is taken before the press: begin marks the draft asking, which has no request
+    const request = before != null ? autoGenerateRequest(before) : null;
+    if (before == null || request == null) {
+        return;
+    }
+    const key = councilProjectKey(project);
+    const seq = (autoSeq.get(key) ?? 0) + 1;
+    autoSeq.set(key, seq);
+    editDraft(project, beginAutoGenerate);
+    const r = await autoGenerateCouncil(request);
+    if (autoSeq.get(key) !== seq) {
+        return;
+    }
+    editDraft(project, (prev) =>
+        r.ok && r.value != null
+            ? settleAutoGenerate(prev, r.value, globalStore.get(libraryAtom) ?? NO_LIBRARY)
+            : failAutoGenerate(prev, r.ok === false ? reasonLine(r.error) : "wavesrv wrote nothing")
+    );
+}
+
+/** Drops the answer to an ask or an Auto-generate that is still out (Cancel, Start). */
 function forgetAsk(project: string): void {
     const key = councilProjectKey(project);
     askSeq.set(key, (askSeq.get(key) ?? 0) + 1);
+    autoSeq.set(key, (autoSeq.get(key) ?? 0) + 1);
 }
 
 // ---- files and screenshots ----
@@ -680,6 +731,11 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
         }
     }, [lib, needsPanel]);
 
+    // an Auto-generate answer that lands (it lands from outside this view) rewrites the composer's text: what the person
+    // typed before it no longer stands for it
+    const autoLast = draft?.autoLast;
+    useEffect(() => setTyped(null), [autoLast]);
+
     // an error is about the last Start council: the next edit clears it. A draft made again from a prefill (Ask the
     // council, a reopened Setup) is a new form, so the notes of the old one go.
     useEffect(() => setStartError(""), [draft]);
@@ -929,11 +985,65 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                         ? void pickImage()
                                         : void addPicked(id === "folder" ? "folder" : "file")
                                 }
-                                className="flex h-[26px] cursor-pointer items-center gap-[5px] rounded-[6px] border border-transparent bg-transparent px-[8px] text-[12px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                                className={BAR_GHOST}
                             >
                                 <Paperclip size={13} strokeWidth={1.8} aria-hidden />
                                 Attach
                             </MenuButton>
+                            {autoGenerateShown(draft) ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        data-council-autogen
+                                        disabled={draft.autoState === "asking"}
+                                        aria-busy={draft.autoState === "asking"}
+                                        title="Write the topic, a question and the mode from what the seated agents were talking about"
+                                        onClick={() => void autoGenerate(project)}
+                                        className={BAR_GHOST}
+                                    >
+                                        {draft.autoState === "asking" ? (
+                                            <Loader2
+                                                size={13}
+                                                strokeWidth={1.8}
+                                                className="animate-spin motion-reduce:animate-none"
+                                                aria-hidden
+                                            />
+                                        ) : (
+                                            <Sparkles size={13} strokeWidth={1.8} aria-hidden />
+                                        )}
+                                        Auto-generate
+                                    </button>
+                                    {draft.autoState === "confirm" ? (
+                                        <span
+                                            data-council-autogen-confirm
+                                            role="group"
+                                            aria-label="Replace the text?"
+                                            className="flex items-center gap-[6px] text-[12px] text-secondary"
+                                        >
+                                            Replace the text?
+                                            <button
+                                                type="button"
+                                                data-council-autogen-replace
+                                                onClick={() => {
+                                                    update((d) => replaceAutoGenerate(d, libraryOrEmpty));
+                                                    setTyped(null);
+                                                }}
+                                                className={MINI}
+                                            >
+                                                Replace
+                                            </button>
+                                            <button
+                                                type="button"
+                                                data-council-autogen-keep
+                                                onClick={() => update(keepAutoGenerate)}
+                                                className={MINI}
+                                            >
+                                                Keep
+                                            </button>
+                                        </span>
+                                    ) : null}
+                                </>
+                            ) : null}
                             <MenuButton
                                 ariaLabel="Group of experts"
                                 itemAttr="data-council-group-item"
@@ -1002,6 +1112,16 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                     </div>
 
                     <div className="flex flex-col gap-[6px]">
+                        {draft.autoState === "failed" ? (
+                            <span
+                                data-council-autogen-error
+                                role="status"
+                                title={draft.autoError}
+                                className="min-w-0 truncate text-[11.5px] text-muted"
+                            >
+                                {draft.autoError}
+                            </span>
+                        ) : null}
                         <span data-council-mode-rules className="min-w-0 text-[11.5px] text-muted">
                             {modeRules(draft.mode)}
                         </span>

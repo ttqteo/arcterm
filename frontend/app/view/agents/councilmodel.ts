@@ -765,6 +765,11 @@ export interface CouncilSetupDraft {
     groupPicked: boolean;
     mode: "review" | "brainstorm";
     modePicked: boolean; // the person flipped the mode chip, so a new suggestion does not change it
+    autoState?: "asking" | "confirm" | "failed"; // Auto-generate: waiting on the answer, on Replace / Keep, or failed; absent = idle
+    autoError?: string; // the one-line reason while Auto-generate is `failed`
+    autoPending?: CouncilAutoGenerate; // an answer that waits on Replace / Keep, for a composer that holds text
+    autoLast?: string; // the composer text the last applied answer produced, so a second press may replace it unasked
+    modeFrom?: "conversation"; // Auto-generate picked the mode; a flip of the chip clears it
 }
 
 /** Pure: a blank draft for a project. */

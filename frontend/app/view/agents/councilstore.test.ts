@@ -18,6 +18,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         CouncilDeleteCommand: vi.fn(),
         CouncilRetryCommand: vi.fn(),
         CouncilSuggestCommand: vi.fn(),
+        CouncilAutoGenerateCommand: vi.fn(),
         CouncilEstimateCommand: vi.fn(),
         CouncilSaveDocCommand: vi.fn(),
         CouncilRolesCommand: vi.fn(),
@@ -38,6 +39,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { emptyCouncilDraft } from "./councilmodel";
 import {
+    autoGenerateCouncil,
     continueCouncil,
     councilAtom,
     councilListAtom,
@@ -302,6 +304,25 @@ describe("actions", () => {
         expect(RpcApi.CouncilSaveDocCommand).toHaveBeenCalledWith(TabRpcClient, { id: "h1", path: undefined });
         expect(await councilRoles()).toEqual({ ok: true, value: roles });
         expect(RpcApi.CouncilRolesCommand).toHaveBeenCalledWith(TabRpcClient);
+    });
+
+    it("auto-generate answers the result, or the message of why wavesrv could not write one", async () => {
+        const request = { project: "/p", agents: ["t1", "t2"] };
+        const written = { topic: "Rail apps", question: "Is the pin worth it?", mode: "brainstorm" };
+        vi.mocked(RpcApi.CouncilAutoGenerateCommand).mockResolvedValueOnce(written);
+        expect(await autoGenerateCouncil(request)).toEqual({ ok: true, value: written });
+        expect(RpcApi.CouncilAutoGenerateCommand).toHaveBeenCalledWith(TabRpcClient, request);
+
+        const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+        vi.mocked(RpcApi.CouncilAutoGenerateCommand).mockRejectedValueOnce(
+            new Error("none of the seated agents has a conversation to read")
+        );
+        expect(await autoGenerateCouncil(request)).toEqual({
+            ok: false,
+            error: "none of the seated agents has a conversation to read",
+        });
+        expect(quiet).toHaveBeenCalled();
+        quiet.mockRestore();
     });
 
     it("takes a method swapped in after the module loaded", async () => {
