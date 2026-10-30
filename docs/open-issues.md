@@ -33,6 +33,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   (Telex) Enter commits the word and does not launch. The `launcher`, `launcher-resume`, `launcher-images` and
   `new-run-window` scenarios were updated but not run. (commit "feat(launcher): the New dialog opens in its Task box,
   now at the top")
+- [ ] (arcterm) New dialog `@` files: with a project picked, type `@` in the Task box: a list of the project's files
+  shows under the Task row ("Listing files…" first on a cold repo); typing after the `@` narrows it, ↑↓ move, Enter or
+  Tab puts `@<path> ` in the task without launching, a click does the same, Esc closes only the list (a second Esc
+  closes the dialog); `me@x.com` opens nothing; Home picked shows no list. Not run in any app. (52d5f4a5d)
 - [ ] (arcterm) Agent badge: run a brainstorm until its Judge (or Builder check) answers, while looking at another
   agent: the Agent nav badge does not go up for the Judge, and every number it shows matches a count on a tree row.
   (commit "fix(agents): a brainstorm's judge and builder check do not count as unread")
