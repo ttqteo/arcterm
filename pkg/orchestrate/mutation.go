@@ -7,6 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -14,6 +18,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/util/keyedmutex"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
+	"github.com/wavetermdev/waveterm/pkg/wshutil"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
@@ -29,9 +34,41 @@ func WithDagMutation(dagID string, fn func() error) error {
 	if dagID == "" {
 		return fmt.Errorf("dag id is required")
 	}
+	start := time.Now()
 	dagMutationLocks.Lock(dagID)
-	defer dagMutationLocks.Unlock(dagID)
+	acquired := time.Now()
+	defer func() {
+		dagMutationLocks.Unlock(dagID)
+		logSlowDagLock(dagID, acquired.Sub(start), time.Since(acquired))
+	}()
 	return fn()
+}
+
+// slowDagLock is a wait or hold worth logging: past it, a wsh caller blocked on the lock has outlived its rpc budget
+const slowDagLock = time.Duration(wshutil.DefaultTimeoutMs) * time.Millisecond
+
+// logSlowDagLock names the caller, so a long holder can be told apart from a caller that only waited behind one
+func logSlowDagLock(dagID string, wait, hold time.Duration) {
+	if wait < slowDagLock && hold < slowDagLock {
+		return
+	}
+	log.Printf("dag %s lock: waited %v, held %v, by %s\n", dagID, wait.Round(time.Millisecond), hold.Round(time.Millisecond), dagLockCaller())
+}
+
+func dagLockCaller() string {
+	pcs := make([]uintptr, 16)
+	// skip runtime.Callers, this function and logSlowDagLock
+	frames := runtime.CallersFrames(pcs[:runtime.Callers(3, pcs)])
+	for {
+		f, more := frames.Next()
+		fn := f.Function[strings.LastIndex(f.Function, "/")+1:]
+		if !strings.Contains(fn, "DagMutation") {
+			return fmt.Sprintf("%s (%s:%d)", fn, filepath.Base(f.File), f.Line)
+		}
+		if !more {
+			return "unknown"
+		}
+	}
 }
 
 // TryWithDagMutation runs fn only if the dag's lock is free, reporting whether it ran. For a write with
@@ -44,7 +81,11 @@ func TryWithDagMutation(dagID string, fn func() error) (bool, error) {
 	if !dagMutationLocks.TryLock(dagID) {
 		return false, nil
 	}
-	defer dagMutationLocks.Unlock(dagID)
+	acquired := time.Now()
+	defer func() {
+		dagMutationLocks.Unlock(dagID)
+		logSlowDagLock(dagID, 0, time.Since(acquired))
+	}()
 	return true, fn()
 }
 

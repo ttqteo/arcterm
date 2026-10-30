@@ -2,6 +2,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useAtomValue } from "jotai";
+import { runProgress } from "../agents/runlineage";
 import { useRunUsage } from "../agents/runtokenstore";
 import { modelsText, summarizeUsage, usageText } from "../agents/runusage";
 import { chipGroups, pickNext, type ChipGroup } from "./dagcanvas";
@@ -59,7 +60,7 @@ export function DagGraphHeader({ group, owner }: { group: TaskGroup; owner: Run 
     const pill = dagStatusPill(group);
     const tone = PILL_TONE[pill.tone];
     const label = pill.label;
-    const done = group.tasks.filter((t) => t.state === "done").length;
+    const { done } = runProgress(group);
     const usage = useRunUsage(group.channelid, group.runid);
     const spent = summarizeUsage(usage?.rows);
     return (
