@@ -387,7 +387,7 @@ function judgeWaitScenario(kit) {
             const w1 = await waitFor(h, drawn);
             await h.shot("cdp-shots/brainstorm-judge-wait-1.png");
             rec(
-                "1. the wait: the question and its why, the status line, What the judge is weighing · 7, the 7 approaches in file order with their facts counts and letters on the first four, the box open with its placeholder, no Guess for me, and the agent's tree line names the judge",
+                "1. the wait: the question and its why, the status line, What the judge is weighing · 7, the 7 approaches in file order with their facts counts and a letter on each, the box open with its placeholder, no Guess for me, and the agent's tree line names the judge",
                 s1.ok &&
                     w1.ok &&
                     w1.treeLine === `judge weighing question ${WAIT_Q.n}` &&

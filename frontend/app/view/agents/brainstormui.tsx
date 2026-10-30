@@ -274,11 +274,14 @@ export function Track({ segments }: { segments: TrackSegment[] }) {
     );
 }
 
-// centred while it fits, scrolled from its top once it does not
+// a third of the way down while it fits, where the eye lands rather than mid-pane; scrolled from its top once it does
+// not, when the spacers have nothing left to take
 export function MainBody({ children }: { children: ReactNode }) {
     return (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[7%] py-[24px]">
-            <div className="my-auto flex flex-col gap-[26px]">{children}</div>
+            <div aria-hidden="true" className="flex-[1]" />
+            <div className="flex flex-none flex-col gap-[26px]">{children}</div>
+            <div aria-hidden="true" className="flex-[2]" />
         </div>
     );
 }

@@ -10,6 +10,7 @@ import {
     approveBlocker,
     asksUser,
     boardBackLabel,
+    bodyBeyondGist,
     brainstormAttention,
     brainstormCounts,
     brainstormFilePath,
@@ -1319,6 +1320,20 @@ describe("partGist", () => {
     });
 });
 
+describe("bodyBeyondGist", () => {
+    const f = file();
+    it("is false for a one-sentence body the gist already reads, or no body", () => {
+        expect(bodyBeyondGist(f, part("a", "yours", { body: "Only this. " }))).toBe(false);
+        expect(bodyBeyondGist(f, part("a", "yours", { gist: "Same.", body: "Same." }))).toBe(false);
+        expect(bodyBeyondGist(f, part("a", "asked"))).toBe(false);
+    });
+
+    it("is true when the body says more than the gist", () => {
+        expect(bodyBeyondGist(f, part("a", "yours", { body: "First. Second." }))).toBe(true);
+        expect(bodyBeyondGist(f, part("a", "yours", { gist: "Short.", body: "The whole story." }))).toBe(true);
+    });
+});
+
 describe("reviewHead", () => {
     it("offers the builder check once every decision is yours and the agent is done", () => {
         const f = file({ done: true, parts: [part("a", "yours"), part("n", "guess", { kind: "note" })] });
@@ -2203,6 +2218,19 @@ describe("unseenSince", () => {
     it("lists a changed decision among the parts but not the notes", () => {
         const after: BrainstormFile = { ...before, parts: [part("a", "guess", { body: "B." }), before.parts[1]] };
         expect(unseenSince(after, seenMark(before))).toEqual({ parts: ["a"], notes: [], recon: [] });
+    });
+
+    it("does not mark a decision written from the user's own answer, but does the agent's guess", () => {
+        const answered: BrainstormFile = {
+            ...before,
+            parts: [part("a", "yours", { body: "From your answer.", from: "answer 1" }), before.parts[1]],
+        };
+        expect(unseenSince(answered, seenMark(before))).toEqual({ parts: [], notes: [], recon: [] });
+        const guessed: BrainstormFile = {
+            ...before,
+            parts: [part("a", "guess", { body: "The agent's guess.", from: "answer 1" }), before.parts[1]],
+        };
+        expect(unseenSince(guessed, seenMark(before))).toEqual({ parts: ["a"], notes: [], recon: [] });
     });
 
     it("historyRows marks only the unseen recon rows", () => {

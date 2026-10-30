@@ -1024,7 +1024,10 @@ export function unseenSince(f: BrainstormFile, seen: SeenMark | null): Unseen {
     if (seen == null) {
         return NOTHING_UNSEEN;
     }
-    const parts = orderedParts(f).filter((p) => seen.parts[p.id] !== partText(p));
+    // a decision written from the user's own answer is not news to them: its answer line already says where it came from
+    const parts = orderedParts(f).filter(
+        (p) => seen.parts[p.id] !== partText(p) && !(p.state === "yours" && partAnswer(f, p) != null)
+    );
     const known = new Set(seen.recon);
     return {
         parts: parts.map((p) => p.id),
@@ -1103,6 +1106,12 @@ export function partAnswer(f: BrainstormFile, p: BrainstormPart): PartAnswer | n
         .pop();
     const text = h == null ? "" : h.a || pickedLine(pickedIndexes(h).map((i) => h.options![i].label));
     return text ? { n, text } : null;
+}
+
+// an opened row shows the body only when it says more than the gist the row already reads
+export function bodyBeyondGist(f: BrainstormFile, p: BrainstormPart): boolean {
+    const body = p.body.trim();
+    return body !== "" && body !== partGist(f, p).trim();
 }
 
 export function answerLine(a: PartAnswer): string {
