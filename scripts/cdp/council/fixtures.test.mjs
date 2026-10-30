@@ -106,7 +106,7 @@ describe("the fixtures as records", () => {
 
     it("round1 is Running.dc.html: UX and New user done, RAM and Skeptic reading", () => {
         const c = placed("round1");
-        expect(headerChip(c)).toBe("Step 1 of 3 · 2 of 4 experts done");
+        expect(headerChip(c)).toBe("Round 1 of 2");
         expect(callSegments(c)).toEqual(["done", "done", "running", "running", ...Array(5).fill("pending")]);
         expect(expertStat(c, "ux")).toBe("1 min 52 s · 84k tokens");
         expect(expertStat(c, "ram")).toBe("3 min 10 s · 71k tokens");
@@ -123,7 +123,7 @@ describe("the fixtures as records", () => {
 
     it("round2 is Main.dc.html: the P2 thread, Skeptic typing under UX's revision, the person's reply queued", () => {
         const c = placed("round2");
-        expect(headerChip(c)).toBe("Step 2 of 3 · 2 replying");
+        expect(headerChip(c)).toBe("Round 2 of 2");
         expect(costLine(c, c.updated)).toBe("7:20 · 19 replies · 0.55M tokens");
         expect(callSegments(c)).toEqual([...Array(6).fill("done"), "running", "running", "pending"]);
         expect(treeMeta(c)).toEqual({ text: "Running", tone: "working" });

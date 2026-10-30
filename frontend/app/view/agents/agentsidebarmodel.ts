@@ -18,7 +18,7 @@
 import { placesOf, splitGrids, type CellPlacement, type GridState, type ProjectGrids } from "./agentgrid";
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
 import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
-import { canRemoveCouncil, councilProjectKey, treeMeta, type CouncilTone } from "./councilmodel";
+import { canRemoveCouncil, councilProjectKey, treeMeta, UNTITLED_COUNCIL, type CouncilTone } from "./councilmodel";
 import type { RunInfo } from "./runlineage";
 import type { QueuedRow } from "./runqueuemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
@@ -28,7 +28,7 @@ export const CONVERSATION_PAGE = 10;
 // the project filter's value for no filter (the model's projectFilterAtom)
 export const ALL_PROJECTS = "all";
 export const UNTITLED_SESSION = "(untitled session)";
-export const UNTITLED_COUNCIL = "(untitled council)";
+export { UNTITLED_COUNCIL };
 
 // an ended session, with the project it is filed under
 export interface EndedSessionRow {

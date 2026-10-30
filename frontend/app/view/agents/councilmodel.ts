@@ -8,7 +8,11 @@
 // Every timestamp on the record (`started`, `updated`, `summary.at`, a reply's `ts`) is epoch milliseconds, and a
 // call is counted in `calls` and in `stats[expert].calls` only once it has returned a reply: a failed call is in
 // `failed`, not in the count. The coordinator is the one expert with `coordinator` set; it never proposes or replies,
-// so "the experts" below means the panel, every other expert (`panel`).
+// so "the experts" below means the panel, every other seat (`panel`): a role expert, or a live agent (`agent` set).
+//
+// The round numbers live here and nowhere else (`roundsOf`, `synthesisRound`, `firstFollowRound`; Go's are in
+// pkg/council/types.go): the seats answer rounds 1 to `rounds`, the summary is the round after, a follow-up the ones
+// after that.
 
 export type CouncilView = "discussion" | "summary" | "setup";
 
@@ -21,7 +25,12 @@ export type CouncilTone = "working" | "asking" | "muted" | "error";
 export type SegmentState = "done" | "running" | "failed" | "pending";
 
 const YOU = "you";
-const ROUNDS = 3;
+const DEFAULT_ROUNDS = 2;
+const MAX_ROUNDS = 3;
+const DRAFT_HELD = "held";
+
+/** The name a council with no title goes by in the Agent tree and in another council's queued line. */
+export const UNTITLED_COUNCIL = "(untitled council)";
 
 /** The words the person reads for a stance (the wire keeps `accept | challenge | oppose`). */
 export const STANCE_WORD: Record<StanceLabel, string> = {
@@ -37,9 +46,58 @@ function isStance(s: string | undefined): s is "accept" | "challenge" | "oppose"
     return s != null && STANCES.has(s);
 }
 
-/** Pure: the experts that propose and review, which is every expert but the coordinator. */
+/** Pure: the seats that propose and review, which is every seat but the coordinator. */
 export function panel(c: Council): CouncilExpert[] {
     return c.experts.filter((e) => !e.coordinator);
+}
+
+// ---- rounds, agent seats and held drafts ----
+
+/** Pure: how many rounds the seats answer, the ideas round included: `rounds` 1 to 3, and anything else (0 on a council
+ *  saved before rounds existed) reads as 2, today's shape. The same rule as `RoundsOf` in pkg/council/types.go. */
+export function roundsOf(c: Pick<Council, "rounds"> | null | undefined): number {
+    const n = c?.rounds ?? 0;
+    return n >= 1 && n <= MAX_ROUNDS ? n : DEFAULT_ROUNDS;
+}
+
+/** Pure: the round number of the coordinator's summary, the one after the last seat round (3 for 2 rounds). */
+export function synthesisRound(c: Pick<Council, "rounds"> | null | undefined): number {
+    return roundsOf(c) + 1;
+}
+
+/** Pure: the round number of a council's first follow-up, after it is done (4 for 2 rounds); each later one is one more. */
+export function firstFollowRound(c: Pick<Council, "rounds"> | null | undefined): number {
+    return roundsOf(c) + 2;
+}
+
+/** Pure: whether a seat is a live agent's (its tab id is `agent`), not a role expert's. */
+export function isAgentSeat(e: Pick<CouncilExpert, "agent">): boolean {
+    return !!e.agent;
+}
+
+/** Pure: whether a live agent sits in the council. It then holds every answer as a draft the person settles. */
+export function hasAgents(c: Pick<Council, "experts"> | null | undefined): boolean {
+    return c != null && c.experts.some(isAgentSeat);
+}
+
+/** An idea or a reply a seat wrote that waits for the person to send, edit or drop it. */
+export type HeldDraft =
+    | { kind: "idea"; id: string; ts: number; proposal: CouncilProposal }
+    | { kind: "reply"; id: string; ts: number; reply: CouncilReply };
+
+/** Pure: the held drafts, ideas and replies, in the order they were written (a tie: the idea, then arrival). A sent
+ *  draft (`draft` empty) and a dropped one are not held. */
+export function heldDrafts(c: Pick<Council, "proposals" | "replies">): HeldDraft[] {
+    const ideas = (c.proposals ?? [])
+        .filter((p) => p.draft === DRAFT_HELD)
+        .map((proposal): HeldDraft => ({ kind: "idea", id: proposal.id, ts: proposal.ts, proposal }));
+    const replies = (c.replies ?? [])
+        .filter((r) => r.draft === DRAFT_HELD)
+        .map((reply): HeldDraft => ({ kind: "reply", id: reply.id, ts: reply.ts, reply }));
+    return [...ideas, ...replies]
+        .map((d, i) => ({ d, i }))
+        .sort((a, b) => a.d.ts - b.d.ts || a.i - b.i)
+        .map((x) => x.d);
 }
 
 /** Pure: the reply author's display name: the expert's, `You` for the person, the raw id for one no longer on the panel. */
@@ -288,15 +346,16 @@ export function answerers(c: Council, proposalId: string, parentId: string, text
 }
 
 /** Pure: the label under the person's own reply while it waits for an answer; empty once it is answered, and for
- *  anyone else's reply. */
+ *  anyone else's reply. A reply posted before the last seat round reaches the seats at the next one; one posted in the
+ *  last round or while the summary is written is answered in the follow-up pass, after the summary. */
 export function replyLabel(c: Council, reply: CouncilReply): string {
     if (reply.author !== YOU || reply.answered) {
         return "";
     }
-    if (reply.round > ROUNDS) {
+    if (reply.round >= firstFollowRound(c)) {
         return c.state === "running" ? "Answering…" : "";
     }
-    if (reply.round <= 1 || c.state === "awaiting-you") {
+    if (reply.round < roundsOf(c) || c.state === "awaiting-you") {
         return "Queued for the next step";
     }
     return "Answered after the summary";
@@ -382,14 +441,9 @@ function elapsedMs(c: Council, nowMs: number): number {
 
 // ---- state words ----
 
-// experts with a reply being written or a call running (the coordinator is not one of them)
+// seats with a reply being written or a call running (the coordinator is not one of them)
 function writing(c: Council): number {
     return panel(c).filter((e) => c.activity?.[e.id] != null).length;
-}
-
-// the experts whose round 1 call is over, whether it came back or failed
-function round1Done(c: Council): number {
-    return panel(c).filter((e) => (c.stats?.[e.id]?.calls ?? 0) >= 1 || c.failed?.[e.id]?.round === 1).length;
 }
 
 const STATE_WORD: Record<string, string> = {
@@ -402,31 +456,56 @@ const STATE_WORD: Record<string, string> = {
     queued: "Queued",
 };
 
-/** Pure: the chip in the Discussion's header: the step and what is going on in it while the council runs
- *  (`Step 1 of 3 · 2 of 4 experts done`, `Step 2 of 3 · 2 replying`), else the state (`Waiting on you`, `Done`). */
-export function headerChip(c: Council): string {
-    if (c.state !== "running") {
-        return STATE_WORD[c.state] ?? c.state;
+/** Pure: `2 drafts wait for you`, `1 draft waits for you`; empty for none. The Councils row's word, and the tail of
+ *  the step chip. */
+export function draftsWaitWord(n: number): string {
+    if (n <= 0) {
+        return "";
     }
-    const n = writing(c);
-    if (c.round > ROUNDS) {
-        return n > 0 ? `Follow-up · ${n} answering` : "Follow-up";
-    }
-    const head = `Step ${Math.max(1, c.round)} of ${ROUNDS}`;
-    if (c.round <= 1) {
-        return `${head} · ${round1Done(c)} of ${panel(c).length} experts done`;
-    }
-    if (c.round === 2) {
-        return n > 0 ? `${head} · ${n} replying` : head;
-    }
-    return `${head} · ${n > 0 ? `${n} answering` : "summarizing"}`;
+    return n === 1 ? "1 draft waits for you" : `${n} drafts wait for you`;
 }
 
-/** Pure: a council's row in the Agent tree: its state in a word and the tone it is drawn in. */
-export function treeMeta(c: Council): { text: string; tone: CouncilTone } {
+// the step a council is in while it works: the seats' round, the summary being written, or a follow-up being answered
+function stepWord(c: Council): string {
+    if (c.round > synthesisRound(c)) {
+        const n = writing(c);
+        return n > 0 ? `Follow-up · ${n} answering` : "Follow-up";
+    }
+    if (c.round === synthesisRound(c)) {
+        return "Writing the summary";
+    }
+    return `Round ${Math.max(1, c.round)} of ${roundsOf(c)}`;
+}
+
+/** Pure: the chip in the Discussion's header: the step while the council runs (`Round 2 of 2`, `Writing the summary`,
+ *  `Follow-up · 2 answering`), else the state (`Waiting on you`, `Done`). While drafts are held the step carries
+ *  ` · 2 drafts wait for you`: a council waiting on held drafts reads its step instead of `Waiting on you`, and a done
+ *  one with a held follow-up answer reads `Done · 1 draft waits for you`. */
+export function headerChip(c: Council): string {
+    const waits = draftsWaitWord(heldDrafts(c).length);
+    const tail = waits === "" ? "" : ` · ${waits}`;
     switch (c.state) {
         case "running":
-            return { text: c.round > ROUNDS ? "Answering" : "Running", tone: "working" };
+            return stepWord(c) + tail;
+        case "awaiting-you":
+            return waits === "" ? STATE_WORD[c.state] : stepWord(c) + tail;
+        case "done":
+            return STATE_WORD[c.state] + tail;
+        default:
+            return STATE_WORD[c.state] ?? c.state;
+    }
+}
+
+/** Pure: a council's row in the Agent tree: its state in a word and the tone it is drawn in. A council with held drafts
+ *  reads `2 drafts wait for you` in the amber tone (it is the person's move), whether it still runs, waits or is done. */
+export function treeMeta(c: Council): { text: string; tone: CouncilTone } {
+    const waits = draftsWaitWord(heldDrafts(c).length);
+    if (waits !== "" && (c.state === "running" || c.state === "awaiting-you" || c.state === "done")) {
+        return { text: waits, tone: "asking" };
+    }
+    switch (c.state) {
+        case "running":
+            return { text: c.round > synthesisRound(c) ? "Answering" : "Running", tone: "working" };
         case "awaiting-you":
             return { text: "Waiting on you", tone: "asking" };
         case "failed":
@@ -434,6 +513,33 @@ export function treeMeta(c: Council): { text: string; tone: CouncilTone } {
         default:
             return { text: STATE_WORD[c.state] ?? c.state, tone: "muted" };
     }
+}
+
+// what a seat's activity reads while its turn waits for the agent behind it to finish its own task (AgentCaller's
+// OnTool line in pkg/council/agentcaller.go)
+const WAITING_FOR_AGENT = /^Waiting for (.+) to finish its task$/;
+
+// `A`, `A and B`, `A, B and C`
+function listAnd(names: string[]): string {
+    return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** Pure: a queued council's line: `Queued`, or `Queued · after <the council that runs>` once the one it waits on is
+ *  known (`holder`, found by the queued council's `queuedafter`), and `Queued · after room · waiting for Witness
+ *  synthesis` while that council holds the slot on a busy agent (its seats' activity says `Waiting for <agent> to
+ *  finish its task`). The Agent tree's row and the queued council's own body both read it. */
+export function queuedLine(holder: Council | null | undefined): string {
+    if (holder == null) {
+        return "Queued";
+    }
+    const line = `Queued · after ${holder.feature.trim() || UNTITLED_COUNCIL}`;
+    if (holder.state !== "running") {
+        return line;
+    }
+    const agents = Object.values(holder.activity ?? {})
+        .map((a) => WAITING_FOR_AGENT.exec(a.text)?.[1])
+        .filter((name): name is string => name != null);
+    return agents.length > 0 ? `${line} · waiting for ${listAnd([...new Set(agents)])}` : line;
 }
 
 /** Pure: the Summary's chip: `Done · 4 experts · 11 min · 0.86M tokens`. */
@@ -463,11 +569,11 @@ export function expertStat(c: Council, expertId: string): string {
     return s == null ? "" : `${duration(s.ms)} · ${countTokens(s.tokens)} tokens`;
 }
 
-/** Pure: the progress bar, one segment per call of the whole council (two per expert and the synthesis: 9 for four):
- *  the finished calls first, then the failed ones, then those running, then those still to come. A `done` council has
- *  nothing left to come: a call a failed expert's round 2 skipped counts as done. */
+/** Pure: the progress bar, one segment per call of the whole council (one per seat in each round and the synthesis: 9
+ *  for four in two rounds): the finished calls first, then the failed ones, then those running, then those still to
+ *  come. A `done` council has nothing left to come: a call a failed expert's round 2 skipped counts as done. */
 export function callSegments(c: Council): SegmentState[] {
-    const total = 2 * panel(c).length + 1;
+    const total = roundsOf(c) * panel(c).length + 1;
     const failed = Math.min(Object.keys(c.failed ?? {}).length, total);
     const done = Math.max(0, Math.min(c.calls, total - failed));
     const running = c.state === "running" ? Math.min(Object.keys(c.activity ?? {}).length, total - done - failed) : 0;
@@ -513,10 +619,10 @@ export function summarizeHold(c: Council): string {
         return "This council has not run";
     }
     if (c.state === "running") {
-        if (c.round >= 3) {
+        if (c.round >= synthesisRound(c)) {
             return "Summarize is on again when the council stops";
         }
-        return c.round === 2
+        return c.round > 1
             ? "The summary comes by itself when the experts finish replying"
             : "Summarize unlocks after the experts' first ideas";
     }
@@ -583,6 +689,36 @@ export function matrixRows(c: Council): MatrixRow[] {
 
 // ---- Setup ----
 
+/** A live agent a council can seat: what the Agent tree and Setup's Add agent picker know of one. */
+export interface SeatableAgent {
+    id: string; // the agent's tab id
+    name: string;
+    project: string; // the path of the project the agent works in
+    harness: string; // claude or pi
+    context: number; // tokens in its context now, which the estimate prices a turn at
+}
+
+/** Pure: the seat for a live agent: the id is its own (it cannot meet a role expert's), `agent` names its tab, and it
+ *  has no brief or model of its own (it answers from its own session and context). */
+export function agentSeat(a: SeatableAgent): CouncilExpert {
+    return {
+        id: `agent-${a.id}`,
+        name: a.name,
+        brief: "",
+        model: "",
+        agent: a.id,
+        harness: a.harness,
+        context: a.context,
+    };
+}
+
+/** An agent seated in a draft: the seat as the wire takes it, and the project the agent works in (a council's own is the
+ *  first agent's, so Setup can say how many other projects the seats come from). */
+export interface DraftAgent {
+    seat: CouncilExpert;
+    project: string;
+}
+
 /** What Setup holds for one project: the form, the coordinator's suggestion, and whether the person picked the group
  *  (a suggested group never overrides a picked one). A draft lives in `councilSetupDraftAtom` so it survives
  *  switching away. */
@@ -593,7 +729,9 @@ export interface CouncilSetupDraft {
     files: string[];
     screenshots: string[];
     group: string; // the group id, empty for none
-    experts: CouncilExpert[]; // the panel, the coordinator last
+    experts: CouncilExpert[]; // the panel, the coordinator last: the role experts only, a group never touches `agents`
+    agents: DraftAgent[]; // the live agents seated, in the order they were added; the start sends them before `experts`
+    rounds: number; // how many rounds the seats answer, 1 to 3; it counts only while an agent is seated
     pause: boolean;
     sessionId?: string; // the agent session that starts the council
     suggestion?: CouncilSuggestion;
@@ -613,6 +751,8 @@ export function emptyCouncilDraft(project: string): CouncilSetupDraft {
         screenshots: [],
         group: "",
         experts: [],
+        agents: [],
+        rounds: DEFAULT_ROUNDS,
         pause: false,
         suggestState: "idle",
         groupPicked: false,
@@ -621,8 +761,21 @@ export function emptyCouncilDraft(project: string): CouncilSetupDraft {
     };
 }
 
+/** Pure: a draft with `agents` seated and the first one's project as the council's project, for Discuss together and
+ *  anywhere else that starts Setup from live agents. The panel stays empty, so Setup fills in its first group. */
+export function draftWithAgents(agents: readonly SeatableAgent[]): CouncilSetupDraft {
+    if (agents.length === 0) {
+        throw new Error("draftWithAgents needs at least one agent");
+    }
+    return {
+        ...emptyCouncilDraft(agents[0].project),
+        agents: agents.map((a) => ({ seat: agentSeat(a), project: a.project })),
+    };
+}
+
 /** Pure: the draft Run again opens: the council's inputs and panel, with the group and the mode counted as picked so
- *  a new suggestion does not change them. A council saved before modes has none, which reads as Review. */
+ *  a new suggestion does not change them. A council saved before modes has none, which reads as Review. Its agent seats
+ *  go to `agents`, each in the council's project (the record keeps no other), and its rounds read as `roundsOf`. */
 export function draftFromCouncil(c: Council): CouncilSetupDraft {
     return {
         project: c.project,
@@ -631,7 +784,9 @@ export function draftFromCouncil(c: Council): CouncilSetupDraft {
         files: [...(c.files ?? [])],
         screenshots: [...(c.screenshots ?? [])],
         group: c.group ?? "",
-        experts: c.experts.map((e) => ({ ...e })),
+        experts: c.experts.filter((e) => !isAgentSeat(e)).map((e) => ({ ...e })),
+        agents: c.experts.filter(isAgentSeat).map((e) => ({ seat: { ...e }, project: c.project })),
+        rounds: roundsOf(c),
         pause: c.pauseafterround1 ?? false,
         sessionId: c.sessionid || undefined,
         suggestState: "idle",

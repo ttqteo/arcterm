@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
     STANCE_WORD,
+    UNTITLED_COUNCIL,
+    agentSeat,
     answerers,
     callSegments,
     canRemoveCouncil,
@@ -10,23 +12,32 @@ import {
     councilProjectName,
     countTokens,
     draftFromCouncil,
+    draftWithAgents,
+    draftsWaitWord,
     emptyCouncilDraft,
     estimateLabel,
     estimateTokens,
     expertStat,
+    firstFollowRound,
     flattenThread,
     followupLabel,
+    hasAgents,
     headerChip,
+    heldDrafts,
+    isAgentSeat,
     latestStances,
     matrixRows,
     outdatedCount,
     panel,
     pickCount,
+    queuedLine,
     rankedProposals,
     replyLabel,
+    roundsOf,
     score,
     summarizeHold,
     summaryChip,
+    synthesisRound,
     threadTree,
     treeMeta,
 } from "./councilmodel";
@@ -57,6 +68,12 @@ const reply = (id: string, author: string, extra: Partial<CouncilReply> = {}): C
     text: `text ${id}`,
     round: 2,
     ts: 10,
+    ...extra,
+});
+
+// a live agent's seat, as agentSeat builds it
+const agentOf = (tab: string, name: string, extra: Partial<CouncilExpert> = {}): CouncilExpert => ({
+    ...agentSeat({ id: tab, name, project: "D:\\code\\arc", harness: "claude", context: 625_000 }),
     ...extra,
 });
 
@@ -399,6 +416,22 @@ describe("replyLabel", () => {
         expect(replyLabel(council(), mine({ round: 2, answered: true }))).toBe("");
         expect(replyLabel(council(), reply("r2", "ram", { round: 2 }))).toBe("");
     });
+
+    it("queues a reply for the seats' next round until the last one", () => {
+        const three = council({ rounds: 3, round: 2 });
+        expect(replyLabel(three, mine({ round: 2 }))).toBe("Queued for the next step");
+        expect(replyLabel(three, mine({ round: 3 }))).toBe("Answered after the summary");
+        const one = council({ rounds: 1, round: 1 });
+        expect(replyLabel(one, mine({ round: 1 }))).toBe("Answered after the summary");
+    });
+
+    it("says a follow-up is answered once the summary's round is past, whatever the rounds", () => {
+        const three = (state: Council["state"]) => council({ rounds: 3, state, round: 4 });
+        expect(replyLabel(three("running"), mine({ round: 4 }))).toBe("Answered after the summary");
+        expect(replyLabel(three("running"), mine({ round: 5 }))).toBe("Answering…");
+        expect(replyLabel(three("done"), mine({ round: 5 }))).toBe("");
+        expect(replyLabel(council({ rounds: 1, state: "running", round: 3 }), mine({ round: 3 }))).toBe("Answering…");
+    });
 });
 
 describe("token labels", () => {
@@ -449,45 +482,76 @@ describe("estimateLabel and followupLabel", () => {
 });
 
 describe("headerChip and treeMeta", () => {
-    it("counts the experts whose round 1 call is over, a failed one included", () => {
+    it("reads the round of the seats while they answer, whoever has finished and whoever is at work", () => {
         const c = council({
             round: 1,
-            stats: {
-                ux: { ms: 1, tokens: 1, calls: 1 },
-                nu: { ms: 1, tokens: 1, calls: 1 },
-                ram: { ms: 9, tokens: 0, calls: 0 },
-            },
+            stats: { ux: { ms: 1, tokens: 1, calls: 1 }, nu: { ms: 1, tokens: 1, calls: 1 } },
             activity: { ram: { text: "Grep" }, sk: { text: "Read" } },
         });
-        expect(headerChip(c)).toBe("Step 1 of 3 · 2 of 4 experts done");
-        const failed = council({
-            ...c,
-            stats: { ux: { ms: 1, tokens: 1, calls: 1 } },
-            failed: { sk: { round: 1, error: "timeout" } },
-        });
-        expect(headerChip(failed)).toBe("Step 1 of 3 · 2 of 4 experts done");
-    });
-
-    it("counts the experts replying in round 2, not the coordinator", () => {
-        const c = council({
+        expect(headerChip(c)).toBe("Round 1 of 2");
+        expect(headerChip(council({ round: 0 }))).toBe("Round 1 of 2");
+        const replying = council({
             activity: {
                 ram: { text: "Replying to UX on P2", proposalid: "P2" },
                 sk: { text: "Replying to UX on P2", proposalid: "P2" },
                 coordinator: { text: "Waiting" },
             },
         });
-        expect(headerChip(c)).toBe("Step 2 of 3 · 2 replying");
-        expect(headerChip(council())).toBe("Step 2 of 3");
+        expect(headerChip(replying)).toBe("Round 2 of 2");
+        expect(headerChip(council())).toBe("Round 2 of 2");
     });
 
-    it("words the last round and a follow-up", () => {
-        expect(headerChip(council({ round: 3 }))).toBe("Step 3 of 3 · summarizing");
-        expect(headerChip(council({ round: 3, activity: { ux: { text: "Answering" } } }))).toBe(
-            "Step 3 of 3 · 1 answering"
-        );
+    it("counts the rounds the council has", () => {
+        expect(headerChip(council({ rounds: 3, round: 3 }))).toBe("Round 3 of 3");
+        expect(headerChip(council({ rounds: 1, round: 1 }))).toBe("Round 1 of 1");
+        expect(headerChip(council({ rounds: 9, round: 2 }))).toBe("Round 2 of 2");
+    });
+
+    it("says the summary is being written once the last round is over, whoever is still at work", () => {
+        expect(headerChip(council({ round: 3 }))).toBe("Writing the summary");
+        expect(headerChip(council({ round: 3, activity: { ux: { text: "Answering" } } }))).toBe("Writing the summary");
+        expect(headerChip(council({ rounds: 3, round: 4 }))).toBe("Writing the summary");
+        expect(headerChip(council({ rounds: 1, round: 2 }))).toBe("Writing the summary");
+    });
+
+    it("counts the seats answering a follow-up", () => {
         expect(headerChip(council({ round: 4, activity: { ux: { text: "a" }, ram: { text: "b" } } }))).toBe(
             "Follow-up · 2 answering"
         );
+        expect(headerChip(council({ round: 4 }))).toBe("Follow-up");
+        expect(headerChip(council({ rounds: 3, round: 5 }))).toBe("Follow-up");
+    });
+
+    it("appends the drafts that wait for the person to the step", () => {
+        const held = council({
+            round: 2,
+            proposals: [prop("P1", "ux", { draft: "held" })],
+            replies: [
+                reply("r1", "ram", { draft: "held" }),
+                reply("r2", "sk", { draft: "dropped" }),
+                reply("r3", "nu"),
+            ],
+        });
+        expect(headerChip(held)).toBe("Round 2 of 2 · 2 drafts wait for you");
+        expect(headerChip({ ...held, replies: [] })).toBe("Round 2 of 2 · 1 draft waits for you");
+        expect(headerChip({ ...held, round: 3 })).toBe("Writing the summary · 2 drafts wait for you");
+        // dropped and sent drafts wait for no one
+        expect(headerChip({ ...held, proposals: [], replies: [reply("r2", "sk", { draft: "dropped" })] })).toBe(
+            "Round 2 of 2"
+        );
+    });
+
+    it("reads the step, not Waiting on you, once a round ends on held drafts", () => {
+        const c = council({ state: "awaiting-you", round: 1, replies: [reply("r1", "ram", { draft: "held" })] });
+        expect(headerChip(c)).toBe("Round 1 of 2 · 1 draft waits for you");
+        expect(headerChip({ ...c, replies: [] })).toBe("Waiting on you");
+    });
+
+    it("tells a done council it holds a follow-up answer, and no other ended council", () => {
+        const held = [reply("r1", "ram", { draft: "held", round: 4 })];
+        expect(headerChip(council({ state: "done", round: 3, replies: held }))).toBe("Done · 1 draft waits for you");
+        expect(headerChip(council({ state: "stopped", round: 2, replies: held }))).toBe("Stopped");
+        expect(headerChip(council({ state: "failed", round: 2, replies: held }))).toBe("Failed");
     });
 
     it("words every other state", () => {
@@ -507,11 +571,166 @@ describe("headerChip and treeMeta", () => {
         expect(treeMeta(council({ round: 2 }))).toEqual({ text: "Running", tone: "working" });
         expect(treeMeta(council({ round: 3 }))).toEqual({ text: "Running", tone: "working" });
         expect(treeMeta(council({ round: 4 }))).toEqual({ text: "Answering", tone: "working" });
+        expect(treeMeta(council({ rounds: 3, round: 4 }))).toEqual({ text: "Running", tone: "working" });
+        expect(treeMeta(council({ rounds: 3, round: 5 }))).toEqual({ text: "Answering", tone: "working" });
         expect(treeMeta(council({ state: "awaiting-you" }))).toEqual({ text: "Waiting on you", tone: "asking" });
         expect(treeMeta(council({ state: "done" }))).toEqual({ text: "Done", tone: "muted" });
         expect(treeMeta(council({ state: "not-run" }))).toEqual({ text: "Not run", tone: "muted" });
         expect(treeMeta(council({ state: "stopped" }))).toEqual({ text: "Stopped", tone: "muted" });
         expect(treeMeta(council({ state: "failed" }))).toEqual({ text: "Failed", tone: "error" });
+    });
+
+    it("reads a council with held drafts as the person's move, whether it runs, waits or is done", () => {
+        const held = [reply("r1", "ram", { draft: "held" }), reply("r2", "sk", { draft: "held" })];
+        const waits = { text: "2 drafts wait for you", tone: "asking" };
+        expect(treeMeta(council({ replies: held }))).toEqual(waits);
+        expect(treeMeta(council({ state: "awaiting-you", replies: held }))).toEqual(waits);
+        expect(treeMeta(council({ state: "done", round: 3, replies: held }))).toEqual(waits);
+        expect(treeMeta(council({ replies: held.slice(0, 1) }))).toEqual({
+            text: "1 draft waits for you",
+            tone: "asking",
+        });
+        // a stopped or failed council has no one to answer to, and a dropped draft waits for no one
+        expect(treeMeta(council({ state: "stopped", replies: held }))).toEqual({ text: "Stopped", tone: "muted" });
+        expect(treeMeta(council({ state: "failed", replies: held }))).toEqual({ text: "Failed", tone: "error" });
+        expect(treeMeta(council({ replies: [reply("r3", "ram", { draft: "dropped" })] }))).toEqual({
+            text: "Running",
+            tone: "working",
+        });
+    });
+});
+
+describe("roundsOf, synthesisRound and firstFollowRound", () => {
+    it("reads 0, nothing and a count out of range as the 2 rounds a council had before rounds", () => {
+        expect(roundsOf(council())).toBe(2);
+        expect(roundsOf(council({ rounds: 0 }))).toBe(2);
+        expect(roundsOf(council({ rounds: 4 }))).toBe(2);
+        expect(roundsOf(council({ rounds: -1 }))).toBe(2);
+        expect(roundsOf(null)).toBe(2);
+        expect(roundsOf(undefined)).toBe(2);
+    });
+
+    it("keeps 1, 2 and 3", () => {
+        expect([1, 2, 3].map((rounds) => roundsOf(council({ rounds })))).toEqual([1, 2, 3]);
+    });
+
+    it("puts the summary one round after the seats, and the follow-ups two", () => {
+        for (const [rounds, summary, follow] of [
+            [undefined, 3, 4],
+            [0, 3, 4],
+            [1, 2, 3],
+            [2, 3, 4],
+            [3, 4, 5],
+        ] as const) {
+            const c = council({ rounds });
+            expect([synthesisRound(c), firstFollowRound(c)], `rounds ${rounds}`).toEqual([summary, follow]);
+        }
+    });
+});
+
+describe("isAgentSeat and hasAgents", () => {
+    it("knows a seat that names an agent's tab", () => {
+        expect(isAgentSeat(agentOf("t1", "Witness synthesis"))).toBe(true);
+        expect(isAgentSeat(experts[0])).toBe(false);
+        expect(isAgentSeat({ agent: "" })).toBe(false);
+    });
+
+    it("knows a council an agent sits in", () => {
+        expect(hasAgents(council())).toBe(false);
+        expect(hasAgents(council({ experts: [agentOf("t1", "Witness synthesis"), ...experts] }))).toBe(true);
+        expect(hasAgents(null)).toBe(false);
+    });
+});
+
+describe("heldDrafts", () => {
+    it("lists the held ideas and replies in the order they were written, an idea before a reply of the same time", () => {
+        const c = council({
+            proposals: [
+                prop("P1", "ux", { ts: 30, draft: "held" }),
+                prop("P2", "ram", { ts: 10, draft: "held" }),
+                prop("P3", "nu", { ts: 5 }),
+                prop("P4", "sk", { ts: 6, draft: "dropped" }),
+            ],
+            replies: [
+                reply("r1", "sk", { ts: 30, draft: "held" }),
+                reply("r2", "ux", { ts: 20, draft: "held" }),
+                reply("r3", "nu", { ts: 25 }),
+                reply("r4", "ram", { ts: 26, draft: "dropped" }),
+            ],
+        });
+        expect(heldDrafts(c).map((d) => [d.kind, d.id, d.ts])).toEqual([
+            ["idea", "P2", 10],
+            ["reply", "r2", 20],
+            ["idea", "P1", 30],
+            ["reply", "r1", 30],
+        ]);
+        const first = heldDrafts(c)[0];
+        expect(first.kind === "idea" && first.proposal.id).toBe("P2");
+    });
+
+    it("is empty for a council that holds nothing, and for one with no ideas or replies yet", () => {
+        expect(heldDrafts(council())).toEqual([]);
+        expect(heldDrafts({})).toEqual([]);
+    });
+});
+
+describe("draftsWaitWord", () => {
+    it("counts the drafts, and says nothing for none", () => {
+        expect(draftsWaitWord(2)).toBe("2 drafts wait for you");
+        expect(draftsWaitWord(1)).toBe("1 draft waits for you");
+        expect(draftsWaitWord(0)).toBe("");
+    });
+});
+
+describe("queuedLine", () => {
+    const holder = (extra: Partial<Council> = {}) => council({ id: "room", feature: "room", ...extra });
+
+    it("is Queued while the council it waits on is not known", () => {
+        expect(queuedLine(undefined)).toBe("Queued");
+        expect(queuedLine(null)).toBe("Queued");
+    });
+
+    it("names the council that runs", () => {
+        expect(queuedLine(holder({ feature: "  Rail apps " }))).toBe("Queued · after Rail apps");
+        expect(queuedLine(holder({ feature: " " }))).toBe(`Queued · after ${UNTITLED_COUNCIL}`);
+        expect(queuedLine(holder({ activity: { ux: { text: "Reading pkg/services" } } }))).toBe("Queued · after room");
+    });
+
+    it("names the agent the running council waits on", () => {
+        const waiting = holder({
+            activity: {
+                "agent-t1": { text: "Waiting for Witness synthesis to finish its task" },
+                ux: { text: "Replying to UX on P2", proposalid: "P2" },
+            },
+        });
+        expect(queuedLine(waiting)).toBe("Queued · after room · waiting for Witness synthesis");
+    });
+
+    it("names every agent it waits on once", () => {
+        const two = holder({
+            activity: {
+                a: { text: "Waiting for Witness synthesis to finish its task" },
+                b: { text: "Waiting for UX audit to finish its task" },
+                c: { text: "Waiting for UX audit to finish its task" },
+            },
+        });
+        expect(queuedLine(two)).toBe("Queued · after room · waiting for Witness synthesis and UX audit");
+        const three = holder({
+            activity: {
+                a: { text: "Waiting for A to finish its task" },
+                b: { text: "Waiting for B to finish its task" },
+                c: { text: "Waiting for C to finish its task" },
+            },
+        });
+        expect(queuedLine(three)).toBe("Queued · after room · waiting for A, B and C");
+    });
+
+    it("names no agent once the council no longer runs", () => {
+        const idle = holder({
+            state: "awaiting-you",
+            activity: { a: { text: "Waiting for Witness synthesis to finish its task" } },
+        });
+        expect(queuedLine(idle)).toBe("Queued · after room");
     });
 });
 
@@ -572,6 +791,13 @@ describe("callSegments", () => {
         expect(callSegments(council({ state: "not-run", round: 0 }))).toEqual(Array(9).fill("pending"));
         const two = council({ experts: experts.slice(0, 2).concat(experts[4]) });
         expect(callSegments(two)).toHaveLength(5);
+    });
+
+    it("has one more call per seat for each round the council has", () => {
+        expect(callSegments(council({ rounds: 3, state: "not-run", round: 0 }))).toHaveLength(13);
+        expect(callSegments(council({ rounds: 1, state: "not-run", round: 0 }))).toHaveLength(5);
+        const seated = council({ experts: [agentOf("t1", "Witness synthesis"), ...experts] });
+        expect(callSegments(seated)).toHaveLength(11);
     });
 
     it("runs done, running, then waiting", () => {
@@ -708,6 +934,18 @@ describe("summarizeHold", () => {
         );
     });
 
+    it("follows the rounds the council has: every reply pass is summarized by itself, the summary's round is not", () => {
+        const by = "The summary comes by itself when the experts finish replying";
+        expect(summarizeHold(council({ rounds: 3, state: "running", round: 2 }))).toBe(by);
+        expect(summarizeHold(council({ rounds: 3, state: "running", round: 3 }))).toBe(by);
+        expect(summarizeHold(council({ rounds: 3, state: "running", round: 4 }))).toBe(
+            "Summarize is on again when the council stops"
+        );
+        expect(summarizeHold(council({ rounds: 1, state: "running", round: 2 }))).toBe(
+            "Summarize is on again when the council stops"
+        );
+    });
+
     it("says a council that has not run has not run, and one with no proposal has nothing to summarize", () => {
         expect(summarizeHold(council({ state: "not-run", round: 0, proposals: undefined }))).toBe(
             "This council has not run"
@@ -813,6 +1051,8 @@ describe("draftFromCouncil and emptyCouncilDraft", () => {
             screenshots: ["C:\\shots\\a.png"],
             group: "ui",
             experts,
+            agents: [],
+            rounds: 2,
             pause: true,
             sessionId: "s1",
             suggestState: "idle",
@@ -822,6 +1062,20 @@ describe("draftFromCouncil and emptyCouncilDraft", () => {
         });
         expect(d.experts).not.toBe(c.experts);
         expect(d.files).not.toBe(c.files);
+    });
+
+    it("seats a council's agents apart from its role experts, in the council's project, with its rounds", () => {
+        const witness = agentOf("t1", "Witness synthesis");
+        const audit = agentOf("t2", "UX audit", { harness: "pi", context: 210_000 });
+        const d = draftFromCouncil(council({ rounds: 3, experts: [witness, audit, ...experts] }));
+        expect(d.experts).toEqual(experts);
+        expect(d.agents).toEqual([
+            { seat: witness, project: "D:\\code\\arc" },
+            { seat: audit, project: "D:\\code\\arc" },
+        ]);
+        expect(d.agents[0].seat).not.toBe(witness);
+        expect(d.rounds).toBe(3);
+        expect(draftFromCouncil(council({ rounds: 0 })).rounds).toBe(2);
     });
 
     it("takes the council's mode, and reads a council with none as Review", () => {
@@ -851,12 +1105,63 @@ describe("draftFromCouncil and emptyCouncilDraft", () => {
             screenshots: [],
             group: "",
             experts: [],
+            agents: [],
+            rounds: 2,
             pause: false,
             suggestState: "idle",
             groupPicked: false,
             mode: "review",
             modePicked: false,
         });
+    });
+});
+
+describe("agentSeat and draftWithAgents", () => {
+    const witness = {
+        id: "tab-1",
+        name: "Witness synthesis",
+        project: "D:\\code\\council-fixture",
+        harness: "claude",
+        context: 625_000,
+    };
+    const audit = { id: "tab-2", name: "UX audit", project: "D:\\code\\other", harness: "pi", context: 210_000 };
+
+    it("seats an agent under an id of its own, naming its tab, harness and context", () => {
+        expect(agentSeat(witness)).toEqual({
+            id: "agent-tab-1",
+            name: "Witness synthesis",
+            brief: "",
+            model: "",
+            agent: "tab-1",
+            harness: "claude",
+            context: 625_000,
+        });
+        expect(isAgentSeat(agentSeat(audit))).toBe(true);
+    });
+
+    it("builds a draft with the agents seated and the first one's project as the council's", () => {
+        const d = draftWithAgents([witness, audit]);
+        expect(d.project).toBe("D:\\code\\council-fixture");
+        expect(d.agents).toEqual([
+            { seat: agentSeat(witness), project: "D:\\code\\council-fixture" },
+            { seat: agentSeat(audit), project: "D:\\code\\other" },
+        ]);
+        expect(d.experts).toEqual([]);
+        expect(d.rounds).toBe(2);
+        expect(d).toEqual({ ...emptyCouncilDraft("D:\\code\\council-fixture"), agents: d.agents });
+    });
+
+    it("keeps each agent's own project when they come from two projects, whichever is first", () => {
+        expect(draftWithAgents([audit, witness]).project).toBe("D:\\code\\other");
+        expect(draftWithAgents([audit, witness]).agents.map((a) => a.project)).toEqual([
+            "D:\\code\\other",
+            "D:\\code\\council-fixture",
+        ]);
+    });
+
+    it("takes one agent too, and refuses none", () => {
+        expect(draftWithAgents([audit]).agents).toHaveLength(1);
+        expect(() => draftWithAgents([])).toThrow("at least one agent");
     });
 });
 
