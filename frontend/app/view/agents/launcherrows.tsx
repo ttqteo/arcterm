@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The New launcher's list parts, shared by its three columns (Start, Project, and the pick's own list: Session or Tool):
-// the row tone, the column label and the filter line. No row draws its key: the digits and letters work unseen.
+// the row tone, the digit keycap, the column label and the filter line.
 
 import { cn } from "@/util/util";
 import { Search } from "lucide-react";
@@ -15,6 +15,29 @@ export function rowTone(selected: boolean, focused: boolean): string {
         // the selected row of the focused column is the keyboard's cursor
         selected && focused && "ring-1 ring-inset ring-accent-700"
     );
+}
+
+// A row's digit. It brightens while its column has focus, which is how the eye finds where a digit will land. A row
+// past the ninth keeps the keycap's room, blank, so the names stay aligned.
+export function Keycap({ k, lit }: { k: string; lit: boolean }) {
+    if (k === "") {
+        return <span aria-hidden className="w-[18px] shrink-0" />;
+    }
+    return (
+        <span
+            aria-hidden
+            className={cn(
+                "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[4px] border font-mono text-[10px]",
+                lit ? "border-edge-strong bg-surface text-ink-hi" : "border-border text-muted"
+            )}
+        >
+            {k}
+        </span>
+    );
+}
+
+export function digitOf(i: number): string {
+    return i < 9 ? String(i + 1) : "";
 }
 
 export function ColumnLabel({

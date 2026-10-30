@@ -213,7 +213,6 @@ export const councilTree = {
 
         // 6. New → Council → the project with no council → Set up council opens Setup there
         await h.ev(`window.__openLauncher?.("agent")`);
-        // the dialog opens with its Start column folded into a chip: open it to reach the Council row
         await until(present("[data-launcher]"));
         await fx.openLauncherStart(h);
         await until(present('[data-start-row="council"]'));

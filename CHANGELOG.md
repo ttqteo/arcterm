@@ -74,9 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Jarvis's Waiting on you opens the rows past its first three with "+2 more" (the count it hides) and folds them with
   "Show less", as the other regions do, instead of "Show all 5", which read like a cap of five.
 - The how-to hint at the top of a brainstorm is one slim row instead of a four-line card, so the question sits higher.
-- The New dialog folds the agent pick into a chip (Claude Code ▾) and opens on Project, so the session list gets the
-  rest of the width. Project lists names only (the folder is in the tooltip), and no
-  row shows its key any more; every key still works. <!-- try: new-agent -->
+- The New dialog is quieter: a past session is one line (its title and how long ago), the command folds under
+  Command ›, and Project lists names only (the folder is in the tooltip). <!-- try: new-agent -->
 - A council review reads like a brainstorm: at most three directions, each with a first step, and the rest under Also
   raised, one line each, with wording-only fixes kept out of the top three. A review used to list every direction as a
   long paragraph.

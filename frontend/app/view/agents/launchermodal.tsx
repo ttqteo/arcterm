@@ -4,14 +4,13 @@
 // The New launcher: one dialog that starts an agent, a terminal, a run or a tool
 // (docs/superpowers/specs/2026-10-08-new-launcher-design.md). It replaced the New agent dialog and the New run window.
 // Start picks what, Project where, and the third column holds the pick's own list (an agent's sessions, the tools, a
-// run's model or start and width); the details below fill in the rest. Start opens folded into a chip over two columns,
-// Project (names only) and the pick's own list taking the rest of the width; the chip, or ← from Project, opens it as a
-// column beside them, and a pick, Enter, Escape or focus leaving it folds it again
-// (docs/superpowers/specs/2026-10-28-new-launcher-declutter-design.md). The band is 360px tall either way: a long
-// Project, Session or Tool list scrolls inside its column, so the dialog keeps its height however many projects and
-// sessions there are. Digits pick in the focused column (0 is Home), → and ← step between the columns, and Tab walks
-// the dialog without leaving it; no row draws its key. Every close keeps the draft (launcherstore), which is what lets
-// a click outside close it.
+// run's model or start and width); the details below fill in the rest. The Start column is always shown and has focus
+// when the dialog opens: what starts and where come first, a past session second (the chip that folded Start away,
+// docs/superpowers/specs/2026-10-28-new-launcher-declutter-design.md D1/D7, was dropped 2026-10-29). The Start column
+// sets the band's height: a long Project, Session or Tool list scrolls inside its column, so the dialog keeps its
+// height however many projects and sessions there are. Digits pick in the focused column (0 is Home), → and ← step
+// between the columns, and Tab walks the dialog without leaving it; each row draws its key. Every close keeps the draft
+// (launcherstore), which is what lets a click outside close it.
 //
 // The open state is model.launcherAtom, so deriveKeyContext counts the dialog as a modal. The app bar's one New button
 // reopens it on the last pick; Mod+N and Mod+Shift+R, and the Brief's `r`, open it at the agent or the run door.
@@ -29,7 +28,7 @@ import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { Check, ChevronDown, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
+import { Check, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { showCouncilSetup, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -76,7 +75,7 @@ import { AgentFields, useProjectBranches } from "./launcheragentfields";
 import { composeTaskWithImages, imagesPending } from "./launcherimages";
 import { appendPage, pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
-import { ColumnLabel, FilterLine, rowTone } from "./launcherrows";
+import { ColumnLabel, digitOf, FilterLine, Keycap, rowTone } from "./launcherrows";
 import { handBackStartedRun, startLauncherRun } from "./launcherrun";
 import { RunColumn, RunFields } from "./launcherrunfields";
 import {
@@ -225,8 +224,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const routeTouched = useAtomValue(routeTouchedAtom);
     const cap = useWorkerCapacity();
     const [zone, setZone] = useState<"start" | "project" | "tools" | null>(null);
-    // the Start column is open beside Project, not folded into its chip; folded on every opening
-    const [startOpen, setStartOpen] = useState(false);
     const [filter, setFilter] = useState("");
     const [home, setHome] = useState("");
     const [error, setError] = useState<string | null>(null);
@@ -355,27 +352,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
     }, [open, pref, harnesses]);
 
-    // every opening starts with Start folded and focus on the Project column, so letters filter the projects and a digit
-    // picks one. ModalShell's own focus effect runs first (a child's effects do), so this one wins.
+    // every opening starts with focus on the Start column: what starts is picked first, then the project. ModalShell's
+    // own focus effect runs first (a child's effects do), so this one wins.
     useEffect(() => {
         if (open) {
-            projectRef.current?.focus();
-        } else {
-            setStartOpen(false);
-        }
-    }, [open]);
-
-    // the chip and ← from Project open the Start column to step into it
-    useEffect(() => {
-        if (startOpen) {
             startRef.current?.focus();
         }
-    }, [startOpen]);
-
-    // the Start column scrolls inside the band, so the row ↑↓ picked stays in sight
-    useEffect(() => {
-        startRef.current?.querySelector('[role="radio"][aria-checked="true"]')?.scrollIntoView({ block: "nearest" });
-    }, [selectedRow, startOpen]);
+    }, [open]);
 
     // home names Home's folder in its tooltip, and offers Home only once it is known (homeOffered)
     useEffect(() => {
@@ -528,13 +511,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
         globalStore.set(launcherKindAtom, "agent");
         pickLauncherRuntime(row.id as Runtime);
-    };
-
-    // the Start column folds back into its chip and focus returns to Project; moving focus there is enough while the
-    // column has it (its blur folds it), and the state is set too for an Escape from elsewhere
-    const foldStart = () => {
-        projectRef.current?.focus();
-        setStartOpen(false);
     };
 
     const pickProject = (key: string) => pickLauncherProject(key, pickKey);
@@ -792,7 +768,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         const action = launcherKey(
             {
                 zone: zoneOf(e.target),
-                startOpen,
                 startCount: startList.length,
                 projectCount: visible.length,
                 homeShown: picks.includes(HOME_PICK),
@@ -828,7 +803,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         switch (action.kind) {
             case "pick-start":
                 pickRow(startList[action.index]);
-                foldStart();
                 return;
             case "pick-project":
                 pickProject(visible[action.index].name);
@@ -868,15 +842,8 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 return;
             }
             case "column":
-                if (action.to === "start") {
-                    // a folded Start column opens first; the effect on startOpen focuses it once it is drawn
-                    if (startOpen) {
-                        startRef.current?.focus();
-                    } else {
-                        setStartOpen(true);
-                    }
-                } else if (action.to === "project") {
-                    projectRef.current?.focus();
+                if (action.to === "start" || action.to === "project") {
+                    (action.to === "project" ? projectRef : startRef).current?.focus();
                 } else if (thirdList === "tools") {
                     toolListRef.current?.focus();
                 } else {
@@ -905,13 +872,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     globalStore.set(launcherBranchListAtom, false);
                 } else if (action.what === "filter") {
                     applyFilter("");
-                } else if (action.what === "start") {
-                    foldStart();
                 }
-                return;
-            case "fold":
-                // Enter keeps the row ↑↓ already picked
-                foldStart();
                 return;
             case "close":
                 // the dialog's own close; ModalShell's listener would only do it again
@@ -924,14 +885,17 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const startFocused = zone === "start";
     const projectFocused = zone === "project";
     const toolsFocused = zone === "tools";
-    // the order, not a key: the folded Project column is too narrow for the count beside it
     let projectHint = "";
-    if (candidates.length > 9 && startOpen) {
+    if (projectFocused) {
+        projectHint =
+            filter === "" && visible.length > 0
+                ? `type to filter · 1–${Math.min(9, visible.length)}${picks.includes(HOME_PICK) ? ", 0 Home" : ""}`
+                : "";
+    } else if (candidates.length > 9) {
         projectHint = `${candidates.length} · last used first`;
     } else if (candidates.length > 1) {
         projectHint = "last used first";
     }
-    const startPick = startList.find((r) => r.id === selectedRow);
 
     const renderStartRow = (row: StartRow) => {
         const selected = row.id === selectedRow;
@@ -942,12 +906,10 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 aria-checked={selected}
                 data-start-row={row.id}
                 title={row.desc ?? undefined}
-                onClick={() => {
-                    pickRow(row);
-                    foldStart();
-                }}
+                onClick={() => pickRow(row)}
                 className={cn(rowTone(selected, startFocused), "shrink-0 gap-[9px] py-2")}
             >
+                <Keycap k={row.key} lit={startFocused} />
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                     <StartMark id={row.id} />
                 </span>
@@ -1007,66 +969,32 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             <X size={15} strokeWidth={2} />
                         </button>
                     </div>
-                    {/* The band keeps 360px folded or open, so nothing below it moves: folded, the chip line and two
-                        columns (Project, then the pick's own list taking the rest); open, the chip gives way to the
-                        Start column and the three columns fill it. Each column scrolls inside it. The Start column
-                        sits in a slot of its own, so Project and the third column stay mounted (and focused) across
-                        a fold. */}
-                    <div className="flex h-[360px] shrink-0 flex-col border-b border-border">
-                        {startOpen ? null : (
-                            <div className="flex h-[38px] shrink-0 items-center border-b border-border px-[10px]">
-                                <button
-                                    type="button"
-                                    data-launcher-chip={selectedRow}
-                                    aria-expanded={false}
-                                    title="Change what starts"
-                                    onClick={() => setStartOpen(true)}
-                                    className="flex h-[26px] cursor-pointer items-center gap-[7px] rounded-[7px] border border-edge-mid bg-surface px-2 text-[12.5px] font-semibold text-primary hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"
-                                >
-                                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                                        <StartMark id={selectedRow} />
-                                    </span>
-                                    {startPick?.name ?? selectedRow}
-                                    <ChevronDown size={12} strokeWidth={2.2} className="text-muted" />
-                                </button>
+                    {/* the Start column sets the band's height; the other two lay out inside it and scroll */}
+                    <div className="shrink-0 border-b border-border">
+                        <div className="grid grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)]">
+                            <div
+                                ref={startRef}
+                                role="radiogroup"
+                                aria-label="Start"
+                                tabIndex={0}
+                                data-launcher-column="start"
+                                onFocus={() => setZone("start")}
+                                onBlur={() => setZone(null)}
+                                className="flex min-h-[300px] flex-col gap-px border-r border-border px-2 py-3 outline-none"
+                            >
+                                <ColumnLabel
+                                    label="Agent"
+                                    focused={startFocused}
+                                    hint={startFocused ? `↑↓ · 1–${Math.min(startList.length, 9)}` : ""}
+                                />
+                                {startList.filter((r) => r.kind === "agent").map(renderStartRow)}
+                                <ColumnLabel label="Run" focused={startFocused} className="pt-[10px]" />
+                                {startList.filter((r) => r.kind === "run").map(renderStartRow)}
+                                <ColumnLabel label="Tool" focused={startFocused} className="pt-[10px]" />
+                                {startList.filter((r) => r.kind === "tool").map(renderStartRow)}
+                                <ColumnLabel label="Council" focused={startFocused} className="pt-[10px]" />
+                                {startList.filter((r) => r.kind === "council").map(renderStartRow)}
                             </div>
-                        )}
-                        <div
-                            className={cn(
-                                "grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)]",
-                                startOpen
-                                    ? "grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)]"
-                                    : "grid-cols-[172px_minmax(0,1fr)]"
-                            )}
-                        >
-                            {startOpen ? (
-                                <div
-                                    ref={startRef}
-                                    role="radiogroup"
-                                    aria-label="Start"
-                                    tabIndex={0}
-                                    data-launcher-column="start"
-                                    onFocus={() => setZone("start")}
-                                    onBlur={(e) => {
-                                        setZone(null);
-                                        // Tab, →, a click on another column or a typed letter moving to the Task box:
-                                        // focus leaving the column folds it, with or without a pick
-                                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                                            setStartOpen(false);
-                                        }
-                                    }}
-                                    className="flex min-h-0 flex-col gap-px overflow-y-auto border-r border-border px-2 py-3 outline-none"
-                                >
-                                    <ColumnLabel label="Agent" focused={startFocused} />
-                                    {startList.filter((r) => r.kind === "agent").map(renderStartRow)}
-                                    <ColumnLabel label="Run" focused={startFocused} className="pt-[10px]" />
-                                    {startList.filter((r) => r.kind === "run").map(renderStartRow)}
-                                    <ColumnLabel label="Tool" focused={startFocused} className="pt-[10px]" />
-                                    {startList.filter((r) => r.kind === "tool").map(renderStartRow)}
-                                    <ColumnLabel label="Council" focused={startFocused} className="pt-[10px]" />
-                                    {startList.filter((r) => r.kind === "council").map(renderStartRow)}
-                                </div>
-                            ) : null}
                             <div
                                 ref={projectRef}
                                 role="radiogroup"
@@ -1128,7 +1056,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                                     ownFolder && "opacity-40"
                                                 )}
                                             >
-                                                {visible.map((p) => {
+                                                {visible.map((p, i) => {
                                                     const selected = p.name === pickKey;
                                                     return (
                                                         <div
@@ -1143,6 +1071,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                                                 "shrink-0 gap-[10px] py-2"
                                                             )}
                                                         >
+                                                            <Keycap k={digitOf(i)} lit={projectFocused} />
                                                             <span
                                                                 className={cn(
                                                                     "min-w-0 flex-1 truncate text-[12.5px] font-semibold",
@@ -1191,6 +1120,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                                             ownFolder && "opacity-40"
                                                         )}
                                                     >
+                                                        <Keycap k="0" lit={projectFocused} />
                                                         <House
                                                             size={13}
                                                             strokeWidth={2}

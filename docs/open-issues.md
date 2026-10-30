@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) New dialog, Start column back: `Mod+N` should open three columns (Start 236px, Project, Session or the
+  pick's list), focus on Start, no chip; every Start, Project, Session row draws its digit (Home 0, tools a–z), and the
+  focused column's label shows its keys. Enter in Start launches; Esc closes. `task verify:ui -- launcher
+  launcher-resume tools-launcher new-run-window agy-harness brainstorm-approve-run council-tree` (scenarios updated,
+  never run). (commit "fix(launcher): the New dialog shows its Start column and keys again")
 - [ ] (arcterm) Replay at the drawn size: start an engine run and open its lead only after it has drawn a
   question or a few turns (the pane never shown before). The terminal should read cleanly, its text in the left
   80 columns, with no second frame of another width over it. `frontend/app/view/term/termwrap.ts`

@@ -304,13 +304,11 @@ export function draftShown(draft: LauncherDraft): boolean {
 // dialog's. "tools" is the Tool column (launchertoolfields), picked by letters.
 export type FocusZone = "start" | "project" | "tools" | "resume" | "textarea" | "input" | "other";
 
-// What an Escape can close before the dialog, innermost first; "start" folds the open Start column
-export type LauncherInner = "flags" | "branches" | "filter" | "start";
+// What an Escape can close before the dialog, innermost first
+export type LauncherInner = "flags" | "branches" | "filter";
 
 export interface LauncherKeyCtx {
     zone: FocusZone;
-    // the Start column is unfolded and shown, not folded into its chip
-    startOpen: boolean;
     startCount: number;
     // the visible project rows, Home not counted: Home is 0, so a project added never moves its digit
     projectCount: number;
@@ -353,8 +351,6 @@ export type LauncherKeyAction =
     | { kind: "launch" }
     | { kind: "resume-secondary" }
     | { kind: "dismiss-inner"; what: LauncherInner }
-    // fold the open Start column, keeping the row under the cursor
-    | { kind: "fold" }
     | { kind: "close" };
 
 const NONE: LauncherKeyAction = { kind: "none" };
@@ -373,10 +369,7 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
             return { kind: "dismiss-inner", what: "branches" };
         }
         // the filter clears when focus leaves the Project column, so a filter means focus is there
-        if (ctx.filter !== "") {
-            return { kind: "dismiss-inner", what: "filter" };
-        }
-        return ctx.startOpen ? { kind: "dismiss-inner", what: "start" } : { kind: "close" };
+        return ctx.filter !== "" ? { kind: "dismiss-inner", what: "filter" } : { kind: "close" };
     }
     // a paste outside a text field goes to the Task or Goal box: focus moves there and the browser's paste lands in it,
     // images included. A text field takes its own paste.
@@ -389,11 +382,6 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
     if (k.key === "Enter") {
         if (zone !== "start" && zone !== "project" && zone !== "tools" && zone !== "resume" && zone !== "input") {
             return NONE;
-        }
-        // Enter in the open Start column keeps the row ↑↓ picked and folds it; it never launches, so launching takes a
-        // second Enter
-        if (zone === "start") {
-            return { kind: "fold" };
         }
         // opening a session asleep (or reading it back, for an agent that cannot sleep) costs nothing; resuming it
         // starts the agent and reloads its whole context. The footer's second button names Shift+Enter, so it holds

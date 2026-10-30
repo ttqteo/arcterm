@@ -238,9 +238,8 @@ export async function openCouncilSetup(h, project, prefill) {
 
 /** Opens a project's council Setup the way a person does: New, the Council row, the project, Set up council. Returns
  *  what each part did, `ok` when Setup shows and the dialog has closed. The dialog is opened through its DEV seam
- *  (`__openLauncher`), which the app bar's New button calls the same way. It opens with the Start column folded into a
- *  chip, so the Council row is clicked after fx.openLauncherStart (scenarios.mjs) opens it; the click folds it again,
- *  and the chip then names the pick. */
+ *  (`__openLauncher`), which the app bar's New button calls the same way; fx.openLauncherStart (scenarios.mjs) focuses
+ *  its Start column before the Council row is clicked. */
 export async function openSetupFromNew(h, project, fx) {
     const until = (expr, ms = 5_000) => waitFor((e) => h.ev(e), expr, ms);
     const opened =
@@ -251,7 +250,7 @@ export async function openSetupFromNew(h, project, fx) {
         })()`)) && (await until(`!!document.querySelector("[data-launcher]")`));
     await fx.openLauncherStart(h);
     await h.ev(`document.querySelector('[data-start-row="council"]')?.click()`);
-    const picked = await until(`document.querySelector("[data-launcher-chip]")?.getAttribute("data-launcher-chip") === "council"`);
+    const picked = await until(`document.querySelector('[data-start-row="council"]')?.getAttribute("aria-checked") === "true"`);
     await h.ev(`document.querySelector(${JSON.stringify(`[data-project-row="${project}"]`)})?.click()`);
     const inProject = await until(
         `document.querySelector(${JSON.stringify(`[data-project-row="${project}"]`)})?.getAttribute("aria-checked") === "true"`
