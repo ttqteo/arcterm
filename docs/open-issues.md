@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A project folder in the Agent sidebar (the project tree and Conversations): a click on its name opens
+  its Overview in the centre without folding it, the chevron alone folds and unfolds it, and Home still folds from
+  anywhere on its row; Tab reaches the row and its chevron, Enter on the row opens the Overview. The
+  `project-overview` and `tools-tree` scenarios were updated but not run. (commit "feat(agents): a project folder's
+  click opens its Overview, its chevron folds it")
 - [ ] (arcterm) A council with a live agent seated: pick an idle claude agent and a pi agent in the Agent tree
   (Ctrl+click), choose Discuss together, set Rounds to 2 and start. Setup's estimate should show the agents' share. In
   the council chat, each agent's ideas come back as amber drafts with Send to the others / Edit / Drop. The chip reads

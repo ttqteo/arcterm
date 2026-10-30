@@ -2116,8 +2116,9 @@ function openFolderMenu(project: string, e: React.MouseEvent): void {
 
 // A project's folder row, in either section: the chevron and the folder say whether it is open, then the project's name
 // (`label` where the folder's key reads otherwise: Home) and, at the far end, `trailing`, which a folded folder keeps
-// (what in it wants you, how much it holds); a right-click opens its menu (openFolderMenu), and its Overview in the
-// centre fills it.
+// (what in it wants you, how much it holds); a click opens its Overview in the centre, which then fills it, and the
+// chevron alone folds it (Home, which has no Overview, folds from anywhere on the row); a right-click opens its menu
+// (openFolderMenu).
 function FolderRow({
     section,
     project,
@@ -2135,25 +2136,42 @@ function FolderRow({
     trailing?: React.ReactNode;
     selected?: boolean;
 }) {
+    const hasOverview = project !== HOME_PROJECT;
+    const activate = hasOverview ? () => showProjectOverview(project) : onToggle;
     return (
-        <button
-            type="button"
-            onClick={onToggle}
+        <div
+            role="button"
+            tabIndex={0}
+            onClick={activate}
+            onKeyDown={(e) => {
+                if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    activate();
+                }
+            }}
             onContextMenu={(e) => openFolderMenu(project, e)}
             aria-expanded={open}
             data-agent-folder={project}
             data-agent-folder-section={section}
             data-project-folder={section === "active" ? project : undefined}
             className={cn(
-                "flex w-full cursor-pointer items-center gap-[7px] overflow-hidden rounded-[6px] px-[8px] py-[6px] text-left",
+                "flex w-full cursor-pointer items-center gap-[7px] overflow-hidden rounded-[6px] px-[8px] py-[6px] text-left outline-none focus-visible:ring-1 focus-visible:ring-accent",
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
-            <ChevronRight
-                size={12}
-                aria-hidden
-                className={cn("shrink-0 text-ink-faint transition-transform", open && "rotate-90")}
-            />
+            <button
+                type="button"
+                data-agent-folder-toggle={project}
+                aria-label={open ? "Collapse" : "Expand"}
+                aria-expanded={open}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onToggle();
+                }}
+                className="-m-[3px] flex shrink-0 cursor-pointer items-center rounded-[4px] p-[3px] text-ink-faint outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-1 focus-visible:ring-accent"
+            >
+                <ChevronRight size={12} aria-hidden className={cn("transition-transform", open && "rotate-90")} />
+            </button>
             {open ? (
                 <FolderOpen size={14} aria-hidden className="shrink-0 text-muted" />
             ) : (
@@ -2166,7 +2184,7 @@ function FolderRow({
                 {label ?? project}
             </span>
             {trailing}
-        </button>
+        </div>
     );
 }
 

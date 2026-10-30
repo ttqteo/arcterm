@@ -15045,11 +15045,11 @@ const agentHistory = {
             // step waits for the rows to go or come back rather than napping
             const sessionRows = `document.querySelectorAll("[data-agent-conversations] [data-agent-session-row]").length`;
             const folderBtn = `document.querySelector('[data-agent-folder-section="conversations"][data-agent-folder="${AH_PROJECT}"]')`;
-            await h.ev(`${folderBtn}?.click()`);
+            await h.ev(`${folderBtn}?.querySelector("[data-agent-folder-toggle]")?.click()`);
             await ahWait(h, `${sessionRows} === 1`, 4000);
             const folded = await ahList(h);
             const foldedCount = await h.ev(`${folderBtn}?.textContent?.trim() ?? null`);
-            await h.ev(`${folderBtn}?.click()`);
+            await h.ev(`${folderBtn}?.querySelector("[data-agent-folder-toggle]")?.click()`);
             await ahWait(h, `${sessionRows} === ${AH_SEEDS + 1}`, 4000);
             const conversationsToggle = `document.querySelector('[data-agent-section-toggle="conversations"]')`;
             await h.ev(`${conversationsToggle}?.click()`);
@@ -15060,13 +15060,13 @@ const agentHistory = {
             // the project tree has no section header: its project's folder folds to its row, taking the agent with it
             const activeToggle = `document.querySelector('[data-project-folder="${AH_PROJECT}"]')`;
             const activeRow = `document.querySelector('[data-agent-active-rows] [data-agent-row="${AH_LIVE_ID}"]')`;
-            await h.ev(`${activeToggle}?.click()`);
+            await h.ev(`${activeToggle}?.querySelector("[data-agent-folder-toggle]")?.click()`);
             await ahWait(h, `!${activeRow}`, 4000);
             const activeFolded = await h.ev(`(() => ({
                 rows: !!${activeRow},
                 expanded: ${activeToggle}?.getAttribute("aria-expanded") ?? null,
             }))()`);
-            await h.ev(`${activeToggle}?.click()`);
+            await h.ev(`${activeToggle}?.querySelector("[data-agent-folder-toggle]")?.click()`);
             await ahWait(h, activeRow, 4000);
             const restored = await h.ev(`!!${activeRow}`);
             rec(
@@ -44902,7 +44902,7 @@ const toolsTree = {
         );
 
         const folded = async (project) => {
-            await ttClick(h, `[data-project-folder="${project}"]`);
+            await ttClick(h, `[data-project-folder="${project}"] [data-agent-folder-toggle]`);
             await polishNap(300);
             return h.ev(`(() => {
                 const f = document.querySelector('[data-project-folder="${project}"]');
@@ -44926,7 +44926,7 @@ const toolsTree = {
                 foldedMain.fits,
             JSON.stringify(foldedMain)
         );
-        await ttClick(h, `[data-project-folder="${TT_PROJECT}"]`);
+        await ttClick(h, `[data-project-folder="${TT_PROJECT}"] [data-agent-folder-toggle]`);
 
         const homeKey = await h.ev(`(() => {
             const f = [...document.querySelectorAll("[data-project-folder]")].find((el) => ${TT_FLAT}(el).startsWith("Home"));
@@ -44938,13 +44938,13 @@ const toolsTree = {
             foldedHome?.expanded === "false" && foldedHome.counts === "2 terminals",
             JSON.stringify({ homeKey, foldedHome })
         );
-        if (homeKey != null) await ttClick(h, `[data-project-folder="${homeKey}"]`);
+        if (homeKey != null) await ttClick(h, `[data-project-folder="${homeKey}"] [data-agent-folder-toggle]`);
 
         // a terminal or a tool opens from New, so a hovered folder row holds no button of its own
         const hovered = await ttMouse(h, `[data-project-folder="${TT_PROJECT}"]`, "move");
         const hoverAction = await h.ev(`(() => {
             const f = document.querySelector('[data-project-folder="${TT_PROJECT}"]');
-            return { inside: f?.querySelectorAll("button").length ?? -1, beside: f?.parentElement?.querySelectorAll("button").length ?? -1 };
+            return { inside: f?.querySelectorAll("button:not([data-agent-folder-toggle])").length ?? -1, beside: f?.parentElement?.querySelectorAll("button").length ?? -1 };
         })()`);
         await h.shot("cdp-shots/tools-tree-3-folder-hover.png");
         rec(
@@ -54858,19 +54858,25 @@ const projectOverview = {
                 JSON.stringify({ opened4, changesUp, quietUp, ...page4 })
             );
 
-            // 5. the folder row reads selected while the page shows; a click folds it and the page stays
+            // 5. the folder row reads selected while the page shows; its chevron folds it and the page stays; a click on the
+            // row itself opens the Overview
             const folded0 = await h.ev(`document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.getAttribute("aria-expanded") ?? null`);
             const selected = (await h.ev(ovClass(OV_ACTIVE_FOLDER))).includes("bg-surface-selected");
-            await h.ev(`document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.click()`);
+            const ovChevron = `document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER + " [data-agent-folder-toggle]")})`;
+            await h.ev(`${ovChevron}?.click()`);
             const folded = await polishWaitFor(h, `document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.getAttribute("aria-expanded") === "false"`, 3000);
             const stays = await h.ev(ovUp);
             await h.shot("cdp-shots/project-overview-5.png");
-            await h.ev(`document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.click()`);
+            await h.ev(`${ovChevron}?.click()`);
             const reopened = await polishWaitFor(h, `document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.getAttribute("aria-expanded") === "true"`, 3000);
+            const left5 = await ovLeave(h, tabId);
+            await h.ev(`document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.click()`);
+            const rowOpens = await polishWaitFor(h, ovUp, 5000);
+            const rowKeepsOpen = await h.ev(`document.querySelector(${JSON.stringify(OV_ACTIVE_FOLDER)})?.getAttribute("aria-expanded") === "true"`);
             rec(
-                "5. the folder row is selected while the Overview shows, a click folds it (aria-expanded flips) with the Overview still in the centre, and a second click opens it",
-                folded0 === "true" && selected && folded && stays === true && reopened,
-                JSON.stringify({ folded0, selected, folded, stays, reopened })
+                "5. the folder row is selected while the Overview shows, its chevron folds it (aria-expanded flips) with the Overview still in the centre and opens it again, and a click on the row opens the Overview without folding it",
+                folded0 === "true" && selected && folded && stays === true && reopened && left5 && rowOpens && rowKeepsOpen,
+                JSON.stringify({ folded0, selected, folded, stays, reopened, left5, rowOpens, rowKeepsOpen })
             );
 
             // 5b. committed, the change count says so; git is read once per mount, so the page is left and opened again

@@ -54,6 +54,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A click on a project's folder in the Agent sidebar opens its Overview; the chevron before it folds and unfolds the
+  folder.
 - When an agent offers you options that differ in UI, in a brainstorm or a plain chat, it draws each one as its own
   board on a canvas beside its terminal (Option A, Option B…) instead of ASCII boxes, and asks first before drawing
   a mockup only a few lines tall. In a brainstorm the boards sit beside the question in the options' order; after you
