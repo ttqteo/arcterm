@@ -194,6 +194,14 @@ type CouncilSuggestion struct {
 	ModeWhy string `json:"modewhy,omitempty"`
 }
 
+// CouncilAutoGenerate is Setup's Auto-generate result: the topic, one question and the mode, written from the seated
+// agents' recent conversations. Mode is always ModeReview or ModeBrainstorm.
+type CouncilAutoGenerate struct {
+	Topic    string `json:"topic"`
+	Question string `json:"question"`
+	Mode     string `json:"mode"`
+}
+
 type Council struct {
 	Id               string                       `json:"id"`
 	Project          string                       `json:"project"` // the project folder, the experts' cwd
