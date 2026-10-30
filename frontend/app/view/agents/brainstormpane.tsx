@@ -6,12 +6,15 @@
 // current), and every action is one line typed into the agent (brainstormsend).
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
+import { cardVariants, turnTransition, viewFade } from "@/app/element/motiontokens";
+import { PaneReveal } from "@/app/element/panereveal";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { makeFeBlockRouteId } from "@/app/store/wshrouter";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { getProcExitAtom } from "./agentcontrollerstore";
 import type { AgentsViewModel } from "./agents";
@@ -137,7 +140,17 @@ export function BrainstormPane({ model, agent }: { model: AgentsViewModel; agent
         board: s.board,
     });
     return (
-        <div data-brainstorm-pane data-brainstorm-view={view} className="flex min-h-0 flex-1 flex-col">
+        // keyed so a step change or another agent's brainstorm fades in, and the lists inside start over without
+        // replaying every row's entrance
+        <motion.div
+            key={`${agent.id}:${view}`}
+            variants={viewFade}
+            initial="initial"
+            animate="animate"
+            data-brainstorm-pane
+            data-brainstorm-view={view}
+            className="flex min-h-0 flex-1 flex-col"
+        >
             {/* how to use it, once per machine; not over a full-size board or a card that says the brainstorm is gone */}
             {view === "removed" || view === "error" || view === "exited" || view === "board" ? null : (
                 <BrainstormHints />
@@ -169,7 +182,7 @@ export function BrainstormPane({ model, agent }: { model: AgentsViewModel; agent
             ) : (
                 <Design agent={agent} s={s} f={f} nowAtom={model.nowAtom} />
             )}
-        </div>
+        </motion.div>
     );
 }
 
@@ -215,37 +228,45 @@ function Design({
             <StaleBanner s={s} />
             <div className="flex min-h-0 flex-1">
                 <div className="flex min-w-0 flex-1 flex-col bg-background">
-                    {view === "question" ? (
-                        <QuestionMain
-                            agent={agent}
-                            s={s}
-                            f={f}
-                            goTo={goTo}
-                            openDesign={openDesign}
-                            findings={
-                                unseen.notes.length > 0
-                                    ? { count: unseen.notes.length, open: () => openParts(unseen.notes) }
-                                    : undefined
-                            }
-                        />
-                    ) : view === "judging" ? (
-                        <JudgingMain agent={agent} f={f} goTo={goTo} openDesign={openDesign} />
-                    ) : view === "working" ? (
-                        <WorkingMain f={f} openDesign={openDesign} />
-                    ) : (
-                        <DesignMain
-                            agent={agent}
-                            s={s}
-                            f={f}
-                            check={check}
-                            lock={lock}
-                            nowAtom={nowAtom}
-                            partsRef={partsRef}
-                            unseen={unseen}
-                            opened={opened}
-                            setOpen={(id, open) => setOpened((o) => ({ ...o, [id]: open }))}
-                        />
-                    )}
+                    <motion.div
+                        key={view === "question" ? `question:${f.question!.n}` : view}
+                        variants={viewFade}
+                        initial="initial"
+                        animate="animate"
+                        className="flex min-h-0 flex-1 flex-col"
+                    >
+                        {view === "question" ? (
+                            <QuestionMain
+                                agent={agent}
+                                s={s}
+                                f={f}
+                                goTo={goTo}
+                                openDesign={openDesign}
+                                findings={
+                                    unseen.notes.length > 0
+                                        ? { count: unseen.notes.length, open: () => openParts(unseen.notes) }
+                                        : undefined
+                                }
+                            />
+                        ) : view === "judging" ? (
+                            <JudgingMain agent={agent} f={f} goTo={goTo} openDesign={openDesign} />
+                        ) : view === "working" ? (
+                            <WorkingMain f={f} openDesign={openDesign} />
+                        ) : (
+                            <DesignMain
+                                agent={agent}
+                                s={s}
+                                f={f}
+                                check={check}
+                                lock={lock}
+                                nowAtom={nowAtom}
+                                partsRef={partsRef}
+                                unseen={unseen}
+                                opened={opened}
+                                setOpen={(id, open) => setOpened((o) => ({ ...o, [id]: open }))}
+                            />
+                        )}
+                    </motion.div>
                     {view === "design" ? (
                         <LineBar agent={agent} box={lineBox(f, check.kind === "pending")} lock={lock} />
                     ) : null}
@@ -292,18 +313,28 @@ function DesignMain({
     const notes = noteParts(f);
     // a changed part opens on its own: what changed is what it asks you to read
     const isOpen = (p: BrainstormPart) => opened[p.id] ?? partView(f, p) === "changed";
+    // a part the agent adds arrives and pushes the rest down; the motion.div is AnimatePresence's direct child so a
+    // removed part pops out of flow instead of leaving a gap
     const row = (p: BrainstormPart) => (
-        <PartRow
+        <motion.div
             key={p.id}
-            agent={agent}
-            s={s}
-            f={f}
-            part={p}
-            lock={lock}
-            unseen={unseen.parts.includes(p.id)}
-            open={isOpen(p)}
-            setOpen={(open) => setOpen(p.id, open)}
-        />
+            layout="position"
+            variants={cardVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+        >
+            <PartRow
+                agent={agent}
+                s={s}
+                f={f}
+                part={p}
+                lock={lock}
+                unseen={unseen.parts.includes(p.id)}
+                open={isOpen(p)}
+                setOpen={(open) => setOpen(p.id, open)}
+            />
+        </motion.div>
     );
     // the design opened over the question or the working note: the way back to it
     const back = designUnder(f, s.designOpen, s.sent != null);
@@ -335,7 +366,7 @@ function DesignMain({
                             data-brainstorm-working-note
                             className="flex items-center gap-[8px] rounded-[8px] bg-surface px-[14px] py-[8px] text-[12.5px] text-ink-mid"
                         >
-                            <span className={cn(SMALL_DOT, "bg-success")} />
+                            <span className={cn(SMALL_DOT, "pulse-dot bg-success")} />
                             The agent is writing. Confirm, edit and keep open again when it asks its next question.
                         </div>
                     ) : null}
@@ -344,17 +375,23 @@ function DesignMain({
                     ) : leftPanel(f) !== "none" ? (
                         <ReviewHead agent={agent} f={f} check={check} />
                     ) : null}
-                    <section data-brainstorm-decisions aria-label="Decisions" className="flex flex-col">
+                    <section data-brainstorm-decisions aria-label="Decisions" className="relative flex flex-col">
                         <div className="flex items-baseline gap-[8px] px-[14px] pb-[6px]">
                             <h2 className={SECTION_HEAD}>Decisions · {decisions.length}</h2>
                             <span className="text-[12px] text-muted">
                                 what the run builds; each one has to be yours
                             </span>
                         </div>
-                        {[...decisions].reverse().map(row)}
+                        <AnimatePresence mode="popLayout" initial={false}>
+                            {[...decisions].reverse().map(row)}
+                        </AnimatePresence>
                     </section>
                     {notes.length > 0 ? (
-                        <section data-brainstorm-notes aria-label="What the agent found" className="flex flex-col">
+                        <section
+                            data-brainstorm-notes
+                            aria-label="What the agent found"
+                            className="relative flex flex-col"
+                        >
                             <div className="flex items-baseline gap-[8px] px-[14px] py-[6px]">
                                 <h2 className={SECTION_HEAD}>What the agent found · {notes.length}</h2>
                                 <span className="text-[12px] text-muted">
@@ -362,7 +399,9 @@ function DesignMain({
                                     confirm
                                 </span>
                             </div>
-                            {notes.map(row)}
+                            <AnimatePresence mode="popLayout" initial={false}>
+                                {notes.map(row)}
+                            </AnimatePresence>
                         </section>
                     ) : null}
                     {fresh ? (
@@ -420,7 +459,7 @@ function CheckWait({
                 className="flex flex-col gap-[10px] rounded-[8px] border border-edge-mid bg-surface px-[16px] py-[12px]"
             >
                 <div className="flex items-center gap-[10px]">
-                    <span className={cn(SMALL_DOT, "bg-success")} />
+                    <span className={cn(SMALL_DOT, "bg-success", clock.running && "pulse-dot")} />
                     <span className="text-[13.5px] font-semibold text-primary">{clock.line}</span>
                     <div className="flex-1" />
                     {clock.elapsed != null ? (
@@ -537,8 +576,9 @@ function Chevron({ open, onClick, className }: { open: boolean; onClick: () => v
         <span
             aria-hidden="true"
             onClick={onClick}
+            style={turnTransition}
             className={cn(
-                "flex h-[20px] w-[12px] flex-none cursor-pointer items-center text-muted",
+                "flex h-[20px] w-[12px] flex-none cursor-pointer items-center text-muted transition-transform motion-reduce:transition-none",
                 open && "rotate-180",
                 className
             )}
@@ -714,7 +754,7 @@ function PartRow({
                     className="@max-[780px]:col-start-3 @max-[780px]:row-start-1"
                 />
             </div>
-            {open ? (
+            <PaneReveal open={open}>
                 <div
                     data-brainstorm-row-body
                     className="mb-[12px] ml-[233px] mr-[14px] flex flex-col gap-[8px] @max-[780px]:ml-[33px]"
@@ -776,7 +816,7 @@ function PartRow({
                     )}
                     {view === "writing" ? null : <PartMockups agentId={agent.id} s={s} f={f} part={part} />}
                 </div>
-            ) : null}
+            </PaneReveal>
             {act.error != null ? <span className={cn(ERROR_LINE, "px-[14px] pb-[8px]")}>{act.error}</span> : null}
         </div>
     );
@@ -855,25 +895,35 @@ function DecidedRail({ f, unseen, goTo }: { f: BrainstormFile; unseen: Unseen; g
                     Each answer lands here, with the options it was picked from.
                 </p>
             ) : null}
-            <div data-brainstorm-history className="flex flex-col">
-                {rows.map((h, i) =>
-                    h.kind === "recon" ? (
-                        <div
-                            key={`recon:${i}`}
-                            data-unseen={h.unseen ? "" : undefined}
-                            className="flex flex-col gap-[5px] border-t border-border py-[12px]"
+            <div data-brainstorm-history className="relative flex flex-col">
+                <AnimatePresence mode="popLayout" initial={false}>
+                    {rows.map((h, i) => (
+                        <motion.div
+                            key={h.key}
+                            layout="position"
+                            variants={cardVariants}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
                         >
-                            <span className="font-mono text-[10.5px] text-muted">
-                                {h.label}
-                                {h.unseen ? <span className="text-accent-soft"> · new</span> : null}
-                            </span>
-                            <span className="text-[12.5px] leading-[1.5] text-ink-mid">{h.answer}</span>
-                            <IntoLinks into={h.into} goTo={goTo} />
-                        </div>
-                    ) : (
-                        <RailQuestion key={`${h.label}:${i}`} h={h} justNow={i === 0 && working} goTo={goTo} />
-                    )
-                )}
+                            {h.kind === "recon" ? (
+                                <div
+                                    data-unseen={h.unseen ? "" : undefined}
+                                    className="flex flex-col gap-[5px] border-t border-border py-[12px]"
+                                >
+                                    <span className="font-mono text-[10.5px] text-muted">
+                                        {h.label}
+                                        {h.unseen ? <span className="text-accent-soft"> · new</span> : null}
+                                    </span>
+                                    <span className="text-[12.5px] leading-[1.5] text-ink-mid">{h.answer}</span>
+                                    <IntoLinks into={h.into} goTo={goTo} />
+                                </div>
+                            ) : (
+                                <RailQuestion h={h} justNow={i === 0 && working} goTo={goTo} />
+                            )}
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
             </div>
         </aside>
     );

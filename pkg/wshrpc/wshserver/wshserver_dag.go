@@ -756,6 +756,29 @@ func (ws *WshServer) DagAnswerCommand(ctx context.Context, data wshrpc.CommandDa
 	return fmt.Errorf("no task %q", data.TaskId)
 }
 
+// DagGoalpostCommand records arc-mod's findings on an edit the caller made, when the caller is a task's current
+// worker; any other run, a run outside a dag included, answers Recorded false.
+func (ws *WshServer) DagGoalpostCommand(ctx context.Context, data wshrpc.CommandDagGoalpostData) (*wshrpc.CommandDagGoalpostRtnData, error) {
+	if data.ChannelId == "" || data.RunId == "" {
+		return nil, errors.New("channelid and runid are required")
+	}
+	if len(data.Findings) == 0 {
+		return nil, errors.New("no findings")
+	}
+	run, err := wstore.GetRun(ctx, data.ChannelId, data.RunId)
+	if err != nil {
+		return nil, fmt.Errorf("loading run: %w", err)
+	}
+	if run.DagORef == "" {
+		return &wshrpc.CommandDagGoalpostRtnData{Recorded: false}, nil
+	}
+	recorded, err := orchestrate.RecordGoalposts(ctx, run.DagORef, data.RunId, data.Findings)
+	if err != nil {
+		return nil, err
+	}
+	return &wshrpc.CommandDagGoalpostRtnData{Recorded: recorded}, nil
+}
+
 // pendingRunAsk finds the pending ask on one of a run's own blocks: a lead's own question, or a task worker's.
 func pendingRunAsk(ctx context.Context, run *waveobj.Run) (string, agentask.PendingAsk, bool) {
 	for _, bo := range orchestrate.RunBlockORefs(ctx, run) {

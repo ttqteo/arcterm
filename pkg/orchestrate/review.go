@@ -18,6 +18,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/runroute"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
@@ -120,7 +121,7 @@ func spawnReviewer(ctx, spawnCtx context.Context, g *waveobj.TaskGroup, t *waveo
 		failReview(ctx, g, t, "reviewer could not start: "+err.Error(), afterCommit)
 		return
 	}
-	prompt := reviewPrompt(g, t, worker, toldToTask(ctx, g, t.ID))
+	prompt := reviewPrompt(g, t, worker, toldToTask(ctx, g, t.ID), goalpostsForTask(ctx, g, t.ID))
 	runID, sessionId := uuid.NewString(), jarvis.WorkerSessionId(pin.Runtime)
 	oref, err := spawnWorker(spawnCtx, capability, owner.WorkspaceId, "", worker.ProjectPath, prompt,
 		jarvis.RunWorkerOptions{SessionId: sessionId, RunId: runID, TaskId: t.ID, Label: "review " + t.ID})
@@ -570,7 +571,7 @@ func downstreamTargets(g *waveobj.TaskGroup, reviewed string, names []string) ([
 // reviewPrompt is a reviewer's whole brief: what the task asked for, where the spec and plan are, what the
 // worker said it did, and the one diff to judge. It checks intent, not tests: Verify runs those at the merge.
 // The reviewer works in the worker's tree, so that is where it reads the docs.
-func reviewPrompt(g *waveobj.TaskGroup, task *waveobj.TaskNode, worker *waveobj.Run, told []string) string {
+func reviewPrompt(g *waveobj.TaskGroup, task *waveobj.TaskNode, worker *waveobj.Run, told []string, findings []wshrpc.GoalpostFinding) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are the reviewer for task %s", task.ID)
 	if g.PlanPath != "" {
@@ -614,6 +615,10 @@ func reviewPrompt(g *waveobj.TaskGroup, task *waveobj.TaskNode, worker *waveobj.
 		if note := strings.TrimSpace(worker.Evidence.Summary); note != "" {
 			fmt.Fprintf(&b, "\n\nThe worker reported: %s", note)
 		}
+	}
+	if section := goalpostSection(findings); section != "" {
+		b.WriteString("\n\n")
+		b.WriteString(section)
 	}
 	if extra := reviewAdditions(task, told); extra != "" {
 		b.WriteString("\n\n")

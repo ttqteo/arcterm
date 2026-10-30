@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -468,5 +469,62 @@ func TestSweepWorktreeRootKeepsAMarkerAnotherRunsFolderSharesThePrefixOf(t *test
 	}
 	if got := readMarker(t, root, id); got != id {
 		t.Fatalf("marker = %q, want %q", got, id)
+	}
+}
+
+// ageMarker sets id's prefix marker back by age.
+func ageMarker(t *testing.T, root, id string, age time.Duration) {
+	t.Helper()
+	old := time.Now().Add(-age)
+	if err := os.Chtimes(runMarkerPath(root, id), old, old); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSweepWorktreeRootDeletesADayOldMarkerNoStoreHolds(t *testing.T) {
+	root := useRoot(t)
+	id := uuid.NewString()
+	if err := claimRunPrefix(root, id); err != nil {
+		t.Fatal(err)
+	}
+	ageMarker(t, root, id, unstoredMarkerAge+time.Minute)
+	SweepWorktreeRoot(context.Background())
+	assertNoMarker(t, root, id)
+}
+
+func TestSweepWorktreeRootKeepsTheMarkerOf(t *testing.T) {
+	cases := map[string]func(t *testing.T, root string) string{
+		"an unstored run under a day old": func(t *testing.T, root string) string {
+			id := uuid.NewString()
+			if err := claimRunPrefix(root, id); err != nil {
+				t.Fatal(err)
+			}
+			ageMarker(t, root, id, unstoredMarkerAge-time.Hour)
+			return id
+		},
+		"a day-old unstored run that still has a folder": func(t *testing.T, root string) string {
+			id := uuid.NewString()
+			leftTree(t, root, id+"-t-1", false)
+			ageMarker(t, root, id, unstoredMarkerAge+time.Minute)
+			return id
+		},
+		"a day-old live run with no folder": func(t *testing.T, root string) string {
+			id := storedRun(t, jarvis.RunStatus_Executing)
+			if err := claimRunPrefix(root, id); err != nil {
+				t.Fatal(err)
+			}
+			ageMarker(t, root, id, unstoredMarkerAge+time.Minute)
+			return id
+		},
+	}
+	for name, arrange := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := useRoot(t)
+			id := arrange(t, root)
+			SweepWorktreeRoot(context.Background())
+			if got := readMarker(t, root, id); got != id {
+				t.Fatalf("marker = %q, want %q", got, id)
+			}
+		})
 	}
 }

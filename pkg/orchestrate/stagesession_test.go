@@ -229,7 +229,7 @@ func TestSpawnStageSessionRunsOnItsRouteAndNamesItsLens(t *testing.T) {
 	f := newFakeLead(t)
 	owner := dagOwner(t, ctx, dag)
 	route := waveobj.RoutePin{Runtime: "claude", Model: "haiku"}
-	runID, err := spawnStageSession(ctx, ctx, dag, owner, StageSession{Role: jarvis.UsageRole_PlanReviewer, Tree: t.TempDir(), Lens: PlanReviewLens_Spec, Route: route})
+	runID, err := spawnStageSession(ctx, ctx, dag, owner, StageSession{Role: jarvis.UsageRole_PlanReviewer, Tree: t.TempDir(), Lens: PlanReviewLens_Second, Route: route})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestSpawnStageSessionRunsOnItsRouteAndNamesItsLens(t *testing.T) {
 			lenses = append(lenses, lens, ok)
 		}
 	}
-	if want := []any{PlanReviewLens_Spec, true, nil, false}; !reflect.DeepEqual(lenses, want) {
+	if want := []any{PlanReviewLens_Second, true, nil, false}; !reflect.DeepEqual(lenses, want) {
 		t.Fatalf("started rows' lens = %v, want %v", lenses, want)
 	}
 }

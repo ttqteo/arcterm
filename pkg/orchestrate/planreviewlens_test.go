@@ -77,7 +77,7 @@ func loseReviewer(t *testing.T, ctx context.Context, dagID, channelId, lens stri
 	}
 }
 
-func TestPlanReviewRoundOneStartsFiveReviewers(t *testing.T) {
+func TestPlanReviewRoundOneStartsTwoReviewers(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		light *waveobj.RoutePin
@@ -100,15 +100,15 @@ func TestPlanReviewRoundOneStartsFiveReviewers(t *testing.T) {
 			schedule(t, ctx, dag.OID)
 			g := loadDag(t, ctx, dag.OID)
 			pr := g.PlanReview
-			if len(*calls) != len(planRoundOneLenses) || len(pr.Reviewers) != len(planRoundOneLenses) {
-				t.Fatalf("want five reviewers, got %d spawns and %+v", len(*calls), pr.Reviewers)
+			if len(*calls) != 2 || len(pr.Reviewers) != 2 {
+				t.Fatalf("want two reviewers, got %d spawns and %+v", len(*calls), pr.Reviewers)
 			}
 			if pr.PlanText != plan || pr.SpecText != spec {
 				t.Fatalf("the round's docs must be captured, got plan %q spec %q", pr.PlanText, pr.SpecText)
 			}
 			full := reviewerRoute(dagOwner(t, ctx, g), g)
 			for i, r := range pr.Reviewers {
-				if r.Lens != planRoundOneLenses[i] || r.State != PlanReviewerState_Reviewing || r.RunID == "" || r.StartedTs == 0 {
+				if r.Lens != []string{PlanReviewLens_Full, PlanReviewLens_Second}[i] || r.State != PlanReviewerState_Reviewing || r.RunID == "" || r.StartedTs == 0 {
 					t.Fatalf("reviewer %d = %+v", i, r)
 				}
 				run, err := wstore.GetRun(ctx, g.ChannelId, r.RunID)
@@ -129,76 +129,74 @@ func TestPlanReviewRoundOneStartsFiveReviewers(t *testing.T) {
 					lenses = append(lenses, fmt.Sprint(row["lens"]))
 				}
 			}
-			if strings.Join(lenses, ",") != strings.Join(planRoundOneLenses, ",") {
+			if strings.Join(lenses, ",") != "full,second" {
 				t.Fatalf("each started row names its lens, got %v", lenses)
 			}
 		})
 	}
 }
 
-func TestPlanReviewLensPromptsSplitTheChecklist(t *testing.T) {
+// checklistOf is the prompt's text from "Check that:" up to the read-only line.
+func checklistOf(t *testing.T, prompt string) string {
+	t.Helper()
+	start, end := strings.Index(prompt, "Check that:\n"), strings.Index(prompt, planReviewReadOnly)
+	if start < 0 || end < start {
+		t.Fatalf("no checklist in:\n%s", prompt)
+	}
+	return prompt[start:end]
+}
+
+func TestPlanReviewSecondPassPromptHasTheWholeChecklist(t *testing.T) {
 	g := &waveobj.TaskGroup{RunID: "run-1", SpecPath: "s.md", PlanPath: "p.md", Prototype: "C:/canvas/board.dc.html", ReviewerPicks: true, Tasks: picksTasks()}
-	itemText := func(it planReviewItem) string {
-		if it.text == planReviewBoardItem {
-			return fmt.Sprintf(planReviewBoardItem, DocPath(g, "tree", g.Prototype))
-		}
-		return it.text
+	second, full := planSecondPassPrompt(g, "tree"), planReviewPrompt(g, "tree")
+	if got, want := checklistOf(t, second), checklistOf(t, full); got != want {
+		t.Fatalf("the second pass lists the full reviewer's checklist as is:\n got %q\nwant %q", got, want)
 	}
-	lenses := planRoundOneLenses[1:]
-	prompts := map[string]string{}
-	for _, lens := range lenses {
-		p := planLensPrompt(g, "tree", lens)
-		prompts[lens] = p
-		if strings.Contains(p, "--pick") || strings.Contains(p, "t-1") {
-			t.Fatalf("%s: a lens picks no models:\n%s", lens, p)
-		}
-		if !strings.Contains(p, "Yours is "+PlanReviewLensTitle(lens)+".") || !strings.Contains(p, "`wsh jarvis dag planreview pass \"<summary>\"`") {
-			t.Fatalf("%s: the brief names its lens and the verdict:\n%s", lens, p)
-		}
-		for _, other := range lenses {
-			if other != lens && !strings.Contains(p, PlanReviewLensTitle(other)) {
-				t.Fatalf("%s: the brief names the other lens %q:\n%s", lens, other, p)
-			}
-		}
-		for _, it := range planReviewChecklist {
-			if has := strings.Contains(p, itemText(it)); has != (it.lens == lens) {
-				t.Fatalf("%s: item %q (lens %s) present = %v:\n%s", lens, itemText(it), it.lens, has, p)
-			}
+	checks := checklistOf(t, second)
+	for _, want := range []string{"- " + planReviewChecklist[0] + "\n", fmt.Sprintf(planReviewBoardItem, DocPath(g, "tree", g.Prototype)), "- " + planReviewManifestItem + "\n", planReviewSpecGap + "\n"} {
+		if !strings.Contains(checks, want) {
+			t.Fatalf("the checklist must hold %q:\n%s", want, checks)
 		}
 	}
-	full := planReviewPrompt(g, "tree")
-	checks := full[strings.Index(full, "Check that:\n")+len("Check that:\n") : strings.Index(full, planReviewReadOnly)]
-	for _, line := range strings.Split(strings.TrimSuffix(checks, "\n"), "\n") {
-		item := strings.TrimPrefix(line, "- ")
-		covered := false
-		for _, p := range prompts {
-			covered = covered || strings.Contains(p, item)
-		}
-		if !covered {
-			t.Fatalf("no lens covers the full prompt's item %q", item)
-		}
+	if !strings.Contains(second, "You are one of two plan reviewers working independently at the same time") || !strings.Contains(second, "`wsh jarvis dag planreview pass \"<summary>\"`") {
+		t.Fatalf("the brief says it is one of two independent reviewers and names the verdict:\n%s", second)
+	}
+	if strings.Contains(second, "--pick") || strings.Contains(second, "t-1") {
+		t.Fatalf("the second pass picks no models:\n%s", second)
+	}
+	if strings.Contains(full, "one of two plan reviewers") {
+		t.Fatalf("the full reviewer's brief is unchanged:\n%s", full)
 	}
 }
 
-func TestPlanReviewPassesOnlyWhenAllPass(t *testing.T) {
+func TestPlanReviewSecondPassRunsOnTheLightReviewersRoute(t *testing.T) {
+	g := &waveobj.TaskGroup{RunID: "run-1", PlanPath: "p.md", LightReviewerRoute: &waveobj.RoutePin{Runtime: "claude", Model: "haiku"}}
+	s, err := planReviewSession(context.Background(), g, "tree", PlanReviewLens_Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Route != *g.LightReviewerRoute || s.Lens != PlanReviewLens_Second || s.Label != "plan review: Second pass" || s.Prompt != planSecondPassPrompt(g, "tree") {
+		t.Fatalf("got %+v", s)
+	}
+}
+
+func TestPlanReviewPassesOnlyWhenBothPass(t *testing.T) {
 	ctx, dag := seedPlanReviewDag(t)
 	captureSpawns(t)
 	f := newFakeLead(t)
 	handed := stubLeadHandoff(t, ctx, dag)
 	schedule(t, ctx, dag.OID)
-	for _, lens := range planRoundOneLenses[:4] {
-		verdict(t, ctx, dag.OID, lens, ReviewVerdict_Pass, lens+" is fine")
-		if g := loadDag(t, ctx, dag.OID); !planReviewHolds(g) || g.PlanReview.State != PlanReviewState_Reviewing {
-			t.Fatalf("after %s's pass the review still holds, got %+v", lens, g.PlanReview)
-		}
+	verdict(t, ctx, dag.OID, PlanReviewLens_Full, ReviewVerdict_Pass, "full is fine")
+	if g := loadDag(t, ctx, dag.OID); !planReviewHolds(g) || g.PlanReview.State != PlanReviewState_Reviewing {
+		t.Fatalf("after the full pass the review still holds, got %+v", g.PlanReview)
 	}
 	if len(planReviewedRows(f)) != 0 || len(*handed) != 0 {
 		t.Fatalf("a round with a reviewer out has no event and no handoff, got %v and %v", planReviewedRows(f), *handed)
 	}
-	verdict(t, ctx, dag.OID, PlanReviewLens_Final, ReviewVerdict_Pass, "final is fine")
+	verdict(t, ctx, dag.OID, PlanReviewLens_Second, ReviewVerdict_Pass, "second is fine")
 	g := loadDag(t, ctx, dag.OID)
 	if planReviewHolds(g) || g.PlanReview.State != PlanReviewState_Passed || g.PlanReview.Findings != "full is fine" {
-		t.Fatalf("the fifth pass clears the hold with the full reviewer's summary, got %+v", g.PlanReview)
+		t.Fatalf("the second pass clears the hold with the full reviewer's summary, got %+v", g.PlanReview)
 	}
 	if rows := planReviewedRows(f); len(rows) != 1 || rows[0]["state"] != PlanReviewState_Passed {
 		t.Fatalf("want one passed event, got %v", rows)
@@ -208,19 +206,17 @@ func TestPlanReviewPassesOnlyWhenAllPass(t *testing.T) {
 	}
 }
 
-func TestPlanReviewLensFailMergesFindingsWhole(t *testing.T) {
+func TestPlanReviewSecondPassFailMergesFindingsWhole(t *testing.T) {
 	ctx, dag := seedPlanReviewDag(t)
 	captureSpawns(t)
 	f := newFakeLead(t)
 	handed := stubLeadHandoff(t, ctx, dag)
 	schedule(t, ctx, dag.OID)
-	fullText, testsText := "F"+strings.Repeat("f", MaxReviewNoteLen-1), "T"+strings.Repeat("t", MaxReviewNoteLen-1)
-	verdict(t, ctx, dag.OID, PlanReviewLens_Tests, ReviewVerdict_Fail, testsText)
-	verdict(t, ctx, dag.OID, PlanReviewLens_Spec, ReviewVerdict_Pass, "fine")
-	verdict(t, ctx, dag.OID, PlanReviewLens_Order, ReviewVerdict_Pass, "fine")
+	fullText, secondText := "F"+strings.Repeat("f", MaxReviewNoteLen-1), "S"+strings.Repeat("s", MaxReviewNoteLen-1)
+	// the second pass answers first, and the findings still list the full reviewer first
+	verdict(t, ctx, dag.OID, PlanReviewLens_Second, ReviewVerdict_Fail, secondText)
 	verdict(t, ctx, dag.OID, PlanReviewLens_Full, ReviewVerdict_Fail, fullText)
-	verdict(t, ctx, dag.OID, PlanReviewLens_Final, ReviewVerdict_Pass, "fine")
-	want := "[Full review] " + fullText + "\n\n[Tests and commands] " + testsText + "\n\nPassed: Spec coverage, Task order and files, Final coverage."
+	want := "[Full review] " + fullText + "\n\n[Second pass] " + secondText
 	pr := loadDag(t, ctx, dag.OID).PlanReview
 	if pr.State != PlanReviewState_Failed || pr.Findings != want {
 		t.Fatalf("want the attributed list whole, got state %s findings %q", pr.State, pr.Findings)
@@ -230,7 +226,7 @@ func TestPlanReviewLensFailMergesFindingsWhole(t *testing.T) {
 		t.Fatalf("want one failed event with the list whole, got %v", rows)
 	}
 	reviewers, _ := rows[0]["reviewers"].([]map[string]any)
-	if len(reviewers) != len(planRoundOneLenses) || reviewers[3]["lens"] != PlanReviewLens_Tests || reviewers[3]["state"] != PlanReviewerState_Failed || reviewers[3]["text"] != testsText {
+	if len(reviewers) != 2 || reviewers[1]["lens"] != PlanReviewLens_Second || reviewers[1]["state"] != PlanReviewerState_Failed || reviewers[1]["text"] != secondText {
 		t.Fatalf("the event lists each reviewer's verdict, got %v", rows[0]["reviewers"])
 	}
 	if joined := strings.Join(f.sends, "\n"); !strings.Contains(joined, planReviewFailedWake(1, want, false, false)) {
@@ -241,23 +237,35 @@ func TestPlanReviewLensFailMergesFindingsWhole(t *testing.T) {
 	}
 }
 
-func TestPlanReviewLostLensIsDropped(t *testing.T) {
+// the full reviewer's pass does not outvote the second pass's findings
+func TestPlanReviewSecondPassFailFailsAPassedFull(t *testing.T) {
+	ctx, dag := seedPlanReviewDag(t)
+	captureSpawns(t)
+	newFakeLead(t)
+	schedule(t, ctx, dag.OID)
+	verdict(t, ctx, dag.OID, PlanReviewLens_Full, ReviewVerdict_Pass, "full is fine")
+	verdict(t, ctx, dag.OID, PlanReviewLens_Second, ReviewVerdict_Fail, "Task 2 names no test")
+	pr := loadDag(t, ctx, dag.OID).PlanReview
+	if want := "[Second pass] Task 2 names no test\n\nPassed: Full review."; pr.State != PlanReviewState_Failed || pr.Findings != want {
+		t.Fatalf("got %s %q, want %q", pr.State, pr.Findings, want)
+	}
+}
+
+func TestPlanReviewLostSecondPassIsDropped(t *testing.T) {
 	ctx, dag := seedPlanReviewDag(t)
 	captureSpawns(t)
 	stubStopRunWorkers(t)
 	f := newFakeLead(t)
 	handed := stubLeadHandoff(t, ctx, dag)
 	schedule(t, ctx, dag.OID)
-	for _, lens := range []string{PlanReviewLens_Full, PlanReviewLens_Order, PlanReviewLens_Tests, PlanReviewLens_Final} {
-		verdict(t, ctx, dag.OID, lens, ReviewVerdict_Pass, lens+" is fine")
-	}
-	loseReviewer(t, ctx, dag.OID, dag.ChannelId, PlanReviewLens_Spec)
+	verdict(t, ctx, dag.OID, PlanReviewLens_Full, ReviewVerdict_Pass, "full is fine")
+	loseReviewer(t, ctx, dag.OID, dag.ChannelId, PlanReviewLens_Second)
 	pr := loadDag(t, ctx, dag.OID).PlanReview
-	if spec := reviewerOf(t, ctx, dag.OID, PlanReviewLens_Spec); spec.State != PlanReviewerState_Lost || spec.Text != "it ended without a verdict" {
-		t.Fatalf("the lens is lost with why, got %+v", spec)
+	if second := reviewerOf(t, ctx, dag.OID, PlanReviewLens_Second); second.State != PlanReviewerState_Lost || second.Text != "it ended without a verdict" {
+		t.Fatalf("the second pass is lost with why, got %+v", second)
 	}
-	if want := "full is fine\nDid not finish: Spec coverage (it ended without a verdict)."; pr.State != PlanReviewState_Passed || pr.Findings != want {
-		t.Fatalf("the round passes on the rest and names the lost lens, got %s %q", pr.State, pr.Findings)
+	if want := "full is fine\nDid not finish: Second pass (it ended without a verdict)."; pr.State != PlanReviewState_Passed || pr.Findings != want {
+		t.Fatalf("the round passes on the full reviewer and names the lost pass, got %s %q", pr.State, pr.Findings)
 	}
 	if rows := planReviewedRows(f); len(rows) != 1 || rows[0]["state"] != PlanReviewState_Passed {
 		t.Fatalf("want one passed event, got %v", rows)
@@ -268,7 +276,7 @@ func TestPlanReviewLostLensIsDropped(t *testing.T) {
 }
 
 func TestPlanReviewLostFullFailsTheRound(t *testing.T) {
-	t.Run("every lens passed: the lost wake", func(t *testing.T) {
+	t.Run("the second pass passed: the lost wake", func(t *testing.T) {
 		ctx, dag := seedPlanReviewDag(t)
 		captureSpawns(t)
 		stubStopRunWorkers(t)
@@ -277,7 +285,7 @@ func TestPlanReviewLostFullFailsTheRound(t *testing.T) {
 		passLenses(t, ctx, dag.OID)
 		loseReviewer(t, ctx, dag.OID, dag.ChannelId, PlanReviewLens_Full)
 		pr := loadDag(t, ctx, dag.OID).PlanReview
-		want := "[Full review] did not finish: it ended without a verdict\nPassed: Spec coverage, Task order and files, Tests and commands, Final coverage."
+		want := "[Full review] did not finish: it ended without a verdict\nPassed: Second pass."
 		if pr.State != PlanReviewState_Failed || pr.Findings != want {
 			t.Fatalf("a lost full reviewer fails the round, got %s %q", pr.State, pr.Findings)
 		}
@@ -289,17 +297,16 @@ func TestPlanReviewLostFullFailsTheRound(t *testing.T) {
 			t.Fatalf("want one event, got %v", rows)
 		}
 	})
-	t.Run("a lens failed too: the failed wake", func(t *testing.T) {
+	t.Run("the second pass failed: the failed wake", func(t *testing.T) {
 		ctx, dag := seedPlanReviewDag(t)
 		captureSpawns(t)
 		stubStopRunWorkers(t)
 		f := newFakeLead(t)
 		schedule(t, ctx, dag.OID)
-		verdict(t, ctx, dag.OID, PlanReviewLens_Tests, ReviewVerdict_Fail, "Task 2 names no test")
-		passLenses(t, ctx, dag.OID)
+		verdict(t, ctx, dag.OID, PlanReviewLens_Second, ReviewVerdict_Fail, "Task 2 names no test")
 		loseReviewer(t, ctx, dag.OID, dag.ChannelId, PlanReviewLens_Full)
 		pr := loadDag(t, ctx, dag.OID).PlanReview
-		want := "[Tests and commands] Task 2 names no test\n\n[Full review] did not finish: it ended without a verdict\nPassed: Spec coverage, Task order and files, Final coverage."
+		want := "[Second pass] Task 2 names no test\n\n[Full review] did not finish: it ended without a verdict"
 		if pr.State != PlanReviewState_Failed || pr.Findings != want {
 			t.Fatalf("got %s %q, want %q", pr.State, pr.Findings, want)
 		}
@@ -310,7 +317,7 @@ func TestPlanReviewLostFullFailsTheRound(t *testing.T) {
 	})
 }
 
-func TestPlanReviewLensPickIsRefused(t *testing.T) {
+func TestPlanReviewSecondPassPickIsRefused(t *testing.T) {
 	ctx, dag := seedPlanReviewDag(t)
 	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
 		g.Tasks, g.ReviewerPicks = picksTasks(), true
@@ -322,18 +329,17 @@ func TestPlanReviewLensPickIsRefused(t *testing.T) {
 	newFakeLead(t)
 	schedule(t, ctx, dag.OID)
 	before := loadDag(t, ctx, dag.OID)
-	spec := reviewerOf(t, ctx, dag.OID, PlanReviewLens_Spec)
-	err := RecordPlanReviewVerdict(ctx, dag.OID, spec.RunID, ReviewVerdict_Pass, "fine", goodPicks())
+	second := reviewerOf(t, ctx, dag.OID, PlanReviewLens_Second)
+	err := RecordPlanReviewVerdict(ctx, dag.OID, second.RunID, ReviewVerdict_Pass, "fine", goodPicks())
 	if err == nil || err.Error() != "only the full reviewer picks models; send the verdict without --pick" {
-		t.Fatalf("want the lens's picks refused, got %v", err)
+		t.Fatalf("want the second pass's picks refused, got %v", err)
 	}
 	after := loadDag(t, ctx, dag.OID)
 	if fmt.Sprint(after.PlanReview.Reviewers) != fmt.Sprint(before.PlanReview.Reviewers) || fmt.Sprint(after.Tasks) != fmt.Sprint(before.Tasks) {
 		t.Fatalf("a refused verdict changes nothing, got %+v", after.PlanReview.Reviewers)
 	}
-	// without picks the lens's pass is taken, and the full reviewer's picks apply as before
-	verdict(t, ctx, dag.OID, PlanReviewLens_Spec, ReviewVerdict_Pass, "fine")
-	passLenses(t, ctx, dag.OID)
+	// without picks the second pass's verdict is taken, and the full reviewer's picks apply as before
+	verdict(t, ctx, dag.OID, PlanReviewLens_Second, ReviewVerdict_Pass, "fine")
 	if err := RecordPlanReviewVerdict(ctx, dag.OID, reviewerOf(t, ctx, dag.OID, PlanReviewLens_Full).RunID, ReviewVerdict_Pass, "fine", goodPicks()); err != nil {
 		t.Fatal(err)
 	}
@@ -349,11 +355,11 @@ func TestPlanReviewReplacedReviewerVerdictIsRefused(t *testing.T) {
 	stubStopRunWorkers(t)
 	newFakeLead(t)
 	schedule(t, ctx, dag.OID)
-	old := reviewerOf(t, ctx, dag.OID, PlanReviewLens_Order).RunID
+	old := reviewerOf(t, ctx, dag.OID, PlanReviewLens_Second).RunID
 	endRun(t, ctx, dag.ChannelId, old)
 	schedule(t, ctx, dag.OID)
 	before := loadDag(t, ctx, dag.OID).PlanReview
-	replacement := reviewerOf(t, ctx, dag.OID, PlanReviewLens_Order)
+	replacement := reviewerOf(t, ctx, dag.OID, PlanReviewLens_Second)
 	if replacement.RunID == old || replacement.State != PlanReviewerState_Reviewing {
 		t.Fatalf("want a replacement, got %+v", replacement)
 	}
@@ -364,7 +370,7 @@ func TestPlanReviewReplacedReviewerVerdictIsRefused(t *testing.T) {
 	if after := loadDag(t, ctx, dag.OID).PlanReview; fmt.Sprint(after) != fmt.Sprint(before) {
 		t.Fatalf("a refused verdict changes nothing, got %+v", after)
 	}
-	verdict(t, ctx, dag.OID, PlanReviewLens_Order, ReviewVerdict_Pass, "fine")
+	verdict(t, ctx, dag.OID, PlanReviewLens_Second, ReviewVerdict_Pass, "fine")
 }
 
 // the last two verdicts land at the same moment: the dag mutation lock lets one of them settle the round
@@ -374,10 +380,7 @@ func TestPlanReviewSettlesOnce(t *testing.T) {
 	f := newFakeLead(t)
 	handed := stubLeadHandoff(t, ctx, dag)
 	schedule(t, ctx, dag.OID)
-	for _, lens := range planRoundOneLenses[:3] {
-		verdict(t, ctx, dag.OID, lens, ReviewVerdict_Pass, "fine")
-	}
-	last := []waveobj.PlanReviewer{reviewerOf(t, ctx, dag.OID, PlanReviewLens_Tests), reviewerOf(t, ctx, dag.OID, PlanReviewLens_Final)}
+	last := []waveobj.PlanReviewer{reviewerOf(t, ctx, dag.OID, PlanReviewLens_Full), reviewerOf(t, ctx, dag.OID, PlanReviewLens_Second)}
 	var wg sync.WaitGroup
 	errs := make([]error, len(last))
 	for i, r := range last {
@@ -402,44 +405,63 @@ func TestPlanReviewSettlesOnce(t *testing.T) {
 	}
 }
 
-// after a restart the stored stage is all there is: the tick tends only the reviewers with no verdict yet
+// after a restart the stored stage is all there is: the tick tends only the reviewers with no verdict yet. A round
+// stored by a build that ran four lenses resumes too: each lens still out runs the second pass's brief.
 func TestPlanReviewResumesMixedStates(t *testing.T) {
-	ctx, dag := seedPlanReviewDag(t)
-	calls := captureSpawns(t)
-	newFakeLead(t)
-	stored := []waveobj.PlanReviewer{
-		{Lens: PlanReviewLens_Full, State: PlanReviewerState_Passed, Text: "fine", RunID: "gone-full", StartedTs: 1},
-		{Lens: PlanReviewLens_Spec, State: PlanReviewerState_Passed, Text: "fine", RunID: "gone-spec", StartedTs: 1},
-		{Lens: PlanReviewLens_Order, State: PlanReviewerState_Reviewing},
-		{Lens: PlanReviewLens_Tests, State: PlanReviewerState_Reviewing},
-		{Lens: PlanReviewLens_Final, State: PlanReviewerState_Reviewing},
-	}
-	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
-		g.PlanReview.Reviewers = stored
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	schedule(t, ctx, dag.OID)
-	if len(*calls) != 3 {
-		t.Fatalf("want the three reviewing ones started, got %d spawns", len(*calls))
-	}
-	for _, c := range *calls {
-		if !strings.Contains(c.prompt, "You are one of 5 plan reviewers") {
-			t.Fatalf("only lens reviewers start, got %q", c.opts.Label)
-		}
-	}
-	pr := loadDag(t, ctx, dag.OID).PlanReview
-	for i, r := range pr.Reviewers {
-		switch {
-		case i < 2 && (r.State != PlanReviewerState_Passed || r.RunID != stored[i].RunID || r.Respawns != 0):
-			t.Fatalf("a passed reviewer is left alone, got %+v", r)
-		case i >= 2 && (r.State != PlanReviewerState_Reviewing || r.RunID == ""):
-			t.Fatalf("a reviewing one is started, got %+v", r)
-		}
-	}
-	if pr.State != PlanReviewState_Reviewing {
-		t.Fatalf("the round is still out, got %s", pr.State)
+	for _, c := range []struct {
+		name   string
+		stored []waveobj.PlanReviewer
+	}{
+		{"two reviewers", []waveobj.PlanReviewer{
+			{Lens: PlanReviewLens_Full, State: PlanReviewerState_Passed, Text: "fine", RunID: "gone-full", StartedTs: 1},
+			{Lens: PlanReviewLens_Second, State: PlanReviewerState_Reviewing},
+		}},
+		{"stored lenses", []waveobj.PlanReviewer{
+			{Lens: PlanReviewLens_Full, State: PlanReviewerState_Passed, Text: "fine", RunID: "gone-full", StartedTs: 1},
+			{Lens: PlanReviewLens_Spec, State: PlanReviewerState_Passed, Text: "fine", RunID: "gone-spec", StartedTs: 1},
+			{Lens: PlanReviewLens_Order, State: PlanReviewerState_Reviewing},
+			{Lens: PlanReviewLens_Tests, State: PlanReviewerState_Reviewing},
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ctx, dag := seedPlanReviewDag(t)
+			calls := captureSpawns(t)
+			newFakeLead(t)
+			if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+				g.PlanReview.Reviewers = c.stored
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			schedule(t, ctx, dag.OID)
+			reviewing := 0
+			for _, r := range c.stored {
+				if r.State == PlanReviewerState_Reviewing {
+					reviewing++
+				}
+			}
+			if len(*calls) != reviewing {
+				t.Fatalf("want the %d reviewing ones started, got %d spawns", reviewing, len(*calls))
+			}
+			for _, call := range *calls {
+				if !strings.Contains(call.prompt, "You are one of two plan reviewers") {
+					t.Fatalf("only the second pass's brief starts, got %q", call.opts.Label)
+				}
+			}
+			pr := loadDag(t, ctx, dag.OID).PlanReview
+			for i, r := range pr.Reviewers {
+				stored := c.stored[i]
+				switch {
+				case stored.State == PlanReviewerState_Passed && (r.State != PlanReviewerState_Passed || r.RunID != stored.RunID || r.Respawns != 0):
+					t.Fatalf("a passed reviewer is left alone, got %+v", r)
+				case stored.State == PlanReviewerState_Reviewing && (r.State != PlanReviewerState_Reviewing || r.RunID == ""):
+					t.Fatalf("a reviewing one is started, got %+v", r)
+				}
+			}
+			if pr.State != PlanReviewState_Reviewing {
+				t.Fatalf("the round is still out, got %s", pr.State)
+			}
+		})
 	}
 }
 
@@ -455,8 +477,8 @@ func TestPlanReviewOldShapeStartsReviewers(t *testing.T) {
 	}
 	schedule(t, ctx, dag.OID)
 	pr := loadDag(t, ctx, dag.OID).PlanReview
-	if len(*calls) != len(planRoundOneLenses) || len(pr.Reviewers) != len(planRoundOneLenses) {
-		t.Fatalf("want the round's five reviewers, got %d spawns and %+v", len(*calls), pr.Reviewers)
+	if len(*calls) != 2 || len(pr.Reviewers) != 2 {
+		t.Fatalf("want the round's two reviewers, got %d spawns and %+v", len(*calls), pr.Reviewers)
 	}
 	if err := RecordPlanReviewVerdict(ctx, dag.OID, "legacy-run", ReviewVerdict_Pass, "fine", nil); err == nil || !strings.Contains(err.Error(), "is not reviewing") {
 		t.Fatalf("the old session's verdict is refused, got %v", err)
@@ -494,7 +516,7 @@ func TestAcceptPlanReviewClearsDocsAndHandsOff(t *testing.T) {
 	}
 }
 
-// the round's event lists the picks off the tasks, so a lens's verdict that settles the round still carries them
+// the round's event lists the picks off the tasks, so a second pass's verdict that settles the round still carries them
 func TestPlanReviewEventPicksComeFromTheTasks(t *testing.T) {
 	g := &waveobj.TaskGroup{Tasks: picksTasks()}
 	applyPicks(g, goodPicks())
@@ -511,7 +533,7 @@ func TestPlanReviewChecksDependsReasons(t *testing.T) {
 	if p := planReviewPrompt(g, "tree"); !strings.Contains(p, "- "+planReviewDependsReasonItem+"\n") {
 		t.Fatalf("the full review checks each Depends reason:\n%s", p)
 	}
-	if p := planLensPrompt(g, "tree", PlanReviewLens_Order); !strings.Contains(p, planReviewDependsReasonItem) {
-		t.Fatalf("the task order lens checks each Depends reason:\n%s", p)
+	if p := planSecondPassPrompt(g, "tree"); !strings.Contains(p, "- "+planReviewDependsReasonItem+"\n") {
+		t.Fatalf("the second pass checks each Depends reason:\n%s", p)
 	}
 }

@@ -1,6 +1,6 @@
 ---
 name: runs
-description: Use when you need to start an arcterm run (quick, or orchestrator from a goal or a plan file), check on or cancel a run, or see what is waiting on the user — via `wsh runs`; or message a live agent tab, read its answer, or wait until it stops working — via `wsh agents`.
+description: Use when you need to start an arcterm run (quick, or orchestrator from a goal or a plan file), check on or cancel a run, or see what is waiting on the user — via `wsh runs`; or message a live agent tab, read its answer, or wait until it stops working — via `wsh agents`; or clean up what arcterm and its runs left on disk (run trees, old sessions, logs, build output) — via `wsh storage`.
 ---
 
 # arcterm runs from the command line
@@ -82,3 +82,15 @@ Rules:
 - Starting a run does not call for showing it: the user sees it in the cockpit already, and a reveal
   takes them off the surface they are working on. Run `wsh ui reveal run:<id>` only when the user asks
   to see the run.
+
+Clean up what arcterm and its runs left on disk with `wsh storage` (the Settings > Storage section):
+
+- `wsh storage scan --wait` scans afresh and prints the report; `wsh storage report` prints the last scan
+  (`--json` for the full report). It lists each category (`runworktrees`, `sessions`, `housekeeping`,
+  `buildoutput`, `canvases`, `packagecaches`) with every item's id, size and whether clean takes it.
+- `wsh storage clean <category> --all`, or `clean <category> <id...>`, removes the items marked cleanable:
+  they lose nothing, and each is re-checked right before it goes.
+- A guarded item (a run tree with uncommitted changes, or one whose run is not in this app's store) is
+  skipped by clean. Look at what it holds (`git -C <tree> status`, `git log`), then show the user the item
+  and what you found, and ask. Only for an item the user approved, run `wsh storage delete <category> <id>`.
+  What it held is gone afterwards.

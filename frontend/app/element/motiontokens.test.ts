@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { MOTION, cardVariants, composerReveal, computeEntrances, easeFluidCss, initialEntranceState, modalBackdrop, modalPanel, paneReveal, popoverReveal, sheetPanel, shouldFadeEntry, reflowProps } from "./motiontokens";
+import { MOTION, cardVariants, composerReveal, computeEntrances, easeFluidCss, indicatorSlide, initialEntranceState, microFade, modalBackdrop, modalPanel, paneReveal, popoverReveal, settleClass, sheetPanel, shouldFadeEntry, reflowProps, turnTransition, viewFade } from "./motiontokens";
 
 describe("motiontokens", () => {
     it("uses the Fluid feel: macro ~360ms on the chosen ease curve", () => {
@@ -44,6 +44,16 @@ describe("motiontokens", () => {
         expect((sheetPanel.animate as any).transition.duration).toBeCloseTo(MOTION.durMacro);
         expect((sheetPanel.exit as any).transition.duration).toBeCloseTo(MOTION.durExit);
         expect((sheetPanel.animate as any).transition.ease).toEqual(MOTION.easeFluid);
+    });
+});
+
+describe("viewFade", () => {
+    it("fades opacity only on the macro duration, with no exit so swapped views never stack", () => {
+        expect(viewFade.initial).toEqual({ opacity: 0 });
+        expect((viewFade.animate as any).opacity).toBe(1);
+        expect((viewFade.animate as any).transition.duration).toBeCloseTo(MOTION.durMacro);
+        expect((viewFade.animate as any).transition.ease).toEqual(MOTION.easeFluid);
+        expect(viewFade).not.toHaveProperty("exit");
     });
 });
 
@@ -132,5 +142,40 @@ describe("paneReveal", () => {
 
     it("leaves a touch quicker than it arrives, like every other exit", () => {
         expect((paneReveal.exit as any).transition.duration).toBe(MOTION.durExit);
+    });
+});
+
+describe("indicatorSlide", () => {
+    it("moves a shared-layout indicator on the macro duration and the fluid ease", () => {
+        expect(indicatorSlide).toEqual({ duration: MOTION.durMacro, ease: MOTION.easeFluid });
+        expect(indicatorSlide.duration).toBeCloseTo(0.36);
+    });
+});
+
+describe("microFade", () => {
+    it("swaps a mark on opacity alone, micro in and out on the fluid ease", () => {
+        expect(microFade.initial).toEqual({ opacity: 0 });
+        expect(microFade.animate).toMatchObject({ opacity: 1 });
+        expect(microFade.exit).toMatchObject({ opacity: 0 });
+        expect((microFade.animate as any).transition).toEqual({ duration: MOTION.durMicro, ease: MOTION.easeFluid });
+        expect((microFade.exit as any).transition).toEqual({ duration: MOTION.durMicro, ease: MOTION.easeFluid });
+    });
+});
+
+describe("turnTransition", () => {
+    it("times a chevron turn from the tokens and leaves the property to the reducible class", () => {
+        expect(turnTransition).toEqual({
+            transitionDuration: `${MOTION.durMicro}s`,
+            transitionTimingFunction: easeFluidCss,
+        });
+        expect(turnTransition).not.toHaveProperty("transition");
+        expect(turnTransition).not.toHaveProperty("transitionProperty");
+    });
+});
+
+describe("settleClass", () => {
+    it("plays the settle keyframe once and is dropped under reduced motion", () => {
+        expect(settleClass).toContain("animate-[settle_");
+        expect(settleClass).toContain("motion-reduce:animate-none");
     });
 });

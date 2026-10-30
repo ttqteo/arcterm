@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
@@ -27,6 +28,8 @@ const (
 	runIDLen         = 36
 	runPrefixLen     = 8
 	runMarkerExt     = ".run"
+	// past this a folderless marker no store knows goes: a run in another store has made its first tree by then
+	unstoredMarkerAge = 24 * time.Hour
 )
 
 // runMarkerMu makes a marker's create and write one step for this process: two lanes of one run claim at once, and
@@ -184,7 +187,8 @@ func claimRunPrefix(root, runID string) error {
 // tree a process still holds, on Windows most often the lead, whose session stays in its landing tree after it
 // completes; git has already unregistered that tree, so its folder has no .git and nothing in it is kept. Each
 // finished run's folder with no .git goes, then each finished run's marker with no folder left under its prefix.
-// A folder still held is logged and left for the next sweep.
+// A folder still held is logged and left for the next sweep. A marker whose run no store holds goes too once it has
+// no folder and is a day old: a dev app on a throwaway store (Final's) shares this root, and its store is deleted.
 func SweepWorktreeRoot(ctx context.Context) {
 	root := worktreeRoot()
 	if root == "" {
@@ -197,7 +201,7 @@ func SweepWorktreeRoot(ctx context.Context) {
 		}
 		return
 	}
-	finished := finishedRuns(ctx)
+	fate := runFates(ctx)
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -208,37 +212,51 @@ func SweepWorktreeRoot(ctx context.Context) {
 		}
 		runID, _, _ := splitRunKey(key)
 		dir := filepath.Join(root, e.Name())
-		if _, err := os.Lstat(filepath.Join(dir, ".git")); !errors.Is(err, fs.ErrNotExist) || !finished(runID) {
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); !errors.Is(err, fs.ErrNotExist) || fate(runID) != runFinished {
 			continue
 		}
 		if err := RemoveDirExclusive(dir); err != nil {
 			log.Printf("sweeping worktrees: run %s: %v", runID, err)
 		}
 	}
-	sweepRunMarkers(root, finished)
+	sweepRunMarkers(root, fate, time.Now())
 }
 
-// finishedRuns reports whether a run is done or cancelled, reading each run once. A run it cannot read, or that
-// is not stored, is not finished.
-func finishedRuns(ctx context.Context) func(runID string) bool {
-	seen := map[string]bool{}
-	return func(runID string) bool {
-		if done, ok := seen[runID]; ok {
-			return done
+type runFate int
+
+const (
+	runLive runFate = iota
+	runFinished
+	runUnstored
+)
+
+// runFates reports whether a run is finished (done or cancelled), not stored, or live, reading each run once. A
+// run it cannot read is live.
+func runFates(ctx context.Context) func(runID string) runFate {
+	seen := map[string]runFate{}
+	return func(runID string) runFate {
+		if f, ok := seen[runID]; ok {
+			return f
 		}
 		run, err := wstore.DBGet[*waveobj.Run](ctx, runID)
-		if err != nil {
+		f := runLive
+		switch {
+		case err != nil:
 			log.Printf("sweeping worktrees: reading run %s: %v", runID, err)
+		case run == nil:
+			f = runUnstored
+		case run.Status == jarvis.RunStatus_Done || run.Status == jarvis.RunStatus_Cancelled:
+			f = runFinished
 		}
-		done := err == nil && run != nil && (run.Status == jarvis.RunStatus_Done || run.Status == jarvis.RunStatus_Cancelled)
-		seen[runID] = done
-		return done
+		seen[runID] = f
+		return f
 	}
 }
 
 // sweepRunMarkers deletes the marker of each finished run with no folder under its prefix, its own or another
-// run's full-key one: a marker decides where every key with its prefix resolves.
-func sweepRunMarkers(root string, finished func(runID string) bool) {
+// run's full-key one: a marker decides where every key with its prefix resolves. An unstored run's marker goes
+// under the same rule once it is unstoredMarkerAge old.
+func sweepRunMarkers(root string, fate func(runID string) runFate, now time.Time) {
 	// held across the listing and the deletes, so no claim lands between them
 	runMarkerMu.Lock()
 	defer runMarkerMu.Unlock()
@@ -264,11 +282,23 @@ func sweepRunMarkers(root string, finished func(runID string) bool) {
 			log.Printf("sweeping worktree markers: %v", err)
 			continue
 		}
-		if !finished(string(owner)) {
+		if !markerGone(e, fate(string(owner)), now) {
 			continue
 		}
 		if err := os.Remove(marker); err != nil {
 			log.Printf("sweeping worktree markers: %v", err)
 		}
 	}
+}
+
+func markerGone(marker fs.DirEntry, f runFate, now time.Time) bool {
+	if f != runUnstored {
+		return f == runFinished
+	}
+	info, err := marker.Info()
+	if err != nil {
+		log.Printf("sweeping worktree markers: %v", err)
+		return false
+	}
+	return now.Sub(info.ModTime()) >= unstoredMarkerAge
 }

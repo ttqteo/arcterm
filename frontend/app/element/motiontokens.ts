@@ -82,6 +82,26 @@ export const foldReveal: Variants = {
     },
 };
 
+// Indicator slide: a shared-layout (layoutId) bar moving between sibling tabs. durMacro because easeFluid
+// front-loads the travel, so the bar arrives in the first frames and the rest is settle; durMicro over a long
+// jump reads as a snap. Named for the pattern so another tab strip can reuse it.
+export const indicatorSlide: Transition = { duration: MOTION.durMacro, ease: MOTION.easeFluid };
+
+// View swap: a pane trading what it shows (the next question, the design, another step). Opacity only, since a
+// whole pane scaling reads as a zoom; no exit, so the old view leaves at once and two never stack in the flow.
+export const viewFade: Variants = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1, transition: { duration: MOTION.durMacro, ease: MOTION.easeFluid } },
+};
+
+// Micro swap: one small mark trading for another in place (a status glyph, copy -> copied). Opacity only and
+// micro both ways, so the old mark and the new one overlap briefly instead of blinking through an empty frame.
+export const microFade: Variants = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1, transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+    exit: { opacity: 0, transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
+};
+
 // Popover / dropdown reveal. Opacity + scale only (never x/y — consistent with cardVariants); the
 // panel scales from its anchor corner via a per-site transform-origin. Snappy in and out — a dropdown
 // dismiss should not linger.
@@ -107,6 +127,14 @@ export function shouldFadeEntry(kind: string): boolean {
 
 // CSS-transition form of easeFluid (Framer wants the array; CSS `transition:` wants the string).
 export const easeFluidCss = `cubic-bezier(${MOTION.easeFluid.join(", ")})`;
+
+// Disclosure chevron turn: pair with `transition-transform motion-reduce:transition-none` on the icon. Only the
+// timing lives here, so reduced motion (transition-property: none) still wins over the inline style.
+export const turnTransition = { transitionDuration: `${MOTION.durMicro}s`, transitionTimingFunction: easeFluidCss };
+
+// Completion settle (moment 4): the one-shot `@keyframes settle` in tailwindsetup.css, gated by useSettle. A
+// literal so Tailwind's scanner sees the class; 0.5s matches useSettle's hold.
+export const settleClass = "animate-[settle_0.5s_ease-out] motion-reduce:animate-none";
 
 // No-cascade entrance guard (shared by Channels, Files, and future list surfaces). Switching the
 // active `key` (channel / files source / …) reseeds silently so a whole-list swap never cascades;

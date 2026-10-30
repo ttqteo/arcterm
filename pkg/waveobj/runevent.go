@@ -100,6 +100,11 @@ const (
 	// owning run so the lead reads it in its status. It wakes nobody.
 	RunEventKindTaskTold = "task-told"
 
+	// task-goalpost: arc-mod saw a task's current worker lower a check (a skipped test, a loosened assertion,
+	// --no-verify), recorded on the owning run ("taskid", "runid": the worker's, "findings": the detector's
+	// findings). It wakes nobody: the task's reviewer reads them and passes or fails each one.
+	RunEventKindTaskGoalpost = "task-goalpost"
+
 	// merge-point Verify (orchestrator redesign §4): the plan's Verify command, run where lanes land after
 	// a batch of squash merges. "batch" (the tip ids in merge order) is set only when the batch has more
 	// than one tip. "bisect" (the extra Verify runs a bisect took) is set only on a bisected batch's events.

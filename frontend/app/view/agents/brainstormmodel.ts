@@ -540,8 +540,12 @@ export function treeLine(f: BrainstormFile, asking: boolean, runText?: string): 
     if (f.check != null) {
         return { text: "builder check" };
     }
+    if (judgeWait(f, false)) {
+        return { text: `judge weighing question ${f.question!.n}` };
+    }
+    // only a closed question means the agent is writing up an answer; a kept one is a change being taken in
     if (f.working != null) {
-        return { text: "writing up your answer" };
+        return { text: f.question == null ? "writing up your answer" : "working" };
     }
     return { text: "in progress" };
 }
@@ -640,6 +644,8 @@ export function questionBoards(f: BrainstormFile, base: string | null): string[]
 }
 
 export type HistoryRow = {
+    // the entry's place in the history: entries only append, so a new one leaves the others' keys alone
+    key: string;
     kind: "question" | "recon";
     // a question dropped after pushback: nothing was decided by it
     dropped: boolean;
@@ -673,6 +679,7 @@ function historyRow(f: BrainstormFile, h: HistoryEntry, i: number, unseen: Unsee
     const answer = h.picked != null ? null : (recon ? h.a || h.q : h.a) || null;
     const why = recon ? null : (h.why ?? null);
     return {
+        key: `${h.kind}:${i}`,
         kind: h.kind,
         dropped: h.superseded === true,
         label: recon ? "Recon" : `Q${h.n ?? i + 1}`,

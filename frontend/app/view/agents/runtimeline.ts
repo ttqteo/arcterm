@@ -148,8 +148,10 @@ const STAGE_ROLE_TITLE: Record<string, string> = {
 };
 
 // PLAN_REVIEW_LENS_TITLE names each plan reviewer by its lens: the one map the graph, timeline and tree read.
+// spec, order, tests and final are an older round 1's lenses, kept because stored rounds carry them.
 const PLAN_REVIEW_LENS_TITLE: Record<string, string> = {
     full: "Full review",
+    second: "Second pass",
     spec: "Spec coverage",
     order: "Task order and files",
     tests: "Tests and commands",

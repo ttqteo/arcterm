@@ -642,6 +642,15 @@ describe("treeLine", () => {
         expect(treeLine(file({ working: "Writing" }), false).text).toBe("writing up your answer");
         expect(treeLine(file(), false)).toEqual({ text: "in progress" });
     });
+
+    it("names the judge's wait, not an answer being written up", () => {
+        expect(treeLine(waitFile(), false).text).toBe("judge weighing question 4");
+    });
+
+    it("reads a kept question with work underway as working, nothing answered", () => {
+        const s = shownFile(file({ question: { n: 3, text: "?", part: "a" } }), { at: 1, modifiedMs: 1, kind: "line" });
+        expect(treeLine(s, false).text).toBe("working");
+    });
 });
 
 describe("brainstormLine", () => {
@@ -719,6 +728,20 @@ describe("historyRows", () => {
             ],
         });
         expect(historyRows(f).map((r) => r.label)).toEqual(["Recon", "Q1", "Q2"]);
+    });
+
+    it("keys each row by its history entry, so an appended entry leaves the others' keys alone", () => {
+        const before = file({
+            history: [
+                { kind: "question", n: 1, q: "q1", a: "a1", into: [] },
+                { kind: "recon", q: "rq", a: "ra", into: [] },
+            ],
+        });
+        const after = file({
+            history: [...before.history, { kind: "question", n: 2, q: "q2", a: "a2", into: [] }],
+        });
+        expect(historyRows(before).map((r) => r.key)).toEqual(["recon:1", "question:0"]);
+        expect(historyRows(after).map((r) => r.key)).toEqual(["recon:1", "question:0", "question:2"]);
     });
 
     it("lists every option offered, the picked one marked, and no separate answer", () => {

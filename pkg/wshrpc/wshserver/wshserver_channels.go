@@ -85,8 +85,8 @@ func (ws *WshServer) GetChannelRunChangesCommand(ctx context.Context, data wshrp
 	if err != nil {
 		return nil, fmt.Errorf("getting channel run changes: %w", err)
 	}
-	// a brainstorm session's run is never in the caller's known map, so it is always among the returned rows and its
-	// id is found here
+	// a brainstorm session's run (builder check, judge) is never in the caller's known map, so it is always among the
+	// returned rows and its id is found here
 	runs, dropped := withoutBrainstormSessions(runs)
 	if len(dropped) > 0 {
 		ids = slices.DeleteFunc(ids, func(id string) bool { return dropped[id] })

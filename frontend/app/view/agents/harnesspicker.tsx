@@ -7,6 +7,7 @@
 // for a run composer.
 // The pure derivation functions live here too so the picker and the composer dispatch share one module.
 
+import { turnTransition } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { REGION_LABEL } from "@/app/view/jarvis/briefstyle";
 import { cn } from "@/util/util";
@@ -169,7 +170,14 @@ export function HarnessPicker({
                 {pref.saving ? (
                     <span className="text-[10.5px] font-normal text-muted">saving</span>
                 ) : (
-                    <ChevronDown size={bare ? 11 : 12} className={cn("flex-none text-muted", open && "rotate-180")} />
+                    <ChevronDown
+                        size={bare ? 11 : 12}
+                        style={turnTransition}
+                        className={cn(
+                            "flex-none text-muted transition-transform motion-reduce:transition-none",
+                            open && "rotate-180"
+                        )}
+                    />
                 )}
             </button>
             <FloatingPortal>

@@ -66,7 +66,7 @@ func reviewerOf(t *testing.T, ctx context.Context, dagID, lens string) waveobj.P
 	return waveobj.PlanReviewer{}
 }
 
-// passLenses records a pass from every reviewer still reviewing but the full one.
+// passLenses records a pass from every reviewer still reviewing but the full one: the second pass.
 func passLenses(t *testing.T, ctx context.Context, dagID string) {
 	t.Helper()
 	for _, r := range loadDag(t, ctx, dagID).PlanReview.Reviewers {
@@ -78,7 +78,7 @@ func passLenses(t *testing.T, ctx context.Context, dagID string) {
 	}
 }
 
-// startPlanReview runs the first tick, which spawns the round's reviewers, passes the four lenses, and returns the
+// startPlanReview runs the first tick, which spawns the round's reviewers, passes the second pass, and returns the
 // full reviewer's run id: the round then settles on its verdict alone.
 func startPlanReview(t *testing.T, ctx context.Context, dagID string) string {
 	t.Helper()

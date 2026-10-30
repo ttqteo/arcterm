@@ -6,7 +6,7 @@ motion to any surface.
 The app-wide revamp this came out of is finished — every surface landed between 2026-07-03 and
 2026-07-04, so the rollout table that used to live here is gone (the per-surface detail is in the
 design specs listed at the bottom, and in git). What remains is the part that still governs new
-work: the north star, the shared primitives, the eight moments, and the guardrails.
+work: the north star, the shared primitives, the moments, and the guardrails.
 
 ## North star
 
@@ -27,7 +27,9 @@ work: the north star, the shared primitives, the eight moments, and the guardrai
 
 | Artifact | Role |
 |---|---|
-| `frontend/app/element/motiontokens.ts` | Durations (`durMacro`/`durMicro`/`durExit`), `easeFluid`, variant presets (`cardVariants`, `reorderLift`, `composerReveal`, `paneReveal`, `popoverReveal`, `reflowProps`) + the `shouldFadeEntry` burst guard. **Import from here; do not inline motion values.** |
+| `frontend/app/element/motiontokens.ts` | Durations (`durMacro`/`durMicro`/`durExit`), `easeFluid`, variant presets (`cardVariants`, `reorderLift`, `composerReveal`, `paneReveal`, `popoverReveal`, `microFade`, `reflowProps`, `indicatorSlide`), `turnTransition` (chevron turn timing), `settleClass` (moment 4), `computeEntrances` (no-cascade guard) + the `shouldFadeEntry` burst guard. **Import from here; do not inline motion values.** |
+| `frontend/app/element/crossfade.tsx` | Micro cross-fade for a mark swapping in place (DAG state glyph, copy -> copied); never plays on mount. |
+| `frontend/app/element/copyfeedback.ts` | `useCopyFeedback`: the one copy-to-clipboard outcome (copied / failed) and its hold, for every copy affordance. |
 | `frontend/app/element/popoverreveal.tsx` | Shared dropdown/popover reveal. Wraps the panel only; callers own positioning + backdrop. Adopted across all live cockpit popovers. |
 | `frontend/tailwindsetup.css` | CSS-only ambient loops: `@keyframes pulseDot`, `breatheGlow`, `settle`. Token-colored via `color-mix(... var(--color-*) ...)` — no raw hex. |
 | `frontend/app/element/motiontokens.test.ts` | Guards token values + the burst-guard helper. |
@@ -36,7 +38,7 @@ work: the north star, the shared primitives, the eight moments, and the guardrai
 Framer (`motion/react`, v12) is the default tool. CSS is the fallback **only** for perpetual ambient
 loops (glow, pulse) and pre-existing hover/press micro-transitions.
 
-## The eight moments
+## The moments
 
 Designed and shipped on the Cockpit surface; every other surface maps its state changes onto this
 same vocabulary rather than inventing one.
@@ -52,6 +54,7 @@ same vocabulary rather than inventing one.
 | 6b | Disclosure pane reveal | Framer | `paneReveal` (same signature, macro — micro reads as a snap over a few hundred px) |
 | 7 | Status pulse + micro | CSS | `pulseDot` (unified 1.6s) + kept hover/press |
 | 8 | Drag lift + drop | Framer | `reorderLift` (`whileDrag`) + `dragTransition` drop-settle |
+| 9 | Active-tab indicator slide | Framer | `indicatorSlide` on a `layoutId` bar (command palette scope tabs) |
 
 ## Guardrails
 

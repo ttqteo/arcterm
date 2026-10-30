@@ -1,53 +1,34 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState } from "react";
+import { makeIconClass } from "@/util/util";
+import { useCopyFeedback } from "./copyfeedback";
+import { CrossFade } from "./crossfade";
 import { IconButton } from "./iconbutton";
 
 type CopyButtonProps = {
     title: string;
     className?: string;
-    onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+    text: string;
 };
 
-const CopyButton = ({ title, className, onClick }: CopyButtonProps) => {
-    const [isCopied, setIsCopied] = useState(false);
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+const ICON = { idle: "copy", copied: "check", failed: "xmark" } as const;
+const TONE = { idle: undefined, copied: "opacity-100 *:text-success", failed: "opacity-100 *:text-error" } as const;
 
-    const handleOnClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-        if (isCopied) {
-            return;
-        }
-        setIsCopied(true);
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-        }
-        timeoutRef.current = setTimeout(() => {
-            setIsCopied(false);
-            timeoutRef.current = null;
-        }, 2000);
-
-        if (onClick) {
-            onClick(e);
-        }
-    };
-
-    useEffect(() => {
-        return () => {
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-            }
-        };
-    }, []);
-
+const CopyButton = ({ title, className, text }: CopyButtonProps) => {
+    const { state, copy } = useCopyFeedback();
     return (
         <IconButton
             decl={{
                 elemtype: "iconbutton",
-                icon: isCopied ? "check" : "copy",
-                title,
-                className: isCopied ? "opacity-100 *:text-success" : undefined,
-                click: handleOnClick,
+                icon: (
+                    <CrossFade swapKey={state}>
+                        <i className={makeIconClass(ICON[state], true)} />
+                    </CrossFade>
+                ),
+                title: state === "failed" ? "Copy failed" : title,
+                className: TONE[state],
+                click: () => copy(text),
             }}
             className={className}
         ></IconButton>

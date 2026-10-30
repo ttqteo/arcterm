@@ -377,41 +377,51 @@ describe("stageEntries", () => {
         round: 1,
         reviewers: [
             { lens: "full", state: "passed", runid: "a" },
-            { lens: "spec", state: "failed", runid: "b" },
-            { lens: "order", state: "lost", runid: "c" },
-            { lens: "tests", state: "reviewing", runid: "d" },
-            { lens: "final", state: "passed", runid: "e" },
+            { lens: "second", state: "reviewing", runid: "b" },
         ],
     };
     const chips = (g: object) =>
         stageEntries(g as unknown as TaskGroup, lead)[0].reviewers.map((r) => `${r.title} · ${r.state} · ${r.model}`);
 
-    it("lists five reviewers, full on the reviewer route and the lenses on sonnet with no Light reviewers route", () => {
+    it("lists two reviewers, full on the reviewer route and the second pass on sonnet with no Light reviewers route", () => {
         expect(chips({ tasks: [], planreview: roundOne })).toEqual([
             "Full review · passed · opus-5-5",
-            "Spec coverage · failed · sonnet",
-            "Task order and files · lost · sonnet",
-            "Tests and commands · reviewing · sonnet",
-            "Final coverage · passed · sonnet",
+            "Second pass · reviewing · sonnet",
         ]);
         const [entry] = stageEntries({ tasks: [], planreview: roundOne } as unknown as TaskGroup, lead);
-        expect(entry.reviewers.map((r) => r.lens)).toEqual(["full", "spec", "order", "tests", "final"]);
+        expect(entry.reviewers.map((r) => r.lens)).toEqual(["full", "second"]);
         expect(entry.text).toBe("plan review · reviewing · round 1");
     });
 
-    it("puts the lenses on the Light reviewers route and full on the reviewer route when the group names them", () => {
+    it("puts the second pass on the Light reviewers route and full on the reviewer route when the group names them", () => {
         const g = {
             tasks: [],
             planreview: roundOne,
             reviewerroute: { model: "sonnet" },
             lightreviewerroute: { runtime: "claude", model: "claude-haiku-5-5" },
         };
-        expect(chips(g)).toEqual([
-            "Full review · passed · sonnet",
-            "Spec coverage · failed · haiku-5-5",
-            "Task order and files · lost · haiku-5-5",
-            "Tests and commands · reviewing · haiku-5-5",
-            "Final coverage · passed · haiku-5-5",
+        expect(chips(g)).toEqual(["Full review · passed · sonnet", "Second pass · reviewing · haiku-5-5"]);
+    });
+
+    // a round stored by a build that split the checklist into four lenses still renders them
+    it("titles a stored round's lenses and puts them on the Light reviewers route", () => {
+        const stored = {
+            state: "reviewing",
+            round: 1,
+            reviewers: [
+                { lens: "full", state: "passed", runid: "a" },
+                { lens: "spec", state: "failed", runid: "b" },
+                { lens: "order", state: "lost", runid: "c" },
+                { lens: "tests", state: "reviewing", runid: "d" },
+                { lens: "final", state: "passed", runid: "e" },
+            ],
+        };
+        expect(chips({ tasks: [], planreview: stored })).toEqual([
+            "Full review · passed · opus-5-5",
+            "Spec coverage · failed · sonnet",
+            "Task order and files · lost · sonnet",
+            "Tests and commands · reviewing · sonnet",
+            "Final coverage · passed · sonnet",
         ]);
     });
 

@@ -69,8 +69,9 @@ describe("eventTitle", () => {
 
 describe("planReviewLensTitle", () => {
     it("titles every lens, and falls back to the key for one it does not know", () => {
-        expect(["full", "spec", "order", "tests", "final", "followup"].map(planReviewLensTitle)).toEqual([
+        expect(["full", "second", "spec", "order", "tests", "final", "followup"].map(planReviewLensTitle)).toEqual([
             "Full review",
+            "Second pass",
             "Spec coverage",
             "Task order and files",
             "Tests and commands",

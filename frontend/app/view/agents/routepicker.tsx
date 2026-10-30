@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { turnTransition } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { cn } from "@/util/util";
 import {
@@ -215,7 +216,14 @@ export function RoutePicker({
                         refused
                     </span>
                 ) : null}
-                <ChevronDown size={12} className={cn("flex-none text-muted", open && "rotate-180")} />
+                <ChevronDown
+                    size={12}
+                    style={turnTransition}
+                    className={cn(
+                        "flex-none text-muted transition-transform motion-reduce:transition-none",
+                        open && "rotate-180"
+                    )}
+                />
             </button>
             <FloatingPortal>
                 {/* above ModalShell's z-[70] backdrop: the launcher's pickers live inside a modal */}

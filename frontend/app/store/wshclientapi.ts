@@ -498,6 +498,12 @@ export class RpcApiType {
         return client.wshRpcCall("dagasks", data, opts);
     }
 
+    // command "daggoalpost" [call]
+    DagGoalpostCommand(client: WshClient, data: CommandDagGoalpostData, opts?: RpcOpts): Promise<CommandDagGoalpostRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "daggoalpost", data, opts);
+        return client.wshRpcCall("daggoalpost", data, opts);
+    }
+
     // command "dagmerge" [call]
     DagMergeCommand(client: WshClient, data: CommandDagMergeData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "dagmerge", data, opts);

@@ -942,6 +942,18 @@ declare global {
         asks: DagAskItem[];
     };
 
+    // wshrpc.CommandDagGoalpostData
+    type CommandDagGoalpostData = {
+        channelid: string;
+        runid: string;
+        findings: GoalpostFinding[];
+    };
+
+    // wshrpc.CommandDagGoalpostRtnData
+    type CommandDagGoalpostRtnData = {
+        recorded: boolean;
+    };
+
     // wshrpc.CommandDagMergeData
     type CommandDagMergeData = {
         channelid: string;
@@ -3026,6 +3038,15 @@ declare global {
         behind?: number;
         hasbase?: boolean;
         error?: string;
+    };
+
+    // wshrpc.GoalpostFinding
+    type GoalpostFinding = {
+        rule: string;
+        file?: string;
+        title: string;
+        before?: string[];
+        after?: string[];
     };
 
     // wshrpc.HarnessInfo

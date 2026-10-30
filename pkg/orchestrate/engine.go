@@ -954,6 +954,7 @@ func workerContract(g *waveobj.TaskGroup, task *waveobj.TaskNode, runtime, tree 
 		fmt.Fprintf(&b, ", and `%s`,", g.Check)
 	}
 	b.WriteString(" and get them passing before you complete; if you can't, ask.")
+	b.WriteString(" When your task says to watch a test fail first, run it before you write the code it tests: a compile error against today's code counts as that failure.")
 	if baseCheckFailed(g) {
 		fmt.Fprintf(&b, " `%s` already fails on the base, before any task (%s): don't fix those failures or count them as yours, and name them under Found not fixed in your report.", g.Check, g.BaseCheck.Detail)
 	}

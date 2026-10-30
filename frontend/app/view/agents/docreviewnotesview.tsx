@@ -5,6 +5,7 @@
 // offsets into the document's text, painting the quoted passages, the note field under a selection, and the
 // rail's list of notes.
 
+import { turnTransition } from "@/app/element/motiontokens";
 import { cn } from "@/util/util";
 import { ChevronDown, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from "react";
@@ -270,7 +271,12 @@ export function NotesSection(p: {
                 <span className="flex-1 text-[10.5px] font-bold uppercase tracking-[0.1em]">
                     Your notes · {p.notes.length}
                 </span>
-                <ChevronDown size={13} aria-hidden className={cn(p.collapsed && "-rotate-90")} />
+                <ChevronDown
+                    size={13}
+                    aria-hidden
+                    style={turnTransition}
+                    className={cn("transition-transform motion-reduce:transition-none", p.collapsed && "-rotate-90")}
+                />
             </button>
             {p.collapsed ? null : (
                 <div className="sc max-h-[300px] overflow-y-auto px-5 pb-2">

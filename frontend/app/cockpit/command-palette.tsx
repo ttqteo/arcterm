@@ -10,6 +10,7 @@
 // second shortcut. The rules live in the pure palette-*.ts modules; this file wires sources to them.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
+import { indicatorSlide } from "@/app/element/motiontokens";
 import { ModalShell } from "@/app/modals/modalshell";
 import { globalStore } from "@/app/store/jotaiStore";
 import { bindingsAtom } from "@/app/store/keybindings/store";
@@ -55,6 +56,7 @@ import { joinRepoPath, sameRepoPath } from "@/util/paths";
 import { isMacOS } from "@/util/platformutil";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue } from "jotai";
+import { LayoutGroup, motion } from "motion/react";
 import {
     ArrowUpRight,
     CircleX,
@@ -69,7 +71,7 @@ import {
     Users,
     type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { THING_KINDS } from "./actions";
 import {
     verbRows,
@@ -310,6 +312,9 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     const [loadedFiles, setLoadedFiles] = useState<{ path: string; index?: CodeIndex; error?: string } | null>(null);
     // Canvases: the selected agent's project's, re-read per open
     const [canvases, setCanvases] = useState<{ agentId: string; topics: string[] } | null>(null);
+    // nav outlives a close, so the first render after an open shows the last open's scope; a new scope-tab group
+    // per open keeps that stale render from sliding the indicator
+    const [openGen, setOpenGen] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const previewRef = useRef<HTMLDivElement>(null);
@@ -358,12 +363,14 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
     // the active project, else the one last used, else the only one
     const homeChannel = palettePickChannel(channel, projectRows, recentProjects[0] ?? null);
 
-    // Each open starts fresh on the surface's own scope, and focuses the input after paint.
-    useEffect(() => {
+    // Each open starts fresh on the surface's own scope, and focuses the input after paint. a layout effect, so
+    // the reset nav and the new openGen commit before the open's first paint: no frame shows the last open's scope.
+    useLayoutEffect(() => {
         if (!open) {
             return;
         }
         setNav(initialNav(globalStore.get(model.surfaceAtom)));
+        setOpenGen((g) => g + 1);
         setDraft(null);
         setArmed(null);
         const raf = requestAnimationFrame(() => inputRef.current?.focus());
@@ -1693,34 +1700,45 @@ export function CommandPalette({ model }: { model: AgentsViewModel }) {
                         aria-label="Scope"
                         className="flex shrink-0 items-stretch gap-1 border-b border-border px-2.5"
                     >
-                        {SCOPES.map((s) => {
-                            const on = s.id === nav.scope;
-                            const count = s.id === "needs" ? needs.length : 0;
-                            return (
-                                <button
-                                    key={s.id}
-                                    type="button"
-                                    aria-pressed={on}
-                                    data-palette-scope={s.id}
-                                    tabIndex={-1}
-                                    onClick={() => {
-                                        setNav(pickScope(nav, s.id));
-                                        inputRef.current?.focus();
-                                    }}
-                                    className={cn(
-                                        "flex cursor-pointer items-center gap-1.5 px-[7px] pb-[9px] pt-2 text-[12.5px] font-medium",
-                                        on
-                                            ? "text-primary shadow-[inset_0_-2px_0_var(--color-accent)]"
-                                            : "text-muted hover:text-secondary"
-                                    )}
-                                >
-                                    <span>{s.label}</span>
-                                    {count > 0 ? (
-                                        <span className="text-[10.5px] font-bold tabular-nums text-asking">{count}</span>
-                                    ) : null}
-                                </button>
-                            );
-                        })}
+                        {/* keyed: LayoutGroup reads its id only on mount, so each open remounts it with no snapshot and the bar
+                            draws in place instead of sliding from the last open's scope */}
+                        <LayoutGroup key={openGen} id={`palette-scope-${openGen}`}>
+                            {SCOPES.map((s) => {
+                                const on = s.id === nav.scope;
+                                const count = s.id === "needs" ? needs.length : 0;
+                                return (
+                                    <button
+                                        key={s.id}
+                                        type="button"
+                                        aria-pressed={on}
+                                        data-palette-scope={s.id}
+                                        tabIndex={-1}
+                                        onClick={() => {
+                                            setNav(pickScope(nav, s.id));
+                                            inputRef.current?.focus();
+                                        }}
+                                        className={cn(
+                                            "relative flex cursor-pointer items-center gap-1.5 px-[7px] pb-[9px] pt-2 text-[12.5px] font-medium",
+                                            on ? "text-primary" : "text-muted hover:text-secondary"
+                                        )}
+                                    >
+                                        <span>{s.label}</span>
+                                        {count > 0 ? (
+                                            <span className="text-[10.5px] font-bold tabular-nums text-asking">{count}</span>
+                                        ) : null}
+                                        {on ? (
+                                            <motion.span
+                                                layoutId="palette-scope-indicator"
+                                                data-palette-scope-indicator
+                                                aria-hidden
+                                                transition={indicatorSlide}
+                                                className="absolute inset-x-0 bottom-0 h-[2px] bg-accent"
+                                            />
+                                        ) : null}
+                                    </button>
+                                );
+                            })}
+                        </LayoutGroup>
                     </div>
                     {paletteError ? (
                         <div

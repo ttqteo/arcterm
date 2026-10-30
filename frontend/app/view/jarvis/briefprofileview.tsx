@@ -312,7 +312,7 @@ function DefaultsFields({
             </DefaultRow>
             <DefaultRow
                 label="Light reviewers route"
-                hint="Plan review lenses and follow-up"
+                hint="Plan review second pass and follow-up"
                 aside={aside("lightreviewerroute", "Light reviewers route")}
                 attrs={{ "data-light-reviewers-row": "" }}
             >

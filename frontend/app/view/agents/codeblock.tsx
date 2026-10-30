@@ -1,10 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { useCopyFeedback, type CopyState } from "@/app/element/copyfeedback";
+import { CrossFade } from "@/app/element/crossfade";
 import { cn } from "@/util/util";
 import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
-import { useState } from "react";
 import { highlightLine, isPlainLang, type CodeToken } from "./highlight";
 
 // Wrap long lines instead of scrolling sideways, on by default. One mode for every code block, kept across
@@ -14,21 +15,12 @@ const codeWrapAtom = atomWithStorage<boolean>("cockpit.codeblock.wrap", true);
 // Styled fenced-code block for transcript prose (Wave-transcript-feed.dc.html code block).
 // lang label + optional path + wrap/copy affordances + line-number gutter + tokenized source.
 export function CodeBlock({ code, lang, path }: { code: string; lang?: string; path?: string }) {
-    const [copied, setCopied] = useState(false);
+    const { state, copy } = useCopyFeedback();
     const [wrap, setWrap] = useAtom(codeWrapAtom);
     const lines = code.replace(/\n$/, "").split("\n");
     const plain = isPlainLang(lang);
     const tokens = (ln: string): CodeToken[] =>
         plain ? [{ t: ln || " ", cls: "text-syntax-ident" }] : highlightLine(ln);
-    const copy = () => {
-        try {
-            void navigator.clipboard?.writeText(code);
-        } catch {
-            // clipboard unavailable — no-op
-        }
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1400);
-    };
     return (
         <div className="my-1.5 overflow-hidden rounded-[10px] border border-border bg-surface-code">
             <div
@@ -49,8 +41,8 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
                 >
                     Wrap
                 </button>
-                <button type="button" onClick={copy} className={cnHeadButton(copied ? "text-success" : "text-muted")}>
-                    {copied ? "Copied" : "Copy"}
+                <button type="button" onClick={() => copy(code)} className={cnHeadButton(COPY_TONE[state])}>
+                    <CrossFade swapKey={state}>{COPY_LABEL[state]}</CrossFade>
                 </button>
             </div>
             <div className="overflow-x-auto">
@@ -82,6 +74,9 @@ export function CodeBlock({ code, lang, path }: { code: string; lang?: string; p
         </div>
     );
 }
+
+const COPY_LABEL: Record<CopyState, string> = { idle: "Copy", copied: "Copied", failed: "Copy failed" };
+const COPY_TONE: Record<CopyState, string> = { idle: "text-muted", copied: "text-success", failed: "text-error" };
 
 function cnHeadButton(color: string): string {
     return (
