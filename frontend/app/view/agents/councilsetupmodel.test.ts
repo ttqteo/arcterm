@@ -1123,6 +1123,15 @@ describe("Auto-generate", () => {
         expect(modeChip(d)).toBe("Review · picked from the conversation");
     });
 
+    it("sends picked from the conversation with Start council for a mode it picked, picked by hand once flipped", () => {
+        const d = generated({ mode: "brainstorm" });
+        expect(startData(d).mode).toBe("brainstorm");
+        expect(startData(d).modewhy).toBe("picked from the conversation");
+        const flipped = flipMode(d, lib);
+        expect(startData(flipped).mode).toBe("review");
+        expect(startData(flipped).modewhy).toBe("picked by hand");
+    });
+
     it("moves the group to Product ideas for a Brainstorm answer, unless the person picked a group", () => {
         const d = generated({ mode: "brainstorm" });
         expect(d.group).toBe("product-ideas");

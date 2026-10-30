@@ -692,7 +692,10 @@ export function startData(draft: CouncilSetupDraft): CommandCouncilStartData {
         pause: draft.pause && !draftHasAgents(draft),
         sessionid: draft.sessionId || undefined,
         mode: draft.mode,
-        modewhy: modeReason(draft) || "picked by hand",
+        // Auto-generate's pick has no reason of its own, but it was not a hand pick either (as modeChip says)
+        modewhy:
+            modeReason(draft) ||
+            (draft.modeFrom === "conversation" ? "picked from the conversation" : "picked by hand"),
         rounds: roundsFor(draft),
     };
 }
