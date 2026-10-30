@@ -39,6 +39,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/services"
 	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 	"github.com/wavetermdev/waveterm/pkg/sleepwatch"
+	"github.com/wavetermdev/waveterm/pkg/stablewsh"
 	"github.com/wavetermdev/waveterm/pkg/telebot"
 	"github.com/wavetermdev/waveterm/pkg/util/envutil"
 	"github.com/wavetermdev/waveterm/pkg/util/jobobject"
@@ -262,6 +263,21 @@ func publishNotice(title, message, level string) {
 func harnessUpdateCheckEnabled() bool {
 	v := wconfig.GetWatcher().GetFullConfig().Settings.HarnessUpdateCheck
 	return v == nil || *v
+}
+
+// startStableWshWatch keeps the ~/.arc/bin/wsh every agent hook runs from this app's own wsh: on a Mac, macOS can
+// start killing that one file mid-session, and the hooks would fail until the next launch's install-agent-hooks. A dev
+// app that leaves the global hooks alone leaves this copy alone too.
+func startStableWshWatch() {
+	if wavebase.NoGlobalInstall() {
+		return
+	}
+	src, err := shellutil.GetLocalWshBinaryPath(wavebase.WaveVersion, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		log.Printf("stablewsh: no wsh to heal the hooks' copy from: %v\n", err)
+		return
+	}
+	stablewsh.StartWatch(context.Background(), src, stablewsh.Path(wavebase.GetHomeDir()))
 }
 
 // startJobQueue builds the heavy-job queue every agent's shell hook and every engine run waits in, and publishes
@@ -544,6 +560,7 @@ func main() {
 	wshserver.StartAgentSleepLoop(context.Background(), func(n wshrpc.NotifyCommandData) { publishNotice(n.Title, n.Message, n.Level) })
 	// the Mac stays out of idle sleep while agents, runs or heavy jobs work (power:keepawake)
 	wshserver.StartKeepAwake(context.Background())
+	startStableWshWatch()
 	// the tray icon's red dot when memory pressure turns critical (spec 2026-10-15-tray-popover-design.md)
 	wshserver.StartMachineWatch(context.Background())
 	jarvisvolunteer.StartLooseEndSweep(context.Background())

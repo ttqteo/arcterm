@@ -9,7 +9,6 @@ import (
 	"embed"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -22,10 +21,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/wavetermdev/waveterm/pkg/stablewsh"
 )
 
 // managedHook is one (event, matcher) hook arcterm owns in the user's settings.json.
@@ -145,17 +144,6 @@ func quotePath(p string) string {
 	return `"` + p + `"`
 }
 
-// stableWshPath is the wsh every agent integration names: a fixed, versionless copy under ~/.arc/bin.
-// The running binary is the wrong target — its name carries the version, and a rebuild, an app update,
-// `task clean` or a worktree removal deletes it while every hook still names it.
-func stableWshPath(home string) string {
-	name := "wsh"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	return filepath.Join(home, ".arc", "bin", name)
-}
-
 //go:embed all:claude-mod all:claude-view-mod all:claude-skim-mod
 var claudeModFS embed.FS
 
@@ -167,7 +155,7 @@ var claudeMods = []string{"claude-mod", "claude-view-mod", "claude-skim-mod"}
 const claudePluginDirsVar = "CLAUDE_CODE_PLUGIN_DIRS"
 
 // claudeModDirs is where the arcterm Claude mods are installed, in claudeMods' order: fixed and versionless
-// like stableWshPath, so the CLAUDE_CODE_PLUGIN_DIRS entries naming them never go stale.
+// like stablewsh.Path, so the CLAUDE_CODE_PLUGIN_DIRS entries naming them never go stale.
 func claudeModDirs(home string) []string {
 	dirs := make([]string, len(claudeMods))
 	for i, name := range claudeMods {
@@ -374,88 +362,11 @@ func pluginDirsInclude(existing map[string]any, modDirs []string) bool {
 	return true
 }
 
-// syncStableWsh makes dst a byte-identical copy of src and leaves an identical copy untouched. The
-// previous copy is renamed aside rather than overwritten because Windows refuses to overwrite an exe a
-// running hook is executing, but allows renaming it.
-func syncStableWsh(src, dst string) error {
-	if src == dst {
-		return nil
-	}
-	want, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("reading %s: %w", src, err)
-	}
-	if cur, err := os.ReadFile(dst); err == nil && bytes.Equal(cur, want) && stableWshRuns(dst) {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return fmt.Errorf("creating %s: %w", filepath.Dir(dst), err)
-	}
-	tmp := dst + ".tmp"
-	if err := os.WriteFile(tmp, want, 0o755); err != nil {
-		return fmt.Errorf("writing %s: %w", tmp, err)
-	}
-	old := stableWshAsideName(dst)
-	if _, err := os.Stat(dst); err == nil {
-		if err := os.Rename(dst, old); err != nil {
-			return fmt.Errorf("moving aside %s: %w", dst, err)
-		}
-	}
-	if err := os.Rename(tmp, dst); err != nil {
-		_ = os.Rename(old, dst) // restore the previous copy so the hooks keep a binary to run
-		return fmt.Errorf("replacing %s: %w", dst, err)
-	}
-	_ = os.Remove(old) // fails only while the previous copy is still executing; the next sync retries
-	return nil
-}
-
-// stableWshRuns reports whether the copy at path still runs. macOS can flag one file's code signature as invalid and
-// SIGKILL every exec of it while its bytes and signature on disk stay valid, so an identical copy is not proof enough;
-// only a new file clears the flag. Anything short of a kill (a timeout, a file that is not a binary) counts as running,
-// so a slow machine never churns the copy. Elsewhere there is no such flag, and no reason to spawn a process.
-var stableWshRuns = func(path string) bool {
-	if runtime.GOOS != "darwin" {
-		return true
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	err := exec.CommandContext(ctx, path, "version").Run()
-	var exitErr *exec.ExitError
-	if ctx.Err() != nil || !errors.As(err, &exitErr) {
-		return true
-	}
-	status, ok := exitErr.Sys().(syscall.WaitStatus)
-	return !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL
-}
-
-// stableWshAsideName removes the copies earlier swaps moved aside and returns a free name to move dst to: dst.old,
-// or dst.old.N while an earlier copy is still executing, which Windows will neither delete nor let a rename replace.
-// A long-lived `wsh agentctl` holds one for days, and reusing its name failed every swap until it exited.
-func stableWshAsideName(dst string) string {
-	base := filepath.Base(dst) + ".old"
-	if entries, err := os.ReadDir(filepath.Dir(dst)); err == nil {
-		for _, e := range entries {
-			if name := e.Name(); name == base || strings.HasPrefix(name, base+".") {
-				_ = os.Remove(filepath.Join(filepath.Dir(dst), name))
-			}
-		}
-	}
-	for i := 0; ; i++ {
-		name := dst + ".old"
-		if i > 0 {
-			name = fmt.Sprintf("%s.old.%d", dst, i)
-		}
-		if _, err := os.Lstat(name); os.IsNotExist(err) {
-			return name
-		}
-	}
-}
-
 // resolveHookWsh returns the wsh path to write into the integrations. A failed refresh keeps an existing
 // copy (stale but runnable); only with no copy at all does it fall back to the running binary.
 func resolveHookWsh(exe, home string) string {
-	stable := stableWshPath(home)
-	err := syncStableWsh(exe, stable)
+	stable := stablewsh.Path(home)
+	err := stablewsh.Sync(exe, stable)
 	if err == nil {
 		return stable
 	}

@@ -8,11 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/wavetermdev/waveterm/pkg/stablewsh"
 )
 
 const testWsh = `C:\a\bin\wsh-0.14.5-windows.x64.exe`
@@ -798,159 +799,14 @@ func writeTestFile(t *testing.T, path, body string) {
 	}
 }
 
-func TestSyncStableWsh_copiesThenLeavesAnIdenticalCopyAlone(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "wsh-0.14.11-windows.x64.exe")
-	writeTestFile(t, src, "build 11")
-	dst := stableWshPath(filepath.Join(dir, "home"))
-
-	if err := syncStableWsh(src, dst); err != nil {
-		t.Fatalf("first sync: %v", err)
-	}
-	if got, err := os.ReadFile(dst); err != nil || string(got) != "build 11" {
-		t.Fatalf("stable copy = %q (err %v), want the source bytes", got, err)
-	}
-	info1, err := os.Stat(dst)
-	if err != nil {
-		t.Fatalf("stat after first sync: %v", err)
-	}
-	time.Sleep(20 * time.Millisecond)
-	if err := syncStableWsh(src, dst); err != nil {
-		t.Fatalf("second sync: %v", err)
-	}
-	info2, err := os.Stat(dst)
-	if err != nil {
-		t.Fatalf("stat after second sync: %v", err)
-	}
-	if !info2.ModTime().Equal(info1.ModTime()) {
-		t.Fatalf("identical copy was rewritten: mtime %v -> %v", info1.ModTime(), info2.ModTime())
-	}
-}
-
-// macOS can flag one file's code signature as invalid and SIGKILL every exec of it while its bytes and signature stay
-// valid (2026-10-30: every hook exited 137 until the copy was replaced); only a new file clears it
-func TestSyncStableWsh_replacesAnIdenticalCopyThatCannotRun(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "wsh-0.15.19-darwin.arm64")
-	writeTestFile(t, src, "build 19")
-	dst := stableWshPath(filepath.Join(dir, "home"))
-	writeTestFile(t, dst, "build 19")
-	before, err := os.Stat(dst)
-	if err != nil {
-		t.Fatalf("stat before sync: %v", err)
-	}
-	prev := stableWshRuns
-	stableWshRuns = func(string) bool { return false }
-	t.Cleanup(func() { stableWshRuns = prev })
-
-	if err := syncStableWsh(src, dst); err != nil {
-		t.Fatalf("sync: %v", err)
-	}
-	after, err := os.Stat(dst)
-	if err != nil {
-		t.Fatalf("stat after sync: %v", err)
-	}
-	if os.SameFile(before, after) {
-		t.Fatalf("an identical copy that cannot run was kept; want a new file in its place")
-	}
-	if got, err := os.ReadFile(dst); err != nil || string(got) != "build 19" {
-		t.Fatalf("stable copy = %q (err %v), want the source bytes", got, err)
-	}
-}
-
-// a script that SIGKILLs itself stands in for the copy macOS kills on exec; any other failure still counts as running
-func TestStableWshRuns_falseOnlyForACopyThatIsKilled(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("only macOS kills a copy whose signature it flagged")
-	}
-	dir := t.TempDir()
-	killed := filepath.Join(dir, "killed")
-	writeTestFile(t, killed, "#!/bin/sh\nkill -9 $$\n")
-	failing := filepath.Join(dir, "failing")
-	writeTestFile(t, failing, "#!/bin/sh\nexit 3\n")
-
-	if stableWshRuns(killed) {
-		t.Fatalf("a copy killed on exec was reported as running")
-	}
-	if !stableWshRuns(failing) {
-		t.Fatalf("a copy that exits nonzero was reported as not running; only a kill should replace it")
-	}
-}
-
-// the failure this exists for: a rebuild deletes the versioned binary the hooks named
-func TestSyncStableWsh_survivesARebuildDeletingTheOldBinary(t *testing.T) {
-	dir := t.TempDir()
-	dst := stableWshPath(filepath.Join(dir, "home"))
-	oldBuild := filepath.Join(dir, "wsh-0.14.10-windows.x64.exe")
-	newBuild := filepath.Join(dir, "wsh-0.14.11-windows.x64.exe")
-	writeTestFile(t, oldBuild, "build 10")
-
-	if err := syncStableWsh(oldBuild, dst); err != nil {
-		t.Fatalf("sync from old build: %v", err)
-	}
-	if err := os.Remove(oldBuild); err != nil {
-		t.Fatalf("simulating the rebuild: %v", err)
-	}
-	if got, err := os.ReadFile(dst); err != nil || string(got) != "build 10" {
-		t.Fatalf("stable copy gone after the old build was deleted: %q (err %v)", got, err)
-	}
-
-	writeTestFile(t, newBuild, "build 11")
-	if err := syncStableWsh(newBuild, dst); err != nil {
-		t.Fatalf("sync from new build: %v", err)
-	}
-	if got, err := os.ReadFile(dst); err != nil || string(got) != "build 11" {
-		t.Fatalf("stable copy = %q (err %v), want the new build", got, err)
-	}
-	for _, leftover := range []string{dst + ".tmp", dst + ".old"} {
-		if _, err := os.Stat(leftover); !os.IsNotExist(err) {
-			t.Fatalf("swap left %s behind", leftover)
-		}
-	}
-}
-
-// a long-lived process (wsh agentctl) still runs the copy an earlier swap moved aside, so .old cannot go; a
-// non-empty directory stands in for it, since neither a remove nor a rename onto it succeeds on any OS
-func TestSyncStableWsh_swapsWhileAnEarlierCopyIsStillRunning(t *testing.T) {
-	dir := t.TempDir()
-	dst := stableWshPath(filepath.Join(dir, "home"))
-	writeTestFile(t, dst, "build 10")
-	writeTestFile(t, filepath.Join(dst+".old", "held"), "build 9")
-	src := filepath.Join(dir, "wsh-0.14.11-windows.x64.exe")
-	writeTestFile(t, src, "build 11")
-
-	if err := syncStableWsh(src, dst); err != nil {
-		t.Fatalf("sync with a held .old: %v", err)
-	}
-	if got, err := os.ReadFile(dst); err != nil || string(got) != "build 11" {
-		t.Fatalf("stable copy = %q (err %v), want the new build", got, err)
-	}
-}
-
-func TestSyncStableWsh_removesCopiesMovedAsideEarlier(t *testing.T) {
-	dir := t.TempDir()
-	dst := stableWshPath(filepath.Join(dir, "home"))
-	writeTestFile(t, dst, "build 10")
-	writeTestFile(t, dst+".old.1", "build 9, no longer running")
-	src := filepath.Join(dir, "wsh-0.14.11-windows.x64.exe")
-	writeTestFile(t, src, "build 11")
-
-	if err := syncStableWsh(src, dst); err != nil {
-		t.Fatalf("sync: %v", err)
-	}
-	if _, err := os.Stat(dst + ".old.1"); !os.IsNotExist(err) {
-		t.Fatalf("an earlier swap's copy that no process holds was left behind")
-	}
-}
-
 func TestResolveHookWsh_namesTheStableCopy(t *testing.T) {
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
 	exe := filepath.Join(dir, "wsh-0.14.11-windows.x64.exe")
 	writeTestFile(t, exe, "build 11")
 
-	if got := resolveHookWsh(exe, home); got != stableWshPath(home) {
-		t.Fatalf("resolveHookWsh = %q, want the stable copy %q", got, stableWshPath(home))
+	if got := resolveHookWsh(exe, home); got != stablewsh.Path(home) {
+		t.Fatalf("resolveHookWsh = %q, want the stable copy %q", got, stablewsh.Path(home))
 	}
 }
 
@@ -964,9 +820,9 @@ func TestResolveHookWsh_fallsBackWhenTheCopyCannotBeRefreshed(t *testing.T) {
 		t.Fatalf("with no stable copy, resolveHookWsh = %q, want the running binary %q", got, unreadable)
 	}
 	// an existing copy beats a failed refresh: stale but runnable
-	writeTestFile(t, stableWshPath(home), "build 10")
-	if got := resolveHookWsh(unreadable, home); got != stableWshPath(home) {
-		t.Fatalf("with a stable copy, resolveHookWsh = %q, want %q", got, stableWshPath(home))
+	writeTestFile(t, stablewsh.Path(home), "build 10")
+	if got := resolveHookWsh(unreadable, home); got != stablewsh.Path(home) {
+		t.Fatalf("with a stable copy, resolveHookWsh = %q, want %q", got, stablewsh.Path(home))
 	}
 }
 

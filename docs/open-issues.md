@@ -1355,6 +1355,11 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   (`![](figures/x.svg)`) in an agent's File tab: the figures draw, not their alt text in a box, and in Code's Preview
   too. Change a line of it from outside (the agent, an editor): within ~2 s Preview and Source show it, keep their
   scroll, and the figures do not blink. f6e9a3a6b, d1dffb724; no dev app was running to try it.
+- [ ] (arcterm) **Hooks heal mid-session on a Mac.** With a build that has `pkg/stablewsh` installed, keep agents
+  working until macOS kills `~/.arc/bin/wsh` again (`~/.arc/bin/wsh version` exits 137; on 2026-10-30/31 it struck
+  three times, once 3 minutes after a fresh copy): within ~10 s `waveapp.log` reads `stablewsh: … was killed on exec;
+  replaced it`, `wsh version` exits 0 again, and the next turn ends with no "Stop hook error". Why the kernel flags
+  the file is still unknown.
 
 ---
 
