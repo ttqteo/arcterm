@@ -24,6 +24,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- Council Setup's Auto-generate button writes the topic, a question and the mode from what the seated agents were
+  talking about. It asks before replacing text you already wrote.
+
 ### Changed
 
 - The New dialog opens in its Task box, now at the top above the columns: type what the agent should do and press Enter

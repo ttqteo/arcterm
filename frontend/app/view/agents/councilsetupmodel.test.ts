@@ -10,7 +10,10 @@ import {
     applyGroup,
     applySuggestion,
     askText,
+    autoGenerateRequest,
+    autoGenerateShown,
     basename,
+    beginAutoGenerate,
     beginSuggest,
     draftHasAgents,
     estimateKey,
@@ -19,6 +22,7 @@ import {
     expertInitial,
     expertsLine,
     expertTone,
+    failAutoGenerate,
     failSuggestion,
     flipMode,
     groupFromDraft,
@@ -26,7 +30,9 @@ import {
     groupSlug,
     initialPanel,
     joinAsk,
+    keepAutoGenerate,
     modeChip,
+    modeReason,
     modeRules,
     moreProjects,
     panelFor,
@@ -37,12 +43,14 @@ import {
     removeExpert,
     removeFile,
     removeScreenshot,
+    replaceAutoGenerate,
     retrySuggestion,
     seatableAgents,
     seatRows,
     seatsOf,
     setExpertModel,
     setRounds,
+    settleAutoGenerate,
     settleRerun,
     setupEstimate,
     splitAsk,
@@ -1003,5 +1011,381 @@ describe("live agents", () => {
         expect(setupEstimate({ calls: 7, tokens: 1_900_000, minutes: 8, agenttokens: 1_250_000 })).toBe(
             "≈ 7 calls · ~1.9M tokens · ~8 min · agents ~1.3M of it"
         );
+    });
+});
+
+describe("Auto-generate", () => {
+    const witness: SeatableAgent = {
+        id: "tab-witness",
+        name: "Witness synthesis",
+        project: PROJECT,
+        harness: "claude",
+        context: 625_000,
+    };
+    const audit: SeatableAgent = {
+        id: "tab-audit",
+        name: "UX audit",
+        project: "D:\\code\\other",
+        harness: "pi",
+        context: 210_000,
+    };
+    // two agents seated, the panel on the library's first group, as Discuss together opens Setup
+    const seated = (extra: Partial<CouncilSetupDraft> = {}): CouncilSetupDraft => ({
+        ...initialPanel(draftWithAgents([witness, audit]), lib),
+        ...extra,
+    });
+    const answer = (extra: Partial<CouncilAutoGenerate> = {}): CouncilAutoGenerate => ({
+        topic: "Rail apps",
+        question: "Should a rail app open in place or take the whole surface?",
+        mode: "brainstorm",
+        ...extra,
+    });
+    // the draft after a press and an answer on an empty composer
+    const generated = (extra: Partial<CouncilAutoGenerate> = {}, from: CouncilSetupDraft = seated()) =>
+        settleAutoGenerate(beginAutoGenerate(from), answer(extra), lib);
+    // what the draft holds besides Auto-generate's own state
+    const bare = (d: CouncilSetupDraft): CouncilSetupDraft => ({
+        ...d,
+        autoState: undefined,
+        autoError: undefined,
+        autoPending: undefined,
+    });
+
+    it("shows only while at least one agent is seated", () => {
+        expect(autoGenerateShown(draft())).toBe(false);
+        expect(autoGenerateShown(initialPanel(draft({ feature: "Rail apps" }), lib))).toBe(false);
+        expect(autoGenerateShown(seated())).toBe(true);
+        expect(autoGenerateShown(removeAgent(seated(), "tab-witness"))).toBe(true);
+        expect(autoGenerateShown(removeAgent(removeAgent(seated(), "tab-witness"), "tab-audit"))).toBe(false);
+    });
+
+    it("asks with the project and the seated agents' tab ids in seat order", () => {
+        expect(autoGenerateRequest(seated())).toEqual({ project: PROJECT, agents: ["tab-witness", "tab-audit"] });
+        const added = addAgent(initialPanel(draft(), lib), audit);
+        expect(autoGenerateRequest(added)).toEqual({ project: PROJECT, agents: ["tab-audit"] });
+    });
+
+    it("does not ask while it waits, with no agent, or with no project", () => {
+        expect(autoGenerateRequest(beginAutoGenerate(seated()))).toBeNull();
+        expect(autoGenerateRequest(initialPanel(draft(), lib))).toBeNull();
+        expect(autoGenerateRequest(seated({ project: "" }))).toBeNull();
+        expect(autoGenerateRequest(seated({ project: "  " }))).toBeNull();
+    });
+
+    it("asks again after a failure, and while an answer waits on Replace / Keep", () => {
+        const failed = failAutoGenerate(beginAutoGenerate(seated()), "boom");
+        expect(autoGenerateRequest(failed)).not.toBeNull();
+        const typed = settleAutoGenerate(beginAutoGenerate(seated({ feature: "mine" })), answer(), lib);
+        expect(typed.autoState).toBe("confirm");
+        expect(autoGenerateRequest(typed)).not.toBeNull();
+    });
+
+    it("waits on the answer, forgetting an earlier failure and a waiting answer", () => {
+        const waiting = beginAutoGenerate(seated());
+        expect(waiting.autoState).toBe("asking");
+        expect(beginAutoGenerate(waiting)).toBe(waiting);
+        const failed = failAutoGenerate(waiting, "no conversation to read");
+        expect(failed.autoError).toBe("no conversation to read");
+        const again = beginAutoGenerate(failed);
+        expect(again.autoState).toBe("asking");
+        expect(again.autoError).toBeUndefined();
+        const confirm = settleAutoGenerate(beginAutoGenerate(seated({ feature: "mine" })), answer(), lib);
+        expect(confirm.autoPending).toBeDefined();
+        const afterConfirm = beginAutoGenerate(confirm);
+        expect(afterConfirm.autoState).toBe("asking");
+        expect(afterConfirm.autoPending).toBeUndefined();
+        expect(afterConfirm.feature).toBe("mine");
+    });
+
+    it("fills an empty composer at once: the topic, the question, the mode as picked from the conversation", () => {
+        const d = generated();
+        expect(d.feature).toBe("Rail apps");
+        expect(d.question).toBe("Should a rail app open in place or take the whole surface?");
+        expect(d.autoLast).toBe("Rail apps\nShould a rail app open in place or take the whole surface?");
+        expect(joinAsk(d)).toBe(d.autoLast);
+        expect(d.mode).toBe("brainstorm");
+        expect(d.modePicked).toBe(true);
+        expect(d.modeFrom).toBe("conversation");
+        expect(modeChip(d)).toBe("Brainstorm · picked from the conversation");
+        expect(modeReason(d)).toBe("");
+        expect(d.autoState).toBeUndefined();
+        expect(d.autoPending).toBeUndefined();
+        expect(d.autoError).toBeUndefined();
+        // the seats and the rest of the draft are not touched
+        expect(d.agents).toEqual(seated().agents);
+        expect(d.project).toBe(PROJECT);
+    });
+
+    it("says Review picked from the conversation for a Review answer", () => {
+        const d = generated({ mode: "review" });
+        expect(d.mode).toBe("review");
+        expect(d.modePicked).toBe(true);
+        expect(modeChip(d)).toBe("Review · picked from the conversation");
+    });
+
+    it("sends picked from the conversation with Start council for a mode it picked, picked by hand once flipped", () => {
+        const d = generated({ mode: "brainstorm" });
+        expect(startData(d).mode).toBe("brainstorm");
+        expect(startData(d).modewhy).toBe("picked from the conversation");
+        const flipped = flipMode(d, lib);
+        expect(startData(flipped).mode).toBe("review");
+        expect(startData(flipped).modewhy).toBe("picked by hand");
+    });
+
+    it("moves the group to Product ideas for a Brainstorm answer, unless the person picked a group", () => {
+        const d = generated({ mode: "brainstorm" });
+        expect(d.group).toBe("product-ideas");
+        expect(ids(d)).toEqual(["newuser", "designer", "builder", "contrarian", "facilitator"]);
+        expect(d.groupPicked).toBe(false);
+        const picked = generated({ mode: "brainstorm" }, applyGroup(seated(), lib, "paper", true));
+        expect(picked.mode).toBe("brainstorm");
+        expect(picked.group).toBe("paper");
+        expect(picked.groupPicked).toBe(true);
+        // editing the rows takes the panel over as well
+        const edited = generated({ mode: "brainstorm" }, removeExpert(seated(), "ux"));
+        expect(edited.group).toBe("ui-feature");
+        expect(ids(edited)).not.toContain("designer");
+    });
+
+    it("takes the suggestion's group, else the UI group, for a Review answer, unless the person picked one", () => {
+        const onIdeas = applyGroup(seated(), lib, "product-ideas", false);
+        expect(generated({ mode: "review" }, onIdeas).group).toBe("ui-feature");
+        const suggested: CouncilSetupDraft = {
+            ...onIdeas,
+            suggestion: { files: [], roles: [], group: "paper", mode: "review" },
+        };
+        const review = generated({ mode: "review" }, suggested);
+        expect(review.group).toBe("paper");
+        expect(ids(review)).toEqual(["reviewer-a", "reader", "areachair"]);
+        const picked = generated({ mode: "review" }, applyGroup(onIdeas, lib, "product-ideas", true));
+        expect(picked.group).toBe("product-ideas");
+    });
+
+    it("leaves the mode and group alone when the person flipped the chip, and still fills the topic and question", () => {
+        const flipped = flipMode(seated(), lib);
+        expect(flipped.mode).toBe("brainstorm");
+        expect(flipped.group).toBe("product-ideas");
+        const d = generated({ mode: "review" }, flipped);
+        expect(d.mode).toBe("brainstorm");
+        expect(d.group).toBe("product-ideas");
+        expect(d.modePicked).toBe(true);
+        expect(d.modeFrom).toBeUndefined();
+        expect(modeChip(d)).toBe("Brainstorm · you picked it");
+        expect(d.feature).toBe("Rail apps");
+        expect(d.question).toBe("Should a rail app open in place or take the whole surface?");
+        expect(d.autoLast).toBe(joinAsk(d));
+    });
+
+    it("counts a rerun's mode as the person's, which arrives picked", () => {
+        const rerun = seated({ mode: "brainstorm", modePicked: true, groupPicked: true });
+        const d = generated({ mode: "review" }, rerun);
+        expect(d.mode).toBe("brainstorm");
+        expect(modeChip(d)).toBe("Brainstorm · you picked it");
+    });
+
+    it("replaces a mode an earlier answer picked, and the group follows it again", () => {
+        const first = generated({ mode: "brainstorm" });
+        expect(first.group).toBe("product-ideas");
+        const second = settleAutoGenerate(
+            beginAutoGenerate(first),
+            answer({ mode: "review", topic: "Rail app focus", question: "Does focus stay put?" }),
+            lib
+        );
+        expect(second.mode).toBe("review");
+        expect(second.group).toBe("ui-feature");
+        expect(second.groupPicked).toBe(false);
+        expect(second.modeFrom).toBe("conversation");
+        expect(second.modePicked).toBe(true);
+        expect(modeChip(second)).toBe("Review · picked from the conversation");
+        expect(second.feature).toBe("Rail app focus");
+        // a suggestion's group wins over the UI group for Review, a picked group over both
+        const withSuggestion: CouncilSetupDraft = {
+            ...first,
+            suggestion: { files: [], roles: [], group: "paper", mode: "review" },
+        };
+        const viaSuggestion = settleAutoGenerate(beginAutoGenerate(withSuggestion), answer({ mode: "review" }), lib);
+        expect(viaSuggestion.group).toBe("paper");
+        const pickedGroup = settleAutoGenerate(
+            beginAutoGenerate({ ...first, groupPicked: true }),
+            answer({ mode: "review" }),
+            lib
+        );
+        expect(pickedGroup.mode).toBe("review");
+        expect(pickedGroup.group).toBe("product-ideas");
+    });
+
+    it("leaves the mode alone for an answer that names none of the two", () => {
+        const d = generated({ mode: "debate" });
+        expect(d.mode).toBe("review");
+        expect(d.modePicked).toBe(false);
+        expect(d.modeFrom).toBeUndefined();
+        expect(modeChip(d)).toBe("Review");
+        expect(d.feature).toBe("Rail apps");
+    });
+
+    it("is not undone by a Suggest that fires later: the mode stays the conversation's", () => {
+        const d = beginSuggest({ ...generated({ mode: "brainstorm" }), files: ["a.ts"] });
+        const after = applySuggestion(d, { files: [], roles: [], mode: "review", modewhy: "an existing thing" }, lib);
+        expect(after.mode).toBe("brainstorm");
+        expect(modeChip(after)).toBe("Brainstorm · picked from the conversation");
+        expect(modeReason(after)).toBe("");
+    });
+
+    it("asks before replacing typed text: the answer waits in autoPending and nothing else changes", () => {
+        const typed = seated({ feature: "My own topic", question: "My own question" });
+        const waiting = beginAutoGenerate(typed);
+        const d = settleAutoGenerate(waiting, answer(), lib);
+        expect(d.autoState).toBe("confirm");
+        expect(d.autoPending).toEqual(answer());
+        expect(bare(d)).toEqual(typed);
+        expect(joinAsk(d)).toBe("My own topic\nMy own question");
+        expect(d.mode).toBe("review");
+        expect(d.modePicked).toBe(false);
+    });
+
+    it("counts text from Ask the council and Run again as typed: a question alone, a session, no last answer", () => {
+        const fromAsk = seated({ question: "Is the rail worth keeping?", sessionId: "sess-1" });
+        expect(fromAsk.autoLast).toBeUndefined();
+        const d = settleAutoGenerate(beginAutoGenerate(fromAsk), answer(), lib);
+        expect(d.autoState).toBe("confirm");
+        expect(d.feature).toBe("");
+        expect(d.question).toBe("Is the rail worth keeping?");
+        const rerun = seated({ feature: "Rail apps", question: "Keep it?", groupPicked: true, modePicked: true });
+        expect(settleAutoGenerate(beginAutoGenerate(rerun), answer(), lib).autoState).toBe("confirm");
+    });
+
+    it("Replace writes the waiting answer over the text", () => {
+        const confirm = settleAutoGenerate(
+            beginAutoGenerate(seated({ feature: "mine", question: "?" })),
+            answer(),
+            lib
+        );
+        const d = replaceAutoGenerate(confirm, lib);
+        expect(d.feature).toBe("Rail apps");
+        expect(d.question).toBe("Should a rail app open in place or take the whole surface?");
+        expect(d.autoLast).toBe(joinAsk(d));
+        expect(d.autoState).toBeUndefined();
+        expect(d.autoPending).toBeUndefined();
+        expect(d.mode).toBe("brainstorm");
+        expect(d.modeFrom).toBe("conversation");
+        expect(d.group).toBe("product-ideas");
+        expect(modeChip(d)).toBe("Brainstorm · picked from the conversation");
+    });
+
+    it("Replace still keeps a mode the person picked", () => {
+        const typed = flipMode(seated({ feature: "mine", question: "?" }), lib);
+        const confirm = settleAutoGenerate(beginAutoGenerate(typed), answer({ mode: "review" }), lib);
+        const d = replaceAutoGenerate(confirm, lib);
+        expect(d.feature).toBe("Rail apps");
+        expect(d.mode).toBe("brainstorm");
+        expect(modeChip(d)).toBe("Brainstorm · you picked it");
+    });
+
+    it("Keep drops the waiting answer and leaves the draft exactly as it was before the press", () => {
+        const typed = seated({ feature: "My own topic", question: "My own question" });
+        const confirm = settleAutoGenerate(beginAutoGenerate(typed), answer(), lib);
+        expect(keepAutoGenerate(confirm)).toStrictEqual(typed);
+        // the last answer is remembered across a Keep, for the second press's exception
+        const first = generated();
+        const edited = { ...first, feature: "Rail apps, edited" };
+        const kept = keepAutoGenerate(settleAutoGenerate(beginAutoGenerate(edited), answer({ topic: "Else" }), lib));
+        expect(kept).toStrictEqual(edited);
+        expect(kept.autoLast).toBe(first.autoLast);
+    });
+
+    it("Replace and Keep do nothing outside a waiting answer", () => {
+        const idle = seated({ feature: "mine" });
+        expect(replaceAutoGenerate(idle, lib)).toBe(idle);
+        expect(keepAutoGenerate(idle)).toBe(idle);
+        const waiting = beginAutoGenerate(idle);
+        expect(replaceAutoGenerate(waiting, lib)).toBe(waiting);
+        expect(keepAutoGenerate(waiting)).toBe(waiting);
+    });
+
+    it("replaces a second time without asking while the composer is still exactly the last answer", () => {
+        const first = generated();
+        const second = settleAutoGenerate(
+            beginAutoGenerate(first),
+            answer({ topic: "Rail app focus", question: "Does focus stay put?" }),
+            lib
+        );
+        expect(second.autoState).toBeUndefined();
+        expect(second.feature).toBe("Rail app focus");
+        expect(second.question).toBe("Does focus stay put?");
+        expect(second.autoLast).toBe("Rail app focus\nDoes focus stay put?");
+    });
+
+    it("asks once the last answer was edited", () => {
+        const first = generated();
+        const edited = { ...first, question: `${first.question} And on a small window?` };
+        const d = settleAutoGenerate(beginAutoGenerate(edited), answer({ topic: "Else" }), lib);
+        expect(d.autoState).toBe("confirm");
+        expect(d.feature).toBe("Rail apps");
+        expect(d.autoPending?.topic).toBe("Else");
+        // an edit put back is the last answer again
+        const restored = { ...edited, question: first.question };
+        expect(settleAutoGenerate(beginAutoGenerate(restored), answer({ topic: "Else" }), lib).feature).toBe("Else");
+    });
+
+    it("checks again when the answer arrives: text typed during the call asks first", () => {
+        const waiting = beginAutoGenerate(seated());
+        const typedDuring = { ...waiting, feature: "typed while it ran" };
+        const d = settleAutoGenerate(typedDuring, answer(), lib);
+        expect(d.autoState).toBe("confirm");
+        expect(d.autoPending).toEqual(answer());
+        expect(d.feature).toBe("typed while it ran");
+        // text cleared during the call leaves an empty composer, which takes the answer at once
+        const cleared = settleAutoGenerate(
+            { ...beginAutoGenerate(seated({ feature: "x" })), feature: "" },
+            answer(),
+            lib
+        );
+        expect(cleared.autoState).toBeUndefined();
+        expect(cleared.feature).toBe("Rail apps");
+    });
+
+    it("ignores an answer or a failure on a draft that is not waiting for one", () => {
+        const idle = seated({ feature: "mine" });
+        expect(settleAutoGenerate(idle, answer(), lib)).toBe(idle);
+        expect(failAutoGenerate(idle, "late")).toBe(idle);
+        const confirm = settleAutoGenerate(beginAutoGenerate(idle), answer(), lib);
+        expect(settleAutoGenerate(confirm, answer({ topic: "Else" }), lib)).toBe(confirm);
+        expect(failAutoGenerate(confirm, "late")).toBe(confirm);
+        const failed = failAutoGenerate(beginAutoGenerate(idle), "first");
+        expect(settleAutoGenerate(failed, answer(), lib)).toBe(failed);
+        expect(failAutoGenerate(failed, "second")).toBe(failed);
+    });
+
+    it("keeps the feature and question on a failure and records the reason", () => {
+        const typed = seated({ feature: "mine", question: "yours?" });
+        const d = failAutoGenerate(beginAutoGenerate(typed), "none of the seated agents has a conversation to read");
+        expect(d.autoState).toBe("failed");
+        expect(d.autoError).toBe("none of the seated agents has a conversation to read");
+        expect(bare(d)).toEqual(typed);
+    });
+
+    it("clears Auto-generate's mark when the person flips the chip", () => {
+        const d = generated({ mode: "brainstorm" });
+        expect(modeChip(d)).toBe("Brainstorm · picked from the conversation");
+        const flipped = flipMode(d, lib);
+        expect(flipped.mode).toBe("review");
+        expect(flipped.modePicked).toBe(true);
+        expect(flipped.modeFrom).toBeUndefined();
+        expect("modeFrom" in flipped).toBe(false);
+        expect(modeChip(flipped)).toBe("Review · you picked it");
+        // the next answer then leaves the mode alone
+        const next = generated({ mode: "brainstorm" }, flipped);
+        expect(next.mode).toBe("review");
+        expect(modeChip(next)).toBe("Review · you picked it");
+    });
+
+    it("passes a Vietnamese topic and question through unchanged", () => {
+        const topic = "Thanh điều hướng bên trái của cockpit";
+        const question = "Nên gộp các mục phụ vào menu «Thêm» hay giữ chúng trên thanh?";
+        const d = generated({ topic, question, mode: "review" });
+        expect(d.feature).toBe(topic);
+        expect(d.question).toBe(question);
+        expect(d.autoLast).toBe(`${topic}\n${question}`);
+        expect(askText(d, null)).toBe(`${topic}\n${question}`);
     });
 });

@@ -22,6 +22,13 @@
 // and the start's seats and rounds are read. The estimate is stubbed there (CouncilEstimateCommand answers with an agent
 // share, and its calls are read for the rounds they carry), so that part does not wait on wavesrv's own count.
 //
+// Steps 20 to 26 are Auto-generate (docs/superpowers/specs/2026-10-30-council-discuss-suggest-design.md, plan Task 4), on
+// a Setup opened again from draftWithAgents of both agents, with CouncilAutoGenerateCommand stubbed (no model is called):
+// the button beside Attach, its spinner while a call is out, a result that fills an empty composer and sets the mode chip
+// to "picked from the conversation", a second press that replaces the last result unasked, Replace / Keep over text the
+// person typed (before the press and during the call), the error line of a refused call, and a late answer to a press
+// Cancel has moved past, which is dropped. Steps 17 and 18 also read that the button goes with the last agent seat.
+//
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx).
 
 import { rmSync, writeFileSync } from "node:fs";
@@ -107,6 +114,8 @@ const SETUP = `(() => {
     const text = (s) => { const el = q(s); return el ? flat(el) : null; };
     const start = q("[data-council-start]");
     const composer = q("[data-council-composer]");
+    const auto = q("[data-council-autogen]");
+    const autoError = q("[data-council-autogen-error]");
     return {
         ask: q('[data-council-input="ask"]')?.value ?? null,
         placeholder: q('[data-council-input="ask"]')?.getAttribute("placeholder") ?? null,
@@ -175,6 +184,39 @@ const SETUP = `(() => {
         estimate: text("[data-council-estimate]"),
         footnote: text("[data-council-footnote]"),
         start: start ? { disabled: start.disabled, text: flat(start) } : null,
+        // Auto-generate: its button (in the composer's bar, right after Attach), the Replace / Keep that wait on an
+        // answer, and the line under the composer that says why a call failed
+        autogen: auto
+            ? {
+                  disabled: auto.disabled,
+                  busy: auto.getAttribute("aria-busy"),
+                  spinner: auto.querySelector("svg.animate-spin") != null,
+                  text: flat(auto),
+                  inBar: auto.closest("[data-council-composer-bar]") != null,
+                  afterAttach: composer?.querySelector("[data-council-attach]")?.parentElement?.nextElementSibling === auto,
+              }
+            : null,
+        confirm: q("[data-council-autogen-confirm]")
+            ? {
+                  text: text("[data-council-autogen-confirm]"),
+                  replace: text("[data-council-autogen-replace]"),
+                  keep: text("[data-council-autogen-keep]"),
+                  afterButton: auto?.nextElementSibling === q("[data-council-autogen-confirm]"),
+              }
+            : null,
+        autogenError: autoError
+            ? {
+                  text: flat(autoError),
+                  belowComposer:
+                      composer != null &&
+                      !composer.contains(autoError) &&
+                      (composer.compareDocumentPosition(autoError) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+                  oneLine:
+                      getComputedStyle(autoError).whiteSpace === "nowrap" &&
+                      getComputedStyle(autoError).textOverflow === "ellipsis" &&
+                      getComputedStyle(autoError).overflow === "hidden",
+              }
+            : null,
     };
 })()`;
 
@@ -766,8 +808,9 @@ export const councilSetup = {
             await h.ev(click("[data-council-pause]"));
             await until(`document.querySelector("[data-council-pause]")?.getAttribute("aria-checked") === "true"`);
             rec(
-                "17. removing both agents takes the Rounds switch, the Seats list and the + 1 more away and brings back the experts line, the five expert rows and the pause (it toggles on); the estimate asked again for the five experts with no rounds and no agent",
-                noAgents?.rounds == null &&
+                "17. removing both agents takes the Rounds switch, the Seats list, the Auto-generate button and the + 1 more away and brings back the experts line, the five expert rows and the pause (it toggles on); the estimate asked again for the five experts with no rounds and no agent",
+                noAgents?.autogen == null &&
+                    noAgents.rounds == null &&
                     noAgents.seats.length === 0 &&
                     noAgents.agentNote == null &&
                     noAgents.project === COUNCIL_PROJECT &&
@@ -779,7 +822,7 @@ export const councilSetup = {
                     askedWithout === true &&
                     lastWithout?.rounds === undefined &&
                     lastWithout.experts.every((e) => e.agent == null),
-                { rounds: noAgents?.rounds, seats: noAgents?.seats.length, project: noAgents?.project, line: noAgents?.expertsLine, pause: noAgents?.pause, addAgent: noAgents?.addAgent, request: lastWithout }
+                { rounds: noAgents?.rounds, seats: noAgents?.seats.length, project: noAgents?.project, line: noAgents?.expertsLine, pause: noAgents?.pause, addAgent: noAgents?.addAgent, autogen: noAgents?.autogen, request: lastWithout }
             );
 
             // 18. with no agent seated Add agent offers both roster agents (the experts-only form's own picker); picking each
@@ -796,14 +839,15 @@ export const councilSetup = {
             await until(`document.querySelectorAll("[data-council-seat-agent]").length === 2`);
             const reseated = await view();
             rec(
-                "18. with no agent seated Add agent lists Witness synthesis and UX audit; picking both seats them in the order picked, with Rounds back at the 3 the draft kept, + 1 more in the header and no pause",
+                "18. with no agent seated Add agent lists Witness synthesis and UX audit; picking both seats them in the order picked, with Rounds back at the 3 the draft kept, + 1 more in the header, no pause, and the Auto-generate button back beside Attach",
                 sameList(offered.map((o) => o.id), [witnessTab, auditTab]) &&
+                    reseated?.autogen?.afterAttach === true &&
                     sameList(reseated?.seats.map((s) => s.id), seatIds) &&
                     reseated.rounds === "3" &&
                     reseated.project === `${COUNCIL_PROJECT} + 1 more` &&
                     reseated.noPause != null &&
                     reseated.pause == null,
-                { offered: offered.map((o) => o.id), seats: reseated?.seats.map((s) => s.id), rounds: reseated?.rounds, project: reseated?.project }
+                { offered: offered.map((o) => o.id), seats: reseated?.seats.map((s) => s.id), rounds: reseated?.rounds, project: reseated?.project, autogen: reseated?.autogen }
             );
 
             // 19. Start council with the agents seated sends them before the panel with their harness and context, the
@@ -832,6 +876,248 @@ export const councilSetup = {
                     roomSent.pause === false &&
                     roomSent.project === ctx.repo,
                 { calls: roomStarts.length, feature: roomSent?.feature, experts: roomSent?.experts?.map((e) => [e.id, e.agent, e.harness, e.context]), rounds: roomSent?.rounds, pause: roomSent?.pause, project: roomSent?.project }
+            );
+
+            // ---- Auto-generate (steps 20 to 26) ----
+            // Setup opened again from draftWithAgents of both agents (step 19 started its council, so that draft is gone), with
+            // the call stubbed: nothing here reaches a model. A step that leaves the stub pending settles it before the next
+            // press, and the stub is swapped for the next step's answer by stubbing it again.
+            const AUTO = "CouncilAutoGenerateCommand";
+            const asText = (r) => `${r.topic}\n${r.question}`;
+            const askIs = (text) => `document.querySelector('[data-council-input="ask"]')?.value === ${JSON.stringify(text)}`;
+            const chipIs = (text) => `(document.querySelector("[data-council-mode-chip]")?.textContent ?? "").trim() === ${JSON.stringify(text)}`;
+            const busy = (on) => `document.querySelector("[data-council-autogen]")?.getAttribute("aria-busy") === "${on}"`;
+            const press = () => h.ev(click("[data-council-autogen]"));
+            const noConfirm = `!document.querySelector("[data-council-autogen-confirm]")`;
+            // the agents were spoken to in Vietnamese, so what the call writes is too
+            const FIRST = { topic: "Ghim ứng dụng vào thanh ray", question: "Thanh ray hay cây Agent là nơi hợp hơn cho ứng dụng đã ghim?", mode: "brainstorm" };
+            const SECOND = { topic: "Chi phí của một hội đồng", question: "Có nên giới hạn số vòng ở mức hai không?", mode: "review" };
+            const THIRD = { topic: "Thứ tự trả lời giữa các agent", question: "Vòng hai nên bắt đầu từ agent nào?", mode: "brainstorm" };
+            const DURING = { topic: "Giới hạn ngữ cảnh của agent", question: "Agent nào nên được cắt ngữ cảnh trước?", mode: "review" };
+            const AFTER_ERROR = { topic: "Cách ghi lại phiên họp", question: "Bản ghi nên nằm trong docs/council hay trong transcript?", mode: "review" };
+            const LATE = { topic: "Một câu trả lời đến muộn", question: "Câu này không được vào ô nhập.", mode: "brainstorm" };
+            const BRAINSTORM_CHIP = "Brainstorm · picked from the conversation";
+            const REVIEW_CHIP = "Review · picked from the conversation";
+            const suggestBefore = (await calls("CouncilSuggestCommand")).length;
+            await stubRpc(h, [AUTO], { [AUTO]: { pending: true } });
+            await openCouncilSetup(h, ctx.repo, await h.ev(draftWithAgentsIn(agentsToSeat)));
+            await until(`document.querySelectorAll("[data-council-seat]").length === 7`);
+            await until(`!!document.querySelector("[data-council-autogen]")`);
+
+            // 20. with agents seated and an empty composer the button shows right after Attach in the composer's bar; a press
+            // (the call stubbed pending) locks it and shows the spinner
+            const idleView = await view();
+            await press();
+            await until(busy("true"));
+            const busyView = await view();
+            await h.shot("cdp-shots/council-setup-autogen-busy.png");
+            const pressCalls = await calls(AUTO);
+            rec(
+                "20. with both agents seated and an empty composer the Auto-generate button shows right after Attach in the composer's bar, ready; a press (the call stubbed pending) locks it, shows the spinner, leaves the composer empty and makes one call",
+                idleView?.ask === "" &&
+                    idleView.autogen?.inBar === true &&
+                    idleView.autogen.afterAttach === true &&
+                    idleView.autogen.text === "Auto-generate" &&
+                    idleView.autogen.disabled === false &&
+                    idleView.autogen.busy === "false" &&
+                    idleView.autogen.spinner === false &&
+                    idleView.confirm == null &&
+                    idleView.autogenError == null &&
+                    busyView?.autogen?.disabled === true &&
+                    busyView.autogen.busy === "true" &&
+                    busyView.autogen.spinner === true &&
+                    busyView.ask === "" &&
+                    pressCalls.length === 1,
+                { idle: idleView?.autogen, busy: busyView?.autogen, ask: busyView?.ask, calls: pressCalls.length }
+            );
+
+            // 21. the answer fills the empty composer (the topic, then the question under it); the mode is the answer's and
+            // reads as picked from the conversation, the group follows it; the call carried the seated agents' tab ids
+            const settledFirst = await resolveStub(h, AUTO, FIRST);
+            await until(askIs(asText(FIRST)));
+            await until(busy("false"));
+            v = await view();
+            await h.shot("cdp-shots/council-setup-autogen-filled.png");
+            const filledCalls = await calls(AUTO);
+            const suggestAfterFirst = (await calls("CouncilSuggestCommand")).length;
+            rec(
+                "21. the answer fills the empty composer with the topic and the question under it; the mode chip reads Brainstorm · picked from the conversation with the Brainstorm rules and the group Product ideas, the button is ready again with no Replace / Keep or error, and the call carried the project and both seated agents' tab ids without asking Suggest",
+                settledFirst === 1 &&
+                    v?.ask === asText(FIRST) &&
+                    v.mode === BRAINSTORM_CHIP &&
+                    v.inComposer.mode === BRAINSTORM_CHIP &&
+                    v.modeKey === "brainstorm" &&
+                    v.modeRules === BRAINSTORM_RULES &&
+                    v.modeTitle === "Click to switch to Review" &&
+                    v.group === "Product ideas" &&
+                    v.autogen?.disabled === false &&
+                    v.autogen.busy === "false" &&
+                    v.autogen.spinner === false &&
+                    v.confirm == null &&
+                    v.autogenError == null &&
+                    filledCalls.length === 1 &&
+                    filledCalls[0].data?.project === ctx.repo &&
+                    sameList(filledCalls[0].data?.agents, [witnessTab, auditTab]) &&
+                    suggestAfterFirst === suggestBefore,
+                { settled: settledFirst, ask: v?.ask, mode: v?.mode, group: v?.group, autogen: v?.autogen, request: filledCalls[0]?.data, suggest: [suggestBefore, suggestAfterFirst] }
+            );
+
+            // 22. the composer still holds exactly that answer, so a second press replaces it without asking, and the mode
+            // the first answer picked is not the person's: the new answer's mode takes over and the group follows it
+            await stubRpc(h, [AUTO], { [AUTO]: { value: SECOND } });
+            await press();
+            const replacedAtOnce = await until(askIs(asText(SECOND)));
+            await until(chipIs(REVIEW_CHIP));
+            v = await view();
+            rec(
+                "22. a second press with the text unchanged replaces it with the new answer without asking; the mode chip reads Review · picked from the conversation with the Review rules and the group Review a UI feature",
+                replacedAtOnce === true &&
+                    v?.ask === asText(SECOND) &&
+                    v.confirm == null &&
+                    v.mode === REVIEW_CHIP &&
+                    v.modeKey === "review" &&
+                    v.modeRules === REVIEW_RULES &&
+                    v.group === "Review a UI feature" &&
+                    v.autogen?.disabled === false &&
+                    v.autogenError == null &&
+                    (await calls(AUTO)).length === 2,
+                { ask: v?.ask, mode: v?.mode, group: v?.group, confirm: v?.confirm, calls: (await calls(AUTO)).length }
+            );
+
+            // 23. text the person typed is not the last answer: the press asks Replace / Keep, inline in the bar; Keep leaves
+            // the typed text and every other field, and a further press then Replace puts the answer in
+            const typedText = "Tôi tự viết lại\nCâu hỏi của tôi";
+            await h.ev(setText('[data-council-input="ask"]', typedText));
+            await stubRpc(h, [AUTO], { [AUTO]: { value: THIRD } });
+            await press();
+            await until(present("[data-council-autogen-confirm]"));
+            const confirming = await view();
+            await h.shot("cdp-shots/council-setup-autogen-confirm.png");
+            await h.ev(click("[data-council-autogen-keep]"));
+            await until(noConfirm);
+            const keptTyped = await view();
+            await press();
+            await until(present("[data-council-autogen-confirm]"));
+            await h.ev(click("[data-council-autogen-replace]"));
+            await until(askIs(asText(THIRD)));
+            await until(noConfirm);
+            const replacedTyped = await view();
+            rec(
+                "23. after typing into the composer a press shows Replace the text? with Replace and Keep right after the button and the typed text intact; Keep leaves the typed text, the mode and the group; a further press and Replace puts the answer in, the chip reading Brainstorm · picked from the conversation over Product ideas",
+                confirming?.confirm?.text.startsWith("Replace the text?") === true &&
+                    confirming.confirm.replace === "Replace" &&
+                    confirming.confirm.keep === "Keep" &&
+                    confirming.confirm.afterButton === true &&
+                    confirming.ask === typedText &&
+                    confirming.autogen?.disabled === false &&
+                    confirming.mode === REVIEW_CHIP &&
+                    keptTyped?.confirm == null &&
+                    keptTyped.ask === typedText &&
+                    keptTyped.mode === REVIEW_CHIP &&
+                    keptTyped.group === "Review a UI feature" &&
+                    keptTyped.autogenError == null &&
+                    replacedTyped?.ask === asText(THIRD) &&
+                    replacedTyped.confirm == null &&
+                    replacedTyped.mode === BRAINSTORM_CHIP &&
+                    replacedTyped.modeKey === "brainstorm" &&
+                    replacedTyped.group === "Product ideas" &&
+                    (await calls(AUTO)).length === 4,
+                { asked: { confirm: confirming?.confirm, ask: confirming?.ask, mode: confirming?.mode }, kept: { ask: keptTyped?.ask, mode: keptTyped?.mode, group: keptTyped?.group }, replaced: { ask: replacedTyped?.ask, mode: replacedTyped?.mode, group: replacedTyped?.group } }
+            );
+
+            // 24. typing during the call: the composer holds the last answer when the call goes out, which alone would let
+            // the next answer in unasked; what is typed while it is out is seen when the answer lands, so it waits on
+            // Replace / Keep and the typed text stays
+            await stubRpc(h, [AUTO], { [AUTO]: { pending: true } });
+            await press();
+            await until(busy("true"));
+            const duringText = "Gõ giữa lúc đang chờ\nCâu hỏi gõ giữa chừng";
+            await h.ev(setText('[data-council-input="ask"]', duringText));
+            const outView = await view();
+            const settledDuring = await resolveStub(h, AUTO, DURING);
+            await until(present("[data-council-autogen-confirm]"));
+            const landed = await view();
+            await h.ev(click("[data-council-autogen-keep]"));
+            await until(noConfirm);
+            const keptDuring = await view();
+            rec(
+                "24. pressing on the last answer and typing while the call is out: the answer then lands as Replace the text? with the typed text intact and the button ready; Keep leaves the typed text and the Brainstorm mode as they were",
+                outView?.autogen?.busy === "true" &&
+                    outView.autogen.spinner === true &&
+                    outView.confirm == null &&
+                    outView.ask === duringText &&
+                    settledDuring === 1 &&
+                    landed?.confirm?.text.startsWith("Replace the text?") === true &&
+                    landed.ask === duringText &&
+                    landed.autogen?.disabled === false &&
+                    landed.autogen.busy === "false" &&
+                    landed.mode === BRAINSTORM_CHIP &&
+                    keptDuring?.confirm == null &&
+                    keptDuring.ask === duringText &&
+                    keptDuring.mode === BRAINSTORM_CHIP &&
+                    keptDuring.group === "Product ideas" &&
+                    (await calls(AUTO)).length === 5,
+                { out: { autogen: outView?.autogen, ask: outView?.ask }, settled: settledDuring, landed: { confirm: landed?.confirm, ask: landed?.ask, mode: landed?.mode }, kept: { ask: keptDuring?.ask, mode: keptDuring?.mode, group: keptDuring?.group } }
+            );
+
+            // 25. a refused call leaves the composer as it was and says why on one line under the box (the error's first
+            // line); on an emptied composer the next press takes that line away and the answer fills the box
+            const REASON = "none of the seated agents has a conversation to read";
+            await stubRpc(h, [AUTO], { [AUTO]: { reject: `${REASON}\n  at wsh agents` } });
+            await press();
+            await until(present("[data-council-autogen-error]"));
+            const refused = await view();
+            await h.shot("cdp-shots/council-setup-autogen-error.png");
+            await h.ev(setText('[data-council-input="ask"]', ""));
+            await stubRpc(h, [AUTO], { [AUTO]: { value: AFTER_ERROR } });
+            await press();
+            await until(askIs(asText(AFTER_ERROR)));
+            await until(chipIs(REVIEW_CHIP));
+            const recovered = await view();
+            rec(
+                "25. a refused call (stubbed) leaves the composer unchanged and shows its first line, none of the seated agents has a conversation to read, on one truncating line under the box with the button ready; after emptying the composer a press (now answering) removes the line and fills the composer, the chip reading Review · picked from the conversation",
+                refused?.ask === duringText &&
+                    refused.autogenError?.text === REASON &&
+                    refused.autogenError.belowComposer === true &&
+                    refused.autogenError.oneLine === true &&
+                    refused.autogen?.disabled === false &&
+                    refused.autogen.busy === "false" &&
+                    refused.confirm == null &&
+                    refused.mode === BRAINSTORM_CHIP &&
+                    recovered?.autogenError == null &&
+                    recovered.ask === asText(AFTER_ERROR) &&
+                    recovered.confirm == null &&
+                    recovered.mode === REVIEW_CHIP &&
+                    recovered.autogen?.disabled === false &&
+                    (await calls(AUTO)).length === 7,
+                { refused: { ask: refused?.ask, error: refused?.autogenError, autogen: refused?.autogen, mode: refused?.mode }, recovered: { ask: recovered?.ask, error: recovered?.autogenError, mode: recovered?.mode } }
+            );
+
+            // 26. a late answer is dropped: a press, then Cancel and Setup opened again from draftWithAgents is a new form,
+            // and the old call's answer must not land in it
+            await stubRpc(h, [AUTO], { [AUTO]: { pending: true } });
+            await press();
+            await until(busy("true"));
+            await h.ev(click("[data-council-cancel]"));
+            await until(`!document.querySelector("[data-council-setup]")`);
+            await openCouncilSetup(h, ctx.repo, await h.ev(draftWithAgentsIn(agentsToSeat)));
+            await until(`document.querySelectorAll("[data-council-seat]").length === 7`);
+            const settledLate = await resolveStub(h, AUTO, LATE);
+            // the answer has nothing to land in, so there is nothing to wait for: it is given a moment to prove it is dropped
+            await new Promise((r) => setTimeout(r, 600));
+            const reopened = await view();
+            rec(
+                "26. a press, then Cancel and Setup opened again from draftWithAgents: the old call's late answer is dropped, so the new composer stays empty, the button is ready (no spinner, Replace / Keep or error) and the mode chip reads Review",
+                settledLate === 1 &&
+                    reopened?.ask === "" &&
+                    reopened.autogen?.disabled === false &&
+                    reopened.autogen.busy === "false" &&
+                    reopened.autogen.spinner === false &&
+                    reopened.confirm == null &&
+                    reopened.autogenError == null &&
+                    reopened.mode === "Review" &&
+                    reopened.group === "Review a UI feature",
+                { settled: settledLate, ask: reopened?.ask, autogen: reopened?.autogen, mode: reopened?.mode, group: reopened?.group }
             );
         } catch (e) {
             rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
