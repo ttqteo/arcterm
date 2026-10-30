@@ -175,7 +175,7 @@ council. Under it, one chip per seat: avatar, name, `agent · <context>` or `exp
 it is doing. A click on an agent chip opens its terminal (`showTerminal`). The channel holds the person's question, a
 divider per round, each idea as a message with its evidence chips, reply chip and agreement reactions, a held draft
 (amber tint, "Waiting for you", Send to the others / Edit / Drop; a reply draft sits in its thread), a skipped-turn
-line, and a typing row. While drafts wait, the step chip reads "Round 1 · 2 drafts wait for you". The composer posts to everyone; `@` asks one seat. The thread opens as a 400px panel on the
+line, and a typing row. While drafts wait, the step chip reads "Round 1 of 2 · 2 drafts wait for you". The composer posts to everyone; `@` asks one seat. The thread opens as a 400px panel on the
 right: the idea on top, then its replies with their stance pills (has doubts, builds on it, is against it, replies),
 then a reply box that names who will answer. The idea whose thread is open is highlighted in the channel. Esc closes
 the thread.
