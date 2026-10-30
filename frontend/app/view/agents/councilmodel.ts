@@ -85,6 +85,23 @@ export type HeldDraft =
     | { kind: "idea"; id: string; ts: number; proposal: CouncilProposal }
     | { kind: "reply"; id: string; ts: number; reply: CouncilReply };
 
+/** Pure: whether an idea or a reply reached the other seats: its `draft` is empty (sent, or never held). A held draft and
+ *  a dropped one did not, so they count in no vote, matrix cell or reply total, as the Go synthesis leaves them out too
+ *  (`Sent` in pkg/council/types.go). */
+export function isSent(item: { draft?: string }): boolean {
+    return !item.draft;
+}
+
+/** Pure: the ideas that were sent (or never held), in the order the record keeps them. */
+export function sentProposals(c: Pick<Council, "proposals">): CouncilProposal[] {
+    return (c.proposals ?? []).filter(isSent);
+}
+
+/** Pure: the replies that were sent (or never held), reactions included, in the order the record keeps them. */
+export function sentReplies(c: Pick<Council, "replies">): CouncilReply[] {
+    return (c.replies ?? []).filter(isSent);
+}
+
 /** Pure: the held drafts, ideas and replies, in the order they were written (a tie: the idea, then arrival). A sent
  *  draft (`draft` empty) and a dropped one are not held. */
 export function heldDrafts(c: Pick<Council, "proposals" | "replies">): HeldDraft[] {
@@ -115,9 +132,10 @@ export function isReaction(r: CouncilReply): boolean {
     return r.author !== YOU && r.stance === "accept" && r.text.trim() === "";
 }
 
-/** Pure: the replies a person reads as replies, which leaves out the reactions. */
+/** Pure: the replies a person reads as replies, which leaves out the reactions and every reply that is still a draft
+ *  or was dropped. */
 export function readableReplies(c: Council): CouncilReply[] {
-    return (c.replies ?? []).filter((r) => !isReaction(r));
+    return sentReplies(c).filter((r) => !isReaction(r));
 }
 
 // replies in the order they were posted: by time, a tie by arrival
@@ -159,19 +177,21 @@ export function canRemoveCouncil(c: Pick<Council, "state">): boolean {
 // ---- stances, score, ranking ----
 
 /** Pure: per proposal id, each expert's last stance on it, from its replies (the last by time wins). The proposal's
- *  author is `proposed` whatever it replied; the person's replies and a reply with no stance word count for nothing. */
+ *  author is `proposed` whatever it replied; the person's replies and a reply with no stance word count for nothing.
+ *  A held or dropped idea has no entry, and a held or dropped reply takes no stance. */
 export function latestStances(c: Council): Record<string, Record<string, StanceLabel>> {
     const out: Record<string, Record<string, StanceLabel>> = {};
-    for (const p of c.proposals ?? []) {
+    const proposals = sentProposals(c);
+    for (const p of proposals) {
         out[p.id] = {};
     }
-    for (const r of byTime(c.replies ?? [])) {
+    for (const r of byTime(sentReplies(c))) {
         const of = out[r.proposalid];
         if (of != null && r.author !== YOU && isStance(r.stance)) {
             of[r.author] = r.stance;
         }
     }
-    for (const p of c.proposals ?? []) {
+    for (const p of proposals) {
         out[p.id][p.author] = "proposed";
     }
     return out;
@@ -218,11 +238,11 @@ export interface RankedProposal {
 
 /** Pure: the proposals by the experts' picks, best first (a council with no picks: by score), a tie by score and then
  *  in arrival order. A withdrawn one and one the person cut at the pause go last (their count kept, so the list can dim
- *  it). */
+ *  it). An idea that is still a draft or was dropped is not ranked. */
 export function rankedProposals(c: Council): RankedProposal[] {
     const stances = latestStances(c);
     const replies = readableReplies(c);
-    return (c.proposals ?? [])
+    return sentProposals(c)
         .map((proposal, i) => ({
             i,
             row: {
@@ -260,9 +280,10 @@ function setDepth(nodes: ThreadNode[], depth: number): void {
     }
 }
 
-/** Pure: one proposal's replies as a tree: nested by `parentid`, siblings by time. A reaction is no reply, so it is not
- *  in the tree; a reply whose parent is not in the thread (a reaction included) is a root. While the council runs, an expert whose `activity` names this proposal adds a `typing` node, last
- *  among the children of the reply it answers (or of the post itself). */
+/** Pure: one proposal's replies as a tree: nested by `parentid`, siblings by time. A reaction is no reply, and a reply
+ *  that is still a draft or was dropped is not one yet, so none is in the tree; a reply whose parent is not in the
+ *  thread (a reaction included) is a root. While the council runs, an expert whose `activity` names this proposal adds a
+ *  `typing` node, last among the children of the reply it answers (or of the post itself). */
 export function threadTree(c: Council, proposalId: string): ThreadNode[] {
     const ordered = byTime(readableReplies(c).filter((r) => r.proposalid === proposalId));
     const nodes = new Map<string, ThreadNode>();
@@ -589,10 +610,11 @@ export function callSegments(c: Council): SegmentState[] {
 
 // ---- the summary ----
 
-/** Pure: the replies posted after the summary, which make it `Outdated · N replies since`. */
+/** Pure: the replies sent after the summary, which make it `Outdated · N replies since`. A draft the person has not
+ *  sent and a dropped one are not in it: the summary is not out of date for a reply no seat has seen. */
 export function outdatedCount(c: Council): number {
     const at = c.summary?.at;
-    return at == null ? 0 : (c.replies ?? []).filter((r) => r.ts > at).length;
+    return at == null ? 0 : sentReplies(c).filter((r) => r.ts > at).length;
 }
 
 /** Pure: whether Summarize is on: exactly when Runner.summarizeLocked takes it. It refuses a council the runner is
@@ -651,19 +673,19 @@ function firstSentence(text: string): string {
 /** Pure: the Summary's matrix: every proposal against every expert of the panel, each cell the expert's last stance
  *  and its reason (the author's cell, `proposed`, carries the first sentence of the argument), then the outcome the
  *  summary gave the proposal. Rows follow the direction a proposal went into, those in none last. Empty before a
- *  summary. */
+ *  summary. An idea that was held or dropped has no row, and a reply that was held or dropped is no cell's reason. */
 export function matrixRows(c: Council): MatrixRow[] {
     const summary = c.summary;
     if (summary == null) {
         return [];
     }
     const stances = latestStances(c);
-    const replies = byTime(c.replies ?? []);
+    const replies = byTime(sentReplies(c));
     const rankOf = (id: string) => {
         const ranks = summary.directions.filter((d) => d.from.includes(id)).map((d) => d.rank);
         return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
     };
-    return (c.proposals ?? [])
+    return sentProposals(c)
         .map((proposal, i) => ({ proposal, i, rank: rankOf(proposal.id) }))
         .sort((a, b) => a.rank - b.rank || a.i - b.i)
         .map(({ proposal }) => ({

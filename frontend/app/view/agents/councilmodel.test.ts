@@ -25,6 +25,7 @@ import {
     headerChip,
     heldDrafts,
     isAgentSeat,
+    isSent,
     latestStances,
     matrixRows,
     outdatedCount,
@@ -32,9 +33,12 @@ import {
     pickCount,
     queuedLine,
     rankedProposals,
+    readableReplies,
     replyLabel,
     roundsOf,
     score,
+    sentProposals,
+    sentReplies,
     summarizeHold,
     summaryChip,
     synthesisRound,
@@ -671,6 +675,111 @@ describe("heldDrafts", () => {
     it("is empty for a council that holds nothing, and for one with no ideas or replies yet", () => {
         expect(heldDrafts(council())).toEqual([]);
         expect(heldDrafts({})).toEqual([]);
+    });
+});
+
+// a council whose seats' answers were held: every figure below reads the sent items only, as the Go synthesis does
+describe("held and dropped items count for nothing", () => {
+    const withDrafts = (extra: Partial<Council> = {}) =>
+        council({
+            state: "done",
+            round: 3,
+            started: 1_000,
+            tokens: 0,
+            proposals: [
+                prop("P1", "ux", { ts: 1 }),
+                prop("P2", "ram", { ts: 2 }),
+                prop("P7", "nu", { ts: 3, draft: "held" }),
+                prop("P8", "sk", { ts: 4, draft: "dropped" }),
+            ],
+            replies: [
+                reply("r1", "ram", {
+                    proposalid: "P1",
+                    stance: "accept",
+                    text: "The state is in ServiceStatus.",
+                    ts: 10,
+                }),
+                reply("r2", "sk", { proposalid: "P1", stance: "challenge", text: "A third dot state?", ts: 11 }),
+                reply("r3", "nu", { proposalid: "P1", stance: "accept", text: "Agreed, held.", ts: 12, draft: "held" }),
+                reply("r4", "ram", {
+                    proposalid: "P1",
+                    stance: "oppose",
+                    text: "No, dropped.",
+                    ts: 13,
+                    draft: "dropped",
+                }),
+                reply("r5", "ux", { proposalid: "P1", stance: "oppose", text: "No, held.", ts: 14, draft: "held" }),
+                reply("r6", "you", { proposalid: "P1", text: "hm", ts: 15 }),
+            ],
+            ...extra,
+        });
+
+    it("tells a sent item from a held or a dropped one, as Go's Sent does", () => {
+        expect(isSent({})).toBe(true);
+        expect(isSent({ draft: "" })).toBe(true);
+        expect(isSent({ draft: "held" })).toBe(false);
+        expect(isSent({ draft: "dropped" })).toBe(false);
+        expect(sentProposals(withDrafts()).map((p) => p.id)).toEqual(["P1", "P2"]);
+        expect(sentReplies(withDrafts()).map((r) => r.id)).toEqual(["r1", "r2", "r6"]);
+        expect(sentProposals({}).length).toBe(0);
+        expect(sentReplies({}).length).toBe(0);
+    });
+
+    it("leaves a held and a dropped reply out of the readable replies", () => {
+        expect(readableReplies(withDrafts()).map((r) => r.id)).toEqual(["r1", "r2", "r6"]);
+    });
+
+    it("takes no stance from a held or a dropped reply, and gives a held or a dropped idea no entry", () => {
+        const stances = latestStances(withDrafts());
+        expect(stances.P1).toEqual({ ux: "proposed", ram: "accept", sk: "challenge" });
+        expect(Object.keys(stances)).toEqual(["P1", "P2"]);
+    });
+
+    it("scores from the sent replies only", () => {
+        expect(score(withDrafts(), "P1")).toBe(1);
+        expect(score(withDrafts(), "P7")).toBe(0);
+        expect(score(withDrafts(), "P8")).toBe(0);
+    });
+
+    it("ranks the sent ideas, with only their sent replies counted", () => {
+        const rows = rankedProposals(withDrafts());
+        expect(rows.map((r) => r.proposal.id)).toEqual(["P1", "P2"]);
+        expect(rows[0]).toMatchObject({ score: 1, replies: 3 });
+    });
+
+    it("leaves a held and a dropped reply out of the thread", () => {
+        const ids = flattenThread(threadTree(withDrafts(), "P1")).map((n) => n.key);
+        expect(ids).toEqual(["r1", "r2", "r6"]);
+    });
+
+    it("counts only the sent replies in the cost line", () => {
+        expect(costLine(withDrafts({ state: "running" }), 1_000 + 60_000)).toBe("1:00 · 3 replies · 0 tokens");
+    });
+
+    it("counts only the replies sent after the summary as outdating it", () => {
+        const c = withDrafts({ summary: { text: "", directions: [], outcomes: {}, at: 9 } });
+        expect(outdatedCount(c)).toBe(3);
+        expect(outdatedCount(withDrafts({ summary: { text: "", directions: [], outcomes: {}, at: 12 } }))).toBe(1);
+    });
+
+    it("gives the matrix no row for a held or a dropped idea and no reason from a held or a dropped reply", () => {
+        const c = withDrafts({ summary: { text: "", directions: [], outcomes: {}, at: 50 } });
+        const rows = matrixRows(c);
+        expect(rows.map((r) => r.proposal.id)).toEqual(["P1", "P2"]);
+        const p1 = rows[0];
+        expect(p1.cells.map((x) => [x.expert.id, x.stance, x.reason])).toEqual([
+            ["ux", "proposed", "argument P1"],
+            ["ram", "accept", "The state is in ServiceStatus."],
+            ["nu", "", ""],
+            ["sk", "challenge", "A third dot state?"],
+        ]);
+    });
+
+    it("reads a council that holds nothing as it did before", () => {
+        const plain = council({ proposals: [prop("P1", "ux"), prop("P2", "ram")], replies: [reply("r1", "ram")] });
+        expect(sentProposals(plain)).toEqual(plain.proposals);
+        expect(sentReplies(plain)).toEqual(plain.replies);
+        expect(readableReplies(plain)).toEqual(plain.replies);
     });
 });
 
