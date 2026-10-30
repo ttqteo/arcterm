@@ -297,12 +297,6 @@ func CleanStorageCommand(w *wshutil.WshRpc, data wshrpc.CommandCleanStorageData,
 	return resp, err
 }
 
-// command "codereviewwrite", wshserver.CodeReviewWriteCommand
-func CodeReviewWriteCommand(w *wshutil.WshRpc, data wshrpc.CommandCodeReviewWriteData, opts *wshrpc.RpcOpts) (*wshrpc.CommandCodeReviewWriteRtnData, error) {
-	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandCodeReviewWriteRtnData](w, "codereviewwrite", data, opts)
-	return resp, err
-}
-
 // command "consult", wshserver.ConsultCommand
 func ConsultCommand(w *wshutil.WshRpc, data wshrpc.CommandConsultData, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[wshrpc.ConsultChunk] {
 	return sendRpcRequestResponseStreamHelper[wshrpc.ConsultChunk](w, "consult", data, opts)

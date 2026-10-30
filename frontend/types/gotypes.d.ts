@@ -719,17 +719,6 @@ declare global {
         allowguarded?: boolean;
     };
 
-    // wshrpc.CommandCodeReviewWriteData
-    type CommandCodeReviewWriteData = {
-        project: string;
-        markdown: string;
-    };
-
-    // wshrpc.CommandCodeReviewWriteRtnData
-    type CommandCodeReviewWriteRtnData = {
-        path: string;
-    };
-
     // wshrpc.CommandConsultData
     type CommandConsultData = {
         channelid: string;

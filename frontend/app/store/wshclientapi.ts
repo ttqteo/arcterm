@@ -300,12 +300,6 @@ export class RpcApiType {
         return client.wshRpcCall("cleanstorage", data, opts);
     }
 
-    // command "codereviewwrite" [call]
-    CodeReviewWriteCommand(client: WshClient, data: CommandCodeReviewWriteData, opts?: RpcOpts): Promise<CommandCodeReviewWriteRtnData> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "codereviewwrite", data, opts);
-        return client.wshRpcCall("codereviewwrite", data, opts);
-    }
-
     // command "consult" [responsestream]
 	ConsultCommand(client: WshClient, data: CommandConsultData, opts?: RpcOpts): AsyncGenerator<ConsultChunk, void, boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "consult", data, opts);
