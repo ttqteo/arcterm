@@ -12,6 +12,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         CouncilStartCommand: vi.fn(),
         CouncilReplyCommand: vi.fn(),
         CouncilContinueCommand: vi.fn(),
+        CouncilDraftCommand: vi.fn(),
         CouncilSummarizeCommand: vi.fn(),
         CouncilStopCommand: vi.fn(),
         CouncilDeleteCommand: vi.fn(),
@@ -47,6 +48,7 @@ import {
     councilUnreadAtom,
     councilViewAtom,
     deleteCouncil,
+    draftCouncil,
     estimateCouncil,
     loadCouncil,
     loadCouncils,
@@ -242,6 +244,33 @@ describe("actions", () => {
         expect(RpcApi.CouncilStopCommand).toHaveBeenCalledWith(TabRpcClient, { id: "h1" });
         expect(RpcApi.CouncilRetryCommand).toHaveBeenCalledWith(TabRpcClient, { id: "h1", expertid: "sk" });
         expect(RpcApi.CouncilSaveGroupCommand).toHaveBeenCalledWith(TabRpcClient, group);
+    });
+
+    it("draft passes the council, the item, the action and the text of an edit", async () => {
+        vi.mocked(RpcApi.CouncilDraftCommand).mockResolvedValue(undefined);
+        expect(await draftCouncil("h1", "P2", "send")).toEqual({ ok: true, value: undefined });
+        expect(await draftCouncil("h1", "r3", "edit", "Shorter: keep it awake only while it is on screen.")).toEqual({
+            ok: true,
+            value: undefined,
+        });
+        expect(await draftCouncil("h1", "P4", "drop")).toEqual({ ok: true, value: undefined });
+        const calls = vi.mocked(RpcApi.CouncilDraftCommand).mock.calls;
+        expect(calls).toHaveLength(3);
+        expect(calls[0]).toEqual([TabRpcClient, { id: "h1", itemid: "P2", action: "send" }]);
+        expect(calls[1]).toEqual([
+            TabRpcClient,
+            { id: "h1", itemid: "r3", action: "edit", text: "Shorter: keep it awake only while it is on screen." },
+        ]);
+        expect(calls[2]).toEqual([TabRpcClient, { id: "h1", itemid: "P4", action: "drop" }]);
+    });
+
+    it("draft answers why wavesrv refused it, and logs", async () => {
+        const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+        vi.mocked(RpcApi.CouncilDraftCommand).mockRejectedValue(new Error("P2 is not a held draft"));
+        const r = await draftCouncil("h1", "P2", "send");
+        expect(r).toEqual({ ok: false, error: "P2 is not a held draft" });
+        expect(quiet).toHaveBeenCalled();
+        quiet.mockRestore();
     });
 
     it("delete removes the council from its atoms once wavesrv agrees, and leaves it when refused", async () => {

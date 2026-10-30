@@ -204,6 +204,21 @@ export function continueCouncil(data: CommandCouncilContinueData): Promise<Counc
     return call("continue", () => RpcApi.CouncilContinueCommand(TabRpcClient, data));
 }
 
+/** What the person does with a held draft: `send` lets it reach the other seats as written, `edit` replaces its text and
+ *  sends that, `drop` keeps it from reaching anyone. */
+export type CouncilDraftAction = "send" | "edit" | "drop";
+
+/** Settles one held draft of a council with live agents. `itemId` is the idea's id (P1) or the reply's (r3); `text` is
+ *  the new text of an `edit`. The council reloads through `council:changed`; wavesrv refuses an item that is not held. */
+export function draftCouncil(
+    id: string,
+    itemId: string,
+    action: CouncilDraftAction,
+    text?: string
+): Promise<CouncilCall<void>> {
+    return call("draft", () => RpcApi.CouncilDraftCommand(TabRpcClient, { id, itemid: itemId, action, text }));
+}
+
 /** Runs the synthesis again on the discussion so far. */
 export function summarizeCouncil(id: string): Promise<CouncilCall<void>> {
     return call("summarize", () => RpcApi.CouncilSummarizeCommand(TabRpcClient, { id }));

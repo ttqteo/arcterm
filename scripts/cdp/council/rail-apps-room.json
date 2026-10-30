@@ -1,0 +1,224 @@
+{
+  "id": "fx-council-room",
+  "project": "",
+  "feature": "Rail apps",
+  "question": "Which changes to pinned apps on the nav rail are worth making first?",
+  "files": [
+    "frontend/app/view/agents/railapps.ts",
+    "frontend/app/view/agents/railappsstore.ts",
+    "pkg/services/model.go"
+  ],
+  "experts": [
+    {
+      "id": "witness",
+      "name": "Witness synthesis",
+      "model": "opus",
+      "brief": "",
+      "agent": "fx-room-witness",
+      "harness": "claude",
+      "context": 625000
+    },
+    {
+      "id": "uxaudit",
+      "name": "UX audit",
+      "model": "sonnet",
+      "brief": "",
+      "agent": "fx-room-uxaudit",
+      "harness": "pi",
+      "context": 210000
+    },
+    {
+      "id": "security",
+      "name": "Security",
+      "model": "sonnet",
+      "brief": "You review the feature for security. Ask what a pinned app exposes, to whom, and for how long."
+    },
+    {
+      "id": "skeptic",
+      "name": "Skeptic",
+      "model": "sonnet",
+      "brief": "You are the skeptic. Name what breaks: the input nobody tried, the state two features reach at once, the claim another expert made without checking it."
+    },
+    {
+      "id": "coordinator",
+      "name": "Coordinator",
+      "model": "opus",
+      "coordinator": true,
+      "brief": "You are the coordinator. Merge the proposals that say the same thing, rank the directions that remain, and mark the claims that cite nothing as weak."
+    }
+  ],
+  "rounds": 2,
+  "state": "running",
+  "round": 2,
+  "proposals": [
+    {
+      "id": "P1",
+      "author": "security",
+      "title": "Stop a pinned app's server when its project closes",
+      "argument": "A pinned app is a dev server. Closing its project leaves it listening on its port until arcterm quits.",
+      "evidence": [
+        {
+          "ref": "pkg/services/model.go:38"
+        }
+      ],
+      "ts": 1792573328000
+    },
+    {
+      "id": "P2",
+      "author": "security",
+      "title": "Bind a pinned app's server to localhost",
+      "argument": "A server started with --host listens on every interface, and the rail pins a page by its url without checking that the url is localhost.",
+      "evidence": [
+        {
+          "ref": "railapps.ts:11"
+        }
+      ],
+      "ts": 1792573329000
+    },
+    {
+      "id": "P3",
+      "author": "skeptic",
+      "title": "Move the rail pins from localStorage to settings",
+      "argument": "A cleared WebView2 profile loses them. railappsstore.ts keeps the pins in localStorage.",
+      "evidence": [
+        {
+          "ref": "railappsstore.ts:12"
+        }
+      ],
+      "ts": 1792573340000
+    },
+    {
+      "id": "P4",
+      "author": "uxaudit",
+      "title": "Show asleep and waking on the rail icon",
+      "argument": "A sleeping app looks the same as a running one. railDot draws only error and warning, so the rail never says an app is asleep.",
+      "evidence": [
+        {
+          "ref": "railapps.ts:72"
+        }
+      ],
+      "ts": 1792573445000,
+      "edited": true
+    },
+    {
+      "id": "P5",
+      "author": "uxaudit",
+      "title": "Show the empty rail slots with a pin hint",
+      "argument": "The cap of 3 shows only once the rail is full.",
+      "evidence": [
+        {
+          "ref": "railapps.ts:11"
+        }
+      ],
+      "ts": 1792573446000,
+      "draft": "dropped"
+    }
+  ],
+  "replies": [
+    {
+      "id": "r1",
+      "proposalid": "",
+      "author": "you",
+      "text": "Judge each idea on a Mac too: the app frame cannot reload in place there yet.",
+      "to": [
+        "witness",
+        "uxaudit",
+        "security",
+        "skeptic"
+      ],
+      "round": 2,
+      "ts": 1792574215000
+    },
+    {
+      "id": "r2",
+      "proposalid": "P1",
+      "author": "skeptic",
+      "stance": "accept",
+      "text": "",
+      "round": 2,
+      "ts": 1792574290000
+    },
+    {
+      "id": "r3",
+      "proposalid": "P2",
+      "author": "skeptic",
+      "stance": "accept",
+      "builds": true,
+      "text": "Say which hosts count as localhost: 127.0.0.1 and ::1, nothing else.",
+      "round": 2,
+      "ts": 1792574291000,
+      "edited": true
+    },
+    {
+      "id": "r4",
+      "proposalid": "P4",
+      "author": "skeptic",
+      "stance": "challenge",
+      "text": "A third dot state: name what I do differently when I see it.",
+      "round": 2,
+      "ts": 1792574292000,
+      "draft": "held"
+    },
+    {
+      "id": "r5",
+      "proposalid": "P4",
+      "author": "you",
+      "text": "Does your transcript show anyone waiting on a sleeping app?",
+      "to": [
+        "witness"
+      ],
+      "round": 2,
+      "ts": 1792574330000
+    }
+  ],
+  "activity": {
+    "uxaudit": {
+      "text": "Replying to Security",
+      "proposalid": "P1"
+    },
+    "witness": {
+      "text": "Waiting for Witness synthesis to finish its task"
+    }
+  },
+  "failed": {
+    "security": {
+      "round": 2,
+      "error": "the reply was not valid JSON"
+    }
+  },
+  "skips": [
+    {
+      "expert": "witness",
+      "round": 1,
+      "reason": "still working on its own task after 10 min",
+      "ts": 1792573825000
+    }
+  ],
+  "stats": {
+    "witness": {
+      "ms": 0,
+      "tokens": 0,
+      "calls": 0
+    },
+    "uxaudit": {
+      "ms": 245000,
+      "tokens": 38000,
+      "calls": 1
+    },
+    "security": {
+      "ms": 129000,
+      "tokens": 52000,
+      "calls": 1
+    },
+    "skeptic": {
+      "ms": 215000,
+      "tokens": 61000,
+      "calls": 2
+    }
+  },
+  "tokens": 151000,
+  "calls": 4,
+  "started": 1792573200000,
+  "created": 1792573170000,
+  "updated": 1792574360000
+}
