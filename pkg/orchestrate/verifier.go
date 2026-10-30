@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -214,9 +215,34 @@ func RecordFinalVerdict(ctx context.Context, dagID, verifierRunID, verdict, text
 
 // finalTreeRemoveAttempts and finalTreeRemoveInterval bound the retries of a final tree's removal: the verifier
 // sends its verdict from inside the tree, and on Windows its session holds the directory until it exits.
-const finalTreeRemoveAttempts = 6
+var finalTreeRemoveAttempts = 6
 
 var finalTreeRemoveInterval = 10 * time.Second
+
+// finalTreeTakes counts the stages that made their tree at each final tree directory. A removal still retrying
+// for an earlier round's tree must not take a later round's tree made at the same path once the old one went.
+var finalTreeTakes = struct {
+	sync.Mutex
+	n map[string]int
+}{n: map[string]int{}}
+
+// takeFinalTreeDir records that a stage is about to make its tree at wt.
+func takeFinalTreeDir(wt string) {
+	finalTreeTakes.Lock()
+	defer finalTreeTakes.Unlock()
+	finalTreeTakes.n[wt]++
+}
+
+// removeUntakenFinalTree removes tree unless a stage has made its tree there since take; then there is nothing
+// of the earlier round's left to remove.
+func removeUntakenFinalTree(project, tree string, take int) error {
+	finalTreeTakes.Lock()
+	defer finalTreeTakes.Unlock()
+	if finalTreeTakes.n[tree] != take {
+		return nil
+	}
+	return removeStaleFinalTree(context.Background(), project, tree)
+}
 
 // releaseFinalTree removes the detached tree a checkout-landed dag's stage made, once the verifier is done
 // with it. A branch-landed dag's tree is its landing tree, which the run keeps.
@@ -235,14 +261,17 @@ func removeFinalTree(dagID string, owner *waveobj.Run, tree string) {
 		return
 	}
 	project := owner.ProjectPath
-	if removeWorktreeDir(context.Background(), project, tree) == nil {
+	finalTreeTakes.Lock()
+	take := finalTreeTakes.n[tree]
+	finalTreeTakes.Unlock()
+	if removeUntakenFinalTree(project, tree, take) == nil {
 		return
 	}
 	goStage("final-tree "+dagID, func() {
 		var err error
 		for i := 1; i < finalTreeRemoveAttempts; i++ {
 			time.Sleep(finalTreeRemoveInterval)
-			if err = removeWorktreeDir(context.Background(), project, tree); err == nil {
+			if err = removeUntakenFinalTree(project, tree, take); err == nil {
 				return
 			}
 		}

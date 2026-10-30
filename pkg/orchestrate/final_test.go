@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -388,6 +389,27 @@ func TestCancelStopsARunningFinalCommand(t *testing.T) {
 	}
 }
 
+// stageKey marks the context a test passes finalTree; the retried removal runs on a context of its own.
+type stageKey struct{}
+
+// holdFinalTrees makes a final tree's removal fail as a held directory does on Windows while held says so, and
+// retries it every 5ms for up to 5s.
+func holdFinalTrees(t *testing.T, held func(context.Context) bool) {
+	t.Helper()
+	attempts, interval := finalTreeRemoveAttempts, finalTreeRemoveInterval
+	removeStaleFinalTree = func(ctx context.Context, project, wt string) error {
+		if held(ctx) {
+			return fmt.Errorf("being used by another process")
+		}
+		return removeWorktreeDir(ctx, project, wt)
+	}
+	finalTreeRemoveAttempts, finalTreeRemoveInterval = 1000, 5*time.Millisecond
+	restoreAfterStages(t, func() {
+		removeStaleFinalTree = removeWorktreeDir
+		finalTreeRemoveAttempts, finalTreeRemoveInterval = attempts, interval
+	})
+}
+
 func TestFinalTree(t *testing.T) {
 	ctx := context.Background()
 	t.Run("a checkout-landed dag gets a detached tree at HEAD, prepared by Setup and removed by cleanup", func(t *testing.T) {
@@ -423,11 +445,9 @@ func TestFinalTree(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		removeStaleFinalTree = func(context.Context, string, string) error {
-			return fmt.Errorf("being used by another process")
-		}
-		t.Cleanup(func() { removeStaleFinalTree = removeWorktreeDir })
-		tree, cleanup, err := finalTree(ctx, g, owner)
+		// the stage's own removal finds the tree held, and the retrying removal it hands it to does not
+		holdFinalTrees(t, func(ctx context.Context) bool { return ctx.Value(stageKey{}) != nil })
+		tree, cleanup, err := finalTree(context.WithValue(ctx, stageKey{}, true), g, owner)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -457,6 +477,30 @@ func TestFinalTree(t *testing.T) {
 		tree, cleanup, err := finalTree(ctx, g, owner)
 		if err != nil || tree != stale {
 			t.Fatalf("want the stale tree's directory %s again, got %s (%v)", stale, tree, err)
+		}
+		cleanup()
+	})
+	// the removal retried for round 1's held tree outlived round 2's removal of it, and took the tree round 2
+	// had just made at the same path
+	t.Run("a retried removal stops once the next round has taken the tree's directory", func(t *testing.T) {
+		repo := newGitRepo(t)
+		owner := &waveobj.Run{ID: "run-r", ProjectPath: repo}
+		g := &waveobj.TaskGroup{OID: "dag-r"}
+		round1, _, err := finalTree(ctx, g, owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var released atomic.Bool
+		holdFinalTrees(t, func(ctx context.Context) bool { return ctx.Value(stageKey{}) == nil && !released.Load() })
+		removeFinalTree(g.OID, owner, round1) // round 1's verifier still holds it: the removal retries
+		round2, cleanup, err := finalTree(context.WithValue(ctx, stageKey{}, true), g, owner)
+		if err != nil || round2 != round1 {
+			t.Fatalf("want round 1's directory %s again, got %s (%v)", round1, round2, err)
+		}
+		released.Store(true)
+		waitStages(t)
+		if _, err := os.Stat(filepath.Join(round2, ".git")); err != nil {
+			t.Fatalf("round 1's retried removal took round 2's tree: %v", err)
 		}
 		cleanup()
 	})
