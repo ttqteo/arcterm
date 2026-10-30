@@ -21,15 +21,37 @@ export interface UnreadAgent {
 
 /** Pure: the agents whose turns never count: a run's workers and stage sessions, and a lead once its run has a dag.
  *  From then on the engine wakes the lead for each task, merge and question, and what it needs from you arrives as an
- *  ask; before it, a lead from a goal is still talking its spec and plan through with you. */
-export function nestedIds(lineage: Lineage): Set<string> {
+ *  ask; before it, a lead from a goal is still talking its spec and plan through with you. Nor do a brainstorm's
+ *  builder check and judge sessions (the runs another agent's `builderCheck` / `brainstormJudge` record names): Arc
+ *  hands their answer to the brainstorming agent, and the tree draws them as its stage rows, which carry no count. */
+export function nestedIds(lineage: Lineage, agents: readonly NestedAgent[] = []): Set<string> {
     const out = new Set<string>();
     for (const [id, role] of Object.entries(lineage.roles)) {
         if (role.kind === "worker" || role.kind === "stage" || lineage.runs[role.runId]?.dag != null) {
             out.add(id);
         }
     }
+    const checkRuns = new Set<string>();
+    for (const a of agents) {
+        for (const record of [a.builderCheck, a.brainstormJudge]) {
+            if (record?.runId) {
+                checkRuns.add(record.runId);
+            }
+        }
+    }
+    for (const a of agents) {
+        if (a.runId != null && checkRuns.has(a.runId)) {
+            out.add(a.id);
+        }
+    }
     return out;
+}
+
+export interface NestedAgent {
+    id: string;
+    runId?: string;
+    builderCheck?: { runId?: string };
+    brainstormJudge?: { runId?: string };
 }
 
 /** Pure: the unread counts after one roster snapshot, `prevStates` being each agent's state in the snapshot before.

@@ -164,4 +164,18 @@ describe("nestedIds", () => {
         });
         expect(out).toEqual(new Set(["lead"]));
     });
+
+    it("picks a brainstorm's builder check and judge sessions, which report to the brainstorming agent", () => {
+        const out = nestedIds({ roles: {}, runs: {} }, [
+            {
+                id: "b",
+                builderCheck: { runId: "chk-1" },
+                brainstormJudge: { runId: "jdg-1" },
+            },
+            { id: "check", runId: "chk-1" },
+            { id: "judge", runId: "jdg-1" },
+            { id: "other", runId: "q-1" },
+        ]);
+        expect(out).toEqual(new Set(["check", "judge"]));
+    });
 });

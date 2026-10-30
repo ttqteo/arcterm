@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Agent badge: run a brainstorm until its Judge (or Builder check) answers, while looking at another
+  agent: the Agent nav badge does not go up for the Judge, and every number it shows matches a count on a tree row.
+  (commit "fix(agents): a brainstorm's judge and builder check do not count as unread")
 - [ ] (arcterm) Kael sync (2026-10-30): in Code, open a file in a repo on a feature branch with a commit ahead of
   main, press `d` three times: HEAD diff, then the branch-base diff (the header names the base, the left side holds
   main's copy), then the single editor; on main the base step is skipped. The `code-diff` scenario was extended but
@@ -69,6 +72,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   rows below. All three rows (the one between included) read selected and Discuss together seats all three; on a Mac
   the same with Cmd+click. The CDP scenario ranged over two adjacent rows on Windows only. (run f46b61f9, task 10)
 
+- [ ] (arcterm) New dialog, Task on top: `Mod+N` should open with the Task box (three lines) above the three columns and
+  the cursor in it; type, Enter starts the agent, Shift+Enter is a new line, a Telex word's Enter does not launch.
+  Alt+1–9 picks a Start row from the box (Option+digit on a Mac); onto Terminal, Tool or Council the box turns to a
+  dashed "takes no task" line and focus goes to Start. `Mod+Shift+R` opens in the Goal. `task verify:ui -- launcher
+  launcher-resume launcher-images new-run-window` (scenarios updated, never run). Uncommitted, 2026-10-30.
 - [ ] (arcterm) New dialog, Start column back: `Mod+N` should open three columns (Start 236px, Project, Session or the
   pick's list), focus on Start, no chip; every Start, Project, Session row draws its digit (Home 0, tools a–z), and the
   focused column's label shows its keys. Enter in Start launches; Esc closes. `task verify:ui -- launcher

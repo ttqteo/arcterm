@@ -22,6 +22,19 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- The New dialog opens in its Task box, now at the top above the columns: type what the agent should do and press Enter
+  to start it (Shift+Enter for a new line). Alt+1–9 picks another agent without leaving the box; a run opens in its
+  Goal the same way. <!-- try: new-agent -->
+
+### Fixed
+
+- The Agent badge no longer counts a brainstorm's Judge and Builder check sessions as unread: their answer goes to the
+  brainstorming agent, so the badge had a number no row in the tree showed.
+
 ## 0.15.19 — 2026-10-30
 
 ### Added
