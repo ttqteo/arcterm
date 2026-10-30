@@ -10,6 +10,7 @@ import {
     councilPeek,
     doingLine,
     finishedRows,
+    firstRows,
     historyRows,
     isQuiet,
     overviewRows,
@@ -539,5 +540,20 @@ describe("historyRows", () => {
         it("is empty when nothing matches", () => {
             expect(rows("zzz")).toEqual([]);
         });
+    });
+});
+
+describe("firstRows", () => {
+    const top = (key: string) => ({ key, nested: false }) as HistoryRow;
+    const child = (key: string) => ({ key, nested: true }) as HistoryRow;
+    const ROWS = [top("a"), child("a1"), child("a2"), top("b"), top("c"), child("c1")];
+
+    it("keeps a top-level row's nested rows with it", () => {
+        expect(firstRows(ROWS, 1).map((r) => r.key)).toEqual(["a", "a1", "a2"]);
+        expect(firstRows(ROWS, 3).map((r) => r.key)).toEqual(["a", "a1", "a2", "b", "c", "c1"]);
+    });
+
+    it("returns every row when the limit is past the end", () => {
+        expect(firstRows(ROWS, 50)).toHaveLength(6);
     });
 });

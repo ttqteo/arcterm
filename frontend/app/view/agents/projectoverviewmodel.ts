@@ -371,3 +371,22 @@ export function historyRows(
     }
     return groups.sort((a, b) => b[0].ts - a[0].ts).flat();
 }
+
+// History draws this many top-level rows at first, and as many more each time its foot scrolls into view
+export const HISTORY_PAGE = 15;
+
+// the first `limit` top-level rows, each with the rows nested under it, so a page never ends between a session and its
+// runs and councils
+export function firstRows(rows: readonly HistoryRow[], limit: number): HistoryRow[] {
+    let top = 0;
+    let end = 0;
+    for (; end < rows.length; end++) {
+        if (!rows[end].nested) {
+            if (top === limit) {
+                break;
+            }
+            top++;
+        }
+    }
+    return rows.slice(0, end);
+}

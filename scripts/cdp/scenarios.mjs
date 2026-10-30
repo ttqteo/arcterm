@@ -55812,8 +55812,14 @@ const OVH_FOLDER = (name) => `[data-agent-folder-section="active"][data-project-
 const ovhUp = (name) => `(document.querySelector('[data-project-overview="${name}"]') != null)`;
 const ovhCount = (sel) => `document.querySelectorAll(${JSON.stringify(sel)}).length`;
 const ovhText = (sel) => `(document.querySelector(${JSON.stringify(sel)})?.textContent.replace(/\\s+/g, " ").trim() ?? null)`;
+// A's Branches card is read: its worktree row and the seed commit's one row, no error, not loading
+const OVH_GRAPH_READY = `(${ovHas('[data-graph-card] [data-graph-row="worktree"]')} &&
+    ${ovhCount('[data-graph-card] [data-graph-row]:not([data-graph-row="worktree"])')} === 1 &&
+    !${ovHas("[data-graph-error]")} && !${ovHas("[data-graph-card][aria-busy]")})`;
+// the top-level rows of History (a nested row names its parent)
+const OVH_TOP_ROWS = "[data-history-row]:not([data-history-parent])";
 // the keys of the rows, top to bottom
-const OVH_ROW_KEYS = `[...document.querySelectorAll("[data-history-row]")].map((r) => r.getAttribute("data-history-row"))`;
+const OVH_ROW_KEYS =`[...document.querySelectorAll("[data-history-row]")].map((r) => r.getAttribute("data-history-row"))`;
 // a nested or top-level run or council row's title and line (the two truncated spans of its text column)
 const ovhRowText = (key) => `(() => {
     const row = document.querySelector(${JSON.stringify(`[data-history-row="${key}"]`)});
@@ -55854,9 +55860,30 @@ function ovhSessions(ctx, now) {
     ];
 }
 
+// step 15's extra ended sessions of A, all in the window, older than the rest (6h, then every 4h back to 5.4 days): with
+// A's two and the cockpit's run History has 35 top-level rows, three pages of HISTORY_PAGE (15)
+const OVH_PAGED = 32;
+function ovhPagedSessions(ctx, now) {
+    const template = ovhSessions(ctx, now)[1];
+    return Array.from({ length: OVH_PAGED }, (_, i) => {
+        const id = `ovh-p${i + 1}`;
+        const agoMs = (6 + 4 * i) * 3_600_000;
+        return {
+            ...template,
+            id,
+            task: `Paged session ${i + 1}`,
+            startedts: now - agoMs - 60_000,
+            lastactivets: now - agoMs,
+            resumecommand: `claude --resume ${id}`,
+            transcriptpath: join(ctx.base, `${id}.jsonl`),
+        };
+    });
+}
+
 // Runs IN THE PAGE (ovhInstallMock sends its source). Answers getsessionsactivity (a page with a cursor holds nothing, the
 // first page the sessions), councillist (A's one council; B's empty, or held until mode.release()) and getchannelruns (A's
-// channel: its two runs, or a rejection with mode.runsFail); every other command goes to what was there. `mode` is the steps'.
+// channel: its two runs, or a rejection with mode.runsFail); every other command goes to what was there. `mode` is the steps'
+// (mode.extraSessions: more sessions after the fixture's, for step 15's paging).
 async function ovhInstallInPage(cfg) {
     const mod = await import(cfg.apiUrl);
     const api = mod.RpcApi;
@@ -55865,7 +55892,7 @@ async function ovhInstallInPage(cfg) {
     const prev = api.mockClient ?? null;
     const norm = (p) => String(p ?? "").replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
     const held = [];
-    const mode = { holdCouncils: false, runsFail: null, noSessionsB: false, release: null };
+    const mode = { holdCouncils: false, runsFail: null, noSessionsB: false, extraSessions: [], release: null };
     mode.release = () => {
         mode.holdCouncils = false;
         for (const resolve of held.splice(0)) resolve([]);
@@ -55875,7 +55902,9 @@ async function ovhInstallInPage(cfg) {
             if (command === "getsessionsactivity") {
                 if (data?.cursor) return Promise.resolve({ sessions: [] });
                 return Promise.resolve({
-                    sessions: cfg.sessions.filter((s) => !(mode.noSessionsB && norm(s.projectpath) === norm(cfg.dirB))),
+                    sessions: [...cfg.sessions, ...mode.extraSessions].filter(
+                        (s) => !(mode.noSessionsB && norm(s.projectpath) === norm(cfg.dirB))
+                    ),
                 });
             }
             if (command === "councillist") {
@@ -56037,6 +56066,8 @@ const projectOverviewHistory = {
             mkdirSync(ctx.dirA);
             mkdirSync(ctx.dirB);
             ovSeedRepo(ctx.dirA);
+            // the seed commit, whose short hash step 14 reads on A's Branches card
+            ctx.seedHash = String(ovGit(ctx.dirA, "rev-parse", "HEAD")).trim();
             for (const [name, dir] of [
                 [OVH_A, ctx.dirA],
                 [OVH_B, ctx.dirB],
@@ -56160,21 +56191,63 @@ const projectOverviewHistory = {
         if (!folderUp || ctx.mock !== "ok") return steps;
         // a thrown call (the page went away, a CDP timeout) must not discard the steps recorded so far
         try {
-            // 1. two columns: Now, and History to the right of it
+            // 1. two columns, with no width cap: Now and the Branches card under it in a left column, History to the right of
+            // it at about 2:3, and the Activity card across the page's inner width
             const opened1 = await ovhOpen(h, OVH_A);
             const both = await polishWaitFor(h, `${ovHas("[data-overview-now]")} && ${ovHas("[data-overview-history]")}`, 5000);
             // the list waits for all its reads: the five rows (two sessions, their children, the cockpit's run) come in at once
             await polishWaitFor(h, `${ovhCount("[data-history-row]")} === 5`, 10000);
+            // the Branches card is read on its own: its worktree row and the seed commit's, no error, not loading
+            const graph1 = await polishWaitFor(h, OVH_GRAPH_READY, 10000);
             const geo1 = await h.ev(`(() => {
-                const n = document.querySelector("[data-overview-now]")?.getBoundingClientRect();
-                const hist = document.querySelector("[data-overview-history]")?.getBoundingClientRect();
-                return n && hist ? { nowRight: Math.round(n.right), historyLeft: Math.round(hist.left), width: window.innerWidth } : null;
+                const rect = (sel) => document.querySelector(sel)?.getBoundingClientRect() ?? null;
+                const n = rect("[data-overview-now]");
+                const hist = rect("[data-overview-history]");
+                const left = rect("[data-overview-left]");
+                const col = rect("[data-overview-history-col]");
+                const card = document.querySelector("[data-graph-card]");
+                const g = card?.getBoundingClientRect() ?? null;
+                const act = rect("[data-activity-card]");
+                const page = document.querySelector("[data-project-overview]");
+                // the author-initials mark of the commit row, which the card may hide at narrow widths
+                const initials = card?.querySelector('[data-graph-row]:not([data-graph-row="worktree"]) span[aria-hidden].rounded-full') ?? null;
+                const r = (v) => (v == null ? null : Math.round(v * 10) / 10);
+                return {
+                    width: window.innerWidth,
+                    pageClient: page?.clientWidth ?? null,
+                    nowRight: r(n?.right),
+                    nowBottom: r(n?.bottom),
+                    historyLeft: r(hist?.left),
+                    left: left && { left: r(left.left), right: r(left.right), width: r(left.width) },
+                    historyCol: col && { left: r(col.left), width: r(col.width) },
+                    graph: g && { top: r(g.top), left: r(g.left), right: r(g.right), bottom: r(g.bottom) },
+                    graphInLeft: !!(card && document.querySelector("[data-overview-left]")?.contains(card)),
+                    ratio: left && col && col.width > 0 ? Math.round((left.width / col.width) * 1000) / 1000 : null,
+                    activityWidth: r(act?.width),
+                    initials: initials == null ? "absent" : initials.getClientRects().length > 0 ? "shown" : "hidden",
+                };
             })()`);
             await shot("1");
+            const minAct1 = geo1?.pageClient != null ? geo1.pageClient - 64 - 2 : null;
             rec(
-                "1. A's Overview shows Now and History side by side: History's left edge is right of Now's right edge",
-                opened1 && both && geo1 != null && geo1.historyLeft >= geo1.nowRight,
-                JSON.stringify({ opened1, both, ...geo1 })
+                "1. A's Overview, 1600px wide: History right of Now; the Branches card (worktree row and one commit row, no error, not busy) sits in [data-overview-left] below Now; the left column ends before History's column and is 0.55–0.8 of its width; the Activity card spans the page's inner width (≥ clientWidth − 66, and > 1120 when clientWidth ≥ 1185)",
+                opened1 &&
+                    both &&
+                    graph1 &&
+                    geo1 != null &&
+                    geo1.historyLeft >= geo1.nowRight &&
+                    geo1.graphInLeft &&
+                    geo1.graph != null &&
+                    geo1.graph.top >= geo1.nowBottom &&
+                    geo1.left != null &&
+                    geo1.historyCol != null &&
+                    geo1.left.right <= geo1.historyCol.left &&
+                    geo1.ratio >= 0.55 &&
+                    geo1.ratio <= 0.8 &&
+                    geo1.activityWidth != null &&
+                    geo1.activityWidth >= minAct1 &&
+                    (geo1.pageClient < 1185 || geo1.activityWidth > 1120),
+                JSON.stringify({ opened1, both, graph1, minActivityWidth: minAct1, ...geo1 })
             );
 
             // 2. one list, no tabs: the two ended sessions of the window (not the run's worker, not the 9-day-old one), the first
@@ -56371,20 +56444,30 @@ const projectOverviewHistory = {
                 JSON.stringify({ reopen8, error8, ...page8, recovered })
             );
 
-            // 9. under 1000px the columns stack: Now above History
+            // 9. under 1000px the columns stack: Now, then the Branches card, then History
             await h.ev(`document.querySelector("[data-project-overview]").style.width = "760px"`);
             await polishNap(400);
+            const graph9 = await polishWaitFor(h, OVH_GRAPH_READY, 5000);
             const geo9 = await h.ev(`(() => {
                 const n = document.querySelector("[data-overview-now]")?.getBoundingClientRect();
+                const g = document.querySelector("[data-graph-card]")?.getBoundingClientRect();
                 const hist = document.querySelector("[data-overview-history]")?.getBoundingClientRect();
-                return n && hist ? { nowBottom: Math.round(n.bottom), historyTop: Math.round(hist.top) } : null;
+                return n && g && hist
+                    ? {
+                          pageWidth: Math.round(document.querySelector("[data-project-overview]").getBoundingClientRect().width),
+                          nowBottom: Math.round(n.bottom),
+                          graphTop: Math.round(g.top),
+                          graphBottom: Math.round(g.bottom),
+                          historyTop: Math.round(hist.top),
+                      }
+                    : null;
             })()`);
             await shot("9");
             await h.ev(`document.querySelector("[data-project-overview]").style.width = ""`);
             rec(
-                "9. at 760px wide the page stacks the columns: Now's bottom is above History's top",
-                geo9 != null && geo9.nowBottom <= geo9.historyTop,
-                JSON.stringify(geo9)
+                "9. at 760px wide the page stacks Now, Branches, History: Now's bottom is above the Branches card's top, and its bottom above History's top",
+                graph9 && geo9 != null && geo9.nowBottom <= geo9.graphTop && geo9.graphBottom <= geo9.historyTop,
+                JSON.stringify({ graph9, ...geo9 })
             );
 
             // 10. B, whose councils are read for the first time here: the one list shows its loading rows until every read is
@@ -56599,6 +56682,98 @@ const projectOverviewHistory = {
                     lines13.includes("x") &&
                     lines13.includes("y"),
                 JSON.stringify({ hook13, opened13, groupUp, age13, rows13, detail13, lines13 })
+            );
+
+            // 14. A's Branches card at full width: the worktree row first, then the seed commit's row with its subject and
+            // short hash, no error, not busy
+            const opened14 = (await h.ev(ovhUp(OVH_A))) || (await ovhOpen(h, OVH_A));
+            const graph14 = await polishWaitFor(h, OVH_GRAPH_READY, 10000);
+            const card14 = await h.ev(`(() => {
+                const card = document.querySelector("[data-graph-card]");
+                if (!card) return null;
+                const rows = [...card.querySelectorAll("[data-graph-row]")];
+                const commit = rows[1] ?? null;
+                const text = (el) => el?.textContent.replace(/\\s+/g, " ").trim() ?? null;
+                return {
+                    rows: rows.map((r) => r.getAttribute("data-graph-row")),
+                    subject: text(commit && [...commit.querySelectorAll("span")].find((s) => s.classList.contains("flex-1"))),
+                    hash: text(commit?.querySelector(".font-mono")),
+                    error: card.querySelector("[data-graph-error]") != null,
+                    busy: card.hasAttribute("aria-busy"),
+                };
+            })()`);
+            await shot("14");
+            const short14 = (ctx.seedHash ?? "").slice(0, 7);
+            rec(
+                "14. A's Branches card lists the worktree row first, then the seed commit's row, whose subject reads `seed` and which shows the commit's short hash (git rev-parse HEAD, first 7); no error, not busy",
+                opened14 &&
+                    graph14 &&
+                    card14 != null &&
+                    JSON.stringify(card14.rows) === JSON.stringify(["worktree", ctx.seedHash]) &&
+                    card14.subject === "seed" &&
+                    short14.length === 7 &&
+                    card14.hash === short14 &&
+                    !card14.error &&
+                    !card14.busy,
+                JSON.stringify({ opened14, graph14, seedHash: ctx.seedHash, short14, ...card14 })
+            );
+
+            // 15. History pages: with 34 ended sessions of A in the window (35 top-level rows with the cockpit's run) it draws
+            // 15 and its foot, 30 once the page is scrolled to the bottom, then all of them with the Older link last. The
+            // viewport is shorter here so the first page's foot starts well past the 400px the list loads ahead
+            await h.ev(`window.${OVH_MOCK_KEY}.mode.extraSessions = ${JSON.stringify(ovhPagedSessions(ctx, Date.now()))}`);
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 600, deviceScaleFactor: 1, mobile: false });
+            const opened15 = await ovhReopen(h, ctx, OVH_A);
+            const page15a = await polishWaitFor(h, `${ovhCount(OVH_TOP_ROWS)} >= 15`, 10000);
+            // a foot already inside the load-ahead margin would grow the list on its own: give it the time to
+            await polishNap(600);
+            const pageState = () =>
+                h.ev(`(() => {
+                    const page = document.querySelector("[data-project-overview]");
+                    const more = document.querySelector("[data-history-more]");
+                    const older = document.querySelector("[data-history-older]");
+                    const pr = page?.getBoundingClientRect();
+                    return {
+                        top: document.querySelectorAll(${JSON.stringify(OVH_TOP_ROWS)}).length,
+                        all: document.querySelectorAll("[data-history-row]").length,
+                        more: more != null,
+                        moreTop: more && pr ? Math.round(more.getBoundingClientRect().top - pr.bottom) : null,
+                        older: older != null,
+                        olderLast: older != null && older.parentElement.lastElementChild === older,
+                        inCol: !!document.querySelector("[data-overview-history-col] [data-history-row]"),
+                        scrollTop: page ? Math.round(page.scrollTop) : null,
+                        scrollHeight: page?.scrollHeight ?? null,
+                        clientHeight: page?.clientHeight ?? null,
+                    };
+                })()`);
+            const scrollDown = () => h.ev(`(() => { const p = document.querySelector("[data-project-overview]"); p.scrollTop = p.scrollHeight; return Math.round(p.scrollTop); })()`);
+            const first15 = await pageState();
+            await scrollDown();
+            const page15b = await polishWaitFor(h, `${ovhCount(OVH_TOP_ROWS)} >= 30`, 5000);
+            await polishNap(600);
+            const second15 = await pageState();
+            await scrollDown();
+            const page15c = await polishWaitFor(h, `${ovhCount(OVH_TOP_ROWS)} === ${OVH_PAGED + 3} && !${ovHas("[data-history-more]")}`, 5000);
+            const third15 = await pageState();
+            await shot("15");
+            await h.ev(`window.${OVH_MOCK_KEY}.mode.extraSessions = []`);
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+            rec(
+                `15. with ${OVH_PAGED + 3} top-level rows History draws 15 and its foot ([data-history-more]); scrolled to the bottom it draws 30; scrolled again all ${OVH_PAGED + 3}, the foot gone and the Older link last; the rows sit in [data-overview-history-col]`,
+                opened15 &&
+                    page15a &&
+                    first15.top === 15 &&
+                    first15.more &&
+                    first15.inCol &&
+                    page15b &&
+                    second15.top === 30 &&
+                    second15.more &&
+                    page15c &&
+                    third15.top === OVH_PAGED + 3 &&
+                    !third15.more &&
+                    third15.older &&
+                    third15.olderLast,
+                JSON.stringify({ opened15, page15a, first15, page15b, second15, page15c, third15 })
             );
         } catch (e) {
             rec("a call failed before the steps finished", false, String(e?.message ?? e));

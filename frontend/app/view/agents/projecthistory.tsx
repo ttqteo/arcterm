@@ -11,12 +11,19 @@ import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
 import { ChevronRight } from "lucide-react";
-import { Fragment, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { showHistory, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatAgeShort, formatTokens } from "./agentsviewmodel";
 import { historyQueryAtom, type ProjectHistory } from "./projecthistorystore";
-import { historyRows, projectSessions, type CouncilPeek, type HistoryItem } from "./projectoverviewmodel";
+import {
+    firstRows,
+    HISTORY_PAGE,
+    historyRows,
+    projectSessions,
+    type CouncilPeek,
+    type HistoryItem,
+} from "./projectoverviewmodel";
 import { runtimeMeta } from "./runtimemeta";
 
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
@@ -143,6 +150,35 @@ function CouncilPeekBody({ peek, nested, onOpen }: { peek: CouncilPeek; nested: 
     );
 }
 
+// How many top-level rows History draws: a page at first, a page more each time the foot nears the Overview's bottom edge.
+// A new search or project starts over from one page.
+function useLazyLimit(reset: string): { limit: number; foot: (el: HTMLDivElement | null) => void } {
+    const [limit, setLimit] = useState(HISTORY_PAGE);
+    const [el, setEl] = useState<HTMLDivElement | null>(null);
+    const last = useRef(reset);
+    if (last.current !== reset) {
+        last.current = reset;
+        setLimit(HISTORY_PAGE);
+    }
+    useEffect(() => {
+        if (el == null) {
+            return;
+        }
+        // the Overview scrolls, not the window: watch the foot against it, a screen ahead
+        const io = new IntersectionObserver(
+            (entries) => {
+                if (entries.some((e) => e.isIntersecting)) {
+                    setLimit((n) => n + HISTORY_PAGE);
+                }
+            },
+            { root: el.closest("[data-project-overview]"), rootMargin: "0px 0px 400px 0px" }
+        );
+        io.observe(el);
+        return () => io.disconnect();
+    }, [el, limit]);
+    return { limit, foot: setEl };
+}
+
 export function HistoryColumn({
     model,
     path,
@@ -163,6 +199,8 @@ export function HistoryColumn({
         () => historyRows(h.sessions, h.councils, h.runs.runs, path, now, q),
         [h.sessions, h.councils, h.runs.runs, path, now, q]
     );
+    const lazy = useLazyLimit(`${path}|${q}`);
+    const shown = useMemo(() => firstRows(rows, lazy.limit), [rows, lazy.limit]);
     // the heading's number is the ended sessions in the window, whatever the search keeps
     const sessionCount = useMemo(() => projectSessions(h.sessions, path, now, "").length, [h.sessions, path, now]);
 
@@ -226,7 +264,7 @@ export function HistoryColumn({
         <div className={PANEL}>
             {h.sessionsError ? <ErrorRow text="Could not read sessions." onRetry={h.retrySessions} /> : null}
             {runsError != null ? <ErrorRow text={`Could not read runs: ${runsError}.`} onRetry={h.retryRuns} /> : null}
-            {rows.map((row) => {
+            {shown.map((row) => {
                 if (row.kind === "session") {
                     const s = row.session;
                     const line = [s.branch, runtimeMeta(s.runtime).label, `${formatTokens(s.tokenstotal)} tokens`]
@@ -305,7 +343,18 @@ export function HistoryColumn({
                 );
             })}
             {rows.length === 0 && !h.sessionsError && runsError == null ? noRows : null}
-            {older}
+            {shown.length < rows.length ? (
+                <div
+                    ref={lazy.foot}
+                    data-history-more
+                    aria-hidden="true"
+                    className="border-t border-edge-mid px-3 py-[11px]"
+                >
+                    <SkeletonLine className="w-[48%]" />
+                </div>
+            ) : (
+                older
+            )}
         </div>
     );
 
