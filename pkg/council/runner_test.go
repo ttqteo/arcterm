@@ -40,7 +40,7 @@ type gate struct {
 func newGate() *gate { return &gate{entered: make(chan struct{}), release: make(chan struct{})} }
 
 // fakeCaller answers every call with canned JSON for its round, and records the requests. A call is keyed
-// "<expert id>/<kind>", with kind r1, r2, r3, ans or suggest; the test can hold, fail or rewrite any key.
+// "<expert id>/<kind>", with kind r1, r2, r3, ans, suggest or autogen; the test can hold, fail or rewrite any key.
 type fakeCaller struct {
 	mu    sync.Mutex
 	reqs  []CallReq
@@ -61,7 +61,7 @@ func newFake() *fakeCaller {
 var roundLineRe = regexp.MustCompile(`This is round (\d+) of (\d+)`)
 
 // kindOf is what a prompt asks for: r1 (the ideas), r2 (a reply pass), r3 (the synthesis, the last round whatever its
-// number), ans (the person's replies) or suggest.
+// number), ans (the person's replies), suggest or autogen.
 func kindOf(prompt string) string {
 	if m := roundLineRe.FindStringSubmatch(prompt); m != nil {
 		switch n, _ := strconv.Atoi(m[1]); {
@@ -77,6 +77,8 @@ func kindOf(prompt string) string {
 		return "ans"
 	case strings.Contains(prompt, "about to review one feature"):
 		return "suggest"
+	case strings.Contains(prompt, "You write the opening of a council"):
+		return "autogen"
 	}
 	return "?"
 }
