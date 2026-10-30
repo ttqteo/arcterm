@@ -16,6 +16,10 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wps"
 )
 
+// titleWait bounds the wait for async generation. Result returns as soon as the title settles, so a long
+// bound costs nothing; 1s failed once while an engine Verify shared the machine with other runs' tests.
+const titleWait = 10 * time.Second
+
 func writePiSession(t *testing.T, lines []string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -114,7 +118,7 @@ func TestPiTitleProviderGeneratesOncePerTranscript(t *testing.T) {
 	})
 	path := writePiSession(t, []string{`{"type":"message","id":"m1","message":{"role":"user","content":"why does the tab flicker"}}`})
 	p.NoteEvent(piStatusEvent("block:uuid-1", "working", "", path, "sess-1"))
-	if p.Result(path, time.Second) != "Fix agent tab flicker" {
+	if p.Result(path, titleWait) != "Fix agent tab flicker" {
 		t.Fatalf("title not generated")
 	}
 	// a second event must not regenerate (cache hit)
@@ -136,7 +140,7 @@ func TestPiTitleProviderFallsBackToHeadText(t *testing.T) {
 	})
 	path := writePiSession(t, []string{`{"type":"message","id":"m1","message":{"role":"user","content":"  real task line\nmore"}}`})
 	p.NoteEvent(piStatusEvent("block:uuid-1", "working", "", path, "sess-1"))
-	if got := p.Result(path, time.Second); got != "real task line" {
+	if got := p.Result(path, titleWait); got != "real task line" {
 		t.Fatalf("fallback title = %q, want %q", got, "real task line")
 	}
 }
@@ -182,7 +186,7 @@ func TestPiTitleProviderRetriesUntilFirstUserMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.NoteEvent(piStatusEvent("block:uuid-1", "working", "", path, "sess-1"))
-	if got := p.Result(path, time.Second); got != "Fix the flicker" {
+	if got := p.Result(path, titleWait); got != "Fix the flicker" {
 		t.Fatalf("title not generated after the first message: %q", got)
 	}
 	if calls != 1 {
@@ -212,7 +216,7 @@ func TestPiTitleProviderHandlesWireShapedEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.NoteEvent(&wireEv)
-	if got := p.Result(path, time.Second); got != "Fix the flicker" {
+	if got := p.Result(path, titleWait); got != "Fix the flicker" {
 		t.Fatalf("wire-shaped event must generate a title, got %q (calls=%d)", got, calls)
 	}
 	if calls != 1 {
