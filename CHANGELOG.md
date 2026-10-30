@@ -72,6 +72,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   "Copy failed".
 - Brainstorm part rows are roomier, and the question and working views sit a third of the way down the pane.
 - arcterm's log (`waveapp.log`) is about 98% smaller: routine connection and call lines are gone, errors stay.
+- Close the brainstorm, once its run has merged, now also ends the agent that brainstormed it (unless it is still at
+  work), and keeps the design canvas in the Canvas gallery instead of deleting it.
 - A project's Overview fills the centre pane: Now and the Branches card sit in a column beside History, which loads
   more sessions as you scroll.
 - A click on a project's folder in the Agent sidebar opens its Overview; the chevron before it folds and unfolds the

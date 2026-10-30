@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { closeTargets, runStepView, runTreeText } from "./brainstormrunmodel";
+import { closeTarget, runStepView, runTreeText } from "./brainstormrunmodel";
 import type { RunInfo } from "./runlineage";
 
 const BLOCKED_ID = "9c6eb723-1111-4222-8333-444455556666";
@@ -158,34 +158,21 @@ describe("runTreeText", () => {
     });
 });
 
-describe("closeTargets", () => {
-    const cwd = "C:\\code\\siem";
-
-    it("deletes the canvas first, then the brainstorm", () => {
-        expect(closeTargets(cwd, "engine-rule-severity", "engine-rule-severity")).toEqual({
+describe("closeTarget", () => {
+    it("deletes the brainstorm folder, never the canvas", () => {
+        expect(closeTarget("C:\\code\\siem", "engine-rule-severity")).toEqual({
             ok: true,
-            paths: [
-                "C:\\code\\siem\\.superpowers\\design\\engine-rule-severity",
-                "C:\\code\\siem\\.superpowers\\brainstorm\\engine-rule-severity",
-            ],
+            path: "C:\\code\\siem\\.superpowers\\brainstorm\\engine-rule-severity",
         });
-    });
-
-    it("deletes only the brainstorm when no canvas is named", () => {
-        expect(closeTargets("/home/k/siem", "topic")).toEqual({
+        expect(closeTarget("/home/k/siem", "topic")).toEqual({
             ok: true,
-            paths: ["/home/k/siem/.superpowers/brainstorm/topic"],
+            path: "/home/k/siem/.superpowers/brainstorm/topic",
         });
     });
 
     for (const bad of ["..", "a/b", "a\\b", "", "."]) {
         it(`refuses the topic ${JSON.stringify(bad)}`, () => {
-            const r = closeTargets(cwd, bad, "canvas");
-            expect("reason" in r && r.reason).toContain(`“${bad}”`);
-        });
-
-        it(`refuses the canvas ${JSON.stringify(bad)}`, () => {
-            const r = closeTargets(cwd, "topic", bad);
+            const r = closeTarget("C:\\code\\siem", bad);
             expect("reason" in r && r.reason).toContain(`“${bad}”`);
         });
     }

@@ -4,7 +4,7 @@
 // The brainstorm's Run step: where the run its design was handed to stands, read from the run itself (its dag's
 // final stage, its land) rather than from the brainstorm file, and what closing the brainstorm deletes. Pure.
 
-import { canvasDir, join } from "./canvasmodel";
+import { join } from "./canvasmodel";
 import { runProgress, type RunInfo } from "./runlineage";
 
 export type RunStepState =
@@ -199,19 +199,10 @@ function badSegment(name: string): boolean {
     return name.trim() === "" || name === "." || name === ".." || /[\\/]/.test(name);
 }
 
-// closeTargets is what closing the brainstorm deletes, in order: its canvas first, so a failed first delete leaves
-// the brainstorm, and its Close, in place.
-export function closeTargets(
-    cwd: string,
-    topic: string,
-    canvas?: string
-): { ok: true; paths: string[] } | { ok: false; reason: string } {
+// closeTarget is what closing the brainstorm deletes: its folder alone. Its canvas stays, in the Canvas gallery.
+export function closeTarget(cwd: string, topic: string): { ok: true; path: string } | { ok: false; reason: string } {
     if (badSegment(topic)) {
         return { ok: false, reason: `Arc won’t delete the topic “${topic}”: it is not one folder name` };
     }
-    if (canvas != null && badSegment(canvas)) {
-        return { ok: false, reason: `Arc won’t delete the canvas “${canvas}”: it is not one folder name` };
-    }
-    const brainstorm = join(cwd, ".superpowers", "brainstorm", topic);
-    return { ok: true, paths: canvas != null ? [canvasDir(cwd, canvas), brainstorm] : [brainstorm] };
+    return { ok: true, path: join(cwd, ".superpowers", "brainstorm", topic) };
 }

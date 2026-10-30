@@ -397,7 +397,7 @@ export default function (kit) {
                 rec("2. the final reseeded as passed", false, String(e?.message ?? e));
                 return steps;
             }
-            const deletes = `closing deletes .superpowers/brainstorm/${LANDED.topic} and the ${LANDED.topic} canvas.`;
+            const deletes = `The ${LANDED.topic} canvas stays in the Canvas gallery. Closing deletes .superpowers/brainstorm/${LANDED.topic} and ends this agent.`;
             s = await runUntil(h, (x) => x.close != null && (x.rail ?? "").includes("Done"));
             rec(
                 "2. with the final passed: Built and merged into main at <sha7>, Close the brainstorm, RunSection finished, all three phases done",
@@ -420,41 +420,27 @@ export default function (kit) {
             rec("3. the tree line reads merged · run <id8>, the state drawn inside it", tree.ok, tree.detail);
 
             const bs = ctx.bs;
+            // a canvas that names another folder no longer matters: Close leaves every canvas in the gallery
             bsWrite(bs, { ...ctx.bsFile, canvas: "../escape" });
-            s = await runUntil(h, (x) => x.close?.disabled === true);
-            const clicked = await bsClick(h, BS_PANE, "Close the brainstorm");
-            await polishNap(500);
-            rec(
-                "4. with the canvas ../escape, Close is disabled with the refusal under it and nothing is deleted",
-                s.ok &&
-                    s.closeError.includes("won’t delete the canvas “../escape”") &&
-                    clicked === "disabled" &&
-                    existsSync(bs.brainstormDir) &&
-                    existsSync(bs.canvasDir) &&
-                    existsSync(join(bs.escape, "keep.txt")),
-                { close: s.close, closeError: s.closeError, clicked }
-            );
-
-            bsWrite(bs, ctx.bsFile);
             s = await runUntil(h, (x) => x.close?.disabled === false);
             const closed = s.ok ? await bsClick(h, BS_PANE, "Close the brainstorm") : "never enabled";
-            const removed = await polishWaitFor(h, `${BS_PANE}?.getAttribute("data-brainstorm-view") === "removed"`, RUN_WAIT_MS);
+            const ended = await polishWaitFor(h, `!document.querySelector('[data-agent-row="${bs.tabId}"]')`, RUN_WAIT_MS);
             const after = {
                 closed,
-                removed,
+                ended,
                 brainstorm: existsSync(bs.brainstormDir),
                 canvas: existsSync(bs.canvasDir),
                 sibling: existsSync(bs.sibling),
                 escape: existsSync(join(bs.escape, "keep.txt")),
             };
             rec(
-                "5. with the canvas restored, Close deletes exactly the brainstorm and canvas folders and the pane shows the removed state",
-                closed === "clicked" && removed && !after.brainstorm && !after.canvas && after.sibling && after.escape,
+                "4. Close (the canvas naming ../escape) deletes only the brainstorm folder, keeps every canvas and ends the idle agent",
+                closed === "clicked" && ended && !after.brainstorm && after.canvas && after.sibling && after.escape,
                 after
             );
-            await h.shot("cdp-shots/brainstorm-run-landed-5-closed.png");
+            await h.shot("cdp-shots/brainstorm-run-landed-4-closed.png");
 
-            await finalUnchanged(h, ctx, PASSED_FINAL, rec, "6. the seeded final is unchanged (passed, round 1)");
+            await finalUnchanged(h, ctx, PASSED_FINAL, rec, "5. the seeded final is unchanged (passed, round 1)");
             return steps;
         },
         teardown: (h, ctx) => teardownRunStep(h, ctx, "brainstorm-run-landed"),

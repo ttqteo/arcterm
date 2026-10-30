@@ -2,17 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The brainstorm's Run step: the design handed over and where the run it started stands, read from the run
-// itself. Once the run merged with its final check passed, Close deletes the brainstorm's scaffolding.
+// itself. Once the run merged with its final check passed, Close deletes the brainstorm file and ends its agent; the
+// canvas stays, in the Canvas gallery.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn } from "@/util/util";
+import { closeSessions } from "./agentactions";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
 import { decisionParts, partGist, type BrainstormFile, type BrainstormPart, type PartState } from "./brainstormmodel";
-import { closeTargets, runStepView, shortRunId, type RunStepState, type RunStepView } from "./brainstormrunmodel";
+import { closeTarget, runStepView, shortRunId, type RunStepState, type RunStepView } from "./brainstormrunmodel";
 import { brainstormAtom, shownBrainstormFile, type BrainstormState } from "./brainstormstore";
 import {
     CheckMark,
@@ -125,7 +127,7 @@ function StateCard({
     view: RunStepView;
 }) {
     const closing = view.canClose;
-    const detail = closing ? closeDetail(s.topic, f.canvas) : view.detail;
+    const detail = closing ? closeDetail(s.topic, f.canvas, agent.state === "idle") : view.detail;
     return (
         <div
             data-brainstorm-run-card
@@ -150,30 +152,22 @@ function StateCard({
                     </span>
                 ) : null}
             </div>
-            {closing ? <CloseButton agentId={agent.id} s={s} f={f} runId={runId} /> : null}
+            {closing ? <CloseButton agent={agent} s={s} runId={runId} /> : null}
         </div>
     );
 }
 
-function closeDetail(topic: string, canvas: string | undefined): string {
-    const deletes = `.superpowers/brainstorm/${topic}${canvas ? ` and the ${canvas} canvas` : ""}`;
-    return `The final check passed. The spec stays in docs/. The brainstorm file and its mockups were scaffolding for the design: closing deletes ${deletes}.`;
+// an agent at work is left running: the brainstorm is done, but it may have moved on to something else
+function closeDetail(topic: string, canvas: string | undefined, idle: boolean): string {
+    const kept = canvas ? ` The ${canvas} canvas stays in the Canvas gallery.` : "";
+    const agent = idle ? " and ends this agent" : "; this agent is at work, so it keeps running";
+    return `The final check passed. The spec stays in docs/.${kept} Closing deletes .superpowers/brainstorm/${topic}${agent}.`;
 }
 
-function CloseButton({
-    agentId,
-    s,
-    f,
-    runId,
-}: {
-    agentId: string;
-    s: BrainstormState;
-    f: BrainstormFile;
-    runId: string;
-}) {
+function CloseButton({ agent, s, runId }: { agent: AgentVM; s: BrainstormState; runId: string }) {
     const act = useAction();
-    const targets = closeTargets(s.cwd, s.topic, f.canvas);
-    const refusal = "reason" in targets ? targets.reason : null;
+    const target = closeTarget(s.cwd, s.topic);
+    const refusal = "reason" in target ? target.reason : null;
     const error = refusal ?? act.error;
     return (
         <div className="flex max-w-[45%] flex-none flex-col items-end gap-[6px]">
@@ -181,7 +175,7 @@ function CloseButton({
                 type="button"
                 data-brainstorm-close
                 disabled={refusal != null || act.busy}
-                onClick={() => void act.run(() => closeBrainstorm(agentId, runId))}
+                onClick={() => void act.run(() => closeBrainstorm(agent, runId))}
                 className={SWAP_PRIMARY_BTN}
             >
                 Close the brainstorm
@@ -196,29 +190,29 @@ function CloseButton({
 }
 
 // the gate and the targets are read again at the click, not trusted from the render that drew the button
-async function closeBrainstorm(agentId: string, runId: string): Promise<void> {
+async function closeBrainstorm(agent: AgentVM, runId: string): Promise<void> {
     const read = globalStore.get(runInfoAtom(runId));
     if (!runStepView(runId, read.run, read.loaded).canClose) {
         throw new Error("The run is no longer merged with its final check passed, so the brainstorm stays.");
     }
-    const s = globalStore.get(brainstormAtom(agentId));
-    const f = s != null ? shownBrainstormFile(s) : null;
-    if (s == null || f == null) {
+    const s = globalStore.get(brainstormAtom(agent.id));
+    if (s == null || shownBrainstormFile(s) == null) {
         throw new Error("Arc has no brainstorm file to close.");
     }
-    const targets = closeTargets(s.cwd, s.topic, f.canvas);
-    if ("reason" in targets) {
-        throw new Error(targets.reason);
+    const target = closeTarget(s.cwd, s.topic);
+    if ("reason" in target) {
+        throw new Error(target.reason);
     }
-    // in order: a failed first delete leaves the brainstorm, and this button, for a retry
-    for (const path of targets.paths) {
-        try {
-            await RpcApi.FileDeleteCommand(TabRpcClient, { path, recursive: true });
-        } catch (e) {
-            if (!NOT_FOUND.test(errText(e))) {
-                throw new Error(`Arc could not delete ${path}: ${errText(e)}`);
-            }
+    // a failed delete leaves the brainstorm, its agent and this button for a retry
+    try {
+        await RpcApi.FileDeleteCommand(TabRpcClient, { path: target.path, recursive: true });
+    } catch (e) {
+        if (!NOT_FOUND.test(errText(e))) {
+            throw new Error(`Arc could not delete ${target.path}: ${errText(e)}`);
         }
+    }
+    if (agent.state === "idle") {
+        closeSessions([agent]);
     }
 }
 

@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A brainstorm whose run merged with its final check passed: Close the brainstorm deletes
+  `.superpowers/brainstorm/<topic>` only, the agent's row leaves the Agent tree (an idle agent; a working one stays),
+  and the canvas still shows in the Canvas gallery. The `brainstorm-run-landed` scenario was updated but not run.
+  (commit "feat(agents): closing a brainstorm ends its agent and keeps its canvas")
 - [ ] (arcterm) A project folder in the Agent sidebar (the project tree and Conversations): a click on its name opens
   its Overview in the centre without folding it, the chevron alone folds and unfolds it, and Home still folds from
   anywhere on its row; Tab reaches the row and its chevron, Enter on the row opens the Overview. The
