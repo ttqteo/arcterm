@@ -114,7 +114,8 @@ has nothing to announce. Give an icon-only button an `aria-label`. Keep
 text at a contrast of at least 4.5:1 against what is behind it (3:1 from
 24px). What fails most often is caption grey, and coloured fills under
 white text: darken both. Colors that must be told apart also differ in
-lightness, not hue alone; prefer blue/orange to red/green.
+lightness, not hue alone; prefer blue/orange to red/green. A control's
+edge and its focus ring hold 3:1 against what is beside them.
 
 ### Landing pages and marketing artboards
 
@@ -187,7 +188,8 @@ copyrighted-designs rule governs whether to recreate at all.)
 
 Adapted from taste-skill (github.com/Leonxlnx/taste-skill, MIT), its
 v2 skill and its redesign audit, keeping only what holds on a canvas
-in any stack. Each is a default a model reaches for when it tries to
+in any stack; some state, type and copy rules are adapted from Open
+Design's craft docs (github.com/nexu-io/open-design, Apache-2.0). Each is a default a model reaches for when it tries to
 look designed. Check finished artboards against the list before
 handing them over. The design system wins wherever it says otherwise:
 a system that specifies a middle-dot count label or a mono eyebrow is
@@ -203,17 +205,27 @@ Locks, held across every artboard of a flow:
 - One theme per page: sections do not flip between light and dark.
 - One copy register: not mono telemetry, editorial prose and
   marketing punch in the same piece.
-- One label per intent: "Get in touch", "Contact us" and "Let's talk"
-  on one page are the same button with three names.
+- One label per intent, one name per thing: "Get in touch", "Contact
+  us" and "Let's talk" on one page are the same button with three
+  names, and a "run" is never also a "job".
 
 States:
 
 - Draw loading, empty and error, not only the successful state.
   Loading takes the shape of the layout it replaces; an empty state
   says how to fill it; a form error sits under its field.
+- A no-results empty is its own state: it echoes the query or filter
+  and offers to clear it.
+- Draw the populated state with its hardest real content too: the
+  longest name, wrapped or truncated as the code would; a missing
+  optional field; a count in the thousands.
 - Hover, pressed and keyboard focus are states too: when the brief
   asks for a control's states, draw them as variants beside it. A
   focus ring is never designed away.
+- A busy action keeps its width, colour and focus: "Save" becomes
+  "Saving…" beside a spinner. On failure it returns to its label with
+  the error beside it. A disabled control says beside it what it is
+  waiting for.
 - Navigation marks the current place, and every screen of a flow has
   a way back.
 - Labels sit above inputs. A placeholder is never the label.
@@ -248,6 +260,15 @@ Type:
   rhythm of the screen.
 - No single word alone on a last line: `text-wrap: balance` on a
   heading, `pretty` on body text.
+- Caps take positive tracking (0.06–0.1em); text from 32px up takes
+  slight negative tracking (-0.01 to -0.03em).
+- Three weights carry a screen: read (400), emphasise (500), announce
+  (600). Reaching for 700 means emphasis is spread thin elsewhere.
+- Body copy runs 50–75 characters a line (`max-width: 65ch`),
+  left-aligned.
+- Hierarchy is relative: levels differ in at least two of size,
+  weight, colour and space, and one element leads each region. Steps
+  of a few px read flat; several leads read as noise.
 
 Decoration:
 
@@ -264,8 +285,16 @@ Copy:
   "Quietly trusted by") become a plain functional sentence.
 - No filler verbs: elevate, seamless, unleash, next-gen,
   revolutionize.
-- Messages are plain and active: "Couldn't save your changes. Try
-  again.", not "Oops!". No exclamation mark on a success message.
+- An error says what happened, why if known, and the next step, and
+  keeps what the user typed: "Couldn't save your changes. You're
+  offline; they'll save when you reconnect.", not "Oops!" or
+  "Something went wrong". A success says what happened in the past
+  tense, with its object ("Run cancelled"), and no exclamation mark.
+- A button says its verb and object ("Cancel run", "Delete branch"),
+  never a bare Submit, OK or Yes. A destructive confirm restates both
+  ("Delete 3 worktrees?" over a "Delete 3 worktrees" button), takes
+  the danger colour on that button alone and leaves the safe choice
+  focused. Where the action can be reversed, Undo beats a confirm.
 - Sample data in a product mockup is specific and uneven (`47.2%`,
   not `50%`), with names plausible for the locale, never John Doe or
   Acme. A figure presented as a claim is still a placeholder.

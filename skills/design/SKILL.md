@@ -198,7 +198,7 @@ The long form, for pushback on a design call or a specific kind of piece: `refer
   icon-only buttons. Text 4.5:1 (3:1 at 24px+); colors that must be told apart also differ in
   lightness. Touch targets ≥44px.
 - Before handing over, check each artboard for the defaults a model reaches for: only the success
-  state drawn (no loading, empty or error); a second accent, radius rule or theme creeping in;
+  state drawn (no loading, empty, error or longest-content case); a second accent, radius rule or theme creeping in;
   shared parts of side-by-side cards misaligned; an uppercase label over every heading; decorative
   dots and section numbers; "Oops!" errors, filler verbs and stock names (`Acme`, `John Doe`). The
   design system overrides any of these. Full list: "AI tells to design past" in
