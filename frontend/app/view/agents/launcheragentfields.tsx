@@ -7,18 +7,29 @@
 // which is this component's state, so every opening of the dialog starts folded; a terminal has no task and shows it
 // open. Whether the flag menu or the branch list is open lives in launcherstore, so the dialog's one key handler closes
 // the open one on Escape wherever focus is, and the dialog stays. Images pasted or dropped into the task show as a row
-// of tiles inside the Task row (launcherimages.ts holds the rules, launcherstore.ts the temp writes).
+// of tiles inside the Task row (launcherimages.ts holds the rules, launcherstore.ts the temp writes). An `@` typed in the
+// task lists the project's files under the Task row, and a pick puts `@<path>` in the task (launchermention.ts).
 
+import { FileIcon } from "@/app/element/fileicon";
 import { composerReveal } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { reloadFileIndex } from "@/app/view/code/codestore";
 import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, Loader2, Lock, Plus, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
+import {
+    useEffect,
+    useState,
+    type ClipboardEvent,
+    type DragEvent,
+    type KeyboardEvent,
+    type ReactNode,
+    type RefObject,
+} from "react";
 import {
     ASK_SETTINGS_ARG,
     launcherFlagCatalog,
@@ -29,6 +40,7 @@ import {
     type Runtime,
 } from "./launch";
 import { imageFilesOf } from "./launcherimages";
+import { fileMentionAt, fileMentionMatches, insertFileMention } from "./launchermention";
 import { resumeLaunchSpec } from "./launcherresume";
 import {
     addTaskImages,
@@ -201,6 +213,135 @@ function TaskImages() {
     );
 }
 
+interface FileMentionState {
+    // the list under the Task row, or null when none shows
+    list: ReactNode;
+    onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
+    onCaret: (el: HTMLTextAreaElement) => void;
+}
+
+// The Task box's `@` picker. The project's files are read again on the first `@` of each opening of the dialog (it
+// unmounts this on close): there is no watcher, and an agent creates files while it is closed. A query no file matches
+// shows nothing, so an `@` meant as text never blocks Enter.
+function useFileMention(task: string, filesRoot: string, taskRef: RefObject<HTMLTextAreaElement>): FileMentionState {
+    const [caret, setCaret] = useState(0);
+    const [pick, setPick] = useState(0);
+    // the `@` whose list Escape closed; it stays closed until the caret leaves it
+    const [dismissed, setDismissed] = useState(-1);
+    const [listing, setListing] = useState<{ root: string; paths?: string[]; error?: boolean } | null>(null);
+    const mention = filesRoot === "" ? null : fileMentionAt(task, caret);
+    const open = mention != null && mention.start !== dismissed;
+    useEffect(() => {
+        if (!open || listing?.root === filesRoot) {
+            return;
+        }
+        setListing({ root: filesRoot });
+        reloadFileIndex(filesRoot).then(
+            (idx) => setListing((cur) => (cur?.root === filesRoot ? { root: filesRoot, paths: idx.paths } : cur)),
+            () => setListing((cur) => (cur?.root === filesRoot ? { root: filesRoot, error: true } : cur))
+        );
+    }, [open, filesRoot, listing?.root]);
+    const own = listing?.root === filesRoot ? listing : null;
+    const matches = open && own?.paths != null ? fileMentionMatches(mention.query, own.paths) : [];
+    const note = !open
+        ? null
+        : own?.error
+          ? "Could not list the project's files"
+          : own?.paths == null
+            ? "Listing files…"
+            : null;
+    const shown = note != null || matches.length > 0;
+    const at = Math.min(pick, Math.max(matches.length - 1, 0));
+
+    const choose = (path: string) => {
+        const next = insertFileMention(task, mention.start, caret, path);
+        globalStore.set(launcherTaskAtom, next.text);
+        setCaret(next.caret);
+        setPick(0);
+        requestAnimationFrame(() => {
+            taskRef.current?.focus();
+            taskRef.current?.setSelectionRange(next.caret, next.caret);
+        });
+    };
+    // the picker's keys stop here: the dialog's own handler would launch on Enter, trap Tab and close on Escape
+    const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+        if (!shown || e.nativeEvent.isComposing) {
+            return;
+        }
+        if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            setDismissed(mention.start);
+            return;
+        }
+        if (matches.length === 0 || e.metaKey || e.ctrlKey || e.altKey) {
+            return;
+        }
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            e.stopPropagation();
+            const n = matches.length;
+            setPick((at + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+        } else if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            choose(matches[at]);
+        }
+    };
+    // a keystroke or a click moves the caret and starts the list from its best match again; ↑↓ do not (the picker
+    // takes them, so the caret stays)
+    const onCaret = (el: HTMLTextAreaElement) => {
+        setCaret(el.selectionStart);
+        setPick(0);
+        if (fileMentionAt(el.value, el.selectionStart) == null) {
+            setDismissed(-1);
+        }
+    };
+
+    const list = !shown ? null : (
+        <ul
+            role="listbox"
+            data-launcher-mentions
+            aria-label="Project files"
+            className="m-0 flex shrink-0 list-none flex-col rounded-[10px] border border-edge-mid bg-surface p-1"
+        >
+            {note != null ? (
+                <li className="px-2 py-[5px] text-[12px] text-muted">{note}</li>
+            ) : (
+                matches.map((path, i) => {
+                    const slash = path.lastIndexOf("/");
+                    return (
+                        <li
+                            key={path}
+                            role="option"
+                            aria-selected={i === at}
+                            data-launcher-mention={path}
+                            title={path}
+                            onMouseDown={(e) => {
+                                // keep focus in the Task box
+                                e.preventDefault();
+                                choose(path);
+                            }}
+                            onMouseMove={() => setPick(i)}
+                            className={cn(
+                                "flex min-w-0 cursor-pointer items-center gap-2 rounded-[7px] px-2 py-[5px]",
+                                i === at && "bg-surface-hover"
+                            )}
+                        >
+                            <FileIcon path={path} size={14} />
+                            <span className="shrink-0 font-mono text-[12px] text-primary">{path.slice(slash + 1)}</span>
+                            <span className="min-w-0 truncate font-mono text-[11px] text-muted">
+                                {slash === -1 ? "" : path.slice(0, slash)}
+                            </span>
+                        </li>
+                    );
+                })
+            )}
+        </ul>
+    );
+    return { list, onKeyDown, onCaret };
+}
+
 interface AgentFieldsProps {
     runtime: Runtime;
     currentBranch: string;
@@ -210,12 +351,24 @@ interface AgentFieldsProps {
     resume: SessionInfo | null;
     // started in Home, the home folder outside any project: no worktree, and Claude Code runs ask-only
     home: boolean;
+    // the picked project's folder, whose files an `@` in the task lists; empty in Home (too big to walk) or with none
+    filesRoot: string;
     // a letter typed in the Start column moves focus here
     taskRef: RefObject<HTMLTextAreaElement>;
 }
 
-export function AgentFields({ runtime, currentBranch, branches, ramWarning, resume, home, taskRef }: AgentFieldsProps) {
+export function AgentFields({
+    runtime,
+    currentBranch,
+    branches,
+    ramWarning,
+    resume,
+    home,
+    filesRoot,
+    taskRef,
+}: AgentFieldsProps) {
     const task = useAtomValue(launcherTaskAtom);
+    const mention = useFileMention(task, filesRoot, taskRef);
     const commands = useAtomValue(launcherCommandAtom);
     const naFlags = useAtomValue(naFlagsAtom);
     const remember = useAtomValue(naRememberFlagsAtom);
@@ -247,9 +400,11 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
     // the field shows the project's checked-out branch until one is typed or picked
     const effectiveBranch = branchPick ?? currentBranch;
     const branchNames = branches.map((b) => b.name);
-    const taskHint = resume
-        ? "optional · sent as the next message · shift+enter for a new line · paste or drop images"
-        : "optional · sent as the first prompt · shift+enter for a new line · paste or drop images";
+    const taskHint =
+        (resume
+            ? "optional · sent as the next message · shift+enter for a new line · paste or drop images"
+            : "optional · sent as the first prompt · shift+enter for a new line · paste or drop images") +
+        (filesRoot !== "" ? " · @ for a file" : "");
     const showTask = runtimeShowsTask(runtime);
     const showWorktree = runtimeSupportsWorktree(runtime) && resume == null && !home;
     const outcome = worktreeOutcome({ branch: effectiveBranch, currentBranch, branchNames });
@@ -276,7 +431,12 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                             id="launcher-task"
                             rows={1}
                             value={task}
-                            onChange={(e) => globalStore.set(launcherTaskAtom, e.target.value)}
+                            onChange={(e) => {
+                                globalStore.set(launcherTaskAtom, e.target.value);
+                                mention.onCaret(e.target);
+                            }}
+                            onSelect={(e) => mention.onCaret(e.currentTarget)}
+                            onKeyDown={mention.onKeyDown}
                             onPaste={pasteIntoTask}
                             onDragOver={(e) => {
                                 if (dragHasFiles(e.dataTransfer)) {
@@ -292,10 +452,13 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                                 task === "" ? "h-[69px] overflow-hidden" : "min-h-[69px] overflow-y-auto"
                             )}
                         />
+                        {/* tabIndex 0 on each button: WebKit's own Tab skips a button without one (Safari's default), so
+                        a Tab the dialog's trap does not take still stops here before the Start column */}
                         <div className="flex min-h-[31px] min-w-0 flex-wrap items-center justify-end gap-1">
                             {flagCatalog.length > 0 ? (
                                 <button
                                     type="button"
+                                    tabIndex={0}
                                     aria-expanded={flagMenuOpen}
                                     title="Add a flag"
                                     onClick={() => setFlagMenuOpen(!flagMenuOpen)}
@@ -322,6 +485,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                                     </span>
                                     <button
                                         type="button"
+                                        tabIndex={0}
                                         aria-label={`Remove ${f.flag}`}
                                         onClick={() => setFlag(f.id, false)}
                                         className="flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary"
@@ -333,6 +497,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                             {showWorktree ? (
                                 <button
                                     type="button"
+                                    tabIndex={0}
                                     role="switch"
                                     aria-checked={worktreeOn}
                                     title="Run in an isolated git worktree"
@@ -359,6 +524,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                             ) : null}
                             <button
                                 type="button"
+                                tabIndex={0}
                                 data-launcher-command-toggle
                                 aria-expanded={commandOpen}
                                 title="Show the command it runs"
@@ -382,6 +548,7 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                     <TaskImages />
                 </div>
             ) : null}
+            {showTask ? mention.list : null}
             <AnimatePresence>
                 {flagMenuOpen && flagCatalog.length > 0 && (
                     <motion.div

@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Typing `@` in New agent's Task box lists the project's files; ↑↓ and Enter (or a click) put `@path` in the task,
+  and Esc closes the list without closing the dialog. <!-- try: new-agent -->
 - Council Setup's Auto-generate button writes the topic, a question and the mode from what the seated agents were
   talking about. It asks before replacing text you already wrote.
 

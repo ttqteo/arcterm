@@ -1013,6 +1013,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                     ramWarning={ramWarning}
                                     resume={resume}
                                     home={atHome}
+                                    filesRoot={atHome ? "" : projectPath}
                                     taskRef={taskRef}
                                 />
                             </>
