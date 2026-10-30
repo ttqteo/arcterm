@@ -27,6 +27,8 @@ import {
     type ReviewRow,
 } from "@/app/view/agents/brainstormmodel";
 import { sendBrainstorm } from "@/app/view/agents/brainstormsend";
+import { councilChatNavAtom } from "@/app/view/agents/councilchatnav";
+import { moveIdea } from "@/app/view/agents/councilchatmodel";
 import {
     focusedBrainstorm,
     moveReviewCursor,
@@ -1107,6 +1109,13 @@ const inGalleryCleanup = (ctx: KeyContext) => galleryNav(ctx) && galleryView() =
 // the grid has nothing to back out of, and leaves. Escape inside the search box is the box's own.
 const galleryHoldsEscape = () =>
     globalStore.get(centerModeAtom) === "canvases" && globalStore.get(canvasGalleryAtom).view !== "grid";
+// A council's chat keeps the keys of its channel and thread (buildCouncilBindings) while focus is inside either: the
+// centre is on the council, so none of the agent keys is live, and Escape closes an open thread before it leaves the
+// council for the terminal.
+const focusInCouncilChat = () =>
+    typeof document !== "undefined" &&
+    document.activeElement?.closest?.("[data-council-channel], [data-council-thread]") != null;
+const councilHoldsEscape = () => globalStore.get(councilChatNavAtom)?.openId != null && focusInCouncilChat();
 
 // Agent (Focus) surface bindings. Moved out of agentsurface.tsx so the registry has one home
 // and the array is stable: run() reads live atoms instead of closing over per-render focus/order.
@@ -1309,7 +1318,8 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 ctx.surface === "agent" &&
                 !centerAtRest() &&
                 globalStore.get(focusSubagentAtom) == null &&
-                !galleryHoldsEscape(),
+                !galleryHoldsEscape() &&
+                !councilHoldsEscape(),
             run: () => showTerminal(),
         },
         // Agent → Canvas gallery. Moving over cards and paging through boards are postures, not actions to search for.
@@ -1978,6 +1988,80 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             label: "Request changes",
             when: (ctx) => reviewSend(ctx) && reviewCanRequest(),
             run: sendReview,
+        },
+    ];
+}
+
+// The council chat's keys (councilchat.tsx publishes its cursor in councilChatNavAtom): j and k move over the ideas of
+// the channel, Enter opens the focused idea's thread, Escape closes it. Active only while the chat is on screen and focus
+// is inside its channel or thread (an input is never inside: it stays editable, and its keys are its own), so elsewhere
+// on the Agent surface nothing here is live and the agent keys keep j and k. Registered by the chat itself.
+export function buildCouncilBindings(): Binding[] {
+    // the nav is read first and unconditionally, so every predicate depends on it however the rest short-circuits
+    const keys = (ctx: KeyContext) => {
+        const nav = globalStore.get(councilChatNavAtom);
+        return (
+            nav != null &&
+            navigateStrict(ctx) &&
+            ctx.surface === "agent" &&
+            globalStore.get(centerModeAtom) === "council" &&
+            focusInCouncilChat()
+        );
+    };
+    const move = (dir: 1 | -1) => {
+        const nav = globalStore.get(councilChatNavAtom);
+        const next = nav == null ? null : moveIdea(nav.order, nav.focusedId, dir);
+        if (nav != null && next != null) {
+            nav.focus(next);
+        }
+    };
+    // a button or link that has focus owns Enter, as it does anywhere on the web: Enter on Send to the others sends
+    const onControl = () => {
+        const tag = typeof document === "undefined" ? "" : (document.activeElement?.tagName ?? "");
+        return tag === "BUTTON" || tag === "A" || tag === "SUMMARY";
+    };
+    return [
+        {
+            id: "council:next-idea",
+            keys: "j",
+            group: "Agent",
+            label: "Next idea in the council channel",
+            when: keys,
+            paletteHidden: true,
+            run: () => move(1),
+        },
+        {
+            id: "council:prev-idea",
+            keys: "k",
+            group: "Agent",
+            label: "Previous idea in the council channel",
+            when: keys,
+            paletteHidden: true,
+            run: () => move(-1),
+        },
+        {
+            id: "council:open-thread",
+            keys: "Enter",
+            group: "Agent",
+            label: "Open the focused idea's thread",
+            when: (ctx) => keys(ctx) && globalStore.get(councilChatNavAtom)?.focusedId != null && !onControl(),
+            paletteHidden: true,
+            run: () => {
+                const nav = globalStore.get(councilChatNavAtom);
+                if (nav?.focusedId == null) {
+                    return false;
+                }
+                nav.open(nav.focusedId);
+            },
+        },
+        {
+            id: "council:close-thread",
+            keys: "Escape",
+            group: "Agent",
+            label: "Close the thread (j and k move over the ideas again)",
+            when: (ctx) => keys(ctx) && globalStore.get(councilChatNavAtom)?.openId != null,
+            paletteHidden: true,
+            run: () => globalStore.get(councilChatNavAtom)?.close(),
         },
     ];
 }

@@ -3,23 +3,26 @@
 //
 // The council Discussion (Main.dc.html, Running.dc.html, Paused.dc.html): a header in one line (the feature, the step
 // chip, the mode, the experts' avatars, the cost line, Summarize, Stop council, or Remove once it ended), and a body that depends on where the
-// council is. While the experts argue and write the answer it is a group chat (councilfeed.tsx) beside the ideas ranked
-// by the experts' picks, those no expert picked folded away; once the council is over it is one idea as a Reddit-style
-// thread beside the same column (councilthread.tsx); while the experts first read and propose it is each expert's card
-// with what it is reading and the ideas as they arrive; at the pause it is the ticks and the question for the argument; a
-// council the token gate did not run offers Start council, and one that waits for the running council says so. The
-// words are plain ones: no proposal id, round or stance word is drawn (the wire's stay in the data-council-*
-// attributes). A failed expert shows its error with Retry, a failed coordinator a Summary failed panel. Status is a dot
-// and a word, never colour alone. Every control carries a data-council-* attribute for the CDP scenario
-// `council-discussion`. The rules are in councildiscussionmodel.ts, councilfeedmodel.ts and councilmodel.ts; the
-// store's actions answer `{ ok, error }`, and a refusal shows in place.
+// council is. Once the seats have proposed it is the chat (councilchat.tsx): a Slack-style channel with threads, for a
+// council that runs its replies or its summary, one that is over, and one that waits on the drafts of its seats; while
+// the experts first read and propose it is each expert's card with what it is reading and the ideas as they arrive; at
+// the pause it is the ticks and the question for the argument; a council the token gate did not run offers Start
+// council, and one that waits for the running council says so. The words are plain ones: no proposal id or stance word
+// is drawn (the wire's stay in the data-council-* attributes). A failed expert shows its error with Retry, a failed
+// coordinator a Summary failed panel. Status is a dot and a word, never colour alone. Every control carries a
+// data-council-* attribute for the CDP scenario `council-discussion`. The rules are in councildiscussionmodel.ts,
+// councilchatmodel.ts and councilmodel.ts; the store's actions answer `{ ok, error }`, and a refusal shows in place.
 
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
-import { ArrowBigUp, Check, ChevronDown, ChevronRight, ListChecks, MessageCircle } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Check, ListChecks } from "lucide-react";
+import { useEffect, useState } from "react";
 import { showCouncil } from "./agentcenter";
+import type { AgentsViewModel } from "./agents";
+import { useActions, type Actions } from "./councilactions";
+import { CouncilAvatar, CouncilChat, EvidenceChips } from "./councilchat";
+import { stepChip } from "./councilchatmodel";
 import {
     avatarStackLabel,
     avatarTone,
@@ -27,58 +30,45 @@ import {
     canContinue,
     coordinatorFailure,
     discussionBody,
+    evidenceChip,
     expertCard,
     expertDoing,
     failedExperts,
     failedWhile,
-    foldedCount,
     headerCost,
     isLit,
+    isQueued,
     keptProposals,
-    proposalLine,
+    modeWord,
     retriedOut,
-    scoreSummary,
     summarizeAction,
     toggleCut,
     type CardDot,
+    type DiscussionBody,
     type FailedExpert,
 } from "./councildiscussionmodel";
-import { ExpertChips, Feed, NothingToDo, StepBar, councilFeedFilterAtom } from "./councilfeed";
-import { isQueued, modeWord, showsFeed } from "./councilfeedmodel";
 import {
     callSegments,
     canRemoveCouncil,
     canSummarize,
     estimateLabel,
     expertStat,
-    headerChip,
     panel,
-    rankedProposals,
+    queuedLine,
     summarizeHold,
-    type RankedProposal,
     type SegmentState,
 } from "./councilmodel";
 import { confirmRemoveCouncil } from "./councilremove";
 import {
     continueCouncil,
-    councilOpenProposalAtom,
     councilSelAtom,
     retryExpert,
     startSavedCouncil,
     stopCouncil,
     summarizeCouncil,
     useCouncil,
-    type CouncilCall,
-} from "./councilstore";
-import {
-    CouncilAvatar,
-    CouncilComposer,
-    EvidenceChips,
-    ProposalPost,
-    ThreadView,
-    councilComposerAtom,
     useEstimate,
-} from "./councilthread";
+} from "./councilstore";
 
 const ROOT = "flex min-h-0 min-w-0 flex-1 flex-col bg-background text-[13px] text-primary";
 
@@ -116,39 +106,9 @@ function useClock(on: boolean): number {
     return now;
 }
 
-/** The clicks that call wavesrv: one at a time per key, the refusal kept to show where it was clicked. */
-interface Actions {
-    error: string | null;
-    busy: ReadonlySet<string>;
-    run: (key: string, what: string, fn: () => Promise<CouncilCall<unknown>>) => Promise<boolean>;
-}
-
-function useActions(): Actions {
-    const [error, setError] = useState<string | null>(null);
-    const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
-    const live = useRef(new Set<string>());
-    const run = useCallback(async (key: string, what: string, fn: () => Promise<CouncilCall<unknown>>) => {
-        if (live.current.has(key)) {
-            return false;
-        }
-        live.current.add(key);
-        setBusy(new Set(live.current));
-        setError(null);
-        const r = await fn();
-        live.current.delete(key);
-        setBusy(new Set(live.current));
-        // `=== false` because the non-strict tsconfig narrows a union only on a comparison
-        if (r.ok === false) {
-            setError(`${what} failed: ${r.error}`);
-        }
-        return r.ok;
-    }, []);
-    return { error, busy, run };
-}
-
 // ---- the view ----
 
-export function CouncilDiscussion() {
+export function CouncilDiscussion({ model }: { model: AgentsViewModel }) {
     const id = useAtomValue(councilSelAtom);
     const c = useCouncil(id);
     if (c == null) {
@@ -158,20 +118,18 @@ export function CouncilDiscussion() {
             </div>
         );
     }
-    return <Discussion key={c.id} c={c} />;
+    return <Discussion key={c.id} c={c} model={model} />;
 }
 
-function Discussion({ c }: { c: Council }) {
+function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
     const now = useClock(c.state === "running");
     const acts = useActions();
     const body = discussionBody(c);
     return (
         <div data-council-discussion={c.id} data-council-id={c.id} data-council-state={c.state} className={ROOT}>
-            <Header c={c} now={now} acts={acts} />
+            <Header c={c} body={body} now={now} acts={acts} />
             {isQueued(c) ? (
-                <QueuedBody />
-            ) : showsFeed(c) ? (
-                <FeedBody c={c} acts={acts} />
+                <QueuedBody c={c} />
             ) : body === "not-run" ? (
                 <NotRunBody c={c} acts={acts} />
             ) : body === "pause" ? (
@@ -179,7 +137,12 @@ function Discussion({ c }: { c: Council }) {
             ) : body === "experts" ? (
                 <ExpertsBody c={c} acts={acts} />
             ) : (
-                <ThreadBody c={c} acts={acts} />
+                <CouncilChat
+                    c={c}
+                    acts={acts}
+                    notes={<FailureNotes c={c} acts={acts} withExperts={false} />}
+                    onOpenTerminal={(tab) => model.openTerminal(tab)}
+                />
             )}
         </div>
     );
@@ -187,15 +150,17 @@ function Discussion({ c }: { c: Council }) {
 
 // ---- the header ----
 
-const CHIP_TONE: Record<string, { box: string; dot: string }> = {
-    running: { box: "bg-pill text-secondary", dot: "bg-working pulse-dot" },
-    "awaiting-you": { box: "bg-askingbg text-warning-soft", dot: "bg-asking" },
+// the step chip's colours by its dot: amber while the council waits on the person, green while it runs, red when it failed
+const CHIP_TONE = {
+    working: { box: "bg-pill text-secondary", dot: "bg-working pulse-dot" },
+    waiting: { box: "bg-askingbg text-warning-soft", dot: "bg-asking" },
     failed: { box: "bg-error/12 text-error-soft", dot: "bg-error" },
+    idle: { box: "bg-pill text-secondary", dot: "bg-ink-faint" },
 };
-const CHIP_QUIET = { box: "bg-pill text-secondary", dot: "bg-ink-faint" };
 
 function StatusChip({ c }: { c: Council }) {
-    const tone = CHIP_TONE[c.state] ?? CHIP_QUIET;
+    const chip = stepChip(c);
+    const tone = CHIP_TONE[chip.dot];
     return (
         <span
             data-council-chip
@@ -206,7 +171,7 @@ function StatusChip({ c }: { c: Council }) {
             )}
         >
             <span aria-hidden className={cn("h-[6px] w-[6px] rounded-full", tone.dot)} />
-            {headerChip(c)}
+            {chip.text}
         </span>
     );
 }
@@ -266,7 +231,7 @@ function CallBar({ c }: { c: Council }) {
     );
 }
 
-function Header({ c, now, acts }: { c: Council; now: number; acts: Actions }) {
+function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now: number; acts: Actions }) {
     const action = summarizeAction(c);
     const enabled = canSummarize(c);
     const summarizing = acts.busy.has("summarize");
@@ -281,7 +246,8 @@ function Header({ c, now, acts }: { c: Council; now: number; acts: Actions }) {
             ? "Rank the directions and fill the matrix from the discussion so far"
             : "Open the ranked directions and the matrix"
         : summarizeHold(c);
-    const showBar = (c.state === "running" && c.round <= 1) || c.state === "awaiting-you";
+    // the call bar is the first step's and the pause's; the chat's seat chips say who is at work
+    const showBar = body !== "chat" && ((c.state === "running" && c.round <= 1) || c.state === "awaiting-you");
     return (
         <header className="flex flex-none flex-col gap-3 border-b border-edge-faint px-8 pb-3 pt-4">
             <div className="flex min-w-0 flex-wrap items-center gap-x-[10px] gap-y-2">
@@ -295,7 +261,7 @@ function Header({ c, now, acts }: { c: Council; now: number; acts: Actions }) {
                 </h1>
                 <StatusChip c={c} />
                 <ModeChip c={c} />
-                {!showsFeed(c) && <AvatarStack c={c} />}
+                {body !== "chat" && <AvatarStack c={c} />}
                 <div className="flex-1" />
                 {c.state !== "not-run" && !isQueued(c) && (
                     <span data-council-cost className="whitespace-nowrap text-[11.5px] tabular-nums text-muted">
@@ -381,7 +347,7 @@ function ExpertFailureCard({ c, f, acts }: { c: Council; f: FailedExpert; acts: 
                 <span className="text-[11px] text-muted">{f.expert.model}</span>
                 <span className="flex items-center gap-[6px] text-[11.5px] text-error-soft">
                     <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-error" />
-                    {failedWhile(f.round)}
+                    {failedWhile(c, f.round)}
                 </span>
             </div>
             <span data-council-failed-error className="break-words text-[12px] leading-[1.5] text-secondary">
@@ -403,7 +369,7 @@ function SummaryFailedPanel({ c, f, acts }: { c: Council; f: FailedExpert; acts:
                 <span className="text-[12.5px] font-semibold">Summary failed</span>
                 <span className="flex items-center gap-[6px] text-[11.5px] text-error-soft">
                     <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-error" />
-                    {failedWhile(f.round)}
+                    {failedWhile(c, f.round)}
                 </span>
             </div>
             <span data-council-failed-error className="break-words text-[12px] leading-[1.5] text-secondary">
@@ -515,7 +481,13 @@ function ProposalsSoFar({ c }: { c: Council }) {
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                         <span className="text-[13px] font-semibold">{p.title}</span>
                         <span className="text-[12px] leading-[1.5] text-secondary">{p.argument}</span>
-                        <EvidenceChips evidence={p.evidence} />
+                        <EvidenceChips
+                            evidence={(p.evidence ?? []).filter((e) => !e.weak).map((e) => evidenceChip(e).text)}
+                            weak={(p.evidence ?? [])
+                                .filter((e) => e.weak)
+                                .map((e) => evidenceChip(e).text)
+                                .join("; ")}
+                        />
                     </div>
                 </div>
             ))}
@@ -707,262 +679,15 @@ function NotRunBody({ c, acts }: { c: Council; acts: Actions }) {
     );
 }
 
-// ---- the thread and the proposals beside it ----
-
-function ProposalRow({
-    c,
-    row,
-    selected,
-    onOpen,
-}: {
-    c: Council;
-    row: RankedProposal;
-    selected: boolean;
-    onOpen: () => void;
-}) {
-    const p = row.proposal;
-    const out = p.withdrawn || p.cut;
-    return (
-        <button
-            type="button"
-            data-council-proposal={p.id}
-            data-selected={selected ? "true" : "false"}
-            data-withdrawn={p.withdrawn ? "true" : undefined}
-            aria-current={selected ? "true" : undefined}
-            onClick={onOpen}
-            className={cn(
-                "flex w-full cursor-pointer gap-[10px] rounded-[8px] border px-[10px] py-[9px] text-left outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                selected
-                    ? "border-edge-strong bg-surface-selected"
-                    : out
-                      ? "border-border bg-background"
-                      : "border-border bg-surface hover:bg-surface-hover"
-            )}
-        >
-            <span
-                title={scoreSummary(c, p.id)}
-                className={cn(
-                    "flex w-[22px] flex-none flex-col items-center text-[12px] font-bold tabular-nums",
-                    row.picks == null && row.score < 0
-                        ? "text-error-soft"
-                        : out || row.picks === 0
-                          ? "text-muted"
-                          : "text-success-soft"
-                )}
-            >
-                <ArrowBigUp size={12} strokeWidth={2.2} aria-hidden />
-                <span data-council-proposal-score>{row.picks ?? row.score}</span>
-            </span>
-            <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                <span className={cn("text-[12px] font-semibold leading-[1.35]", out ? "text-muted" : "text-primary")}>
-                    {p.title}
-                </span>
-                <span className="flex items-center gap-[5px] text-[10.5px] text-muted">
-                    <span
-                        aria-hidden
-                        data-council-live={row.replying > 0 ? "true" : undefined}
-                        className={cn(
-                            "h-[5px] w-[5px] flex-none rounded-full",
-                            row.replying > 0 ? "bg-working pulse-dot" : "bg-transparent"
-                        )}
-                    />
-                    {proposalLine(c, row)}
-                </span>
-            </span>
-        </button>
-    );
-}
-
-// the ideas no expert picked, folded under one row; an open idea inside it keeps the fold unfolded
-function FoldedIdeas({
-    c,
-    rows,
-    openId,
-    onOpen,
-}: {
-    c: Council;
-    rows: RankedProposal[];
-    openId: string | undefined;
-    onOpen: (id: string) => void;
-}) {
-    const [unfolded, setUnfolded] = useState(false);
-    const shown = unfolded || rows.some((r) => r.proposal.id === openId);
-    return (
-        <>
-            <button
-                type="button"
-                data-council-folded={rows.length}
-                aria-expanded={shown}
-                onClick={() => setUnfolded(!shown)}
-                className="flex h-[28px] w-full flex-none cursor-pointer items-center gap-[6px] rounded-[8px] border-0 bg-transparent px-[6px] text-left text-[11.5px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
-            >
-                {shown ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />}
-                {rows.length} more with no picks
-            </button>
-            {shown &&
-                rows.map((row) => (
-                    <ProposalRow
-                        key={row.proposal.id}
-                        c={c}
-                        row={row}
-                        selected={row.proposal.id === openId}
-                        onOpen={() => onOpen(row.proposal.id)}
-                    />
-                ))}
-        </>
-    );
-}
-
-// the council's reply composer: one at a time, drawn under the post or message it answers
-function useReplyComposer(c: Council) {
-    const [composer, setComposer] = useAtom(councilComposerAtom(c.id));
-    const here = (proposalId: string, parentId: string) =>
-        composer != null && composer.proposalId === proposalId && composer.parentId === parentId;
-    const startReply = (proposalId: string, parentId: string) => {
-        if (!here(proposalId, parentId)) {
-            setComposer({ proposalId, parentId, text: "", tools: false });
-        }
-    };
-    const renderComposer = (proposalId: string, parentId: string): ReactNode =>
-        composer != null && here(proposalId, parentId) ? (
-            <CouncilComposer c={c} draft={composer} onChange={setComposer} onClose={() => setComposer(null)} />
-        ) : null;
-    return { startReply, renderComposer };
-}
-
-// the ideas ranked by the experts' picks, those no expert picked folded away; `selectedId` is the one open
-function IdeasList({
-    c,
-    selectedId,
-    onOpen,
-}: {
-    c: Council;
-    selectedId: string | undefined;
-    onOpen: (id: string) => void;
-}) {
-    const ranked = rankedProposals(c);
-    const folded = foldedCount(c) > 0 ? ranked.filter((r) => r.picks === 0) : [];
-    return (
-        <>
-            <span className={cn(SECTION_LABEL, "pt-[6px]")}>Ideas</span>
-            {ranked
-                .filter((row) => !folded.includes(row))
-                .map((row) => (
-                    <ProposalRow
-                        key={row.proposal.id}
-                        c={c}
-                        row={row}
-                        selected={row.proposal.id === selectedId}
-                        onOpen={() => onOpen(row.proposal.id)}
-                    />
-                ))}
-            {folded.length > 0 && <FoldedIdeas c={c} rows={folded} openId={selectedId} onOpen={onOpen} />}
-        </>
-    );
-}
-
-function AskTheCouncil({ onAsk }: { onAsk: () => void }) {
-    return (
-        <button
-            type="button"
-            data-council-ask-all
-            onClick={onAsk}
-            className="flex h-[34px] w-full flex-none cursor-pointer items-center gap-2 rounded-[8px] border border-edge-mid bg-surface px-[10px] text-left text-[12px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
-        >
-            <MessageCircle size={13} strokeWidth={1.8} aria-hidden />
-            Ask the whole council
-        </button>
-    );
-}
-
 // ---- a council waiting for the one that runs ----
 
-function QueuedBody() {
+// the line says which council it waits for and, while that one waits on a busy agent, which agent
+function QueuedBody({ c }: { c: Council }) {
+    const holder = useCouncil(c.queuedafter || null);
     return (
-        <div data-council-queued className="min-h-0 flex-1 px-8 py-6 text-[13px] text-secondary">
-            Queued: it starts when the running council ends.
-        </div>
-    );
-}
-
-// ---- the feed while the experts argue and write the answer ----
-
-function FeedBody({ c, acts }: { c: Council; acts: Actions }) {
-    const [filter, setFilter] = useAtom(councilFeedFilterAtom(c.id));
-    const { startReply, renderComposer } = useReplyComposer(c);
-    // a filter on an idea that is gone shows everything
-    const narrowed = (c.proposals ?? []).find((p) => p.id === filter);
-    const toggle = (id: string) => setFilter(filter === id ? null : id);
-    return (
-        <div className="flex min-h-0 flex-1 gap-6 px-8 py-4">
-            <div data-council-main className="flex min-h-0 min-w-0 max-w-[760px] flex-1 flex-col gap-3">
-                <FailureNotes c={c} acts={acts} withExperts />
-                <StepBar c={c} />
-                <NothingToDo />
-                <ExpertChips c={c} />
-                {narrowed != null && (
-                    <div data-council-feed-filter className="flex items-center gap-2 text-[11.5px] text-muted">
-                        <span className="min-w-0 truncate">Showing one idea: {narrowed.title}</span>
-                        <button
-                            type="button"
-                            data-council-feed-filter-clear
-                            onClick={() => setFilter(null)}
-                            className="flex-none cursor-pointer rounded-[6px] border-0 bg-transparent px-[6px] py-px text-[11.5px] text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                            Show everything
-                        </button>
-                    </div>
-                )}
-                <Feed c={c} onProposal={narrowed?.id} renderComposer={renderComposer} onReply={startReply} />
-                <div className="flex flex-none flex-col gap-2">
-                    <AskTheCouncil onAsk={() => startReply("", "")} />
-                    {renderComposer("", "")}
-                </div>
-            </div>
-            <aside data-council-proposals className="flex min-h-0 w-[270px] flex-none flex-col gap-2 overflow-y-auto">
-                <IdeasList c={c} selectedId={narrowed?.id} onOpen={toggle} />
-            </aside>
-        </div>
-    );
-}
-
-// ---- the thread of the open idea ----
-
-function ThreadBody({ c, acts }: { c: Council; acts: Actions }) {
-    const ranked = rankedProposals(c);
-    const [openId, setOpenId] = useAtom(councilOpenProposalAtom(c.id));
-    const { startReply, renderComposer } = useReplyComposer(c);
-    const open = (ranked.find((r) => r.proposal.id === openId) ?? ranked[0])?.proposal;
-
-    return (
-        <div className="flex min-h-0 flex-1 gap-6 px-8 py-4">
-            <div
-                data-council-main
-                className="flex min-h-0 min-w-0 max-w-[760px] flex-1 flex-col gap-3 overflow-y-auto pr-1"
-            >
-                <FailureNotes c={c} acts={acts} withExperts />
-                {open != null && (
-                    <>
-                        <ProposalPost
-                            c={c}
-                            proposal={open}
-                            onReply={() => startReply(open.id, "")}
-                            composer={renderComposer(open.id, "")}
-                        />
-                        <ThreadView
-                            c={c}
-                            proposalId={open.id}
-                            renderComposer={renderComposer}
-                            onReply={(replyId) => startReply(open.id, replyId)}
-                        />
-                    </>
-                )}
-            </div>
-            <aside data-council-proposals className="flex min-h-0 w-[270px] flex-none flex-col gap-2 overflow-y-auto">
-                <AskTheCouncil onAsk={() => startReply("", "")} />
-                {renderComposer("", "")}
-                <IdeasList c={c} selectedId={open?.id} onOpen={setOpenId} />
-            </aside>
+        <div data-council-queued className="flex min-h-0 flex-1 flex-col gap-1 px-8 py-6 text-[13px] text-secondary">
+            <span data-council-queued-line>{queuedLine(holder)}</span>
+            <span className="text-[12px] text-muted">It starts when the running council ends.</span>
         </div>
     );
 }

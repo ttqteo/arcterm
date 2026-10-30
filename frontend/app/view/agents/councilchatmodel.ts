@@ -17,6 +17,7 @@ import {
     avatarTone,
     evidenceChip,
     expertDoing,
+    failedWhile as failedWhileWords,
     isLit,
     listNames,
     reactions,
@@ -36,7 +37,6 @@ import {
     roundsOf,
     sentProposals,
     sentReplies,
-    synthesisRound,
     type HeldDraft,
 } from "./councilmodel";
 
@@ -89,15 +89,10 @@ function contextLabel(n: number): string {
 // what a seat's activity reads while its turn waits for the agent behind it (AgentCaller's OnTool line)
 const WAITING_FOR_AGENT = /^Waiting for .+ to finish its task$/;
 
-// where a failed call failed, as the words that follow the seat's name
+// where a failed call failed, as the words that follow the seat's name (`failed while replying`)
 function failedWhile(c: Council, round: number): string {
-    if (round <= 1) {
-        return "failed while proposing";
-    }
-    if (round <= roundsOf(c)) {
-        return "failed while replying";
-    }
-    return round === synthesisRound(c) ? "failed while writing the summary" : "failed while answering";
+    const words = failedWhileWords(c, round);
+    return words.charAt(0).toLowerCase() + words.slice(1);
 }
 
 // ---- one message ----

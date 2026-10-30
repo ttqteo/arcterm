@@ -586,14 +586,17 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ ratedFacts, stoppedFacts, benchRating }) };
         });
 
-        await step("Ask the experts again on direction 1 opens the Discussion on its first proposal", async () => {
+        await step("Ask the experts again on direction 1 opens the Discussion's chat with that proposal's thread open", async () => {
             await openDirection(h, 1);
             const before = await h.ev(`window.__arcCouncil.openProposal(${q(ctx.councilId)})`);
             await click(h, `${DIRECTION(1)} [data-council-action='ask-again']`);
             const shown = await until(h, `!!document.querySelector("[data-council-discussion]")`);
             const open = await h.ev(`window.__arcCouncil.openProposal(${q(ctx.councilId)})`);
-            // the Discussion draws the open proposal as a post of its own
-            const post = await until(h, `!!document.querySelector("[data-council-discussion] [data-council-post='P5']")`);
+            // the chat opens that idea's thread: its panel carries the idea on top, and the channel marks it open
+            const post = await until(
+                h,
+                `!!document.querySelector("[data-council-discussion] [data-council-thread] [data-council-post='P5']") && document.querySelector("[data-council-idea='P5']")?.getAttribute("data-open") === "true"`
+            );
             await openSummary(h, ctx);
             return { ok: shown && open === "P5" && post, detail: JSON.stringify({ shown, before, open, post }) };
         });
