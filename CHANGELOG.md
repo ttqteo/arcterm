@@ -51,8 +51,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Mac, from anywhere on Agent) draws it as the sleeping view does, loads the earlier part as you scroll up, and keeps up
   with what the agent writes while you read. Its Compactions button steps back through each compaction, so what a
   compaction dropped from the terminal can be read again. Esc returns to the terminal.
+- A project's Overview has a Branches card: the newest commits of every branch drawn over the commit graph, with your
+  uncommitted changes on top.
 
 ### Changed
+
+- A project's Overview fills the centre pane: Now and the Branches card sit in a column beside History, which loads
+  more sessions as you scroll.
 
 - A click on a project's folder in the Agent sidebar opens its Overview; the chevron before it folds and unfolds the
   folder.

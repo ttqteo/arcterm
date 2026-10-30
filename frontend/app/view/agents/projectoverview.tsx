@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // A project's Overview, the Agent surface's `project` centre mode (agentcenter.ts): the header with the buttons that
-// start an agent or a terminal there (a run or a council is started by an agent's session, never on its own), the
-// Activity card (projectactivitycard.tsx: its tokens per day over a year), then two columns, Now (projectnow.tsx: what
-// waits on you, what runs, what finished unread) and History (projecthistory.tsx: its sessions of the last 7 days, with
-// the runs and councils each started). The page reads the Needs you items (needsyou.ts, scoped to this project) and
-// the project's history once and hands them down. Under 1000px wide the columns stack.
+// start an agent or a terminal there (a run or a council is started by an agent's session, never on its own) and the
+// Activity card (projectactivitycard.tsx: its tokens per day over a year) across the top, then two columns sharing the
+// width at 2:3: on the left Now (projectnow.tsx: what waits on you, what runs, what finished unread) with the Branches
+// card under it (projectgraphcard.tsx: the newest commits of every branch over the commit graph), on the right History
+// (projecthistory.tsx: its sessions of the last 7 days, with the runs and councils each started, loaded a page at a
+// time as it scrolls). The page fills the centre pane, with no width cap. It reads the Needs you items (needsyou.ts,
+// scoped to this project) and the project's history once and hands them down. Under 1000px wide the columns stack in
+// the order Now, Branches, History; with no project path there is no History and the left column takes the row.
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -22,6 +25,7 @@ import type { LauncherKind } from "./launcher";
 import { openLauncher } from "./launcherstore";
 import { useNeedsYou } from "./needsyou";
 import { ActivityCard } from "./projectactivitycard";
+import { GraphCard } from "./projectgraphcard";
 import { HistoryColumn } from "./projecthistory";
 import { useProjectHistory } from "./projecthistorystore";
 import { NowColumn } from "./projectnow";
@@ -77,7 +81,7 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
 
     return (
         <div data-project-overview={project} className="@container min-h-0 flex-1 overflow-y-auto px-8 py-6">
-            <div className="mx-auto flex max-w-[1120px] flex-col gap-[22px]">
+            <div className="flex flex-col gap-[22px]">
                 <header className="flex flex-col gap-[10px]">
                     <div className="flex flex-wrap items-center gap-3">
                         <h1 className="text-[18px] font-semibold text-primary">{project}</h1>
@@ -128,10 +132,17 @@ export function ProjectOverview({ model }: { model: AgentsViewModel }) {
                 {path ? <ActivityCard path={path} sessions={sessionCount} /> : null}
 
                 <div className="flex flex-col gap-6 @min-[1000px]:flex-row @min-[1000px]:items-start">
-                    <div className="w-full @min-[1000px]:w-[420px] @min-[1000px]:flex-none">
+                    <div data-overview-left className="flex w-full min-w-0 flex-col gap-[22px] @min-[1000px]:flex-[2]">
                         <NowColumn model={model} project={project} ny={ny} />
+                        {path && git != null ? (
+                            <GraphCard model={model} project={project} path={path} dirty={git.files} />
+                        ) : null}
                     </div>
-                    {path ? <HistoryColumn model={model} path={path} project={project} history={history} /> : null}
+                    {path ? (
+                        <div data-overview-history-col className="w-full min-w-0 @min-[1000px]:flex-[3]">
+                            <HistoryColumn model={model} path={path} project={project} history={history} />
+                        </div>
+                    ) : null}
                 </div>
             </div>
         </div>
