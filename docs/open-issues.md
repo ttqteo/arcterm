@@ -27,6 +27,24 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Kael sync (2026-10-30): in Code, open a file in a repo on a feature branch with a commit ahead of
+  main, press `d` three times: HEAD diff, then the branch-base diff (the header names the base, the left side holds
+  main's copy), then the single editor; on main the base step is skipped. The `code-diff` scenario was extended but
+  not run. (commit "feat(code): diff the open file against the branch base")
+- [ ] (arcterm) Kael sync: in Code, the Blame icon on the path bar (or `b` with the tree focused) opens a column of
+  sha · age · run goal beside the editor, lined up with the code while scrolling, wrapping included; a click on a row
+  a run landed opens that run, another row copies its sha; in a plain folder the icon is disabled. The `code-blame`
+  scenario is new and the `code-plain-dir` step added, neither run. (commit "feat(code): blame column that leads to
+  the landing run")
+- [ ] (arcterm) Kael sync: Ctrl+P, switch scope tabs: the accent underline slides between them, and reopening the
+  palette on another surface draws it in place without sliding. `palette-scope-indicator` not run.
+- [ ] (arcterm) Kael sync: motion pass: a DAG task card settles when it turns done or failed, live timeline rows fade
+  in (a run switch or filter does not cascade them), a code block's Copy cross-fades to Copied, the Jarvis peek's
+  reply shows a flow bar while it streams and an × once done, and the brainstorm pane fades on a view swap.
+  `dag-motion` not run.
+- [ ] (arcterm) Kael sync: the next orchestrator run's plan review shows two round-1 reviewers (Full review, Second
+  pass) in its DAG and timeline, and a Claude task worker that skips a test gets a goalpost finding its reviewer
+  passes or fails by name (`task-goalpost` in the run's events). Needs wavesrv/wsh rebuilt (next dev start or install).
 - [ ] (arcterm) A brainstorm whose run merged with its final check passed: Close the brainstorm deletes
   `.superpowers/brainstorm/<topic>` only, the agent's row leaves the Agent tree (an idle agent; a working one stays),
   and the canvas still shows in the Canvas gallery. The `brainstorm-run-landed` scenario was updated but not run.
