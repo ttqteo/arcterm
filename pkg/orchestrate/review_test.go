@@ -175,7 +175,7 @@ func TestReviewerRunsOnTheLeadsRouteInTheLaneTree(t *testing.T) {
 		t.Fatalf("want one reviewer, got %d", len(*calls))
 	}
 	c := (*calls)[0]
-	if c.cap.Model != "opus" || c.cwd != worker.ProjectPath || c.opts.Label != "review t-0" || c.opts.TaskId != "t-0" {
+	if c.cap.Model != "opus" || c.cwd != worker.ProjectPath || c.opts.Label != "review t-0" || c.opts.TaskId != "t-0" || !c.opts.ShortCache {
 		t.Fatalf("reviewer must run on the lead's route in the lane tree, got model %q cwd %q opts %+v", c.cap.Model, c.cwd, c.opts)
 	}
 }

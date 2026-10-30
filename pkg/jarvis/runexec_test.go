@@ -589,3 +589,26 @@ func TestMakeWorkerBlockMetaMarksARunAgent(t *testing.T) {
 		}
 	}
 }
+
+// only the engine's back-to-back sessions take the 5-minute cache: a lead or a design session has a person
+// pausing in it, and a re-written context after each pause costs more than the 1-hour writes
+func TestSpawnRunWorkerSetsTheShortCacheOnlyWhenAsked(t *testing.T) {
+	stubWorkerSpawn(t)
+	var persisted waveobj.MetaMapType
+	persistWorkerBlockMeta = func(_ context.Context, _ string, meta waveobj.MetaMapType) error {
+		persisted = meta
+		return nil
+	}
+	for _, short := range []bool{true, false} {
+		if _, err := SpawnRunWorker(context.Background(), piCap(t), "ws-1", "proj", "/proj", "do it", RunWorkerOptions{ShortCache: short}); err != nil {
+			t.Fatal(err)
+		}
+		got, ok := persisted.GetStringMap(waveobj.MetaKey_CmdEnv, false)[consult.PromptCacheTTLEnv]
+		if short && got != consult.ShortSessionCacheTTL {
+			t.Fatalf("ShortCache: cmd:env %s = %q, want %q", consult.PromptCacheTTLEnv, got, consult.ShortSessionCacheTTL)
+		}
+		if !short && ok {
+			t.Fatalf("no ShortCache: cmd:env carries %s = %q", consult.PromptCacheTTLEnv, got)
+		}
+	}
+}

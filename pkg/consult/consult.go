@@ -65,9 +65,19 @@ type RuntimeSpec struct {
 	PromptViaStdin bool
 	UsePty         bool
 	ParseLine      func(line []byte) ParsedEvent
+	Env            []string   // KEY=value entries added to the inherited environment
 	ApiBackend     apiBackend // if set, Run() calls the API instead of shelling out
 	Model          string     // model id for API backends
 }
+
+// PromptCacheTTLEnv sets a claude session's prompt cache lifetime. On a subscription claude defaults to 1h,
+// whose writes cost 2x input against 1.25x for 5m. A session that runs its turns back to back and exits never
+// uses the hour: measured 2026-10-30 over 21 days, 5m made those sessions 12-27% cheaper, and a session a
+// person drives 0.4% dearer, since its reading pauses re-write the context.
+const PromptCacheTTLEnv = "CLAUDE_CODE_PROMPT_CACHE_TTL"
+
+// ShortSessionCacheTTL is the PromptCacheTTLEnv value for a session no person pauses in.
+const ShortSessionCacheTTL = "5m"
 
 // runtimeSpecs is keyed by the FE Runtime identifier.
 //
@@ -76,7 +86,7 @@ type RuntimeSpec struct {
 //     very end — no incremental streaming. Their JSONL modes (--output-format stream-json / --json)
 //     emit structured reply events on stdout as they go, so we parse those.
 var runtimeSpecs = map[string]RuntimeSpec{
-	"claude":     {Bin: "claude", BaseArgs: []string{"-p", "--output-format", "stream-json", "--verbose"}, PromptViaStdin: true, ParseLine: claudeParseLine},
+	"claude":     {Bin: "claude", BaseArgs: []string{"-p", "--output-format", "stream-json", "--verbose"}, PromptViaStdin: true, ParseLine: claudeParseLine, Env: []string{PromptCacheTTLEnv + "=" + ShortSessionCacheTTL}},
 	"codex":      {Bin: "codex", BaseArgs: []string{"exec", "--json"}, PromptViaStdin: true, ParseLine: codexParseLine},
 	"agy":        {Bin: "agy", BaseArgs: []string{"-p"}, PromptViaStdin: false},
 	"opencode":   {Bin: "opencode", BaseArgs: []string{"run", "--format", "json"}, PromptViaStdin: false, ParseLine: opencodeParseLine},

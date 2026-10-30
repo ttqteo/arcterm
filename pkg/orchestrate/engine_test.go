@@ -435,9 +435,11 @@ func TestScheduleOnceLabelsAWorkerWithItsTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	labels := map[string]string{}
+	shortCache := map[string]bool{}
 	old := spawnWorker
 	spawnWorker = func(_ context.Context, _ runroute.Capability, _, _, _, _ string, opts jarvis.RunWorkerOptions) (string, error) {
 		labels[opts.TaskId] = opts.Label
+		shortCache[opts.TaskId] = opts.ShortCache
 		return "tab:worker", nil
 	}
 	defer func() { spawnWorker = old }()
@@ -447,6 +449,10 @@ func TestScheduleOnceLabelsAWorkerWithItsTask(t *testing.T) {
 	}
 	if labels["t-0"] != "Chunk sidebar" || labels["t-1"] != "Run sheet" {
 		t.Fatalf("labels = %v", labels)
+	}
+	// a worker runs its turns back to back, so the 1-hour prompt cache only costs more
+	if !shortCache["t-0"] || !shortCache["t-1"] {
+		t.Fatalf("workers spawn without the short prompt cache: %v", shortCache)
 	}
 }
 

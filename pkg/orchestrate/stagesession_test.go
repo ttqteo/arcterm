@@ -38,7 +38,7 @@ func TestSpawnStageSessionRecordsARunWithItsRoleAndNoTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := (*calls)[0]
-	if c.cwd != tree || c.prompt != "judge it" || c.opts.TaskId != "" || c.opts.RunId != runID || c.opts.SessionId == "" || c.opts.Label != "final check" {
+	if c.cwd != tree || c.prompt != "judge it" || c.opts.TaskId != "" || c.opts.RunId != runID || c.opts.SessionId == "" || c.opts.Label != "final check" || !c.opts.ShortCache {
 		t.Fatalf("spawned %+v", c)
 	}
 	if c.cap.Runtime != runroute.DefaultRuntime(owner.Runtime) {

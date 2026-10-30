@@ -333,6 +333,9 @@ func startCmd(ctx context.Context, spec RuntimeSpec, cwd, prompt string) (*exec.
 		args = append(args, prompt)
 	}
 	cmd := exec.CommandContext(ctx, spec.Bin, args...)
+	if len(spec.Env) > 0 {
+		cmd.Env = append(os.Environ(), spec.Env...)
+	}
 	if cwd != "" {
 		cmd.Dir = cwd
 	}

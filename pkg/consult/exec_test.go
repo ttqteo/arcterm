@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -234,5 +235,23 @@ func TestRunPipe_removesTheStderrCapture(t *testing.T) {
 	}
 	if left != nil {
 		t.Fatalf("temp dir holds %v after the run, want nothing", left)
+	}
+}
+
+// a consult call is a few back-to-back turns, so its claude takes the 5-minute prompt cache
+func TestStartCmdPassesTheRuntimeEnv(t *testing.T) {
+	spec := runtimeSpecs["claude"]
+	spec.Bin = "go" // any binary on PATH: startCmd only builds the command
+	cmd, stderr, err := startCmd(context.Background(), spec, "", "hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stderr != nil {
+		defer os.Remove(stderr.Name())
+		defer stderr.Close()
+	}
+	want := PromptCacheTTLEnv + "=" + ShortSessionCacheTTL
+	if !slices.Contains(cmd.Env, want) || len(cmd.Env) <= 1 {
+		t.Fatalf("cmd.Env lacks %q on top of the inherited environment: %v", want, cmd.Env)
 	}
 }
