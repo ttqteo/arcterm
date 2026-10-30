@@ -30,7 +30,7 @@ export function CouncilPane({ model }: { model: AgentsViewModel }) {
     return view === "summary" ? (
         <CouncilSummary model={model} />
     ) : view === "setup" ? (
-        <CouncilSetup />
+        <CouncilSetup model={model} />
     ) : (
         <CouncilDiscussion />
     );

@@ -5,7 +5,9 @@
 // composer for the feature (its first line) and the question (the rest) with the files and screenshots as chips inside it,
 // a bar with Attach, the group, the mode chip (Review or Brainstorm, flipped by a click, with its rules under the box), the
 // estimate and Start council (Queue council while another council runs), and Options for the panel rows with their
-// models, Save as group and Pause after the first ideas. The form is the project's draft in councilSetupDraftAtom, so it
+// models, Save as group and Pause after the first ideas. With a live agent seated (Add agent, or Discuss together in the
+// Agent tree) the Seats list shows, agents first, with the Rounds switch and Add expert, and the pause is gone: every
+// answer waits for the person then. The form is the project's draft in councilSetupDraftAtom, so it
 // survives switching away; councilsetupmodel.ts holds every rule (the composer's text is `joinAsk` of the draft, written
 // back with `splitAsk`) and this file only draws them and calls the store.
 //
@@ -20,22 +22,29 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { createTempFileFromBlob } from "@/app/view/term/termutil";
 import { cn } from "@/util/util";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { ChevronDown, Image as ImageIcon, Paperclip, X } from "lucide-react";
+import { ChevronDown, Image as ImageIcon, Paperclip, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { showCouncil, showTerminal } from "./agentcenter";
-import { councilProjectKey, estimateLabel, type CouncilSetupDraft } from "./councilmodel";
+import type { AgentsViewModel } from "./agents";
+import { formatTokens } from "./agentsviewmodel";
+import { councilProjectKey, councilProjectName, type CouncilSetupDraft, type SeatableAgent } from "./councilmodel";
 import {
+    addableRoles,
+    addAgent,
     addFiles,
     addRole,
     addScreenshot,
+    AGENT_NOTE,
     anyCouncilRunning,
     applyGroup,
     applySuggestion,
     askText,
     basename,
     beginSuggest,
+    draftHasAgents,
     estimateKey,
     estimateRequest,
+    estimateWanted,
     expertInitial,
     expertsLine,
     expertTone,
@@ -48,19 +57,28 @@ import {
     MODEL_CHOICES,
     modeReason,
     modeRules,
+    moreProjects,
     pendingRoles,
     readingLine,
+    removeAgent,
     removeExpert,
     removeFile,
     removeScreenshot,
     retrySuggestion,
+    ROUND_CHOICES,
+    seatableAgents,
+    seatRows,
+    seatsOf,
     setExpertModel,
+    setRounds,
     settleRerun,
+    setupEstimate,
     splitAsk,
     startBlocker,
     startData,
     startLabel,
     suggestRequest,
+    unseatedAgents,
     type ExpertTone,
     type RoleLibrary,
 } from "./councilsetupmodel";
@@ -464,7 +482,7 @@ function useEstimate(draft: CouncilSetupDraft | null): { est: CouncilEstimateRtn
     const latest = useRef(draft);
     latest.current = draft;
     const key = draft != null ? estimateKey(draft) : "";
-    const hasPanel = draft != null && draft.experts.some((e) => !e.coordinator);
+    const hasPanel = draft != null && estimateWanted(draft);
     useEffect(() => {
         if (!hasPanel) {
             setState({ est: null, failed: false });
@@ -489,9 +507,121 @@ function useEstimate(draft: CouncilSetupDraft | null): { est: CouncilEstimateRtn
     return state;
 }
 
+// ---- agent seats ----
+
+const ADD_DISABLED =
+    "disabled:cursor-default disabled:opacity-40 disabled:hover:border-edge-mid disabled:hover:bg-surface-raised";
+
+// Add agent: a pick over the live claude and pi agents not seated yet. With none to pick it is a disabled button that
+// says why, in the Seats list; an expert-only Setup leaves it out.
+function AddAgentMenu({ agents, onPick }: { agents: SeatableAgent[]; onPick: (agent: SeatableAgent) => void }) {
+    if (agents.length === 0) {
+        return (
+            <button
+                type="button"
+                disabled
+                data-council-add-agent
+                title="Every running claude or pi agent is seated"
+                className={cn(SECONDARY, ADD_DISABLED)}
+            >
+                <Plus size={12} strokeWidth={2} aria-hidden />
+                Add agent
+            </button>
+        );
+    }
+    return (
+        <MenuButton
+            ariaLabel="Add an agent"
+            itemAttr="data-council-add-agent-item"
+            data-council-add-agent
+            items={agents.map((a) => ({
+                id: a.id,
+                label: `${a.name} · ${a.harness}${a.context > 0 ? ` · ${formatTokens(a.context)}` : ""}`,
+            }))}
+            onPick={(id) => {
+                const picked = agents.find((a) => a.id === id);
+                if (picked != null) {
+                    onPick(picked);
+                }
+            }}
+            className={SECONDARY}
+        >
+            <Plus size={12} strokeWidth={2} aria-hidden />
+            Add agent
+        </MenuButton>
+    );
+}
+
+// Add expert: a pick over the library's roles that are not on the panel
+function AddExpertMenu({ roles, onPick }: { roles: CouncilExpert[]; onPick: (role: CouncilExpert) => void }) {
+    if (roles.length === 0) {
+        return (
+            <button
+                type="button"
+                disabled
+                data-council-add-expert
+                title="Every role in the library is on the panel"
+                className={cn(SECONDARY, ADD_DISABLED)}
+            >
+                <Plus size={12} strokeWidth={2} aria-hidden />
+                Add expert
+            </button>
+        );
+    }
+    return (
+        <MenuButton
+            ariaLabel="Add an expert"
+            itemAttr="data-council-add-expert-item"
+            data-council-add-expert
+            items={roles.map((r) => ({ id: r.id, label: r.name }))}
+            onPick={(id) => {
+                const picked = roles.find((r) => r.id === id);
+                if (picked != null) {
+                    onPick(picked);
+                }
+            }}
+            className={SECONDARY}
+        >
+            <Plus size={12} strokeWidth={2} aria-hidden />
+            Add expert
+        </MenuButton>
+    );
+}
+
+// the Rounds the seats answer, 1 to 3: the ideas round counts as the first
+function RoundsSwitch({ rounds, onPick }: { rounds: number; onPick: (rounds: number) => void }) {
+    return (
+        <div
+            role="group"
+            aria-label="Rounds"
+            data-council-rounds={rounds}
+            title="How many rounds the seats answer, the ideas round included"
+            className="inline-flex overflow-hidden rounded-[6px] border border-edge-mid text-[11.5px]"
+        >
+            {ROUND_CHOICES.map((n) => (
+                <button
+                    key={n}
+                    type="button"
+                    aria-pressed={n === rounds}
+                    data-council-rounds-option={n}
+                    onClick={() => onPick(n)}
+                    className={cn(
+                        "h-[22px] cursor-pointer border-0 px-[9px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                        n === rounds
+                            ? "bg-surface-hover font-semibold text-primary"
+                            : "bg-transparent text-muted hover:text-secondary"
+                    )}
+                >
+                    {n}
+                </button>
+            ))}
+        </div>
+    );
+}
+
 // ---- the view ----
 
-export function CouncilSetup() {
+export function CouncilSetup({ model }: { model: Pick<AgentsViewModel, "agentsAtom"> }) {
     const project = useAtomValue(councilSetupProjectAtom);
     if (project == null) {
         return (
@@ -503,7 +633,7 @@ export function CouncilSetup() {
             </div>
         );
     }
-    return <SetupForm key={councilProjectKey(project)} project={project} />;
+    return <SetupForm key={councilProjectKey(project)} project={project} model={model} />;
 }
 
 // a file or screenshot chip inside the composer
@@ -512,10 +642,13 @@ const CHIP =
 const CHIP_REMOVE =
     "flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded-[4px] border-0 bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent";
 
-function SetupForm({ project }: { project: string }) {
+function SetupForm({ project, model }: { project: string; model: Pick<AgentsViewModel, "agentsAtom"> }) {
     const draftAtom = councilSetupDraftAtom(project);
     const draft = useAtomValue(draftAtom);
     const projects = useAtomValue(projectsAtom);
+    // the live agents Add agent offers: the cockpit's roster, the one the Agent tree draws
+    const roster = useAtomValue(model.agentsAtom);
+    const seatable = useMemo(() => seatableAgents(roster, projects, project), [roster, projects, project]);
     // every council, in every project: one runs at a time, so a running one turns Start council into Queue council
     const allCouncils = useCouncils("");
     const { lib, failed: libFailed, reload } = useRoleLibrary();
@@ -609,10 +742,11 @@ function SetupForm({ project }: { project: string }) {
         );
     }
 
-    const projectLabel =
-        Object.entries(projects).find(
-            ([, p]) => p?.path != null && councilProjectKey(p.path) === councilProjectKey(project)
-        )?.[0] ?? basename(project);
+    // a project's registered name, else the last part of its path
+    const nameOf = (path: string) => councilProjectName(projects, path) ?? basename(path);
+    const projectLabel = nameOf(project);
+    const withAgents = draftHasAgents(draft);
+    const unseated = unseatedAgents(seatable, draft);
     const blocker = startBlocker(draft);
     const reading = readingLine(draft);
     const pending = pendingRoles(draft);
@@ -664,7 +798,7 @@ function SetupForm({ project }: { project: string }) {
         }
     };
 
-    const estimateText = est != null ? estimateLabel(est) : estimateFailed ? "Estimate unavailable" : "Estimating…";
+    const estimateText = est != null ? setupEstimate(est) : estimateFailed ? "Estimate unavailable" : "Estimating…";
     const hasChips = draft.files.length > 0 || draft.screenshots.length > 0;
 
     return (
@@ -676,14 +810,18 @@ function SetupForm({ project }: { project: string }) {
         >
             <div className="flex flex-none items-center gap-[10px] border-b border-edge-faint px-8 pb-[14px] pt-[18px]">
                 <h1 className="m-0 text-[15px] font-semibold tracking-[-0.01em]">New council</h1>
-                <span className="min-w-0 truncate text-[12px] text-muted">{projectLabel}</span>
+                <span data-council-project className="min-w-0 truncate text-[12px] text-muted">
+                    {projectLabel}
+                    {moreProjects(draft)}
+                </span>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-8 py-5">
                 <div className="flex max-w-[780px] flex-col gap-[14px]">
                     <p className="m-0 text-[13px] leading-[1.5] text-secondary">
-                        A few AI experts read your project, argue over each other's ideas, and give you a ranked answer.
-                        They never edit anything.{" "}
+                        {withAgents
+                            ? "The agents you seated answer from their own sessions, beside any experts who read your project. Every answer waits for you to send it on, and the coordinator gives you a ranked answer."
+                            : "A few AI experts read your project, argue over each other's ideas, and give you a ranked answer. They never edit anything."}{" "}
                         <span data-council-saves>
                             The finished council saves to docs/council/ in the project, with the whole discussion.
                         </span>
@@ -898,11 +1036,18 @@ function SetupForm({ project }: { project: string }) {
                                     <span>Pick a group to choose the experts.</span>
                                 )}
                             </div>
-                        ) : (
+                        ) : withAgents ? null : (
                             <span data-council-experts-line className="text-[12.5px] leading-[1.5] text-secondary">
                                 {who}
                             </span>
                         )}
+                        {/* with an agent seated the Seats list below holds these; a council of experts alone offers to
+                            seat one, when a claude or pi agent runs */}
+                        {!withAgents && unseated.length > 0 ? (
+                            <div className="flex">
+                                <AddAgentMenu agents={unseated} onPick={(a) => update((d) => addAgent(d, a))} />
+                            </div>
+                        ) : null}
                         {groupNote !== "" ? (
                             <span data-council-group-note role="status" className="text-[11.5px] text-muted">
                                 {groupNote}
@@ -964,6 +1109,86 @@ function SetupForm({ project }: { project: string }) {
                             </div>
                         ) : null}
                     </div>
+
+                    {withAgents ? (
+                        <section data-council-seats aria-label="Seats" className="flex flex-col gap-[6px]">
+                            <div className="flex items-center gap-[10px]">
+                                <h2 className="m-0 text-[12.5px] font-semibold">Seats</h2>
+                                <span className="text-[11.5px] text-muted">Rounds</span>
+                                <RoundsSwitch rounds={draft.rounds} onPick={(n) => update((d) => setRounds(d, n))} />
+                            </div>
+                            <div
+                                role="list"
+                                data-council-seat-list
+                                className="flex flex-col rounded-[10px] border border-border bg-surface"
+                            >
+                                {seatRows(draft, nameOf).map((row, i) => {
+                                    const e = row.expert;
+                                    return (
+                                        <div
+                                            key={e.id}
+                                            role="listitem"
+                                            data-council-seat={e.id}
+                                            data-council-seat-agent={e.agent || undefined}
+                                            data-council-seat-coordinator={e.coordinator ? "" : undefined}
+                                            className={cn(
+                                                "flex items-center gap-[9px] py-2 pl-[10px] pr-2",
+                                                i > 0 && "border-t border-border"
+                                            )}
+                                        >
+                                            <Avatar expert={e} tone={expertTone(seatsOf(draft), i)} />
+                                            <span className="max-w-[220px] flex-none truncate text-[12.5px] font-semibold">
+                                                {e.name}
+                                            </span>
+                                            <span className="flex-none rounded-full bg-surface-hover px-[6px] text-[10px] font-semibold text-secondary">
+                                                {row.kind}
+                                            </span>
+                                            <span
+                                                className="min-w-0 flex-1 truncate text-[11.5px] text-muted"
+                                                title={row.meta}
+                                            >
+                                                {row.meta}
+                                            </span>
+                                            <span
+                                                data-council-seat-cost
+                                                title={row.costNote}
+                                                className="flex-none whitespace-nowrap text-[11.5px] tabular-nums text-secondary"
+                                            >
+                                                {row.cost}
+                                            </span>
+                                            {row.removable ? (
+                                                <button
+                                                    type="button"
+                                                    data-council-seat-remove={e.id}
+                                                    aria-label={`Remove ${e.name}`}
+                                                    onClick={() =>
+                                                        update((d) =>
+                                                            e.agent ? removeAgent(d, e.agent) : removeExpert(d, e.id)
+                                                        )
+                                                    }
+                                                    className={ICON_BUTTON}
+                                                >
+                                                    <X size={14} strokeWidth={1.8} aria-hidden />
+                                                </button>
+                                            ) : (
+                                                <span className="h-6 w-6 flex-none" aria-hidden />
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <div className="flex gap-[6px]">
+                                <AddAgentMenu agents={unseated} onPick={(a) => update((d) => addAgent(d, a))} />
+                                <AddExpertMenu
+                                    roles={addableRoles(draft, libraryOrEmpty)}
+                                    onPick={(r) => update((d) => addRole(d, r))}
+                                />
+                            </div>
+                            <span data-council-agent-note className="text-[11.5px] leading-[1.5] text-muted">
+                                {AGENT_NOTE}
+                            </span>
+                        </section>
+                    ) : null}
 
                     <div className="flex flex-col gap-3">
                         <button
@@ -1080,23 +1305,30 @@ function SetupForm({ project }: { project: string }) {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-[10px]">
-                                    <Toggle
-                                        on={draft.pause}
-                                        onToggle={() => update((d) => ({ ...d, pause: !d.pause }))}
-                                        label="Pause after the first ideas"
-                                        data-council-pause
-                                    />
-                                    <span
-                                        onClick={() => update((d) => ({ ...d, pause: !d.pause }))}
-                                        className="flex min-w-0 cursor-pointer items-baseline gap-[10px]"
-                                    >
-                                        <span className="flex-none text-[12.5px]">Pause after the first ideas</span>
-                                        <span className="min-w-0 text-[11.5px] text-muted">
-                                            so you can cut ideas or ask the experts something before they argue
-                                        </span>
+                                {withAgents ? (
+                                    <span data-council-no-pause className="text-[11.5px] text-muted">
+                                        No pause after the first ideas while an agent is seated: every answer waits for
+                                        you to send it on.
                                     </span>
-                                </div>
+                                ) : (
+                                    <div className="flex items-center gap-[10px]">
+                                        <Toggle
+                                            on={draft.pause}
+                                            onToggle={() => update((d) => ({ ...d, pause: !d.pause }))}
+                                            label="Pause after the first ideas"
+                                            data-council-pause
+                                        />
+                                        <span
+                                            onClick={() => update((d) => ({ ...d, pause: !d.pause }))}
+                                            className="flex min-w-0 cursor-pointer items-baseline gap-[10px]"
+                                        >
+                                            <span className="flex-none text-[12.5px]">Pause after the first ideas</span>
+                                            <span className="min-w-0 text-[11.5px] text-muted">
+                                                so you can cut ideas or ask the experts something before they argue
+                                            </span>
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         ) : null}
                     </div>
