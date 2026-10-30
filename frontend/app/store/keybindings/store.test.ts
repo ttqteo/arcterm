@@ -38,6 +38,7 @@ import {
     buildChannelsAskBindings,
     buildCockpitBindings,
     buildCodeBindings,
+    buildCouncilBindings,
     buildFilesBindings,
     buildGlobalBindings,
     buildJarvisBindings,
@@ -219,6 +220,7 @@ describe("keybinding conflict invariant", () => {
             ...buildAgentBindings(model),
             ...buildFilesBindings(),
             ...buildCodeBindings(),
+            ...buildCouncilBindings(),
         ];
         const open = all.find((x) => x.id === "agent:brainstorm-open")!;
         const close = all.find((x) => x.id === "agent:brainstorm-close")!;

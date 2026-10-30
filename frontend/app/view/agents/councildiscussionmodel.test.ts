@@ -4,7 +4,6 @@ import {
     avatarTone,
     callBarLabel,
     canContinue,
-    composerHint,
     coordinatorFailure,
     discussionBody,
     evidenceChip,
@@ -12,27 +11,21 @@ import {
     expertDoing,
     failedExperts,
     failedWhile,
-    foldedCount,
     headerCost,
     initialOf,
     isFollowUp,
     isLit,
+    isQueued,
     keptProposals,
     listNames,
-    postFoot,
-    proposalLine,
+    modeWord,
     reactions,
-    replyAddressees,
-    replyPills,
     retriedOut,
-    scoreSummary,
     segmentSummary,
     sinceStart,
     summarizeAction,
     toggleCut,
-    unreviewed,
 } from "./councildiscussionmodel";
-import { rankedProposals } from "./councilmodel";
 
 const experts: CouncilExpert[] = [
     { id: "ux", name: "UX", brief: "", model: "sonnet" },
@@ -169,16 +162,48 @@ describe("isLit and expertDoing", () => {
         expect(expertDoing(c, c.experts[4])).toBe("Wrote the summary");
         expect(expertDoing({ ...c, proposals: [], replies: [] }, c.experts[3])).toBe("No posts");
     });
+
+    it("counts the ideas that were sent: a held draft and a dropped one are not a post yet", () => {
+        const c = council({
+            state: "awaiting-you",
+            proposals: [
+                prop("P1", "ux"),
+                prop("P2", "ux", { draft: "held" }),
+                prop("P3", "ram", { draft: "dropped" }),
+                prop("P4", "nu", { draft: "held" }),
+            ],
+        });
+        expect(expertDoing(c, c.experts[0])).toBe("1 idea");
+        expect(expertDoing(c, c.experts[1])).toBe("No posts");
+        expect(expertDoing(c, c.experts[2])).toBe("No posts");
+    });
 });
 
 describe("failedWhile", () => {
     it("says where a call failed, by the step it was in", () => {
-        expect([1, 2, 3, 4, 0].map(failedWhile)).toEqual([
+        const two = council();
+        expect([1, 2, 3, 4, 0].map((round) => failedWhile(two, round))).toEqual([
             "Failed while proposing",
             "Failed while replying",
-            "Failed while writing the answer",
+            "Failed while writing the summary",
             "Failed while answering",
             "Failed",
+        ]);
+    });
+
+    it("moves the summary with the rounds a council runs", () => {
+        const three = council({ rounds: 3 });
+        expect([2, 3, 4, 5].map((round) => failedWhile(three, round))).toEqual([
+            "Failed while replying",
+            "Failed while replying",
+            "Failed while writing the summary",
+            "Failed while answering",
+        ]);
+        const one = council({ rounds: 1 });
+        expect([1, 2, 3].map((round) => failedWhile(one, round))).toEqual([
+            "Failed while proposing",
+            "Failed while writing the summary",
+            "Failed while answering",
         ]);
     });
 });
@@ -207,6 +232,16 @@ describe("expertCard", () => {
     it("says no proposals for a call that brought none", () => {
         const none = council({ round: 1, proposals: [], stats: { ux: { ms: 1, tokens: 1, calls: 1 } } });
         expect(expertCard(none, none.experts[0])).toEqual({ dot: "done", text: "Proposed · no ideas" });
+    });
+
+    it("counts the ideas that were sent, not the held or dropped drafts", () => {
+        const drafts = council({
+            round: 1,
+            proposals: [prop("P1", "ux"), prop("P2", "ux", { draft: "held" }), prop("P3", "nu", { draft: "dropped" })],
+            stats: { ux: { ms: 1, tokens: 1, calls: 1 }, nu: { ms: 1, tokens: 1, calls: 1 } },
+        });
+        expect(expertCard(drafts, drafts.experts[0])).toEqual({ dot: "done", text: "Proposed · 1 idea" });
+        expect(expertCard(drafts, drafts.experts[2])).toEqual({ dot: "done", text: "Proposed · no ideas" });
     });
 });
 
@@ -266,46 +301,7 @@ describe("evidenceChip", () => {
     });
 });
 
-describe("scoreSummary and postFoot", () => {
-    const c = council({
-        replies: [
-            reply("r1", "ram", { stance: "oppose", ts: 1 }),
-            reply("r2", "sk", { stance: "challenge", ts: 2 }),
-            reply("r3", "nu", { stance: "accept", ts: 3 }),
-            reply("r4", "you", { ts: 4 }),
-        ],
-    });
-
-    it("spells out the score of a council with no picks for a screen reader", () => {
-        expect(scoreSummary(c, "P2")).toBe("Score 0 so far: 1 accept, 1 oppose, 1 challenge");
-        expect(scoreSummary(c, "P1")).toBe("Score 0: no one has taken a stance yet");
-    });
-
-    it("says how many experts picked a proposal once the council has picks", () => {
-        const picked = council({ picks: { ux: ["P2"], ram: ["P2", "P3"] } });
-        expect(scoreSummary(picked, "P2")).toBe("Picked by 2 of 4 experts");
-        expect(scoreSummary(picked, "P3")).toBe("Picked by 1 of 4 experts");
-        expect(scoreSummary(picked, "P1")).toBe("Picked by 0 of 4 experts");
-    });
-
-    it("counts the replies and the person's own", () => {
-        expect(postFoot(c, "P2")).toBe("4 replies · 1 from you");
-        expect(postFoot(c, "P1")).toBe("No replies yet");
-        expect(postFoot(council({ replies: [reply("r1", "ram")] }), "P2")).toBe("1 reply");
-    });
-
-    it("leaves a reaction out of the reply count", () => {
-        const withReaction = council({
-            replies: [reply("r1", "ram", { stance: "accept", text: "" }), reply("r2", "sk", { stance: "challenge" })],
-        });
-        expect(postFoot(withReaction, "P2")).toBe("1 reply");
-        expect(postFoot(council({ replies: [reply("r1", "ram", { stance: "accept", text: " " })] }), "P2")).toBe(
-            "No replies yet"
-        );
-    });
-});
-
-describe("reactions and foldedCount", () => {
+describe("reactions", () => {
     const blank = (id: string, author: string, extra: Partial<CouncilReply> = {}) =>
         reply(id, author, { stance: "accept", text: "", ...extra });
 
@@ -334,91 +330,9 @@ describe("reactions and foldedCount", () => {
         });
         expect(reactions(c, "P2")).toEqual(["RAM agrees"]);
     });
-
-    it("counts the proposals no expert picked, and none for a council with no picks", () => {
-        expect(foldedCount(council())).toBe(0);
-        expect(foldedCount(council({ picks: { ux: ["P2"], ram: ["P2", "P1"] } }))).toBe(2);
-        expect(foldedCount(council({ picks: { ux: ["P1", "P2", "P3"] } }))).toBe(1);
-    });
 });
 
-describe("unreviewed", () => {
-    it("is a proposal nobody else answered in a council that is past review", () => {
-        const c = council({
-            state: "done",
-            round: 3,
-            replies: [reply("r1", "ram", { proposalid: "P2" }), reply("r2", "you", { proposalid: "P1" })],
-        });
-        expect(unreviewed(c, "P1")).toBe(true);
-        expect(unreviewed(c, "P2")).toBe(false);
-    });
-
-    it("is not one that is cut, withdrawn, or still in review", () => {
-        const done = council({ state: "done", round: 3 });
-        expect(unreviewed(done, "P6")).toBe(false);
-        expect(
-            unreviewed(council({ state: "done", round: 3, proposals: [prop("P1", "ux", { cut: true })] }), "P1")
-        ).toBe(false);
-        expect(unreviewed(council({ state: "running", round: 2 }), "P1")).toBe(false);
-        expect(unreviewed(council({ state: "awaiting-you", round: 1 }), "P1")).toBe(false);
-        expect(unreviewed(done, "P99")).toBe(false);
-    });
-});
-
-describe("replyPills", () => {
-    const c = council();
-
-    it("shows an expert's stance in plain words, and Revised beside or instead of it", () => {
-        expect(replyPills(c, reply("r1", "ram", { stance: "oppose" }))).toEqual([
-            { word: "Is against it", tone: "oppose" },
-        ]);
-        expect(replyPills(c, reply("r1", "ram", { stance: "challenge" }))).toEqual([
-            { word: "Has doubts", tone: "challenge" },
-        ]);
-        expect(replyPills(c, reply("r2", "ux", { revised: true }))).toEqual([{ word: "Revised", tone: "neutral" }]);
-        expect(replyPills(c, reply("r3", "ux", { revised: true, stance: "accept" }))).toEqual([
-            { word: "Agrees", tone: "accept" },
-            { word: "Revised", tone: "neutral" },
-        ]);
-        expect(replyPills(c, reply("r4", "ram"))).toEqual([{ word: "Reply", tone: "neutral" }]);
-    });
-
-    it("labels the person's reply until it is answered", () => {
-        expect(replyPills(c, reply("r5", "you"))).toEqual([{ word: "Answered after the summary", tone: "neutral" }]);
-        expect(replyPills(c, reply("r6", "you", { round: 1 }))).toEqual([
-            { word: "Queued for the next step", tone: "neutral" },
-        ]);
-        expect(replyPills(c, reply("r7", "you", { answered: true }))).toEqual([]);
-    });
-
-    it("names who a reply of the person's is for", () => {
-        expect(replyAddressees(c, reply("r1", "you", { to: ["ux", "ram"] }))).toBe("For UX and RAM");
-        expect(replyAddressees(c, reply("r2", "you"))).toBe("");
-    });
-});
-
-describe("proposalLine", () => {
-    it("reads author and replies, with who is replying, and no id", () => {
-        const none = council({ replies: [reply("r0", "ram", { stance: "accept", text: "" })] });
-        expect(proposalLine(none, rankedProposals(none).find((r) => r.proposal.id === "P2")!)).toBe("UX · 0 replies");
-        const c = council({
-            replies: [reply("r1", "ram")],
-            activity: { sk: { text: "x", proposalid: "P2" } },
-        });
-        const rows = rankedProposals(c);
-        const line = (id: string) => proposalLine(c, rows.find((r) => r.proposal.id === id)!);
-        expect(line("P2")).toBe("UX · 1 reply · 1 replying");
-        expect(line("P3")).toBe("RAM · 0 replies");
-        expect(line("P6")).toBe("Skeptic · withdrawn");
-    });
-
-    it("says a proposal was cut at the pause", () => {
-        const c = council({ proposals: [prop("P1", "ux", { cut: true })] });
-        expect(proposalLine(c, rankedProposals(c)[0])).toBe("UX · cut at the pause");
-    });
-});
-
-describe("the composer", () => {
+describe("who answers", () => {
     it("joins names", () => {
         expect(listNames([])).toBe("");
         expect(listNames(["UX"])).toBe("UX");
@@ -437,16 +351,6 @@ describe("the composer", () => {
             false,
             false,
         ]);
-    });
-
-    it("says who answers and when", () => {
-        const [ux, ram] = experts;
-        expect(composerHint(council({ round: 2 }), [ux, ram])).toBe("UX and RAM answer it after the summary");
-        expect(composerHint(council({ round: 1 }), [ux])).toBe("UX answers it while the experts argue");
-        expect(composerHint(council({ state: "awaiting-you", round: 1 }), [ux])).toBe(
-            "UX answers it while the experts argue"
-        );
-        expect(composerHint(council({ round: 2 }), [])).toBe("Name an expert with @ to choose who answers");
     });
 });
 
@@ -509,11 +413,51 @@ describe("discussionBody", () => {
         expect(discussionBody(council({ state: "not-run", round: 0, proposals: [] }))).toBe("not-run");
     });
 
-    it("shows the thread from round 2 on, and for a council stopped or failed with proposals", () => {
-        expect(discussionBody(council({ round: 2 }))).toBe("thread");
-        expect(discussionBody(council({ state: "done", round: 3 }))).toBe("thread");
-        expect(discussionBody(council({ state: "stopped", round: 1 }))).toBe("thread");
-        expect(discussionBody(council({ state: "failed", round: 3 }))).toBe("thread");
+    it("shows the chat from round 2 on, and for a council stopped or failed with proposals", () => {
+        expect(discussionBody(council({ round: 2 }))).toBe("chat");
+        expect(discussionBody(council({ state: "done", round: 3 }))).toBe("chat");
+        expect(discussionBody(council({ state: "stopped", round: 1 }))).toBe("chat");
+        expect(discussionBody(council({ state: "failed", round: 3 }))).toBe("chat");
+    });
+
+    it("shows the chat instead of the pause while the person has drafts to settle, in any round", () => {
+        const held = council({
+            state: "awaiting-you",
+            round: 1,
+            proposals: [prop("P1", "ux", { draft: "held" }), prop("P2", "ram")],
+        });
+        expect(discussionBody(held)).toBe("chat");
+        const heldReply = council({
+            state: "awaiting-you",
+            round: 2,
+            replies: [reply("r1", "ram", { draft: "held" })],
+        });
+        expect(discussionBody(heldReply)).toBe("chat");
+        // a dropped draft is settled: nothing waits, so the pause is back
+        const dropped = council({
+            state: "awaiting-you",
+            round: 1,
+            proposals: [prop("P1", "ux", { draft: "dropped" })],
+        });
+        expect(discussionBody(dropped)).toBe("pause");
+    });
+
+    it("keeps the queued and not-run councils off the chat", () => {
+        expect(discussionBody(council({ state: "not-run", round: 0 }))).toBe("not-run");
+        expect(discussionBody(council({ state: "queued", round: 0, proposals: [] }))).toBe("experts");
+    });
+});
+
+describe("isQueued and modeWord", () => {
+    it("knows a council that waits for the running one", () => {
+        expect(isQueued(council({ state: "queued", round: 0 }))).toBe(true);
+        expect(isQueued(council({ state: "running" }))).toBe(false);
+    });
+
+    it("reads an empty or unknown mode as Review", () => {
+        expect(modeWord(council())).toBe("Review");
+        expect(modeWord(council({ mode: "brainstorm" }))).toBe("Brainstorm");
+        expect(modeWord(council({ mode: "debate" }))).toBe("Review");
     });
 });
 

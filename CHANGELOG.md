@@ -26,6 +26,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Live agents in a council, and a council that reads as a chat**: a council can seat your running claude and pi
+  agents beside its role experts, each answering from its own session, and every answer waits for you as a draft to
+  send to the others, edit or drop. The discussion of every council is now a chat: each idea is a message in a channel
+  with a reply chip that opens its thread on the right, and j / k, Enter and Esc move over the ideas, open a thread
+  and close it. <!-- big -->
 - **Translate**: a button above Setup on the nav rail, or Ctrl+Shift+D (⌘⇧D on a Mac), opens a small panel beside the
   rail. Type or paste text and its translation shows below, from English to Vietnamese or any other pair (⇄ swaps them,
   and Detect language reads the source for you), with the phonetic and word classes for a single word. Nothing needs

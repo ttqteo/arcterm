@@ -1,25 +1,25 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// What the council Discussion (councildiscussion.tsx, councilthread.tsx) draws beyond councilmodel.ts: an expert's colour
-// and initial, what it is doing (the avatar's hover and the first step's cards), the pills on a reply, the reactions and
-// the lines under a post and in the ideas column, who a composer says will answer, what the Summarize button does, and
-// the pause's ticks. Every word here is the plain one (`STANCE_WORD`); the wire's stances, rounds and ids stay in the data.
-// Pure, no React, no Wave runtime imports, so every rule here has a test (councildiscussionmodel.test.ts).
+// What the council Discussion (councildiscussion.tsx) draws beyond councilmodel.ts, and what the chat (councilchat.tsx,
+// councilchatmodel.ts) borrows: an expert's colour and initial, what it is doing (the avatar's hover and the first step's
+// cards), the reactions under an idea, which body a council gets, what the Summarize button does, whether a reply is a
+// follow-up, the header's words, and the pause's ticks. Every word here is the plain one; the wire's stances, rounds and
+// ids stay in the data. Pure, no React, no Wave runtime imports, so every rule here has a test
+// (councildiscussionmodel.test.ts).
 
 import {
-    STANCE_WORD,
     authorName,
     callSegments,
     costLine,
+    heldDrafts,
     isReaction,
-    latestStances,
     outdatedCount,
     panel,
-    pickCount,
     readableReplies,
-    replyLabel,
-    type RankedProposal,
+    roundsOf,
+    sentProposals,
+    synthesisRound,
     type SegmentState,
 } from "./councilmodel";
 
@@ -62,19 +62,31 @@ export function avatarTone(c: Council, id: string): AvatarTone {
     return PANEL_TONES[panel(c).findIndex((e) => e.id === id) % PANEL_TONES.length];
 }
 
-/** What the Discussion's body shows: the thread of the open proposal, the round 1 cards while the experts are still
- *  proposing (or when none brought a proposal), the pause's ticks, or the not-run council's Start. */
-export type DiscussionBody = "thread" | "experts" | "pause" | "not-run";
+/** What the Discussion's body shows: the chat (the channel and its threads), the round 1 cards while the experts are
+ *  still proposing (or when none brought a proposal), the pause's ticks, or the not-run council's Start. */
+export type DiscussionBody = "chat" | "experts" | "pause" | "not-run";
 
-/** Pure: which body a council gets. */
+/** Pure: which body a council gets. A council waiting on the person is at the pause, unless held drafts wait: those are
+ *  the chat's, and the person settles them there (no Continue). */
 export function discussionBody(c: Council): DiscussionBody {
     if (c.state === "not-run") {
         return "not-run";
     }
     if (c.state === "awaiting-you") {
-        return "pause";
+        return heldDrafts(c).length > 0 ? "chat" : "pause";
     }
-    return (c.proposals ?? []).length === 0 || (c.state === "running" && c.round <= 1) ? "experts" : "thread";
+    return (c.proposals ?? []).length === 0 || (c.state === "running" && c.round <= 1) ? "experts" : "chat";
+}
+
+/** Pure: a council that waits for the one running council to end. */
+export function isQueued(c: Council): boolean {
+    return c.state === "queued";
+}
+
+/** Pure: the mode in a word, for the Discussion's chip; an empty, missing or unknown mode reads as Review (councils saved
+ *  before modes have none). */
+export function modeWord(c: Council): "Review" | "Brainstorm" {
+    return c.mode === "brainstorm" ? "Brainstorm" : "Review";
 }
 
 /** Pure: the avatar stack for a screen reader: the panel, and who is writing. */
@@ -95,22 +107,22 @@ export function isLit(c: Council, id: string): boolean {
     return c.state === "running" && c.activity?.[id] != null;
 }
 
-const proposalsBy = (c: Council, id: string) => (c.proposals ?? []).filter((p) => p.author === id).length;
+const proposalsBy = (c: Council, id: string) => sentProposals(c).filter((p) => p.author === id).length;
 const repliesBy = (c: Council, id: string) => readableReplies(c).filter((r) => r.author === id).length;
 
-/** Pure: where a failed call failed, in words: round 1 proposing, round 2 replying, round 3 writing the answer, later
- *  ones the follow-up. */
-export function failedWhile(round: number): string {
-    switch (round) {
-        case 1:
-            return "Failed while proposing";
-        case 2:
-            return "Failed while replying";
-        case 3:
-            return "Failed while writing the answer";
-        default:
-            return round > 3 ? "Failed while answering" : "Failed";
+/** Pure: where a failed call failed, in words: round 1 proposing, a later seat round replying, the round after them
+ *  writing the summary, the ones after that the follow-up. */
+export function failedWhile(c: Council, round: number): string {
+    if (round < 1) {
+        return "Failed";
     }
+    if (round === 1) {
+        return "Failed while proposing";
+    }
+    if (round <= roundsOf(c)) {
+        return "Failed while replying";
+    }
+    return round === synthesisRound(c) ? "Failed while writing the summary" : "Failed while answering";
 }
 
 /** Pure: what an avatar's hover says after the name (`Skeptic: Replying to UX`): the tool or reply being written,
@@ -122,7 +134,7 @@ export function expertDoing(c: Council, e: CouncilExpert): string {
     }
     const failure = c.failed?.[e.id];
     if (failure != null) {
-        return failedWhile(failure.round);
+        return failedWhile(c, failure.round);
     }
     if (e.coordinator) {
         return c.summary != null
@@ -218,24 +230,6 @@ export function evidenceChip(e: CouncilEvidence): { text: string; weak: boolean 
     return { text: `Weak · ${e.note || e.ref || "no evidence"}`, weak: true };
 }
 
-/** Pure: the post's ↑ for a screen reader and its hover: `Picked by 2 of 4 experts`; for a council with no picks (one
- *  from before them) the old score, `Score 1 so far: 2 accept, 1 oppose, 1 challenge`. */
-export function scoreSummary(c: Council, proposalId: string): string {
-    const picked = pickCount(c, proposalId);
-    if (picked != null) {
-        return `Picked by ${picked} of ${panel(c).length} experts`;
-    }
-    const stances = Object.values(latestStances(c)[proposalId] ?? {});
-    const count = (s: string) => stances.filter((x) => x === s).length;
-    const parts = (["accept", "oppose", "challenge"] as const)
-        .filter((s) => count(s) > 0)
-        .map((s) => `${count(s)} ${s}`);
-    const net = count("accept") - count("oppose");
-    return parts.length > 0
-        ? `Score ${net} so far: ${parts.join(", ")}`
-        : `Score ${net}: no one has taken a stance yet`;
-}
-
 /** Pure: the reactions under a post, `Reader agrees` one per expert whose latest word on it is an accept with no text
  *  (an expert that agreed and then spoke up is not one), in the order they came. */
 export function reactions(c: Council, proposalId: string): string[] {
@@ -252,78 +246,6 @@ export function reactions(c: Council, proposalId: string): string[] {
     return [...latest.values()].filter(isReaction).map((r) => `${authorName(c, r.author)} agrees`);
 }
 
-/** Pure: how many of the ideas no expert picked, which the column folds under `n more with no picks`; 0 for a council
- *  with no picks. */
-export function foldedCount(c: Council): number {
-    return (c.proposals ?? []).filter((p) => pickCount(c, p.id) === 0).length;
-}
-
-/** Pure: under the post: `5 replies · 1 from you`. */
-export function postFoot(c: Council, proposalId: string): string {
-    const replies = readableReplies(c).filter((r) => r.proposalid === proposalId);
-    if (replies.length === 0) {
-        return "No replies yet";
-    }
-    const mine = replies.filter((r) => r.author === YOU).length;
-    return mine > 0
-        ? `${plural(replies.length, "reply", "replies")} · ${mine} from you`
-        : plural(replies.length, "reply", "replies");
-}
-
-/** Pure: whether no expert has reviewed a proposal in a council that is past review (a Retry of a round 1 call after
- *  round 2 adds proposals nobody reviews). A cut or withdrawn one is not waiting for a review. */
-export function unreviewed(c: Council, proposalId: string): boolean {
-    const p = (c.proposals ?? []).find((x) => x.id === proposalId);
-    if (p == null || p.cut || p.withdrawn || c.state === "running" || c.round < 2) {
-        return false;
-    }
-    return !(c.replies ?? []).some((r) => r.proposalid === p.id && r.author !== p.author && r.author !== YOU);
-}
-
-export type PillTone = "accept" | "challenge" | "oppose" | "neutral" | "live";
-
-export interface ReplyPill {
-    word: string;
-    tone: PillTone;
-}
-
-/** Pure: the pills beside a reply's author: the stance (`Has doubts`) and `Revised` for an expert's, the label of the
- *  person's own until it is answered (`Queued for the next step`); a reply with neither is a plain `Reply`. */
-export function replyPills(c: Council, r: CouncilReply): ReplyPill[] {
-    if (r.author === YOU) {
-        const label = replyLabel(c, r);
-        return label === "" ? [] : [{ word: label, tone: "neutral" }];
-    }
-    const pills: ReplyPill[] = [];
-    const stance = r.stance ?? "";
-    if (PILL_STANCES.has(stance)) {
-        pills.push({ word: STANCE_WORD[stance as keyof typeof STANCE_WORD], tone: stance as PillTone });
-    }
-    if (r.revised) {
-        pills.push({ word: "Revised", tone: "neutral" });
-    }
-    return pills.length > 0 ? pills : [{ word: "Reply", tone: "neutral" }];
-}
-
-/** Pure: who a reply of the person's is for (`For UX and RAM`), from the experts it reaches; empty when it names none. */
-export function replyAddressees(c: Council, r: CouncilReply): string {
-    const names = (r.to ?? []).map((id) => authorName(c, id));
-    return names.length === 0 ? "" : `For ${listNames(names)}`;
-}
-
-// ---- the ideas column ----
-
-/** Pure: a proposal's second line in the column: `UX · 5 replies · 1 replying`, `Skeptic · withdrawn`. */
-export function proposalLine(c: Council, row: RankedProposal): string {
-    const p = row.proposal;
-    const parts = [authorName(c, p.author)];
-    parts.push(p.withdrawn ? "withdrawn" : p.cut ? "cut at the pause" : plural(row.replies, "reply", "replies"));
-    if (row.replying > 0) {
-        parts.push(`${row.replying} replying`);
-    }
-    return parts.join(" · ");
-}
-
 // ---- the composer ----
 
 /** Pure: `UX`, `UX and RAM`, `UX, RAM and Skeptic`. */
@@ -338,19 +260,6 @@ export function listNames(names: string[]): string {
  *  council's own. */
 export function isFollowUp(c: Council): boolean {
     return c.state === "done" || c.state === "stopped" || c.state === "failed";
-}
-
-/** Pure: what the composer says of who answers and when, for a council that is not over (a follow-up's is
- *  `followupLabel`): `UX and RAM answer it while the experts argue`. */
-export function composerHint(c: Council, who: CouncilExpert[]): string {
-    if (who.length === 0) {
-        return "Name an expert with @ to choose who answers";
-    }
-    const when =
-        c.state === "awaiting-you" || (c.state === "running" && c.round <= 1)
-            ? "while the experts argue"
-            : "after the summary";
-    return `${listNames(who.map((e) => e.name))} ${who.length === 1 ? "answers" : "answer"} it ${when}`;
 }
 
 // ---- the header's Summarize ----

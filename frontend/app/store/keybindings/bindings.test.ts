@@ -77,6 +77,7 @@ import {
     buildChannelsAskBindings,
     buildCockpitBindings,
     buildCodeBindings,
+    buildCouncilBindings,
     buildFilesBindings,
     buildFinalShotsBindings,
     buildGlobalBindings,
@@ -86,6 +87,7 @@ import {
     buildUsageBindings,
     closeTarget,
 } from "./bindings";
+import { councilChatNavAtom, type CouncilChatNav } from "@/app/view/agents/councilchatnav";
 import { setPlatform } from "@/util/platformutil";
 import { listNavAtom } from "./listnav";
 import { matchBinding } from "./matcher";
@@ -2822,5 +2824,116 @@ describe("brainstorm pane view keys", () => {
         expect(close.when!(nav)).toBe(true);
         expect(close.when!({ ...nav, editable: true })).toBe(true);
         expect(close.when!({ ...nav, modalOpen: true })).toBe(false);
+    });
+});
+
+describe("council chat keys", () => {
+    const council: KeyContext = { surface: "agent", editable: false, modalOpen: false, leader: null };
+    const find = (id: string) => buildCouncilBindings().find((b) => b.id === id)!;
+    const nav = (extra: Partial<CouncilChatNav> = {}): CouncilChatNav => ({
+        order: ["P1", "P2", "P3"],
+        focusedId: null,
+        openId: null,
+        focus: vi.fn(),
+        open: vi.fn(),
+        close: vi.fn(),
+        ...extra,
+    });
+    // where focus is: inside the channel or the thread (or not), on a control of the given tag
+    const focusIn = (inside: boolean, tag = "DIV") =>
+        vi.stubGlobal("document", { activeElement: { tagName: tag, closest: () => (inside ? {} : null) } });
+    const show = (published: CouncilChatNav | null = nav()) => {
+        globalStore.set(centerModeAtom, "council");
+        globalStore.set(councilChatNavAtom, published);
+        return published;
+    };
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        globalStore.set(centerModeAtom, "terminal");
+        globalStore.set(councilChatNavAtom, null);
+    });
+
+    it("is live only with the chat published on the council centre, on the Agent surface, with focus inside it", () => {
+        const keys = ["council:next-idea", "council:prev-idea"].map(find);
+        focusIn(true);
+        // nothing published, or the centre elsewhere
+        for (const b of keys) expect(b.when!(council)).toBe(false);
+        show();
+        for (const b of keys) expect(b.when!(council)).toBe(true);
+        globalStore.set(centerModeAtom, "terminal");
+        for (const b of keys) expect(b.when!(council)).toBe(false);
+        show();
+        // another surface, a field with focus, an open modal
+        for (const b of keys) {
+            expect(b.when!({ ...council, surface: "jarvis" })).toBe(false);
+            expect(b.when!({ ...council, editable: true })).toBe(false);
+            expect(b.when!({ ...council, modalOpen: true })).toBe(false);
+        }
+        // focus outside the channel and the thread: the keys are not the chat's
+        focusIn(false);
+        for (const b of keys) expect(b.when!(council)).toBe(false);
+    });
+
+    it("moves the cursor over the ideas with j and k, and stops at either end", () => {
+        focusIn(true);
+        const chat = show(nav({ focusedId: "P2" }))!;
+        find("council:next-idea").run(council);
+        expect(chat.focus).toHaveBeenLastCalledWith("P3");
+        find("council:prev-idea").run(council);
+        expect(chat.focus).toHaveBeenLastCalledWith("P1");
+        const first = show(nav())!;
+        find("council:next-idea").run(council);
+        expect(first.focus).toHaveBeenLastCalledWith("P1");
+        const last = show(nav({ focusedId: "P3" }))!;
+        find("council:next-idea").run(council);
+        expect(last.focus).toHaveBeenLastCalledWith("P3");
+        const none = show(nav({ order: [] }))!;
+        find("council:next-idea").run(council);
+        expect(none.focus).not.toHaveBeenCalled();
+    });
+
+    it("opens the focused idea's thread with Enter, unless none is focused or a button has focus", () => {
+        const open = find("council:open-thread");
+        focusIn(true);
+        show(nav());
+        expect(open.when!(council)).toBe(false);
+        const chat = show(nav({ focusedId: "P2" }))!;
+        expect(open.when!(council)).toBe(true);
+        open.run(council);
+        expect(chat.open).toHaveBeenCalledWith("P2");
+        focusIn(true, "BUTTON");
+        expect(open.when!(council)).toBe(false);
+    });
+
+    it("closes an open thread with Escape, and the Agent surface's Escape stands down meanwhile", () => {
+        const close = find("council:close-thread");
+        const leave = buildAgentBindings(stubModel()).find((b) => b.id === "agent:leave-center")!;
+        focusIn(true);
+        const chat = show(nav({ focusedId: "P2", openId: "P2" }))!;
+        expect(close.when!(council)).toBe(true);
+        expect(leave.when!(council)).toBe(false);
+        close.run(council);
+        expect(chat.close).toHaveBeenCalled();
+        // no thread open: Escape leaves the council as it did
+        show(nav({ focusedId: "P2" }));
+        expect(close.when!(council)).toBe(false);
+        expect(leave.when!(council)).toBe(true);
+        // a thread open with focus elsewhere: Escape leaves the council too
+        show(nav({ openId: "P2" }));
+        focusIn(false);
+        expect(close.when!(council)).toBe(false);
+        expect(leave.when!(council)).toBe(true);
+    });
+
+    it("shares no key with the Agent surface's while the council is on screen", () => {
+        focusIn(true);
+        show(nav({ focusedId: "P2", openId: "P2" }));
+        const all = [...buildAgentBindings(stubModel()), ...buildCouncilBindings()];
+        for (const typing of [false, true]) {
+            const active = all.filter((b) => b.when!({ ...council, editable: typing }));
+            const keys = active.map((b) => b.keys);
+            expect(new Set(keys).size).toBe(keys.length);
+        }
     });
 });

@@ -34,6 +34,8 @@ import (
 // A Runner must not be copied after first use.
 type Runner struct {
 	Caller Caller
+	// Agents is the caller for the seats with Agent set, an AgentCaller over the live agents; Caller serves the rest.
+	Agents Caller
 	// OnChange is told after each save, with the council as saved. It may be called from several goroutines at once, and
 	// the council is the callee's to read, not to change.
 	OnChange func(c *Council)
@@ -97,10 +99,12 @@ func (rn *run) refresh(c *Council, now int64) {
 }
 
 // ending is how a run leaves the council: the fields it ends with, and whether the person's open replies are
-// answered first.
+// answered first. heldRound is set when it leaves the council waiting on held drafts: the round they belong to, so that
+// drive can tell that the person settled them all meanwhile and go on to the next round instead.
 type ending struct {
-	set     func(c *Council)
-	answers bool
+	set       func(c *Council)
+	answers   bool
+	heldRound int
 }
 
 // work is what a run does; it returns how the council ends. A run whose ctx was cancelled ends stopped whatever it
@@ -225,6 +229,12 @@ func emptyReply(res CallRes) error {
 
 // ---- starting ----
 
+// The harnesses whose live sessions `wsh agents` reaches: the only ones that can take a seat.
+const (
+	HarnessClaude = "claude"
+	HarnessPi     = "pi"
+)
+
 func validateCouncil(c *Council) error {
 	if strings.TrimSpace(c.Feature) == "" {
 		return errors.New("a council needs a feature to review")
@@ -235,7 +245,10 @@ func validateCouncil(c *Council) error {
 	if c.Mode != "" && c.Mode != ModeReview && c.Mode != ModeBrainstorm {
 		return fmt.Errorf("unknown council mode %q: use %s or %s", c.Mode, ModeReview, ModeBrainstorm)
 	}
-	seen := map[string]bool{}
+	if c.Rounds < 0 || c.Rounds > MaxRounds {
+		return fmt.Errorf("a council runs 1 to %d rounds, not %d", MaxRounds, c.Rounds)
+	}
+	seen, agents := map[string]bool{}, map[string]bool{}
 	coordinators, panel := 0, 0
 	for _, e := range c.Experts {
 		switch {
@@ -247,6 +260,17 @@ func validateCouncil(c *Council) error {
 			return fmt.Errorf("expert %q is listed twice", e.Id)
 		}
 		seen[e.Id] = true
+		if IsAgent(e) {
+			switch {
+			case e.Coordinator:
+				return fmt.Errorf("%q is an agent, and an agent cannot be the coordinator", e.Name)
+			case agents[e.Agent]:
+				return fmt.Errorf("agent %q sits in the council twice", e.Agent)
+			case e.Harness != HarnessClaude && e.Harness != HarnessPi:
+				return fmt.Errorf("agent %q runs %q: only a %s or %s agent can take a seat", e.Name, e.Harness, HarnessClaude, HarnessPi)
+			}
+			agents[e.Agent] = true
+		}
 		if e.Coordinator {
 			coordinators++
 		} else {
@@ -272,15 +296,19 @@ func (r *Runner) stampNew(c *Council) {
 		c.Created = r.now()
 	}
 	c.Proposals, c.Replies, c.Summary = nil, nil, nil
-	c.Activity, c.Failed, c.Stats = nil, nil, nil
+	c.Activity, c.Failed, c.Skips, c.Stats = nil, nil, nil, nil
 	c.Tokens, c.Calls, c.Started, c.Error = 0, 0, 0, ""
 }
 
 // beginFresh is where a council's run begins, whether Start, StartSaved or the queue starts it, so it is where the
-// council records the harness it runs under.
+// council records the harness it runs under, and where Rounds, which only a council with agents honours, is cleared from
+// one without: it runs today's two rounds.
 func (r *Runner) beginFresh(c *Council) {
 	c.State, c.Round, c.Started, c.Error = StateRunning, 1, r.now(), ""
 	c.Harness = HarnessVersion
+	if !HasAgents(c) {
+		c.Rounds = 0
+	}
 }
 
 // absent is nil when nothing is saved under id yet.
@@ -607,8 +635,10 @@ func (r *Runner) launchLocked(parent context.Context, id string, persist func() 
 
 // drive is the goroutine of one run: the work, then, while the person has replies nobody answered, an answers pass,
 // then the council's last state. The last check for replies and the end of the run happen under r.mu, so a reply
-// either lands before it and is answered, or finds the run gone and starts a follow-up. The run ends by starting the
-// next queued council (under the same lock, so nobody takes the slot in between) and saving its own document.
+// either lands before it and is answered, or finds the run gone and starts a follow-up. The same holds for held drafts:
+// a draft settled before the check is seen, and one settled after it finds the council awaiting-you and starts the next
+// round. The run ends by starting the next queued council (under the same lock, so nobody takes the slot in between)
+// and saving its own document.
 func (r *Runner) drive(ctx context.Context, rn *run, id string, w work) {
 	defer close(rn.done)
 	defer rn.cancel()
@@ -618,6 +648,14 @@ func (r *Runner) drive(ctx context.Context, rn *run, id string, w work) {
 	}
 	for passes := 0; ; passes++ {
 		r.mu.Lock()
+		if end.heldRound > 0 && ctx.Err() == nil {
+			if c, err := Load(id); err == nil && HeldDrafts(c) == 0 {
+				// the person settled every draft while the round ran: there is nothing to wait for, so the next round starts
+				r.mu.Unlock()
+				end = r.roundsWork(end.heldRound+1)(ctx, rn, id)
+				continue
+			}
+		}
 		if end.answers && ctx.Err() == nil && passes < maxPasses {
 			if c, err := Load(id); err == nil && hasOpenReplies(c) {
 				r.mu.Unlock()
@@ -666,15 +704,48 @@ func loadFailed(err error) ending {
 
 // ---- the rounds ----
 
-// roundsWork is round 1 (when from is 1), the pause after it, round 2 and the synthesis.
+// HeldDrafts is how many ideas and replies wait for the person to send, edit or drop them.
+func HeldDrafts(c *Council) int {
+	n := 0
+	for _, p := range c.Proposals {
+		if p.Draft == DraftHeld {
+			n++
+		}
+	}
+	for _, x := range c.Replies {
+		if x.Draft == DraftHeld {
+			n++
+		}
+	}
+	return n
+}
+
+// awaitingDrafts ends a run at round with the council waiting on the person's held drafts.
+func awaitingDrafts(round int) ending {
+	return ending{set: func(c *Council) { c.State, c.Round, c.Error = StateAwaiting, round, "" }, heldRound: round}
+}
+
+// roundsWork runs the rounds from round `from` on: the ideas (round 1), then each reply pass, then the synthesis. A
+// council with no agent seated runs round 1, the pause after it when it has one, one reply pass and the synthesis. One
+// with agents holds every answer as a draft, so a round whose answers left a draft held ends the run awaiting-you at
+// that round: settling the last of them starts the next, and the council holds no slot while it waits.
 func (r *Runner) roundsWork(from int) work {
 	return func(ctx context.Context, rn *run, id string) ending {
-		if from <= 1 {
-			snap, err := Load(id)
-			if err != nil {
+		snap, err := Load(id)
+		if err != nil {
+			return loadFailed(err)
+		}
+		synth, held, at := SynthesisRound(snap), HasAgents(snap), snap.Round
+		for round := from; round < synth; round++ {
+			if round != at {
+				r.setRound(rn, id, round)
+				at = round
+			}
+			if round == 1 {
+				forEachExpert(panelOf(snap), func(e CouncilExpert) { r.round1(ctx, rn, id, snap, e) })
+			} else if err := r.replyPass(ctx, rn, id, round); err != nil {
 				return loadFailed(err)
 			}
-			forEachExpert(panelOf(snap), func(e CouncilExpert) { r.round1(ctx, rn, id, snap, e) })
 			if ctx.Err() != nil {
 				return ending{}
 			}
@@ -683,42 +754,56 @@ func (r *Runner) roundsWork(from int) work {
 				return loadFailed(err)
 			}
 			switch {
-			case everyoneFailedRound1(cur):
-				return ending{set: func(c *Council) { c.State, c.Error = StateFailed, "every expert failed in round 1" }}
-			case cur.PauseAfterRound1:
+			case round == 1 && everyoneFailedRound1(cur):
+				return ending{set: func(c *Council) { c.State, c.Error = StateFailed, noOneAnsweredRound1(c) }}
+			case held && HeldDrafts(cur) > 0:
+				return awaitingDrafts(round)
+			case round == 1 && !held && cur.PauseAfterRound1: // with agents seated the held drafts are the pause
 				return ending{set: func(c *Council) { c.State, c.Round, c.Error = StateAwaiting, 1, "" }}
 			}
-			r.setRound(rn, id, 2)
 		}
-		if err := r.round2Phase(ctx, rn, id); err != nil {
-			return loadFailed(err)
+		if at != synth {
+			r.setRound(rn, id, synth)
 		}
-		if ctx.Err() != nil {
-			return ending{}
-		}
-		r.setRound(rn, id, 3)
 		if err := r.synthesize(ctx, rn, id); err != nil {
 			if ctx.Err() != nil {
 				return ending{}
 			}
 			return ending{set: synthesisFailed(err)}
 		}
-		return ending{set: func(c *Council) { c.State, c.Round, c.Error = StateDone, 3, "" }, answers: true}
+		return ending{set: func(c *Council) { c.State, c.Round, c.Error = StateDone, SynthesisRound(c), "" }, answers: true}
 	}
 }
 
+// skipped says seat id skipped its turn in round.
+func skipped(c *Council, id string, round int) bool {
+	return slices.ContainsFunc(c.Skips, func(s CouncilSkip) bool { return s.Expert == id && s.Round == round })
+}
+
+// everyoneFailedRound1 says no seat of the panel got an answer out in round 1: each failed it or skipped it.
 func everyoneFailedRound1(c *Council) bool {
 	panel := panelOf(c)
 	for _, e := range panel {
-		if f, ok := c.Failed[e.Id]; !ok || f.Round != 1 {
+		if f, ok := c.Failed[e.Id]; (!ok || f.Round != 1) && !skipped(c, e.Id, 1) {
 			return false
 		}
 	}
 	return len(panel) > 0
 }
 
+// noOneAnsweredRound1 is the council's error when everyoneFailedRound1: a skip is not a failure, so it is named.
+func noOneAnsweredRound1(c *Council) string {
+	if len(c.Skips) > 0 {
+		return "every expert failed or skipped round 1"
+	}
+	return "every expert failed in round 1"
+}
+
 func synthesisFailed(err error) func(c *Council) {
-	return func(c *Council) { c.State, c.Round, c.Error = StateFailed, 3, "round 3: "+errText(err) }
+	return func(c *Council) {
+		round := SynthesisRound(c)
+		c.State, c.Round, c.Error = StateFailed, round, fmt.Sprintf("round %d: %s", round, errText(err))
+	}
 }
 
 func (r *Runner) setRound(rn *run, id string, round int) {
@@ -728,16 +813,31 @@ func (r *Runner) setRound(rn *run, id string, round int) {
 	})
 }
 
+// callerFor is the Caller that takes seat e's turn: the runner's Agents for a live agent, its Caller for a role expert.
+func (r *Runner) callerFor(e CouncilExpert) (Caller, error) {
+	if !IsAgent(e) {
+		return r.Caller, nil
+	}
+	if r.Agents == nil {
+		return nil, fmt.Errorf("the council runner has no way to reach live agents: %s cannot take its turn", e.Name)
+	}
+	return r.Agents, nil
+}
+
 // call makes one expert call: it starts the expert's clock, shows what it is doing, and keeps that current from the
-// call's tool events. It returns what the Caller returned.
+// call's tool events (and, for an agent seat, from the wait for its session). It returns what the Caller returned.
 func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, snap *Council, prompt string, tools bool, first CouncilActivity) (CallRes, error) {
+	caller, err := r.callerFor(e)
+	if err != nil {
+		return CallRes{}, err
+	}
 	rn.begin(e.Id, callClock{start: r.now(), base: snap.Stats[e.Id].Ms})
 	r.updateLogged(rn, id, func(c *Council) error {
 		setActivity(c, e.Id, first)
 		return nil
 	})
 	req := CallReq{Expert: e, Cwd: snap.Project, Prompt: prompt, Tools: tools}
-	if tools {
+	if tools || IsAgent(e) {
 		req.OnTool = func(text string) {
 			act := first
 			act.Text = text
@@ -747,29 +847,49 @@ func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, 
 			})
 		}
 	}
-	return r.Caller.Call(ctx, req)
+	return caller.Call(ctx, req)
+}
+
+// seatSkip reads the SeatSkipped out of err, whether the Caller returned it by value or by pointer.
+func seatSkip(err error) (SeatSkipped, bool) {
+	var v SeatSkipped
+	if errors.As(err, &v) {
+		return v, true
+	}
+	var p *SeatSkipped
+	if errors.As(err, &p) && p != nil {
+		return *p, true
+	}
+	return SeatSkipped{}, false
 }
 
 // finishCall saves the end of one expert call. Its time and tokens are booked whatever happened. A call that ended
-// because the run was stopped is neither a failure nor a result; any other error is the expert's failure in round;
-// and on success apply adds what the call produced.
+// because the run was stopped is neither a failure nor a result; a seat that skipped its turn (SeatSkipped) is posted as
+// a skip, not as a failure with a Retry, and made no call; any other error is the expert's failure in round; and on
+// success apply adds what the call produced.
 func (r *Runner) finishCall(ctx context.Context, rn *run, id string, e CouncilExpert, res CallRes, err error, round int, apply func(c *Council)) {
 	cancelled := err != nil && ctx.Err() != nil
+	skip, skippedTurn := seatSkip(err)
 	r.updateLogged(rn, id, func(c *Council) error {
 		if k, ok := rn.end(e.Id); ok {
 			st := c.Stats[e.Id]
 			st.Ms = k.base + max(0, r.now()-k.start)
 			setStat(c, e.Id, st)
 		}
-		st := c.Stats[e.Id]
-		st.Calls++
-		st.Tokens += res.Tokens
-		setStat(c, e.Id, st)
-		c.Calls++
-		c.Tokens += res.Tokens
+		if !skippedTurn {
+			st := c.Stats[e.Id]
+			st.Calls++
+			st.Tokens += res.Tokens
+			setStat(c, e.Id, st)
+			c.Calls++
+			c.Tokens += res.Tokens
+		}
 		delete(c.Activity, e.Id)
 		switch {
 		case cancelled:
+		case skippedTurn:
+			delete(c.Failed, e.Id)
+			c.Skips = append(c.Skips, CouncilSkip{Expert: e.Id, Round: round, Reason: skip.Reason, Ts: r.now()})
 		case err != nil:
 			setFailed(c, e.Id, CouncilFailure{Round: round, Error: errText(err)})
 		default:
@@ -808,18 +928,51 @@ func nextReplyId(c *Council) string {
 
 // ---- round 1 ----
 
+// heldFor is the Draft state of what a seat answers: held when an agent is seated (every answer then waits for the
+// person), sent at once otherwise.
+func heldFor(c *Council) string {
+	if HasAgents(c) {
+		return DraftHeld
+	}
+	return ""
+}
+
+// addPlainReply posts the words of an agent's answer that held none of the JSON the round asks for as one reply from the
+// seat: to the whole council, or under parent, the person's reply it answers.
+func addPlainReply(c *Council, e CouncilExpert, text string, round int, now int64, parent *CouncilReply) {
+	rp := CouncilReply{Id: nextReplyId(c), Author: e.Id, Text: text, Round: round, Ts: now, Draft: heldFor(c)}
+	if parent != nil {
+		rp.ProposalId, rp.ParentId = parent.ProposalId, parent.Id
+	}
+	c.Replies = append(c.Replies, rp)
+}
+
 func (r *Runner) round1(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert) {
-	res, err := r.call(ctx, rn, id, e, snap, Round1Prompt(snap, e), true, CouncilActivity{Text: actStarting})
-	var props []CouncilProposal
+	prompt := Round1Prompt(snap, e)
+	if IsAgent(e) {
+		prompt = agentPrompt(snap, e, 1)
+	}
+	res, err := r.call(ctx, rn, id, e, snap, prompt, true, CouncilActivity{Text: actStarting})
+	var (
+		props []CouncilProposal
+		plain string
+	)
 	if err == nil {
 		err = emptyReply(res)
 	}
 	if err == nil {
 		props, _, err = ParseRound1(res.Text) // the overall view has no field on the council, so it is not kept
+		if err != nil && IsAgent(e) {
+			plain, err = PlainReply(res.Text), nil // a live agent is heard as it spoke, not failed for the shape
+		}
 	}
 	r.finishCall(ctx, rn, id, e, res, err, 1, func(c *Council) {
+		if plain != "" {
+			addPlainReply(c, e, plain, 1, r.now(), nil)
+			return
+		}
 		for _, p := range props {
-			p.Id, p.Author, p.Ts = nextProposalId(c), e.Id, r.now()
+			p.Id, p.Author, p.Ts, p.Draft = nextProposalId(c), e.Id, r.now(), heldFor(c)
 			if isBrainstorm(c) {
 				p.Evidence = withoutNoEvidenceChip(p.Evidence) // a Brainstorm's idea needs none, so it is not drawn weak
 			} else {
@@ -840,9 +993,9 @@ func withoutNoEvidenceChip(ev []CouncilEvidence) []CouncilEvidence {
 
 // ---- round 2 ----
 
-// round2Phase has every expert that proposed review the others' proposals, at once and from text. An expert whose
-// round 1 call failed sits it out.
-func (r *Runner) round2Phase(ctx context.Context, rn *run, id string) error {
+// replyPass is a pass of reply rounds, round 2 or, in a council with three rounds, round 3: it has every expert that
+// proposed review the others' proposals, at once and from text. An expert whose round 1 call failed sits it out.
+func (r *Runner) replyPass(ctx context.Context, rn *run, id string, round int) error {
 	snap, err := Load(id)
 	if err != nil {
 		return err
@@ -860,7 +1013,7 @@ func (r *Runner) round2Phase(ctx context.Context, rn *run, id string) error {
 			asks = append(asks, pr.Id)
 		}
 	}
-	forEachExpert(experts, func(e CouncilExpert) { r.round2(ctx, rn, id, snap, e) })
+	forEachExpert(experts, func(e CouncilExpert) { r.round2(ctx, rn, id, snap, e, round) })
 	if ctx.Err() == nil && len(asks) > 0 {
 		r.updateLogged(rn, id, func(c *Council) error {
 			markAnswered(c, asks)
@@ -886,7 +1039,7 @@ func withOpenAsks(c *Council, e CouncilExpert) *Council {
 // round2Target is what an expert is doing in round 2, for its avatar's tooltip and the dashed row in the thread: the
 // first proposal it reviews, or, with none, the person's question it answers. Nil means it has nothing to do.
 func round2Target(c *Council, e CouncilExpert) *CouncilActivity {
-	for _, p := range c.Proposals {
+	for _, p := range sentProposals(c) {
 		if p.Author != e.Id && !p.Cut {
 			return &CouncilActivity{Text: "Replying to " + speaker(c, p.Author), ProposalId: p.Id}
 		}
@@ -897,26 +1050,49 @@ func round2Target(c *Council, e CouncilExpert) *CouncilActivity {
 	return nil
 }
 
-func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert) {
+// round2 is one seat's turn in reply pass round (2, or 3 in a council with three rounds). A live agent is sent its own
+// prompt, and what it answers that holds no JSON is heard as one plain reply. After the first pass a seat with nothing
+// new to answer sits the pass out.
+func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, round int) {
 	view := withOpenAsks(snap, e)
 	target := round2Target(view, e)
+	if target != nil && round > 2 && !seatHasNews(view, e, round) {
+		target = nil
+	}
 	if target == nil {
 		return
 	}
-	res, err := r.call(ctx, rn, id, e, view, Round2Prompt(view, e), false, *target)
-	var out Round2Result
+	prompt := round2PromptFor(view, e, round)
+	if IsAgent(e) {
+		prompt = agentPrompt(view, e, round)
+	}
+	res, err := r.call(ctx, rn, id, e, view, prompt, false, *target)
+	var (
+		out   Round2Result
+		plain string
+	)
 	if err == nil {
 		err = emptyReply(res)
 	}
 	if err == nil {
 		out, err = ParseRound2(res.Text)
+		if err != nil && IsAgent(e) {
+			plain, err = PlainReply(res.Text), nil
+		}
 	}
-	r.finishCall(ctx, rn, id, e, res, err, 2, func(c *Council) { applyRound2(c, e, out, r.now()) })
+	r.finishCall(ctx, rn, id, e, res, err, round, func(c *Council) {
+		if plain != "" {
+			addPlainReply(c, e, plain, round, r.now(), nil)
+			return
+		}
+		applyRound2(c, e, out, round, r.now())
+	})
 }
 
+// hasStance says seat expertId took a stance of its own on the proposal: a dropped one is not one.
 func hasStance(c *Council, proposalId, expertId string) bool {
 	for _, x := range c.Replies {
-		if x.ProposalId == proposalId && x.Author == expertId && x.ParentId == "" && x.Stance != "" {
+		if x.ProposalId == proposalId && x.Author == expertId && x.ParentId == "" && x.Stance != "" && x.Draft != DraftDropped {
 			return true
 		}
 	}
@@ -924,11 +1100,11 @@ func hasStance(c *Council, proposalId, expertId string) bool {
 }
 
 // challengeTo is the latest challenge or opposition to a proposal from someone other than its author, the reply a
-// revision of that proposal answers.
+// revision of that proposal answers. A reply not sent yet is not out in the room to be answered.
 func challengeTo(c *Council, proposalId, authorId string) string {
 	for i := len(c.Replies) - 1; i >= 0; i-- {
 		x := c.Replies[i]
-		if x.ProposalId == proposalId && x.ParentId == "" && x.Author != authorId && x.Author != YouId &&
+		if x.ProposalId == proposalId && x.ParentId == "" && x.Author != authorId && x.Author != YouId && Sent(x.Draft) &&
 			(x.Stance == StanceChallenge || x.Stance == StanceOppose) {
 			return x.Id
 		}
@@ -936,42 +1112,96 @@ func challengeTo(c *Council, proposalId, authorId string) string {
 	return ""
 }
 
-// applyRound2 turns one expert's round 2 reply into replies on the council. The model names the ids, so each is
-// checked: a stance on an unknown, cut or own proposal is dropped, and so is a revision of someone else's proposal.
-func applyRound2(c *Council, e CouncilExpert, res Round2Result, now int64) {
+// latestReplyTo is the latest sent reply to a proposal from a seat other than seatId, the reply a later pass's second
+// stance of seatId answers. The person's replies are left out: a reply under one would read as the answer it is owed.
+func latestReplyTo(c *Council, proposalId, seatId string) string {
+	for i := len(c.Replies) - 1; i >= 0; i-- {
+		x := c.Replies[i]
+		if x.ProposalId == proposalId && x.Author != seatId && x.Author != YouId && Sent(x.Draft) {
+			return x.Id
+		}
+	}
+	return ""
+}
+
+// revisionPending says a held reply already carries a revision of the proposal.
+func revisionPending(c *Council, proposalId string) bool {
+	return slices.ContainsFunc(c.Replies, func(x CouncilReply) bool {
+		return x.ProposalId == proposalId && x.Draft == DraftHeld && x.Revision != nil
+	})
+}
+
+// applyRevision is what a revision of its own idea changes: a withdrawal, or the new title and argument.
+func applyRevision(p *CouncilProposal, rev CouncilRevision) {
+	if rev.Withdraw {
+		p.Withdrawn = true
+		return
+	}
+	if rev.Title != "" {
+		p.Title = rev.Title
+	}
+	if rev.Argument != "" {
+		p.Argument = rev.Argument
+	}
+}
+
+// applyRound2 turns one expert's reply in reply pass round into replies on the council. The model names the ids, so each
+// is checked: a stance on an unknown, cut, own or unsent proposal is dropped, and so is a revision of someone else's
+// proposal. In a council with agents every reply with words is held for the person; an agreement with nothing to add
+// applies at once, and a revision rides on its reply and applies when that is sent. After the first pass, a stance on a
+// proposal the seat already took one on answers the latest reply to it, and only when it has a reason.
+func applyRound2(c *Council, e CouncilExpert, res Round2Result, round int, now int64) {
+	hold := heldFor(c)
 	for _, s := range res.Stances {
 		p := findProposal(c, s.ProposalId)
-		if p == nil || p.Author == e.Id || p.Cut || hasStance(c, p.Id, e.Id) {
+		if p == nil || p.Author == e.Id || p.Cut || !Sent(p.Draft) {
 			continue
 		}
-		if strings.TrimSpace(s.Reason) == "" && s.Stance != StanceAccept { // an accept needs no words; a doubt or an objection does
+		reason := strings.TrimSpace(s.Reason)
+		parent := ""
+		if hasStance(c, p.Id, e.Id) {
+			if round <= 2 {
+				continue
+			}
+			if parent = latestReplyTo(c, p.Id, e.Id); parent == "" || reason == "" {
+				continue
+			}
+		}
+		if reason == "" && s.Stance != StanceAccept { // an accept needs no words; a doubt or an objection does
 			continue
 		}
 		// a Brainstorm's build is the words it adds; with none it reads as a plain accept, and a Review has no builds
-		builds := s.Builds && isBrainstorm(c) && strings.TrimSpace(s.Reason) != ""
+		builds := s.Builds && isBrainstorm(c) && reason != ""
+		draft := ""
+		if reason != "" {
+			draft = hold
+		}
 		c.Replies = append(c.Replies, CouncilReply{
-			Id: nextReplyId(c), ProposalId: p.Id, Author: e.Id, Stance: s.Stance, Builds: builds,
-			Text: s.Reason, Evidence: s.Evidence, Round: 2, Ts: now,
+			Id: nextReplyId(c), ProposalId: p.Id, ParentId: parent, Author: e.Id, Stance: s.Stance, Builds: builds,
+			Text: s.Reason, Evidence: s.Evidence, Round: round, Ts: now, Draft: draft,
 		})
 	}
 	for _, rv := range res.Revisions {
 		p := findProposal(c, rv.ProposalId)
-		if p == nil || p.Author != e.Id || p.Withdrawn {
+		if p == nil || p.Author != e.Id || p.Withdrawn || !Sent(p.Draft) || revisionPending(c, p.Id) {
 			continue
 		}
-		var text string
+		var (
+			rev  CouncilRevision
+			text string
+		)
 		if rv.Withdraw {
-			p.Withdrawn, text = true, "Withdrawn."
+			rev.Withdraw, text = true, "Withdrawn."
 		} else {
 			// the new argument shows on the proposal itself; the reply says only what changed
 			var parts []string
 			if rv.Title != "" && rv.Title != p.Title {
-				p.Title = rv.Title
+				rev.Title = rv.Title
 				parts = append(parts, "Retitled: "+rv.Title+".")
 			}
 			argued := rv.Argument != "" && rv.Argument != p.Argument
 			if argued {
-				p.Argument = rv.Argument
+				rev.Argument = rv.Argument
 			}
 			if len(parts) == 0 && !argued {
 				continue
@@ -984,13 +1214,21 @@ func applyRound2(c *Council, e CouncilExpert, res Round2Result, now int64) {
 			}
 			text = strings.Join(parts, " ")
 		}
-		c.Replies = append(c.Replies, CouncilReply{
+		reply := CouncilReply{
 			Id: nextReplyId(c), ProposalId: p.Id, ParentId: challengeTo(c, p.Id, e.Id), Author: e.Id,
-			Revised: true, Text: text, Round: 2, Ts: now,
-		})
+			Revised: true, Text: text, Round: round, Ts: now,
+		}
+		if hold != "" {
+			reply.Draft, reply.Revision = hold, &rev
+		} else {
+			applyRevision(p, rev)
+		}
+		c.Replies = append(c.Replies, reply)
 	}
-	applyPicks(c, e, res.Picks)
-	applyAnswers(c, e, res.Answers, 2, now)
+	if round == SynthesisRound(c)-1 { // picks are taken in the last reply pass only
+		applyPicks(c, e, res.Picks)
+	}
+	applyAnswers(c, e, res.Answers, round, now)
 }
 
 // applyPicks keeps an expert's picks that name another expert's proposal still in the running, at most maxPicks, in
@@ -999,7 +1237,7 @@ func applyPicks(c *Council, e CouncilExpert, picks []string) {
 	var kept []string
 	for _, id := range picks {
 		p := findProposal(c, id)
-		if p == nil || p.Author == e.Id || p.Cut || p.Withdrawn || slices.Contains(kept, id) || len(kept) == maxPicks {
+		if p == nil || p.Author == e.Id || p.Cut || p.Withdrawn || !Sent(p.Draft) || slices.Contains(kept, id) || len(kept) == maxPicks {
 			continue
 		}
 		kept = append(kept, id)
@@ -1049,7 +1287,7 @@ func markAnswered(c *Council, ids []string) {
 }
 
 // applyAnswers adds an expert's answers under the person's replies. An answer to a reply the expert was not asked, or
-// has already answered, is dropped.
+// has already answered, is dropped. In a council with agents each is held for the person.
 func applyAnswers(c *Council, e CouncilExpert, answers []Answer, round int, now int64) {
 	for _, a := range answers {
 		pr := findReply(c, a.ReplyId)
@@ -1058,28 +1296,45 @@ func applyAnswers(c *Council, e CouncilExpert, answers []Answer, round int, now 
 		}
 		c.Replies = append(c.Replies, CouncilReply{
 			Id: nextReplyId(c), ProposalId: pr.ProposalId, ParentId: pr.Id, Author: e.Id, Stance: a.Stance,
-			Text: a.Text, Evidence: a.Evidence, Round: round, Ts: now,
+			Text: a.Text, Evidence: a.Evidence, Round: round, Ts: now, Draft: heldFor(c),
 		})
 	}
 }
 
 // answerCall asks one expert to answer the replies it owes, and saves its answers as replies of the given round. It has
-// the read-only tools when a reply asked for them (Let them read code).
+// the read-only tools when a reply asked for them (Let them read code). A live agent is sent its own prompt, and what it
+// answers that holds no JSON is heard as one plain reply under the first reply it owes.
 func (r *Runner) answerCall(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, replies []CouncilReply, round int) {
 	tools := false
 	for _, pr := range replies {
 		tools = tools || pr.Tools
 	}
 	first := CouncilActivity{Text: actPerson, ProposalId: replies[0].ProposalId, ParentId: replies[0].Id}
-	res, err := r.call(ctx, rn, id, e, snap, AnswersPrompt(snap, e, replies), tools, first)
-	var answers []Answer
+	prompt := AnswersPrompt(snap, e, replies)
+	if IsAgent(e) {
+		prompt = agentPrompt(withOpenAsks(snap, e), e, round)
+	}
+	res, err := r.call(ctx, rn, id, e, snap, prompt, tools, first)
+	var (
+		answers []Answer
+		plain   string
+	)
 	if err == nil {
 		err = emptyReply(res)
 	}
 	if err == nil {
 		answers, err = ParseAnswers(res.Text)
+		if err != nil && IsAgent(e) {
+			plain, err = PlainReply(res.Text), nil
+		}
 	}
-	r.finishCall(ctx, rn, id, e, res, err, round, func(c *Council) { applyAnswers(c, e, answers, round, r.now()) })
+	r.finishCall(ctx, rn, id, e, res, err, round, func(c *Council) {
+		if plain != "" {
+			addPlainReply(c, e, plain, round, r.now(), &replies[0])
+			return
+		}
+		applyAnswers(c, e, answers, round, r.now())
+	})
 }
 
 // answersPass has every expert the person's open replies are addressed to answer them, at once. The Summary is not
@@ -1090,7 +1345,7 @@ func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
 	if err != nil {
 		return err
 	}
-	round := max(3, snap.Round)
+	round := max(SynthesisRound(snap), snap.Round)
 	var open []string
 	for _, pr := range snap.Replies {
 		if pr.Author == YouId && !pr.Answered {
@@ -1221,20 +1476,22 @@ func appendPersonReply(c *Council, proposalId, parentId, text string, tools bool
 	return nil
 }
 
-// followRound is the round number of a follow-up: 4 for the first, then one more for each after.
+// followRound is the round number of a follow-up: the first one after the synthesis (4 for two rounds), then one more
+// for each after.
 func followRound(c *Council) int {
 	last := 0
 	for _, pr := range c.Replies {
 		last = max(last, pr.Round)
 	}
-	return max(4, last+1)
+	return max(FirstFollowRound(c), last+1)
 }
 
 // Reply posts the person's reply on a proposal (proposalId), under another reply (parentId), or, with neither, to the
 // whole council. It goes to the experts in its branch unless the text @-mentions some. Posted before round 2, or while
-// the council waits on the person, it is answered in round 2; posted while a run is on, it is answered by the pass
-// after the synthesis; posted to a council that is done, stopped or failed, it starts a follow-up round at once,
-// with tools when the person turned Let them read code on, and the council returns to the state it was in.
+// the council waits on the person, it is answered in the next reply pass (a seat that is a live agent gets it at its
+// next turn); posted while a run is on, it is answered by the pass after the synthesis; posted to a council that is
+// done, stopped or failed, it starts a follow-up round at once, with tools when the person turned Let them read code
+// on, and the council returns to the state it was in.
 func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool) (*Council, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -1286,7 +1543,9 @@ func (r *Runner) followupWork(prev prevState) work {
 }
 
 // Continue ends the pause: it marks the proposals in cut as cut, stores question (if any) as the person's reply to the
-// whole council, and runs round 2 and the synthesis on what is left.
+// whole council, and runs round 2 and the synthesis on what is left. It runs the rounds after the one the council waits
+// at, so a council with agents that waits on no draft (they were all settled) goes on from where it stands; one that
+// still holds a draft is refused, since the drafts are what it waits for.
 func (r *Runner) Continue(id string, cut []string, question string) (*Council, error) {
 	if r.Caller == nil {
 		return nil, errors.New("the council runner has no caller")
@@ -1300,10 +1559,14 @@ func (r *Runner) Continue(id string, cut []string, question string) (*Council, e
 	if err == nil && cur.State != StateAwaiting {
 		err = fmt.Errorf("council %s is %s, not waiting on you", id, cur.State)
 	}
+	if err == nil && HeldDrafts(cur) > 0 {
+		err = fmt.Errorf("council %s has %d drafts waiting for you: send, edit or drop them, and the next round starts", id, HeldDrafts(cur))
+	}
 	if err != nil {
 		r.mu.Unlock()
 		return nil, err
 	}
+	from := cur.Round + 1
 	saved, start, err := r.launchLocked(context.Background(), id, func() (*Council, error) {
 		return Update(id, func(c *Council) error {
 			for _, pid := range cut {
@@ -1318,10 +1581,10 @@ func (r *Runner) Continue(id string, cut []string, question string) (*Council, e
 					Id: nextReplyId(c), Author: YouId, Text: question, To: idsOf(panelOf(c)), Round: c.Round, Ts: r.now(),
 				})
 			}
-			c.State, c.Round, c.Error = StateRunning, 2, ""
+			c.State, c.Round, c.Error = StateRunning, from, ""
 			return nil
 		})
-	}, r.roundsWork(2))
+	}, r.roundsWork(from))
 	r.mu.Unlock()
 	if err != nil {
 		return nil, err
@@ -1360,7 +1623,7 @@ func (r *Runner) synthesize(ctx context.Context, rn *run, id string) error {
 		sum = cleanSummary(snap, sum)
 		sum.At = at
 	}
-	r.finishCall(ctx, rn, id, coord, res, err, 3, func(c *Council) {
+	r.finishCall(ctx, rn, id, coord, res, err, SynthesisRound(snap), func(c *Council) {
 		c.Summary = &sum
 		if !isBrainstorm(c) { // a Brainstorm marks nothing weak
 			MarkWeak(c, weak)
@@ -1371,6 +1634,14 @@ func (r *Runner) synthesize(ctx context.Context, rn *run, id string) error {
 
 // directionOutcome reads the direction number of a proposal's outcome: "Direction 4", "Merged into direction 4".
 var directionOutcome = regexp.MustCompile(`(?i)^(?:merged into )?direction (\d+)$`)
+
+// findSentProposal is the proposal with id when it is out in the room, nil when there is none or it is held or dropped.
+func findSentProposal(c *Council, id string) *CouncilProposal {
+	if p := findProposal(c, id); p != nil && Sent(p.Draft) {
+		return p
+	}
+	return nil
+}
 
 // cleanSummary drops what the coordinator named that is not on the council: a proposal that does not exist, an
 // expert that is not on the panel, and a stance from the author of a proposal the direction merges. A Brainstorm's
@@ -1408,7 +1679,7 @@ func cleanSummary(c *Council, s CouncilSummary) CouncilSummary {
 	}
 	outcomes := map[string]string{}
 	for pid, o := range s.Outcomes {
-		if o = strings.TrimSpace(o); o != "" && findProposal(c, pid) != nil {
+		if o = strings.TrimSpace(o); o != "" && findSentProposal(c, pid) != nil {
 			if m := directionOutcome.FindStringSubmatch(o); m != nil && !isBrainstorm(c) {
 				if n, _ := strconv.Atoi(m[1]); n > maxDirections {
 					o = "Also raised"
@@ -1427,7 +1698,7 @@ func cleanDirection(c *Council, d *CouncilDirection, panel map[string]bool) {
 	from := make([]string, 0, len(d.From))
 	authors := map[string]bool{}
 	for _, pid := range d.From {
-		if p := findProposal(c, pid); p != nil && !slices.Contains(from, pid) {
+		if p := findSentProposal(c, pid); p != nil && !slices.Contains(from, pid) {
 			from = append(from, pid)
 			authors[p.Author] = true
 		}
@@ -1442,7 +1713,8 @@ func cleanDirection(c *Council, d *CouncilDirection, panel map[string]bool) {
 
 // Summarize reruns the synthesis on everything so far and replaces the Summary. A done, stopped or paused council
 // goes back to the state it was in (a stopped one is summarized from the rounds that finished); a failed one, whose
-// synthesis failed, becomes done. A synthesis that fails leaves the council failed, with Retry on the coordinator.
+// synthesis failed, becomes done. A synthesis that fails leaves the council failed, with Retry on the coordinator. A
+// council with no idea sent (every one held or dropped) has nothing to summarize and is refused.
 func (r *Runner) Summarize(id string) (*Council, error) {
 	r.mu.Lock()
 	saved, start, err := r.summarizeLocked(id)
@@ -1474,13 +1746,26 @@ func (r *Runner) summarizeLocked(id string) (*Council, func(), error) {
 	if _, ok := coordinatorExpert(cur); !ok {
 		return nil, nil, fmt.Errorf("council %s has no coordinator", id)
 	}
+	if len(sentProposals(cur)) == 0 { // a held or dropped idea is not out in the room: the synthesis would see none
+		return nil, nil, fmt.Errorf("council %s has no sent idea to summarize", id)
+	}
 	prev := prevOf(cur)
 	return r.launchLocked(context.Background(), id, func() (*Council, error) {
 		return Update(id, func(c *Council) error {
-			c.State, c.Round, c.Error = StateRunning, 3, ""
+			c.State, c.Round, c.Error = StateRunning, SynthesisRound(c), ""
 			return nil
 		})
 	}, r.summarizeWork(prev))
+}
+
+// heldRoundAfter is the heldRound a job that hands a council back awaiting-you ends with: the round its drafts belong to,
+// so that drive goes on to the next round when the person settled them all while the job ran. 0 for anything else, and
+// for the pause after round 1 of a council with no agent, which waits on a Continue.
+func heldRoundAfter(prev prevState, snap *Council) int {
+	if prev.state == StateAwaiting && HasAgents(snap) {
+		return prev.round
+	}
+	return 0
 }
 
 func (r *Runner) summarizeWork(prev prevState) work {
@@ -1491,17 +1776,145 @@ func (r *Runner) summarizeWork(prev prevState) work {
 			}
 			return ending{set: synthesisFailed(err)}
 		}
+		held := 0
+		if snap, err := Load(id); err == nil {
+			held = heldRoundAfter(prev, snap)
+		}
 		return ending{
 			set: func(c *Council) {
 				if prev.state == StateFailed {
-					c.State, c.Round, c.Error = StateDone, 3, ""
+					c.State, c.Round, c.Error = StateDone, SynthesisRound(c), ""
 					return
 				}
 				prev.restore(c)
 			},
-			answers: prev.state != StateAwaiting,
+			answers:   prev.state != StateAwaiting,
+			heldRound: held,
 		}
 	}
+}
+
+// ---- held drafts ----
+
+// settleDraft settles the held draft itemId on c. send puts it out in the room: a held revision then takes effect on the
+// idea it revises. edit replaces its text (an idea's argument, a reply's words) and sends it. drop cancels it, and a
+// revision with it. It is an error to name an idea or reply that is not there or not held.
+func settleDraft(c *Council, itemId, action, text string) error {
+	if p := findProposal(c, itemId); p != nil {
+		if p.Draft != DraftHeld {
+			return fmt.Errorf("idea %s is not a held draft", itemId)
+		}
+		switch action {
+		case draftDrop:
+			p.Draft = DraftDropped
+		case draftEdit:
+			p.Argument, p.Edited, p.Draft = text, true, ""
+		default:
+			p.Draft = ""
+		}
+		return nil
+	}
+	x := findReply(c, itemId)
+	switch {
+	case x == nil:
+		return fmt.Errorf("council %s has no idea or reply %s", c.Id, itemId)
+	case x.Draft != DraftHeld:
+		return fmt.Errorf("reply %s is not a held draft", itemId)
+	}
+	if action == draftDrop {
+		x.Draft, x.Revision = DraftDropped, nil
+		dropOrphanedPicks(c, x.Author, x.Round)
+		return nil
+	}
+	if action == draftEdit {
+		x.Text, x.Edited = text, true
+	}
+	x.Draft = ""
+	if x.Revision != nil {
+		if p := findProposal(c, x.ProposalId); p != nil {
+			applyRevision(p, *x.Revision)
+		}
+		x.Revision = nil
+	}
+	return nil
+}
+
+// dropOrphanedPicks takes back a seat's picks when the person dropped everything it answered in the last reply pass: its
+// answer is gone, and the picks were part of it. A seat that has an answer left in that round (sent or held, an agreement
+// reaction too) keeps its picks.
+func dropOrphanedPicks(c *Council, seatId string, round int) {
+	if round != SynthesisRound(c)-1 {
+		return
+	}
+	for _, x := range c.Replies {
+		if x.Author == seatId && x.Round == round && x.Draft != DraftDropped {
+			return
+		}
+	}
+	delete(c.Picks, seatId)
+}
+
+// The actions of Draft.
+const (
+	draftSend = "send"
+	draftEdit = "edit"
+	draftDrop = "drop"
+)
+
+// Draft settles one held draft, an idea or a reply (itemId): action is "send", "edit" (replace the text with text and send
+// it) or "drop". An unknown item, or one that is not held, is refused. Settling the last held draft of a council that
+// waits on them (awaiting-you) starts the next round at once, or the synthesis after the last reply pass, as Continue
+// would: the person's own action, never queued. On a council that is running, stopped, failed or done it only settles
+// the draft: the follow-up answer of a done council is settled and the council stays done, and a round that is running
+// goes on by itself once none is held.
+func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
+	action, text = strings.ToLower(strings.TrimSpace(action)), strings.TrimSpace(text)
+	switch action {
+	case draftSend, draftDrop:
+	case draftEdit:
+		if text == "" {
+			return nil, errors.New("an edited draft needs some text")
+		}
+	default:
+		return nil, fmt.Errorf("unknown draft action %q: use %s, %s or %s", action, draftSend, draftEdit, draftDrop)
+	}
+	r.mu.Lock()
+	cur, err := Load(id)
+	if err != nil {
+		r.mu.Unlock()
+		return nil, err
+	}
+	var (
+		saved *Council
+		start func()
+	)
+	// the last held draft of a council waiting on them starts what comes next; a draft that is not held fails in settleDraft
+	if from := cur.Round + 1; cur.State == StateAwaiting && r.active[id] == nil && HeldDrafts(cur) == 1 {
+		if r.Caller == nil {
+			err = errors.New("the council runner has no caller")
+		} else {
+			saved, start, err = r.launchLocked(context.Background(), id, func() (*Council, error) {
+				return Update(id, func(c *Council) error {
+					if err := settleDraft(c, itemId, action, text); err != nil {
+						return err
+					}
+					c.State, c.Round, c.Error = StateRunning, from, ""
+					return nil
+				})
+			}, r.roundsWork(from))
+		}
+	} else {
+		saved, err = Update(id, func(c *Council) error { return settleDraft(c, itemId, action, text) })
+	}
+	r.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	r.changed(saved)
+	if start != nil {
+		start()
+	}
+	return saved, nil
 }
 
 // ---- retry and stop ----
@@ -1562,8 +1975,8 @@ func (r *Runner) retryWork(e CouncilExpert, f CouncilFailure, prev prevState) wo
 		switch {
 		case f.Round <= 1:
 			r.round1(ctx, rn, id, snap, e)
-		case f.Round == 2:
-			r.round2(ctx, rn, id, snap, e)
+		case f.Round < SynthesisRound(snap):
+			r.round2(ctx, rn, id, snap, e, f.Round)
 		default:
 			if replies := owed(snap, e, false); len(replies) > 0 {
 				r.answerCall(ctx, rn, id, snap, e, replies, f.Round)
@@ -1574,7 +1987,7 @@ func (r *Runner) retryWork(e CouncilExpert, f CouncilFailure, prev prevState) wo
 				})
 			}
 		}
-		return ending{set: prev.restore, answers: prev.state != StateAwaiting}
+		return ending{set: prev.restore, answers: prev.state != StateAwaiting, heldRound: heldRoundAfter(prev, snap)}
 	}
 }
 

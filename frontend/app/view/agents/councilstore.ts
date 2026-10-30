@@ -13,7 +13,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { councilProjectKey, type CouncilSetupDraft, type CouncilView } from "./councilmodel";
 import type { CouncilRating } from "./councilsummarymodel";
 
@@ -204,6 +204,21 @@ export function continueCouncil(data: CommandCouncilContinueData): Promise<Counc
     return call("continue", () => RpcApi.CouncilContinueCommand(TabRpcClient, data));
 }
 
+/** What the person does with a held draft: `send` lets it reach the other seats as written, `edit` replaces its text and
+ *  sends that, `drop` keeps it from reaching anyone. */
+export type CouncilDraftAction = "send" | "edit" | "drop";
+
+/** Settles one held draft of a council with live agents. `itemId` is the idea's id (P1) or the reply's (r3); `text` is
+ *  the new text of an `edit`. The council reloads through `council:changed`; wavesrv refuses an item that is not held. */
+export function draftCouncil(
+    id: string,
+    itemId: string,
+    action: CouncilDraftAction,
+    text?: string
+): Promise<CouncilCall<void>> {
+    return call("draft", () => RpcApi.CouncilDraftCommand(TabRpcClient, { id, itemid: itemId, action, text }));
+}
+
 /** Runs the synthesis again on the discussion so far. */
 export function summarizeCouncil(id: string): Promise<CouncilCall<void>> {
     return call("summarize", () => RpcApi.CouncilSummarizeCommand(TabRpcClient, { id }));
@@ -239,6 +254,28 @@ export function suggestCouncil(data: CommandCouncilSuggestData): Promise<Council
  *  follow-up round (`id` and `followup`, the number of experts). */
 export function estimateCouncil(data: CommandCouncilEstimateData): Promise<CouncilCall<CouncilEstimateRtnData>> {
     return call("estimate", () => RpcApi.CouncilEstimateCommand(TabRpcClient, data));
+}
+
+/** One estimate over wshrpc, or null while it is on its way (a stale one for other inputs is never shown). Free: it
+ *  prices, it calls no model. */
+export function useEstimate(data: CommandCouncilEstimateData | null): CouncilEstimateRtnData | null {
+    const key = data == null ? "" : JSON.stringify(data);
+    const [got, setGot] = useState<{ key: string; value: CouncilEstimateRtnData } | null>(null);
+    useEffect(() => {
+        if (key === "") {
+            return;
+        }
+        let live = true;
+        void estimateCouncil(JSON.parse(key) as CommandCouncilEstimateData).then((r) => {
+            if (live && r.ok) {
+                setGot({ key, value: r.value });
+            }
+        });
+        return () => {
+            live = false;
+        };
+    }, [key]);
+    return got?.key === key ? got.value : null;
 }
 
 /** Writes the Summary and Matrix as markdown into the project and answers the path. Never commits. */
@@ -283,7 +320,7 @@ export const councilUnreadAtom = atom<ReadonlySet<string>>(new Set<string>()) as
 /** The project Setup shows, the one showCouncilSetup last opened: its form is `councilSetupDraftAtom(project)`. */
 export const councilSetupProjectAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
 
-/** The proposal open in each council's Discussion, or null for the first in the ranking. */
+/** The idea whose thread is open in each council's chat, or null while none is. */
 export const councilOpenProposalAtom = atomFamily(
     (_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>
 );

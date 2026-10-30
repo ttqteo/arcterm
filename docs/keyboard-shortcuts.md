@@ -288,6 +288,20 @@ Opened from a project folder's menu, Open overview. It covers the terminal as Hi
 | `←` / `→` | In the Activity card (`Tab` onto its grid, which starts on today): move the cursor a week back or on, showing that day's tip |
 | `↑` / `↓` | In the Activity card: move the cursor a day back or on |
 
+### Agent: council chat
+
+A council's Discussion is a channel with threads: each idea is a message, and its reply chip opens the thread in a panel
+on the right. A council covers the terminal as History does, so the agent keys (`j` / `k`, the arrows, `d`, `f`…) stand
+down there and `Esc` goes back to the terminal. These keys are the chat's only while focus is inside its channel or
+thread (click it, or `Tab` to it), not in a text field; elsewhere nothing here is live.
+
+| Keys | Action |
+|---|---|
+| `j` / `k` | Move the cursor to the next / previous idea of the channel (ringed). It stops at either end |
+| `Enter` | Open the thread of the idea under the cursor. With a button focused (Send to the others, Edit, Drop, an idea's reply chip) `Enter` presses that button instead |
+| `Esc` | Close the open thread, which gives `j` / `k` back to the channel. With no thread open, `Esc` leaves the council for the terminal. In the message box or a thread's reply box, `Esc` returns focus to the channel or thread first |
+| `Enter` | In the message box: send. `Shift`+`Enter` adds a line. After an `@`, `↑` / `↓` pick a seat and `Enter` or `Tab` takes it, `Esc` closes the list |
+
 ### Agent: terminal grid
 
 A cell is an agent or a terminal (a shell, lazygit beside the agent). Open a split by dragging a live agent or terminal

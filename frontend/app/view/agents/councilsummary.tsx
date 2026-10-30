@@ -27,6 +27,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { showCouncil, showCouncilSetup } from "./agentcenter";
 import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
+import { CouncilAvatar } from "./councilchat";
 import { avatarTone } from "./councildiscussionmodel";
 import {
     STANCE_WORD,
@@ -35,6 +36,7 @@ import {
     outdatedCount,
     panel,
     summaryChip,
+    synthesisRound,
     type StanceLabel,
 } from "./councilmodel";
 import {
@@ -71,7 +73,6 @@ import {
     type KeptRow,
     type Position,
 } from "./councilsummarymodel";
-import { CouncilAvatar } from "./councilthread";
 import { runtimeStartupCommand } from "./launch";
 import { projectListAtom } from "./projectsstore";
 
@@ -670,7 +671,8 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
     const coordinator = c.experts.find((e) => e.coordinator);
     const failure = coordinator != null ? c.failed?.[coordinator.id] : undefined;
     const writing =
-        c.state === "running" && (c.round >= 3 || (coordinator != null && c.activity?.[coordinator.id] != null));
+        c.state === "running" &&
+        (c.round >= synthesisRound(c) || (coordinator != null && c.activity?.[coordinator.id] != null));
     return (
         <div
             data-council-nosummary

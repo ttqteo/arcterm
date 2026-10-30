@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,14 +58,21 @@ func newFake() *fakeCaller {
 	}
 }
 
+var roundLineRe = regexp.MustCompile(`This is round (\d+) of (\d+)`)
+
+// kindOf is what a prompt asks for: r1 (the ideas), r2 (a reply pass), r3 (the synthesis, the last round whatever its
+// number), ans (the person's replies) or suggest.
 func kindOf(prompt string) string {
-	switch {
-	case strings.Contains(prompt, "This is round 1 of 3"):
-		return "r1"
-	case strings.Contains(prompt, "This is round 2 of 3"):
+	if m := roundLineRe.FindStringSubmatch(prompt); m != nil {
+		switch n, _ := strconv.Atoi(m[1]); {
+		case n == 1:
+			return "r1"
+		case m[1] == m[2]:
+			return "r3"
+		}
 		return "r2"
-	case strings.Contains(prompt, "This is round 3 of 3"):
-		return "r3"
+	}
+	switch {
 	case strings.Contains(prompt, "The council has already met"):
 		return "ans"
 	case strings.Contains(prompt, "about to review one feature"):
@@ -271,7 +279,11 @@ func round2JSON(req CallReq) string {
 }
 
 func answersJSON(req CallReq) string {
-	return fence(mustJSON(map[string]any{"answers": answersFor(req, idsIn(replyHeadRe, req.Prompt))}))
+	ids := idsIn(replyHeadRe, req.Prompt)
+	if len(ids) == 0 { // an agent seat's prompt lists what the person asks it, as round 2 does
+		ids = idsIn(askLineRe, sectionText(req.Prompt, "## What the person asks you"))
+	}
+	return fence(mustJSON(map[string]any{"answers": answersFor(req, ids)}))
 }
 
 func cannedSynthesis(text string) string {
@@ -353,10 +365,11 @@ func fixtureCouncil(id string, state CouncilState, round int) *Council {
 }
 
 type harness struct {
-	t     *testing.T
-	r     *Runner
-	f     *fakeCaller
-	clock int64
+	t      *testing.T
+	r      *Runner
+	f      *fakeCaller
+	agents *fakeCaller // answers for the seats that are live agents
+	clock  int64
 
 	mu   sync.Mutex
 	seen []Council
@@ -366,8 +379,8 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 	useTempRoot(t)
 	useTempConfig(t)
-	h := &harness{t: t, f: newFake(), clock: 1_700_000_000_000}
-	h.r = &Runner{Caller: h.f, Now: h.tick, OnChange: func(c *Council) {
+	h := &harness{t: t, f: newFake(), agents: newFake(), clock: 1_700_000_000_000}
+	h.r = &Runner{Caller: h.f, Agents: h.agents, Now: h.tick, OnChange: func(c *Council) {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		h.seen = append(h.seen, *c)
@@ -884,11 +897,11 @@ func TestApplyRound2KeepsOnlyValidPicks(t *testing.T) {
 	c := picksCouncil()
 	ux := c.Experts[0]
 	// its own P1, a ghost, a cut, a withdrawn and a repeat are dropped; the rest keep the expert's order
-	applyRound2(c, ux, Round2Result{Picks: []string{"P3", "P1", "P99", "P4", "P5", "P3", "P2", "P6", "P7"}}, 5)
+	applyRound2(c, ux, Round2Result{Picks: []string{"P3", "P1", "P99", "P4", "P5", "P3", "P2", "P6", "P7"}}, 2, 5)
 	if got, want := c.Picks["ux"], []string{"P3", "P2", "P6"}; !slices.Equal(got, want) {
 		t.Errorf("picks = %v, want %v", got, want)
 	}
-	applyRound2(c, c.Experts[1], Round2Result{Picks: []string{"P2", "P99"}}, 5)
+	applyRound2(c, c.Experts[1], Round2Result{Picks: []string{"P2", "P99"}}, 2, 5)
 	if _, ok := c.Picks["ram"]; ok {
 		t.Errorf("Picks[ram] = %v, want no entry when nothing valid is picked", c.Picks["ram"])
 	}
@@ -901,7 +914,7 @@ func TestApplyRound2AnAcceptNeedsNoReasonButADoubtDoes(t *testing.T) {
 		{ProposalId: "P3", Stance: StanceChallenge, Reason: "  "},
 		{ProposalId: "P6", Stance: StanceOppose},
 		{ProposalId: "P7", Stance: StanceChallenge, Reason: "Breaks."},
-	}}, 5)
+	}}, 2, 5)
 	if len(c.Replies) != 2 {
 		t.Fatalf("replies = %+v, want the empty accept and the reasoned challenge", c.Replies)
 	}
@@ -927,7 +940,7 @@ func TestApplyRound2ARevisionRepliesWithTheChangeNotTheArgument(t *testing.T) {
 		c := picksCouncil()
 		c.Proposals[0].Argument = "Old."
 		tc.rv.ProposalId = "P1"
-		applyRound2(c, c.Experts[0], Round2Result{Revisions: []Round2Revision{tc.rv}}, 5)
+		applyRound2(c, c.Experts[0], Round2Result{Revisions: []Round2Revision{tc.rv}}, 2, 5)
 		got := ""
 		if len(c.Replies) == 1 && c.Replies[0].Revised {
 			got = c.Replies[0].Text
@@ -1609,6 +1622,41 @@ func TestSummarizeRefusesACouncilThatIsNotThere(t *testing.T) {
 	}
 	if _, err := h.r.Summarize("nope"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Summarize of an unknown council = %v, want not-exist", err)
+	}
+}
+
+// A council whose ideas are all held drafts has nothing out in the room to summarize: the synthesis would see no idea.
+func TestSummarizeNeedsASentIdea(t *testing.T) {
+	h := newHarness(t)
+	c := h.run(agentCouncil("a"))
+	if c.State != StateAwaiting || len(heldIds(c)) != 2 {
+		t.Fatalf("after round 1: %s holding %v, want awaiting-you with both ideas held", c.State, heldIds(c))
+	}
+	if _, err := h.r.Summarize("a"); err == nil || err.Error() != "council a has no sent idea to summarize" {
+		t.Fatalf("Summarize with every idea held = %v, want the refusal", err)
+	}
+	if got := h.load("a"); got.State != StateAwaiting || got.Summary != nil || len(h.f.calls("r3")) != 0 {
+		t.Errorf("the refused Summarize left %s, summary %v, %d synthesis calls", got.State, got.Summary, len(h.f.calls("r3")))
+	}
+
+	// a dropped idea is not out in the room either
+	d := fixtureCouncil("b", StateAwaiting, 1)
+	d.Proposals[0].Draft, d.Proposals[1].Draft = DraftHeld, DraftDropped
+	h.save(d)
+	if _, err := h.r.Summarize("b"); err == nil || err.Error() != "council b has no sent idea to summarize" {
+		t.Fatalf("Summarize with one idea held and one dropped = %v, want the refusal", err)
+	}
+
+	// one sent idea is enough, and the council goes on waiting on the draft still held
+	if _, err := h.r.Draft("a", ideaBy(t, c, "witness"), "send", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.r.Summarize("a"); err != nil {
+		t.Fatalf("Summarize with a sent idea: %v", err)
+	}
+	got := h.wait("a")
+	if got.State != StateAwaiting || got.Summary == nil || len(h.f.calls("r3")) != 1 {
+		t.Errorf("after Summarize: %s, summary %v, %d synthesis calls, want it awaiting-you with one synthesis", got.State, got.Summary, len(h.f.calls("r3")))
 	}
 }
 
@@ -2712,7 +2760,7 @@ func TestApplyRound2Builds(t *testing.T) {
 		{ProposalId: "P3", Stance: StanceAccept, Builds: true},
 		{ProposalId: "P6", Stance: StanceAccept},
 	}}
-	applyRound2(brainstorm, brainstorm.Experts[0], res, 5)
+	applyRound2(brainstorm, brainstorm.Experts[0], res, 2, 5)
 	if len(brainstorm.Replies) != 3 {
 		t.Fatalf("replies = %+v, want three", brainstorm.Replies)
 	}
@@ -2726,7 +2774,7 @@ func TestApplyRound2Builds(t *testing.T) {
 		t.Errorf("reply 2 = %+v, want a plain accept", r)
 	}
 
-	applyRound2(review, review.Experts[0], res, 5)
+	applyRound2(review, review.Experts[0], res, 2, 5)
 	for _, r := range review.Replies {
 		if r.Builds {
 			t.Errorf("reply %+v builds in a Review", r)
@@ -2937,5 +2985,775 @@ func TestConsultCallerFailures(t *testing.T) {
 	_, err = ConsultCaller{}.Call(context.Background(), CallReq{Expert: CouncilExpert{Id: "ux"}, Prompt: "p", Tools: true})
 	if err == nil || !errors.Is(err, jobqueue.ErrSkipped) || ran {
 		t.Errorf("a call whose slot was refused = %v (ran %v), want the refusal and no claude", err, ran)
+	}
+}
+
+// ---- live agent seats ----
+
+// agentCouncil is a council with a live agent, Witness, seated beside the expert UX: every answer is held for the person.
+func agentCouncil(id string) *Council {
+	return &Council{
+		Id: id, Project: `D:\proj`, Feature: "Idle sleep for services", Question: "Which direction first?",
+		Experts: []CouncilExpert{
+			{Id: "witness", Name: "Witness", Agent: "tab-1", Harness: HarnessClaude},
+			{Id: "ux", Name: "UX", Brief: "Can someone use it without being told how?", Model: "sonnet"},
+			{Id: "lead", Name: "Lead", Brief: "Merge and rank.", Model: "opus", Coordinator: true},
+		},
+	}
+}
+
+// heldIds are the ideas and replies waiting for the person, the ideas first.
+func heldIds(c *Council) []string {
+	var out []string
+	for _, p := range c.Proposals {
+		if p.Draft == DraftHeld {
+			out = append(out, p.Id)
+		}
+	}
+	for _, x := range c.Replies {
+		if x.Draft == DraftHeld {
+			out = append(out, x.Id)
+		}
+	}
+	return out
+}
+
+// ideaBy is the id of the idea the seat posted.
+func ideaBy(t *testing.T, c *Council, author string) string {
+	t.Helper()
+	for _, p := range c.Proposals {
+		if p.Author == author {
+			return p.Id
+		}
+	}
+	t.Fatalf("%s posted no idea: %+v", author, c.Proposals)
+	return ""
+}
+
+// settle sends every draft held now. The last one starts the next round, which the caller waits for.
+func (h *harness) settle(id string) {
+	h.t.Helper()
+	held := heldIds(h.load(id))
+	if len(held) == 0 {
+		h.t.Fatalf("council %s holds no draft to send", id)
+	}
+	for _, item := range held {
+		if _, err := h.r.Draft(id, item, "send", ""); err != nil {
+			h.t.Fatalf("Draft(%s, send): %v", item, err)
+		}
+	}
+}
+
+// prompts are the prompts of every call so far, the live agents' and the experts'.
+func (h *harness) prompts() []string {
+	var out []string
+	for _, req := range append(h.f.all(), h.agents.all()...) {
+		out = append(out, req.Prompt)
+	}
+	return out
+}
+
+// agreeOnly answers a reply pass with an agreement, and nothing to add, on every proposal it was shown.
+func agreeOnly(req CallReq) string {
+	stances := []map[string]any{}
+	for _, pid := range idsIn(proposalHeadRe, sectionText(req.Prompt, "## Proposals to review")) {
+		stances = append(stances, map[string]any{"proposalid": pid, "stance": "accept", "reason": ""})
+	}
+	return fence(mustJSON(map[string]any{"stances": stances, "revisions": []any{}, "answers": []any{}, "picks": []string{}}))
+}
+
+func TestAgentSeatsHoldDrafts(t *testing.T) {
+	h := newHarness(t)
+	c := h.run(agentCouncil("a"))
+	if c.State != StateAwaiting || c.Round != 1 {
+		t.Fatalf("after round 1: %s at round %d, want awaiting-you at round 1", c.State, c.Round)
+	}
+	if len(c.Proposals) != 2 {
+		t.Fatalf("proposals = %+v, want an idea from each seat", c.Proposals)
+	}
+	for _, p := range c.Proposals {
+		if p.Draft != DraftHeld {
+			t.Errorf("idea %s is %q, want it held for the person", p.Id, p.Draft)
+		}
+	}
+	rounds2 := func() int { return len(h.f.calls("r2")) + len(h.agents.calls("r2")) }
+	if rounds2() != 0 || c.Activity != nil {
+		t.Fatalf("round 2 began, or the council shows work, with every draft still held")
+	}
+
+	// one draft settled and one held: the round keeps waiting
+	witness, ux := ideaBy(t, c, "witness"), ideaBy(t, c, "ux")
+	got, err := h.r.Draft("a", witness, "send", "")
+	if err != nil || got.State != StateAwaiting || got.Round != 1 || proposalOf(t, got, witness).Draft != "" {
+		t.Fatalf("after sending one: %+v, %v, want it sent and the council still awaiting-you at round 1", got.State, err)
+	}
+	if rounds2() != 0 {
+		t.Fatal("round 2 began with a draft held")
+	}
+
+	// the last one settled (dropped) starts round 2 at once, on what was sent
+	got, err = h.r.Draft("a", ux, "drop", "")
+	if err != nil || got.State != StateRunning || got.Round != 2 {
+		t.Fatalf("after the last draft: %s at round %d, %v, want round 2 running", got.State, got.Round, err)
+	}
+	c = h.wait("a")
+	if c.State != StateAwaiting || c.Round != 2 {
+		t.Fatalf("after round 2: %s at round %d, want awaiting-you at round 2", c.State, c.Round)
+	}
+	if len(c.Replies) != 1 || c.Replies[0].Author != "ux" || c.Replies[0].ProposalId != witness || c.Replies[0].Draft != DraftHeld {
+		t.Fatalf("replies = %+v, want UX's held reply to Witness's idea (Witness had nobody's idea to review)", c.Replies)
+	}
+	if len(h.agents.calls("r2")) != 0 {
+		t.Error("the agent was sent a turn with nothing to answer")
+	}
+
+	// the last draft of the last reply pass starts the synthesis
+	h.settle("a")
+	c = h.wait("a")
+	if c.State != StateDone || c.Round != 3 || c.Summary == nil {
+		t.Fatalf("after the last draft: %s at round %d (summary %v), want done at round 3", c.State, c.Round, c.Summary != nil)
+	}
+	if len(c.Picks["ux"]) != 1 || c.Picks["ux"][0] != witness {
+		t.Errorf("picks = %v, want UX's pick of Witness's idea", c.Picks)
+	}
+}
+
+func TestDraftEditIsSent(t *testing.T) {
+	h := newHarness(t)
+	c := h.run(agentCouncil("a"))
+	witness, ux := ideaBy(t, c, "witness"), ideaBy(t, c, "ux")
+	if _, err := h.r.Draft("a", witness, "edit", "  "); err == nil {
+		t.Error("an edit with no text was taken")
+	}
+	if _, err := h.r.Draft("a", ux, "send", ""); err != nil {
+		t.Fatal(err)
+	}
+	const edited = "Edited by the person: cache the sleep state."
+	if got, err := h.r.Draft("a", witness, "edit", edited); err != nil || got.Round != 2 {
+		t.Fatalf("editing the last draft: round %d, %v, want round 2 started", got.Round, err)
+	}
+	c = h.wait("a")
+	if p := proposalOf(t, c, witness); p.Argument != edited || !p.Edited || p.Draft != "" {
+		t.Errorf("the idea = %+v, want the edited argument, marked edited and sent", p)
+	}
+	// UX is a fresh call that reads every proposal in its prompt: it got the edited words, never the original
+	r2 := h.f.calls("r2")
+	if len(r2) != 1 {
+		t.Fatalf("UX's round 2 calls = %d, want 1", len(r2))
+	}
+	mustContain(t, "UX's round 2 prompt", r2[0].Prompt, edited)
+	mustNotContain(t, "UX's round 2 prompt", r2[0].Prompt, "Argument from witness")
+}
+
+func TestDroppedDraftReachesNoOne(t *testing.T) {
+	h := newHarness(t)
+	// a dropped idea
+	c := h.run(agentCouncil("a"))
+	witness, ux := ideaBy(t, c, "witness"), ideaBy(t, c, "ux")
+	if _, err := h.r.Draft("a", witness, "send", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.r.Draft("a", ux, "drop", ""); err != nil {
+		t.Fatal(err)
+	}
+	h.wait("a")
+	h.settle("a")
+	c = h.wait("a")
+	if c.State != StateDone {
+		t.Fatalf("council ended %s, want done", c.State)
+	}
+	for _, p := range h.prompts() {
+		if strings.Contains(p, "Title from ux") || strings.Contains(p, "Argument from ux") {
+			t.Errorf("a prompt carries the dropped idea:\n%s", p)
+		}
+	}
+	for _, picks := range c.Picks {
+		if slices.Contains(picks, ux) {
+			t.Errorf("picks = %v, name the dropped idea", c.Picks)
+		}
+	}
+	if _, ok := c.Summary.Outcomes[ux]; ok {
+		t.Errorf("outcomes = %v, give the dropped idea a fate", c.Summary.Outcomes)
+	}
+	for what, doc := range map[string]string{"document": Document(c), "report": Markdown(c)} {
+		mustNotContain(t, "the "+what, doc, "Title from ux", "Argument from ux")
+	}
+
+	// a dropped reply
+	c = h.run(agentCouncil("b"))
+	h.settle("b")
+	c = h.wait("b")
+	var fromUx, fromWitness string
+	for _, x := range c.Replies {
+		if x.Draft == DraftHeld && x.Author == "ux" {
+			fromUx = x.Id
+		}
+		if x.Draft == DraftHeld && x.Author == "witness" {
+			fromWitness = x.Id
+		}
+	}
+	if fromUx == "" || fromWitness == "" {
+		t.Fatalf("replies = %+v, want a held reply from each seat", c.Replies)
+	}
+	if _, err := h.r.Draft("b", fromUx, "drop", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.load("b"); len(got.Picks["ux"]) != 0 || len(got.Picks["witness"]) != 1 {
+		t.Errorf("picks = %v, want UX's gone with its whole answer and Witness's kept", got.Picks)
+	}
+	if _, err := h.r.Draft("b", fromWitness, "send", ""); err != nil {
+		t.Fatal(err)
+	}
+	c = h.wait("b")
+	synth := h.f.calls("r3")
+	if c.State != StateDone || len(synth) != 2 {
+		t.Fatalf("council b = %s with %d syntheses, want done", c.State, len(synth))
+	}
+	mustContain(t, "the synthesis prompt", synth[1].Prompt, "Reason from witness on")
+	mustNotContain(t, "the synthesis prompt", synth[1].Prompt, "Reason from ux on")
+	mustNotContain(t, "the document", Document(c), "Reason from ux on")
+	mustContain(t, "the document", Document(c), "Reason from witness on")
+}
+
+func TestAgreeAppliesAtOnce(t *testing.T) {
+	h := newHarness(t)
+	h.agents.setFn("witness/r2", agreeOnly)
+	h.f.setFn("ux/r2", agreeOnly)
+	h.run(agentCouncil("a"))
+	h.settle("a")
+	c := h.wait("a")
+	// both seats agreed with nothing to add, so round 2 left nothing held: no second wait, and the summary was written
+	if c.State != StateDone || c.Round != 3 {
+		t.Fatalf("after round 2: %s at round %d, want done at round 3", c.State, c.Round)
+	}
+	if len(c.Replies) != 2 {
+		t.Fatalf("replies = %+v, want one agreement from each seat", c.Replies)
+	}
+	for _, x := range c.Replies {
+		if x.Stance != StanceAccept || x.Text != "" || x.Draft != "" {
+			t.Errorf("reply %+v, want an agreement with no words, out at once", x)
+		}
+	}
+}
+
+func TestWithdrawRidesOnReply(t *testing.T) {
+	h := newHarness(t)
+	revises := func(id string, rv func(pid string) map[string]any) {
+		h.agents.setFn("witness/r2", func(req CallReq) string {
+			c, err := Load(id)
+			if err != nil {
+				t.Errorf("Load(%s): %v", id, err)
+				return ""
+			}
+			mine := ""
+			for _, p := range c.Proposals {
+				if p.Author == "witness" {
+					mine = p.Id
+				}
+			}
+			return fence(mustJSON(map[string]any{"stances": []any{}, "revisions": []any{rv(mine)}, "answers": []any{}, "picks": []string{}}))
+		})
+	}
+	// toRound2 runs a council to the held revision and returns the idea and the reply that carries the change to it
+	toRound2 := func(id string) (idea string, reply CouncilReply) {
+		h.run(agentCouncil(id))
+		h.settle(id)
+		c := h.wait(id)
+		idea = ideaBy(t, c, "witness")
+		for _, x := range c.Replies {
+			if x.Revised {
+				reply = x
+			}
+		}
+		if reply.Id == "" || reply.Draft != DraftHeld || reply.Revision == nil {
+			t.Fatalf("replies = %+v, want a held reply that carries the revision", c.Replies)
+		}
+		if p := proposalOf(t, c, idea); p.Withdrawn || p.Title != "Title from witness" || p.Argument != "Argument from witness" {
+			t.Fatalf("the idea = %+v while its revision is held, want it as it was", p)
+		}
+		return idea, reply
+	}
+
+	// sent: the withdrawal takes effect
+	revises("a", func(pid string) map[string]any { return map[string]any{"proposalid": pid, "withdraw": true} })
+	idea, reply := toRound2("a")
+	if !reply.Revision.Withdraw || reply.Text != "Withdrawn." {
+		t.Errorf("held reply = %+v, want a withdrawal", reply)
+	}
+	h.settle("a")
+	c := h.wait("a")
+	if p := proposalOf(t, c, idea); !p.Withdrawn {
+		t.Errorf("the idea = %+v after the reply was sent, want it withdrawn", p)
+	}
+	if x := replyOf(t, c, reply.Id); x.Draft != "" || x.Revision != nil {
+		t.Errorf("sent reply = %+v, want nothing left to apply", x)
+	}
+
+	// dropped: the reply cancels it
+	revises("b", func(pid string) map[string]any { return map[string]any{"proposalid": pid, "withdraw": true} })
+	idea, reply = toRound2("b")
+	if _, err := h.r.Draft("b", reply.Id, "drop", ""); err != nil {
+		t.Fatal(err)
+	}
+	h.settle("b") // UX's reply to Witness's idea is still held
+	c = h.wait("b")
+	if p := proposalOf(t, c, idea); p.Withdrawn {
+		t.Errorf("the idea = %+v, want it standing after its withdrawal was dropped", p)
+	}
+	if x := replyOf(t, c, reply.Id); x.Draft != DraftDropped || x.Revision != nil {
+		t.Errorf("dropped reply = %+v, want it dropped with nothing to apply", x)
+	}
+
+	// a new title and argument ride on the reply the same way
+	revises("c", func(pid string) map[string]any {
+		return map[string]any{"proposalid": pid, "title": "Cache the sleep state", "argument": "A narrower argument.", "change": "Narrowed to the sleep state."}
+	})
+	idea, reply = toRound2("c")
+	if reply.Text != "Retitled: Cache the sleep state. Narrowed to the sleep state." {
+		t.Errorf("held reply text = %q", reply.Text)
+	}
+	h.settle("c")
+	c = h.wait("c")
+	if p := proposalOf(t, c, idea); p.Title != "Cache the sleep state" || p.Argument != "A narrower argument." {
+		t.Errorf("the idea = %+v after the reply was sent, want the new title and argument", p)
+	}
+}
+
+func TestMixedSeats(t *testing.T) {
+	h := newHarness(t)
+	h.run(agentCouncil("a"))
+	h.settle("a")
+	h.wait("a")
+	h.settle("a")
+	c := h.wait("a")
+	if c.State != StateDone {
+		t.Fatalf("council ended %s, want done", c.State)
+	}
+	// the live agent's turns went through the agent caller, the expert's and the coordinator's through the other
+	for _, req := range h.agents.all() {
+		if req.Expert.Id != "witness" {
+			t.Errorf("the agent caller was asked for %s", req.Expert.Id)
+		}
+		if req.OnTool == nil { // a busy seat's wait is shown as what it is doing
+			t.Errorf("the agent's %s call carries no way to show what it waits for", kindOf(req.Prompt))
+		}
+	}
+	for _, req := range h.f.all() {
+		if IsAgent(req.Expert) {
+			t.Errorf("the expert caller was asked for the agent %s", req.Expert.Id)
+		}
+	}
+	if len(h.agents.calls("r1")) != 1 || len(h.agents.calls("r2")) != 1 || len(h.agents.all()) != 2 {
+		t.Errorf("agent calls = %d, want its ideas and its reply pass", len(h.agents.all()))
+	}
+	if len(h.f.calls("r1")) != 1 || len(h.f.calls("r2")) != 1 || len(h.f.calls("r3")) != 1 {
+		t.Errorf("expert calls = %d, want UX's two and the coordinator's summary", len(h.f.all()))
+	}
+	if st := c.Stats["witness"]; st.Calls != 2 || st.Tokens != callTokens["r1"]+callTokens["r2"] {
+		t.Errorf("Witness's stats = %+v, want its two calls and their tokens", st)
+	}
+}
+
+func TestAgentSeatWithoutAnAgentCallerFails(t *testing.T) {
+	h := newHarness(t)
+	h.r.Agents = nil
+	c := h.run(agentCouncil("a"))
+	if f, ok := c.Failed["witness"]; !ok || f.Round != 1 || !strings.Contains(f.Error, "live agents") {
+		t.Errorf("failed = %+v, want Witness's seat failed with a clear reason", c.Failed)
+	}
+	if len(c.Proposals) != 1 || c.Proposals[0].Author != "ux" {
+		t.Errorf("proposals = %+v, want the expert's idea all the same", c.Proposals)
+	}
+}
+
+func TestSkippedTurnGoesOn(t *testing.T) {
+	h := newHarness(t)
+	const why = "still working on its own task after 10 min"
+	h.agents.setFail("witness/r1", SeatSkipped{Reason: why})
+	c := h.run(agentCouncil("a"))
+	if len(c.Skips) != 1 || c.Skips[0].Expert != "witness" || c.Skips[0].Round != 1 || c.Skips[0].Reason != why || c.Skips[0].Ts == 0 {
+		t.Fatalf("skips = %+v, want Witness's skipped round 1", c.Skips)
+	}
+	if _, failed := c.Failed["witness"]; failed {
+		t.Errorf("failed = %+v: a skipped turn is not a failure, and has no Retry", c.Failed)
+	}
+	if st := c.Stats["witness"]; st.Calls != 0 || c.Calls != 1 {
+		t.Errorf("stats = %+v, calls %d, want the skipped turn to count as no call", st, c.Calls)
+	}
+	if c.State != StateAwaiting || len(heldIds(c)) != 1 {
+		t.Fatalf("council = %s with %v held, want it to go on with UX's idea held", c.State, heldIds(c))
+	}
+
+	// Witness takes its first turn in round 2, and is brought into the council whole
+	h.settle("a")
+	c = h.wait("a")
+	w := h.agents.calls("r2")
+	if len(w) != 1 {
+		t.Fatalf("Witness's round 2 calls = %d, want 1", len(w))
+	}
+	mustContain(t, "Witness's first turn", w[0].Prompt, "Question for the council: Which direction first?", "## Who sits in the council", "Title from ux")
+	h.settle("a")
+	c = h.wait("a")
+	if c.State != StateDone || len(c.Skips) != 1 {
+		t.Fatalf("council = %s with skips %+v, want done", c.State, c.Skips)
+	}
+	mustContain(t, "the synthesis prompt", h.f.calls("r3")[0].Prompt, "Witness (it skipped round 1: "+why+")")
+	mustContain(t, "the document", Document(c), "- Skipped: Witness in round 1: "+why)
+}
+
+func TestSeatSkipIsReadWhetherItIsAValueOrAPointer(t *testing.T) {
+	for _, err := range []error{SeatSkipped{Reason: "r"}, &SeatSkipped{Reason: "r"}, fmt.Errorf("wrapped: %w", SeatSkipped{Reason: "r"})} {
+		if s, ok := seatSkip(err); !ok || s.Reason != "r" {
+			t.Errorf("seatSkip(%v) = %+v, %v, want the skip", err, s, ok)
+		}
+	}
+	for _, err := range []error{nil, errors.New("gave no answer")} {
+		if _, ok := seatSkip(err); ok {
+			t.Errorf("seatSkip(%v) took it for a skip", err)
+		}
+	}
+}
+
+func TestEveryoneSkippingRound1FailsTheCouncil(t *testing.T) {
+	h := newHarness(t)
+	h.agents.setFail("witness/r1", SeatSkipped{Reason: "a question waits for you in its terminal"})
+	h.f.setFail("ux/r1", SeatSkipped{Reason: "gave no answer within 20 min"})
+	c := h.run(agentCouncil("a"))
+	if c.State != StateFailed || c.Error != "every expert failed or skipped round 1" {
+		t.Errorf("council = %s (%q), want it failed: nobody answered", c.State, c.Error)
+	}
+}
+
+func TestAgentRounds1And3(t *testing.T) {
+	h := newHarness(t)
+
+	// one round: the ideas, then the summary
+	one := agentCouncil("one")
+	one.Rounds = 1
+	h.run(one)
+	h.settle("one")
+	c := h.wait("one")
+	if c.State != StateDone || c.Round != 2 || c.Summary == nil {
+		t.Fatalf("one round: %s at round %d, want done at round 2", c.State, c.Round)
+	}
+	if len(h.f.calls("r2"))+len(h.agents.calls("r2")) != 0 || len(c.Picks) != 0 {
+		t.Errorf("one round ran a reply pass or took picks: %v", c.Picks)
+	}
+	mustContain(t, "the summary prompt", h.f.calls("r3")[0].Prompt, "This is round 2 of 2")
+	mustContain(t, "UX's ideas prompt", h.f.calls("r1")[0].Prompt, "This is round 1 of 2")
+
+	// three rounds: a second reply pass, and picks only from the last
+	h.agents.setFn("witness/r2", func(req CallReq) string {
+		if !strings.Contains(req.Prompt, "round 3 of 4") {
+			return round2JSON(req)
+		}
+		c, err := Load("three")
+		if err != nil {
+			t.Errorf("Load: %v", err)
+			return ""
+		}
+		rv := map[string]any{"proposalid": ideaBy(t, c, "witness"), "title": "Retitled in round 3", "change": "Narrowed."}
+		return fence(mustJSON(map[string]any{"stances": []any{}, "revisions": []any{rv}, "answers": []any{}, "picks": []string{}}))
+	})
+	three := agentCouncil("three")
+	three.Rounds = 3
+	c = h.run(three)
+	if c.State != StateAwaiting || c.Round != 1 {
+		t.Fatalf("three rounds, after 1: %s at round %d", c.State, c.Round)
+	}
+	h.settle("three")
+	c = h.wait("three")
+	if c.State != StateAwaiting || c.Round != 2 || len(c.Replies) != 2 {
+		t.Fatalf("three rounds, after 2: %s at round %d with %d replies, want awaiting-you at round 2", c.State, c.Round, len(c.Replies))
+	}
+	if len(c.Picks) != 0 {
+		t.Errorf("picks = %v after round 2 of 3, want none: picks are taken in the last reply pass", c.Picks)
+	}
+	h.settle("three")
+	c = h.wait("three")
+	if c.State != StateAwaiting || c.Round != 3 {
+		t.Fatalf("three rounds, after 3: %s at round %d, want awaiting-you at round 3", c.State, c.Round)
+	}
+	if len(c.Picks["ux"]) != 1 {
+		t.Errorf("picks = %v, want UX's pick from the last reply pass", c.Picks)
+	}
+	held := heldIds(c)
+	if len(held) != 1 || replyOf(t, c, held[0]).Round != 3 || !replyOf(t, c, held[0]).Revised {
+		t.Fatalf("held after round 3 = %v, want Witness's revision of its idea", held)
+	}
+	// Witness saw what was sent since its last turn, and the later pass's note, but none of its own words
+	var pass2 []CallReq
+	for _, req := range h.agents.calls("r2") {
+		if strings.Contains(req.Prompt, "round 3 of 4") {
+			pass2 = append(pass2, req)
+		}
+	}
+	if len(pass2) != 1 {
+		t.Fatalf("Witness's calls in round 3 = %d, want 1", len(pass2))
+	}
+	mustContain(t, "Witness's round 3 prompt", pass2[0].Prompt, "Reason from ux on", laterPassNote)
+	mustNotContain(t, "Witness's round 3 prompt", pass2[0].Prompt, "Reason from witness on")
+
+	h.settle("three")
+	c = h.wait("three")
+	if c.State != StateDone || c.Round != 4 {
+		t.Fatalf("three rounds, after the last draft: %s at round %d, want done at round 4", c.State, c.Round)
+	}
+	if p := proposalOf(t, c, ideaBy(t, c, "witness")); p.Title != "Retitled in round 3" {
+		t.Errorf("the idea = %+v, want the revision sent in round 3 to apply", p)
+	}
+	mustContain(t, "the summary prompt", h.f.calls("r3")[1].Prompt, "This is round 4 of 4")
+}
+
+func TestFollowupDraftKeepsDone(t *testing.T) {
+	h := newHarness(t)
+	h.run(agentCouncil("a"))
+	h.settle("a")
+	h.wait("a")
+	h.settle("a")
+	c := h.wait("a")
+	if c.State != StateDone {
+		t.Fatalf("council ended %s, want done", c.State)
+	}
+	if _, err := h.r.Reply("a", "", "", "What about the Mac?", false); err != nil {
+		t.Fatal(err)
+	}
+	c = h.wait("a")
+	if c.State != StateDone || c.Round != 3 {
+		t.Fatalf("after the follow-up: %s at round %d, want the council done as it was", c.State, c.Round)
+	}
+	held := heldIds(c)
+	if len(held) != 2 {
+		t.Fatalf("held = %v, want both seats' answers held", held)
+	}
+	for _, id := range held {
+		if x := replyOf(t, c, id); x.Round != FirstFollowRound(c) || x.ParentId == "" {
+			t.Errorf("held answer %+v, want a follow-up answer under the person's reply", x)
+		}
+	}
+	calls := len(h.prompts())
+	for _, id := range held {
+		got, err := h.r.Draft("a", id, "send", "")
+		if err != nil || got.State != StateDone {
+			t.Fatalf("settling %s: %v, %v, want the council to stay done", id, got.State, err)
+		}
+	}
+	if c = h.wait("a"); c.State != StateDone || HeldDrafts(c) != 0 || len(h.prompts()) != calls {
+		t.Errorf("after settling: %s with %d held and %d new calls, want done, settled and nothing rerun", c.State, HeldDrafts(c), len(h.prompts())-calls)
+	}
+}
+
+func TestContinueRefusesHeldDrafts(t *testing.T) {
+	h := newHarness(t)
+	h.run(agentCouncil("a"))
+	if _, err := h.r.Continue("a", nil, ""); err == nil || !strings.Contains(err.Error(), "drafts waiting for you") {
+		t.Fatalf("Continue = %v, want it refused for the held drafts", err)
+	}
+	if c := h.load("a"); c.State != StateAwaiting || c.Round != 1 || len(h.f.calls("r2")) != 0 {
+		t.Errorf("council = %s at round %d, want it still waiting at round 1", c.State, c.Round)
+	}
+}
+
+func TestPauseAfterRound1IsIgnoredWithAgents(t *testing.T) {
+	h := newHarness(t)
+	nothing := fence(mustJSON(map[string]any{"overview": "Nothing to add.", "proposals": []any{}}))
+	h.agents.setText("witness/r1", nothing)
+	h.f.setText("ux/r1", nothing)
+	c := agentCouncil("a")
+	c.PauseAfterRound1 = true
+	if got := h.run(c); got.State != StateDone {
+		t.Errorf("council = %s at round %d, want it to go on to the summary: held drafts are the pause, and there are none", got.State, got.Round)
+	}
+}
+
+func TestPostReachesNextTurn(t *testing.T) {
+	h := newHarness(t)
+	// posted while the round runs, to Witness only
+	h.agents.gate("witness/r1")
+	h.start(agentCouncil("a"))
+	h.agents.entered(t, "witness/r1")
+	const ask = "@Witness does this hold on a Mac?"
+	if _, err := h.r.Reply("a", "", "", ask, false); err != nil {
+		t.Fatal(err)
+	}
+	h.agents.release("witness/r1")
+	c := h.wait("a")
+	you := repliesBy(c, YouId)
+	if len(you) != 1 || !slices.Equal(you[0].To, []string{"witness"}) || you[0].Round != 1 || you[0].Draft != "" {
+		t.Fatalf("the person's replies = %+v, want one to Witness, never held", you)
+	}
+	h.settle("a")
+	c = h.wait("a")
+	w, ux := h.agents.calls("r2"), h.f.calls("r2")
+	if len(w) != 1 || len(ux) != 1 {
+		t.Fatalf("round 2 calls: Witness %d, UX %d, want one each", len(w), len(ux))
+	}
+	mustContain(t, "Witness's round 2 prompt", w[0].Prompt, "## What the person asks you", "does this hold on a Mac?")
+	mustNotContain(t, "UX's round 2 prompt", ux[0].Prompt, "does this hold on a Mac?")
+	var answer *CouncilReply
+	for _, x := range c.Replies {
+		if x.Author == "witness" && x.ParentId == you[0].Id {
+			answer = &x
+		}
+	}
+	if answer == nil || answer.Draft != DraftHeld {
+		t.Errorf("replies = %+v, want Witness's held answer under the person's reply", c.Replies)
+	}
+	if !replyOf(t, c, you[0].Id).Answered {
+		t.Error("the person's reply is not marked answered after its seat's turn")
+	}
+
+	// posted while the council waits, to UX only
+	h.run(agentCouncil("b"))
+	if _, err := h.r.Reply("b", "", "", "@UX is it findable?", false); err != nil {
+		t.Fatal(err)
+	}
+	h.settle("b")
+	h.wait("b")
+	w, ux = h.agents.calls("r2"), h.f.calls("r2")
+	if len(w) != 2 || len(ux) != 2 {
+		t.Fatalf("round 2 calls so far: Witness %d, UX %d, want two each", len(w), len(ux))
+	}
+	mustContain(t, "UX's round 2 prompt", ux[1].Prompt, "is it findable?")
+	mustNotContain(t, "Witness's round 2 prompt", w[1].Prompt, "is it findable?")
+}
+
+func TestValidateAgentSeats(t *testing.T) {
+	withSeat := func(mod func(c *Council)) *Council {
+		c := agentCouncil("v")
+		mod(c)
+		return c
+	}
+	for _, tc := range []struct {
+		name string
+		c    *Council
+		want string // a part of the refusal; empty means the council is fine
+	}{
+		{"one agent beside an expert", agentCouncil("v"), ""},
+		{"a pi agent", withSeat(func(c *Council) { c.Experts[0].Harness = HarnessPi }), ""},
+		{"three rounds", withSeat(func(c *Council) { c.Rounds = 3 }), ""},
+		{"the same agent twice", withSeat(func(c *Council) {
+			c.Experts = slices.Insert(c.Experts, 1, CouncilExpert{Id: "second", Name: "Second", Agent: "tab-1", Harness: HarnessClaude})
+		}), "twice"},
+		{"two different agents", withSeat(func(c *Council) {
+			c.Experts = slices.Insert(c.Experts, 1, CouncilExpert{Id: "second", Name: "Second", Agent: "tab-2", Harness: HarnessClaude})
+		}), ""},
+		{"an agent as the coordinator", withSeat(func(c *Council) { c.Experts[2].Agent, c.Experts[2].Harness = "tab-9", HarnessClaude }), "coordinator"},
+		{"another harness", withSeat(func(c *Council) { c.Experts[0].Harness = "gemini" }), "only a claude or pi agent"},
+		{"no harness", withSeat(func(c *Council) { c.Experts[0].Harness = "" }), "only a claude or pi agent"},
+		{"rounds below 0", withSeat(func(c *Council) { c.Rounds = -1 }), "1 to 3 rounds"},
+		{"rounds above 3", withSeat(func(c *Council) { c.Rounds = 4 }), "1 to 3 rounds"},
+	} {
+		err := validateCouncil(tc.c)
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s: refused: %v", tc.name, err)
+		case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+			t.Errorf("%s: error = %v, want one that says %q", tc.name, err, tc.want)
+		}
+	}
+
+	// Start refuses them all the same, and saves nothing
+	h := newHarness(t)
+	bad := agentCouncil("bad")
+	bad.Experts[0].Harness = "gemini"
+	if _, err := h.r.Start(context.Background(), bad); err == nil {
+		t.Error("Start took a council with a gemini agent")
+	}
+	if _, err := Load("bad"); err == nil {
+		t.Error("a refused council was saved")
+	}
+
+	// Rounds is honoured only when an agent is seated: an expert-only council runs today's two rounds
+	experts := testCouncil("e")
+	experts.Rounds = 3
+	c := h.run(experts)
+	if c.State != StateDone || c.Round != 3 || c.Rounds != 0 || HeldDrafts(c) != 0 || len(h.f.calls("r2")) != 4 {
+		t.Errorf("expert-only council with Rounds 3 = %s at round %d, Rounds %d, %d reply calls; want today's shape",
+			c.State, c.Round, c.Rounds, len(h.f.calls("r2")))
+	}
+}
+
+func TestUnparsedAgentAnswerIsPlainReply(t *testing.T) {
+	h := newHarness(t)
+	const words = "I would cache the sleep state, since the polling is what keeps it awake."
+	h.agents.setText("witness/r1", words+"\n\n```json\n{ this is not json\n```")
+	c := h.run(agentCouncil("a"))
+	if _, failed := c.Failed["witness"]; failed {
+		t.Fatalf("failed = %+v, want an agent's free words heard, not failed", c.Failed)
+	}
+	if len(c.Proposals) != 1 || c.Proposals[0].Author != "ux" {
+		t.Errorf("proposals = %+v, want only UX's idea", c.Proposals)
+	}
+	plain := repliesBy(c, "witness")
+	if len(plain) != 1 || plain[0].Text != words || plain[0].ProposalId != "" || plain[0].ParentId != "" || plain[0].Round != 1 || plain[0].Draft != DraftHeld {
+		t.Fatalf("Witness's replies = %+v, want one plain reply to the whole council, held", plain)
+	}
+
+	// a reply pass too
+	h.agents.setText("witness/r2", "Agreed, with one caveat about Macs.")
+	h.settle("a")
+	c = h.wait("a")
+	if len(c.Failed) != 0 {
+		t.Errorf("failed = %+v, want none", c.Failed)
+	}
+	if got := repliesBy(c, "witness"); len(got) != 2 || got[1].Text != "Agreed, with one caveat about Macs." || got[1].Round != 2 || got[1].Draft != DraftHeld {
+		t.Errorf("Witness's replies = %+v, want its round 2 words as a plain reply", got)
+	}
+}
+
+func TestDraftRefusals(t *testing.T) {
+	h := newHarness(t)
+	c := h.run(agentCouncil("a"))
+	witness := ideaBy(t, c, "witness")
+	if _, err := h.r.Draft("a", "P99", "send", ""); err == nil || !strings.Contains(err.Error(), "no idea or reply P99") {
+		t.Errorf("an unknown item: %v", err)
+	}
+	if _, err := h.r.Draft("a", witness, "approve", ""); err == nil || !strings.Contains(err.Error(), "unknown draft action") {
+		t.Errorf("an unknown action: %v", err)
+	}
+	if _, err := h.r.Draft("nope", witness, "send", ""); err == nil {
+		t.Error("an unknown council was taken")
+	}
+	if _, err := h.r.Draft("a", witness, "send", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.r.Draft("a", witness, "drop", ""); err == nil || !strings.Contains(err.Error(), "not a held draft") {
+		t.Errorf("a draft that was sent: %v", err)
+	}
+	if got := proposalOf(t, h.load("a"), witness); got.Draft != "" {
+		t.Errorf("the refused drop changed the idea: %+v", got)
+	}
+}
+
+func TestDraftOnACouncilThatIsNotWaitingOnlySettles(t *testing.T) {
+	h := newHarness(t)
+
+	// running: the person settles Witness's idea while UX is still at work, and the round goes on by itself when it ends
+	h.f.gate("ux/r1")
+	h.f.setText("ux/r1", fence(mustJSON(map[string]any{"overview": "Nothing to add.", "proposals": []any{}})))
+	h.f.setFn("ux/r2", agreeOnly)
+	h.start(agentCouncil("a"))
+	waitFor(t, "Witness's idea", func() bool { return len(h.load("a").Proposals) == 1 })
+	idea := h.load("a").Proposals[0].Id
+	got, err := h.r.Draft("a", idea, "send", "")
+	if err != nil || got.State != StateRunning || got.Round != 1 || len(h.f.calls("r2")) != 0 {
+		t.Fatalf("settling during the round: %s at round %d, %v, want it only settled", got.State, got.Round, err)
+	}
+	h.f.release("ux/r1")
+	if c := h.wait("a"); c.State != StateDone {
+		t.Errorf("council = %s at round %d, want it to go on to the summary: nothing was left held", c.State, c.Round)
+	}
+
+	// stopped: a draft is settled and nothing starts
+	h.run(agentCouncil("b"))
+	if _, err := h.r.Stop("b"); err != nil {
+		t.Fatal(err)
+	}
+	calls := len(h.prompts())
+	held := heldIds(h.load("b"))
+	got, err = h.r.Draft("b", held[0], "send", "")
+	if err != nil || got.State != StateStopped || len(h.prompts()) != calls {
+		t.Errorf("settling a stopped council: %s, %v, %d new calls; want it settled and left stopped", got.State, err, len(h.prompts())-calls)
 	}
 }

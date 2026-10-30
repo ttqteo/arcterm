@@ -16,10 +16,17 @@
 // another council runs. The council Start council "starts" is written just before step 11's click, so no council runs
 // before it and that step still reads Start council.
 //
+// Steps 14 to 19 are Setup with live agents seated (docs/superpowers/specs/2026-10-29-council-live-agents-design.md, plan
+// Task 9): the room's two agents (fixtures.mjs ROOM_AGENTS, in two projects) are written as the cockpit's roster, Setup is
+// opened from draftWithAgents of both, and the Seats list, the Rounds switch, the Add agent picker, the pause that goes
+// and the start's seats and rounds are read. The estimate is stubbed there (CouncilEstimateCommand answers with an agent
+// share, and its calls are read for the rounds they carry), so that part does not wait on wavesrv's own count.
+//
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx).
 
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { waitFor } from "../attach.mjs";
 import {
     arrangeCouncilProject,
@@ -30,11 +37,14 @@ import {
     openSetupFromNew,
     placeCouncil,
     resolveStub,
+    restoreRoomRoster,
+    ROOM_AGENTS,
     rpcCalls,
     seedCouncil,
     stubRpc,
     teardownCouncilProject,
     writeCouncil,
+    writeRoomRoster,
 } from "./fixtures.mjs";
 
 const UI_WAIT_MS = 6_000;
@@ -140,6 +150,28 @@ const SETUP = `(() => {
         })),
         pause: q("[data-council-pause]")?.getAttribute("aria-checked") ?? null,
         pauseLabel: q("[data-council-pause]")?.getAttribute("aria-label") ?? null,
+        noPause: text("[data-council-no-pause]"),
+        // the header's project and the agents the council seats
+        project: text("[data-council-project]"),
+        seats: [...root.querySelectorAll("[data-council-seat]")].map((r) => ({
+            id: r.dataset.councilSeat,
+            agent: r.dataset.councilSeatAgent ?? null,
+            coordinator: r.hasAttribute("data-council-seat-coordinator"),
+            cost: flat(r.querySelector("[data-council-seat-cost]")),
+            remove: r.querySelector("[data-council-seat-remove]") != null,
+            text: flat(r),
+        })),
+        rounds: q("[data-council-rounds]")?.dataset.councilRounds ?? null,
+        roundsPressed: [...root.querySelectorAll("[data-council-rounds-option]")]
+            .filter((b) => b.getAttribute("aria-pressed") === "true")
+            .map((b) => b.dataset.councilRoundsOption),
+        agentNote: text("[data-council-agent-note]"),
+        addAgent: q("[data-council-add-agent]")
+            ? { disabled: q("[data-council-add-agent]").disabled, title: q("[data-council-add-agent]").getAttribute("title") }
+            : null,
+        addExpert: q("[data-council-add-expert]")
+            ? { disabled: q("[data-council-add-expert]").disabled }
+            : null,
         estimate: text("[data-council-estimate]"),
         footnote: text("[data-council-footnote]"),
         start: start ? { disabled: start.disabled, text: flat(start) } : null,
@@ -166,11 +198,26 @@ const menuItems = (attr) => `[...document.querySelectorAll("[${attr}]")].map((el
 
 const sameList = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
+// draftWithAgents (councilmodel.ts) run in the page: the dev server serves the frontend's modules under /@fs/<path>, and the
+// function is pure, so it is the app's own code whichever instance of the module answers
+const COUNCIL_MODEL_URL = `/@fs/${fileURLToPath(new URL("../../../frontend/app/view/agents/councilmodel.ts", import.meta.url)).replace(/\\/g, "/")}`;
+const draftWithAgentsIn = (agents) => `(async () => {
+    const { draftWithAgents } = await import(${JSON.stringify(COUNCIL_MODEL_URL)});
+    return draftWithAgents(${JSON.stringify(agents)});
+})()`;
+
+// the line Setup says under the Seats, and the estimate the stub answers with (the agents' share is 1.25M of the 1.9M)
+const AGENT_NOTE =
+    "An agent takes its turn in its own session, so the talk also lands in its transcript. A busy agent is waited for up to 10 min, then skips that round.";
+const AGENT_ESTIMATE = { calls: 11, tokens: 1_900_000, minutes: 8, agenttokens: 1_250_000 };
+const AGENT_ESTIMATE_TEXT = "≈ 11 calls · ~1.9M tokens · ~8 min · agents ~1.3M of it";
+
 // ---- council-setup ----
 
 export const councilSetup = {
     async arrange(h, fx) {
-        const ctx = await arrangeCouncilProject(h, fx);
+        // the room's second agent works in another project, which steps 14 to 19 resolve its seat's project from
+        const ctx = await arrangeCouncilProject(h, fx, { extraProjects: [ROOM_AGENTS[1].project] });
         try {
             ctx.shot = join(ctx.base, "rail-apps.png");
             writeFileSync(ctx.shot, PNG_1X1);
@@ -576,6 +623,216 @@ export const councilSetup = {
                     queued.feature === "Rail apps",
                 { idle, start: v?.start, calls: queueCalls.length, queued: { mode: queued?.mode, modewhy: queued?.modewhy } }
             );
+
+            // ---- live agents seated (steps 14 to 19) ----
+            // the room's two agents are the cockpit's roster from here (the reload takes the page's stand-ins with it, so
+            // they are made again), and each steps through one Setup draft that starts from draftWithAgents of both
+            ctx.roster = await writeRoomRoster(h);
+            await h.goto("agent");
+            await stubRpc(h, ["CouncilSuggestCommand", "CouncilStartCommand", "CouncilEstimateCommand"], {
+                CouncilSuggestCommand: { pending: true },
+                CouncilStartCommand: { value: { ...started, id: runningId } },
+                CouncilEstimateCommand: { value: AGENT_ESTIMATE },
+            });
+            const [witnessTab, auditTab] = ROOM_AGENTS.map((a) => a.tabId);
+            const seatIds = ["agent-" + witnessTab, "agent-" + auditTab, "ux", "ram", "newuser", "skeptic", "coordinator"];
+            const agentsToSeat = ROOM_AGENTS.map((a, i) => ({
+                id: a.tabId,
+                name: a.name,
+                project: ctx.projects[i].repo,
+                harness: a.harness,
+                context: a.context,
+            }));
+
+            // 14. Setup opened from draftWithAgents of both agents (two projects): the agents are the first two seats, the
+            // header names the second project, Rounds reads 2, the transcript line and the estimate's agent share show, and
+            // there is no pause
+            await openCouncilSetup(h, ctx.repo, await h.ev(draftWithAgentsIn(agentsToSeat)));
+            await until(`document.querySelectorAll("[data-council-seat]").length === 7`);
+            await until(`(document.querySelector("[data-council-estimate]")?.textContent ?? "").includes("agents ~1.3M of it")`);
+            v = await view();
+            await h.shot("cdp-shots/council-setup-agents.png");
+            await h.ev(OPEN_OPTIONS);
+            await until(`document.querySelectorAll("[data-council-expert]").length === 5`);
+            const optionsWithAgents = await view();
+            const estimateCalls = await calls("CouncilEstimateCommand");
+            const lastEstimate = estimateCalls.at(-1)?.data;
+            rec(
+                "14. Setup opened from both room agents (two projects) lists the two agents first, then the panel with the coordinator last without a remove; the header reads council-fixture + 1 more, Rounds reads 2, the transcript line shows, the estimate splits out the agents' share and asked for 2 rounds with both agents' context, and the pause is not offered",
+                sameList(v?.seats.map((s) => s.id), seatIds) &&
+                    sameList(v.seats.filter((s) => s.agent != null).map((s) => s.agent), [witnessTab, auditTab]) &&
+                    v.seats.slice(0, 2).every((s) => s.agent != null && s.remove) &&
+                    v.seats.slice(2).every((s) => s.agent == null) &&
+                    v.seats.at(-1)?.coordinator === true &&
+                    v.seats.at(-1)?.remove === false &&
+                    v.seats[0].text.includes("Witness synthesis") &&
+                    v.seats[0].text.includes("claude · council-fixture") &&
+                    v.seats[1].text.includes("pi · council-fixture-ux") &&
+                    v.seats[0].cost === "625k / turn" &&
+                    v.seats[1].cost === "210k / turn" &&
+                    v.project === `${COUNCIL_PROJECT} + 1 more` &&
+                    v.rounds === "2" &&
+                    sameList(v.roundsPressed, ["2"]) &&
+                    v.agentNote === AGENT_NOTE &&
+                    v.expertsLine == null &&
+                    v.estimate === AGENT_ESTIMATE_TEXT &&
+                    lastEstimate?.rounds === 2 &&
+                    lastEstimate.project === ctx.repo &&
+                    sameList(lastEstimate.experts.map((e) => e.agent ?? null), [witnessTab, auditTab, null, null, null, null, null]) &&
+                    lastEstimate.experts[0].context === 625_000 &&
+                    lastEstimate.experts[1].context === 210_000 &&
+                    optionsWithAgents?.pause == null &&
+                    optionsWithAgents?.noPause != null &&
+                    optionsWithAgents.experts.length === 5,
+                { seats: v?.seats.map((s) => [s.id, s.agent, s.cost]), project: v?.project, rounds: v?.rounds, note: v?.agentNote, estimate: v?.estimate, request: lastEstimate, pause: optionsWithAgents?.pause, noPause: optionsWithAgents?.noPause }
+            );
+
+            // 15. Rounds 3 moves the switch and the next estimate asks for 3 rounds
+            await h.ev(click('[data-council-rounds-option="3"]'));
+            await until(`document.querySelector("[data-council-rounds]")?.dataset.councilRounds === "3"`);
+            const askedThree = await pollUntil(async () => (await calls("CouncilEstimateCommand")).at(-1)?.data?.rounds === 3);
+            v = await view();
+            rec(
+                "15. clicking Rounds 3 makes the switch read 3 and the estimate request carry rounds 3",
+                v?.rounds === "3" && sameList(v.roundsPressed, ["3"]) && askedThree === true,
+                { rounds: v?.rounds, pressed: v?.roundsPressed, last: (await calls("CouncilEstimateCommand")).at(-1)?.data?.rounds }
+            );
+
+            // 16. Add agent: with both seated there is nobody to pick; removing one takes its row and the header's + 1 more
+            // away and the picker then lists exactly that agent (the roster minus the seated); picking it seats it again
+            const everyoneSeated = (await view())?.addAgent;
+            await h.ev(click(`[data-council-seat-remove="agent-${auditTab}"]`));
+            await until(`!document.querySelector('[data-council-seat="agent-${auditTab}"]')`);
+            const oneLeft = await view();
+            await h.ev(click("[data-council-add-agent]"));
+            await until(`document.querySelectorAll("[data-council-add-agent-item]").length === 1`);
+            const picker = await h.ev(menuItems("data-council-add-agent-item"));
+            await h.ev(click(`[data-council-add-agent-item="${auditTab}"]`));
+            await until(`!!document.querySelector('[data-council-seat="agent-${auditTab}"]')`);
+            await until(`document.querySelectorAll("[data-council-add-agent-item]").length === 0`);
+            const seatedAgain = await view();
+            rec(
+                "16. with both agents seated Add agent is disabled; removing UX audit takes its row and the + 1 more away, the picker then lists only UX audit (pi, 210k), and picking it seats it again after Witness synthesis with Rounds still 3",
+                everyoneSeated?.disabled === true &&
+                    sameList(oneLeft?.seats.map((s) => s.id), seatIds.filter((id) => id !== `agent-${auditTab}`)) &&
+                    oneLeft.project === COUNCIL_PROJECT &&
+                    oneLeft.rounds === "3" &&
+                    picker.length === 1 &&
+                    picker[0].id === auditTab &&
+                    picker[0].text === "UX audit · pi · 210k" &&
+                    sameList(seatedAgain?.seats.map((s) => s.id), seatIds) &&
+                    seatedAgain.project === `${COUNCIL_PROJECT} + 1 more` &&
+                    seatedAgain.seats[1].cost === "210k / turn" &&
+                    seatedAgain.rounds === "3",
+                { everyoneSeated, oneLeft: oneLeft?.seats.map((s) => s.id), project: oneLeft?.project, picker, again: seatedAgain?.seats.map((s) => s.id), againProject: seatedAgain?.project }
+            );
+
+            // 16b. Add expert lists the library roles that are not on the panel (no panel member, no coordinator); picking one
+            // seats it ahead of the coordinator, and its remove takes it away again
+            await h.ev(click("[data-council-add-expert]"));
+            await until(`document.querySelectorAll("[data-council-add-expert-item]").length > 0`);
+            const roles = await h.ev(menuItems("data-council-add-expert-item"));
+            const roleId = roles[0]?.id;
+            await h.ev(click(`[data-council-add-expert-item="${roleId}"]`));
+            await until(`!!document.querySelector('[data-council-seat="${roleId}"]')`);
+            await until(`document.querySelectorAll("[data-council-add-expert-item]").length === 0`);
+            const withRole = await view();
+            await h.ev(click(`[data-council-seat-remove="${roleId}"]`));
+            await until(`!document.querySelector('[data-council-seat="${roleId}"]')`);
+            const roleGone = await view();
+            rec(
+                "16b. Add expert lists library roles that are neither on the panel nor a coordinator; picking one seats it before the coordinator (eight rows) and its remove takes it away again (seven)",
+                roles.length > 0 &&
+                    roles.every((r) => !["ux", "ram", "newuser", "skeptic", "coordinator"].includes(r.id)) &&
+                    withRole?.seats.length === 8 &&
+                    withRole.seats.at(-1)?.id === "coordinator" &&
+                    withRole.seats.at(-2)?.id === roleId &&
+                    sameList(roleGone?.seats.map((s) => s.id), seatIds),
+                { roles: roles.map((r) => r.id), withRole: withRole?.seats.map((s) => s.id), gone: roleGone?.seats.map((s) => s.id) }
+            );
+
+            // 17. removing both agents takes the Rounds switch and the Seats list away and gives the experts-only form back:
+            // the experts line, the five expert rows, the pause (which toggles on) and an estimate that names no agent
+            await h.ev(click(`[data-council-seat-remove="agent-${witnessTab}"]`));
+            await until(`!document.querySelector('[data-council-seat="agent-${witnessTab}"]')`);
+            await h.ev(click(`[data-council-seat-remove="agent-${auditTab}"]`));
+            await until(`!document.querySelector("[data-council-rounds]")`);
+            await until(`!!document.querySelector("[data-council-pause]")`);
+            const askedWithout = await pollUntil(
+                async () => (await calls("CouncilEstimateCommand")).at(-1)?.data?.experts?.length === 5
+            );
+            const lastWithout = (await calls("CouncilEstimateCommand")).at(-1)?.data;
+            const noAgents = await view();
+            await h.ev(click("[data-council-pause]"));
+            await until(`document.querySelector("[data-council-pause]")?.getAttribute("aria-checked") === "true"`);
+            rec(
+                "17. removing both agents takes the Rounds switch, the Seats list and the + 1 more away and brings back the experts line, the five expert rows and the pause (it toggles on); the estimate asked again for the five experts with no rounds and no agent",
+                noAgents?.rounds == null &&
+                    noAgents.seats.length === 0 &&
+                    noAgents.agentNote == null &&
+                    noAgents.project === COUNCIL_PROJECT &&
+                    /^Review a UI feature: UX, RAM, New user and Skeptic each read the code/.test(noAgents.expertsLine ?? "") &&
+                    noAgents.experts.length === 5 &&
+                    noAgents.pause === "false" &&
+                    noAgents.noPause == null &&
+                    noAgents.addAgent?.disabled === false &&
+                    askedWithout === true &&
+                    lastWithout?.rounds === undefined &&
+                    lastWithout.experts.every((e) => e.agent == null),
+                { rounds: noAgents?.rounds, seats: noAgents?.seats.length, project: noAgents?.project, line: noAgents?.expertsLine, pause: noAgents?.pause, addAgent: noAgents?.addAgent, request: lastWithout }
+            );
+
+            // 18. with no agent seated Add agent offers both roster agents (the experts-only form's own picker); picking each
+            // seats it, and the pause just turned on goes away again
+            await h.ev(click("[data-council-add-agent]"));
+            await until(`document.querySelectorAll("[data-council-add-agent-item]").length === 2`);
+            const offered = await h.ev(menuItems("data-council-add-agent-item"));
+            await h.ev(click(`[data-council-add-agent-item="${witnessTab}"]`));
+            await until(`!!document.querySelector('[data-council-seat="agent-${witnessTab}"]')`);
+            await until(`document.querySelectorAll("[data-council-add-agent-item]").length === 0`);
+            await h.ev(click("[data-council-add-agent]"));
+            await until(`document.querySelectorAll("[data-council-add-agent-item]").length === 1`);
+            await h.ev(click(`[data-council-add-agent-item="${auditTab}"]`));
+            await until(`document.querySelectorAll("[data-council-seat-agent]").length === 2`);
+            const reseated = await view();
+            rec(
+                "18. with no agent seated Add agent lists Witness synthesis and UX audit; picking both seats them in the order picked, with Rounds back at the 3 the draft kept, + 1 more in the header and no pause",
+                sameList(offered.map((o) => o.id), [witnessTab, auditTab]) &&
+                    sameList(reseated?.seats.map((s) => s.id), seatIds) &&
+                    reseated.rounds === "3" &&
+                    reseated.project === `${COUNCIL_PROJECT} + 1 more` &&
+                    reseated.noPause != null &&
+                    reseated.pause == null,
+                { offered: offered.map((o) => o.id), seats: reseated?.seats.map((s) => s.id), rounds: reseated?.rounds, project: reseated?.project }
+            );
+
+            // 19. Start council with the agents seated sends them before the panel with their harness and context, the
+            // rounds, and no pause (the pause toggled on in step 17 is not sent), in the project of the first agent
+            await h.ev(setText('[data-council-input="ask"]', "Oracle first?\nYou each did one side of it."));
+            await until(`document.querySelector("[data-council-start]")?.disabled === false`);
+            await h.ev(click("[data-council-start]"));
+            await until(`${present("[data-council-discussion]")}`);
+            const roomStarts = await calls("CouncilStartCommand");
+            const roomSent = roomStarts[0]?.data;
+            rec(
+                "19. Start council with both agents seated (stubbed) sends them first, each with its tab, harness and context, then the panel with the coordinator last, rounds 3 and no pause, once, in the first agent's project, and opens the Discussion",
+                roomStarts.length === 1 &&
+                    roomSent?.feature === "Oracle first?" &&
+                    roomSent.question === "You each did one side of it." &&
+                    sameList(roomSent.experts?.map((e) => e.id), seatIds) &&
+                    roomSent.experts[0].agent === witnessTab &&
+                    roomSent.experts[0].harness === "claude" &&
+                    roomSent.experts[0].context === 625_000 &&
+                    roomSent.experts[1].agent === auditTab &&
+                    roomSent.experts[1].harness === "pi" &&
+                    roomSent.experts[1].context === 210_000 &&
+                    roomSent.experts.slice(2).every((e) => e.agent == null) &&
+                    roomSent.experts.at(-1)?.coordinator === true &&
+                    roomSent.rounds === 3 &&
+                    roomSent.pause === false &&
+                    roomSent.project === ctx.repo,
+                { calls: roomStarts.length, feature: roomSent?.feature, experts: roomSent?.experts?.map((e) => [e.id, e.agent, e.harness, e.context]), rounds: roomSent?.rounds, pause: roomSent?.pause, project: roomSent?.project }
+            );
         } catch (e) {
             rec("the scenario stopped early: a page call failed", false, String(e?.message ?? e));
         }
@@ -583,6 +840,12 @@ export const councilSetup = {
     },
 
     async teardown(h, ctx) {
+        // the roster steps 14 to 19 wrote goes back first (a scenario that stopped before it has none)
+        if (ctx.roster != null) {
+            await restoreRoomRoster(ctx.roster).catch((e) =>
+                console.error(`council-setup teardown: restoring the roster failed: ${e?.message ?? e}`)
+            );
+        }
         await teardownCouncilProject(h, ctx);
     },
 };

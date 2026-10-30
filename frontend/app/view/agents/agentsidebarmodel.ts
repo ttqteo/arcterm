@@ -18,7 +18,14 @@
 import { placesOf, splitGrids, type CellPlacement, type GridState, type ProjectGrids } from "./agentgrid";
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
 import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
-import { canRemoveCouncil, councilProjectKey, treeMeta, type CouncilTone } from "./councilmodel";
+import {
+    canRemoveCouncil,
+    councilProjectKey,
+    queuedLine,
+    treeMeta,
+    UNTITLED_COUNCIL,
+    type CouncilTone,
+} from "./councilmodel";
 import type { RunInfo } from "./runlineage";
 import type { QueuedRow } from "./runqueuemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
@@ -29,7 +36,7 @@ export const CONVERSATION_PAGE = 10;
 // the project filter's value for no filter (the model's projectFilterAtom)
 export const ALL_PROJECTS = "all";
 export const UNTITLED_SESSION = "(untitled session)";
-export const UNTITLED_COUNCIL = "(untitled council)";
+export { UNTITLED_COUNCIL };
 
 // an ended session, with the project it is filed under
 export interface EndedSessionRow {
@@ -326,8 +333,10 @@ export interface CouncilRowVM {
  *  projectTree are keyed by project name and a council holds the project's path, so each is filed under the name whose
  *  root is the same path (councilProjectKey: separators, trailing slash and a drive path's case aside). A council of a
  *  folder that is no registered project has no folder to sit in and is left out. `null` is a list not loaded yet.
- *  `unread` is the ids of the councils that ended unseen. A queued council reads `Queued · after <feature>` of the council
- *  it waits on, found in the whole list (that one may sit in another project's folder), `Queued` when it is not there. */
+ *  `unread` is the ids of the councils that ended unseen. A queued council reads queuedLine of the council it waits on,
+ *  found in the whole list (that one may sit in another project's folder): `Queued · after <feature>`, with ` · waiting
+ *  for <agent>` while that council waits on a busy agent, and `Queued` when it is not there. A council with held drafts
+ *  reads `2 drafts wait for you` (treeMeta). */
 export function councilRowsByProject(
     councils: readonly Council[] | null | undefined,
     roots: ReadonlyMap<string, string>,
@@ -348,12 +357,11 @@ export function councilRowsByProject(
             continue;
         }
         const { text, tone } = treeMeta(c);
-        const ahead = c.state === "queued" && c.queuedafter ? byId.get(c.queuedafter) : undefined;
         const row: CouncilRowVM = {
             id: c.id,
             feature: c.feature.trim() || UNTITLED_COUNCIL,
             created: c.created,
-            meta: ahead != null ? `${text} · after ${ahead.feature.trim() || UNTITLED_COUNCIL}` : text,
+            meta: c.state === "queued" ? queuedLine(c.queuedafter ? byId.get(c.queuedafter) : undefined) : text,
             tone,
             unread: unread.has(c.id),
         };

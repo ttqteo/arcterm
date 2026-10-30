@@ -11,6 +11,8 @@
 //   writeCouncil / seedCouncil  one fixture council into the data dir, moved to where it should sit on the clock
 //   openCouncil / openCouncilSetup  the DEV hook window.__arcCouncil (councilpane.tsx), then the view's root
 //   stubRpc, resolveStub, rejectStub, rpcCalls, unstubRpc  the page-side stand-ins for RpcApi commands
+//   ROOM_AGENTS, writeRoomRoster, restoreRoomRoster  the two live agents the `room` fixtures seat, as the cockpit's
+//                          fixture roster (the agent seats' tab ids are theirs, so the tree and Setup know them)
 //   teardownCouncilProject  the reverse of all of it
 //
 // scenarios.mjs hands the helpers it owns in through `fx`: waitForProjectInConfig, polishReload, openRailTerminal,
@@ -20,11 +22,13 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { waitFor } from "../attach.mjs";
 
 export const COUNCIL_PROJECT = "council-fixture";
-export const COUNCIL_FIXTURES = ["round1", "round2", "awaiting", "done", "failed", "notrun"];
+// `room` is a running council with two live agents seated, `room-awaiting` the same room waiting on two held ideas
+export const COUNCIL_FIXTURES = ["round1", "round2", "awaiting", "done", "failed", "notrun", "room", "room-awaiting"];
 export const COUNCIL_ID_PREFIX = "fx-council-";
 export const councilFixtureId = (name) => `${COUNCIL_ID_PREFIX}${name}`;
 
@@ -33,8 +37,8 @@ const MINUTE = 60_000;
 const ROOT_WAIT_MS = 10_000;
 
 // Where each fixture sits on the clock. A running council's clock is `now - started`, so those two end at "now" and
-// their header reads 3:48 and 7:20 whenever the scenario looks; the rest are placed by when they were created, so the
-// tree (newest created first) lists round1, round2, awaiting, failed, done, notrun.
+// their header reads 3:48 and 7:20 whenever the scenario looks (the room's 19:20); the rest are placed by when they were
+// created, so the tree (newest created first) lists round1, round2, awaiting, room-awaiting, room, failed, done, notrun.
 const PLACE = {
     round1: { updatedAgoMs: 0 },
     round2: { updatedAgoMs: 0 },
@@ -42,6 +46,8 @@ const PLACE = {
     failed: { createdAgoMs: 25 * MINUTE },
     done: { createdAgoMs: 40 * MINUTE },
     notrun: { createdAgoMs: 60 * MINUTE },
+    room: { updatedAgoMs: 0 },
+    "room-awaiting": { createdAgoMs: 18 * MINUTE },
 };
 
 /** The fixture as authored (project empty, times around 2026-10-21 09:00 UTC). */
@@ -53,7 +59,7 @@ export function loadCouncilFixture(name) {
 }
 
 /** A copy of the fixture in `project`, every time on it (created, updated, started, proposal and reply times, the
- *  summary's) moved by the same amount, so the gaps between them stay as authored. */
+ *  skips' and the summary's) moved by the same amount, so the gaps between them stay as authored. */
 export function placeCouncil(raw, name, project, now = Date.now()) {
     const place = PLACE[name];
     const delta =
@@ -65,8 +71,108 @@ export function placeCouncil(raw, name, project, now = Date.now()) {
     if (c.started) c.started += delta;
     for (const p of c.proposals ?? []) p.ts += delta;
     for (const r of c.replies ?? []) r.ts += delta;
+    for (const s of c.skips ?? []) s.ts += delta;
     if (c.summary) c.summary.at += delta;
     return c;
+}
+
+// The two live agents the room fixtures seat: `id` is the expert id of the seat, `tabId` the agent it seats
+// (CouncilExpert.agent) and the id the roster below gives it, `context` the tokens the fixture seats it with. The
+// second agent is in another project, so a room spans two: arrange the first as COUNCIL_PROJECT and the rest as
+// `extraProjects`.
+export const ROOM_AGENTS = [
+    {
+        id: "witness",
+        tabId: "fx-room-witness",
+        name: "Witness synthesis",
+        project: COUNCIL_PROJECT,
+        harness: "claude",
+        context: 625_000,
+    },
+    {
+        id: "uxaudit",
+        tabId: "fx-room-uxaudit",
+        name: "UX audit",
+        project: `${COUNCIL_PROJECT}-ux`,
+        harness: "pi",
+        context: 210_000,
+    },
+];
+
+const ROOM_CONTEXT_MAX = 1_000_000;
+const ROOM_MODELS = { claude: "opus", pi: "sonnet" };
+const ROOM_TASKS = { witness: "Synthesise the witness transcripts", uxaudit: "Audit the rail apps flow" };
+
+/** The cockpit roster (AgentVM[]) of the room's agents, each with the context the council seats it with. */
+export function roomRoster(now = Date.now()) {
+    return ROOM_AGENTS.map((a, i) => ({
+        id: a.tabId,
+        name: a.name,
+        project: a.project,
+        task: ROOM_TASKS[a.id],
+        state: "working",
+        agent: a.harness,
+        model: ROOM_MODELS[a.harness],
+        activeMs: 240_000 - i * 60_000,
+        stateSince: now - (240_000 - i * 60_000),
+        blockId: `${a.tabId}-blk`,
+        usage: {
+            contextpct: Math.round((a.context / ROOM_CONTEXT_MAX) * 10_000) / 100,
+            contextmax: ROOM_CONTEXT_MAX,
+            costusd: 3.2 - i,
+        },
+    }));
+}
+
+// the roster the DEV app reads instead of the live one (frontend/app/view/agents/devmock.ts), which the agent-tree-rail
+// and usage-insights scenarios write too (TREE_RAIL_FIXTURE in scenarios.mjs)
+const ROSTER_FILE = fileURLToPath(new URL("../../../public/cockpit-fixtures/active.json", import.meta.url));
+const APP_READY = "!!window.TabRpcClient && !!document.querySelector('nav button')";
+const RELOAD_WAIT_MS = 30_000;
+
+// a reload, and the same wait and landing as scenarios.mjs's polishReload; a page that does not come back throws
+async function reloadApp(h) {
+    try {
+        await h.ev("location.reload()");
+    } catch {
+        // the evaluate is cut off by the navigation it just started
+    }
+    if (!(await waitFor((e) => h.ev(e), APP_READY, RELOAD_WAIT_MS))) {
+        throw new Error(`the app did not come back within ${RELOAD_WAIT_MS / 1000}s of the reload`);
+    }
+    await h.goto("jarvis");
+}
+
+function putRosterBack(roster) {
+    if (roster.prev != null) writeFileSync(roster.file, roster.prev);
+    else rmSync(roster.file, { force: true });
+    roster.restored = true;
+}
+
+/** Writes the room's agents as the fixture roster, in place of whatever roster was there, and reloads the page so the
+ *  cockpit reads it. Answers what restoreRoomRoster needs (`{ h, file, prev, restored }`); a reload that fails puts
+ *  the previous roster back and throws. `opts.file` writes somewhere else, `opts.now` fixes the clock the agents' state
+ *  ages are read from. */
+export async function writeRoomRoster(h, opts = {}) {
+    const file = opts.file ?? ROSTER_FILE;
+    const roster = { h, file, prev: existsSync(file) ? readFileSync(file, "utf8") : null, restored: false };
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify(roomRoster(opts.now), null, 2));
+    try {
+        await reloadApp(h);
+    } catch (e) {
+        putRosterBack(roster);
+        throw e;
+    }
+    return roster;
+}
+
+/** Puts the roster writeRoomRoster replaced back (or removes the file when there was none) and reloads onto it. Safe to
+ *  call twice. */
+export async function restoreRoomRoster(roster) {
+    if (roster.restored) return;
+    putRosterBack(roster);
+    await reloadApp(roster.h);
 }
 
 const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();

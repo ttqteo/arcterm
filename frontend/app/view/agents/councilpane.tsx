@@ -15,8 +15,8 @@ import { councilOpenProposalAtom, councilViewAtom } from "./councilstore";
 import { CouncilSummary } from "./councilsummary";
 
 // DEV only: lets a CDP scenario open a fixture council, or Setup prefilled, without clicking through the tree, and read
-// the one piece of UI state it cannot see in the DOM (openProposal: the proposal open in a council's Discussion, null
-// while it is the first in the ranking)
+// the one piece of UI state it cannot see in the DOM (openProposal: the idea whose thread is open in a council's chat,
+// null while none is)
 if (import.meta.env.DEV) {
     (window as any).__arcCouncil ??= {
         showCouncil,
@@ -30,8 +30,8 @@ export function CouncilPane({ model }: { model: AgentsViewModel }) {
     return view === "summary" ? (
         <CouncilSummary model={model} />
     ) : view === "setup" ? (
-        <CouncilSetup />
+        <CouncilSetup model={model} />
     ) : (
-        <CouncilDiscussion />
+        <CouncilDiscussion model={model} />
     );
 }

@@ -32,6 +32,7 @@ import { brainstormAtom } from "@/app/view/agents/brainstormstore";
 import { canvasGalleryAtom } from "@/app/view/agents/canvasgallerystore";
 import { canvasStateAtom } from "@/app/view/agents/canvasstore";
 import { compareOnAtom } from "@/app/view/agents/comparestore";
+import { councilChatNavAtom } from "@/app/view/agents/councilchatnav";
 import { docReviewStateAtom } from "@/app/view/agents/docreviewstore";
 import { historyFiltersAtom } from "@/app/view/agents/githistorystore";
 import { initiativePopoverAtom } from "@/app/view/agents/initiativepopover";
@@ -77,6 +78,7 @@ export const PREDICATE_ATOMS: Atom<unknown>[] = [
     dockedTerminalAtom, // buildAgentBindings: agent:terminal-panel
     initiativePopoverAtom, // buildAgentBindings: agentNav / agentNavStrict (every single-key Agent binding yields to the popover)
     reviewModeAtom, // buildJarvisBindings: jarvis:review and the review keys; buildListNavBindings: active; surface:back-home
+    councilChatNavAtom, // buildCouncilBindings: every council:* key; buildAgentBindings: agent:leave-center
 ];
 
 function bumpWhenVersion() {

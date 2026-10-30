@@ -20,6 +20,7 @@ type CouncilCommands interface {
 	CouncilGetCommand(ctx context.Context, data CommandCouncilIdData) (*council.Council, error)
 	CouncilReplyCommand(ctx context.Context, data CommandCouncilReplyData) error
 	CouncilContinueCommand(ctx context.Context, data CommandCouncilContinueData) error
+	CouncilDraftCommand(ctx context.Context, data CommandCouncilDraftData) error
 	CouncilSummarizeCommand(ctx context.Context, data CommandCouncilIdData) error
 	CouncilStopCommand(ctx context.Context, data CommandCouncilIdData) error
 	CouncilDeleteCommand(ctx context.Context, data CommandCouncilIdData) error
@@ -39,7 +40,9 @@ type CouncilCommands interface {
 // field is ignored. Otherwise Experts is the panel (the coordinator last, as council.ExpertsFor builds it) and, when
 // empty, the panel of Group. NotRun saves the council as not-run and starts nothing, for a start the token gate
 // refused: Start council in the app runs it later. Mode is council.ModeReview or council.ModeBrainstorm (empty is
-// review; any other word is refused) and ModeWhy the one-line reason it was picked.
+// review; any other word is refused) and ModeWhy the one-line reason it was picked. Rounds is how many rounds the seats
+// answer before the summary, the ideas round included: 1 to 3, and 0 is the default 2. An Experts entry with Agent set
+// seats that live agent, and a council with one holds every answer as a draft.
 type CommandCouncilStartData struct {
 	Id          string                  `json:"id,omitempty"`
 	Project     string                  `json:"project,omitempty"`
@@ -54,6 +57,7 @@ type CommandCouncilStartData struct {
 	NotRun      bool                    `json:"notrun,omitempty"`
 	Mode        string                  `json:"mode,omitempty"`
 	ModeWhy     string                  `json:"modewhy,omitempty"`
+	Rounds      int                     `json:"rounds,omitempty"`
 }
 
 // CommandCouncilListData lists the councils of one project, newest first; an empty project lists them all.
@@ -84,6 +88,16 @@ type CommandCouncilContinueData struct {
 	Question string   `json:"question,omitempty"`
 }
 
+// CommandCouncilDraftData settles one held draft of a council: ItemId is the id of the idea (P1) or reply (r3) and
+// Action is "send" (the draft reaches the other seats as written), "edit" (Text replaces the draft and is sent) or
+// "drop" (it reaches no one).
+type CommandCouncilDraftData struct {
+	Id     string `json:"id"`
+	ItemId string `json:"itemid"`
+	Action string `json:"action"`
+	Text   string `json:"text,omitempty"`
+}
+
 // CommandCouncilRetryData reruns the failed call of one expert; the coordinator's is the synthesis.
 type CommandCouncilRetryData struct {
 	Id       string `json:"id"`
@@ -100,7 +114,8 @@ type CommandCouncilSuggestData struct {
 
 // CommandCouncilEstimateData prices a council. With Id and Followup (a count of experts) it prices a follow-up round
 // of that many calls, Tools being Let them read code; with Id alone it prices what a saved council has left to run;
-// otherwise it prices the whole of a new council of Experts, reading the size of Files under Project.
+// otherwise it prices the whole of a new council of Experts, reading the size of Files under Project, over Rounds
+// rounds (0 is the default 2).
 type CommandCouncilEstimateData struct {
 	Project  string                  `json:"project,omitempty"`
 	Files    []string                `json:"files,omitempty"`
@@ -108,13 +123,16 @@ type CommandCouncilEstimateData struct {
 	Id       string                  `json:"id,omitempty"`
 	Followup int                     `json:"followup,omitempty"`
 	Tools    bool                    `json:"tools,omitempty"`
+	Rounds   int                     `json:"rounds,omitempty"`
 }
 
-// CouncilEstimateRtnData is council.CouncilEstimate on the wire: counted, not priced.
+// CouncilEstimateRtnData is council.CouncilEstimate on the wire: counted, not priced. AgentTokens is the share of
+// Tokens the seated agents' turns take.
 type CouncilEstimateRtnData struct {
-	Calls   int   `json:"calls"`
-	Tokens  int64 `json:"tokens"`
-	Minutes int   `json:"minutes"`
+	Calls       int   `json:"calls"`
+	Tokens      int64 `json:"tokens"`
+	Minutes     int   `json:"minutes"`
+	AgentTokens int64 `json:"agenttokens,omitempty"`
 }
 
 // CommandCouncilSaveDocData writes a council's Summary and Matrix as markdown. An empty Path is

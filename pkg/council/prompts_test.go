@@ -355,3 +355,171 @@ func TestAnswersPromptForAWholeCouncilQuestionAndSeveralReplies(t *testing.T) {
 	mustContain(t, "own section", own, "Title-two")
 	mustNotContain(t, "own section", own, "Title-four") // cut
 }
+
+// The picks and the withdrawals of a council come in its last reply pass, so its prompts name that round: 2 for a council
+// of 2 rounds or none set, 3 for 3. A council of one round has no reply pass, so no prompt speaks of one.
+func TestSynthesisAnswersAndPicksNameTheLastReplyRound(t *testing.T) {
+	build := func(rounds int, brainstorm bool) *Council {
+		c := promptCouncil()
+		if brainstorm {
+			c = brainstormCouncil()
+		}
+		c.Rounds = rounds
+		c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
+		return c
+	}
+	for _, tc := range []struct {
+		rounds      int
+		round, none string // the reply round the prompts name, and the one they must not
+	}{{0, "round 2", "round 3"}, {2, "round 2", "round 3"}, {3, "round 3", "round 2"}} {
+		review, brain := build(tc.rounds, false), build(tc.rounds, true)
+
+		p := SynthesisPrompt(review)
+		mustContain(t, "review synthesis", p, "In "+tc.round+" each expert named the proposals of the others most worth doing",
+			"Its author withdrew it in "+tc.round+".", `"Also raised", "Withdrawn in `+tc.round+`" or "Cut at the pause"`,
+			`"P4": "Withdrawn in `+tc.round+`", `)
+		mustNotContain(t, "review synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in "+tc.none)
+
+		p = SynthesisPrompt(brain)
+		mustContain(t, "brainstorm synthesis", p, "In "+tc.round+" each expert named the ideas of the others most worth trying",
+			"Its author withdrew it in "+tc.round+".", `"Not picked", "Withdrawn in `+tc.round+`" or "Cut at the pause"`)
+		mustNotContain(t, "brainstorm synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in "+tc.none)
+
+		for name, c := range map[string]*Council{"review": review, "brainstorm": brain} {
+			p = AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}) // UX, who withdrew P5
+			mustContain(t, name+" answers", p, "You withdrew this one in "+tc.round+".")
+			mustNotContain(t, name+" answers", p, "withdrew this one in "+tc.none)
+		}
+
+		// the shape still parses once its example outcome names the round
+		if _, _, err := ParseSynthesis(jsonFence(shapeForRounds(review, synthesisShape))); err != nil {
+			t.Errorf("%d rounds: the synthesis shape does not parse: %v", tc.rounds, err)
+		}
+	}
+	if SynthesisPrompt(build(0, false)) != SynthesisPrompt(build(2, false)) {
+		t.Error("a council with no rounds set reads differently from one of 2 rounds")
+	}
+}
+
+func TestSynthesisAndAnswersOfACouncilOfOneRoundSpeakOfNoReplyPass(t *testing.T) {
+	for name, c := range map[string]*Council{"review": promptCouncil(), "brainstorm": brainstormCouncil()} {
+		c.Rounds = 1
+		c.Picks = map[string][]string{"ux": {"P2"}}
+		p := SynthesisPrompt(c)
+		mustContain(t, name+" synthesis", p, "This is round 2 of 2", `or "Cut at the pause"`)
+		mustNotContain(t, name+" synthesis", p, "## Picks", "each expert named", "withdrew it in round", "Withdrawn in round", `"P4"`)
+		mustNotContain(t, name+" answers", AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}), "withdrew this one in round")
+	}
+	one := promptCouncil()
+	one.Rounds = 1
+	if _, _, err := ParseSynthesis(jsonFence(shapeForRounds(one, synthesisShape))); err != nil {
+		t.Errorf("the synthesis shape of one round does not parse: %v", err)
+	}
+	mustContain(t, "synthesis", SynthesisPrompt(one), `"Also raised" or "Cut at the pause"`)
+}
+
+// agentPromptCouncil is a council of three rounds with two live agents (Witness and Scout) beside the experts UX and RAM,
+// in its third round: ideas from Witness, UX and RAM, replies of every kind, and the person's questions. P3, P4, r2 are
+// not out in the room (held, dropped), r4 is of round 3, and r3 is Witness's own.
+func agentPromptCouncil() *Council {
+	return &Council{
+		Id: "c1", Project: `D:\proj`, Feature: "Idle sleep for services", Question: "Which direction first?",
+		Files: []string{"pkg/services/idle.go"}, Rounds: 3,
+		Experts: []CouncilExpert{
+			{Id: "witness", Name: "Witness", Agent: "tab-1", Harness: HarnessClaude},
+			{Id: "scout", Name: "Scout", Agent: "tab-2", Harness: HarnessPi},
+			{Id: "ux", Name: "UX", Brief: "Can someone use it without being told how?"},
+			{Id: "ram", Name: "RAM", Brief: "What stays in memory?"},
+			{Id: "lead", Name: "Lead", Brief: "Merge and rank.", Coordinator: true},
+		},
+		Proposals: []CouncilProposal{
+			{Id: "P1", Author: "witness", Title: "Title-own", Argument: "Argument-own"},
+			{Id: "P2", Author: "ux", Title: "Title-sent", Argument: "Argument-sent", Evidence: []CouncilEvidence{{Ref: "a.go:1"}}},
+			{Id: "P3", Author: "ram", Title: "Title-held", Argument: "Argument-held", Draft: DraftHeld},
+			{Id: "P4", Author: "ram", Title: "Title-dropped", Argument: "Argument-dropped", Draft: DraftDropped},
+		},
+		Replies: []CouncilReply{
+			{Id: "r1", ProposalId: "P1", Author: "ux", Stance: StanceChallenge, Text: "Text-r1 sent challenge", Round: 2},
+			{Id: "r2", ProposalId: "P1", Author: "ram", Stance: StanceChallenge, Text: "Text-r2 held", Round: 2, Draft: DraftHeld},
+			{Id: "r3", ProposalId: "P2", Author: "witness", Stance: StanceAccept, Text: "Text-r3 its own reply", Round: 2},
+			{Id: "r4", ProposalId: "P2", Author: "ram", Stance: StanceOppose, Text: "Text-r4 of the third round", Round: 3},
+			{Id: "r5", Author: YouId, Text: "Text-r5 to Witness", To: []string{"witness"}, Round: 2},
+			{Id: "r6", Author: YouId, Text: "Text-r6 to UX", To: []string{"ux"}, Round: 2},
+			{Id: "r7", ProposalId: "P2", Author: "ram", Stance: StanceAccept, Round: 2},
+		},
+	}
+}
+
+func TestAgentPrompts(t *testing.T) {
+	c := agentPromptCouncil()
+	witness, scout := c.Experts[0], c.Experts[1]
+
+	// the first turn: the question, the other seats marked agent or expert, and the shape the experts answer round 1 in
+	first := AgentFirstPrompt(c, witness, 1)
+	mustContain(t, "first prompt", first, "You are Witness", "live agent", "Feature: Idle sleep for services", "Question for the council: Which direction first?",
+		`D:\proj`, "pkg/services/idle.go", "## Who sits in the council", "- Scout · agent", "- UX · expert", "- RAM · expert", "- Lead · expert · the coordinator",
+		"Nothing you say reaches the others until the person sends it", "This is round 1 of 4: proposals", round1Shape, evidenceRule)
+	mustNotContain(t, "first prompt", first, "- Witness ·", "Title-sent", "## What was said", "## What the person asks you")
+	mustContain(t, "brainstorm first prompt", AgentFirstPrompt(&Council{Mode: ModeBrainstorm, Feature: "F", Experts: c.Experts}, witness, 1),
+		"brainstorms ideas", "Problem or goal: F", brainstormRound1Shape)
+
+	// a later turn of the first reply pass: the ideas it has not seen, and none of the drafts that are not out
+	pass2 := AgentLaterPrompt(c, witness, 2)
+	mustContain(t, "round 2 prompt", pass2, "You are back in the council as Witness", "This is round 2 of 4: cross-review", "P2 · UX · Title-sent", "Argument-sent", "a.go:1", round2Shape)
+	mustNotContain(t, "round 2 prompt", pass2, "Title-held", "Argument-held", "Title-dropped", "Title-own", "Text-r2 held", "## Who sits", "Question for the council")
+
+	// a later pass: only what was sent since its last turn (round 2), never its own words, a held reply or a reply of this round
+	pass3 := AgentLaterPrompt(c, witness, 3)
+	said := section(t, pass3, "## What was said since your last turn")
+	mustContain(t, "said section", said, "[r1] UX (challenge) on P1 (Title-own)", "Text-r1 sent challenge", "[r7] RAM (accept) on P2 (Title-sent): agrees, with nothing to add")
+	mustNotContain(t, "round 3 prompt", pass3, "Text-r2 held", "Text-r3 its own reply", "Text-r4 of the third round", "Text-r6", "Argument-sent", "Title-held", "Title-dropped")
+	mustContain(t, "round 3 prompt", pass3, "This is round 3 of 4: cross-review", "(none since your last turn)", laterPassNote, round2Shape)
+	asks := section(t, pass3, "## What the person asks you")
+	mustContain(t, "asks section", asks, "[r5]", "Text-r5 to Witness", "to the whole council")
+	mustNotContain(t, "asks section", asks, "Text-r6")
+
+	// a seat that has not spoken is brought in with everything that was sent so far
+	late := AgentFirstPrompt(c, scout, 3)
+	mustContain(t, "late first prompt", late, "You are Scout", "- Witness · agent", "P1 · Witness · Title-own", "P2 · UX · Title-sent",
+		"Text-r1 sent challenge", "Text-r3 its own reply", "[r7] RAM (accept)", "Question for the council")
+	mustNotContain(t, "late first prompt", late, "Title-held", "Text-r2 held", "Text-r4 of the third round", "- Scout ·")
+	if got := agentPrompt(c, scout, 3); got != late {
+		t.Error("a seat that has not spoken is not sent its first prompt")
+	}
+	if got := agentPrompt(c, witness, 3); got != pass3 {
+		t.Error("a seat that has spoken is not sent its later prompt")
+	}
+
+	// after the summary: the follow-up shape, and what it missed of the last round
+	follow := AgentLaterPrompt(c, witness, SynthesisRound(c))
+	mustContain(t, "follow-up prompt", follow, "The council has already met", "Text-r4 of the third round", "Text-r5 to Witness", answersShape)
+	mustNotContain(t, "follow-up prompt", follow, "Text-r2 held", "Text-r3 its own reply", "Text-r6", round2Shape)
+
+	// nothing new and nothing asked: the seat is not asked at all
+	if seatHasNews(&Council{Experts: c.Experts, Rounds: 3}, witness, 3) {
+		t.Error("a seat with nothing to answer was given news")
+	}
+}
+
+func TestRound2PromptShowsWhatWasSaidInALaterPass(t *testing.T) {
+	c := agentPromptCouncil()
+	ux := c.Experts[2]
+	p := round2PromptFor(c, ux, 3)
+	mustContain(t, "round 3 prompt", p, "This is round 3 of 4: cross-review", laterPassNote, "What was said about it:", "[r1] UX", "Text-r1 sent challenge")
+	own := section(t, p, "## Your own proposals")
+	mustContain(t, "own section", own, "P2 · UX · Title-sent", "[r7] RAM", "[r4] RAM (oppose)")
+	mustNotContain(t, "round 3 prompt", p, "Text-r2 held", "Title-held", "Title-dropped")
+	// the first pass has no threads, and a council of two rounds says so in its numbers
+	first := round2PromptFor(c, ux, 2)
+	mustContain(t, "round 2 prompt", first, "This is round 2 of 4")
+	mustNotContain(t, "round 2 prompt", first, "What was said about it:", laterPassNote)
+}
+
+func TestSynthesisPromptLeavesOutDraftsAndNamesSkips(t *testing.T) {
+	c := agentPromptCouncil()
+	c.Skips = []CouncilSkip{{Expert: "scout", Round: 2, Reason: "still working on its own task after 10 min"}}
+	p := SynthesisPrompt(c)
+	mustContain(t, "synthesis prompt", p, "This is round 4 of 4: synthesis", "Title-sent", "Text-r1 sent challenge", "Text-r4 of the third round",
+		"Scout (it skipped round 2: still working on its own task after 10 min)", "No seat gave picks")
+	mustNotContain(t, "synthesis prompt", p, "Title-held", "Argument-held", "Title-dropped", "Text-r2 held")
+}

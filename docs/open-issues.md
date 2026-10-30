@@ -27,6 +27,18 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A council with a live agent seated: pick an idle claude agent and a pi agent in the Agent tree
+  (Ctrl+click), choose Discuss together, set Rounds to 2 and start. Setup's estimate should show the agents' share. In
+  the council chat, each agent's ideas come back as amber drafts with Send to the others / Edit / Drop. The chip reads
+  "Round 1 of 2 · N drafts wait for you", and settling the last draft starts round 2. The prompt appears in the agent's
+  own transcript as a council message. A busy agent's seat waits ("Waiting for <agent> to finish its task"), and one
+  with no answer after 20 min becomes a skipped line with Open its terminal. Only fake links and stubbed RPCs have
+  been through it. (commits "feat(council): AgentCaller and the live AgentLink" and "feat(council): the chat view
+  replaces the feed and the Reddit thread")
+- [ ] (arcterm) The council chat's keys on a real keyboard, Telex on and off: in a council chat, j/k move over the
+  ideas only while focus is in the channel or the thread, and `docs/keyboard-shortcuts.md` lists what the chat binds.
+  (commit "feat(council): the chat view replaces the feed and the Reddit thread")
+
 - [ ] (arcterm) New dialog, Start column back: `Mod+N` should open three columns (Start 236px, Project, Session or the
   pick's list), focus on Start, no chip; every Start, Project, Session row draws its digit (Home 0, tools a–z), and the
   focused column's label shows its keys. Enter in Start launches; Esc closes. `task verify:ui -- launcher

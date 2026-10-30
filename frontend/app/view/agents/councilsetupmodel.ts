@@ -2,12 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The council Setup's pure rules (councilsetup.tsx draws them): the panel a group makes, editing a draft's panel, files
-// and screenshots, the mode (Review or Brainstorm) and its chip, when the coordinator's suggestion is asked and how it
-// lands, what Start council sends and what the button reads, and the footer's words. The draft type is councilmodel.ts's; every function here returns the next draft and leaves the one it was given
+// and screenshots, the mode (Review or Brainstorm) and its chip, the live agents seated beside the experts and the Rounds
+// they answer, when the coordinator's suggestion is asked and how it lands, what Start council sends and what the button
+// reads, and the footer's words. The draft type is councilmodel.ts's; every function here returns the next draft and leaves the one it was given
 // alone, and returns that same object when nothing changed so an atom set from it does not rerender. Pure, no React, no
 // Wave runtime imports (councilsetupmodel.test.ts).
 
-import { councilProjectKey, type CouncilSetupDraft } from "./councilmodel";
+import { formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
+import {
+    agentSeat,
+    councilProjectKey,
+    estimateLabel,
+    estimateTokens,
+    type CouncilSetupDraft,
+    type SeatableAgent,
+} from "./councilmodel";
 
 export const MODEL_CHOICES = ["sonnet", "opus", "haiku"] as const;
 
@@ -205,6 +214,155 @@ export function expertTone(experts: CouncilExpert[], index: number): ExpertTone 
     }
     const slot = experts.slice(0, index).filter((e) => !e.coordinator).length;
     return PANEL_TONES[slot % PANEL_TONES.length];
+}
+
+// ---- live agents and rounds ----
+
+/** The Rounds switch's choices: how many rounds the seats answer, the ideas round included. */
+export const ROUND_CHOICES = [1, 2, 3] as const;
+
+/** The one line under the Seats list. */
+export const AGENT_NOTE =
+    "An agent takes its turn in its own session, so the talk also lands in its transcript. A busy agent is waited for up to 10 min, then skips that round.";
+
+// what a seat's turn costs, as pkg/council/estimate.go counts an expert's (round1BaseTokens, round2Tokens,
+// synthesisTokens). They only label the rows: the estimate in the composer's bar is wavesrv's own number.
+const EXPERT_FIRST_TURN_TOKENS = 140_000;
+const EXPERT_TURN_TOKENS = 45_000;
+const COORDINATOR_TOKENS = 80_000;
+
+// the harnesses wavesrv can seat: the ones `wsh agents` reaches
+const SEATABLE_HARNESSES = new Set(["claude", "pi"]);
+
+/** Pure: whether a live agent is seated. The council then holds every answer as a draft, so Setup shows Rounds and has
+ *  no pause after the first ideas. */
+export function draftHasAgents(draft: Pick<CouncilSetupDraft, "agents">): boolean {
+    return draft.agents.length > 0;
+}
+
+/** Pure: every seat in the order Setup lists and the start sends them: the agents as they were added, then the experts,
+ *  the coordinator last. */
+export function seatsOf(draft: Pick<CouncilSetupDraft, "agents" | "experts">): CouncilExpert[] {
+    return [...draft.agents.map((a) => a.seat), ...draft.experts];
+}
+
+/** Pure: a live agent seated, once. Its project is the one it works in, which the council's own may differ from. */
+export function addAgent(draft: CouncilSetupDraft, agent: SeatableAgent): CouncilSetupDraft {
+    if (draft.agents.some((a) => a.seat.agent === agent.id)) {
+        return draft;
+    }
+    return { ...draft, agents: [...draft.agents, { seat: agentSeat(agent), project: agent.project }] };
+}
+
+/** Pure: the agent with tab id `tabId` taken out of the seats. */
+export function removeAgent(draft: CouncilSetupDraft, tabId: string): CouncilSetupDraft {
+    if (!draft.agents.some((a) => a.seat.agent === tabId)) {
+        return draft;
+    }
+    return { ...draft, agents: draft.agents.filter((a) => a.seat.agent !== tabId) };
+}
+
+/** Pure: the Rounds the seats answer, 1 to 3 (anything else leaves the draft as it was). */
+export function setRounds(draft: CouncilSetupDraft, rounds: number): CouncilSetupDraft {
+    if (!(ROUND_CHOICES as readonly number[]).includes(rounds) || rounds === draft.rounds) {
+        return draft;
+    }
+    return { ...draft, rounds };
+}
+
+/** Pure: the roster's agents a council can seat: a claude or pi agent (not a terminal, a background agent or another
+ *  harness), with the project's path (the registered one, else where it runs, else `fallbackProject`) and the context it
+ *  holds now, which is what each of its turns re-reads. This is the one seat rule: the agent tree's Discuss together
+ *  asks it too (`seatableOf`), with an empty `fallbackProject` when there is no council project yet. */
+export function seatableAgents(
+    roster: readonly AgentVM[],
+    registry: Readonly<Record<string, { path?: string }>> | null | undefined,
+    fallbackProject: string
+): SeatableAgent[] {
+    const seatable: SeatableAgent[] = [];
+    for (const vm of roster) {
+        if ((vm.kind != null && vm.kind !== "agent") || !SEATABLE_HARNESSES.has(vm.agent ?? "")) {
+            continue;
+        }
+        const usage = vm.usage;
+        seatable.push({
+            id: vm.id,
+            name: vm.name,
+            project: registry?.[projectOf(vm)]?.path || vm.cwd || fallbackProject,
+            harness: vm.agent ?? "",
+            context: usage?.contextmax ? Math.round(((usage.contextpct ?? 0) / 100) * usage.contextmax) : 0,
+        });
+    }
+    return seatable;
+}
+
+/** Pure: the agents Add agent offers: the seatable ones not seated yet. */
+export function unseatedAgents(
+    agents: readonly SeatableAgent[],
+    draft: Pick<CouncilSetupDraft, "agents">
+): SeatableAgent[] {
+    return agents.filter((a) => !draft.agents.some((d) => d.seat.agent === a.id));
+}
+
+/** Pure: the library roles Add expert offers: not on the panel yet, and not a group's coordinator (the panel has its own). */
+export function addableRoles(draft: CouncilSetupDraft, lib: RoleLibrary): CouncilExpert[] {
+    const coordinators = new Set(lib.groups.map((g) => g.coordinator));
+    return lib.roles.filter(
+        (r) => !r.coordinator && !coordinators.has(r.id) && !draft.experts.some((x) => x.id === r.id)
+    );
+}
+
+/** Pure: ` + 2 more` after the project's name when the agents come from other projects than the council's own (the
+ *  first agent's); empty when every seat is in one. */
+export function moreProjects(draft: Pick<CouncilSetupDraft, "project" | "agents">): string {
+    const keys = new Set([draft.project, ...draft.agents.map((a) => a.project)].map(councilProjectKey));
+    return keys.size > 1 ? ` + ${keys.size - 1} more` : "";
+}
+
+/** One line of Setup's Seats list. */
+export interface SeatRow {
+    expert: CouncilExpert;
+    kind: "agent" | "expert";
+    meta: string; // `claude · arc`, `sonnet · <its brief>`, `opus · writes the summary`
+    cost: string; // what one turn costs: an agent's whole context, an expert's call, the coordinator's summary
+    costNote: string; // the title that says what the cost is
+    removable: boolean; // the coordinator stays
+}
+
+/** Pure: the Seats list: the agents first, then the experts and the coordinator, each with its cost per turn.
+ *  `projectName` names the project an agent works in. */
+export function seatRows(draft: CouncilSetupDraft, projectName: (path: string) => string): SeatRow[] {
+    const agents = draft.agents.map(
+        (a): SeatRow => ({
+            expert: a.seat,
+            kind: "agent",
+            meta: [a.seat.harness, projectName(a.project)].filter(Boolean).join(" · "),
+            cost: a.seat.context ? `${formatTokens(a.seat.context)} / turn` : "size unknown",
+            costNote: "Its context, which every turn of its own session re-reads",
+            removable: true,
+        })
+    );
+    const experts = draft.experts.map(
+        (e): SeatRow =>
+            e.coordinator
+                ? {
+                      expert: e,
+                      kind: "expert",
+                      meta: `${e.model} · writes the summary`,
+                      cost: `≈${formatTokens(COORDINATOR_TOKENS)}`,
+                      costNote: "One call, for the summary",
+                      removable: false,
+                  }
+                : {
+                      expert: e,
+                      kind: "expert",
+                      meta: [e.model, e.brief].filter(Boolean).join(" · "),
+                      cost: `≈${formatTokens(EXPERT_TURN_TOKENS)} / turn`,
+                      costNote: `About ${formatTokens(EXPERT_FIRST_TURN_TOKENS)} in round 1, when it reads the code`,
+                      removable: true,
+                  }
+    );
+    return [...agents, ...experts];
 }
 
 // ---- files and screenshots ----
@@ -407,13 +565,21 @@ export function startBlocker(draft: CouncilSetupDraft): string {
     if (!draft.experts.some((e) => e.coordinator)) {
         return "Pick a group of experts";
     }
-    if (!draft.experts.some((e) => !e.coordinator)) {
+    // a seated agent is a seat that proposes and replies, so it stands in for the expert a council needs besides its coordinator
+    if (!draftHasAgents(draft) && !draft.experts.some((e) => !e.coordinator)) {
         return "Keep at least one expert besides the coordinator";
     }
     return "";
 }
 
-/** Pure: what Start council sends: the draft's inputs and its panel, the coordinator last. */
+// Rounds count only while an agent is seated (an expert-only council keeps its fixed shape) and the held drafts are the
+// pause then, so a draft that carries a Rounds pick or a pause from before the agents were seated sends neither
+function roundsFor(draft: CouncilSetupDraft): number | undefined {
+    return draftHasAgents(draft) ? draft.rounds : undefined;
+}
+
+/** Pure: what Start council sends: the draft's inputs and its seats, the agents first and the coordinator last, with the
+ *  Rounds when an agent is seated. */
 export function startData(draft: CouncilSetupDraft): CommandCouncilStartData {
     const question = draft.question.trim();
     return {
@@ -424,24 +590,39 @@ export function startData(draft: CouncilSetupDraft): CommandCouncilStartData {
         files: draft.files,
         screenshots: draft.screenshots,
         group: draft.group || undefined,
-        experts: draft.experts,
-        pause: draft.pause,
+        experts: seatsOf(draft),
+        pause: draft.pause && !draftHasAgents(draft),
         sessionid: draft.sessionId || undefined,
         mode: draft.mode,
         modewhy: modeReason(draft) || "picked by hand",
+        rounds: roundsFor(draft),
     };
 }
 
 // ---- the footer ----
 
-export function estimateRequest(draft: CouncilSetupDraft): CommandCouncilEstimateData {
-    return { project: draft.project, files: draft.files, experts: draft.experts };
+/** Pure: whether there is a panel to price: a seat besides the coordinator. */
+export function estimateWanted(draft: CouncilSetupDraft): boolean {
+    return seatsOf(draft).some((e) => !e.coordinator);
 }
 
-/** Pure: what the estimate depends on. Tokens are counted, not priced, so a model change does not move it. */
+export function estimateRequest(draft: CouncilSetupDraft): CommandCouncilEstimateData {
+    return { project: draft.project, files: draft.files, experts: seatsOf(draft), rounds: roundsFor(draft) };
+}
+
+/** Pure: what the estimate depends on. Tokens are counted, not priced, so a model change does not move it; an agent's
+ *  context and the Rounds do. */
 export function estimateKey(draft: CouncilSetupDraft): string {
     const n = draft.experts.filter((e) => !e.coordinator).length;
-    return `${councilProjectKey(draft.project)}\n${draft.files.join("\n")}\n${n}`;
+    const agents = draft.agents.map((a) => `${a.seat.agent}:${a.seat.context ?? 0}`).join(",");
+    return `${councilProjectKey(draft.project)}\n${draft.files.join("\n")}\n${n}\n${agents}\n${roundsFor(draft) ?? 0}`;
+}
+
+/** Pure: the estimate in the composer's bar: `≈ 9 calls · ~1.9M tokens · ~8 min`, and ` · agents ~1.3M of it` when
+ *  seated agents take a share of the tokens. */
+export function setupEstimate(est: CouncilEstimateRtnData): string {
+    const label = estimateLabel(est);
+    return (est.agenttokens ?? 0) > 0 ? `${label} · agents ~${estimateTokens(est.agenttokens ?? 0)} of it` : label;
 }
 
 /** Pure: `4 sonnet experts read the code first; then they argue over text only`; empty with no expert. */

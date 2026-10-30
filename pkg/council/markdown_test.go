@@ -98,6 +98,17 @@ func TestMarkdownReviewAlsoRaised(t *testing.T) {
 	}
 }
 
+// The matrix prints the coordinator's outcome word as it is, so a withdrawal in the third round of a council of three
+// reads as that.
+func TestMarkdownMatrixKeepsTheRoundOfAWithdrawal(t *testing.T) {
+	c := markdownCouncil()
+	c.Rounds = 3
+	c.Summary.Outcomes["P3"] = "Withdrawn in round 3"
+	if md := Markdown(c); !strings.Contains(md, "| P3 · Wake on hover | — | — | author | Withdrawn in round 3 |") {
+		t.Errorf("the matrix lacks the round 3 withdrawal\n%s", md)
+	}
+}
+
 func TestMarkdownMatrixRows(t *testing.T) {
 	md := Markdown(markdownCouncil())
 	rows := map[string]string{}
@@ -352,6 +363,27 @@ func TestMarkdownBrainstormWithNoWildIdeasHasNoKeptSection(t *testing.T) {
 	for name, md := range map[string]string{"report": Markdown(c), "document": Document(c)} {
 		if strings.Contains(md, "Wild ideas kept aside") || strings.Contains(md, "wild idea") {
 			t.Errorf("the %s shows a wild idea section with none kept\n%s", name, md)
+		}
+	}
+}
+
+func TestDocumentLeavesOutHeldAndDroppedDrafts(t *testing.T) {
+	c := documentCouncil()
+	c.Experts[0].Agent, c.Experts[0].Harness = "tab-1", HarnessPi
+	c.Skips = []CouncilSkip{{Expert: "ram", Round: 2, Reason: "still working on its own task after 10 min"}}
+	c.Proposals[4].Draft = DraftHeld    // P5, Quiet badge
+	c.Proposals[3].Draft = DraftDropped // P4, Poll less
+	c.Replies[1].Draft = DraftHeld      // r2, the pipe in a cell
+	c.Replies[2].Draft = DraftDropped   // r3, the long oppose
+	doc := Document(c)
+	for _, w := range []string{"Quiet badge", "Poll less", "Costs a | pipe", "long long long"} {
+		if strings.Contains(doc, w) {
+			t.Errorf("the document holds %q, a draft that is not out in the room\n%s", w, doc)
+		}
+	}
+	for _, w := range []string{"Cheap to do.", "Show the sleep state", "UX (agent pi)", "- Skipped: RAM in round 2: still working on its own task after 10 min"} {
+		if !strings.Contains(doc, w) {
+			t.Errorf("the document lacks %q\n%s", w, doc)
 		}
 	}
 }

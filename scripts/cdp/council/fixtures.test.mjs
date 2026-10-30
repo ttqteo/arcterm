@@ -28,9 +28,11 @@ import {
     threadTree,
     treeMeta,
 } from "../../../frontend/app/view/agents/councilmodel";
+import { contextTokens } from "../../../frontend/app/view/agents/agentrailmodel";
 import {
     COUNCIL_FIXTURES,
     COUNCIL_PROJECT,
+    ROOM_AGENTS,
     announceCouncil,
     arrangeCouncilProject,
     councilFixtureId,
@@ -38,12 +40,15 @@ import {
     placeCouncil,
     rejectStub,
     resolveStub,
+    restoreRoomRoster,
+    roomRoster,
     rpcCalls,
     seedCouncil,
     stubRpc,
     teardownCouncilProject,
     unstubRpc,
     writeCouncil,
+    writeRoomRoster,
 } from "./fixtures.mjs";
 
 const roots = [];
@@ -60,8 +65,17 @@ const NOW = Date.UTC(2026, 9, 21, 12, 0, 0);
 const placed = (name, now = NOW) => placeCouncil(loadCouncilFixture(name), name, "/work/fixture", now);
 
 describe("the fixtures as records", () => {
-    it("has the six the plan names, each under its own id", () => {
-        expect(COUNCIL_FIXTURES).toEqual(["round1", "round2", "awaiting", "done", "failed", "notrun"]);
+    it("has the six the plan names and the two rooms, each under its own id", () => {
+        expect(COUNCIL_FIXTURES).toEqual([
+            "round1",
+            "round2",
+            "awaiting",
+            "done",
+            "failed",
+            "notrun",
+            "room",
+            "room-awaiting",
+        ]);
         for (const name of COUNCIL_FIXTURES) {
             expect(loadCouncilFixture(name).id).toBe(councilFixtureId(name));
         }
@@ -79,11 +93,16 @@ describe("the fixtures as records", () => {
         const proposals = new Map((c.proposals ?? []).map((p) => [p.id, p]));
         expect(proposals.size).toBe((c.proposals ?? []).length);
         for (const p of proposals.values()) expect(ids.has(p.author)).toBe(true);
-        // replies: unique ids, on a proposal of the council, a parent that came earlier on the same proposal
+        // replies: unique ids, on a proposal of the council (the person's post to the whole council has none), a parent
+        // that came earlier on the same proposal
         const seen = new Map();
         for (const r of c.replies ?? []) {
             expect(seen.has(r.id)).toBe(false);
-            expect(proposals.has(r.proposalid)).toBe(true);
+            if (r.author === "you" && r.proposalid === "" && !r.parentid) {
+                expect(r.to?.length).toBeGreaterThan(0);
+            } else {
+                expect(proposals.has(r.proposalid)).toBe(true);
+            }
             expect(ids.has(r.author) || r.author === "you").toBe(true);
             if (r.parentid) {
                 const parent = seen.get(r.parentid);
@@ -106,7 +125,7 @@ describe("the fixtures as records", () => {
 
     it("round1 is Running.dc.html: UX and New user done, RAM and Skeptic reading", () => {
         const c = placed("round1");
-        expect(headerChip(c)).toBe("Step 1 of 3 · 2 of 4 experts done");
+        expect(headerChip(c)).toBe("Round 1 of 2");
         expect(callSegments(c)).toEqual(["done", "done", "running", "running", ...Array(5).fill("pending")]);
         expect(expertStat(c, "ux")).toBe("1 min 52 s · 84k tokens");
         expect(expertStat(c, "ram")).toBe("3 min 10 s · 71k tokens");
@@ -123,7 +142,7 @@ describe("the fixtures as records", () => {
 
     it("round2 is Main.dc.html: the P2 thread, Skeptic typing under UX's revision, the person's reply queued", () => {
         const c = placed("round2");
-        expect(headerChip(c)).toBe("Step 2 of 3 · 2 replying");
+        expect(headerChip(c)).toBe("Round 2 of 2");
         expect(costLine(c, c.updated)).toBe("7:20 · 19 replies · 0.55M tokens");
         expect(callSegments(c)).toEqual([...Array(6).fill("done"), "running", "running", "pending"]);
         expect(treeMeta(c)).toEqual({ text: "Running", tone: "working" });
@@ -244,6 +263,125 @@ describe("the fixtures as records", () => {
     });
 });
 
+// the ids of the seats that answer a round: everyone but the coordinator
+const seatIds = (c) => panel(c).map((e) => e.id);
+
+describe("the room fixtures", () => {
+    it.each(["room", "room-awaiting"])("%s seats ROOM_AGENTS first, then the experts, the coordinator last", (name) => {
+        const c = loadCouncilFixture(name);
+        const agents = c.experts.filter((e) => e.agent);
+        expect(agents.map((e) => e.id)).toEqual(ROOM_AGENTS.map((a) => a.id));
+        for (const a of ROOM_AGENTS) {
+            expect(c.experts.find((e) => e.id === a.id)).toMatchObject({
+                name: a.name,
+                agent: a.tabId,
+                harness: a.harness,
+                context: a.context,
+            });
+        }
+        // the agents sit first, so the seat row reads agents then experts then the coordinator
+        expect(c.experts.slice(0, agents.length)).toEqual(agents);
+        expect(c.experts.slice(agents.length).every((e) => !e.agent && !e.harness && !e.context)).toBe(true);
+        expect(c.experts.slice(agents.length, -1).map((e) => e.id)).toEqual(["security", "skeptic"]);
+        expect(c.rounds).toBe(2);
+    });
+
+    it("the two rooms hold the same seats, and ROOM_AGENTS are in two projects", () => {
+        expect(loadCouncilFixture("room").experts).toEqual(loadCouncilFixture("room-awaiting").experts);
+        expect(ROOM_AGENTS.map((a) => a.harness)).toEqual(["claude", "pi"]);
+        expect(ROOM_AGENTS[0].project).toBe(COUNCIL_PROJECT);
+        expect(new Set(ROOM_AGENTS.map((a) => a.project)).size).toBe(2);
+        expect(new Set(ROOM_AGENTS.map((a) => a.tabId)).size).toBe(2);
+    });
+
+    it("room is running in round 2 of 2, a state the runner can produce", () => {
+        const c = placed("room");
+        expect([c.state, c.round, c.rounds]).toEqual(["running", 2, 2]);
+        expect(c.updated).toBe(NOW);
+        // round 1 is settled: no idea is still held, one was dropped, one edited, the rest sent
+        const ideas = c.proposals;
+        expect(ideas.filter((p) => p.draft === "held")).toEqual([]);
+        expect(ideas.filter((p) => p.draft === "dropped").map((p) => p.id)).toEqual(["P5"]);
+        expect(ideas.filter((p) => p.edited).map((p) => p.id)).toEqual(["P4"]);
+        expect(ideas.filter((p) => !p.draft).map((p) => p.id)).toEqual(["P1", "P2", "P3", "P4"]);
+        // a dropped idea reaches no one, so nothing in round 2 answers it
+        expect(c.replies.some((r) => r.proposalid === "P5")).toBe(false);
+        // one reply is held, in a thread, in round 2; another was edited before it was sent
+        const held = c.replies.filter((r) => r.draft === "held");
+        expect(held.map((r) => [r.id, r.proposalid, r.round])).toEqual([["r4", "P4", 2]]);
+        expect(c.replies.filter((r) => r.edited).map((r) => r.id)).toEqual(["r3"]);
+        // an agreement with nothing to add applies at once
+        expect(c.replies.find((r) => r.id === "r2")).toMatchObject({ stance: "accept", text: "" });
+        expect(c.replies.every((r) => r.round === 2)).toBe(true);
+    });
+
+    it("room has each seat in one state of round 2: finished, at work, waiting on a busy agent or failed", () => {
+        const c = placed("room");
+        const finished = new Set(c.replies.filter((r) => r.round === 2 && r.author !== "you").map((r) => r.author));
+        const atWork = Object.entries(c.activity)
+            .filter(([, a]) => a.proposalid)
+            .map(([id]) => id);
+        const waiting = Object.entries(c.activity)
+            .filter(([, a]) => !a.proposalid)
+            .map(([id]) => id);
+        const failed = Object.keys(c.failed);
+        expect([...finished]).toEqual(["skeptic"]);
+        expect(atWork).toEqual(["uxaudit"]);
+        expect(waiting).toEqual(["witness"]);
+        expect(failed).toEqual(["security"]);
+        // all four seats, none in two states
+        expect([...finished, ...atWork, ...waiting, ...failed].sort()).toEqual(seatIds(c).sort());
+        // the held draft is a finished seat's
+        expect(finished.has(c.replies.find((r) => r.draft === "held").author)).toBe(true);
+        expect(c.activity.uxaudit.text).toMatch(/^Replying to /);
+        expect(c.activity.witness.text).toBe("Waiting for Witness synthesis to finish its task");
+        expect(c.failed.security.round).toBe(2);
+        // the busy agent skipped round 1 for the same reason it is waited on now
+        expect(c.skips).toEqual([
+            expect.objectContaining({ expert: "witness", round: 1, reason: "still working on its own task after 10 min" }),
+        ]);
+        expect(c.skips[0].ts).toBeGreaterThan(Math.max(...c.proposals.map((p) => p.ts)));
+        // an agent that skipped has no idea in round 1, and one at work has no draft yet
+        expect(c.proposals.some((p) => p.author === "witness")).toBe(false);
+        expect(c.replies.some((r) => r.author === "uxaudit")).toBe(false);
+    });
+
+    it("room has the person's post to the whole council and an @ to one agent", () => {
+        const c = placed("room");
+        const mine = c.replies.filter((r) => r.author === "you");
+        expect(mine.map((r) => [r.proposalid, r.to])).toEqual([
+            ["", seatIds(c)],
+            ["P4", ["witness"]],
+        ]);
+        // the @ names an agent seat
+        expect(c.experts.find((e) => e.id === "witness").agent).toBeTruthy();
+    });
+
+    it("room's stats add up to its totals", () => {
+        const c = placed("room");
+        expect(Object.values(c.stats).reduce((n, s) => n + s.tokens, 0)).toBe(c.tokens);
+        expect(Object.values(c.stats).reduce((n, s) => n + s.calls, 0)).toBe(c.calls);
+    });
+
+    it("room-awaiting waits on two held ideas of round 1, with nothing at work", () => {
+        const c = placed("room-awaiting");
+        expect([c.state, c.round, c.rounds]).toEqual(["awaiting-you", 1, 2]);
+        expect(c.pauseafterround1).toBeUndefined();
+        expect(c.proposals.filter((p) => p.draft === "held").map((p) => p.id)).toEqual(["P2", "P3"]);
+        expect(c.proposals.filter((p) => !p.draft).map((p) => p.id)).toEqual(["P1"]);
+        expect(c.replies ?? []).toEqual([]);
+        // no seat is at work and none failed: no typing row, no Retry
+        expect(c.activity).toBeUndefined();
+        expect(c.failed).toBeUndefined();
+        // every seat has answered or skipped round 1, which is why the round ended
+        const answered = new Set([...c.proposals.map((p) => p.author), ...c.skips.map((s) => s.expert)]);
+        expect([...answered].sort()).toEqual(seatIds(c).sort());
+        expect(c.skips).toEqual([expect.objectContaining({ expert: "witness", round: 1 })]);
+        expect(Object.values(c.stats).reduce((n, s) => n + s.tokens, 0)).toBe(c.tokens);
+        expect(Object.values(c.stats).reduce((n, s) => n + s.calls, 0)).toBe(c.calls);
+    });
+});
+
 describe("placeCouncil", () => {
     it("ends a running council at now, so its clock reads as authored whenever it is looked at", () => {
         expect(placed("round1").updated).toBe(NOW);
@@ -268,9 +406,20 @@ describe("placeCouncil", () => {
         expect(placed("notrun").started).toBeUndefined();
     });
 
-    it("sorts the tree newest created first: round1, round2, awaiting, failed, done, notrun", () => {
+    it("moves the skipped turns with everything else", () => {
+        const raw = loadCouncilFixture("room");
+        const c = placeCouncil(raw, "room", "/work/fixture", NOW);
+        const delta = c.created - raw.created;
+        expect(raw.skips).toHaveLength(1);
+        expect(c.skips.map((s, i) => s.ts - raw.skips[i].ts)).toEqual([delta]);
+        // a skip still comes after the start and before the clock reads now
+        expect(c.skips[0].ts).toBeGreaterThan(c.started);
+        expect(c.skips[0].ts).toBeLessThan(c.updated);
+    });
+
+    it("sorts the tree newest created first: round1, round2, awaiting, room-awaiting, room, failed, done, notrun", () => {
         const order = [...COUNCIL_FIXTURES].sort((a, b) => placed(b).created - placed(a).created);
-        expect(order).toEqual(["round1", "round2", "awaiting", "failed", "done", "notrun"]);
+        expect(order).toEqual(["round1", "round2", "awaiting", "room-awaiting", "room", "failed", "done", "notrun"]);
         // the four Task 13 lists keep the plan's order: Running, Waiting on you, Done, Not run
         const four = ["notrun", "done", "awaiting", "round2"].sort((a, b) => placed(b).created - placed(a).created);
         expect(four.map((n) => treeMeta(placed(n)).text)).toEqual(["Running", "Waiting on you", "Done", "Not run"]);
@@ -512,5 +661,109 @@ describe("arrangeCouncilProject and teardownCouncilProject", () => {
         }
         expect(calls.some(([c]) => c === "deleteproject")).toBe(true);
         expect(existsSync(ctx.base)).toBe(false);
+    });
+});
+
+describe("roomRoster", () => {
+    it("is the room's agents as cockpit agents, each with the context its seat names", () => {
+        const roster = roomRoster(NOW);
+        expect(roster.map((a) => [a.id, a.name, a.project, a.agent])).toEqual(
+            ROOM_AGENTS.map((a) => [a.tabId, a.name, a.project, a.harness])
+        );
+        expect(new Set(roster.map((a) => a.blockId)).size).toBe(roster.length);
+        // the figure the tree shows is the seat's context
+        expect(roster.map((a) => contextTokens(a.usage.contextpct, a.usage.contextmax))).toEqual(["625k", "210k"]);
+        for (const [i, a] of ROOM_AGENTS.entries()) {
+            expect((roster[i].usage.contextpct / 100) * roster[i].usage.contextmax).toBeCloseTo(a.context, 0);
+        }
+        // and the room's seats are the roster's agents
+        for (const name of ["room", "room-awaiting"]) {
+            const seats = loadCouncilFixture(name).experts.filter((e) => e.agent);
+            expect(seats.map((e) => [e.agent, e.name, e.harness, e.context])).toEqual(
+                roster.map((a, i) => [a.id, a.name, a.agent, ROOM_AGENTS[i].context])
+            );
+        }
+    });
+});
+
+// a fake page for the roster's reload: the evaluate answers that the app is ready, goto records where it landed
+function rosterPage(over = {}) {
+    const evals = [];
+    const gotos = [];
+    const h = {
+        async ev(expr) {
+            evals.push(expr);
+            return expr.includes("TabRpcClient") ? true : undefined;
+        },
+        async goto(surface) {
+            gotos.push(surface);
+        },
+        ...over,
+    };
+    return { h, evals, gotos };
+}
+
+describe("writeRoomRoster and restoreRoomRoster", () => {
+    it("writes the room's agents over the roster, reloads, and puts the previous one back", async () => {
+        const dir = tempRoot();
+        const file = join(dir, "cockpit-fixtures", "active.json");
+        mkdirSync(join(dir, "cockpit-fixtures"));
+        writeFileSync(file, '[{"id":"mock-ask-1"}]');
+        const { h, evals, gotos } = rosterPage();
+
+        const roster = await writeRoomRoster(h, { file, now: NOW });
+        expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(roomRoster(NOW));
+        expect(evals).toContain("location.reload()");
+        expect(gotos).toEqual(["jarvis"]);
+
+        evals.length = 0;
+        await restoreRoomRoster(roster);
+        expect(readFileSync(file, "utf8")).toBe('[{"id":"mock-ask-1"}]');
+        expect(evals).toContain("location.reload()");
+        // a second restore changes and reloads nothing
+        evals.length = 0;
+        writeFileSync(file, "[]");
+        await restoreRoomRoster(roster);
+        expect(readFileSync(file, "utf8")).toBe("[]");
+        expect(evals).toEqual([]);
+    });
+
+    it("removes the roster when there was none before, creating the folder it needs", async () => {
+        const dir = tempRoot();
+        const file = join(dir, "public", "cockpit-fixtures", "active.json");
+        const { h } = rosterPage();
+        const roster = await writeRoomRoster(h, { file });
+        expect(roster.prev).toBeNull();
+        expect(JSON.parse(readFileSync(file, "utf8")).map((a) => a.id)).toEqual(ROOM_AGENTS.map((a) => a.tabId));
+        await restoreRoomRoster(roster);
+        expect(existsSync(file)).toBe(false);
+    });
+
+    it("puts the previous roster back and throws when the reload fails", async () => {
+        const dir = tempRoot();
+        const file = join(dir, "active.json");
+        writeFileSync(file, "[]");
+        const { h } = rosterPage({
+            async goto() {
+                throw new Error("goto failed");
+            },
+        });
+        await expect(writeRoomRoster(h, { file })).rejects.toThrow("goto failed");
+        expect(readFileSync(file, "utf8")).toBe("[]");
+    });
+
+    it("takes a reload cut off by the navigation it starts", async () => {
+        const dir = tempRoot();
+        const file = join(dir, "active.json");
+        const { h } = rosterPage({
+            async ev(expr) {
+                if (expr === "location.reload()") throw new Error("navigated");
+                return expr.includes("TabRpcClient") ? true : undefined;
+            },
+        });
+        const roster = await writeRoomRoster(h, { file });
+        expect(existsSync(file)).toBe(true);
+        await restoreRoomRoster(roster);
+        expect(existsSync(file)).toBe(false);
     });
 });

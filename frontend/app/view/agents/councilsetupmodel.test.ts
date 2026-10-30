@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { emptyCouncilDraft, type CouncilSetupDraft } from "./councilmodel";
+import type { AgentVM } from "./agentsviewmodel";
+import { draftWithAgents, emptyCouncilDraft, type CouncilSetupDraft, type SeatableAgent } from "./councilmodel";
 import {
+    addableRoles,
+    addAgent,
     addFiles,
     addRole,
     addScreenshot,
@@ -9,8 +12,10 @@ import {
     askText,
     basename,
     beginSuggest,
+    draftHasAgents,
     estimateKey,
     estimateRequest,
+    estimateWanted,
     expertInitial,
     expertsLine,
     expertTone,
@@ -23,21 +28,29 @@ import {
     joinAsk,
     modeChip,
     modeRules,
+    moreProjects,
     panelFor,
     pendingRoles,
     readingLine,
     relativeToProject,
+    removeAgent,
     removeExpert,
     removeFile,
     removeScreenshot,
     retrySuggestion,
+    seatableAgents,
+    seatRows,
+    seatsOf,
     setExpertModel,
+    setRounds,
     settleRerun,
+    setupEstimate,
     splitAsk,
     startBlocker,
     startData,
     startLabel,
     suggestRequest,
+    unseatedAgents,
     type RoleLibrary,
 } from "./councilsetupmodel";
 
@@ -764,5 +777,231 @@ describe("rows", () => {
     it("wraps around when the panel is longer than the palette", () => {
         const many = Array.from({ length: 8 }, (_, i) => role(`r${i}`, `R${i}`));
         expect(expertTone(many, 6)).toBe(expertTone(many, 0));
+    });
+});
+
+describe("live agents", () => {
+    const witness: SeatableAgent = {
+        id: "tab-witness",
+        name: "Witness synthesis",
+        project: "D:\\code\\arc",
+        harness: "claude",
+        context: 625_000,
+    };
+    const audit: SeatableAgent = {
+        id: "tab-audit",
+        name: "UX audit",
+        project: "D:\\code\\other",
+        harness: "pi",
+        context: 210_000,
+    };
+    const withAgents = (...agents: SeatableAgent[]) => initialPanel(draftWithAgents(agents), lib);
+    const seatIds = (d: CouncilSetupDraft) => seatsOf(d).map((e) => e.id);
+
+    it("seats the agents first, then the experts and the coordinator", () => {
+        const d = withAgents(witness, audit);
+        expect(seatIds(d)).toEqual([
+            "agent-tab-witness",
+            "agent-tab-audit",
+            "ux",
+            "ram",
+            "newuser",
+            "skeptic",
+            "coordinator",
+        ]);
+        expect(seatsOf(d).at(-1)?.coordinator).toBe(true);
+        expect(draftHasAgents(d)).toBe(true);
+        const solo = initialPanel(draft(), lib);
+        expect(draftHasAgents(solo)).toBe(false);
+        expect(seatsOf(solo)).toEqual(solo.experts);
+    });
+
+    it("adds an agent once, after the ones seated, and removes one by its tab", () => {
+        const d = addAgent(withAgents(witness), audit);
+        expect(d.agents.map((a) => a.seat.agent)).toEqual(["tab-witness", "tab-audit"]);
+        expect(d.agents[1]).toEqual({
+            seat: {
+                id: "agent-tab-audit",
+                name: "UX audit",
+                brief: "",
+                model: "",
+                agent: "tab-audit",
+                harness: "pi",
+                context: 210_000,
+            },
+            project: "D:\\code\\other",
+        });
+        expect(addAgent(d, audit)).toBe(d);
+        const one = removeAgent(d, "tab-witness");
+        expect(one.agents.map((a) => a.seat.agent)).toEqual(["tab-audit"]);
+        expect(removeAgent(one, "tab-witness")).toBe(one);
+        expect(draftHasAgents(removeAgent(one, "tab-audit"))).toBe(false);
+        // the experts are not the agents' to change
+        expect(ids(one)).toEqual(ids(d));
+    });
+
+    it("keeps the agents when a group replaces the panel", () => {
+        const d = applyGroup(withAgents(witness), lib, "paper", true);
+        expect(d.agents).toHaveLength(1);
+        expect(ids(d)).toEqual(["reviewer-a", "reader", "areachair"]);
+    });
+
+    it("offers the live claude and pi agents that are not seated", () => {
+        const vm = (id: string, extra: Partial<AgentVM> = {}): AgentVM => ({
+            id,
+            name: id,
+            task: "",
+            state: "idle",
+            agent: "claude",
+            project: "arc",
+            usage: { contextpct: 62.5, contextmax: 1_000_000 },
+            ...extra,
+        });
+        const roster: AgentVM[] = [
+            vm("a"),
+            vm("b", { agent: "pi", project: "other", usage: { contextpct: 21, contextmax: 1_000_000 } }),
+            vm("codex-1", { agent: "codex" }),
+            vm("shell", { kind: "terminal", agent: undefined }),
+            vm("bg", { kind: "background" }),
+            vm("lost", { project: undefined, cwd: "D:\\code\\cwd", usage: undefined }),
+        ];
+        const registry = { arc: { path: "D:\\code\\arc" }, other: { path: "D:\\code\\other" } };
+        const found = seatableAgents(roster, registry, "D:\\code\\fallback");
+        expect(found.map((a) => a.id)).toEqual(["a", "b", "lost"]);
+        expect(found[0]).toEqual({ id: "a", name: "a", project: "D:\\code\\arc", harness: "claude", context: 625_000 });
+        expect(found[1]).toMatchObject({ project: "D:\\code\\other", harness: "pi", context: 210_000 });
+        expect(found[2]).toMatchObject({ project: "D:\\code\\cwd", context: 0 });
+        const unregistered = seatableAgents([vm("x", { project: "gone", cwd: undefined })], registry, "D:\\code\\fb");
+        expect(unregistered[0].project).toBe("D:\\code\\fb");
+
+        const d = addAgent(initialPanel(draft(), lib), found[0]);
+        expect(unseatedAgents(found, d).map((a) => a.id)).toEqual(["b", "lost"]);
+        expect(unseatedAgents(found, addAgent(addAgent(d, found[1]), found[2]))).toEqual([]);
+    });
+
+    it("offers the library roles that are not on the panel and are no group's coordinator", () => {
+        const d = initialPanel(draft(), lib);
+        expect(addableRoles(d, lib).map((r) => r.id)).toEqual([
+            "reviewer-a",
+            "reader",
+            "designer",
+            "builder",
+            "contrarian",
+        ]);
+        expect(addableRoles(removeExpert(d, "ux"), lib).map((r) => r.id)).toContain("ux");
+    });
+
+    it("keeps the Rounds to 1, 2 or 3, starting at 2", () => {
+        const d = withAgents(witness);
+        expect(d.rounds).toBe(2);
+        expect(setRounds(d, 3).rounds).toBe(3);
+        expect(setRounds(d, 1).rounds).toBe(1);
+        expect(setRounds(d, 2)).toBe(d);
+        expect(setRounds(d, 4)).toBe(d);
+        expect(setRounds(d, 0)).toBe(d);
+        expect(setRounds(d, 1.5)).toBe(d);
+    });
+
+    it("names the other projects the seats come from after the council's own", () => {
+        expect(moreProjects(withAgents(witness))).toBe("");
+        expect(moreProjects(withAgents(witness, audit))).toBe(" + 1 more");
+        const third: SeatableAgent = { ...witness, id: "tab-3", project: "D:\\code\\third" };
+        expect(moreProjects(addAgent(withAgents(witness, audit), third))).toBe(" + 2 more");
+        // the same folder in another spelling is one project
+        expect(moreProjects(withAgents(witness, { ...audit, id: "tab-same", project: "d:/code/arc/" }))).toBe("");
+        expect(moreProjects(initialPanel(draft(), lib))).toBe("");
+    });
+
+    it("lists each seat with what one turn of it costs", () => {
+        const rows = seatRows(withAgents(witness, audit), (p) => basename(p));
+        expect(rows.map((r) => [r.expert.id, r.kind])).toEqual([
+            ["agent-tab-witness", "agent"],
+            ["agent-tab-audit", "agent"],
+            ["ux", "expert"],
+            ["ram", "expert"],
+            ["newuser", "expert"],
+            ["skeptic", "expert"],
+            ["coordinator", "expert"],
+        ]);
+        expect(rows[0]).toMatchObject({ meta: "claude · arc", cost: "625k / turn", removable: true });
+        expect(rows[1]).toMatchObject({ meta: "pi · other", cost: "210k / turn", removable: true });
+        expect(rows[2]).toMatchObject({ meta: "sonnet · UX brief", cost: "≈45k / turn", removable: true });
+        expect(rows[6]).toMatchObject({ meta: "opus · writes the summary", cost: "≈80k", removable: false });
+        expect(rows[2].costNote).toContain("140k in round 1");
+        const unknown = seatRows(withAgents({ ...witness, context: 0 }), (p) => p);
+        expect(unknown[0].cost).toBe("size unknown");
+    });
+
+    it("counts an agent seat as the expert a council needs besides its coordinator", () => {
+        let d = withAgents(witness);
+        for (const id of ["ux", "ram", "newuser", "skeptic"]) d = removeExpert(d, id);
+        d = { ...d, feature: "Rail apps" };
+        expect(startBlocker(d)).toBe("");
+        expect(startBlocker(removeAgent(d, "tab-witness"))).toBe("Keep at least one expert besides the coordinator");
+        // the coordinator still comes from a group
+        expect(startBlocker({ ...draftWithAgents([witness]), feature: "Rail apps" })).toBe("Pick a group of experts");
+    });
+
+    it("sends no Rounds from an expert-only draft, and its pause as it was", () => {
+        const solo = { ...initialPanel(draft({ feature: "Rail apps" }), lib), pause: true, rounds: 3 };
+        expect(startData(solo).pause).toBe(true);
+        expect(startData(solo).rounds).toBeUndefined();
+        expect(estimateRequest(solo).rounds).toBeUndefined();
+        // a draft that had agents, then lost them, is expert-only again
+        const seated = addAgent(solo, witness);
+        const back = removeAgent(seated, "tab-witness");
+        expect(startData(back).rounds).toBeUndefined();
+        expect(startData(back).pause).toBe(true);
+    });
+
+    it("sends the agent seats before the experts, the Rounds, and no pause", () => {
+        const d = { ...withAgents(witness, audit), feature: "Rail apps", pause: true, rounds: 3 };
+        const data = startData(d);
+        expect(data.experts?.map((e) => e.id)).toEqual(seatIds(d));
+        expect(data.experts?.[0]).toMatchObject({ agent: "tab-witness", harness: "claude", context: 625_000 });
+        expect(data.experts?.[1]).toMatchObject({ agent: "tab-audit", harness: "pi", context: 210_000 });
+        expect(data.experts?.at(-1)?.coordinator).toBe(true);
+        expect(data.rounds).toBe(3);
+        expect(data.pause).toBe(false);
+        // the council's project is the first agent's
+        expect(data.project).toBe("D:\\code\\arc");
+    });
+
+    it("prices the agents' seats with their context, over the Rounds", () => {
+        const d = { ...withAgents(witness), files: ["a.ts"], rounds: 3 };
+        const req = estimateRequest(d);
+        expect(req.rounds).toBe(3);
+        expect(req.experts?.map((e) => e.id)).toEqual(seatIds(d));
+        expect(req.experts?.[0].context).toBe(625_000);
+        expect(estimateWanted(d)).toBe(true);
+        expect(estimateWanted(initialPanel(draft(), lib))).toBe(true);
+        expect(estimateWanted(draftWithAgents([witness]))).toBe(true);
+        let bare = removeAgent(d, "tab-witness");
+        for (const id of ["ux", "ram", "newuser", "skeptic"]) bare = removeExpert(bare, id);
+        expect(estimateWanted(bare)).toBe(false);
+    });
+
+    it("asks for a new estimate when an agent is seated, its context changes or the Rounds do", () => {
+        const base = initialPanel(draft({ files: ["a.ts"] }), lib);
+        const key = estimateKey(base);
+        const one = addAgent(base, witness);
+        expect(estimateKey(one)).not.toBe(key);
+        expect(estimateKey(addAgent(one, audit))).not.toBe(estimateKey(one));
+        expect(estimateKey(addAgent(base, { ...witness, context: 100_000 }))).not.toBe(estimateKey(one));
+        expect(estimateKey(setRounds(one, 3))).not.toBe(estimateKey(one));
+        expect(estimateKey(removeAgent(one, "tab-witness"))).toBe(key);
+        // Rounds mean nothing with no agent seated
+        expect(estimateKey({ ...base, rounds: 3 })).toBe(key);
+        expect(estimateKey({ ...one, pause: true, feature: "Rail apps" })).toBe(estimateKey(one));
+    });
+
+    it("splits what the agents cost out of the estimate", () => {
+        expect(setupEstimate({ calls: 9, tokens: 820_000, minutes: 6 })).toBe("≈ 9 calls · ~0.8M tokens · ~6 min");
+        expect(setupEstimate({ calls: 9, tokens: 820_000, minutes: 6, agenttokens: 0 })).toBe(
+            "≈ 9 calls · ~0.8M tokens · ~6 min"
+        );
+        expect(setupEstimate({ calls: 7, tokens: 1_900_000, minutes: 8, agenttokens: 1_250_000 })).toBe(
+            "≈ 7 calls · ~1.9M tokens · ~8 min · agents ~1.3M of it"
+        );
     });
 });

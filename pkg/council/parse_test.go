@@ -260,6 +260,13 @@ func TestParseSynthesis(t *testing.T) {
 	}
 }
 
+func TestParseSynthesisKeepsTheRoundOfAWithdrawal(t *testing.T) {
+	sum, _, err := ParseSynthesis(jsonFence(`{"directions": [{"title": "A"}], "outcomes": {"P4": "Withdrawn in round 3"}}`))
+	if err != nil || sum.Outcomes["P4"] != "Withdrawn in round 3" {
+		t.Errorf("outcomes = %v, %v, want the round 3 withdrawal kept as the coordinator wrote it", sum.Outcomes, err)
+	}
+}
+
 func TestParseSynthesisRenumbersWithoutRanks(t *testing.T) {
 	sum, _, err := ParseSynthesis(jsonFence(`{"directions": [{"title": "B"}, {"title": "A"}]}`))
 	if err != nil {
@@ -431,5 +438,29 @@ func TestParseBrainstorm(t *testing.T) {
 	}
 	if sum.Directions[0].FirstStep != "" {
 		t.Errorf("first step = %q, want none when the model gave none", sum.Directions[0].FirstStep)
+	}
+}
+
+func TestPlainReply(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{"free words", "  I would cache it.\n\nIt is cheap.  ", "I would cache it.\n\nIt is cheap."},
+		{"words, then a block that did not read", "I would cache it.\n\n```json\n{ not json\n```", "I would cache it."},
+		{"words, then an unclosed block", "I would cache it.\n```JSON\n{\"stances\": [", "I would cache it."},
+		{"a block and no words keeps the whole reply", "```json\n{ not json\n```", "```json\n{ not json\n```"},
+		{"another language's fence stays in the words", "Try:\n```go\nf()\n```\nThat is all.", "Try:\n```go\nf()\n```\nThat is all."},
+	} {
+		if got := PlainReply(tc.in); got != tc.want {
+			t.Errorf("%s: PlainReply = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	// what the shapes ask for does not read from it, which is how the runner knows to fall back
+	if _, _, err := ParseRound1("I would cache it."); err == nil {
+		t.Error("free words parsed as an ideas round")
+	}
+	if _, err := ParseRound2("I would cache it."); err == nil {
+		t.Error("free words parsed as a reply pass")
+	}
+	if _, err := ParseAnswers("I would cache it."); err == nil {
+		t.Error("free words parsed as answers")
 	}
 }

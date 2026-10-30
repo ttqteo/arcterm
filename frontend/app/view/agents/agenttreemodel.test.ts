@@ -1,14 +1,24 @@
 import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
+    agentsInCouncil,
     buildAgentTree,
+    discussTogetherSeats,
+    extendRow,
     foldCollapsedProjects,
+    NO_ROW_SELECTION,
+    pickedRowIds,
+    seatableOf,
+    selectableRowIds,
+    selectOnly,
     stageOutcome,
     stageSubline,
+    toggleRow,
     UNGROUPED_PROJECT,
     type AgentTreeRow,
 } from "./agenttreemodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
+import { seatableAgents } from "./councilsetupmodel";
 import { endedWorkerId, type Lineage, type RunInfo } from "./runlineage";
 
 function vm(id: string, state: AgentVM["state"], path?: string): AgentVM {
@@ -1043,5 +1053,254 @@ describe("foldCollapsedProjects", () => {
             "parent",
         ]);
         expect(out[0]).toMatchObject({ kind: "group", project: "waveterm", count: 2, attn: 1 });
+    });
+});
+
+describe("row multi-selection", () => {
+    // five agent rows, a to e, in the order drawn
+    const rows = ["a", "b", "c", "d", "e"];
+
+    it("selectableRowIds takes a plain agent's and a lead's row, in order, and nothing else", () => {
+        const tree = buildAgentTree(
+            [vm("a", "idle", WAVE), vm("lead", "working", WAVE), vm("w", "working", WAVE), vm("c", "idle", LOOM)],
+            ["a", "lead", "w", "c"],
+            {
+                runs: { r1: { runId: "r1", channelId: "ch", project: "waveterm", title: "run" } as RunInfo },
+                roles: { lead: { kind: "lead", runId: "r1" }, w: { kind: "worker", leadRunId: "r1", taskId: "t1" } },
+            } as unknown as Lineage
+        );
+        expect(selectableRowIds(tree)).toEqual(["a", "lead", "c"]);
+        expect(selectableRowIds([{ kind: "terminal" }, { kind: "group" }, { kind: "parent" }])).toEqual([]);
+    });
+
+    it("a plain click selects one row, clears the rest and is the anchor", () => {
+        expect(selectOnly("c")).toEqual({ ids: [], anchor: "c" });
+        expect(NO_ROW_SELECTION).toEqual({ ids: [], anchor: null });
+    });
+
+    describe("Ctrl/Cmd+click", () => {
+        it("starts from the focused agent's row, so the second row makes two", () => {
+            const sel = toggleRow(selectOnly("a"), "c", "a", rows);
+            expect(sel).toEqual({ ids: ["a", "c"], anchor: "c" });
+        });
+
+        it("starts from the row alone when nothing is focused, or the focus is no agent row", () => {
+            expect(toggleRow(NO_ROW_SELECTION, "b", null, rows)).toEqual({ ids: ["b"], anchor: "b" });
+            expect(toggleRow(NO_ROW_SELECTION, "b", "a-terminal", rows)).toEqual({ ids: ["b"], anchor: "b" });
+        });
+
+        it("adds a row in the order picked, and takes a picked row off again", () => {
+            let sel = toggleRow(NO_ROW_SELECTION, "d", "d", rows);
+            sel = toggleRow(sel, "a", "d", rows);
+            sel = toggleRow(sel, "c", "d", rows);
+            expect(sel.ids).toEqual(["d", "a", "c"]);
+            sel = toggleRow(sel, "a", "d", rows);
+            expect(sel).toEqual({ ids: ["d", "c"], anchor: "a" });
+        });
+
+        it("does not seed the focused agent again once it was toggled off", () => {
+            let sel = toggleRow(selectOnly("a"), "b", "a", rows); // a, b
+            sel = toggleRow(sel, "a", "a", rows); // b
+            expect(sel.ids).toEqual(["b"]);
+            sel = toggleRow(sel, "b", "a", rows); // none
+            expect(sel.ids).toEqual([]);
+            // empty again: the focus row seeds the next pick, as the first time
+            expect(toggleRow(sel, "c", "a", rows).ids).toEqual(["a", "c"]);
+        });
+
+        it("leaves a row that is no agent row alone, and drops picked rows that are gone", () => {
+            const sel = { ids: ["a", "x"], anchor: "a" };
+            expect(toggleRow(sel, "terminal-1", "a", rows)).toBe(sel);
+            expect(toggleRow(sel, "c", "a", rows).ids).toEqual(["a", "c"]);
+        });
+    });
+
+    describe("Shift+click", () => {
+        it("takes the rows from the last clicked row through the clicked one, in the order drawn", () => {
+            expect(extendRow(selectOnly("b"), "d", "b", rows)).toEqual({ ids: ["b", "c", "d"], anchor: "b" });
+            // upwards too
+            expect(extendRow(selectOnly("d"), "b", "d", rows)).toEqual({ ids: ["b", "c", "d"], anchor: "d" });
+        });
+
+        it("keeps the anchor, so the next one ranges from the same row and replaces the last range", () => {
+            let sel = extendRow(selectOnly("b"), "e", "b", rows);
+            expect(sel.ids).toEqual(["b", "c", "d", "e"]);
+            sel = extendRow(sel, "c", "b", rows);
+            expect(sel).toEqual({ ids: ["b", "c"], anchor: "b" });
+        });
+
+        it("ranges from the last Ctrl/Cmd+clicked row", () => {
+            const sel = toggleRow(selectOnly("a"), "c", "a", rows); // a, c; anchor c
+            expect(extendRow(sel, "e", "a", rows).ids).toEqual(["c", "d", "e"]);
+        });
+
+        it("falls back to the focused agent when the anchor is gone, and to the row itself when neither is there", () => {
+            expect(extendRow({ ids: [], anchor: "x" }, "c", "a", rows).ids).toEqual(["a", "b", "c"]);
+            expect(extendRow(NO_ROW_SELECTION, "c", null, rows)).toEqual({ ids: ["c"], anchor: "c" });
+        });
+
+        it("leaves a row that is no agent row alone", () => {
+            const sel = selectOnly("a");
+            expect(extendRow(sel, "terminal-1", "a", rows)).toBe(sel);
+        });
+    });
+
+    describe("pickedRowIds", () => {
+        it("is the multi-selection's rows that are still in the tree", () => {
+            expect(pickedRowIds({ ids: ["c", "x", "a"], anchor: "a" }, "b", rows)).toEqual(["c", "a"]);
+        });
+        it("is the focused agent alone with no multi-selection, and nothing when that is no agent row", () => {
+            expect(pickedRowIds(NO_ROW_SELECTION, "b", rows)).toEqual(["b"]);
+            expect(pickedRowIds(selectOnly("c"), "b", rows)).toEqual(["b"]);
+            expect(pickedRowIds(NO_ROW_SELECTION, "terminal-1", rows)).toEqual([]);
+            expect(pickedRowIds(NO_ROW_SELECTION, undefined, rows)).toEqual([]);
+        });
+        it("falls back to the focused agent when every picked row has gone", () => {
+            expect(pickedRowIds({ ids: ["x", "y"], anchor: "x" }, "b", rows)).toEqual(["b"]);
+        });
+    });
+});
+
+describe("Discuss together", () => {
+    const roots = new Map([
+        ["waveterm", "D:\\code\\waveterm"],
+        ["loom", "/home/u/loom"],
+    ]);
+    // a live claude or pi agent in a project, holding 62.5% of a 1M window
+    const live = (id: string, over: Partial<AgentVM> = {}): AgentVM => ({
+        ...vm(id, "working"),
+        agent: "claude",
+        project: "waveterm",
+        usage: { contextpct: 62.5, contextmax: 1_000_000 },
+        ...over,
+    });
+
+    describe("seatableOf", () => {
+        it("makes a seat of a claude or pi agent: its project's path, harness and the tokens in its context now", () => {
+            expect(seatableOf(live("a"), roots)).toEqual({
+                id: "a",
+                name: "a",
+                project: "D:\\code\\waveterm",
+                harness: "claude",
+                context: 625_000,
+            });
+            expect(seatableOf(live("p", { agent: "pi", project: "loom", usage: { contextpct: 21 } }), roots)).toEqual({
+                id: "p",
+                name: "p",
+                project: "/home/u/loom",
+                harness: "pi",
+                // no window size known: the context cannot be priced
+                context: 0,
+            });
+        });
+
+        it("refuses a terminal, a background agent and any other harness", () => {
+            expect(seatableOf(live("t", { kind: "terminal" }), roots)).toBeNull();
+            expect(seatableOf(live("b", { kind: "background" }), roots)).toBeNull();
+            expect(seatableOf(live("c", { agent: "codex" }), roots)).toBeNull();
+            expect(seatableOf(live("o", { agent: "opencode" }), roots)).toBeNull();
+            expect(seatableOf(live("n", { agent: undefined }), roots)).toBeNull();
+        });
+
+        it("takes where the agent runs when its project is not registered, and refuses one with no path at all", () => {
+            expect(seatableOf(live("a", { project: "elsewhere", cwd: "/work/x" }), roots)?.project).toBe("/work/x");
+            expect(seatableOf(live("a", { project: "elsewhere" }), roots)).toBeNull();
+            expect(seatableOf(live("a", { project: undefined }), roots)).toBeNull();
+        });
+
+        // one seat rule: Setup's seatableAgents, which the tree asks with no council project to fall back on
+        it("seats what Setup's rule seats, with the same project path", () => {
+            const registry = Object.fromEntries([...roots].map(([name, path]) => [name, { path }]));
+            const cases = [
+                live("reg"),
+                live("cwd", { project: "elsewhere", cwd: "/work/x" }),
+                live("both", { cwd: "/work/y" }),
+                live("none", { project: "elsewhere" }),
+                live("term", { kind: "terminal" }),
+                // no project name of its own: the one its transcript sits under
+                live("tp", { project: undefined, transcriptPath: "/home/u/.claude/projects/home-u-loom/def.jsonl" }),
+            ];
+            for (const a of cases) {
+                const [setup] = seatableAgents([a], registry, "");
+                expect(seatableOf(a, roots)).toEqual(setup?.project ? setup : null);
+            }
+            expect(seatableOf(cases[2], roots)?.project).toBe("D:\\code\\waveterm");
+            expect(seatableOf(cases[5], roots)?.project).toBe("/home/u/loom");
+        });
+    });
+
+    describe("discussTogetherSeats", () => {
+        const agents = [
+            live("a"),
+            live("b", { agent: "pi", project: "loom" }),
+            live("c", { agent: "codex" }),
+            live("d"),
+        ];
+
+        it("is the picked agents' seats in the order picked, from two up", () => {
+            expect(discussTogetherSeats(["b", "a"], agents, roots).map((s) => s.id)).toEqual(["b", "a"]);
+            expect(discussTogetherSeats(["a", "b", "d"], agents, roots).map((s) => s.project)).toEqual([
+                "D:\\code\\waveterm",
+                "/home/u/loom",
+                "D:\\code\\waveterm",
+            ]);
+        });
+
+        it("is empty for one agent, whatever it is", () => {
+            expect(discussTogetherSeats(["a"], agents, roots)).toEqual([]);
+            expect(discussTogetherSeats([], agents, roots)).toEqual([]);
+        });
+
+        it("leaves out a picked agent that cannot sit in a council, and offers nothing when fewer than two can", () => {
+            expect(discussTogetherSeats(["a", "c", "d"], agents, roots).map((s) => s.id)).toEqual(["a", "d"]);
+            expect(discussTogetherSeats(["a", "c"], agents, roots)).toEqual([]);
+        });
+
+        it("skips an id that is not in the roster", () => {
+            expect(discussTogetherSeats(["a", "gone", "b"], agents, roots).map((s) => s.id)).toEqual(["a", "b"]);
+        });
+    });
+});
+
+describe("agentsInCouncil", () => {
+    const council = (state: Council["state"], ...agents: string[]): Council =>
+        ({
+            id: `c-${state}`,
+            project: "/work/a",
+            feature: "F",
+            state,
+            round: 1,
+            experts: [
+                { id: "security", name: "Security", brief: "b", model: "" },
+                ...agents.map((a) => ({
+                    id: `agent-${a}`,
+                    name: a,
+                    brief: "",
+                    model: "",
+                    agent: a,
+                    harness: "claude",
+                })),
+            ],
+        }) as unknown as Council;
+
+    it("is the agents seated in a council that runs or waits on the person", () => {
+        const ids = agentsInCouncil([council("running", "w", "u"), council("awaiting-you", "x")]);
+        expect([...ids].sort()).toEqual(["u", "w", "x"]);
+    });
+
+    it("leaves out a queued council, an ended one and the role experts", () => {
+        const ids = agentsInCouncil([
+            council("queued", "q"),
+            council("done", "d"),
+            council("failed", "f"),
+            council("stopped", "s"),
+            council("not-run", "n"),
+        ]);
+        expect(ids.size).toBe(0);
+    });
+
+    it("is empty for a list not loaded yet", () => {
+        expect(agentsInCouncil(null).size).toBe(0);
+        expect(agentsInCouncil(undefined).size).toBe(0);
     });
 });
