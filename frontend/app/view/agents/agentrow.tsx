@@ -342,7 +342,7 @@ export const AgentRow = memo(function AgentRow({
                 // card fills its flex share; overflow clipped
                 "group relative flex cursor-pointer flex-col overflow-hidden rounded-[13px] border",
                 asking
-                    ? "border-warning/40 bg-lane animate-[breatheGlow_2.4s_ease-in-out_infinite] motion-reduce:animate-none"
+                    ? "border-warning/40 bg-lane pulse-glow"
                     : "border-edge-mid bg-lane",
                 isCursor &&
                     (asking ? "shadow-[0_0_0_1.5px_var(--color-warning)]" : "shadow-[0_0_0_1.5px_var(--color-accent)]"),

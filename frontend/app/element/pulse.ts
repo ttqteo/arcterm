@@ -12,6 +12,8 @@ export interface PulseSpec {
     low: number;
     /** timing function, applied to each half of the cycle as CSS applies it to each keyframe interval */
     ease: (t: number) => number;
+    /** the style property the driver writes the curve to; opacity unless set */
+    prop?: string;
 }
 
 /** CSS cubic-bezier(x1, y1, x2, y2) as a function of progress, solved by bisection on x. */
@@ -33,11 +35,13 @@ export function cubicBezier(x1: number, y1: number, x2: number, y2: number): (t:
 }
 
 // Keyed by the class a call site puts on its dot. Each keeps the CSS animation it replaces exactly:
-// pulseDot 1.6s (default `ease`), pulseDot 1.8s ease-in-out, and tailwind's animate-pulse.
+// pulseDot 1.6s (default `ease`), pulseDot 1.8s ease-in-out, tailwind's animate-pulse, and breatheGlow.
 export const PULSES: Record<string, PulseSpec> = {
     "pulse-dot": { periodMs: 1_600, low: 0.32, ease: cubicBezier(0.25, 0.1, 0.25, 1) },
     "pulse-dot-slow": { periodMs: 1_800, low: 0.32, ease: cubicBezier(0.42, 0, 0.58, 1) },
     "pulse-soft": { periodMs: 2_000, low: 0.5, ease: cubicBezier(0.4, 0, 0.6, 1) },
+    // breatheGlow 2.4s ease-in-out: tailwindsetup.css's .pulse-glow reads the curve as the glow's strength
+    "pulse-glow": { periodMs: 2_400, low: 0, ease: cubicBezier(0.42, 0, 0.58, 1), prop: "--pulse" },
 };
 
 /** Opacity `elapsedMs` into a dot's pulse: 1 down to `low` over the first half, back up over the second. */

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Always-mounted (cockpit root) driver for the status-dot pulse. Renders nothing. A dot opts in with one of
-// the PULSES classes (pulse.ts); every tick this sets each such dot's opacity from its curve, so the pulse
+// the PULSES classes (pulse.ts); every tick this sets each such dot's opacity (or its spec's prop) from its curve, so the pulse
 // costs 12 frames a second instead of the display rate a CSS animation holds the page at. A 6px dot fading
 // over 0.8s has no visible steps at 12fps.
 //
@@ -13,6 +13,7 @@ import { useEffect } from "react";
 import { PULSES, pulseOpacity, type PulseSpec } from "./pulse";
 
 const PULSE_FRAME_MS = 1_000 / 12;
+const DEFAULT_PROP = "opacity";
 const SELECTOR = Object.keys(PULSES)
     .map((cls) => "." + cls)
     .join(",");
@@ -31,10 +32,13 @@ export function PulseDriver() {
         const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
         const startedAt = new WeakMap<Element, number>();
         const shown = new WeakMap<Element, string>();
+        // the property each element's curve went to, kept because a released element may have lost its class
+        const written = new WeakMap<Element, string>();
         let active = new Set<HTMLElement>();
 
         const release = (el: HTMLElement) => {
-            el.style.opacity = "";
+            el.style.removeProperty(written.get(el) ?? DEFAULT_PROP);
+            written.delete(el);
             startedAt.delete(el);
             shown.delete(el);
         };
@@ -53,11 +57,13 @@ export function PulseDriver() {
                         start = now;
                         startedAt.set(el, start);
                     }
-                    const opacity = pulseOpacity(spec, now - start).toFixed(3);
+                    const value = pulseOpacity(spec, now - start).toFixed(3);
                     // an unchanged write would still invalidate the dot's style
-                    if (shown.get(el) !== opacity) {
-                        el.style.opacity = opacity;
-                        shown.set(el, opacity);
+                    if (shown.get(el) !== value) {
+                        const prop = spec.prop ?? DEFAULT_PROP;
+                        el.style.setProperty(prop, value);
+                        written.set(el, prop);
+                        shown.set(el, value);
                     }
                     next.add(el);
                 }

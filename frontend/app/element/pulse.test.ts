@@ -51,4 +51,13 @@ describe("PULSES", () => {
         expect(PULSES["pulse-dot-slow"]).toMatchObject({ periodMs: 1800, low: 0.32 });
         expect(PULSES["pulse-soft"]).toMatchObject({ periodMs: 2000, low: 0.5 });
     });
+
+    it("drives the asking glow's strength, not its opacity, over breatheGlow's 2.4s", () => {
+        // .pulse-glow reads --pulse as 1 at rest and 0 at the peak: the curve must reach both ends
+        const glow = PULSES["pulse-glow"];
+        expect(glow).toMatchObject({ periodMs: 2400, low: 0, prop: "--pulse" });
+        expect(pulseOpacity(glow, 0)).toBeCloseTo(1, 5);
+        expect(pulseOpacity(glow, 1200)).toBeCloseTo(0, 5);
+        expect(PULSES["pulse-dot"].prop).toBeUndefined();
+    });
 });

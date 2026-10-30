@@ -481,15 +481,16 @@ svg [aria-label="tip"] g path {
 
 /* Asking attention (moment 3): a slow, persistent amber breathing glow. drop-shadow
    (not box-shadow) so it never clashes with the card's cursor-ring box-shadow, and
-   is not clipped by the card's overflow-hidden. Amber comes from the status token. */
-@keyframes breatheGlow {
-    0%,
-    100% {
-        filter: drop-shadow(0 0 2px color-mix(in oklab, var(--color-warning) 30%, transparent));
-    }
-    50% {
-        filter: drop-shadow(0 0 10px color-mix(in oklab, var(--color-warning) 55%, transparent));
-    }
+   is not clipped by the card's overflow-hidden. Amber comes from the status token.
+   pulsedriver.tsx sets --pulse (1 at rest, 0 at the peak) at 12fps: as a CSS animation
+   the filter repainted the card every display frame, ~30% of a core with three asking
+   cards on screen. Without the driver (reduced motion) it rests at the small glow. */
+.pulse-glow {
+    --glow: calc(1 - var(--pulse, 1));
+    filter: drop-shadow(
+        0 0 calc(2px + 8px * var(--glow))
+            color-mix(in oklab, var(--color-warning) calc(30% + 25% * var(--glow)), transparent)
+    );
 }
 
 /* Finished settle (moment 4): a single soft scale acknowledgement on working -> idle. */

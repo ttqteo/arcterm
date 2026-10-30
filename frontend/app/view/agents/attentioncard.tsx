@@ -55,7 +55,7 @@ export function BannerChip({ children }: { children: ReactNode }) {
 }
 
 // The neutral card shell: lane surface, amber hairline border, rounded + clipped so the banner's top
-// corners follow the radius. `glow` adds the existing breathing drop-shadow for an unanswered ask
+// corners follow the radius. `glow` adds the breathing drop-shadow (.pulse-glow) for an unanswered ask
 // (moment-3 attention). Compose AttentionBanner as its first child.
 export function AttentionCard({
     glow,
@@ -70,7 +70,7 @@ export function AttentionCard({
         <div
             className={cn(
                 "overflow-hidden rounded-[13px] border border-warning/40 bg-lane",
-                glow && "animate-[breatheGlow_2.4s_ease-in-out_infinite] motion-reduce:animate-none",
+                glow && "pulse-glow",
                 className
             )}
         >
