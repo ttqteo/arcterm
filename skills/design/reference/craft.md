@@ -42,6 +42,20 @@ type and detail. Commit to a small system:
   derive harmonious oklch colors from them rather than inventing new.
 - Motion, where the design carries it (CSS in the artboard): one
   well-orchestrated moment, not scattered effects.
+  Motion confirms a change that already happened, beside a static
+  sign of it (label, colour, position), and is never decorative.
+  How often it plays decides whether it exists: a keyboard action or
+  anything seen a hundred times a day does not animate; a modal,
+  drawer or toast does. Where the design system names no values
+  (rules from Emil Kowalski's design-engineering skill,
+  github.com/emilkowalski/skills): enter and exit ease out (a strong
+  curve such as `cubic-bezier(0.23,1,0.32,1)`), never ease in; press
+  100–160 ms, tooltip or menu 150–250 ms, modal or drawer up to
+  400 ms; exits faster than entrances. Transition named properties
+  (`transform`, `opacity`), never `all`. An entering element starts at
+  `scale(0.95)` and transparent, never `scale(0)`; a popover grows
+  from its trigger, a modal from the centre. Reduced motion keeps
+  fades and drops movement.
 
 ### Hi-fi mockups are rooted in context
 
