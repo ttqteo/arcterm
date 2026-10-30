@@ -26,6 +26,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- **Who wrote this line**: the Code surface's Blame button (or `b`) opens a column beside the editor with each
+  block's commit, its age and, when a run landed it, that run's goal. A click opens the run, or copies the sha.
+- The Code surface's diff (`d`) now steps from `HEAD` to the branch base (everything this branch changed in the file)
+  and then off; the diff header says which one you are looking at.
+- A run's task reviewer is now shown every check a Claude worker loosened (a skipped or deleted test, a rewritten
+  expected value, `--no-verify`) and must pass or fail each one; outside a run, Claude is told so it says so in its
+  reply.
 - **Live agents in a council, and a council that reads as a chat**: a council can seat your running claude and pi
   agents beside its role experts, each answering from its own session, and every answer waits for you as a draft to
   send to the others, edit or drop. The discussion of every council is now a chat: each idea is a message in a channel
@@ -56,6 +63,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A plan review's first round runs two independent reviewers instead of five, for about the same findings at a
+  lower cost, and engine sessions use a 5-minute prompt cache instead of an hour.
+- A run started with `wsh runs start` from inside a linked worktree branches from that worktree and lands back into
+  it, instead of the main checkout.
+- Motion: the palette's scope underline slides between tabs, a DAG task settles when it finishes, live timeline rows
+  fade in, Jarvis's reply shows a flow bar while it thinks (and can be dismissed), and a failed copy now reads
+  "Copy failed".
+- Brainstorm part rows are roomier, and the question and working views sit a third of the way down the pane.
+- arcterm's log (`waveapp.log`) is about 98% smaller: routine connection and call lines are gone, errors stay.
 - A project's Overview fills the centre pane: Now and the Branches card sit in a column beside History, which loads
   more sessions as you scroll.
 - A click on a project's folder in the Agent sidebar opens its Overview; the chevron before it folds and unfolds the
@@ -96,6 +112,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run that ended while its DAG was blocked or finalizing no longer leaves that DAG stuck (and retrying every 30
+  seconds).
+- The cache-miss notice no longer covers a survey above the prompt.
 - A run held because the checkout was in the middle of a merge, rebase or cherry-pick now lands by itself once
   that operation is finished or aborted, instead of waiting for you to land it by hand.
 - A run's lead or worker you open for the first time after it has been working no longer shows its terminal
