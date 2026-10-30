@@ -46,6 +46,32 @@ export async function readPanelFile(abs: string, since?: string): Promise<PanelF
     }
 }
 
+/** Pure: what a re-read in place shows. The file as read, unless it reads the same (a re-render for nothing), or the read
+ * itself failed over a file on screen (a dropped RPC: what is shown stands). */
+export function afterReread(prev: PanelFile, next: PanelFile): PanelFile {
+    if (next.kind === "error" && prev.kind !== "loading") {
+        return prev;
+    }
+    return panelKey(prev) === panelKey(next) ? prev : next;
+}
+
+function panelKey(f: PanelFile): string {
+    switch (f.kind) {
+        case "text":
+            return `text:${f.stamp}`;
+        case "pdf":
+        case "image":
+            return `${f.kind}:${f.size}:${f.modtime}`;
+        case "binary":
+        case "toolarge":
+            return `${f.kind}:${f.size}`;
+        case "error":
+            return `error:${f.message}`;
+        default:
+            return f.kind;
+    }
+}
+
 // Flips the task box on `line` (mdtasks.ts), read fresh so an edit made since the Preview's read is kept; false when
 // that line no longer reads `shown`, as the Preview rendered it.
 export async function toggleTaskInFile(abs: string, line: number, shown: string): Promise<boolean> {

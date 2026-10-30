@@ -37,7 +37,7 @@ import { DocFindBar } from "./docfindbar";
 import { OUTLINE_SELECTOR, OutlineButton } from "./docoutlineview";
 import { savedScroll, saveScroll } from "./filescroll";
 import { FileTabDiff } from "./filetabdiff";
-import { canOpenInOsApp, formatSize, readPanelFile, type PanelFile } from "./filetabload";
+import { afterReread, canOpenInOsApp, formatSize, readPanelFile, type PanelFile } from "./filetabload";
 import { frameToTop, HtmlFrame } from "./htmlframe";
 import { ImageFrame } from "./imageframe";
 import { cancelBox, mdCommentAtom } from "./mdcommentstore";
@@ -58,6 +58,7 @@ const OPTIONS: MonacoTypes.editor.IEditorOptions = {
     scrollbar: { useShadows: false, verticalScrollbarSize: 5, horizontalScrollbarSize: 5 },
 };
 const LIVE_POLL_MS = 1000;
+const WATCH_POLL_MS = 1500;
 const COPIED_MS = 1200;
 // the line a link named: a grey fill (selection is grey, DESIGN.md) and an accent mark in the gutter
 const HIT_LINE = "bg-surface-hover";
@@ -125,34 +126,38 @@ export function FileTab({
             live = false;
         };
     }, [ref?.abs, ref?.reread]);
-    // Live: read the file again each second, in place, while it changes
+    // read the file again in place when it changes (only its size and modtime are read until it does): Live output
+    // each second while followed, any other file a little slower, and nothing while the window is hidden
     useEffect(() => {
-        if (ref == null || !following) {
+        if (ref == null || (ref.live && !following)) {
             return;
         }
         let live = true;
         let busy = false;
-        const timer = setInterval(() => {
-            if (busy) {
-                return;
-            }
-            busy = true;
-            fireAndForget(async () => {
-                try {
-                    const next = await readPanelFile(ref.abs, stampRef.current);
-                    if (live && next != null) {
-                        setState(next);
-                    }
-                } finally {
-                    busy = false;
+        const timer = setInterval(
+            () => {
+                if (busy || document.hidden) {
+                    return;
                 }
-            });
-        }, LIVE_POLL_MS);
+                busy = true;
+                fireAndForget(async () => {
+                    try {
+                        const next = await readPanelFile(ref.abs, stampRef.current);
+                        if (live && next != null) {
+                            setState((prev) => afterReread(prev, next));
+                        }
+                    } finally {
+                        busy = false;
+                    }
+                });
+            },
+            ref.live ? LIVE_POLL_MS : WATCH_POLL_MS
+        );
         return () => {
             live = false;
             clearInterval(timer);
         };
-    }, [ref?.abs, following]);
+    }, [ref?.abs, ref?.live, following]);
     // the bar finds in one file's Preview: another file or view closes it
     useEffect(() => setFindOpen(false), [ref?.abs, mdMode, diffOn]);
     if (ref == null) {
