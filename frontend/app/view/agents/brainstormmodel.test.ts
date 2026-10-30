@@ -58,6 +58,7 @@ import {
     phaseSteps,
     pickableOptions,
     pickedLine,
+    procExited,
     progressView,
     questionBoards,
     questionTrack,
@@ -1807,6 +1808,23 @@ describe("paneView", () => {
         expect(paneView({ ...s, file: file({ run: "r1" }) })).toBe("run");
         expect(paneView({ ...s, file: withCheck, board: "B.dc.html" })).toBe("board");
         expect(paneView({ ...s, file: withCheck })).toBe("check");
+    });
+});
+
+describe("procExited", () => {
+    const exit = { code: 1, at: 5 };
+
+    it("an exit with the agent awake is an exit", () => {
+        expect(procExited(exit, undefined)).toBe(true);
+    });
+
+    it("no exit is none", () => {
+        expect(procExited(undefined, undefined)).toBe(false);
+    });
+
+    it("a sleep ends the process too, and is not an exit", () => {
+        expect(procExited(exit, { since: 4, freedBytes: 0 })).toBe(false);
+        expect(procExited(exit, { since: 4, freedBytes: 0, wakeFailed: "gone" })).toBe(false);
     });
 });
 

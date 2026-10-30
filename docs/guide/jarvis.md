@@ -90,7 +90,7 @@ Run và chunk nối với nhau thế nào, và ai đóng chunk khi run xong: [Or
 
 ## Run sheet
 
-Mở một run từ **Waiting on you**, **Runs**, **Shipped**, Conversation History, hoặc ngay sau **Start run**. Từ trên xuống:
+Mở một run từ **Waiting on you**, **Runs**, **Shipped**, hoặc Conversation History. Từ trên xuống:
 
 - **Verb** và dòng phụ: Planning, Starting, Working, Final check, Wrapping up, Landing, Waiting on you, Blocked, Done, Cancelled. Một run Done mà land đang chờ đọc **Landing**, kể cả khi land đang xếp hàng sau land khác của project (dòng phụ: *#2 in line to merge wave/… into main*) hay khi một resolver đang merge base vào branch của run (*a resolver is merging main into wave/…*): cả hai tự land, không cần bạn; land bị giữ đọc **Waiting on you** kèm lý do.
 - **Thanh tiến độ** (mỗi task một đoạn, rồi ba chấm cuối cho **Final check**, **Wrap-up** và **Land**: mọi task xanh mà ba chấm chưa xong thì run chưa xong) và các chip: thời gian đã trôi, worker-time, landed, answered, forwarded, unverified, **N needs you**.

@@ -60,10 +60,19 @@ const WAIT: BrainstormFile = {
 // calls holds every call in order, so a stop can be seen to come before the prompt
 function fakeIO(fail = false, stopFails = false) {
     const sent: [string, string][] = [];
+    const woken: [string, string][] = [];
     const calls: string[] = [];
     return {
         sent,
+        woken,
         calls,
+        wake: async (tabId: string, text: string) => {
+            if (fail) {
+                throw new Error("the session file is gone");
+            }
+            calls.push(`wake ${tabId}`);
+            woken.push([tabId, text]);
+        },
         prompt: async (blockId: string, text: string) => {
             if (fail) {
                 throw new Error("boom");
@@ -118,6 +127,23 @@ describe("sendBrainstorm", () => {
         const io = fakeIO();
         await sendBrainstorm(AGENT, action, io);
         expect(io.sent).toEqual([["blk-1", brainstormLine(action)]]);
+    });
+
+    it("wakes a sleeping agent with the line instead of typing into its stopped terminal", async () => {
+        const io = fakeIO();
+        const asleep = { ...AGENT, sleeping: { since: 1, freedBytes: 0 } };
+        await sendBrainstorm(asleep, { kind: "answer", text: "yes" }, io, 1000);
+        expect(io.sent).toEqual([]);
+        expect(io.woken).toEqual([["a1", "yes"]]);
+        expect(getBrainstorm(AGENT.id)?.sent).toEqual({ at: 1000, modifiedMs: 500, kind: "answer" });
+    });
+
+    it("a wake that fails throws with its reason and records nothing", async () => {
+        const asleep = { ...AGENT, sleeping: { since: 1, freedBytes: 0 } };
+        await expect(sendBrainstorm(asleep, { kind: "guess" }, fakeIO(true))).rejects.toThrow(
+            "Couldn't wake lag-alerts: the session file is gone"
+        );
+        expect(getBrainstorm(AGENT.id)?.sent).toBeNull();
     });
 
     it("sends a multi-line answer as one line", async () => {
@@ -235,6 +261,7 @@ describe("approveAndOpenRun", () => {
             prompt: async (blockId: string, text: string) => {
                 seen.push([blockId, text, globalStore.get(launcherPrefillAtom), globalStore.get(model.launcherAtom)]);
             },
+            wake: async () => {},
             stopJudge: async () => {},
         };
         await approveAndOpenRun(model, AGENT, STATE, io);

@@ -143,6 +143,8 @@ Drop) starts the next round at once, as Continue does today: a person's action, 
 - A post or an @ the person makes while a round runs reaches each seat it names at that seat's next round turn; after
   the last round, the follow-up pass answers it.
 - Continue (the round-1 pause) refuses a council that has held drafts.
+- Send or Drop on the last held draft starts the next round only on a council that is `awaiting-you`. On a running,
+  stopped or done council it only settles the draft.
 - j/k move over ideas only while focus is inside the council channel or its thread. Elsewhere they keep the Agent
   surface's agent navigation. Enter opens the focused idea's thread; Esc closes it and gives j/k back.
 - At start a council is refused when it seats the same agent twice, an agent as coordinator, an agent that is not

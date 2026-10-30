@@ -38,6 +38,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) The council chat's keys on a real keyboard, Telex on and off: in a council chat, j/k move over the
   ideas only while focus is in the channel or the thread, and `docs/keyboard-shortcuts.md` lists what the chat binds.
   (commit "feat(council): the chat view replaces the feed and the Reddit thread")
+- [ ] (arcterm) Discuss together picks a range: in the Agent tree, Ctrl+click one agent, then Shift+click an agent two
+  rows below. All three rows (the one between included) read selected and Discuss together seats all three; on a Mac
+  the same with Cmd+click. The CDP scenario ranged over two adjacent rows on Windows only. (run f46b61f9, task 10)
 
 - [ ] (arcterm) New dialog, Start column back: `Mod+N` should open three columns (Start 236px, Project, Session or the
   pick's list), focus on Start, no chip; every Start, Project, Session row draws its digit (Home 0, tools a–z), and the
@@ -96,6 +99,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) A wake message survives switching agents: open a sleeping agent, type a line in the box under its
   conversation, press Enter, then pick another agent and come back before it is awake. The box still shows the line
   (read-only, Waking…), the agent receives it, and the box is empty once it is awake.
+- [ ] (arcterm) Jarvis Runs rows no longer shade with an initiative open: with an agent row under Runs, click an
+  initiative so its panel opens on the right. No agent row under Runs is shaded; clicking an orchestrator run still
+  shades that one row. (commit "fix: council refusals say why; a sleeping brainstorm stays; clean compaction summary")
 - [ ] (arcterm) Start run hands the run to a Starting row: New → Orchestrate → write a goal → Start run. The dialog
   closes at once, the Agent surface shows a spinning **Starting · <1m** row in the project's folder, and it goes when
   the lead's row appears. Start another and click its × while it starts: it reads Cancelling…, then goes, and the run
@@ -126,6 +132,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Judge row under the agent and no "Judge · …" row of its own in the project folder; the same for a second builder
   check. Rows left over from before this fix stay until closed by hand. (commit "fix(brainstorm): a new judge or
   builder check closes the one before it")
+- [ ] (arcterm) A sleeping brainstorm stays a brainstorm: put an agent in brainstorm mode to sleep (its row's menu →
+  Sleep). The pane keeps the design with the "Sleeping since … · Wake" card above it, not "exited with code 1 ·
+  Resume in a new agent"; Wake brings the same conversation back, and answering a question while it sleeps wakes it
+  and delivers the answer. (commit "fix: council refusals say why; a sleeping brainstorm stays; clean compaction summary")
+- [ ] (arcterm) A compaction summary reads clean: open a compacted Claude agent on the Agent surface and expand the
+  Compacted divider. The card opens on "1. Primary Request and Intent" as a formatted list, with no
+  `<system-reminder>` text and no "Continue the conversation…" lines at the end (`transcriptprojection.ts`
+  `compactSummaryText`). (commit "fix: council refusals say why; a sleeping brainstorm stays; clean compaction summary")
 - [ ] (arcterm) A council review holds three directions: start a Review council (or wait for the next one) and open
   its report. At most three direction cards, each with a "First step:" line, then an "Also raised" heading with one row
   each for the rest (`from <expert>` under the title, no stances); its saved doc has `## Also raised` between the

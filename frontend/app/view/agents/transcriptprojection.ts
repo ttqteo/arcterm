@@ -101,6 +101,32 @@ function parseTaskNotification(content: string): Extract<AgentEntry, { kind: "no
     return { kind: "notification", summary: grab("summary") ?? "", status: grab("status"), ...(result ? { result } : {}) };
 }
 
+// Claude Code wraps a compaction summary in text meant for the model: a preamble, a <system-reminder> block that runs
+// straight into "Summary:" (markdown reads both as one raw HTML block up to the next blank line), and closing
+// instructions with the transcript path. Only the summary itself is for the person.
+const COMPACT_PREAMBLE = "This session is being continued from a previous conversation that ran out of context.";
+const COMPACT_TAIL_MARKERS = [
+    "If you need specific details from before compaction",
+    "Continue the conversation from where it left off",
+    "Please continue the conversation from where we left it off",
+    "The messages after this summary are the most recent messages",
+];
+
+/** Pure: the part of a compaction summary a person reads, with the model-facing wrapper removed. */
+export function compactSummaryText(raw: string): string {
+    let text = raw.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "");
+    const cut = Math.min(...COMPACT_TAIL_MARKERS.map((m) => text.indexOf(m)).filter((i) => i > 0));
+    if (Number.isFinite(cut)) {
+        text = text.slice(0, cut);
+    }
+    text = text.trim();
+    if (text.startsWith(COMPACT_PREAMBLE)) {
+        const para = text.indexOf("\n\n");
+        text = para < 0 ? "" : text.slice(para).trim();
+    }
+    return text.replace(/^Summary:[ \t]*\n/, "").trim();
+}
+
 function mergeCompaction(entries: AgentEntry[], patch: Partial<Extract<AgentEntry, { kind: "compaction" }>>): void {
     const last = entries[entries.length - 1];
     if (last != null && last.kind === "compaction") {
@@ -197,7 +223,8 @@ export function projectTranscript(lines: string[]): AgentEntry[] {
                                 .map((b: any) => b.text)
                                 .join("\n")
                           : "";
-                mergeCompaction(entries, summary.trim() !== "" ? { summary } : {});
+                const text = compactSummaryText(summary);
+                mergeCompaction(entries, text !== "" ? { summary: text } : {});
                 continue;
             }
             const content = rec?.message?.content;

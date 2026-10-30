@@ -6,6 +6,7 @@
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { AgentsViewModel } from "./agents";
+import { wakeAgent } from "./agentsleep";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import {
     brainstormLine,
@@ -20,14 +21,19 @@ import { openLauncher } from "./launcherstore";
 
 type PromptIO = {
     prompt(blockId: string, text: string): Promise<void>;
+    wake(tabId: string, text: string): Promise<void>;
     stopJudge(blockId: string): Promise<void>;
 };
 
 // a session whose arc mod holds a control stream runs the line as a prompt, leaving the user's draft in the
-// composer alone; any other session has it typed, as canvas marks are sent
+// composer alone; any other session has it typed, as canvas marks are sent. A sleeping agent has no process to send
+// to: the line goes with its Wake, which delivers it once the agent is back, as the composer's message does
 const tauriPromptIO: PromptIO = {
     async prompt(blockId, text) {
         await RpcApi.AgentPromptCommand(TabRpcClient, { blockid: blockId, text });
+    },
+    async wake(tabId, text) {
+        await wakeAgent(tabId, { message: text });
     },
     async stopJudge(blockId) {
         await RpcApi.BrainstormJudgeStopCommand(TabRpcClient, { blockid: blockId });
@@ -61,10 +67,18 @@ export async function sendBrainstorm(
             throw new Error(`Couldn't stop the judge: ${e instanceof Error ? e.message : String(e)}`);
         }
     }
-    try {
-        await io.prompt(agent.blockId, line);
-    } catch (e) {
-        throw new Error(`Couldn't send to ${agent.name}: ${e instanceof Error ? e.message : String(e)}`);
+    if (agent.sleeping) {
+        try {
+            await io.wake(agent.id, line);
+        } catch (e) {
+            throw new Error(`Couldn't wake ${agent.name}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    } else {
+        try {
+            await io.prompt(agent.blockId, line);
+        } catch (e) {
+            throw new Error(`Couldn't send to ${agent.name}: ${e instanceof Error ? e.message : String(e)}`);
+        }
     }
     // the agent writes its file once, at the end of its turn: until then the pane says it is writing
     const modifiedMs = getBrainstorm(agent.id)?.modifiedMs ?? null;

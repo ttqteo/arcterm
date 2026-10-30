@@ -129,7 +129,7 @@ Cấu hình trong hộp New:
 
 Nút **Start run** bị khóa khi còn thiếu gì đó, và dòng ở chân hộp nói thiếu gì: `Pick a project`, `Write the goal`, `Give the plan's absolute path`, `Reading the plan…`, hoặc lỗi của parser. Khi hộp được mở kèm một Prototype (ví dụ từ một design canvas), một chip `Prototype · <đường dẫn>` hiện dưới các bộ chọn và có nút gỡ. Đóng hộp không mất gì bạn đã gõ: mở lại thì bản nháp được khôi phục (hộp ghi "draft restored" kèm nút **Clear**).
 
-**Start run** tạo run và mở sheet của nó ở trạng thái **Planning** ("the lead is writing the plan"). Không gì được dispatch cho tới khi lead submit một plan.
+**Start run** đóng hộp ngay và đưa bạn sang Agent: trong thư mục của project hiện một hàng **Starting · <thời gian>** (vòng quay) suốt lúc run được tạo, việc dựng landing tree và lead có thể mất vài phút. Muốn hủy thì bấm **×** trên hàng đó (hoặc chuột phải → **Cancel**); run vừa được tạo xong sẽ bị cancel ngay. Khi run tồn tại, hàng biến mất và lead của run thế chỗ, ở trạng thái **Planning** ("the lead is writing the plan"). Không gì được dispatch cho tới khi lead submit một plan. Nếu tạo run lỗi, hàng chuyển thành **Failed · <lý do>** với **Try again** (cùng goal, project và model) và **Dismiss**.
 
 1. **Open lead ↗** (nút ở dock của sheet) đưa bạn tới lead trên surface Agent. Lead chạy `superpowers:brainstorming` trên code thật trong cây của nó (branch của run, hoặc checkout).
 2. Lead được dặn đưa **mọi câu hỏi và phê duyệt** qua công cụ hỏi, nên chúng hiện ở **Waiting on you** trên Jarvis (và trên Cockpit) thay vì trôi qua trong terminal. Trả lời như [Jarvis → Trả lời câu hỏi](jarvis.md#trả-lời-câu-hỏi-của-lead-và-worker) mô tả.

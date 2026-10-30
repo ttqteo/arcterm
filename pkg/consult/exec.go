@@ -171,10 +171,11 @@ func runPipe(ctx context.Context, spec RuntimeSpec, cwd, prompt string, emit fun
 		}
 	}
 	if werr := waitCmd(ctx, cmd); werr != nil {
-		msg := strings.TrimSpace(stderrTail(stderr))
-		if msg == "" {
-			msg = werr.Error()
-		}
+		// A non-zero exit by itself ("exit status 1") says nothing. Prefer, in order: a
+		// runtime-reported assistant error the parser surfaced (a safeguard refusal, a
+		// result event with is_error), the process's stderr tail, a model-error line
+		// mined from the captured reply, and only then the bare exit error.
+		msg := exitMessage(parseErr, stderrTail(stderr), full.String(), werr)
 		return full.String(), fmt.Errorf("%s", msg)
 	}
 	if parseErr != nil {
@@ -289,6 +290,41 @@ func stderrTail(f *os.File) string {
 		return ""
 	}
 	return strings.TrimSpace(string(buf))
+}
+
+// exitMessage turns a non-zero CLI exit into the most informative message available: a parser-surfaced
+// assistant error (safeguard refusal, result is_error), else the stderr tail, else a model-error line
+// mined from the captured reply, else the bare exit error. A refusal commonly arrives only as an
+// assistant text block on stdout ("API Error: … safeguards flagged this session"), with an empty
+// stderr and a bare "exit status 1" — mining full is what recovers it then.
+func exitMessage(parseErr error, stderrTail, full string, werr error) string {
+	if parseErr != nil {
+		return strings.TrimSpace(parseErr.Error())
+	}
+	if s := strings.TrimSpace(stderrTail); s != "" {
+		return s
+	}
+	if s := mineModelError(full); s != "" {
+		return s
+	}
+	return werr.Error()
+}
+
+// mineModelError returns the first line of captured output that looks like a model/runtime error —
+// an "API Error" line (the CLI's synthetic AUP/safeguard message) or a stated refusal — or "" when
+// the output holds no such line.
+func mineModelError(full string) string {
+	for line := range strings.SplitSeq(full, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		low := strings.ToLower(line)
+		if strings.Contains(low, "api error") || strings.Contains(low, "safeguards flagged") || strings.Contains(low, "declined to") {
+			return line
+		}
+	}
+	return ""
 }
 
 func startCmd(ctx context.Context, spec RuntimeSpec, cwd, prompt string) (*exec.Cmd, *os.File, error) {

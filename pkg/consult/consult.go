@@ -111,8 +111,12 @@ func codexParseLine(line []byte) ParsedEvent {
 func claudeParseLine(line []byte) ParsedEvent {
 	var ev struct {
 		Type    string `json:"type"`
+		Subtype string `json:"subtype"`
+		IsError bool   `json:"is_error"`
+		Result  string `json:"result"`
 		Message struct {
-			Content []struct {
+			StopReason string `json:"stop_reason"`
+			Content    []struct {
 				Type  string          `json:"type"`
 				Text  string          `json:"text"`
 				Name  string          `json:"name"`
@@ -132,7 +136,20 @@ func claudeParseLine(line []byte) ParsedEvent {
 	switch ev.Type {
 	case "result":
 		u := ev.Usage
-		return ParsedEvent{Complete: true, Tokens: u.Input + u.CacheRead + u.CacheCreation + u.Output}
+		pe := ParsedEvent{Complete: true, Tokens: u.Input + u.CacheRead + u.CacheCreation + u.Output}
+		// A result that reports an error (a safeguard refusal, a run that hit a limit) carries the
+		// reason in result/subtype; surface it so the caller reports it instead of a bare exit code.
+		if ev.IsError || strings.HasPrefix(ev.Subtype, "error") {
+			msg := strings.TrimSpace(ev.Result)
+			if msg == "" {
+				msg = ev.Subtype
+			}
+			if msg == "" {
+				msg = "the model reported an error"
+			}
+			pe.Err = errors.New(msg)
+		}
+		return pe
 	case "assistant":
 		var text strings.Builder
 		var tool string
@@ -145,6 +162,16 @@ func claudeParseLine(line []byte) ParsedEvent {
 					tool = describeClaudeTool(c.Name, c.Input)
 				}
 			}
+		}
+		// A model refusal arrives as an assistant turn with stop_reason "refusal" (and the CLI then
+		// exits non-zero). Surface the refusal text as the error rather than letting it ride as reply
+		// text that would read as a successful, if terse, answer.
+		if ev.Message.StopReason == "refusal" {
+			msg := strings.TrimSpace(text.String())
+			if msg == "" {
+				msg = "the model declined to respond (refusal)"
+			}
+			return ParsedEvent{Err: errors.New(msg), Tool: tool}
 		}
 		return ParsedEvent{Text: text.String(), Tool: tool}
 	}

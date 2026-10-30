@@ -5,6 +5,7 @@ package consult
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -162,6 +163,52 @@ func TestClaudeParseLine_extractsAssistantText(t *testing.T) {
 	ev = claudeParseLine([]byte(`{"type":"result","subtype":"success","result":"pong"}`))
 	if ev.Text != "" || !ev.Complete || ev.Err != nil {
 		t.Errorf("expected a result to settle without text, got %+v", ev)
+	}
+}
+
+func TestClaudeParseLine_surfacesErrors(t *testing.T) {
+	// a result event that reports an error carries its reason in result/subtype
+	ev := claudeParseLine([]byte(`{"type":"result","subtype":"error_during_execution","is_error":true,"result":"model overloaded"}`))
+	if ev.Err == nil || ev.Err.Error() != "model overloaded" {
+		t.Errorf("expected result error 'model overloaded', got %+v", ev)
+	}
+	if !ev.Complete {
+		t.Errorf("an error result still settles the call, got %+v", ev)
+	}
+	// is_error with no result text falls back to the subtype
+	ev = claudeParseLine([]byte(`{"type":"result","subtype":"error_max_turns","is_error":true}`))
+	if ev.Err == nil || ev.Err.Error() != "error_max_turns" {
+		t.Errorf("expected subtype fallback, got %+v", ev)
+	}
+	// a refusal arrives as an assistant turn with stop_reason "refusal"; its text is the error, not reply text
+	refusal := `{"type":"assistant","message":{"stop_reason":"refusal","content":[{"type":"text","text":"API Error: safeguards flagged this session"}]}}`
+	ev = claudeParseLine([]byte(refusal))
+	if ev.Text != "" {
+		t.Errorf("a refusal must not ride as reply text, got text %q", ev.Text)
+	}
+	if ev.Err == nil || !strings.Contains(ev.Err.Error(), "safeguards flagged") {
+		t.Errorf("expected refusal surfaced as error, got %+v", ev)
+	}
+}
+
+func TestExitMessage(t *testing.T) {
+	werr := errors.New("exit status 1")
+	// a parser-surfaced error wins over everything
+	if got := exitMessage(errors.New("safeguards flagged this session"), "some stderr", "full", werr); got != "safeguards flagged this session" {
+		t.Errorf("parseErr should win, got %q", got)
+	}
+	// else the stderr tail
+	if got := exitMessage(nil, "panic: boom", "full", werr); got != "panic: boom" {
+		t.Errorf("stderr should win over exit code, got %q", got)
+	}
+	// else an API-error line mined from the captured reply (empty stderr, bare exit code)
+	full := "thinking...\nAPI Error: Opus 5.5's safeguards flagged this session\n"
+	if got := exitMessage(nil, "", full, werr); got != "API Error: Opus 5.5's safeguards flagged this session" {
+		t.Errorf("should mine the API Error line, got %q", got)
+	}
+	// else the bare exit error
+	if got := exitMessage(nil, "", "no error here", werr); got != "exit status 1" {
+		t.Errorf("should fall back to exit error, got %q", got)
 	}
 }
 

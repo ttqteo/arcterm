@@ -96,6 +96,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Before, only the count showed, and clicking the row sent the approach as your answer.
 - A run's route takes a pi model from a provider whose own ids carry an org, such as
   `river/deepseek-ai/DeepSeek-V4.1-Flash`. Before, the route was refused as the wrong namespace.
+- In Jarvis, opening an initiative's panel no longer shades every agent row under Runs as if it were the one open.
 - A message typed under a sleeping agent stays in its box while the agent wakes, even if you open another agent and
   come back. Before, the box came back empty, so the message read as lost, though it still reached the agent.
 - Vietnamese in the Hack and Fira Code fonts no longer breaks apart: letters such as ả, ị and ở drew with a gap after
@@ -104,11 +105,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   their own, and stayed in the Agent tree after the agent was gone.
 - A brainstorm's earlier judge or builder check no longer turns up as a separate session in the Agent tree when the
   agent asks for a new one: the earlier one's tab closes as the new one starts.
+- A brainstorm whose agent was put to sleep keeps showing the brainstorm instead of "exited with code 1 · Resume in a
+  new agent": Wake above it brings the same agent back, and answering in the pane wakes it with your answer.
 - An agent's Files tab lists the files of a folder that is not a git repository, as Code does, leaving out
   node_modules, build output and dot-folders. Before, the files flashed up and gave way to a "Not a git repository"
   note.
 - A canvas board no longer flickers between two sizes (86% and 87%) when the pane's width shifts by a few pixels: the
   board shrinks at once when the pane narrows, and grows again only once it widens by more than a little.
+- The summary under a Compacted divider reads as formatted markdown from its first section. Before, its opening ran
+  into one raw block with the `<system-reminder>` tags showing, and it ended with Claude Code's instructions to the
+  model.
 
 ## 0.15.18 — 2026-10-27
 

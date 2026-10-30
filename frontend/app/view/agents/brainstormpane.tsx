@@ -38,6 +38,7 @@ import {
     partAnswer,
     partGist,
     partView,
+    procExited,
     resumePrompt,
     reviewHead,
     unseenSince,
@@ -131,7 +132,7 @@ export function BrainstormPane({ model, agent }: { model: AgentsViewModel; agent
         file: s.file,
         error: s.error,
         removed: s.removed,
-        exited: exit != null,
+        exited: procExited(exit, agent.sleeping),
         showDesign: s.showDesign,
         board: s.board,
     });

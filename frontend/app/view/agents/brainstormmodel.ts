@@ -1530,6 +1530,13 @@ export function brainstormAttention(
     };
 }
 
+/** Pure: whether the agent's process exit reads as an exit. Putting an agent to sleep ends its process too, but the
+ *  agent is asleep, not gone: the card over the terminal wakes it with its conversation, which the exited card's
+ *  "Resume in a new agent" would not. */
+export function procExited(exit: { code: number; at: number } | undefined, sleeping: AgentVM["sleeping"]): boolean {
+    return exit != null && sleeping == null;
+}
+
 export type PaneView = "error" | "removed" | "exited" | "run" | "check" | "board" | "design";
 
 export function paneView(s: {

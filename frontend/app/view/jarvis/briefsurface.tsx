@@ -2397,8 +2397,12 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                                         model={model}
                                                                         line={l}
                                                                         focused={cursor === l.id}
+                                                                        // an agent row has no run, and neither has a
+                                                                        // sheet on an initiative: undefined === undefined
                                                                         selected={
-                                                                            sheetOpen && stageRun?.id === l.runOid
+                                                                            sheetOpen &&
+                                                                            l.runOid != null &&
+                                                                            stageRun?.id === l.runOid
                                                                         }
                                                                         onOpenSheet={
                                                                             l.target != null

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    compactSummaryText,
     extractAiTitle,
     extractBackgroundTasks,
     extractSubagentSpawns,
@@ -194,6 +195,25 @@ describe("projectTranscript compaction", () => {
             { kind: "user", text: "next thing" },
             { kind: "compaction", summary: "This session is being continued...\n\nSummary:\n**kept**" },
         ]);
+    });
+});
+
+describe("compactSummaryText", () => {
+    it("drops the model-facing wrapper around Claude Code's summary", () => {
+        const raw =
+            "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\n" +
+            "<system-reminder>\n<tools-used-before-summary>Bash, Read</tools-used-before-summary>\n</system-reminder>\n" +
+            "Summary:\n1. Primary Request and Intent:\n   The user asked for buttons.\n   - I suggested slash commands.\n\n2. Key Technical Concepts:\n   - brainstorm.json\n\n" +
+            "If you need specific details from before compaction (like exact code snippets), read the full transcript at: C:\\x.jsonl\n" +
+            "Continue the conversation from where it left off without asking the user any further questions.\n\n" +
+            "The messages after this summary are the most recent messages from before compaction, kept verbatim.";
+        expect(compactSummaryText(raw)).toBe(
+            "1. Primary Request and Intent:\n   The user asked for buttons.\n   - I suggested slash commands.\n\n2. Key Technical Concepts:\n   - brainstorm.json"
+        );
+    });
+
+    it("keeps a summary with no wrapper as it is", () => {
+        expect(compactSummaryText("**kept**")).toBe("**kept**");
     });
 });
 
