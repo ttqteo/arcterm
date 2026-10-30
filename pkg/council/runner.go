@@ -1713,7 +1713,8 @@ func cleanDirection(c *Council, d *CouncilDirection, panel map[string]bool) {
 
 // Summarize reruns the synthesis on everything so far and replaces the Summary. A done, stopped or paused council
 // goes back to the state it was in (a stopped one is summarized from the rounds that finished); a failed one, whose
-// synthesis failed, becomes done. A synthesis that fails leaves the council failed, with Retry on the coordinator.
+// synthesis failed, becomes done. A synthesis that fails leaves the council failed, with Retry on the coordinator. A
+// council with no idea sent (every one held or dropped) has nothing to summarize and is refused.
 func (r *Runner) Summarize(id string) (*Council, error) {
 	r.mu.Lock()
 	saved, start, err := r.summarizeLocked(id)
@@ -1744,6 +1745,9 @@ func (r *Runner) summarizeLocked(id string) (*Council, func(), error) {
 	}
 	if _, ok := coordinatorExpert(cur); !ok {
 		return nil, nil, fmt.Errorf("council %s has no coordinator", id)
+	}
+	if len(sentProposals(cur)) == 0 { // a held or dropped idea is not out in the room: the synthesis would see none
+		return nil, nil, fmt.Errorf("council %s has no sent idea to summarize", id)
 	}
 	prev := prevOf(cur)
 	return r.launchLocked(context.Background(), id, func() (*Council, error) {

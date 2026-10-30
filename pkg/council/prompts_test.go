@@ -356,6 +356,68 @@ func TestAnswersPromptForAWholeCouncilQuestionAndSeveralReplies(t *testing.T) {
 	mustNotContain(t, "own section", own, "Title-four") // cut
 }
 
+// The picks and the withdrawals of a council come in its last reply pass, so its prompts name that round: 2 for a council
+// of 2 rounds or none set, 3 for 3. A council of one round has no reply pass, so no prompt speaks of one.
+func TestSynthesisAnswersAndPicksNameTheLastReplyRound(t *testing.T) {
+	build := func(rounds int, brainstorm bool) *Council {
+		c := promptCouncil()
+		if brainstorm {
+			c = brainstormCouncil()
+		}
+		c.Rounds = rounds
+		c.Picks = map[string][]string{"ux": {"P2", "P3"}, "ram": {"P1", "P3"}}
+		return c
+	}
+	for _, tc := range []struct {
+		rounds      int
+		round, none string // the reply round the prompts name, and the one they must not
+	}{{0, "round 2", "round 3"}, {2, "round 2", "round 3"}, {3, "round 3", "round 2"}} {
+		review, brain := build(tc.rounds, false), build(tc.rounds, true)
+
+		p := SynthesisPrompt(review)
+		mustContain(t, "review synthesis", p, "In "+tc.round+" each expert named the proposals of the others most worth doing",
+			"Its author withdrew it in "+tc.round+".", `"Also raised", "Withdrawn in `+tc.round+`" or "Cut at the pause"`,
+			`"P4": "Withdrawn in `+tc.round+`", `)
+		mustNotContain(t, "review synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in "+tc.none)
+
+		p = SynthesisPrompt(brain)
+		mustContain(t, "brainstorm synthesis", p, "In "+tc.round+" each expert named the ideas of the others most worth trying",
+			"Its author withdrew it in "+tc.round+".", `"Not picked", "Withdrawn in `+tc.round+`" or "Cut at the pause"`)
+		mustNotContain(t, "brainstorm synthesis", p, "In "+tc.none+" each expert", "withdrew it in "+tc.none, "Withdrawn in "+tc.none)
+
+		for name, c := range map[string]*Council{"review": review, "brainstorm": brain} {
+			p = AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}) // UX, who withdrew P5
+			mustContain(t, name+" answers", p, "You withdrew this one in "+tc.round+".")
+			mustNotContain(t, name+" answers", p, "withdrew this one in "+tc.none)
+		}
+
+		// the shape still parses once its example outcome names the round
+		if _, _, err := ParseSynthesis(jsonFence(shapeForRounds(review, synthesisShape))); err != nil {
+			t.Errorf("%d rounds: the synthesis shape does not parse: %v", tc.rounds, err)
+		}
+	}
+	if SynthesisPrompt(build(0, false)) != SynthesisPrompt(build(2, false)) {
+		t.Error("a council with no rounds set reads differently from one of 2 rounds")
+	}
+}
+
+func TestSynthesisAndAnswersOfACouncilOfOneRoundSpeakOfNoReplyPass(t *testing.T) {
+	for name, c := range map[string]*Council{"review": promptCouncil(), "brainstorm": brainstormCouncil()} {
+		c.Rounds = 1
+		c.Picks = map[string][]string{"ux": {"P2"}}
+		p := SynthesisPrompt(c)
+		mustContain(t, name+" synthesis", p, "This is round 2 of 2", `or "Cut at the pause"`)
+		mustNotContain(t, name+" synthesis", p, "## Picks", "each expert named", "withdrew it in round", "Withdrawn in round", `"P4"`)
+		mustNotContain(t, name+" answers", AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]}), "withdrew this one in round")
+	}
+	one := promptCouncil()
+	one.Rounds = 1
+	if _, _, err := ParseSynthesis(jsonFence(shapeForRounds(one, synthesisShape))); err != nil {
+		t.Errorf("the synthesis shape of one round does not parse: %v", err)
+	}
+	mustContain(t, "synthesis", SynthesisPrompt(one), `"Also raised" or "Cut at the pause"`)
+}
+
 // agentPromptCouncil is a council of three rounds with two live agents (Witness and Scout) beside the experts UX and RAM,
 // in its third round: ideas from Witness, UX and RAM, replies of every kind, and the person's questions. P3, P4, r2 are
 // not out in the room (held, dropped), r4 is of round 3, and r3 is Witness's own.

@@ -13,7 +13,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-10-29.1"
+const HarnessVersion = "2026-10-30.1"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -83,6 +83,52 @@ const (
 
 // answerLine is the line of both synthesis shapes that holds the answer to the person's question.
 const answerLine = "  \"answer\": \"one short sentence that answers the person's question directly\",\n"
+
+// withdrawnExample is the example outcome synthesisShape shows for a withdrawn idea, written for a council of 2 rounds.
+const withdrawnExample = `"P4": "Withdrawn in round 2", `
+
+// lastReplyRound is the round the seats' picks and withdrawals come in: the last reply pass, the one before the
+// summary. 0 for a council of one round, which has no reply pass. A withdrawal in an earlier pass of a council of three
+// rounds reads as this round too, since a proposal records only that it was withdrawn.
+func lastReplyRound(c *Council) int {
+	if r := SynthesisRound(c) - 1; r >= 2 {
+		return r
+	}
+	return 0
+}
+
+// withdrawnOutcome is the outcome of an idea its author withdrew, "Withdrawn in round 2" for 2 rounds. A council of one
+// round has none.
+func withdrawnOutcome(c *Council) string {
+	if r := lastReplyRound(c); r > 0 {
+		return fmt.Sprintf("Withdrawn in round %d", r)
+	}
+	return ""
+}
+
+// outcomeWords is the list of words a synthesis prompt offers for a proposal's fate: "a", "b" or "c". The fate of a
+// withdrawn idea is among them only when the council has a reply pass to withdraw in.
+func outcomeWords(c *Council, words ...string) string {
+	if w := withdrawnOutcome(c); w != "" {
+		words = append(words, w)
+	}
+	words = append(words, "Cut at the pause")
+	quoted := make([]string, len(words))
+	for i, w := range words {
+		quoted[i] = `"` + w + `"`
+	}
+	return strings.Join(quoted[:len(quoted)-1], ", ") + " or " + quoted[len(quoted)-1]
+}
+
+// shapeForRounds is a synthesis shape written for 2 rounds, as it reads for c: the withdrawn idea in its example
+// outcomes names the council's last reply round, and a council of one round shows none.
+func shapeForRounds(c *Council, shape string) string {
+	w := withdrawnOutcome(c)
+	if w == "" {
+		return strings.Replace(shape, withdrawnExample, "", 1)
+	}
+	return strings.Replace(shape, "Withdrawn in round 2", w, 1)
+}
 
 // synthesisShapeNoQuestion is synthesisShape for a council with no question: there is nothing to answer, so it asks
 // for no answer.
@@ -228,6 +274,10 @@ func sentProposals(c *Council) []CouncilProposal {
 // writePicks lists how many of the experts' picks each proposal got and who gave them. A council from before picks
 // existed has none, and the prompt says so, so the coordinator ranks on the replies alone.
 func writePicks(b *strings.Builder, c *Council) {
+	round := lastReplyRound(c)
+	if round == 0 { // a council of one round has no reply pass to take picks in
+		return
+	}
 	b.WriteString("## Picks\n\n")
 	if len(c.Picks) == 0 {
 		if HasAgents(c) {
@@ -238,9 +288,9 @@ func writePicks(b *strings.Builder, c *Council) {
 		return
 	}
 	if isBrainstorm(c) {
-		b.WriteString("In round 2 each expert named the ideas of the others most worth trying. Picks per idea:\n\n")
+		fmt.Fprintf(b, "In round %d each expert named the ideas of the others most worth trying. Picks per idea:\n\n", round)
 	} else {
-		b.WriteString("In round 2 each expert named the proposals of the others most worth doing. Picks per proposal:\n\n")
+		fmt.Fprintf(b, "In round %d each expert named the proposals of the others most worth doing. Picks per proposal:\n\n", round)
 	}
 	for _, p := range sentProposals(c) {
 		var by []string
@@ -622,8 +672,8 @@ func SynthesisPrompt(c *Council) string {
 		switch {
 		case p.Cut:
 			b.WriteString("The person cut this proposal at the pause: it was not reviewed.\n\n")
-		case p.Withdrawn:
-			b.WriteString("Its author withdrew it in round 2.\n\n")
+		case p.Withdrawn && lastReplyRound(c) > 0:
+			fmt.Fprintf(&b, "Its author withdrew it in round %d.\n\n", lastReplyRound(c))
 		}
 		var thread strings.Builder
 		writeThread(&thread, c, p.Id)
@@ -654,8 +704,8 @@ func SynthesisPrompt(c *Council) string {
 	b.WriteString("6. In \"stances\", give each expert's stance towards the direction, keyed by the expert's id, from the replies " +
 		"above. " + stanceRule + " Leave out the authors of the proposals the direction merges. \"agreed\" is true when no " +
 		"expert challenges or opposes it.\n")
-	b.WriteString("7. In \"outcomes\", give every proposal its fate: \"Direction N\", \"Merged into direction N\", " +
-		"\"Also raised\", \"Withdrawn in round 2\" or \"Cut at the pause\".\n")
+	b.WriteString("7. In \"outcomes\", give every proposal its fate: " +
+		outcomeWords(c, "Direction N", "Merged into direction N", "Also raised") + ".\n")
 	b.WriteString("8. In \"weak\", mark any claim that cites no evidence, or whose evidence does not show what it says. " +
 		"\"ref\" is a proposal id, a reply id or an evidence ref; \"note\" says what is missing.\n")
 	b.WriteString("9. Treat the person's replies as the person's own view and weigh them.\n")
@@ -668,7 +718,7 @@ func SynthesisPrompt(c *Council) string {
 	b.WriteString("\n" + titleRule + "\n\n")
 	b.WriteString(summary + "\n\n")
 	b.WriteString(evidenceRule + "\n\n")
-	b.WriteString(jsonRule + "\n```json\n" + shape + "\n```\n")
+	b.WriteString(jsonRule + "\n```json\n" + shapeForRounds(c, shape) + "\n```\n")
 	return b.String()
 }
 
@@ -686,8 +736,8 @@ func writeBrainstormSynthesisTask(b *strings.Builder, c *Council) string {
 		"about it or is against it.\n")
 	b.WriteString("5. In \"kept\", list the wild ideas that were not chosen (the ones marked wild above), each with a title, a " +
 		"line on why it is worth remembering, and its ids in \"from\". Leave \"kept\" empty when there are none.\n")
-	b.WriteString("6. In \"outcomes\", give every idea its fate: \"Direction N\", \"Merged into direction N\", \"Kept aside\", " +
-		"\"Not picked\", \"Withdrawn in round 2\" or \"Cut at the pause\".\n")
+	b.WriteString("6. In \"outcomes\", give every idea its fate: " +
+		outcomeWords(c, "Direction N", "Merged into direction N", "Kept aside", "Not picked") + ".\n")
 	b.WriteString("7. Treat the person's replies as the person's own view and weigh them.\n")
 	shape, summary := brainstormSynthesisShapeNoQuestion, summaryRuleNoQuestion
 	if strings.TrimSpace(c.Question) != "" {
@@ -746,8 +796,8 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 		b.WriteString("## Your own proposals\n\n")
 		for _, p := range own {
 			writeProposal(&b, c, p, "###")
-			if p.Withdrawn {
-				b.WriteString("You withdrew this one in round 2.\n\n")
+			if p.Withdrawn && lastReplyRound(c) > 0 {
+				fmt.Fprintf(&b, "You withdrew this one in round %d.\n\n", lastReplyRound(c))
 			}
 		}
 	}

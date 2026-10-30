@@ -1625,6 +1625,41 @@ func TestSummarizeRefusesACouncilThatIsNotThere(t *testing.T) {
 	}
 }
 
+// A council whose ideas are all held drafts has nothing out in the room to summarize: the synthesis would see no idea.
+func TestSummarizeNeedsASentIdea(t *testing.T) {
+	h := newHarness(t)
+	c := h.run(agentCouncil("a"))
+	if c.State != StateAwaiting || len(heldIds(c)) != 2 {
+		t.Fatalf("after round 1: %s holding %v, want awaiting-you with both ideas held", c.State, heldIds(c))
+	}
+	if _, err := h.r.Summarize("a"); err == nil || err.Error() != "council a has no sent idea to summarize" {
+		t.Fatalf("Summarize with every idea held = %v, want the refusal", err)
+	}
+	if got := h.load("a"); got.State != StateAwaiting || got.Summary != nil || len(h.f.calls("r3")) != 0 {
+		t.Errorf("the refused Summarize left %s, summary %v, %d synthesis calls", got.State, got.Summary, len(h.f.calls("r3")))
+	}
+
+	// a dropped idea is not out in the room either
+	d := fixtureCouncil("b", StateAwaiting, 1)
+	d.Proposals[0].Draft, d.Proposals[1].Draft = DraftHeld, DraftDropped
+	h.save(d)
+	if _, err := h.r.Summarize("b"); err == nil || err.Error() != "council b has no sent idea to summarize" {
+		t.Fatalf("Summarize with one idea held and one dropped = %v, want the refusal", err)
+	}
+
+	// one sent idea is enough, and the council goes on waiting on the draft still held
+	if _, err := h.r.Draft("a", ideaBy(t, c, "witness"), "send", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.r.Summarize("a"); err != nil {
+		t.Fatalf("Summarize with a sent idea: %v", err)
+	}
+	got := h.wait("a")
+	if got.State != StateAwaiting || got.Summary == nil || len(h.f.calls("r3")) != 1 {
+		t.Errorf("after Summarize: %s, summary %v, %d synthesis calls, want it awaiting-you with one synthesis", got.State, got.Summary, len(h.f.calls("r3")))
+	}
+}
+
 // ---- stop ----
 
 func TestStopKeepsFinishedRounds(t *testing.T) {

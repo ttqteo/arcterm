@@ -260,6 +260,13 @@ func TestParseSynthesis(t *testing.T) {
 	}
 }
 
+func TestParseSynthesisKeepsTheRoundOfAWithdrawal(t *testing.T) {
+	sum, _, err := ParseSynthesis(jsonFence(`{"directions": [{"title": "A"}], "outcomes": {"P4": "Withdrawn in round 3"}}`))
+	if err != nil || sum.Outcomes["P4"] != "Withdrawn in round 3" {
+		t.Errorf("outcomes = %v, %v, want the round 3 withdrawal kept as the coordinator wrote it", sum.Outcomes, err)
+	}
+}
+
 func TestParseSynthesisRenumbersWithoutRanks(t *testing.T) {
 	sum, _, err := ParseSynthesis(jsonFence(`{"directions": [{"title": "B"}, {"title": "A"}]}`))
 	if err != nil {

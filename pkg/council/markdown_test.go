@@ -98,6 +98,17 @@ func TestMarkdownReviewAlsoRaised(t *testing.T) {
 	}
 }
 
+// The matrix prints the coordinator's outcome word as it is, so a withdrawal in the third round of a council of three
+// reads as that.
+func TestMarkdownMatrixKeepsTheRoundOfAWithdrawal(t *testing.T) {
+	c := markdownCouncil()
+	c.Rounds = 3
+	c.Summary.Outcomes["P3"] = "Withdrawn in round 3"
+	if md := Markdown(c); !strings.Contains(md, "| P3 · Wake on hover | — | — | author | Withdrawn in round 3 |") {
+		t.Errorf("the matrix lacks the round 3 withdrawal\n%s", md)
+	}
+}
+
 func TestMarkdownMatrixRows(t *testing.T) {
 	md := Markdown(markdownCouncil())
 	rows := map[string]string{}
