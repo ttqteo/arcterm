@@ -242,6 +242,13 @@ func councilExpertsText(n int) string {
 	return fmt.Sprintf("%d experts", n)
 }
 
+func councilDraftsText(n int) string {
+	if n == 1 {
+		return "1 draft"
+	}
+	return fmt.Sprintf("%d drafts", n)
+}
+
 // councilStartedLine is the line a started council prints: the mode and the group it works in, then the cost.
 func councilStartedLine(id, feature, mode, group string, n int, est *wshrpc.CouncilEstimateRtnData) string {
 	return fmt.Sprintf("council %s started: %s · %s · %s · %s · ≈ %d calls · ~%s tokens",
@@ -281,6 +288,11 @@ func councilWaitText(c *council.Council) (string, error) {
 	case council.StateDone:
 		return council.Markdown(c), nil
 	case council.StateAwaiting:
+		if n := council.HeldDrafts(c); n > 0 { // a council with agents seated waits on its drafts, not on a Continue
+			return fmt.Sprintf("council %s is waiting on you: %s from round %d wait for you. In arcterm, open the council and "+
+				"send, edit or drop each one; the next round starts once none is left. Run `wsh council wait %s` again when "+
+				"you have.\n", c.Id, councilDraftsText(n), c.Round, c.Id), nil
+		}
 		return fmt.Sprintf("council %s is waiting on you: it paused after round 1. In arcterm, open the council, untick the "+
 			"proposals not worth a review, ask the experts anything, then press Continue. Rounds 2 and 3 follow; run "+
 			"`wsh council wait %s` again when you have.\n", c.Id, c.Id), nil

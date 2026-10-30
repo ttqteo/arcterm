@@ -433,6 +433,24 @@ func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 	return CouncilSummary{Text: strings.TrimSpace(r.Text), Directions: dirs, Kept: kept, Outcomes: outcomes, Answer: strings.TrimSpace(r.Answer)}, weak, nil
 }
 
+// PlainReply is what a live agent's answer becomes when it holds none of the JSON the round asks for: its own words, the
+// prose it wrote before a JSON block that did not read, or the whole text when it wrote none. A live agent is not held to
+// the shape the way a fresh call is, so what it said is heard as one plain reply to the council rather than failed.
+func PlainReply(reply string) string {
+	text := strings.TrimSpace(reply)
+	offset := 0
+	for line := range strings.SplitSeq(text, "\n") {
+		if t := strings.TrimSpace(line); strings.HasPrefix(t, "```") && strings.EqualFold(strings.TrimSpace(strings.TrimPrefix(t, "```")), "json") {
+			if prose := strings.TrimSpace(text[:offset]); prose != "" {
+				return prose
+			}
+			break
+		}
+		offset += len(line) + 1
+	}
+	return text
+}
+
 // MarkWeak applies the synthesis's weak notes to c. A note whose ref is the ref of some evidence marks that evidence
 // weak; one whose ref is a proposal or reply id adds a weak chip to it. A ref that matches nothing is skipped, and
 // so is a note already on the claim, so applying the same notes again changes nothing.

@@ -126,6 +126,17 @@ type CouncilReply struct {
 	Ts         int64             `json:"ts"`
 	Draft      string            `json:"draft,omitempty"`  // DraftHeld or DraftDropped; empty once sent, and on a reply that was never held
 	Edited     bool              `json:"edited,omitempty"` // the person edited it before sending
+	// Revision is the change to its own idea a held reply carries: it takes effect when the reply is sent, and a dropped
+	// reply cancels it. Nil on every reply that is sent or never held.
+	Revision *CouncilRevision `json:"revision,omitempty"`
+}
+
+// CouncilRevision is what a seat's revision of its own idea changes: a withdrawal, or a new title and argument (an
+// empty one stays as it is).
+type CouncilRevision struct {
+	Withdraw bool   `json:"withdraw,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Argument string `json:"argument,omitempty"`
 }
 
 type CouncilDirection struct {

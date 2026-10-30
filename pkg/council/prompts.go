@@ -13,7 +13,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-10-28.1"
+const HarnessVersion = "2026-10-29.1"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -213,12 +213,28 @@ func speaker(c *Council, id string) string {
 	return id
 }
 
+// sentProposals are the proposals that are out in the room: the ones a held or dropped draft is not. Only these reach a
+// prompt, the picks, the synthesis and the saved document.
+func sentProposals(c *Council) []CouncilProposal {
+	out := make([]CouncilProposal, 0, len(c.Proposals))
+	for _, p := range c.Proposals {
+		if Sent(p.Draft) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // writePicks lists how many of the experts' picks each proposal got and who gave them. A council from before picks
 // existed has none, and the prompt says so, so the coordinator ranks on the replies alone.
 func writePicks(b *strings.Builder, c *Council) {
 	b.WriteString("## Picks\n\n")
 	if len(c.Picks) == 0 {
-		b.WriteString("No expert gave picks (this council is from before picks existed): rank on the replies alone.\n\n")
+		if HasAgents(c) {
+			b.WriteString("No seat gave picks: rank on the ideas and the replies alone.\n\n")
+		} else {
+			b.WriteString("No expert gave picks (this council is from before picks existed): rank on the replies alone.\n\n")
+		}
 		return
 	}
 	if isBrainstorm(c) {
@@ -226,7 +242,7 @@ func writePicks(b *strings.Builder, c *Council) {
 	} else {
 		b.WriteString("In round 2 each expert named the proposals of the others most worth doing. Picks per proposal:\n\n")
 	}
-	for _, p := range c.Proposals {
+	for _, p := range sentProposals(c) {
 		var by []string
 		for _, e := range c.Experts {
 			if slices.Contains(c.Picks[e.Id], p.Id) {
@@ -258,6 +274,16 @@ func findReply(c *Council, id string) *CouncilReply {
 		}
 	}
 	return nil
+}
+
+// seatOf is the seat with expert id id.
+func seatOf(c *Council, id string) (CouncilExpert, bool) {
+	for _, e := range c.Experts {
+		if e.Id == id {
+			return e, true
+		}
+	}
+	return CouncilExpert{}, false
 }
 
 func coordinatorExpert(c *Council) (CouncilExpert, bool) {
@@ -322,25 +348,27 @@ func writeProposal(b *strings.Builder, c *Council, p CouncilProposal, level stri
 	b.WriteString("\n")
 }
 
-// Round1Prompt asks one expert for its proposals. The call runs in the project folder with Read, Grep and Glob.
-func Round1Prompt(c *Council, e CouncilExpert) string {
-	var b strings.Builder
-	writeContext(&b, c, e, "one expert on")
+// writeFiles lists the files and screenshots the person put in front of the panel.
+func writeFiles(b *strings.Builder, c *Council) {
 	if len(c.Files) > 0 {
 		b.WriteString("\nFiles to read first:\n")
 		for _, f := range c.Files {
-			fmt.Fprintf(&b, "- %s\n", f)
+			fmt.Fprintf(b, "- %s\n", f)
 		}
 	}
 	if len(c.Screenshots) > 0 {
 		b.WriteString("\nScreenshots (open each with Read):\n")
 		for _, s := range c.Screenshots {
-			fmt.Fprintf(&b, "- %s\n", s)
+			fmt.Fprintf(b, "- %s\n", s)
 		}
 	}
+}
+
+// round1Task is what the ideas round asks, and the shape of the answer: the end of the round 1 prompt, and of an agent
+// seat's first turn.
+func round1Task(c *Council) string {
+	var b strings.Builder
 	if isBrainstorm(c) {
-		b.WriteString("\nThis is round 1 of 3: ideas. You have Read, Grep and Glob in the project folder. " +
-			"You brainstorm; you never edit anything.\n\n")
 		b.WriteString("Come up with ideas for the problem or goal from your angle only. Do not judge any idea, yours or " +
 			"anyone's: doubts wait for round 2. A few strong, different ideas beat many that are alike. Each idea is one " +
 			"entry in \"proposals\", with a short title and an argument: what the idea is, and why it could work. An idea " +
@@ -349,13 +377,27 @@ func Round1Prompt(c *Council, e CouncilExpert) string {
 		b.WriteString(jsonRule + "\n```json\n" + brainstormRound1Shape + "\n```\n")
 		return b.String()
 	}
-	b.WriteString("\nThis is round 1 of 3: proposals. You have Read, Grep and Glob in the project folder. " +
-		"You review; you never edit anything.\n\n")
 	b.WriteString("Review the feature from your angle only and propose the changes worth making. A few strong " +
 		"proposals beat many weak ones, and none is a fair answer if you find nothing worth changing. " +
 		"Each proposal has a short title, an argument, and the evidence it rests on.\n\n")
 	b.WriteString(evidenceRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + round1Shape + "\n```\n")
+	return b.String()
+}
+
+// Round1Prompt asks one expert for its proposals. The call runs in the project folder with Read, Grep and Glob.
+func Round1Prompt(c *Council, e CouncilExpert) string {
+	var b strings.Builder
+	writeContext(&b, c, e, "one expert on")
+	writeFiles(&b, c)
+	if isBrainstorm(c) {
+		fmt.Fprintf(&b, "\nThis is round 1 of %d: ideas. You have Read, Grep and Glob in the project folder. "+
+			"You brainstorm; you never edit anything.\n\n", SynthesisRound(c))
+	} else {
+		fmt.Fprintf(&b, "\nThis is round 1 of %d: proposals. You have Read, Grep and Glob in the project folder. "+
+			"You review; you never edit anything.\n\n", SynthesisRound(c))
+	}
+	b.WriteString(round1Task(c))
 	return b.String()
 }
 
@@ -386,49 +428,21 @@ func askLine(c *Council, r CouncilReply) string {
 // tools. Its own proposals sit apart, under their own heading, because each call is a fresh process that remembers
 // nothing of round 1: the expert can revise or withdraw only what it is shown. The person's unanswered replies to
 // it, and the question asked at the pause (a reply to the whole council), come last.
-func Round2Prompt(c *Council, e CouncilExpert) string {
+func Round2Prompt(c *Council, e CouncilExpert) string { return round2PromptFor(c, e, 2) }
+
+// laterPassNote opens the task of every reply pass after the first, a council with agents and three rounds: the stances
+// of the pass before stand, and what was said since is answered.
+const laterPassNote = `Your stances from the earlier rounds stand. Give an entry in "stances" again only on a proposal where what was ` +
+	`said since gives you reason to speak: it needs a reason, and it answers the latest reply to that proposal. Leave ` +
+	`"stances" empty otherwise.`
+
+// round2Task is what a reply pass asks, and the shape of the answer: the end of the round 2 prompt, and of an agent
+// seat's turn in a reply pass. A pass after the first opens with laterPassNote.
+func round2Task(c *Council, round int) string {
 	var b strings.Builder
-	writeContext(&b, c, e, "one expert on")
-	if isBrainstorm(c) {
-		b.WriteString("\nThis is round 2 of 3: build on each other. You have no tools in this round: work from the text below.\n\n")
-	} else {
-		b.WriteString("\nThis is round 2 of 3: cross-review. You have no tools in this round: work from the text below.\n\n")
+	if round > 2 {
+		b.WriteString(laterPassNote + "\n\n")
 	}
-
-	b.WriteString("## Proposals to review\n\n")
-	review := 0
-	for _, p := range c.Proposals {
-		if p.Author != e.Id && !p.Cut {
-			writeProposal(&b, c, p, "###")
-			review++
-		}
-	}
-	if review == 0 {
-		b.WriteString("(none: no other expert has a proposal to review, so \"stances\" is empty)\n\n")
-	}
-
-	var own []CouncilProposal
-	for _, p := range c.Proposals {
-		if p.Author == e.Id && !p.Cut {
-			own = append(own, p)
-		}
-	}
-	if len(own) > 0 {
-		b.WriteString("## Your own proposals\n\nThese are yours, from round 1. Do not review them.\n\n")
-		for _, p := range own {
-			writeProposal(&b, c, p, "###")
-		}
-	}
-
-	if asks := unansweredFor(c, e.Id); len(asks) > 0 {
-		b.WriteString("## What the person asks you\n\n")
-		for _, r := range asks {
-			b.WriteString(askLine(c, r))
-		}
-		b.WriteString("\n")
-	}
-
-	b.WriteString("## What to do\n\n")
 	if isBrainstorm(c) {
 		b.WriteString(`The proposals under "Proposals to review" are the others' ideas. Your default is to build on them, not ` +
 			"to judge them.\n\n")
@@ -465,11 +479,70 @@ func Round2Prompt(c *Council, e CouncilExpert) string {
 	return b.String()
 }
 
+// round2PromptFor is the cross-review prompt of reply pass round (2, or 3 in a council with three rounds). A pass after
+// the first shows what was said under each proposal, which the first pass has none of.
+func round2PromptFor(c *Council, e CouncilExpert, round int) string {
+	var b strings.Builder
+	writeContext(&b, c, e, "one expert on")
+	if isBrainstorm(c) {
+		fmt.Fprintf(&b, "\nThis is round %d of %d: build on each other. You have no tools in this round: work from the text below.\n\n", round, SynthesisRound(c))
+	} else {
+		fmt.Fprintf(&b, "\nThis is round %d of %d: cross-review. You have no tools in this round: work from the text below.\n\n", round, SynthesisRound(c))
+	}
+	writeWithThread := func(p CouncilProposal) {
+		writeProposal(&b, c, p, "###")
+		if round > 2 {
+			var thread strings.Builder
+			writeThread(&thread, c, p.Id)
+			if thread.Len() > 0 {
+				b.WriteString("What was said about it:\n" + thread.String() + "\n")
+			}
+		}
+	}
+
+	b.WriteString("## Proposals to review\n\n")
+	review := 0
+	for _, p := range sentProposals(c) {
+		if p.Author != e.Id && !p.Cut {
+			writeWithThread(p)
+			review++
+		}
+	}
+	if review == 0 {
+		b.WriteString("(none: no other expert has a proposal to review, so \"stances\" is empty)\n\n")
+	}
+
+	var own []CouncilProposal
+	for _, p := range sentProposals(c) {
+		if p.Author == e.Id && !p.Cut {
+			own = append(own, p)
+		}
+	}
+	if len(own) > 0 {
+		b.WriteString("## Your own proposals\n\nThese are yours, from round 1. Do not review them.\n\n")
+		for _, p := range own {
+			writeWithThread(p)
+		}
+	}
+
+	if asks := unansweredFor(c, e.Id); len(asks) > 0 {
+		b.WriteString("## What the person asks you\n\n")
+		for _, r := range asks {
+			b.WriteString(askLine(c, r))
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("## What to do\n\n")
+	b.WriteString(round2Task(c, round))
+	return b.String()
+}
+
 // writeThread writes the replies of one proposal (or, with an empty id, the ones to the whole council), each
-// indented under the reply it answers.
+// indented under the reply it answers. A held or dropped reply is not written: it is not out in the room.
 func writeThread(b *strings.Builder, c *Council, proposalId string) {
 	for _, r := range c.Replies {
-		if r.ProposalId != proposalId {
+		if r.ProposalId != proposalId || !Sent(r.Draft) {
 			continue
 		}
 		fmt.Fprintf(b, "%s- [%s] %s", strings.Repeat("  ", len(ancestorsOf(c, r))), r.Id, speaker(c, r.Author))
@@ -506,10 +579,11 @@ func SynthesisPrompt(c *Council) string {
 	}
 	var b strings.Builder
 	writeContext(&b, c, coord, "the coordinator of")
+	last := SynthesisRound(c)
 	if isBrainstorm(c) {
-		b.WriteString("\nThis is round 3 of 3: pick the best. You have no tools: work from the text below.\n\n")
+		fmt.Fprintf(&b, "\nThis is round %d of %d: pick the best. You have no tools: work from the text below.\n\n", last, last)
 	} else {
-		b.WriteString("\nThis is round 3 of 3: synthesis. You have no tools: work from the text below.\n\n")
+		fmt.Fprintf(&b, "\nThis is round %d of %d: synthesis. You have no tools: work from the text below.\n\n", last, last)
 	}
 
 	b.WriteString("## Experts\n\nUse the id as the key in \"stances\".\n\n")
@@ -526,6 +600,11 @@ func SynthesisPrompt(c *Council) string {
 			missing = append(missing, fmt.Sprintf("%s (its round %d call failed)", e.Name, f.Round))
 		}
 	}
+	for _, s := range c.Skips {
+		if e, ok := seatOf(c, s.Expert); ok && !e.Coordinator {
+			missing = append(missing, fmt.Sprintf("%s (it skipped round %d: %s)", e.Name, s.Round, s.Reason))
+		}
+	}
 	if len(missing) > 0 {
 		b.WriteString("## Missing\n\nThese experts are missing: " + strings.Join(missing, ", ") + ". Their view is absent from " +
 			"everything below. Say so in \"text\", and do not guess their stance.\n\n")
@@ -534,10 +613,11 @@ func SynthesisPrompt(c *Council) string {
 	writePicks(&b, c)
 
 	b.WriteString("## Proposals and what was said about them\n\n")
-	if len(c.Proposals) == 0 {
+	sent := sentProposals(c)
+	if len(sent) == 0 {
 		b.WriteString("(no expert made a proposal)\n\n")
 	}
-	for _, p := range c.Proposals {
+	for _, p := range sent {
 		writeProposal(&b, c, p, "###")
 		switch {
 		case p.Cut:
@@ -657,7 +737,7 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 	}
 
 	var own []CouncilProposal
-	for _, p := range c.Proposals {
+	for _, p := range sentProposals(c) {
 		if p.Author == e.Id && !p.Cut {
 			own = append(own, p)
 		}
@@ -695,6 +775,14 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 	}
 
 	b.WriteString("## What to do\n\n")
+	b.WriteString(answersTask(c))
+	return b.String()
+}
+
+// answersTask is what the pass after the synthesis asks, and the shape of the answer: the end of the answers prompt, and
+// of an agent seat's turn in it.
+func answersTask(c *Council) string {
+	var b strings.Builder
 	b.WriteString("Answer every reply above with one entry in \"answers\", by its replyid. If an answer changes your " +
 		"view of the proposal it sits on, add a \"stance\". " + stanceRule + "\n\n")
 	b.WriteString(titleRule + "\n\n")
@@ -702,5 +790,238 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 		b.WriteString(evidenceRule + "\n\n")
 	}
 	b.WriteString(jsonRule + "\n```json\n" + answersShape + "\n```\n")
+	return b.String()
+}
+
+// ---- agent seats ----
+
+// lastTurn is the latest round before round in which seat e spoke: it posted an idea (round 1) or a reply there, a held or
+// dropped one too. 0 means it has not spoken yet, so its prompt brings it into the council whole. A seat that spoke in no
+// round of its turn reads as not having had it, and is sent a little twice, never too little.
+func lastTurn(c *Council, e CouncilExpert, round int) int {
+	last := 0
+	if round > 1 && slices.ContainsFunc(c.Proposals, func(p CouncilProposal) bool { return p.Author == e.Id }) {
+		last = 1
+	}
+	for _, r := range c.Replies {
+		if r.Author == e.Id && r.Round < round {
+			last = max(last, r.Round)
+		}
+	}
+	return last
+}
+
+// agentNews are what the seat has not been shown: the others' sent ideas when it has seen none yet, and the sent replies
+// of the rounds since its last turn, never one of this round (the seats answer a round at once), never its own, and never
+// the person's (those come as questions, in agentAsks). A held or dropped item is in neither.
+func agentNews(c *Council, e CouncilExpert, round int) (ideas []CouncilProposal, said []CouncilReply) {
+	from := max(lastTurn(c, e, round), 1)
+	if from == 1 {
+		for _, p := range sentProposals(c) {
+			if p.Author != e.Id && !p.Cut {
+				ideas = append(ideas, p)
+			}
+		}
+	}
+	for _, r := range c.Replies {
+		if r.Author != e.Id && r.Author != YouId && Sent(r.Draft) && r.Round >= from && r.Round < round {
+			said = append(said, r)
+		}
+	}
+	return ideas, said
+}
+
+// agentAsks are the person's questions to the seat that it has not answered.
+func agentAsks(c *Council, e CouncilExpert, round int) []CouncilReply {
+	return owed(c, e, round >= SynthesisRound(c))
+}
+
+// seatHasNews says whether a turn of the seat in reply pass round has anything to answer: a seat with nothing new and no
+// question is not asked.
+func seatHasNews(c *Council, e CouncilExpert, round int) bool {
+	ideas, said := agentNews(c, e, round)
+	return len(ideas)+len(said)+len(agentAsks(c, e, round)) > 0
+}
+
+// agentPrompt is the turn the seat gets in round: the first prompt until it has spoken, the later one after.
+func agentPrompt(c *Council, e CouncilExpert, round int) string {
+	if lastTurn(c, e, round) == 0 {
+		return AgentFirstPrompt(c, e, round)
+	}
+	return AgentLaterPrompt(c, e, round)
+}
+
+// AgentFirstPrompt brings a live agent into the council: the question, the other seats (each marked agent or expert),
+// and the turn of the round, with the answer shape the experts use for it. A seat that joins after round 1 gets
+// everything sent so far in it, since it has seen none of it.
+func AgentFirstPrompt(c *Council, e CouncilExpert, round int) string {
+	var b strings.Builder
+	if isBrainstorm(c) {
+		fmt.Fprintf(&b, "You are %s, a seat in a council that brainstorms ideas for one problem or goal of a project. ", e.Name)
+	} else {
+		fmt.Fprintf(&b, "You are %s, a seat in a council that reviews one feature of a project. ", e.Name)
+	}
+	b.WriteString("You are a live agent: answer from what you already know and have done in this session, in your own voice.\n")
+	if angle := strings.TrimSpace(e.Brief); angle != "" {
+		b.WriteString(angle + "\n")
+	}
+	b.WriteString("\n")
+	if isBrainstorm(c) {
+		fmt.Fprintf(&b, "Problem or goal: %s\n", c.Feature)
+	} else {
+		fmt.Fprintf(&b, "Feature: %s\n", c.Feature)
+	}
+	if q := strings.TrimSpace(c.Question); q != "" {
+		fmt.Fprintf(&b, "Question for the council: %s\n", q)
+	}
+	fmt.Fprintf(&b, "Project folder: %s\n", c.Project)
+	writeFiles(&b, c)
+
+	b.WriteString("\n## Who sits in the council\n\n")
+	for _, s := range c.Experts {
+		switch {
+		case s.Id == e.Id:
+		case s.Coordinator:
+			fmt.Fprintf(&b, "- %s · expert · the coordinator, who writes the summary from what is sent\n", s.Name)
+		case IsAgent(s):
+			fmt.Fprintf(&b, "- %s · agent · a live session like yours\n", s.Name)
+		default:
+			fmt.Fprintf(&b, "- %s · expert · a fresh model call that reviews from its own angle\n", s.Name)
+		}
+	}
+	b.WriteString("\nThe person is in the room too. Nothing you say reaches the others until the person sends it, and they may " +
+		"edit or drop it first. The seats answer each round at once, so what the others say in a round reaches you in the next.\n\n")
+	writeAgentTurn(&b, c, e, round, true)
+	return b.String()
+}
+
+// AgentLaterPrompt is the turn of a seat that has spoken before: only what was sent since its last turn (the previous
+// rounds' answers and the person's), never an answer of this round, and the shape of the answer.
+func AgentLaterPrompt(c *Council, e CouncilExpert, round int) string {
+	var b strings.Builder
+	if round >= SynthesisRound(c) {
+		b.WriteString("The council has already met. The person replied in the discussion, and you answer from your own angle, " +
+			"as yourself.\n\n")
+	} else {
+		fmt.Fprintf(&b, "You are back in the council as %s. Below is what was sent since your last turn; the others answer a "+
+			"round at the same time as you, so none of this round's answers is here.\n\n", e.Name)
+	}
+	writeAgentTurn(&b, c, e, round, false)
+	return b.String()
+}
+
+// writeAgentTurn is the part of an agent seat's prompt both turns share: what the seat is to do in round, what is new to
+// it, the person's questions, and the task with its answer shape. first says the seat has seen nothing yet.
+func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, first bool) {
+	last := SynthesisRound(c)
+	ideas, said := agentNews(c, e, round)
+	asks := agentAsks(c, e, round)
+	switch {
+	case round >= last:
+		if first {
+			b.WriteString("The council has already met. The person replied in the discussion, and you answer from your own " +
+				"angle, as yourself.\n")
+		}
+		b.WriteString("Work from the text below and what you already know; you answer for the council and change nothing in " +
+			"the project.\n\n")
+	case round == 1 && isBrainstorm(c):
+		fmt.Fprintf(b, "This is round 1 of %d: ideas. You have your own tools: read the project when an idea needs it. You "+
+			"brainstorm for the council; you never edit anything.\n\n", last)
+	case round == 1:
+		fmt.Fprintf(b, "This is round 1 of %d: proposals. You have your own tools: read the project when a proposal needs it. "+
+			"You review for the council; you never edit anything.\n\n", last)
+	case isBrainstorm(c):
+		fmt.Fprintf(b, "This is round %d of %d: build on each other. Work from the text below and what you already know; you "+
+			"change nothing in the project.\n\n", round, last)
+	default:
+		fmt.Fprintf(b, "This is round %d of %d: cross-review. Work from the text below and what you already know; you "+
+			"change nothing in the project.\n\n", round, last)
+	}
+
+	if round == 1 {
+		b.WriteString(round1Task(c))
+		return
+	}
+	if round < last {
+		b.WriteString("## Proposals to review\n\n")
+		if len(ideas) == 0 {
+			b.WriteString("(none since your last turn)\n\n")
+		}
+		for _, p := range ideas {
+			writeProposal(b, c, p, "###")
+		}
+	}
+	if len(said) > 0 || (round >= last && len(ideas) > 0) {
+		b.WriteString("## What was said since your last turn\n\n")
+		if round >= last { // no review section here, so the ideas it has not seen sit with the replies
+			for _, p := range ideas {
+				writeProposal(b, c, p, "###")
+			}
+		}
+		shown := map[string]bool{}
+		for _, r := range said {
+			if !r.Revised || shown[r.ProposalId] || slices.ContainsFunc(ideas, func(p CouncilProposal) bool { return p.Id == r.ProposalId }) {
+				continue
+			}
+			if p := findProposal(c, r.ProposalId); p != nil && Sent(p.Draft) {
+				shown[p.Id] = true
+				b.WriteString("This idea now reads:\n\n")
+				writeProposal(b, c, *p, "###")
+			}
+		}
+		for _, r := range said {
+			b.WriteString(saidLine(c, r))
+		}
+		b.WriteString("\n")
+	}
+	if len(asks) > 0 {
+		b.WriteString("## What the person asks you\n\n")
+		for _, r := range asks {
+			b.WriteString(askLine(c, r))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("## What to do\n\n")
+	if round >= last {
+		b.WriteString(answersTask(c))
+	} else {
+		b.WriteString(round2Task(c, round))
+	}
+}
+
+// saidLine is one reply another seat sent, as a seat is shown it: who, its stance, what it is on, and its words.
+func saidLine(c *Council, r CouncilReply) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "- [%s] %s", r.Id, speaker(c, r.Author))
+	var tags []string
+	if r.Stance != "" {
+		tags = append(tags, string(r.Stance))
+	}
+	if r.Builds && isBrainstorm(c) {
+		tags = append(tags, "builds on it")
+	}
+	if r.Revised {
+		tags = append(tags, "revised its proposal")
+	}
+	if len(tags) > 0 {
+		fmt.Fprintf(&b, " (%s)", strings.Join(tags, ", "))
+	}
+	if p := findProposal(c, r.ProposalId); p != nil {
+		fmt.Fprintf(&b, " on %s (%s)", p.Id, p.Title)
+	} else {
+		b.WriteString(" to the whole council")
+	}
+	if parent := findReply(c, r.ParentId); parent != nil {
+		fmt.Fprintf(&b, ", replying to %s's %s", speaker(c, parent.Author), parent.Id)
+	}
+	if text := strings.TrimSpace(r.Text); text != "" {
+		fmt.Fprintf(&b, ": %s", text)
+	} else {
+		b.WriteString(": agrees, with nothing to add")
+	}
+	if len(r.Evidence) > 0 {
+		fmt.Fprintf(&b, " Evidence: %s.", evidenceText(r.Evidence))
+	}
+	b.WriteString("\n")
 	return b.String()
 }

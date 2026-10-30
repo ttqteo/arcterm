@@ -52,7 +52,7 @@ func Markdown(c *Council) string {
 			b.WriteString("\n")
 		}
 	}
-	if len(c.Proposals) > 0 {
+	if len(sentProposals(c)) > 0 {
 		b.WriteString("\n## Matrix\n\n")
 		writeMatrix(&b, c)
 	}
@@ -149,7 +149,7 @@ func writeMatrix(b *strings.Builder, c *Council) {
 		rule += "---|"
 	}
 	b.WriteString(head + " Outcome |\n" + rule + "---|\n")
-	for _, p := range c.Proposals {
+	for _, p := range sentProposals(c) {
 		title := p.Title
 		if p.Wild && isBrainstorm(c) {
 			title += " (wild idea)"
@@ -169,7 +169,7 @@ func matrixCell(c *Council, p CouncilProposal, e CouncilExpert) string {
 		return "author"
 	}
 	for _, r := range c.Replies {
-		if r.ProposalId != p.Id || r.Author != e.Id || r.ParentId != "" || r.Stance == "" {
+		if r.ProposalId != p.Id || r.Author != e.Id || r.ParentId != "" || r.Stance == "" || !Sent(r.Draft) {
 			continue
 		}
 		reason := strings.Join(strings.Fields(r.Text), " ")
@@ -322,11 +322,13 @@ func writeDiscussion(b *strings.Builder, c *Council) {
 		text string
 	}
 	var msgs []message
-	for _, p := range c.Proposals {
+	for _, p := range sentProposals(c) { // a held or dropped draft is not in the room, so not in the document
 		msgs = append(msgs, message{p.Ts, proposalMessage(c, p)})
 	}
 	for _, r := range c.Replies {
-		msgs = append(msgs, message{r.Ts, replyMessage(c, r)})
+		if Sent(r.Draft) {
+			msgs = append(msgs, message{r.Ts, replyMessage(c, r)})
+		}
 	}
 	sort.SliceStable(msgs, func(i, j int) bool { return msgs[i].ts < msgs[j].ts })
 	q := oneLine(c.Question)
@@ -373,7 +375,9 @@ func writeRunFacts(b *strings.Builder, c *Council) {
 			name = e.Id
 		}
 		var tags []string
-		if e.Model != "" {
+		if IsAgent(e) {
+			tags = append(tags, "agent "+e.Harness)
+		} else if e.Model != "" {
 			tags = append(tags, e.Model)
 		}
 		if e.Coordinator {
@@ -389,6 +393,9 @@ func writeRunFacts(b *strings.Builder, c *Council) {
 	}
 	if c.Harness != "" {
 		fmt.Fprintf(b, "- Harness: %s\n", c.Harness)
+	}
+	for _, s := range c.Skips {
+		fmt.Fprintf(b, "- Skipped: %s in round %d: %s\n", docName(c, s.Expert), s.Round, oneLine(s.Reason))
 	}
 	fmt.Fprintf(b, "- Tokens: %s in %d calls\n", FormatTokens(c.Tokens), c.Calls)
 	if c.Started > 0 && c.Updated > c.Started {

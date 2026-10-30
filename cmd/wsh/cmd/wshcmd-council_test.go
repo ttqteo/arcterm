@@ -409,6 +409,14 @@ func TestCouncilWaitText(t *testing.T) {
 		t.Fatalf("awaiting-you = %q, %v; want what the person does in the app", text, err)
 	}
 
+	// a council with agents waits on its held drafts, and there is no Continue to press
+	held := &council.Council{Id: "c7", State: council.StateAwaiting, Round: 2, Proposals: []council.CouncilProposal{{Id: "P1", Draft: council.DraftHeld}},
+		Replies: []council.CouncilReply{{Id: "r1", Draft: council.DraftHeld}, {Id: "r2", Draft: council.DraftDropped}}}
+	text, err = councilWaitText(held)
+	if err != nil || !strings.Contains(text, "2 drafts from round 2 wait for you") || strings.Contains(text, "Continue") || !strings.Contains(text, "wsh council wait c7") {
+		t.Fatalf("awaiting drafts = %q, %v; want the drafts named and no Continue", text, err)
+	}
+
 	if text, err := councilWaitText(&council.Council{Id: "c3", State: council.StateNotRun}); err != nil || !strings.Contains(text, "Start council in the app") {
 		t.Fatalf("not run = %q, %v", text, err)
 	}

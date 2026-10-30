@@ -2512,6 +2512,14 @@ declare global {
         ts: number;
         draft?: string;
         edited?: boolean;
+        revision?: CouncilRevision;
+    };
+
+    // council.CouncilRevision
+    type CouncilRevision = {
+        withdraw?: boolean;
+        title?: string;
+        argument?: string;
     };
 
     // wshrpc.CouncilRolesRtnData
