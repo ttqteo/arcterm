@@ -34,6 +34,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The New dialog opens in its Task box, now at the top above the columns: type what the agent should do and press Enter
   to start it (Shift+Enter for a new line). Alt+1–9 picks another agent without leaving the box; a run opens in its
   Goal the same way. <!-- try: new-agent -->
+- A project folder in the Agent sidebar folds from its folder icon as well as its chevron; a click on its name still
+  opens the project's Overview.
 
 ### Fixed
 

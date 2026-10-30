@@ -2117,8 +2117,8 @@ function openFolderMenu(project: string, e: React.MouseEvent): void {
 // A project's folder row, in either section: the chevron and the folder say whether it is open, then the project's name
 // (`label` where the folder's key reads otherwise: Home) and, at the far end, `trailing`, which a folded folder keeps
 // (what in it wants you, how much it holds); a click opens its Overview in the centre, which then fills it, and the
-// chevron alone folds it (Home, which has no Overview, folds from anywhere on the row); a right-click opens its menu
-// (openFolderMenu).
+// chevron and the folder icon fold it (Home, which has no Overview, folds from anywhere on the row); a right-click
+// opens its menu (openFolderMenu).
 function FolderRow({
     section,
     project,
@@ -2168,15 +2168,15 @@ function FolderRow({
                     e.stopPropagation();
                     onToggle();
                 }}
-                className="-m-[3px] flex shrink-0 cursor-pointer items-center rounded-[4px] p-[3px] text-ink-faint outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-1 focus-visible:ring-accent"
+                className="group/fold -m-[3px] flex shrink-0 cursor-pointer items-center gap-[7px] rounded-[4px] p-[3px] text-ink-faint outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-1 focus-visible:ring-accent"
             >
                 <ChevronRight size={12} aria-hidden className={cn("transition-transform", open && "rotate-90")} />
+                {open ? (
+                    <FolderOpen size={14} aria-hidden className="shrink-0 text-muted group-hover/fold:text-secondary" />
+                ) : (
+                    <Folder size={14} aria-hidden className="shrink-0 text-muted group-hover/fold:text-secondary" />
+                )}
             </button>
-            {open ? (
-                <FolderOpen size={14} aria-hidden className="shrink-0 text-muted" />
-            ) : (
-                <Folder size={14} aria-hidden className="shrink-0 text-muted" />
-            )}
             {/* the name keeps a few letters however much the far end holds */}
             <span
                 className={cn("min-w-[40px] flex-1 truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
