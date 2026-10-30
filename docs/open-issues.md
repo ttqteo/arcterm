@@ -1347,6 +1347,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **A real Brainstorm with a pi agent.** The same, with a pi agent: pi has no reveal hook, so the skill has it
   run `wsh ui reveal brainstorm:<topic>` itself after writing the file; check the pane opens then, and that the
   judge and the builder check (both Arc's own sessions) work the same.
+- [ ] (arcterm) **Markdown images and a File tab that follows its file.** Open a `.md` with PNG and SVG figures beside it
+  (`![](figures/x.svg)`) in an agent's File tab: the figures draw, not their alt text in a box, and in Code's Preview
+  too. Change a line of it from outside (the agent, an editor): within ~2 s Preview and Source show it, keep their
+  scroll, and the figures do not blink. f6e9a3a6b, d1dffb724; no dev app was running to try it.
 
 ---
 
