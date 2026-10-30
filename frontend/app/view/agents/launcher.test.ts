@@ -407,6 +407,40 @@ describe("launcherKey", () => {
         expect(launcherKey(at("textarea"), key("Enter"))).toEqual({ kind: "none" });
         expect(launcherKey(at("other"), key("Enter"))).toEqual({ kind: "none" });
     });
+    it("in the Task box at the top, Enter launches and Shift+Enter is its newline", () => {
+        expect(launcherKey(at("task"), key("Enter"))).toEqual({ kind: "launch" });
+        expect(launcherKey(at("task"), key("Enter", { shift: true }))).toEqual({ kind: "none" });
+        // a picked session's Shift+Enter stays the newline here; the footer's button is a click or a column away
+        expect(launcherKey(at("task", "", { resumePicked: true }), key("Enter", { shift: true }))).toEqual({
+            kind: "none",
+        });
+        // ModalShell keeps Mod+Enter
+        expect(launcherKey(at("task"), key("Enter", { mod: true }))).toEqual({ kind: "none" });
+    });
+    it("an IME's Enter and Escape are its own, in the Task box or anywhere", () => {
+        expect(launcherKey(at("task"), { ...key("Enter"), composing: true })).toEqual({ kind: "none" });
+        expect(launcherKey(at("task"), { ...key("Escape"), composing: true })).toEqual({ kind: "none" });
+        expect(launcherKey(at("start"), { ...key("Enter"), composing: true })).toEqual({ kind: "none" });
+    });
+    it("Alt+digit picks a Start row from the Task box; plain digits and letters type", () => {
+        expect(launcherKey(at("task"), { ...key("2", { mod: true }), altDigit: 2 })).toEqual({
+            kind: "pick-start",
+            index: 1,
+        });
+        // Option+1 on a Mac types ¡: the digit is the key's code
+        expect(launcherKey(at("task"), { ...key("¡", { mod: true }), altDigit: 1 })).toEqual({
+            kind: "pick-start",
+            index: 0,
+        });
+        expect(launcherKey(at("task"), { ...key("5", { mod: true }), altDigit: 5 })).toEqual({ kind: "none" });
+        expect(launcherKey(at("task"), { ...key("0", { mod: true }), altDigit: 0 })).toEqual({ kind: "none" });
+        expect(launcherKey(at("task"), key("3"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("task"), key("f"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("task"), key("ArrowDown"))).toEqual({ kind: "none" });
+    });
+    it("the Task box takes its own paste", () => {
+        expect(launcherKey(at("task"), key("v", { mod: true, paste: true }))).toEqual({ kind: "none" });
+    });
     it("in the Start column a digit picks and ↑↓ move, and ← from Project goes to Start", () => {
         expect(launcherKey(at("start"), key("2"))).toEqual({ kind: "pick-start", index: 1 });
         expect(launcherKey(at("start"), key("ArrowDown"))).toEqual({ kind: "move", column: "start", delta: 1 });

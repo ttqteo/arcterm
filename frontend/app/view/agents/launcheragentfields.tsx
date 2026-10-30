@@ -248,8 +248,8 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
     const effectiveBranch = branchPick ?? currentBranch;
     const branchNames = branches.map((b) => b.name);
     const taskHint = resume
-        ? "optional · sent as the next message · paste or drop images"
-        : "optional · sent as the first prompt · paste or drop images";
+        ? "optional · sent as the next message · shift+enter for a new line · paste or drop images"
+        : "optional · sent as the first prompt · shift+enter for a new line · paste or drop images";
     const showTask = runtimeShowsTask(runtime);
     const showWorktree = runtimeSupportsWorktree(runtime) && resume == null && !home;
     const outcome = worktreeOutcome({ branch: effectiveBranch, currentBranch, branchNames });
@@ -269,7 +269,8 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                         >
                             Task
                         </label>
-                        {/* one line when empty, grows as the text wraps, up to about eleven lines, then scrolls */}
+                        {/* three lines when empty, the dialog's first thing; grows as the text wraps, up to about eleven
+                        lines, then scrolls */}
                         <textarea
                             ref={taskRef}
                             id="launcher-task"
@@ -287,8 +288,8 @@ export function AgentFields({ runtime, currentBranch, branches, ramWarning, resu
                             title={task === "" ? taskHint : undefined}
                             className={cn(
                                 "block field-sizing-content max-h-[240px] min-w-[140px] flex-1 resize-none bg-transparent px-1 py-[6px] text-[13px] leading-[19px] text-primary outline-none placeholder:truncate placeholder:text-muted",
-                                // the placeholder would size the field and wrap it; empty, it is one line
-                                task === "" ? "h-[31px] overflow-hidden" : "overflow-y-auto"
+                                // the placeholder would size the field and wrap it; empty, it is three lines
+                                task === "" ? "h-[69px] overflow-hidden" : "min-h-[69px] overflow-y-auto"
                             )}
                         />
                         <div className="flex min-h-[31px] min-w-0 flex-wrap items-center justify-end gap-1">

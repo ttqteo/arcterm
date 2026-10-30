@@ -22938,10 +22938,10 @@ const newRunWindow = {
         const listed = await h.ev(launcherState);
         await h.shot("cdp-shots/new-run-window-1-picker.png");
         rec(
-            "2. Mod+Shift+R opens on a run row with focus on Start, the recent project first in the project column",
+            "2. Mod+Shift+R opens on a run row with focus in its Goal (or plan path) box at the top, the recent project first in the project column",
             listed != null &&
                 ["quick", "orchestrator"].includes(listed.start) &&
-                listed.focus === "start" &&
+                ["launcher-goal", "plan"].includes(listed.focus) &&
                 listed.projects[0] === NEW_RUN_PROJECT,
             JSON.stringify(listed)
         );
@@ -23023,17 +23023,17 @@ const newRunWindow = {
             JSON.stringify({ closed, runsBefore, runsAfter })
         );
 
-        // the DEV seam opens it at the run door as Mod+Shift+R does: on the run row, focus on Start
+        // the DEV seam opens it at the run door as Mod+Shift+R does: on the run row, focus in its Goal box
         await h.ev(`window.__openLauncher?.('run')`);
         await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
         await polishNap(400);
         const seamOpened = await h.ev(launcherState);
         await h.shot("cdp-shots/new-run-window-1b-seam.png");
         rec(
-            "8b. __openLauncher at the run door opens on a run row with focus on Start",
+            "8b. __openLauncher at the run door opens on a run row with focus in its Goal (or plan path) box",
             seamOpened != null &&
                 ["quick", "orchestrator"].includes(seamOpened.start) &&
-                seamOpened.focus === "start",
+                ["launcher-goal", "plan"].includes(seamOpened.focus),
             JSON.stringify(seamOpened)
         );
         await h.ev(`[...(${NEW_RUN}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
@@ -23113,7 +23113,8 @@ const newRunWindow = {
 
 // --- launcher: the one New dialog for agents and runs (docs/superpowers/specs/2026-10-08-new-launcher-design.md,
 // decluttered by 2026-10-28-new-launcher-declutter-design.md, whose folded Start chip was dropped 2026-10-29: the Start
-// column is always shown, has focus on opening, and every row draws its key).
+// column is always shown and every row draws its key; since 2026-10-30-new-agent-next-design.md the Task or Goal box
+// sits above the columns and has focus on opening).
 // One step per board of the design canvas, plus the keys, the error line, the Prototype chip and the kept draft.
 const LAUNCHER = NEW_RUN;
 const LAUNCHER_PROJECT = "verify-launcher";
@@ -23134,7 +23135,7 @@ const launcherState = `(() => {
         startRows: [...d.querySelectorAll('[data-start-row]')].map((r) => r.getAttribute('data-start-row')),
         project: d.querySelector('[data-project-row][aria-checked="true"]')?.getAttribute('data-project-row') ?? null,
         projects: [...d.querySelectorAll('[data-project-row]')].map((r) => r.getAttribute('data-project-row')),
-        focus: active?.getAttribute('data-launcher-column') ?? (active?.id || null),
+        focus: active?.getAttribute('data-launcher-column') ?? (active?.id || (active?.hasAttribute?.('data-jarvis-plan-path') ? 'plan' : null)),
         focusPrimary: !!primary && active === primary,
         filter: d.querySelector('[data-launcher-filter]') ? flat(d.querySelector('[data-launcher-filter]')) : null,
         restored: !!d.querySelector('[data-launcher-restored]'),
@@ -23321,14 +23322,14 @@ const launcherScenario = {
         let s = await state();
         await h.shot("cdp-shots/launcher-1-agent.png");
         rec(
-            "1. Mod+N opens the dialog titled New agent: the Start column is shown with an agent row picked and has focus, and the recent project is selected",
+            "1. Mod+N opens the dialog titled New agent: the Start column is shown with an agent row picked, focus is in the Task box at the top, and the recent project is selected",
             s != null &&
                 s.title === "New agent" &&
                 s.startShown &&
                 s.startRows.length > 0 &&
                 s.start != null &&
                 !["quick", "orchestrator"].includes(s.start) &&
-                s.focus === "start" &&
+                s.focus === "launcher-task" &&
                 s.project === LAUNCHER_PROJECT,
             JSON.stringify(s)
         );
@@ -23347,17 +23348,45 @@ const launcherScenario = {
             JSON.stringify(ours)
         );
 
-        // before any draft exists, so no Clear button of a restored note sits before Start, the dialog's first stop
-        const onStart = `document.activeElement?.getAttribute('data-launcher-column') === 'start'`;
+        // before any draft exists, so no Clear button of a restored note sits before the Task box, the dialog's first stop
+        const onTask = `document.activeElement?.id === 'launcher-task'`;
         await launcherPress(h, "Tab", { shift: true });
         const back = await state();
         await launcherPress(h, "Tab");
-        const wrapped = await h.ev(onStart);
+        const wrapped = await h.ev(onTask);
         rec(
-            "2. Shift+Tab from Start wraps to the primary button, and Tab from there wraps back to Start",
+            "2. Shift+Tab from the Task box wraps to the primary button, and Tab from there wraps back to the Task box",
             !s.restored && back?.focusPrimary === true && wrapped,
             JSON.stringify({ restored: s.restored, back: back?.focusPrimary, wrapped })
         );
+
+        // Alt+digit from the Task box picks a Start row without typing the digit; onto Terminal, which takes no task, the
+        // box is drawn empty with why, and focus goes to the Start column
+        const fromStart = s.start;
+        const rowsNow = await h.ev(`[...(${LAUNCHER}?.querySelectorAll('[data-start-row]') ?? [])].map((r) => r.getAttribute('data-start-row'))`);
+        const termAt = (rowsNow ?? []).indexOf("terminal");
+        if (termAt >= 0 && termAt < 9) {
+            await h.ev(`document.getElementById('launcher-task')?.focus()`);
+            for (const type of ["rawKeyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", {
+                    type,
+                    key: String(termAt + 1),
+                    code: `Digit${termAt + 1}`,
+                    windowsVirtualKeyCode: 49 + termAt,
+                    modifiers: 1, // Alt
+                });
+            }
+            await polishWaitFor(h, `document.activeElement?.getAttribute('data-launcher-column') === 'start'`, 3000);
+            const altPicked = await state();
+            const noTask = await h.ev(`(${LAUNCHER}?.querySelector('[data-launcher-no-task]')?.textContent ?? '').trim()`);
+            await h.shot("cdp-shots/launcher-1b-alt-terminal.png");
+            rec(
+                "2b. Alt+digit in the Task box picks Terminal: the box at the top says a terminal takes no task, focus on Start",
+                altPicked?.start === "terminal" && altPicked.focus === "start" && altPicked.task === null && /no task/.test(noTask),
+                JSON.stringify({ ...altPicked, noTask })
+            );
+            await launcherPickStart(h, fromStart);
+        }
 
         await h.ev(focusColumn("start"));
         await polishNap(200);
@@ -23551,11 +23580,11 @@ const launcherScenario = {
             JSON.stringify(s)
         );
 
-        // the agent row's fields sit under a project with no session, so the third column holds a note and no stop
+        // the agent row's Task box is the dialog's first stop, at the top: Tab from the launch button wraps to it
         const offered = await launcherStartRows(h);
         const agentRow = offered.includes("claude") ? "claude" : offered[0];
         await launcherPickStart(h, agentRow);
-        await h.ev(focusColumn("project"));
+        await h.ev(`[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => /^Launch agent/.test((b.textContent ?? '').trim()))?.focus()`);
         await launcherPress(h, "Tab");
         const tabbedTo = (await state()).focus;
         const FLAG_BUTTON = `${LAUNCHER}?.querySelector('[data-launcher-task-row] button[title="Add a flag"]')`;
@@ -23568,7 +23597,7 @@ const launcherScenario = {
         const worktree = await h.ev(`${LAUNCHER}?.querySelector('button[role="switch"]')?.getAttribute('aria-checked')`);
         await h.shot("cdp-shots/launcher-8-agent-options.png");
         rec(
-            "17. on an agent row, Tab from Project lands in Task; a task, the worktree switch and the flag menu all take",
+            "17. on an agent row, Tab from the launch button wraps to the Task box at the top; a task, the worktree switch and the flag menu all take",
             tabbedTo === "launcher-task" && s.task === "verify launcher: kept draft" && worktree === "true",
             JSON.stringify({ tabbedTo, worktree, hasFlags, ...s })
         );
@@ -23697,8 +23726,8 @@ const launcherScenario = {
         s = await state();
         await h.shot("cdp-shots/launcher-10-restored.png");
         rec(
-            "21. reopened with focus on Start, it says draft restored and the task is still there",
-            s != null && s.focus === "start" && s.restored && s.task === "verify launcher: kept draft",
+            "21. reopened with focus in the Task box, it says draft restored and the task is still there",
+            s != null && s.focus === "launcher-task" && s.restored && s.task === "verify launcher: kept draft",
             JSON.stringify(s)
         );
 
@@ -23825,11 +23854,11 @@ const launcherScenario = {
         s = await state();
         await h.shot("cdp-shots/launcher-13-new-button.png");
         rec(
-            "28. the app bar has one New button and no New run button, and New reopens on the last pick, focus on Start",
+            "28. the app bar has one New button and no New run button, and New reopens on the last pick, focus in its Goal box",
             appBar.newButton.startsWith("+New") &&
                 !appBar.newRunButton &&
                 s?.start === "quick" &&
-                s.focus === "start" &&
+                s.focus === "launcher-goal" &&
                 s.title === "New run",
             JSON.stringify({ ...appBar, ...s })
         );
@@ -23971,7 +24000,7 @@ const launcherResumeState = `(() => {
     return {
         startRows: [...d.querySelectorAll('[data-start-row]')].map((r) => r.getAttribute('data-start-row')),
         start: startCol?.querySelector('[data-start-row][aria-checked="true"]')?.getAttribute('data-start-row') ?? null,
-        focus: active?.getAttribute('data-launcher-column') ?? (active?.id || null),
+        focus: active?.getAttribute('data-launcher-column') ?? (active?.id || (active?.hasAttribute?.('data-jarvis-plan-path') ? 'plan' : null)),
         project: d.querySelector('[data-project-row][aria-checked="true"]')?.getAttribute('data-project-row') ?? null,
         list: !!list,
         newPicked: list?.querySelector('[data-resume-new]')?.getAttribute('aria-checked') === 'true',
@@ -24151,8 +24180,8 @@ const launcherResume = {
         let s = await state();
         await h.shot("cdp-shots/launcher-resume-1-list.png");
         rec(
-            "1. New agent opens with focus on Start; with Claude picked the verify project lists the verify session, New session picked",
-            opened.focus === "start" &&
+            "1. New agent opens with focus in the Task box (on Start for a terminal); with Claude picked the verify project lists the verify session, New session picked",
+            (opened.start === "terminal" ? opened.focus === "start" : opened.focus === "launcher-task") &&
                 s.start === "claude" &&
                 s.focus === "start" &&
                 s.project === LAUNCHER_RESUME_PROJECT &&
@@ -25192,9 +25221,9 @@ const launcherImages = {
             rec("0. the Task box is there and holds no image yet", false, JSON.stringify(s));
             return steps;
         }
-        // the field's height, empty and with three lines; it is emptied again, as step 7 reads an empty task
+        // the field's height, empty and with four lines; it is emptied again, as step 7 reads an empty task
         const empty = { boxH: s.boxH, rowH: s.rowH };
-        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, "verify line 1\nverify line 2\nverify line 3"));
+        await h.ev(setFieldExpr(`${LAUNCHER}?.querySelector('#launcher-task')`, "verify line 1\nverify line 2\nverify line 3\nverify line 4"));
         await polishNap(250);
         const lines = await state();
         await h.shot("cdp-shots/launcher-images-0-lines.png");
@@ -25217,13 +25246,13 @@ const launcherImages = {
             JSON.stringify({ first, s })
         );
         rec(
-            "1b. the empty Task field is one line (31px), and grows with multi-line text and an attached image",
-            empty.boxH === 31 &&
-                lines.boxH > 31 &&
+            "1b. the empty Task field is three lines (69px), and grows with longer text and an attached image",
+            empty.boxH === 69 &&
+                lines.boxH > 69 &&
                 lines.rowH > empty.rowH &&
-                emptied.boxH === 31 &&
+                emptied.boxH === 69 &&
                 emptied.task === "" &&
-                s.boxH === 31 &&
+                s.boxH === 69 &&
                 s.rowH > empty.rowH,
             JSON.stringify({ empty, lines: { boxH: lines.boxH, rowH: lines.rowH }, emptied: { boxH: emptied.boxH, task: emptied.task }, image: { boxH: s.boxH, rowH: s.rowH } })
         );

@@ -63,22 +63,24 @@ Setup and Settings have no `Mod`+number slot — the positions are bound to `SUR
 
 ## The New dialog (New agent, New run, Open a tool)
 
-One dialog starts an agent, a terminal, a run or a tool. It opens with focus on the Start column. Three columns sit
-side by side: Start, Project, and the pick's own list (an agent's sessions, the tools; a run's model, or its start and
-width). They keep one height: a long Project, Session or Tool list scrolls inside its column. The Tool row is the last
-in Start, so the other rows keep their digits.
+One dialog starts an agent, a terminal, a run or a tool. The pick's Task box (a run's Goal) sits at the top, and the
+dialog opens with focus in it; a terminal, a tool or a council has no box and opens with focus on the Start column.
+Under it, three columns sit side by side: Start, Project, and the pick's own list (an agent's sessions, the tools; a
+run's model, or its start and width). They keep one height: a long Project, Session or Tool list scrolls inside its
+column. The Tool row is the last in Start, so the other rows keep their digits.
 
 | Keys | Action |
 |---|---|
 | `1`…`9` | Pick that row in the focused column (Start, Project or Session); in Session `1` is New session |
+| `Alt`+`1`…`9` | In the task or goal box: pick that Start row without leaving the box |
 | `0` | In the Project column: Home, pinned under the projects |
 | `↑` / `↓` | Move in the focused column |
 | `→` / `←` | Step Start, Project, then the Session or Tool column, and back |
 | letters | In the Start column, start typing the task (or a run's goal): focus moves to that box with the letter in it (not with the Tool row picked, which has no task box). In the Project or Session column, filter it by name; `Backspace` shortens the filter |
 | `a`…`z` | In the Tool column (with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
-| `Tab` / `Shift`+`Tab` | Next / previous: Start, Project, the Session or Tool column, each field, Cancel, the launch button, and round again |
-| `Enter` | Launch, from a column, the Tool list or a one-line field; in the task or goal box it starts a new line |
-| `Shift`+`Enter` | With a session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
+| `Tab` / `Shift`+`Tab` | Next / previous: the task or goal box and its fields, Start, Project, the Session or Tool column, Cancel, the launch button, and round again |
+| `Enter` | Launch, from the task or goal box, a column, the Tool list or a one-line field |
+| `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
 | `Esc` | Close the open menu or a column's filter first, then the dialog. What you typed is kept for the next open |
 

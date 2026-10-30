@@ -301,8 +301,9 @@ export function draftShown(draft: LauncherDraft): boolean {
 }
 
 // "resume" is the Session column: it takes its own digits, arrows and filter (launcherresumelist), so only Enter is the
-// dialog's. "tools" is the Tool column (launchertoolfields), picked by letters.
-export type FocusZone = "start" | "project" | "tools" | "resume" | "textarea" | "input" | "other";
+// dialog's. "tools" is the Tool column (launchertoolfields), picked by letters. "task" is the pick's Task or Goal box at
+// the top, where the dialog opens; any other textarea is "textarea".
+export type FocusZone = "start" | "project" | "tools" | "resume" | "task" | "textarea" | "input" | "other";
 
 // What an Escape can close before the dialog, innermost first
 export type LauncherInner = "flags" | "branches" | "filter";
@@ -334,6 +335,11 @@ export interface LauncherKeyIn {
     shift: boolean;
     // Cmd, Ctrl or Alt held
     mod: boolean;
+    // Alt (Option) alone of the three, with the digit its physical key is: on a Mac, Option+1 types "¡", so the digit
+    // comes from the key's code, not from `key`
+    altDigit?: number;
+    // an IME is composing: its Enter commits the composition and launches nothing
+    composing?: boolean;
     // the paste shortcut: Ctrl+V, Cmd+V on a Mac, or Shift+Insert
     paste?: boolean;
 }
@@ -359,6 +365,10 @@ const NONE: LauncherKeyAction = { kind: "none" };
 // Mod+Enter (submit). Tab never gets here: the dialog's focus trap takes it first.
 export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyAction {
     const { zone } = ctx;
+    // a key an IME is composing with (its Enter commits, its Escape cancels) belongs to the IME
+    if (k.composing) {
+        return NONE;
+    }
     // Escape closes the innermost open thing, wherever focus is: the flag menu opens from the Command row while
     // focus can sit in the Task box
     if (k.key === "Escape") {
@@ -374,7 +384,16 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
     // a paste outside a text field goes to the Task or Goal box: focus moves there and the browser's paste lands in it,
     // images included. A text field takes its own paste.
     if (k.paste) {
-        return ctx.textField && zone !== "textarea" && zone !== "input" ? { kind: "write" } : NONE;
+        return ctx.textField && zone !== "task" && zone !== "textarea" && zone !== "input" ? { kind: "write" } : NONE;
+    }
+    // The Task (or Goal) box is where the dialog opens: Enter launches and Shift+Enter is its newline, as in a chat box,
+    // and Alt+1–9 picks a Start row without leaving it. The project and the session are a Tab away, in their columns.
+    if (zone === "task") {
+        if (k.altDigit != null) {
+            const index = k.altDigit - 1;
+            return index >= 0 && index < ctx.startCount ? { kind: "pick-start", index } : NONE;
+        }
+        return k.key === "Enter" && !k.shift && !k.mod ? { kind: "launch" } : NONE;
     }
     if (k.mod) {
         return NONE;

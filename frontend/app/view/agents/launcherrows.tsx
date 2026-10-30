@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The New launcher's list parts, shared by its three columns (Start, Project, and the pick's own list: Session or Tool):
-// the row tone, the digit keycap, the column label and the filter line.
+// the row tone, the digit keycap, the column label and the filter line; and the empty Task box over them.
 
 import { cn } from "@/util/util";
 import { Search } from "lucide-react";
@@ -55,6 +55,20 @@ export function ColumnLabel({
         <div className={cn("flex shrink-0 items-baseline gap-2 px-2 pb-[7px] pt-0.5", className)}>
             <span className={cn(LAUNCHER_LABEL, "flex-1", focused && "text-secondary")}>{label}</span>
             {hint ? <span className="text-[10.5px] tabular-nums text-muted">{hint}</span> : null}
+        </div>
+    );
+}
+
+// The Task box's place at the top for a pick that takes no task (a terminal, a tool, a council): kept, so the dialog
+// keeps one shape whatever is picked, and saying why it is empty
+export function NoTaskBox({ reason }: { reason: string }) {
+    return (
+        <div
+            data-launcher-no-task
+            className="flex min-h-[38px] items-center gap-2 rounded-[10px] border border-dashed border-edge-mid px-3 py-[6px]"
+        >
+            <span className={cn(LAUNCHER_LABEL, "shrink-0")}>Task</span>
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted">{reason}</span>
         </div>
     );
 }

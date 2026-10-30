@@ -3,14 +3,15 @@
 //
 // The New launcher: one dialog that starts an agent, a terminal, a run or a tool
 // (docs/superpowers/specs/2026-10-08-new-launcher-design.md). It replaced the New agent dialog and the New run window.
-// Start picks what, Project where, and the third column holds the pick's own list (an agent's sessions, the tools, a
-// run's model or start and width); the details below fill in the rest. The Start column is always shown and has focus
-// when the dialog opens: what starts and where come first, a past session second (the chip that folded Start away,
-// docs/superpowers/specs/2026-10-28-new-launcher-declutter-design.md D1/D7, was dropped 2026-10-29). The Start column
-// sets the band's height: a long Project, Session or Tool list scrolls inside its column, so the dialog keeps its
-// height however many projects and sessions there are. Digits pick in the focused column (0 is Home), → and ← step
-// between the columns, and Tab walks the dialog without leaving it; each row draws its key. Every close keeps the draft
-// (launcherstore), which is what lets a click outside close it.
+// The pick's fields come first, its Task (or a run's Goal) box at the top with focus when the dialog opens, so an agent
+// in the project you are in is type and Enter (docs/superpowers/specs/2026-10-30-new-agent-next-design.md); Shift+Enter
+// is the box's newline and Alt+1–9 picks a Start row from it. Under the fields, three columns: Start picks what, Project
+// where, and the third holds the pick's own list (an agent's sessions, the tools, a run's model or start and width). The
+// Start column is always shown (the chip that folded it away, 2026-10-28-new-launcher-declutter-design.md D1/D7, was
+// dropped 2026-10-29) and sets the band's height: a long Project, Session or Tool list scrolls inside its column, so
+// the dialog keeps its height however many projects and sessions there are. Digits pick in the focused column (0 is
+// Home), → and ← step between the columns, and Tab walks the dialog without leaving it; each row draws its key. Every
+// close keeps the draft (launcherstore), which is what lets a click outside close it.
 //
 // The open state is model.launcherAtom, so deriveKeyContext counts the dialog as a modal. The app bar's one New button
 // reopens it on the last pick; Mod+N and Mod+Shift+R, and the Brief's `r`, open it at the agent or the run door.
@@ -24,7 +25,6 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { resolveChannelTarget, type NewRunPrefill, type RunConfig } from "@/app/view/jarvis/newrun";
 import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
-import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { Check, House, Network, SquareTerminal, Users, Wrench, X, Zap } from "lucide-react";
@@ -74,7 +74,7 @@ import { AgentFields, useProjectBranches } from "./launcheragentfields";
 import { composeTaskWithImages, imagesPending } from "./launcherimages";
 import { appendPage, pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
-import { ColumnLabel, digitOf, FilterLine, Keycap, rowTone } from "./launcherrows";
+import { ColumnLabel, digitOf, FilterLine, Keycap, NoTaskBox, rowTone } from "./launcherrows";
 import { startLauncherRun } from "./launcherrun";
 import { RunColumn, RunFields } from "./launcherrunfields";
 import {
@@ -221,7 +221,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const runRoute = useAtomValue(runRouteAtom);
     const routeTouched = useAtomValue(routeTouchedAtom);
     const cap = useWorkerCapacity();
-    const [zone, setZone] = useState<"start" | "project" | "tools" | null>(null);
+    const [zone, setZone] = useState<"start" | "project" | "tools" | "task" | null>(null);
     const [filter, setFilter] = useState("");
     const [home, setHome] = useState("");
     const [error, setError] = useState<string | null>(null);
@@ -350,12 +350,17 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         }
     }, [open, pref, harnesses]);
 
-    // every opening starts with focus on the Start column: what starts is picked first, then the project. ModalShell's
-    // own focus effect runs first (a child's effects do), so this one wins.
+    // every opening starts in the box at the top: an agent's Task, or a run's Goal (its plan path, for a run from a plan),
+    // so the most common New, an agent in the project you are in, is type and Enter. A pick with no box (a terminal, a
+    // tool, a council) starts on the Start column. ModalShell's own focus effect runs first (a child's effects do), so
+    // this one wins.
     useEffect(() => {
-        if (open) {
-            startRef.current?.focus();
+        if (!open) {
+            return;
         }
+        const box = isTool || isCouncil ? null : isRun ? (goalRef.current ?? planRef.current) : taskRef.current;
+        (box ?? startRef.current)?.focus();
+        // once per opening: a pick made later keeps its own focus
     }, [open]);
 
     // home names Home's folder in its tooltip, and offers Home only once it is known (homeOffered)
@@ -719,6 +724,9 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         if (target instanceof Element && target.closest("[data-launcher-resume]")) {
             return "resume";
         }
+        if (target != null && (target === taskRef.current || target === goalRef.current)) {
+            return "task";
+        }
         if (target instanceof HTMLTextAreaElement) {
             return "textarea";
         }
@@ -763,6 +771,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                 key: e.key,
                 shift: e.shiftKey,
                 mod,
+                altDigit:
+                    e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[0-9]$/.test(e.code)
+                        ? Number(e.code.slice(5))
+                        : undefined,
+                composing: e.nativeEvent.isComposing || e.keyCode === 229,
                 paste:
                     ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "v") ||
                     (e.shiftKey && !mod && e.key === "Insert"),
@@ -783,6 +796,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         switch (action.kind) {
             case "pick-start":
                 pickRow(startList[action.index]);
+                // Alt+digit from the Task box onto a pick with no box (a terminal, a tool, a council) unmounts the box;
+                // focus goes to the Start column instead of falling out of the dialog
+                requestAnimationFrame(() => {
+                    if (!rootRef.current?.contains(document.activeElement)) {
+                        startRef.current?.focus();
+                    }
+                });
                 return;
             case "pick-project":
                 pickProject(visible[action.index].name);
@@ -949,8 +969,57 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             <X size={15} strokeWidth={2} />
                         </button>
                     </div>
+                    {/* the pick's own fields come first, its Task or Goal box at the top where the dialog opens; a box too
+                    tall for the dialog scrolls, the columns under it never do */}
+                    <div
+                        data-launcher-fields
+                        onFocus={(e) => {
+                            const target: EventTarget = e.target;
+                            if (target === taskRef.current || target === goalRef.current) {
+                                setZone("task");
+                            }
+                        }}
+                        onBlur={(e) => {
+                            const target: EventTarget = e.target;
+                            if (target === taskRef.current || target === goalRef.current) {
+                                setZone(null);
+                            }
+                        }}
+                        className="flex min-h-0 shrink flex-col gap-[14px] overflow-y-auto border-b border-border px-[18px] pb-4 pt-[14px]"
+                    >
+                        {isRun ? (
+                            <RunFields
+                                projectPath={projectPath}
+                                goalRef={goalRef}
+                                planRef={planRef}
+                                ramWarning={ramWarning}
+                            />
+                        ) : isTool ? (
+                            <>
+                                <NoTaskBox reason={`${tool?.name ?? "A tool"} takes no task: it opens as it is.`} />
+                                <ToolFields tool={tool} atHome={toolAtHome} />
+                            </>
+                        ) : isCouncil ? (
+                            <NoTaskBox reason="A council's question is written in its Setup, which opens next." />
+                        ) : (
+                            <>
+                                {runtimeShowsTask(runtime) ? null : (
+                                    <NoTaskBox reason="A terminal takes no task: it opens a shell." />
+                                )}
+                                <AgentFields
+                                    runtime={runtime}
+                                    currentBranch={currentBranch}
+                                    branches={branches}
+                                    ramWarning={ramWarning}
+                                    resume={resume}
+                                    home={atHome}
+                                    taskRef={taskRef}
+                                />
+                            </>
+                        )}
+                    </div>
                     {/* the Start column sets the band's height; the other two lay out inside it and scroll */}
-                    <div className="shrink-0 border-b border-border">
+                    <div className="shrink-0">
                         <div className="grid grid-cols-[236px_minmax(0,1fr)_minmax(0,1fr)]">
                             <div
                                 ref={startRef}
@@ -965,7 +1034,13 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 <ColumnLabel
                                     label="Agent"
                                     focused={startFocused}
-                                    hint={startFocused ? `↑↓ · 1–${Math.min(startList.length, 9)}` : ""}
+                                    hint={
+                                        startFocused
+                                            ? `↑↓ · 1–${Math.min(startList.length, 9)}`
+                                            : zone === "task"
+                                              ? `alt 1–${Math.min(startList.length, 9)}`
+                                              : ""
+                                    }
                                 />
                                 {startList.filter((r) => r.kind === "agent").map(renderStartRow)}
                                 <ColumnLabel label="Run" focused={startFocused} className="pt-[10px]" />
@@ -1180,28 +1255,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             </div>
                         </div>
                     </div>
-                    <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto px-[18px] pb-4 pt-[14px]">
-                        {isRun ? (
-                            <RunFields
-                                projectPath={projectPath}
-                                goalRef={goalRef}
-                                planRef={planRef}
-                                ramWarning={ramWarning}
-                            />
-                        ) : isTool ? (
-                            <ToolFields tool={tool} atHome={toolAtHome} />
-                        ) : isCouncil ? null : (
-                            <AgentFields
-                                runtime={runtime}
-                                currentBranch={currentBranch}
-                                branches={branches}
-                                ramWarning={ramWarning}
-                                resume={resume}
-                                home={atHome}
-                                taskRef={taskRef}
-                            />
-                        )}
-                    </div>
                     <div className="flex shrink-0 items-center gap-3 border-t border-border px-[18px] py-[13px]">
                         {error != null ? (
                             <span
@@ -1252,15 +1305,11 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 Transcript
                             </DialogButton>
                         ) : null}
-                        {/* Enter launches from every zone but the Task box, where Mod+Enter does */}
+                        {/* Enter launches from every zone, the Task box included, where Shift+Enter is the newline */}
                         <DialogButton
                             variant="primary"
                             hint="enter"
-                            title={
-                                isTool || isCouncil
-                                    ? "Enter"
-                                    : `Enter, or ${formatChordString("Cmd:Enter")} from the Task box`
-                            }
+                            title={isTool || isCouncil ? "Enter" : "Enter (Shift+Enter is a new line in the Task box)"}
                             disabled={primaryDisabled}
                             onClick={launch}
                             className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"

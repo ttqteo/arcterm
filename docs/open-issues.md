@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) New dialog, Task on top: Mod+N opens with the caret in the Task box above the columns; type and Enter
+  starts the agent, Shift+Enter adds a line; Alt+2 (Option+2 on a Mac) picks another Start row without leaving the box,
+  and Alt onto Terminal draws the dashed "takes no task" line with focus on Start; Mod+Shift+R opens in the Goal; an IME
+  (Telex) Enter commits the word and does not launch. The `launcher`, `launcher-resume`, `launcher-images` and
+  `new-run-window` scenarios were updated but not run. (commit "feat(launcher): the New dialog opens in its Task box,
+  now at the top")
 - [ ] (arcterm) Agent badge: run a brainstorm until its Judge (or Builder check) answers, while looking at another
   agent: the Agent nav badge does not go up for the Judge, and every number it shows matches a count on a tree row.
   (commit "fix(agents): a brainstorm's judge and builder check do not count as unread")
