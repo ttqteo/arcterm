@@ -24,6 +24,8 @@ const (
 	agentsAllProjectsTip = "wsh agents list --all shows every project"
 	// a send to a sleeping agent waits for its wake: the server gives it 60 s to report in
 	agentsSendTimeoutMs = 70_000
+	agentsSelfMark      = "(you)"
+	agentsTitleMax      = 60
 )
 
 var agentsCmd = &cobra.Command{
@@ -109,7 +111,7 @@ func agentsListRun(cmd *cobra.Command, args []string) error {
 	if isJSON(cmd) {
 		return jsonOut(rows)
 	}
-	for _, line := range agentsListLines(rows, projectPath != "") {
+	for _, line := range agentsListLines(rows, projectPath != "", getTabIdFromEnv()) {
 		fmt.Println(line)
 	}
 	return nil
@@ -143,7 +145,10 @@ func agentsInProject(rows []wshrpc.AgentInfo, projectPath string) []wshrpc.Agent
 	return kept
 }
 
-func agentsListLines(rows []wshrpc.AgentInfo, filtered bool) []string {
+// agentsListLines prints a row per agent. Two sessions in one project read alike by name, and a worktree's
+// session files under its main checkout's project, so a row also shows where the session works when that is
+// not the checkout, its task title, and which row is the caller's own.
+func agentsListLines(rows []wshrpc.AgentInfo, filtered bool, selfTab string) []string {
 	if len(rows) == 0 {
 		if filtered {
 			return []string{"no live agents in this project; " + agentsAllProjectsTip}
@@ -157,10 +162,35 @@ func agentsListLines(rows []wshrpc.AgentInfo, filtered bool) []string {
 		if r.RunId != "" {
 			run = agentsShort(r.RunId)
 		}
-		fmt.Fprintln(w, strings.Join([]string{agentsShort(r.TabId), r.Name, r.Project, run, r.Harness, r.State}, "\t"))
+		about := agentsTitle(r.Title)
+		if r.TabId == selfTab {
+			about = strings.TrimSpace(agentsSelfMark + " " + about)
+		}
+		fmt.Fprintln(w, strings.Join([]string{agentsShort(r.TabId), r.Name, r.Project, run, r.Harness, r.State, agentsWhere(r), about}, "\t"))
 	}
 	w.Flush()
 	return strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+}
+
+// agentsWhere is the session's directory when it is not its project's checkout, relative to the checkout when
+// inside it (a .claude/worktrees tree), "-" otherwise
+func agentsWhere(r wshrpc.AgentInfo) string {
+	if r.Cwd == "" || runsNormPath(r.Cwd) == runsNormPath(r.ProjectPath) {
+		return agentsNoRun
+	}
+	if runsPathWithin(r.Cwd, r.ProjectPath) {
+		return runsNormPath(r.Cwd)[len(runsNormPath(r.ProjectPath))+1:]
+	}
+	return r.Cwd
+}
+
+// agentsTitle is a title on one line, cut to fit a terminal row
+func agentsTitle(title string) string {
+	t := []rune(strings.Join(strings.Fields(title), " "))
+	if len(t) > agentsTitleMax {
+		return string(t[:agentsTitleMax-1]) + "…"
+	}
+	return string(t)
 }
 
 func agentsShort(id string) string {

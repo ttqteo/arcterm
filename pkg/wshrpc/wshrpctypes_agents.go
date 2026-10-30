@@ -68,6 +68,8 @@ type AgentInfo struct {
 	State       string `json:"state"`
 	SleptAt     int64  `json:"sleptat,omitempty"`
 	FreedBytes  uint64 `json:"freedbytes,omitempty"`
+	Cwd         string `json:"cwd,omitempty"`   // the session's own directory: a worktree's, when it works in one
+	Title       string `json:"title,omitempty"` // the harness's summary of the session's task, the cockpit's label
 }
 
 type CommandAgentsListRtnData struct {

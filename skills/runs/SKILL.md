@@ -29,7 +29,9 @@ description: Use when you need to start an arcterm run (quick, or orchestrator f
 
 Message a live agent (claude or pi) with `wsh agents`:
 
-- `wsh agents list` shows the live agent tabs, with a tab prefix and each one's state.
+- `wsh agents list` shows the live agent tabs, with a tab prefix, each one's state, the folder it works in
+  when that is not the project's checkout (a worktree), and its task title. `(you)` marks your own tab.
+  Rows of one project can share a name: pick the target by folder and title, never by name alone.
 - `wsh agents send <tab> "<text>"` hands the agent a prompt; `--file <path>` reads the text from a file, `--wait` blocks until it has answered.
 - `wsh agents read <tab>` prints the agent's last answer.
 - `wsh agents wait <tab>` blocks until the agent stops working (its turn ends, it asks the user, it sleeps or its tab

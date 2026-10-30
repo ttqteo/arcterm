@@ -40,11 +40,11 @@ func agentsTabIds(rows []wshrpc.AgentInfo) []string {
 }
 
 func TestAgentsListLines(t *testing.T) {
-	lines := agentsListLines(agentsTestRoster(), false)
+	lines := agentsListLines(agentsTestRoster(), false, "")
 	want := [][]string{
-		{"aaaaaaaa", "design", "lead", "arc", "0f9e8d7c", "claude", "idle"},
-		{"bbbbbbbb", "scratch", "arc", "-", "pi", "working"},
-		{"cccccccc", "siem", "arc-siem", "-", "claude", "asking"},
+		{"aaaaaaaa", "design", "lead", "arc", "0f9e8d7c", "claude", "idle", "-"},
+		{"bbbbbbbb", "scratch", "arc", "-", "pi", "working", "-"},
+		{"cccccccc", "siem", "arc-siem", "-", "claude", "asking", "-"},
 	}
 	if len(lines) != len(want) {
 		t.Fatalf("got %d lines, want %d: %q", len(lines), len(want), lines)
@@ -57,12 +57,43 @@ func TestAgentsListLines(t *testing.T) {
 }
 
 func TestAgentsListEmptyRoster(t *testing.T) {
-	if got := agentsListLines(nil, false); !reflect.DeepEqual(got, []string{"no live agents"}) {
+	if got := agentsListLines(nil, false, ""); !reflect.DeepEqual(got, []string{"no live agents"}) {
 		t.Errorf("unfiltered empty roster = %q", got)
 	}
-	got := agentsListLines(nil, true)
+	got := agentsListLines(nil, true, "")
 	if len(got) != 1 || !strings.Contains(got[0], "no live agents") || !strings.Contains(got[0], "wsh agents list --all") {
 		t.Errorf("filtered empty roster = %q, want one line naming --all", got)
+	}
+}
+
+// two sessions of one project once read as the same row ("waveterm waveterm - claude"), and a message for a
+// worktree's session went to the human's own session in the main checkout
+func TestAgentsListLinesTellSessionsOfOneProjectApart(t *testing.T) {
+	long := strings.Repeat("word ", 30)
+	rows := []wshrpc.AgentInfo{
+		{TabId: agentsTestTabA, Name: "waveterm", ProjectPath: `C:\work\arc`, Project: "arc", Harness: "claude", State: wshrpc.AgentsState_Working, Cwd: `C:\work\arc`, Title: "Explore improvement areas"},
+		{TabId: agentsTestTabB, Name: "waveterm", ProjectPath: `C:\work\arc`, Project: "arc", Harness: "claude", State: wshrpc.AgentsState_Idle, Cwd: `C:\work\arc\.claude\worktrees\bench`, Title: "Benchmark\nsonnet workers"},
+		{TabId: agentsTestTabC, Name: "waveterm", ProjectPath: `C:\work\arc`, Project: "arc", RunId: agentsTestRun, Harness: "claude", State: wshrpc.AgentsState_Working, Cwd: `C:\wt\0f9e8d7c-t-1`, Title: long},
+	}
+	lines := agentsListLines(rows, true, agentsTestTabA)
+	if len(lines) != 3 {
+		t.Fatalf("got %d lines, want 3: %q", len(lines), lines)
+	}
+	want := []string{
+		"working  -  " + agentsSelfMark + " Explore improvement areas",
+		"idle     .claude/worktrees/bench  Benchmark sonnet workers",
+		`working  C:\wt\0f9e8d7c-t-1`,
+	}
+	for i, w := range want {
+		if norm := strings.Join(strings.Fields(lines[i]), " "); !strings.Contains(norm, strings.Join(strings.Fields(w), " ")) {
+			t.Errorf("line %d = %q, want it to hold %q", i, lines[i], w)
+		}
+	}
+	if strings.Contains(lines[1], agentsSelfMark) || strings.Contains(lines[2], agentsSelfMark) {
+		t.Errorf("only the caller's own row is marked: %q", lines)
+	}
+	if !strings.HasSuffix(lines[2], "…") || len([]rune(lines[2])) > 200 {
+		t.Errorf("a long title is cut to one short row: %q", lines[2])
 	}
 }
 

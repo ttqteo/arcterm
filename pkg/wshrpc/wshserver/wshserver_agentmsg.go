@@ -198,6 +198,8 @@ func buildAgentRoster(facts *agentRosterFacts) []agentRow {
 				ProjectPath: tf.ProjectPath,
 				Harness:     harness,
 				State:       agentsState(tf.Status.State, tf.OpenAsk),
+				Cwd:         tf.Status.Cwd,
+				Title:       tf.Status.Title,
 			},
 			blockId:   tf.BlockId,
 			status:    tf.Status,

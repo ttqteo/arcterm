@@ -68,6 +68,8 @@ declare global {
         state: string;
         sleptat?: number;
         freedbytes?: number;
+        cwd?: string;
+        title?: string;
     };
 
     // baseds.AgentStatusData

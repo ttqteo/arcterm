@@ -82,6 +82,7 @@ func blockORef(blockId string) string {
 func TestAgentsRosterRows(t *testing.T) {
 	owned := agentFacts(agentsTabA, "worker", agentsBlockA, "claude", baseds.AgentState_Working)
 	owned.ProjectPath = `C:\elsewhere\t-1`
+	owned.Status.Title = "Build the shaper"
 	loose := agentFacts(agentsTabB, "scout", agentsBlockB, "pi", baseds.AgentState_Idle)
 	loose.ProjectPath = `C:\src\widgets\`
 	codex := agentFacts("cccc-tab", "codex", agentsBlockC, "codex", baseds.AgentState_Idle)
@@ -100,8 +101,8 @@ func TestAgentsRosterRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []wshrpc.AgentInfo{
-		{TabId: agentsTabA, Name: "worker", ProjectPath: `C:\proj\arc`, Project: "Arc", RunId: "run-1", Harness: "claude", State: wshrpc.AgentsState_Working},
-		{TabId: agentsTabB, Name: "scout", ProjectPath: `C:\src\widgets\`, Project: "widgets", Harness: "pi", State: wshrpc.AgentsState_Idle},
+		{TabId: agentsTabA, Name: "worker", ProjectPath: `C:\proj\arc`, Project: "Arc", RunId: "run-1", Harness: "claude", State: wshrpc.AgentsState_Working, Cwd: "/work/worker", Title: "Build the shaper"},
+		{TabId: agentsTabB, Name: "scout", ProjectPath: `C:\src\widgets\`, Project: "widgets", Harness: "pi", State: wshrpc.AgentsState_Idle, Cwd: "/work/scout"},
 	}
 	if len(rtn.Agents) != len(want) {
 		t.Fatalf("rows = %+v, want %+v", rtn.Agents, want)
