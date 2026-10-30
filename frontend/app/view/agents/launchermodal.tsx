@@ -23,7 +23,6 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { resolveChannelTarget, type NewRunPrefill, type RunConfig } from "@/app/view/jarvis/newrun";
-import { openTarget } from "@/app/view/jarvis/openref";
 import { homeFromInfo } from "@/app/view/jarvis/projectpicker";
 import { formatChordString } from "@/util/keysym";
 import { cn, fireAndForget } from "@/util/util";
@@ -76,10 +75,9 @@ import { composeTaskWithImages, imagesPending } from "./launcherimages";
 import { appendPage, pickedResume, resumeChoices, resumeLaunchSpec, resumeScopeKey } from "./launcherresume";
 import { ResumeList } from "./launcherresumelist";
 import { ColumnLabel, digitOf, FilterLine, Keycap, rowTone } from "./launcherrows";
-import { handBackStartedRun, startLauncherRun } from "./launcherrun";
+import { startLauncherRun } from "./launcherrun";
 import { RunColumn, RunFields } from "./launcherrunfields";
 import {
-    abandonLauncherLaunch,
     applyLauncherPrefill,
     beginLauncherLaunch,
     clearLauncherDraft,
@@ -95,8 +93,6 @@ import {
     launcherGoalAtom,
     launcherImagesAtom,
     launcherKindAtom,
-    launcherLaunchAbandoned,
-    launcherLaunchTicket,
     launcherOwnProjectAtom,
     launcherPrefillAtom,
     launcherProjectAtom,
@@ -120,7 +116,7 @@ import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
 import { noteRecentProject, projectListAtom, recentFirst, recentProjectsAtom, type ProjectRow } from "./projectsstore";
 import { activeClaudeAccountAtom, claudeIdentityAtom } from "./ratelimitstore";
 import { leadRouteSeed } from "./route";
-import { cancelRun, channelOverrideAtom, loadResolvedProfile, resolvedProfileAtom } from "./runactions";
+import { channelOverrideAtom, loadResolvedProfile, resolvedProfileAtom } from "./runactions";
 import { launchBlocker, type RunShape } from "./runconfig";
 import {
     autonomousAtom,
@@ -143,6 +139,8 @@ import { agentProject } from "./runlineage";
 import { RuntimeMark } from "./runtimemark";
 import { sessionKey } from "./sessionsruns";
 import { setupTabAtom } from "./setupstore";
+import { startingTitle } from "./startingrunsmodel";
+import { startRunInBackground } from "./startingrunsstore";
 import { pickerOrder } from "./toolsmodel";
 import { loadTools, openTool, pinnedToolsAtom, toolsErrorAtom, toolsStatusAtom } from "./toolsstore";
 import { newAgentRamWarning } from "./workercapacity";
@@ -488,11 +486,6 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
     const close = () => {
         setError(null);
         setFilter("");
-        // a run still starting is given up with the dialog (startRun cancels it when it lands); an agent launch is
-        // quick and is left to finish
-        if (isRun) {
-            abandonLauncherLaunch();
-        }
         closeLauncher(model);
     };
 
@@ -618,47 +611,34 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             setError("Still reading your projects — try again in a moment.");
             return;
         }
-        if (!beginLauncherLaunch()) {
-            return;
-        }
-        setError(null);
-        const ticket = launcherLaunchTicket();
-        fireAndForget(async () => {
-            let started: { channelId: string; run: Run };
-            try {
-                started = await startLauncherRun({
-                    target,
+        // A run can take minutes to start (CreateRun builds the landing tree and the lead before it returns), so the
+        // dialog hands it to a Starting row in its project's folder and closes at once; that row is where it is cancelled
+        // or reads why it failed. Read before close(), which drops it: the prefill's caller still hears the run's id.
+        const onStarted = takeLauncherOnStarted();
+        const pickedRoute = routeTouched ? runRoute : null;
+        startRunInBackground({
+            project: p.name,
+            title: startingTitle(
+                goal,
+                config.shape === "orchestrator" && config.start === "plan" ? config.planPath : ""
+            ),
+            // a Try again reads the channel list again: a first try that minted the project's channel must not mint another
+            start: () =>
+                startLauncherRun({
+                    target: resolveChannelTarget(globalStore.get(channelsAtom), p.name, p.path) ?? target,
                     projectName: p.name,
                     config,
                     goal,
-                    pickedRoute: routeTouched ? runRoute : null,
-                });
-            } catch (e) {
-                // only a failure before the run exists keeps the dialog: there is still a launch to retry. A start the
-                // user gave up has no dialog to say it in.
-                if (!launcherLaunchAbandoned(ticket)) {
-                    setError(String(e));
-                    endLauncherLaunch();
-                }
-                return;
-            }
-            if (launcherLaunchAbandoned(ticket)) {
-                // closed while it started: the user cancelled it, so the run goes and the draft stays for a retry
-                await cancelRun(started.channelId, started.run.id);
-                return;
-            }
-            // read before close(), which drops it: only a start the dialog was still open for belongs to its caller
-            const onStarted = takeLauncherOnStarted();
-            endLauncherLaunch();
-            endLauncherDraft();
-            close();
-            // A caller that filled the dialog (a brainstorm's Approve) hears the run's id and follows the run itself, so
-            // the person stays where they are; any other start lands on the run. Landing reports its own failures
-            // (openTarget toasts); holding the dialog over a run that is already running would read as a failed launch
-            if (handBackStartedRun(onStarted, started.run.id) === "land") {
-                await openTarget(model, { kind: "channel", channelId: started.channelId, runId: started.run.id });
-            }
+                    pickedRoute,
+                }),
+            onStarted,
         });
+        endLauncherDraft();
+        close();
+        // the row is in the Agent tree, as a new agent's is; a caller that filled the dialog keeps the person where it is
+        if (onStarted == null) {
+            globalStore.set(model.surfaceAtom, "agent");
+        }
     };
 
     // A tool takes the centre, as an agent launch does. The folder is the project's (the tool's own "opens in" aside, see
@@ -1285,7 +1265,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                             onClick={launch}
                             className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-300"
                         >
-                            {busy && isRun ? "Starting…" : primaryLabel(kind, runtime, resume != null, tool?.name)}
+                            {primaryLabel(kind, runtime, resume != null, tool?.name)}
                         </DialogButton>
                     </div>
                 </div>

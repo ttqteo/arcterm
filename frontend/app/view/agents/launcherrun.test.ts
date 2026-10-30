@@ -102,23 +102,23 @@ describe("startLauncherRun", () => {
 });
 
 describe("handBackStartedRun", () => {
-    it("tells the caller that filled the dialog the run's id, and leaves the person where they are", () => {
+    it("tells the caller that filled the dialog the run's id", () => {
         const onStarted = vi.fn();
-        expect(handBackStartedRun(onStarted, "run-1")).toBe("stay");
+        handBackStartedRun(onStarted, "run-1");
         expect(onStarted).toHaveBeenCalledTimes(1);
         expect(onStarted).toHaveBeenCalledWith("run-1");
     });
 
-    it("lands a start that nothing follows on its run's Brief", () => {
-        expect(handBackStartedRun(null, "run-1")).toBe("land");
-        expect(handBackStartedRun(undefined, "run-1")).toBe("land");
+    it("does nothing for a start no caller follows", () => {
+        expect(() => handBackStartedRun(null, "run-1")).not.toThrow();
+        expect(() => handBackStartedRun(undefined, "run-1")).not.toThrow();
     });
 
-    it("stays on the surface even when the handback throws: the run exists, and a throw must not move the person", () => {
+    it("swallows a handback that throws: the run exists either way", () => {
         const onStarted = vi.fn(() => {
             throw new Error("agent gone");
         });
-        expect(handBackStartedRun(onStarted, "run-1")).toBe("stay");
+        expect(() => handBackStartedRun(onStarted, "run-1")).not.toThrow();
         expect(onStarted).toHaveBeenCalledWith("run-1");
     });
 });

@@ -57,6 +57,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In a float, the Translate tab shows the Translate panel over the terminal (Ctrl+Shift+D opens it there too) instead of
   opening translate-shell, so it works without installing anything. A translate-shell terminal opened from Setup →
   Tools is an ordinary tab in the float.
+- Start run in the New dialog no longer holds the dialog on "Starting…" while the run is created: the dialog closes at
+  once and the run shows as a Starting row in its project's folder in the Agent tree until its lead takes its place.
+  The row's × cancels it; a start that fails stays as a Failed row with Try again and Dismiss.
 - A project's Overview shows a year of activity as a calendar in your theme's colour, and its History lists each
   session with the runs and councils it started under it. The Run and Council buttons are gone from its header: an
   agent session starts those.

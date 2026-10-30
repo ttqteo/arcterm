@@ -102,6 +102,8 @@ import {
     useRunQueueFeed,
 } from "./runqueuestore";
 import { runMenuEntries } from "./runrowmenu";
+import { startingMeta, type StartingRun } from "./startingrunsmodel";
+import { cancelStartingRun, dismissStartingRun, retryStartingRun, startingRunsAtom } from "./startingrunsstore";
 import {
     centerModeAtom,
     overviewProjectAtom,
@@ -2714,6 +2716,90 @@ function QueuedEntryRow({ model, row }: { model: AgentsViewModel; row: QueuedRow
     );
 }
 
+// A run the New dialog handed off while it starts (startingrunsstore.ts). It has no run or session yet, so a click
+// selects nothing; it goes when the run exists, and the run's lead takes its place. Hover offers Cancel while it
+// starts, and Try again and Dismiss once it failed; the menu holds the same.
+function StartingRunRow({ model, row }: { model: AgentsViewModel; row: StartingRun }) {
+    const now = useAtomValue(model.nowAtom);
+    const failed = row.state === "failed";
+    const meta = startingMeta(row, now);
+    const onContextMenu = (e: React.MouseEvent) => {
+        const items: ContextMenuItem[] = failed
+            ? [
+                  { label: "Try again", icon: <RotateCcw size={15} />, click: () => retryStartingRun(row.id) },
+                  { label: "Dismiss", icon: <X size={15} />, click: () => dismissStartingRun(row.id) },
+              ]
+            : row.state === "starting"
+              ? [{ label: "Cancel", icon: <X size={15} />, danger: true, click: () => cancelStartingRun(row.id) }]
+              : [];
+        if (items.length > 0) {
+            ContextMenuModel.getInstance().showContextMenu(items, e);
+        }
+    };
+    const act =
+        "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary";
+    return (
+        <div
+            data-starting-run-row={row.id}
+            data-starting-state={row.state}
+            title={failed ? `${row.title}\n${meta}` : row.title}
+            onContextMenu={onContextMenu}
+            className="group relative flex items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] transition-colors duration-[140ms] hover:bg-surface-hover"
+        >
+            <Slot>
+                {failed ? (
+                    <X size={13} aria-hidden className="text-error" />
+                ) : (
+                    <Loader2 size={13} aria-hidden className="animate-spin text-muted motion-reduce:animate-none" />
+                )}
+            </Slot>
+            <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium text-secondary">{row.title}</div>
+                <div data-starting-meta className={cn("truncate text-[11px]", failed ? "text-error" : "text-muted")}>
+                    {meta}
+                </div>
+            </div>
+            <span className="flex flex-none items-center gap-[2px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100">
+                {failed ? (
+                    <>
+                        <button
+                            type="button"
+                            data-starting-act="retry"
+                            title="Try again"
+                            aria-label={`Try starting ${row.title} again`}
+                            onClick={() => retryStartingRun(row.id)}
+                            className={act}
+                        >
+                            <RotateCcw size={12} aria-hidden />
+                        </button>
+                        <button
+                            type="button"
+                            data-starting-act="dismiss"
+                            title="Dismiss"
+                            aria-label={`Dismiss ${row.title}`}
+                            onClick={() => dismissStartingRun(row.id)}
+                            className={act}
+                        >
+                            <X size={12} aria-hidden />
+                        </button>
+                    </>
+                ) : row.state === "starting" ? (
+                    <button
+                        type="button"
+                        data-starting-act="cancel"
+                        title="Cancel"
+                        aria-label={`Cancel starting ${row.title}`}
+                        onClick={() => cancelStartingRun(row.id)}
+                        className={cn(act, "hover:text-error")}
+                    >
+                        <X size={12} aria-hidden />
+                    </button>
+                ) : null}
+            </span>
+        </div>
+    );
+}
+
 // The sidebar's second section: every ended conversation and orchestrator run, in a folder per project (the one with the
 // newest conversation first), or the chosen project's alone when the app bar narrows the sidebar
 // (the switcher names it). A plain list, not the Active section's animated one: it can run
@@ -2953,6 +3039,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // the plans queued to start (the run queue), each a row in its project's folder under the agents
     useRunQueueFeed();
     const queue = useAtomValue(queuedRowsAtom);
+    // the runs the New dialog handed off while they start, ahead of the queued plans
+    const starting = useAtomValue(startingRunsAtom);
     // the held services (wavesrv's) that are up or in trouble: a row each in its project's folder, after the divider. A
     // sleeping one has none (the selected one keeps its row), and its tab is still no terminal row.
     useEffect(() => ensureServicesFeed(), []);
@@ -2976,6 +3064,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         collapsed: collapsedList,
         roots,
         queue,
+        starting,
         services,
         serviceTabs,
         splits,
@@ -3107,6 +3196,8 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                         `queued-entry-${r.entry.id}`,
                                         <QueuedEntryRow model={model} row={r} />
                                     );
+                                case "startingrun":
+                                    return plain(`starting-run-${r.id}`, <StartingRunRow model={model} row={r} />);
                                 case "councilhead":
                                     return plain(`council-head-${r.project}`, <CouncilHeadRow project={r.project} />);
                                 case "council":

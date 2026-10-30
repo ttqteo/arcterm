@@ -84,6 +84,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) A wake message survives switching agents: open a sleeping agent, type a line in the box under its
   conversation, press Enter, then pick another agent and come back before it is awake. The box still shows the line
   (read-only, Waking…), the agent receives it, and the box is empty once it is awake.
+- [ ] (arcterm) Start run hands the run to a Starting row: New → Orchestrate → write a goal → Start run. The dialog
+  closes at once, the Agent surface shows a spinning **Starting · <1m** row in the project's folder, and it goes when
+  the lead's row appears. Start another and click its × while it starts: it reads Cancelling…, then goes, and the run
+  shows cancelled (no lead left running). A start that fails (e.g. a route not installed) stays **Failed · …** with
+  Try again and Dismiss on hover. Not tried live: the dev app was not running. (commit "feat(launcher): a run starts
+  behind a Starting row")
 - [ ] (arcterm) A council in a project Overview's History unfolds before it opens: open a project's Overview (its row
   in the Agent tree) and click a Council row in History. It is titled as in the Agent tree's Councils, and it unfolds in
   place (question, answer, up to three directions by rank, a chevron turned down) without leaving the Overview; Open
