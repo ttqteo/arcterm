@@ -9,6 +9,7 @@ import (
 	"embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -383,7 +385,7 @@ func syncStableWsh(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", src, err)
 	}
-	if cur, err := os.ReadFile(dst); err == nil && bytes.Equal(cur, want) {
+	if cur, err := os.ReadFile(dst); err == nil && bytes.Equal(cur, want) && stableWshRuns(dst) {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
@@ -405,6 +407,25 @@ func syncStableWsh(src, dst string) error {
 	}
 	_ = os.Remove(old) // fails only while the previous copy is still executing; the next sync retries
 	return nil
+}
+
+// stableWshRuns reports whether the copy at path still runs. macOS can flag one file's code signature as invalid and
+// SIGKILL every exec of it while its bytes and signature on disk stay valid, so an identical copy is not proof enough;
+// only a new file clears the flag. Anything short of a kill (a timeout, a file that is not a binary) counts as running,
+// so a slow machine never churns the copy. Elsewhere there is no such flag, and no reason to spawn a process.
+var stableWshRuns = func(path string) bool {
+	if runtime.GOOS != "darwin" {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := exec.CommandContext(ctx, path, "version").Run()
+	var exitErr *exec.ExitError
+	if ctx.Err() != nil || !errors.As(err, &exitErr) {
+		return true
+	}
+	status, ok := exitErr.Sys().(syscall.WaitStatus)
+	return !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL
 }
 
 // stableWshAsideName removes the copies earlier swaps moved aside and returns a free name to move dst to: dst.old,

@@ -39,6 +39,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- On a Mac, agents no longer show `?` with no model or title, and hook errors in every turn, when macOS has started
+  killing arcterm's helper (`~/.arc/bin/wsh`): opening arcterm replaces a copy that no longer runs.
 - The Agent badge no longer counts a brainstorm's Judge and Builder check sessions as unread: their answer goes to the
   brainstorming agent, so the badge had a number no row in the tree showed.
 

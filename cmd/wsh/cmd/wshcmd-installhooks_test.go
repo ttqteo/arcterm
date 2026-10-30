@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -823,6 +824,56 @@ func TestSyncStableWsh_copiesThenLeavesAnIdenticalCopyAlone(t *testing.T) {
 	}
 	if !info2.ModTime().Equal(info1.ModTime()) {
 		t.Fatalf("identical copy was rewritten: mtime %v -> %v", info1.ModTime(), info2.ModTime())
+	}
+}
+
+// macOS can flag one file's code signature as invalid and SIGKILL every exec of it while its bytes and signature stay
+// valid (2026-10-30: every hook exited 137 until the copy was replaced); only a new file clears it
+func TestSyncStableWsh_replacesAnIdenticalCopyThatCannotRun(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "wsh-0.15.19-darwin.arm64")
+	writeTestFile(t, src, "build 19")
+	dst := stableWshPath(filepath.Join(dir, "home"))
+	writeTestFile(t, dst, "build 19")
+	before, err := os.Stat(dst)
+	if err != nil {
+		t.Fatalf("stat before sync: %v", err)
+	}
+	prev := stableWshRuns
+	stableWshRuns = func(string) bool { return false }
+	t.Cleanup(func() { stableWshRuns = prev })
+
+	if err := syncStableWsh(src, dst); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	after, err := os.Stat(dst)
+	if err != nil {
+		t.Fatalf("stat after sync: %v", err)
+	}
+	if os.SameFile(before, after) {
+		t.Fatalf("an identical copy that cannot run was kept; want a new file in its place")
+	}
+	if got, err := os.ReadFile(dst); err != nil || string(got) != "build 19" {
+		t.Fatalf("stable copy = %q (err %v), want the source bytes", got, err)
+	}
+}
+
+// a script that SIGKILLs itself stands in for the copy macOS kills on exec; any other failure still counts as running
+func TestStableWshRuns_falseOnlyForACopyThatIsKilled(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("only macOS kills a copy whose signature it flagged")
+	}
+	dir := t.TempDir()
+	killed := filepath.Join(dir, "killed")
+	writeTestFile(t, killed, "#!/bin/sh\nkill -9 $$\n")
+	failing := filepath.Join(dir, "failing")
+	writeTestFile(t, failing, "#!/bin/sh\nexit 3\n")
+
+	if stableWshRuns(killed) {
+		t.Fatalf("a copy killed on exec was reported as running")
+	}
+	if !stableWshRuns(failing) {
+		t.Fatalf("a copy that exits nonzero was reported as not running; only a kill should replace it")
 	}
 }
 
