@@ -18,7 +18,8 @@ const (
 	followupTokens       = 20_000 // one expert answering a reply from text
 	followupToolsTokens  = 90_000 // the same, with Read, Grep and Glob on
 	round1Minutes        = 3
-	laterRoundsMinutes   = 3 // round 2 and the synthesis
+	replyPassMinutes     = 2 // round 2, and again for a third round
+	synthesisMinutes     = 1
 	followupMinutes      = 1
 	followupToolsMinutes = 2
 	bytesPerToken        = 4 // the rough size of a file read as tokens
@@ -33,42 +34,67 @@ type CouncilEstimate struct {
 	AgentTokens int64 `json:"agenttokens,omitempty"` // the share of Tokens the seated agents' turns take
 }
 
-// panelSize counts the experts that propose and review, which is all but the coordinator.
-func panelSize(experts []CouncilExpert) int {
-	n := 0
+// seatRounds is how many rounds the seats of c answer before the summary. Rounds counts only when an agent is seated,
+// so an expert-only council keeps today's two whatever it says.
+func seatRounds(c *Council) int {
+	if !HasAgents(c) {
+		return DefaultRounds
+	}
+	return RoundsOf(c)
+}
+
+// seatCounts counts the seats that propose and review, which is all but the coordinator and the ones sitsOut names:
+// the role experts, the live agents, and the context tokens the agents hold between them.
+func seatCounts(experts []CouncilExpert, sitsOut func(CouncilExpert) bool) (roleExperts, agents, agentContext int64) {
 	for _, e := range experts {
-		if !e.Coordinator {
-			n++
+		switch {
+		case e.Coordinator || sitsOut(e):
+		case IsAgent(e):
+			agents++
+			agentContext += e.Context
+		default:
+			roleExperts++
 		}
 	}
-	return n
+	return roleExperts, agents, agentContext
 }
 
-// Estimate prices a whole council of n non-coordinator experts: one round 1 call each, which also reads the
-// fileBytes of input as about fileBytes/4 tokens, one round 2 call each, and the synthesis. Tokens are counted, not
-// priced, so the experts' models do not change it. rounds is the council's Rounds; it is not counted yet.
+// Estimate prices a whole council: one round 1 call for each role expert, which also reads the fileBytes of input as
+// about fileBytes/4 tokens, a call per reply pass for each, the synthesis, and for each seated agent a turn per round
+// that costs its Context (the agent already holds its own context, and reads the files itself). Tokens are counted, not
+// priced, so the models do not change it. rounds is the council's Rounds; it counts only with an agent seated, where 1
+// drops the reply pass and 3 adds a second. AgentTokens is the agents' share of Tokens.
 func Estimate(experts []CouncilExpert, fileBytes int64, rounds int) CouncilEstimate {
-	n := int64(panelSize(experts))
+	rn := int64(seatRounds(&Council{Experts: experts, Rounds: rounds}))
+	roleExperts, agents, agentContext := seatCounts(experts, func(CouncilExpert) bool { return false })
+	agentTokens := agentContext * rn
 	return CouncilEstimate{
-		Calls:   int(2*n + 1),
-		Tokens:  n*(round1BaseTokens+fileBytes/bytesPerToken) + n*round2Tokens + synthesisTokens,
-		Minutes: round1Minutes + laterRoundsMinutes,
+		Calls:       int((roleExperts+agents)*rn + 1),
+		Tokens:      roleExperts*(round1BaseTokens+fileBytes/bytesPerToken) + roleExperts*(rn-1)*round2Tokens + agentTokens + synthesisTokens,
+		Minutes:     round1Minutes + int(rn-1)*replyPassMinutes + synthesisMinutes,
+		AgentTokens: agentTokens,
 	}
 }
 
-// EstimateRemaining prices rounds 2 and 3 of c, for the pause after round 1: the experts whose round 1 call failed
-// have no proposals and sit round 2 out.
+// EstimateRemaining prices what is left of c after the round it has finished, for its pause: round 1 when c has none
+// (Round 0, or the pause after round 1), else c.Round. An expert-only council has its one reply pass and the synthesis
+// left; with agents seated the reply passes after that round count, and each takes a turn from every agent too. The
+// seats whose round 1 call failed have no proposals and sit the reply passes out.
 func EstimateRemaining(c *Council) CouncilEstimate {
-	n := int64(0)
-	for _, e := range c.Experts {
-		if f, failed := c.Failed[e.Id]; !e.Coordinator && !(failed && f.Round == 1) {
-			n++
-		}
+	passes := int64(1)
+	if HasAgents(c) {
+		passes = int64(max(RoundsOf(c)-max(c.Round, 1), 0))
 	}
+	roleExperts, agents, agentContext := seatCounts(c.Experts, func(e CouncilExpert) bool {
+		f, failed := c.Failed[e.Id]
+		return failed && f.Round == 1
+	})
+	agentTokens := agentContext * passes
 	return CouncilEstimate{
-		Calls:   int(n + 1),
-		Tokens:  n*round2Tokens + synthesisTokens,
-		Minutes: laterRoundsMinutes,
+		Calls:       int((roleExperts+agents)*passes + 1),
+		Tokens:      roleExperts*passes*round2Tokens + agentTokens + synthesisTokens,
+		Minutes:     int(passes)*replyPassMinutes + synthesisMinutes,
+		AgentTokens: agentTokens,
 	}
 }
 

@@ -70,6 +70,145 @@ func TestEstimateRemainingLeavesOutExpertsThatFailedInRound1(t *testing.T) {
 	}
 }
 
+// withAgent is two role experts, their coordinator and one live agent that holds 625k tokens of context.
+func withAgent() []CouncilExpert {
+	return []CouncilExpert{
+		{Id: "a"}, {Id: "b"},
+		{Id: "witness", Agent: "tab-1", Harness: "claude", Context: 625_000},
+		{Id: "chair", Coordinator: true},
+	}
+}
+
+func TestEstimateAgentSeatCostsItsContextTimesRounds(t *testing.T) {
+	got := Estimate(withAgent(), 0, 2)
+	want := CouncilEstimate{
+		Calls:       7, // three seats, two rounds each, and the synthesis
+		Tokens:      2*(140_000+45_000) + 2*625_000 + 80_000,
+		Minutes:     6,
+		AgentTokens: 1_250_000,
+	}
+	if got != want {
+		t.Fatalf("Estimate = %+v, want %+v", got, want)
+	}
+	if s := FormatTokens(got.AgentTokens); s != "1.3M" {
+		t.Errorf("the agent's share reads %q, want 1.3M", s)
+	}
+	if Estimate(withAgent(), 0, 0) != got {
+		t.Error("rounds 0 reads as 2, as RoundsOf does")
+	}
+	for _, rounds := range []int{-1, 4, 9} {
+		if Estimate(withAgent(), 0, rounds) != got {
+			t.Errorf("rounds %d is out of range and reads as 2", rounds)
+		}
+	}
+}
+
+func TestEstimateRounds1DropsTheReplyPass(t *testing.T) {
+	got := Estimate(withAgent(), 0, 1)
+	want := CouncilEstimate{
+		Calls:       4, // three seats, one round each, and the synthesis
+		Tokens:      2*140_000 + 625_000 + 80_000,
+		Minutes:     4,
+		AgentTokens: 625_000,
+	}
+	if got != want {
+		t.Errorf("Estimate = %+v, want %+v", got, want)
+	}
+}
+
+func TestEstimateRounds3AddsASecondReplyPass(t *testing.T) {
+	got := Estimate(withAgent(), 0, 3)
+	want := CouncilEstimate{
+		Calls:       10, // three seats, three rounds each, and the synthesis
+		Tokens:      2*(140_000+2*45_000) + 3*625_000 + 80_000,
+		Minutes:     8,
+		AgentTokens: 1_875_000,
+	}
+	if got != want {
+		t.Errorf("Estimate = %+v, want %+v", got, want)
+	}
+}
+
+func TestEstimateFilesAreReadByTheExpertsNotTheAgents(t *testing.T) {
+	plain, withFiles := Estimate(withAgent(), 0, 2), Estimate(withAgent(), 40_000, 2)
+	if got, want := withFiles.Tokens-plain.Tokens, int64(2*10_000); got != want {
+		t.Errorf("files add %d tokens, want %d: the two role experts read them, the agent does not", got, want)
+	}
+	if withFiles.AgentTokens != plain.AgentTokens {
+		t.Errorf("files changed the agent's share: %d -> %d", plain.AgentTokens, withFiles.AgentTokens)
+	}
+}
+
+func TestEstimateAgentsOnlyIsTheirTurnsAndTheSynthesis(t *testing.T) {
+	seats := []CouncilExpert{
+		{Id: "one", Agent: "tab-1", Harness: "claude", Context: 100_000},
+		{Id: "two", Agent: "tab-2", Harness: "pi", Context: 300_000},
+		{Id: "chair", Coordinator: true},
+	}
+	got := Estimate(seats, 0, 2)
+	want := CouncilEstimate{Calls: 5, Tokens: 2*400_000 + 80_000, Minutes: 6, AgentTokens: 800_000}
+	if got != want {
+		t.Errorf("Estimate = %+v, want %+v", got, want)
+	}
+}
+
+func TestEstimateExpertOnlyCouncilIgnoresRounds(t *testing.T) {
+	want := Estimate(uiGroup(), 0, 0)
+	for _, rounds := range []int{1, 2, 3, 7} {
+		if got := Estimate(uiGroup(), 0, rounds); got != want {
+			t.Errorf("rounds %d priced an expert-only council as %+v, want %+v", rounds, got, want)
+		}
+	}
+	if want.AgentTokens != 0 {
+		t.Errorf("an expert-only council has no agent share: %+v", want)
+	}
+}
+
+func TestEstimateRemainingWithAgentsCountsTheirTurnsLeft(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		rounds int
+		round  int
+		want   CouncilEstimate
+	}{
+		{"2 rounds, after round 1", 2, 1,
+			CouncilEstimate{Calls: 4, Tokens: 2*45_000 + 625_000 + 80_000, Minutes: 3, AgentTokens: 625_000}},
+		{"the default rounds, no round recorded", 0, 0,
+			CouncilEstimate{Calls: 4, Tokens: 2*45_000 + 625_000 + 80_000, Minutes: 3, AgentTokens: 625_000}},
+		{"3 rounds, after round 1", 3, 1,
+			CouncilEstimate{Calls: 7, Tokens: 2*2*45_000 + 2*625_000 + 80_000, Minutes: 5, AgentTokens: 1_250_000}},
+		{"3 rounds, after round 2", 3, 2,
+			CouncilEstimate{Calls: 4, Tokens: 2*45_000 + 625_000 + 80_000, Minutes: 3, AgentTokens: 625_000}},
+		{"3 rounds, after round 3 is the synthesis alone", 3, 3,
+			CouncilEstimate{Calls: 1, Tokens: 80_000, Minutes: 1}},
+		{"1 round is the synthesis alone", 1, 1,
+			CouncilEstimate{Calls: 1, Tokens: 80_000, Minutes: 1}},
+	} {
+		if got := EstimateRemaining(&Council{Experts: withAgent(), Rounds: c.rounds, Round: c.round}); got != c.want {
+			t.Errorf("%s: EstimateRemaining = %+v, want %+v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestEstimateRemainingLeavesOutAnAgentThatFailedInRound1(t *testing.T) {
+	c := &Council{Experts: withAgent(), Rounds: 3, Round: 1, Failed: map[string]CouncilFailure{
+		"witness": {Round: 1, Error: "gone"},
+	}}
+	got := EstimateRemaining(c)
+	if want := (CouncilEstimate{Calls: 5, Tokens: 2*2*45_000 + 80_000, Minutes: 5}); got != want {
+		t.Errorf("EstimateRemaining = %+v, want %+v", got, want)
+	}
+}
+
+func TestEstimateRemainingExpertOnlyIgnoresRounds(t *testing.T) {
+	want := EstimateRemaining(&Council{Experts: uiGroup()})
+	for _, rounds := range []int{1, 3} {
+		if got := EstimateRemaining(&Council{Experts: uiGroup(), Rounds: rounds, Round: 1}); got != want {
+			t.Errorf("rounds %d priced an expert-only council's remainder as %+v, want %+v", rounds, got, want)
+		}
+	}
+}
+
 func TestEstimateFollowup(t *testing.T) {
 	if got, want := EstimateFollowup(3, false), (CouncilEstimate{Calls: 3, Tokens: 60_000, Minutes: 1}); got != want {
 		t.Errorf("without tools = %+v, want %+v", got, want)
