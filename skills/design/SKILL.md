@@ -1,6 +1,6 @@
 ---
 name: design
-description: Make a multi-artboard .dc.html design canvas locally, in a gitignored scratch folder, in the Claude Design format. Use when the user asks to /arc:design (or /design-local) something, or for a UI mockup or prototype of a new screen or a redesign.
+description: Make a multi-artboard .dc.html design canvas locally, in a gitignored scratch folder, in the Claude Design format. Use when the user asks to /arc:design (or /design-local) something, or for a UI mockup or prototype of a new screen or a redesign, and whenever you are about to draw a UI mockup (ASCII included) or offer the user options that differ in UI, in any session.
 ---
 
 # Design, local
@@ -12,9 +12,13 @@ lives outside git and is deleted when its feature lands. Nothing is published to
 ## When to use
 
 Decide per question, not per session: would the user understand this better by seeing it than
-reading it? Layouts, visual options side by side, states of a screen, polish: draw it. Scope,
-trade-offs, conceptual A/B choices: stay in the terminal. A question about a UI topic is not
-automatically a visual question.
+reading it? Layouts, visual options side by side, states of a screen, polish: draw it. This holds
+in a plain chat as much as in a brainstorm. Whenever you are about to draw a UI mockup, or ask the
+user to choose between options that differ in UI (a layout, where something sits, a click flow),
+draw boards, one per option (**Options**, below), never ASCII boxes in your reply. A small mockup
+that fits in a few lines (a status line, one button, a label) is the exception: first ask "draw a
+board, or keep it as text?". Scope, trade-offs and conceptual choices with no layout stay in the
+terminal: a question about a UI topic is not automatically a visual question.
 
 ## Starting a canvas
 
@@ -52,6 +56,25 @@ automatically a visual question.
 
 Hand over and stop. Render, screenshot or re-read the files only when the user asks.
 
+## Options
+
+When a choice is between options that differ in UI:
+
+- One artboard per option, named by its label: `A-<slug>.dc.html`, `B-<slug>.dc.html`, …, `title`
+  `Option A: <what it is>`, and in that order in `canvas.json`'s `order`, so the labels, the files
+  and the order agree. The options lead the canvas; they need no `Main.dc.html`.
+- Every option draws the same content: they differ in layout and treatment only (**Designing well**).
+- In a plain session, `<topic>` names the feature under discussion (`council-rooms`), not the
+  question; a later question about the same feature adds its boards to the same canvas.
+- Draw, run `wsh ui reveal canvas:<topic>` as **The loop** says, then ask the question in your reply,
+  one line per option led by its label, and end the turn. The user answers with the label.
+- Once the user picks, move the boards of the options not chosen to
+  `.superpowers/design/<topic>/unchosen/`, beside `project/`, and drop their entries from
+  `canvas.json` (`boards` and `order`). The files stay on disk but leave the Canvas gallery, and no
+  run reads them as its spec (**The canvas as a spec**).
+- In an `arc:brainstorm`, its **Mockups** rule also lists the boards on the question's part, in the
+  order of the question's options.
+
 ## Cleaning up
 
 Keep a canvas after the feature it designed ships, unless `wsh canvas policy` prints
@@ -64,7 +87,9 @@ they can also clean up in arcterm's Agent → Canvas gallery. A canvas is never 
 
 A canvas can settle a run's design: Build this… on the canvas, or a plan's `**Prototype:**` line,
 makes the plan reviewer read it as the spec and the final verifier check the built UI against
-every board. So before a canvas becomes a spec, drop the options not chosen: each board then
+every board; the reviewer wants a scenario step for every `.dc.html` in `project/`, whatever its
+title. So before a canvas becomes a spec, move the boards of the options not chosen to
+`unchosen/` and drop them from `canvas.json` (**Options**): each board left in `project/` then
 shows one screen or state the built UI can reach, and its `title` says which.
 
 ## The design system

@@ -20,8 +20,8 @@ What changes from plain brainstorming:
 - A playback is a part written to the file, not 200-300 words in the terminal.
 - The user reads the pane, not the terminal. Your terminal reply is one short line on what you
   changed, then the question you are waiting on. Never repeat a part's text there.
-- Mockups are `arc:design` boards, listed on the part they illustrate. Never start the visual
-  companion's server inside Arc. A live spike is listed on its part too, never only in the terminal.
+- Mockups are `arc:design` boards, listed on the part they illustrate, one per option when a
+  question's options differ in UI. Never start the visual companion's server inside Arc. A live spike is listed on its part too, never only in the terminal.
 - Still end every turn on the question in the terminal: the file is what Arc shows, the terminal is
   what you wait on.
 
@@ -147,7 +147,7 @@ Every other action is a `brainstorm:` line:
 | the answer, as typed | Answer sequence below, unless the line pushes back or asks instead (below). |
 | `brainstorm: guess` | The user wants you to decide. Write your best guess for the current question's part as `guess` (say in `from` that it was your call), then ask the next question as after an answer. |
 | `brainstorm: skip questions` | Stop asking. Write every `asked` and `open` part as a `guess`, set `question: null` and `done: true`. |
-| `brainstorm: judged <path>` | The judge weighed the open question. Copy the file at `<path>` onto `question` with the one-line script under **Approach questions go to the judge**, which sets `working` to `null` in the same write; never retype it. End the turn on the question. |
+| `brainstorm: judged <path>` | The judge weighed the open question. Copy the file at `<path>` onto `question` with the one-line script under **Approach questions go to the judge**, which sets `working` to `null` in the same write; never retype it. When its options differ in UI, draw their boards first and copy with the variant there that lists them. End the turn on the question. |
 | `brainstorm: judge failed: <reason>` | The judge did not weigh the open question (ignore it for a question no longer open, as the section after **Approach questions go to the judge** says). Write your own `options` and `read` with one `pick`, set `question.judge` to `{ "failed": "<reason>" }` and `working` to `null`, and end the turn on the question. |
 | `brainstorm: confirm <part id>` | Make that part `yours`; drop its `was` and `why`. |
 | `brainstorm: confirm every guess` | Make every `guess` part that has no `was` `yours`. A part with `was` stays a guess: it waits for keep or restore. |
@@ -324,6 +324,17 @@ node -e "const fs=require('fs'),[f,j]=process.argv.slice(1),b=JSON.parse(fs.read
 replaces yours: set `multi` on the approach question only for the wait, when the approaches could be
 taken together.
 
+When the judge's options differ in UI, the same turn draws them before the copy: read `<path>`,
+draw one board per option in its order (**Options as boards**), then copy with this variant, which
+also sets `canvas` and the asked part's `boards`, in board order, in the same write:
+
+```
+node -e "const fs=require('fs'),[f,j,c,...bs]=process.argv.slice(1),b=JSON.parse(fs.readFileSync(f));Object.assign(b.question,JSON.parse(fs.readFileSync(j)));b.working=null;b.canvas=c;const p=b.parts.find(x=>x.id===b.question.part);if(p)p.boards=bs;fs.writeFileSync(f,JSON.stringify(b,null,2))" "<absolute path of brainstorm.json>" "<path>" "<canvas>" "A-<slug>.dc.html" "B-<slug>.dc.html"
+```
+
+On a rerun (pushback, "double check") do the same for the new options: redraw to match them, and
+move a board no option matches any more to `unchosen/`. End the turn on the question.
+
 **While the judge weighs.** Arc shows the question, the approach list and an open answer box while
 the judge runs, and stops the judge itself before it sends an answer or Skip; you never stop it. A
 line that arrives while the judge runs (`working` set for an approach question) is handled so:
@@ -372,6 +383,16 @@ make it a `guess`. It stays a guess until they keep or restore it.
 `canvas`, and list each board's file name in `boards` on the part it illustrates. Arc draws it as a
 thumbnail in the part, under its body when the user opens it, in the talk and in the builder check's
 review alike. The run's prototype is the first board any part lists.
+
+**Options as boards.** When a question chooses between options that differ in UI, draw one board
+per option as `arc:design`'s **Options** section says, and list them in `boards` on the asked part:
+exactly one per option, in the order of `question.options`. The pane labels a question's boards
+`option A of N` by position, so the order is what matches each board to its lettered row. A
+question you weigh yourself gets its boards in the write that asks it. An approach question has no
+options until the judge writes them: draw nothing before it runs, and draw on `brainstorm: judged`
+(**Approach questions go to the judge**). Once the user picks, the part lists only the picked
+option's board, so the run's prototype is the picked design, and the other boards move to
+`unchosen/` as **Options** says.
 
 A spike is a throwaway live page for what a board cannot show, such as motion or a drag: a plain
 HTML file under the canvas folder, e.g. `.superpowers/design/<canvas>/spike/motion.html`. List its

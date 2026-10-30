@@ -1,6 +1,10 @@
 # New dialog, decluttered — design
 
-Date: 2026-10-28. Status: shipped (run d0dcd0fb, 2026-10-28).
+Date: 2026-10-28. Status: shipped (run d0dcd0fb, 2026-10-28). **Partly reverted 2026-10-29:** D1 (Start folds into a
+chip), D2's narrow Project column, D3, D7 (opens on Project) and D8 (no keycaps, no key hints) are undone, by the
+person's call: the dialog is about what starts and where, a past session second. The Start column is always shown with
+focus on opening, the three columns are as before (Start 236px, Project and the pick's list sharing the rest), and
+every row draws its key again. D4, D5, D6 and the names-only Project rows stand.
 Mockup: `.superpowers/design/new-launcher-declutter/project/Main.dc.html` (gitignored; interactive) plus three state
 boards beside it (NewSession, ProjectFocus, Columns). BottomB, a rejected option kept only for reference, is in the
 sibling `rejected/` folder.

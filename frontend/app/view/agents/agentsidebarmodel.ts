@@ -30,6 +30,7 @@ import type { RunInfo } from "./runlineage";
 import type { QueuedRow } from "./runqueuemodel";
 import { overlayLive, type LiveSession } from "./sessionsarchivestore";
 import { groupRunSessions, memberSession, runSelKey, sessionKey, type RunSessions } from "./sessionsruns";
+import type { StartingRun } from "./startingrunsmodel";
 
 export const CONVERSATION_PAGE = 10;
 // the project filter's value for no filter (the model's projectFilterAtom)
@@ -405,6 +406,8 @@ export type ProjectTreeRow =
     // a plan queued to start, in its project's folder right under the project's agents. Named apart from the tree's
     // "queued" row, which folds a run's queued tasks.
     | ({ kind: "queuedentry" } & QueuedRow)
+    // a run the New dialog handed off while it starts (startingrunsstore.ts), ahead of the queued plans; no focus target
+    | ({ kind: "startingrun" } & StartingRun)
     // a project's split (2+ cells) as one row, where the topmost of its cells' rows was: each cell its tab and its place
     // in the 2x2 the surface draws. `shown` is the split on screen; another project's saved split is drawn too.
     | { kind: "split"; project: string; shown: boolean; cells: SplitRowCell[] }
@@ -509,6 +512,9 @@ export function newCouncilRoot(focus: AgentVM | undefined, projects: ProjectRegi
  *  agent rows, in queue order, ahead of the divider and the terminals. They are not agents, so the group row does not
  *  count them, and treeNavIds skips them (they select nothing).
  *
+ *  `starting` is the runs the New dialog handed off while they start: each goes in its project's folder ahead of the
+ *  queued plans, and like them is no agent, no focus target and no count on the group row.
+ *
  *  `councils` (councilRowsByProject, by project name) turns the councils block on: the folder of each registered project
  *  that has a council then holds, right after its queued plans and ahead of the divider, a Councils label and one row
  *  per council (`created`, newest first). A project with no council has no block; one whose only content is a council
@@ -528,6 +534,7 @@ export function projectTree(input: {
     collapsed: readonly string[];
     roots: ReadonlyMap<string, string>; // project name -> root path
     queue?: readonly QueuedRow[];
+    starting?: readonly StartingRun[];
     // the held services to list; `project` is the status's (wavesrv's "Home" for none), `tabId` its tab. A terminal on
     // a service's tab is the service's row, never a terminal row.
     services?: readonly { id: string; name: string; project: string; tabId?: string }[];
@@ -551,8 +558,17 @@ export function projectTree(input: {
     const queue = input.queue ?? [];
     // an entry whose channel names no project is filed under Home, as a terminal with none is
     const queueFolder = (q: QueuedRow) => q.project || HOME_PROJECT;
-    const queuedRowsOf = (project: string): ProjectTreeRow[] =>
-        queue.filter((q) => queueFolder(q) === project).map((q) => ({ kind: "queuedentry", ...q, project }));
+    const starting = input.starting ?? [];
+    const startingFolder = (s: StartingRun) => s.project || HOME_PROJECT;
+    // the runs starting, then the plans queued: both wait to become a lead in this folder
+    const queuedRowsOf = (project: string): ProjectTreeRow[] => [
+        ...starting
+            .filter((s) => startingFolder(s) === project)
+            .map((s): ProjectTreeRow => ({ kind: "startingrun", ...s, project })),
+        ...queue
+            .filter((q) => queueFolder(q) === project)
+            .map((q): ProjectTreeRow => ({ kind: "queuedentry", ...q, project })),
+    ];
     const termProject = (t: AgentVM) => projectOf(t) || HOME_PROJECT;
     const termRows = (project: string, list: AgentVM[]): ProjectTreeRow[] =>
         list.map((terminal) => ({
@@ -628,6 +644,7 @@ export function projectTree(input: {
     const others = [
         ...new Set([
             ...terminals.map(termProject),
+            ...starting.map(startingFolder),
             ...queue.map(queueFolder),
             ...services.map(serviceFolder),
             ...councilFolders,

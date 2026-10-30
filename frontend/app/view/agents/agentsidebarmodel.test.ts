@@ -47,6 +47,7 @@ import type { AgentVM } from "./agentsviewmodel";
 import { buildAgentTree, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
 import { queuedRows } from "./runqueuemodel";
 import { treeServiceInput } from "./servicesmodel";
+import type { StartingRun } from "./startingrunsmodel";
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -1166,6 +1167,31 @@ describe("projectTree", () => {
             expect(shape(build([agent("a")], [term("t1")]))).toEqual(
                 shape(build([agent("a")], [term("t1")], { queue: [] }))
             );
+        });
+
+        const sr = (id: string, project: string): StartingRun => ({
+            id,
+            project,
+            title: id,
+            ts: 0,
+            state: "starting",
+        });
+
+        it("puts a starting run ahead of the queued plans, uncounted, and gives its project a folder", () => {
+            const rows = build([agent("a")], [term("t1")], {
+                queue: queued(qe("q-1")),
+                starting: [sr("s-1", "waveterm"), sr("s-2", "ops")],
+            });
+            expect(rows.map((r) => (r.kind === "startingrun" ? `s:${r.id}` : shape([r])[0]))).toEqual([
+                "group:waveterm:1a:1t",
+                "a:a",
+                "s:s-1",
+                "q:q-1:1",
+                "divider:waveterm",
+                "t:t1",
+                "group:ops:0a:0t",
+                "s:s-2",
+            ]);
         });
     });
 

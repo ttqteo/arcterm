@@ -7,7 +7,6 @@ import { atom, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LauncherKind } from "./launcher";
 import {
-    abandonLauncherLaunch,
     addTaskImages,
     applyLauncherPrefill,
     beginLauncherLaunch,
@@ -25,8 +24,6 @@ import {
     launcherGoalAtom,
     launcherImagesAtom,
     launcherKindAtom,
-    launcherLaunchAbandoned,
-    launcherLaunchTicket,
     launcherOnStartedAtom,
     launcherOwnProjectAtom,
     launcherPageAtom,
@@ -291,23 +288,6 @@ describe("closing, clearing and launching", () => {
         expect(beginLauncherLaunch()).toBe(false);
         endLauncherLaunch();
         expect(beginLauncherLaunch()).toBe(true);
-    });
-    it("a close mid-start gives the start up and frees the dialog at once", () => {
-        globalStore.set(launcherBusyAtom, false);
-        expect(beginLauncherLaunch()).toBe(true);
-        const ticket = launcherLaunchTicket();
-        abandonLauncherLaunch();
-        expect(globalStore.get(launcherBusyAtom)).toBe(false);
-        expect(launcherLaunchAbandoned(ticket)).toBe(true);
-        // a new start is not ended by the given-up one returning
-        expect(beginLauncherLaunch()).toBe(true);
-        expect(launcherLaunchAbandoned(launcherLaunchTicket())).toBe(false);
-    });
-    it("a close with no start in flight gives nothing up", () => {
-        globalStore.set(launcherBusyAtom, false);
-        const ticket = launcherLaunchTicket();
-        abandonLauncherLaunch();
-        expect(launcherLaunchAbandoned(ticket)).toBe(false);
     });
 });
 

@@ -4,8 +4,8 @@
 // The New launcher's Session column: the picked agent's recent sessions in the picked project, under a pinned first row
 // that starts a new one (docs/superpowers/specs/2026-10-09-launcher-resume-and-images-design.md). Which sessions are
 // offered is launcherresume.ts; the pick is launcherResumeAtom. A session row is one line, its title and how long ago it
-// was last active (docs/superpowers/specs/2026-10-28-new-launcher-declutter-design.md D4, D8: no keycaps, no key hints,
-// no transcript read). The rows are one radio group with a roving tab stop, so
+// was last active, after its digit (docs/superpowers/specs/2026-10-28-new-launcher-declutter-design.md D4; no transcript
+// read). The rows are one radio group with a roving tab stop, so
 // Tab lands on the picked row. It keys as the Project column does (resumeListKey): a digit picks the nth visible row,
 // letters filter, ↑↓ move, ← steps back to Project; Enter bubbles to the dialog, which launches from this zone. The
 // sessions scroll under New session, so a long list never makes the dialog taller. Older sessions load a page at a time
@@ -19,7 +19,7 @@ import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from
 import { formatAge } from "./agentsviewmodel";
 import { stepIndex } from "./launcher";
 import { filterSessions, resumeListKey, sessionTitle, shownSessions } from "./launcherresume";
-import { ColumnLabel, FilterLine, rowTone } from "./launcherrows";
+import { ColumnLabel, digitOf, FilterLine, Keycap, rowTone } from "./launcherrows";
 import {
     findLauncherSessions,
     launcherFoundAtom,
@@ -132,8 +132,10 @@ export function ResumeList({ choices, scopeKey, pickedId, onBack }: ResumeListPr
     };
 
     const now = Date.now();
-    // no key hint (D8): the keys still work, the label only counts
-    const hint = `${choices.length}${more ? "+" : ""} · newest first`;
+    let hint = `${choices.length}${more ? "+" : ""} · newest first`;
+    if (focused) {
+        hint = filter === "" ? `type to filter · 1–${Math.min(9, rowCount)}` : "";
+    }
     const newOn = picked === 0;
 
     return (
@@ -168,6 +170,7 @@ export function ResumeList({ choices, scopeKey, pickedId, onBack }: ResumeListPr
                     onClick={() => pickRow(0)}
                     className={cn(rowTone(newOn, focused), "shrink-0 gap-[10px] py-2 outline-none")}
                 >
+                    <Keycap k="1" lit={focused} />
                     <span
                         className={cn("text-[12.5px] font-semibold", newOn ? "text-primary" : "text-muted-foreground")}
                     >
@@ -192,6 +195,7 @@ export function ResumeList({ choices, scopeKey, pickedId, onBack }: ResumeListPr
                                 onClick={() => pickRow(i + 1)}
                                 className={cn(rowTone(on, focused), "shrink-0 gap-[10px] py-2 outline-none")}
                             >
+                                <Keycap k={digitOf(i + 1)} lit={focused} />
                                 <span
                                     className={cn(
                                         "min-w-0 flex-1 truncate text-[12.5px]",

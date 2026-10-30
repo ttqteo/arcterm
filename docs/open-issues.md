@@ -39,6 +39,19 @@ does not, say what you saw and it becomes a bug row under Actionable.
   ideas only while focus is in the channel or the thread, and `docs/keyboard-shortcuts.md` lists what the chat binds.
   (commit "feat(council): the chat view replaces the feed and the Reddit thread")
 
+- [ ] (arcterm) New dialog, Start column back: `Mod+N` should open three columns (Start 236px, Project, Session or the
+  pick's list), focus on Start, no chip; every Start, Project, Session row draws its digit (Home 0, tools a–z), and the
+  focused column's label shows its keys. Enter in Start launches; Esc closes. `task verify:ui -- launcher
+  launcher-resume tools-launcher new-run-window agy-harness brainstorm-approve-run council-tree` (scenarios updated,
+  never run). (commit "fix(launcher): the New dialog shows its Start column and keys again")
+- [ ] (arcterm) Replay at the drawn size: start an engine run and open its lead only after it has drawn a
+  question or a few turns (the pane never shown before). The terminal should read cleanly, its text in the left
+  80 columns, with no second frame of another width over it. `frontend/app/view/term/termwrap.ts`
+  (`writeAtSize`).
+- [ ] (arcterm) Option boards: in a fresh plain Claude session (after a launch re-seeds the skills), ask a UI question
+  with two layouts. You should see it draw `A-…` and `B-…` boards, reveal the canvas beside its terminal and ask by
+  label; after you pick, the other board sits in `.superpowers/design/<topic>/unchosen/`. Ask for a one-line status
+  mockup: it should ask "draw a board, or keep it as text?" first. `skills/design`, `skills/brainstorm`, c6a622510.
 - [ ] (arcterm) The Transcript tab reads a real compacted session back: wake a sleeping Claude agent whose transcript is
   55 MB or more (it was compacted before it slept), open the agent's panel on Transcript (Ctrl+Shift+F in its terminal),
   then press Compactions until it says No earlier compactions. You should see the conversation from its first prompt,
@@ -83,6 +96,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) A wake message survives switching agents: open a sleeping agent, type a line in the box under its
   conversation, press Enter, then pick another agent and come back before it is awake. The box still shows the line
   (read-only, Waking…), the agent receives it, and the box is empty once it is awake.
+- [ ] (arcterm) Start run hands the run to a Starting row: New → Orchestrate → write a goal → Start run. The dialog
+  closes at once, the Agent surface shows a spinning **Starting · <1m** row in the project's folder, and it goes when
+  the lead's row appears. Start another and click its × while it starts: it reads Cancelling…, then goes, and the run
+  shows cancelled (no lead left running). A start that fails (e.g. a route not installed) stays **Failed · …** with
+  Try again and Dismiss on hover. Not tried live: the dev app was not running. (commit "feat(launcher): a run starts
+  behind a Starting row")
 - [ ] (arcterm) A council in a project Overview's History unfolds before it opens: open a project's Overview (its row
   in the Agent tree) and click a Council row in History. It is titled as in the Agent tree's Councils, and it unfolds in
   place (question, answer, up to three directions by rank, a chevron turned down) without leaving the Overview; Open

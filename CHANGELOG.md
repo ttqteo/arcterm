@@ -54,9 +54,17 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- When an agent offers you options that differ in UI, in a brainstorm or a plain chat, it draws each one as its own
+  board on a canvas beside its terminal (Option A, Option B…) instead of ASCII boxes, and asks first before drawing
+  a mockup only a few lines tall. In a brainstorm the boards sit beside the question in the options' order; after you
+  pick, the boards you passed over move out of the canvas into an `unchosen/` folder, so a run only builds the one you
+  chose.
 - In a float, the Translate tab shows the Translate panel over the terminal (Ctrl+Shift+D opens it there too) instead of
   opening translate-shell, so it works without installing anything. A translate-shell terminal opened from Setup →
   Tools is an ordinary tab in the float.
+- Start run in the New dialog no longer holds the dialog on "Starting…" while the run is created: the dialog closes at
+  once and the run shows as a Starting row in its project's folder in the Agent tree until its lead takes its place.
+  The row's × cancels it; a start that fails stays as a Failed row with Try again and Dismiss.
 - A project's Overview shows a year of activity as a calendar in your theme's colour, and its History lists each
   session with the runs and councils it started under it. The Run and Council buttons are gone from its header: an
   agent session starts those.
@@ -74,15 +82,16 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Jarvis's Waiting on you opens the rows past its first three with "+2 more" (the count it hides) and folds them with
   "Show less", as the other regions do, instead of "Show all 5", which read like a cap of five.
 - The how-to hint at the top of a brainstorm is one slim row instead of a four-line card, so the question sits higher.
-- The New dialog folds the agent pick into a chip (Claude Code ▾) and opens on Project, so the session list gets the
-  rest of the width. Project lists names only (the folder is in the tooltip), and no
-  row shows its key any more; every key still works. <!-- try: new-agent -->
+- The New dialog is quieter: a past session is one line (its title and how long ago), the command folds under
+  Command ›, and Project lists names only (the folder is in the tooltip). <!-- try: new-agent -->
 - A council review reads like a brainstorm: at most three directions, each with a first step, and the rest under Also
   raised, one line each, with wording-only fixes kept out of the top three. A review used to list every direction as a
   long paragraph.
 
 ### Fixed
 
+- A run's lead or worker you open for the first time after it has been working no longer shows its terminal
+  garbled, two frames of different widths over each other. Its output now replays at the size it was drawn at.
 - While the brainstorm judge weighs a question's approaches, an approach's "N facts" opens the facts under its row.
   Before, only the count showed, and clicking the row sent the approach as your answer.
 - A run's route takes a pi model from a provider whose own ids carry an org, such as
