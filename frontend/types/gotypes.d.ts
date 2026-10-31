@@ -1155,6 +1155,15 @@ declare global {
         opts?: FileCopyOpts;
     };
 
+    // wshrpc.CommandFileDropWriteData
+    type CommandFileDropWriteData = {
+        path: string;
+        data64?: string;
+        offset?: number;
+        dir?: boolean;
+        unique?: boolean;
+    };
+
     // wshrpc.CommandFindProjectFoldersData
     type CommandFindProjectFoldersData = {
         near: string[];

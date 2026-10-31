@@ -32,6 +32,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   talking about. It asks before replacing text you already wrote.
 - A table in a Markdown Preview or an agent's reply has a copy button on its corner when you point at it: it pastes
   into Sheets, Excel, Numbers, Notion or Docs as a table with real cells, not as `| a | b |` text.
+- Drop files or folders from Finder or Explorer onto the agent panel's Files tree to copy them into the folder under
+  the pointer (onto a file: its folder; onto empty space: the project root). The originals stay where they are, and a
+  name already taken becomes `name (1)`, `name (2)`…
 
 ### Changed
 

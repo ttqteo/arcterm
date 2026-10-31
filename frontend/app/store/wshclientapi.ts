@@ -660,6 +660,12 @@ export class RpcApiType {
         return client.wshRpcCall("filedelete", data, opts);
     }
 
+    // command "filedropwrite" [call]
+    FileDropWriteCommand(client: WshClient, data: CommandFileDropWriteData, opts?: RpcOpts): Promise<string> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "filedropwrite", data, opts);
+        return client.wshRpcCall("filedropwrite", data, opts);
+    }
+
     // command "fileinfo" [call]
     FileInfoCommand(client: WshClient, data: FileData, opts?: RpcOpts): Promise<FileInfo> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "fileinfo", data, opts);

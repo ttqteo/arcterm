@@ -18,8 +18,9 @@ type WshRpcFileInterface interface {
 	FileMoveCommand(ctx context.Context, data CommandFileCopyData) error
 	FileInfoCommand(ctx context.Context, data FileData) (*FileInfo, error)
 	FileJoinCommand(ctx context.Context, paths []string) (*FileInfo, error)
-	CanvasServeCommand(ctx context.Context, designDir string) (string, error) // serves a .superpowers/design folder; returns its URL path on the web listener
-	HtmlPreviewServeCommand(ctx context.Context, path string) (string, error) // serves an HTML file's folder; returns the file's URL path on the web listener
+	CanvasServeCommand(ctx context.Context, designDir string) (string, error)                // serves a .superpowers/design folder; returns its URL path on the web listener
+	HtmlPreviewServeCommand(ctx context.Context, path string) (string, error)                // serves an HTML file's folder; returns the file's URL path on the web listener
+	FileDropWriteCommand(ctx context.Context, data CommandFileDropWriteData) (string, error) // writes one piece of a file or folder dropped from the OS; returns the path it wrote
 }
 
 type WshRpcRemoteFileInterface interface {
@@ -87,6 +88,19 @@ type FileListOpts struct {
 type CommandDeleteFileData struct {
 	Path      string `json:"path"`
 	Recursive bool   `json:"recursive"`
+}
+
+// One piece of a copy of a file or folder dropped from the OS (Finder, Explorer) into a folder of the app. The webview
+// hands over the bytes, not the source path, so a file arrives in chunks: offset 0 creates it, and never over a file
+// that is there; a later chunk writes at its offset, which must be the size written so far. Parent folders are made.
+type CommandFileDropWriteData struct {
+	Path   string `json:"path"` // absolute
+	Data64 string `json:"data64,omitempty"`
+	Offset int64  `json:"offset,omitempty"`
+	// Dir makes a folder at Path instead of writing a file
+	Dir bool `json:"dir,omitempty"`
+	// Unique takes the first free "name (1)", "name (2)"… beside Path when Path is taken; only at offset 0
+	Unique bool `json:"unique,omitempty"`
 }
 
 type CommandFileCopyData struct {

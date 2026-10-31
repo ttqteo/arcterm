@@ -656,6 +656,12 @@ func FileDeleteCommand(w *wshutil.WshRpc, data wshrpc.CommandDeleteFileData, opt
 	return err
 }
 
+// command "filedropwrite", wshserver.FileDropWriteCommand
+func FileDropWriteCommand(w *wshutil.WshRpc, data wshrpc.CommandFileDropWriteData, opts *wshrpc.RpcOpts) (string, error) {
+	resp, err := sendRpcRequestCallHelper[string](w, "filedropwrite", data, opts)
+	return resp, err
+}
+
 // command "fileinfo", wshserver.FileInfoCommand
 func FileInfoCommand(w *wshutil.WshRpc, data wshrpc.FileData, opts *wshrpc.RpcOpts) (*wshrpc.FileInfo, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.FileInfo](w, "fileinfo", data, opts)
