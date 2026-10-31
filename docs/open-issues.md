@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Copy table: point at a table in a `.md` Preview (Code surface and the Agent File tab) and in an agent's
+  reply: a copy icon shows on the table's top-right corner, not the column's; click it (✓), then paste into Google
+  Sheets or Numbers: real cells with the header row, right-aligned columns kept; paste into Notes or a terminal:
+  tab-separated rows, no `|`. A wide table scrolls under the icon, which stays put. On the Mac's WKWebView the HTML
+  write may be refused: then the paste is the text alone, still split into cells by a spreadsheet. Not run in any
+  app. (d97c67098)
 - [ ] (arcterm) New dialog, Task on top: Mod+N opens with the caret in the Task box above the columns; type and Enter
   starts the agent, Shift+Enter adds a line; Alt+2 (Option+2 on a Mac) picks another Start row without leaving the box,
   and Alt onto Terminal draws the dashed "takes no task" line with focus on Start; Mod+Shift+R opens in the Goal; an IME
