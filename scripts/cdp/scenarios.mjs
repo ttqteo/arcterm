@@ -23360,6 +23360,19 @@ const launcherScenario = {
             JSON.stringify({ restored: s.restored, back: back?.focusPrimary, wrapped })
         );
 
+        // Tab from the Task box goes to the Project column, past the Task row's buttons and the Start column (Alt+digit
+        // picks there), and Shift+Tab comes back to the box
+        const focusedName = `(() => { const a = document.activeElement; return a?.getAttribute('data-launcher-column') ?? a?.id ?? a?.getAttribute('title') ?? a?.tagName; })()`;
+        await launcherPress(h, "Tab");
+        const toProject = await h.ev(focusedName);
+        await launcherPress(h, "Tab", { shift: true });
+        const backToTask = await h.ev(onTask);
+        rec(
+            "2b. Tab from the Task box goes to the Project column, past + Flag, Worktree, Command and Start; Shift+Tab returns to the box",
+            toProject === "project" && backToTask,
+            JSON.stringify({ toProject, backToTask })
+        );
+
         // Alt+digit from the Task box picks a Start row without typing the digit; onto Terminal, which takes no task, the
         // box is drawn empty with why, and focus goes to the Start column
         const fromStart = s.start;

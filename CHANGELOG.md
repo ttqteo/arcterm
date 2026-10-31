@@ -43,8 +43,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
-- In New agent on a Mac, Tab from the Task box goes to + Flag, Worktree and Command, then the Agent column; it had
-  skipped the three buttons.
+- In New agent, Tab from the Task box goes to the Project column, then the sessions, Cancel and Launch, and round to
+  the box again. It no longer stops at + Flag, Worktree, Command or the Agent column: Alt+1–9 (Option on a Mac) picks
+  the agent from the box.
 - On a Mac, agents no longer show `?` with no model or title, and hook errors in every turn, when macOS has started
   killing arcterm's helper (`~/.arc/bin/wsh`): arcterm replaces a copy that no longer runs within seconds, mid-session
   too, not only when it opens.

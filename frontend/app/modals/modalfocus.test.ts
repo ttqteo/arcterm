@@ -41,6 +41,30 @@ describe("focusTrapTarget", () => {
         expect(focusTrapTarget([first, second], outside, true)).toBe(second);
         expect(focusTrapTarget([], outside, false)).toBeNull();
     });
+
+    it("carries on from a focused element that is no stop, by its place in the page", () => {
+        // page order: a, skipped, b, c; focus sits on `skipped` (a column Tab passes over, focused by a click)
+        const order: unknown[] = [];
+        const at = () => {
+            const node = {
+                focus: vi.fn(),
+                compareDocumentPosition: (other: unknown) =>
+                    // Node.DOCUMENT_POSITION_FOLLOWING (4) or _PRECEDING (2); no DOM here
+                    order.indexOf(other) > order.indexOf(node) ? 4 : 2,
+            };
+            order.push(node);
+            return node as unknown as HTMLElement;
+        };
+        const a = at();
+        const skipped = at();
+        const b = at();
+        const c = at();
+        expect(focusTrapTarget([a, b, c], skipped, false)).toBe(b);
+        expect(focusTrapTarget([a, b, c], skipped, true)).toBe(a);
+        // past the last stop it wraps, as from a stop
+        expect(focusTrapTarget([a, b], c, false)).toBe(a);
+        expect(focusTrapTarget([b, c], a, true)).toBe(c);
+    });
 });
 
 describe("takeModalFocus", () => {

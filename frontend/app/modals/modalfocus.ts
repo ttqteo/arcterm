@@ -9,6 +9,29 @@
 // It must not steal focus from a child that already claimed it (an autoFocus'd input), and it must hand
 // focus back on close so the terminal is live again without a click.
 
+// Node.DOCUMENT_POSITION_PRECEDING and _FOLLOWING, spelled out: the unit tests run with no DOM
+const POSITION_PRECEDING = 2;
+const POSITION_FOLLOWING = 4;
+
+// With focus on something that is no stop (a column Tab passes over, focused by a click): the first stop after it in the
+// page, or the last before it for Shift+Tab, so Tab carries on from where focus is instead of going back to the first
+// stop. Null when there is none that side (focus past the last stop), and the caller wraps.
+function stopNear(focusables: HTMLElement[], active: Element | null, reverse: boolean): HTMLElement | null {
+    if (typeof active?.compareDocumentPosition !== "function") {
+        return null;
+    }
+    let near: HTMLElement | null = null;
+    for (const f of focusables) {
+        const position = active.compareDocumentPosition(f);
+        if (reverse && position & POSITION_PRECEDING) {
+            near = f;
+        } else if (!reverse && position & POSITION_FOLLOWING) {
+            return f;
+        }
+    }
+    return near;
+}
+
 export function focusTrapTarget(
     focusables: HTMLElement[],
     active: Element | null,
@@ -19,7 +42,7 @@ export function focusTrapTarget(
     }
     const index = active == null ? -1 : focusables.indexOf(active as HTMLElement);
     if (index < 0) {
-        return reverse ? focusables[focusables.length - 1] : focusables[0];
+        return stopNear(focusables, active, reverse) ?? (reverse ? focusables[focusables.length - 1] : focusables[0]);
     }
     const next = reverse ? index - 1 : index + 1;
     return focusables[(next + focusables.length) % focusables.length];

@@ -184,6 +184,7 @@ function TaskImages() {
                             ) : null}
                             <button
                                 type="button"
+                                tabIndex={-1}
                                 aria-label="Remove image"
                                 onClick={() => removeTaskImage(img.id)}
                                 className="absolute -right-1.5 -top-1.5 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-edge-mid bg-surface text-muted hover:text-primary"
@@ -491,13 +492,12 @@ export function AgentFields({
                                 task === "" ? "h-[69px] overflow-hidden" : "min-h-[69px] overflow-y-auto"
                             )}
                         />
-                        {/* tabIndex 0 on each button: WebKit's own Tab skips a button without one (Safari's default), so
-                        a Tab the dialog's trap does not take still stops here before the Start column */}
+                        {/* the buttons are tabIndex -1, for the pointer: Tab goes from the Task box to the Project column */}
                         <div className="flex min-h-[31px] min-w-0 flex-wrap items-center justify-end gap-1">
                             {flagCatalog.length > 0 ? (
                                 <button
                                     type="button"
-                                    tabIndex={0}
+                                    tabIndex={-1}
                                     aria-expanded={flagMenuOpen}
                                     title="Add a flag"
                                     onClick={() => setFlagMenuOpen(!flagMenuOpen)}
@@ -524,7 +524,7 @@ export function AgentFields({
                                     </span>
                                     <button
                                         type="button"
-                                        tabIndex={0}
+                                        tabIndex={-1}
                                         aria-label={`Remove ${f.flag}`}
                                         onClick={() => setFlag(f.id, false)}
                                         className="flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-primary"
@@ -536,7 +536,7 @@ export function AgentFields({
                             {showWorktree ? (
                                 <button
                                     type="button"
-                                    tabIndex={0}
+                                    tabIndex={-1}
                                     role="switch"
                                     aria-checked={worktreeOn}
                                     title="Run in an isolated git worktree"
@@ -563,7 +563,7 @@ export function AgentFields({
                             ) : null}
                             <button
                                 type="button"
-                                tabIndex={0}
+                                tabIndex={-1}
                                 data-launcher-command-toggle
                                 aria-expanded={commandOpen}
                                 title="Show the command it runs"

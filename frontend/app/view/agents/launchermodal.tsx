@@ -146,7 +146,8 @@ import { loadTools, openTool, pinnedToolsAtom, toolsErrorAtom, toolsStatusAtom }
 import { newAgentRamWarning } from "./workercapacity";
 import { useWorkerCapacity } from "./workercapacitystore";
 
-// Tab's stops, in DOM order; the close button is tabIndex -1 because Esc does the same
+// Tab's stops, in DOM order; the close button is tabIndex -1 because Esc does the same, and the Task row's buttons and
+// the draft's Clear are tabIndex -1 because they are for the pointer
 const FOCUSABLE =
     'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), textarea:not([disabled]), [tabindex="0"]';
 
@@ -743,10 +744,14 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
             return;
         }
         const mod = e.metaKey || e.ctrlKey || e.altKey;
-        // Tab walks the dialog's stops and wraps, as the DAG modal's trap does; focus never leaves the dialog
+        // Tab walks the dialog's stops and wraps, as the DAG modal's trap does; focus never leaves the dialog. With a Task
+        // or Goal box, the Start column is no stop: Alt+1–9 picks there from the box, so Tab goes from the box to Project
         if (e.key === "Tab" && !mod) {
             e.preventDefault();
-            const stops = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE));
+            const box = isTool || isCouncil ? null : isRun ? goalRef.current : taskRef.current;
+            const stops = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+                (el) => box == null || el !== startRef.current
+            );
             focusTrapTarget(stops, document.activeElement, e.shiftKey)?.focus();
             return;
         }
@@ -950,6 +955,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                                 · draft restored
                                 <button
                                     type="button"
+                                    tabIndex={-1}
                                     onClick={clearLauncherDraft}
                                     className="cursor-pointer rounded-[5px] px-1 py-0.5 font-semibold text-ink-mid hover:bg-surface-hover hover:text-primary"
                                 >
