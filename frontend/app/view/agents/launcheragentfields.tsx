@@ -18,6 +18,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { reloadFileIndex } from "@/app/view/code/codestore";
 import { cn } from "@/util/util";
+import { autoUpdate, flip, FloatingPortal, size as floatingSize, offset, shift, useFloating } from "@floating-ui/react";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, Loader2, Lock, Plus, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -214,15 +215,20 @@ function TaskImages() {
 }
 
 interface FileMentionState {
-    // the list under the Task row, or null when none shows
+    // the dropdown under the Task box, portaled out of the dialog, or null when none shows
     list: ReactNode;
     onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
     onCaret: (el: HTMLTextAreaElement) => void;
 }
 
-// The Task box's `@` picker. The project's files are read again on the first `@` of each opening of the dialog (it
-// unmounts this on close): there is no watcher, and an agent creates files while it is closed. A query no file matches
-// shows nothing, so an `@` meant as text never blocks Enter.
+const MENTION_MIN_WIDTH = 360;
+const MENTION_MAX_WIDTH = 560;
+const MENTION_MAX_HEIGHT = 320;
+
+// The Task box's `@` picker, a dropdown under the box. It is portaled out of the dialog, as the route picker is: the
+// fields area scrolls, so a dropdown inside it would be cut off at its edge. The project's files are read again on the
+// first `@` of each opening of the dialog (it unmounts this on close): there is no watcher, and an agent creates files
+// while it is closed. A query no file matches shows nothing, so an `@` meant as text never blocks Enter.
 function useFileMention(task: string, filesRoot: string, taskRef: RefObject<HTMLTextAreaElement>): FileMentionState {
     const [caret, setCaret] = useState(0);
     const [pick, setPick] = useState(0);
@@ -252,6 +258,32 @@ function useFileMention(task: string, filesRoot: string, taskRef: RefObject<HTML
             : null;
     const shown = note != null || matches.length > 0;
     const at = Math.min(pick, Math.max(matches.length - 1, 0));
+    const { refs, floatingStyles } = useFloating({
+        open: shown,
+        placement: "bottom-start",
+        strategy: "fixed",
+        middleware: [
+            offset(4),
+            flip({ padding: 8 }),
+            shift({ padding: 8 }),
+            floatingSize({
+                padding: 8,
+                apply({ rects, availableHeight, elements }) {
+                    const width = Math.min(Math.max(rects.reference.width, MENTION_MIN_WIDTH), MENTION_MAX_WIDTH);
+                    elements.floating.style.width = `${width}px`;
+                    elements.floating.style.setProperty(
+                        "--mention-max-height",
+                        `${Math.min(MENTION_MAX_HEIGHT, availableHeight)}px`
+                    );
+                },
+            }),
+        ],
+        whileElementsMounted: autoUpdate,
+    });
+    // anchored to the box itself, so the list starts under the text and follows the box as it grows
+    useEffect(() => {
+        refs.setReference(shown ? taskRef.current : null);
+    }, [shown, refs, taskRef]);
 
     const choose = (path: string) => {
         const next = insertFileMention(task, mention.start, caret, path);
@@ -299,45 +331,52 @@ function useFileMention(task: string, filesRoot: string, taskRef: RefObject<HTML
     };
 
     const list = !shown ? null : (
-        <ul
-            role="listbox"
-            data-launcher-mentions
-            aria-label="Project files"
-            className="m-0 flex shrink-0 list-none flex-col rounded-[10px] border border-edge-mid bg-surface p-1"
-        >
-            {note != null ? (
-                <li className="px-2 py-[5px] text-[12px] text-muted">{note}</li>
-            ) : (
-                matches.map((path, i) => {
-                    const slash = path.lastIndexOf("/");
-                    return (
-                        <li
-                            key={path}
-                            role="option"
-                            aria-selected={i === at}
-                            data-launcher-mention={path}
-                            title={path}
-                            onMouseDown={(e) => {
-                                // keep focus in the Task box
-                                e.preventDefault();
-                                choose(path);
-                            }}
-                            onMouseMove={() => setPick(i)}
-                            className={cn(
-                                "flex min-w-0 cursor-pointer items-center gap-2 rounded-[7px] px-2 py-[5px]",
-                                i === at && "bg-surface-hover"
-                            )}
-                        >
-                            <FileIcon path={path} size={14} />
-                            <span className="shrink-0 font-mono text-[12px] text-primary">{path.slice(slash + 1)}</span>
-                            <span className="min-w-0 truncate font-mono text-[11px] text-muted">
-                                {slash === -1 ? "" : path.slice(0, slash)}
-                            </span>
-                        </li>
-                    );
-                })
-            )}
-        </ul>
+        <FloatingPortal>
+            {/* above ModalShell's z-[70] backdrop, as the route picker sits */}
+            <div ref={refs.setFloating} style={floatingStyles} className="z-[80]">
+                <ul
+                    role="listbox"
+                    data-launcher-mentions
+                    aria-label="Project files"
+                    className="m-0 flex max-h-[var(--mention-max-height)] list-none flex-col overflow-y-auto rounded-[11px] border border-border bg-surface p-[5px] shadow-popover-md"
+                >
+                    {note != null ? (
+                        <li className="px-2 py-[5px] text-[12px] text-muted">{note}</li>
+                    ) : (
+                        matches.map((path, i) => {
+                            const slash = path.lastIndexOf("/");
+                            return (
+                                <li
+                                    key={path}
+                                    role="option"
+                                    aria-selected={i === at}
+                                    data-launcher-mention={path}
+                                    title={path}
+                                    onMouseDown={(e) => {
+                                        // keep focus in the Task box
+                                        e.preventDefault();
+                                        choose(path);
+                                    }}
+                                    onMouseMove={() => setPick(i)}
+                                    className={cn(
+                                        "flex min-w-0 cursor-pointer items-center gap-2 rounded-[7px] px-2 py-[5px]",
+                                        i === at && "bg-surface-hover"
+                                    )}
+                                >
+                                    <FileIcon path={path} size={14} />
+                                    <span className="shrink-0 font-mono text-[12px] text-primary">
+                                        {path.slice(slash + 1)}
+                                    </span>
+                                    <span className="min-w-0 truncate font-mono text-[11px] text-muted">
+                                        {slash === -1 ? "" : path.slice(0, slash)}
+                                    </span>
+                                </li>
+                            );
+                        })
+                    )}
+                </ul>
+            </div>
+        </FloatingPortal>
     );
     return { list, onKeyDown, onCaret };
 }
