@@ -152,6 +152,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   rail-translate float-note agent-rail-tabs surface-smoke` (never ran: the run's Final dev app did not finish
   building). Cmd+Shift+D on a Mac is untried. (commit "feat(translate): the Translate panel on the rail, and
   Ctrl+Shift+D")
+- [ ] (arcterm) Translate's history and listen buttons: translate a few words, pausing on each, then empty the box. The
+  list shows them newest first (a half-typed word you kept typing past is not there); a row puts its text back and
+  translates it, ☆ fills and Starred lists it, × removes a row, and the list is still there after a restart. The
+  speaker in the box reads the English word and the one beside copy reads the Vietnamese (on a Mac, the Linh voice;
+  with none installed the button is off and its tooltip says so), and closing the panel stops it. Untried in WKWebView,
+  which no CDP scenario reaches. (commit "feat(translate): a history with stars, and listen buttons")
 - [ ] (arcterm) The File tab's Back to the top button: open a long `.md` file in an agent's File tab (Preview), scroll
   down and press the arrow-to-line button in the header; the document glides back to its top. Do the same with a long
   `.html` file (needs a wavesrv built after this change). Source and Diff show no such button.

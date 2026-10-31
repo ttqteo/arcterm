@@ -36,6 +36,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Drop files or folders from Finder or Explorer onto the agent panel's Files tree to copy them into the folder under
   the pointer (onto a file: its folder; onto empty space: the project root). The originals stay where they are, and a
   name already taken becomes `name (1)`, `name (2)`…
+- Translate keeps a history: with the box empty, the panel lists what you translated last, newest first. A click on a
+  row translates it again, ☆ stars a word you want to learn (Starred lists only those, and they stay however long the
+  history grows), and × removes a row. Speaker buttons read the text and the translation aloud in your system's voice.
+  <!-- try: translate -->
 
 ### Changed
 

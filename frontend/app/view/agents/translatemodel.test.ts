@@ -5,17 +5,30 @@ import { describe, expect, it } from "vitest";
 import {
     DEFAULT_PAIR,
     DETECT,
+    entryKey,
+    HISTORY_MAX,
+    historyEntryFor,
+    historyView,
     isCurrent,
     langName,
     LANGUAGES,
     MAX_CHARS,
     PAIR_KEY,
+    parseHistory,
     parsePair,
+    pickVoice,
+    recordEntry,
+    removeEntry,
     requestFor,
+    rowPairLabel,
+    speechCodeFor,
+    speechLang,
     swap,
+    toggleStar,
     TRANSLATE_DEBOUNCE_MS,
     translateErrorLine,
     wordDetails,
+    type HistoryEntry,
     type TranslateResult,
 } from "./translatemodel";
 
@@ -210,5 +223,138 @@ describe("translateErrorLine", () => {
             "Couldn't translate. Your text stays here, and your next edit tries again."
         );
         expect(translateErrorLine(new Error("bad\nthing"))).not.toContain("\n");
+    });
+});
+
+describe("history", () => {
+    const entry = (text: string, over: Partial<HistoryEntry> = {}): HistoryEntry => ({
+        text,
+        translation: `vi:${text}`,
+        source: "en",
+        target: "vi",
+        starred: false,
+        at: 1,
+        ...over,
+    });
+    const texts = (h: HistoryEntry[]) => h.map((e) => e.text);
+
+    it("makes an entry from an answer, trimmed, and none for blank text or a blank translation", () => {
+        const pair = { source: "en", target: "vi" };
+        expect(historyEntryFor("  compaction \n", pair, result({ translation: " sự nén chặt " }), 7)).toEqual({
+            text: "compaction",
+            translation: "sự nén chặt",
+            source: "en",
+            target: "vi",
+            starred: false,
+            at: 7,
+        });
+        expect(historyEntryFor("   ", pair, result(), 7)).toBeNull();
+        expect(historyEntryFor("hello", pair, result({ translation: "  " }), 7)).toBeNull();
+    });
+    it("files a Detect language answer under the language detected, and under Detect when it is unknown", () => {
+        const pair = { source: DETECT, target: "vi" };
+        expect(historyEntryFor("hallo", pair, result({ source: "de" }), 1)?.source).toBe("de");
+        expect(historyEntryFor("hallo", pair, result({ source: "" }), 1)?.source).toBe(DETECT);
+        expect(historyEntryFor("hallo", pair, result({ source: "xx" }), 1)?.source).toBe(DETECT);
+    });
+    it("records at the top, and the same text through the same pair moves up keeping its star", () => {
+        let h = recordEntry([], entry("assess"));
+        h = recordEntry(h, entry("council"));
+        h = toggleStar(h, entryKey(entry("assess")));
+        h = recordEntry(h, entry("assess", { translation: "đánh giá", at: 9 }));
+        expect(texts(h)).toEqual(["assess", "council"]);
+        expect(h[0]).toMatchObject({ translation: "đánh giá", starred: true, at: 9 });
+    });
+    it("keeps the same text through another pair as its own entry", () => {
+        let h = recordEntry([], entry("hello"));
+        h = recordEntry(h, entry("hello", { target: "ja" }));
+        expect(h).toHaveLength(2);
+    });
+    it("keeps HISTORY_MAX unstarred entries and every starred one", () => {
+        let h: HistoryEntry[] = [];
+        h = recordEntry(h, entry("first"));
+        h = toggleStar(h, entryKey(entry("first")));
+        for (let i = 0; i < HISTORY_MAX + 5; i++) {
+            h = recordEntry(h, entry(`w${i}`));
+        }
+        expect(h.filter((e) => !e.starred)).toHaveLength(HISTORY_MAX);
+        expect(h.at(-1)?.text).toBe("first");
+        expect(texts(h)).not.toContain("w0");
+        // unstarring it lets the cap drop it
+        h = toggleStar(h, entryKey(entry("first")));
+        expect(texts(h)).not.toContain("first");
+    });
+    it("removes one entry", () => {
+        const h = [entry("a"), entry("b")];
+        expect(texts(removeEntry(h, entryKey(entry("a"))))).toEqual(["b"]);
+    });
+    it("shows every row, or the starred ones", () => {
+        const h = [entry("a"), entry("b", { starred: true })];
+        expect(texts(historyView(h, "all"))).toEqual(["a", "b"]);
+        expect(texts(historyView(h, "starred"))).toEqual(["b"]);
+    });
+    it("reads back what it wrote and drops what is malformed", () => {
+        const h = [entry("a", { starred: true }), entry("b")];
+        expect(parseHistory(JSON.stringify(h))).toEqual(h);
+        expect(parseHistory(null)).toEqual([]);
+        expect(parseHistory("{not json")).toEqual([]);
+        expect(parseHistory(JSON.stringify({ text: "a" }))).toEqual([]);
+        expect(
+            parseHistory(
+                JSON.stringify([null, { text: "", translation: "x", source: "en", target: "vi", at: 1 }, h[1]])
+            )
+        ).toEqual([h[1]]);
+        // a missing star reads as unstarred
+        const { starred: _s, ...noStar } = h[1];
+        expect(parseHistory(JSON.stringify([noStar]))[0].starred).toBe(false);
+    });
+    it("names a row's pair only when it is not the pair chosen now", () => {
+        expect(rowPairLabel(entry("a"), { source: "en", target: "vi" })).toBeNull();
+        expect(rowPairLabel(entry("a", { target: "ja" }), { source: "en", target: "vi" })).toBe("English → Japanese");
+        expect(rowPairLabel(entry("a"), { source: DETECT, target: "vi" })).toBeNull();
+        expect(rowPairLabel(entry("a", { source: DETECT }), { source: "fr", target: "vi" })).toBe(
+            "Detect language → Vietnamese"
+        );
+    });
+});
+
+describe("reading aloud", () => {
+    it("reads Google's codes as BCP 47, and nothing for Detect language", () => {
+        expect(speechLang("vi")).toBe("vi");
+        expect(speechLang("zh-CN")).toBe("zh-CN");
+        expect(speechLang("iw")).toBe("he");
+        expect(speechLang("jw")).toBe("jv");
+        expect(speechLang(DETECT)).toBeNull();
+        expect(speechLang("")).toBeNull();
+    });
+    it("reads the input in the source, the detected one under Detect language, and the translation in the target", () => {
+        const pair = { source: "en", target: "vi" };
+        expect(speechCodeFor("input", pair, null)).toBe("en");
+        expect(speechCodeFor("output", pair, null)).toBe("vi");
+        const detect = { source: DETECT, target: "vi" };
+        expect(speechCodeFor("input", detect, result({ source: "de" }))).toBe("de");
+        expect(speechCodeFor("input", detect, null)).toBeNull();
+    });
+    it("picks the exact tag before the base language, then the default, then an on-device voice", () => {
+        const v = (name: string, lang: string, extra: { default?: boolean; localService?: boolean } = {}) => ({
+            name,
+            lang,
+            ...extra,
+        });
+        const voices = [
+            v("Tingting", "zh_CN", { localService: true }),
+            v("Meijia", "zh-TW", { localService: true }),
+            v("Samantha", "en-US", { default: true, localService: true }),
+            v("Daniel", "en-GB", { localService: true }),
+            v("Google US", "en-US"),
+            v("Linh", "vi-VN", { localService: true }),
+        ];
+        expect(pickVoice(voices, "zh-TW")?.name).toBe("Meijia");
+        expect(pickVoice(voices, "zh-CN")?.name).toBe("Tingting");
+        expect(pickVoice(voices, "en")?.name).toBe("Samantha");
+        expect(pickVoice(voices, "en-GB")?.name).toBe("Daniel");
+        expect(pickVoice(voices, "vi")?.name).toBe("Linh");
+        expect(pickVoice(voices, "ja")).toBeNull();
+        expect(pickVoice([], "en")).toBeNull();
     });
 });

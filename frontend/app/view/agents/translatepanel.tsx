@@ -2,26 +2,45 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Quick translate's panel (docs/superpowers/specs/2026-10-29-rail-translate-design.md): one narrow column like Google
-// Translate's, the language row, the input, the word details and the translation. TranslateBody is that column on its
+// Translate's, the language row, the input, the word details and the translation, or the history while the box is
+// empty. TranslateBody is that column on its
 // own, so Float can show it too; TranslateRailPanel is its floating frame beside the nav rail (cockpitshell.tsx) and
 // TranslateFloatPanel its frame over Float's terminal area (cockpit-root.tsx). The state is translatestore.ts, the pure
 // parts translatemodel.ts.
 
 import { MOTION } from "@/app/element/motiontokens";
+import { Segmented } from "@/app/element/segmented";
 import { cn } from "@/util/util";
-import { useAtomValue } from "jotai";
-import { ArrowLeftRight, Check, CircleAlert, Copy, X } from "lucide-react";
+import { useAtom, useAtomValue } from "jotai";
+import { ArrowLeftRight, Check, CircleAlert, Copy, Star, Volume2, X } from "lucide-react";
 import { motion, type Variants } from "motion/react";
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
-import { DETECT, LANGUAGES, swap, wordDetails, type SwapState } from "./translatemodel";
+import {
+    DETECT,
+    entryKey,
+    historyView,
+    LANGUAGES,
+    rowPairLabel,
+    speechCodeFor,
+    swap,
+    wordDetails,
+    type HistoryFilter,
+    type SwapState,
+} from "./translatemodel";
+import { cannotSpeak, speak, stopSpeaking, useSpeechVoices } from "./translatespeech";
 import {
     clearTranslate,
     closeTranslate,
+    removeHistoryEntry,
+    reuseHistoryEntry,
     setPair,
     setTranslateText,
     swapTranslate,
+    toggleHistoryStar,
     translateErrorAtom,
+    translateHistoryAtom,
+    translateHistoryFilterAtom,
     translateOpenAtom,
     translatePairAtom,
     translateResultAtom,
@@ -35,12 +54,134 @@ const SELECT =
 const ICON_BTN =
     "flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted";
 
-/** The column: language row, input, word details, translation (or the error line in its place). `onClose` runs on Esc. */
+/** A speaker button: reads a text in a Google language, or names why it cannot. */
+function ListenButton({
+    text,
+    code,
+    what,
+    className,
+}: {
+    text: string;
+    code: string | null;
+    what: string;
+    className?: string;
+}) {
+    const voices = useSpeechVoices();
+    const why = cannotSpeak(voices, code);
+    const label = `Listen to the ${what}`;
+    return (
+        <button
+            type="button"
+            data-translate-listen={what}
+            aria-label={label}
+            title={why == null ? label : `${label} (${why})`}
+            disabled={why != null}
+            onClick={() => code != null && speak(text, code)}
+            className={cn(ICON_BTN, className)}
+        >
+            <Volume2 size={14} strokeWidth={1.8} />
+        </button>
+    );
+}
+
+/** The past translations, under an empty box: a row brings its text back and translates it, ☆ keeps it to learn (and
+ *  past HISTORY_MAX), × removes it. Starred shows only the starred rows. */
+function TranslateHistory() {
+    const history = useAtomValue(translateHistoryAtom);
+    const pair = useAtomValue(translatePairAtom);
+    const [filter, setFilter] = useAtom(translateHistoryFilterAtom);
+    const starred = history.filter((e) => e.starred).length;
+    const rows = historyView(history, filter);
+    return (
+        <div data-translate-history className="flex min-h-0 flex-none flex-col gap-1.5">
+            {/* a row of its own, so the pill is as wide as its options, not the column */}
+            <div className="flex">
+                <Segmented<HistoryFilter>
+                    role="tablist"
+                    ariaLabel="Translation history"
+                    value={filter}
+                    onChange={setFilter}
+                    options={[
+                        { key: "all", label: "History" },
+                        { key: "starred", label: starred > 0 ? `Starred ${starred}` : "Starred" },
+                    ]}
+                />
+            </div>
+            {rows.length === 0 ? (
+                <div data-translate-history-empty className="px-1 py-2 text-[12px] text-muted">
+                    Star a translation to keep it here.
+                </div>
+            ) : (
+                <ul className="m-0 flex max-h-[320px] list-none flex-col overflow-y-auto p-0">
+                    {rows.map((e) => {
+                        const key = entryKey(e);
+                        const pairLabel = rowPairLabel(e, pair);
+                        return (
+                            <li key={key} className="group relative">
+                                <button
+                                    type="button"
+                                    data-translate-history-item
+                                    title="Translate this again"
+                                    onClick={() => reuseHistoryEntry(e)}
+                                    className="flex w-full min-w-0 cursor-pointer flex-col items-start gap-0.5 rounded-[7px] border-0 bg-transparent py-1.5 pl-2 pr-14 text-left hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                >
+                                    <span className="w-full truncate text-[13px] leading-[18px] text-primary">
+                                        {e.text}
+                                    </span>
+                                    <span className="w-full truncate text-[12px] leading-[16px] text-muted">
+                                        {e.translation}
+                                    </span>
+                                    {pairLabel != null ? (
+                                        <span className="text-[11px] leading-[14px] text-muted">{pairLabel}</span>
+                                    ) : null}
+                                </button>
+                                <div className="absolute right-1 top-1 flex items-center gap-0.5">
+                                    <button
+                                        type="button"
+                                        data-translate-history-star
+                                        aria-pressed={e.starred}
+                                        aria-label={e.starred ? "Unstar" : "Star to learn"}
+                                        title={e.starred ? "Unstar" : "Star to learn"}
+                                        onClick={() => toggleHistoryStar(key)}
+                                        className={ICON_BTN}
+                                    >
+                                        <Star
+                                            size={13}
+                                            strokeWidth={1.8}
+                                            className={e.starred ? "fill-current text-primary" : undefined}
+                                        />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        data-translate-history-remove
+                                        aria-label="Remove from history"
+                                        title="Remove from history"
+                                        onClick={() => removeHistoryEntry(key)}
+                                        className={cn(
+                                            ICON_BTN,
+                                            "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                                        )}
+                                    >
+                                        <X size={13} strokeWidth={1.8} />
+                                    </button>
+                                </div>
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
+        </div>
+    );
+}
+
+/** The column: language row, input, word details, translation (or the error line in its place, or the history while the
+ *  box is empty). `onClose` runs on Esc. */
 export function TranslateBody({ onClose }: { onClose: () => void }) {
     const pair = useAtomValue(translatePairAtom);
     const text = useAtomValue(translateTextAtom);
     const result = useAtomValue(translateResultAtom);
     const error = useAtomValue(translateErrorAtom);
+    const hasHistory = useAtomValue(translateHistoryAtom).length > 0;
     const inputRef = useRef<HTMLTextAreaElement>(null);
     // opening puts the caret in the box, at the end of the text kept from last time
     useEffect(() => {
@@ -57,6 +198,8 @@ export function TranslateBody({ onClose }: { onClose: () => void }) {
             if (copiedTimer.current != null) {
                 clearTimeout(copiedTimer.current);
             }
+            // closing the panel stops a reading too
+            stopSpeaking();
         },
         []
     );
@@ -138,6 +281,14 @@ export function TranslateBody({ onClose }: { onClose: () => void }) {
                     onChange={(e) => setTranslateText(e.target.value)}
                     className="field-sizing-content max-h-[200px] min-h-[84px] w-full resize-none rounded-[8px] border border-edge-mid bg-transparent py-2 pl-3 pr-8 text-[14px] leading-[20px] text-primary caret-primary outline-none placeholder:text-muted focus:border-edge-strong"
                 />
+                {text.trim() !== "" ? (
+                    <ListenButton
+                        text={text}
+                        code={speechCodeFor("input", pair, result)}
+                        what="text"
+                        className="absolute bottom-2.5 right-1.5"
+                    />
+                ) : null}
                 {text !== "" ? (
                     <button
                         type="button"
@@ -176,15 +327,25 @@ export function TranslateBody({ onClose }: { onClose: () => void }) {
                     <CircleAlert size={14} strokeWidth={2} className="mt-[2px] flex-none text-error" />
                     <span>{error}</span>
                 </div>
+            ) : text === "" && hasHistory ? (
+                <TranslateHistory />
             ) : (
                 <div className="relative flex-none rounded-[8px] bg-background">
                     <div
                         data-translate-output
                         aria-live="polite"
-                        className="max-h-[240px] min-h-[84px] overflow-y-auto whitespace-pre-wrap break-words py-2.5 pl-3 pr-8 text-[14px] leading-[20px] text-ink-hi"
+                        className="max-h-[240px] min-h-[84px] overflow-y-auto whitespace-pre-wrap break-words py-2.5 pl-3 pr-16 text-[14px] leading-[20px] text-ink-hi"
                     >
                         {translation}
                     </div>
+                    {translation !== "" ? (
+                        <ListenButton
+                            text={translation}
+                            code={speechCodeFor("output", pair, result)}
+                            what="translation"
+                            className="absolute right-8 top-1.5"
+                        />
+                    ) : null}
                     {translation !== "" ? (
                         <button
                             type="button"

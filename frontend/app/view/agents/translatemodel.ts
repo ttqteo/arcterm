@@ -3,8 +3,8 @@
 //
 // Quick translate (docs/superpowers/specs/2026-10-29-rail-translate-design.md): what the panel decides without React or
 // an RPC. The language list, the remembered pair, swap, the request a text makes, which reply is still wanted, the word
-// row under the input and the words of a failure. Pure: translatestore.ts owns the state and the debounce timer, and
-// wavesrv's Translate command (pkg/translate) answers.
+// row under the input, the history and its stars, and the words of a failure. Pure: translatestore.ts owns the state and
+// the timers, and wavesrv's Translate command (pkg/translate) answers.
 
 export type Pair = { source: string; target: string };
 
@@ -237,6 +237,181 @@ export function wordDetails(input: string, result: TranslateResult | null): stri
         }
     }
     return details.length > 0 ? [word, ...details] : null;
+}
+
+// ---- history ----
+
+/** One translation kept in the history: the text as sent (trimmed), its translation, the pair it went through (with
+ *  Detect language, the language detected, when the list holds it) and whether it is starred to learn. `at` is when it
+ *  was last translated. */
+export type HistoryEntry = {
+    text: string;
+    translation: string;
+    source: string;
+    target: string;
+    starred: boolean;
+    at: number;
+};
+
+// the localStorage key of the history (a per-viewer convenience, like the pair)
+export const HISTORY_KEY = "translate.history";
+
+// how many unstarred entries the history keeps; a starred one is kept until it is unstarred or removed
+export const HISTORY_MAX = 50;
+
+// How long an answer stands, with no edit, before it goes into the history: a pause mid-word ("compa…") gets an answer
+// too, and the next keystroke within this time drops it. Closing the panel, ×, ⇄ or a new pair records it at once.
+export const HISTORY_SETTLE_MS = 1500;
+
+/** What identifies an entry: the same text through the same pair is one entry, moved to the top when translated again. */
+export function entryKey(e: Pick<HistoryEntry, "text" | "source" | "target">): string {
+    return `${e.source}\u0000${e.target}\u0000${e.text}`;
+}
+
+/** The entry an answer makes; null for blank text or a blank translation. */
+export function historyEntryFor(text: string, pair: Pair, result: TranslateResult, at: number): HistoryEntry | null {
+    const t = text.trim();
+    const translation = result.translation.trim();
+    if (t === "" || translation === "") {
+        return null;
+    }
+    const source = pair.source === DETECT && isLanguage(result.source) ? result.source : pair.source;
+    return { text: t, translation, source, target: pair.target, starred: false, at };
+}
+
+/** The history out of localStorage, newest first; anything malformed is dropped, and a missing or broken value reads
+ *  as empty. */
+export function parseHistory(raw: string | null): HistoryEntry[] {
+    if (!raw) {
+        return [];
+    }
+    let v: unknown;
+    try {
+        v = JSON.parse(raw);
+    } catch {
+        return [];
+    }
+    if (!Array.isArray(v)) {
+        return [];
+    }
+    const out: HistoryEntry[] = [];
+    for (const e of v) {
+        if (
+            e != null &&
+            typeof e.text === "string" &&
+            e.text !== "" &&
+            typeof e.translation === "string" &&
+            typeof e.source === "string" &&
+            typeof e.target === "string" &&
+            typeof e.at === "number"
+        ) {
+            out.push({
+                text: e.text,
+                translation: e.translation,
+                source: e.source,
+                target: e.target,
+                starred: e.starred === true,
+                at: e.at,
+            });
+        }
+    }
+    return out;
+}
+
+// keeps every starred entry and the newest HISTORY_MAX unstarred ones, in order
+function capHistory(history: HistoryEntry[]): HistoryEntry[] {
+    let unstarred = 0;
+    return history.filter((e) => e.starred || ++unstarred <= HISTORY_MAX);
+}
+
+/** The history with an entry recorded at the top. The same text through the same pair replaces its old entry and
+ *  keeps its star. */
+export function recordEntry(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
+    const key = entryKey(entry);
+    const old = history.find((e) => entryKey(e) === key);
+    const rest = history.filter((e) => e !== old);
+    return capHistory([{ ...entry, starred: entry.starred || (old?.starred ?? false) }, ...rest]);
+}
+
+/** The history with one entry's star flipped; unstarring an old entry may drop it past HISTORY_MAX. */
+export function toggleStar(history: HistoryEntry[], key: string): HistoryEntry[] {
+    return capHistory(history.map((e) => (entryKey(e) === key ? { ...e, starred: !e.starred } : e)));
+}
+
+/** The history without one entry. */
+export function removeEntry(history: HistoryEntry[], key: string): HistoryEntry[] {
+    return history.filter((e) => entryKey(e) !== key);
+}
+
+/** The history list's two views: every entry, or the starred ones. */
+export type HistoryFilter = "all" | "starred";
+
+export function historyView(history: HistoryEntry[], filter: HistoryFilter): HistoryEntry[] {
+    return filter === "starred" ? history.filter((e) => e.starred) : history;
+}
+
+/** The pair a row names, when it is not the pair chosen now (`English → Japanese`); null when it is. */
+export function rowPairLabel(entry: HistoryEntry, pair: Pair): string | null {
+    if (entry.source === pair.source && entry.target === pair.target) {
+        return null;
+    }
+    // a Detect language row from the detected language reads as the same pair
+    if (pair.source === DETECT && entry.target === pair.target) {
+        return null;
+    }
+    return `${langName(entry.source)} → ${langName(entry.target)}`;
+}
+
+// ---- reading aloud ----
+
+// Google's codes that BCP 47 spells differently (the speech voices use BCP 47)
+const SPEECH_LANG: Record<string, string> = { iw: "he", jw: "jv", tl: "fil", no: "nb" };
+
+/** The BCP 47 tag a text in a Google language is read in; null for DETECT or no language. */
+export function speechLang(code: string): string | null {
+    if (code === "" || code === DETECT) {
+        return null;
+    }
+    return SPEECH_LANG[code] ?? code;
+}
+
+/** The Google language a side of the panel is read in: the input in the source (the detected one under Detect
+ *  language), the translation in the target. Null while Detect language has detected nothing. */
+export function speechCodeFor(side: "input" | "output", pair: Pair, result: TranslateResult | null): string | null {
+    const code = side === "output" ? pair.target : pair.source === DETECT ? (result?.source ?? "") : pair.source;
+    return speechLang(code) == null ? null : code;
+}
+
+// the fields of SpeechSynthesisVoice the choice reads
+export type VoiceLike = { lang: string; name: string; default?: boolean; localService?: boolean };
+
+function normTag(tag: string): string {
+    return tag.replace(/_/g, "-").toLowerCase();
+}
+
+/** The voice a language is read with: one for the exact tag (zh-CN) before one for its base language (zh), and among
+ *  those the system's default, then an on-device one. Null when the system has none for it. */
+export function pickVoice<V extends VoiceLike>(voices: readonly V[], lang: string): V | null {
+    const want = normTag(lang);
+    const base = want.split("-")[0];
+    const rank = (v: V): number => {
+        const tag = normTag(v.lang);
+        const match = tag === want ? 0 : tag.split("-")[0] === base ? 1 : -1;
+        if (match < 0) {
+            return -1;
+        }
+        return match * 4 + (v.default ? 0 : 2) + (v.localService ? 0 : 1);
+    };
+    let best: V | null = null;
+    let bestRank = Infinity;
+    for (const v of voices) {
+        const r = rank(v);
+        if (r >= 0 && r < bestRank) {
+            best = v;
+            bestRank = r;
+        }
+    }
+    return best;
 }
 
 /** The one line under the input when a translation failed. */

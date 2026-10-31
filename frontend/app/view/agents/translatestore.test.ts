@@ -18,6 +18,9 @@ import { floatNoteOpenAtom } from "./floatnotestore";
 import { floatModeAtom } from "./floatstore";
 import {
     DEFAULT_PAIR,
+    entryKey,
+    HISTORY_KEY,
+    HISTORY_SETTLE_MS,
     PAIR_KEY,
     TRANSLATE_DEBOUNCE_MS,
     translateErrorLine,
@@ -27,12 +30,17 @@ import {
     clearTranslate,
     closeTranslate,
     openTranslate,
+    readStoredHistory,
     readStoredPair,
+    removeHistoryEntry,
+    reuseHistoryEntry,
     setPair,
     setTranslateText,
     swapTranslate,
+    toggleHistoryStar,
     toggleTranslate,
     translateErrorAtom,
+    translateHistoryAtom,
     translateOpenAtom,
     translatePairAtom,
     translateResultAtom,
@@ -68,6 +76,7 @@ beforeEach(() => {
     globalStore.set(floatModeAtom, false);
     globalStore.set(floatNoteOpenAtom, false);
     globalStore.set(translatePairAtom, { ...DEFAULT_PAIR });
+    globalStore.set(translateHistoryAtom, []);
     rpc.mockImplementation(async (_c, req) => answer(`vi:${req.text}`));
 });
 
@@ -367,5 +376,108 @@ describe("Float", () => {
         expect(open()).toBe(false);
         expect(noteOpen()).toBe(false);
         expect(globalStore.get(floatModeAtom)).toBe(true);
+    });
+});
+
+describe("history", () => {
+    const history = () => globalStore.get(translateHistoryAtom);
+    const texts = () => history().map((e) => e.text);
+    // types a text and lets its answer arrive
+    async function translateText(t: string) {
+        setTranslateText(t);
+        await vi.advanceTimersByTimeAsync(TRANSLATE_DEBOUNCE_MS);
+    }
+
+    it("records an answer once it has stood HISTORY_SETTLE_MS with no edit", async () => {
+        await translateText("compaction");
+        expect(history()).toEqual([]);
+        await vi.advanceTimersByTimeAsync(HISTORY_SETTLE_MS);
+        expect(history()).toEqual([
+            expect.objectContaining({ text: "compaction", translation: "vi:compaction", source: "en", target: "vi" }),
+        ]);
+    });
+    it("drops the answer to a half-typed word when typing goes on", async () => {
+        await translateText("compa");
+        await vi.advanceTimersByTimeAsync(HISTORY_SETTLE_MS / 2);
+        await translateText("compaction");
+        await vi.advanceTimersByTimeAsync(HISTORY_SETTLE_MS);
+        expect(texts()).toEqual(["compaction"]);
+    });
+    it("records at once when the panel closes, the box is cleared, the pair changes or ⇄ is pressed", async () => {
+        openTranslate();
+        await translateText("close");
+        closeTranslate();
+        expect(texts()).toEqual(["close"]);
+        await translateText("clear");
+        clearTranslate();
+        expect(texts()).toEqual(["clear", "close"]);
+        await translateText("pair");
+        setPair({ source: "en", target: "fr" });
+        expect(texts()).toEqual(["pair", "clear", "close"]);
+        await vi.advanceTimersByTimeAsync(HISTORY_SETTLE_MS);
+        expect(history()[0]).toMatchObject({ text: "pair", target: "fr" });
+        setPair({ ...DEFAULT_PAIR });
+        await translateText("swap");
+        swapTranslate();
+        expect(history()[0]).toMatchObject({ text: "swap", target: "vi" });
+    });
+    it("records nothing for a failed request", async () => {
+        rpc.mockRejectedValue(new Error("offline"));
+        await translateText("hello");
+        await vi.advanceTimersByTimeAsync(HISTORY_SETTLE_MS);
+        closeTranslate();
+        expect(history()).toEqual([]);
+    });
+    it("a row brings its pair and text back and translates them at once", async () => {
+        await translateText("hello");
+        closeTranslate();
+        const [entry] = history();
+        clearTranslate();
+        setPair({ source: "en", target: "ja" });
+        rpc.mockClear();
+        reuseHistoryEntry(entry);
+        expect(pair()).toEqual({ source: "en", target: "vi" });
+        expect(text()).toBe("hello");
+        // no debounce: the request is out before the debounce would have fired
+        await vi.advanceTimersByTimeAsync(0);
+        expect(rpc).toHaveBeenCalledTimes(1);
+        expect(result()).toEqual(answer("vi:hello"));
+    });
+    it("stars, unstars and removes a row", async () => {
+        await translateText("assess");
+        closeTranslate();
+        const key = entryKey(history()[0]);
+        toggleHistoryStar(key);
+        expect(history()[0].starred).toBe(true);
+        toggleHistoryStar(key);
+        expect(history()[0].starred).toBe(false);
+        removeHistoryEntry(key);
+        expect(history()).toEqual([]);
+    });
+    it("round-trips through localStorage", async () => {
+        const store = new Map<string, string>();
+        vi.stubGlobal("localStorage", {
+            getItem: (k: string) => store.get(k) ?? null,
+            setItem: (k: string, v: string) => void store.set(k, v),
+        });
+        await translateText("flashy");
+        closeTranslate();
+        toggleHistoryStar(entryKey(history()[0]));
+        expect(readStoredHistory()).toEqual(history());
+        expect(JSON.parse(store.get(HISTORY_KEY) ?? "[]")[0]).toMatchObject({ text: "flashy", starred: true });
+    });
+    it("holds the history for the session when storage is blocked", async () => {
+        vi.stubGlobal("localStorage", {
+            getItem: () => {
+                throw new Error("blocked");
+            },
+            setItem: () => {
+                throw new Error("blocked");
+            },
+        });
+        expect(readStoredHistory()).toEqual([]);
+        await translateText("skeptic");
+        closeTranslate();
+        expect(texts()).toEqual(["skeptic"]);
     });
 });

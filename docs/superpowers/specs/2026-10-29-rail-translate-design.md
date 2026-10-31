@@ -74,8 +74,14 @@ A single column, like a narrow Google Translate:
    not, and then this row is absent.
 4. **Translation.** The translation sits on a background one step darker, with a copy button.
 
-There is no microphone, speaker, History, or Saved. Colours come from the `@theme` tokens, and the layout follows
-`DESIGN.md`.
+There is no microphone. Colours come from the `@theme` tokens, and the layout follows `DESIGN.md`.
+
+Added 2026-10-31: **History.** While the box is empty, the translation's place lists past translations (the newest 50,
+in localStorage `translate.history`; an answer is kept once it has stood 1.5 s with no edit, or at once on close, ×, ⇄
+or a new pair). A row translates its text again; ☆ stars it to learn, which keeps it past the 50, and Starred lists
+only those; × removes it. **Listen.** A speaker in the box and beside the translation's copy button reads the text in
+the source language (the detected one under Detect language) and the translation in the target, in the OS's own voice
+(Web Speech API; `translatespeech.ts`), and is off with the reason when the system has no voice for the language.
 
 ### Languages
 
@@ -152,6 +158,6 @@ Plan 1:
 ## Out of scope
 
 - Translating a selection in a terminal or transcript.
-- Speech input or output, translation history, and saved phrases.
+- Speech input, and sending starred words anywhere else (a Lingua word list is a likely next step).
 - LLM translation (pkg/consult, LM Studio): it was considered and not chosen.
 - Removing translate-shell, the `trans` tool, or `wsh trans`.
