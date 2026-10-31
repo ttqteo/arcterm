@@ -5,6 +5,10 @@ import type { Element, ElementContent } from "hast";
 import { describe, expect, it } from "vitest";
 import { tableClipboard } from "./markdown-table";
 
+// a pasted doc (Google Docs, Word) draws a cell's border only from its inline style
+const CELL = "border:1px solid #000;padding:4px 8px";
+const TABLE = '<meta charset="utf-8"><table style="border-collapse:collapse">';
+
 // the hast remark-gfm + remark-rehype produce: newline text nodes between rows and cells, align on each cell
 function h(tagName: string, properties: Record<string, unknown>, ...children: (ElementContent | string)[]): Element {
     return {
@@ -66,13 +70,13 @@ describe("tableClipboard", () => {
         );
     });
 
-    it("copies the HTML table a spreadsheet or doc pastes as cells, keeping each column's alignment", () => {
+    it("copies the HTML table a doc pastes as ruled cells, keeping each column's alignment", () => {
         expect(tableClipboard(gfmTable()).html).toBe(
-            '<meta charset="utf-8"><table>' +
-                '<thead><tr><th style="text-align:left">Task</th><th style="text-align:right">Mean time</th></tr></thead>' +
+            TABLE +
+                `<thead><tr><th style="${CELL};text-align:left">Task</th><th style="${CELL};text-align:right">Mean time</th></tr></thead>` +
                 "<tbody>" +
-                '<tr><td style="text-align:left">T1 Start as a guest</td><td style="text-align:right">48 s</td></tr>' +
-                '<tr><td style="text-align:left">T2 Finish a lesson</td><td style="text-align:right">222 s</td></tr>' +
+                `<tr><td style="${CELL};text-align:left">T1 Start as a guest</td><td style="${CELL};text-align:right">48 s</td></tr>` +
+                `<tr><td style="${CELL};text-align:left">T2 Finish a lesson</td><td style="${CELL};text-align:right">222 s</td></tr>` +
                 "</tbody></table>"
         );
     });
@@ -88,13 +92,13 @@ describe("tableClipboard", () => {
             )
         );
         const out = tableClipboard(t);
-        expect(out.html).toContain("<td><strong>bold</strong> and <code>code</code><br>next</td>");
+        expect(out.html).toContain(`<td style="${CELL}"><strong>bold</strong> and <code>code</code><br>next</td>`);
         expect(out.text).toBe("bold and code next");
     });
 
     it("escapes cell text so it pastes as text, not markup", () => {
         const t = h("table", {}, h("tbody", {}, h("tr", {}, h("td", {}, 'a < b & "c"'))));
-        expect(tableClipboard(t).html).toContain("<td>a &lt; b &amp; &quot;c&quot;</td>");
+        expect(tableClipboard(t).html).toContain(`<td style="${CELL}">a &lt; b &amp; &quot;c&quot;</td>`);
     });
 
     it("keeps a web link and unwraps a link a pasted document cannot open", () => {
@@ -114,9 +118,9 @@ describe("tableClipboard", () => {
             )
         );
         const out = tableClipboard(t);
-        expect(out.html).toContain('<td><a href="https://example.com/?a=1&amp;b=2">web</a></td>');
-        expect(out.html).toContain("<td>script</td>");
-        expect(out.html).toContain("<td>local</td>");
+        expect(out.html).toContain(`<td style="${CELL}"><a href="https://example.com/?a=1&amp;b=2">web</a></td>`);
+        expect(out.html).toContain(`<td style="${CELL}">script</td>`);
+        expect(out.html).toContain(`<td style="${CELL}">local</td>`);
         expect(out.text).toBe("web\tscript\tlocal");
     });
 
@@ -131,7 +135,8 @@ describe("tableClipboard", () => {
         const out = tableClipboard(t);
         expect(out.text).toBe("outer\ninner");
         expect(out.html).toBe(
-            '<meta charset="utf-8"><table><tbody><tr><th>outer</th></tr><tr><td>inner</td></tr></tbody></table>'
+            TABLE +
+                `<tbody><tr><th style="${CELL}">outer</th></tr><tr><td style="${CELL}">inner</td></tr></tbody></table>`
         );
     });
 });

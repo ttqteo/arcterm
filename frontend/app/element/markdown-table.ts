@@ -84,9 +84,13 @@ function cellHtml(nodes: ElementContent[]): string {
         .join("");
 }
 
-function alignStyle(cell: Element): string {
+// a pasted doc (Google Docs, Word) draws a cell's border only from its inline style, and a bare table pastes with
+// none; black 1px is a new table's own rule there. Not a theme colour: this is the pasted document's
+const CELL_STYLE = "border:1px solid #000;padding:4px 8px";
+
+function cellStyle(cell: Element): string {
     const align = cell.properties?.align;
-    return typeof align === "string" && ALIGNS.has(align) ? ` style="text-align:${align}"` : "";
+    return typeof align === "string" && ALIGNS.has(align) ? `${CELL_STYLE};text-align:${align}` : CELL_STYLE;
 }
 
 export function tableClipboard(table: Element): TableClipboard {
@@ -99,14 +103,14 @@ export function tableClipboard(table: Element): TableClipboard {
         r.cells
             .map((c) => {
                 const tag = c.tagName === "th" ? "th" : "td";
-                return `<${tag}${alignStyle(c)}>${cellHtml(c.children).trim()}</${tag}>`;
+                return `<${tag} style="${cellStyle(c)}">${cellHtml(c.children).trim()}</${tag}>`;
             })
             .join("") +
         "</tr>";
     const head = rows.filter((r) => r.head);
     const body = rows.filter((r) => !r.head);
     const html =
-        '<meta charset="utf-8"><table>' +
+        '<meta charset="utf-8"><table style="border-collapse:collapse">' +
         (head.length > 0 ? `<thead>${head.map(rowHtml).join("")}</thead>` : "") +
         (body.length > 0 ? `<tbody>${body.map(rowHtml).join("")}</tbody>` : "") +
         "</table>";

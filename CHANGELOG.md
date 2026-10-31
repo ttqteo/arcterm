@@ -31,7 +31,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - Council Setup's Auto-generate button writes the topic, a question and the mode from what the seated agents were
   talking about. It asks before replacing text you already wrote.
 - A table in a Markdown Preview or an agent's reply has a copy button on its corner when you point at it: it pastes
-  into Sheets, Excel, Numbers, Notion or Docs as a table with real cells, not as `| a | b |` text.
+  into Sheets, Excel, Numbers, Notion or Docs as a table with real cells and a border round each, not as `| a | b |`
+  text.
 - Drop files or folders from Finder or Explorer onto the agent panel's Files tree to copy them into the folder under
   the pointer (onto a file: its folder; onto empty space: the project root). The originals stay where they are, and a
   name already taken becomes `name (1)`, `name (2)`…
@@ -60,7 +61,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The Agent badge no longer counts a brainstorm's Judge and Builder check sessions as unread: their answer goes to the
   brainstorming agent, so the badge had a number no row in the tree showed.
 - Images in a Markdown Preview (the File tab, Code) show: a figure on disk beside the file, PNG, SVG or any other,
-  drew as an empty box with only its caption.
+  drew as `[img]` or an empty box with only its caption.
 
 ## 0.15.19 — 2026-10-30
 

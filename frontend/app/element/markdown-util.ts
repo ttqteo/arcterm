@@ -5,6 +5,7 @@ import { getApi } from "@/app/store/global";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { getWebServerEndpoint } from "@/util/endpoints";
+import { fetch } from "@/util/fetchutil";
 import { formatRemoteUri } from "@/util/waveutil";
 import parseSrcSet from "parse-srcset";
 import { BlobCache } from "./markdown-imagecache";
@@ -179,6 +180,8 @@ export function cachedLocalImage(filepath: string, resolveOpts: MarkdownResolveO
 
 // A web image's URL as it is. A local one is read through wavesrv into a blob: URL, as ImageFrame's are (useBlobSrc):
 // the packaged app's CSP keeps an <img> off wavesrv, and /wave/stream-file wants the auth key an <img> can't send.
+// The read goes through fetchutil: the packaged webview refuses its own fetch to wavesrv, another origin that sends
+// CORS headers only in dev, so every figure drew as [img] there while the dev and browser builds showed them.
 export const resolveRemoteFile = async (filepath: string, resolveOpts: MarkdownResolveOpts): Promise<string | null> => {
     if (!filepath || isWebSrc(filepath)) {
         return filepath;
