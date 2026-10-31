@@ -13,9 +13,10 @@ export interface CouncilChatNav {
     order: readonly string[]; // the ideas j and k move over, in the order the channel draws them
     focusedId: string | null; // the idea the keyboard cursor is on
     openId: string | null; // the idea whose thread is open
+    sourcesOpen: boolean; // the Sources panel is open in the thread's place
     focus: (id: string) => void;
     open: (id: string) => void;
-    close: () => void;
+    close: () => void; // the Sources panel (back to its thread) when it is open, else the thread
 }
 
 export const councilChatNavAtom = atom<CouncilChatNav | null>(null) as PrimitiveAtom<CouncilChatNav | null>;

@@ -2834,6 +2834,7 @@ describe("council chat keys", () => {
         order: ["P1", "P2", "P3"],
         focusedId: null,
         openId: null,
+        sourcesOpen: false,
         focus: vi.fn(),
         open: vi.fn(),
         close: vi.fn(),
@@ -2924,6 +2925,17 @@ describe("council chat keys", () => {
         focusIn(false);
         expect(close.when!(council)).toBe(false);
         expect(leave.when!(council)).toBe(true);
+    });
+
+    it("closes the Sources panel with Escape, as it does a thread", () => {
+        const close = find("council:close-thread");
+        const leave = buildAgentBindings(stubModel()).find((b) => b.id === "agent:leave-center")!;
+        focusIn(true);
+        const chat = show(nav({ sourcesOpen: true }))!;
+        expect(close.when!(council)).toBe(true);
+        expect(leave.when!(council)).toBe(false);
+        close.run(council);
+        expect(chat.close).toHaveBeenCalled();
     });
 
     it("shares no key with the Agent surface's while the council is on screen", () => {

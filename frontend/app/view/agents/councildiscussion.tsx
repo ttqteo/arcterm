@@ -13,7 +13,8 @@
 // data-council-* attribute for the CDP scenario `council-discussion`. The rules are in councildiscussionmodel.ts,
 // councilchatmodel.ts and councilmodel.ts; the store's actions answer `{ ok, error }`, and a refusal shows in place.
 
-import { cn } from "@/util/util";
+import { openFileInCode } from "@/app/cockpit/openfilestore";
+import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { Check, ListChecks } from "lucide-react";
@@ -21,7 +22,7 @@ import { useEffect, useState } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { useActions, type Actions } from "./councilactions";
-import { CouncilAvatar, CouncilChat, EvidenceChips } from "./councilchat";
+import { CouncilAvatar, CouncilChat } from "./councilchat";
 import { stepChip } from "./councilchatmodel";
 import {
     avatarStackLabel,
@@ -59,6 +60,7 @@ import {
     type SegmentState,
 } from "./councilmodel";
 import { confirmRemoveCouncil } from "./councilremove";
+import { EvidenceChips } from "./councilsourcespanel";
 import {
     continueCouncil,
     councilSelAtom,
@@ -142,6 +144,7 @@ function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
                     acts={acts}
                     notes={<FailureNotes c={c} acts={acts} withExperts={false} />}
                     onOpenTerminal={(tab) => model.openTerminal(tab)}
+                    onOpenFile={(path, line) => fireAndForget(() => openFileInCode(model, path, false, line))}
                 />
             )}
         </div>

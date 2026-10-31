@@ -331,6 +331,38 @@ export const councilOpenProposalAtom = atomFamily(
     (_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>
 );
 
+/** What a council chat's Sources panel shows: the evidence of the message whose link was clicked, the file picked
+ *  among it, and the thread it was opened from, which closing the panel goes back to. */
+export interface CouncilSourcesView {
+    owner: string; // the idea, reply or draft whose evidence it is
+    title: string;
+    refs: string[];
+    pick: number; // the group of groupSources(refs) shown
+    thread: string | null;
+}
+
+/** Each council's Sources panel, or null while it is closed. It shares the right of the chat with the thread panel. */
+export const councilSourcesAtom = atomFamily(
+    (_id: string) => atom<CouncilSourcesView | null>(null) as PrimitiveAtom<CouncilSourcesView | null>
+);
+
+/** Opens the Sources panel on one file of a message's evidence, in place of the thread panel it then goes back to. */
+export function openCouncilSources(councilId: string, view: Omit<CouncilSourcesView, "thread">): void {
+    const open = globalStore.get(councilOpenProposalAtom(councilId));
+    const prev = globalStore.get(councilSourcesAtom(councilId));
+    globalStore.set(councilSourcesAtom(councilId), { ...view, thread: open ?? prev?.thread ?? null });
+    globalStore.set(councilOpenProposalAtom(councilId), null);
+}
+
+/** Closes the Sources panel, back to the thread it was opened from. */
+export function closeCouncilSources(councilId: string): void {
+    const view = globalStore.get(councilSourcesAtom(councilId));
+    globalStore.set(councilSourcesAtom(councilId), null);
+    if (view?.thread != null) {
+        globalStore.set(councilOpenProposalAtom(councilId), view.thread);
+    }
+}
+
 /** Each project's unsent Setup draft, so it survives switching away; null when there is none. */
 export const councilSetupDraftAtom = atomFamily(
     (_project: string) => atom<CouncilSetupDraft | null>(null) as PrimitiveAtom<CouncilSetupDraft | null>,

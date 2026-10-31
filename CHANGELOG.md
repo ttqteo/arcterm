@@ -52,6 +52,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   opens the project's Overview.
 - A council's chat shows when each message came as the time of day (`14:32`); hover it for the date and how far into
   the council it came. Before, `1:16` was the time since the council started and read like a clock.
+- The files a council message cites are one blue link per file, its lines after it (`huong_harness.md:65`), in place of
+  a chip per line with the whole path; hover one for the path. A click opens Sources on the right: the cited lines lit,
+  a line each side, the message's other files above, and Open in Code. Esc goes back to the thread.
 
 ### Fixed
 

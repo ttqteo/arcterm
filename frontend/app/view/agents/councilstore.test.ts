@@ -40,6 +40,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { emptyCouncilDraft } from "./councilmodel";
 import {
     autoGenerateCouncil,
+    closeCouncilSources,
     continueCouncil,
     councilAtom,
     councilListAtom,
@@ -47,6 +48,7 @@ import {
     councilRoles,
     councilSelAtom,
     councilSetupDraftAtom,
+    councilSourcesAtom,
     councilUnreadAtom,
     councilViewAtom,
     deleteCouncil,
@@ -54,6 +56,7 @@ import {
     estimateCouncil,
     loadCouncil,
     loadCouncils,
+    openCouncilSources,
     rateCouncil,
     replyCouncil,
     retryExpert,
@@ -386,6 +389,27 @@ describe("UI state", () => {
         expect(globalStore.get(councilSelAtom)).toBeNull();
         expect(globalStore.get(councilViewAtom)).toBe("discussion");
         expect(globalStore.get(councilOpenProposalAtom("x"))).toBeNull();
+        expect(globalStore.get(councilSourcesAtom("x"))).toBeNull();
+    });
+
+    it("opens the Sources panel in place of a thread, and closing it goes back to that thread", () => {
+        globalStore.set(councilOpenProposalAtom("s1"), "P2");
+        openCouncilSources("s1", { owner: "P2", title: "Two", refs: ["a.ts:1", "b.ts:2"], pick: 0 });
+        expect(globalStore.get(councilOpenProposalAtom("s1"))).toBeNull();
+        expect(globalStore.get(councilSourcesAtom("s1"))).toMatchObject({ owner: "P2", pick: 0, thread: "P2" });
+        // picking another file of the same message keeps where to go back to
+        openCouncilSources("s1", { owner: "P2", title: "Two", refs: ["a.ts:1", "b.ts:2"], pick: 1 });
+        expect(globalStore.get(councilSourcesAtom("s1"))).toMatchObject({ pick: 1, thread: "P2" });
+        closeCouncilSources("s1");
+        expect(globalStore.get(councilSourcesAtom("s1"))).toBeNull();
+        expect(globalStore.get(councilOpenProposalAtom("s1"))).toBe("P2");
+    });
+
+    it("closes Sources opened from the channel with no thread to go back to", () => {
+        openCouncilSources("s2", { owner: "P1", title: "One", refs: ["a.ts:1"], pick: 0 });
+        closeCouncilSources("s2");
+        expect(globalStore.get(councilSourcesAtom("s2"))).toBeNull();
+        expect(globalStore.get(councilOpenProposalAtom("s2"))).toBeNull();
     });
 
     it("keeps a Setup draft per project, under either spelling of its path", () => {

@@ -8,7 +8,8 @@
 // and a composer, Summarize off while they do), on a council whose experts gave their picks, as a Brainstorm, queued (a
 // line that names the council it waits for), while they first propose (the experts' cards and the call bar), at the pause
 // (the ticks, Ask the experts, Continue), stopped at the pause (Summarize), failed (Retry on an expert and on the
-// coordinator), not run (Start council), a done council as a channel with a follow-up in a thread, and the `room`
+// coordinator), not run (Start council), a done council as a channel with a follow-up in a thread, its sources (a link
+// per cited file, the Sources panel a click opens, Escape, back to a thread, a file not in the project), and the `room`
 // fixtures: two live agents seated beside two experts (the seat chips with their context, a skipped turn, a failed seat's
 // Retry, drafts waiting for the person with Send to the others, Edit and Drop, a thread with its stance pills and its
 // held reply, j / k / Enter / Esc, the composer and its @, a click on an agent's chip or on Open its terminal). Each
@@ -22,6 +23,8 @@
 // and calls no model. The room phases write the room's two agents as the cockpit fixture roster (writeRoomRoster, which
 // reloads the page) and put the previous roster back in teardown.
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { waitFor } from "../attach.mjs";
 import {
     arrangeCouncilProject,
@@ -665,6 +668,89 @@ async function done(h, ctx, rec) {
     );
 }
 
+// ---- the sources: a message's files as links, and the panel a click opens ----
+
+// writes two of the files the done fixture cites into the council's project, each line naming its own number; the
+// third it cites (railappsstore.ts) stays missing
+function writeCitedFiles(ctx) {
+    const file = (rel, n) => {
+        const path = join(ctx.repo, rel);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, Array.from({ length: n }, (_, i) => `// ${rel} line ${i + 1}`).join("\n") + "\n");
+    };
+    file("railapps.ts", 80);
+    file("pkg/services/model.go", 40);
+}
+
+const sourceLinks = (h, scope) =>
+    h.ev(`[...document.querySelectorAll(${sel(`${scope} [data-council-source]`)})].map((e) => ({
+        path: e.getAttribute("data-council-source"),
+        text: (e.textContent ?? "")${NORM},
+        title: e.getAttribute("title"),
+    }))`);
+
+async function sources(h, ctx, rec) {
+    writeCitedFiles(ctx);
+    await openFixture(h, ctx, "done");
+    const P2 = '[data-council-idea="P2"] [data-council-source]';
+    const links = await sourceLinks(h, '[data-council-idea="P2"]');
+    rec(
+        "sources: an idea's evidence is one link per file, named by the file and its line, its path in the title",
+        links.length === 1 &&
+            links[0].path === "pkg/services/model.go" &&
+            links[0].text === "model.go:38" &&
+            links[0].title === "pkg/services/model.go:38",
+        links
+    );
+
+    await click(h, P2);
+    const read = await until(h, `document.querySelector("[data-council-sources-body]")?.getAttribute("data-state") === "ok"`);
+    const hunks = await h.ev(
+        `[...document.querySelectorAll("[data-council-sources-hunk]")].map((e) => e.getAttribute("data-council-sources-hunk"))`
+    );
+    const cited = await h.ev(`[...document.querySelectorAll("[data-council-sources] [data-cited]")].map((e) => (e.textContent ?? "")${NORM})`);
+    const picked = await attr(h, P2, "data-picked");
+    rec(
+        "sources: a click opens Sources on the file, line 38 lit with a line each side, and marks the link it shows",
+        read &&
+            hunks.length === 1 &&
+            hunks[0] === "37" &&
+            cited.length === 1 &&
+            cited[0].startsWith("38") &&
+            cited[0].endsWith("line 38") &&
+            picked === "true" &&
+            !(await exists(h, "[data-council-thread]")),
+        { hunks, cited, picked }
+    );
+    await h.shot("cdp-shots/council-discussion-sources.png");
+
+    await focusOn(h, P2);
+    await pressEscape(h);
+    rec("sources: Escape closes Sources opened from the channel", !(await exists(h, "[data-council-sources]")));
+
+    // from a thread, and back to it
+    await click(h, '[data-council-thread-open="P2"]');
+    await until(h, `!!document.querySelector("[data-council-thread] [data-council-source]")`);
+    await click(h, "[data-council-thread] [data-council-source]");
+    await until(h, `!!document.querySelector("[data-council-sources]")`);
+    const label = await attr(h, "[data-council-sources-close]", "aria-label");
+    const threadGone = !(await exists(h, "[data-council-thread]"));
+    await click(h, "[data-council-sources-close]");
+    const back = await until(h, `!!document.querySelector("[data-council-thread]") && !document.querySelector("[data-council-sources]")`);
+    rec(
+        "sources: opened from a thread they take its place, and closing goes back to the thread",
+        threadGone && label === "Back to the thread (Esc)" && back,
+        { label, threadGone, back }
+    );
+    await click(h, "[data-council-thread-close]");
+
+    // a file that is not in the project
+    await click(h, '[data-council-idea="P5"] [data-council-source]');
+    const missing = await until(h, `!!document.querySelector("[data-council-sources-error]")`);
+    rec("sources: a cited file that is not in the project says so in place of its lines", missing);
+    await click(h, "[data-council-sources-close]");
+}
+
 // ---- the room: two live agents seated beside two experts ----
 
 // writes the room's agents as the cockpit's fixture roster once, for every room phase (it reloads the page, so no stub
@@ -1025,6 +1111,7 @@ const PHASES = [
     ["failed", failed],
     ["not run", notRun],
     ["done", done],
+    ["sources", sources],
     ["room", room],
     ["room keys", roomKeys],
     ["room composer", roomComposer],

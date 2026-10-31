@@ -1113,11 +1113,15 @@ const galleryHoldsEscape = () =>
     globalStore.get(centerModeAtom) === "canvases" && globalStore.get(canvasGalleryAtom).view !== "grid";
 // A council's chat keeps the keys of its channel and thread (buildCouncilBindings) while focus is inside either: the
 // centre is on the council, so none of the agent keys is live, and Escape closes an open thread before it leaves the
-// council for the terminal.
+// council for the terminal; the Sources panel closes the same way, back to its thread.
 const focusInCouncilChat = () =>
     typeof document !== "undefined" &&
-    document.activeElement?.closest?.("[data-council-channel], [data-council-thread]") != null;
-const councilHoldsEscape = () => globalStore.get(councilChatNavAtom)?.openId != null && focusInCouncilChat();
+    document.activeElement?.closest?.("[data-council-channel], [data-council-thread], [data-council-sources]") != null;
+const councilPanelOpen = () => {
+    const nav = globalStore.get(councilChatNavAtom);
+    return nav != null && (nav.openId != null || nav.sourcesOpen);
+};
+const councilHoldsEscape = () => councilPanelOpen() && focusInCouncilChat();
 
 // Agent (Focus) surface bindings. Moved out of agentsurface.tsx so the registry has one home
 // and the array is stable: run() reads live atoms instead of closing over per-render focus/order.
@@ -2060,8 +2064,8 @@ export function buildCouncilBindings(): Binding[] {
             id: "council:close-thread",
             keys: "Escape",
             group: "Agent",
-            label: "Close the thread (j and k move over the ideas again)",
-            when: (ctx) => keys(ctx) && globalStore.get(councilChatNavAtom)?.openId != null,
+            label: "Close the thread or the sources (j and k move over the ideas again)",
+            when: (ctx) => keys(ctx) && councilPanelOpen(),
             paletteHidden: true,
             run: () => globalStore.get(councilChatNavAtom)?.close(),
         },

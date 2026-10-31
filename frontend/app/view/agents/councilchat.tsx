@@ -10,7 +10,9 @@
 // chip, or Enter on the idea the keyboard cursor is on, opens its thread in a 400px panel on the right: the idea on top,
 // then its replies with their stance pills, the replies held as drafts, and a reply box that names who will answer. j and
 // k move the cursor over the ideas, Enter opens the thread and Escape closes it, while focus is inside the channel or the
-// thread (buildCouncilBindings reads the cursor councilchatnav.ts publishes). Every part carries a data-council-*
+// thread (buildCouncilBindings reads the cursor councilchatnav.ts publishes). A message's evidence is a link per cited
+// file (councilsourcespanel.tsx): a click opens the Sources panel in the thread's place, and Escape or its close button
+// goes back to the thread it was opened from. Every part carries a data-council-*
 // attribute for the CDP scenario `council-discussion`. The store's actions answer `{ ok, error }`; a refusal shows in the
 // header (the `acts` the discussion shares).
 
@@ -58,7 +60,16 @@ import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { answerers, draftsWaitWord, followupLabel } from "./councilmodel";
 import { followsEnd, keepPlace, keptPlace, placeOf, topFor, type ScrollPlace } from "./councilscroll";
-import { councilOpenProposalAtom, draftCouncil, replyCouncil, retryExpert, useEstimate } from "./councilstore";
+import { CouncilSourcesPanel, EvidenceChips } from "./councilsourcespanel";
+import {
+    closeCouncilSources,
+    councilOpenProposalAtom,
+    councilSourcesAtom,
+    draftCouncil,
+    replyCouncil,
+    retryExpert,
+    useEstimate,
+} from "./councilstore";
 
 // ---- shared pieces ----
 
@@ -147,35 +158,6 @@ const PILL_TONE: Record<PillTone, string> = {
 
 export function CouncilPill({ word, tone }: { word: string; tone: PillTone }) {
     return <span className={cn("rounded-full px-[7px] py-px text-[10px] font-semibold", PILL_TONE[tone])}>{word}</span>;
-}
-
-/** The references a message cites, and a claim marked weak as its own amber chip. */
-export function EvidenceChips({ evidence = [], weak = "" }: { evidence?: string[]; weak?: string }) {
-    if (evidence.length === 0 && weak === "") {
-        return null;
-    }
-    return (
-        <div className="flex flex-wrap gap-[6px]">
-            {evidence.map((ref, i) => (
-                <span
-                    key={i}
-                    data-council-evidence
-                    className="rounded-[6px] border border-edge-mid bg-surface px-[8px] py-[2px] text-[11px] text-secondary"
-                >
-                    {ref}
-                </span>
-            ))}
-            {weak !== "" && (
-                <span
-                    data-council-evidence
-                    data-weak="true"
-                    className="rounded-[6px] border border-warning/40 bg-surface px-[8px] py-[2px] text-[11px] text-warning-soft"
-                >
-                    {weak}
-                </span>
-            )}
-        </div>
-    );
 }
 
 // `agent` or `expert`, beside a name; empty for the person
@@ -314,11 +296,13 @@ const Reaction = ({ text }: { text: string }) => (
 );
 
 function IdeaMessage({
+    councilId,
     item,
     open,
     focused,
     onOpen,
 }: {
+    councilId: string;
     item: IdeaPost;
     open: boolean;
     focused: boolean;
@@ -354,7 +338,11 @@ function IdeaMessage({
                 <span className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-ink-hi">
                     {item.text}
                 </span>
-                <EvidenceChips evidence={item.evidence} weak={item.weak} />
+                <EvidenceChips
+                    evidence={item.evidence}
+                    weak={item.weak}
+                    source={{ councilId, owner: item.id, title: item.title }}
+                />
                 <div className="flex flex-wrap items-center gap-[10px]">
                     <button
                         type="button"
@@ -417,7 +405,7 @@ function ReplyHeader({ item }: { item: ReplyPost }) {
     );
 }
 
-function ReplyMessage({ item, inThread }: { item: ReplyPost; inThread?: boolean }) {
+function ReplyMessage({ councilId, item, inThread }: { councilId: string; item: ReplyPost; inThread?: boolean }) {
     return (
         <article
             data-council-item
@@ -434,7 +422,11 @@ function ReplyMessage({ item, inThread }: { item: ReplyPost; inThread?: boolean 
                 <span className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-ink-hi">
                     {item.text}
                 </span>
-                <EvidenceChips evidence={item.evidence} weak={item.weak} />
+                <EvidenceChips
+                    evidence={item.evidence}
+                    weak={item.weak}
+                    source={{ councilId, owner: item.id, title: `${item.name}'s reply` }}
+                />
             </div>
         </article>
     );
@@ -516,7 +508,11 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
                         {item.text}
                     </span>
                 )}
-                <EvidenceChips evidence={item.evidence} weak={item.weak} />
+                <EvidenceChips
+                    evidence={item.evidence}
+                    weak={item.weak}
+                    source={{ councilId: c.id, owner: item.id, title: item.title || `${item.name}'s reply` }}
+                />
                 <div className="flex flex-wrap gap-[6px]">
                     {editing ? (
                         <>
@@ -958,7 +954,11 @@ function ThreadPanel({
                         <span className="whitespace-pre-wrap break-words text-[12px] leading-[1.5] text-ink-hi">
                             {idea.text}
                         </span>
-                        <EvidenceChips evidence={idea.evidence} weak={idea.weak} />
+                        <EvidenceChips
+                            evidence={idea.evidence}
+                            weak={idea.weak}
+                            source={{ councilId: c.id, owner: idea.id, title: idea.title }}
+                        />
                         {idea.agrees.length > 0 && (
                             <div className="flex flex-wrap gap-[6px]">
                                 {idea.agrees.map((text, i) => (
@@ -973,7 +973,7 @@ function ThreadPanel({
                 </div>
                 {thread.items.map((item: ThreadItem) =>
                     item.kind === "reply" ? (
-                        <ReplyMessage key={item.id} item={item} inThread />
+                        <ReplyMessage key={item.id} councilId={c.id} item={item} inThread />
                     ) : item.kind === "draft" ? (
                         <DraftCard key={item.id} c={c} item={item} acts={acts} />
                     ) : (
@@ -1088,23 +1088,33 @@ export function CouncilChat({
     acts,
     notes,
     onOpenTerminal,
+    onOpenFile,
 }: {
     c: Council;
     acts: Actions;
     notes?: ReactNode;
     onOpenTerminal: (tab: string) => void;
+    onOpenFile?: (path: string, line?: number) => void;
 }) {
     const [openId, setOpenId] = useAtom(councilOpenProposalAtom(c.id));
+    const [sources, setSources] = useAtom(councilSourcesAtom(c.id));
     const [focusedId, setFocusedId] = useState<string | null>(null);
     const channel = useRef<HTMLDivElement>(null);
     const thread = openId == null ? null : councilThread(c, openId);
     const threadOpen = thread != null;
+    const sourcesOpen = !threadOpen && sources != null;
     // an idea that is gone (the id of another council, a dropped idea) closes the panel
     useEffect(() => {
         if (openId != null && !threadOpen) {
             setOpenId(null);
         }
     }, [openId, threadOpen, setOpenId]);
+    // a thread opened another way (Enter on an idea, the Summary's link) takes the right of the chat from the sources
+    useEffect(() => {
+        if (threadOpen && sources != null) {
+            setSources(null);
+        }
+    }, [threadOpen, sources, setSources]);
 
     const items = useMemo(() => councilChannel(c), [c]);
     const seats = useMemo(() => seatChips(c), [c]);
@@ -1116,10 +1126,15 @@ export function CouncilChat({
         },
         [setOpenId]
     );
-    const close = useCallback(() => setOpenId(null), [setOpenId]);
+    const closeSources = useCallback(() => closeCouncilSources(c.id), [c.id]);
+    // Escape closes the sources first, back to the thread they were opened from, then the thread
+    const close = useCallback(
+        () => (sourcesOpen ? closeSources() : setOpenId(null)),
+        [sourcesOpen, closeSources, setOpenId]
+    );
     const nav = useMemo<CouncilChatNav>(
-        () => ({ order, focusedId, openId: threadOpen ? openId : null, focus: setFocusedId, open, close }),
-        [order, focusedId, openId, threadOpen, open, close]
+        () => ({ order, focusedId, openId: threadOpen ? openId : null, sourcesOpen, focus: setFocusedId, open, close }),
+        [order, focusedId, openId, threadOpen, sourcesOpen, open, close]
     );
     useCouncilChatNav(nav);
     const bindings = useMemo(buildCouncilBindings, []);
@@ -1159,6 +1174,7 @@ export function CouncilChat({
                                 return (
                                     <IdeaMessage
                                         key={item.id}
+                                        councilId={c.id}
                                         item={item}
                                         open={threadOpen && item.id === openId}
                                         focused={item.id === focusedId}
@@ -1168,7 +1184,7 @@ export function CouncilChat({
                             case "draft":
                                 return <DraftCard key={item.id} c={c} item={item} acts={acts} />;
                             case "reply":
-                                return <ReplyMessage key={item.id} item={item} />;
+                                return <ReplyMessage key={item.id} councilId={c.id} item={item} />;
                             case "skip":
                                 return <SkippedLine key={item.id} item={item} onOpenTerminal={onOpenTerminal} />;
                             case "failure":
@@ -1196,7 +1212,11 @@ export function CouncilChat({
                     />
                 </div>
             </div>
-            {thread != null && <ThreadPanel c={c} thread={thread} acts={acts} onClose={close} />}
+            {thread != null ? (
+                <ThreadPanel c={c} thread={thread} acts={acts} onClose={close} />
+            ) : sources != null ? (
+                <CouncilSourcesPanel c={c} view={sources} onClose={closeSources} onOpenFile={onOpenFile} />
+            ) : null}
         </div>
     );
 }
