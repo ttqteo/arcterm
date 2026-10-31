@@ -3,6 +3,7 @@
 
 import { CopyButton } from "@/app/element/copybutton";
 import { createContentBlockPlugin } from "@/app/element/markdown-contentblock-plugin";
+import { tableClipboard } from "@/app/element/markdown-table";
 import {
     cachedLocalImage,
     MarkdownContentBlockType,
@@ -176,7 +177,7 @@ const CodeBlock = ({ children, onClickExecute, attrs }: CodeBlockProps) => {
         <pre className="codeblock" {...attrs}>
             {children}
             <div className="codeblock-actions">
-                <CopyButton text={getTextContent(children).replace(/\n$/, "")} title="Copy" />
+                <CopyButton content={getTextContent(children).replace(/\n$/, "")} title="Copy" />
                 {onClickExecute && (
                     <IconButton
                         decl={{
@@ -446,7 +447,14 @@ const Markdown = memo(function Markdown({
         ),
         table: ({ node, children, ...props }: any) => (
             <>
-                <table {...props}>{children}</table>
+                <div className="table-block">
+                    <div className="table-box">
+                        <table {...props}>{children}</table>
+                        <div className="table-actions">
+                            <CopyButton content={() => tableClipboard(node)} title="Copy table" />
+                        </div>
+                    </div>
+                </div>
                 {after("table", props)}
             </>
         ),

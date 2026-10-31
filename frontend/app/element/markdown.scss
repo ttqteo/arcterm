@@ -134,6 +134,31 @@
             border-bottom: 1px solid var(--color-border);
         }
 
+        // as wide as its table, so the copy button sits on the table's corner and not the column's; the block
+        // around it (markdown.tsx) takes the column's width and margins
+        .table-box {
+            position: relative;
+            width: fit-content;
+            max-width: 100%;
+
+            .table-actions {
+                visibility: hidden;
+                position: absolute;
+                top: 0;
+                right: 0;
+                margin: 0.143em;
+                padding: 0.143em;
+                border-radius: 4px;
+                // opaque: it covers the end of the header cell under it
+                background-color: var(--color-surface-raised);
+            }
+
+            &:hover .table-actions,
+            &:focus-within .table-actions {
+                visibility: visible;
+            }
+        }
+
         blockquote {
             margin: 0.286em 0.714em;
             border-radius: 4px;

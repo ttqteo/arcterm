@@ -1,6 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { CopyButton } from "@/app/element/copybutton";
+import { tableClipboard } from "@/app/element/markdown-table";
 import { openLink } from "@/app/store/global";
 import { cn } from "@/util/util";
 import { Lightbulb } from "lucide-react";
@@ -32,9 +34,15 @@ const MD_COMPONENTS: Components = {
             {children}
         </a>
     ),
-    table: ({ children }) => (
-        <div className="agent-table-wrap">
-            <table>{children}</table>
+    // the copy button sits outside the scroller, so it stays on the corner while a wide table scrolls
+    table: ({ node, children }) => (
+        <div className="group relative">
+            <div className="agent-table-wrap">
+                <table>{children}</table>
+            </div>
+            <div className="invisible absolute right-1 top-1 rounded bg-surface-raised p-0.5 group-hover:visible group-focus-within:visible">
+                <CopyButton content={() => (node != null ? tableClipboard(node) : "")} title="Copy table" />
+            </div>
         </div>
     ),
     pre: ({ children }) => {

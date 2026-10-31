@@ -30,6 +30,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   and Esc closes the list without closing the dialog. <!-- try: new-agent -->
 - Council Setup's Auto-generate button writes the topic, a question and the mode from what the seated agents were
   talking about. It asks before replacing text you already wrote.
+- A table in a Markdown Preview or an agent's reply has a copy button on its corner when you point at it: it pastes
+  into Sheets, Excel, Numbers, Notion or Docs as a table with real cells, not as `| a | b |` text.
 
 ### Changed
 
