@@ -23,6 +23,7 @@ import { Check, CornerDownRight, X } from "lucide-react";
 import {
     useCallback,
     useEffect,
+    useLayoutEffect,
     useMemo,
     useRef,
     useState,
@@ -56,6 +57,7 @@ import {
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { answerers, draftsWaitWord, followupLabel } from "./councilmodel";
+import { followsEnd, keepPlace, keptPlace, placeOf, topFor, type ScrollPlace } from "./councilscroll";
 import { councilOpenProposalAtom, draftCouncil, replyCouncil, retryExpert, useEstimate } from "./councilstore";
 
 // ---- shared pieces ----
@@ -293,6 +295,14 @@ function Byline({ who, children }: { who: Who; children?: ReactNode }) {
     );
 }
 
+// a post's time of day; the hover says the day and how far into the council it came
+const PostTime = ({ at, when }: { at: string; when: string }) =>
+    at === "" ? null : (
+        <span className="tabular-nums text-muted" title={when}>
+            {at}
+        </span>
+    );
+
 const Reaction = ({ text }: { text: string }) => (
     <span
         data-council-reaction
@@ -337,7 +347,7 @@ function IdeaMessage({
                     ) : (
                         <span className="text-muted">{item.label}</span>
                     )}
-                    <span className="tabular-nums text-muted">{item.at}</span>
+                    <PostTime at={item.at} when={item.when} />
                     {item.edited && <span className="text-muted">edited</span>}
                 </Byline>
                 <h3 className="m-0 text-[13.5px] font-semibold leading-[1.35] text-primary">{item.title}</h3>
@@ -369,7 +379,11 @@ function IdeaMessage({
                             </span>
                         )}
                         <span className="font-semibold text-accent">{t.label}</span>
-                        {t.last !== "" && <span className="text-muted">{t.last}</span>}
+                        {t.last !== "" && (
+                            <span className="text-muted" title={t.lastWhen}>
+                                {t.last}
+                            </span>
+                        )}
                         {t.drafts > 0 && <span className="text-warning-soft">{draftsWaitWord(t.drafts)}</span>}
                     </button>
                     {item.agrees.map((text, i) => (
@@ -395,7 +409,7 @@ function ReplyHeader({ item }: { item: ReplyPost }) {
     return (
         <Byline who={item}>
             <CouncilPill word={item.label} tone={item.pill} />
-            <span className="tabular-nums text-muted">{item.at}</span>
+            <PostTime at={item.at} when={item.when} />
             {item.edited && <span className="text-muted">edited</span>}
             {item.reaches !== "" && <span className="text-muted">{item.reaches}</span>}
             {item.pending !== "" && <span className="text-muted">{item.pending}</span>}
@@ -590,7 +604,7 @@ function QuestionMessage({ item }: { item: Extract<ChannelItem, { kind: "questio
             <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
                 <Byline who={item}>
                     <span className="text-muted">{item.label}</span>
-                    {item.at !== "" && <span className="tabular-nums text-muted">{item.at}</span>}
+                    <PostTime at={item.at} when={item.when} />
                 </Byline>
                 <span className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-ink-hi">
                     {item.text}
@@ -897,6 +911,8 @@ function ThreadPanel({
     onClose: () => void;
 }) {
     const idea = thread.idea;
+    const scroller = useRef<HTMLDivElement>(null);
+    const onScroll = useKeptScroll(scroller, `thread:${c.id}:${idea.id}`);
     return (
         <aside
             data-council-thread={idea.id}
@@ -918,7 +934,11 @@ function ThreadPanel({
                     <X size={14} strokeWidth={2} aria-hidden />
                 </button>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-[2px] overflow-y-auto px-2 py-[10px]">
+            <div
+                ref={scroller}
+                onScroll={onScroll}
+                className="flex min-h-0 flex-1 flex-col gap-[2px] overflow-y-auto px-2 py-[10px]"
+            >
                 <article
                     data-council-post={idea.id}
                     className="flex gap-[9px] border-b border-edge-faint px-[8px] pb-[12px] pt-[8px]"
@@ -926,7 +946,7 @@ function ThreadPanel({
                     <CouncilAvatar tone={idea.tone} name={idea.name} />
                     <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
                         <Byline who={idea}>
-                            <span className="tabular-nums text-muted">{idea.at}</span>
+                            <PostTime at={idea.at} when={idea.when} />
                             {idea.edited && <span className="text-muted">edited</span>}
                         </Byline>
                         <h2
@@ -981,25 +1001,71 @@ function ThreadPanel({
 
 // ---- the chat ----
 
-const NEAR_BOTTOM_PX = 80;
+/** Keeps a council scroller where the reader left it, under `key` (councilscroll.ts): back there after a remount (another
+ *  council, the Summary, another agent) and after the surface comes back from display:none, which drops an element's
+ *  offset. With `follow`, a reader at the bottom stays at the bottom as `count` grows, and a scroller with nothing kept
+ *  starts there; without it, at the top. Returns the scroller's onScroll. */
+export function useKeptScroll(
+    ref: RefObject<HTMLElement | null>,
+    key: string,
+    { follow = false, count = 0 }: { follow?: boolean; count?: number } = {}
+): () => void {
+    const place = useRef<ScrollPlace | undefined>(undefined);
+    const restore = useCallback(() => {
+        const el = ref.current;
+        if (el != null && el.clientHeight > 0) {
+            el.scrollTop = topFor(place.current, el, follow);
+        }
+    }, [ref, follow]);
+    useLayoutEffect(() => {
+        place.current = keptPlace(key);
+        restore();
+    }, [key, restore]);
+    useLayoutEffect(() => {
+        if (followsEnd(place.current, follow)) {
+            restore();
+        }
+    }, [count, follow, restore]);
+    // shown again (its offset is gone), or resized while following (the thread opening rewraps the channel)
+    useEffect(() => {
+        const el = ref.current;
+        if (el == null || typeof ResizeObserver === "undefined") {
+            return;
+        }
+        let shown = el.clientHeight > 0;
+        const ro = new ResizeObserver(() => {
+            const now = el.clientHeight > 0;
+            if (now && (!shown || followsEnd(place.current, follow))) {
+                restore();
+            }
+            shown = now;
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [ref, follow, restore]);
+    return useCallback(() => {
+        const el = ref.current;
+        // a hidden scroller has no height and clamps to the top: not the reader's place
+        if (el != null && el.clientHeight > 0) {
+            place.current = placeOf(el);
+            keepPlace(key, place.current);
+        }
+    }, [ref, key]);
+}
 
-// the channel, scrolled to its newest line while the reader is at the bottom of it
+// the channel, scrolled to its newest line while the reader is at the bottom of it, and back where they left it
 function Channel({
     children,
+    councilId,
     count,
     boxRef,
 }: {
     children: ReactNode;
+    councilId: string;
     count: number;
     boxRef: RefObject<HTMLDivElement | null>;
 }) {
-    const atBottom = useRef(true);
-    useEffect(() => {
-        const el = boxRef.current;
-        if (el != null && atBottom.current) {
-            el.scrollTop = el.scrollHeight;
-        }
-    }, [count, boxRef]);
+    const onScroll = useKeptScroll(boxRef, `channel:${councilId}`, { follow: true, count });
     return (
         <div
             ref={boxRef}
@@ -1007,10 +1073,7 @@ function Channel({
             tabIndex={0}
             role="log"
             aria-label="Council channel"
-            onScroll={(e) => {
-                const el = e.currentTarget;
-                atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
-            }}
+            onScroll={onScroll}
             className="flex min-h-0 flex-1 flex-col gap-[2px] overflow-y-auto px-[22px] py-[10px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-edge-strong"
         >
             {children}
@@ -1085,7 +1148,7 @@ export function CouncilChat({
                     ))}
                 </div>
                 {notes}
-                <Channel boxRef={channel} count={items.length}>
+                <Channel boxRef={channel} councilId={c.id} count={items.length}>
                     {items.map((item) => {
                         switch (item.kind) {
                             case "question":

@@ -222,6 +222,23 @@ export function sinceStart(c: Council, ts: number): string {
     return c.started ? clock(ts - c.started) : "";
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** Pure: when a post came, as the chat shows it: `at` is the local time of day (`14:32`), and `when`, its tooltip, adds
+ *  the day and how far into the council it came (`Oct 31 14:32 · 1:16 into the council`). The council's own clock alone
+ *  read like a time of day. Both empty for no time. */
+export function postedAt(c: Council, ts: number): { at: string; when: string } {
+    if (!(ts > 0)) {
+        return { at: "", when: "" };
+    }
+    const d = new Date(ts);
+    const at = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    const day = `${MONTHS[d.getMonth()]} ${d.getDate()} ${at}`;
+    const into = sinceStart(c, ts);
+    return { at, when: into === "" ? day : `${day} · ${into} into the council` };
+}
+
 /** Pure: an evidence chip: the reference, or for a weak claim `Weak ·` and why (an amber chip). */
 export function evidenceChip(e: CouncilEvidence): { text: string; weak: boolean } {
     if (!e.weak) {

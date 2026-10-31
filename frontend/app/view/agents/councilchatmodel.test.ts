@@ -14,7 +14,8 @@ import {
     type ChannelItem,
 } from "./councilchatmodel";
 
-const STARTED = 1_000_000;
+// local time, so the times of day the chat shows read the same in every time zone
+const STARTED = new Date(2026, 9, 31, 14, 0, 0).getTime();
 const at = (seconds: number) => STARTED + seconds * 1000;
 
 const agent = (id: string, tab: string, name: string, context: number, harness = "claude"): CouncilExpert => ({
@@ -121,7 +122,7 @@ const room = (extra: Partial<Council> = {}): Council =>
     });
 
 describe("councilChannel: the goal, the rounds and the order", () => {
-    it("opens with the person's question as a message of theirs, with the council's clock", () => {
+    it("opens with the person's question as a message of theirs, at the time the council started", () => {
         const [first] = councilChannel(council());
         expect(first).toEqual({
             kind: "question",
@@ -132,7 +133,8 @@ describe("councilChannel: the goal, the rounds and the order", () => {
             tag: "",
             label: "sets the goal",
             text: "Which changes to the rail are worth making first?",
-            at: "0:00",
+            at: "14:00",
+            when: "Oct 31 14:00 · 0:00 into the council",
         });
     });
 
@@ -209,7 +211,7 @@ describe("councilChannel: the goal, the rounds and the order", () => {
 });
 
 describe("councilChannel: an idea", () => {
-    it("is a message with its author, evidence and the council's clock", () => {
+    it("is a message with its author, evidence and the time it came", () => {
         const items = councilChannel(room());
         expect(byId(items, "P1")).toMatchObject({
             kind: "idea",
@@ -223,7 +225,8 @@ describe("councilChannel: an idea", () => {
             weak: "",
             wild: false,
             edited: false,
-            at: "1:00",
+            at: "14:01",
+            when: "Oct 31 14:01 · 1:00 into the council",
         });
     });
 
@@ -283,7 +286,13 @@ describe("councilChannel: the reply chip", () => {
     it("counts the replies a person reads, names who wrote them and when the last came", () => {
         const idea = byId(councilChannel(room()), "P1");
         expect(idea).toMatchObject({
-            thread: { count: 3, label: "3 replies", last: "Last reply 3:10", drafts: 1 },
+            thread: {
+                count: 3,
+                label: "3 replies",
+                last: "Last reply 14:03",
+                lastWhen: "Oct 31 14:03 · 3:10 into the council",
+                drafts: 1,
+            },
         });
         const repliers = (idea as { thread: { repliers: { author: string; name: string; tag: string }[] } }).thread
             .repliers;
@@ -316,13 +325,20 @@ describe("councilChannel: the reply chip", () => {
         expect(chip.repliers).toHaveLength(1);
     });
 
-    it("leaves the time of the last reply out for a council with no start", () => {
+    it("gives the time of the last reply for a council with no start too, with no council clock in its tooltip", () => {
         const c = council({
             started: undefined,
             proposals: [prop("P1", "sec", 60)],
             replies: [reply("r1", "sk", 150)],
         });
-        expect(byId(councilChannel(c), "P1")).toMatchObject({ thread: { count: 1, last: "" } });
+        expect(byId(councilChannel(c), "P1")).toMatchObject({
+            thread: { count: 1, last: "Last reply 14:02", lastWhen: "Oct 31 14:02" },
+        });
+    });
+
+    it("has no time of a last reply with no replies", () => {
+        const c = council({ proposals: [prop("P1", "sec", 60)] });
+        expect(byId(councilChannel(c), "P1")).toMatchObject({ thread: { count: 0, last: "", lastWhen: "" } });
     });
 
     it("keeps a reply to an idea out of the channel: it is in the thread", () => {
@@ -345,7 +361,8 @@ describe("councilChannel: held drafts", () => {
             title: "title P4",
             text: "argument P4",
             on: "",
-            at: "2:11",
+            at: "14:02",
+            when: "Oct 31 14:02 · 2:11 into the council",
         });
         expect(DRAFT_WAIT).toBe("Waiting for you");
         expect((draft as { actions: typeof DRAFT_ACTIONS }).actions.map((a) => [a.action, a.label])).toEqual([
@@ -401,7 +418,8 @@ describe("councilChannel: the person's posts", () => {
             mine: true,
             reaches: "For everyone",
             pending: "Answered after the summary",
-            at: "2:30",
+            at: "14:02",
+            when: "Oct 31 14:02 · 2:30 into the council",
         });
     });
 
@@ -451,7 +469,8 @@ describe("councilChannel: skipped turns, failures and seats at work", () => {
             round: 2,
             reason: SKIP_REASON,
             text: `Witness synthesis skipped round 2: ${SKIP_REASON}.`,
-            at: "3:00",
+            at: "14:03",
+            when: "Oct 31 14:03 · 3:00 into the council",
         });
         const order = ids(items);
         expect(order.indexOf("r1")).toBeLessThan(order.indexOf(`skip:witness:2:${at(180)}`));
@@ -574,7 +593,8 @@ describe("councilThread", () => {
             label: "is against it",
             pill: "oppose",
             on: "title P1",
-            at: "3:20",
+            at: "14:03",
+            when: "Oct 31 14:03 · 3:20 into the council",
         });
         expect((draft as { actions: typeof DRAFT_ACTIONS }).actions).toBe(DRAFT_ACTIONS);
         expect(councilThread(room(), "P2")!.items).toEqual([]);
@@ -841,7 +861,7 @@ describe("a council saved before live agents", () => {
         const items = councilChannel(c);
         expect(ids(items)).toEqual(["question", "round:1", "P1", "P2", "P3", "round:2", "typing:ram"]);
         expect(byId(items, "P1")).toMatchObject({
-            thread: { count: 1, label: "1 reply", last: "Last reply 2:30", drafts: 0 },
+            thread: { count: 1, label: "1 reply", last: "Last reply 14:02", drafts: 0 },
             agrees: ["New user agrees"],
             tag: "expert",
             picks: null,
@@ -874,7 +894,7 @@ describe("a council saved before live agents", () => {
         expect(ids(items)).toEqual(["question", "round:1", "P1", "P2", "P3", "round:2", "r2", "r3"]);
         expect(byId(items, "P1")).toMatchObject({
             picks: { count: 2, title: "Picked by 2 of 3 experts" },
-            thread: { count: 2, last: "Last reply 7:00" },
+            thread: { count: 2, last: "Last reply 14:07" },
         });
         expect(byId(items, "P3")).toMatchObject({ picks: null });
         expect(byId(items, "r2")).toMatchObject({ label: "steers", reaches: "For everyone", pending: "" });

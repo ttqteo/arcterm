@@ -27,7 +27,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { showCouncil, showCouncilSetup } from "./agentcenter";
 import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
-import { CouncilAvatar } from "./councilchat";
+import { CouncilAvatar, useKeptScroll } from "./councilchat";
 import { avatarTone } from "./councildiscussionmodel";
 import {
     STANCE_WORD,
@@ -737,6 +737,8 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const outdated = outdatedCount(c);
     const coordinator = c.experts.find((e) => e.coordinator);
     const coordinatorFailed = coordinator != null ? c.failed?.[coordinator.id] : undefined;
+    const scroller = useRef<HTMLDivElement>(null);
+    const onScroll = useKeptScroll(scroller, `summary:${c.id}`);
 
     // one action at a time; a refusal is shown where the person clicked, not thrown
     const act = async (what: string, run: () => Promise<void>) => {
@@ -970,7 +972,12 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                     </button>
                 </Banner>
             ) : null}
-            <div data-council-scroll className="min-h-0 flex-1 overflow-y-auto px-8 py-5">
+            <div
+                ref={scroller}
+                data-council-scroll
+                onScroll={onScroll}
+                className="min-h-0 flex-1 overflow-y-auto px-8 py-5"
+            >
                 {summary == null ? (
                     <NoSummary c={c} busy={busy === "summarize"} onSummarize={() => void summarizeAgain()} />
                 ) : (

@@ -19,6 +19,7 @@ import {
     keptProposals,
     listNames,
     modeWord,
+    postedAt,
     reactions,
     retriedOut,
     segmentSummary,
@@ -283,6 +284,26 @@ describe("sinceStart", () => {
         expect(sinceStart(council({ started: 1000 }), 1000 + 112_000)).toBe("1:52");
         expect(sinceStart(council({ started: 1000 }), 1000 + 3_723_000)).toBe("1:02:03");
         expect(sinceStart(council(), 5000)).toBe("");
+    });
+});
+
+describe("postedAt", () => {
+    it("is the local time of day, with the day and the council's clock in its tooltip", () => {
+        const started = new Date(2026, 9, 31, 23, 58, 30).getTime();
+        expect(postedAt(council({ started }), started + 76_000)).toEqual({
+            at: "23:59",
+            when: "Oct 31 23:59 · 1:16 into the council",
+        });
+        expect(postedAt(council({ started }), started + 3_723_000)).toEqual({
+            at: "01:00",
+            when: "Nov 1 01:00 · 1:02:03 into the council",
+        });
+    });
+
+    it("has no clock for a council that never started, and nothing for no time", () => {
+        const ts = new Date(2026, 9, 31, 9, 5).getTime();
+        expect(postedAt(council(), ts)).toEqual({ at: "09:05", when: "Oct 31 09:05" });
+        expect(postedAt(council(), 0)).toEqual({ at: "", when: "" });
     });
 });
 

@@ -50,9 +50,13 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   Source keep your place. Before, only a background task's Live output did.
 - A project folder in the Agent sidebar folds from its folder icon as well as its chevron; a click on its name still
   opens the project's Overview.
+- A council's chat shows when each message came as the time of day (`14:32`); hover it for the date and how far into
+  the council it came. Before, `1:16` was the time since the council started and read like a clock.
 
 ### Fixed
 
+- A council's chat, its open thread and its Summary keep your place: leaving for another council, the Summary, another
+  agent or another surface and coming back lands where you were reading, not at the newest message or the top.
 - In New agent, Tab from the Task box goes to the Project column, then the sessions, Cancel and Launch, and round to
   the box again. It no longer stops at + Flag, Worktree, Command or the Agent column: Alt+1–9 (Option on a Mac) picks
   the agent from the box.

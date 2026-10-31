@@ -20,8 +20,8 @@ import {
     failedWhile as failedWhileWords,
     isLit,
     listNames,
+    postedAt,
     reactions,
-    sinceStart,
 } from "./councildiscussionmodel";
 import {
     answerers,
@@ -166,7 +166,8 @@ export interface ReplyPost extends Who {
     parentid: string;
     revised: boolean;
     edited: boolean;
-    at: string; // the council's clock when it was posted (`2:12`)
+    at: string; // the time of day it was posted (`14:32`)
+    when: string; // its tooltip: the day, and how far into the council (`Oct 31 14:32 · 2:12 into the council`)
 }
 
 function replyPost(c: Council, r: CouncilReply): ReplyPost {
@@ -184,7 +185,7 @@ function replyPost(c: Council, r: CouncilReply): ReplyPost {
         parentid: r.parentid ?? "",
         revised: !!r.revised,
         edited: !!r.edited,
-        at: sinceStart(c, r.ts),
+        ...postedAt(c, r.ts),
     };
 }
 
@@ -204,6 +205,7 @@ export interface DraftPost extends Who {
     revised: boolean; // a reply that revises its seat's own idea: its `text` is the change line, and Edit changes only that
     edited: boolean;
     at: string;
+    when: string;
     actions: typeof DRAFT_ACTIONS;
 }
 
@@ -223,7 +225,7 @@ function draftPost(c: Council, d: HeldDraft): DraftPost {
             ...evidenceOf(p.evidence),
             revised: false,
             edited: !!p.edited,
-            at: sinceStart(c, p.ts),
+            ...postedAt(c, p.ts),
             actions: DRAFT_ACTIONS,
         };
     }
@@ -240,7 +242,7 @@ function draftPost(c: Council, d: HeldDraft): DraftPost {
         ...evidenceOf(r.evidence),
         revised: !!r.revised,
         edited: !!r.edited,
-        at: sinceStart(c, r.ts),
+        ...postedAt(c, r.ts),
         actions: DRAFT_ACTIONS,
     };
 }
@@ -251,7 +253,8 @@ export interface IdeaThread {
     count: number;
     label: string; // `3 replies`, `1 reply`, `No replies yet`
     repliers: Who[]; // each author once, in the order they first replied
-    last: string; // `Last reply 4:50`; empty with no replies
+    last: string; // `Last reply 14:36`; empty with no replies
+    lastWhen: string; // its tooltip, as a post's `when`
     drafts: number;
 }
 
@@ -269,6 +272,7 @@ export interface IdeaPost extends Who {
     picks: { count: number; label: string; title: string } | null; // `Picked by 2`; null when no seat picked it
     edited: boolean;
     at: string;
+    when: string;
     thread: IdeaThread;
 }
 
@@ -277,6 +281,7 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
         .filter((r) => r.proposalid === p.id)
         .sort((a, b) => a.ts - b.ts);
     const last = replies[replies.length - 1];
+    const lastAt = postedAt(c, last?.ts ?? 0);
     const repliers = [...new Set(replies.map((r) => r.author))].map((id) => whoIs(c, id));
     const picked = pickCount(c, p.id);
     return {
@@ -298,12 +303,13 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
                   }
                 : null,
         edited: !!p.edited,
-        at: sinceStart(c, p.ts),
+        ...postedAt(c, p.ts),
         thread: {
             count: replies.length,
             label: replies.length === 0 ? "No replies yet" : plural(replies.length, "reply", "replies"),
             repliers,
-            last: last == null || sinceStart(c, last.ts) === "" ? "" : `Last reply ${sinceStart(c, last.ts)}`,
+            last: lastAt.at === "" ? "" : `Last reply ${lastAt.at}`,
+            lastWhen: lastAt.when,
             drafts: heldDrafts(c).filter((d) => d.kind === "reply" && d.reply.proposalid === p.id).length,
         },
     };
@@ -317,6 +323,7 @@ export interface QuestionPost extends Who {
     label: "sets the goal";
     text: string;
     at: string;
+    when: string;
 }
 
 /** The line where a round starts. */
@@ -337,6 +344,7 @@ export interface SkipLine extends Who {
     reason: string;
     text: string; // `Witness synthesis skipped round 2: still working on its own task after 10 min.`
     at: string;
+    when: string;
 }
 
 /** A seat whose call failed and has not been retried: its line carries Retry (for `author`). */
@@ -470,7 +478,7 @@ export function councilChannel(c: Council): ChannelItem[] {
             round: s.round,
             reason: s.reason,
             text: `${authorName(c, s.expert)} skipped round ${s.round}: ${s.reason}.`,
-            at: sinceStart(c, s.ts),
+            ...postedAt(c, s.ts),
         });
     }
     for (const { ts, line } of dividers(c)) {
@@ -489,7 +497,7 @@ export function councilChannel(c: Council): ChannelItem[] {
             ...whoIs(c, YOU),
             label: "sets the goal",
             text: question,
-            at: c.started ? sinceStart(c, c.started) : "",
+            ...postedAt(c, c.started ?? 0),
         });
     }
 
