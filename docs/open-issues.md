@@ -33,6 +33,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   tab-separated rows, no `|`. A wide table scrolls under the icon, which stays put. On the Mac's WKWebView the HTML
   write may be refused: then the paste is the text alone, still split into cells by a spreadsheet. Not run in any
   app. (d97c67098)
+- [ ] (arcterm) Finder drop on the Files tree: in the Agent panel's Files tab, drag a file from Finder over a folder
+  row: that row rings and the strip under the tree reads "Drop to copy into <folder>/"; over a file row its folder is
+  the target, over empty space "the project root". Drop: the file is copied (still in Finder), the tree reloads with
+  the folder open and the copy selected. Drop it again: `name (1).ext`. Drop a folder with subfolders and a file over
+  4 MB: the whole tree arrives, byte-identical (`cmp`), and the strip shows "Copying … · N%" meanwhile. Dragging a
+  tree row onto a terminal still types its path. Not run in any app; on WKWebView the folder walk
+  (`webkitGetAsEntry`) is unproven. (52f334394)
 - [ ] (arcterm) New dialog, Task on top: Mod+N opens with the caret in the Task box above the columns; type and Enter
   starts the agent, Shift+Enter adds a line; Alt+2 (Option+2 on a Mac) picks another Start row without leaving the box,
   and Alt onto Terminal draws the dashed "takes no task" line with focus on Start; Mod+Shift+R opens in the Goal; an IME
