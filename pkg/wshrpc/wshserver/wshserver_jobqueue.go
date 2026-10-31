@@ -10,6 +10,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/shirou/gopsutil/v4/process"
 	"github.com/wavetermdev/waveterm/pkg/jobqueue"
 	"github.com/wavetermdev/waveterm/pkg/memgate"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
@@ -70,13 +71,46 @@ func (ws *WshServer) JobSlotCommand(ctx context.Context, data wshrpc.CommandJobS
 		if !send(wshrpc.JobSlotUpdate{Run: &yes}) {
 			return
 		}
+		reclaimed := false
 		select {
 		case <-ctx.Done():
+			// a caller that handed the slot on (`wsh jobslot --hold-parent`, for a background command) has left
+			// once its command may start: the slot stays while the shell running the command does
+			if data.HoldPid > 0 {
+				reclaimed = !holdWhileRunning(data.HoldPid, slot.Reclaimed())
+			}
 		case <-slot.Reclaimed():
+			reclaimed = true
+		}
+		if reclaimed {
 			log.Printf("jobqueue: reclaimed %q (block %s) after %v", job.Name, data.BlockId, jobqueue.MaxHold)
 		}
 	}()
 	return ch
+}
+
+// how a slot handed to a process watches it; tests swap both
+var (
+	pidAlive = func(pid int32) bool {
+		ok, _ := process.PidExists(pid)
+		return ok
+	}
+	pidPoll = 2 * time.Second
+)
+
+// holdWhileRunning keeps a slot until pid exits; false when the queue took the slot back first (MaxHold), which
+// also bounds a pid that is never seen to exit
+func holdWhileRunning(pid int32, reclaimed <-chan struct{}) bool {
+	tick := time.NewTicker(pidPoll)
+	defer tick.Stop()
+	for pidAlive(pid) {
+		select {
+		case <-reclaimed:
+			return false
+		case <-tick.C:
+		}
+	}
+	return true
 }
 
 func (ws *WshServer) GetJobQueueCommand(ctx context.Context) (*wshrpc.JobQueueData, error) {

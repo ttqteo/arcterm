@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -75,5 +76,62 @@ func TestJobslotLinesAreWhatTheHooksRead(t *testing.T) {
 		if got := buf.String(); got != c.line+"\n" {
 			t.Fatalf("line = %q, want %q", got, c.line)
 		}
+	}
+}
+
+func TestJobslotTakesSlotMatchesTheServer(t *testing.T) {
+	cases := map[string]bool{
+		"task check:ts":                 true,
+		"cd frontend && npx vitest run": true,
+		"ls -la":                        false,
+		"task dev":                      false, // a dev server runs on for good and never queues
+		"wsh agents wait e9f6af44":      false,
+	}
+	for command, want := range cases {
+		if got := jobslotTakesSlot(command); got != want {
+			t.Errorf("jobslotTakesSlot(%q) = %v, want %v", command, got, want)
+		}
+	}
+}
+
+func jobslotStream(updates ...wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate]) chan wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate] {
+	ch := make(chan wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate], len(updates))
+	for _, u := range updates {
+		ch <- u
+	}
+	close(ch)
+	return ch
+}
+
+func TestJobslotHandRunsAfterItsTurnAndSaysWhereItWaited(t *testing.T) {
+	yes := true
+	var out bytes.Buffer
+	code := jobslotHand(jobslotStream(
+		wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate]{Response: wshrpc.JobSlotUpdate{Queued: 1, Behind: "task check:ts", For: "run 700db4"}},
+		wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate]{Response: wshrpc.JobSlotUpdate{Run: &yes}},
+	), &out)
+	if code != 0 {
+		t.Fatalf("exit %d, want 0", code)
+	}
+	if want := "arc: queued #1 in arcterm's heavy-job queue — waiting behind task check:ts (run 700db4)\n"; out.String() != want {
+		t.Fatalf("output %q, want %q", out.String(), want)
+	}
+}
+
+func TestJobslotHandStopsTheShellOnlyOnARefusal(t *testing.T) {
+	no := false
+	var out bytes.Buffer
+	code := jobslotHand(jobslotStream(
+		wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate]{Response: wshrpc.JobSlotUpdate{Run: &no, Reason: "Not run: skipped"}},
+	), &out)
+	if code != jobslotRefusedExit || out.String() != "Not run: skipped\n" {
+		t.Fatalf("exit %d output %q, want %d and the reason", code, out.String(), jobslotRefusedExit)
+	}
+	// a broken queue, or a stream that ends with no verdict, lets the command run
+	if code := jobslotHand(jobslotStream(wshrpc.RespOrErrorUnion[wshrpc.JobSlotUpdate]{Error: errors.New("no route")}), io.Discard); code != 0 {
+		t.Fatalf("exit %d on an error, want 0", code)
+	}
+	if code := jobslotHand(jobslotStream(), io.Discard); code != 0 {
+		t.Fatalf("exit %d on an empty stream, want 0", code)
 	}
 }

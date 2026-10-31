@@ -53,6 +53,60 @@ describe("shell tool calls", () => {
     }
 });
 
+describe("a background Bash command", () => {
+    // wsh says task check:ts takes a slot and nothing else does
+    function backgroundEngine(spawned: string[][], ran: string[][]) {
+        const $ = arcEngine(spawned);
+        return {
+            ...$,
+            process: {
+                ...$.process,
+                run: async (argv: string[]) => {
+                    ran.push(argv);
+                    const heavy = argv[1] === "jobslot" && argv[2] === "--heavy" && argv[4] === "task check:ts";
+                    return { exitCode: heavy ? 0 : 1, stdout: "", stderr: "" };
+                },
+            },
+        };
+    }
+
+    it("runs a heavy one behind wsh in its own shell, holding no slot around the call", async () => {
+        const handlers = registered();
+        const spawned: string[][] = [];
+        const ran: string[][] = [];
+        const $ = backgroundEngine(spawned, ran);
+        await handlers.get("session.start")!($, { cwd: "/repo" }, async () => undefined);
+        const next = vi.fn(async (_e: { command: string; run_in_background?: boolean }) => ({ result: {} }));
+        await handlers.get("tool.call:Bash")!($, { command: "task check:ts", run_in_background: true }, next);
+        expect(ran).toContainEqual(["__WSH_PATH__", "jobslot", "--heavy", "--", "task check:ts"]);
+        expect(next.mock.calls[0][0]).toEqual({
+            command: "'__WSH_PATH__' jobslot --hold-parent -- 'task check:ts'; [ $? -ne 75 ] || exit 75\ntask check:ts",
+            run_in_background: true,
+        });
+        expect(spawned.filter((argv) => argv[1] === "jobslot")).toEqual([]);
+    });
+
+    it("leaves a light one as written", async () => {
+        const handlers = registered();
+        const $ = backgroundEngine([], []);
+        await handlers.get("session.start")!($, { cwd: "/repo" }, async () => undefined);
+        const next = vi.fn(async (_e: { command: string }) => ({ result: {} }));
+        await handlers.get("tool.call:Bash")!($, { command: "wsh agents wait e9f6", run_in_background: true }, next);
+        expect(next.mock.calls[0][0].command).toBe("wsh agents wait e9f6");
+    });
+
+    it("is put to the permission check as the model wrote it", async () => {
+        const handlers = registered();
+        const check = handlers.get("tool.check:Bash")!;
+        const next = vi.fn(async (_e: { input: { command: string } }) => ({ decision: "allow" }));
+        const held = "'__WSH_PATH__' jobslot --hold-parent -- 'task check:ts'; [ $? -ne 75 ] || exit 75\ntask check:ts";
+        await check({}, { tool: "Bash", input: { command: held, description: "typecheck" } }, next);
+        expect(next.mock.calls[0][0].input).toEqual({ command: "task check:ts", description: "typecheck" });
+        await check({}, { tool: "Bash", input: { command: "ls" } }, next);
+        expect(next.mock.calls[1][0].input).toEqual({ command: "ls" });
+    });
+});
+
 // an engine in arcterm's repo (or another, isArcRepo false) whose git moves HEAD from a1 to b2 on a commit and
 // lists files as the commit's paths
 function repoEngine(files: string[], isArcRepo = true) {

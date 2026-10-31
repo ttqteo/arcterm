@@ -184,7 +184,7 @@ Mỗi hàng có:
 
 `go build`, `cargo`, `tsc` và cả bộ test đều ngốn RAM, nên vài run chạy chung là máy swap rồi đứng. Vì vậy mọi lệnh **nặng** xếp vào **một hàng đợi chung**, và mặc định máy tự điều phối: lệnh chạy ngay khi còn đủ RAM, chỉ phải chờ khi chạy nó sẽ đẩy máy sát mức lag. Hàng đợi nhận:
 
-- **lệnh shell của agent** khi nó nặng. Trước mỗi lệnh, mod Claude, extension pi và hook Antigravity hỏi `wsh jobslot`: lệnh thường chạy ngay, lệnh nặng chờ đến lượt rồi giữ chỗ trong lúc chạy;
+- **lệnh shell của agent** khi nó nặng. Trước mỗi lệnh, mod Claude, extension pi và hook Antigravity hỏi `wsh jobslot`: lệnh thường chạy ngay, lệnh nặng chờ đến lượt rồi giữ chỗ trong lúc chạy. Lệnh nặng Claude chạy ngầm (`run_in_background`) cũng vậy: mod đặt `wsh jobslot --hold-parent` trước nó, nên lệnh chờ đến lượt ngay trong shell chạy ngầm (vị trí trong hàng hiện ở output của lệnh), và wavesrv giữ chỗ đến khi shell đó thoát;
 - **Verify** và **Final** của một run (luôn luôn), cùng **Setup** và **Check** khi lệnh của chúng nặng. Chúng xếp chung hàng với lệnh của agent.
 
 "RAM đủ" tùy hệ điều hành:

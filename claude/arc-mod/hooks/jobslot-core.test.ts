@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jobslotArgs, jobslotLine } from "./jobslot-core";
+import { heavyArgs, heldInBackground, heldOriginal, jobslotArgs, jobslotLine } from "./jobslot-core";
 
 describe("jobslotArgs", () => {
     it("passes the command as one argument after --, so a leading dash is never a flag", () => {
@@ -38,5 +38,45 @@ describe("jobslotLine", () => {
         ["null", "null"],
     ])("ignores %s", (_name, line) => {
         expect(jobslotLine(line)).toBeNull();
+    });
+});
+
+describe("a heavy background command", () => {
+    const wsh = "/Users/me/.arc/bin/wsh";
+
+    it("asks wsh whether it takes a slot, the command one argument after --", () => {
+        expect(heavyArgs("-x task check:ts")).toEqual(["jobslot", "--heavy", "--", "-x task check:ts"]);
+    });
+
+    it("runs behind wsh in its own shell, and stops only on a skip", () => {
+        expect(heldInBackground(wsh, "task check:ts")).toBe(
+            "'/Users/me/.arc/bin/wsh' jobslot --hold-parent -- 'task check:ts'; [ $? -ne 75 ] || exit 75\ntask check:ts"
+        );
+    });
+
+    it("quotes a command holding quotes for wsh, and keeps it as written to run", () => {
+        const command = `cd 'a b' && echo "it's" | tail -3`;
+        const held = heldInBackground(wsh, command);
+        expect(held).toContain(`-- 'cd '\\''a b'\\'' && echo "it'\\''s" | tail -3';`);
+        expect(held.endsWith(`\n${command}`)).toBe(true);
+    });
+
+    it("gives the permission check back the command as written", () => {
+        for (const command of [
+            "task check:ts",
+            "cd x && go test ./... 2>&1 | tail -20 # all of it",
+            "npx vitest run; [ $? -ne 75 ] || exit 75\nnpm test",
+            "line one\nline two",
+        ]) {
+            expect(heldOriginal(wsh, heldInBackground(wsh, command))).toBe(command);
+        }
+    });
+
+    it("reads any other command as not held", () => {
+        expect(heldOriginal(wsh, "task check:ts")).toBeNull();
+        expect(heldOriginal(wsh, heldInBackground("/other/wsh", "task check:ts"))).toBeNull();
+        // anything added after the wrapped command is no longer the wrapper's: checked whole, rm included
+        expect(heldOriginal(wsh, heldInBackground(wsh, "task check:ts") + "; rm -rf x")).toBeNull();
+        expect(heldOriginal(wsh, heldInBackground(wsh, "a").replace("'a'", "'b'"))).toBeNull();
     });
 });

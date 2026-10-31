@@ -17,6 +17,9 @@ type JobQueueCommands interface {
 type CommandJobSlotData struct {
 	Command string `json:"command"`
 	BlockId string `json:"blockid,omitempty"`
+	// HoldPid, when set, keeps the slot past the stream for as long as that process runs: `wsh jobslot
+	// --hold-parent` exits once its command may start and hands the slot to the shell that runs it
+	HoldPid int32 `json:"holdpid,omitempty"`
 }
 
 // JobSlotUpdate is one line of `wsh jobslot`: a queued place while it waits (the job ahead and who it is

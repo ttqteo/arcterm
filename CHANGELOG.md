@@ -51,6 +51,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - On a Mac, agents no longer show `?` with no model or title, and hook errors in every turn, when macOS has started
   killing arcterm's helper (`~/.arc/bin/wsh`): arcterm replaces a copy that no longer runs within seconds, mid-session
   too, not only when it opens.
+- A heavy command a Claude agent runs in the background (a typecheck, a build) waits its turn in the Jobs queue like
+  one it runs in the foreground. Before, it let go of its place at once, so two or three agents could each start a
+  3 GB typecheck at the same time and push the Mac into swap.
 - The Agent badge no longer counts a brainstorm's Judge and Builder check sessions as unread: their answer goes to the
   brainstorming agent, so the badge had a number no row in the tree showed.
 - Images in a Markdown Preview (the File tab, Code) show: a figure on disk beside the file, PNG, SVG or any other,

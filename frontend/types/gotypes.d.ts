@@ -1749,6 +1749,7 @@ declare global {
     type CommandJobSlotData = {
         command: string;
         blockid?: string;
+        holdpid?: number;
     };
 
     // wshrpc.CommandLandRunData

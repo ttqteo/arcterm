@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -106,6 +107,65 @@ func TestJobSlotQueuesBehindTheHolderAndStartsWhenItLeaves(t *testing.T) {
 
 	cancel1()
 	requireRun(t, nextSlotUpdate(t, second))
+}
+
+// a fake process table for a slot handed to a pid: alive until the test ends it
+func fakePids(t *testing.T) func(pid int32) {
+	t.Helper()
+	var mu sync.Mutex
+	gone := map[int32]bool{}
+	savedAlive, savedPoll := pidAlive, pidPoll
+	pidAlive = func(pid int32) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return !gone[pid]
+	}
+	pidPoll = 5 * time.Millisecond
+	t.Cleanup(func() { pidAlive, pidPoll = savedAlive, savedPoll })
+	return func(pid int32) {
+		mu.Lock()
+		defer mu.Unlock()
+		gone[pid] = true
+	}
+}
+
+func TestJobSlotHandedToAProcessHoldsUntilItExits(t *testing.T) {
+	installQueue(t, 1)
+	exit := fakePids(t)
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+	first := (&WshServer{}).JobSlotCommand(ctx1, wshrpc.CommandJobSlotData{Command: "task check:ts", HoldPid: 4242})
+	requireRun(t, nextSlotUpdate(t, first))
+	cancel1() // `wsh jobslot --hold-parent` exits as soon as its command may start
+
+	second := openJobSlot(context.Background(), "task check:ts")
+	if got := nextSlotUpdate(t, second); got.Queued != 1 || got.Run != nil {
+		t.Fatalf("second's first line = %+v, want queued behind the background command", got)
+	}
+	select {
+	case msg := <-second:
+		t.Fatalf("second got %+v while the background command still ran", msg.Response)
+	case <-time.After(50 * time.Millisecond):
+	}
+	exit(4242)
+	requireRun(t, nextSlotUpdate(t, second))
+}
+
+func TestJobSlotHandedToAGoneProcessFreesAtOnce(t *testing.T) {
+	q := installQueue(t, 1)
+	exit := fakePids(t)
+	exit(4243)
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := (&WshServer{}).JobSlotCommand(ctx, wshrpc.CommandJobSlotData{Command: "task check:ts", HoldPid: 4243})
+	requireRun(t, nextSlotUpdate(t, ch))
+	cancel()
+	deadline := time.Now().Add(time.Second)
+	for len(q.Snapshot().Jobs) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the slot outlived a process that had already exited")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func TestJobSlotNamesTheRunWhenAnEngineStepHoldsTheSlot(t *testing.T) {
