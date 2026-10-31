@@ -73,6 +73,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   brainstorming agent, so the badge had a number no row in the tree showed.
 - Images in a Markdown Preview (the File tab, Code) show: a figure on disk beside the file, PNG, SVG or any other,
   drew as `[img]` or an empty box with only its caption.
+- On a Mac, a pinned app keeps the settings it saves in its page (a dark mode, filters) when arcterm restarts. Before,
+  it opened with none of them each time, though the same app in a browser kept them.
 
 ## 0.15.19 — 2026-10-30
 

@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Pinned app storage on a Mac, in the packaged app: in a pinned app that saves settings in the page (the
+  portfolio dashboard's dark mode), change one, quit arcterm (⌘Q) and open it again: the setting is still there.
+  `waveapp.log` has `pinned apps keep their storage (storage blocking policy 0, tracking prevention off)`, and the
+  app's origin has a `LocalStorage/localstorage.sqlite3` under `~/Library/WebKit/dev.arc.app/WebsiteData/Default/`.
+  Run in the dev app only (a probe app's key kept across a restart); no unit test can make a real WKWebView, which
+  needs the main thread (`src-tauri/src/framestorage.rs`).
 - [ ] (arcterm) Copy table: point at a table in a `.md` Preview (Code surface and the Agent File tab) and in an agent's
   reply: a copy icon shows on the table's top-right corner, not the column's; click it (✓), then paste into Google
   Sheets or Numbers: real cells with the header row, right-aligned columns kept; paste into Notes or a terminal:

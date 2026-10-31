@@ -4,6 +4,7 @@ mod applog;
 mod canvas;
 mod estart;
 mod foreground;
+mod framestorage;
 mod init;
 #[cfg(windows)]
 mod keptapps;
@@ -405,6 +406,7 @@ fn main() {
             macwindow::watch_arrivals(app.handle());
             if let Some(w) = app.get_webview_window("main") {
                 macwindow::show_in_mission_control(&w);
+                framestorage::keep_frame_storage(&w);
                 winframe::restore_and_track(&w);
                 pagekeys::watch(&w);
                 #[cfg(windows)]
