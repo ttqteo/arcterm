@@ -10,6 +10,26 @@ where it would plug in, and how to pick it back up. Append new entries at the to
 > Pruned 2026-10-05: 27 entries whose work shipped, was retired with its subsystem, or was superseded were
 > removed. Recover any of them with `git show c99f2041:docs/deferred.md`.
 
+## (arcterm) Translate's starred words sent to Lingua (deferred 2026-10-31)
+
+Translate's history (`translatestore.ts`, commit "feat(translate): a history with stars, and listen buttons") lets
+you ☆ a word to learn; the starred words live only in that viewer's localStorage. The person learns vocabulary in
+Lingua (`~/Workspaces/dev/lingua`, Next.js + Prisma, deployed on Vercel) and wants the starred words there.
+
+- **Why deferred:** the person's call ("để sau"): it spans two repos, and the useful version is the bigger one.
+- **What Lingua has today:** `SavedItem` (kind `WORD`, unique on `[userId, kind, text]`, `saved-item.repository.ts`)
+  is display only, the "Tủ đánh dấu" tab of a course's archive, and needs a `courseId` (two courses:
+  `backend-speaking`, `it-english-basics`). Quiz, dictation and listen-and-type run only on word lists, which are
+  static YAML in `content/lists/`. No route takes a personal token; the cron routes check a `Bearer` env secret.
+- **The shape agreed so far:** wavesrv (Go), not the webview, POSTs to Lingua's Vercel URL with a per-user token the
+  person makes on Lingua's Profile page (Lingua keeps its hash) and pastes into arcterm's Settings, so there is no CORS
+  and no token in page JS. An entry starred offline is marked unsent and sent on the next chance.
+- **Two destinations:** (1) the course shelf (`SavedItem`): small, an API and the token, but nothing drills it;
+  (2) recommended: a DB-backed personal list ("Từ của tôi") that `/lists/[slug]` renders beside the YAML lists, so
+  the starred words get quiz, dictation and listen-and-type: a Prisma model and migration, the list page reading
+  both sources, the API, the token, then the arcterm Settings field and sender (~6–8 tasks over two repos).
+- **Revive when** the person asks for the Lingua sync; ask (1) or (2) first.
+
 ## (arcterm) Brainstorm judge end to end, in a real brainstorm (deferred 2026-10-23)
 
 The brainstorm judge (`docs/superpowers/specs/2026-10-23-unbiased-approach-questions-design.md`,

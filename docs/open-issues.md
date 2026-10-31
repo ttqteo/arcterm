@@ -1545,6 +1545,9 @@ Harnesses:
 
 Cockpit and surfaces:
 
+- **(arcterm) Translate's starred words sent to Lingua** (2026-10-31) — starred words stay in arcterm's localStorage;
+  sending them to Lingua (its course shelf, or a personal word list it can drill) waits on the person's ask. Notes in
+  `docs/deferred.md`.
 - **(arcterm) Image diff in File mode** (2026-10-19) — the image diff shipped in Diff → Review only; File mode
   still shows "Binary file", and no CDP scenario covers it. Revive when a changed image in File mode is wanted.
 - **(arcterm) Per-tool shortcuts in the tool library** (2026-10-13) — Setup → Tools has no Shortcut field until the
