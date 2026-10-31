@@ -43,6 +43,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- In New agent on a Mac, Tab from the Task box goes to + Flag, Worktree and Command, then the Agent column; it had
+  skipped the three buttons.
 - On a Mac, agents no longer show `?` with no model or title, and hook errors in every turn, when macOS has started
   killing arcterm's helper (`~/.arc/bin/wsh`): arcterm replaces a copy that no longer runs within seconds, mid-session
   too, not only when it opens.
