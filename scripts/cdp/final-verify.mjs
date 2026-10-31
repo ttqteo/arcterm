@@ -398,6 +398,8 @@ async function main() {
             // read by a debug build of the dev host (src-tauri/src/paths.rs), by sync:piartifacts and by browser-app.mjs
             ARC_DEV_DATA_DIR: store,
             ARC_DEV_NO_GLOBAL_INSTALL: "1",
+            // the fake Bot API settings-telegram serves; the fresh store holds no bot token, so nothing else calls it
+            ARC_TELEGRAM_API_BASE: process.env.ARC_TELEGRAM_API_BASE || "http://127.0.0.1:18765",
         },
     });
     const stop = () => {

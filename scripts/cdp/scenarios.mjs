@@ -41458,7 +41458,7 @@ const settingsRuns = {
 
 // --- settings-telegram: the Telegram row on Settings > General's Notifications card ----------------------------------
 // The dev app talks to a fake Bot API on 127.0.0.1:18765, so it must have been started with
-// ARC_TELEGRAM_API_BASE=http://127.0.0.1:18765 (the Final line sets it, and wavesrv reads it only under
+// ARC_TELEGRAM_API_BASE=http://127.0.0.1:18765 (final-verify.mjs sets it for its app, and wavesrv reads it only under
 // ARC_DEV_NO_GLOBAL_INSTALL). The fake answers /bot<token>/<method>: getMe is held until the scenario releases it,
 // getUpdates hands out the queued updates or an empty page after up to a second (counted in fake.updates, not recorded
 // in fake.calls), the sends are recorded, and a switch makes every call answer 401. The bot connects only when it must,
@@ -42447,6 +42447,8 @@ const settingsPages = {
         // agents-detail: the account card leads, one account is active, five runtime tabs, flag rows stay one line
         await spOpen(h, "agents");
         await polishWaitFor(h, `${spPane("agents")}?.querySelector("[data-claude-account-row]") != null`, 8000);
+        // the Default row draws before ClaudeAccountList answers, and the ✓ only once it has
+        await polishWaitFor(h, `${spPane("agents")}?.querySelector("[data-account-active]") != null`, 8000);
         await polishWaitFor(h, `${spPane("agents")}?.querySelector('[data-setting-row^="newagent.flag."]') != null`, 5000);
         const agentsDetail = await h.ev(`(() => {
             const pane = ${spPane("agents")};
@@ -45064,7 +45066,8 @@ const settingsStorage = {
         await h.ev(`${toggle}?.scrollIntoView({ block: "center" })`);
         await h.ev(`${toggle}?.click()`);
         const flipped = await ssWaitConfig(h, "storage:autoclean", !wasOn);
-        const flippedShown = (await h.ev(`${toggle}?.getAttribute('aria-checked') ?? null`)) === String(!wasOn);
+        // the config write lands before the settings atom re-renders the switch, so poll it
+        const flippedShown = await polishWaitFor(h, `${toggle}?.getAttribute('aria-checked') === ${JSON.stringify(String(!wasOn))}`, 3000);
         await h.ev(`${toggle}?.click()`);
         const restored = await ssWaitConfig(h, "storage:autoclean", wasOn);
         await h.ev(
