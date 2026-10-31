@@ -31,6 +31,7 @@ import {
     type StatusKey,
 } from "./sessionsruns";
 import { atBottom } from "./transcriptfollow";
+import { transcriptPlace } from "./transcriptplace";
 import { useTranscriptRead } from "./transcriptread";
 import { TranscriptSkeleton } from "./transcriptskeleton";
 
@@ -300,19 +301,24 @@ function SessionBody({
     const read = view === "transcript" ? session : undefined;
     const entries = useTranscriptRead(read?.transcriptpath, read?.runtime, read?.live ?? false);
     const scrollRef = useRef<HTMLDivElement>(null);
-    // opened at the end; after that, a re-read of a running session follows only a reader who is still at the end
+    // opened at the end, or where its reader left it (CompactTranscript restores a kept place, transcriptplace.ts); after
+    // that, a re-read of a running session follows only a reader who is still at the end
     const opened = useRef<string | undefined>(undefined);
     const following = useRef(true);
+    const placeId = read?.transcriptpath ? `session:${read.transcriptpath}` : undefined;
     useLayoutEffect(() => {
         const el = scrollRef.current;
         if (!el || !entries?.length) {
             return;
         }
         const key = session?.transcriptpath;
-        if (opened.current !== key || following.current) {
-            el.scrollTop = el.scrollHeight;
+        const placed = placeId != null && transcriptPlace(placeId) != null;
+        if (opened.current !== key) {
             opened.current = key;
-            following.current = true;
+            following.current = !placed;
+        }
+        if (following.current && !placed) {
+            el.scrollTop = el.scrollHeight;
         }
     }, [entries]);
 
@@ -335,6 +341,7 @@ function SessionBody({
             <CompactTranscript
                 entries={entries}
                 active={session.live}
+                placeId={placeId}
                 onReview={
                     session.projectpath
                         ? () => openDiff(model, projectDiffScope(session.projectname || "project", session.projectpath))

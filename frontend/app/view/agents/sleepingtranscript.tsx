@@ -22,7 +22,10 @@ const NO_ENTRIES: AgentEntry[] = [];
 // `barred`: the cell has a grid bar on top (h-[26px], gridcellbar.tsx), which stays visible above the transcript
 export function SleepingTranscript({ agent, barred }: { agent: AgentVM; barred: boolean }) {
     const entries = useTranscriptRead(agent.transcriptPath, agent.agent, false);
-    const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries ?? NO_ENTRIES);
+    // where the reader left this sleep's conversation, kept while another agent takes the cell; a later sleep has more
+    // to read, so it opens at the end
+    const placeId = `sleeping:${agent.id}:${agent.sleeping?.since ?? 0}`;
+    const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries ?? NO_ENTRIES, placeId);
     return (
         <div
             data-sleeping-transcript={agent.id}
@@ -37,7 +40,7 @@ export function SleepingTranscript({ agent, barred }: { agent: AgentVM; barred: 
                         <TranscriptSkeleton />
                     ) : entries.length > 0 ? (
                         <AgentPathLinks agent={agent}>
-                            <CompactTranscript entries={entries} active={false} />
+                            <CompactTranscript entries={entries} active={false} placeId={placeId} />
                         </AgentPathLinks>
                     ) : (
                         <div className="flex h-full items-center justify-center text-[12px] text-muted">

@@ -26,7 +26,8 @@ export function EndedTranscript({ model, agent }: { model: AgentsViewModel; agen
     const agents = useAtomValue(model.agentsAtom);
     const paths = useAtomValue(runTranscriptPathsAtom);
     const entries = useAtomValue(entriesAtomFor(agent.id));
-    const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries);
+    const placeId = `ended:${agent.id}`; // where the reader left it, kept while another agent is in view
+    const { scrollRef, onScroll, atBottom, jumpToBottom } = useStickToBottom(entries, placeId);
     const role = lineage.roles[agent.id];
     const run = role?.kind === "worker" ? lineage.runs[role.leadRunId] : undefined;
     const task = role?.kind === "worker" ? run?.dag?.tasks?.find((t) => t.id === role.taskId) : undefined;
@@ -78,7 +79,7 @@ export function EndedTranscript({ model, agent }: { model: AgentsViewModel; agen
                 <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto px-[22px] py-[12px]">
                     {entries.length > 0 ? (
                         <AgentPathLinks agent={agent}>
-                            <CompactTranscript entries={entries} active={false} />
+                            <CompactTranscript entries={entries} active={false} placeId={placeId} />
                         </AgentPathLinks>
                     ) : missing ? (
                         <div className="flex h-full items-center justify-center text-[12px] text-muted">

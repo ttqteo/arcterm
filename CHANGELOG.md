@@ -75,6 +75,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   drew as `[img]` or an empty box with only its caption.
 - On a Mac, a pinned app keeps the settings it saves in its page (a dark mode, filters) when arcterm restarts. Before,
   it opened with none of them each time, though the same app in a browser kept them.
+- A sleeping agent's conversation, a finished run worker's, and one opened in Conversation History come back where you
+  left off when you switch away and back, instead of jumping to the last message. One read to the end still opens at
+  the end.
 
 ## 0.15.19 — 2026-10-30
 

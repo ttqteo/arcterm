@@ -14,7 +14,7 @@ import { cn } from "@/util/util";
 import { Check, ChevronDown, ChevronRight, Copy, FileDiff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { burstRenderMode, conversationText, type AgentEntry, type EditFile } from "./agentsviewmodel";
+import { burstRenderMode, conversationText, isNearBottom, type AgentEntry, type EditFile } from "./agentsviewmodel";
 import {
     filesChangedLabel,
     groupCompact,
@@ -46,6 +46,7 @@ import {
     ToolLine,
 } from "./narrationtimeline";
 import { PinnedPromptBar, scrollParent, usePinnedPrompt } from "./pinnedpromptbar";
+import { firstItemBelow, keepTranscriptPlace, transcriptPlace } from "./transcriptplace";
 
 // the top of the list counts as reached this far before it is in view, so the earlier items are drawn (or asked for) by
 // the time the reader gets there
@@ -230,6 +231,7 @@ export function CompactTranscript({
     onReachStart,
     keyOffset = 0,
     scrollTo,
+    placeId,
 }: {
     entries: AgentEntry[];
     active?: boolean;
@@ -245,6 +247,9 @@ export function CompactTranscript({
     // on each new nonce, draws back to the item holding entry `index` (an index into `entries`) and scrolls it to the
     // top of the scroll container; an index no item holds does nothing
     scrollTo?: { index: number; nonce: number };
+    // keeps where the reader is under this id (transcriptplace.ts) and opens there again: drawn back to that item, at
+    // the same depth into it. A caller that sticks to the end checks transcriptPlace first and does not pin over it
+    placeId?: string;
 }) {
     const [opened, setOpened] = useState<Set<number>>(new Set());
     const items = useMemo(() => groupCompact(entries), [entries]);
@@ -272,7 +277,9 @@ export function CompactTranscript({
     const reachedAt = useRef<number | null>(null); // the item count onReachStart was last called at
     const heightBeforeGrow = useRef<{ top: number; height: number } | null>(null);
     const wanted = useRef<number | null>(null); // the key of the item scrollTo wants at the top, until it is there
+    const wantedOffset = useRef(0); // how far below that item's top the view starts: a restored place's depth into it
     const handledNonce = useRef<number | null>(null);
+    const placedFor = useRef<string | undefined>(undefined); // the placeId whose kept place was looked up
 
     // the top of the list: draw earlier items while some are hidden, ask the caller for earlier ones once all are drawn.
     // Measured, not observed: after a draw-back the sentinel may stay in view and fire nothing new, so this also runs
@@ -320,6 +327,17 @@ export function CompactTranscript({
             handledNonce.current = scrollTo.nonce;
             const held = holdingItem(spans, keyFor(scrollTo.index, keyOffset));
             wanted.current = held < 0 ? null : spans[held].start;
+            wantedOffset.current = 0;
+        }
+        // opened again: back to where its reader left it, once per id
+        if (placeId != null && placedFor.current !== placeId && spans.length > 0) {
+            placedFor.current = placeId;
+            const place = transcriptPlace(placeId);
+            const held = place == null ? -1 : holdingItem(spans, place.key);
+            if (held >= 0) {
+                wanted.current = spans[held].start;
+                wantedOffset.current = place.offset;
+            }
         }
         if (wanted.current == null) {
             return;
@@ -327,6 +345,7 @@ export function CompactTranscript({
         const at = holdingItem(spans, wanted.current);
         if (at < 0) {
             wanted.current = null;
+            wantedOffset.current = 0;
         } else if (at < first) {
             // hidden: the window counts from the end, so it needs every item from this one on; this runs again once drawn
             setAnchor(spans[firstDrawn(spans.length, drawnToReach(spans.length, at))].start);
@@ -335,10 +354,51 @@ export function CompactTranscript({
             const el = rootRef.current?.querySelectorAll<HTMLElement>(":scope > [data-compact-item]")[at - first];
             const scroller = scrollParent(rootRef.current);
             if (el != null && scroller != null) {
-                scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+                scroller.scrollTop +=
+                    el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + wantedOffset.current;
             }
+            wantedOffset.current = 0;
         }
-    }, [scrollTo?.nonce, first]);
+    }, [scrollTo?.nonce, first, placeId, spans.length > 0]);
+    // keeps where the reader is, at most once a frame while they scroll: the item at the top of the view and how far
+    // into it, or nothing once they are at the end. Not while a restore is still drawing back, nor while the view has
+    // no size (its surface hidden). Unmounting drops a pending frame: by then the DOM is gone or shows the next id.
+    useEffect(() => {
+        const root = rootRef.current;
+        const scroller = scrollParent(root);
+        if (placeId == null || root == null || scroller == null) {
+            return;
+        }
+        let frame = 0;
+        const keep = () => {
+            frame = 0;
+            if (placedFor.current !== placeId || wanted.current != null || scroller.clientHeight === 0) {
+                return;
+            }
+            if (isNearBottom(scroller)) {
+                keepTranscriptPlace(placeId, null);
+                return;
+            }
+            const drawn = root.querySelectorAll<HTMLElement>(":scope > [data-compact-item]");
+            const viewTop = scroller.getBoundingClientRect().top;
+            const at = firstItemBelow(drawn.length, (i) => drawn[i].getBoundingClientRect().bottom, viewTop);
+            const span = live.current.spans[live.current.first + at];
+            if (at >= drawn.length || span == null) {
+                return;
+            }
+            keepTranscriptPlace(placeId, { key: span.start, offset: viewTop - drawn[at].getBoundingClientRect().top });
+        };
+        const onScroll = () => {
+            if (frame === 0) {
+                frame = requestAnimationFrame(keep);
+            }
+        };
+        scroller.addEventListener("scroll", onScroll, { passive: true });
+        return () => {
+            scroller.removeEventListener("scroll", onScroll);
+            cancelAnimationFrame(frame);
+        };
+    }, [placeId]);
     useEffect(() => {
         checkTop();
     }, [checkTop, first, items.length]);

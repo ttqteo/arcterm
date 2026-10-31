@@ -8,24 +8,36 @@ import { PopoverReveal } from "@/app/element/popoverreveal";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isNearBottom } from "./agentsviewmodel";
 import { PROMPT_JUMP_EVENT } from "./pinnedprompt";
+import { transcriptPlace } from "./transcriptplace";
+
+// a transcript its reader left above the end opens there (CompactTranscript's placeId restores it), not stuck
+const opensAtEnd = (placeId: string | undefined) => placeId == null || transcriptPlace(placeId) == null;
 
 // A scroll region that sticks to the tail while the user is at the bottom, releases when they scroll
 // up to read history, and re-sticks on jumpToBottom. `entries` is the dependency that triggers the
 // re-pin: pass the same array the feed renders. layout-effect (not effect) so the pin lands before
 // paint — otherwise a taller feed paints at the old scrollTop then snaps down a frame later. A pinned prompt's scroll
-// back (PROMPT_JUMP_EVENT) releases it as scrolling up does.
-export function useStickToBottom(entries: unknown[]) {
+// back (PROMPT_JUMP_EVENT) releases it as scrolling up does. `placeId`: the id the feed's CompactTranscript keeps its
+// reader's place under; with a place kept, the region starts released, and again whenever the id changes.
+export function useStickToBottom(entries: unknown[], placeId?: string) {
     const scrollRef = useRef<HTMLDivElement>(null);
-    const stickRef = useRef(true);
+    const stickRef = useRef(opensAtEnd(placeId));
     // a pinned prompt's jump released the tail and its smooth scroll has not yet left the bottom zone, where the first
     // frames still read as near the bottom and would re-stick
     const leavingRef = useRef(false);
-    const [atBottom, setAtBottom] = useState(true);
+    const [atBottom, setAtBottom] = useState(() => stickRef.current);
+    const stuckFor = useRef(placeId); // the placeId stickRef was last set for
 
     useLayoutEffect(() => {
         const el = scrollRef.current;
         if (!el) {
             return;
+        }
+        if (stuckFor.current !== placeId) {
+            stuckFor.current = placeId;
+            stickRef.current = opensAtEnd(placeId);
+            leavingRef.current = false;
+            setAtBottom(stickRef.current);
         }
         const pin = () => {
             if (stickRef.current) {
@@ -40,7 +52,7 @@ export function useStickToBottom(entries: unknown[]) {
             ro.observe(child);
         }
         return () => ro.disconnect();
-    }, [entries]);
+    }, [entries, placeId]);
 
     // after every render, not once: a caller may mount its scroll region after its first render
     useEffect(() => {
