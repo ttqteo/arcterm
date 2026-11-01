@@ -31,13 +31,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   (e.g. "that's a given, not the point"). The first seat on the panel answers first; the others answer after it and
   add only what is new, and one with nothing to add shows as a green "<seat> agrees" chip under that first answer,
   not as an empty bubble. While the first answer waits as a draft (a council with an agent), the chip sits under your
-  message. Unit tests cover the order, the prompt, the parse and the chip's place only (2aebc1cbc).
+  message. Unit tests cover the order, the prompt, the parse and the chip's place only (58f8fb245).
 - [ ] (arcterm) Council messages as Markdown: start a new council (Brainstorm) whose question compares two or more
   options. In the Discussion, an idea or reply with a table draws a table inside the bubble: it wraps its cells instead
   of scrolling sideways, and its copy button shows on hover. A ```mermaid block draws a flowchart that fits the
   bubble's width, a numbered list draws as a list, and a ==…== sentence is still tinted. The same in a thread, the
   draft card and the report's positions; a matrix cell shows only the words. Unit tests cover the prompt rule, the
-  parse and the matrix text only (6e6726bb9).
+  parse and the matrix text only (2594e0e82).
 - [ ] (arcterm) Council Ask next and Let them read files: start a new council, or Summarize a finished one again. The
   report ends with Ask next, two or three questions each with whom it is for; a click opens the Discussion with it in
   the box, `@` the expert first. The same questions sit as chips over the Discussion's empty box and leave once asked.
@@ -60,7 +60,7 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Cmd + three or four times: nothing in the bar under the agent header draws over anything else. "updated … ago · N%"
   shortens and goes first, then the topic and the board tabs shorten with `…` (the selected tab last), and ‹, `2/8 ▾`,
   ›, Mark, Open in browser and Build this… keep their size. Also with ≤4 boards (plain tabs, no picker). Checked only
-  as a static copy of the bar in headless Chrome at 560–1000 px, not in the app. (f72e455f1)
+  as a static copy of the bar in headless Chrome at 560–1000 px, not in the app. (c39e68038)
 - [ ] (arcterm) Copy table: point at a table in a `.md` Preview (Code surface and the Agent File tab) and in an agent's
   reply: a copy icon shows on the table's top-right corner, not the column's; click it (✓), then paste into Google
   Sheets or Numbers: real cells with the header row, right-aligned columns kept; paste into Notes or a terminal:
