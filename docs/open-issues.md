@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council messages as Markdown: start a new council (Brainstorm) whose question compares two or more
+  options. In the Discussion, an idea or reply with a table draws a table inside the bubble: it wraps its cells instead
+  of scrolling sideways, and its copy button shows on hover. A ```mermaid block draws a flowchart that fits the
+  bubble's width, a numbered list draws as a list, and a ==…== sentence is still tinted. The same in a thread, the
+  draft card and the report's positions; a matrix cell shows only the words. Unit tests cover the prompt rule, the
+  parse and the matrix text only (6e6726bb9).
 - [ ] (arcterm) Pinned app storage on a Mac, in the packaged app: in a pinned app that saves settings in the page (the
   portfolio dashboard's dark mode), change one, quit arcterm (⌘Q) and open it again: the setting is still there.
   `waveapp.log` has `pinned apps keep their storage (storage blocking policy 0, tracking prevention off)`, and the
