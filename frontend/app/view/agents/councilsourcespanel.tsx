@@ -1,9 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// A council message's evidence as links, one per cited file with its lines after it, and the Sources panel a click opens
-// on the right of the chat, in place of the thread panel (A-links-panel.dc.html in the council-evidence-chips canvas;
-// the rules are in councilsources.ts). The panel lists the message's files, reads the picked one from the council's
+// A council message's evidence as compact chips, one per cited file with its lines after it, two at most and the rest
+// folded into `+N files`, and the Sources panel a click opens on the right of the chat, in place of the thread panel
+// (A-links-panel.dc.html in the council-evidence-chips canvas; the rules are in councilsources.ts). The panel lists the message's files, reads the picked one from the council's
 // project and shows the cited lines lit, a line of context each side; Open in Code opens it at the first cited line.
 // Escape or the close button goes back to the thread the panel was opened from. A list with no council to open (Ideas so
 // far) draws the same names, not as links. Each part carries a data-council-* attribute for the CDP scenario.
@@ -15,6 +15,7 @@ import { atom, useAtomValue } from "jotai";
 import { FileText, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
+    foldSources,
     groupSources,
     hunkLabel,
     pastEndWords,
@@ -26,6 +27,10 @@ import {
 import { councilSourcesAtom, openCouncilSources, type CouncilSourcesView } from "./councilstore";
 
 const NO_SOURCES = atom<CouncilSourcesView | null>(null);
+
+// a cited file as a small chip (the editor-tab look): its icon, its name cut short in a 260px chip, its lines after it
+const CHIP =
+    "inline-flex h-[24px] min-w-0 max-w-[260px] items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface px-[7px] text-[12.5px]";
 
 // the panel reads a cited file whole; past this it says so instead
 const MAX_READ = 2 * 1024 * 1024;
@@ -58,33 +63,54 @@ export function EvidenceChips({
         return null;
     }
     const picked = source != null && shown != null && shown.owner === source.owner ? shown.pick : -1;
+    const fold = foldSources(view.groups);
+    const open = (pick: number) =>
+        source != null &&
+        openCouncilSources(source.councilId, { owner: source.owner, title: source.title, refs: evidence, pick });
     return (
-        <div className="flex flex-wrap items-center gap-x-[12px] gap-y-[4px]">
-            {view.groups.map((g, i) =>
+        <div className="flex flex-wrap items-center gap-[6px]">
+            {fold.shown.map((g, i) =>
                 source == null ? (
                     <SourceName key={g.path} group={g} />
                 ) : (
-                    <SourceLink
-                        key={g.path}
-                        group={g}
-                        picked={i === picked}
-                        onOpen={() =>
-                            openCouncilSources(source.councilId, {
-                                owner: source.owner,
-                                title: source.title,
-                                refs: evidence,
-                                pick: i,
-                            })
-                        }
-                    />
+                    <SourceLink key={g.path} group={g} picked={i === picked} onOpen={() => open(i)} />
                 )
             )}
+            {fold.more !== "" &&
+                (source == null ? (
+                    <span
+                        data-council-evidence="more"
+                        title={view.groups
+                            .slice(fold.shown.length)
+                            .map((g) => g.path + g.label)
+                            .join("\n")}
+                        className={cn(CHIP, "text-muted")}
+                    >
+                        {fold.more}
+                    </span>
+                ) : (
+                    <button
+                        type="button"
+                        data-council-evidence="more"
+                        data-picked={picked >= fold.shown.length ? "true" : undefined}
+                        title={view.groups
+                            .slice(fold.shown.length)
+                            .map((g) => g.path + g.label)
+                            .join("\n")}
+                        onClick={() => open(fold.shown.length)}
+                        className={cn(
+                            CHIP,
+                            "cursor-pointer text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent",
+                            picked >= fold.shown.length
+                                ? "border-edge-strong bg-surface-selected"
+                                : "hover:bg-surface-hover"
+                        )}
+                    >
+                        {fold.more}
+                    </button>
+                ))}
             {view.others.map((ref, i) => (
-                <span
-                    key={`other-${i}`}
-                    data-council-evidence="other"
-                    className="rounded-[6px] border border-edge-mid bg-surface px-[8px] py-[2px] text-[12px] text-secondary"
-                >
+                <span key={`other-${i}`} data-council-evidence="other" className={cn(CHIP, "text-secondary")}>
                     {ref}
                 </span>
             ))}
@@ -92,7 +118,7 @@ export function EvidenceChips({
                 <span
                     data-council-evidence="weak"
                     data-weak="true"
-                    className="rounded-[6px] border border-warning/40 bg-surface px-[8px] py-[2px] text-[12px] text-warning-soft"
+                    className={cn(CHIP, "border-warning/40 text-warning-soft")}
                 >
                     {weak}
                 </span>
@@ -111,12 +137,15 @@ function SourceLink({ group, picked, onOpen }: { group: SourceGroup; picked: boo
             title={`${group.path}${group.label}`}
             onClick={onOpen}
             className={cn(
-                "group -ml-[5px] inline-flex min-w-0 max-w-full cursor-pointer items-center gap-[5px] rounded-[5px] border-0 px-[5px] py-px text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                picked ? "bg-surface-selected" : "bg-transparent hover:bg-surface-hover"
+                CHIP,
+                "group cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                picked ? "border-edge-strong bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
             <FileText size={12} className="flex-none text-muted" aria-hidden />
-            <span className="truncate text-link underline-offset-2 group-hover:underline">{group.name}</span>
+            <span className="min-w-0 truncate font-medium text-link underline-offset-2 group-hover:underline">
+                {group.name}
+            </span>
             {group.label !== "" && <span className="flex-none tabular-nums text-muted">{group.label}</span>}
         </button>
     );
@@ -124,13 +153,9 @@ function SourceLink({ group, picked, onOpen }: { group: SourceGroup; picked: boo
 
 function SourceName({ group }: { group: SourceGroup }) {
     return (
-        <span
-            data-council-evidence="ref"
-            title={`${group.path}${group.label}`}
-            className="inline-flex min-w-0 max-w-full items-center gap-[5px] text-[13px]"
-        >
+        <span data-council-evidence="ref" title={`${group.path}${group.label}`} className={CHIP}>
             <FileText size={12} className="flex-none text-muted" aria-hidden />
-            <span className="truncate text-secondary">{group.name}</span>
+            <span className="min-w-0 truncate font-medium text-secondary">{group.name}</span>
             {group.label !== "" && <span className="flex-none tabular-nums text-muted">{group.label}</span>}
         </span>
     );

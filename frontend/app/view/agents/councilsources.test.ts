@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+    foldSources,
     groupSources,
     hunkLabel,
     MAX_HUNK_ROWS,
@@ -171,5 +172,17 @@ describe("sourceExcerpt", () => {
         const x = sourceExcerpt("a\r\nb\r\nc\r\n", [{ start: 2, end: 2 }]);
         expect(x.hunks[0].rows.map((r) => r.text)).toEqual(["a", "b", "c"]);
         expect(x.lineCount).toBe(3);
+    });
+});
+
+describe("foldSources", () => {
+    it("shows two files and folds the rest into one count", () => {
+        expect(foldSources(["a", "b", "c"])).toEqual({ shown: ["a", "b"], more: "+1 file" });
+        expect(foldSources(["a", "b", "c", "d"])).toEqual({ shown: ["a", "b"], more: "+2 files" });
+    });
+
+    it("folds nothing at two files or fewer", () => {
+        expect(foldSources(["a", "b"])).toEqual({ shown: ["a", "b"], more: "" });
+        expect(foldSources([])).toEqual({ shown: [], more: "" });
     });
 });

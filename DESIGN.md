@@ -277,8 +277,9 @@ green, `mem-feedback` amber, `mem-user` purple), **jarvis graph node kinds**
   `syntax-number` `#e6b450`, `syntax-comment` `#6b7178`, `syntax-punct`,
   `syntax-ident`) color transcript code blocks. **`code-inline` `#d7b981`**
   (a warm gold) colors inline code in markdown and transcript narration. **`link` `#1d9bd1`**, a
-  Slack-like blue, colors the files a council message cites (one link per file, its lines after it in
-  `muted`), so a source reads apart from the clay a thread's reply link and the CTAs take; other links stay
+  Slack-like blue, colors the files a council message cites (a small chip per file, its lines after it in
+  `muted`, two at most and the rest folded into `+N files`), so a source reads apart from the clay a thread's reply
+  link and the CTAs take; other links stay
   `accent`. Theme-agnostic like syntax.
 - **Diff tokens** (`diff-added` `#3fb950`, `diff-removed` `#f85149`) color
   git diff bands, inline diff lines, and every `+N` / `−N` count. They are

@@ -109,6 +109,19 @@ export function groupSources(refs: readonly string[]): EvidenceView {
     return { groups, others };
 }
 
+/** How many of a message's files show as chips; the rest fold into one `+N files` that opens the Sources panel, which
+ *  lists them all. */
+export const SHOWN_SOURCES = 2;
+
+/** Pure: the files a message shows as chips, and the `+N files` the rest fold into ("" when none is left). */
+export function foldSources<T>(groups: readonly T[]): { shown: T[]; more: string } {
+    const rest = groups.length - SHOWN_SOURCES;
+    return {
+        shown: groups.slice(0, SHOWN_SOURCES),
+        more: rest <= 0 ? "" : `+${rest} ${rest === 1 ? "file" : "files"}`,
+    };
+}
+
 /** Pure: `:45, 49` for the cited lines, a run as `12–20`; "" when there are none. */
 export function linesLabel(lines: readonly CitedLines[]): string {
     if (lines.length === 0) {
