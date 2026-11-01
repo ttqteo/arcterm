@@ -201,7 +201,7 @@ func TestCouncilEstimateOfASavedCouncil(t *testing.T) {
 		{"a follow-up of two experts", wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2},
 			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 40_000, Minutes: 1}},
 		{"a follow-up that reads code", wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2, Tools: true},
-			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 180_000, Minutes: 2}},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 220_000, Minutes: 2}},
 	} {
 		got, err := ws.CouncilEstimateCommand(ctx, tc.data)
 		if err != nil {
