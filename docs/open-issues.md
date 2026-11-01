@@ -33,6 +33,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   app's origin has a `LocalStorage/localstorage.sqlite3` under `~/Library/WebKit/dev.arc.app/WebsiteData/Default/`.
   Run in the dev app only (a probe app's key kept across a restart); no unit test can make a real WKWebView, which
   needs the main thread (`src-tauri/src/framestorage.rs`).
+- [ ] (arcterm) Canvas toolbar at zoom: open a canvas with more than 4 boards (the picker shows `2/8 ▾`), then press
+  Cmd + three or four times: nothing in the bar under the agent header draws over anything else. "updated … ago · N%"
+  shortens and goes first, then the topic and the board tabs shorten with `…` (the selected tab last), and ‹, `2/8 ▾`,
+  ›, Mark, Open in browser and Build this… keep their size. Also with ≤4 boards (plain tabs, no picker). Checked only
+  as a static copy of the bar in headless Chrome at 560–1000 px, not in the app. (f72e455f1)
 - [ ] (arcterm) Copy table: point at a table in a `.md` Preview (Code surface and the Agent File tab) and in an agent's
   reply: a copy icon shows on the table's top-right corner, not the column's; click it (✓), then paste into Google
   Sheets or Numbers: real cells with the header row, right-aligned columns kept; paste into Notes or a terminal:
