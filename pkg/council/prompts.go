@@ -13,7 +13,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-01.3"
+const HarnessVersion = "2026-11-01.4"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -24,7 +24,12 @@ const (
   "proposals": [
     {
       "title": "a short title for the change you propose",
-      "argument": "why, in about 70 words",
+      "argument": "why, in about 70 words, with a table, a list or a diagram when it compares or counts",
+      "evidence": [{"ref": "pkg/services/idle.go:42"}]
+    },
+    {
+      "title": "Sleep after one idle minute",
+      "argument": "I'd put a service to sleep after one idle minute, not five. Here's what each wait holds:\n\n| Idle wait | RAM held | Wake time |\n|---|---|---|\n| 1 min | 40 MB | 2 s |\n| 5 min | 120 MB | 2 s |\n\nWaking takes as long either way, so the shorter wait only saves. To try it:\n\n1. Log the idle gaps for a day.\n2. Count how often a wake would cost 2 s.\n3. Ship it behind a setting.",
       "evidence": [{"ref": "pkg/services/idle.go:42"}]
     }
   ]
@@ -142,7 +147,12 @@ const (
   "proposals": [
     {
       "title": "a short title for the idea",
-      "argument": "what the idea is and why it could work, in about 70 words",
+      "argument": "what the idea is and why it could work, in about 70 words, with a table, a list or a diagram when it compares or counts",
+      "wild": false
+    },
+    {
+      "title": "Sleep after one idle minute",
+      "argument": "I'd put a service to sleep after one idle minute, not five. Here's what each wait holds:\n\n| Idle wait | RAM held | Wake time |\n|---|---|---|\n| 1 min | 40 MB | 2 s |\n| 5 min | 120 MB | 2 s |\n\nWaking takes as long either way, so the shorter wait only saves. To try it:\n\n1. Log the idle gaps for a day.\n2. Count how often a wake would cost 2 s.\n3. Ship it behind a setting.",
       "wild": false
     }
   ]
@@ -235,16 +245,26 @@ const (
 		"to them as \"you\" and of yourself as \"I\", with the everyday pronouns of the language you write in (in " +
 		"Vietnamese, \"mình\" and \"bạn\"). Say the point first, then why. Keep sentences short, one thought each, with " +
 		"no parentheses and no clauses stacked behind a colon. Say a term or a reference in plain words the first time, " +
-		"unless the person used it: \"the panel two days ago suggested…\", not \"council 24-25\". No emoji."
+		"unless the person used it: \"the panel two days ago suggested…\", not \"council 24-25\". In a reply on " +
+		"another seat's idea, talk to them by their name, as you would in a group chat. No emoji."
 
 	// visualRule is in every prompt whose fields the Discussion shows as messages: it draws them as Markdown, so a table,
 	// a list or a mermaid diagram shows as one.
-	visualRule = "When a picture says it better than sentences, put one in the message, in Markdown: a small table when " +
-		"you compare two or more options on two or more points, a numbered list for steps in order, or a ```mermaid " +
-		"flowchart for a flow of a few steps (at most about 8 nodes, each label short and in double quotes, " +
-		"A[\"swap the value\"] --> B[\"trace the sink\"]). Open it with one chat sentence that says what it shows, and " +
-		"leave everything else as chat. A table or a diagram does not count toward the word limit. Inside the JSON " +
-		"string, write each line break as \\n, and leave a blank line before and after a table or a diagram."
+	visualRule = "A chat message can hold a picture, and yours must whenever it compares or counts. Two or more " +
+		"options weighed on two or more points, or three or more numbers side by side, go in a small Markdown table, " +
+		"never in a sentence. Three or more steps in order go in a numbered list. A flow that branches or loops goes " +
+		"in a ```mermaid flowchart, at most about 8 nodes, each label short and in double quotes. Open the picture with " +
+		"one chat sentence that says what it shows. A table, a list or a diagram does not count toward the word " +
+		"limit. In the JSON string, write each line break as \\n and leave a blank line before and after a table or " +
+		"a diagram, as in this argument: \"I'd put it to sleep sooner. Here's what each wait holds:\\n\\n| Idle " +
+		"wait | RAM held | Wake time |\\n|---|---|---|\\n| 1 min | 40 MB | 2 s |\\n| 5 min | 120 MB | 2 s " +
+		"|\\n\\nWaking takes as long either way, so the shorter wait only saves.\""
+
+	// pictureCheck closes round 1's task, just before the shape: a probe of round 1 on 2026-11-01 drew no table or list
+	// from visualRule alone (0 of 6 ideas), and 3 of 7 with this check and the shape's second idea, which shows one.
+	pictureCheck = "Before you write the JSON, read each argument again: a part that names three or more things, steps " +
+		"or numbers, or weighs options, becomes a list or a table. Most good ideas have one; the second idea in the " +
+		"shape below is a message with a table and a list."
 
 	// messageRules are the rules every prompt whose fields the Discussion shows as messages ends with, before its shape.
 	messageRules = voiceRule + "\n\n" + visualRule + "\n\n" + markRule
@@ -452,6 +472,7 @@ func round1Task(c *Council) string {
 			"may rest on a guess, so it needs no evidence; read the code to ground an idea, not to audit it.\n\n")
 		b.WriteString(wildRule + "\n\n")
 		b.WriteString(messageRules + "\n\n")
+		b.WriteString(pictureCheck + "\n\n")
 		b.WriteString(jsonRule + "\n```json\n" + brainstormRound1Shape + "\n```\n")
 		return b.String()
 	}
@@ -460,6 +481,7 @@ func round1Task(c *Council) string {
 		"Each proposal has a short title, an argument, and the evidence it rests on.\n\n")
 	b.WriteString(evidenceRule + "\n\n")
 	b.WriteString(messageRules + "\n\n")
+	b.WriteString(pictureCheck + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + round1Shape + "\n```\n")
 	return b.String()
 }

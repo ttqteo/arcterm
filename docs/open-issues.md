@@ -33,6 +33,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   bubble's width, a numbered list draws as a list, and a ==…== sentence is still tinted. The same in a thread, the
   draft card and the report's positions; a matrix cell shows only the words. Unit tests cover the prompt rule, the
   parse and the matrix text only (6e6726bb9).
+- [ ] (arcterm) Council as a group chat: in a council past round 2 (or a new one), the round 1 ideas alternate between
+  the experts, with no bold title in the bubbles; round 2 shows every reply in the chat, a `↳ <idea>` quote over the
+  first of each idea's replies, those replies together and in the ideas' order. While a round runs, its messages stay
+  in the order they came and jump into turns only when it ends: check the view keeps your place then. A new council
+  should show a table or a numbered list in some ideas (a probe drew 3 of 7). Covered by unit tests only.
 - [ ] (arcterm) Pinned app storage on a Mac, in the packaged app: in a pinned app that saves settings in the page (the
   portfolio dashboard's dark mode), change one, quit arcterm (⌘Q) and open it again: the setting is still there.
   `waveapp.log` has `pinned apps keep their storage (storage blocking policy 0, tracking prevention off)`, and the

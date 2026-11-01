@@ -433,7 +433,8 @@ function IdeaMessage({
                         focused && "ring-1 ring-edge-strong"
                     )}
                 >
-                    <h3 className="m-0 text-[16px] font-semibold leading-[1.4] text-primary">{item.title}</h3>
+                    {/* no title: a chat message has none, and its first sentence says the idea; the title names it where
+                        it is quoted (a reply's ↳, the thread's header, the report) */}
                     <CouncilText text={item.text} className="text-[14.5px] leading-[1.6]" />
                     <EvidenceChips
                         evidence={item.evidence}
@@ -1128,12 +1129,7 @@ function ThreadPanel({
                                 TONE_BUBBLE[idea.tone]
                             )}
                         >
-                            <h2
-                                data-council-post-title
-                                className="m-0 text-[15px] font-semibold leading-[1.4] text-primary"
-                            >
-                                {idea.title}
-                            </h2>
+                            {/* the thread's header names the idea; the bubble is its message alone */}
                             <CouncilText text={idea.text} className="text-[14px] leading-[1.6]" />
                             <EvidenceChips
                                 evidence={idea.evidence}

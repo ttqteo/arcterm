@@ -77,6 +77,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   question and the limits you set.
 - A council's experts write their ideas and replies like chat messages to you: short, friendly sentences with the point
   first, in place of dense report prose. Councils started before this update keep the old wording.
+- A council's Discussion reads as a group chat: once a round is over, the experts' ideas take turns instead of coming
+  as one expert's block after another, and every reply sits in the chat under a quote of the idea it answers, the
+  replies to one idea together. An idea is its message alone, with no title over it; the thread still gathers each
+  idea's replies.
 
 ### Fixed
 

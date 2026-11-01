@@ -528,7 +528,7 @@ func TestSynthesisPromptLeavesOutDraftsAndNamesSkips(t *testing.T) {
 func TestPromptsAskForTheMustReadMark(t *testing.T) {
 	for name, c := range map[string]*Council{"review": promptCouncil(), "brainstorm": brainstormCouncil()} {
 		e := c.Experts[0]
-		mustContain(t, name+" round 1 prompt", Round1Prompt(c, e), voiceRule, visualRule, markRule)
+		mustContain(t, name+" round 1 prompt", Round1Prompt(c, e), voiceRule, visualRule, markRule, pictureCheck)
 		mustContain(t, name+" round 2 prompt", Round2Prompt(c, e), voiceRule, visualRule, markRule)
 		mustContain(t, name+" answers prompt", AnswersPrompt(c, e, c.Replies), voiceRule, visualRule, markRule)
 		mustNotContain(t, name+" synthesis prompt", SynthesisPrompt(c), voiceRule, visualRule, markRule)

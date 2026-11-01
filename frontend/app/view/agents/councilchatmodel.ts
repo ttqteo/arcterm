@@ -1,13 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The council's discussion as a Slack-style channel with threads (councilchat.tsx): what the channel, its thread panel,
-// the seat chips and the step chip draw, derived from a `Council`. The channel holds the person's question, a divider for
-// each round, every idea as a message (its evidence, the seats that agreed with it, the seats that picked it, a reply
-// chip), the ideas still held as drafts for the person, the lines where an agent skipped a turn, the person's own posts to
-// the whole council, a failure line with Retry, and a typing row for each seat at work. Every reply to an idea, the
-// person's included, lives in that idea's thread, with a held reply draft among them. An item that was dropped is left
-// out everywhere, and one the person edited before sending says so. Pure, no React, no Wave runtime imports, so every
+// The council's discussion as a group chat with threads (councilchat.tsx): what the channel, its thread panel, the seat
+// chips and the step chip draw, derived from a `Council`. The channel holds the person's question, a divider for each
+// round, every idea as a message (its evidence, the seats that agreed with it, the seats that picked it, a reply chip),
+// every reply as a message naming the idea it is on, the drafts held for the person, the lines where an agent skipped a
+// turn, a failure line with Retry, and a typing row for each seat at work; the seats take turns in it (`takeTurns`).
+// Each idea's thread gathers its replies again, a held reply draft among them. An item that was dropped is left out
+// everywhere, and one the person edited before sending says so. Pure, no React, no Wave runtime imports, so every
 // rule here has a test (councilchatmodel.test.ts).
 //
 // The rounds come from councilmodel.ts (`roundsOf`, `synthesisRound`), so a council saved before rounds existed (no
@@ -170,7 +170,7 @@ export interface ReplyPost extends Who {
     pending: string; // the person's reply: `Queued for the next step` until it is answered
     parentid: string;
     proposalid: string; // the idea it replies on; empty for a post to the whole council
-    on: string; // that idea's title, which the channel shows when it draws a thread's reply (one seat's messages)
+    on: string; // that idea's title, the quote the channel shows above a run of replies on it; empty after the first
     revised: boolean;
     edited: boolean;
     at: string; // the time of day it was posted (`14:32`)
@@ -400,13 +400,18 @@ function typingRow(c: Council, e: CouncilExpert, act: CouncilActivity): TypingRo
     };
 }
 
-// where an item sits among the others: by time, a divider before the items of its round, then as it arrived
+// where an item sits among the others: by time, a divider before the items of its round, then as it arrived; a seat's
+// idea or reply also has its place in the seats' turns
 interface Entry {
     ts: number;
     rank: number;
     index: number;
     item: ChannelItem;
+    turn?: Turn;
 }
+
+// what a seat's message is to the turn order: an idea (round 1), or a reply in a round on the idea it is on
+type Turn = { round: number; author: string; on: string };
 
 const FIRST = Number.MIN_SAFE_INTEGER; // round 1 starts before anything is posted
 const NOT_YET = Number.MAX_SAFE_INTEGER; // a round with nothing posted yet is the newest thing
@@ -448,44 +453,104 @@ function sentView(c: Council): Council {
     return { ...c, proposals: sentProposals(c), replies: sentReplies(c) };
 }
 
-// the ideas that have a message, and so a thread, in the channel
-function threadIds(c: Council): Set<string> {
-    return new Set(sentProposals(c).map((p) => p.id));
+// a round whose messages are all in: every round before the one at work, and every round once nothing runs
+function settled(c: Council, round: number): boolean {
+    return c.state !== "running" || round < c.round;
 }
 
-/** Pure: the channel of a council, in time order: the person's question, a divider for each round reached, every idea
- *  (sent, or held as a draft), the lines where an agent skipped a turn, and the person's posts to the whole council with
- *  the answers to them (a reply with no idea of its own, held ones as drafts); then a failure line for each seat whose
- *  call failed, and last a typing row for each seat at work. Replies to an idea are not here: they are the idea's thread
- *  (`councilThread`). A dropped item is left out.
+/** Pure: the seats' messages of each settled round in the order a group chat has them. A seat sends all its ideas or
+ *  replies of a round in one call, so by time a round reads as one seat's block after another. Here the ideas take
+ *  turns (each seat's first, then each one's second…, the seats in the order they first posted), and the replies follow
+ *  the ideas they are on, in the ideas' order, the seats as they came. A round still at work keeps the order its
+ *  messages came in, so nothing moves above what the person is reading while it runs. Only the seats' messages swap
+ *  places among themselves: the person's posts, drafts, skips and dividers stay where time put them. */
+function takeTurns(c: Council, entries: Entry[]): Entry[] {
+    const ideas = entries.filter((e) => e.turn != null && e.turn.on === "");
+    const seats: string[] = [];
+    const bySeat = new Map<string, Entry[]>();
+    for (const e of ideas) {
+        if (!bySeat.has(e.turn.author)) {
+            seats.push(e.turn.author);
+            bySeat.set(e.turn.author, []);
+        }
+        bySeat.get(e.turn.author).push(e);
+    }
+    const ideaPlace = new Map<string, number>();
+    for (let k = 0; ideaPlace.size < ideas.length; k++) {
+        for (const seat of seats) {
+            const e = bySeat.get(seat)[k];
+            if (e != null) {
+                ideaPlace.set(e.item.id, ideaPlace.size);
+            }
+        }
+    }
+    const placeOf = (e: Entry) =>
+        e.turn.on === "" ? ideaPlace.get(e.item.id) : (ideaPlace.get(e.turn.on) ?? Number.MAX_SAFE_INTEGER);
+    const out = entries.slice();
+    const rounds = new Set(entries.filter((e) => e.turn != null).map((e) => e.turn.round));
+    for (const round of rounds) {
+        if (!settled(c, round)) {
+            continue;
+        }
+        const slots = out.flatMap((e, i) => (e.turn?.round === round ? [i] : []));
+        const moved = slots
+            .map((i, order) => ({ e: out[i], order }))
+            .sort((a, b) => placeOf(a.e) - placeOf(b.e) || a.order - b.order)
+            .map((x) => x.e);
+        slots.forEach((slot, i) => (out[slot] = moved[i]));
+    }
+    return out;
+}
+
+// a run of replies on one idea names it once, on the first: the channel reads as a group chat's quoted reply
+function quoteOnce(items: ChannelItem[]): ChannelItem[] {
+    let on = "";
+    return items.map((item) => {
+        if (item.kind !== "reply" || item.proposalid === "") {
+            on = "";
+            return item;
+        }
+        const repeat = item.proposalid === on;
+        on = item.proposalid;
+        return repeat ? { ...item, on: "" } : item;
+    });
+}
+
+/** Pure: the channel of a council: the person's question, a divider for each round reached, every idea (sent, or held
+ *  as a draft), every reply (each on an idea names it, `on`, the first of a run on one idea only), the lines where an
+ *  agent skipped a turn, and the person's posts with the answers to them; then a failure line for each seat whose call
+ *  failed, and last a typing row for each seat at work. It is in time order, but for the seats taking turns in each
+ *  settled round (`takeTurns`). A reply on an idea is in that idea's thread too (`councilThread`). A dropped item is
+ *  left out.
  *
  *  With `only`, an expert's id, it is that seat's messages alone (the Summary's "show their messages"): the question,
- *  its ideas, and every reply it wrote, a thread's included (each names the idea it is on), with its own lines; a round
- *  with nothing of its own leaves its divider out. An agreement with nothing to add is no message. */
+ *  its ideas, and every reply it wrote, with its own lines; a round with nothing of its own leaves its divider out. An
+ *  agreement with nothing to add is no message. */
 export function councilChannel(c: Council, only?: string): ChannelItem[] {
     const view = sentView(c);
-    const threads = threadIds(c);
     const entries: Entry[] = [];
-    const push = (ts: number, rank: number, item: ChannelItem) =>
-        entries.push({ ts, rank, index: entries.length, item });
+    const push = (ts: number, rank: number, item: ChannelItem, turn?: Turn) =>
+        entries.push({ ts, rank, index: entries.length, item, turn });
     const theirs = (author: string) => only == null || author === only;
-    // one seat's view draws its thread replies in the channel, since the threads they sit in are not its own
-    const inChannel = (proposalid: string) => only != null || !threads.has(proposalid);
 
     for (const p of sentProposals(c)) {
         if (theirs(p.author)) {
-            push(p.ts, 1, ideaPost(c, view, p));
+            push(p.ts, 1, ideaPost(c, view, p), { round: 1, author: p.author, on: "" });
         }
     }
     for (const d of heldDrafts(c)) {
-        const author = d.kind === "idea" ? d.proposal.author : d.reply.author;
-        if ((d.kind === "idea" || inChannel(d.reply.proposalid)) && theirs(author)) {
+        if (theirs(d.kind === "idea" ? d.proposal.author : d.reply.author)) {
             push(d.ts, 1, draftPost(c, d));
         }
     }
     for (const r of readableReplies(c)) {
-        if (inChannel(r.proposalid) && theirs(r.author)) {
-            push(r.ts, 1, replyPost(c, r));
+        if (theirs(r.author)) {
+            // a seat's reply on an idea takes its turn; the person's posts, and the answers to a post, stay in time
+            const turn =
+                r.author !== YOU && r.proposalid !== ""
+                    ? { round: r.round, author: r.author, on: r.proposalid }
+                    : undefined;
+            push(r.ts, 1, replyPost(c, r), turn);
         }
     }
     for (const s of c.skips ?? []) {
@@ -508,9 +573,12 @@ export function councilChannel(c: Council, only?: string): ChannelItem[] {
         push(ts, 0, line);
     }
 
-    const items = entries
-        .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.rank - b.rank || a.index - b.index))
-        .map((e) => e.item);
+    const items = quoteOnce(
+        takeTurns(
+            c,
+            entries.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.rank - b.rank || a.index - b.index))
+        ).map((e) => e.item)
+    );
 
     const asked = askedParts(c.question);
     if (asked.question !== "") {

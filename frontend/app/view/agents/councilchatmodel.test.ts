@@ -344,11 +344,12 @@ describe("councilChannel: the reply chip", () => {
         expect(byId(councilChannel(c), "P1")).toMatchObject({ thread: { count: 0, last: "", lastWhen: "" } });
     });
 
-    it("keeps a reply to an idea out of the channel: it is in the thread", () => {
+    it("draws a reply to an idea in the channel too, but no agreement with nothing to add", () => {
         const items = ids(councilChannel(room()));
-        for (const id of ["r2", "r3", "r4", "r5", "r6"]) {
-            expect(items).not.toContain(id);
+        for (const id of ["r3", "r4", "r5", "r6"]) {
+            expect(items).toContain(id);
         }
+        expect(items).not.toContain("r2");
     });
 });
 
@@ -379,9 +380,9 @@ describe("councilChannel: held drafts", () => {
         expect(ids(councilChannel(room()))).not.toContain("P5");
     });
 
-    it("keeps a held reply to an idea out of the channel: it sits in the thread, and the chip counts it", () => {
+    it("shows a held reply to an idea as a draft in the channel, and the chip counts it", () => {
         const items = councilChannel(room());
-        expect(ids(items)).not.toContain("r6");
+        expect(byId(items, "r6")).toMatchObject({ kind: "draft", of: "reply", on: "title P1" });
         expect(byId(items, "P1")).toMatchObject({ thread: { drafts: 1 } });
     });
 
@@ -862,7 +863,7 @@ describe("a council saved before live agents", () => {
     it("reads as today's two rounds in round 2: a divider for each, the ideas, a chip for the replies", () => {
         const c = old({ activity: { ram: { text: "Replying to UX", proposalid: "P1" } } });
         const items = councilChannel(c);
-        expect(ids(items)).toEqual(["question", "round:1", "P1", "P2", "P3", "round:2", "typing:ram"]);
+        expect(ids(items)).toEqual(["question", "round:1", "P1", "P2", "P3", "round:2", "r1", "r3", "typing:ram"]);
         expect(byId(items, "P1")).toMatchObject({
             thread: { count: 1, label: "1 reply", last: "Last reply 14:02", drafts: 0 },
             agrees: ["New user agrees"],
@@ -894,7 +895,7 @@ describe("a council saved before live agents", () => {
             ],
         });
         const items = councilChannel(c);
-        expect(ids(items)).toEqual(["question", "round:1", "P1", "P2", "P3", "round:2", "r2", "r3"]);
+        expect(ids(items)).toEqual(["question", "round:1", "P1", "P2", "P3", "round:2", "r1", "r2", "r3", "r4"]);
         expect(byId(items, "P1")).toMatchObject({
             picks: { count: 2, title: "Picked by 2 of 3 experts" },
             thread: { count: 2, last: "Last reply 14:07" },
@@ -913,6 +914,60 @@ describe("a council saved before live agents", () => {
         expect(stepChip(old({ state: "done", round: 3 }))).toEqual({ text: "Done", dot: "idle" });
         expect(councilThread(old(), "P1")!.items.map((i) => i.id)).toEqual(["r1"]);
         expect(ideaOrder(councilChannel(old()))).toEqual(["P1", "P2", "P3"]);
+    });
+});
+
+describe("councilChannel: the seats take turns", () => {
+    // each seat sends a round in one call: UX three ideas at 0:39, RAM two at 0:56, New user one at 1:02; in round 2 RAM
+    // answers at 1:46 and New user at 1:57, each on two ideas
+    const turns = (extra: Partial<Council> = {}): Council =>
+        council({
+            experts: oldExperts,
+            proposals: [
+                prop("P1", "ux", 39),
+                prop("P2", "ux", 39),
+                prop("P3", "ux", 39),
+                prop("P4", "ram", 56),
+                prop("P5", "ram", 56),
+                prop("P6", "nu", 62),
+            ],
+            replies: [
+                reply("r1", "ram", 106, { proposalid: "P6", stance: "challenge" }),
+                reply("r2", "ram", 106, { proposalid: "P1", stance: "accept", builds: true }),
+                reply("r3", "nu", 117, { proposalid: "P4", stance: "oppose" }),
+                reply("r4", "nu", 117, { proposalid: "P1", stance: "challenge" }),
+            ],
+            ...extra,
+        });
+    const messages = (c: Council) =>
+        ids(councilChannel(c)).filter((id) => /^[Pr]\d+$/.test(id ?? "") || id?.startsWith("round:"));
+
+    it("deals the ideas round by round, each seat's first, then each one's second, once their round is over", () => {
+        expect(messages(turns()).slice(0, 7)).toEqual(["round:1", "P1", "P4", "P6", "P2", "P5", "P3"]);
+    });
+
+    it("puts the replies under the ideas' order, the seats as they came, and quotes the idea once per run", () => {
+        const c = turns({ state: "done", round: 3 });
+        expect(messages(c).slice(7)).toEqual(["round:2", "r2", "r4", "r3", "r1"]);
+        const items = councilChannel(c);
+        expect(byId(items, "r2")).toMatchObject({ on: "title P1" });
+        expect(byId(items, "r4")).toMatchObject({ on: "" });
+        expect(byId(items, "r3")).toMatchObject({ on: "title P4" });
+        expect(byId(items, "r1")).toMatchObject({ on: "title P6" });
+    });
+
+    it("keeps a round at work in the order its messages came, so nothing moves above the reader", () => {
+        expect(messages(turns({ round: 1, replies: [] }))).toEqual(["round:1", "P1", "P2", "P3", "P4", "P5", "P6"]);
+        expect(messages(turns({ round: 2 })).slice(7)).toEqual(["round:2", "r1", "r2", "r3", "r4"]);
+    });
+
+    it("leaves the person's post in its place, third, while the seats' replies trade places around it", () => {
+        const c = turns({
+            state: "done",
+            round: 3,
+            replies: [...turns().replies, reply("r5", "you", 110, { proposalid: "P4", to: ["ram"] })],
+        });
+        expect(messages(c).slice(7)).toEqual(["round:2", "r2", "r4", "r5", "r3", "r1"]);
     });
 });
 
@@ -955,8 +1010,8 @@ describe("councilChannel with only one seat", () => {
         });
     });
 
-    it("draws a thread's reply in the channel only for one seat; the whole channel keeps it in its thread", () => {
-        expect(councilChannel(room()).some((i) => i.id === "r4")).toBe(false);
+    it("draws a thread's reply in the whole channel as well as one seat's, and a post's answer names no idea", () => {
+        expect(byId(councilChannel(room()), "r4")).toMatchObject({ kind: "reply", proposalid: "P1" });
         expect(byId(councilChannel(room()), "r8")).toMatchObject({ proposalid: "", on: "" });
     });
 });

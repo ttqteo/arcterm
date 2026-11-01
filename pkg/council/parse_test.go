@@ -364,7 +364,12 @@ func TestMarkWeak(t *testing.T) {
 // TestShapesParse feeds each JSON shape a prompt asks for back through its parser: the prompt and the parser
 // describe one shape, or this fails.
 func TestShapesParse(t *testing.T) {
-	if props, _, err := ParseRound1(jsonFence(round1Shape)); err != nil || len(props) != 1 || props[0].Evidence[0].Weak {
+	// the second idea of each round 1 shape is the example message with a table and a list (pictureCheck)
+	hasPicture := func(arg string) bool {
+		return strings.Contains(arg, "\n| 1 min | 40 MB | 2 s |\n") && strings.Contains(arg, "\n1. Log the idle gaps")
+	}
+	if props, _, err := ParseRound1(jsonFence(round1Shape)); err != nil || len(props) != 2 || props[0].Evidence[0].Weak ||
+		!hasPicture(props[1].Argument) {
 		t.Errorf("round1Shape: %+v, %v", props, err)
 	}
 	if r, err := ParseRound2(jsonFence(round2Shape)); err != nil || len(r.Stances) != 1 || len(r.Revisions) != 1 || len(r.Answers) != 1 || len(r.Picks) != 3 {
@@ -383,7 +388,8 @@ func TestShapesParse(t *testing.T) {
 	}
 
 	// the Brainstorm shapes read through the same parsers
-	if props, _, err := ParseRound1(jsonFence(brainstormRound1Shape)); err != nil || len(props) != 1 || props[0].Title == "" {
+	if props, _, err := ParseRound1(jsonFence(brainstormRound1Shape)); err != nil || len(props) != 2 || props[0].Title == "" ||
+		!hasPicture(props[1].Argument) {
 		t.Errorf("brainstormRound1Shape: %+v, %v", props, err)
 	}
 	if r, err := ParseRound2(jsonFence(brainstormRound2Shape)); err != nil || len(r.Stances) != 2 || !r.Stances[0].Builds || r.Stances[1].Builds ||
