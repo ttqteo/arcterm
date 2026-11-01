@@ -69,6 +69,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   folded to three lines with its limits as chips. The seats at the top are filters, each with how many messages it
   wrote, and a thread slides in from the right. The report folds what you asked into a card that opens on the whole
   question and the limits you set.
+- A council's experts write their ideas and replies like chat messages to you: short, friendly sentences with the point
+  first, in place of dense report prose. Councils started before this update keep the old wording.
 
 ### Fixed
 

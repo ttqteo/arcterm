@@ -13,7 +13,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-01.1"
+const HarnessVersion = "2026-11-01.2"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -24,7 +24,7 @@ const (
   "proposals": [
     {
       "title": "a short title for the change you propose",
-      "argument": "why, in at most four sentences",
+      "argument": "why, in about 70 words",
       "evidence": [{"ref": "pkg/services/idle.go:42"}]
     }
   ]
@@ -43,7 +43,7 @@ const (
     {"proposalid": "P1", "withdraw": false, "title": "its new title", "argument": "its new argument", "change": "one line: what you changed and why"}
   ],
   "answers": [
-    {"replyid": "r3", "text": "your answer to the person, in at most three sentences"}
+    {"replyid": "r3", "text": "your answer to the person, in about 50 words"}
   ],
   "picks": ["P2", "P3", "P4"]
 }`
@@ -52,7 +52,7 @@ const (
   "answers": [
     {
       "replyid": "r3",
-      "text": "your answer to the person, in at most three sentences",
+      "text": "your answer to the person, in about 50 words",
       "stance": "accept",
       "evidence": [{"ref": "pkg/services/idle.go:42"}]
     }
@@ -142,7 +142,7 @@ const (
   "proposals": [
     {
       "title": "a short title for the idea",
-      "argument": "what the idea is and why it could work, in at most four sentences",
+      "argument": "what the idea is and why it could work, in about 70 words",
       "wild": false
     }
   ]
@@ -166,7 +166,7 @@ const (
     {"proposalid": "P1", "withdraw": false, "title": "its new title", "argument": "its new argument", "change": "one line: what you changed and why"}
   ],
   "answers": [
-    {"replyid": "r3", "text": "your answer to the person, in at most three sentences"}
+    {"replyid": "r3", "text": "your answer to the person, in about 50 words"}
   ],
   "picks": ["P2", "P3", "P4"]
 }`
@@ -227,6 +227,15 @@ const (
 		`that line under the proposal, and the new argument only in the proposal itself.`
 
 	jsonRule = "End your reply with one JSON object in a ```json fence and nothing after it, in this shape:"
+
+	// voiceRule is in every prompt whose fields the Discussion shows as messages: it shows them as chat bubbles, so an
+	// argument written as a paper abstract (dense, impersonal, its point last) reads wrong there.
+	voiceRule = "The person reads every argument, reason and answer as a chat message from you, so write it the way " +
+		"you would text a friend you work with: warm, casual and direct, never the voice of a report or a paper. Talk " +
+		"to them as \"you\" and of yourself as \"I\", with the everyday pronouns of the language you write in (in " +
+		"Vietnamese, \"mình\" and \"bạn\"). Say the point first, then why. Keep sentences short, one thought each, with " +
+		"no parentheses and no clauses stacked behind a colon. Say a term or a reference in plain words the first time, " +
+		"unless the person used it: \"the panel two days ago suggested…\", not \"council 24-25\". No emoji."
 
 	// markRule is in every prompt whose fields the Discussion shows as messages: it draws a sentence wrapped in ==…==
 	// highlighted, so a long argument or reply shows first the line the person must read.
@@ -430,7 +439,7 @@ func round1Task(c *Council) string {
 			"entry in \"proposals\", with a short title and an argument: what the idea is, and why it could work. An idea " +
 			"may rest on a guess, so it needs no evidence; read the code to ground an idea, not to audit it.\n\n")
 		b.WriteString(wildRule + "\n\n")
-		b.WriteString(markRule + "\n\n")
+		b.WriteString(voiceRule + "\n\n" + markRule + "\n\n")
 		b.WriteString(jsonRule + "\n```json\n" + brainstormRound1Shape + "\n```\n")
 		return b.String()
 	}
@@ -438,7 +447,7 @@ func round1Task(c *Council) string {
 		"proposals beat many weak ones, and none is a fair answer if you find nothing worth changing. " +
 		"Each proposal has a short title, an argument, and the evidence it rests on.\n\n")
 	b.WriteString(evidenceRule + "\n\n")
-	b.WriteString(markRule + "\n\n")
+	b.WriteString(voiceRule + "\n\n" + markRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + round1Shape + "\n```\n")
 	return b.String()
 }
@@ -517,7 +526,7 @@ func round2Task(c *Council, round int) string {
 		b.WriteString(`Answer each question from the person with an entry in "answers", by its replyid. Leave "answers" empty ` +
 			"when there are none.\n\n")
 		b.WriteString(titleRule + "\n\n")
-		b.WriteString(markRule + "\n\n")
+		b.WriteString(voiceRule + "\n\n" + markRule + "\n\n")
 		b.WriteString(jsonRule + "\n```json\n" + brainstormRound2Shape + "\n```\n")
 		return b.String()
 	}
@@ -534,7 +543,7 @@ func round2Task(c *Council, round int) string {
 		"when there are none.\n\n")
 	b.WriteString(titleRule + "\n\n")
 	b.WriteString(evidenceRule + "\n\n")
-	b.WriteString(markRule + "\n\n")
+	b.WriteString(voiceRule + "\n\n" + markRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + round2Shape + "\n```\n")
 	return b.String()
 }
@@ -849,7 +858,7 @@ func answersTask(c *Council) string {
 	if !isBrainstorm(c) { // a Brainstorm asks for no evidence
 		b.WriteString(evidenceRule + "\n\n")
 	}
-	b.WriteString(markRule + "\n\n")
+	b.WriteString(voiceRule + "\n\n" + markRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + answersShape + "\n```\n")
 	return b.String()
 }
