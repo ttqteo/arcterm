@@ -8,6 +8,7 @@ import {
     insertMention,
     mentionPicker,
     moveIdea,
+    onlyLine,
     replyReach,
     seatChips,
     stepChip,
@@ -129,10 +130,12 @@ describe("councilChannel: the goal, the rounds and the order", () => {
             id: "question",
             author: "you",
             name: "You",
+            initials: "Y",
             tone: "you",
             tag: "",
-            label: "sets the goal",
+            label: "asked",
             text: "Which changes to the rail are worth making first?",
+            limits: [],
             at: "14:00",
             when: "Oct 31 14:00 · 0:00 into the council",
         });
@@ -955,5 +958,30 @@ describe("councilChannel with only one seat", () => {
     it("draws a thread's reply in the channel only for one seat; the whole channel keeps it in its thread", () => {
         expect(councilChannel(room()).some((i) => i.id === "r4")).toBe(false);
         expect(byId(councilChannel(room()), "r8")).toMatchObject({ proposalid: "", on: "" });
+    });
+});
+
+describe("the question's limits, a seat's letters and the seat filters", () => {
+    it("splits the limits the question set off the question", () => {
+        const [first] = councilChannel(council({ question: "Which first? Keep to: the rail only; no new tokens." }));
+        expect(first).toMatchObject({
+            kind: "question",
+            text: "Which first?",
+            limits: ["the rail only", "no new tokens"],
+        });
+    });
+
+    it("gives each message its seat's letters", () => {
+        const items = councilChannel(room());
+        expect(byId(items, "P1")).toMatchObject({ author: "sec", initials: "SE" });
+        expect(byId(items, "P3")).toMatchObject({ author: "ux", initials: "UA" });
+    });
+
+    it("counts each seat's ideas and readable replies, and names them while its filter is on", () => {
+        const chips = seatChips(room());
+        const sk = chips.find((c) => c.id === "sk")!;
+        expect([sk.short, sk.initials, sk.ideas, sk.replies]).toEqual(["Skeptic", "SK", 1, 1]);
+        expect(onlyLine(sk)).toBe("Only Skeptic: 1 idea and 1 reply");
+        expect(onlyLine({ short: "Định vị", ideas: 7, replies: 12 })).toBe("Only Định vị: 7 ideas and 12 replies");
     });
 });

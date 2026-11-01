@@ -1,27 +1,32 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The council's discussion as a Slack-style channel with threads (Main.dc.html in the council-live-agents prototype;
-// councilchatmodel.ts derives what it draws). Under the header the discussion draws (councildiscussion.tsx): a chip for
-// each seat (a click on an agent's opens its terminal), then the channel: the person's question, a divider for each
-// round, every idea as a message with its reply chip, the ideas and replies a seat wrote that wait for the person (amber,
-// Send to the others, Edit, Drop), the line where an agent skipped a turn, a failure with Retry, and a typing row for
-// whoever is at work; under it the composer, which posts to everyone, and `@` asks one seat. A click on an idea's reply
-// chip, or Enter on the idea the keyboard cursor is on, opens its thread in a 400px panel on the right: the idea on top,
-// then its replies with their stance pills, the replies held as drafts, and a reply box that names who will answer. j and
-// k move the cursor over the ideas, Enter opens the thread and Escape closes it, while focus is inside the channel or the
+// The council's discussion as a channel of speech bubbles with threads (boards J-chat-bubbles and J3-seat-filter-panel in
+// .superpowers/design/council-report; councilchatmodel.ts derives what it draws). Under the header the discussion draws
+// (councildiscussion.tsx): Everyone and a filter for each seat (its letters, short name and how many messages it wrote;
+// a click shows its messages alone; while it works, waits or failed its dot and what it is doing; an agent's terminal
+// and a failed seat's Retry beside it), then the channel, one column: the person's question on the right in their
+// bubble, folded to three lines and two of its limits; a divider for each round; every idea as a bubble in its seat's
+// colour with its reply chip; the ideas and replies a seat wrote that wait for the person (amber, Send to the others,
+// Edit, Drop); the line where an agent skipped a turn, a failure with Retry, and a typing row for whoever is at work;
+// under it the composer, which posts to everyone, and `@` asks one seat. A click on an idea's reply chip, or Enter on
+// the idea the keyboard cursor is on, slides its thread in from the right (sheetPanel): the idea on top, then its
+// replies with their stance pills, the replies held as drafts, and a reply box that names who will answer. j and k move
+// the cursor over the ideas, Enter opens the thread and Escape closes it, while focus is inside the channel or the
 // thread (buildCouncilBindings reads the cursor councilchatnav.ts publishes). A message's evidence is a link per cited
 // file (councilsourcespanel.tsx): a click opens the Sources panel in the thread's place, and Escape or its close button
-// goes back to the thread it was opened from. Every part carries a data-council-*
-// attribute for the CDP scenario `council-discussion`. The store's actions answer `{ ok, error }`; a refusal shows in the
-// header (the `acts` the discussion shares).
+// goes back to the thread it was opened from. Every part carries a data-council-* attribute for the CDP scenario
+// `council-discussion`. The store's actions answer `{ ok, error }`; a refusal shows in the header (the `acts` the
+// discussion shares).
 
+import { sheetPanel } from "@/app/element/motiontokens";
 import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { cn } from "@/util/util";
 import { atom, useAtom, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
-import { Check, CornerDownRight, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, CornerDownRight, SquareTerminal, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import {
     useCallback,
     useEffect,
@@ -41,6 +46,7 @@ import {
     ideaOrder,
     insertMention,
     mentionPicker,
+    onlyLine,
     replyReach,
     seatChips,
     type ChannelItem,
@@ -58,7 +64,7 @@ import {
 } from "./councilchatmodel";
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
-import { answerers, authorName, draftsWaitWord, followupLabel } from "./councilmodel";
+import { answerers, draftsWaitWord, followupLabel } from "./councilmodel";
 import { followsEnd, keepPlace, keptPlace, placeOf, topFor, type ScrollPlace } from "./councilscroll";
 import { CouncilSourcesPanel, EvidenceChips } from "./councilsourcespanel";
 import {
@@ -99,6 +105,44 @@ const TONE_TEXT: Record<AvatarTone, string> = {
     "conn-8": "text-conn-8",
 };
 
+// an avatar's disc and a message's bubble: the seat's colour, faint, so who speaks shows without the text losing contrast
+const TONE_FILL: Record<AvatarTone, string> = {
+    you: "bg-accent/20",
+    coordinator: "bg-primary/15",
+    muted: "bg-muted/20",
+    "conn-1": "bg-conn-1/20",
+    "conn-2": "bg-conn-2/20",
+    "conn-3": "bg-conn-3/20",
+    "conn-6": "bg-conn-6/20",
+    "conn-7": "bg-conn-7/20",
+    "conn-8": "bg-conn-8/20",
+};
+
+const TONE_BUBBLE: Record<AvatarTone, string> = {
+    you: "border-accent/30 bg-accent/10",
+    coordinator: "border-primary/20 bg-primary/5",
+    muted: "border-edge-mid bg-surface",
+    "conn-1": "border-conn-1/25 bg-conn-1/8",
+    "conn-2": "border-conn-2/25 bg-conn-2/8",
+    "conn-3": "border-conn-3/25 bg-conn-3/8",
+    "conn-6": "border-conn-6/25 bg-conn-6/8",
+    "conn-7": "border-conn-7/25 bg-conn-7/8",
+    "conn-8": "border-conn-8/25 bg-conn-8/8",
+};
+
+// the bubble of the idea whose thread is open, and a seat's filter while it is on
+const TONE_BUBBLE_ON: Record<AvatarTone, string> = {
+    you: "border-accent/55 bg-accent/18",
+    coordinator: "border-primary/45 bg-primary/12",
+    muted: "border-edge-strong bg-surface-selected",
+    "conn-1": "border-conn-1/55 bg-conn-1/16",
+    "conn-2": "border-conn-2/55 bg-conn-2/16",
+    "conn-3": "border-conn-3/55 bg-conn-3/16",
+    "conn-6": "border-conn-6/55 bg-conn-6/16",
+    "conn-7": "border-conn-7/55 bg-conn-7/16",
+    "conn-8": "border-conn-8/55 bg-conn-8/16",
+};
+
 /** The dot on an avatar's corner: an expert writing is green, one whose call failed red. Its word is in the avatar's
  *  title, so the colour never stands alone. */
 type AvatarDot = "working" | "failed" | null;
@@ -106,7 +150,9 @@ type AvatarDot = "working" | "failed" | null;
 export function CouncilAvatar({
     tone,
     name,
+    initials,
     small,
+    large,
     dashed,
     dim,
     dot,
@@ -116,7 +162,9 @@ export function CouncilAvatar({
 }: {
     tone: AvatarTone;
     name: string;
+    initials?: string; // the seat's letters (seatInitials); its name's first letter without
     small?: boolean;
+    large?: boolean;
     dashed?: boolean;
     dim?: boolean;
     dot?: AvatarDot;
@@ -128,16 +176,19 @@ export function CouncilAvatar({
             title={title}
             {...rest}
             className={cn(
-                "relative box-border flex flex-none items-center justify-center rounded-full border-2 bg-background font-bold",
-                small ? "h-[18px] w-[18px] text-[9px]" : "h-[22px] w-[22px] text-[10px]",
-                dashed ? "border-dashed" : "border-solid",
-                TONE_BORDER[tone],
+                "relative box-border flex flex-none items-center justify-center rounded-full font-bold",
+                small
+                    ? "h-[18px] w-[18px] text-[8px]"
+                    : large
+                      ? "h-[30px] w-[30px] text-[11px]"
+                      : "h-[22px] w-[22px] text-[9px]",
+                dashed ? cn("border-2 border-dashed bg-transparent", TONE_BORDER[tone]) : TONE_FILL[tone],
                 TONE_TEXT[tone],
                 dim && "opacity-55",
                 className
             )}
         >
-            {initialOf(name)}
+            {initials ?? initialOf(name)}
             {dot != null && (
                 <span
                     className={cn(
@@ -159,13 +210,6 @@ const PILL_TONE: Record<PillTone, string> = {
 
 export function CouncilPill({ word, tone }: { word: string; tone: PillTone }) {
     return <span className={cn("rounded-full px-[7px] py-px text-[10px] font-semibold", PILL_TONE[tone])}>{word}</span>;
-}
-
-// `agent` or `expert`, beside a name; empty for the person
-function KindTag({ tag }: { tag: Who["tag"] }) {
-    return tag === "" ? null : (
-        <span className="rounded-full bg-pill px-[6px] text-[10px] font-semibold text-secondary">{tag}</span>
-    );
 }
 
 const primaryButton =
@@ -197,57 +241,71 @@ const SEAT_DOT: Record<SeatChip["dot"], string> = {
     idle: "bg-ink-faint",
 };
 
-function SeatChipView({
+// A seat as a filter (board J3-seat-filter-panel.dc.html): its letters, short name and how many messages it wrote; a
+// click shows its messages alone, again shows everyone. While it works, waits or failed, its dot and what it is doing
+// show beside the name; its kind and tooltip are on hover. An agent's terminal and a failed seat's Retry sit beside it.
+function SeatFilter({
     c,
     chip,
+    on,
     acts,
+    onToggle,
     onOpenTerminal,
 }: {
     c: Council;
     chip: SeatChip;
+    on: boolean;
     acts: Actions;
+    onToggle: () => void;
     onOpenTerminal: (tab: string) => void;
 }) {
     const key = `retry:${chip.id}`;
-    const body = (
-        <>
-            <CouncilAvatar tone={chip.tone} name={chip.name} small />
-            <span className="flex-none font-semibold text-primary">{chip.name}</span>
-            <span className="flex-none rounded-full bg-pill px-[6px] text-[10px] font-semibold text-secondary">
-                {chip.kind}
-            </span>
-            <span aria-hidden className={cn("h-[6px] w-[6px] flex-none rounded-full", SEAT_DOT[chip.dot])} />
-            <span data-council-seat-doing className="min-w-0 truncate text-muted">
-                {chip.doing}
-            </span>
-        </>
-    );
-    const box =
-        "flex min-w-0 items-center gap-[6px] rounded-full border border-edge-mid bg-surface py-[3px] pl-[4px] pr-[9px] text-[12px]";
+    const count = chip.ideas + chip.replies;
+    const live = chip.dot !== "idle";
     return (
         <div
             role="listitem"
             data-council-expert-chip={chip.id}
             data-lit={chip.dot === "working" || chip.dot === "waiting" ? "true" : "false"}
             data-dot={chip.dot}
-            title={chip.title}
-            className="flex max-w-[360px] items-center gap-[4px]"
+            title={`${chip.name} · ${chip.kind}. ${chip.title}`}
+            className="flex max-w-[420px] items-center gap-[4px]"
         >
-            {chip.agent ? (
+            <button
+                type="button"
+                data-council-filter={chip.id}
+                aria-pressed={on}
+                disabled={count === 0}
+                onClick={onToggle}
+                className={cn(
+                    "flex h-[30px] min-w-0 cursor-pointer items-center gap-[7px] rounded-full border py-0 pl-[4px] pr-[12px] text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default",
+                    on
+                        ? cn(TONE_BUBBLE_ON[chip.tone], "font-semibold")
+                        : cn(TONE_BUBBLE[chip.tone], "hover:brightness-125"),
+                    TONE_TEXT[chip.tone]
+                )}
+            >
+                <CouncilAvatar tone={chip.tone} name={chip.name} initials={chip.initials} />
+                <span className="flex-none">{chip.short}</span>
+                {count > 0 && <span className="flex-none font-normal tabular-nums text-muted">{count}</span>}
+                {live && (
+                    <span aria-hidden className={cn("h-[6px] w-[6px] flex-none rounded-full", SEAT_DOT[chip.dot])} />
+                )}
+                <span data-council-seat-doing className={live ? "min-w-0 truncate font-normal text-muted" : "sr-only"}>
+                    {chip.doing}
+                </span>
+            </button>
+            {chip.agent && (
                 <button
                     type="button"
                     data-council-chip-open={chip.tab}
                     aria-label={`Open the terminal of ${chip.name}`}
+                    title={`Open the terminal of ${chip.name}`}
                     onClick={() => onOpenTerminal(chip.tab)}
-                    className={cn(
-                        box,
-                        "cursor-pointer text-left outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
-                    )}
+                    className="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                    {body}
+                    <SquareTerminal size={15} strokeWidth={1.8} aria-hidden />
                 </button>
-            ) : (
-                <span className={box}>{body}</span>
             )}
             {chip.retry && (
                 <button
@@ -256,7 +314,7 @@ function SeatChipView({
                     aria-label={`Retry ${chip.name}`}
                     disabled={acts.busy.has(key)}
                     onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, chip.id))}
-                    className={cn(secondaryButton, "h-[22px] px-[8px] text-[12px]")}
+                    className={cn(secondaryButton, "h-[24px] px-[8px] text-[12px]")}
                 >
                     {acts.busy.has(key) ? "Retrying…" : "Retry"}
                 </button>
@@ -272,7 +330,6 @@ function Byline({ who, children }: { who: Who; children?: ReactNode }) {
     return (
         <div className="flex flex-wrap items-center gap-[7px] text-[12.5px]">
             <span className={cn("font-semibold", TONE_TEXT[who.tone])}>{who.name}</span>
-            <KindTag tag={who.tag} />
             {children}
         </div>
     );
@@ -318,14 +375,10 @@ function IdeaMessage({
             data-item-label={item.label}
             data-open={open ? "true" : undefined}
             data-focused={focused ? "true" : undefined}
-            className={cn(
-                "flex gap-[9px] rounded-[8px] px-[10px] py-[8px]",
-                open && "bg-surface-selected",
-                focused && "ring-1 ring-edge-strong"
-            )}
+            className="flex gap-[10px]"
         >
-            <CouncilAvatar tone={item.tone} name={item.name} />
-            <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
+            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} large />
+            <div className="flex min-w-0 max-w-[720px] flex-1 flex-col gap-[6px]">
                 <Byline who={item}>
                     {item.wild ? (
                         <CouncilPill word={item.label} tone="neutral" />
@@ -335,58 +388,67 @@ function IdeaMessage({
                     <PostTime at={item.at} when={item.when} />
                     {item.edited && <span className="text-muted">edited</span>}
                 </Byline>
-                <h3 className="m-0 text-[15px] font-semibold leading-[1.35] text-primary">{item.title}</h3>
-                <span className="whitespace-pre-wrap break-words text-[13.5px] leading-[1.5] text-ink-hi">
-                    {item.text}
-                </span>
-                <EvidenceChips
-                    evidence={item.evidence}
-                    weak={item.weak}
-                    source={{ councilId, owner: item.id, title: item.title }}
-                />
-                <div className="flex flex-wrap items-center gap-[10px]">
-                    <button
-                        type="button"
-                        data-council-thread-open={item.id}
-                        data-replies={t.count}
-                        aria-label={`Open the thread: ${t.label}`}
-                        onClick={() => onOpen(item.id)}
-                        className="-ml-[6px] inline-flex h-[26px] cursor-pointer items-center gap-[8px] rounded-[6px] border border-transparent bg-transparent pl-[6px] pr-[8px] text-[12.5px] outline-none hover:border-edge-mid hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                        {t.repliers.length > 0 && (
-                            <span className="flex">
-                                {t.repliers.map((w, i) => (
-                                    <CouncilAvatar
-                                        key={w.author}
-                                        tone={w.tone}
-                                        name={w.name}
-                                        small
-                                        data-council-replier={w.author}
-                                        className={i > 0 ? "-ml-[5px]" : undefined}
-                                    />
-                                ))}
-                            </span>
-                        )}
-                        <span className="font-semibold text-accent">{t.label}</span>
-                        {t.last !== "" && (
-                            <span className="text-muted" title={t.lastWhen}>
-                                {t.last}
-                            </span>
-                        )}
-                        {t.drafts > 0 && <span className="text-warning-soft">{draftsWaitWord(t.drafts)}</span>}
-                    </button>
-                    {item.agrees.map((text, i) => (
-                        <Reaction key={i} text={text} />
-                    ))}
-                    {item.picks != null && (
-                        <span
-                            data-council-picks
-                            title={item.picks.title}
-                            className="rounded-full bg-pill px-[8px] py-px text-[12px] font-semibold text-secondary"
-                        >
-                            {item.picks.label}
-                        </span>
+                <div
+                    className={cn(
+                        "flex min-w-0 flex-col gap-[6px] rounded-[4px_16px_16px_16px] border px-4 py-3",
+                        open ? TONE_BUBBLE_ON[item.tone] : TONE_BUBBLE[item.tone],
+                        focused && "ring-1 ring-edge-strong"
                     )}
+                >
+                    <h3 className="m-0 text-[16px] font-semibold leading-[1.4] text-primary">{item.title}</h3>
+                    <span className="whitespace-pre-wrap break-words text-[14.5px] leading-[1.6] text-ink-hi">
+                        {item.text}
+                    </span>
+                    <EvidenceChips
+                        evidence={item.evidence}
+                        weak={item.weak}
+                        source={{ councilId, owner: item.id, title: item.title }}
+                    />
+                    <div className="flex flex-wrap items-center gap-[10px]">
+                        <button
+                            type="button"
+                            data-council-thread-open={item.id}
+                            data-replies={t.count}
+                            aria-label={`Open the thread: ${t.label}`}
+                            onClick={() => onOpen(item.id)}
+                            className="-ml-[6px] inline-flex h-[26px] cursor-pointer items-center gap-[8px] rounded-[6px] border border-transparent bg-transparent pl-[6px] pr-[8px] text-[12.5px] outline-none hover:border-edge-mid hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            {t.repliers.length > 0 && (
+                                <span className="flex">
+                                    {t.repliers.map((w, i) => (
+                                        <CouncilAvatar
+                                            key={w.author}
+                                            tone={w.tone}
+                                            name={w.name}
+                                            initials={w.initials}
+                                            small
+                                            data-council-replier={w.author}
+                                            className={i > 0 ? "-ml-[5px]" : undefined}
+                                        />
+                                    ))}
+                                </span>
+                            )}
+                            <span className="font-semibold text-accent">{t.label}</span>
+                            {t.last !== "" && (
+                                <span className="text-muted" title={t.lastWhen}>
+                                    {t.last}
+                                </span>
+                            )}
+                            {t.drafts > 0 && <span className="text-warning-soft">{draftsWaitWord(t.drafts)}</span>}
+                        </button>
+                        {item.agrees.map((text, i) => (
+                            <Reaction key={i} text={text} />
+                        ))}
+                        {item.picks != null && (
+                            <span
+                                data-council-picks
+                                title={item.picks.title}
+                                className="rounded-full bg-pill px-[8px] py-px text-[12px] font-semibold text-secondary"
+                            >
+                                {item.picks.label}
+                            </span>
+                        )}
+                    </div>
                 </div>
             </div>
         </article>
@@ -437,19 +499,27 @@ function ReplyMessage({
             data-item-label={item.label}
             data-item-mine={item.mine ? "true" : undefined}
             data-in-thread={inThread ? "true" : undefined}
-            className={cn("flex gap-[9px] rounded-[8px] px-[10px] py-[8px]", item.mine && "bg-surface-raised")}
+            className={cn("flex gap-[8px]", item.mine && "flex-row-reverse")}
         >
-            <CouncilAvatar tone={item.tone} name={item.name} />
-            <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
+            {!item.mine && <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} />}
+            <div className={cn("flex min-w-0 max-w-[680px] flex-col gap-[5px]", item.mine && "items-end")}>
                 <ReplyHeader item={item} onOpenIdea={inThread ? undefined : onOpenIdea} />
-                <span className="whitespace-pre-wrap break-words text-[13.5px] leading-[1.5] text-ink-hi">
-                    {item.text}
-                </span>
-                <EvidenceChips
-                    evidence={item.evidence}
-                    weak={item.weak}
-                    source={{ councilId, owner: item.id, title: `${item.name}'s reply` }}
-                />
+                <div
+                    className={cn(
+                        "flex min-w-0 flex-col gap-[6px] border px-[14px] py-[10px]",
+                        item.mine ? "rounded-[14px_14px_4px_14px]" : "rounded-[4px_14px_14px_14px]",
+                        TONE_BUBBLE[item.tone]
+                    )}
+                >
+                    <span className="whitespace-pre-wrap break-words text-[14px] leading-[1.6] text-ink-hi">
+                        {item.text}
+                    </span>
+                    <EvidenceChips
+                        evidence={item.evidence}
+                        weak={item.weak}
+                        source={{ councilId, owner: item.id, title: `${item.name}'s reply` }}
+                    />
+                </div>
             </div>
         </article>
     );
@@ -487,9 +557,9 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
             data-council-draft={item.id}
             data-draft-of={item.of}
             aria-label="Draft waiting for you"
-            className="flex gap-[9px] rounded-[8px] bg-askingbg px-[10px] py-[8px]"
+            className="flex gap-[9px] rounded-[12px] border border-asking/30 bg-askingbg px-[12px] py-[10px]"
         >
-            <CouncilAvatar tone={item.tone} name={item.name} />
+            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} />
             <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
                 <Byline who={item}>
                     <span className="inline-flex items-center gap-[5px] font-semibold text-warning-soft">
@@ -612,22 +682,73 @@ function Divider({ text, round }: { text: string; round: number }) {
     );
 }
 
+// the person's question as their message on the right (boards F-asked-message and J-chat-bubbles): three lines and two
+// of the limits it set until Show all opens the rest
+const QUESTION_FOLD = 280;
+const LIMITS_FOLDED = 2;
+
 function QuestionMessage({ item }: { item: Extract<ChannelItem, { kind: "question" }> }) {
+    const [open, setOpen] = useState(false);
+    const hidden = item.limits.length - LIMITS_FOLDED;
+    const foldable = hidden > 0 || item.text.length > QUESTION_FOLD;
+    const limits = open ? item.limits : item.limits.slice(0, LIMITS_FOLDED);
     return (
-        <article
-            data-council-item
-            data-item-kind="question"
-            className="flex gap-[9px] rounded-[8px] bg-surface-raised px-[10px] py-[8px]"
-        >
-            <CouncilAvatar tone={item.tone} name={item.name} />
-            <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
-                <Byline who={item}>
+        <article data-council-item data-item-kind="question" className="flex justify-end">
+            <div
+                className={cn(
+                    "flex min-w-0 max-w-[640px] flex-col gap-[8px] rounded-[16px_16px_4px_16px] border px-4 py-3",
+                    TONE_BUBBLE[item.tone]
+                )}
+            >
+                <div className="flex flex-wrap items-center gap-[7px] text-[12.5px]">
+                    <span className={cn("font-semibold", TONE_TEXT[item.tone])}>{item.name}</span>
                     <span className="text-muted">{item.label}</span>
                     <PostTime at={item.at} when={item.when} />
-                </Byline>
-                <span className="whitespace-pre-wrap break-words text-[13.5px] leading-[1.5] text-ink-hi">
+                    {foldable && (
+                        <button
+                            type="button"
+                            data-council-question-toggle
+                            aria-expanded={open}
+                            onClick={() => setOpen(!open)}
+                            className="ml-auto flex cursor-pointer items-center gap-[4px] rounded-[4px] border-0 bg-transparent p-0 text-[12.5px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            {open ? "Show less" : "Show all"}
+                            {open ? <ChevronUp size={13} aria-hidden /> : <ChevronDown size={13} aria-hidden />}
+                        </button>
+                    )}
+                </div>
+                <span
+                    data-council-question
+                    className={cn(
+                        "whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-primary",
+                        !open && "line-clamp-3"
+                    )}
+                >
                     {item.text}
                 </span>
+                {item.limits.length > 0 && (
+                    <div data-council-limits className="flex flex-wrap items-center gap-[6px]">
+                        <span className="mr-[2px] text-[12.5px] font-semibold text-muted">Keep to</span>
+                        {limits.map((limit, i) => (
+                            <span
+                                key={i}
+                                data-council-limit
+                                className="rounded-[6px] bg-accent/12 px-[8px] py-[2px] text-[13px] leading-[1.45] text-secondary"
+                            >
+                                {limit}
+                            </span>
+                        ))}
+                        {!open && hidden > 0 && (
+                            <button
+                                type="button"
+                                onClick={() => setOpen(true)}
+                                className="cursor-pointer rounded-[4px] border-0 bg-transparent px-[4px] text-[13px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                            >
+                                +{hidden} more
+                            </button>
+                        )}
+                    </div>
+                )}
             </div>
         </article>
     );
@@ -644,7 +765,7 @@ function SkippedLine({ item, onOpenTerminal }: { item: SkipLine; onOpenTerminal:
             data-council-skip={item.author}
             className="flex flex-wrap items-center gap-[9px] px-[10px] py-[6px] text-[13px] text-muted"
         >
-            <CouncilAvatar tone={item.tone} name={item.name} small dim />
+            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} small dim />
             <span>
                 {rest === item.text ? null : <span className="font-semibold text-secondary">{item.name}</span>}
                 {rest}
@@ -673,7 +794,7 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
             data-council-failed={item.author}
             className="flex flex-wrap items-center gap-[9px] px-[10px] py-[6px] text-[13px]"
         >
-            <CouncilAvatar tone={item.tone} name={item.name} small dot="failed" />
+            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} small dot="failed" />
             <span className="text-error-soft">{item.text}</span>
             <span data-council-failed-error className="min-w-0 break-words text-muted">
                 {item.error}
@@ -702,7 +823,7 @@ function TypingLine({ item }: { item: TypingRow }) {
             data-item-on={item.proposalid || undefined}
             className="flex items-center gap-[9px] px-[10px] py-[6px]"
         >
-            <CouncilAvatar tone={item.tone} name={item.name} dashed />
+            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} dashed />
             <span data-council-typing className="text-[13px] text-muted">
                 {item.text}
             </span>
@@ -851,7 +972,7 @@ function Composer({
                     ))}
                 </ul>
             )}
-            <div className="flex items-end gap-[8px] rounded-[10px] border border-edge-mid bg-surface py-[8px] pl-[12px] pr-[8px] focus-within:border-accent">
+            <div className="flex items-end gap-[8px] rounded-[14px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
                 <textarea
                     ref={box}
                     data-council-composer-input
@@ -866,7 +987,10 @@ function Composer({
                     }}
                     onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
                     onKeyDown={onKeyDown}
-                    className="box-border min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted"
+                    className={cn(
+                        "box-border min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted",
+                        rows < 5 ? "overflow-hidden" : "overflow-y-auto"
+                    )}
                 />
                 <button
                     type="button"
@@ -937,7 +1061,7 @@ function ThreadPanel({
             data-council-thread={idea.id}
             tabIndex={-1}
             aria-label="Thread"
-            className="flex min-h-0 w-[400px] flex-none flex-col border-l border-edge-faint bg-surface outline-none"
+            className="flex h-full min-h-0 w-[420px] flex-none flex-col border-l border-edge-faint bg-surface outline-none"
         >
             <div className="flex flex-none items-center gap-[8px] border-b border-edge-faint px-4 py-[12px]">
                 <span className="text-[14px] font-semibold">Thread</span>
@@ -956,43 +1080,49 @@ function ThreadPanel({
             <div
                 ref={scroller}
                 onScroll={onScroll}
-                className="flex min-h-0 flex-1 flex-col gap-[2px] overflow-y-auto px-2 py-[10px]"
+                className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto px-4 py-4"
             >
-                <article
-                    data-council-post={idea.id}
-                    className="flex gap-[9px] border-b border-edge-faint px-[8px] pb-[12px] pt-[8px]"
-                >
-                    <CouncilAvatar tone={idea.tone} name={idea.name} />
-                    <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
+                <article data-council-post={idea.id} className="flex gap-[8px]">
+                    <CouncilAvatar tone={idea.tone} name={idea.name} initials={idea.initials} />
+                    <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
                         <Byline who={idea}>
+                            <span className="text-muted">{idea.label}</span>
                             <PostTime at={idea.at} when={idea.when} />
                             {idea.edited && <span className="text-muted">edited</span>}
                         </Byline>
-                        <h2
-                            data-council-post-title
-                            className="m-0 text-[14px] font-semibold leading-[1.35] text-primary"
+                        <div
+                            className={cn(
+                                "flex min-w-0 flex-col gap-[6px] rounded-[4px_14px_14px_14px] border px-[14px] py-[10px]",
+                                TONE_BUBBLE[idea.tone]
+                            )}
                         >
-                            {idea.title}
-                        </h2>
-                        <span className="whitespace-pre-wrap break-words text-[13px] leading-[1.5] text-ink-hi">
-                            {idea.text}
-                        </span>
-                        <EvidenceChips
-                            evidence={idea.evidence}
-                            weak={idea.weak}
-                            source={{ councilId: c.id, owner: idea.id, title: idea.title }}
-                        />
-                        {idea.agrees.length > 0 && (
-                            <div className="flex flex-wrap gap-[6px]">
-                                {idea.agrees.map((text, i) => (
-                                    <Reaction key={i} text={text} />
-                                ))}
-                            </div>
-                        )}
+                            <h2
+                                data-council-post-title
+                                className="m-0 text-[15px] font-semibold leading-[1.4] text-primary"
+                            >
+                                {idea.title}
+                            </h2>
+                            <span className="whitespace-pre-wrap break-words text-[14px] leading-[1.6] text-ink-hi">
+                                {idea.text}
+                            </span>
+                            <EvidenceChips
+                                evidence={idea.evidence}
+                                weak={idea.weak}
+                                source={{ councilId: c.id, owner: idea.id, title: idea.title }}
+                            />
+                            {idea.agrees.length > 0 && (
+                                <div className="flex flex-wrap gap-[6px]">
+                                    {idea.agrees.map((text, i) => (
+                                        <Reaction key={i} text={text} />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </article>
-                <div data-council-thread-count className="px-[8px] py-[6px] text-[12.5px] text-muted">
+                <div data-council-thread-count className="flex items-center gap-[10px] text-[12.5px] text-muted">
                     {idea.thread.label}
+                    <span aria-hidden className="h-px flex-1 bg-edge-faint" />
                 </div>
                 {thread.items.map((item: ThreadItem) =>
                     item.kind === "reply" ? (
@@ -1097,9 +1227,9 @@ function Channel({
             role="log"
             aria-label="Council channel"
             onScroll={onScroll}
-            className="flex min-h-0 flex-1 flex-col gap-[2px] overflow-y-auto px-[22px] py-[10px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-edge-strong"
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-edge-strong"
         >
-            {children}
+            <div className="mx-auto flex w-full max-w-[860px] flex-col gap-[16px]">{children}</div>
         </div>
     );
 }
@@ -1144,6 +1274,7 @@ export function CouncilChat({
     const onlyId = only != null && c.experts.some((e) => e.id === only) ? only : null;
     const items = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
     const seats = useMemo(() => seatChips(c), [c]);
+    const onlySeat = onlyId == null ? null : (seats.find((chip) => chip.id === onlyId) ?? null);
     const order = useMemo(() => ideaOrder(items), [items]);
     const open = useCallback(
         (id: string) => {
@@ -1181,33 +1312,40 @@ export function CouncilChat({
                 <div
                     data-council-experts
                     role="list"
-                    aria-label="Seats"
-                    className="flex flex-none flex-wrap gap-[6px] border-b border-edge-faint px-8 py-[10px]"
+                    aria-label="Seats: a click shows one seat's messages"
+                    className="flex flex-none flex-wrap items-center gap-[6px] border-b border-edge-faint px-6 py-[10px]"
                 >
-                    {seats.map((chip) => (
-                        <SeatChipView key={chip.id} c={c} chip={chip} acts={acts} onOpenTerminal={onOpenTerminal} />
-                    ))}
-                </div>
-                {onlyId != null ? (
-                    <div
-                        role="status"
-                        data-council-only={onlyId}
-                        className="flex flex-none items-center gap-3 border-b border-edge-faint bg-surface px-8 py-[8px] text-[13px] text-secondary"
+                    <button
+                        type="button"
+                        data-council-action="show-everyone"
+                        aria-pressed={onlyId == null}
+                        onClick={() => setOnly(null)}
+                        className={cn(
+                            "h-[30px] cursor-pointer rounded-full border px-[12px] text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            onlyId == null
+                                ? "border-edge-strong bg-surface-selected font-semibold text-primary"
+                                : "border-edge-mid bg-transparent text-secondary hover:text-primary"
+                        )}
                     >
-                        <span className="min-w-0 flex-1">
-                            Only <span className="font-semibold text-primary">{authorName(c, onlyId)}</span>: their
-                            ideas and every reply they wrote
+                        Everyone
+                    </button>
+                    {seats.map((chip) => (
+                        <SeatFilter
+                            key={chip.id}
+                            c={c}
+                            chip={chip}
+                            on={chip.id === onlyId}
+                            acts={acts}
+                            onToggle={() => setOnly(chip.id === onlyId ? null : chip.id)}
+                            onOpenTerminal={onOpenTerminal}
+                        />
+                    ))}
+                    {onlySeat != null && (
+                        <span role="status" data-council-only={onlySeat.id} className="ml-[6px] text-[13px] text-muted">
+                            {onlyLine(onlySeat)}
                         </span>
-                        <button
-                            type="button"
-                            data-council-action="show-everyone"
-                            onClick={() => setOnly(null)}
-                            className={cn(secondaryButton, "h-[24px] px-[10px] text-[12.5px]")}
-                        >
-                            Show everyone
-                        </button>
-                    </div>
-                ) : null}
+                    )}
+                </div>
                 {notes}
                 <Channel boxRef={channel} councilId={c.id} count={items.length}>
                     {items.map((item) => {
@@ -1258,11 +1396,26 @@ export function CouncilChat({
                     />
                 </div>
             </div>
-            {thread != null ? (
-                <ThreadPanel c={c} thread={thread} acts={acts} onClose={close} />
-            ) : sources != null ? (
-                <CouncilSourcesPanel c={c} view={sources} onClose={closeSources} onOpenFile={onOpenFile} />
-            ) : null}
+            {/* the right panel slides in from its edge and back out (sheetPanel); the thread and the Sources it opens
+                take each other's place in it without moving */}
+            <AnimatePresence initial={false}>
+                {thread != null || sources != null ? (
+                    <motion.div
+                        key="panel"
+                        variants={sheetPanel}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className="flex min-h-0 flex-none"
+                    >
+                        {thread != null ? (
+                            <ThreadPanel c={c} thread={thread} acts={acts} onClose={close} />
+                        ) : sources != null ? (
+                            <CouncilSourcesPanel c={c} view={sources} onClose={closeSources} onOpenFile={onOpenFile} />
+                        ) : null}
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
         </div>
     );
 }

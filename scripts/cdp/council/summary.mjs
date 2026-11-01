@@ -257,13 +257,14 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ entries, sticky, current, placed, back }) };
         });
 
-        await step("a seat in the column opens the Discussion on its messages alone, each thread reply naming its idea, and Show everyone brings the rest back", async () => {
+        await step("a seat in the column opens the Discussion on its messages alone (its filter on), each thread reply naming its idea, and Everyone brings the rest back", async () => {
             await click(h, `${SUMMARY} [data-council-facts-column] [data-council-expert='ux']`);
             const shown = await until(h, `!!document.querySelector("[data-council-only='ux']")`);
             const only = await h.ev(`({
                 ideas: [...document.querySelectorAll("[data-council-channel] [data-council-idea]")].map((e) => e.dataset.councilIdea),
                 on: [...document.querySelectorAll("[data-council-channel] [data-council-reply-on]")].map((e) => e.dataset.councilReplyOn),
                 bar: document.querySelector("[data-council-only]")?.innerText.replace(/\\s+/g, " ").trim() ?? null,
+                pressed: document.querySelector("[data-council-filter='ux']")?.getAttribute("aria-pressed") ?? null,
             })`);
             await h.shot("cdp-shots/council-discussion-only.png");
             await click(h, "[data-council-channel] [data-council-reply-on='P3']");
@@ -275,7 +276,8 @@ export const councilSummary = {
                 shown &&
                 only.ideas.join("|") === "P1|P2" &&
                 [...only.on].sort().join("|") === "P3|P4|P5|P6" &&
-                /^Only UX: their ideas and every reply they wrote/.test(only.bar ?? "") &&
+                only.bar === "Only UX: 2 ideas and 4 replies" &&
+                only.pressed === "true" &&
                 thread &&
                 all;
             return { ok, detail: JSON.stringify({ shown, only, thread, all }) };
@@ -302,7 +304,7 @@ export const councilSummary = {
             const ok =
                 rowShown &&
                 landed &&
-                /^You asked: Which changes to pinned apps/.test(asked ?? "") &&
+                /^You asked Which changes to pinned apps/.test(asked ?? "") &&
                 answer?.text === FIRST_SENTENCE &&
                 answer.weight >= 600;
             return { ok, detail: JSON.stringify({ rowShown, landed, asked, answer, want: FIRST_SENTENCE }) };

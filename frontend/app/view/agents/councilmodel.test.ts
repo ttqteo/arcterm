@@ -4,6 +4,7 @@ import {
     UNTITLED_COUNCIL,
     agentSeat,
     answerers,
+    askedParts,
     callSegments,
     canRemoveCouncil,
     canSummarize,
@@ -1347,5 +1348,31 @@ describe("councilProjectKey", () => {
         expect(councilProjectKey("D:\\Code\\Arc\\")).toBe(councilProjectKey("d:/code/arc"));
         expect(councilProjectKey("/Users/me/Arc/")).toBe("/Users/me/Arc");
         expect(councilProjectKey("")).toBe("");
+    });
+});
+
+describe("askedParts", () => {
+    it("splits the limits after Keep to: at semicolons, a closing period dropped", () => {
+        expect(
+            askedParts(
+                "Which way next? Keep to: a side project, ~5-10h a week; no new dependency; npm first, PyPI later."
+            )
+        ).toEqual({
+            question: "Which way next?",
+            limits: ["a side project, ~5-10h a week", "no new dependency", "npm first, PyPI later"],
+        });
+    });
+
+    it("is the whole question with no Keep to:, its line breaks kept, and empty with none", () => {
+        expect(askedParts("  Which changes first?\nThe rail only.  ")).toEqual({
+            question: "Which changes first?\nThe rail only.",
+            limits: [],
+        });
+        expect(askedParts(undefined)).toEqual({ question: "", limits: [] });
+        expect(askedParts("   ")).toEqual({ question: "", limits: [] });
+    });
+
+    it("keeps a question that is only limits whole, and drops empty limits", () => {
+        expect(askedParts("Keep to: a; ; b.")).toEqual({ question: "Keep to: a; ; b.", limits: ["a", "b"] });
     });
 });

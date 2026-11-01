@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
     answerLine,
     answerParts,
-    askedLine,
     brainstormPrompt,
     canRunSummary,
     currentSection,
@@ -414,7 +413,7 @@ describe("defaultCouncilView", () => {
     });
 });
 
-describe("answerLine and askedLine", () => {
+describe("answerLine", () => {
     const text = "Move the pins first: both are cheap. Keeping an app awake waits on a measurement.";
     const summary = (extra: Partial<CouncilSummary> = {}): CouncilSummary => ({
         text,
@@ -446,12 +445,6 @@ describe("answerLine and askedLine", () => {
         expect(answerLine(council({ summary: undefined }))).toBe("");
         expect(answerLine(council({ summary: summary({ text: "" }) }))).toBe("");
         expect(answerParts(council({ summary: undefined }))).toEqual({ answer: "", rest: "" });
-    });
-
-    it("asks what the person asked, and says nothing without a question", () => {
-        expect(askedLine(council({ question: "What first?" }))).toBe("You asked: What first?");
-        expect(askedLine(council({ question: "  " }))).toBe("");
-        expect(askedLine(council({ question: undefined }))).toBe("");
     });
 });
 

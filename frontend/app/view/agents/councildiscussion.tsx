@@ -42,6 +42,7 @@ import {
     keptProposals,
     modeWord,
     retriedOut,
+    seatInitials,
     summarizeAction,
     toggleCut,
     type CardDot,
@@ -204,6 +205,7 @@ function AvatarStack({ c }: { c: Council }) {
                         key={e.id}
                         tone={avatarTone(c, e.id)}
                         name={e.name}
+                        initials={seatInitials(c, e.id)}
                         dim={running && !lit}
                         dot={lit ? "working" : failed ? "failed" : null}
                         title={`${e.name}: ${expertDoing(c, e)}`}
@@ -345,7 +347,11 @@ function ExpertFailureCard({ c, f, acts }: { c: Council; f: FailedExpert; acts: 
             className="flex flex-col gap-[7px] rounded-[10px] border border-error/30 bg-surface-raised px-3 py-[10px]"
         >
             <div className="flex items-center gap-2">
-                <CouncilAvatar tone={avatarTone(c, f.expert.id)} name={f.expert.name} />
+                <CouncilAvatar
+                    tone={avatarTone(c, f.expert.id)}
+                    name={f.expert.name}
+                    initials={seatInitials(c, f.expert.id)}
+                />
                 <span className="text-[13.5px] font-semibold">{f.expert.name}</span>
                 <span className="text-[12px] text-muted">{f.expert.model}</span>
                 <span className="flex items-center gap-[6px] text-[12.5px] text-error-soft">
@@ -368,7 +374,11 @@ function SummaryFailedPanel({ c, f, acts }: { c: Council; f: FailedExpert; acts:
             className="flex flex-col gap-[7px] rounded-[10px] border border-error/30 bg-surface-raised px-3 py-[10px]"
         >
             <div className="flex items-center gap-2">
-                <CouncilAvatar tone={avatarTone(c, f.expert.id)} name={f.expert.name} />
+                <CouncilAvatar
+                    tone={avatarTone(c, f.expert.id)}
+                    name={f.expert.name}
+                    initials={seatInitials(c, f.expert.id)}
+                />
                 <span className="text-[13.5px] font-semibold">Summary failed</span>
                 <span className="flex items-center gap-[6px] text-[12.5px] text-error-soft">
                     <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-error" />
@@ -426,7 +436,7 @@ function ExpertCard({ c, e, acts }: { c: Council; e: CouncilExpert; acts: Action
             className="flex min-w-0 flex-col gap-2 rounded-[10px] border border-edge-mid bg-surface-raised px-3 py-[10px]"
         >
             <div className="flex items-center gap-2">
-                <CouncilAvatar tone={avatarTone(c, e.id)} name={e.name} />
+                <CouncilAvatar tone={avatarTone(c, e.id)} name={e.name} initials={seatInitials(c, e.id)} />
                 <span className="truncate text-[13.5px] font-semibold">{e.name}</span>
                 <span className="text-[12px] text-muted">{e.model}</span>
             </div>
@@ -480,6 +490,7 @@ function ProposalsSoFar({ c }: { c: Council }) {
                     <CouncilAvatar
                         tone={avatarTone(c, p.author)}
                         name={c.experts.find((e) => e.id === p.author)?.name ?? p.author}
+                        initials={seatInitials(c, p.author)}
                     />
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                         <span className="text-[14px] font-semibold">{p.title}</span>
@@ -555,6 +566,7 @@ function PauseRow({ c, p, kept, onToggle }: { c: Council; p: CouncilProposal; ke
             <CouncilAvatar
                 tone={avatarTone(c, p.author)}
                 name={c.experts.find((e) => e.id === p.author)?.name ?? p.author}
+                initials={seatInitials(c, p.author)}
                 dim={!kept}
             />
             <span

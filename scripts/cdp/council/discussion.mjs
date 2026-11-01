@@ -171,11 +171,11 @@ async function round2(h, ctx, rec) {
     const chips = await seatChips(h);
     const skeptic = chips.find((c) => c.id === "skeptic");
     rec(
-        "round 2: five seat chips replace the header's avatars, two lit, Skeptic's line reads `Replying to UX`, each an `expert · …`",
+        "round 2: five seat filters replace the header's avatars, two lit, Skeptic's line reads `Replying to UX`, each an `expert · …` on hover",
         chips.length === 5 &&
             chips.filter((c) => c.lit).length === 2 &&
             skeptic?.doing === "Replying to UX" &&
-            chips.filter((c) => c.id !== "coordinator").every((c) => /expert · \w+/.test(c.text)) &&
+            chips.filter((c) => c.id !== "coordinator").every((c) => /expert · \w+/.test(c.title ?? "")) &&
             (await count(h, "[data-council-avatar]")) === 0,
         chips.map((c) => `${c.id}: ${c.doing}`).join(" ; ")
     );
@@ -187,10 +187,10 @@ async function round2(h, ctx, rec) {
     const goal = await text(h, '[data-item-kind="question"]');
     const marks = await dividers(h);
     rec(
-        "round 2: the channel opens with the question (`sets the goal`), then a divider for each round, `Round 1 · ideas` and `Round 2 · replies`",
+        "round 2: the channel opens with the question (`You asked`), then a divider for each round, `Round 1 · ideas` and `Round 2 · replies`",
         kinds[0] === "question" &&
             goal.includes("Which changes to pinned apps on the nav rail are worth making first?") &&
-            goal.includes("sets the goal") &&
+            goal.includes("asked") &&
             marks.join("|") === "Round 1 · ideas|Round 2 · replies",
         { kinds: kinds.slice(0, 3), marks }
     );
@@ -726,7 +726,8 @@ async function sources(h, ctx, rec) {
 
     await focusOn(h, P2);
     await pressEscape(h);
-    rec("sources: Escape closes Sources opened from the channel", !(await exists(h, "[data-council-sources]")));
+    // the panel slides out before it leaves the page
+    rec("sources: Escape closes Sources opened from the channel", await until(h, `!document.querySelector("[data-council-sources]")`));
 
     // from a thread, and back to it
     await click(h, '[data-council-thread-open="P2"]');
@@ -774,11 +775,11 @@ async function room(h, ctx, rec) {
     const chips = await seatChips(h);
     const byId = Object.fromEntries(chips.map((c) => [c.id, c]));
     rec(
-        "room: five seat chips; the agents read `agent · 625k` and `agent · 210k`, an expert `expert · sonnet`, Witness waits for its own task, Security has Retry, and an agent's chip opens its terminal",
+        "room: five seat filters; the agents read `agent · 625k` and `agent · 210k` on hover, an expert `expert · sonnet`, Witness waits for its own task, Security has Retry, and an agent's terminal opens beside its filter",
         chips.length === 5 &&
-            byId.witness?.text.includes("agent · 625k") &&
-            byId.uxaudit?.text.includes("agent · 210k") &&
-            byId.security?.text.includes("expert · sonnet") &&
+            byId.witness?.title.includes("agent · 625k") &&
+            byId.uxaudit?.title.includes("agent · 210k") &&
+            byId.security?.title.includes("expert · sonnet") &&
             byId.witness.doing === "Waiting for Witness synthesis to finish its task" &&
             byId.witness.dot === "waiting" &&
             byId.security.retry === true &&

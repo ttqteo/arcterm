@@ -38,9 +38,10 @@ import { showCouncil, showCouncilSetup } from "./agentcenter";
 import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { CouncilAvatar, useKeptScroll } from "./councilchat";
-import { avatarTone } from "./councildiscussionmodel";
+import { avatarTone, seatInitials } from "./councildiscussionmodel";
 import {
     STANCE_WORD,
+    askedParts,
     draftFromCouncil,
     matrixRows,
     outdatedCount,
@@ -60,7 +61,6 @@ import {
 } from "./councilstore";
 import {
     answerParts,
-    askedLine,
     brainstormPrompt,
     canRunSummary,
     currentSection,
@@ -121,7 +121,7 @@ const PRIMARY = cn(
 );
 
 // The Discussion's avatar, in the colour avatarTone gives the expert. It is decorative here (the name is always beside
-// it, so a screen reader skips the letter) and sits on the Summary's own surfaces, so it has no disc fill of its own.
+// it, so a screen reader skips the letters).
 function Avatar({
     c,
     id,
@@ -140,8 +140,9 @@ function Avatar({
             <CouncilAvatar
                 tone={avatarTone(c, id)}
                 name={name}
+                initials={seatInitials(c, id)}
                 small={small}
-                className={cn("bg-transparent", className)}
+                className={className}
             />
         </span>
     );
@@ -904,6 +905,68 @@ function FactsColumn({
     );
 }
 
+// What the person asked, folded to two lines in a quiet card (board E-asked-folded.dc.html, .superpowers/design/
+// council-report): Show all opens the whole question and, under "Keep to", the limits it set.
+function AskedCard({ question }: { question: string | undefined }) {
+    const parts = useMemo(() => askedParts(question), [question]);
+    const [open, setOpen] = useState(false);
+    if (parts.question === "") {
+        return null;
+    }
+    const n = parts.limits.length;
+    const foldable = n > 0 || parts.question.length > ASKED_FOLD;
+    return (
+        <section
+            data-council-asked
+            aria-label="What you asked"
+            className="mb-[6px] flex flex-col gap-[6px] rounded-[10px] bg-surface px-[14px] py-3"
+        >
+            <div className="flex items-center gap-[10px]">
+                <span className="text-[12.5px] font-semibold text-muted">You asked</span>
+                {foldable && (
+                    <button
+                        type="button"
+                        data-council-asked-toggle
+                        aria-expanded={open}
+                        onClick={() => setOpen(!open)}
+                        className={cn(
+                            "ml-auto flex cursor-pointer items-center gap-[4px] rounded-[4px] border-0 bg-transparent p-0 text-[12.5px] text-muted hover:text-primary",
+                            FOCUS
+                        )}
+                    >
+                        {open ? "Show less" : n > 0 ? `${n} ${n === 1 ? "limit" : "limits"} · Show all` : "Show all"}
+                        {open ? <ChevronUp size={13} aria-hidden /> : <ChevronDown size={13} aria-hidden />}
+                    </button>
+                )}
+            </div>
+            <p
+                data-council-asked-question
+                className={cn("m-0 text-[14px] leading-[1.55] text-secondary", !open && "line-clamp-2")}
+            >
+                {parts.question}
+            </p>
+            {open && n > 0 && (
+                <>
+                    <span className="mt-1 text-[12.5px] font-semibold text-muted">Keep to</span>
+                    <ul className="m-0 grid list-none grid-cols-1 gap-x-6 gap-y-[6px] p-0 text-[13.5px] leading-[1.5] text-secondary lg:grid-cols-2">
+                        {parts.limits.map((limit, i) => (
+                            <li key={i} data-council-asked-limit className="flex gap-2">
+                                <span aria-hidden className="flex-none text-ink-faint">
+                                    –
+                                </span>
+                                <span>{limit}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </>
+            )}
+        </section>
+    );
+}
+
+// past this many characters a question with no limits folds too
+const ASKED_FOLD = 200;
+
 function Banner({ tone, children }: { tone: "asking" | "error" | "working"; children: ReactNode }) {
     return (
         <div
@@ -1081,7 +1144,6 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
     const toggle = (rank: number) => setOpen(open.includes(rank) ? open.filter((r) => r !== rank) : [...open, rank]);
 
     const written = writtenLine(c);
-    const asked = askedLine(c);
     const { answer, rest } = answerParts(c);
     const heading = directionsHeading(c);
     const kept = useMemo(() => keptRows(c), [c]);
@@ -1218,11 +1280,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                 />
                             ) : (
                                 <>
-                                    {asked !== "" ? (
-                                        <span data-council-asked className="text-[13px] text-muted">
-                                            {asked}
-                                        </span>
-                                    ) : null}
+                                    <AskedCard key={c.id} question={c.question} />
                                     {answer !== "" ? (
                                         <p
                                             data-council-answer

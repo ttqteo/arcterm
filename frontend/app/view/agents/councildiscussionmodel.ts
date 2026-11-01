@@ -102,6 +102,52 @@ export function initialOf(name: string): string {
     return first == null ? "?" : first.toUpperCase();
 }
 
+const wordsOf = (name: string) =>
+    name
+        .trim()
+        .split(/\s+/)
+        .filter((w) => w !== "");
+
+// the leading words every panel seat's name shares (`Cố vấn` of `Cố vấn định vị`, `Cố vấn khả thi`), so long as each
+// name keeps a word after them; none with fewer than two seats
+function sharedLead(c: Council): number {
+    const names = panel(c).map((e) => wordsOf(e.name).map((w) => w.toLocaleLowerCase()));
+    if (names.length < 2) {
+        return 0;
+    }
+    let n = 0;
+    while (names.every((w) => w.length > n + 1 && w[n] === names[0][n])) {
+        n++;
+    }
+    return n;
+}
+
+/** Pure: a seat's name without the words every panel seat shares (`Định vị` for `Cố vấn định vị`), for the places
+ *  that name seats side by side; the whole name when they share none, and for the coordinator and the person. */
+export function shortName(c: Council, id: string): string {
+    const seat = c.experts.find((e) => e.id === id);
+    if (seat == null || seat.coordinator) {
+        return authorName(c, id);
+    }
+    const rest = wordsOf(seat.name).slice(sharedLead(c)).join(" ");
+    return rest === "" ? seat.name : rest.charAt(0).toLocaleUpperCase() + rest.slice(1);
+}
+
+/** Pure: the letters in a seat's avatar, which tell seats apart where their names start alike: the first letters of
+ *  the first two words of its short name (`ĐV` for `Định vị`, `NU` for `New user`), else the first two letters of its
+ *  one word (`SK` for `Skeptic`, `CO` for the coordinator); `Y` for the person. */
+export function seatInitials(c: Council, id: string): string {
+    if (id === YOU) {
+        return "Y";
+    }
+    const words = wordsOf(shortName(c, id));
+    if (words.length === 0) {
+        return "?";
+    }
+    const letters = words.length >= 2 ? [[...words[0]][0], [...words[1]][0]] : [...words[0]].slice(0, 2);
+    return letters.join("").toLocaleUpperCase();
+}
+
 /** Pure: whether an expert is writing right now (the avatar's green dot). Nothing is while the council is not running. */
 export function isLit(c: Council, id: string): boolean {
     return c.state === "running" && c.activity?.[id] != null;

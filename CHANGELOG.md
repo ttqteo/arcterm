@@ -61,9 +61,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   naming the idea it is on; Show everyone brings the rest back. The header keeps only the title and its actions.
 - A council reads at the size a brainstorm does: its report, Discussion, Setup and Sources step up a size, and the
   report's answer is set larger as the headline it is.
+- A council's Discussion reads as a chat: each expert's ideas and replies sit in bubbles tinted their colour, and the
+  avatars carry two letters (ĐV, KT) that tell apart seats whose names start alike. Your question sits on the right,
+  folded to three lines with its limits as chips. The seats at the top are filters, each with how many messages it
+  wrote, and a thread slides in from the right. The report folds what you asked into a card that opens on the whole
+  question and the limits you set.
 
 ### Fixed
 
+- A council's message box no longer shows a scrollbar over its hint while it holds one line.
 - A council's chat, its open thread and its Summary keep your place: leaving for another council, the Summary, another
   agent or another surface and coming back lands where you were reading, not at the newest message or the top.
 - In New agent, Tab from the Task box goes to the Project column, then the sessions, Cancel and Launch, and round to

@@ -92,6 +92,24 @@ export function isSent(item: { draft?: string }): boolean {
     return !item.draft;
 }
 
+/** Pure: what the person asked, as the council skill writes it (skills/council/SKILL.md): the question, then after
+ *  "Keep to:" the limits they stated, split at semicolons with a closing period dropped. Without "Keep to:" there are
+ *  no limits; the question is trimmed, its own line breaks kept. */
+export function askedParts(question: string | undefined): { question: string; limits: string[] } {
+    const q = (question ?? "").trim();
+    const at = q.indexOf("Keep to:");
+    if (at < 0) {
+        return { question: q, limits: [] };
+    }
+    const limits = q
+        .slice(at + "Keep to:".length)
+        .split(";")
+        .map((s) => s.trim().replace(/\.$/, "").trim())
+        .filter((s) => s !== "");
+    const head = q.slice(0, at).trim();
+    return { question: head === "" ? q : head, limits };
+}
+
 /** Pure: the ideas that were sent (or never held), in the order the record keeps them. */
 export function sentProposals(c: Pick<Council, "proposals">): CouncilProposal[] {
     return (c.proposals ?? []).filter(isSent);

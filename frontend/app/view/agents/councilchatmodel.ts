@@ -22,9 +22,12 @@ import {
     listNames,
     postedAt,
     reactions,
+    seatInitials,
+    shortName,
 } from "./councildiscussionmodel";
 import {
     answerers,
+    askedParts,
     authorName,
     draftsWaitWord,
     headerChip,
@@ -50,6 +53,7 @@ export type Tone = ReturnType<typeof avatarTone>;
 export interface Who {
     author: string;
     name: string;
+    initials: string; // the letters in its avatar (`ĐV`), which tell apart seats whose names start alike
     tone: Tone;
     tag: "agent" | "expert" | "";
 }
@@ -59,6 +63,7 @@ function whoIs(c: Council, id: string): Who {
     return {
         author: id,
         name: authorName(c, id),
+        initials: seatInitials(c, id),
         tone: avatarTone(c, id),
         tag: seat == null ? "" : isAgentSeat(seat) ? "agent" : "expert",
     };
@@ -324,8 +329,9 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
 export interface QuestionPost extends Who {
     kind: "question";
     id: "question";
-    label: "sets the goal";
-    text: string;
+    label: "asked";
+    text: string; // the question, without the limits
+    limits: string[]; // what it said to keep to (askedParts), each a chip under it
     at: string;
     when: string;
 }
@@ -506,14 +512,15 @@ export function councilChannel(c: Council, only?: string): ChannelItem[] {
         .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.rank - b.rank || a.index - b.index))
         .map((e) => e.item);
 
-    const question = (c.question ?? "").trim();
-    if (question !== "") {
+    const asked = askedParts(c.question);
+    if (asked.question !== "") {
         items.unshift({
             kind: "question",
             id: "question",
             ...whoIs(c, YOU),
-            label: "sets the goal",
-            text: question,
+            label: "asked",
+            text: asked.question,
+            limits: asked.limits,
             ...postedAt(c, c.started ?? 0),
         });
     }
@@ -611,6 +618,10 @@ export type SeatDot = "working" | "waiting" | "failed" | "idle";
 export interface SeatChip {
     id: string; // the seat's id
     name: string;
+    short: string; // the name without the words every seat shares (`Định vị`), as the filter row shows it
+    initials: string;
+    ideas: number; // its sent ideas and the replies a person reads: the filter's count, and the line under it
+    replies: number;
     tone: Tone;
     agent: boolean;
     tab: string; // the agent's tab id; empty for a role expert
@@ -661,6 +672,10 @@ export function seatChips(c: Council): SeatChip[] {
     return c.experts.map((e) => ({
         id: e.id,
         name: e.name,
+        short: shortName(c, e.id),
+        initials: seatInitials(c, e.id),
+        ideas: sentProposals(c).filter((p) => p.author === e.id).length,
+        replies: readableReplies(c).filter((r) => r.author === e.id).length,
         tone: avatarTone(c, e.id),
         agent: isAgentSeat(e),
         tab: e.agent ?? "",
@@ -669,6 +684,13 @@ export function seatChips(c: Council): SeatChip[] {
         retry: c.failed?.[e.id] != null,
         title: seatTitle(e),
     }));
+}
+
+/** Pure: the line beside the seat filters while one is on: `Only Định vị: 7 ideas and 12 replies`. */
+export function onlyLine(chip: Pick<SeatChip, "short" | "ideas" | "replies">): string {
+    const ideas = `${chip.ideas} ${chip.ideas === 1 ? "idea" : "ideas"}`;
+    const replies = `${chip.replies} ${chip.replies === 1 ? "reply" : "replies"}`;
+    return `Only ${chip.short}: ${ideas} and ${replies}`;
 }
 
 /** The chip in the header: the step (`Round 2 of 2 · 1 draft waits for you`) and the dot beside it, amber while the

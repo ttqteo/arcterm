@@ -22,7 +22,9 @@ import {
     postedAt,
     reactions,
     retriedOut,
+    seatInitials,
     segmentSummary,
+    shortName,
     sinceStart,
     summarizeAction,
     toggleCut,
@@ -507,5 +509,53 @@ describe("the pause", () => {
     it("needs a proposal to carry on with", () => {
         expect(canContinue(c, ["P1", "P2"])).toBe(true);
         expect(canContinue(c, ["P1", "P2", "P3"])).toBe(false);
+    });
+});
+
+describe("shortName and seatInitials", () => {
+    const seat = (id: string, name: string, extra: Partial<CouncilExpert> = {}): CouncilExpert => ({
+        id,
+        name,
+        brief: "",
+        model: "sonnet",
+        ...extra,
+    });
+    const advisers = council({
+        experts: [
+            seat("pp", "Cố vấn phương pháp"),
+            seat("dv", "Cố vấn định vị"),
+            seat("kt", "Cố vấn khả thi"),
+            seat("coordinator", "Coordinator", { model: "opus", coordinator: true }),
+        ],
+    });
+
+    it("drops the words every seat's name starts with, and tells the seats apart by the rest", () => {
+        expect(["pp", "dv", "kt"].map((id) => shortName(advisers, id))).toEqual(["Phương pháp", "Định vị", "Khả thi"]);
+        expect(["pp", "dv", "kt"].map((id) => seatInitials(advisers, id))).toEqual(["PP", "ĐV", "KT"]);
+    });
+
+    it("keeps the coordinator's name, and gives the person Y", () => {
+        expect(shortName(advisers, "coordinator")).toBe("Coordinator");
+        expect(seatInitials(advisers, "coordinator")).toBe("CO");
+        expect(seatInitials(advisers, "you")).toBe("Y");
+    });
+
+    it("keeps whole names that share no first word: two words give two first letters, one word its first two", () => {
+        const c = council();
+        expect(["ux", "ram", "nu", "sk"].map((id) => [shortName(c, id), seatInitials(c, id)])).toEqual([
+            ["UX", "UX"],
+            ["RAM", "RA"],
+            ["New user", "NU"],
+            ["Skeptic", "SK"],
+        ]);
+    });
+
+    it("never strips a seat's whole name, and with one seat strips nothing", () => {
+        const alike = council({ experts: [seat("a", "Reviewer"), seat("b", "Reviewer two")] });
+        expect(shortName(alike, "a")).toBe("Reviewer");
+        expect(shortName(alike, "b")).toBe("Reviewer two");
+        const one = council({ experts: [seat("a", "Cố vấn định vị")] });
+        expect(shortName(one, "a")).toBe("Cố vấn định vị");
+        expect(seatInitials(one, "a")).toBe("CV");
     });
 });

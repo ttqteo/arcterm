@@ -65,12 +65,6 @@ export function answerLine(c: Council): string {
     return answerParts(c).answer;
 }
 
-/** Pure: `You asked: <question>`, empty for a council without a question. */
-export function askedLine(c: Council): string {
-    const q = (c.question ?? "").replace(/\s+/g, " ").trim();
-    return q === "" ? "" : `You asked: ${q}`;
-}
-
 /** Pure: how a proposal's outcome reads in the report: the round a withdrawal happened in is a v1 detail. */
 export function outcomeLabel(outcome: string): string {
     return /^Withdrawn in round \d+$/.test(outcome) ? "Withdrawn" : outcome;
