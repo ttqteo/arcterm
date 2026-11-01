@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council answers one at a time: in a finished council, send a message For everyone that only steers
+  (e.g. "that's a given, not the point"). The first seat on the panel answers first; the others answer after it and
+  add only what is new, and one with nothing to add shows as a green "<seat> agrees" chip under that first answer,
+  not as an empty bubble. While the first answer waits as a draft (a council with an agent), the chip sits under your
+  message. Unit tests cover the order, the prompt, the parse and the chip's place only (2aebc1cbc).
 - [ ] (arcterm) Council messages as Markdown: start a new council (Brainstorm) whose question compares two or more
   options. In the Discussion, an idea or reply with a table draws a table inside the bubble: it wraps its cells instead
   of scrolling sideways, and its copy button shows on hover. A ```mermaid block draws a flowchart that fits the
