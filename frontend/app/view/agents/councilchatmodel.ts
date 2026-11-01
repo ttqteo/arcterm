@@ -164,6 +164,8 @@ export interface ReplyPost extends Who {
     reaches: string; // the person's reply: `For everyone`, `For UX and RAM`
     pending: string; // the person's reply: `Queued for the next step` until it is answered
     parentid: string;
+    proposalid: string; // the idea it replies on; empty for a post to the whole council
+    on: string; // that idea's title, which the channel shows when it draws a thread's reply (one seat's messages)
     revised: boolean;
     edited: boolean;
     at: string; // the time of day it was posted (`14:32`)
@@ -183,6 +185,8 @@ function replyPost(c: Council, r: CouncilReply): ReplyPost {
         reaches: mine ? reachOf(c, r) : "",
         pending: mine ? replyLabel(c, r) : "",
         parentid: r.parentid ?? "",
+        proposalid: r.proposalid,
+        on: r.proposalid === "" ? "" : ((c.proposals ?? []).find((p) => p.id === r.proposalid)?.title ?? ""),
         revised: !!r.revised,
         edited: !!r.edited,
         ...postedAt(c, r.ts),
@@ -447,28 +451,41 @@ function threadIds(c: Council): Set<string> {
  *  (sent, or held as a draft), the lines where an agent skipped a turn, and the person's posts to the whole council with
  *  the answers to them (a reply with no idea of its own, held ones as drafts); then a failure line for each seat whose
  *  call failed, and last a typing row for each seat at work. Replies to an idea are not here: they are the idea's thread
- *  (`councilThread`). A dropped item is left out. */
-export function councilChannel(c: Council): ChannelItem[] {
+ *  (`councilThread`). A dropped item is left out.
+ *
+ *  With `only`, an expert's id, it is that seat's messages alone (the Summary's "show their messages"): the question,
+ *  its ideas, and every reply it wrote, a thread's included (each names the idea it is on), with its own lines; a round
+ *  with nothing of its own leaves its divider out. An agreement with nothing to add is no message. */
+export function councilChannel(c: Council, only?: string): ChannelItem[] {
     const view = sentView(c);
     const threads = threadIds(c);
     const entries: Entry[] = [];
     const push = (ts: number, rank: number, item: ChannelItem) =>
         entries.push({ ts, rank, index: entries.length, item });
+    const theirs = (author: string) => only == null || author === only;
+    // one seat's view draws its thread replies in the channel, since the threads they sit in are not its own
+    const inChannel = (proposalid: string) => only != null || !threads.has(proposalid);
 
     for (const p of sentProposals(c)) {
-        push(p.ts, 1, ideaPost(c, view, p));
+        if (theirs(p.author)) {
+            push(p.ts, 1, ideaPost(c, view, p));
+        }
     }
     for (const d of heldDrafts(c)) {
-        if (d.kind === "idea" || !threads.has(d.reply.proposalid)) {
+        const author = d.kind === "idea" ? d.proposal.author : d.reply.author;
+        if ((d.kind === "idea" || inChannel(d.reply.proposalid)) && theirs(author)) {
             push(d.ts, 1, draftPost(c, d));
         }
     }
     for (const r of readableReplies(c)) {
-        if (!threads.has(r.proposalid)) {
+        if (inChannel(r.proposalid) && theirs(r.author)) {
             push(r.ts, 1, replyPost(c, r));
         }
     }
     for (const s of c.skips ?? []) {
+        if (!theirs(s.expert)) {
+            continue;
+        }
         const seat = c.experts.find((e) => e.id === s.expert);
         push(s.ts, 1, {
             kind: "skip",
@@ -503,7 +520,7 @@ export function councilChannel(c: Council): ChannelItem[] {
 
     for (const e of c.experts) {
         const failure = c.failed?.[e.id];
-        if (failure != null) {
+        if (failure != null && theirs(e.id)) {
             items.push({
                 kind: "failure",
                 id: `failed:${e.id}`,
@@ -516,11 +533,15 @@ export function councilChannel(c: Council): ChannelItem[] {
     }
     for (const e of c.experts) {
         const act = c.activity?.[e.id];
-        if (isLit(c, e.id) && act != null) {
+        if (isLit(c, e.id) && act != null && theirs(e.id)) {
             items.push(typingRow(c, e, act));
         }
     }
-    return items;
+    return only == null
+        ? items
+        : items.filter(
+              (item, i) => item.kind !== "divider" || (i + 1 < items.length && items[i + 1].kind !== "divider")
+          );
 }
 
 // ---- a thread ----
@@ -562,12 +583,10 @@ export function councilThread(c: Council, proposalId: string): ChatThread | null
     return { idea: ideaPost(c, sentView(c), p), items };
 }
 
-/** Pure: the ideas j and k move over, in the order the channel draws them: the sent ones (a held draft has no thread to
- *  open). */
-export function ideaOrder(c: Council): string[] {
-    return councilChannel(c)
-        .filter((i): i is IdeaPost => i.kind === "idea")
-        .map((i) => i.id);
+/** Pure: the ideas j and k move over, in the order the channel draws them (`items`, the whole channel or one seat's):
+ *  the sent ones (a held draft has no thread to open). */
+export function ideaOrder(items: readonly ChannelItem[]): string[] {
+    return items.filter((i): i is IdeaPost => i.kind === "idea").map((i) => i.id);
 }
 
 /** Pure: the idea j (`1`) or k (`-1`) moves to from `from`: the first (or, going up, the last) when none is focused or

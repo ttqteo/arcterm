@@ -55,6 +55,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - The files a council message cites are one blue link per file, its lines after it (`huong_harness.md:65`), in place of
   a chip per line with the whole path; hover one for the path. A click opens Sources on the right: the cited lines lit,
   a line each side, the message's other files above, and Open in Code. Esc goes back to the thread.
+- A council's report keeps its facts in a column beside it that stays in view as you scroll: the state and cost, an
+  outline of the report (a click jumps to a part; the one you are reading is grey), each expert with its model and what
+  it did, and the saved document. Click an expert to see only their ideas and replies in the Discussion, each reply
+  naming the idea it is on; Show everyone brings the rest back. The header keeps only the title and its actions.
 
 ### Fixed
 

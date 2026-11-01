@@ -563,15 +563,15 @@ export function queuedLine(holder: Council | null | undefined): string {
     return agents.length > 0 ? `${line} · waiting for ${listAnd([...new Set(agents)])}` : line;
 }
 
-/** Pure: the Summary's chip: `Done · 4 experts · 11 min · 0.86M tokens`. */
-export function summaryChip(c: Council, nowMs: number): string {
-    const parts = [STATE_WORD[c.state] ?? c.state, plural(panel(c).length, "expert", "experts")];
+/** Pure: the Summary's side column opens on the state word, with `4 experts · 11 min · 0.86M tokens` under it. */
+export function summaryFacts(c: Council, nowMs: number): { state: string; facts: string } {
+    const parts = [plural(panel(c).length, "expert", "experts")];
     const ms = elapsedMs(c, nowMs);
     if (c.started) {
         parts.push(`${Math.max(1, Math.round(ms / 60_000))} min`);
     }
     parts.push(`${countTokens(c.tokens)} tokens`);
-    return parts.join(" · ");
+    return { state: STATE_WORD[c.state] ?? c.state, facts: parts.join(" · ") };
 }
 
 /** Pure: the Discussion header's cost line: `7:20 · 19 replies · 0.55M tokens` (reactions are no replies). */

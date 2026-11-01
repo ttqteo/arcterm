@@ -331,6 +331,10 @@ export const councilOpenProposalAtom = atomFamily(
     (_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>
 );
 
+/** The seat whose messages alone a council's Discussion shows, per council; null shows everyone. The Summary's column
+ *  sets it (showCouncil's `only`); every other way into a council clears it. */
+export const councilOnlyAtom = atomFamily((_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>);
+
 /** What a council chat's Sources panel shows: the evidence of the message whose link was clicked, the file picked
  *  among it, and the thread it was opened from, which closing the panel goes back to. */
 export interface CouncilSourcesView {

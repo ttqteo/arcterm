@@ -24,7 +24,7 @@ import {
     rankedProposals,
     replyLabel,
     summarizeHold,
-    summaryChip,
+    summaryFacts,
     threadTree,
     treeMeta,
 } from "../../../frontend/app/view/agents/councilmodel";
@@ -201,7 +201,7 @@ describe("the fixtures as records", () => {
     it("done is Summary.dc.html: four directions, the matrix, a reply after the summary", () => {
         const c = placed("done");
         expect(headerChip(c)).toBe("Done");
-        expect(summaryChip(c, NOW)).toBe("Done · 4 experts · 11 min · 0.86M tokens");
+        expect(summaryFacts(c, NOW)).toEqual({ state: "Done", facts: "4 experts · 11 min · 0.86M tokens" });
         expect(treeMeta(c)).toEqual({ text: "Done", tone: "muted" });
         expect(c.sessionid).toBeTruthy();
         expect(c.summary.directions.map((d) => d.rank)).toEqual([1, 2, 3, 4]);

@@ -40,7 +40,7 @@ import {
     sentProposals,
     sentReplies,
     summarizeHold,
-    summaryChip,
+    summaryFacts,
     synthesisRound,
     threadTree,
     treeMeta,
@@ -843,7 +843,7 @@ describe("queuedLine", () => {
     });
 });
 
-describe("summaryChip and costLine", () => {
+describe("summaryFacts and costLine", () => {
     const started = 1_000_000;
 
     it("sums up a done council", () => {
@@ -855,7 +855,10 @@ describe("summaryChip and costLine", () => {
             updated: started + 40 * MIN,
             summary: { text: "", directions: [], outcomes: {}, at: started + 11 * MIN },
         });
-        expect(summaryChip(c, started + 99 * MIN)).toBe("Done · 4 experts · 11 min · 0.86M tokens");
+        expect(summaryFacts(c, started + 99 * MIN)).toEqual({
+            state: "Done",
+            facts: "4 experts · 11 min · 0.86M tokens",
+        });
     });
 
     it("times a running council to now and a finished one to its summary or last save", () => {
@@ -867,7 +870,10 @@ describe("summaryChip and costLine", () => {
         expect(costLine(running, started + 7 * MIN + 20_000)).toBe("7:20 · 19 replies · 0.55M tokens");
         const stopped = council({ state: "stopped", started, updated: started + 3 * MIN, tokens: 0 });
         expect(costLine(stopped, started + 90 * MIN)).toBe("3:00 · 0 replies · 0 tokens");
-        expect(summaryChip(stopped, started + 90 * MIN)).toBe("Stopped · 4 experts · 3 min · 0 tokens");
+        expect(summaryFacts(stopped, started + 90 * MIN)).toEqual({
+            state: "Stopped",
+            facts: "4 experts · 3 min · 0 tokens",
+        });
     });
 
     it("runs past the hour, and leaves the time out of a council that never started", () => {
@@ -875,7 +881,7 @@ describe("summaryChip and costLine", () => {
         expect(costLine(long, started + 61 * MIN + 5_000)).toBe("1:01:05 · 1 reply · 1k tokens");
         const notRun = council({ state: "not-run", round: 0 });
         expect(costLine(notRun, started)).toBe("0 replies · 0 tokens");
-        expect(summaryChip(notRun, started)).toBe("Not run · 4 experts · 0 tokens");
+        expect(summaryFacts(notRun, started)).toEqual({ state: "Not run", facts: "4 experts · 0 tokens" });
     });
 });
 

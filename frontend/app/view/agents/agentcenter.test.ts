@@ -22,6 +22,7 @@ import { draftWithAgents, emptyCouncilDraft } from "./councilmodel";
 import {
     councilAtom,
     councilListAtom,
+    councilOnlyAtom,
     councilSelAtom,
     councilSetupDraftAtom,
     councilSetupProjectAtom,
@@ -132,6 +133,13 @@ describe("council openers", () => {
         showCouncil("c2", "summary");
         expect(globalStore.get(councilSelAtom)).toBe("c2");
         expect(globalStore.get(councilViewAtom)).toBe("summary");
+    });
+
+    it("showCouncil shows one seat's messages only when asked, and everyone on any other way in", () => {
+        showCouncil("c3", "discussion", undefined, "ux");
+        expect(globalStore.get(councilOnlyAtom("c3"))).toBe("ux");
+        showCouncil("c3", "summary");
+        expect(globalStore.get(councilOnlyAtom("c3"))).toBeNull();
     });
 
     describe("with no view", () => {

@@ -191,7 +191,7 @@ export const councilSummary = {
         };
         await openSummary(h, ctx);
 
-        await step("the header: title, state chip, Show the discussion, the ⋯ menu and one chip per expert with its model", async () => {
+        await step("the header: title, Show the discussion and the ⋯ menu; the column beside the report: the state, its cost and each expert with its model and what it did", async () => {
             const header = await h.ev(`(() => {
                 const root = document.querySelector(${q(SUMMARY)});
                 const t = (s) => root.querySelector(s)?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
@@ -199,9 +199,15 @@ export const councilSummary = {
                     back: t("[data-council-action='discussion']"),
                     menu: !!root.querySelector("[data-council-menu]"),
                     title: t("h1"),
-                    chip: t("[data-council-state-chip]"),
+                    state: t("[data-council-facts-column] [data-council-state]"),
+                    facts: t("[data-council-facts-column] [data-council-facts]"),
+                    inHeader: !!root.querySelector("header [data-council-expert], header [data-council-state]"),
                     written: t("[data-council-written]"),
-                    experts: [...root.querySelectorAll("[data-council-expert]")].map((e) => e.innerText.replace(/\\s+/g, " ").trim()),
+                    experts: [...root.querySelectorAll("[data-council-facts-column] [data-council-expert] [data-council-expert-who]")].map((e) => e.innerText.replace(/\\s+/g, " ").trim()),
+                    ux: t("[data-council-expert='ux'] [data-council-expert-activity]"),
+                    coordinator: t("[data-council-expert='coordinator'] [data-council-expert-activity]"),
+                    uxButton: root.querySelector("[data-council-expert='ux']")?.tagName ?? null,
+                    coordinatorButton: root.querySelector("[data-council-expert='coordinator']")?.tagName ?? null,
                 };
             })()`);
             const want = ["UX sonnet", "RAM sonnet", "New user sonnet", "Skeptic sonnet", "Coordinator opus"];
@@ -209,11 +215,70 @@ export const councilSummary = {
                 header.back === "Show the discussion" &&
                 header.menu &&
                 header.title === "Council · Rail apps" &&
-                /^Done · 4 experts · \d+ min · [\d.]+M tokens$/.test(header.chip ?? "") &&
+                header.state === "Done" &&
+                /^4 experts · \d+ min · [\d.]+M tokens$/.test(header.facts ?? "") &&
+                !header.inHeader &&
                 /^Written by the coordinator at \d\d:\d\d from 18 replies$/.test(header.written ?? "") &&
                 header.experts.length === want.length &&
-                want.every((w, i) => header.experts[i].endsWith(w));
+                want.every((w, i) => header.experts[i] === w) &&
+                header.ux === "2 ideas, 2 in the summary · 4 replies" &&
+                header.coordinator === "Wrote the summary" &&
+                header.uxButton === "BUTTON" &&
+                header.coordinatorButton === "DIV";
             return { ok, detail: JSON.stringify(header) };
+        });
+
+        await step("the column's outline lists the answer, the four directions and the matrix, follows the report as it scrolls and scrolls to a direction on a click", async () => {
+            const OUTLINE = `${SUMMARY} [data-council-outline]`;
+            const entries = await h.ev(`[...document.querySelectorAll(${q(`${OUTLINE} [data-council-outline-entry]`)})].map((e) => e.dataset.councilOutlineEntry)`);
+            const sticky = await h.ev(`getComputedStyle(document.querySelector(${q(`${SUMMARY} [data-council-facts-column]`)})).position`);
+            await click(h, `${OUTLINE} [data-council-outline-entry='direction:3']`);
+            const current = await until(h, `document.querySelector(${q(`${OUTLINE} [aria-current='location']`)})?.dataset.councilOutlineEntry === "direction:3"`);
+            const placed = await h.ev(`(() => {
+                const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
+                const card = box.querySelector("[data-council-direction='3']");
+                const column = document.querySelector(${q(`${SUMMARY} [data-council-facts-column]`)});
+                return { cardTop: Math.round(card.getBoundingClientRect().top - box.getBoundingClientRect().top), columnTop: Math.round(column.getBoundingClientRect().top - box.getBoundingClientRect().top), scrolled: box.scrollTop };
+            })()`);
+            await h.shot("cdp-shots/council-summary-outline.png");
+            await click(h, `${OUTLINE} [data-council-outline-entry='answer']`);
+            const back = await until(h, `document.querySelector(${q(`${OUTLINE} [aria-current='location']`)})?.dataset.councilOutlineEntry === "answer"`);
+            const want = ["answer", "directions", "direction:1", "direction:2", "direction:3", "direction:4", "matrix"];
+            const ok =
+                entries.join("|") === want.join("|") &&
+                sticky === "sticky" &&
+                current &&
+                placed.scrolled > 0 &&
+                placed.cardTop >= 0 &&
+                placed.cardTop < 60 &&
+                placed.columnTop >= 0 &&
+                placed.columnTop < 40 &&
+                back;
+            return { ok, detail: JSON.stringify({ entries, sticky, current, placed, back }) };
+        });
+
+        await step("a seat in the column opens the Discussion on its messages alone, each thread reply naming its idea, and Show everyone brings the rest back", async () => {
+            await click(h, `${SUMMARY} [data-council-facts-column] [data-council-expert='ux']`);
+            const shown = await until(h, `!!document.querySelector("[data-council-only='ux']")`);
+            const only = await h.ev(`({
+                ideas: [...document.querySelectorAll("[data-council-channel] [data-council-idea]")].map((e) => e.dataset.councilIdea),
+                on: [...document.querySelectorAll("[data-council-channel] [data-council-reply-on]")].map((e) => e.dataset.councilReplyOn),
+                bar: document.querySelector("[data-council-only]")?.innerText.replace(/\\s+/g, " ").trim() ?? null,
+            })`);
+            await h.shot("cdp-shots/council-discussion-only.png");
+            await click(h, "[data-council-channel] [data-council-reply-on='P3']");
+            const thread = await until(h, `!!document.querySelector("[data-council-thread]")`);
+            await click(h, "[data-council-action='show-everyone']");
+            const all = await until(h, `!document.querySelector("[data-council-only]") && document.querySelectorAll("[data-council-channel] [data-council-idea]").length === 6`);
+            await openSummary(h, ctx);
+            const ok =
+                shown &&
+                only.ideas.join("|") === "P1|P2" &&
+                [...only.on].sort().join("|") === "P3|P4|P5|P6" &&
+                /^Only UX: their ideas and every reply they wrote/.test(only.bar ?? "") &&
+                thread &&
+                all;
+            return { ok, detail: JSON.stringify({ shown, only, thread, all }) };
         });
 
         await step("Show the discussion goes back to the Discussion", async () => {
@@ -663,6 +728,11 @@ export const councilSummary = {
             await menuClick(h, "open-doc");
             const inCode = await until(h, `document.querySelector("[data-code-path]")?.getAttribute("data-code-path") === ${q(DOC_REL)}`);
             const surface = await h.activeSurfaceLabel();
+            // the saved line in the column beside the report opens the same document
+            await h.goto("agent");
+            await openBrainstormSummary(h, id);
+            await click(h, `${SUMMARY} [data-council-facts-column] [data-council-docpath]`);
+            const lineOpens = await until(h, `document.querySelector("[data-code-path]")?.getAttribute("data-code-path") === ${q(DOC_REL)}`);
             // back on the Agent surface for the steps that follow
             await h.goto("agent");
             await openSummary(h, ctx);
@@ -685,8 +755,9 @@ export const councilSummary = {
                 items.includes("open-doc=Open the document") &&
                 !items.some((i) => i.startsWith("save-doc=")) &&
                 inCode &&
-                surface === SURFACE_LABEL.code;
-            return { ok, detail: JSON.stringify({ facts, items, inCode, surface }) };
+                surface === SURFACE_LABEL.code &&
+                lineOpens;
+            return { ok, detail: JSON.stringify({ facts, items, inCode, surface, lineOpens }) };
         });
 
         await step("a Brainstorm that kept nothing aside shows no kept section and offers Save as doc until it has saved itself, and a Review report shows none of the Brainstorm parts", async () => {

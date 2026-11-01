@@ -5,6 +5,7 @@ import {
     askedLine,
     brainstormPrompt,
     canRunSummary,
+    currentSection,
     defaultCouncilView,
     directionRows,
     directionsHeading,
@@ -13,11 +14,13 @@ import {
     docPathLabel,
     droppedLine,
     evidenceLabel,
+    expertActivity,
     initiativeSeed,
     keptHeading,
     keptRows,
     outcomeLabel,
     outdatedLabel,
+    outlineOf,
     positionsOf,
     projectNameOf,
     ratingRow,
@@ -691,5 +694,122 @@ describe("brainstormPrompt", () => {
         expect(prompt.length).toBeLessThanOrEqual(8000);
         expect(prompt).toContain("reply 29 ");
         expect(prompt).not.toContain("reply 0 ");
+    });
+});
+
+describe("expertActivity", () => {
+    const lines = (c: Council) => expertActivity(c).map((a) => [a.expert.id, a.line, a.filter]);
+
+    it("says what each seat wrote and how many of its ideas went into the summary; the coordinator wrote it", () => {
+        expect(lines(council())).toEqual([
+            ["ux", "2 ideas, 1 in the summary", true],
+            ["ram", "1 idea, 1 in the summary · 1 reply", true],
+            ["nu", "2 replies", true],
+            ["sk", "1 idea, 1 in the summary · 1 reply", true],
+            ["coordinator", "Wrote the summary", false],
+        ]);
+    });
+
+    it("counts an agreement with nothing to add apart, an idea kept aside as in the summary, and none used as none", () => {
+        const base = council();
+        const c = council({
+            proposals: [...base.proposals!, prop("P6", "nu"), prop("P7", "nu")],
+            replies: [...base.replies!, reply("r6", "P1", "sk", { stance: "accept", text: "" })],
+            summary: { ...base.summary!, kept: [direction(3, ["P6"])] },
+        });
+        const by = Object.fromEntries(expertActivity(c).map((a) => [a.expert.id, a.line]));
+        expect(by.nu).toBe("2 ideas, 1 in the summary · 2 replies");
+        expect(by.sk).toBe("1 idea, 1 in the summary · 1 reply · agreed with 1 idea");
+        const none = council({ summary: { ...base.summary!, directions: [direction(1, ["P3"])] } });
+        expect(expertActivity(none)[0].line).toBe("2 ideas, none in the summary");
+    });
+
+    it("leaves the summary out before there is one, names a failed call, and says so for a seat that wrote nothing", () => {
+        const c = council({ summary: undefined, failed: { nu: { round: 1, error: "timeout" } } });
+        const by = Object.fromEntries(expertActivity(c).map((a) => [a.expert.id, a]));
+        expect(by.ux.line).toBe("2 ideas");
+        expect(by.nu.line).toBe("2 replies · failed while proposing");
+        expect(by.coordinator.line).toBe("");
+        const quiet = expertActivity(council({ proposals: [], replies: [] }));
+        expect(quiet[0]).toMatchObject({ line: "No messages", filter: false });
+        // a failed coordinator says how it failed (failedWhile's words) in place of the summary it wrote
+        const failed = expertActivity(council({ failed: { coordinator: { round: 4, error: "x" } } }));
+        expect(failed[4].line).toMatch(/^Failed while /);
+    });
+
+    it("counts no held or dropped draft", () => {
+        const c = council({
+            proposals: [prop("P1", "ux", { draft: "held" }), prop("P2", "ux", { draft: "dropped" })],
+            replies: [reply("r1", "P1", "ram", { draft: "held" })],
+        });
+        expect(
+            expertActivity(c)
+                .slice(0, 2)
+                .map((a) => a.line)
+        ).toEqual(["No messages", "No messages"]);
+    });
+});
+
+describe("outlineOf", () => {
+    it("lists the answer, the directions with each one under them, and the matrix with its rows", () => {
+        expect(outlineOf(council()).map((e) => [e.id, e.label, e.count, e.depth])).toEqual([
+            ["answer", "The answer", null, 0],
+            ["directions", "Directions", 2, 0],
+            ["direction:1", "direction 1", null, 1],
+            ["direction:2", "direction 2", null, 1],
+            ["matrix", "Every expert on every idea", 4, 0],
+        ]);
+    });
+
+    it("names a Brainstorm's ideas and the ideas kept aside, and a Review's ideas also raised", () => {
+        const base = council();
+        const kept = { ...base.summary!, kept: [direction(3, ["P6"]), direction(4, ["P7"])] };
+        const brainstorm = outlineOf(council({ mode: "brainstorm", summary: kept }));
+        expect(brainstorm.filter((e) => e.depth === 0).map((e) => [e.label, e.count])).toEqual([
+            ["The answer", null],
+            ["Ideas worth trying", 2],
+            ["Wild ideas kept aside", 2],
+            ["Every expert on every idea", 4],
+        ]);
+        expect(outlineOf(council({ summary: kept })).find((e) => e.id === "kept")?.label).toBe("Also raised");
+    });
+
+    it("is empty before a summary", () => {
+        expect(outlineOf(council({ summary: undefined }))).toEqual([]);
+    });
+});
+
+describe("currentSection", () => {
+    const tops = [
+        { id: "answer", top: -400 },
+        { id: "directions", top: -20 },
+        { id: "direction:1", top: 30 },
+        { id: "kept", top: null },
+        { id: "matrix", top: 900 },
+    ];
+    const middle = { atEnd: false, height: 600 };
+
+    it("is the last section whose top has passed the line, skipping one not drawn", () => {
+        expect(currentSection(tops, 40, middle)).toBe("direction:1");
+        expect(currentSection(tops, 0, middle)).toBe("directions");
+    });
+
+    it("is the first before any has passed, and null with nothing drawn", () => {
+        expect(
+            currentSection(
+                [
+                    { id: "answer", top: 20 },
+                    { id: "matrix", top: 500 },
+                ],
+                10,
+                middle
+            )
+        ).toBe("answer");
+        expect(currentSection([{ id: "answer", top: null }], 10, middle)).toBeNull();
+    });
+
+    it("is the last one in view once the box is scrolled to its end", () => {
+        expect(currentSection(tops, 40, { atEnd: true, height: 1000 })).toBe("matrix");
+        expect(currentSection(tops, 40, { atEnd: true, height: 600 })).toBe("direction:1");
     });
 });

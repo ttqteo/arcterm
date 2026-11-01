@@ -629,8 +629,8 @@ describe("councilThread", () => {
 
 describe("ideaOrder and moveIdea", () => {
     it("lists the ideas in the order the channel draws them, a held or dropped one left out", () => {
-        expect(ideaOrder(room())).toEqual(["P1", "P2", "P3"]);
-        expect(ideaOrder(council())).toEqual([]);
+        expect(ideaOrder(councilChannel(room()))).toEqual(["P1", "P2", "P3"]);
+        expect(ideaOrder(councilChannel(council()))).toEqual([]);
     });
 
     it("moves down and up, stops at the ends, and starts at the first (or last) with none focused", () => {
@@ -909,6 +909,51 @@ describe("a council saved before live agents", () => {
         expect(items.some((i) => i.kind === "draft" || i.kind === "skip")).toBe(false);
         expect(stepChip(old({ state: "done", round: 3 }))).toEqual({ text: "Done", dot: "idle" });
         expect(councilThread(old(), "P1")!.items.map((i) => i.id)).toEqual(["r1"]);
-        expect(ideaOrder(old())).toEqual(["P1", "P2", "P3"]);
+        expect(ideaOrder(councilChannel(old()))).toEqual(["P1", "P2", "P3"]);
+    });
+});
+
+describe("councilChannel with only one seat", () => {
+    const shown = (c: Council, id: string) => {
+        const items = councilChannel(c, id);
+        return { items, ids: items.filter((i) => i.kind !== "divider").map((i) => i.id) };
+    };
+
+    it("keeps the question, the seat's ideas and every reply it wrote, a thread's named by its idea", () => {
+        // Skeptic wrote P2, agreed with P1 with nothing to add (no message), holds a reply on P1 for the person (r6) and
+        // answered the person's post (r8)
+        const sk = shown(room(), "sk");
+        expect(sk.ids).toEqual(["question", "P2", "r6", "r8"]);
+        expect(byId(sk.items, "r6")).toMatchObject({ kind: "draft", on: "title P1" });
+        // UX audit wrote P3 and built on P1 in its thread (r4)
+        const ux = shown(room(), "ux");
+        expect(ux.ids.slice(0, 3)).toEqual(["question", "P3", "r4"]);
+        expect(byId(ux.items, "r4")).toMatchObject({ kind: "reply", proposalid: "P1", on: "title P1" });
+    });
+
+    it("keeps a seat's held idea and held thread reply, skipped turn and typing row, but no one else's", () => {
+        const witness = shown(room(), "witness").ids;
+        expect(witness).toContain("P4");
+        expect(witness).toContain("r3");
+        expect(witness).not.toContain("P1");
+        expect(witness.some((id) => id?.startsWith("skip:witness:"))).toBe(true);
+        expect(witness).toContain("typing:witness");
+        expect(witness).not.toContain("typing:ux");
+        expect(shown(room(), "sec").ids).toContain("failed:sec");
+    });
+
+    it("leaves out a round's divider when nothing of the seat's sits in that round", () => {
+        const { items } = shown(room(), "sk");
+        items.forEach((item, i) => {
+            if (item.kind === "divider") {
+                expect(i).toBeLessThan(items.length - 1);
+                expect(items[i + 1].kind).not.toBe("divider");
+            }
+        });
+    });
+
+    it("draws a thread's reply in the channel only for one seat; the whole channel keeps it in its thread", () => {
+        expect(councilChannel(room()).some((i) => i.id === "r4")).toBe(false);
+        expect(byId(councilChannel(room()), "r8")).toMatchObject({ proposalid: "", on: "" });
     });
 });

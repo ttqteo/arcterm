@@ -32,6 +32,7 @@ import {
 import {
     councilAtom,
     councilListAtom,
+    councilOnlyAtom,
     councilSelAtom,
     councilSetupDraftAtom,
     councilSetupProjectAtom,
@@ -86,15 +87,19 @@ export function showProjectOverview(project: string, model?: Pick<AgentsViewMode
 /** Open one council in the Agent surface, on `view` when given, else on its report when it has ended with a summary and
  *  on its Discussion otherwise (defaultCouncilView, read from the council's atom, else from the list of every council;
  *  a council not loaded yet opens on its Discussion). From the Agent surface itself (a tree row) nothing more is needed;
- *  from any other (the palette) pass the model, which lands on Agent. */
+ *  from any other (the palette) pass the model, which lands on Agent. `only`, an expert's id, has the Discussion show
+ *  that seat's messages alone (the Summary's column); every call without it shows everyone again. */
 export function showCouncil(
     id: string,
     view?: Exclude<CouncilView, "setup">,
-    model?: Pick<AgentsViewModel, "surfaceAtom">
+    model?: Pick<AgentsViewModel, "surfaceAtom">,
+    only?: string
 ): void {
     const known =
         globalStore.get(councilAtom(id)) ?? globalStore.get(councilListAtom(""))?.find((c) => c.id === id) ?? null;
     globalStore.set(councilSelAtom, id);
+    // the Discussion shows one seat's messages only when the way in asked for it
+    globalStore.set(councilOnlyAtom(id), only ?? null);
     globalStore.set(councilViewAtom, view ?? defaultCouncilView(known));
     globalStore.set(centerModeAtom, "council");
     if (model != null) {

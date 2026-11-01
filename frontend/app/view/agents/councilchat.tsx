@@ -58,11 +58,12 @@ import {
 } from "./councilchatmodel";
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
-import { answerers, draftsWaitWord, followupLabel } from "./councilmodel";
+import { answerers, authorName, draftsWaitWord, followupLabel } from "./councilmodel";
 import { followsEnd, keepPlace, keptPlace, placeOf, topFor, type ScrollPlace } from "./councilscroll";
 import { CouncilSourcesPanel, EvidenceChips } from "./councilsourcespanel";
 import {
     closeCouncilSources,
+    councilOnlyAtom,
     councilOpenProposalAtom,
     councilSourcesAtom,
     draftCouncil,
@@ -392,8 +393,9 @@ function IdeaMessage({
     );
 }
 
-// the pill and the time beside a reply's author
-function ReplyHeader({ item }: { item: ReplyPost }) {
+// the pill and the time beside a reply's author; a thread's reply drawn in the channel (one seat's messages) also names
+// the idea it is on, a click opening that thread
+function ReplyHeader({ item, onOpenIdea }: { item: ReplyPost; onOpenIdea?: (id: string) => void }) {
     return (
         <Byline who={item}>
             <CouncilPill word={item.label} tone={item.pill} />
@@ -401,11 +403,32 @@ function ReplyHeader({ item }: { item: ReplyPost }) {
             {item.edited && <span className="text-muted">edited</span>}
             {item.reaches !== "" && <span className="text-muted">{item.reaches}</span>}
             {item.pending !== "" && <span className="text-muted">{item.pending}</span>}
+            {onOpenIdea != null && item.on !== "" && (
+                <button
+                    type="button"
+                    data-council-reply-on={item.proposalid}
+                    onClick={() => onOpenIdea(item.proposalid)}
+                    className="flex min-w-0 cursor-pointer items-center gap-[5px] rounded-[4px] text-[11px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    <CornerDownRight size={11} aria-hidden className="flex-none" />
+                    <span className="min-w-0 truncate">{item.on}</span>
+                </button>
+            )}
         </Byline>
     );
 }
 
-function ReplyMessage({ councilId, item, inThread }: { councilId: string; item: ReplyPost; inThread?: boolean }) {
+function ReplyMessage({
+    councilId,
+    item,
+    inThread,
+    onOpenIdea,
+}: {
+    councilId: string;
+    item: ReplyPost;
+    inThread?: boolean;
+    onOpenIdea?: (id: string) => void;
+}) {
     return (
         <article
             data-council-item
@@ -418,7 +441,7 @@ function ReplyMessage({ councilId, item, inThread }: { councilId: string; item: 
         >
             <CouncilAvatar tone={item.tone} name={item.name} />
             <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
-                <ReplyHeader item={item} />
+                <ReplyHeader item={item} onOpenIdea={inThread ? undefined : onOpenIdea} />
                 <span className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-ink-hi">
                     {item.text}
                 </span>
@@ -1116,9 +1139,12 @@ export function CouncilChat({
         }
     }, [threadOpen, sources, setSources]);
 
-    const items = useMemo(() => councilChannel(c), [c]);
+    // one seat's messages only, when the Summary's column asked for them (a seat no longer on the panel shows everyone)
+    const [only, setOnly] = useAtom(councilOnlyAtom(c.id));
+    const onlyId = only != null && c.experts.some((e) => e.id === only) ? only : null;
+    const items = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
     const seats = useMemo(() => seatChips(c), [c]);
-    const order = useMemo(() => ideaOrder(c), [c]);
+    const order = useMemo(() => ideaOrder(items), [items]);
     const open = useCallback(
         (id: string) => {
             setOpenId(id);
@@ -1162,6 +1188,26 @@ export function CouncilChat({
                         <SeatChipView key={chip.id} c={c} chip={chip} acts={acts} onOpenTerminal={onOpenTerminal} />
                     ))}
                 </div>
+                {onlyId != null ? (
+                    <div
+                        role="status"
+                        data-council-only={onlyId}
+                        className="flex flex-none items-center gap-3 border-b border-edge-faint bg-surface px-8 py-[8px] text-[12px] text-secondary"
+                    >
+                        <span className="min-w-0 flex-1">
+                            Only <span className="font-semibold text-primary">{authorName(c, onlyId)}</span>: their
+                            ideas and every reply they wrote
+                        </span>
+                        <button
+                            type="button"
+                            data-council-action="show-everyone"
+                            onClick={() => setOnly(null)}
+                            className={cn(secondaryButton, "h-[24px] px-[10px] text-[11.5px]")}
+                        >
+                            Show everyone
+                        </button>
+                    </div>
+                ) : null}
                 {notes}
                 <Channel boxRef={channel} councilId={c.id} count={items.length}>
                     {items.map((item) => {
@@ -1184,7 +1230,7 @@ export function CouncilChat({
                             case "draft":
                                 return <DraftCard key={item.id} c={c} item={item} acts={acts} />;
                             case "reply":
-                                return <ReplyMessage key={item.id} councilId={c.id} item={item} />;
+                                return <ReplyMessage key={item.id} councilId={c.id} item={item} onOpenIdea={open} />;
                             case "skip":
                                 return <SkippedLine key={item.id} item={item} onOpenTerminal={onOpenTerminal} />;
                             case "failure":

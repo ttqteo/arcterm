@@ -7,8 +7,16 @@
 // makes and the first prompt Start an agent on it opens an agent with. Pure, no React, no Wave runtime imports, so every rule here has a test (councilsummarymodel.test.ts). The
 // stances, ranking and matrix of the whole council are in councilmodel.ts.
 
-import { listNames } from "./councildiscussionmodel";
-import { councilProjectKey, panel, STANCE_WORD, type StanceLabel } from "./councilmodel";
+import { failedWhile, listNames } from "./councildiscussionmodel";
+import {
+    councilProjectKey,
+    isReaction,
+    panel,
+    sentProposals,
+    sentReplies,
+    STANCE_WORD,
+    type StanceLabel,
+} from "./councilmodel";
 
 function asStance(s: string | undefined): Exclude<StanceLabel, "proposed"> | undefined {
     return s === "accept" || s === "challenge" || s === "oppose" ? s : undefined;
@@ -458,4 +466,113 @@ export function brainstormPrompt(c: Council, row: DirectionRow): string {
         lines.shift();
     }
     return build(lines);
+}
+
+// ---- the column beside the report ----
+
+/** What one seat did, as the column beside the report lists it: `7 ideas, 3 in the summary · 12 replies`. `filter` is
+ *  whether a click can show the Discussion with only its messages (an expert who wrote something; never the
+ *  coordinator, whose work is the summary). */
+export interface ExpertActivity {
+    expert: CouncilExpert;
+    line: string;
+    filter: boolean;
+}
+
+/** Pure: each seat of the council, in panel order, with what it did: its ideas (and, once there is a summary, how many
+ *  of them went into it), its replies, the ideas it agreed with and nothing more (reactions), and a failed call; the
+ *  coordinator says it wrote the summary. Held and dropped drafts are not counted. */
+export function expertActivity(c: Council): ExpertActivity[] {
+    const summary = c.summary;
+    const used = new Set([...(summary?.directions ?? []), ...(summary?.kept ?? [])].flatMap((d) => d.from));
+    const replies = sentReplies(c);
+    return c.experts.map((expert) => {
+        const failure = c.failed?.[expert.id];
+        const failed = failure != null ? failedWhile(c, failure.round) : "";
+        if (expert.coordinator) {
+            return { expert, line: failed !== "" ? failed : summary != null ? "Wrote the summary" : "", filter: false };
+        }
+        const ideas = sentProposals(c).filter((p) => p.author === expert.id);
+        const own = replies.filter((r) => r.author === expert.id);
+        const nods = own.filter(isReaction).length;
+        const said = own.length - nods;
+        const parts: string[] = [];
+        if (ideas.length > 0) {
+            const inSummary = ideas.filter((p) => used.has(p.id)).length;
+            parts.push(
+                plural(ideas.length, "idea", "ideas") +
+                    (summary == null ? "" : inSummary === 0 ? ", none in the summary" : `, ${inSummary} in the summary`)
+            );
+        }
+        if (said > 0) {
+            parts.push(plural(said, "reply", "replies"));
+        }
+        if (nods > 0) {
+            parts.push(`agreed with ${plural(nods, "idea", "ideas")}`);
+        }
+        if (failed !== "") {
+            parts.push(failed.charAt(0).toLowerCase() + failed.slice(1));
+        }
+        const wrote = ideas.length + own.length > 0;
+        return { expert, line: parts.length > 0 ? parts.join(" · ") : "No messages", filter: wrote };
+    });
+}
+
+/** One entry of the report's outline: a section (`depth` 0) or a direction under its section (`depth` 1). `id` names
+ *  the element it scrolls to (`data-council-section`, or `data-council-direction` for `direction:<rank>`). */
+export interface OutlineEntry {
+    id: string;
+    label: string;
+    count: number | null;
+    depth: 0 | 1;
+    rank: number | null;
+}
+
+/** Pure: the report's outline, in page order: the answer, the directions (each one under them), the kept or also-raised
+ *  ideas, and the matrix with its row count. Empty before a summary: then the column has no outline. */
+export function outlineOf(c: Council): OutlineEntry[] {
+    const summary = c.summary;
+    if (summary == null) {
+        return [];
+    }
+    const entries: OutlineEntry[] = [{ id: "answer", label: "The answer", count: null, depth: 0, rank: null }];
+    const directions = [...summary.directions].sort((a, b) => a.rank - b.rank);
+    if (directions.length > 0) {
+        const heading = directionsHeading(c);
+        entries.push({
+            id: "directions",
+            label: heading !== "" ? heading.replace(/, best first$/, "") : "Directions",
+            count: directions.length,
+            depth: 0,
+            rank: null,
+        });
+        for (const d of directions) {
+            entries.push({ id: `direction:${d.rank}`, label: d.title, count: null, depth: 1, rank: d.rank });
+        }
+    }
+    const kept = keptRows(c);
+    if (kept.length > 0) {
+        entries.push({ id: "kept", label: keptHeading(c), count: kept.length, depth: 0, rank: null });
+    }
+    const rows = sentProposals(c).length;
+    if (rows > 0) {
+        entries.push({ id: "matrix", label: "Every expert on every idea", count: rows, depth: 0, rank: null });
+    }
+    return entries;
+}
+
+/** Pure: the outline entry being read: the last whose element's top (from the scroll box's top, in px) has passed
+ *  `line`; once the box is scrolled to its end, the last whose top is in view. The first entry when none has. An entry
+ *  with no top (its element is not drawn) is skipped. */
+export function currentSection(
+    tops: readonly { id: string; top: number | null }[],
+    line: number,
+    end: { atEnd: boolean; height: number }
+): string | null {
+    const drawn = tops.filter((t): t is { id: string; top: number } => t.top != null);
+    if (drawn.length === 0) {
+        return null;
+    }
+    const passed = drawn.filter((t) => t.top <= (end.atEnd ? end.height - 1 : line));
+    return (passed[passed.length - 1] ?? drawn[0]).id;
 }
