@@ -57,6 +57,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council message you send to several experts is answered by one of them first; the others read that answer and add
+  only what their own angle brings, or show as "agrees" under it, instead of each opening with the same "you're right".
+  It takes a little longer, one answer before the rest.
 - A council follow-up that names a file or a path (`rail-apps.json`, `pkg/services/idle.go`) turns Let them read files
   on by itself and says which file it saw; one that names none answers from the discussion, which costs about a fifth.
   Flip the switch to choose for yourself. The experts answering a follow-up now also see the report, so "direction 2"

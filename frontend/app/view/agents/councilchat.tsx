@@ -562,6 +562,13 @@ function ReplyMessage({
                         source={{ councilId, owner: item.id, title: `${item.name}'s reply` }}
                     />
                 </div>
+                {item.agrees.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-[6px]">
+                        {item.agrees.map((text, i) => (
+                            <Reaction key={i} text={text} />
+                        ))}
+                    </div>
+                )}
             </div>
         </article>
     );

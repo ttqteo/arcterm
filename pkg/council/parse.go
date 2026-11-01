@@ -233,8 +233,8 @@ type answerEntry struct {
 func convertAnswers(what string, in []answerEntry) ([]Answer, error) {
 	out := make([]Answer, 0, len(in))
 	for _, a := range in {
-		if strings.TrimSpace(a.ReplyId) == "" || strings.TrimSpace(a.Text) == "" {
-			return nil, fmt.Errorf("%s reply: an answer needs a replyid and a text", what)
+		if strings.TrimSpace(a.ReplyId) == "" {
+			return nil, fmt.Errorf("%s reply: an answer needs a replyid", what)
 		}
 		ans := Answer{ReplyId: strings.TrimSpace(a.ReplyId), Text: strings.TrimSpace(a.Text), Evidence: a.Evidence}
 		if strings.TrimSpace(a.Stance) != "" {
@@ -243,6 +243,10 @@ func convertAnswers(what string, in []answerEntry) ([]Answer, error) {
 				return nil, fmt.Errorf("%s reply: answer to %s: %w", what, ans.ReplyId, err)
 			}
 			ans.Stance = s
+		}
+		// an answer with no words agrees with the answer another seat gave first; a doubt or an objection needs its words
+		if ans.Text == "" && ans.Stance != "" && ans.Stance != StanceAccept {
+			return nil, fmt.Errorf("%s reply: the %s answering %s has no text", what, ans.Stance, ans.ReplyId)
 		}
 		out = append(out, ans)
 	}

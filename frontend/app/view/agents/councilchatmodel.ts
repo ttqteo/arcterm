@@ -33,6 +33,7 @@ import {
     headerChip,
     heldDrafts,
     isAgentSeat,
+    isReaction,
     panel,
     pickCount,
     readableReplies,
@@ -167,6 +168,7 @@ export interface ReplyPost extends Who {
     weak: string; // a claim marked weak, as the chip reads (`Weak · no measurement`)
     mine: boolean;
     reaches: string; // the person's reply: `For everyone`, `For UX and RAM`
+    agrees: string[]; // `RAM agrees`: the seats that answered the person's post with no words (answerAgrees)
     pending: string; // the person's reply: `Queued for the next step` until it is answered
     parentid: string;
     proposalid: string; // the idea it replies on; empty for a post to the whole council
@@ -188,6 +190,7 @@ function replyPost(c: Council, r: CouncilReply): ReplyPost {
         ...evidenceOf(r.evidence),
         mine,
         reaches: mine ? reachOf(c, r) : "",
+        agrees: answerAgrees(c, r),
         pending: mine ? replyLabel(c, r) : "",
         parentid: r.parentid ?? "",
         proposalid: r.proposalid,
@@ -196,6 +199,27 @@ function replyPost(c: Council, r: CouncilReply): ReplyPost {
         edited: !!r.edited,
         ...postedAt(c, r.ts),
     };
+}
+
+/** Pure: the reactions a reply carries: the seats that answered a post of the person's with no words (they agree with
+ *  the answer before theirs, and have nothing to add) sit under the first answer to it with words, as a group chat
+ *  shows a +1 under the message it agrees with, or under the post itself while it has no such answer sent. */
+function answerAgrees(c: Council, r: CouncilReply): string[] {
+    const sent = sentReplies(c);
+    const ask = r.author === YOU ? r : sent.find((x) => x.id === r.parentid && x.author === YOU);
+    if (ask == null) {
+        return [];
+    }
+    const answers = sent
+        .map((x, i) => ({ x, i }))
+        .filter(({ x }) => x.parentid === ask.id && x.author !== YOU)
+        .sort((a, b) => a.x.ts - b.x.ts || a.i - b.i)
+        .map(({ x }) => x);
+    const first = answers.find((x) => !isReaction(x));
+    if ((first ?? ask).id !== r.id) {
+        return [];
+    }
+    return answers.filter(isReaction).map((x) => `${authorName(c, x.author)} agrees`);
 }
 
 /** An idea or a reply a seat wrote that waits for the person: `of` says which. An idea sits in the channel; a reply in

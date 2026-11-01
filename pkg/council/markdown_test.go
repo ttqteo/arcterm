@@ -423,3 +423,14 @@ func TestDocumentLeavesOutHeldAndDroppedDrafts(t *testing.T) {
 		}
 	}
 }
+
+// An answer to the person with no words and no stance is a seat with nothing to add to the answer before it: it agrees.
+func TestAWordlessAnswerReadsAsAgreeing(t *testing.T) {
+	c := &Council{Experts: []CouncilExpert{{Id: "ram", Name: "RAM"}}}
+	if got := replyLabel(c, CouncilReply{Id: "r9", ParentId: "r8", Author: "ram"}); got != "agrees" {
+		t.Errorf("a wordless answer reads %q, want agrees", got)
+	}
+	if got := replyLabel(c, CouncilReply{Id: "r9", ParentId: "r8", Author: "ram", Text: "No."}); got != "replies" {
+		t.Errorf("an answer with words reads %q, want replies", got)
+	}
+}

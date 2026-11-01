@@ -377,6 +377,43 @@ func TestAnswersPromptForAWholeCouncilQuestionAndSeveralReplies(t *testing.T) {
 	mustNotContain(t, "own section", own, "Title-four") // cut
 }
 
+// A reply to several seats is answered by one of them first; the others are shown its answer under the reply and asked
+// to add to it, not say it again. A dropped answer is not shown, and a seat that answers first is asked nothing of the sort.
+func TestAnswersPromptShowsTheAnswersAlreadyGiven(t *testing.T) {
+	c := promptCouncil()
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r20", ParentId: "r4", Author: "ux", Text: "Text-r20 UX answered Mac first", Round: 4},
+		CouncilReply{Id: "r21", ParentId: "r4", Author: "ux", Text: "Text-r21 dropped", Round: 4, Draft: DraftDropped},
+		CouncilReply{Id: "r22", ParentId: "r4", Author: "ram", Round: 4},
+	)
+	skeptic, _ := seatOf(c, "skeptic")
+	p := AnswersPrompt(c, skeptic, []CouncilReply{c.Replies[3]})
+	reply := section(t, p, "## Reply r4")
+	mustContain(t, "reply r4", reply, "Already answered by others in the council:", "- UX: Text-r20 UX answered Mac first",
+		"- RAM: agrees, with nothing to add")
+	mustNotContain(t, "reply r4", reply, "Text-r21 dropped")
+	mustContain(t, "answers prompt", p, othersAnsweredRule)
+
+	ux, _ := seatOf(c, "ux")
+	first := AnswersPrompt(c, ux, []CouncilReply{c.Replies[2]}) // r3 has no answer yet
+	mustNotContain(t, "first answer", first, "Already answered", othersAnsweredRule)
+}
+
+// An agent seat answering the person after another seat did is shown that answer under the ask, and the same rule.
+func TestAgentFollowUpShowsTheAnswersAlreadyGiven(t *testing.T) {
+	c := agentPromptCouncil()
+	round := SynthesisRound(c) + 1
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r8", Author: YouId, Text: "Text-r8 to everyone", To: []string{"witness", "scout", "ux", "ram"}, Round: round},
+		CouncilReply{Id: "r9", ParentId: "r8", Author: "ux", Text: "Text-r9 UX answered first", Round: round},
+	)
+	p := AgentLaterPrompt(c, c.Experts[0], round) // Witness
+	asks := section(t, p, "## What the person asks you")
+	mustContain(t, "asks section", asks, "- [r8] to the whole council: Text-r8 to everyone", "  - UX already answered it: Text-r9 UX answered first")
+	mustContain(t, "follow-up prompt", p, othersAnsweredRule, answersShape)
+	mustNotContain(t, "asks section", asks, "- [r9]")
+}
+
 // The picks and the withdrawals of a council come in its last reply pass, so its prompts name that round: 2 for a council
 // of 2 rounds or none set, 3 for 3. A council of one round has no reply pass, so no prompt speaks of one.
 func TestSynthesisAnswersAndPicksNameTheLastReplyRound(t *testing.T) {

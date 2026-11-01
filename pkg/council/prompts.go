@@ -293,6 +293,14 @@ const (
 	// messageRules are the rules every prompt whose fields the Discussion shows as messages ends with, before its shape.
 	messageRules = voiceRule + "\n\n" + visualRule + "\n\n" + markRule
 
+	// othersAnsweredRule is in an answers prompt where another seat answered a reply first (answersPass). Answered at
+	// once, three seats each opened a steer of the person's with the same concession ("You're right, …"), which read as
+	// one message three times.
+	othersAnsweredRule = "Others in the council answered some of these replies before you; their answers are under " +
+		"each one. Do not say again what they said, agreeing with the person included: answer only with what your own " +
+		"angle adds, in fewer words. When you have nothing to add, give that reply an entry with an empty \"text\" and " +
+		"no stance: you show as agreeing with them."
+
 	// markRule is in every prompt whose fields the Discussion shows as messages: it draws a sentence wrapped in ==…==
 	// highlighted, so a long argument or reply shows first the line the person must read.
 	markRule = "In an argument, a reason or an answer of three sentences or more, wrap the one sentence the person " +
@@ -855,7 +863,10 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 	for _, r := range replies {
 		tools = tools || r.Tools
 	}
-	var b strings.Builder
+	var (
+		b      strings.Builder
+		others bool // a seat answered one of the replies before this one: say not to repeat it
+	)
 	writeContext(&b, c, e, "one expert on")
 	b.WriteString("\nThe council has already met. The person replied in the discussion, and you answer from your own " +
 		"angle, as yourself.\n")
@@ -902,11 +913,39 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 			b.WriteString("\n")
 		}
 		fmt.Fprintf(&b, "The person's reply [%s]: %s\n\n", r.Id, strings.TrimSpace(r.Text))
+		if given := answersTo(c, r); len(given) > 0 {
+			others = true
+			b.WriteString("Already answered by others in the council:\n\n")
+			for _, a := range given {
+				fmt.Fprintf(&b, "- %s: %s\n", speaker(c, a.Author), answerWords(a))
+			}
+			b.WriteString("\n")
+		}
 	}
 
 	b.WriteString("## What to do\n\n")
-	b.WriteString(answersTask(c))
+	b.WriteString(answersTask(c, others))
 	return b.String()
+}
+
+// answersTo are the seats' answers to the person's reply r that were not dropped, in the order they came: one seat
+// answers a reply to several first, and the others are shown its answer (answersPass).
+func answersTo(c *Council, r CouncilReply) []CouncilReply {
+	var out []CouncilReply
+	for _, a := range c.Replies {
+		if a.ParentId == r.Id && a.Author != YouId && a.Draft != DraftDropped {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// answerWords are an answer's words as another seat is shown them; one with none agrees.
+func answerWords(a CouncilReply) string {
+	if text := strings.TrimSpace(a.Text); text != "" {
+		return text
+	}
+	return "agrees, with nothing to add"
 }
 
 // writeReport gives an expert answering the person the council's report as the person read it: the answer, then the
@@ -939,11 +978,14 @@ func writeReport(b *strings.Builder, c *Council) {
 }
 
 // answersTask is what the pass after the synthesis asks, and the shape of the answer: the end of the answers prompt, and
-// of an agent seat's turn in it.
-func answersTask(c *Council) string {
+// of an agent seat's turn in it. others says another seat answered one of the replies first, and adds othersAnsweredRule.
+func answersTask(c *Council, others bool) string {
 	var b strings.Builder
 	b.WriteString("Answer every reply above with one entry in \"answers\", by its replyid. If an answer changes your " +
 		"view of the proposal it sits on, add a \"stance\". " + stanceRule + "\n\n")
+	if others {
+		b.WriteString(othersAnsweredRule + "\n\n")
+	}
 	b.WriteString(titleRule + "\n\n")
 	if !isBrainstorm(c) { // a Brainstorm asks for no evidence
 		b.WriteString(evidenceRule + "\n\n")
@@ -1134,16 +1176,21 @@ func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, 
 		}
 		b.WriteString("\n")
 	}
+	others := false // a seat answered one of the asks before this one
 	if len(asks) > 0 {
 		b.WriteString("## What the person asks you\n\n")
 		for _, r := range asks {
 			b.WriteString(askLine(c, r))
+			for _, a := range answersTo(c, r) { // indented: an ask's line is the only one that starts "- ["
+				others = true
+				fmt.Fprintf(b, "  - %s already answered it: %s\n", speaker(c, a.Author), answerWords(a))
+			}
 		}
 		b.WriteString("\n")
 	}
 	b.WriteString("## What to do\n\n")
 	if round >= last {
-		b.WriteString(answersTask(c))
+		b.WriteString(answersTask(c, others))
 	} else {
 		b.WriteString(round2Task(c, round))
 	}

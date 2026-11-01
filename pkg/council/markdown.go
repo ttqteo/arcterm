@@ -294,8 +294,9 @@ func proposalLabel(c *Council, p CouncilProposal) string {
 	return "idea"
 }
 
-// replyLabel is a reply's label in plain words. An accept with no words is a reaction ("agrees"), which the document
-// keeps as a line of its own rather than dropping.
+// replyLabel is a reply's label in plain words. An accept with no words is a reaction ("agrees"), and so is an answer to
+// the person with no words and no stance (a seat with nothing to add to the answer before it); the document keeps each
+// as a line of its own rather than dropping it.
 func replyLabel(c *Council, r CouncilReply) string {
 	spoke := strings.TrimSpace(r.Text) != ""
 	switch {
@@ -307,7 +308,7 @@ func replyLabel(c *Council, r CouncilReply) string {
 		return "has doubts"
 	case r.Stance == StanceOppose:
 		return "is against it"
-	case r.Stance == StanceAccept && !spoke:
+	case (r.Stance == StanceAccept || r.Stance == "") && !spoke:
 		return "agrees"
 	case r.Stance == StanceAccept && r.Builds && isBrainstorm(c):
 		return "builds on it"

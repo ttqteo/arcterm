@@ -453,6 +453,35 @@ describe("councilChannel: the person's posts", () => {
         expect(byId(councilChannel(c), "r1")).toMatchObject({ pending: "Queued for the next step" });
     });
 
+    it("shows the seats that answered a post with no words as `agrees` under the first answer with words", () => {
+        const c = council({
+            state: "done",
+            replies: [
+                reply("r1", "you", 150, { proposalid: "", to: ["witness", "ux", "sec", "sk"] }),
+                reply("r2", "sec", 160, { proposalid: "", parentid: "r1", round: 3 }),
+                reply("r3", "sk", 170, { proposalid: "", parentid: "r1", round: 3, text: "" }),
+                reply("r4", "ux", 170, { proposalid: "", parentid: "r1", round: 3, text: "Only this part is new." }),
+                reply("r5", "witness", 171, { proposalid: "", parentid: "r1", round: 3, text: " " }),
+            ],
+        });
+        const items = councilChannel(c);
+        expect(ids(items.filter((i) => i.kind === "reply"))).toEqual(["r1", "r2", "r4"]);
+        expect(byId(items, "r2")).toMatchObject({ agrees: ["Skeptic agrees", "Witness synthesis agrees"] });
+        expect(byId(items, "r4")).toMatchObject({ agrees: [] });
+        expect(byId(items, "r1")).toMatchObject({ agrees: [] });
+    });
+
+    it("keeps the `agrees` under the post itself while its first answer waits as a draft", () => {
+        const c = council({
+            replies: [
+                reply("r1", "you", 150, { proposalid: "", to: ["witness", "sk"] }),
+                reply("r2", "witness", 160, { proposalid: "", parentid: "r1", round: 3, draft: "held" }),
+                reply("r3", "sk", 170, { proposalid: "", parentid: "r1", round: 3, text: "" }),
+            ],
+        });
+        expect(byId(councilChannel(c), "r1")).toMatchObject({ agrees: ["Skeptic agrees"] });
+    });
+
     it("shows a seat's answer to the whole council in the channel, with no `mine` and no reach", () => {
         expect(byId(councilChannel(room()), "r8")).toMatchObject({
             kind: "reply",

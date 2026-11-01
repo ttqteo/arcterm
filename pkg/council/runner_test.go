@@ -1491,6 +1491,59 @@ func TestFollowUpBringsBackTheStateItFound(t *testing.T) {
 	}
 }
 
+// A question to everyone is answered by the first seat on the panel first; the others answer after it, shown its answer,
+// and one with nothing to add answers with no words, which is sent at once as agreement.
+func TestAFollowUpToEveryoneIsAnsweredByOneSeatFirst(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	h.f.setFn("ram/ans", func(req CallReq) string {
+		answers := []map[string]any{}
+		for _, id := range idsIn(replyHeadRe, req.Prompt) {
+			answers = append(answers, map[string]any{"replyid": id, "text": ""})
+		}
+		return fence(mustJSON(map[string]any{"answers": answers}))
+	})
+	if _, err := h.r.Reply("c1", "", "", "You keep missing my point.", false); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	c := h.wait("c1")
+	ans := h.f.calls("ans")
+	if len(ans) != 4 || ans[0].Expert.Id != "ux" {
+		t.Fatalf("%d answer calls, the first to %s, want 4 with UX first", len(ans), ans[0].Expert.Id)
+	}
+	mustNotContain(t, "UX's prompt", ans[0].Prompt, "Already answered", othersAnsweredRule)
+	for _, req := range ans[1:] {
+		mustContain(t, req.Expert.Id+"'s prompt", req.Prompt, "- UX: Answer from ux", othersAnsweredRule)
+	}
+	ask := repliesBy(c, YouId)[0]
+	var nod *CouncilReply
+	for _, r := range repliesBy(c, "ram") {
+		if r.ParentId == ask.Id {
+			nod = &r
+		}
+	}
+	if nod == nil || nod.Text != "" || !Sent(nod.Draft) || !ask.Answered {
+		t.Errorf("RAM's answer = %+v, the ask answered %v, want a sent answer with no words", nod, ask.Answered)
+	}
+}
+
+// In a council with an agent seated each answer with words is held for the person; one with none applies at once, as an
+// agreement in round 2 does.
+func TestAnAnswerWithNoWordsIsNotHeld(t *testing.T) {
+	c := &Council{
+		Experts: []CouncilExpert{{Id: "witness", Name: "Witness", Agent: "tab-1"}, {Id: "ux", Name: "UX"}, {Id: "ram", Name: "RAM"}},
+		Replies: []CouncilReply{{Id: "r1", Author: YouId, Text: "Why?", To: []string{"witness", "ux", "ram"}}},
+	}
+	applyAnswers(c, c.Experts[1], []Answer{{ReplyId: "r1", Text: "Because."}}, 4, 1)
+	applyAnswers(c, c.Experts[2], []Answer{{ReplyId: "r1"}}, 4, 2)
+	if got := c.Replies[1]; got.Author != "ux" || got.Draft != DraftHeld {
+		t.Errorf("UX's answer = %+v, want held", got)
+	}
+	if got := c.Replies[2]; got.Author != "ram" || got.Text != "" || !Sent(got.Draft) {
+		t.Errorf("RAM's answer = %+v, want sent with no words", got)
+	}
+}
+
 func TestAnExpertThatFailedSitsTheAnswersPassOut(t *testing.T) {
 	h := newHarness(t)
 	h.f.setFail("ram/r1", errors.New("boom"))

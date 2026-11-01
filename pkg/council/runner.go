@@ -1287,16 +1287,21 @@ func markAnswered(c *Council, ids []string) {
 }
 
 // applyAnswers adds an expert's answers under the person's replies. An answer to a reply the expert was not asked, or
-// has already answered, is dropped. In a council with agents each is held for the person.
+// has already answered, is dropped. In a council with agents each answer with words is held for the person; one with
+// none (it agrees with the answer before it) applies at once, as an agreement in a reply pass does.
 func applyAnswers(c *Council, e CouncilExpert, answers []Answer, round int, now int64) {
 	for _, a := range answers {
 		pr := findReply(c, a.ReplyId)
 		if pr == nil || pr.Author != YouId || !slices.Contains(pr.To, e.Id) || answeredBy(c, pr.Id, e.Id) {
 			continue
 		}
+		draft := ""
+		if a.Text != "" {
+			draft = heldFor(c)
+		}
 		c.Replies = append(c.Replies, CouncilReply{
 			Id: nextReplyId(c), ProposalId: pr.ProposalId, ParentId: pr.Id, Author: e.Id, Stance: a.Stance,
-			Text: a.Text, Evidence: a.Evidence, Round: round, Ts: now, Draft: heldFor(c),
+			Text: a.Text, Evidence: a.Evidence, Round: round, Ts: now, Draft: draft,
 		})
 	}
 }
@@ -1337,9 +1342,12 @@ func (r *Runner) answerCall(ctx context.Context, rn *run, id string, snap *Counc
 	})
 }
 
-// answersPass has every expert the person's open replies are addressed to answer them, at once. The Summary is not
-// rerun. Each reply is marked answered when the pass ends, whatever came of its calls: a call that failed is on
-// the council's Failed list with its Retry, and an expert already on that list sits the pass out until it is retried.
+// answersPass has every expert the person's open replies are addressed to answer them. A reply no seat has answered yet
+// is answered first by one of the seats it is addressed to (firstAnswerers), and then by the rest at once, who are shown
+// that answer and asked to add to it rather than say it again: answered all at once, three seats each opened a steer of
+// the person's with the same concession. The Summary is not rerun. Each reply is marked answered when the pass ends,
+// whatever came of its calls: a call that failed is on the council's Failed list with its Retry, and an expert already
+// on that list sits the pass out until it is retried.
 func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
 	snap, err := Load(id)
 	if err != nil {
@@ -1352,6 +1360,47 @@ func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
 			open = append(open, pr.Id)
 		}
 	}
+	first := firstAnswerers(snap)
+	r.answerAll(ctx, rn, id, snap, round, func(e CouncilExpert, pr CouncilReply) bool { return first[pr.Id] == e.Id })
+	if ctx.Err() != nil {
+		return nil
+	}
+	if snap, err = Load(id); err != nil { // the rest are shown the first answers
+		return err
+	}
+	r.answerAll(ctx, rn, id, snap, round, nil)
+	if ctx.Err() != nil {
+		return nil
+	}
+	_, err = r.update(rn, id, func(c *Council) error {
+		markAnswered(c, open)
+		return nil
+	})
+	return err
+}
+
+// firstAnswerers maps each open reply of the person that no seat has answered yet to the seat that answers it first: the
+// first on the panel it is addressed to, of those with no failed call.
+func firstAnswerers(c *Council) map[string]string {
+	out := map[string]string{}
+	panel := panelOf(c)
+	for _, pr := range c.Replies {
+		if pr.Author != YouId || pr.Answered || len(answersTo(c, pr)) > 0 {
+			continue
+		}
+		for _, e := range panel {
+			if _, bad := c.Failed[e.Id]; !bad && slices.Contains(pr.To, e.Id) {
+				out[pr.Id] = e.Id
+				break
+			}
+		}
+	}
+	return out
+}
+
+// answerAll has each expert with no failed call answer, at once, the open replies it owes that take says it answers in
+// this step (all of them when take is nil).
+func (r *Runner) answerAll(ctx context.Context, rn *run, id string, snap *Council, round int, take func(CouncilExpert, CouncilReply) bool) {
 	type ask struct {
 		e       CouncilExpert
 		replies []CouncilReply
@@ -1361,7 +1410,13 @@ func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
 		if _, bad := snap.Failed[e.Id]; bad {
 			continue
 		}
-		if replies := owed(snap, e, true); len(replies) > 0 {
+		var replies []CouncilReply
+		for _, pr := range owed(snap, e, true) {
+			if take == nil || take(e, pr) {
+				replies = append(replies, pr)
+			}
+		}
+		if len(replies) > 0 {
 			asks = append(asks, ask{e, replies})
 		}
 	}
@@ -1372,14 +1427,6 @@ func (r *Runner) answersPass(ctx context.Context, rn *run, id string) error {
 		byId[a.e.Id] = a
 	}
 	forEachExpert(experts, func(e CouncilExpert) { r.answerCall(ctx, rn, id, snap, e, byId[e.Id].replies, round) })
-	if ctx.Err() != nil {
-		return nil
-	}
-	_, err = r.update(rn, id, func(c *Council) error {
-		markAnswered(c, open)
-		return nil
-	})
-	return err
 }
 
 func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' }

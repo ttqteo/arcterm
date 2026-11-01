@@ -145,11 +145,11 @@ export function authorName(c: Council, id: string): string {
     return c.experts.find((e) => e.id === id)?.name ?? id;
 }
 
-/** Pure: whether a reply is agreement with nothing to add: an expert's accept with no text. It is drawn as a reaction
- *  under the post, never as a reply, and counts in no reply total; the stance still counts in the vote and the
- *  synthesis reads it. */
+/** Pure: whether a reply is agreement with nothing to add: an expert's accept with no text, or its answer to the person
+ *  with no text and no stance (it agrees with the answer another seat gave first). It is drawn as a reaction, never as
+ *  a reply, and counts in no reply total; an accept still counts in the vote and the synthesis reads it. */
 export function isReaction(r: CouncilReply): boolean {
-    return r.author !== YOU && r.stance === "accept" && r.text.trim() === "";
+    return r.author !== YOU && (r.stance === "accept" || !r.stance) && r.text.trim() === "";
 }
 
 /** Pure: the replies a person reads as replies, which leaves out the reactions and every reply that is still a draft

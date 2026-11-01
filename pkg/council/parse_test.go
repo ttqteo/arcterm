@@ -207,7 +207,8 @@ func TestParseRound2Rejects(t *testing.T) {
 		"a stance with no proposal":    `{"stances": [{"stance": "accept"}]}`,
 		"no stances field":             `{"answers": []}`,
 		"a revision that does nothing": `{"stances": [], "revisions": [{"proposalid": "P1"}]}`,
-		"an answer with no text":       `{"stances": [], "answers": [{"replyid": "r1"}]}`,
+		"a doubt with no text":         `{"stances": [], "answers": [{"replyid": "r1", "stance": "challenge"}]}`,
+		"an answer with no replyid":    `{"stances": [], "answers": [{"text": "x"}]}`,
 		"an answer with a bad stance":  `{"stances": [], "answers": [{"replyid": "r1", "text": "x", "stance": "meh"}]}`,
 	} {
 		if _, err := ParseRound2(jsonFence(body)); err == nil || !strings.Contains(err.Error(), "round 2") {
@@ -237,6 +238,30 @@ func TestParseAnswers(t *testing.T) {
 	}
 	if _, err := ParseAnswers(jsonFence(`{"stances": []}`)); err == nil {
 		t.Error("a reply with no answers field was accepted")
+	}
+}
+
+// An answer with no words is a seat that has nothing to add to what another already answered: it agrees. A doubt or an
+// objection still needs its words.
+func TestParseAnswersTakesAnAnswerWithNoWords(t *testing.T) {
+	got, err := ParseAnswers(jsonFence(`{"answers": [
+	  {"replyid": "r3", "text": ""},
+	  {"replyid": "r4", "text": " ", "stance": "accept"}
+	]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Answer{{ReplyId: "r3"}, {ReplyId: "r4", Stance: StanceAccept}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+	for _, stance := range []string{"challenge", "oppose"} {
+		if _, err := ParseAnswers(jsonFence(`{"answers": [{"replyid": "r3", "text": "", "stance": "` + stance + `"}]}`)); err == nil {
+			t.Errorf("a %s with no words was accepted", stance)
+		}
+	}
+	if _, err := ParseAnswers(jsonFence(`{"answers": [{"replyid": "", "text": "Yes."}]}`)); err == nil {
+		t.Error("an answer with no replyid was accepted")
 	}
 }
 
