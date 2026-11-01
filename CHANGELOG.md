@@ -96,6 +96,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A council's message box holds its one line level with the Send or Reply button, not low at the foot of the
+  box.
 - A finished council you left on its Discussion opens there again from its row in the Agent sidebar, instead of on
   the report; a council with a newer summary still opens on the report.
 - A council's message box no longer shows a scrollbar over its hint while it holds one line.

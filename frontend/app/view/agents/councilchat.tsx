@@ -1060,7 +1060,9 @@ function Composer({
                     onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
                     onKeyDown={onKeyDown}
                     className={cn(
-                        "box-border min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted",
+                        // a line (21px) padded to the Send button's 30px, so one line sits level with its label
+                        // and not at the foot of the row; more lines grow above the button, which stays at the foot
+                        "box-border min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-[4.5px] text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted",
                         rows < 5 ? "overflow-hidden" : "overflow-y-auto"
                     )}
                 />
