@@ -72,15 +72,15 @@ import {
     useEstimate,
 } from "./councilstore";
 
-const ROOT = "flex min-h-0 min-w-0 flex-1 flex-col bg-background text-[13px] text-primary";
+const ROOT = "flex min-h-0 min-w-0 flex-1 flex-col bg-background text-[14px] text-primary";
 
 const SECTION_LABEL = "text-[10.5px] font-bold uppercase tracking-[0.1em] text-muted";
 
 const secondaryButton =
-    "h-[30px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[12px] text-[12.5px] text-secondary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
+    "h-[30px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[12px] text-[13.5px] text-secondary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
 
 const primaryButton =
-    "h-[30px] cursor-pointer rounded-[6px] border-0 bg-accent px-[14px] text-[12.5px] font-semibold text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
+    "h-[30px] cursor-pointer rounded-[6px] border-0 bg-accent px-[14px] text-[13.5px] font-semibold text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
 
 // ---- state the view keeps ----
 
@@ -254,11 +254,11 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
     return (
         <header className="flex flex-none flex-col gap-3 border-b border-edge-faint px-8 pb-3 pt-4">
             <div className="flex min-w-0 flex-wrap items-center gap-x-[10px] gap-y-2">
-                <span className="text-[12px] text-muted">Council</span>
+                <span className="text-[13px] text-muted">Council</span>
                 <h1
                     data-council-title
                     title={c.feature}
-                    className="m-0 min-w-0 truncate text-[15px] font-semibold tracking-[-0.01em] text-primary"
+                    className="m-0 min-w-0 truncate text-[16px] font-semibold tracking-[-0.01em] text-primary"
                 >
                     {c.feature}
                 </h1>
@@ -267,7 +267,7 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
                 {body !== "chat" && <AvatarStack c={c} />}
                 <div className="flex-1" />
                 {c.state !== "not-run" && !isQueued(c) && (
-                    <span data-council-cost className="whitespace-nowrap text-[11.5px] tabular-nums text-muted">
+                    <span data-council-cost className="whitespace-nowrap text-[12.5px] tabular-nums text-muted">
                         {headerCost(c, now)}
                     </span>
                 )}
@@ -277,7 +277,7 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
                     disabled={!enabled || summarizing}
                     title={title}
                     onClick={() => void summarize()}
-                    className="inline-flex h-[28px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-strong bg-surface-raised px-[12px] text-[12px] font-semibold text-primary outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:border-border disabled:bg-surface disabled:text-ink-faint"
+                    className="inline-flex h-[28px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-strong bg-surface-raised px-[12px] text-[13px] font-semibold text-primary outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:border-border disabled:bg-surface disabled:text-ink-faint"
                 >
                     <ListChecks size={13} strokeWidth={2} aria-hidden />
                     {summarizing ? "Summarizing…" : action.label}
@@ -288,7 +288,7 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
                         data-council-stop
                         disabled={acts.busy.has("stop")}
                         onClick={() => void acts.run("stop", "Stop council", () => stopCouncil(c.id))}
-                        className="h-[28px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[12px] text-[12px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
+                        className="h-[28px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[12px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
                     >
                         {acts.busy.has("stop") ? "Stopping…" : "Stop council"}
                     </button>
@@ -299,7 +299,7 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
                         data-council-remove
                         title="Remove this council and its discussion"
                         onClick={() => confirmRemoveCouncil(c)}
-                        className="h-[28px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[12px] text-[12px] text-muted outline-none hover:text-error focus-visible:ring-2 focus-visible:ring-accent"
+                        className="h-[28px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[12px] text-[13px] text-muted outline-none hover:text-error focus-visible:ring-2 focus-visible:ring-accent"
                     >
                         Remove
                     </button>
@@ -307,12 +307,12 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
             </div>
             {showBar && <CallBar c={c} />}
             {c.state === "running" && c.round <= 1 && (
-                <span className="self-start text-[11.5px] text-muted">
+                <span className="self-start text-[12.5px] text-muted">
                     The discussion opens here as ideas arrive. Summarize unlocks after the experts' first ideas.
                 </span>
             )}
             {acts.error != null && (
-                <span role="alert" data-council-error className="text-[12px] text-error-soft">
+                <span role="alert" data-council-error className="text-[13px] text-error-soft">
                     {acts.error}
                 </span>
             )}
@@ -331,7 +331,7 @@ function RetryButton({ expertId, label, acts, c }: { expertId: string; label: st
             aria-label={label}
             disabled={acts.busy.has(key)}
             onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, expertId))}
-            className={cn(secondaryButton, "h-[26px] self-start px-[10px] text-[11.5px]")}
+            className={cn(secondaryButton, "h-[26px] self-start px-[10px] text-[12.5px]")}
         >
             {acts.busy.has(key) ? "Retrying…" : "Retry"}
         </button>
@@ -346,14 +346,14 @@ function ExpertFailureCard({ c, f, acts }: { c: Council; f: FailedExpert; acts: 
         >
             <div className="flex items-center gap-2">
                 <CouncilAvatar tone={avatarTone(c, f.expert.id)} name={f.expert.name} />
-                <span className="text-[12.5px] font-semibold">{f.expert.name}</span>
-                <span className="text-[11px] text-muted">{f.expert.model}</span>
-                <span className="flex items-center gap-[6px] text-[11.5px] text-error-soft">
+                <span className="text-[13.5px] font-semibold">{f.expert.name}</span>
+                <span className="text-[12px] text-muted">{f.expert.model}</span>
+                <span className="flex items-center gap-[6px] text-[12.5px] text-error-soft">
                     <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-error" />
                     {failedWhile(c, f.round)}
                 </span>
             </div>
-            <span data-council-failed-error className="break-words text-[12px] leading-[1.5] text-secondary">
+            <span data-council-failed-error className="break-words text-[13px] leading-[1.5] text-secondary">
                 {f.error}
             </span>
             <RetryButton expertId={f.expert.id} label={`Retry ${f.expert.name}`} acts={acts} c={c} />
@@ -369,16 +369,16 @@ function SummaryFailedPanel({ c, f, acts }: { c: Council; f: FailedExpert; acts:
         >
             <div className="flex items-center gap-2">
                 <CouncilAvatar tone={avatarTone(c, f.expert.id)} name={f.expert.name} />
-                <span className="text-[12.5px] font-semibold">Summary failed</span>
-                <span className="flex items-center gap-[6px] text-[11.5px] text-error-soft">
+                <span className="text-[13.5px] font-semibold">Summary failed</span>
+                <span className="flex items-center gap-[6px] text-[12.5px] text-error-soft">
                     <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-error" />
                     {failedWhile(c, f.round)}
                 </span>
             </div>
-            <span data-council-failed-error className="break-words text-[12px] leading-[1.5] text-secondary">
+            <span data-council-failed-error className="break-words text-[13px] leading-[1.5] text-secondary">
                 {f.error}
             </span>
-            <span className="text-[11.5px] text-muted">The discussion is kept. Retry runs the summary again.</span>
+            <span className="text-[12.5px] text-muted">The discussion is kept. Retry runs the summary again.</span>
             <RetryButton expertId={f.expert.id} label="Retry the summary" acts={acts} c={c} />
         </div>
     );
@@ -398,7 +398,7 @@ function FailureNotes({ c, acts, withExperts }: { c: Council; acts: Actions; wit
     }
     return (
         <div data-council-failures className="flex flex-col gap-2">
-            {note != null && <span className="text-[12px] text-secondary">{note}</span>}
+            {note != null && <span className="text-[13px] text-secondary">{note}</span>}
             {experts.map((f) => (
                 <ExpertFailureCard key={f.expert.id} c={c} f={f} acts={acts} />
             ))}
@@ -427,13 +427,13 @@ function ExpertCard({ c, e, acts }: { c: Council; e: CouncilExpert; acts: Action
         >
             <div className="flex items-center gap-2">
                 <CouncilAvatar tone={avatarTone(c, e.id)} name={e.name} />
-                <span className="truncate text-[12.5px] font-semibold">{e.name}</span>
-                <span className="text-[11px] text-muted">{e.model}</span>
+                <span className="truncate text-[13.5px] font-semibold">{e.name}</span>
+                <span className="text-[12px] text-muted">{e.model}</span>
             </div>
             <div
                 data-dot={state.dot}
                 className={cn(
-                    "flex min-w-0 items-center gap-[6px] text-[11.5px]",
+                    "flex min-w-0 items-center gap-[6px] text-[12.5px]",
                     state.dot === "working"
                         ? "text-primary"
                         : state.dot === "failed"
@@ -447,7 +447,7 @@ function ExpertCard({ c, e, acts }: { c: Council; e: CouncilExpert; acts: Action
                 </span>
             </div>
             {failure != null && (
-                <span data-council-failed-error className="break-words text-[11.5px] leading-[1.45] text-secondary">
+                <span data-council-failed-error className="break-words text-[12.5px] leading-[1.45] text-secondary">
                     {failure.error}
                 </span>
             )}
@@ -470,7 +470,7 @@ function ProposalsSoFar({ c }: { c: Council }) {
                 <span className="text-[10.5px] tabular-nums text-muted">{proposals.length}</span>
                 <div className="h-px flex-1 bg-edge-faint" />
             </div>
-            {proposals.length === 0 && <span className="text-[12px] text-muted">No ideas yet.</span>}
+            {proposals.length === 0 && <span className="text-[13px] text-muted">No ideas yet.</span>}
             {proposals.map((p) => (
                 <div
                     key={p.id}
@@ -482,8 +482,8 @@ function ProposalsSoFar({ c }: { c: Council }) {
                         name={c.experts.find((e) => e.id === p.author)?.name ?? p.author}
                     />
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
-                        <span className="text-[13px] font-semibold">{p.title}</span>
-                        <span className="text-[12px] leading-[1.5] text-secondary">{p.argument}</span>
+                        <span className="text-[14px] font-semibold">{p.title}</span>
+                        <span className="text-[13px] leading-[1.5] text-secondary">{p.argument}</span>
                         <EvidenceChips
                             evidence={(p.evidence ?? []).filter((e) => !e.weak).map((e) => evidenceChip(e).text)}
                             weak={(p.evidence ?? [])
@@ -516,7 +516,7 @@ function ExpertsBody({ c, acts }: { c: Council; acts: Actions }) {
                             <span className="h-[58px] rounded-[10px] bg-surface opacity-60" />
                             <span className="h-[58px] rounded-[10px] bg-surface opacity-35" />
                         </div>
-                        <span className="text-[11.5px] text-muted">
+                        <span className="text-[12.5px] text-muted">
                             The answer appears here once the experts have argued it out. You can leave; the Council row
                             in the tree turns to Done.
                         </span>
@@ -559,11 +559,11 @@ function PauseRow({ c, p, kept, onToggle }: { c: Council; p: CouncilProposal; ke
             />
             <span
                 data-council-pause-title
-                className={cn("min-w-0 flex-1 text-[13px]", kept ? "text-primary" : "text-muted line-through")}
+                className={cn("min-w-0 flex-1 text-[14px]", kept ? "text-primary" : "text-muted line-through")}
             >
                 {p.title}
             </span>
-            <span className="text-[11px] text-muted">{p.evidence?.find((e) => !e.weak && e.ref)?.ref ?? ""}</span>
+            <span className="text-[12px] text-muted">{p.evidence?.find((e) => !e.weak && e.ref)?.ref ?? ""}</span>
         </label>
     );
 }
@@ -589,7 +589,7 @@ function PauseBody({ c, acts }: { c: Council; acts: Actions }) {
                     <span className="text-[10.5px] tabular-nums text-muted">{proposals.length}</span>
                     <div className="h-px flex-1 bg-edge-faint" />
                 </div>
-                <p className="m-0 text-[13.5px] leading-[1.55] text-ink-hi">
+                <p className="m-0 text-[15px] leading-[1.55] text-ink-hi">
                     Untick the ideas not worth a review: the argument reads only the ones you keep, and anything you ask
                     below.
                 </p>
@@ -611,9 +611,9 @@ function PauseBody({ c, acts }: { c: Council; acts: Actions }) {
                         rows={3}
                         value={draft.question}
                         onChange={(e) => setDraft({ ...draft, question: e.target.value })}
-                        className="box-border w-full resize-none rounded-[6px] border border-edge-strong bg-surface px-[10px] py-2 text-[13px] leading-[1.5] text-primary outline-none focus:border-accent"
+                        className="box-border w-full resize-none rounded-[6px] border border-edge-strong bg-surface px-[10px] py-2 text-[14px] leading-[1.5] text-primary outline-none focus:border-accent"
                     />
-                    <span className="text-[11.5px] text-muted">
+                    <span className="text-[12.5px] text-muted">
                         Every expert answers it while they argue, beside their review of the kept ideas.
                     </span>
                 </label>
@@ -637,12 +637,12 @@ function PauseBody({ c, acts }: { c: Council; acts: Actions }) {
                     >
                         Stop here and keep these ideas
                     </button>
-                    <span data-council-remaining className="text-[11.5px] tabular-nums text-muted">
+                    <span data-council-remaining className="text-[12.5px] tabular-nums text-muted">
                         {est != null ? `The rest: ${estimateLabel(est, false)}` : ""}
                     </span>
                 </div>
                 {keptProposals(c, draft.cut).length === 0 && (
-                    <span className="text-[11.5px] text-warning-soft">
+                    <span className="text-[12.5px] text-warning-soft">
                         Nothing is kept. Tick an idea, or stop here and keep these ideas.
                     </span>
                 )}
@@ -658,12 +658,12 @@ function NotRunBody({ c, acts }: { c: Council; acts: Actions }) {
     return (
         <div data-council-notrun className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
             <div className="flex max-w-[640px] flex-col gap-3">
-                <p className="m-0 text-[14px] font-semibold">This council has not run</p>
-                <p className="m-0 text-[13px] leading-[1.55] text-ink-hi">
+                <p className="m-0 text-[15px] font-semibold">This council has not run</p>
+                <p className="m-0 text-[14px] leading-[1.55] text-ink-hi">
                     The token gate did not run it when it was asked for, so no expert was called. Starting it here is
                     the yes.
                 </p>
-                <span data-council-estimate className="text-[12px] tabular-nums text-secondary">
+                <span data-council-estimate className="text-[13px] tabular-nums text-secondary">
                     {est != null ? estimateLabel(est) : "Estimating…"}
                 </span>
                 <div>
@@ -688,9 +688,9 @@ function NotRunBody({ c, acts }: { c: Council; acts: Actions }) {
 function QueuedBody({ c }: { c: Council }) {
     const holder = useCouncil(c.queuedafter || null);
     return (
-        <div data-council-queued className="flex min-h-0 flex-1 flex-col gap-1 px-8 py-6 text-[13px] text-secondary">
+        <div data-council-queued className="flex min-h-0 flex-1 flex-col gap-1 px-8 py-6 text-[14px] text-secondary">
             <span data-council-queued-line>{queuedLine(holder)}</span>
-            <span className="text-[12px] text-muted">It starts when the running council ends.</span>
+            <span className="text-[13px] text-muted">It starts when the running council ends.</span>
         </div>
     );
 }

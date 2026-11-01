@@ -112,11 +112,11 @@ const STANCE_PILL: Record<StanceLabel, string> = {
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 const BUTTON = cn(
-    "flex h-[28px] flex-none cursor-pointer items-center rounded-md border border-edge-mid bg-surface-raised px-3 text-[12px] text-secondary hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50 disabled:hover:border-edge-mid disabled:hover:bg-surface-raised",
+    "flex h-[28px] flex-none cursor-pointer items-center rounded-md border border-edge-mid bg-surface-raised px-3 text-[13px] text-secondary hover:border-edge-strong hover:bg-surface-hover disabled:cursor-default disabled:opacity-50 disabled:hover:border-edge-mid disabled:hover:bg-surface-raised",
     FOCUS
 );
 const PRIMARY = cn(
-    "flex h-[28px] flex-none cursor-pointer items-center rounded-md bg-accent px-3 text-[12px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50 disabled:hover:bg-accent",
+    "flex h-[28px] flex-none cursor-pointer items-center rounded-md bg-accent px-3 text-[13px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50 disabled:hover:bg-accent",
     FOCUS
 );
 
@@ -166,7 +166,7 @@ function EvidenceChip({ evidence }: { evidence: CouncilEvidence }) {
         <span
             data-council-evidence={weak ? "weak" : "ref"}
             className={cn(
-                "inline-flex items-center gap-[5px] rounded-[6px] border bg-surface px-2 py-[2px] text-[11px]",
+                "inline-flex items-center gap-[5px] rounded-[6px] border bg-surface px-2 py-[2px] text-[12px]",
                 weak ? "border-warning/40 text-warning-soft" : "border-edge-mid text-secondary"
             )}
         >
@@ -179,14 +179,14 @@ function EvidenceChip({ evidence }: { evidence: CouncilEvidence }) {
 function PositionView({ c, position }: { c: Council; position: Position }) {
     return (
         <div data-council-position={position.expert.id} className="flex gap-[10px]">
-            <Avatar c={c} id={position.expert.id} name={position.expert.name} className="text-[11px]" />
+            <Avatar c={c} id={position.expert.id} name={position.expert.name} className="text-[12px]" />
             <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
                 <div className="flex items-center gap-2">
-                    <span className="text-[12px] font-semibold text-primary">{position.expert.name}</span>
+                    <span className="text-[13px] font-semibold text-primary">{position.expert.name}</span>
                     <StancePill stance={position.stance} />
                 </div>
                 {position.text !== "" ? (
-                    <span className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-ink-hi">
+                    <span className="whitespace-pre-wrap break-words text-[13.5px] leading-[1.5] text-ink-hi">
                         {position.text}
                     </span>
                 ) : null}
@@ -237,20 +237,20 @@ function DirectionCard({
                 onClick={onToggle}
                 className={cn("flex w-full cursor-pointer items-center gap-3 px-[14px] py-3 text-left", FOCUS)}
             >
-                <span className="flex h-[22px] w-[22px] flex-none items-center justify-center rounded-[6px] bg-surface text-[11.5px] font-bold tabular-nums text-secondary">
+                <span className="flex h-[22px] w-[22px] flex-none items-center justify-center rounded-[6px] bg-surface text-[12.5px] font-bold tabular-nums text-secondary">
                     {d.rank}
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                    <span data-council-title className="text-[13.5px] font-semibold text-primary">
+                    <span data-council-title className="text-[15px] font-semibold text-primary">
                         {d.title}
                     </span>
                     {row.firstStep !== "" ? (
-                        <span data-council-first-step className="text-[12px] leading-[1.45] text-secondary">
+                        <span data-council-first-step className="text-[13px] leading-[1.45] text-secondary">
                             {row.firstStep}
                         </span>
                     ) : null}
                     {row.meta !== "" ? (
-                        <span data-council-meta className="text-[11px] text-muted">
+                        <span data-council-meta className="text-[12px] text-muted">
                             {row.meta}
                         </span>
                     ) : null}
@@ -301,7 +301,7 @@ function DirectionCard({
                     className="flex flex-col gap-3 pb-[14px] pl-[48px] pr-[14px] pt-1"
                 >
                     {d.reasoning !== "" ? (
-                        <p data-council-reasoning className="m-0 text-[12.5px] leading-[1.55] text-secondary">
+                        <p data-council-reasoning className="m-0 text-[13.5px] leading-[1.55] text-secondary">
                             <span className="font-semibold">Coordinator: </span>
                             {d.reasoning}
                         </p>
@@ -339,16 +339,16 @@ function KeptCard({ row }: { row: KeptRow }) {
             data-council-kept-idea={d.rank}
             className="flex flex-col gap-[3px] rounded-[10px] border border-edge-mid bg-surface-raised px-[14px] py-[10px]"
         >
-            <span data-council-title className="text-[13px] font-semibold text-primary">
+            <span data-council-title className="text-[14px] font-semibold text-primary">
                 {d.title}
             </span>
             {row.meta !== "" ? (
-                <span data-council-meta className="text-[11px] text-muted">
+                <span data-council-meta className="text-[12px] text-muted">
                     {row.meta}
                 </span>
             ) : null}
             {d.reasoning !== "" ? (
-                <span className="text-[12.5px] leading-[1.5] text-secondary">{d.reasoning}</span>
+                <span className="text-[13.5px] leading-[1.5] text-secondary">{d.reasoning}</span>
             ) : null}
         </div>
     );
@@ -379,12 +379,12 @@ function RatingRow({ c }: { c: Council }) {
     return (
         <div
             data-council-rating
-            className="mt-[6px] flex flex-wrap items-center gap-x-[10px] gap-y-[6px] text-[12px] text-muted"
+            className="mt-[6px] flex flex-wrap items-center gap-x-[10px] gap-y-[6px] text-[13px] text-muted"
         >
             <span
                 role="status"
                 data-council-rating-thanks={row.choices.length === 0 ? "" : undefined}
-                className="text-[12px]"
+                className="text-[13px]"
             >
                 {row.text}
             </span>
@@ -395,7 +395,7 @@ function RatingRow({ c }: { c: Council }) {
                     data-council-rate={choice.id}
                     disabled={busy != null}
                     onClick={() => void rate(choice.id)}
-                    className={cn(BUTTON, "h-[24px] px-[10px] text-[11.5px]")}
+                    className={cn(BUTTON, "h-[24px] px-[10px] text-[12.5px]")}
                 >
                     {busy === choice.id ? <Loader2 size={11} aria-hidden className="mr-[6px] animate-spin" /> : null}
                     {choice.label}
@@ -406,7 +406,7 @@ function RatingRow({ c }: { c: Council }) {
                     type="button"
                     data-council-rating-change
                     onClick={() => setChanging(true)}
-                    className={cn("cursor-pointer rounded-[4px] text-[12px] text-accent hover:text-accenthover", FOCUS)}
+                    className={cn("cursor-pointer rounded-[4px] text-[13px] text-accent hover:text-accenthover", FOCUS)}
                 >
                     {row.change}
                 </button>
@@ -441,7 +441,7 @@ function Matrix({ c }: { c: Council }) {
                 aria-controls={open ? bodyId : undefined}
                 onClick={() => setOpen(!open)}
                 className={cn(
-                    "flex w-fit cursor-pointer items-center gap-[8px] rounded-[6px] py-[3px] pr-[6px] text-left text-[12.5px] font-semibold text-secondary hover:text-primary",
+                    "flex w-fit cursor-pointer items-center gap-[8px] rounded-[6px] py-[3px] pr-[6px] text-left text-[13.5px] font-semibold text-secondary hover:text-primary",
                     FOCUS
                 )}
             >
@@ -451,7 +451,7 @@ function Matrix({ c }: { c: Council }) {
                     <ChevronDown size={14} aria-hidden className="flex-none text-muted" />
                 )}
                 Every expert on every idea
-                <span className="text-[11.5px] font-normal text-muted">where each expert ended up on each idea</span>
+                <span className="text-[12.5px] font-normal text-muted">where each expert ended up on each idea</span>
             </button>
             {open ? (
                 <div id={bodyId} className="overflow-x-auto rounded-[10px] border border-border">
@@ -475,7 +475,7 @@ function Matrix({ c }: { c: Council }) {
                                     <th
                                         key={e.id}
                                         scope="col"
-                                        className="px-[10px] py-[9px] text-[12px] font-semibold text-primary"
+                                        className="px-[10px] py-[9px] text-[13px] font-semibold text-primary"
                                     >
                                         <span className="flex items-center gap-[6px]">
                                             <Avatar c={c} id={e.id} name={e.name} small />
@@ -503,13 +503,13 @@ function Matrix({ c }: { c: Council }) {
                                         <td className="min-w-0 px-3 py-[11px]">
                                             <div
                                                 className={cn(
-                                                    "text-[12.5px] font-semibold",
+                                                    "text-[13.5px] font-semibold",
                                                     out ? "text-muted" : "text-primary"
                                                 )}
                                             >
                                                 {row.proposal.title}
                                             </div>
-                                            <div className="mt-1 text-[11px] text-muted">{citedRefs(row.proposal)}</div>
+                                            <div className="mt-1 text-[12px] text-muted">{citedRefs(row.proposal)}</div>
                                         </td>
                                         {row.cells.map((cell) => (
                                             <td
@@ -521,20 +521,20 @@ function Matrix({ c }: { c: Council }) {
                                                     <div className="flex flex-col gap-[5px]">
                                                         <StancePill stance={cell.stance} />
                                                         {cell.reason !== "" ? (
-                                                            <span className="break-words text-[11.5px] leading-[1.4] text-secondary">
+                                                            <span className="break-words text-[12.5px] leading-[1.4] text-secondary">
                                                                 {cell.reason}
                                                             </span>
                                                         ) : null}
                                                     </div>
                                                 ) : (
-                                                    <span className="text-[11.5px] text-ink-faint">No view</span>
+                                                    <span className="text-[12.5px] text-ink-faint">No view</span>
                                                 )}
                                             </td>
                                         ))}
                                         <td
                                             data-council-matrix-outcome
                                             className={cn(
-                                                "border-l border-edge-faint px-[10px] py-[11px] text-[11.5px]",
+                                                "border-l border-edge-faint px-[10px] py-[11px] text-[12.5px]",
                                                 out ? "text-muted" : "text-primary"
                                             )}
                                         >
@@ -622,7 +622,7 @@ function ActionsMenu({ items }: { items: { id: string; label: string; disabled?:
                                 trigger.current?.focus();
                                 item.onPick();
                             }}
-                            className="flex h-[28px] w-full cursor-pointer items-center rounded-[6px] border-0 bg-transparent px-[8px] text-left text-[12px] text-primary outline-none hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
+                            className="flex h-[28px] w-full cursor-pointer items-center rounded-[6px] border-0 bg-transparent px-[8px] text-left text-[13px] text-primary outline-none hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
                         >
                             {item.label}
                         </button>
@@ -660,7 +660,7 @@ function StateFacts({ model, c }: { model: AgentsViewModel; c: Council }) {
                 <StateMark state={c.state} />
                 {state}
             </span>
-            <span data-council-facts className="text-[11.5px] tabular-nums text-muted">
+            <span data-council-facts className="text-[12.5px] tabular-nums text-muted">
                 {facts}
             </span>
         </div>
@@ -758,8 +758,8 @@ function Outline({ c, scroller }: { c: Council; scroller: RefObject<HTMLDivEleme
                         className={cn(
                             "flex w-full cursor-pointer rounded-[6px] px-[6px] text-left hover:bg-surface-hover hover:text-primary",
                             e.depth === 0
-                                ? "min-h-[26px] items-center gap-[6px] py-[3px] text-[12px]"
-                                : "items-baseline gap-[6px] py-[3px] pl-[18px] text-[11.5px] leading-[1.4]",
+                                ? "min-h-[26px] items-center gap-[6px] py-[3px] text-[13px]"
+                                : "items-baseline gap-[6px] py-[3px] pl-[18px] text-[12.5px] leading-[1.4]",
                             lit ? "bg-surface-selected text-primary" : here ? "text-primary" : "text-muted",
                             FOCUS
                         )}
@@ -767,7 +767,7 @@ function Outline({ c, scroller }: { c: Council; scroller: RefObject<HTMLDivEleme
                         {e.rank != null ? <span className="flex-none tabular-nums">{e.rank}</span> : null}
                         <span className={cn("min-w-0", e.depth === 1 && "line-clamp-2")}>{e.label}</span>
                         {e.count != null ? (
-                            <span className="ml-auto flex-none pl-2 text-[11px] tabular-nums text-muted">
+                            <span className="ml-auto flex-none pl-2 text-[12px] tabular-nums text-muted">
                                 {e.count}
                             </span>
                         ) : null}
@@ -790,19 +790,19 @@ function Panel({ c }: { c: Council }) {
                         <Avatar c={c} id={e.id} name={e.name} small className="mt-px" />
                         <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
                             <span data-council-expert-who className="flex items-baseline gap-[6px]">
-                                <span className="min-w-0 flex-1 text-[12px]">{e.name}</span>
-                                <span className="flex-none text-[11px] text-muted">{e.model}</span>
+                                <span className="min-w-0 flex-1 text-[13px]">{e.name}</span>
+                                <span className="flex-none text-[12px] text-muted">{e.model}</span>
                             </span>
                             {line !== "" ? (
                                 <span
                                     data-council-expert-activity
-                                    className="text-[11px] leading-[1.4] tabular-nums text-muted"
+                                    className="text-[12px] leading-[1.4] tabular-nums text-muted"
                                 >
                                     {line}
                                 </span>
                             ) : null}
                             {filter ? (
-                                <span className="hidden text-[11px] text-primary group-hover:block group-focus-visible:block">
+                                <span className="hidden text-[12px] text-primary group-hover:block group-focus-visible:block">
                                     Show their messages →
                                 </span>
                             ) : null}
@@ -861,7 +861,7 @@ function FactsColumn({
             disabled={opening}
             onClick={() => onOpenDoc(path)}
             className={cn(
-                "flex cursor-pointer items-start gap-[7px] rounded-[4px] text-left text-[11.5px] leading-[1.45] text-secondary [overflow-wrap:anywhere] hover:text-primary hover:underline disabled:cursor-default",
+                "flex cursor-pointer items-start gap-[7px] rounded-[4px] text-left text-[12.5px] leading-[1.45] text-secondary [overflow-wrap:anywhere] hover:text-primary hover:underline disabled:cursor-default",
                 FOCUS
             )}
         >
@@ -874,7 +874,7 @@ function FactsColumn({
         <aside
             aria-label="About this council"
             data-council-facts-column
-            className="sticky top-0 flex w-[256px] flex-none flex-col gap-[14px] rounded-lg bg-surface p-[14px] text-[12px] text-secondary"
+            className="sticky top-0 flex w-[280px] flex-none flex-col gap-[14px] rounded-lg bg-surface p-[14px] text-[13px] text-secondary"
         >
             <StateFacts model={model} c={c} />
             {hasOutline ? (
@@ -909,7 +909,7 @@ function Banner({ tone, children }: { tone: "asking" | "error" | "working"; chil
         <div
             role={tone === "error" ? "alert" : "status"}
             className={cn(
-                "flex flex-none items-center gap-3 border-b px-8 py-[9px] text-[12px]",
+                "flex flex-none items-center gap-3 border-b px-8 py-[9px] text-[13px]",
                 tone === "asking" && "border-asking/30 bg-askingbg text-warning-soft",
                 tone === "error" && "border-error/30 bg-error/10 text-error-soft",
                 tone === "working" && "border-edge-faint bg-surface text-secondary"
@@ -930,7 +930,7 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
     return (
         <div
             data-council-nosummary
-            className="flex max-w-[900px] flex-col items-start gap-3 text-[13px] text-secondary"
+            className="flex max-w-[900px] flex-col items-start gap-3 text-[14px] text-secondary"
         >
             {writing ? (
                 <span className="flex items-center gap-2" role="status">
@@ -1091,7 +1091,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
         <>
             <header className="flex flex-none flex-col gap-3 border-b border-edge-faint px-8 pb-[14px] pt-[18px]">
                 <div className="flex items-start gap-[10px]">
-                    <h1 className="m-0 min-w-0 flex-1 text-[15px] font-semibold leading-[1.4] tracking-[-0.01em] text-primary">
+                    <h1 className="m-0 min-w-0 flex-1 text-[16px] font-semibold leading-[1.4] tracking-[-0.01em] text-primary">
                         Council · {c.feature}
                     </h1>
                     <button
@@ -1136,7 +1136,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                     />
                 </div>
                 {initiative != null || error != null ? (
-                    <div className="flex flex-col gap-1 text-[11.5px]">
+                    <div className="flex flex-col gap-1 text-[12.5px]">
                         {initiative != null ? (
                             <span
                                 data-council-initiative-made
@@ -1219,14 +1219,14 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                             ) : (
                                 <>
                                     {asked !== "" ? (
-                                        <span data-council-asked className="text-[12px] text-muted">
+                                        <span data-council-asked className="text-[13px] text-muted">
                                             {asked}
                                         </span>
                                     ) : null}
                                     {answer !== "" ? (
                                         <p
                                             data-council-answer
-                                            className="m-0 whitespace-pre-wrap text-[17px] font-semibold leading-[1.4] tracking-[-0.01em] text-primary"
+                                            className="m-0 whitespace-pre-wrap text-[22px] font-semibold leading-[1.4] tracking-[-0.01em] text-primary"
                                         >
                                             {answer}
                                         </p>
@@ -1234,20 +1234,20 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                     {rest !== "" ? (
                                         <p
                                             data-council-summary-text
-                                            className="m-0 whitespace-pre-wrap text-[13.5px] leading-[1.55] text-ink-hi"
+                                            className="m-0 whitespace-pre-wrap text-[15px] leading-[1.55] text-ink-hi"
                                         >
                                             {rest}
                                         </p>
                                     ) : null}
                                     {written !== "" ? (
-                                        <span data-council-written className="mb-[6px] text-[11.5px] text-muted">
+                                        <span data-council-written className="mb-[6px] text-[12.5px] text-muted">
                                             {written}
                                         </span>
                                     ) : null}
                                     {heading !== "" && directions.length > 0 ? (
                                         <h2
                                             data-council-directions-heading
-                                            className="m-0 text-[13px] font-semibold text-primary"
+                                            className="m-0 text-[14px] font-semibold text-primary"
                                         >
                                             {heading}
                                         </h2>
@@ -1266,7 +1266,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                     ))}
                                     {kept.length > 0 ? (
                                         <section data-council-kept className="mt-[14px] flex flex-col gap-[10px]">
-                                            <h2 className="m-0 text-[13px] font-semibold text-primary">
+                                            <h2 className="m-0 text-[14px] font-semibold text-primary">
                                                 {keptHeading(c)}
                                             </h2>
                                             {kept.map((row, i) => (
@@ -1275,7 +1275,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                         </section>
                                     ) : null}
                                     {dropped !== "" ? (
-                                        <span data-council-dropped className="text-[11.5px] text-muted">
+                                        <span data-council-dropped className="text-[12.5px] text-muted">
                                             {dropped}
                                         </span>
                                     ) : null}
@@ -1310,7 +1310,7 @@ export function CouncilSummary({ model }: { model: AgentsViewModel }) {
             className="flex min-h-0 min-w-0 flex-1 flex-col bg-background"
         >
             {c == null ? (
-                <div className="flex flex-1 items-center justify-center text-[13px] text-muted">
+                <div className="flex flex-1 items-center justify-center text-[14px] text-muted">
                     {id == null ? "No council is open." : "Loading the council…"}
                 </div>
             ) : (

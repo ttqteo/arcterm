@@ -59,6 +59,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   outline of the report (a click jumps to a part; the one you are reading is grey), each expert with its model and what
   it did, and the saved document. Click an expert to see only their ideas and replies in the Discussion, each reply
   naming the idea it is on; Show everyone brings the rest back. The header keeps only the title and its actions.
+- A council reads at the size a brainstorm does: its report, Discussion, Setup and Sources step up a size, and the
+  report's answer is set larger as the headline it is.
 
 ### Fixed
 

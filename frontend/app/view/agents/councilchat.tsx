@@ -169,11 +169,11 @@ function KindTag({ tag }: { tag: Who["tag"] }) {
 }
 
 const primaryButton =
-    "h-[26px] cursor-pointer rounded-[6px] border-0 bg-accent px-[10px] text-[12px] font-semibold text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
+    "h-[26px] cursor-pointer rounded-[6px] border-0 bg-accent px-[10px] text-[13px] font-semibold text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
 const secondaryButton =
-    "h-[26px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[12px] text-secondary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
+    "h-[26px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[13px] text-secondary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
 const ghostButton =
-    "h-[26px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[10px] text-[12px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
+    "h-[26px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[10px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
 
 // ---- state the chat keeps ----
 
@@ -223,7 +223,7 @@ function SeatChipView({
         </>
     );
     const box =
-        "flex min-w-0 items-center gap-[6px] rounded-full border border-edge-mid bg-surface py-[3px] pl-[4px] pr-[9px] text-[11px]";
+        "flex min-w-0 items-center gap-[6px] rounded-full border border-edge-mid bg-surface py-[3px] pl-[4px] pr-[9px] text-[12px]";
     return (
         <div
             role="listitem"
@@ -256,7 +256,7 @@ function SeatChipView({
                     aria-label={`Retry ${chip.name}`}
                     disabled={acts.busy.has(key)}
                     onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, chip.id))}
-                    className={cn(secondaryButton, "h-[22px] px-[8px] text-[11px]")}
+                    className={cn(secondaryButton, "h-[22px] px-[8px] text-[12px]")}
                 >
                     {acts.busy.has(key) ? "Retrying…" : "Retry"}
                 </button>
@@ -270,7 +270,7 @@ function SeatChipView({
 // the line over a message: who wrote it, then what the caller adds (a label, the time)
 function Byline({ who, children }: { who: Who; children?: ReactNode }) {
     return (
-        <div className="flex flex-wrap items-center gap-[7px] text-[11.5px]">
+        <div className="flex flex-wrap items-center gap-[7px] text-[12.5px]">
             <span className={cn("font-semibold", TONE_TEXT[who.tone])}>{who.name}</span>
             <KindTag tag={who.tag} />
             {children}
@@ -289,7 +289,7 @@ const PostTime = ({ at, when }: { at: string; when: string }) =>
 const Reaction = ({ text }: { text: string }) => (
     <span
         data-council-reaction
-        className="inline-flex items-center gap-[5px] rounded-full bg-success/12 px-[8px] py-px text-[11px] font-semibold text-success-soft"
+        className="inline-flex items-center gap-[5px] rounded-full bg-success/12 px-[8px] py-px text-[12px] font-semibold text-success-soft"
     >
         <Check size={10} strokeWidth={3} aria-hidden />
         {text}
@@ -335,8 +335,8 @@ function IdeaMessage({
                     <PostTime at={item.at} when={item.when} />
                     {item.edited && <span className="text-muted">edited</span>}
                 </Byline>
-                <h3 className="m-0 text-[13.5px] font-semibold leading-[1.35] text-primary">{item.title}</h3>
-                <span className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-ink-hi">
+                <h3 className="m-0 text-[15px] font-semibold leading-[1.35] text-primary">{item.title}</h3>
+                <span className="whitespace-pre-wrap break-words text-[13.5px] leading-[1.5] text-ink-hi">
                     {item.text}
                 </span>
                 <EvidenceChips
@@ -351,7 +351,7 @@ function IdeaMessage({
                         data-replies={t.count}
                         aria-label={`Open the thread: ${t.label}`}
                         onClick={() => onOpen(item.id)}
-                        className="-ml-[6px] inline-flex h-[26px] cursor-pointer items-center gap-[8px] rounded-[6px] border border-transparent bg-transparent pl-[6px] pr-[8px] text-[11.5px] outline-none hover:border-edge-mid hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
+                        className="-ml-[6px] inline-flex h-[26px] cursor-pointer items-center gap-[8px] rounded-[6px] border border-transparent bg-transparent pl-[6px] pr-[8px] text-[12.5px] outline-none hover:border-edge-mid hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
                     >
                         {t.repliers.length > 0 && (
                             <span className="flex">
@@ -382,7 +382,7 @@ function IdeaMessage({
                         <span
                             data-council-picks
                             title={item.picks.title}
-                            className="rounded-full bg-pill px-[8px] py-px text-[11px] font-semibold text-secondary"
+                            className="rounded-full bg-pill px-[8px] py-px text-[12px] font-semibold text-secondary"
                         >
                             {item.picks.label}
                         </span>
@@ -408,7 +408,7 @@ function ReplyHeader({ item, onOpenIdea }: { item: ReplyPost; onOpenIdea?: (id: 
                     type="button"
                     data-council-reply-on={item.proposalid}
                     onClick={() => onOpenIdea(item.proposalid)}
-                    className="flex min-w-0 cursor-pointer items-center gap-[5px] rounded-[4px] text-[11px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                    className="flex min-w-0 cursor-pointer items-center gap-[5px] rounded-[4px] text-[12px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     <CornerDownRight size={11} aria-hidden className="flex-none" />
                     <span className="min-w-0 truncate">{item.on}</span>
@@ -442,7 +442,7 @@ function ReplyMessage({
             <CouncilAvatar tone={item.tone} name={item.name} />
             <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
                 <ReplyHeader item={item} onOpenIdea={inThread ? undefined : onOpenIdea} />
-                <span className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-ink-hi">
+                <span className="whitespace-pre-wrap break-words text-[13.5px] leading-[1.5] text-ink-hi">
                     {item.text}
                 </span>
                 <EvidenceChips
@@ -499,14 +499,14 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
                     {item.of === "reply" && <CouncilPill word={item.label} tone={item.pill} />}
                     {item.edited && <span className="text-muted">edited</span>}
                     {item.on !== "" && (
-                        <span className="flex min-w-0 items-center gap-[5px] text-[11px] text-muted">
+                        <span className="flex min-w-0 items-center gap-[5px] text-[12px] text-muted">
                             <CornerDownRight size={11} aria-hidden className="flex-none" />
                             <span className="min-w-0 truncate">{item.on}</span>
                         </span>
                     )}
                 </Byline>
                 {item.title !== "" && (
-                    <h3 className="m-0 text-[13.5px] font-semibold leading-[1.35] text-primary">{item.title}</h3>
+                    <h3 className="m-0 text-[15px] font-semibold leading-[1.35] text-primary">{item.title}</h3>
                 )}
                 {editing ? (
                     <>
@@ -518,16 +518,16 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
                             aria-label={item.of === "idea" ? "The idea's argument" : "The reply"}
                             onChange={(e) => setText(e.target.value)}
                             onKeyDown={onKeyDown}
-                            className="box-border w-full resize-none rounded-[6px] border border-edge-strong bg-surface px-[10px] py-[8px] text-[12.5px] leading-[1.5] text-primary outline-none focus:border-accent"
+                            className="box-border w-full resize-none rounded-[6px] border border-edge-strong bg-surface px-[10px] py-[8px] text-[13.5px] leading-[1.5] text-primary outline-none focus:border-accent"
                         />
                         {item.revised && (
-                            <span className="text-[11px] text-muted">
+                            <span className="text-[12px] text-muted">
                                 Edit changes only this line. The new title and argument apply as written.
                             </span>
                         )}
                     </>
                 ) : (
-                    <span className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-ink-hi">
+                    <span className="whitespace-pre-wrap break-words text-[13.5px] leading-[1.5] text-ink-hi">
                         {item.text}
                     </span>
                 )}
@@ -603,7 +603,7 @@ function Divider({ text, round }: { text: string; round: number }) {
             data-council-item
             data-item-kind="divider"
             data-council-divider={round}
-            className="flex items-center gap-[10px] px-[10px] py-[6px] text-[11.5px] text-muted"
+            className="flex items-center gap-[10px] px-[10px] py-[6px] text-[12.5px] text-muted"
         >
             <span aria-hidden className="h-px flex-1 bg-edge-faint" />
             <span>{text}</span>
@@ -625,7 +625,7 @@ function QuestionMessage({ item }: { item: Extract<ChannelItem, { kind: "questio
                     <span className="text-muted">{item.label}</span>
                     <PostTime at={item.at} when={item.when} />
                 </Byline>
-                <span className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-ink-hi">
+                <span className="whitespace-pre-wrap break-words text-[13.5px] leading-[1.5] text-ink-hi">
                     {item.text}
                 </span>
             </div>
@@ -642,7 +642,7 @@ function SkippedLine({ item, onOpenTerminal }: { item: SkipLine; onOpenTerminal:
             data-council-item
             data-item-kind="skip"
             data-council-skip={item.author}
-            className="flex flex-wrap items-center gap-[9px] px-[10px] py-[6px] text-[12px] text-muted"
+            className="flex flex-wrap items-center gap-[9px] px-[10px] py-[6px] text-[13px] text-muted"
         >
             <CouncilAvatar tone={item.tone} name={item.name} small dim />
             <span>
@@ -654,7 +654,7 @@ function SkippedLine({ item, onOpenTerminal }: { item: SkipLine; onOpenTerminal:
                     type="button"
                     data-council-open-terminal={item.tab}
                     onClick={() => onOpenTerminal(item.tab)}
-                    className="h-[22px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[8px] text-[11px] font-semibold text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                    className="h-[22px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[8px] text-[12px] font-semibold text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     Open its terminal
                 </button>
@@ -671,7 +671,7 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
             data-council-item
             data-item-kind="failure"
             data-council-failed={item.author}
-            className="flex flex-wrap items-center gap-[9px] px-[10px] py-[6px] text-[12px]"
+            className="flex flex-wrap items-center gap-[9px] px-[10px] py-[6px] text-[13px]"
         >
             <CouncilAvatar tone={item.tone} name={item.name} small dot="failed" />
             <span className="text-error-soft">{item.text}</span>
@@ -684,7 +684,7 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
                 aria-label={`Retry ${item.name}`}
                 disabled={acts.busy.has(key)}
                 onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, item.author))}
-                className={cn(secondaryButton, "h-[22px] px-[8px] text-[11px]")}
+                className={cn(secondaryButton, "h-[22px] px-[8px] text-[12px]")}
             >
                 {acts.busy.has(key) ? "Retrying…" : "Retry"}
             </button>
@@ -703,11 +703,11 @@ function TypingLine({ item }: { item: TypingRow }) {
             className="flex items-center gap-[9px] px-[10px] py-[6px]"
         >
             <CouncilAvatar tone={item.tone} name={item.name} dashed />
-            <span data-council-typing className="text-[12px] text-muted">
+            <span data-council-typing className="text-[13px] text-muted">
                 {item.text}
             </span>
             {item.on !== "" && (
-                <span className="flex min-w-0 items-center gap-[5px] text-[11px] text-muted">
+                <span className="flex min-w-0 items-center gap-[5px] text-[12px] text-muted">
                     <CornerDownRight size={11} aria-hidden className="flex-none" />
                     <span className="min-w-0 truncate">{item.on}</span>
                 </span>
@@ -841,12 +841,12 @@ function Composer({
                                 choose(s);
                             }}
                             className={cn(
-                                "flex cursor-pointer items-center gap-[8px] rounded-[6px] px-[8px] py-[5px] text-[12px]",
+                                "flex cursor-pointer items-center gap-[8px] rounded-[6px] px-[8px] py-[5px] text-[13px]",
                                 i === pick ? "bg-surface-hover text-primary" : "text-secondary"
                             )}
                         >
                             <span className="font-semibold">{s.name}</span>
-                            <span className="text-[11px] text-muted">{s.agent ? "agent" : "expert"}</span>
+                            <span className="text-[12px] text-muted">{s.agent ? "agent" : "expert"}</span>
                         </li>
                     ))}
                 </ul>
@@ -866,7 +866,7 @@ function Composer({
                     }}
                     onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
                     onKeyDown={onKeyDown}
-                    className="box-border min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-[13px] leading-[1.5] text-primary outline-none placeholder:text-muted"
+                    className="box-border min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted"
                 />
                 <button
                     type="button"
@@ -874,7 +874,7 @@ function Composer({
                     disabled={text.trim() === "" || busy}
                     onClick={() => void send()}
                     title="Send (Enter)"
-                    className={cn(primaryButton, "h-[30px] px-[14px] text-[12.5px]")}
+                    className={cn(primaryButton, "h-[30px] px-[14px] text-[13.5px]")}
                 >
                     {busy ? "Sending…" : sendLabel}
                 </button>
@@ -886,7 +886,7 @@ function Composer({
                     aria-checked={drafts.tools}
                     data-council-tools
                     onClick={() => setDrafts((d) => ({ ...d, tools: !d.tools }))}
-                    className="flex w-fit cursor-pointer items-center gap-[7px] rounded-[6px] border-0 bg-transparent py-px text-[11.5px] text-secondary outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="flex w-fit cursor-pointer items-center gap-[7px] rounded-[6px] border-0 bg-transparent py-px text-[12.5px] text-secondary outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     <span
                         className={cn(
@@ -904,11 +904,11 @@ function Composer({
                     Let them read code
                 </button>
             )}
-            <span data-council-composer-hint className="min-w-0 text-[11px] tabular-nums text-muted">
+            <span data-council-composer-hint className="min-w-0 text-[12px] tabular-nums text-muted">
                 {hint}
             </span>
             {error != null && (
-                <span role="alert" data-council-composer-error className="text-[11.5px] text-error-soft">
+                <span role="alert" data-council-composer-error className="text-[12.5px] text-error-soft">
                     {error}
                 </span>
             )}
@@ -940,8 +940,8 @@ function ThreadPanel({
             className="flex min-h-0 w-[400px] flex-none flex-col border-l border-edge-faint bg-surface outline-none"
         >
             <div className="flex flex-none items-center gap-[8px] border-b border-edge-faint px-4 py-[12px]">
-                <span className="text-[13px] font-semibold">Thread</span>
-                <span className="min-w-0 flex-1 truncate text-[11.5px] text-muted">{idea.title}</span>
+                <span className="text-[14px] font-semibold">Thread</span>
+                <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted">{idea.title}</span>
                 <button
                     type="button"
                     data-council-thread-close
@@ -970,11 +970,11 @@ function ThreadPanel({
                         </Byline>
                         <h2
                             data-council-post-title
-                            className="m-0 text-[13px] font-semibold leading-[1.35] text-primary"
+                            className="m-0 text-[14px] font-semibold leading-[1.35] text-primary"
                         >
                             {idea.title}
                         </h2>
-                        <span className="whitespace-pre-wrap break-words text-[12px] leading-[1.5] text-ink-hi">
+                        <span className="whitespace-pre-wrap break-words text-[13px] leading-[1.5] text-ink-hi">
                             {idea.text}
                         </span>
                         <EvidenceChips
@@ -991,7 +991,7 @@ function ThreadPanel({
                         )}
                     </div>
                 </article>
-                <div data-council-thread-count className="px-[8px] py-[6px] text-[11.5px] text-muted">
+                <div data-council-thread-count className="px-[8px] py-[6px] text-[12.5px] text-muted">
                     {idea.thread.label}
                 </div>
                 {thread.items.map((item: ThreadItem) =>
@@ -1192,7 +1192,7 @@ export function CouncilChat({
                     <div
                         role="status"
                         data-council-only={onlyId}
-                        className="flex flex-none items-center gap-3 border-b border-edge-faint bg-surface px-8 py-[8px] text-[12px] text-secondary"
+                        className="flex flex-none items-center gap-3 border-b border-edge-faint bg-surface px-8 py-[8px] text-[13px] text-secondary"
                     >
                         <span className="min-w-0 flex-1">
                             Only <span className="font-semibold text-primary">{authorName(c, onlyId)}</span>: their
@@ -1202,7 +1202,7 @@ export function CouncilChat({
                             type="button"
                             data-council-action="show-everyone"
                             onClick={() => setOnly(null)}
-                            className={cn(secondaryButton, "h-[24px] px-[10px] text-[11.5px]")}
+                            className={cn(secondaryButton, "h-[24px] px-[10px] text-[12.5px]")}
                         >
                             Show everyone
                         </button>

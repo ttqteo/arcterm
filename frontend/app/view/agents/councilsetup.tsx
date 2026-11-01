@@ -118,17 +118,17 @@ const NO_LIBRARY: RoleLibrary = { roles: [], groups: [] };
 
 const LABEL = "text-[10.5px] font-bold uppercase tracking-[0.1em] text-muted";
 const INPUT =
-    "h-8 w-full min-w-0 rounded-[6px] border border-edge-mid bg-surface px-[10px] text-[13px] text-primary outline-none placeholder:text-ink-faint focus:border-accent-700 focus-visible:ring-2 focus-visible:ring-accent";
+    "h-8 w-full min-w-0 rounded-[6px] border border-edge-mid bg-surface px-[10px] text-[14px] text-primary outline-none placeholder:text-ink-faint focus:border-accent-700 focus-visible:ring-2 focus-visible:ring-accent";
 const GHOST =
-    "h-[26px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[10px] text-[12px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
+    "h-[26px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[10px] text-[13px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
 // a ghost button in the composer's bar: Attach, and Auto-generate beside it
 const BAR_GHOST =
-    "flex h-[26px] cursor-pointer items-center gap-[5px] rounded-[6px] border border-transparent bg-transparent px-[8px] text-[12px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted";
+    "flex h-[26px] cursor-pointer items-center gap-[5px] rounded-[6px] border border-transparent bg-transparent px-[8px] text-[13px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted";
 // the small Replace and Keep that answer Auto-generate's "Replace the text?"
 const MINI =
-    "h-[22px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-2 text-[11.5px] text-primary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent";
+    "h-[22px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-2 text-[12.5px] text-primary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent";
 const SECONDARY =
-    "flex h-[26px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[12px] text-primary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent";
+    "flex h-[26px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[13px] text-primary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent";
 const ICON_BUTTON =
     "flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent";
 
@@ -403,9 +403,9 @@ function MenuButton({
                                 trigger.current?.focus();
                                 onPick(item.id);
                             }}
-                            className="flex h-[28px] w-full cursor-pointer items-center gap-[8px] rounded-[6px] border-0 bg-transparent px-[8px] text-left text-[12px] text-primary outline-none hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
+                            className="flex h-[28px] w-full cursor-pointer items-center gap-[8px] rounded-[6px] border-0 bg-transparent px-[8px] text-left text-[13px] text-primary outline-none hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
                         >
-                            <span className="w-[12px] flex-none text-center text-[11px]" aria-hidden>
+                            <span className="w-[12px] flex-none text-center text-[12px]" aria-hidden>
                                 {item.checked ? "✓" : ""}
                             </span>
                             <span className="min-w-0 flex-1 truncate">{item.label}</span>
@@ -501,7 +501,7 @@ function SaveGroupForm({
                         setOpen(false);
                     }
                 }}
-                className={cn(INPUT, "h-[26px] w-[160px] text-[12px]")}
+                className={cn(INPUT, "h-[26px] w-[160px] text-[13px]")}
             />
             <button type="button" data-council-save-group-confirm onClick={() => void save()} className={SECONDARY}>
                 Save
@@ -515,7 +515,7 @@ function SaveGroupForm({
                 <X size={13} strokeWidth={1.8} aria-hidden />
             </button>
             {problem !== "" ? (
-                <span data-council-group-problem className="text-[11.5px] text-error">
+                <span data-council-group-problem className="text-[12.5px] text-error">
                     {problem}
                 </span>
             ) : null}
@@ -647,7 +647,7 @@ function RoundsSwitch({ rounds, onPick }: { rounds: number; onPick: (rounds: num
             aria-label="Rounds"
             data-council-rounds={rounds}
             title="How many rounds the seats answer, the ideas round included"
-            className="inline-flex overflow-hidden rounded-[6px] border border-edge-mid text-[11.5px]"
+            className="inline-flex overflow-hidden rounded-[6px] border border-edge-mid text-[12.5px]"
         >
             {ROUND_CHOICES.map((n) => (
                 <button
@@ -678,7 +678,7 @@ export function CouncilSetup({ model }: { model: Pick<AgentsViewModel, "agentsAt
         return (
             <div
                 data-council-setup
-                className="flex min-h-0 min-w-0 flex-1 items-center justify-center text-[13px] text-muted"
+                className="flex min-h-0 min-w-0 flex-1 items-center justify-center text-[14px] text-muted"
             >
                 Pick New council in a project to set one up.
             </div>
@@ -689,7 +689,7 @@ export function CouncilSetup({ model }: { model: Pick<AgentsViewModel, "agentsAt
 
 // a file or screenshot chip inside the composer
 const CHIP =
-    "inline-flex h-[24px] max-w-full items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised pl-[8px] pr-[4px] text-[12px] text-secondary";
+    "inline-flex h-[24px] max-w-full items-center gap-[6px] rounded-[6px] border border-edge-mid bg-surface-raised pl-[8px] pr-[4px] text-[13px] text-secondary";
 const CHIP_REMOVE =
     "flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded-[4px] border-0 bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent";
 
@@ -791,7 +791,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
         return (
             <div
                 data-council-setup
-                className="flex min-h-0 min-w-0 flex-1 items-center justify-center text-[13px] text-muted"
+                className="flex min-h-0 min-w-0 flex-1 items-center justify-center text-[14px] text-muted"
             >
                 This draft is gone. Pick New council to start another.
             </div>
@@ -865,8 +865,8 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
             className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden text-primary"
         >
             <div className="flex flex-none items-center gap-[10px] border-b border-edge-faint px-8 pb-[14px] pt-[18px]">
-                <h1 className="m-0 text-[15px] font-semibold tracking-[-0.01em]">New council</h1>
-                <span data-council-project className="min-w-0 truncate text-[12px] text-muted">
+                <h1 className="m-0 text-[16px] font-semibold tracking-[-0.01em]">New council</h1>
+                <span data-council-project className="min-w-0 truncate text-[13px] text-muted">
                     {projectLabel}
                     {moreProjects(draft)}
                 </span>
@@ -874,7 +874,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
 
             <div className="min-h-0 flex-1 overflow-y-auto px-8 py-5">
                 <div className="flex max-w-[780px] flex-col gap-[14px]">
-                    <p className="m-0 text-[13px] leading-[1.5] text-secondary">
+                    <p className="m-0 text-[14px] leading-[1.5] text-secondary">
                         {withAgents
                             ? "The agents you seated answer from their own sessions, beside any experts who read your project. Every answer waits for you to send it on, and the coordinator gives you a ranked answer."
                             : "A few AI experts read your project, argue over each other's ideas, and give you a ranked answer. They never edit anything."}{" "}
@@ -905,7 +905,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                     void start();
                                 }
                             }}
-                            className="min-h-[96px] w-full min-w-0 resize-none rounded-t-[10px] border-0 bg-transparent px-3 pb-1 pt-[10px] text-[13px] leading-[1.5] text-primary outline-none placeholder:text-ink-faint"
+                            className="min-h-[96px] w-full min-w-0 resize-none rounded-t-[10px] border-0 bg-transparent px-3 pb-1 pt-[10px] text-[14px] leading-[1.5] text-primary outline-none placeholder:text-ink-faint"
                         />
                         {hasChips ? (
                             <div data-council-files className="flex flex-wrap gap-[6px] px-3 pb-2">
@@ -1018,7 +1018,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                             data-council-autogen-confirm
                                             role="group"
                                             aria-label="Replace the text?"
-                                            className="flex items-center gap-[6px] text-[12px] text-secondary"
+                                            className="flex items-center gap-[6px] text-[13px] text-secondary"
                                         >
                                             Replace the text?
                                             <button
@@ -1079,7 +1079,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                             <div className="ml-auto flex flex-none items-center gap-2">
                                 <span
                                     data-council-estimate
-                                    className="flex-none text-[12px] tabular-nums text-secondary"
+                                    className="flex-none text-[13px] tabular-nums text-secondary"
                                 >
                                     {estimateText}
                                 </span>
@@ -1087,7 +1087,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                     type="button"
                                     data-council-cancel
                                     onClick={cancel}
-                                    className="h-[30px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-3 text-[12.5px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                                    className="h-[30px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-3 text-[13.5px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
                                 >
                                     Cancel
                                 </button>
@@ -1103,7 +1103,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                               : "Start the council. The estimate is what it will use"
                                     }
                                     onClick={() => void start()}
-                                    className="h-[30px] cursor-pointer rounded-[6px] border-0 bg-accent px-[14px] text-[12.5px] font-semibold text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-default disabled:opacity-40 disabled:hover:bg-accent"
+                                    className="h-[30px] cursor-pointer rounded-[6px] border-0 bg-accent px-[14px] text-[13.5px] font-semibold text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-default disabled:opacity-40 disabled:hover:bg-accent"
                                 >
                                     {starting ? (queueing ? "Queueing…" : "Starting…") : startLabel(allCouncils)}
                                 </button>
@@ -1117,32 +1117,32 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                 data-council-autogen-error
                                 role="status"
                                 title={draft.autoError}
-                                className="min-w-0 truncate text-[11.5px] text-muted"
+                                className="min-w-0 truncate text-[12.5px] text-muted"
                             >
                                 {draft.autoError}
                             </span>
                         ) : null}
-                        <span data-council-mode-rules className="min-w-0 text-[11.5px] text-muted">
+                        <span data-council-mode-rules className="min-w-0 text-[12.5px] text-muted">
                             {modeRules(draft.mode)}
                         </span>
                         <span
                             data-council-footnote={blocker !== "" ? "blocked" : "reading"}
-                            className="min-w-0 text-[11.5px] text-muted"
+                            className="min-w-0 text-[12.5px] text-muted"
                         >
                             {blocker !== "" ? blocker : reading}
                         </span>
                         {startError !== "" ? (
-                            <span data-council-error role="alert" className="min-w-0 text-[11.5px] text-error">
+                            <span data-council-error role="alert" className="min-w-0 text-[12.5px] text-error">
                                 {startError}
                             </span>
                         ) : null}
                         {pasteError !== "" ? (
-                            <span data-council-paste-error className="text-[11.5px] text-error">
+                            <span data-council-paste-error className="text-[12.5px] text-error">
                                 {pasteError}
                             </span>
                         ) : null}
                         {draft.experts.length === 0 ? (
-                            <div className="flex items-center gap-2 text-[12px] text-muted">
+                            <div className="flex items-center gap-2 text-[13px] text-muted">
                                 {libFailed ? (
                                     <>
                                         <span>Couldn't load the experts.</span>
@@ -1157,7 +1157,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                 )}
                             </div>
                         ) : withAgents ? null : (
-                            <span data-council-experts-line className="text-[12.5px] leading-[1.5] text-secondary">
+                            <span data-council-experts-line className="text-[13.5px] leading-[1.5] text-secondary">
                                 {who}
                             </span>
                         )}
@@ -1169,12 +1169,12 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                             </div>
                         ) : null}
                         {groupNote !== "" ? (
-                            <span data-council-group-note role="status" className="text-[11.5px] text-muted">
+                            <span data-council-group-note role="status" className="text-[12.5px] text-muted">
                                 {groupNote}
                             </span>
                         ) : null}
                         {draft.suggestState === "asking" ? (
-                            <span data-council-suggesting role="status" className="text-[11.5px] text-muted">
+                            <span data-council-suggesting role="status" className="text-[12.5px] text-muted">
                                 Suggesting…
                             </span>
                         ) : null}
@@ -1182,7 +1182,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                             <div
                                 data-council-suggest-failed
                                 role="status"
-                                className="flex items-center gap-2 text-[11.5px] text-muted"
+                                className="flex items-center gap-2 text-[12.5px] text-muted"
                             >
                                 <span>The coordinator's suggestion failed. The group's experts are unchanged.</span>
                                 <button
@@ -1200,7 +1200,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                         ) : null}
                         {pending.length > 0 ? (
                             <div data-council-suggestions className="flex flex-col gap-[6px]">
-                                <span className="text-[11.5px] text-muted">
+                                <span className="text-[12.5px] text-muted">
                                     The coordinator suggests, for this feature
                                 </span>
                                 {pending.map((r) => (
@@ -1210,10 +1210,10 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                         className="flex items-center gap-[10px] rounded-[8px] border border-dashed border-edge-strong py-2 pl-3 pr-[10px]"
                                     >
                                         <Avatar expert={r} tone="conn-1" dashed />
-                                        <div className="w-[110px] flex-none truncate text-[12.5px] font-semibold text-secondary">
+                                        <div className="w-[130px] flex-none truncate text-[13.5px] font-semibold text-secondary">
                                             {r.name}
                                         </div>
-                                        <div className="min-w-0 flex-1 truncate text-[12px] text-muted" title={r.why}>
+                                        <div className="min-w-0 flex-1 truncate text-[13px] text-muted" title={r.why}>
                                             {r.why}
                                         </div>
                                         <button
@@ -1233,8 +1233,8 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                     {withAgents ? (
                         <section data-council-seats aria-label="Seats" className="flex flex-col gap-[6px]">
                             <div className="flex items-center gap-[10px]">
-                                <h2 className="m-0 text-[12.5px] font-semibold">Seats</h2>
-                                <span className="text-[11.5px] text-muted">Rounds</span>
+                                <h2 className="m-0 text-[13.5px] font-semibold">Seats</h2>
+                                <span className="text-[12.5px] text-muted">Rounds</span>
                                 <RoundsSwitch rounds={draft.rounds} onPick={(n) => update((d) => setRounds(d, n))} />
                             </div>
                             <div
@@ -1257,14 +1257,14 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                             )}
                                         >
                                             <Avatar expert={e} tone={expertTone(seatsOf(draft), i)} />
-                                            <span className="max-w-[220px] flex-none truncate text-[12.5px] font-semibold">
+                                            <span className="max-w-[220px] flex-none truncate text-[13.5px] font-semibold">
                                                 {e.name}
                                             </span>
                                             <span className="flex-none rounded-full bg-surface-hover px-[6px] text-[10px] font-semibold text-secondary">
                                                 {row.kind}
                                             </span>
                                             <span
-                                                className="min-w-0 flex-1 truncate text-[11.5px] text-muted"
+                                                className="min-w-0 flex-1 truncate text-[12.5px] text-muted"
                                                 title={row.meta}
                                             >
                                                 {row.meta}
@@ -1272,7 +1272,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                             <span
                                                 data-council-seat-cost
                                                 title={row.costNote}
-                                                className="flex-none whitespace-nowrap text-[11.5px] tabular-nums text-secondary"
+                                                className="flex-none whitespace-nowrap text-[12.5px] tabular-nums text-secondary"
                                             >
                                                 {row.cost}
                                             </span>
@@ -1304,7 +1304,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                     onPick={(r) => update((d) => addRole(d, r))}
                                 />
                             </div>
-                            <span data-council-agent-note className="text-[11.5px] leading-[1.5] text-muted">
+                            <span data-council-agent-note className="text-[12.5px] leading-[1.5] text-muted">
                                 {AGENT_NOTE}
                             </span>
                         </section>
@@ -1316,7 +1316,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                             data-council-options
                             aria-expanded={optionsOpen}
                             onClick={() => setOptionsOpen((o) => !o)}
-                            className="flex h-[26px] w-fit cursor-pointer items-center gap-[5px] rounded-[6px] border-0 bg-transparent px-[6px] text-[12px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                            className="flex h-[26px] w-fit cursor-pointer items-center gap-[5px] rounded-[6px] border-0 bg-transparent px-[6px] text-[13px] text-muted outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
                         >
                             <ChevronDown
                                 size={12}
@@ -1331,12 +1331,12 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                 <div className="flex flex-col gap-2">
                                     <div className="flex items-center gap-2">
                                         <span className={LABEL}>What the experts read</span>
-                                        <span className="text-[11px] text-muted">
+                                        <span className="text-[12px] text-muted">
                                             the coordinator adds more from your question; paste an image anywhere here
                                             to add a screenshot
                                         </span>
                                     </div>
-                                    <span className="text-[12px] text-secondary">
+                                    <span className="text-[13px] text-secondary">
                                         Files and screenshots sit in the box above; Attach adds more, × takes one away.
                                     </span>
                                 </div>
@@ -1361,7 +1361,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                         className="flex flex-col rounded-[10px] border border-border bg-surface"
                                     >
                                         {draft.experts.length === 0 ? (
-                                            <div className="px-3 py-[10px] text-[12px] text-muted">
+                                            <div className="px-3 py-[10px] text-[13px] text-muted">
                                                 Pick a group to choose the experts.
                                             </div>
                                         ) : (
@@ -1376,11 +1376,11 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                                     )}
                                                 >
                                                     <Avatar expert={e} tone={expertTone(draft.experts, i)} />
-                                                    <div className="w-[110px] flex-none truncate text-[12.5px] font-semibold">
+                                                    <div className="w-[130px] flex-none truncate text-[13.5px] font-semibold">
                                                         {e.name}
                                                     </div>
                                                     <div
-                                                        className="min-w-0 flex-1 truncate text-[12px] text-secondary"
+                                                        className="min-w-0 flex-1 truncate text-[13px] text-secondary"
                                                         title={e.brief}
                                                     >
                                                         {e.brief}
@@ -1396,7 +1396,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                                             checked: m === e.model,
                                                         }))}
                                                         onPick={(m) => update((d) => setExpertModel(d, e.id, m))}
-                                                        className="flex h-6 cursor-pointer items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface-raised px-2 text-[11.5px] text-secondary outline-none hover:border-edge-strong focus-visible:ring-2 focus-visible:ring-accent"
+                                                        className="flex h-6 cursor-pointer items-center gap-[5px] rounded-[6px] border border-edge-mid bg-surface-raised px-2 text-[12.5px] text-secondary outline-none hover:border-edge-strong focus-visible:ring-2 focus-visible:ring-accent"
                                                     >
                                                         {e.model}
                                                         <ChevronDown
@@ -1426,7 +1426,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                 </div>
 
                                 {withAgents ? (
-                                    <span data-council-no-pause className="text-[11.5px] text-muted">
+                                    <span data-council-no-pause className="text-[12.5px] text-muted">
                                         No pause after the first ideas while an agent is seated: every answer waits for
                                         you to send it on.
                                     </span>
@@ -1442,8 +1442,8 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                             onClick={() => update((d) => ({ ...d, pause: !d.pause }))}
                                             className="flex min-w-0 cursor-pointer items-baseline gap-[10px]"
                                         >
-                                            <span className="flex-none text-[12.5px]">Pause after the first ideas</span>
-                                            <span className="min-w-0 text-[11.5px] text-muted">
+                                            <span className="flex-none text-[13.5px]">Pause after the first ideas</span>
+                                            <span className="min-w-0 text-[12.5px] text-muted">
                                                 so you can cut ideas or ask the experts something before they argue
                                             </span>
                                         </span>

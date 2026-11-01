@@ -31,9 +31,9 @@ const NO_SOURCES = atom<CouncilSourcesView | null>(null);
 const MAX_READ = 2 * 1024 * 1024;
 
 const secondaryButton =
-    "h-[26px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[12px] text-secondary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent";
+    "h-[26px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[13px] text-secondary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent";
 const ghostButton =
-    "h-[26px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[10px] text-[12px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent";
+    "h-[26px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[10px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent";
 
 /** The message a row of evidence links belongs to, so a click opens the Sources panel on it. */
 export interface SourceOwner {
@@ -83,7 +83,7 @@ export function EvidenceChips({
                 <span
                     key={`other-${i}`}
                     data-council-evidence="other"
-                    className="rounded-[6px] border border-edge-mid bg-surface px-[8px] py-[2px] text-[11px] text-secondary"
+                    className="rounded-[6px] border border-edge-mid bg-surface px-[8px] py-[2px] text-[12px] text-secondary"
                 >
                     {ref}
                 </span>
@@ -92,7 +92,7 @@ export function EvidenceChips({
                 <span
                     data-council-evidence="weak"
                     data-weak="true"
-                    className="rounded-[6px] border border-warning/40 bg-surface px-[8px] py-[2px] text-[11px] text-warning-soft"
+                    className="rounded-[6px] border border-warning/40 bg-surface px-[8px] py-[2px] text-[12px] text-warning-soft"
                 >
                     {weak}
                 </span>
@@ -111,7 +111,7 @@ function SourceLink({ group, picked, onOpen }: { group: SourceGroup; picked: boo
             title={`${group.path}${group.label}`}
             onClick={onOpen}
             className={cn(
-                "group -ml-[5px] inline-flex min-w-0 max-w-full cursor-pointer items-center gap-[5px] rounded-[5px] border-0 px-[5px] py-px text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                "group -ml-[5px] inline-flex min-w-0 max-w-full cursor-pointer items-center gap-[5px] rounded-[5px] border-0 px-[5px] py-px text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
                 picked ? "bg-surface-selected" : "bg-transparent hover:bg-surface-hover"
             )}
         >
@@ -127,7 +127,7 @@ function SourceName({ group }: { group: SourceGroup }) {
         <span
             data-council-evidence="ref"
             title={`${group.path}${group.label}`}
-            className="inline-flex min-w-0 max-w-full items-center gap-[5px] text-[12px]"
+            className="inline-flex min-w-0 max-w-full items-center gap-[5px] text-[13px]"
         >
             <FileText size={12} className="flex-none text-muted" aria-hidden />
             <span className="truncate text-secondary">{group.name}</span>
@@ -218,8 +218,8 @@ export function CouncilSourcesPanel({
             className="flex min-h-0 w-[440px] flex-none flex-col border-l border-edge-faint bg-surface outline-none"
         >
             <div className="flex flex-none items-center gap-[8px] border-b border-edge-faint py-[12px] pl-4 pr-3">
-                <span className="text-[13px] font-semibold">Sources</span>
-                <span className="min-w-0 flex-1 truncate text-[11.5px] text-muted">{view.title}</span>
+                <span className="text-[14px] font-semibold">Sources</span>
+                <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted">{view.title}</span>
                 <button
                     type="button"
                     data-council-sources-close
@@ -246,7 +246,7 @@ export function CouncilSourcesPanel({
                                 title={`${g.path}${g.label}`}
                                 onClick={() => openCouncilSources(c.id, { ...view, pick: i })}
                                 className={cn(
-                                    "flex h-[28px] min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] border-0 px-2 text-left text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                    "flex h-[28px] min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] border-0 px-2 text-left text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
                                     on ? "bg-surface-selected" : "bg-transparent hover:bg-surface-hover"
                                 )}
                             >
@@ -268,19 +268,19 @@ export function CouncilSourcesPanel({
                     groups.length > 1 && "border-t border-edge-faint"
                 )}
             >
-                <div className="break-all text-[15px] font-semibold leading-[1.35] text-primary">
+                <div className="break-all text-[16px] font-semibold leading-[1.35] text-primary">
                     {group.path.slice(dir.length)}
                 </div>
-                {dir !== "" && <div className="mt-[2px] break-all text-[11.5px] text-muted">{dir}</div>}
-                {file.state === "loading" && <div className="mt-[14px] text-[12px] text-muted">Reading the file…</div>}
+                {dir !== "" && <div className="mt-[2px] break-all text-[12.5px] text-muted">{dir}</div>}
+                {file.state === "loading" && <div className="mt-[14px] text-[13px] text-muted">Reading the file…</div>}
                 {file.state === "unreadable" && (
-                    <div data-council-sources-error className="mt-[14px] text-[12px] leading-[1.5] text-secondary">
+                    <div data-council-sources-error className="mt-[14px] text-[13px] leading-[1.5] text-secondary">
                         Can't show this file: it is not in the project any more, it is a folder, or it is over 2 MB.
                     </div>
                 )}
                 {excerpt?.hunks.map((h) => (
                     <div key={h.start}>
-                        <div className="mb-[6px] mt-[14px] text-[11px] text-muted">
+                        <div className="mb-[6px] mt-[14px] text-[12px] text-muted">
                             {hunkLabel(h)}
                             {h.cut && " · cut short"}
                         </div>
@@ -296,13 +296,13 @@ export function CouncilSourcesPanel({
                                 >
                                     <span
                                         className={cn(
-                                            "w-[34px] flex-none select-none text-right font-mono text-[11px] leading-[1.65]",
+                                            "w-[34px] flex-none select-none text-right font-mono text-[12px] leading-[1.65]",
                                             r.cited ? "font-semibold text-primary" : "text-ink-faint"
                                         )}
                                     >
                                         {r.n}
                                     </span>
-                                    <span className="min-w-0 flex-1 whitespace-pre-wrap font-mono text-[11.5px] leading-[1.65] text-secondary [overflow-wrap:anywhere]">
+                                    <span className="min-w-0 flex-1 whitespace-pre-wrap font-mono text-[12.5px] leading-[1.65] text-secondary [overflow-wrap:anywhere]">
                                         {r.text === "" ? " " : r.text}
                                     </span>
                                 </div>
@@ -310,7 +310,7 @@ export function CouncilSourcesPanel({
                         </div>
                     </div>
                 ))}
-                {past !== "" && <div className="mt-[14px] text-[12px] leading-[1.5] text-secondary">{past}</div>}
+                {past !== "" && <div className="mt-[14px] text-[13px] leading-[1.5] text-secondary">{past}</div>}
             </div>
             <div className="flex flex-none gap-2 border-t border-edge-faint px-4 py-3">
                 {onOpenFile != null && file.state === "ok" && (
