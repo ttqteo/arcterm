@@ -14,6 +14,8 @@
 // pkg/council/types.go): the seats answer rounds 1 to `rounds`, the summary is the round after, a follow-up the ones
 // after that.
 
+import { stripMarks } from "./councilmarks";
+
 export type CouncilView = "discussion" | "summary" | "setup";
 
 /** A stance in the Discussion: what an expert said of a proposal, or `proposed` for the proposal's own author. */
@@ -718,7 +720,8 @@ export function matrixRows(c: Council): MatrixRow[] {
                     return { expert, stance: "", reason: "" };
                 }
                 if (stance === "proposed") {
-                    return { expert, stance, reason: firstSentence(proposal.argument) };
+                    // the marks go first: the first sentence could cut a mark in half
+                    return { expert, stance, reason: firstSentence(stripMarks(proposal.argument)) };
                 }
                 const last = replies.filter(
                     (r) => r.proposalid === proposal.id && r.author === expert.id && r.stance === stance

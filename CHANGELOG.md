@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A council's experts now mark the one or two sentences you must read in a long idea or reply, and the Discussion
+  and the report draw them highlighted, as your terminal does. Councils started before this update have no marks.
 - Typing `@` in New agent's Task box lists the project's files; ↑↓ and Enter (or a click) put `@path` in the task,
   and Esc closes the list without closing the dialog. <!-- try: new-agent -->
 - Council Setup's Auto-generate button writes the topic, a question and the mode from what the seated agents were
@@ -69,6 +71,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A finished council you left on its Discussion opens there again from its row in the Agent sidebar, instead of on
+  the report; a council with a newer summary still opens on the report.
 - A council's message box no longer shows a scrollbar over its hint while it holds one line.
 - A council's chat, its open thread and its Summary keep your place: leaving for another council, the Summary, another
   agent or another surface and coming back lands where you were reading, not at the newest message or the top.

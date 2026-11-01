@@ -64,6 +64,7 @@ import {
 } from "./councilchatmodel";
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
+import { markSpans } from "./councilmarks";
 import { answerers, draftsWaitWord, followupLabel } from "./councilmodel";
 import { followsEnd, keepPlace, keptPlace, placeOf, topFor, type ScrollPlace } from "./councilscroll";
 import { CouncilSourcesPanel, EvidenceChips } from "./councilsourcespanel";
@@ -198,6 +199,25 @@ export function CouncilAvatar({
                 />
             )}
         </span>
+    );
+}
+
+/** What a seat wrote, its must-read sentence (==…==, councilmarks.ts) highlighted in the accent's tint the terminal
+ *  draws a skim highlight in, as markdown.scss draws a <mark>. */
+export function MarkedText({ text }: { text: string }) {
+    const spans = useMemo(() => markSpans(text), [text]);
+    return (
+        <>
+            {spans.map((span, i) =>
+                span.mark ? (
+                    <mark key={i} data-council-mark className="rounded-[2px] bg-accent/24 px-px text-inherit">
+                        {span.text}
+                    </mark>
+                ) : (
+                    span.text
+                )
+            )}
+        </>
     );
 }
 
@@ -397,7 +417,7 @@ function IdeaMessage({
                 >
                     <h3 className="m-0 text-[16px] font-semibold leading-[1.4] text-primary">{item.title}</h3>
                     <span className="whitespace-pre-wrap break-words text-[14.5px] leading-[1.6] text-ink-hi">
-                        {item.text}
+                        <MarkedText text={item.text} />
                     </span>
                     <EvidenceChips
                         evidence={item.evidence}
@@ -512,7 +532,7 @@ function ReplyMessage({
                     )}
                 >
                     <span className="whitespace-pre-wrap break-words text-[14px] leading-[1.6] text-ink-hi">
-                        {item.text}
+                        <MarkedText text={item.text} />
                     </span>
                     <EvidenceChips
                         evidence={item.evidence}
@@ -598,7 +618,7 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
                     </>
                 ) : (
                     <span className="whitespace-pre-wrap break-words text-[13.5px] leading-[1.5] text-ink-hi">
-                        {item.text}
+                        <MarkedText text={item.text} />
                     </span>
                 )}
                 <EvidenceChips
@@ -1103,7 +1123,7 @@ function ThreadPanel({
                                 {idea.title}
                             </h2>
                             <span className="whitespace-pre-wrap break-words text-[14px] leading-[1.6] text-ink-hi">
-                                {idea.text}
+                                <MarkedText text={idea.text} />
                             </span>
                             <EvidenceChips
                                 evidence={idea.evidence}

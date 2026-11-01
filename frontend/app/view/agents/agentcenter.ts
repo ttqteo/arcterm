@@ -31,6 +31,7 @@ import {
 } from "./councilmodel";
 import {
     councilAtom,
+    councilLastViewAtom,
     councilListAtom,
     councilOnlyAtom,
     councilSelAtom,
@@ -38,7 +39,7 @@ import {
     councilSetupProjectAtom,
     councilViewAtom,
 } from "./councilstore";
-import { defaultCouncilView } from "./councilsummarymodel";
+import { reopenView } from "./councilsummarymodel";
 import { runIdOfSel } from "./sessionsruns";
 
 export type CenterMode = "terminal" | "session" | "run" | "history" | "canvases" | "council" | "project";
@@ -84,9 +85,10 @@ export function showProjectOverview(project: string, model?: Pick<AgentsViewMode
     }
 }
 
-/** Open one council in the Agent surface, on `view` when given, else on its report when it has ended with a summary and
- *  on its Discussion otherwise (defaultCouncilView, read from the council's atom, else from the list of every council;
- *  a council not loaded yet opens on its Discussion). From the Agent surface itself (a tree row) nothing more is needed;
+/** Open one council in the Agent surface, on `view` when given, else on the view the person left it on, unless a
+ *  summary was written since (reopenView); a council not shown before opens on its report when it has ended with a
+ *  summary and on its Discussion otherwise (defaultCouncilView, read from the council's atom, else from the list of
+ *  every council; a council not loaded yet opens on its Discussion). From the Agent surface itself (a tree row) nothing more is needed;
  *  from any other (the palette) pass the model, which lands on Agent. `only`, an expert's id, has the Discussion show
  *  that seat's messages alone (the Summary's column); every call without it shows everyone again. */
 export function showCouncil(
@@ -100,7 +102,10 @@ export function showCouncil(
     globalStore.set(councilSelAtom, id);
     // the Discussion shows one seat's messages only when the way in asked for it
     globalStore.set(councilOnlyAtom(id), only ?? null);
-    globalStore.set(councilViewAtom, view ?? defaultCouncilView(known));
+    // with no view named, the one the person left it on (reopenView), and each view shown is kept for next time
+    const shown = view ?? reopenView(known, globalStore.get(councilLastViewAtom(id)));
+    globalStore.set(councilViewAtom, shown);
+    globalStore.set(councilLastViewAtom(id), { view: shown, summaryAt: known?.summary?.at ?? 0 });
     globalStore.set(centerModeAtom, "council");
     if (model != null) {
         landOn(model.surfaceAtom, "agent");

@@ -523,3 +523,14 @@ func TestSynthesisPromptLeavesOutDraftsAndNamesSkips(t *testing.T) {
 		"Scout (it skipped round 2: still working on its own task after 10 min)", "No seat gave picks")
 	mustNotContain(t, "synthesis prompt", p, "Title-held", "Argument-held", "Title-dropped", "Text-r2 held")
 }
+
+// every prompt whose fields the Discussion shows asks for the must-read sentence marked, and the synthesis does not
+func TestPromptsAskForTheMustReadMark(t *testing.T) {
+	for name, c := range map[string]*Council{"review": promptCouncil(), "brainstorm": brainstormCouncil()} {
+		e := c.Experts[0]
+		mustContain(t, name+" round 1 prompt", Round1Prompt(c, e), markRule)
+		mustContain(t, name+" round 2 prompt", Round2Prompt(c, e), markRule)
+		mustContain(t, name+" answers prompt", AnswersPrompt(c, e, c.Replies), markRule)
+		mustNotContain(t, name+" synthesis prompt", SynthesisPrompt(c), markRule)
+	}
+}

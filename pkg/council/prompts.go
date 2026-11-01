@@ -13,7 +13,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-10-30.1"
+const HarnessVersion = "2026-11-01.1"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -228,6 +228,12 @@ const (
 
 	jsonRule = "End your reply with one JSON object in a ```json fence and nothing after it, in this shape:"
 
+	// markRule is in every prompt whose fields the Discussion shows as messages: it draws a sentence wrapped in ==…==
+	// highlighted, so a long argument or reply shows first the line the person must read.
+	markRule = "In an argument, a reason or an answer of three sentences or more, wrap the one sentence the person " +
+		"must read in ==…== (two at most): the claim it turns on, or what it asks them to decide. Mark whole sentences, " +
+		"never a whole field, a title, an id or an evidence ref; a field of one or two sentences takes no mark."
+
 	// wildRule is in the Brainstorm's round 1: an idea can be offered wild, and is then kept aside, not ranked.
 	wildRule = `Set "wild" to true on an idea that is far-fetched, risky or off to the side but might open a door. Wild ideas ` +
 		"are not ranked with the others: the coordinator keeps them aside, so offer one whenever you have one."
@@ -424,6 +430,7 @@ func round1Task(c *Council) string {
 			"entry in \"proposals\", with a short title and an argument: what the idea is, and why it could work. An idea " +
 			"may rest on a guess, so it needs no evidence; read the code to ground an idea, not to audit it.\n\n")
 		b.WriteString(wildRule + "\n\n")
+		b.WriteString(markRule + "\n\n")
 		b.WriteString(jsonRule + "\n```json\n" + brainstormRound1Shape + "\n```\n")
 		return b.String()
 	}
@@ -431,6 +438,7 @@ func round1Task(c *Council) string {
 		"proposals beat many weak ones, and none is a fair answer if you find nothing worth changing. " +
 		"Each proposal has a short title, an argument, and the evidence it rests on.\n\n")
 	b.WriteString(evidenceRule + "\n\n")
+	b.WriteString(markRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + round1Shape + "\n```\n")
 	return b.String()
 }
@@ -509,6 +517,7 @@ func round2Task(c *Council, round int) string {
 		b.WriteString(`Answer each question from the person with an entry in "answers", by its replyid. Leave "answers" empty ` +
 			"when there are none.\n\n")
 		b.WriteString(titleRule + "\n\n")
+		b.WriteString(markRule + "\n\n")
 		b.WriteString(jsonRule + "\n```json\n" + brainstormRound2Shape + "\n```\n")
 		return b.String()
 	}
@@ -525,6 +534,7 @@ func round2Task(c *Council, round int) string {
 		"when there are none.\n\n")
 	b.WriteString(titleRule + "\n\n")
 	b.WriteString(evidenceRule + "\n\n")
+	b.WriteString(markRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + round2Shape + "\n```\n")
 	return b.String()
 }
@@ -839,6 +849,7 @@ func answersTask(c *Council) string {
 	if !isBrainstorm(c) { // a Brainstorm asks for no evidence
 		b.WriteString(evidenceRule + "\n\n")
 	}
+	b.WriteString(markRule + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + answersShape + "\n```\n")
 	return b.String()
 }

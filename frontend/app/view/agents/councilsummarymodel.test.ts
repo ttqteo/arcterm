@@ -23,6 +23,7 @@ import {
     positionsOf,
     projectNameOf,
     ratingRow,
+    reopenView,
     savedLine,
     writtenLine,
 } from "./councilsummarymodel";
@@ -804,5 +805,26 @@ describe("currentSection", () => {
     it("is the last one in view once the box is scrolled to its end", () => {
         expect(currentSection(tops, 40, { atEnd: true, height: 1000 })).toBe("matrix");
         expect(currentSection(tops, 40, { atEnd: true, height: 600 })).toBe("direction:1");
+    });
+});
+
+describe("reopenView", () => {
+    const done = council({ state: "done" });
+    const at = done.summary!.at;
+
+    it("is the view the person left the council on while its summary is the same", () => {
+        expect(reopenView(done, { view: "discussion", summaryAt: at })).toBe("discussion");
+        expect(reopenView(done, { view: "summary", summaryAt: at })).toBe("summary");
+    });
+
+    it("opens a summary written since on the report, and a council never shown on its default", () => {
+        expect(reopenView(done, { view: "discussion", summaryAt: 0 })).toBe("summary");
+        expect(reopenView(done, null)).toBe("summary");
+        expect(reopenView(council({ state: "running", summary: undefined }), null)).toBe("discussion");
+    });
+
+    it("keeps a running council's Discussion, which has no summary yet", () => {
+        const running = council({ state: "running", summary: undefined });
+        expect(reopenView(running, { view: "discussion", summaryAt: 0 })).toBe("discussion");
     });
 });

@@ -35,6 +35,22 @@ export function defaultCouncilView(c: Council | null | undefined): "discussion" 
     return c.state === "done" || c.state === "stopped" || c.state === "failed" ? "summary" : "discussion";
 }
 
+/** The view a council was last shown on, with the time of the summary it had then (0 for none). */
+export interface KeptCouncilView {
+    view: "discussion" | "summary";
+    summaryAt: number;
+}
+
+/** Pure: the view a council opens on when the way in names none (its tree row, the palette): the one the person left
+ *  it on, so a council left on its Discussion opens there again; but a summary written since then opens on the
+ *  report, and a council never shown opens on defaultCouncilView. */
+export function reopenView(c: Council | null | undefined, kept: KeptCouncilView | null): "discussion" | "summary" {
+    if (kept != null && kept.summaryAt === (c?.summary?.at ?? 0)) {
+        return kept.view;
+    }
+    return defaultCouncilView(c);
+}
+
 // ---- the answer ----
 
 // the first sentence of a text and what follows it: the end of a sentence is . ! or ? before a space or the end

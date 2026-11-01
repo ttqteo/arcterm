@@ -135,6 +135,25 @@ describe("council openers", () => {
         expect(globalStore.get(councilViewAtom)).toBe("summary");
     });
 
+    it("showCouncil reopens a council on the view it was left on when the way in names none", () => {
+        globalStore.set(councilAtom("c4"), {
+            id: "c4",
+            project: "/work/a",
+            feature: "F",
+            experts: [],
+            state: "done",
+            round: 3,
+            summary: { text: "t", directions: [], outcomes: {}, at: 7 },
+        } as Council);
+        showCouncil("c4");
+        expect(globalStore.get(councilViewAtom)).toBe("summary");
+        showCouncil("c4", "discussion");
+        showTerminal();
+        showCouncil("c4");
+        expect(globalStore.get(councilViewAtom)).toBe("discussion");
+        globalStore.set(councilAtom("c4"), null);
+    });
+
     it("showCouncil shows one seat's messages only when asked, and everyone on any other way in", () => {
         showCouncil("c3", "discussion", undefined, "ux");
         expect(globalStore.get(councilOnlyAtom("c3"))).toBe("ux");

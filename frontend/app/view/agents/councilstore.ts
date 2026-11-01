@@ -15,7 +15,7 @@ import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { useEffect, useState } from "react";
 import { councilProjectKey, type CouncilSetupDraft, type CouncilView } from "./councilmodel";
-import type { CouncilRating } from "./councilsummarymodel";
+import type { CouncilRating, KeptCouncilView } from "./councilsummarymodel";
 
 const sameProject = (a: string, b: string) => councilProjectKey(a) === councilProjectKey(b);
 
@@ -329,6 +329,11 @@ export const councilSetupProjectAtom = atom<string | null>(null) as PrimitiveAto
 /** The idea whose thread is open in each council's chat, or null while none is. */
 export const councilOpenProposalAtom = atomFamily(
     (_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>
+);
+
+/** The view each council was last shown on (showCouncil keeps it), so its tree row opens it there again. */
+export const councilLastViewAtom = atomFamily(
+    (_id: string) => atom<KeptCouncilView | null>(null) as PrimitiveAtom<KeptCouncilView | null>
 );
 
 /** The seat whose messages alone a council's Discussion shows, per council; null shows everyone. The Summary's column

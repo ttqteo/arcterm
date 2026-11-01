@@ -37,7 +37,7 @@ import {
 import { showCouncil, showCouncilSetup } from "./agentcenter";
 import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
-import { CouncilAvatar, useKeptScroll } from "./councilchat";
+import { CouncilAvatar, MarkedText, useKeptScroll } from "./councilchat";
 import { avatarTone, seatInitials } from "./councildiscussionmodel";
 import {
     STANCE_WORD,
@@ -188,7 +188,7 @@ function PositionView({ c, position }: { c: Council; position: Position }) {
                 </div>
                 {position.text !== "" ? (
                     <span className="whitespace-pre-wrap break-words text-[13.5px] leading-[1.5] text-ink-hi">
-                        {position.text}
+                        <MarkedText text={position.text} />
                     </span>
                 ) : null}
                 {position.evidence.length > 0 ? (
@@ -523,7 +523,7 @@ function Matrix({ c }: { c: Council }) {
                                                         <StancePill stance={cell.stance} />
                                                         {cell.reason !== "" ? (
                                                             <span className="break-words text-[12.5px] leading-[1.4] text-secondary">
-                                                                {cell.reason}
+                                                                <MarkedText text={cell.reason} />
                                                             </span>
                                                         ) : null}
                                                     </div>
