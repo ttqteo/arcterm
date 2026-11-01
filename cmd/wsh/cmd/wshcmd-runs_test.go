@@ -196,6 +196,17 @@ func TestRunsMainCheckoutPathMapsWorktreesOntoTheMainCheckout(t *testing.T) {
 		}
 	}
 
+	// a worktree reached through a symlink, which git reports resolved, still maps its subfolder (Windows may not
+	// allow the symlink)
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(outside, link); err == nil {
+		dir := filepath.Join(link, "wt", sub, "pkg")
+		here, err := runsMainCheckoutPath(context.Background(), dir)
+		if p := runsResolveProject(projects, here); err != nil || p == nil || p.name != "app" {
+			t.Fatalf("%s mapped to %q (%v) and resolved to %+v, want project app", dir, here, err, p)
+		}
+	}
+
 	plain := t.TempDir()
 	if here, err := runsMainCheckoutPath(context.Background(), plain); err != nil || here != plain {
 		t.Fatalf("outside a repository the path is the dir itself: %q %v", here, err)
@@ -231,7 +242,12 @@ func TestRunsWorktreeAtNamesOnlyALinkedWorktree(t *testing.T) {
 			t.Fatalf("from %s: got %q, %v; want the directory itself", dir, got, err)
 		}
 	}
-	for _, dir := range []string{main, t.TempDir()} {
+	// main is spelled as the OS gave it (on macOS /var/…, which git reports as /private/var/…): still the main checkout
+	inMain := filepath.Join(main, "src")
+	if err := os.MkdirAll(inMain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{main, inMain, t.TempDir()} {
 		if got, err := runsWorktreeAt(ctx, dir); err != nil || got != "" {
 			t.Fatalf("from %s: got %q, %v; want no worktree", dir, got, err)
 		}

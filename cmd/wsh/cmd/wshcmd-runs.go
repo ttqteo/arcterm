@@ -769,10 +769,20 @@ func runsWorktreeAt(ctx context.Context, dir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if runsNormPath(here) == runsNormPath(abs) {
+	// here is git's spelling of the path (runsMainCheckoutPath), so dir is compared as given and resolved
+	if n := runsNormPath(here); n == runsNormPath(abs) || n == runsNormPath(runsRealPath(abs)) {
 		return "", nil
 	}
 	return abs, nil
+}
+
+// runsRealPath is p with its symlinks resolved, the way git reports a checkout's path (on macOS the temp root /var is
+// /private/var); p itself when it cannot be resolved
+func runsRealPath(p string) string {
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		return real
+	}
+	return p
 }
 
 // runsMainCheckoutPath is dir's place in the repository's main checkout: projects are registered there, so
@@ -790,18 +800,24 @@ func runsMainCheckoutPath(ctx context.Context, dir string) (string, error) {
 	if len(wts) == 0 || !wts[0].IsMain {
 		return abs, nil
 	}
-	// the deepest checkout holding dir: a linked worktree can sit inside the main one (.worktrees/<name>)
-	holder := ""
-	for _, wt := range wts {
-		if runsPathWithin(abs, wt.Path) && len(runsNormPath(wt.Path)) > len(runsNormPath(holder)) {
-			holder = wt.Path
+	// the deepest checkout holding dir: a linked worktree can sit inside the main one (.worktrees/<name>). git reports
+	// each checkout by its real path, so a dir reached through a symlink is matched again resolved
+	holder, from := "", abs
+	for _, at := range []string{abs, runsRealPath(abs)} {
+		for _, wt := range wts {
+			if runsPathWithin(at, wt.Path) && len(runsNormPath(wt.Path)) > len(runsNormPath(holder)) {
+				holder, from = wt.Path, at
+			}
+		}
+		if holder != "" {
+			break
 		}
 	}
 	main := filepath.FromSlash(wts[0].Path)
 	if holder == "" {
 		return main, nil
 	}
-	rel, err := filepath.Rel(filepath.FromSlash(holder), abs)
+	rel, err := filepath.Rel(filepath.FromSlash(holder), from)
 	if err != nil {
 		return main, nil
 	}
