@@ -21,7 +21,9 @@ export const SWAP_BTN_ON = "border-accent bg-accentbg text-accent hover:border-a
 export const SWAP_PRIMARY_BTN =
     "flex flex-none cursor-pointer items-center gap-[6px] whitespace-nowrap rounded-[7px] border border-accent bg-accent px-[10px] py-[5px] text-[11.5px] font-semibold text-background hover:bg-accenthover disabled:cursor-default disabled:opacity-50";
 
-// Underlined tabs that run the bar's full height, so the selected one's underline sits on the bar's bottom border
+// Underlined tabs that run the bar's full height, so the selected one's underline sits on the bar's bottom border.
+// The strip keeps its width unless a caller lets it shrink (className "min-w-0 flex-initial", each label a truncating
+// span): then the tabs beside the selected one give their width first, so the one you are on stays readable longest
 export function SwapTabs<T extends string>({
     value,
     options,
@@ -52,10 +54,10 @@ export function SwapTabs<T extends string>({
                     aria-selected={value === o.key}
                     onClick={() => onChange(o.key)}
                     className={cn(
-                        "flex cursor-pointer items-center border-0 border-b-2 bg-transparent px-[9px] text-[11.5px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                        "flex min-w-0 cursor-pointer items-center border-0 border-b-2 bg-transparent px-[9px] text-[11.5px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
                         value === o.key
                             ? "border-primary text-primary"
-                            : "border-transparent text-muted hover:text-secondary"
+                            : "shrink-[3] border-transparent text-muted hover:text-secondary"
                     )}
                 >
                     {o.label}

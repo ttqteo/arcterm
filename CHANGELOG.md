@@ -84,6 +84,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A sleeping agent's conversation, a finished run worker's, and one opened in Conversation History come back where you
   left off when you switch away and back, instead of jumping to the last message. One read to the end still opens at
   the end.
+- A canvas's toolbar no longer draws its text on top of itself when you zoom in (Cmd +) or the pane is narrow: the
+  "updated … ago" line gives way first, then the topic and the board tabs shorten with `…`, and the buttons stay
+  whole.
 
 ## 0.15.19 — 2026-10-30
 

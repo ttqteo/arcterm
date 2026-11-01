@@ -138,7 +138,7 @@ export function CanvasPane({
                         onStep={(delta) => stepCanvasBoard(agent.id, delta)}
                     />
                 ) : s.boards.length > 0 ? (
-                    <div className="flex flex-none items-center gap-[4px] self-stretch">
+                    <div className="flex min-w-0 flex-initial items-center gap-[4px] self-stretch">
                         <StepButton dir="prev" onStep={(delta) => stepCanvasBoard(agent.id, delta)} />
                         <SwapTabs
                             ariaLabel="Boards"
@@ -146,16 +146,19 @@ export function CanvasPane({
                             value={currentTab(s)}
                             options={canvasTabs(s.boards).map((t) => ({
                                 key: t,
-                                label: t === ALL_TAB ? "All" : boardLabel(t),
+                                label: <span className="truncate">{t === ALL_TAB ? "All" : boardLabel(t)}</span>,
                             }))}
                             onChange={(tab) => selectCanvasTab(agent.id, tab)}
+                            className="min-w-0 flex-initial"
                         />
                         <StepButton dir="next" onStep={(delta) => stepCanvasBoard(agent.id, delta)} />
                     </div>
                 ) : null}
                 <div className="flex-1" />
+                {/* the bar gives way when the pane is narrow or zoomed in: this line first, then the topic and the tabs;
+                    the buttons keep their size */}
                 {pane === "board" ? (
-                    <span className="flex-none whitespace-nowrap text-[10.5px] tabular-nums text-muted">{meta}</span>
+                    <span className="min-w-0 shrink-[6] truncate text-[10.5px] tabular-nums text-muted">{meta}</span>
                 ) : null}
                 <button
                     type="button"
@@ -310,7 +313,7 @@ function BoardPicker({
                     ),
                 }))}
                 onChange={onChange}
-                className="min-w-0"
+                className="min-w-0 flex-initial"
             />
             <button
                 type="button"
