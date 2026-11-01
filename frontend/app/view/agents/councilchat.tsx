@@ -24,7 +24,7 @@ import { PopoverReveal } from "@/app/element/popoverreveal";
 import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { cn } from "@/util/util";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Check, ChevronDown, ChevronUp, CornerDownRight, SquareTerminal, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -51,6 +51,7 @@ import {
     readsFiles,
     replyReach,
     seatChips,
+    type AskChip,
     type ChannelItem,
     type ChatThread,
     type DraftPost,
@@ -913,15 +914,6 @@ function Composer({
     const reads = readsFiles(drafts.tools, text);
     const est = useEstimate(k > 0 ? { id: c.id, followup: k, tools: reads.on } : null);
     const hint = k > 0 ? followupLabel(est, k, reads.on) : replyReach(c, proposalId, "", text).label;
-    const asks = scope === "channel" && followUp && text === "" ? askChips(c) : [];
-    const fill = (t: string) => {
-        setText(t);
-        setCaret(t.length);
-        requestAnimationFrame(() => {
-            box.current?.focus();
-            box.current?.setSelectionRange(t.length, t.length);
-        });
-    };
 
     const send = async () => {
         const body = text.trim();
@@ -1022,28 +1014,6 @@ function Composer({
                     ))}
                 </ul>
             )}
-            {asks.length > 0 && (
-                <div
-                    role="group"
-                    aria-label="Ask next"
-                    data-council-asks
-                    className="flex flex-wrap items-center gap-[6px]"
-                >
-                    <span className="text-[12px] text-muted">Ask next</span>
-                    {asks.map((a, i) => (
-                        <button
-                            key={a.text}
-                            type="button"
-                            data-council-ask={i}
-                            onClick={() => fill(a.fill)}
-                            title="Put it in the box to edit and send"
-                            className="max-w-full cursor-pointer truncate rounded-full border border-edge-mid bg-transparent px-[12px] py-[4px] text-left text-[13px] text-secondary outline-none hover:border-edge-strong hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                            {a.fill}
-                        </button>
-                    ))}
-                </div>
-            )}
             <div className="flex items-end gap-[8px] rounded-[14px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
                 <textarea
                     ref={box}
@@ -1112,6 +1082,41 @@ function Composer({
                     {error}
                 </span>
             )}
+        </div>
+    );
+}
+
+// ---- the report's questions to ask next ----
+
+// the last line of the channel, under the newest message, so it shows to a reader at the latest and scrolls away with
+// the rest; a click puts the question in the channel's box, `@` seat and all, to edit and send
+function AskNext({ c, asks }: { c: Council; asks: AskChip[] }) {
+    const setDrafts = useSetAtom(councilChatDraftAtom(c.id));
+    const fill = (t: string) => {
+        setDrafts((d) => ({ ...d, texts: { ...d.texts, [""]: t } }));
+        requestAnimationFrame(() => {
+            const box = document.querySelector<HTMLTextAreaElement>(
+                '[data-council-composer="channel"] [data-council-composer-input]'
+            );
+            box?.focus();
+            box?.setSelectionRange(t.length, t.length);
+        });
+    };
+    return (
+        <div role="group" aria-label="Ask next" data-council-asks className="flex flex-wrap items-center gap-[6px]">
+            <span className="text-[12px] text-muted">Ask next</span>
+            {asks.map((a, i) => (
+                <button
+                    key={a.text}
+                    type="button"
+                    data-council-ask={i}
+                    onClick={() => fill(a.fill)}
+                    title="Put it in the box to edit and send"
+                    className="max-w-full cursor-pointer truncate rounded-full border border-edge-mid bg-transparent px-[12px] py-[4px] text-left text-[13px] text-secondary outline-none hover:border-edge-strong hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    {a.fill}
+                </button>
+            ))}
         </div>
     );
 }
@@ -1390,7 +1395,7 @@ function JumpPill({
     children: ReactNode;
 }) {
     return (
-        <PopoverReveal open={show} origin="bottom" className="pointer-events-auto">
+        <PopoverReveal open={show} origin="bottom right" className="pointer-events-auto">
             <button
                 type="button"
                 data-council-jump={jump}
@@ -1406,7 +1411,7 @@ function JumpPill({
 }
 
 // the channel, scrolled to its newest line while the reader is at the bottom of it, and back where they left it; Top,
-// Latest and Back float at its foot
+// Back and Latest float in its bottom right corner
 function Channel({
     children,
     councilId,
@@ -1438,7 +1443,7 @@ function Channel({
                     {children}
                 </div>
             </div>
-            <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-[8px]">
+            <div className="pointer-events-none absolute bottom-3 right-4 z-20 flex flex-col items-end gap-[6px]">
                 <JumpPill show={jumps.pills.top} jump="top" label="Jump to the top" onClick={jumps.toTop}>
                     <span aria-hidden>↑</span> Top
                 </JumpPill>
@@ -1497,6 +1502,8 @@ export function CouncilChat({
     const [only, setOnly] = useAtom(councilOnlyAtom(c.id));
     const onlyId = only != null && c.experts.some((e) => e.id === only) ? only : null;
     const items = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
+    const channelDraft = useAtomValue(councilChatDraftAtom(c.id)).texts[""] ?? "";
+    const asks = isFollowUp(c) && channelDraft === "" ? askChips(c) : [];
     const seats = useMemo(() => seatChips(c), [c]);
     const onlySeat = onlyId == null ? null : (seats.find((chip) => chip.id === onlyId) ?? null);
     const order = useMemo(() => ideaOrder(items), [items]);
@@ -1571,7 +1578,12 @@ export function CouncilChat({
                     )}
                 </div>
                 {notes}
-                <Channel boxRef={channel} councilId={c.id} view={onlyId ?? ""} count={items.length}>
+                <Channel
+                    boxRef={channel}
+                    councilId={c.id}
+                    view={onlyId ?? ""}
+                    count={items.length + (asks.length > 0 ? 1 : 0)}
+                >
                     {items.map((item) => {
                         switch (item.kind) {
                             case "question":
@@ -1604,6 +1616,7 @@ export function CouncilChat({
                                 return <TypingLine key={item.id} item={item} />;
                         }
                     })}
+                    {asks.length > 0 && <AskNext c={c} asks={asks} />}
                 </Channel>
                 <div className="flex-none px-8 pb-4 pt-[10px]">
                     <span id="council-channel-label" className="sr-only">

@@ -691,19 +691,25 @@ async function done(h, ctx, rec) {
     await h.shot("cdp-shots/council-discussion-done.png");
     await jumps(h, rec);
 
-    // the report's questions to ask next sit over the empty box; a click puts one in it, @ seat and all
-    const asks = await count(h, `${CHANNEL_COMPOSER} [data-council-ask]`);
-    await click(h, `${CHANNEL_COMPOSER} [data-council-ask="0"]`);
+    // the report's questions to ask next are the channel's last line, under the newest message, none of them over the
+    // box; a click puts one in the box, @ seat and all
+    await h.ev(`(() => { const el = document.querySelector("[data-council-channel]"); el.scrollTop = el.scrollHeight; })()`);
+    const asks = await count(h, "[data-council-channel] [data-council-ask]");
+    const last = await h.ev(
+        `document.querySelector("[data-council-channel] [data-council-asks]")?.parentElement?.lastElementChild?.hasAttribute("data-council-asks") ?? false`
+    );
+    const overBox = await count(h, `${CHANNEL_COMPOSER} [data-council-ask]`);
+    await h.shot("cdp-shots/council-discussion-asknext.png");
+    await click(h, '[data-council-channel] [data-council-ask="0"]');
     const box = sel(`${CHANNEL_COMPOSER} [data-council-composer-input]`);
     await until(h, `document.querySelector(${box})?.value !== ""`).catch(() => {});
     const filled = await h.ev(`document.querySelector(${box})?.value ?? ""`);
-    const hidden = !(await exists(h, `${CHANNEL_COMPOSER} [data-council-asks]`));
+    const hidden = !(await exists(h, "[data-council-asks]"));
     rec(
-        "done: Ask next offers the report's three questions over the empty box, and a click fills the box with the @ seat",
-        asks === 3 && filled.startsWith("@RAM How much RAM") && hidden,
-        { asks, filled, hidden }
+        "done: Ask next offers the report's three questions as the channel's last line, not over the box, and a click fills the box with the @ seat",
+        asks === 3 && last && overBox === 0 && filled.startsWith("@RAM How much RAM") && hidden,
+        { asks, last, overBox, filled, hidden }
     );
-    await h.shot("cdp-shots/council-discussion-asknext.png");
     await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "What does rail-apps.json hold?");
     const auto = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "aria-checked");
     const why = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "data-council-tools-why");

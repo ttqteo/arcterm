@@ -26,8 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
-- A council's Discussion has Top and Latest buttons at the foot of the channel, and after either jump a Back to
-  where you were button that puts the message you were reading back where it was.
+- A council's Discussion has Top and Latest buttons in the channel's bottom right corner, and after either jump a
+  Back to where you were button that puts the message you were reading back where it was.
 - Translate offers what you just copied: a word or a short sentence shows as a Paste chip under the box, and a click
   or Tab pastes and translates it. Links, paths, file names, commands, code, numbers and images are never offered. On a
   Mac, macOS may ask whether arcterm can paste from other apps. <!-- try: translate -->
@@ -37,9 +37,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council's experts now mark the one or two sentences you must read in a long idea or reply, and the Discussion
   and the report draw them highlighted, as your terminal does. Councils started before this update have no marks.
 - A council's report ends with two or three questions worth asking the panel next: where the experts still disagree,
-  a condition nobody checked, or a view the panel was missing. They sit as chips over the Discussion's empty box and
-  under Ask next in the report; a click puts the question in the box, with `@` the expert it is for, to edit and send.
-  Councils started before this update have none until you Summarize again.
+  a condition nobody checked, or a view the panel was missing. They sit as chips under the newest message in the
+  Discussion and under Ask next in the report; a click puts the question in the box, with `@` the expert it is for, to
+  edit and send. Councils started before this update have none until you Summarize again.
 - Typing `@` in New agent's Task box lists the project's files; ↑↓ and Enter (or a click) put `@path` in the task,
   and Esc closes the list without closing the dialog. <!-- try: new-agent -->
 - Council Setup's Auto-generate button writes the topic, a question and the mode from what the seated agents were
