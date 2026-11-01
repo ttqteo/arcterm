@@ -12,7 +12,7 @@ import type { Turn } from "./control-core";
 import { ALL_CATEGORIES, applyEdit, goalpostNote, goalpostRole, inspectChange, inspectCommand } from "./goalpost-core";
 import type { GoalpostFinding } from "./goalpost-core";
 import { denial, isEngineTree } from "./guard-core";
-import { jobslotArgs, jobslotLine } from "./jobslot-core";
+import { heavyArgs, heldInBackground, heldOriginal, jobslotArgs, jobslotLine } from "./jobslot-core";
 import { claudeConfigDir, memoryDir, transcriptFile } from "./claudepaths-core";
 import { lintContext, lintMemory, parseMemory, referencedPaths, taskNames } from "./memlint-core";
 import type { Ran } from "./mention-core";
@@ -317,6 +317,19 @@ async function withJobSlot<T>(
     }
 }
 
+// whether a command waits for a slot, by wsh's own table (`jobslot --heavy`, no connection). false where wsh
+// cannot say, which leaves the call to withJobSlot
+async function takesSlot($: EngineInterface, command: string): Promise<boolean> {
+    if (!active) {
+        return false;
+    }
+    try {
+        return (await $.process.run([WSH, ...heavyArgs(command)])).exitCode === 0;
+    } catch {
+        return false;
+    }
+}
+
 // the last context reading, for the Token burn card
 let lastContext: { tokens: number; window: number } | null = null;
 
@@ -547,7 +560,21 @@ export const register: Register = (on) => {
             return { deny: why };
         }
         const findings = await goalposts($, () => inspectCommand(e.command, ALL_CATEGORIES));
+        if (e.run_in_background === true && (await takesSlot($, e.command))) {
+            // the call returns once the command starts, so a slot held around it would free at once: the command
+            // waits for its turn in its own shell, which keeps the slot until it exits
+            const held = { ...e, command: heldInBackground(WSH, e.command) };
+            return withUiCheck($, e.command, () => withGoalposts($, findings, held, next));
+        }
         return withJobSlot($, e.command, () => withUiCheck($, e.command, () => withGoalposts($, findings, e, next)));
+    });
+
+    // a background command heldInBackground wrapped is decided as the model wrote it: the rules and the mode judge
+    // the command, not the wsh call in front of it
+    on("tool.check", { tool: "Bash" }, ($, e, next) => {
+        const input = e.input as { command?: unknown } | null;
+        const original = typeof input?.command === "string" ? heldOriginal(WSH, input.command) : null;
+        return original === null ? next(e) : next({ ...e, input: { ...input, command: original } });
     });
 
     on("tool.call", { tool: "PowerShell" }, async ($, e, next) => {

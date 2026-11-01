@@ -37,3 +37,38 @@ export function jobslotLine(line: string): JobslotLine | null {
     }
     return null;
 }
+
+// `wsh jobslot --heavy` exits 0 when the command takes a slot at all, from wsh's own table, with no connection
+export function heavyArgs(command: string): string[] {
+    return ["jobslot", "--heavy", "--", command];
+}
+
+// the exit of `wsh jobslot --hold-parent` when the person skipped the command
+export const JOBSLOT_REFUSED_EXIT = 75;
+
+const shellQuote = (s: string): string => `'${s.replaceAll("'", `'\\''`)}'`;
+
+const HELD_TAIL = `; [ $? -ne ${JOBSLOT_REFUSED_EXIT} ] || exit ${JOBSLOT_REFUSED_EXIT}\n`;
+
+// a heavy background command outlives its tool call, so a slot the hook held around the call would free as soon
+// as the command started. Instead it runs behind `wsh jobslot --hold-parent` in its own shell: wsh waits there
+// for its turn, then hands the slot to that shell, which wavesrv holds it for until the shell exits. A skip from
+// the job queue exits the shell before the command; any other end of wsh's, a crash included, runs it
+export function heldInBackground(wsh: string, command: string): string {
+    return `${shellQuote(wsh)} jobslot --hold-parent -- ${shellQuote(command)}${HELD_TAIL}${command}`;
+}
+
+// the command heldInBackground wrapped, or null for any other: the permission check reads the command as the
+// model wrote it. The quoted copy may hold the tail's text too, so each place it occurs is tried
+export function heldOriginal(wsh: string, command: string): string | null {
+    if (!command.startsWith(`${shellQuote(wsh)} jobslot --hold-parent -- `)) {
+        return null;
+    }
+    for (let at = command.indexOf(HELD_TAIL); at !== -1; at = command.indexOf(HELD_TAIL, at + 1)) {
+        const original = command.slice(at + HELD_TAIL.length);
+        if (heldInBackground(wsh, original) === command) {
+            return original;
+        }
+    }
+    return null;
+}
