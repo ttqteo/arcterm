@@ -3,6 +3,8 @@
 
 import { CopyButton } from "@/app/element/copybutton";
 import { tableClipboard } from "@/app/element/markdown-table";
+import { Mermaid } from "@/app/element/mermaid";
+import remarkMark from "@/app/element/remark-mark";
 import { openLink } from "@/app/store/global";
 import { cn } from "@/util/util";
 import { Lightbulb } from "lucide-react";
@@ -21,6 +23,15 @@ import { inlinePathOf } from "./pathlinks";
 // links open through the app helper (external/internal routing), matching element/markdown.tsx —
 // NOT target=_blank, which bypasses that routing. tables are wrapped so wide ones scroll inside
 // the panel instead of breaking its width.
+// a fenced block's language and text, from the <code> element react-markdown put in its <pre>
+function fencedOf(children: unknown): { lang?: string; raw: string } {
+    const child: any = Array.isArray(children) ? children[0] : children;
+    const props = child?.props ?? {};
+    const lang = /language-(\w+)/.exec(props.className ?? "")?.[1];
+    const raw = Array.isArray(props.children) ? props.children.join("") : String(props.children ?? "");
+    return { lang, raw };
+}
+
 const MD_COMPONENTS: Components = {
     a: ({ href, children }) => (
         <a
@@ -46,12 +57,7 @@ const MD_COMPONENTS: Components = {
         </div>
     ),
     pre: ({ children }) => {
-        // children is the <code> element react-markdown produced for a fenced block
-        const child: any = Array.isArray(children) ? children[0] : children;
-        const props = child?.props ?? {};
-        const className: string = props.className ?? "";
-        const lang = /language-(\w+)/.exec(className)?.[1];
-        const raw = Array.isArray(props.children) ? props.children.join("") : String(props.children ?? "");
+        const { lang, raw } = fencedOf(children);
         return <CodeBlock code={raw} lang={lang} />;
     },
     code: ({ className, children }) => {
@@ -70,35 +76,82 @@ const MD_COMPONENTS: Components = {
 
 const REMARK_PLUGINS = [remarkGfm];
 
-function renderMd(text: string) {
+// The extras a caller opts into: `marks` draws ==…== (remark-mark.ts) as a <mark> in the accent's tint the terminal draws a
+// skim highlight in, and `diagrams` draws a ```mermaid block as its diagram instead of its code. A council's messages
+// take both; an agent's transcript takes neither, so it never loads mermaid.
+export interface MarkdownExtras {
+    marks?: boolean;
+    diagrams?: boolean;
+}
+
+const MARK_PLUGINS = [remarkGfm, remarkMark];
+
+const MARK_COMPONENT: Components = {
+    mark: ({ children }) => (
+        <mark data-council-mark className="rounded-[2px] bg-accent/24 px-px text-inherit">
+            {children}
+        </mark>
+    ),
+};
+
+const DIAGRAM_COMPONENT: Components = {
+    pre: ({ children }) => {
+        const { lang, raw } = fencedOf(children);
+        return lang === "mermaid" ? <Mermaid chart={raw} /> : <CodeBlock code={raw} lang={lang} />;
+    },
+};
+
+// one components map per set of extras, built once, so react-markdown never sees a new map on a re-render
+const COMPONENTS_BY_EXTRAS = new Map<string, Components>();
+
+function componentsFor(extras: MarkdownExtras): Components {
+    const key = `${extras.marks ? "m" : ""}${extras.diagrams ? "d" : ""}`;
+    let out = COMPONENTS_BY_EXTRAS.get(key);
+    if (out == null) {
+        out = {
+            ...MD_COMPONENTS,
+            ...(extras.marks ? MARK_COMPONENT : {}),
+            ...(extras.diagrams ? DIAGRAM_COMPONENT : {}),
+        };
+        COMPONENTS_BY_EXTRAS.set(key, out);
+    }
+    return out;
+}
+
+function renderMd(text: string, extras: MarkdownExtras = {}) {
     return (
-        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>
+        <ReactMarkdown remarkPlugins={extras.marks ? MARK_PLUGINS : REMARK_PLUGINS} components={componentsFor(extras)}>
             {text}
         </ReactMarkdown>
     );
 }
 
-function InsightCallout({ text }: { text: string }) {
+function InsightCallout({ text, extras }: { text: string; extras?: MarkdownExtras }) {
     return (
         <div data-insight className="my-2.5 rounded-[8px] border border-accent/25 bg-accent/[0.05] px-3 py-2">
             <div className="mb-1 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-accent-soft">
                 <Lightbulb size={11} strokeWidth={2.2} aria-hidden />
                 Insight
             </div>
-            {renderMd(text)}
+            {renderMd(text, extras)}
         </div>
     );
 }
 
-export const MarkdownMessage = memo(function MarkdownMessage({ text, className }: { text: string; className?: string }) {
+export const MarkdownMessage = memo(function MarkdownMessage({
+    text,
+    className,
+    marks,
+    diagrams,
+}: { text: string; className?: string } & MarkdownExtras) {
     const segments = splitInsightBlocks(text);
     return (
         <div className={cn("agent-md", className)}>
             {segments.map((seg, i) =>
                 seg.kind === "insight" ? (
-                    <InsightCallout key={i} text={seg.text} />
+                    <InsightCallout key={i} text={seg.text} extras={{ marks, diagrams }} />
                 ) : (
-                    <Fragment key={i}>{renderMd(seg.text)}</Fragment>
+                    <Fragment key={i}>{renderMd(seg.text, { marks, diagrams })}</Fragment>
                 )
             )}
         </div>

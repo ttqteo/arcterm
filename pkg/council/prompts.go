@@ -13,7 +13,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-01.2"
+const HarnessVersion = "2026-11-01.3"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -237,6 +237,18 @@ const (
 		"no parentheses and no clauses stacked behind a colon. Say a term or a reference in plain words the first time, " +
 		"unless the person used it: \"the panel two days ago suggested…\", not \"council 24-25\". No emoji."
 
+	// visualRule is in every prompt whose fields the Discussion shows as messages: it draws them as Markdown, so a table,
+	// a list or a mermaid diagram shows as one.
+	visualRule = "When a picture says it better than sentences, put one in the message, in Markdown: a small table when " +
+		"you compare two or more options on two or more points, a numbered list for steps in order, or a ```mermaid " +
+		"flowchart for a flow of a few steps (at most about 8 nodes, each label short and in double quotes, " +
+		"A[\"swap the value\"] --> B[\"trace the sink\"]). Open it with one chat sentence that says what it shows, and " +
+		"leave everything else as chat. A table or a diagram does not count toward the word limit. Inside the JSON " +
+		"string, write each line break as \\n, and leave a blank line before and after a table or a diagram."
+
+	// messageRules are the rules every prompt whose fields the Discussion shows as messages ends with, before its shape.
+	messageRules = voiceRule + "\n\n" + visualRule + "\n\n" + markRule
+
 	// markRule is in every prompt whose fields the Discussion shows as messages: it draws a sentence wrapped in ==…==
 	// highlighted, so a long argument or reply shows first the line the person must read.
 	markRule = "In an argument, a reason or an answer of three sentences or more, wrap the one sentence the person " +
@@ -439,7 +451,7 @@ func round1Task(c *Council) string {
 			"entry in \"proposals\", with a short title and an argument: what the idea is, and why it could work. An idea " +
 			"may rest on a guess, so it needs no evidence; read the code to ground an idea, not to audit it.\n\n")
 		b.WriteString(wildRule + "\n\n")
-		b.WriteString(voiceRule + "\n\n" + markRule + "\n\n")
+		b.WriteString(messageRules + "\n\n")
 		b.WriteString(jsonRule + "\n```json\n" + brainstormRound1Shape + "\n```\n")
 		return b.String()
 	}
@@ -447,7 +459,7 @@ func round1Task(c *Council) string {
 		"proposals beat many weak ones, and none is a fair answer if you find nothing worth changing. " +
 		"Each proposal has a short title, an argument, and the evidence it rests on.\n\n")
 	b.WriteString(evidenceRule + "\n\n")
-	b.WriteString(voiceRule + "\n\n" + markRule + "\n\n")
+	b.WriteString(messageRules + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + round1Shape + "\n```\n")
 	return b.String()
 }
@@ -526,7 +538,7 @@ func round2Task(c *Council, round int) string {
 		b.WriteString(`Answer each question from the person with an entry in "answers", by its replyid. Leave "answers" empty ` +
 			"when there are none.\n\n")
 		b.WriteString(titleRule + "\n\n")
-		b.WriteString(voiceRule + "\n\n" + markRule + "\n\n")
+		b.WriteString(messageRules + "\n\n")
 		b.WriteString(jsonRule + "\n```json\n" + brainstormRound2Shape + "\n```\n")
 		return b.String()
 	}
@@ -543,7 +555,7 @@ func round2Task(c *Council, round int) string {
 		"when there are none.\n\n")
 	b.WriteString(titleRule + "\n\n")
 	b.WriteString(evidenceRule + "\n\n")
-	b.WriteString(voiceRule + "\n\n" + markRule + "\n\n")
+	b.WriteString(messageRules + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + round2Shape + "\n```\n")
 	return b.String()
 }
@@ -858,7 +870,7 @@ func answersTask(c *Council) string {
 	if !isBrainstorm(c) { // a Brainstorm asks for no evidence
 		b.WriteString(evidenceRule + "\n\n")
 	}
-	b.WriteString(voiceRule + "\n\n" + markRule + "\n\n")
+	b.WriteString(messageRules + "\n\n")
 	b.WriteString(jsonRule + "\n```json\n" + answersShape + "\n```\n")
 	return b.String()
 }

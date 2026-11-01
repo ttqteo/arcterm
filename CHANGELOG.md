@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A council's experts can put a small table, a numbered list or a flowchart in an idea or a reply when it reads
+  better than sentences, and the Discussion and the report draw it as one, a table with its copy button. Councils
+  started before this update have none.
 - A council's experts now mark the one or two sentences you must read in a long idea or reply, and the Discussion
   and the report draw them highlighted, as your terminal does. Councils started before this update have no marks.
 - Typing `@` in New agent's Task box lists the project's files; ↑↓ and Enter (or a click) put `@path` in the task,

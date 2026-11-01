@@ -78,6 +78,7 @@ import {
     retryExpert,
     useEstimate,
 } from "./councilstore";
+import { MarkdownMessage } from "./markdownmessage";
 
 // ---- shared pieces ----
 
@@ -202,8 +203,25 @@ export function CouncilAvatar({
     );
 }
 
-/** What a seat wrote, its must-read sentence (==…==, councilmarks.ts) highlighted in the accent's tint the terminal
- *  draws a skim highlight in, as markdown.scss draws a <mark>. */
+/** What a seat wrote, as a message: Markdown, so the table, list or ```mermaid diagram the prompts ask for when one
+ *  reads better than prose (visualRule in pkg/council/prompts.go) draws as one, its must-read sentence (==…==)
+ *  highlighted. A line break stays a line break, as the plain text it replaces kept it. `className` sets its size. */
+export function CouncilText({ text, className }: { text: string; className?: string }) {
+    return (
+        <MarkdownMessage
+            text={text}
+            marks
+            diagrams
+            className={cn(
+                "min-w-0 break-words text-ink-hi [&_p]:whitespace-pre-wrap [&_table]:whitespace-normal [&_td]:align-top [&_.mermaid]:my-2 [&_.mermaid_svg]:max-w-full",
+                className
+            )}
+        />
+    );
+}
+
+/** What a seat wrote as plain text, for a place too small for a table or a diagram (a cell of the Summary's matrix),
+ *  its must-read sentence (==…==, councilmarks.ts) highlighted as CouncilText draws it. */
 export function MarkedText({ text }: { text: string }) {
     const spans = useMemo(() => markSpans(text), [text]);
     return (
@@ -416,9 +434,7 @@ function IdeaMessage({
                     )}
                 >
                     <h3 className="m-0 text-[16px] font-semibold leading-[1.4] text-primary">{item.title}</h3>
-                    <span className="whitespace-pre-wrap break-words text-[14.5px] leading-[1.6] text-ink-hi">
-                        <MarkedText text={item.text} />
-                    </span>
+                    <CouncilText text={item.text} className="text-[14.5px] leading-[1.6]" />
                     <EvidenceChips
                         evidence={item.evidence}
                         weak={item.weak}
@@ -531,9 +547,7 @@ function ReplyMessage({
                         TONE_BUBBLE[item.tone]
                     )}
                 >
-                    <span className="whitespace-pre-wrap break-words text-[14px] leading-[1.6] text-ink-hi">
-                        <MarkedText text={item.text} />
-                    </span>
+                    <CouncilText text={item.text} className="text-[14px] leading-[1.6]" />
                     <EvidenceChips
                         evidence={item.evidence}
                         weak={item.weak}
@@ -617,9 +631,7 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
                         )}
                     </>
                 ) : (
-                    <span className="whitespace-pre-wrap break-words text-[13.5px] leading-[1.5] text-ink-hi">
-                        <MarkedText text={item.text} />
-                    </span>
+                    <CouncilText text={item.text} className="text-[13.5px] leading-[1.5]" />
                 )}
                 <EvidenceChips
                     evidence={item.evidence}
@@ -1122,9 +1134,7 @@ function ThreadPanel({
                             >
                                 {idea.title}
                             </h2>
-                            <span className="whitespace-pre-wrap break-words text-[14px] leading-[1.6] text-ink-hi">
-                                <MarkedText text={idea.text} />
-                            </span>
+                            <CouncilText text={idea.text} className="text-[14px] leading-[1.6]" />
                             <EvidenceChips
                                 evidence={idea.evidence}
                                 weak={idea.weak}

@@ -32,6 +32,7 @@ import {
     outdatedCount,
     panel,
     pickCount,
+    proseOf,
     queuedLine,
     rankedProposals,
     readableReplies,
@@ -1171,6 +1172,31 @@ describe("matrixRows", () => {
         expect(matrixRows(c).find((r) => r.proposal.id === "P6")!.outcome).toBe("Withdrawn in round 2");
     });
 
+    it("keeps only the words of a message with a table, a diagram or a list, for a cell has no room for them", () => {
+        const rich = council({
+            state: "done",
+            round: 3,
+            proposals: [
+                prop("P1", "ux", {
+                    argument:
+                        "I compare two checks:\n\n| | A | B |\n|---|---|---|\n| patch | yes | no |\n\nB covers more.",
+                }),
+            ],
+            replies: [
+                reply("r1", "ram", {
+                    proposalid: "P1",
+                    stance: "challenge",
+                    text: "Two steps:\n\n1. Swap the value.\n2. Trace the sink.\n\n```mermaid\nflowchart LR\n  A --> B\n```",
+                    ts: 1,
+                }),
+            ],
+            summary: { text: "", directions: [dir(1, ["P1"])], outcomes: { P1: "Direction 1" }, at: 50 },
+        });
+        const cells = matrixRows(rich)[0].cells;
+        expect(cells.find((x) => x.expert.id === "ux")!.reason).toBe("I compare two checks: B covers more.");
+        expect(cells.find((x) => x.expert.id === "ram")!.reason).toBe("Two steps:\n\nSwap the value.\nTrace the sink.");
+    });
+
     it("says what became of a proposal the summary left out", () => {
         const gap = council({
             proposals: [prop("P1", "ux", { cut: true }), prop("P2", "ram", { withdrawn: true }), prop("P3", "nu")],
@@ -1374,5 +1400,21 @@ describe("askedParts", () => {
 
     it("keeps a question that is only limits whole, and drops empty limits", () => {
         expect(askedParts("Keep to: a; ; b.")).toEqual({ question: "Keep to: a; ; b.", limits: ["a", "b"] });
+    });
+});
+
+describe("proseOf", () => {
+    it("leaves plain words as they are", () => {
+        expect(proseOf("One idea. Two lines\nhere.")).toBe("One idea. Two lines\nhere.");
+    });
+
+    it("drops a table, a fenced block and a list's markers", () => {
+        expect(
+            proseOf("Look:\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```mermaid\nA --> B\n```\n\n- first\n2) second")
+        ).toBe("Look:\n\nfirst\nsecond");
+    });
+
+    it("is empty for a message that is only a table", () => {
+        expect(proseOf("| a |\n|---|\n| 1 |")).toBe("");
     });
 });

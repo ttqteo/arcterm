@@ -30,6 +30,7 @@ import remarkGfm from "remark-gfm";
 import { openLink } from "../store/global";
 import { IconButton } from "./iconbutton";
 import "./markdown.scss";
+import { Mermaid } from "./mermaid";
 
 // the source-line stamp (rehype-srclines.ts) an overridden component must keep on the element it renders
 function stampAttrs(props: object): Record<string, string> {
@@ -39,18 +40,6 @@ function stampAttrs(props: object): Record<string, string> {
     }
     return { "data-src-start": String(p["data-src-start"]), "data-src-end": String(p["data-src-end"]) };
 }
-
-let mermaidInitialized = false;
-let mermaidInstance: any = null;
-
-const initializeMermaid = async () => {
-    if (!mermaidInitialized) {
-        const mermaid = await import("mermaid");
-        mermaidInstance = mermaid.default;
-        mermaidInstance.initialize({ startOnLoad: false, theme: "dark", securityLevel: "strict" });
-        mermaidInitialized = true;
-    }
-};
 
 const Link = ({
     setFocusedHeading,
@@ -82,60 +71,6 @@ const Heading = ({ props, hnum }: { props: React.HTMLAttributes<HTMLHeadingEleme
             {props.children}
         </div>
     );
-};
-
-const Mermaid = ({ chart }: { chart: string }) => {
-    const ref = useRef<HTMLDivElement>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        const renderMermaid = async () => {
-            try {
-                setIsLoading(true);
-                setError(null);
-
-                await initializeMermaid();
-                if (!ref.current || !mermaidInstance) {
-                    return;
-                }
-
-                // Normalize the chart text
-                let normalizedChart = chart
-                    .replace(/<br\s*\/?>/gi, "\n") // Convert <br/> and <br> to newlines
-                    .replace(/\r\n?/g, "\n") // Normalize \r \r\n to \n
-                    .replace(/\n+$/, ""); // Remove final newline
-
-                ref.current.removeAttribute("data-processed");
-                ref.current.textContent = normalizedChart;
-                // console.log("mermaid", normalizedChart);
-                await mermaidInstance.run({ nodes: [ref.current] });
-                setIsLoading(false);
-            } catch (err) {
-                console.error("Error rendering mermaid diagram:", err);
-                setError(`Failed to render diagram: ${err.message || err}`);
-                setIsLoading(false);
-            }
-        };
-
-        renderMermaid();
-    }, [chart]);
-
-    useEffect(() => {
-        if (!ref.current) return;
-
-        if (error) {
-            ref.current.textContent = `Error: ${error}`;
-            ref.current.className = "mermaid error";
-        } else if (isLoading) {
-            ref.current.textContent = "Loading diagram...";
-            ref.current.className = "mermaid";
-        } else {
-            ref.current.className = "mermaid";
-        }
-    }, [isLoading, error]);
-
-    return <div className="mermaid" ref={ref} />;
 };
 
 const Code = ({ className = "", children }: { className?: string; children: React.ReactNode }) => {

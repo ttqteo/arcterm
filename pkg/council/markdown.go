@@ -5,6 +5,7 @@ package council
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -172,7 +173,7 @@ func matrixCell(c *Council, p CouncilProposal, e CouncilExpert) string {
 		if r.ProposalId != p.Id || r.Author != e.Id || r.ParentId != "" || r.Stance == "" || !Sent(r.Draft) {
 			continue
 		}
-		reason := strings.Join(strings.Fields(r.Text), " ")
+		reason := strings.Join(strings.Fields(proseOf(r.Text)), " ")
 		if runes := []rune(reason); len(runes) > matrixReasonRunes {
 			reason = strings.TrimSpace(string(runes[:matrixReasonRunes])) + "…"
 		}
@@ -227,6 +228,28 @@ func indent(s, prefix string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// listMarker is the marker a Markdown list item opens with: "1. ", "2) ", "- ", "* " or "+ ".
+var listMarker = regexp.MustCompile(`^\s*(?:\d+[.)]|[-*+])\s+`)
+
+// proseOf is a message without its tables, diagrams and code blocks, and its list items as plain lines: a matrix cell
+// has room for words only. The Summary's matrix keeps the same rule (proseOf in frontend/app/view/agents/councilmodel.ts).
+func proseOf(text string) string {
+	var out []string
+	fenced := false
+	for line := range strings.SplitSeq(text, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			fenced = !fenced
+			continue
+		}
+		if fenced || strings.HasPrefix(t, "|") {
+			continue
+		}
+		out = append(out, listMarker.ReplaceAllString(line, ""))
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
 }
 
 // writeMessage is one message of the discussion: who, the label in plain words, what it is about, its words and its

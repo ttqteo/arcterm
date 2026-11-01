@@ -524,13 +524,13 @@ func TestSynthesisPromptLeavesOutDraftsAndNamesSkips(t *testing.T) {
 	mustNotContain(t, "synthesis prompt", p, "Title-held", "Argument-held", "Title-dropped", "Text-r2 held")
 }
 
-// every prompt whose fields the Discussion shows asks for the chat voice and the must-read sentence marked, and the synthesis does not
+// every prompt whose fields the Discussion shows asks for the chat voice, a picture where one helps and the must-read sentence marked, and the synthesis does not
 func TestPromptsAskForTheMustReadMark(t *testing.T) {
 	for name, c := range map[string]*Council{"review": promptCouncil(), "brainstorm": brainstormCouncil()} {
 		e := c.Experts[0]
-		mustContain(t, name+" round 1 prompt", Round1Prompt(c, e), voiceRule, markRule)
-		mustContain(t, name+" round 2 prompt", Round2Prompt(c, e), voiceRule, markRule)
-		mustContain(t, name+" answers prompt", AnswersPrompt(c, e, c.Replies), voiceRule, markRule)
-		mustNotContain(t, name+" synthesis prompt", SynthesisPrompt(c), voiceRule, markRule)
+		mustContain(t, name+" round 1 prompt", Round1Prompt(c, e), voiceRule, visualRule, markRule)
+		mustContain(t, name+" round 2 prompt", Round2Prompt(c, e), voiceRule, visualRule, markRule)
+		mustContain(t, name+" answers prompt", AnswersPrompt(c, e, c.Replies), voiceRule, visualRule, markRule)
+		mustNotContain(t, name+" synthesis prompt", SynthesisPrompt(c), voiceRule, visualRule, markRule)
 	}
 }

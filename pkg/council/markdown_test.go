@@ -135,6 +135,30 @@ func TestMarkdownMatrixRows(t *testing.T) {
 	}
 }
 
+func TestProseOfKeepsOnlyTheWords(t *testing.T) {
+	for in, want := range map[string]string{
+		"One idea. Two lines\nhere.": "One idea. Two lines\nhere.",
+		"Look:\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```mermaid\nA --> B\n```\n\n- first\n2) second": "Look:\n\n\n\nfirst\nsecond",
+		"| a |\n|---|\n| 1 |": "",
+	} {
+		if got := proseOf(in); got != want {
+			t.Errorf("proseOf(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestMarkdownMatrixCellKeepsOnlyTheWordsOfAReply(t *testing.T) {
+	c := markdownCouncil()
+	for i, r := range c.Replies {
+		if r.Text == "Cheap to do.\nAnd clear." {
+			c.Replies[i].Text = "Cheap to do:\n\n| cost | time |\n|---|---|\n| low | 1 h |\n\n```mermaid\nflowchart LR\n  A --> B\n```\nAnd clear."
+		}
+	}
+	if md := Markdown(c); !strings.Contains(md, "| accept: Cheap to do: And clear. |") {
+		t.Errorf("the matrix cell kept more than the words:\n%s", md)
+	}
+}
+
 func TestMarkdownOutcomeFallsBackToTheProposalsState(t *testing.T) {
 	c := markdownCouncil()
 	c.Summary.Outcomes = nil

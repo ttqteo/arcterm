@@ -687,6 +687,27 @@ export interface MatrixRow {
     outcome: string; // `Direction 1`, `Merged into direction 3`, `Withdrawn`
 }
 
+/** Pure: a message without its tables, diagrams and code blocks, and its list items as plain lines: a matrix cell has
+ *  room for words only. A message that is nothing but a table comes back empty. */
+export function proseOf(text: string): string {
+    const out: string[] = [];
+    let fenced = false;
+    for (const line of text.split("\n")) {
+        if (/^\s*(```|~~~)/.test(line)) {
+            fenced = !fenced;
+            continue;
+        }
+        if (fenced || /^\s*\|/.test(line)) {
+            continue;
+        }
+        out.push(line.replace(/^\s*(?:\d+[.)]|[-*+])\s+/, ""));
+    }
+    return out
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
 // a proposal's argument down to its first sentence: the author's cell in the matrix
 function firstSentence(text: string): string {
     const flat = text.replace(/\s+/g, " ").trim();
@@ -721,12 +742,12 @@ export function matrixRows(c: Council): MatrixRow[] {
                 }
                 if (stance === "proposed") {
                     // the marks go first: the first sentence could cut a mark in half
-                    return { expert, stance, reason: firstSentence(stripMarks(proposal.argument)) };
+                    return { expert, stance, reason: firstSentence(stripMarks(proseOf(proposal.argument))) };
                 }
                 const last = replies.filter(
                     (r) => r.proposalid === proposal.id && r.author === expert.id && r.stance === stance
                 );
-                return { expert, stance, reason: last[last.length - 1]?.text ?? "" };
+                return { expert, stance, reason: proseOf(last[last.length - 1]?.text ?? "") };
             }),
             outcome:
                 summary.outcomes[proposal.id] ??

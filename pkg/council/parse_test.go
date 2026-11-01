@@ -4,6 +4,7 @@
 package council
 
 import (
+	"encoding/json"
 	"reflect"
 	"slices"
 	"strings"
@@ -88,6 +89,23 @@ func TestParseRound1(t *testing.T) {
 	}
 	if !reflect.DeepEqual(props, want) {
 		t.Errorf("proposals = %+v\nwant %+v", props, want)
+	}
+}
+
+// an argument may hold a table and a mermaid diagram (visualRule): its fence sits inside a JSON string, escaped onto
+// the line of its field, so the ```json fence around the reply still closes where it should
+func TestParseRound1KeepsATableAndADiagramInAnArgument(t *testing.T) {
+	arg := "I compare two checks:\n\n| | A | B |\n|---|---|---|\n| patch | yes | no |\n\n```mermaid\nflowchart LR\n  A[\"swap\"] --> B[\"trace\"]\n```\n\nB covers more."
+	body, err := json.Marshal(map[string]any{"overview": "", "proposals": []map[string]any{{"title": "T", "argument": arg}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	props, _, err := ParseRound1("Some thoughts first.\n```mermaid\nA --> B\n```\n" + jsonFence(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(props) != 1 || props[0].Argument != arg {
+		t.Errorf("proposals = %+v, want the argument whole: %q", props, arg)
 	}
 }
 
