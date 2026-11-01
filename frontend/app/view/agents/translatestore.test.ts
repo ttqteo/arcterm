@@ -7,6 +7,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: { TranslateCommand: vi.fn(), NoteScratchWriteCommand: vi.fn(), NoteScratchReadCommand: vi.fn() },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("./floatstore", async () => {
     const { atom } = await import("jotai");
     return { enterFloat: vi.fn(), floatModeAtom: atom(false) };
@@ -14,6 +15,7 @@ vi.mock("./floatstore", async () => {
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
+import { invoke } from "@tauri-apps/api/core";
 import { floatNoteOpenAtom } from "./floatnotestore";
 import { floatModeAtom } from "./floatstore";
 import {
@@ -27,6 +29,8 @@ import {
     type TranslateResult,
 } from "./translatemodel";
 import {
+    acceptClipSuggestion,
+    checkClipboard,
     clearTranslate,
     closeTranslate,
     openTranslate,
@@ -39,6 +43,8 @@ import {
     swapTranslate,
     toggleHistoryStar,
     toggleTranslate,
+    translateClipAtom,
+    translateClipBlockedAtom,
     translateErrorAtom,
     translateHistoryAtom,
     translateOpenAtom,
@@ -479,5 +485,121 @@ describe("history", () => {
         await translateText("skeptic");
         closeTranslate();
         expect(texts()).toEqual(["skeptic"]);
+    });
+});
+
+describe("the paste suggestion", () => {
+    const host = vi.mocked(invoke);
+    const clip = () => globalStore.get(translateClipAtom);
+    // the clipboard's change counter outlives a test in the store, so every copy here is newer than the last
+    let change = 1000;
+    function copy(text: string | null, blocked = false): number {
+        change += 1;
+        const now = change;
+        host.mockImplementation(async (_cmd, args) => ({
+            change: now,
+            text: (args as { since: number }).since === now ? null : text,
+            blocked,
+        }));
+        return now;
+    }
+
+    it("offers a copied word when the panel opens", async () => {
+        openTranslate();
+        copy("serendipity");
+        await checkClipboard();
+        expect(host).toHaveBeenCalledWith("clipboard_text", { since: expect.any(Number) });
+        expect(clip()).toBe("serendipity");
+    });
+    it("offers nothing for a link or a file name", async () => {
+        openTranslate();
+        copy("https://example.com/a");
+        await checkClipboard();
+        expect(clip()).toBeNull();
+        copy("photo.png");
+        await checkClipboard();
+        expect(clip()).toBeNull();
+    });
+    it("offers each copy once: closing passes it over, and reopening reads nothing new", async () => {
+        openTranslate();
+        const now = copy("glance");
+        await checkClipboard();
+        expect(clip()).toBe("glance");
+        closeTranslate();
+        expect(clip()).toBeNull();
+        openTranslate();
+        await checkClipboard();
+        expect(host).toHaveBeenLastCalledWith("clipboard_text", { since: now });
+        expect(clip()).toBeNull();
+    });
+    it("leaves a copy unread when the panel closed before the answer", async () => {
+        openTranslate();
+        copy("later");
+        const check = checkClipboard();
+        closeTranslate();
+        await check;
+        expect(clip()).toBeNull();
+        openTranslate();
+        await checkClipboard();
+        expect(clip()).toBe("later");
+    });
+    it("taking it fills the box and translates at once, no debounce", async () => {
+        openTranslate();
+        copy("At a glance");
+        await checkClipboard();
+        acceptClipSuggestion();
+        expect(text()).toBe("At a glance");
+        expect(clip()).toBeNull();
+        // the engine asks once its on-device check has passed: a tick, far short of TRANSLATE_DEBOUNCE_MS
+        await vi.advanceTimersByTimeAsync(0);
+        expect(rpc).toHaveBeenCalledWith({}, { source: "en", target: "vi", text: "At a glance" });
+        expect(result()).toEqual(answer("vi:At a glance"));
+    });
+    it("replaces the text the box held", async () => {
+        openTranslate();
+        setTranslateText("old words");
+        copy("new words");
+        await checkClipboard();
+        acceptClipSuggestion();
+        expect(text()).toBe("new words");
+    });
+    it("typing passes it over", async () => {
+        openTranslate();
+        copy("glance");
+        await checkClipboard();
+        setTranslateText("g");
+        expect(clip()).toBeNull();
+        acceptClipSuggestion();
+        expect(text()).toBe("g");
+    });
+    it("is not the text the box holds or the translation just copied", async () => {
+        openTranslate();
+        setTranslateText("flashy");
+        await vi.advanceTimersByTimeAsync(TRANSLATE_DEBOUNCE_MS);
+        copy("vi:flashy");
+        await checkClipboard();
+        expect(clip()).toBeNull();
+        copy("flashy");
+        await checkClipboard();
+        expect(clip()).toBeNull();
+    });
+    it("says when macOS denies the clipboard, and stops saying it once allowed", async () => {
+        openTranslate();
+        copy(null, true);
+        await checkClipboard();
+        expect(globalStore.get(translateClipBlockedAtom)).toBe(true);
+        expect(clip()).toBeNull();
+        copy("allowed");
+        await checkClipboard();
+        expect(globalStore.get(translateClipBlockedAtom)).toBe(false);
+        expect(clip()).toBe("allowed");
+    });
+    it("survives a host that cannot answer", async () => {
+        openTranslate();
+        host.mockRejectedValue(new Error("the browser app answers no Tauri command clipboard_text"));
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        await checkClipboard();
+        expect(clip()).toBeNull();
+        warn.mockRestore();
     });
 });

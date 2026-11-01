@@ -57142,9 +57142,11 @@ const projectOverviewHistory = {
 // --- Quick translate on the nav rail -------------------------------------------------------------------------------
 // docs/superpowers/specs/2026-10-29-rail-translate-design.md. The rail's Translate button, and Mod+Shift+D from a focused
 // terminal, open a panel beside the rail: typing, a word's details, swap, the remembered pair, copy, clear, the error
-// line, and every way the panel closes. Google never answers here: window.__arcTranslateStub (translateengine.ts, read in
-// dev builds only) returns a fixed answer and records each request, and the error line is the real Translate RPC
-// refusing text over 5,000 characters. It asserts the DOM only, so the browser app runs it too.
+// line, the paste suggestion from the clipboard, and every way the panel closes. Google never answers here:
+// window.__arcTranslateStub (translateengine.ts, read in dev builds only) returns a fixed answer and records each
+// request, and the error line is the real Translate RPC refusing text over 5,000 characters. Nothing is copied either:
+// window.__arcClipboardStub (translatestore.ts, dev builds only) stands in for the clipboard. It asserts the DOM only, so
+// the browser app runs it too.
 const RAIL_TRANSLATE_PROJECT = "verify-rail-translate";
 const RAIL_TRANSLATE_PAIR_KEY = "translate.pair";
 const RAIL_TRANSLATE_WORD = "compaction";
@@ -57175,6 +57177,7 @@ const RAIL_TRANSLATE_CLIP = `(() => {
 })()`;
 const RAIL_TRANSLATE_CLEANUP = `(() => {
     delete window.__arcTranslateStub;
+    delete window.__arcClipboardStub;
     delete window.__railTranslateSeen;
     delete window.__railTranslateClip;
     delete navigator.clipboard.writeText;
@@ -57491,6 +57494,46 @@ const railTranslate = {
             openedK && outside != null && outsideCloses && openedAgain && buttonCloses && stays,
             JSON.stringify({ openedK, outside, outsideCloses, openedAgain, buttonCloses, stays })
         );
+
+        // l. a copied word is offered under the input as the panel opens, and Tab pastes and translates it over the
+        // text the box held; a copied link is never offered; with macOS denying the clipboard the empty box says how to
+        // allow it. The store keeps the last change it read across scenarios, so the counter starts from the clock.
+        const copyStub = (change, text, blocked = false) =>
+            h.ev(`window.__arcClipboardStub = ${JSON.stringify({ change, text, blocked })}`);
+        const PASTE = railTranslateQ("[data-translate-paste]");
+        const BLOCKED = railTranslateQ("[data-translate-clip-blocked]");
+        const firstCopy = Date.now();
+        await copyStub(firstCopy, "serendipity");
+        const openedL = await open();
+        const offered = await wait(`(${PASTE}?.textContent ?? "").includes("serendipity")`, 3000);
+        const l1 = await h.ev(`({ input: ${RAIL_TRANSLATE_INPUT}, chip: ${PASTE}?.textContent ?? null })`);
+        await polishNap(400);
+        await h.shot("cdp-shots/rail-translate-paste.png");
+        await floatNoteSpecial(h, "Tab", "Tab", 9);
+        const pasted = await wait(`${RAIL_TRANSLATE_INPUT} === "serendipity" && ${RAIL_TRANSLATE_OUTPUT} === "[fr] serendipity" && !${PASTE}`, 3000);
+        const keptCaret = await h.ev(RAIL_TRANSLATE_INPUT_FOCUSED);
+        await floatNoteSpecial(h, "Escape", "Escape", 27);
+        await wait(RAIL_TRANSLATE_GONE, 2000);
+        await copyStub(firstCopy + 1, "https://example.com/a");
+        await open();
+        await polishNap(500);
+        const linkNotOffered = await h.ev(`!${PASTE}`);
+        await floatNoteSpecial(h, "Escape", "Escape", 27);
+        await wait(RAIL_TRANSLATE_GONE, 2000);
+        await copyStub(firstCopy + 2, null, true);
+        await open();
+        await h.ev(`${railTranslateQ("[data-translate-clear]")}?.click() ?? false`);
+        const blockedShown = await wait(`(${BLOCKED}?.textContent ?? "").includes("Paste from Other Apps")`, 3000);
+        await polishNap(400);
+        await h.shot("cdp-shots/rail-translate-paste-blocked.png");
+        rec(
+            "l. a copied word shows as a Paste chip under the box and Tab pastes and translates it over the old text; a copied link shows none; a denied clipboard shows how to allow it",
+            openedL && offered && l1.input === "hello" && pasted && keptCaret && linkNotOffered && blockedShown,
+            JSON.stringify({ openedL, offered, ...l1, pasted, keptCaret, linkNotOffered, blockedShown })
+        );
+        await h.ev("delete window.__arcClipboardStub");
+        await floatNoteSpecial(h, "Escape", "Escape", 27);
+        await wait(RAIL_TRANSLATE_GONE, 2000);
         return steps;
     },
     async teardown(h, ctx) {

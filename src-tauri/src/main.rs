@@ -2,6 +2,7 @@
 
 mod applog;
 mod canvas;
+mod clipboard;
 mod estart;
 mod foreground;
 mod framestorage;
@@ -365,6 +366,7 @@ fn main() {
             commands::reveal_path,
             commands::open_path,
             canvas::capture_webview,
+            clipboard::clipboard_text,
             pagekeys::app_frame_action,
             notify::notify_os,
             macwindow::set_folded_chrome,

@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Translate offers what you just copied: a word or a short sentence shows as a Paste chip under the box, and a click
+  or Tab pastes and translates it. Links, paths, file names, commands, code, numbers and images are never offered. On a
+  Mac, macOS may ask whether arcterm can paste from other apps. <!-- try: translate -->
 - A council's experts can put a small table, a numbered list or a flowchart in an idea or a reply when it reads
   better than sentences, and the Discussion and the report draw it as one, a table with its copy button. Councils
   started before this update have none.

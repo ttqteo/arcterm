@@ -12,10 +12,12 @@ import {
     isCurrent,
     langName,
     LANGUAGES,
+    looksTranslatable,
     MAX_CHARS,
     PAIR_KEY,
     parseHistory,
     parsePair,
+    pasteSuggestion,
     pickVoice,
     recordEntry,
     removeEntry,
@@ -356,5 +358,97 @@ describe("reading aloud", () => {
         expect(pickVoice(voices, "vi")?.name).toBe("Linh");
         expect(pickVoice(voices, "ja")).toBeNull();
         expect(pickVoice([], "en")).toBeNull();
+    });
+});
+
+describe("looksTranslatable", () => {
+    it("takes a word, a phrase or a short sentence in any script", () => {
+        for (const t of [
+            "serendipity",
+            "At a glance",
+            "  well-known  ",
+            "don't",
+            "Trong nháy mắt",
+            "お疲れ様です",
+            "The build is orchestrated by Task, a make replacement.",
+            "## At a glance",
+            "two lines\nof prose",
+        ]) {
+            expect(looksTranslatable(t), t).toBe(true);
+        }
+    });
+
+    it("refuses links, addresses and paths", () => {
+        for (const t of [
+            "https://example.com/a",
+            "see https://example.com for more",
+            "www.example.com",
+            "mailto:me@example.com",
+            "me@example.com",
+            "/Users/me/notes.md",
+            "~/Downloads",
+            "./scripts/verify.mjs",
+            "C:\\Users\\me",
+            "frontend/app",
+        ]) {
+            expect(looksTranslatable(t), t).toBe(false);
+        }
+    });
+
+    it("refuses file names, identifiers, hashes and numbers", () => {
+        for (const t of [
+            "photo.png",
+            "translatemodel.ts",
+            "translate_model",
+            "pasteSuggestion",
+            "6e31e2e04",
+            "a3f9c2d1-77b0-4c1e-9d2a-0b8f1e2c3d4e",
+            "v0.15.11",
+            "1,234.56",
+            "(555) 123-4567",
+            "#12345",
+        ]) {
+            expect(looksTranslatable(t), t).toBe(false);
+        }
+    });
+
+    it("refuses commands and code", () => {
+        for (const t of [
+            "git status",
+            "npm run build",
+            "$ ls -la",
+            "task dev --watch",
+            "const x = { a: 1 }",
+            "return a && b",
+            "<div>hi</div>",
+            "`code`",
+            "doThing();",
+        ]) {
+            expect(looksTranslatable(t), t).toBe(false);
+        }
+    });
+
+    it("refuses blank, long and many-line text", () => {
+        expect(looksTranslatable("")).toBe(false);
+        expect(looksTranslatable("   \n ")).toBe(false);
+        expect(looksTranslatable("word ".repeat(70))).toBe(false);
+        expect(looksTranslatable("one\ntwo\nthree\nfour")).toBe(false);
+    });
+});
+
+describe("pasteSuggestion", () => {
+    it("offers the copied text, trimmed", () => {
+        expect(pasteSuggestion("  At a glance\n", "", "")).toBe("At a glance");
+    });
+
+    it("offers nothing for no text or text that is not words", () => {
+        expect(pasteSuggestion(null, "", "")).toBeNull();
+        expect(pasteSuggestion("https://example.com", "", "")).toBeNull();
+    });
+
+    it("offers nothing the box already holds or the translation just made", () => {
+        expect(pasteSuggestion("At a glance", " At a glance ", "")).toBeNull();
+        expect(pasteSuggestion("Trong nháy mắt", "At a glance", "Trong nháy mắt")).toBeNull();
+        expect(pasteSuggestion("serendipity", "At a glance", "Trong nháy mắt")).toBe("serendipity");
     });
 });

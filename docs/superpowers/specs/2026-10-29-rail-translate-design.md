@@ -117,6 +117,22 @@ from there is an ordinary ledge tab.
 - A request that returns after a newer one has started is dropped, so a slow reply never overwrites a newer
   translation. Emptying the box or pressing × counts as newer too, so a late reply never refills a cleared result.
 
+### Paste suggestion
+
+Added 2026-11-01. As the panel opens, and when the window comes back to the front while it is open, the panel looks at
+the clipboard. A new copy that reads as words to translate (a word, a phrase, a sentence or two: at most 300
+characters and 3 lines, mostly letters, no link, path, file name, flag, command, code, identifier or number;
+`translatemodel.looksTranslatable`) shows as a **Paste** chip under the input; a click or Tab replaces the box's text
+with it and translates at once. Typing, closing the panel or taking it passes it over, and each copy is offered once:
+the host reads the text only when the clipboard's change counter moved since the last read. Text equal to the box's or
+to the translation just made (the copy button's) is never offered.
+
+The page cannot read the clipboard itself (WKWebView pops a Paste callout, WebView2 asks a permission), so the Tauri
+host answers `clipboard_text` (`src-tauri/src/clipboard.rs`: NSPasteboard on a Mac, Win32 on Windows), with no text
+for a file or an image. On a Mac, reading the text makes macOS ask whether arcterm may paste from other apps unless it
+is set to Allow under System Settings → Privacy & Security → Paste from Other Apps; set to Deny, the empty box says
+how to allow it.
+
 ## Delivery
 
 Two plans (builder question 2):

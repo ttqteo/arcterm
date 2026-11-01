@@ -28,6 +28,7 @@ export const BROWSER_COMMANDS: readonly string[] = [
     "app_foreground",
     "capture_webview",
     "app_frame_action",
+    "clipboard_text",
     ...NO_OPS,
 ];
 
@@ -52,6 +53,10 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
             throw new Error("window capture needs the Tauri host");
         case "app_frame_action":
             return false as T; // a page cannot reach into a cross-origin frame: Home and the window's history stand in
+        case "clipboard_text":
+            // a page reads the clipboard only behind a prompt, so nothing is ever copied; a scenario stands in for a copy
+            // with window.__arcClipboardStub (translatestore.ts)
+            return { change: 0, text: null, blocked: false } as T;
 
         case "fe_log":
             console.log(`[fe-log] ${String(args?.msg)}`);

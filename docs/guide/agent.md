@@ -476,7 +476,7 @@ Phím đơn (`j`, `k`, `d`, `f`, `r`, `c`, `Esc`…) chỉ có tác dụng khi b
 | `f` / `F11` | Toàn màn hình terminal (`F11` dùng được trong terminal) |
 | `Shift+F` | Bật/tắt Float |
 | `⌘⇧N` | Mở Float thẳng vào tab Note, bấm lại để về terminal |
-| `Ctrl+Shift+D` (`⌘⇧D` trên Mac) | Mở panel **Translate** bên cạnh nav rail (nút **Translate** nằm trên **Setup**), bấm lại để đóng; gõ hoặc dán văn bản là bản dịch hiện bên dưới, mặc định từ tiếng Anh sang tiếng Việt, `Esc` hoặc bấm ra ngoài để đóng (dùng được cả trong terminal) |
+| `Ctrl+Shift+D` (`⌘⇧D` trên Mac) | Mở panel **Translate** bên cạnh nav rail (nút **Translate** nằm trên **Setup**), bấm lại để đóng; gõ hoặc dán văn bản là bản dịch hiện bên dưới, mặc định từ tiếng Anh sang tiếng Việt; vừa copy một từ hay một câu ngắn thì dưới ô hiện chip **Paste**, bấm vào hoặc `Tab` để dán và dịch luôn (link, đường dẫn, tên file, lệnh, code, số và ảnh thì không gợi ý); `Esc` hoặc bấm ra ngoài để đóng (dùng được cả trong terminal) |
 | `r` | Mở review của agent (Spec/Plan review hoặc Doc review) / về lại terminal |
 | `c` | Hiện canvas của agent / về terminal |
 | `Esc` | Về Cockpit; thoát toàn màn hình trước; từ History hoặc transcript thì về terminal; trong subagent thì về agent cha |

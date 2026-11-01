@@ -414,6 +414,90 @@ export function pickVoice<V extends VoiceLike>(voices: readonly V[], lang: strin
     return best;
 }
 
+// ---- the paste suggestion ----
+
+// The longest copied text the panel offers to paste: a word, a phrase or a sentence or two, not a document or a log.
+export const SUGGEST_MAX_CHARS = 300;
+export const SUGGEST_MAX_LINES = 3;
+
+// command-line tools whose name is no everyday English word, so a copy starting with one is a command, not a phrase
+const COMMANDS = new Set([
+    "git",
+    "npm",
+    "npx",
+    "pnpm",
+    "yarn",
+    "cd",
+    "ls",
+    "sudo",
+    "brew",
+    "cargo",
+    "wsh",
+    "pip",
+    "python3",
+    "docker",
+    "kubectl",
+    "curl",
+    "ssh",
+    "rm",
+    "mkdir",
+    "grep",
+]);
+
+// a link or an address in a token: a scheme (https://, file:, mailto:), www., or an email address
+const LINK = /^[a-z][a-z0-9+.-]*:\/\/|^(mailto|file|data|tel):|^www\.|^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
+// a path in a token: from the root, home or here, a drive letter, or a backslash
+const PATH = /^(\/|~\/|\.{1,2}\/|[a-z]:[\\/])|\\/i;
+// code anywhere in the text: braces, angle brackets, backticks, arrows, comparisons, shell substitutions, a line ending in ;
+const CODE = /[{}<>`]|=>|==|&&|\|\||\$\(|::|\(\)|;\s*$/m;
+
+/** Whether a copied text reads as words to translate, not a link, a path, a file name, a command, code, an identifier
+ *  or a number. */
+export function looksTranslatable(raw: string): boolean {
+    const text = raw.trim();
+    if (text === "" || text.length > SUGGEST_MAX_CHARS || text.split(/\r?\n/).length > SUGGEST_MAX_LINES) {
+        return false;
+    }
+    // mostly letters: a price, a phone number, a version or a hash with a letter or two is not words
+    const solid = text.replace(/\s/g, "");
+    const letters = solid.match(/\p{L}/gu)?.length ?? 0;
+    if (letters === 0 || letters / solid.length < 0.5) {
+        return false;
+    }
+    // code, or a command after a shell prompt
+    if (CODE.test(text) || /^[$%] /.test(text)) {
+        return false;
+    }
+    const tokens = text.split(/\s+/);
+    // a link, a path or a flag (-v, --help) anywhere
+    if (tokens.some((t) => LINK.test(t) || PATH.test(t) || /^--?\p{L}/u.test(t))) {
+        return false;
+    }
+    if (tokens.length > 1) {
+        return !COMMANDS.has(tokens[0].toLowerCase());
+    }
+    // one token: not a file name (photo.png), a path (src/app), an identifier (snake_case, camelCase) or letters mixed
+    // with digits (a hash, an id, a version)
+    const word = tokens[0];
+    return !(
+        /^[\p{L}\p{N}_-]+(\.[\p{L}\p{N}_-]+)*\.[a-z0-9]{1,5}$/iu.test(word) ||
+        word.includes("/") ||
+        word.includes("_") ||
+        /\p{Ll}\p{Lu}/u.test(word) ||
+        (/\p{N}/u.test(word) && /\p{L}/u.test(word))
+    );
+}
+
+/** The copied text the panel offers to paste, trimmed; null when there is none: nothing copied, not words to translate,
+ *  or what the box already holds, or the translation the panel just made (its copy button put it there). */
+export function pasteSuggestion(clip: string | null, input: string, translation: string): string | null {
+    const text = clip?.trim() ?? "";
+    if (!looksTranslatable(text) || text === input.trim() || text === translation.trim()) {
+        return null;
+    }
+    return text;
+}
+
 /** The one line under the input when a translation failed. */
 export function translateErrorLine(err: unknown): string {
     const raw = err instanceof Error ? err.message : String(err);

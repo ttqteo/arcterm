@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Quick translate's state (docs/superpowers/specs/2026-10-29-rail-translate-design.md): whether the panel is up, the
-// input, the last answer, the error line, the language pair and the history, with the debounce and the ordering of
-// replies. Module-level atoms: the rail's panel unmounts when it closes and every surface but Agent unmounts on a
+// input, the last answer, the error line, the language pair, the history and the paste suggestion from the clipboard,
+// with the debounce and the ordering of replies. Module-level atoms: the rail's panel unmounts when it closes and every surface but Agent unmounts on a
 // switch, and the text must outlive both (it does not outlive the launch; the pair and the history do, in
 // localStorage). The pure parts are
 // translatemodel.ts; the engine is translateengine.ts. Float shows the same panel on its own, and the lines at the end
 // keep the two variants and the Note tab from showing together.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { invoke } from "@tauri-apps/api/core";
 import { atom, type PrimitiveAtom } from "jotai";
 import { closeFloatNote, floatNoteOpenAtom } from "./floatnotestore";
 import { floatModeAtom } from "./floatstore";
@@ -22,6 +23,7 @@ import {
     PAIR_KEY,
     parseHistory,
     parsePair,
+    pasteSuggestion,
     recordEntry,
     removeEntry,
     requestFor,
@@ -142,6 +144,7 @@ export function removeHistoryEntry(key: string): void {
 /** A row clicked: its pair and text come back into the box and are translated at once, which moves it to the top. */
 export function reuseHistoryEntry(entry: HistoryEntry): void {
     flushPending();
+    globalStore.set(translateClipAtom, null);
     globalStore.set(translatePairAtom, { source: entry.source, target: entry.target });
     globalStore.set(translateTextAtom, entry.text);
     send();
@@ -192,6 +195,8 @@ function send(): void {
 export function setTranslateText(text: string): void {
     // an edit within HISTORY_SETTLE_MS of the answer means it was for a half-typed text
     dropPending();
+    // typing (or pasting by hand) passes the suggestion over
+    globalStore.set(translateClipAtom, null);
     globalStore.set(translateTextAtom, text);
     if (text.trim() === "") {
         send();
@@ -234,6 +239,70 @@ export function swapTranslate(): void {
     send();
 }
 
+// ---- the paste suggestion ----
+
+/** The host's clipboard_text answer (src-tauri/src/clipboard.rs): the clipboard's change counter, its text when it
+ *  changed since the read asked about (null for no text, a file, an image or a long text), and whether macOS denies
+ *  arcterm the clipboard (Paste from Other Apps set to Deny). */
+export type ClipRead = { change: number; text: string | null; blocked: boolean };
+
+// the copied text offered under the input, to paste and translate in one go; null for none
+export const translateClipAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+// macOS denies arcterm the clipboard, so no suggestion can come: the panel says how to allow it
+export const translateClipBlockedAtom = atom(false) as PrimitiveAtom<boolean>;
+
+// the clipboard change the panel last read: a check reads the text again only after a newer copy, so each copy is
+// offered once (and on a Mac, macOS asks about pasting from another app at most once per copy)
+let clipChange = -1;
+// counts checks; an answer for an older one is dropped
+let clipSeq = 0;
+
+// scenarios.mjs sets window.__arcClipboardStub ({ change, text, blocked }) to stand in for a copy, on the Tauri host as in
+// the browser app; the check is compiled out of a production build
+function devClipboardStub(): ClipRead | null {
+    if (!import.meta.env.DEV || typeof window === "undefined") {
+        return null;
+    }
+    const stub = (window as unknown as { __arcClipboardStub?: ClipRead }).__arcClipboardStub;
+    return stub != null && typeof stub === "object" ? stub : null;
+}
+
+/** Looks at the clipboard as the panel opens and when the window comes back to the front while it is open: a new copy
+ *  that reads as words to translate (translatemodel.pasteSuggestion) becomes the suggestion. */
+export async function checkClipboard(): Promise<void> {
+    const seq = ++clipSeq;
+    let read: ClipRead;
+    try {
+        read = devClipboardStub() ?? (await invoke<ClipRead>("clipboard_text", { since: clipChange }));
+    } catch (err) {
+        console.warn("reading the clipboard failed", err);
+        return;
+    }
+    // the panel closed meanwhile: the copy stays unread, for the next time it opens
+    if (seq !== clipSeq || !globalStore.get(translateOpenAtom)) {
+        return;
+    }
+    globalStore.set(translateClipBlockedAtom, read.blocked);
+    if (read.blocked || read.change === clipChange) {
+        return;
+    }
+    clipChange = read.change;
+    const translation = globalStore.get(translateResultAtom)?.translation ?? "";
+    globalStore.set(translateClipAtom, pasteSuggestion(read.text, globalStore.get(translateTextAtom), translation));
+}
+
+/** The suggestion taken (its chip, or Tab in the box): the copied text replaces the box's and is translated at once. */
+export function acceptClipSuggestion(): void {
+    const clip = globalStore.get(translateClipAtom);
+    if (clip == null) {
+        return;
+    }
+    flushPending();
+    globalStore.set(translateClipAtom, null);
+    globalStore.set(translateTextAtom, clip);
+    send();
+}
+
 // ---- the panel ----
 
 export function openTranslate(): void {
@@ -242,6 +311,8 @@ export function openTranslate(): void {
 
 export function closeTranslate(): void {
     flushPending();
+    // a suggestion is offered while the panel is up; its copy is not offered again
+    globalStore.set(translateClipAtom, null);
     globalStore.set(translateOpenAtom, false);
 }
 

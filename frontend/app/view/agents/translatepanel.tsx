@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Quick translate's panel (docs/superpowers/specs/2026-10-29-rail-translate-design.md): one narrow column like Google
-// Translate's, the language row, the input, the word details and the translation, or the history while the box is
-// empty. TranslateBody is that column on its
+// Translate's, the language row, the input, the paste suggestion, the word details and the translation, or the history
+// while the box is empty. TranslateBody is that column on its
 // own, so Float can show it too; TranslateRailPanel is its floating frame beside the nav rail (cockpitshell.tsx) and
 // TranslateFloatPanel its frame over Float's terminal area (cockpit-root.tsx). The state is translatestore.ts, the pure
 // parts translatemodel.ts.
@@ -12,7 +12,7 @@ import { MOTION } from "@/app/element/motiontokens";
 import { Segmented } from "@/app/element/segmented";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ArrowLeftRight, Check, CircleAlert, Copy, Star, Volume2, X } from "lucide-react";
+import { ArrowLeftRight, Check, CircleAlert, ClipboardPaste, Copy, Star, Volume2, X } from "lucide-react";
 import { motion, type Variants } from "motion/react";
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentsViewModel } from "./agents";
@@ -30,6 +30,8 @@ import {
 } from "./translatemodel";
 import { cannotSpeak, speak, stopSpeaking, useSpeechVoices } from "./translatespeech";
 import {
+    acceptClipSuggestion,
+    checkClipboard,
     clearTranslate,
     closeTranslate,
     removeHistoryEntry,
@@ -38,6 +40,8 @@ import {
     setTranslateText,
     swapTranslate,
     toggleHistoryStar,
+    translateClipAtom,
+    translateClipBlockedAtom,
     translateErrorAtom,
     translateHistoryAtom,
     translateHistoryFilterAtom,
@@ -174,15 +178,24 @@ function TranslateHistory() {
     );
 }
 
-/** The column: language row, input, word details, translation (or the error line in its place, or the history while the
- *  box is empty). `onClose` runs on Esc. */
+/** The column: language row, input, the paste suggestion (or the line saying macOS denies the clipboard), word details,
+ *  translation (or the error line in its place, or the history while the box is empty). `onClose` runs on Esc. */
 export function TranslateBody({ onClose }: { onClose: () => void }) {
     const pair = useAtomValue(translatePairAtom);
     const text = useAtomValue(translateTextAtom);
     const result = useAtomValue(translateResultAtom);
     const error = useAtomValue(translateErrorAtom);
     const hasHistory = useAtomValue(translateHistoryAtom).length > 0;
+    const clip = useAtomValue(translateClipAtom);
+    const clipBlocked = useAtomValue(translateClipBlockedAtom);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+    // a copy made before opening, or in another app while the panel stayed up, is offered under the input
+    useEffect(() => {
+        void checkClipboard();
+        const onFocus = () => void checkClipboard();
+        window.addEventListener("focus", onFocus);
+        return () => window.removeEventListener("focus", onFocus);
+    }, []);
     // opening puts the caret in the box, at the end of the text kept from last time
     useEffect(() => {
         const input = inputRef.current;
@@ -279,6 +292,13 @@ export function TranslateBody({ onClose }: { onClose: () => void }) {
                     value={text}
                     placeholder="Type or paste text"
                     onChange={(e) => setTranslateText(e.target.value)}
+                    onKeyDown={(e) => {
+                        // Tab takes the paste suggestion while one shows; otherwise it moves on as usual
+                        if (e.key === "Tab" && clip != null && !(e.shiftKey || e.altKey || e.ctrlKey || e.metaKey)) {
+                            e.preventDefault();
+                            acceptClipSuggestion();
+                        }
+                    }}
                     className="field-sizing-content max-h-[200px] min-h-[84px] w-full resize-none rounded-[8px] border border-edge-mid bg-transparent py-2 pl-3 pr-8 text-[14px] leading-[20px] text-primary caret-primary outline-none placeholder:text-muted focus:border-edge-strong"
                 />
                 {text.trim() !== "" ? (
@@ -305,6 +325,38 @@ export function TranslateBody({ onClose }: { onClose: () => void }) {
                     </button>
                 ) : null}
             </div>
+            {clip != null ? (
+                <button
+                    type="button"
+                    data-translate-paste
+                    title="Paste and translate (Tab)"
+                    onClick={() => {
+                        acceptClipSuggestion();
+                        inputRef.current?.focus({ preventScroll: true });
+                    }}
+                    className="flex min-w-0 max-w-full flex-none cursor-pointer items-center gap-1.5 self-start rounded-[7px] border border-edge-mid bg-surface-raised py-1 pl-2 pr-1.5 text-[12px] leading-[16px] text-secondary hover:border-edge-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    <ClipboardPaste size={13} strokeWidth={1.8} className="flex-none text-muted" />
+                    <span className="flex-none">Paste</span>
+                    <span className="min-w-0 truncate text-primary">{clip}</span>
+                    <kbd className="flex-none rounded-[4px] border border-edge-mid px-[5px] font-mono text-[10.5px] text-muted">
+                        Tab
+                    </kbd>
+                </button>
+            ) : clipBlocked && text === "" ? (
+                <div
+                    role="status"
+                    data-translate-clip-blocked
+                    className="flex flex-none items-start gap-2 px-1 text-[12px] leading-[17px] text-muted"
+                >
+                    <CircleAlert size={13} strokeWidth={2} className="mt-[2px] flex-none text-warning" />
+                    <span>
+                        macOS keeps arcterm from reading the clipboard, so text you copy can't be offered here. To allow
+                        it: System Settings → Privacy &amp; Security → Paste from Other Apps, then quit and reopen
+                        arcterm.
+                    </span>
+                </div>
+            ) : null}
             {details != null ? (
                 <div
                     data-translate-details
