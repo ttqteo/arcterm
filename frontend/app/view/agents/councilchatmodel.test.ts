@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
     DRAFT_ACTIONS,
     DRAFT_WAIT,
+    askChips,
     councilChannel,
     councilThread,
     ideaOrder,
     insertMention,
     mentionPicker,
     moveIdea,
+    namedFile,
     onlyLine,
+    readsFiles,
     replyReach,
     seatChips,
     stepChip,
@@ -1038,5 +1041,90 @@ describe("the question's limits, a seat's letters and the seat filters", () => {
         expect([sk.short, sk.initials, sk.ideas, sk.replies]).toEqual(["Skeptic", "SK", 1, 1]);
         expect(onlyLine(sk)).toBe("Only Skeptic: 1 idea and 1 reply");
         expect(onlyLine({ short: "Định vị", ideas: 7, replies: 12 })).toBe("Only Định vị: 7 ideas and 12 replies");
+    });
+});
+
+describe("askChips: the questions to ask next", () => {
+    const base = {
+        id: "c1",
+        project: "/p",
+        feature: "Idle sleep",
+        state: "done",
+        round: 3,
+        tokens: 0,
+        calls: 0,
+        created: 0,
+        updated: 0,
+        experts: [
+            { id: "ux", name: "UX", brief: "", model: "sonnet" },
+            { id: "skeptic", name: "Skeptic", brief: "", model: "sonnet" },
+            { id: "coordinator", name: "Coordinator", brief: "", model: "opus", coordinator: true },
+        ],
+    } as Council;
+    const summary = (asks: CouncilAsk[]) => ({ text: "", directions: [], outcomes: {}, at: 0, asks });
+
+    it("puts the seat's @ name before a question for one seat, and none before one for everyone", () => {
+        const c = {
+            ...base,
+            summary: summary([
+                { text: "Does one minute hold on a Mac?", to: "skeptic" },
+                { text: "What do we log first?" },
+            ]),
+        };
+        expect(askChips(c)).toEqual([
+            { text: "Does one minute hold on a Mac?", to: "skeptic", fill: "@Skeptic Does one minute hold on a Mac?" },
+            { text: "What do we log first?", to: "", fill: "What do we log first?" },
+        ]);
+    });
+
+    it("sends a question for a seat that is not on the panel, or the coordinator, to everyone", () => {
+        const c = {
+            ...base,
+            summary: summary([
+                { text: "Why?", to: "gone" },
+                { text: "Who writes it?", to: "coordinator" },
+            ]),
+        };
+        expect(askChips(c).map((a) => a.fill)).toEqual(["Why?", "Who writes it?"]);
+    });
+
+    it("leaves out a question the person has already asked, and has none without a report", () => {
+        const c = {
+            ...base,
+            summary: summary([{ text: "Why?", to: "ux" }, { text: "What next?" }]),
+            replies: [{ id: "r1", proposalid: "", author: "you", text: "@UX Why?", round: 4, ts: 1 }],
+        } as Council;
+        expect(askChips(c).map((a) => a.text)).toEqual(["What next?"]);
+        expect(askChips(base)).toEqual([]);
+    });
+});
+
+describe("namedFile and readsFiles: a follow-up reads files when the question names one", () => {
+    it.each([
+        ["Trong rail-apps.json, app nào được ghim?", "rail-apps.json"],
+        ["Look at pkg/services/idle.go first", "pkg/services/idle.go"],
+        ["check pkg/services/idle before", "pkg/services/idle"],
+        ["what does ./run.sh do", "./run.sh"],
+        ["see ~/notes/plan", "~/notes/plan"],
+        ["is `cfg.timeout` read anywhere?", "cfg.timeout"],
+        ["(adaptive.json) holds it", "adaptive.json"],
+    ])("%s names %s", (text, file) => {
+        expect(namedFile(text)).toBe(file);
+    });
+
+    it.each([
+        "Tuần này mình chỉ có 5 tiếng, làm hướng 1 hay hướng 3?",
+        "Is the pass/fail split by mac/windows fair?",
+        "Does 1.5 s matter here? e.g. on a Mac.",
+        "What about plan-a vs plan-b?",
+    ])("%s names no file", (text) => {
+        expect(namedFile(text)).toBe("");
+    });
+
+    it("is on when the question names a file, says which, and the person's own choice wins", () => {
+        expect(readsFiles(null, "Trong rail-apps.json có gì?")).toEqual({ on: true, why: "rail-apps.json" });
+        expect(readsFiles(null, "Làm hướng nào trước?")).toEqual({ on: false, why: "" });
+        expect(readsFiles(false, "Trong rail-apps.json có gì?")).toEqual({ on: false, why: "" });
+        expect(readsFiles(true, "Làm hướng nào trước?")).toEqual({ on: true, why: "" });
     });
 });

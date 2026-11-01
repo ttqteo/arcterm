@@ -60,6 +60,9 @@ const maxPicks = 3
 // (the rest of a Review's go under Also raised, one line each).
 const maxDirections = 3
 
+// MaxAsks is how many questions to ask next a report suggests.
+const MaxAsks = 3
+
 // WeakNote is the coordinator's remark that a claim does not hold up. Ref names a proposal id, a reply id or an
 // evidence ref; MarkWeak applies it.
 type WeakNote struct {
@@ -359,6 +362,7 @@ func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 		} `json:"kept"`
 		Outcomes map[string]string `json:"outcomes"`
 		Answer   string            `json:"answer"`
+		Asks     []CouncilAsk      `json:"asks"`
 		Weak     []WeakNote        `json:"weak"`
 	}
 	if err := decodeReply(reply, what, &r); err != nil {
@@ -430,7 +434,13 @@ func ParseSynthesis(reply string) (CouncilSummary, []WeakNote, error) {
 			Stances:   map[string]CouncilStance{},
 		})
 	}
-	return CouncilSummary{Text: strings.TrimSpace(r.Text), Directions: dirs, Kept: kept, Outcomes: outcomes, Answer: strings.TrimSpace(r.Answer)}, weak, nil
+	var asks []CouncilAsk
+	for _, a := range r.Asks {
+		if text := strings.TrimSpace(a.Text); text != "" {
+			asks = append(asks, CouncilAsk{Text: text, To: strings.TrimSpace(a.To)})
+		}
+	}
+	return CouncilSummary{Text: strings.TrimSpace(r.Text), Directions: dirs, Kept: kept, Outcomes: outcomes, Answer: strings.TrimSpace(r.Answer), Asks: asks}, weak, nil
 }
 
 // PlainReply is what a live agent's answer becomes when it holds none of the JSON the round asks for: its own words, the

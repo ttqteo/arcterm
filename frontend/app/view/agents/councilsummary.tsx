@@ -38,6 +38,7 @@ import { showCouncil, showCouncilSetup } from "./agentcenter";
 import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { CouncilAvatar, CouncilText, MarkedText, useKeptScroll } from "./councilchat";
+import { askChips } from "./councilchatmodel";
 import { avatarTone, seatInitials } from "./councildiscussionmodel";
 import {
     STANCE_WORD,
@@ -51,6 +52,7 @@ import {
     type StanceLabel,
 } from "./councilmodel";
 import {
+    councilChatDraftAtom,
     councilOpenProposalAtom,
     councilSelAtom,
     rateCouncil,
@@ -1139,6 +1141,13 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
         showCouncil(c.id, "discussion");
     };
 
+    // Ask next puts the question in the Discussion's box, to edit and send there
+    const askNext = (fill: string) => {
+        globalStore.set(councilChatDraftAtom(c.id), (d) => ({ ...d, texts: { ...d.texts, [""]: fill } }));
+        showCouncil(c.id, "discussion");
+    };
+    const asks = useMemo(() => askChips(c), [c]);
+
     const toggle = (rank: number) => setOpen(open.includes(rank) ? open.filter((r) => r !== rank) : [...open, rank]);
 
     const written = writtenLine(c);
@@ -1327,6 +1336,28 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                                             </h2>
                                             {kept.map((row, i) => (
                                                 <KeptCard key={`${row.direction.rank}-${i}`} row={row} />
+                                            ))}
+                                        </section>
+                                    ) : null}
+                                    {asks.length > 0 ? (
+                                        <section data-council-asks-next className="mt-[14px] flex flex-col gap-[8px]">
+                                            <h2 className="m-0 text-[14px] font-semibold text-primary">Ask next</h2>
+                                            {asks.map((a, i) => (
+                                                <button
+                                                    key={a.text}
+                                                    type="button"
+                                                    data-council-summary-ask={i}
+                                                    onClick={() => askNext(a.fill)}
+                                                    title="Open the Discussion with this question in the box"
+                                                    className="flex cursor-pointer items-baseline gap-[10px] rounded-[10px] border border-edge-mid bg-surface-raised px-[14px] py-[10px] text-left outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
+                                                >
+                                                    <span className="min-w-0 flex-1 text-[13.5px] leading-[1.5] text-secondary">
+                                                        {a.text}
+                                                    </span>
+                                                    <span className="flex-none text-[12px] text-muted">
+                                                        {c.experts.find((e) => e.id === a.to)?.name ?? "Everyone"}
+                                                    </span>
+                                                </button>
                                             ))}
                                         </section>
                                     ) : null}

@@ -13,7 +13,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-01.4"
+const HarnessVersion = "2026-11-01.5"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -80,6 +80,10 @@ const (
   ],
   "kept": [
     {"title": "a short title for a direction also raised", "reasoning": "one line: what it asks for", "from": ["P5"]}
+  ],
+  "asks": [
+    {"text": "a question the person could ask next, as they would type it", "to": "skeptic"},
+    {"text": "one for the whole panel", "to": ""}
   ],
   "outcomes": {"P1": "Direction 1", "P2": "Merged into direction 1", "P4": "Withdrawn in round 2", "P5": "Also raised"},
   "weak": [{"ref": "P3", "note": "\"about 3 s\" has no measurement"}]
@@ -198,6 +202,10 @@ const (
   "kept": [
     {"title": "a short title for a wild idea kept aside", "reasoning": "why it is worth remembering", "from": ["P5"]}
   ],
+  "asks": [
+    {"text": "a question the person could ask next, as they would type it", "to": "contrarian"},
+    {"text": "one for the whole panel", "to": ""}
+  ],
   "outcomes": {"P1": "Direction 1", "P2": "Merged into direction 1", "P5": "Kept aside", "P6": "Not picked"}
 }`
 )
@@ -225,11 +233,19 @@ const (
 		`plain sentence of at most 25 words, "text" at most three short sentences (about 60 words) on where the panel ` +
 		`landed, naming any missing expert in one clause. Do not retell the directions in "text", and put no path:line ` +
 		`or other evidence ref in either: the evidence stays with the directions. Write "answer" and "text" in the ` +
-		`language the person's question is written in; every other field stays in English.`
+		`language the person's question is written in, and "asks" too; every other field stays in English.`
 	summaryRuleNoQuestion = `The person reads "text" first, above the directions, so keep it short: at most three short ` +
 		`sentences (about 60 words) on where the panel landed, naming any missing expert in one clause. Do not retell ` +
 		`the directions, and put no path:line or other evidence ref in it: the evidence stays with the directions. ` +
-		`Write "text" in the language the feature is written in; every other field stays in English.`
+		`Write "text" in the language the feature is written in, and "asks" too; every other field stays in English.`
+
+	// askRule is in both synthesis prompts: the questions the report suggests the person ask next, which the Discussion
+	// offers above its composer.
+	askRule = `In "asks", write two or three questions the person could ask the panel next, each one whose answer would ` +
+		`change what they do: a point the experts still disagree on, a condition a direction rests on that nobody has ` +
+		`checked, or a view the panel was missing. Write each as the person would type it into the chat, at most 25 ` +
+		`words, and name an idea by what it says. "to" is the id of the expert best placed to answer it, or "" for the ` +
+		`whole panel.`
 
 	// changeRule is in both round 2 prompts: a revision's reply shows its one-line change, and the new argument only
 	// on the proposal itself.
@@ -246,7 +262,15 @@ const (
 		"Vietnamese, \"mình\" and \"bạn\"). Say the point first, then why. Keep sentences short, one thought each, with " +
 		"no parentheses and no clauses stacked behind a colon. Say a term or a reference in plain words the first time, " +
 		"unless the person used it: \"the panel two days ago suggested…\", not \"council 24-25\". In a reply on " +
-		"another seat's idea, talk to them by their name, as you would in a group chat. No emoji."
+		"another seat's idea, talk to its author as \"you\" (\"bạn\"), never by their name or role: a role called " +
+		"out reads like a noun, as in \"Phương pháp ơi\". No emoji."
+
+	// readWhenNeeded is how an expert answering the person uses its tools: the text first, a file only for a fact the
+	// text lacks, so a question about the discussion costs a text answer and one about a file reads it.
+	readWhenNeeded = "You have Read, Grep and Glob in the project folder. Answer from the text below when it holds " +
+		"what you need. Open a file only when an answer needs a fact the text does not hold, such as a number, a line " +
+		"or what a file says, or when the person asks you to look; then say which file you read. You review; you " +
+		"never edit anything."
 
 	// visualRule is in every prompt whose fields the Discussion shows as messages: it draws them as Markdown, so a table,
 	// a list or a mermaid diagram shows as one.
@@ -762,9 +786,10 @@ func SynthesisPrompt(c *Council) string {
 	b.WriteString("8. In \"weak\", mark any claim that cites no evidence, or whose evidence does not show what it says. " +
 		"\"ref\" is a proposal id, a reply id or an evidence ref; \"note\" says what is missing.\n")
 	b.WriteString("9. Treat the person's replies as the person's own view and weigh them.\n")
+	b.WriteString("10. " + askRule + "\n")
 	shape, summary := synthesisShapeNoQuestion, summaryRuleNoQuestion
 	if strings.TrimSpace(c.Question) != "" {
-		b.WriteString("10. In \"answer\", write one sentence that answers the question for the council directly: the " +
+		b.WriteString("11. In \"answer\", write one sentence that answers the question for the council directly: the " +
 			"answer itself, not a description of the discussion.\n")
 		shape, summary = synthesisShape, summaryRule
 	}
@@ -792,9 +817,10 @@ func writeBrainstormSynthesisTask(b *strings.Builder, c *Council) string {
 	b.WriteString("6. In \"outcomes\", give every idea its fate: " +
 		outcomeWords(c, "Direction N", "Merged into direction N", "Kept aside", "Not picked") + ".\n")
 	b.WriteString("7. Treat the person's replies as the person's own view and weigh them.\n")
+	b.WriteString("8. " + askRule + "\n")
 	shape, summary := brainstormSynthesisShapeNoQuestion, summaryRuleNoQuestion
 	if strings.TrimSpace(c.Question) != "" {
-		b.WriteString("8. In \"answer\", write one sentence that answers the question for the council directly: the " +
+		b.WriteString("9. In \"answer\", write one sentence that answers the question for the council directly: the " +
 			"answer itself, not a description of the discussion.\n")
 		shape, summary = brainstormSynthesisShape, summaryRule
 	}
@@ -822,7 +848,8 @@ func branchOf(c *Council, r CouncilReply) []CouncilReply {
 
 // AnswersPrompt asks one expert to answer the person's replies, the pass after the synthesis and a follow-up. For
 // each reply it carries only the branch the reply sits in (its proposal and the replies above it), then the
-// expert's own proposals. The expert has tools when any of the replies asked for them (Let them read code).
+// expert's own proposals. The expert has tools when any of the replies asked for them (Let them read files), and is
+// told to open a file only when an answer needs it (readWhenNeeded).
 func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 	tools := false
 	for _, r := range replies {
@@ -833,11 +860,11 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 	b.WriteString("\nThe council has already met. The person replied in the discussion, and you answer from your own " +
 		"angle, as yourself.\n")
 	if tools {
-		b.WriteString("You have Read, Grep and Glob in the project folder this time: read the code when an answer needs it. " +
-			"You review; you never edit anything.\n\n")
+		b.WriteString(readWhenNeeded + "\n\n")
 	} else {
 		b.WriteString("You have no tools this time: answer from the text below.\n\n")
 	}
+	writeReport(&b, c)
 
 	var own []CouncilProposal
 	for _, p := range sentProposals(c) {
@@ -880,6 +907,35 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 	b.WriteString("## What to do\n\n")
 	b.WriteString(answersTask(c))
 	return b.String()
+}
+
+// writeReport gives an expert answering the person the council's report as the person read it: the answer, then the
+// directions by number with their first steps, then the rest in a line each, so "direction 2" in a reply means
+// something. A council with no report yet writes nothing.
+func writeReport(b *strings.Builder, c *Council) {
+	s := c.Summary
+	if s == nil || len(s.Directions)+len(s.Kept) == 0 {
+		return
+	}
+	b.WriteString("## The council's report\n\nThe person has read it. A reply that names a direction by its number " +
+		"means this numbering.\n\n")
+	if a := strings.TrimSpace(s.Answer); a != "" {
+		fmt.Fprintf(b, "Answer: %s\n\n", a)
+	}
+	for i, d := range s.Directions {
+		fmt.Fprintf(b, "%d. %s", i+1, d.Title)
+		if d.FirstStep != "" {
+			fmt.Fprintf(b, ". First step: %s", d.FirstStep)
+		}
+		b.WriteString("\n")
+	}
+	if len(s.Kept) > 0 {
+		b.WriteString("\nAlso in the report, unranked:\n")
+		for _, d := range s.Kept {
+			fmt.Fprintf(b, "- %s\n", d.Title)
+		}
+	}
+	b.WriteString("\n")
 }
 
 // answersTask is what the pass after the synthesis asks, and the shape of the answer: the end of the answers prompt, and

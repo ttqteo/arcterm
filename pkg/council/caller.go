@@ -18,7 +18,7 @@ type CallReq struct {
 	Expert CouncilExpert
 	Cwd    string
 	Prompt string
-	Tools  bool // round 1, the Setup suggestion, a follow-up with Let them read code on
+	Tools  bool // round 1, the Setup suggestion, a follow-up with Let them read files on
 	OnTool func(text string)
 }
 

@@ -397,6 +397,33 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify(open) };
         });
 
+        await step("Ask next lists the report's three questions with whom each is for, and a click opens the Discussion with it in the box", async () => {
+            await openSummary(h, ctx);
+            const rows = await h.ev(
+                `[...document.querySelectorAll(${q(`${SUMMARY} [data-council-summary-ask]`)})].map((b) => b.innerText.replace(/\\s+/g, " ").trim())`
+            );
+            await h.shot("cdp-shots/council-summary-asknext.png");
+            await click(h, `${SUMMARY} [data-council-summary-ask="1"]`);
+            const box = q('[data-council-composer="channel"] [data-council-composer-input]');
+            const opened = await until(h, `document.querySelector(${box})?.value?.startsWith("@")`);
+            const filled = await h.ev(`document.querySelector(${box})?.value ?? ""`);
+            // back on the Summary for the steps after, the box emptied again
+            await h.ev(`(() => {
+                const el = document.querySelector(${box});
+                if (!el) return;
+                Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value").set.call(el, "");
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+            })()`);
+            await openSummary(h, ctx);
+            const ok =
+                rows.length === 3 &&
+                rows[0].endsWith("RAM") &&
+                rows[2].endsWith("Everyone") &&
+                opened &&
+                filled.endsWith("Would a new user find the pin hint without being told?");
+            return { ok, detail: JSON.stringify({ rows, filled }) };
+        });
+
         await step("the matrix is folded under Every expert on every idea, and unfolds to six rows by idea title, Withdrawn on the sixth", async () => {
             const toggle = "[data-council-matrix-toggle]";
             const label = await textOf(h, toggle);

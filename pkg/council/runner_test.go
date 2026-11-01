@@ -1426,7 +1426,7 @@ func TestReplyToADoneCouncilStartsAFollowUp(t *testing.T) {
 	}
 	for _, req := range ans {
 		if !req.Tools || req.OnTool == nil || req.Cwd != `D:\proj` {
-			t.Errorf("answer call for %s: tools %v, want Let them read code on", req.Expert.Id, req.Tools)
+			t.Errorf("answer call for %s: tools %v, want Let them read files on", req.Expert.Id, req.Tools)
 		}
 	}
 	if !replyOf(t, c, "r13").Answered || c.Calls != callsBefore+4 {
@@ -1442,7 +1442,7 @@ func TestReplyToADoneCouncilStartsAFollowUp(t *testing.T) {
 		}
 	}
 
-	// a second follow-up is round 5, and without tools when the person leaves Let them read code off
+	// a second follow-up is round 5, and without tools when the person leaves Let them read files off
 	if _, err := h.r.Reply("c1", "P1", "", "And this one?", false); err != nil {
 		t.Fatalf("second Reply: %v", err)
 	}
@@ -2781,6 +2781,21 @@ func TestApplyRound2Builds(t *testing.T) {
 		if r.Builds {
 			t.Errorf("reply %+v builds in a Review", r)
 		}
+	}
+}
+
+func TestCleanSummaryKeepsThreeAsksForThePanel(t *testing.T) {
+	c := fixtureCouncil("c1", StateDone, 3)
+	in := CouncilSummary{Asks: []CouncilAsk{
+		{Text: "Does it hold on a Mac?", To: "ux"},
+		{Text: "Does it hold on a Mac?", To: "ram"}, // the same question twice
+		{Text: "Who checks the RAM?", To: "ghost"},  // not on the panel: the whole panel answers
+		{Text: "What first?"},
+		{Text: "One too many", To: "ux"},
+	}}
+	want := []CouncilAsk{{Text: "Does it hold on a Mac?", To: "ux"}, {Text: "Who checks the RAM?"}, {Text: "What first?"}}
+	if got := cleanSummary(c, in).Asks; !reflect.DeepEqual(got, want) {
+		t.Errorf("asks = %+v, want %+v", got, want)
 	}
 }
 

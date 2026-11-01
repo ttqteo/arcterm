@@ -375,6 +375,11 @@
       "P4": "Direction 4",
       "P6": "Withdrawn in round 2"
     },
+    "asks": [
+      { "text": "How much RAM does an app kept awake hold after an hour?", "to": "ram" },
+      { "text": "Would a new user find the pin hint without being told?", "to": "newuser" },
+      { "text": "Which of these would you ship first if we had one day?" }
+    ],
     "at": 1792573860000
   },
   "stats": {

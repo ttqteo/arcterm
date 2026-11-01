@@ -443,14 +443,14 @@ export function estimateLabel(est: CouncilEstimateRtnData, minutes = true): stri
     return parts.join(" · ");
 }
 
-/** Pure: the cost label under a follow-up's composer: who answers, whether they read code, and the estimate (which
+/** Pure: the cost label under a follow-up's composer: who answers, whether they read files, and the estimate (which
  *  may not have come back yet). Empty when no one would answer. */
 export function followupLabel(est: CouncilEstimateRtnData | null, k: number, tools: boolean): string {
     if (k <= 0) {
         return "";
     }
     const who = k === 1 ? "1 expert answers" : `${k} experts answer`;
-    const head = tools ? `${who}, reading code` : who;
+    const head = tools ? `${who}, reading files` : who;
     return est == null ? head : `${head} · ${estimateLabel(est, false)}`;
 }
 

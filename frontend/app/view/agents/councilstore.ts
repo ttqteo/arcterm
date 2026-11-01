@@ -331,6 +331,18 @@ export const councilOpenProposalAtom = atomFamily(
     (_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>
 );
 
+/** What is typed and not sent in a council's chat, so it survives a trip to the Summary: the channel's composer under
+ *  `""`, a thread's under its idea's id; and Let them read files for the next follow-up: the person's own choice, or
+ *  null to let the question decide (`readsFiles`). The Summary's Ask next writes the channel's. */
+export interface CouncilChatDrafts {
+    texts: Record<string, string>;
+    tools: boolean | null;
+}
+
+export const councilChatDraftAtom = atomFamily(
+    (_id: string) => atom<CouncilChatDrafts>({ texts: {}, tools: null }) as PrimitiveAtom<CouncilChatDrafts>
+);
+
 /** The view each council was last shown on (showCouncil keeps it), so its tree row opens it there again. */
 export const councilLastViewAtom = atomFamily(
     (_id: string) => atom<KeptCouncilView | null>(null) as PrimitiveAtom<KeptCouncilView | null>

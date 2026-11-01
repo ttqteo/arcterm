@@ -15,7 +15,7 @@ const matrixReasonRunes = 120 // a matrix cell keeps one line of the reason, cut
 // Markdown is the report as a document, what `wsh council wait` and `show` print: the feature, the question and its
 // one-sentence answer, the coordinator's paragraph, the directions in rank order (a Brainstorm's ideas worth trying),
 // each with its first step and each expert's stance, then one line each for a Brainstorm's wild ideas kept aside or a
-// Review's directions also raised, then proposals × experts. Document adds the whole discussion and the run facts to it.
+// Review's directions also raised, the questions to ask next, then proposals × experts. Document adds the whole discussion and the run facts to it.
 func Markdown(c *Council) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Council: %s\n\n", c.Feature)
@@ -52,12 +52,27 @@ func Markdown(c *Council) string {
 			}
 			b.WriteString("\n")
 		}
+		if len(c.Summary.Asks) > 0 {
+			b.WriteString("## Ask next\n\n")
+			for _, a := range c.Summary.Asks {
+				fmt.Fprintf(&b, "- %s: %s\n", askedOf(c, a), oneLine(a.Text))
+			}
+			b.WriteString("\n")
+		}
 	}
 	if len(sentProposals(c)) > 0 {
 		b.WriteString("\n## Matrix\n\n")
 		writeMatrix(&b, c)
 	}
 	return b.String()
+}
+
+// askedOf is who a question to ask next goes to: the seat's name, or the whole panel.
+func askedOf(c *Council, a CouncilAsk) string {
+	if e, ok := seatOf(c, a.To); ok && a.To != "" {
+		return "To " + e.Name
+	}
+	return "To the whole panel"
 }
 
 // oneLine is text as one trimmed line.

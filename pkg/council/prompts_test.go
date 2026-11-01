@@ -149,7 +149,7 @@ func TestSynthesisPrompt(t *testing.T) {
 	p := SynthesisPrompt(c)
 
 	mustContain(t, "synthesis prompt", p, "You are Lead", "the coordinator", "Merge and rank.", "Idle sleep for services", "Which direction first?", "no tools",
-		evidenceRule, synthesisShape, stanceRule, summaryRule)
+		evidenceRule, synthesisShape, stanceRule, summaryRule, askRule)
 	// every proposal, the cut and the withdrawn ones too
 	mustContain(t, "synthesis prompt", p, "Title-one", "Title-two", "Title-three", "Title-four", "Title-five",
 		"The person cut this proposal at the pause", "Its author withdrew it in round 2")
@@ -252,8 +252,29 @@ func TestAnswersPromptSaysWhenToolsAreGiven(t *testing.T) {
 	r3 := c.Replies[2]
 	r3.Tools = true
 	p := AnswersPrompt(c, c.Experts[0], []CouncilReply{r3})
-	mustContain(t, "answers prompt", p, "Read, Grep and Glob")
+	// the tools, and to open a file only when the text does not hold the answer
+	mustContain(t, "answers prompt", p, readWhenNeeded)
 	mustNotContain(t, "answers prompt", p, "no tools")
+}
+
+func TestAnswersPromptCarriesTheReport(t *testing.T) {
+	c := promptCouncil()
+	p := AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]})
+	mustNotContain(t, "answers prompt before the report", p, "## The council's report")
+
+	c.Summary = &CouncilSummary{
+		Answer: "Show the state first.",
+		Directions: []CouncilDirection{
+			{Title: "Show the state", FirstStep: "Add the badge"},
+			{Title: "Sleep sooner"},
+		},
+		Kept: []CouncilDirection{{Title: "Wake on hover"}},
+	}
+	p = AnswersPrompt(c, c.Experts[0], []CouncilReply{c.Replies[2]})
+	report := section(t, p, "## The council's report")
+	// numbered as the person read it, so "direction 2" in a reply means something
+	mustContain(t, "report section", report, "Answer: Show the state first.", "1. Show the state. First step: Add the badge\n",
+		"2. Sleep sooner\n", "- Wake on hover")
 }
 
 // brainstormCouncil is promptCouncil as a Brainstorm: the same ideas, the third one wild, and a build among the replies.
@@ -532,5 +553,6 @@ func TestPromptsAskForTheMustReadMark(t *testing.T) {
 		mustContain(t, name+" round 2 prompt", Round2Prompt(c, e), voiceRule, visualRule, markRule)
 		mustContain(t, name+" answers prompt", AnswersPrompt(c, e, c.Replies), voiceRule, visualRule, markRule)
 		mustNotContain(t, name+" synthesis prompt", SynthesisPrompt(c), voiceRule, visualRule, markRule)
+		mustContain(t, name+" synthesis prompt", SynthesisPrompt(c), askRule)
 	}
 }

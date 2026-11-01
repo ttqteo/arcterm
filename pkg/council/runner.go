@@ -1302,7 +1302,7 @@ func applyAnswers(c *Council, e CouncilExpert, answers []Answer, round int, now 
 }
 
 // answerCall asks one expert to answer the replies it owes, and saves its answers as replies of the given round. It has
-// the read-only tools when a reply asked for them (Let them read code). A live agent is sent its own prompt, and what it
+// the read-only tools when a reply asked for them (Let them read files). A live agent is sent its own prompt, and what it
 // answers that holds no JSON is heard as one plain reply under the first reply it owes.
 func (r *Runner) answerCall(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, replies []CouncilReply, round int) {
 	tools := false
@@ -1490,7 +1490,7 @@ func followRound(c *Council) int {
 // whole council. It goes to the experts in its branch unless the text @-mentions some. Posted before round 2, or while
 // the council waits on the person, it is answered in the next reply pass (a seat that is a live agent gets it at its
 // next turn); posted while a run is on, it is answered by the pass after the synthesis; posted to a council that is
-// done, stopped or failed, it starts a follow-up round at once, with tools when the person turned Let them read code
+// done, stopped or failed, it starts a follow-up round at once, with tools when the person turned Let them read files
 // on, and the council returns to the state it was in.
 func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool) (*Council, error) {
 	text = strings.TrimSpace(text)
@@ -1689,7 +1689,27 @@ func cleanSummary(c *Council, s CouncilSummary) CouncilSummary {
 		}
 	}
 	s.Outcomes = outcomes
+	s.Asks = cleanAsks(s.Asks, panel)
 	return s
+}
+
+// cleanAsks keeps at most MaxAsks of the questions to ask next, each once, and sends one addressed to a seat that is not
+// on the panel to the whole panel instead.
+func cleanAsks(asks []CouncilAsk, panel map[string]bool) []CouncilAsk {
+	var out []CouncilAsk
+	for _, a := range asks {
+		if len(out) == MaxAsks {
+			break
+		}
+		if slices.ContainsFunc(out, func(o CouncilAsk) bool { return o.Text == a.Text }) {
+			continue
+		}
+		if !panel[a.To] {
+			a.To = ""
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // cleanDirection keeps the proposal ids of d that are on the council, once each, and the stances of the panel's

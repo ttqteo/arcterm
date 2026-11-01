@@ -636,6 +636,30 @@ async function done(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-done.png");
 
+    // the report's questions to ask next sit over the empty box; a click puts one in it, @ seat and all
+    const asks = await count(h, `${CHANNEL_COMPOSER} [data-council-ask]`);
+    await click(h, `${CHANNEL_COMPOSER} [data-council-ask="0"]`);
+    const box = sel(`${CHANNEL_COMPOSER} [data-council-composer-input]`);
+    await until(h, `document.querySelector(${box})?.value !== ""`).catch(() => {});
+    const filled = await h.ev(`document.querySelector(${box})?.value ?? ""`);
+    const hidden = !(await exists(h, `${CHANNEL_COMPOSER} [data-council-asks]`));
+    rec(
+        "done: Ask next offers the report's three questions over the empty box, and a click fills the box with the @ seat",
+        asks === 3 && filled.startsWith("@RAM How much RAM") && hidden,
+        { asks, filled, hidden }
+    );
+    await h.shot("cdp-shots/council-discussion-asknext.png");
+    await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "What does rail-apps.json hold?");
+    const auto = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "aria-checked");
+    const why = await attr(h, `${CHANNEL_COMPOSER} [data-council-tools]`, "data-council-tools-why");
+    rec(
+        "done: a question that names a file turns Let them read files on by itself and says which file",
+        auto === "true" && why === "rail-apps.json",
+        { auto, why }
+    );
+    await h.shot("cdp-shots/council-discussion-readsfiles.png");
+    await typeInto(h, `${CHANNEL_COMPOSER} [data-council-composer-input]`, "");
+
     // a follow-up on P2, in its thread
     const summarize = await text(h, "[data-council-summarize]");
     await click(h, '[data-council-thread-open="P2"]');
@@ -646,11 +670,11 @@ async function done(h, ctx, rec) {
     const plain = await settledText(h, `${THREAD_COMPOSER} [data-council-composer-hint]`, /^1 expert answers · ≈ 1 call · ~\d+k tokens$/);
 
     await click(h, `${THREAD_COMPOSER} [data-council-tools]`);
-    const reading = await settledText(h, `${THREAD_COMPOSER} [data-council-composer-hint]`, /reading code · ≈ 1 call · ~[\d.]+[kM] tokens$/);
+    const reading = await settledText(h, `${THREAD_COMPOSER} [data-council-composer-hint]`, /reading files · ≈ 1 call · ~[\d.]+[kM] tokens$/);
     const on = await attr(h, `${THREAD_COMPOSER} [data-council-tools]`, "aria-checked");
     rec(
-        "follow-up: Let them read code changes the cost label from `≈ 1 call` to one that says `reading code` with more tokens",
-        !plain.includes("reading code") && reading.includes("reading code") && tokensIn(reading) > tokensIn(plain) && on === "true",
+        "follow-up: Let them read files changes the cost label from `≈ 1 call` to one that says `reading files` with more tokens",
+        !plain.includes("reading files") && reading.includes("reading files") && tokensIn(reading) > tokensIn(plain) && on === "true",
         `${plain}  →  ${reading}`
     );
     rec("follow-up: the outdated summary reads `Summarize again`", summarize === "Summarize again", summarize);

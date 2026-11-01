@@ -841,3 +841,62 @@ export function insertMention(
         caret: start + mention.length + 1,
     };
 }
+
+// ---- what to ask next ----
+
+/** One question the report suggests the person ask next, as a chip above the channel's composer and a row in the
+ *  Summary: `text` as the coordinator wrote it, `to` the seat it is for ("" the whole panel), and `fill`, what a click
+ *  puts in the composer (`@<seat's name> ` before the text when it is for one seat). */
+export interface AskChip {
+    text: string;
+    to: string;
+    fill: string;
+}
+
+/** Pure: the report's questions to ask next that the person has not asked yet (no reply of theirs holds the text), each
+ *  for a seat on the panel or for everyone. Empty with no report. */
+export function askChips(c: Council): AskChip[] {
+    const asked = (c.replies ?? []).filter((r) => r.author === YOU).map((r) => r.text);
+    const seats = panel(c);
+    const out: AskChip[] = [];
+    for (const a of c.summary?.asks ?? []) {
+        const text = a.text.trim();
+        if (text === "" || asked.some((t) => t.includes(text))) {
+            continue;
+        }
+        const seat = seats.find((e) => e.id === a.to);
+        out.push({ text, to: seat?.id ?? "", fill: seat != null ? `@${seat.name} ${text}` : text });
+    }
+    return out;
+}
+
+// ---- whether a follow-up reads files ----
+
+// a file by a name with an extension a project holds as text, a path with two slashes or more (one slash is a pair,
+// "pass/fail"), one that starts ./ ../ ~/ or /, or a code span holding a dot or a slash
+const FILE_EXT =
+    "json|jsonl|md|mdx|txt|csv|tsv|ya?ml|toml|ini|go|ts|tsx|js|jsx|mjs|cjs|py|ipynb|rs|java|kt|swift|c|h|cpp|rb|php|sh|sql|html|css|scss|tex|bib|log";
+const NAMED_FILE = new RegExp(`(?:^|[\\s(\`"'])([\\w~./-]*[\\w-]\\.(?:${FILE_EXT}))(?=$|[\\s),.:;!?\`"'])`, "iu");
+const NAMED_PATH = /(?:^|[\s(`"'])((?:\.{1,2}\/|~\/|\/)[\w.-]+(?:\/[\w.-]+)*|[\w.-]+(?:\/[\w.-]+){2,})/u;
+const NAMED_SPAN = /`([^`\s]*[./][^`\s]*)`/u;
+
+/** Pure: the first file or path a question names, "" when it names none. */
+export function namedFile(text: string): string {
+    for (const re of [NAMED_FILE, NAMED_PATH, NAMED_SPAN]) {
+        const m = re.exec(text);
+        if (m != null) {
+            return m[1];
+        }
+    }
+    return "";
+}
+
+/** Pure: whether a follow-up lets the seats read files: the person's own choice when they flipped Let them read files
+ *  (`choice`), else on exactly when the question names a file or a path, `why` naming it. */
+export function readsFiles(choice: boolean | null, text: string): { on: boolean; why: string } {
+    if (choice != null) {
+        return { on: choice, why: "" };
+    }
+    const file = namedFile(text);
+    return { on: file !== "", why: file };
+}

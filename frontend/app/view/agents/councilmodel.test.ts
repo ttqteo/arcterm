@@ -474,7 +474,7 @@ describe("estimateLabel and followupLabel", () => {
         const text = { calls: 2, tokens: 40_000, minutes: 1 };
         const code = { calls: 2, tokens: 180_000, minutes: 2 };
         expect(followupLabel(text, 2, false)).toBe("2 experts answer · ≈ 2 calls · ~40k tokens");
-        expect(followupLabel(code, 2, true)).toBe("2 experts answer, reading code · ≈ 2 calls · ~0.2M tokens");
+        expect(followupLabel(code, 2, true)).toBe("2 experts answer, reading files · ≈ 2 calls · ~0.2M tokens");
         expect(followupLabel({ calls: 1, tokens: 20_000, minutes: 1 }, 1, false)).toBe(
             "1 expert answers · ≈ 1 call · ~20k tokens"
         );
@@ -482,7 +482,7 @@ describe("estimateLabel and followupLabel", () => {
 
     it("names the experts alone while the estimate is not in", () => {
         expect(followupLabel(null, 3, false)).toBe("3 experts answer");
-        expect(followupLabel(null, 1, true)).toBe("1 expert answers, reading code");
+        expect(followupLabel(null, 1, true)).toBe("1 expert answers, reading files");
         expect(followupLabel(null, 0, false)).toBe("");
     });
 });

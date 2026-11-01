@@ -213,7 +213,7 @@ func TestEstimateFollowup(t *testing.T) {
 	if got, want := EstimateFollowup(3, false), (CouncilEstimate{Calls: 3, Tokens: 60_000, Minutes: 1}); got != want {
 		t.Errorf("without tools = %+v, want %+v", got, want)
 	}
-	if got, want := EstimateFollowup(3, true), (CouncilEstimate{Calls: 3, Tokens: 270_000, Minutes: 2}); got != want {
+	if got, want := EstimateFollowup(3, true), (CouncilEstimate{Calls: 3, Tokens: 330_000, Minutes: 2}); got != want {
 		t.Errorf("with tools = %+v, want %+v", got, want)
 	}
 	if got := EstimateFollowup(0, true); got.Calls != 0 || got.Tokens != 0 {

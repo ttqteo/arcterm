@@ -2410,6 +2410,12 @@ declare global {
         parentid?: string;
     };
 
+    // council.CouncilAsk
+    type CouncilAsk = {
+        text: string;
+        to?: string;
+    };
+
     // council.CouncilAutoGenerate
     type CouncilAutoGenerate = {
         topic: string;
@@ -2609,6 +2615,7 @@ declare global {
         kept?: CouncilDirection[];
         outcomes: {[key: string]: string};
         answer?: string;
+        asks?: CouncilAsk[];
         at: number;
     };
 

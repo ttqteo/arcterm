@@ -23,8 +23,7 @@ import { sheetPanel } from "@/app/element/motiontokens";
 import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { cn } from "@/util/util";
-import { atom, useAtom, type PrimitiveAtom } from "jotai";
-import { atomFamily } from "jotai/utils";
+import { useAtom } from "jotai";
 import { Check, ChevronDown, ChevronUp, CornerDownRight, SquareTerminal, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -41,12 +40,14 @@ import {
 import type { Actions } from "./councilactions";
 import {
     DRAFT_WAIT,
+    askChips,
     councilChannel,
     councilThread,
     ideaOrder,
     insertMention,
     mentionPicker,
     onlyLine,
+    readsFiles,
     replyReach,
     seatChips,
     type ChannelItem,
@@ -70,6 +71,7 @@ import { followsEnd, keepPlace, keptPlace, placeOf, topFor, type ScrollPlace } f
 import { CouncilSourcesPanel, EvidenceChips } from "./councilsourcespanel";
 import {
     closeCouncilSources,
+    councilChatDraftAtom,
     councilOnlyAtom,
     councilOpenProposalAtom,
     councilSourcesAtom,
@@ -256,19 +258,6 @@ const secondaryButton =
     "h-[26px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[13px] text-secondary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
 const ghostButton =
     "h-[26px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[10px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
-
-// ---- state the chat keeps ----
-
-/** What is typed and not sent, per council, so it survives a trip to the Summary: the channel's composer under `""`,
- *  a thread's under its idea's id; and whether a follow-up may read code. */
-interface ChatDrafts {
-    texts: Record<string, string>;
-    tools: boolean;
-}
-
-const councilChatDraftAtom = atomFamily(
-    (_id: string) => atom<ChatDrafts>({ texts: {}, tools: false }) as PrimitiveAtom<ChatDrafts>
-);
 
 // ---- the seats ----
 
@@ -904,8 +893,18 @@ function Composer({
     const who = answerers(c, proposalId, "", text);
     const followUp = isFollowUp(c);
     const k = followUp ? who.length : 0;
-    const est = useEstimate(k > 0 ? { id: c.id, followup: k, tools: drafts.tools } : null);
-    const hint = k > 0 ? followupLabel(est, k, drafts.tools) : replyReach(c, proposalId, "", text).label;
+    const reads = readsFiles(drafts.tools, text);
+    const est = useEstimate(k > 0 ? { id: c.id, followup: k, tools: reads.on } : null);
+    const hint = k > 0 ? followupLabel(est, k, reads.on) : replyReach(c, proposalId, "", text).label;
+    const asks = scope === "channel" && followUp && text === "" ? askChips(c) : [];
+    const fill = (t: string) => {
+        setText(t);
+        setCaret(t.length);
+        requestAnimationFrame(() => {
+            box.current?.focus();
+            box.current?.setSelectionRange(t.length, t.length);
+        });
+    };
 
     const send = async () => {
         const body = text.trim();
@@ -918,13 +917,14 @@ function Composer({
             id: c.id,
             proposalid: proposalId || undefined,
             text: body,
-            tools: followUp && drafts.tools ? true : undefined,
+            tools: followUp && reads.on ? true : undefined,
         });
         setBusy(false);
         if (r.ok === false) {
             setError(r.error);
         } else {
-            setText("");
+            // the next question decides for itself whether the seats read files
+            setDrafts((d) => ({ ...d, texts: { ...d.texts, [proposalId]: "" }, tools: null }));
         }
     };
     const choose = (seat: CouncilExpert) => {
@@ -1005,6 +1005,28 @@ function Composer({
                     ))}
                 </ul>
             )}
+            {asks.length > 0 && (
+                <div
+                    role="group"
+                    aria-label="Ask next"
+                    data-council-asks
+                    className="flex flex-wrap items-center gap-[6px]"
+                >
+                    <span className="text-[12px] text-muted">Ask next</span>
+                    {asks.map((a, i) => (
+                        <button
+                            key={a.text}
+                            type="button"
+                            data-council-ask={i}
+                            onClick={() => fill(a.fill)}
+                            title="Put it in the box to edit and send"
+                            className="max-w-full cursor-pointer truncate rounded-full border border-edge-mid bg-transparent px-[12px] py-[4px] text-left text-[13px] text-secondary outline-none hover:border-edge-strong hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            {a.fill}
+                        </button>
+                    ))}
+                </div>
+            )}
             <div className="flex items-end gap-[8px] rounded-[14px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
                 <textarea
                     ref={box}
@@ -1040,25 +1062,27 @@ function Composer({
                 <button
                     type="button"
                     role="switch"
-                    aria-checked={drafts.tools}
+                    aria-checked={reads.on}
                     data-council-tools
-                    onClick={() => setDrafts((d) => ({ ...d, tools: !d.tools }))}
+                    data-council-tools-why={reads.why}
+                    onClick={() => setDrafts((d) => ({ ...d, tools: !reads.on }))}
                     className="flex w-fit cursor-pointer items-center gap-[7px] rounded-[6px] border-0 bg-transparent py-px text-[12.5px] text-secondary outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     <span
                         className={cn(
                             "relative h-[14px] w-[24px] flex-none rounded-full",
-                            drafts.tools ? "bg-accent" : "bg-edge-strong"
+                            reads.on ? "bg-accent" : "bg-edge-strong"
                         )}
                     >
                         <span
                             className={cn(
                                 "absolute top-[2px] h-[10px] w-[10px] rounded-full bg-background",
-                                drafts.tools ? "left-[12px]" : "left-[2px]"
+                                reads.on ? "left-[12px]" : "left-[2px]"
                             )}
                         />
                     </span>
-                    Let them read code
+                    Let them read files
+                    {reads.why !== "" && <span className="text-muted">· it names {reads.why}</span>}
                 </button>
             )}
             <span data-council-composer-hint className="min-w-0 text-[12px] tabular-nums text-muted">

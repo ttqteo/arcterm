@@ -120,7 +120,7 @@ type CouncilReply struct {
 	Text       string            `json:"text"`
 	Evidence   []CouncilEvidence `json:"evidence,omitempty"`
 	To         []string          `json:"to,omitempty"`    // the person's reply: the experts who answer it
-	Tools      bool              `json:"tools,omitempty"` // the person's follow-up: Let them read code was on
+	Tools      bool              `json:"tools,omitempty"` // the person's follow-up: Let them read files was on
 	Answered   bool              `json:"answered,omitempty"`
 	Round      int               `json:"round"` // the round it was posted in; FirstFollowRound and up for follow-ups after done
 	Ts         int64             `json:"ts"`
@@ -155,7 +155,15 @@ type CouncilSummary struct {
 	Kept       []CouncilDirection `json:"kept,omitempty"`   // one line each: a Brainstorm's wild ideas kept aside, a Review's Also raised
 	Outcomes   map[string]string  `json:"outcomes"`         // proposal id -> "Direction 1", "Merged into direction 3", "Withdrawn in round 2"
 	Answer     string             `json:"answer,omitempty"` // the one-sentence answer to the person's question; empty without a question
+	Asks       []CouncilAsk       `json:"asks,omitempty"`   // up to MaxAsks questions the person could ask next
 	At         int64              `json:"at"`
+}
+
+// CouncilAsk is a question the coordinator suggests the person ask the panel next: Text as the person would type it, in
+// their language, and To the seat best placed to answer it, empty for the whole panel.
+type CouncilAsk struct {
+	Text string `json:"text"`
+	To   string `json:"to,omitempty"`
 }
 
 type CouncilActivity struct {

@@ -33,6 +33,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   bubble's width, a numbered list draws as a list, and a ==…== sentence is still tinted. The same in a thread, the
   draft card and the report's positions; a matrix cell shows only the words. Unit tests cover the prompt rule, the
   parse and the matrix text only (6e6726bb9).
+- [ ] (arcterm) Council Ask next and Let them read files: start a new council, or Summarize a finished one again. The
+  report ends with Ask next, two or three questions each with whom it is for; a click opens the Discussion with it in
+  the box, `@` the expert first. The same questions sit as chips over the Discussion's empty box and leave once asked.
+  Type a question naming a file (`rail-apps.json`): Let them read files turns on and says `it names rail-apps.json`;
+  one naming none leaves it off, and the cost line reads about a fifth. In a new council's round 2, no reply calls a
+  seat by its role ("Phương pháp ơi"). Unit tests and two CDP steps (discussion `done`, summary Ask next) cover it;
+  the CDP steps were not run.
 - [ ] (arcterm) Council as a group chat: in a council past round 2 (or a new one), the round 1 ideas alternate between
   the experts, with no bold title in the bubbles; round 2 shows every reply in the chat, a `↳ <idea>` quote over the
   first of each idea's replies, those replies together and in the ideas' order. While a round runs, its messages stay

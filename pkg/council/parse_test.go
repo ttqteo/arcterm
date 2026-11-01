@@ -380,7 +380,8 @@ func TestShapesParse(t *testing.T) {
 	}
 	sum, weak, err := ParseSynthesis(jsonFence(synthesisShape))
 	if err != nil || len(sum.Directions) != 1 || sum.Directions[0].FirstStep == "" || len(sum.Kept) != 1 || len(sum.Outcomes) != 4 ||
-		len(weak) != 1 || sum.Directions[0].Agreed || sum.Answer == "" {
+		len(weak) != 1 || sum.Directions[0].Agreed || sum.Answer == "" || len(sum.Asks) != 2 || sum.Asks[0].To != "skeptic" ||
+		sum.Asks[1].To != "" {
 		t.Errorf("synthesisShape: %+v, %+v, %v", sum, weak, err)
 	}
 	if _, _, err := ParseSynthesis(jsonFence(synthesisShapeNoQuestion)); err != nil {
@@ -397,12 +398,28 @@ func TestShapesParse(t *testing.T) {
 		t.Errorf("brainstormRound2Shape: %+v, %v", r, err)
 	}
 	sum, _, err = ParseSynthesis(jsonFence(brainstormSynthesisShape))
-	if err != nil || len(sum.Directions) != 1 || sum.Directions[0].FirstStep == "" || len(sum.Kept) != 1 || sum.Answer == "" {
+	if err != nil || len(sum.Directions) != 1 || sum.Directions[0].FirstStep == "" || len(sum.Kept) != 1 || sum.Answer == "" ||
+		len(sum.Asks) != 2 || sum.Asks[0].To != "contrarian" {
 		t.Errorf("brainstormSynthesisShape: %+v, %v", sum, err)
 	}
 	sum, _, err = ParseSynthesis(jsonFence(brainstormSynthesisShapeNoQuestion))
 	if err != nil || len(sum.Directions) != 1 || sum.Answer != "" {
 		t.Errorf("brainstormSynthesisShapeNoQuestion: %+v, %v", sum, err)
+	}
+}
+
+func TestParseSynthesisAsks(t *testing.T) {
+	sum, _, err := ParseSynthesis(jsonFence(`{"directions": [], "asks": [
+		{"text": "  Does one minute hold on a Mac?  ", "to": " skeptic "},
+		{"text": "   ", "to": "ux"},
+		{"text": "What do we log first?"}
+	]}`))
+	want := []CouncilAsk{{Text: "Does one minute hold on a Mac?", To: "skeptic"}, {Text: "What do we log first?"}}
+	if err != nil || !reflect.DeepEqual(sum.Asks, want) {
+		t.Errorf("asks = %+v, %v; want %+v (trimmed, an empty one dropped)", sum.Asks, err, want)
+	}
+	if sum, _, err := ParseSynthesis(jsonFence(`{"directions": []}`)); err != nil || sum.Asks != nil {
+		t.Errorf("a report with no asks = %+v, %v", sum.Asks, err)
 	}
 }
 

@@ -15,8 +15,8 @@ const (
 	round1BaseTokens     = 140_000 // one expert's round 1 call: its tools reading the code, before any file is attached
 	round2Tokens         = 45_000  // one expert's round 2 call: text in, a few stances out
 	synthesisTokens      = 80_000
-	followupTokens       = 20_000 // one expert answering a reply from text
-	followupToolsTokens  = 90_000 // the same, with Read, Grep and Glob on
+	followupTokens       = 20_000  // one expert answering a reply from text
+	followupToolsTokens  = 110_000 // the same, with Read, Grep and Glob on: three sonnet answers took 80k–147k on 2026-11-01
 	round1Minutes        = 3
 	replyPassMinutes     = 2 // round 2, and again for a third round
 	synthesisMinutes     = 1

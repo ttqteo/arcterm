@@ -77,6 +77,18 @@ func TestMarkdown(t *testing.T) {
 	}
 }
 
+func TestMarkdownAskNext(t *testing.T) {
+	c := markdownCouncil()
+	c.Summary.Asks = []CouncilAsk{{Text: "Does it hold\non a Mac?", To: "skeptic"}, {Text: "What first?"}, {Text: "Who?", To: "ghost"}}
+	md := Markdown(c)
+	mustContain(t, "markdown", md, "## Ask next\n\n- To Skeptic: Does it hold on a Mac?\n- To the whole panel: What first?\n- To the whole panel: Who?\n")
+	if a, m := strings.Index(md, "## Ask next"), strings.Index(md, "## Matrix"); a < 0 || m < a {
+		t.Errorf("Ask next should come before the matrix:\n%s", md)
+	}
+	c.Summary.Asks = nil
+	mustNotContain(t, "markdown", Markdown(c), "## Ask next")
+}
+
 func TestMarkdownReviewAlsoRaised(t *testing.T) {
 	c := markdownCouncil()
 	c.Summary.Directions[0].FirstStep = "Add the state word to the tree row."

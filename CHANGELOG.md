@@ -34,6 +34,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   started before this update have none.
 - A council's experts now mark the one or two sentences you must read in a long idea or reply, and the Discussion
   and the report draw them highlighted, as your terminal does. Councils started before this update have no marks.
+- A council's report ends with two or three questions worth asking the panel next: where the experts still disagree,
+  a condition nobody checked, or a view the panel was missing. They sit as chips over the Discussion's empty box and
+  under Ask next in the report; a click puts the question in the box, with `@` the expert it is for, to edit and send.
+  Councils started before this update have none until you Summarize again.
 - Typing `@` in New agent's Task box lists the project's files; ↑↓ and Enter (or a click) put `@path` in the task,
   and Esc closes the list without closing the dialog. <!-- try: new-agent -->
 - Council Setup's Auto-generate button writes the topic, a question and the mode from what the seated agents were
@@ -51,6 +55,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council follow-up that names a file or a path (`rail-apps.json`, `pkg/services/idle.go`) turns Let them read files
+  on by itself and says which file it saw; one that names none answers from the discussion, which costs about a fifth.
+  Flip the switch to choose for yourself. The experts answering a follow-up now also see the report, so "direction 2"
+  in your question means the report's second one.
+- A council's experts talk to each other as "you" (bạn) in their replies instead of calling out a role name ("Phương
+  pháp ơi").
 - The New dialog opens in its Task box, now at the top above the columns: type what the agent should do and press Enter
   to start it (Shift+Enter for a new line). Alt+1–9 picks another agent without leaving the box; a run opens in its
   Goal the same way. <!-- try: new-agent -->
