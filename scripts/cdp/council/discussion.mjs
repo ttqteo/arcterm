@@ -8,8 +8,9 @@
 // and a composer, Summarize off while they do), on a council whose experts gave their picks, as a Brainstorm, queued (a
 // line that names the council it waits for), while they first propose (the experts' cards and the call bar), at the pause
 // (the ticks, Ask the experts, Continue), stopped at the pause (Summarize), failed (Retry on an expert and on the
-// coordinator), not run (Start council), a done council as a channel with a follow-up in a thread, its sources (a link
-// per cited file, the Sources panel a click opens, Escape, back to a thread, a file not in the project), and the `room`
+// coordinator), not run (Start council), a done council as a channel (its Top, Latest and Back to where you were) with a
+// follow-up in a thread, its sources (a link per cited file, the Sources panel a click opens, Escape, back to a thread,
+// a file not in the project), and the `room`
 // fixtures: two live agents seated beside two experts (the seat chips with their context, a skipped turn, a failed seat's
 // Retry, drafts waiting for the person with Send to the others, Edit and Drop, a thread with its stance pills and its
 // held reply, j / k / Enter / Esc, the composer and its @, a click on an agent's chip or on Open its terminal). Each
@@ -617,6 +618,59 @@ async function notRun(h, ctx, rec) {
 
 const FOLLOWUP_TEXT = "Does this hold on a Mac?";
 
+// the channel's Top, Latest and Back, on a channel held short so it scrolls: the reader on a message in the middle jumps
+// to the top, then to the latest, and Back puts that message where it was in the view (Top then Latest keeps the place
+// the first jump saved)
+async function jumps(h, rec) {
+    const ch = sel("[data-council-channel]");
+    const pill = (name) => `!!document.querySelector('[data-council-jump="${name}"]')`;
+    const scrollTop = () => h.ev(`document.querySelector(${ch})?.scrollTop ?? -1`);
+    // the item at the view's top (its place in the channel) and how far below the view's top it sits
+    const reading = () =>
+        h.ev(`(() => {
+            const el = document.querySelector(${ch});
+            const top = el.getBoundingClientRect().top;
+            const items = [...el.querySelectorAll("[data-council-item]")];
+            const at = items.findIndex((e) => e.getBoundingClientRect().bottom - top > 24);
+            return at < 0 ? null : { id: at, offset: Math.round(items[at].getBoundingClientRect().top - top) };
+        })()`);
+    await h.ev(`(() => { const el = document.querySelector(${ch}); el.style.flex = "none"; el.style.height = "260px"; })()`);
+    const mid = await h.ev(
+        `(() => { const el = document.querySelector(${ch}); el.scrollTop = Math.round((el.scrollHeight - el.clientHeight) / 2); return el.scrollTop; })()`
+    );
+    const was = await reading();
+    const offered = await until(h, `${pill("top")} && ${pill("latest")} && !${pill("back")}`);
+    await click(h, '[data-council-jump="top"]');
+    const backAtTop = await until(h, `${pill("back")} && !${pill("top")}`);
+    const atTop = await scrollTop();
+    await h.shot("cdp-shots/council-discussion-jumps.png");
+    await click(h, '[data-council-jump="latest"]');
+    const backAtEnd = await until(h, `${pill("back")} && ${pill("top")} && !${pill("latest")}`);
+    const atEnd = await h.ev(`(() => { const el = document.querySelector(${ch}); return el.scrollHeight - el.scrollTop - el.clientHeight; })()`);
+    await click(h, '[data-council-jump="back"]');
+    const gone = await until(h, `!${pill("back")}`);
+    const now = await reading();
+    const backTo = await scrollTop();
+    const focused = await h.ev(`document.activeElement === document.querySelector(${ch})`);
+    rec(
+        "jumps: Top and Latest show off the ends, each jump offers Back, and Back puts the message read before Top then Latest where it was, the channel keeping focus",
+        mid > 260 &&
+            offered &&
+            backAtTop &&
+            atTop === 0 &&
+            backAtEnd &&
+            atEnd < 2 &&
+            gone &&
+            Math.abs(backTo - mid) <= 2 &&
+            was != null &&
+            now?.id === was.id &&
+            Math.abs(now.offset - was.offset) <= 2 &&
+            focused,
+        { mid, offered, backAtTop, atTop, backAtEnd, atEnd, gone, backTo, was, now, focused }
+    );
+    await h.ev(`(() => { const el = document.querySelector(${ch}); el.style.flex = ""; el.style.height = ""; })()`);
+}
+
 async function done(h, ctx, rec) {
     const id = await openFixture(h, ctx, "done");
     await settledText(h, "[data-council-chip]", "Done");
@@ -635,6 +689,7 @@ async function done(h, ctx, rec) {
         { kinds: kinds.slice(0, 3), typing, drafts }
     );
     await h.shot("cdp-shots/council-discussion-done.png");
+    await jumps(h, rec);
 
     // the report's questions to ask next sit over the empty box; a click puts one in it, @ seat and all
     const asks = await count(h, `${CHANNEL_COMPOSER} [data-council-ask]`);

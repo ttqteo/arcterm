@@ -61,3 +61,63 @@ export function followsEnd(place: ScrollPlace | undefined, follow: boolean): boo
 export function clearKeptPlaces(): void {
     places.clear();
 }
+
+// ---- the channel's jumps (Channel, councilchat.tsx): Top, Latest, and Back to the message the reader was on ----
+
+// a row with no more than this much left below the view's top is already read past
+export const READ_EDGE_PX = 24;
+
+/** A row of the channel, in the scroller's content (where scrollTop counts from). */
+export interface RowBox {
+    top: number;
+    bottom: number;
+}
+
+/** The row the reader is on: the first whose bottom is more than READ_EDGE_PX below the view's top, or -1 with none. */
+export function readingRow(rows: RowBox[], viewTop: number): number {
+    return rows.findIndex((r) => r.bottom - viewTop > READ_EDGE_PX);
+}
+
+/** Where the reader was before a jump: how far the row they were on sat below the view's top (negative when it started
+ *  above it), and the scrollTop, the way back when that row is gone. */
+export interface ReadingPlace {
+    offset: number;
+    top: number;
+}
+
+/** The scrollTop that puts the reader back on their row as they left it, wherever the rows above it moved; `rowTop` is
+ *  where that row is now, or null when it is gone. Clamped to the scroller. */
+export function returnTop(place: ReadingPlace, rowTop: number | null, el: Scroller): number {
+    const end = Math.max(0, el.scrollHeight - el.clientHeight);
+    const top = rowTop == null ? place.top : rowTop - place.offset;
+    return Math.min(Math.max(0, top), end);
+}
+
+export type Landing = "top" | "latest";
+
+/** Whether the reader is still where the last jump put them: then a second jump keeps the place saved by the first, so
+ *  Top then Latest still goes back to where they were reading, not to the top. */
+export function stillLanded(landing: Landing | null, el: Scroller): boolean {
+    if (landing === "top") {
+        return el.scrollTop < NEAR_BOTTOM_PX;
+    }
+    return landing === "latest" && placeOf(el).bottom;
+}
+
+export interface JumpPills {
+    top: boolean;
+    latest: boolean;
+    back: boolean;
+}
+
+export const NO_PILLS: JumpPills = { top: false, latest: false, back: false };
+
+/** Which jumps the channel offers: Top once the reader is more than a screen down, Latest once they left the end, and
+ *  Back while a saved place (`backTop`, the scrollTop that returns to it) is more than half a screen away. */
+export function jumpPills(el: Scroller, backTop: number | null): JumpPills {
+    return {
+        top: el.scrollTop > el.clientHeight,
+        latest: !placeOf(el).bottom,
+        back: backTop != null && Math.abs(el.scrollTop - backTop) > el.clientHeight / 2,
+    };
+}

@@ -20,6 +20,7 @@
 // discussion shares).
 
 import { sheetPanel } from "@/app/element/motiontokens";
+import { PopoverReveal } from "@/app/element/popoverreveal";
 import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { cn } from "@/util/util";
@@ -67,7 +68,23 @@ import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { markSpans } from "./councilmarks";
 import { answerers, draftsWaitWord, followupLabel } from "./councilmodel";
-import { followsEnd, keepPlace, keptPlace, placeOf, topFor, type ScrollPlace } from "./councilscroll";
+import {
+    NO_PILLS,
+    followsEnd,
+    jumpPills,
+    keepPlace,
+    keptPlace,
+    placeOf,
+    readingRow,
+    returnTop,
+    stillLanded,
+    topFor,
+    type JumpPills,
+    type Landing,
+    type ReadingPlace,
+    type RowBox,
+    type ScrollPlace,
+} from "./councilscroll";
 import { CouncilSourcesPanel, EvidenceChips } from "./councilsourcespanel";
 import {
     closeCouncilSources,
@@ -1256,30 +1273,185 @@ export function useKeptScroll(
     }, [ref, key]);
 }
 
-// the channel, scrolled to its newest line while the reader is at the bottom of it, and back where they left it
+// where a row of the channel sits in its scroller's content, as scrollTop counts
+function contentBox(row: Element, el: HTMLElement): RowBox {
+    const base = el.getBoundingClientRect().top - el.scrollTop;
+    const r = row.getBoundingClientRect();
+    return { top: r.top - base, bottom: r.bottom - base };
+}
+
+// the place a jump saved: the row the reader was on (kept by node, so rows that grew above it do not move the way back)
+type SavedPlace = ReadingPlace & { row: Element | null };
+
+/** The channel's jumps (councilscroll.ts): Top and Latest, and after either, Back to the message the reader was on.
+ *  `reset` drops the saved place (another council, another seat filter); `onKeptScroll` is useKeptScroll's, called at
+ *  once on a jump so a line that lands before the scroll event does not pull the reader back to the end. Returns the
+ *  pills to show, the scroller's onScroll, and the three jumps. */
+function useChannelJumps(
+    boxRef: RefObject<HTMLDivElement | null>,
+    rowsRef: RefObject<HTMLDivElement | null>,
+    reset: string,
+    count: number,
+    onKeptScroll: () => void
+) {
+    const saved = useRef<SavedPlace | null>(null);
+    const landing = useRef<Landing | null>(null);
+    const [pills, setPills] = useState<JumpPills>(NO_PILLS);
+    const backTop = useCallback((el: HTMLElement): number | null => {
+        const p = saved.current;
+        if (p == null) {
+            return null;
+        }
+        return returnTop(p, p.row?.isConnected ? contentBox(p.row, el).top : null, el);
+    }, []);
+    const sync = useCallback(() => {
+        const el = boxRef.current;
+        // a hidden scroller has no height: its pills wait until it shows
+        if (el == null || el.clientHeight === 0) {
+            return;
+        }
+        const next = jumpPills(el, backTop(el));
+        // the reader came back to the saved place by hand: nothing left to go back to
+        if (saved.current != null && !next.back) {
+            saved.current = null;
+            landing.current = null;
+        }
+        setPills((prev) =>
+            prev.top === next.top && prev.latest === next.latest && prev.back === next.back ? prev : next
+        );
+    }, [boxRef, backTop]);
+    useEffect(() => {
+        saved.current = null;
+        landing.current = null;
+        sync();
+    }, [reset, sync]);
+    // a new line can take the reader off the end without a scroll
+    useEffect(sync, [count, sync]);
+    const jump = useCallback(
+        (to: Landing) => {
+            const el = boxRef.current;
+            if (el == null) {
+                return;
+            }
+            if (saved.current == null || !stillLanded(landing.current, el)) {
+                const rows = Array.from(rowsRef.current?.children ?? []);
+                const i = readingRow(
+                    rows.map((row) => contentBox(row, el)),
+                    el.scrollTop
+                );
+                saved.current = {
+                    row: i < 0 ? null : rows[i],
+                    offset: i < 0 ? 0 : contentBox(rows[i], el).top - el.scrollTop,
+                    top: el.scrollTop,
+                };
+            }
+            landing.current = to;
+            el.scrollTop = to === "top" ? 0 : el.scrollHeight - el.clientHeight;
+            // the pill clicked may go away: the channel keeps focus, and with it j and k
+            el.focus({ preventScroll: true });
+            onKeptScroll();
+            sync();
+        },
+        [boxRef, rowsRef, onKeptScroll, sync]
+    );
+    const back = useCallback(() => {
+        const el = boxRef.current;
+        const top = el == null ? null : backTop(el);
+        if (el == null || top == null) {
+            return;
+        }
+        saved.current = null;
+        landing.current = null;
+        el.scrollTop = top;
+        el.focus({ preventScroll: true });
+        onKeptScroll();
+        sync();
+    }, [boxRef, backTop, onKeptScroll, sync]);
+    const onScroll = useCallback(() => {
+        onKeptScroll();
+        sync();
+    }, [onKeptScroll, sync]);
+    return { pills, onScroll, toTop: () => jump("top"), toLatest: () => jump("latest"), back };
+}
+
+function JumpPill({
+    show,
+    jump,
+    label,
+    onClick,
+    children,
+}: {
+    show: boolean;
+    jump: string;
+    label: string;
+    onClick: () => void;
+    children: ReactNode;
+}) {
+    return (
+        <PopoverReveal open={show} origin="bottom" className="pointer-events-auto">
+            <button
+                type="button"
+                data-council-jump={jump}
+                title={label}
+                aria-label={label}
+                onClick={onClick}
+                className="flex cursor-pointer items-center gap-[5px] rounded-full border border-edge-strong bg-surface-raised px-[12px] py-[5px] text-[12.5px] font-medium text-secondary shadow-popover-sm outline-none hover:border-accent hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+            >
+                {children}
+            </button>
+        </PopoverReveal>
+    );
+}
+
+// the channel, scrolled to its newest line while the reader is at the bottom of it, and back where they left it; Top,
+// Latest and Back float at its foot
 function Channel({
     children,
     councilId,
+    view,
     count,
     boxRef,
 }: {
     children: ReactNode;
     councilId: string;
+    view: string;
     count: number;
     boxRef: RefObject<HTMLDivElement | null>;
 }) {
-    const onScroll = useKeptScroll(boxRef, `channel:${councilId}`, { follow: true, count });
+    const rowsRef = useRef<HTMLDivElement>(null);
+    const onKeptScroll = useKeptScroll(boxRef, `channel:${councilId}`, { follow: true, count });
+    const jumps = useChannelJumps(boxRef, rowsRef, `${councilId}:${view}`, count, onKeptScroll);
     return (
-        <div
-            ref={boxRef}
-            data-council-channel
-            tabIndex={0}
-            role="log"
-            aria-label="Council channel"
-            onScroll={onScroll}
-            className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-edge-strong"
-        >
-            <div className="mx-auto flex w-full max-w-[860px] flex-col gap-[16px]">{children}</div>
+        <div className="relative flex min-h-0 flex-1 flex-col">
+            <div
+                ref={boxRef}
+                data-council-channel
+                tabIndex={0}
+                role="log"
+                aria-label="Council channel"
+                onScroll={jumps.onScroll}
+                className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-edge-strong"
+            >
+                <div ref={rowsRef} className="mx-auto flex w-full max-w-[860px] flex-col gap-[16px]">
+                    {children}
+                </div>
+            </div>
+            <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-[8px]">
+                <JumpPill show={jumps.pills.top} jump="top" label="Jump to the top" onClick={jumps.toTop}>
+                    <span aria-hidden>↑</span> Top
+                </JumpPill>
+                <JumpPill
+                    show={jumps.pills.back}
+                    jump="back"
+                    label="Back to the message you were reading"
+                    onClick={jumps.back}
+                >
+                    <span aria-hidden>↩</span> Back to where you were
+                </JumpPill>
+                <JumpPill show={jumps.pills.latest} jump="latest" label="Jump to the latest" onClick={jumps.toLatest}>
+                    <span aria-hidden>↓</span> Latest
+                </JumpPill>
+            </div>
         </div>
     );
 }
@@ -1397,7 +1569,7 @@ export function CouncilChat({
                     )}
                 </div>
                 {notes}
-                <Channel boxRef={channel} councilId={c.id} count={items.length}>
+                <Channel boxRef={channel} councilId={c.id} view={onlyId ?? ""} count={items.length}>
                     {items.map((item) => {
                         switch (item.kind) {
                             case "question":

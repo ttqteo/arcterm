@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A council's Discussion has Top and Latest buttons at the foot of the channel, and after either jump a Back to
+  where you were button that puts the message you were reading back where it was.
 - Translate offers what you just copied: a word or a short sentence shows as a Paste chip under the box, and a click
   or Tab pastes and translates it. Links, paths, file names, commands, code, numbers and images are never offered. On a
   Mac, macOS may ask whether arcterm can paste from other apps. <!-- try: translate -->
