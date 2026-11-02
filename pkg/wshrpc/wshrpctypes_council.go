@@ -99,10 +99,12 @@ type CommandCouncilDraftData struct {
 	Text   string `json:"text,omitempty"`
 }
 
-// CommandCouncilRetryData reruns the failed call of one expert; the coordinator's is the synthesis.
+// CommandCouncilRetryData reruns the failed call of one expert; the coordinator's is the synthesis. Model, when set,
+// runs this retry on that model instead of the seat's own (sonnet, fable, a full id); the seat keeps its model.
 type CommandCouncilRetryData struct {
 	Id       string `json:"id"`
 	ExpertId string `json:"expertid"`
+	Model    string `json:"model,omitempty"`
 }
 
 // CommandCouncilSuggestData asks for Setup's suggestion: the files to read and the roles that fit the feature.

@@ -69,6 +69,7 @@ import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { markSpans } from "./councilmarks";
 import { answerers, draftsWaitWord, followupLabel } from "./councilmodel";
+import { RetryWithButton } from "./councilretrymenu";
 import {
     NO_PILLS,
     followsEnd,
@@ -365,6 +366,14 @@ function SeatFilter({
                 >
                     {acts.busy.has(key) ? "Retrying…" : "Retry"}
                 </button>
+            )}
+            {chip.retry && (
+                <RetryWithButton
+                    expert={c.experts.find((e) => e.id === chip.id)}
+                    disabled={acts.busy.has(key)}
+                    onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, chip.id, model))}
+                    className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
+                />
             )}
         </div>
     );
@@ -858,6 +867,12 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
             >
                 {acts.busy.has(key) ? "Retrying…" : "Retry"}
             </button>
+            <RetryWithButton
+                expert={c.experts.find((e) => e.id === item.author)}
+                disabled={acts.busy.has(key)}
+                onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, item.author, model))}
+                className={cn(secondaryButton, "h-[22px] px-[6px] text-[12px]")}
+            />
         </div>
     );
 }

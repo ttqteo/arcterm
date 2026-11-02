@@ -240,9 +240,14 @@ export async function deleteCouncil(id: string): Promise<CouncilCall<void>> {
     return r;
 }
 
-/** Reruns a failed expert's call in the round it failed in (the coordinator's: the synthesis). */
-export function retryExpert(id: string, expertId: string): Promise<CouncilCall<void>> {
-    return call("retry", () => RpcApi.CouncilRetryCommand(TabRpcClient, { id, expertid: expertId }));
+/** Reruns a failed expert's call in the round it failed in (the coordinator's: the synthesis). With a model it runs this
+ *  once on that model instead of the seat's own; the seat keeps its model. */
+export function retryExpert(id: string, expertId: string, model?: string): Promise<CouncilCall<void>> {
+    const data: CommandCouncilRetryData = { id, expertid: expertId };
+    if (model) {
+        data.model = model;
+    }
+    return call("retry", () => RpcApi.CouncilRetryCommand(TabRpcClient, data));
 }
 
 /** Asks the coordinator which files to read and which roles fit the feature: one model call, so Setup waits for it. */

@@ -1195,6 +1195,87 @@ func TestSynthesisFailureLeavesTheCouncilFailedAndCanBeRerun(t *testing.T) {
 	}
 }
 
+func TestRetryOnAnotherModelRunsOnceOnItAndKeepsTheSeat(t *testing.T) {
+	t.Run("coordinator", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setFail("lead/r3", errors.New("opus overloaded"))
+		h.run(testCouncil("c1"))
+		// a retry on another model that fails again leaves no retry on the council
+		if _, err := h.r.RetryOn("c1", "lead", "sonnet"); err != nil {
+			t.Fatalf("RetryOn: %v", err)
+		}
+		c := h.wait("c1")
+		if c.State != StateFailed || len(c.Retries) != 0 {
+			t.Fatalf("after a failed retry: %s, retries %+v, want failed and none kept", c.State, c.Retries)
+		}
+		h.f.setFail("lead/r3", nil)
+		if _, err := h.r.RetryOn("c1", "lead", "sonnet"); err != nil {
+			t.Fatalf("RetryOn: %v", err)
+		}
+		c = h.wait("c1")
+		r3 := h.f.calls("r3")
+		if len(r3) != 3 || r3[2].Expert.Model != "sonnet" || r3[1].Expert.Model != "sonnet" || r3[0].Expert.Model != "opus" {
+			t.Fatalf("synthesis calls %d, want the first on opus and both retries on sonnet", len(r3))
+		}
+		if c.State != StateDone || c.Summary == nil || len(c.Failed) != 0 {
+			t.Fatalf("after RetryOn: %s summary %v failed %v, want done with a summary", c.State, c.Summary, c.Failed)
+		}
+		if lead := c.Experts[len(c.Experts)-1]; lead.Model != "opus" {
+			t.Errorf("the coordinator's model is %q, want its seat kept on opus", lead.Model)
+		}
+		if len(c.Retries) != 1 || c.Retries[0] != (CouncilRetry{Expert: "lead", Round: 3, Model: "sonnet", Was: "opus", Ts: c.Retries[0].Ts}) {
+			t.Fatalf("retries %+v, want the one that worked", c.Retries)
+		}
+		mustContain(t, "document", Document(c), "- Retried: Lead in round 3 on sonnet (its seat is opus)")
+	})
+	t.Run("expert", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setFail("ram/r1", errors.New("claude exited 1: boom"))
+		h.run(testCouncil("c1"))
+		h.f.setFail("ram/r1", nil)
+		if _, err := h.r.RetryOn("c1", "ram", " fable "); err != nil {
+			t.Fatalf("RetryOn: %v", err)
+		}
+		c := h.wait("c1")
+		r1 := h.f.calls("r1")
+		if last := r1[len(r1)-1]; last.Expert.Id != "ram" || last.Expert.Model != "fable" {
+			t.Fatalf("last round 1 call %s on %q, want ram on fable", last.Expert.Id, last.Expert.Model)
+		}
+		if c.Experts[1].Model != "sonnet" || len(c.Failed) != 0 {
+			t.Fatalf("ram's model %q, failed %v, want the seat kept on sonnet and no failure", c.Experts[1].Model, c.Failed)
+		}
+		if len(c.Retries) != 1 || c.Retries[0].Expert != "ram" || c.Retries[0].Round != 1 || c.Retries[0].Model != "fable" || c.Retries[0].Was != "sonnet" {
+			t.Fatalf("retries %+v, want ram's round 1 on fable", c.Retries)
+		}
+	})
+	t.Run("the seat's own model is a plain retry", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setFail("ram/r1", errors.New("boom"))
+		h.run(testCouncil("c1"))
+		h.f.setFail("ram/r1", nil)
+		if _, err := h.r.RetryOn("c1", "ram", "sonnet"); err != nil {
+			t.Fatalf("RetryOn: %v", err)
+		}
+		if c := h.wait("c1"); len(c.Failed) != 0 || len(c.Retries) != 0 {
+			t.Fatalf("failed %v retries %+v, want the failure cleared and no retry kept", c.Failed, c.Retries)
+		}
+	})
+	t.Run("a name that is not a model is refused", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setFail("ram/r1", errors.New("boom"))
+		h.run(testCouncil("c1"))
+		before := len(h.f.calls("r1"))
+		for _, m := range []string{"so net", "--dangerously-skip-permissions", "a;b"} {
+			if _, err := h.r.RetryOn("c1", "ram", m); err == nil {
+				t.Errorf("RetryOn with %q worked, want it refused", m)
+			}
+		}
+		if len(h.f.calls("r1")) != before {
+			t.Errorf("a refused retry made a call")
+		}
+	})
+}
+
 func TestBusyCouncilRefusesOtherWork(t *testing.T) {
 	h := newHarness(t)
 	h.f.gate("ux/r1")

@@ -186,6 +186,16 @@ type CouncilSkip struct {
 	Ts     int64  `json:"ts"`
 }
 
+// CouncilRetry is one failed call that a retry on another model answered: the seat keeps its own Model for the calls
+// after it, and the document names the model that wrote this round.
+type CouncilRetry struct {
+	Expert string `json:"expert"` // the seat's expert id
+	Round  int    `json:"round"`
+	Model  string `json:"model"` // the model the retry ran on
+	Was    string `json:"was"`   // the seat's own model
+	Ts     int64  `json:"ts"`
+}
+
 type CouncilExpertStat struct {
 	Ms     int64 `json:"ms"`     // time spent in this expert's calls, the running one included at its last save
 	Tokens int64 `json:"tokens"` // tokens its finished calls used
@@ -240,6 +250,7 @@ type Council struct {
 	Activity         map[string]CouncilActivity   `json:"activity,omitempty"` // expert id -> what it is doing now
 	Failed           map[string]CouncilFailure    `json:"failed,omitempty"`   // expert id -> its failed call
 	Skips            []CouncilSkip                `json:"skips,omitempty"`    // the agent turns that did not happen
+	Retries          []CouncilRetry               `json:"retries,omitempty"`  // the retries that worked on another model than the seat's
 	Stats            map[string]CouncilExpertStat `json:"stats,omitempty"`    // expert id -> time and tokens so far
 	Tokens           int64                        `json:"tokens"`
 	Calls            int                          `json:"calls"`

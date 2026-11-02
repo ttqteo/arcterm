@@ -33,9 +33,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A project's History list opens a menu on right-click: a session can open its transcript, resume, copy its title or
   transcript path, or be deleted; a run or a council can be opened or have its title copied. Each session row also
   names its model.
+- A council call that failed can be retried on another model: Retry with… beside Retry picks opus, sonnet, fable or
+  haiku for that one call, the seat keeps its own model, and the saved document notes the retry.
 
 ### Changed
 
+- A brainstorm mockup's thumbnail opens the board full size when you click it, not only from its Open full size link.
 - A council's header fits on one line: the mode leads, a long question shortens to fit instead of pushing the status
   onto a second row, and Top, Latest and Back in its discussion glide to their place instead of jumping.
 

@@ -1646,6 +1646,12 @@ func (r *Runner) Continue(id string, cut []string, question string) (*Council, e
 // synthesize runs the coordinator's call over everything so far and replaces the Summary. A failure is on the
 // coordinator's Failed entry, and comes back as the error.
 func (r *Runner) synthesize(ctx context.Context, rn *run, id string) error {
+	return r.synthesizeOn(ctx, rn, id, "")
+}
+
+// synthesizeOn is synthesize on model instead of the coordinator's own, when model is set: a retry on another model. The
+// coordinator keeps its Model, and the council keeps a CouncilRetry when the synthesis works.
+func (r *Runner) synthesizeOn(ctx context.Context, rn *run, id string, model string) error {
 	snap, err := Load(id)
 	if err != nil {
 		return err
@@ -1653,6 +1659,10 @@ func (r *Runner) synthesize(ctx context.Context, rn *run, id string) error {
 	coord, ok := coordinatorExpert(snap)
 	if !ok {
 		return errors.New("the council has no coordinator")
+	}
+	was := coord.Model
+	if model != "" {
+		coord.Model = model
 	}
 	at := r.now() // the Summary reads what was said up to now; a reply posted while it is written reads as newer
 	res, err := r.call(ctx, rn, id, coord, snap, SynthesisPrompt(snap), false, CouncilActivity{Text: actSummary})
@@ -1672,6 +1682,9 @@ func (r *Runner) synthesize(ctx context.Context, rn *run, id string) error {
 	}
 	r.finishCall(ctx, rn, id, coord, res, err, SynthesisRound(snap), func(c *Council) {
 		c.Summary = &sum
+		if model != "" {
+			c.Retries = append(c.Retries, CouncilRetry{Expert: coord.Id, Round: SynthesisRound(snap), Model: model, Was: was, Ts: r.now()})
+		}
 		if !isBrainstorm(c) { // a Brainstorm marks nothing weak
 			MarkWeak(c, weak)
 		}
@@ -1784,7 +1797,7 @@ func cleanDirection(c *Council, d *CouncilDirection, panel map[string]bool) {
 // council with no idea sent (every one held or dropped) has nothing to summarize and is refused.
 func (r *Runner) Summarize(id string) (*Council, error) {
 	r.mu.Lock()
-	saved, start, err := r.summarizeLocked(id)
+	saved, start, err := r.summarizeLocked(id, "")
 	r.mu.Unlock()
 	if err != nil {
 		return nil, err
@@ -1794,7 +1807,8 @@ func (r *Runner) Summarize(id string) (*Council, error) {
 	return saved, nil
 }
 
-func (r *Runner) summarizeLocked(id string) (*Council, func(), error) {
+// summarizeLocked starts the synthesis; a model other than "" runs it on that model instead of the coordinator's.
+func (r *Runner) summarizeLocked(id string, model string) (*Council, func(), error) {
 	if r.Caller == nil {
 		return nil, nil, errors.New("the council runner has no caller")
 	}
@@ -1822,7 +1836,7 @@ func (r *Runner) summarizeLocked(id string) (*Council, func(), error) {
 			c.State, c.Round, c.Error = StateRunning, SynthesisRound(c), ""
 			return nil
 		})
-	}, r.summarizeWork(prev))
+	}, r.summarizeWork(prev, model))
 }
 
 // heldRoundAfter is the heldRound a job that hands a council back awaiting-you ends with: the round its drafts belong to,
@@ -1835,9 +1849,9 @@ func heldRoundAfter(prev prevState, snap *Council) int {
 	return 0
 }
 
-func (r *Runner) summarizeWork(prev prevState) work {
+func (r *Runner) summarizeWork(prev prevState, model string) work {
 	return func(ctx context.Context, rn *run, id string) ending {
-		if err := r.synthesize(ctx, rn, id); err != nil {
+		if err := r.synthesizeOn(ctx, rn, id, model); err != nil {
 			if ctx.Err() != nil {
 				return ending{}
 			}
@@ -1990,8 +2004,22 @@ func (r *Runner) Draft(id, itemId, action, text string) (*Council, error) {
 // coordinator's failure is the synthesis, as Summarize reruns it. A council that is running cannot be retried; wait
 // for it or stop it.
 func (r *Runner) Retry(id, expertId string) (*Council, error) {
+	return r.RetryOn(id, expertId, "")
+}
+
+// retryModel is the shape of a model name a retry may run on: a claude alias (sonnet, fable) or a full model id.
+var retryModel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:\[\]-]*$`)
+
+// RetryOn is Retry on model instead of the seat's own, for this retry only: the seat keeps its Model for the calls after
+// it, and the council keeps a CouncilRetry when the retry works, which the document names. An empty model, or the seat's
+// own, is a plain Retry. A live agent's seat answers with its own session, so it takes no model.
+func (r *Runner) RetryOn(id, expertId, model string) (*Council, error) {
+	model = strings.TrimSpace(model)
+	if model != "" && !retryModel.MatchString(model) {
+		return nil, fmt.Errorf("%q is not a model name", model)
+	}
 	r.mu.Lock()
-	saved, start, err := r.retryLocked(id, expertId)
+	saved, start, err := r.retryLocked(id, expertId, model)
 	r.mu.Unlock()
 	if err != nil {
 		return nil, err
@@ -2001,7 +2029,7 @@ func (r *Runner) Retry(id, expertId string) (*Council, error) {
 	return saved, nil
 }
 
-func (r *Runner) retryLocked(id, expertId string) (*Council, func(), error) {
+func (r *Runner) retryLocked(id, expertId, model string) (*Council, func(), error) {
 	if r.Caller == nil {
 		return nil, nil, errors.New("the council runner has no caller")
 	}
@@ -2021,8 +2049,14 @@ func (r *Runner) retryLocked(id, expertId string) (*Council, func(), error) {
 		return nil, nil, fmt.Errorf("council %s has no expert %s", id, expertId)
 	}
 	e := cur.Experts[idx]
+	if model == e.Model {
+		model = ""
+	}
+	if model != "" && IsAgent(e) {
+		return nil, nil, fmt.Errorf("%s is a live agent: it answers with its own session's model", e.Name)
+	}
 	if e.Coordinator {
-		return r.summarizeLocked(id)
+		return r.summarizeLocked(id, model)
 	}
 	prev := prevOf(cur)
 	return r.launchLocked(context.Background(), id, func() (*Council, error) {
@@ -2030,15 +2064,22 @@ func (r *Runner) retryLocked(id, expertId string) (*Council, func(), error) {
 			c.State, c.Error = StateRunning, ""
 			return nil
 		})
-	}, r.retryWork(e, f, prev))
+	}, r.retryWork(e, f, prev, model))
 }
 
-func (r *Runner) retryWork(e CouncilExpert, f CouncilFailure, prev prevState) work {
+// retryWork reruns e's failed call f; with a model it runs on that model and, when the failure clears, keeps a
+// CouncilRetry.
+func (r *Runner) retryWork(e CouncilExpert, f CouncilFailure, prev prevState, model string) work {
+	was := e.Model
+	if model != "" {
+		e.Model = model
+	}
 	return func(ctx context.Context, rn *run, id string) ending {
 		snap, err := Load(id)
 		if err != nil {
 			return loadFailed(err)
 		}
+		called := true
 		switch {
 		case f.Round <= 1:
 			r.round1(ctx, rn, id, snap, e)
@@ -2048,10 +2089,23 @@ func (r *Runner) retryWork(e CouncilExpert, f CouncilFailure, prev prevState) wo
 			if replies := owed(snap, e, false); len(replies) > 0 {
 				r.answerCall(ctx, rn, id, snap, e, replies, f.Round)
 			} else {
+				called = false
 				r.updateLogged(rn, id, func(c *Council) error {
 					delete(c.Failed, e.Id)
 					return nil
 				})
+			}
+		}
+		if model != "" && called && ctx.Err() == nil {
+			_, err := r.update(rn, id, func(c *Council) error {
+				if _, failed := c.Failed[e.Id]; failed {
+					return errSkip
+				}
+				c.Retries = append(c.Retries, CouncilRetry{Expert: e.Id, Round: f.Round, Model: model, Was: was, Ts: r.now()})
+				return nil
+			})
+			if err != nil && !errors.Is(err, errSkip) {
+				log.Printf("[council] %s: save failed: %v", id, err)
 			}
 		}
 		return ending{set: prev.restore, answers: prev.state != StateAwaiting, heldRound: heldRoundAfter(prev, snap)}

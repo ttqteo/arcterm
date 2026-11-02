@@ -231,6 +231,7 @@ describe("actions", () => {
         await summarizeCouncil("h1");
         await stopCouncil("h1");
         await retryExpert("h1", "sk");
+        await retryExpert("h1", "coordinator", "sonnet");
         const group = { id: "mine", name: "Mine", roles: ["ux"], coordinator: "coordinator" };
         await saveCouncilGroup(group);
         expect(RpcApi.CouncilReplyCommand).toHaveBeenCalledWith(TabRpcClient, {
@@ -248,6 +249,11 @@ describe("actions", () => {
         expect(RpcApi.CouncilSummarizeCommand).toHaveBeenCalledWith(TabRpcClient, { id: "h1" });
         expect(RpcApi.CouncilStopCommand).toHaveBeenCalledWith(TabRpcClient, { id: "h1" });
         expect(RpcApi.CouncilRetryCommand).toHaveBeenCalledWith(TabRpcClient, { id: "h1", expertid: "sk" });
+        expect(RpcApi.CouncilRetryCommand).toHaveBeenCalledWith(TabRpcClient, {
+            id: "h1",
+            expertid: "coordinator",
+            model: "sonnet",
+        });
         expect(RpcApi.CouncilSaveGroupCommand).toHaveBeenCalledWith(TabRpcClient, group);
     });
 

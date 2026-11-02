@@ -61,6 +61,7 @@ import {
     type SegmentState,
 } from "./councilmodel";
 import { confirmRemoveCouncil } from "./councilremove";
+import { RetryWithButton } from "./councilretrymenu";
 import { EvidenceChips } from "./councilsourcespanel";
 import {
     continueCouncil,
@@ -329,17 +330,26 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
 
 function RetryButton({ expertId, label, acts, c }: { expertId: string; label: string; acts: Actions; c: Council }) {
     const key = `retry:${expertId}`;
+    const busy = acts.busy.has(key);
     return (
-        <button
-            type="button"
-            data-council-retry={expertId}
-            aria-label={label}
-            disabled={acts.busy.has(key)}
-            onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, expertId))}
-            className={cn(secondaryButton, "h-[26px] self-start px-[10px] text-[12.5px]")}
-        >
-            {acts.busy.has(key) ? "Retrying…" : "Retry"}
-        </button>
+        <span className="flex items-center gap-[6px] self-start">
+            <button
+                type="button"
+                data-council-retry={expertId}
+                aria-label={label}
+                disabled={busy}
+                onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, expertId))}
+                className={cn(secondaryButton, "h-[26px] px-[10px] text-[12.5px]")}
+            >
+                {busy ? "Retrying…" : "Retry"}
+            </button>
+            <RetryWithButton
+                expert={c.experts.find((e) => e.id === expertId)}
+                disabled={busy}
+                onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, expertId, model))}
+                className={cn(secondaryButton, "h-[26px] px-[8px] text-[12.5px]")}
+            />
+        </span>
     );
 }
 

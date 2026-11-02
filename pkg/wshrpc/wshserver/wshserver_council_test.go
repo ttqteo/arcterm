@@ -1109,14 +1109,25 @@ func TestCouncilRetryOfAFailedExpert(t *testing.T) {
 		t.Error("retry on a council that does not exist should fail")
 	}
 
+	if err := ws.CouncilRetryCommand(ctx, wshrpc.CommandCouncilRetryData{Id: started.Id, ExpertId: "ux", Model: "not a model"}); err == nil {
+		t.Error("a retry on a name that is not a model should be refused")
+	}
+
 	fake.setFailure("ux/r1", nil)
-	if err := ws.CouncilRetryCommand(ctx, wshrpc.CommandCouncilRetryData{Id: started.Id, ExpertId: "ux"}); err != nil {
+	if err := ws.CouncilRetryCommand(ctx, wshrpc.CommandCouncilRetryData{Id: started.Id, ExpertId: "ux", Model: "fable"}); err != nil {
 		t.Fatalf("CouncilRetryCommand: %v", err)
 	}
 	retried := waitCouncil(t, started.Id)
 	if _, still := retried.Failed["ux"]; still || len(retried.Proposals) != 4 || retried.State != ended.State {
 		t.Errorf("after the retry: failed %+v, %d proposals, state %s (was %s), want the failure cleared and ux's proposal in",
 			retried.Failed, len(retried.Proposals), retried.State, ended.State)
+	}
+	r1 := fake.calls("r1")
+	if last := r1[len(r1)-1]; last.Expert.Id != "ux" || last.Expert.Model != "fable" {
+		t.Errorf("the retry ran %s on %q, want ux on fable", last.Expert.Id, last.Expert.Model)
+	}
+	if len(retried.Retries) != 1 || retried.Retries[0].Model != "fable" {
+		t.Errorf("retries = %+v, want the retry on fable kept", retried.Retries)
 	}
 }
 

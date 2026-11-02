@@ -51,6 +51,7 @@ import {
     synthesisRound,
     type StanceLabel,
 } from "./councilmodel";
+import { RetryWithButton } from "./councilretrymenu";
 import {
     councilChatDraftAtom,
     councilOpenProposalAtom,
@@ -1006,14 +1007,21 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
                         The coordinator failed: {failure.error}
                     </span>
                     {coordinator != null ? (
-                        <button
-                            type="button"
-                            data-council-action="retry"
-                            onClick={() => void retryExpert(c.id, coordinator.id)}
-                            className={BUTTON}
-                        >
-                            Retry the summary
-                        </button>
+                        <span className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                data-council-action="retry"
+                                onClick={() => void retryExpert(c.id, coordinator.id)}
+                                className={BUTTON}
+                            >
+                                Retry the summary
+                            </button>
+                            <RetryWithButton
+                                expert={coordinator}
+                                onPick={(model) => void retryExpert(c.id, coordinator.id, model)}
+                                className={BUTTON}
+                            />
+                        </span>
                     ) : null}
                 </>
             ) : (
@@ -1244,14 +1252,21 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                 <Banner tone="error">
                     <span data-council-banner="failed">The coordinator failed: {coordinatorFailed.error}</span>
                     {coordinator != null ? (
-                        <button
-                            type="button"
-                            data-council-action="retry"
-                            onClick={() => void retryExpert(c.id, coordinator.id)}
-                            className={BUTTON}
-                        >
-                            Retry the summary
-                        </button>
+                        <span className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                data-council-action="retry"
+                                onClick={() => void retryExpert(c.id, coordinator.id)}
+                                className={BUTTON}
+                            >
+                                Retry the summary
+                            </button>
+                            <RetryWithButton
+                                expert={coordinator}
+                                onPick={(model) => void retryExpert(c.id, coordinator.id, model)}
+                                className={BUTTON}
+                            />
+                        </span>
                     ) : null}
                 </Banner>
             ) : summary != null && outdated > 0 ? (

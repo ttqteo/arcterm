@@ -54,6 +54,22 @@ const click = (h, sel) =>
     h.ev(`(() => { const el = document.querySelector(${q(sel)}); if (el == null || el.disabled) return false; el.click(); return true; })()`);
 const until = (h, expr, ms = WAIT_MS) => waitFor((e) => h.ev(e), expr, ms);
 
+// a real mouse click at the middle of the first element `sel` matches (the shared menu opens where the pointer is); false
+// when it is not on screen
+async function mouseClick(h, sel) {
+    const box = await h.ev(`(() => {
+        const el = document.querySelector(${q(sel)});
+        el?.scrollIntoView({ block: "nearest" });
+        const r = el?.getBoundingClientRect();
+        return r && r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+    if (box == null) return false;
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+    await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: box.x, y: box.y, button: "left", buttons: 1, clickCount: 1 });
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: box.x, y: box.y, button: "left", buttons: 0, clickCount: 1 });
+    return true;
+}
+
 // the Summary of the council (or of another seeded from the same fixture, by id), reopened (a step that left it for the
 // Discussion or Setup comes back this way) and drawn
 async function openSummary(h, ctx, id = ctx.councilId) {
@@ -583,6 +599,14 @@ export const councilSummary = {
             const rating = await exists(h, RATING);
             const clicked = await click(h, "[data-council-action='retry']");
             await callSeen(h, "CouncilRetryCommand", () => true);
+            // Retry with… beside it: a menu of the other models, the coordinator's own (opus) left out; a pick retries once
+            // on that model
+            const withClicked = await mouseClick(h, "[data-council-retry-with='coordinator']");
+            const menuShown = await until(h, `!!document.querySelector('[data-menu-item="Retry on sonnet"]')`);
+            const menu = await h.ev(`[...document.querySelectorAll("[data-menu-item]")].map((el) => el.dataset.menuItem)`);
+            await h.shot("cdp-shots/council-summary-retry-with.png");
+            const picked = await mouseClick(h, '[data-menu-item="Retry on sonnet"]');
+            await callSeen(h, "CouncilRetryCommand", (c) => c.data?.model === "sonnet");
             const calls = await rpcCalls(h, "CouncilRetryCommand");
             await openSummary(h, ctx);
             const ok =
@@ -591,10 +615,19 @@ export const councilSummary = {
                 directions === 4 &&
                 !rating &&
                 clicked &&
-                calls.length === 1 &&
+                withClicked &&
+                menuShown &&
+                menu.includes("Retry on fable") &&
+                !menu.includes("Retry on opus") &&
+                picked &&
+                calls.length === 2 &&
                 calls[0].data?.id === failed &&
-                calls[0].data?.expertid === "coordinator";
-            return { ok, detail: JSON.stringify({ banner, directions, rating, calls }) };
+                calls[0].data?.expertid === "coordinator" &&
+                calls[0].data?.model === undefined &&
+                calls[1].data?.id === failed &&
+                calls[1].data?.expertid === "coordinator" &&
+                calls[1].data?.model === "sonnet";
+            return { ok, detail: JSON.stringify({ banner, directions, rating, menu, calls }) };
         });
 
         // "Was this useful?" (docs/superpowers/specs/2026-10-22-council-agent-team-design.md, Storage). CouncilRateCommand is replaced, so

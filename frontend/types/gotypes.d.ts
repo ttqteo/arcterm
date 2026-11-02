@@ -813,6 +813,7 @@ declare global {
     type CommandCouncilRetryData = {
         id: string;
         expertid: string;
+        model?: string;
     };
 
     // wshrpc.CommandCouncilSaveDocData
@@ -2401,6 +2402,7 @@ declare global {
         activity?: {[key: string]: CouncilActivity};
         failed?: {[key: string]: CouncilFailure};
         skips?: CouncilSkip[];
+        retries?: CouncilRetry[];
         stats?: {[key: string]: CouncilExpertStat};
         tokens: number;
         calls: number;
@@ -2577,6 +2579,15 @@ declare global {
         draft?: string;
         edited?: boolean;
         revision?: CouncilRevision;
+    };
+
+    // council.CouncilRetry
+    type CouncilRetry = {
+        expert: string;
+        round: number;
+        model: string;
+        was: string;
+        ts: number;
     };
 
     // council.CouncilRevision

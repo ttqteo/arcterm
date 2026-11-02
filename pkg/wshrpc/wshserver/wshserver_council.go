@@ -177,7 +177,7 @@ func (ws *WshServer) CouncilDeleteCommand(ctx context.Context, data wshrpc.Comma
 }
 
 func (ws *WshServer) CouncilRetryCommand(ctx context.Context, data wshrpc.CommandCouncilRetryData) error {
-	_, err := councilRunner.Retry(data.Id, data.ExpertId)
+	_, err := councilRunner.RetryOn(data.Id, data.ExpertId, data.Model)
 	return err
 }
 

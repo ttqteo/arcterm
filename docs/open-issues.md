@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council Retry with…: in a council whose coordinator failed, Retry with… → Retry on sonnet reruns the
+  summary on sonnet (the strip still reads Coordinator opus), and the saved document's run facts gain `- Retried:
+  Coordinator in round 3 on sonnet (its seat is opus)`. Do the same on a failed expert from the Discussion's failure
+  card and the chat's seat chip. CDP `council-summary` clicks the summary banner's menu with the RPC stubbed; no real
+  call on another model and neither Discussion site was tried. The commit that adds this line.
 - [ ] (arcterm) Summary failed panel closes: open a council whose summary failed. The panel's header ends with an ✕;
   clicking it hides the panel while the strip's Coordinator chip keeps its Retry. Retry, and when it fails again the
   panel is back. The commit that adds this line.
