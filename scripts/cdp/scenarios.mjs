@@ -31215,6 +31215,47 @@ const canvasTabsScenario = {
                 (await h.ev(`!!document.querySelector('[data-canvas-board-step="next"]')`)),
             JSON.stringify(prev)
         );
+
+        // 5. marking, which the canvas pane and a brainstorm's board rail share (canvasmarking.tsx). Mark, a box dragged
+        // over the board with real mouse events (the layer takes pointer capture), the numbered mark and the tray's note
+        // field and Send drawn. It does not send.
+        await h.ev(`document.querySelector('[data-canvas-pane] button[title^="Mark parts of the board"]')?.click()`);
+        const layerUp = await polishWaitFor(h, `!!document.querySelector("[data-canvas-mark-layer]")`, 3000);
+        const layerBox = await h.ev(`(() => {
+            const r = document.querySelector("[data-canvas-mark-layer]")?.getBoundingClientRect();
+            return r && r.width > 0 ? { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) } : null;
+        })()`);
+        if (layerBox != null) {
+            const from = { x: layerBox.x + Math.round(layerBox.w * 0.15), y: layerBox.y + Math.round(layerBox.h * 0.3) };
+            const to = { x: layerBox.x + Math.round(layerBox.w * 0.6), y: layerBox.y + Math.round(layerBox.h * 0.7) };
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...from, button: "none" });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...from, button: "left", buttons: 1, clickCount: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round((from.x + to.x) / 2), y: Math.round((from.y + to.y) / 2), button: "left", buttons: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...to, button: "left", buttons: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...to, button: "left", buttons: 0, clickCount: 1 });
+        }
+        const marked = await polishWaitFor(h, `!!document.querySelector("[data-canvas-mark='1']")`, 3000);
+        await polishNap(300);
+        const markState = await h.ev(`(() => {
+            const chip = document.querySelector("[data-canvas-mark='1'] span");
+            const send = document.querySelector("[data-canvas-send]");
+            return {
+                chip: (chip?.textContent || "").trim(),
+                note: !!document.querySelector('input[aria-label="Note for mark 1"]'),
+                send: !!send,
+                sendEnabled: !!send && !send.disabled,
+                marks: document.querySelectorAll("[data-canvas-mark]").length,
+            };
+        })()`);
+        await h.shot("cdp-shots/canvas-tabs-mark.png");
+        rec(
+            "5. mark on a board: Mark, a box dragged over the board draws mark 1, and the tray shows its note field and Send",
+            layerUp && layerBox != null && marked && markState.chip === "1" && markState.marks === 1 && markState.note && markState.send && markState.sendEnabled,
+            JSON.stringify({ layerUp, layerBox, marked, ...markState })
+        );
+        // leave marking: Mark pressed again turns it off and drops the marks, so nothing is sent or left behind
+        await h.ev(`document.querySelector('[data-canvas-pane] button[title^="Mark parts of the board"]')?.click()`);
+        await polishNap(200);
         return steps;
     },
     teardown: (h, ctx) => teardownCanvasBoards(h, ctx, "canvas-tabs"),
