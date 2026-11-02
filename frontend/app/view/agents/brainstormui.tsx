@@ -5,7 +5,6 @@
 // working view and the was/now diff.
 
 import { foldReveal } from "@/app/element/motiontokens";
-import { getApi } from "@/app/store/global";
 import { cn } from "@/util/util";
 import { useAtomValue, useSetAtom } from "jotai";
 import { AnimatePresence, motion } from "motion/react";
@@ -17,8 +16,6 @@ import {
     hasProsCons,
     judgeWork,
     optionLetter,
-    partBoards,
-    partSpikes,
     partTitle,
     phaseSteps,
     pickedLine,
@@ -28,7 +25,6 @@ import {
     questionTrack,
     sendPickedLabel,
     sentenceDiff,
-    spikeUrl,
     togglePick,
     type AnswerOption,
     type Approach,
@@ -45,14 +41,7 @@ import {
 } from "./brainstormmodel";
 import { optionHoverAtom } from "./brainstormrail";
 import { sendBrainstorm } from "./brainstormsend";
-import { openBrainstormBoard, type BrainstormState } from "./brainstormstore";
-import { boardUrl, canvasDir, DEFAULT_BOARD_H, DEFAULT_BOARD_W, type CanvasBoard } from "./canvasmodel";
-import { attachCanvas } from "./canvasstore";
-
-const THUMB_W = 300;
-// beside a question's answers, where the label goes under the board so both fit the main column
-const THUMB_W_COMPACT = 220;
-const THUMB_MAX_H = 200;
+import type { BrainstormState } from "./brainstormstore";
 
 export const WORKING_TITLE = "The agent is writing; this opens when it asks again";
 const CHECK_LOCK_TITLE = "Locked while the builder check runs; this opens when the agent has taken in its questions";
@@ -1125,117 +1114,6 @@ export function JudgingMain({
                     {ans.act.error != null ? <span className={ERROR_LINE}>{ans.act.error}</span> : null}
                 </div>
             </MainBody>
-        </div>
-    );
-}
-
-// what a part shows to look at, wherever its body opens: the talk's part rows and the check's review
-export function PartMockups({
-    agentId,
-    s,
-    f,
-    part,
-}: {
-    agentId: string;
-    s: BrainstormState;
-    f: BrainstormFile;
-    part: BrainstormPart;
-}) {
-    const boards = partBoards(f, part, s.base);
-    const spikes = partSpikes(f, part, s.base);
-    return (
-        <>
-            {boards != null ? (
-                <Thumbnails agentId={agentId} s={s} canvas={f.canvas!} base={s.base!} boards={boards} />
-            ) : null}
-            {spikes != null ? <Spikes base={s.base!} canvas={f.canvas!} spikes={spikes} /> : null}
-        </>
-    );
-}
-
-// a spike is a live page to feel, not a board to look at, so it opens in the browser rather than the canvas
-function Spikes({ base, canvas, spikes }: { base: string; canvas: string; spikes: string[] }) {
-    return (
-        <div data-brainstorm-spikes className="flex flex-wrap items-baseline gap-x-[14px] gap-y-[4px]">
-            <span className="text-[11.5px] text-muted">{spikes.length > 1 ? "Live spikes" : "Live spike"}</span>
-            {spikes.map((path) => (
-                <button
-                    key={path}
-                    type="button"
-                    data-brainstorm-spike={path}
-                    title={spikeUrl(base, canvas, path)}
-                    onClick={() => getApi().openExternal(spikeUrl(base, canvas, path))}
-                    className={cn(LINK, "border-0 bg-transparent p-0 font-mono text-[11.5px]")}
-                >
-                    {path}
-                </button>
-            ))}
-        </div>
-    );
-}
-
-// a part's boards, each as a scaled live thumbnail with its option letter and a way to open it full size
-export function Thumbnails({
-    agentId,
-    s,
-    canvas,
-    base,
-    boards,
-    compact = false,
-}: {
-    agentId: string;
-    s: BrainstormState;
-    canvas: string;
-    base: string;
-    boards: string[];
-    compact?: boolean;
-}) {
-    const thumbW = compact ? THUMB_W_COMPACT : THUMB_W;
-    const open = (board: string) => {
-        attachCanvas(agentId, { topic: canvas, dir: canvasDir(s.cwd, canvas), projectDir: s.cwd, board }, Date.now());
-        openBrainstormBoard(agentId, board);
-    };
-    return (
-        <div className={cn("flex flex-none flex-col", compact ? "gap-[14px]" : "gap-[10px]")}>
-            {boards.map((name, i) => {
-                const b: CanvasBoard | undefined = s.boards.find((x) => x.name === name);
-                const w = b?.w ?? DEFAULT_BOARD_W;
-                const h = b?.h ?? DEFAULT_BOARD_H;
-                const scale = thumbW / w;
-                return (
-                    <div key={name} className={cn("flex", compact ? "flex-col gap-[6px]" : "items-start gap-[12px]")}>
-                        <div
-                            data-brainstorm-thumb={name}
-                            className="pointer-events-none relative flex-none overflow-hidden rounded-[8px] border border-edge-mid bg-background"
-                            style={{ width: thumbW, height: Math.min(THUMB_MAX_H, Math.round(h * scale)) }}
-                        >
-                            <iframe
-                                src={boardUrl(base, canvas, name)}
-                                title={name}
-                                tabIndex={-1}
-                                sandbox="allow-scripts allow-same-origin"
-                                className="absolute left-0 top-0 border-0"
-                                style={{ width: w, height: h, transform: `scale(${scale})`, transformOrigin: "0 0" }}
-                            />
-                        </div>
-                        <div className={cn("flex flex-col", compact ? "gap-[2px]" : "gap-[6px] pt-[2px]")}>
-                            <span className="font-mono text-[10.5px] text-muted">
-                                {boards.length > 1
-                                    ? `${name} · option ${String.fromCharCode(65 + i)} of ${boards.length}`
-                                    : name}
-                            </span>
-                            <button
-                                type="button"
-                                data-brainstorm-open-board
-                                onClick={() => open(name)}
-                                className={cn(LINK, "text-left text-[12px] font-semibold")}
-                            >
-                                Open full size
-                            </button>
-                        </div>
-                    </div>
-                );
-            })}
         </div>
     );
 }

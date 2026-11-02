@@ -38,7 +38,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
-- A brainstorm mockup's thumbnail opens the board full size when you click it, not only from its Open full size link.
+- A brainstorm's boards now sit in a resizable right rail beside the question instead of small thumbnails in it: drag
+  the rail wider and they lie side by side, each headed by its option and lit with it when you point at either, and a
+  click opens a board large in the rail while the question stays on screen, with marking still there.
 - A council's header fits on one line: the mode leads, a long question shortens to fit instead of pushing the status
   onto a second row, and Top, Latest and Back in its discussion glide to their place instead of jumping.
 

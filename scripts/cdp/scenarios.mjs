@@ -29405,8 +29405,8 @@ const BS_HINTS_SEEN_KEY = "brainstorm.hintsSeen";
 const bsSeeHints = (h) => h.ev(`(() => { try { localStorage.setItem(${JSON.stringify(BS_HINTS_SEEN_KEY)}, "1"); return true; } catch { return false; } })()`);
 
 // Whether the agent's details rail (the `d` binding's atom) is open. It stays beside a brainstorm on main, as it does
-// beside a canvas, so at the dev window's 1600×950 the pane is about 514px wide and its rows stack: a step that judges a
-// row's layout reads this with the row, so it proves the layout with the rail open, never with it hidden.
+// beside a canvas, so in the harness (the dev window at 1600×950) the pane is about 974px wide with it open: a step that
+// judges a row's layout reads this with the row, so it proves the layout with the rail open, never with it hidden.
 const bsRailOpen = (h) =>
     lookEval(h, `
         const { globalStore } = await mod("app/store/jotaiStore.ts");

@@ -114,10 +114,42 @@ which opens the design with those notes open. Coming back from the design clears
 whose state alone changed (a confirm) is not new. The skill puts a summary of any report in the
 question's `why` too, since the link says only how many notes there are.
 
-A part's mockups draw under its body when its row opens: each board a scaled live thumbnail with
-Open full size (the canvas), each of its `spikes` (a throwaway live page under the canvas folder, for
-motion a board cannot show) a link that opens it in the browser from the same served folder.
-`PartMockups` in `brainstormui.tsx` draws both, from `partBoards` and `partSpikes`.
+**The right rail.** A part's mockups are not in its row: the rail (`BrainstormRail` in `brainstormrail.tsx`) draws
+them, from `railGroups` in `brainstormmodel.ts`. It has two tabs, **Boards · N** and a second one that is Decided so
+far · N in the design and Builder check in the builder check (its own rail, `AskRail` or `AnsweredRail`). With no
+board or spike to show there is no tab strip, and the rail is Decided so far alone, 280px at the least (the check's rail,
+460px).
+
+- **Boards tab.** While a question is open it lists the boards of the question's part, and opens first; with none open
+  (the design, the judge's wait, the agent writing, the review) it lists every part's, each group under its part's title,
+  and opens first in the design (in the check the check's tab does). Each board is a scaled live tile at the column's
+  width and its own aspect. Opening a part from anywhere (a part row, a link over the question, a review row) switches
+  the rail to Boards and scrolls to that part's group. A part's `spikes` (a throwaway live page under the canvas
+  folder, for motion a board cannot show) are links under its boards that open it in the browser from the same served
+  folder; a part with spikes and no boards is its title and the links.
+- **Each board is tied to its option.** A board is headed by its option's letter and label (`A · Lag trend first`) when
+  the open question offers options and the part has as many boards as options, two or more (`railBoardHeads`): board
+  `i` is option `i`. Hovering or ticking an option outlines its board in the accent and scrolls the rail to it, and
+  hovering a board lights its option, through one per-agent atom (`optionHoverAtom`). Any other count leaves the match
+  a guess: the head is the board's title in `canvas.json`, else its file name, and the board is linked to no option.
+  A question whose part has boards starts with its pros and cons folded.
+- **Width.** A handle on the rail's left edge drags it; the width is kept on the machine (`localStorage`
+  `brainstorm.railWidth`, one number for the design and the check) and the rail opens at 32% of the pane until then.
+  The largest leaves the question 360px. Two columns once the rail's inner width fits two 380px tiles and their gap
+  (776px); a quiet readout beside the tabs says `2 columns · 52%`. The sizes are pure functions in
+  `brainstormmodel.ts` (`clampRailWidth`, `railMaxWidth`, `railColumns`).
+- **A board opens large without leaving the question.** Clicking a tile widens the rail to its largest and shows only
+  that board, drawn from the agent's canvas state (`attachCanvas`, then `openBrainstormBoard`, whose board now means
+  "widened in the rail"). The question stays on screen and live, so an option can be picked while the board is large.
+  Clicking the board again, the close button, the Boards tab or `Esc` returns the rail to its width; `[` `]` and ← →
+  step the boards. **Mark** draws marks on the widened board with the layer `CanvasPane` shares
+  (`canvasmarking.tsx`), and its Send button sends them to the agent as one line (`sendCanvasMarks`), as on an agent's
+  canvas.
+- **A narrow pane.** Below 640px (820px in the builder check) the rail goes under the question at full width, without
+  its handle, from one container query on `RailRow`. In the check this holds with no Boards tab too: the spec kept that
+  rail at 460px beside the question, but a pane under 820px would leave the question under 360px, so the rail stacks.
+
+The standalone canvas pane and the Canvas gallery are unchanged; they do not use the rail.
 
 **Builder check.** Check with a builder appears once the agent sets `done`, no question is open and
 every part is yours.
@@ -130,8 +162,9 @@ answered. Approve stays off until every builder question has an answer. While th
 pane shows "A builder is reading the design." and Check with a builder is unavailable.
 
 The check's review keeps every part's mockups reachable while the user confirms the design: a review
-row whose part has a board or a spike opens to them (even a row new since the check, which has
-nothing it was), and so does a part opened from the "Yours, unchanged" and notes links under it.
+row whose part has a board or a spike opens the rail's Boards tab at that part (even a row new since
+the check, which has nothing it was), and so does a part opened from the "Yours, unchanged" and notes
+links under it.
 
 Any question the agent waits on is in the file's `question`, in every phase. A question about no
 part (a choice the agent needs before it can go on) shows as a plain "Question N" card, without
@@ -321,6 +354,7 @@ to the judge**). The judge rides the builder check's machinery.
 | Polling, re-attach after a restart, settling a sent line | `frontend/app/view/agents/brainstormpoller.ts` |
 | Sending lines, opening the launcher, run id handback | `frontend/app/view/agents/brainstormsend.ts` |
 | The pane (frame, question, design) | `frontend/app/view/agents/brainstormpane.tsx`, `brainstormui.tsx` |
+| The right rail: Boards tab, drag handle, widened board, the narrow-pane row | `frontend/app/view/agents/brainstormrail.tsx`, `canvasmarking.tsx` (the shared marking layer) |
 | The builder check's review and the Run step | `frontend/app/view/agents/brainstormcheck.tsx`, `brainstormreview.tsx`, `brainstormrun.tsx` |
 | The first-open hint card and the start line | `frontend/app/view/agents/brainstormhints.ts`, `brainstormhintscard.tsx` |
 | The pane's keys | `frontend/app/store/keybindings/bindings.ts` (`inBrainstorm…` predicates), `whenstate.ts` |
