@@ -52,7 +52,9 @@ const (
 	actSummary  = "Writing the summary"
 	actPerson   = "Replying to the person"
 
-	// maxPasses stops a run that keeps finding replies to answer, which only a store that cannot save can cause.
+	// maxPasses stops a run whose answers passes in a row answer none of the person's replies, which only a store that
+	// cannot save can cause. A pass that answers some starts the count again, so a person who keeps posting while the
+	// passes run is never left with a reply nobody answers.
 	maxPasses = 8
 
 	stopWait = 15 * time.Second
@@ -654,6 +656,7 @@ func (r *Runner) drive(ctx context.Context, rn *run, id string, w work) {
 	if ctx.Err() == nil { // a Stop can land between the launch and the goroutine's first step
 		end = w(ctx, rn, id)
 	}
+	answered := -1 // the person's replies answered when the last answers pass began
 	for passes := 0; ; passes++ {
 		r.mu.Lock()
 		if end.heldRound > 0 && ctx.Err() == nil {
@@ -666,6 +669,9 @@ func (r *Runner) drive(ctx context.Context, rn *run, id string, w work) {
 		}
 		if end.answers && ctx.Err() == nil && passes < maxPasses {
 			if c, err := Load(id); err == nil && hasOpenReplies(c) {
+				if n := answeredReplies(c); n > answered {
+					passes, answered = 0, n
+				}
 				r.mu.Unlock()
 				if err := r.answersPass(ctx, rn, id); err != nil {
 					log.Printf("[council] %s: answers pass: %v", id, err)
@@ -1313,6 +1319,16 @@ func owed(c *Council, e CouncilExpert, openOnly bool) []CouncilReply {
 
 func hasOpenReplies(c *Council) bool {
 	return slices.ContainsFunc(c.Replies, func(pr CouncilReply) bool { return pr.Author == YouId && !pr.Answered })
+}
+
+func answeredReplies(c *Council) int {
+	n := 0
+	for _, pr := range c.Replies {
+		if pr.Author == YouId && pr.Answered {
+			n++
+		}
+	}
+	return n
 }
 
 func markAnswered(c *Council, ids []string) {
