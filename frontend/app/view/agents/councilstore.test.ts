@@ -28,6 +28,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         CouncilRolesCommand: vi.fn(),
         CouncilSaveGroupCommand: vi.fn(),
         CouncilRateCommand: vi.fn(),
+        CouncilThumbCommand: vi.fn(),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: { client: true } }));
@@ -84,6 +85,7 @@ import {
     stopCouncil,
     suggestCouncil,
     summarizeCouncil,
+    thumbCouncil,
 } from "./councilstore";
 import { MAX_TASK_IMAGES, type TaskImage } from "./launcherimages";
 
@@ -405,6 +407,44 @@ describe("rating", () => {
         const r = await rateCouncil("r3", "useful");
         expect(r.ok).toBe(true);
         expect(globalStore.get(councilAtom("r3"))).toBeNull();
+    });
+});
+
+describe("thumbs", () => {
+    const nullAnswer = null as unknown as void;
+
+    it("sends the thumb and puts it on the idea in the council's atom at once", async () => {
+        get.mockResolvedValue(
+            council("t1", "/p/t", {
+                proposals: [{ id: "P1", author: "ux", title: "t", argument: "a", ts: 1 }],
+                replies: [{ id: "r1", proposalid: "P1", author: "ux", text: "x", round: 2, ts: 2, thumb: "like" }],
+            })
+        );
+        await loadCouncil("t1");
+        vi.mocked(RpcApi.CouncilThumbCommand).mockResolvedValue(nullAnswer);
+        expect(await thumbCouncil("t1", "P1", "dislike")).toEqual({ ok: true, value: null });
+        expect(RpcApi.CouncilThumbCommand).toHaveBeenCalledWith(TabRpcClient, {
+            id: "t1",
+            item: "P1",
+            thumb: "dislike",
+        });
+        expect(globalStore.get(councilAtom("t1"))?.proposals?.[0].thumb).toBe("dislike");
+
+        // "" takes one back
+        await thumbCouncil("t1", "r1", "");
+        expect(globalStore.get(councilAtom("t1"))?.replies?.[0].thumb).toBeUndefined();
+    });
+
+    it("leaves the atom as it was when the call fails", async () => {
+        const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+        get.mockResolvedValue(
+            council("t2", "/p/t", { proposals: [{ id: "P1", author: "ux", title: "t", argument: "a", ts: 1 }] })
+        );
+        await loadCouncil("t2");
+        vi.mocked(RpcApi.CouncilThumbCommand).mockRejectedValue(new Error("reply r1 is the person's own"));
+        expect(await thumbCouncil("t2", "P1", "like")).toEqual({ ok: false, error: "reply r1 is the person's own" });
+        expect(globalStore.get(councilAtom("t2"))?.proposals?.[0].thumb).toBeUndefined();
+        quiet.mockRestore();
     });
 });
 

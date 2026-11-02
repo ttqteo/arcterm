@@ -40,9 +40,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   closed ones too, is in the new Councils list at the top of the Agent sidebar (under Canvas gallery, or `Ctrl+G` `o`),
   newest first by Today, Yesterday and Earlier, with a search; open one there and Reopen puts it back in the tree.
   <!-- try: go:councils -->
+- The jump buttons are now just their arrows: a council's Top, Back and Latest (↑ ↩ ↓), and the Latest button (↓) in
+  an agent's transcript; hover one to see what it does.
 
 ### Added
 
+- Like or dislike a council's messages: 👍 and 👎 sit under every idea, and in the line over each seat's reply when
+  you hover it. The seats read what you liked and disliked in their next turns and the summary weighs it as your own
+  view, so you can steer the discussion without typing; press the same thumb again to take it back.
 - A council that already exists, running or done, can take a live claude or pi chat into it: type `@` in its message
   box, pick the chat under Add a live chat (its short id, title, project and how much context it holds are listed) and
   send. The chat joins the council, answers that message from its own context, and stays a seat.
@@ -177,6 +182,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A running task's mark in a run's graph sits back in the middle of its pulsing ring, and every task's mark lines up
+  with its title again, instead of sitting a few pixels low.
 - A brainstorm's Approve stays off while the run it started is still starting, with "The run is starting" beside it,
   so pressing it again in the minute before the agent records the run no longer starts the same run twice.
 - A brainstorm's "What you handed over" list keeps its text readable: where each decision came from now sits under the

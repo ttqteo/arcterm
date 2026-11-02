@@ -270,6 +270,35 @@ func SetRating(id, rating string, at int64) (*Council, error) {
 	})
 }
 
+// SetThumb keeps the person's like or dislike on one of the council's sent ideas or seat replies, named by its id (P1,
+// r3): ThumbLike or ThumbDislike, and "" takes it back. Any other word, the person's own reply, a held or dropped draft
+// and an id the council does not have are refused, and nothing is saved.
+func SetThumb(id, item, thumb string) (*Council, error) {
+	if thumb != "" && thumb != ThumbLike && thumb != ThumbDislike {
+		return nil, fmt.Errorf("thumb %q is not %q, %q or empty", thumb, ThumbLike, ThumbDislike)
+	}
+	return Update(id, func(c *Council) error {
+		if p := findProposal(c, item); p != nil {
+			if !Sent(p.Draft) {
+				return fmt.Errorf("idea %s is not sent", item)
+			}
+			p.Thumb = thumb
+			return nil
+		}
+		r := findReply(c, item)
+		switch {
+		case r == nil:
+			return fmt.Errorf("council %s has no idea or reply %q", id, item)
+		case r.Author == YouId:
+			return fmt.Errorf("reply %s is the person's own", item)
+		case !Sent(r.Draft):
+			return fmt.Errorf("reply %s is not sent", item)
+		}
+		r.Thumb = thumb
+		return nil
+	})
+}
+
 // samePath compares two paths as the OS does: cleaned, and without case on Windows.
 func samePath(a, b string) bool {
 	a, b = filepath.Clean(a), filepath.Clean(b)

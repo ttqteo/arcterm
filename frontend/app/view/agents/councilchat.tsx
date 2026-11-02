@@ -30,7 +30,18 @@ import { useKeybindings } from "@/app/store/keybindings/store";
 import { reloadFileIndex } from "@/app/view/code/codestore";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Check, ChevronDown, ChevronUp, CornerDownRight, FileText, Loader2, Plus, X } from "lucide-react";
+import {
+    Check,
+    ChevronDown,
+    ChevronUp,
+    CornerDownRight,
+    FileText,
+    Loader2,
+    Plus,
+    ThumbsDown,
+    ThumbsUp,
+    X,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
     useCallback,
@@ -81,7 +92,15 @@ import {
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { markSpans } from "./councilmarks";
-import { answerers, councilProjectName, draftsWaitWord, followupLabel, type SeatableAgent } from "./councilmodel";
+import {
+    answerers,
+    councilProjectName,
+    draftsWaitWord,
+    followupLabel,
+    nextThumb,
+    type CouncilThumb,
+    type SeatableAgent,
+} from "./councilmodel";
 import { offersRetryAll, retryAllModels, retryAllSeats } from "./councilretry";
 import { RetryModelPick, RetryWithButton } from "./councilretrymenu";
 import {
@@ -119,6 +138,7 @@ import {
     replyCouncil,
     retryAllExperts,
     retryExpert,
+    thumbCouncil,
     useEstimate,
 } from "./councilstore";
 import { imageFilesOf, imagesPending, type TaskImage } from "./launcherimages";
@@ -337,18 +357,81 @@ const Reaction = ({ text }: { text: string }) => (
     </span>
 );
 
+// the person's like and dislike on a seat's idea or reply: quiet until one is on, which takes its tint; a press on the
+// one that is on takes it back. The seats' later prompts and the summary read it, so it steers them with no words.
+const THUMBS: { thumb: CouncilThumb; Icon: typeof ThumbsUp; word: string; on: string }[] = [
+    { thumb: "like", Icon: ThumbsUp, word: "Like", on: "bg-success/12 text-success-soft" },
+    { thumb: "dislike", Icon: ThumbsDown, word: "Dislike", on: "bg-error/12 text-error-soft" },
+];
+
+function Thumbs({
+    councilId,
+    item,
+    thumb,
+    acts,
+    quiet,
+}: {
+    councilId: string;
+    item: string;
+    thumb: CouncilThumb | "";
+    acts: Actions;
+    quiet?: boolean; // a reply's byline: smaller, and hidden until its reply is hovered or focused while neither is on
+}) {
+    const key = `thumb:${item}`;
+    const busy = acts.busy.has(key);
+    return (
+        <span
+            data-council-thumbs={item}
+            data-thumb={thumb === "" ? undefined : thumb}
+            className={cn(
+                "inline-flex gap-[2px]",
+                quiet &&
+                    thumb === "" &&
+                    "opacity-0 group-hover/reply:opacity-100 focus-within:opacity-100 group-focus-within/reply:opacity-100"
+            )}
+        >
+            {THUMBS.map(({ thumb: t, Icon, word, on }) => {
+                const pressed = thumb === t;
+                return (
+                    <button
+                        key={t}
+                        type="button"
+                        data-council-thumb={t}
+                        aria-pressed={pressed}
+                        aria-label={pressed ? `Take back your ${word.toLowerCase()}` : word}
+                        title={pressed ? `Take back your ${word.toLowerCase()}` : `${word}: the council reads it`}
+                        disabled={busy}
+                        onClick={() =>
+                            void acts.run(key, word, () => thumbCouncil(councilId, item, nextThumb(thumb, t)))
+                        }
+                        className={cn(
+                            "flex cursor-pointer items-center justify-center rounded-[6px] border-0 outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default",
+                            quiet ? "h-[20px] w-[22px]" : "h-[24px] w-[26px]",
+                            pressed ? on : "bg-transparent text-muted hover:bg-surface-hover hover:text-secondary"
+                        )}
+                    >
+                        <Icon size={quiet ? 12 : 13} strokeWidth={2} aria-hidden />
+                    </button>
+                );
+            })}
+        </span>
+    );
+}
+
 function IdeaMessage({
     councilId,
     item,
     open,
     focused,
     onOpen,
+    acts,
 }: {
     councilId: string;
     item: IdeaPost;
     open: boolean;
     focused: boolean;
     onOpen: (id: string) => void;
+    acts: Actions;
 }) {
     const t = item.thread;
     return (
@@ -422,6 +505,7 @@ function IdeaMessage({
                         {item.agrees.map((text, i) => (
                             <Reaction key={i} text={text} />
                         ))}
+                        <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />
                         {item.picks != null && (
                             <span
                                 data-council-picks
@@ -440,7 +524,15 @@ function IdeaMessage({
 
 // the pill and the time beside a reply's author; a thread's reply drawn in the channel (one seat's messages) also names
 // the idea it is on, a click opening that thread
-function ReplyHeader({ item, onOpenIdea }: { item: ReplyPost; onOpenIdea?: (id: string) => void }) {
+function ReplyHeader({
+    item,
+    onOpenIdea,
+    thumbs,
+}: {
+    item: ReplyPost;
+    onOpenIdea?: (id: string) => void;
+    thumbs?: ReactNode;
+}) {
     return (
         <Byline who={item}>
             <CouncilPill word={item.label} tone={item.pill} />
@@ -459,6 +551,7 @@ function ReplyHeader({ item, onOpenIdea }: { item: ReplyPost; onOpenIdea?: (id: 
                     <span className="min-w-0 truncate">{item.on}</span>
                 </button>
             )}
+            {thumbs}
         </Byline>
     );
 }
@@ -513,12 +606,14 @@ function PersonText({ councilId, item }: { councilId: string; item: ReplyPost })
 function ReplyMessage({
     councilId,
     item,
+    acts,
     inThread,
     onOpenIdea,
     rise,
 }: {
     councilId: string;
     item: ReplyPost;
+    acts: Actions;
     inThread?: boolean;
     onOpenIdea?: (id: string) => void;
     rise?: boolean; // the person's post that just arrived: it rises in from the composer (sentRise)
@@ -535,11 +630,20 @@ function ReplyMessage({
             initial={rise ? "initial" : false}
             animate="animate"
             style={{ transformOrigin: "bottom right" }}
-            className={cn("flex gap-[8px]", item.mine && "flex-row-reverse")}
+            className={cn("group/reply flex gap-[8px]", item.mine && "flex-row-reverse")}
         >
             {!item.mine && <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} />}
             <div className={cn("flex min-w-0 max-w-[680px] flex-col gap-[5px]", item.mine && "items-end")}>
-                <ReplyHeader item={item} onOpenIdea={inThread ? undefined : onOpenIdea} />
+                <ReplyHeader
+                    item={item}
+                    onOpenIdea={inThread ? undefined : onOpenIdea}
+                    thumbs={
+                        // a seat's reply only; in its byline, shown on hover or focus until one is on, so a reply is no taller
+                        item.mine ? undefined : (
+                            <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} quiet />
+                        )
+                    }
+                />
                 <div
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] border px-[14px] py-[10px]",
@@ -1566,13 +1670,12 @@ function ThreadPanel({
                                 weak={idea.weak}
                                 source={{ councilId: c.id, owner: idea.id, title: idea.title }}
                             />
-                            {idea.agrees.length > 0 && (
-                                <div className="flex flex-wrap gap-[6px]">
-                                    {idea.agrees.map((text, i) => (
-                                        <Reaction key={i} text={text} />
-                                    ))}
-                                </div>
-                            )}
+                            <div className="flex flex-wrap items-center gap-[6px]">
+                                {idea.agrees.map((text, i) => (
+                                    <Reaction key={i} text={text} />
+                                ))}
+                                <Thumbs councilId={c.id} item={idea.id} thumb={idea.thumb} acts={acts} />
+                            </div>
                         </div>
                     </div>
                 </article>
@@ -1586,6 +1689,7 @@ function ThreadPanel({
                             key={item.id}
                             councilId={c.id}
                             item={item}
+                            acts={acts}
                             inThread
                             rise={item.mine && entering.has(item.id)}
                         />
@@ -1837,9 +1941,9 @@ function JumpPill({
                 title={label}
                 aria-label={label}
                 onClick={onClick}
-                className="flex cursor-pointer items-center gap-[5px] rounded-full border border-edge-strong bg-surface-raised px-[12px] py-[5px] text-[12.5px] font-medium text-secondary shadow-popover-sm outline-none hover:border-accent hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                className="flex size-[28px] cursor-pointer items-center justify-center rounded-full border border-edge-strong bg-surface-raised text-[14px] leading-none text-secondary shadow-popover-sm outline-none hover:border-accent hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
             >
-                {children}
+                <span aria-hidden>{children}</span>
             </button>
         </PopoverReveal>
     );
@@ -1881,7 +1985,7 @@ function Channel({
             </div>
             <div className="pointer-events-none absolute bottom-3 right-4 z-20 flex items-center gap-[6px]">
                 <JumpPill show={jumps.pills.top} jump="top" label="Jump to the top" onClick={jumps.toTop}>
-                    <span aria-hidden>↑</span> Top
+                    ↑
                 </JumpPill>
                 <JumpPill
                     show={jumps.pills.back}
@@ -1889,10 +1993,10 @@ function Channel({
                     label="Back to the message you were reading"
                     onClick={jumps.back}
                 >
-                    <span aria-hidden>↩</span> Back
+                    ↩
                 </JumpPill>
                 <JumpPill show={jumps.pills.latest} jump="latest" label="Jump to the latest" onClick={jumps.toLatest}>
-                    <span aria-hidden>↓</span> Latest
+                    ↓
                 </JumpPill>
             </div>
         </div>
@@ -2072,6 +2176,7 @@ export function CouncilChat({
                                         key={item.id}
                                         councilId={c.id}
                                         item={item}
+                                        acts={acts}
                                         open={threadOpen && item.id === openId}
                                         focused={item.id === focusedId}
                                         onOpen={open}
@@ -2085,6 +2190,7 @@ export function CouncilChat({
                                         key={item.id}
                                         councilId={c.id}
                                         item={item}
+                                        acts={acts}
                                         onOpenIdea={open}
                                         rise={item.mine && entering.has(item.id)}
                                     />

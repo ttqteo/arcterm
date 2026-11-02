@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Jump buttons are arrows only: scroll a council's Discussion off both ends → round ↑ / ↩ / ↓ buttons in
+  its bottom right, no words, each with its tooltip on hover; scroll up in an agent's transcript (a card's or the
+  rail's) → a round ↓ at the bottom centre, no "Latest". (aff9e9b80, b640846da)
 - [ ] (arcterm) A live chat joins a council that already exists: open a Done council, type `@` in its message box →
   the seats, then **Add a live chat** with each real claude or pi chat (short id, title, harness, project, context
   size; none of the seated ones). Pick one and send a question → the line under the box counts it ("… and 1 chat
