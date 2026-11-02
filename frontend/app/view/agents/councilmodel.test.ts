@@ -46,6 +46,7 @@ import {
     synthesisRound,
     threadTree,
     treeMeta,
+    type SeatableAgent,
 } from "./councilmodel";
 
 const MIN = 60_000;
@@ -395,6 +396,104 @@ describe("answerers", () => {
     });
 });
 
+// live chats: tab ids are UUIDs, whose 9th character is a `-`
+describe("answerers: live chats by their mention key", () => {
+    const SEATED = "5b7c1d90-4e2a-4f6b-9a31-0c8d2e7f6a15";
+    const NEAR_A = "3e19c0d2-a1c4-4b7e-9d20-5f8a6c3e1b07";
+    const NEAR_B = "3e19c0d2-b7e0-4a91-8c3d-2e6f1a9b5d08";
+    const FAR = "82faafca-3b1c-4d0e-8a57-9c1e6f0d2b44";
+    const seatable = (id: string, name: string): SeatableAgent => ({
+        id,
+        name,
+        project: "D:\\code\\arc",
+        harness: "pi",
+        context: 48_000,
+    });
+    const far = seatable(FAR, "Design review");
+    const ids = (list: CouncilExpert[]) => list.map((e) => e.id);
+    const withChats = (...tabs: [string, string][]) =>
+        council({
+            experts: [...experts.slice(0, 4), ...tabs.map(([tab, name]) => agentOf(tab, name)), experts[4]],
+        });
+    const one = withChats([SEATED, "Witness synthesis"]);
+    const twins = withChats([NEAR_A, "Perf notes"], [NEAR_B, "Perf notes"]);
+
+    it("reaches a chat seat by @ and a whole word of 8 characters or more that starts its tab id", () => {
+        expect(ids(answerers(one, "", "", "@5b7c1d90 why?"))).toEqual([`agent-${SEATED}`]);
+        expect(ids(answerers(one, "", "", "@5B7C1D90, why?"))).toEqual([`agent-${SEATED}`]);
+        expect(ids(answerers(one, "", "", "@5b7c1d90-4e2a why?"))).toEqual([`agent-${SEATED}`]);
+        expect(ids(answerers(one, "", "", `@${SEATED}`))).toEqual([`agent-${SEATED}`]);
+        expect(ids(answerers(one, "P2", "r1", "@RAM and @5b7c1d90"))).toEqual(["ram", `agent-${SEATED}`]);
+    });
+
+    it("does not read a short word, a word that is not its start, a longer word or an address", () => {
+        const everyone = ["ux", "ram", "nu", "sk", `agent-${SEATED}`];
+        expect(ids(answerers(one, "", "", "@5b7c1d9 why?"))).toEqual(everyone);
+        expect(ids(answerers(one, "", "", "@b7c1d90f why?"))).toEqual(everyone);
+        expect(ids(answerers(one, "", "", "@5b7c1d90x why?"))).toEqual(everyone);
+        expect(ids(answerers(one, "", "", "mail a@5b7c1d90"))).toEqual(everyone);
+    });
+
+    it("keeps two chats whose tab ids share their first 8 characters apart", () => {
+        expect(ids(answerers(twins, "", "", "@3e19c0d2-a what do you think?"))).toEqual([`agent-${NEAR_A}`]);
+        expect(ids(answerers(twins, "", "", "@3e19c0d2-b, and you?"))).toEqual([`agent-${NEAR_B}`]);
+        expect(ids(answerers(twins, "", "", `@${NEAR_A} @${NEAR_B}`))).toEqual([`agent-${NEAR_A}`, `agent-${NEAR_B}`]);
+    });
+
+    it("reads a word both chats start with as no mention", () => {
+        const everyone = ["ux", "ram", "nu", "sk", `agent-${NEAR_A}`, `agent-${NEAR_B}`];
+        expect(ids(answerers(twins, "", "", "@3e19c0d2 which of you?"))).toEqual(everyone);
+        expect(ids(answerers(twins, "", "", "@3e19c0d2- which of you?"))).toEqual(everyone);
+    });
+
+    it("counts the chats a message adds as named, after the seats", () => {
+        expect(answerers(council(), "", "", "@82faafca", [far])).toEqual([agentSeat(far)]);
+        expect(ids(answerers(council(), "", "", "@RAM and @82faafca", [far]))).toEqual(["ram", `agent-${FAR}`]);
+        expect(ids(answerers(council(), "P2", "r1", "@82faafca", [far]))).toEqual([`agent-${FAR}`]);
+        expect(ids(answerers(one, "", "", "@82faafca and @5b7c1d90", [far]))).toEqual([
+            `agent-${SEATED}`,
+            `agent-${FAR}`,
+        ]);
+    });
+
+    it("builds the seat of a joining chat as wavesrv does", () => {
+        const [seat] = answerers(council(), "", "", "@82faafca", [far]);
+        expect(seat).toEqual({
+            id: `agent-${FAR}`,
+            name: "Design review",
+            brief: "",
+            model: "",
+            agent: FAR,
+            harness: "pi",
+            context: 48_000,
+        });
+        expect(isAgentSeat(seat)).toBe(true);
+    });
+
+    it("names two joining chats in the order given, and a chat that is a seat once", () => {
+        const other = seatable("c0ffee00-1111-4222-8333-444455556666", "Other");
+        expect(ids(answerers(council(), "", "", "@c0ffee00 @82faafca", [far, other]))).toEqual([
+            `agent-${FAR}`,
+            `agent-${other.id}`,
+        ]);
+        expect(ids(answerers(one, "", "", "@5b7c1d90", [seatable(SEATED, "Witness synthesis")]))).toEqual([
+            `agent-${SEATED}`,
+        ]);
+    });
+
+    it("counts a joining chat's tab id when it asks whether a prefix is one seat's", () => {
+        const sibling = seatable("3e19c0d2-a9ff-4000-8000-000000000001", "Sibling");
+        const c = withChats([NEAR_A, "Perf notes"]);
+        expect(ids(answerers(c, "", "", "@3e19c0d2-a"))).toEqual([`agent-${NEAR_A}`]);
+        // once the sibling is seated too, that prefix is no longer the one seat's: only the joining chat is named
+        expect(ids(answerers(c, "", "", "@3e19c0d2-a", [sibling]))).toEqual([`agent-${sibling.id}`]);
+        expect(ids(answerers(c, "", "", "@3e19c0d2-a1", [sibling]))).toEqual([
+            `agent-${NEAR_A}`,
+            `agent-${sibling.id}`,
+        ]);
+    });
+});
+
 describe("replyLabel", () => {
     const mine = (extra: Partial<CouncilReply>) => reply("r1", "you", extra);
 
@@ -484,6 +583,25 @@ describe("estimateLabel and followupLabel", () => {
         expect(followupLabel(null, 3, false)).toBe("3 experts answer");
         expect(followupLabel(null, 1, true)).toBe("1 expert answers, reading files");
         expect(followupLabel(null, 0, false)).toBe("");
+    });
+
+    it("counts the chats beside the experts, and words the verb for the whole", () => {
+        expect(followupLabel(null, 1, false, 1)).toBe("1 expert and 1 chat answer");
+        expect(followupLabel(null, 2, false, 3)).toBe("2 experts and 3 chats answer");
+        expect(followupLabel(null, 2, false, 0)).toBe("2 experts answer");
+        expect(followupLabel(null, 1, false, 0)).toBe("1 expert answers");
+        expect(followupLabel(null, 0, false, 1)).toBe("1 chat answers");
+        expect(followupLabel(null, 0, false, 2)).toBe("2 chats answer");
+        expect(followupLabel(null, 0, false, 0)).toBe("");
+    });
+
+    it("keeps the files and the estimate after the chats", () => {
+        const est = { calls: 3, tokens: 84_000, minutes: 2 };
+        expect(followupLabel(est, 1, false, 1)).toBe("1 expert and 1 chat answer · ≈ 3 calls · ~84k tokens");
+        expect(followupLabel(est, 2, true, 1)).toBe(
+            "2 experts and 1 chat answer, reading files · ≈ 3 calls · ~84k tokens"
+        );
+        expect(followupLabel(est, 0, true, 2)).toBe("2 chats answer, reading files · ≈ 3 calls · ~84k tokens");
     });
 });
 

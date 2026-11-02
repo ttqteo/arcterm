@@ -26,14 +26,17 @@ import {
     shortName,
 } from "./councildiscussionmodel";
 import {
+    MIN_CHAT_KEY,
     answerers,
     askedParts,
     authorName,
+    chatSeatTabs,
     draftsWaitWord,
     headerChip,
     heldDrafts,
     isAgentSeat,
     isReaction,
+    mentionsChat,
     panel,
     pickCount,
     readableReplies,
@@ -42,6 +45,7 @@ import {
     sentProposals,
     sentReplies,
     type HeldDraft,
+    type SeatableAgent,
 } from "./councilmodel";
 
 const YOU = "you";
@@ -87,8 +91,8 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-// a context size as the Agent tree shows it: 625k, 1.2M
-function contextLabel(n: number): string {
+/** A context size as the Agent tree shows it: 625k, 1.2M (a seat chip's, and a chat row in the @ picker's). */
+export function contextLabel(n: number): string {
     return n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`;
 }
 
@@ -802,20 +806,22 @@ export function stepChip(c: Council): StepChip {
 
 // ---- who a message reaches ----
 
-/** Pure: who answers a message of the person's, for the line under a composer: the seats it @-mentions, else (in a
- *  thread) the idea's author and the seats on the path to the reply it answers, else (in the channel) everyone. An empty
- *  `proposalId` is the channel's composer. */
+/** Pure: who answers a message of the person's, for the line under a composer: the seats it @-mentions (a chat seat by
+ *  its name or its mention key) and the live chats it adds (`joining`, the ones `pickedChats` found), else (in a thread)
+ *  the idea's author and the seats on the path to the reply it answers, else (in the channel) everyone. An empty
+ *  `proposalId` is the channel's composer. A message that adds a chat always names who answers: it is not everyone. */
 export function replyReach(
     c: Council,
     proposalId: string,
     parentId: string,
-    text: string
+    text: string,
+    joining: readonly SeatableAgent[] = []
 ): { names: string[]; label: string } {
-    const names = answerers(c, proposalId, parentId, text).map((e) => e.name);
+    const names = answerers(c, proposalId, parentId, text, joining).map((e) => e.name);
     if (names.length === 0) {
         return { names, label: "Name a seat with @ to choose who answers" };
     }
-    if (proposalId === "" && parentId === "" && names.length === panel(c).length) {
+    if (joining.length === 0 && proposalId === "" && parentId === "" && names.length === panel(c).length) {
         return { names, label: "Everyone answers" };
     }
     return { names, label: `Answered by: ${names.join(", ")}` };
@@ -826,28 +832,75 @@ export function replyReach(
 // an @ that does not sit inside a word, and what has been typed after it up to the caret
 const MENTION = /(^|[^\p{L}\p{N}_])@([^@\n]{0,40})$/u;
 
-/** Pure: the seats the `@` picker lists while the person types, for the text before `caret`: the seats whose name or id
- *  holds what follows the `@`, and `start`, where that `@` sits (it is replaced by the seat's name, `insertMention`).
- *  Null when the caret is not right after an `@`, when no seat matches, and once a whole name and a space follow it, so
- *  the picker closes after a pick. */
+/** Pure: each chat's mention key, by tab id: the shortest start of the tab id, {@link MIN_CHAT_KEY} characters or more,
+ *  that no other chat in `tabIds` shares (any case). `@82faafca` for a lone chat; for two whose ids start alike the key
+ *  runs on past the `-` of a UUID (`3e19c0d2-a`, `3e19c0d2-b`). A tab id shorter than a key, or one that starts another
+ *  chat's, keeps its whole id (a mention cannot reach it: `mentionsChat`). `tabIds` is the chat seats' plus the chats
+ *  the picker lists, so a key it inserts is one of its own seat's the moment the chat is seated. */
+export function chatMentionKeys(tabIds: readonly string[]): Map<string, string> {
+    const ids = [...new Set(tabIds)];
+    const lower = ids.map((id) => id.toLowerCase());
+    const keys = new Map<string, string>();
+    ids.forEach((id, i) => {
+        let n = Math.min(MIN_CHAT_KEY, id.length);
+        while (n < id.length && lower.some((other, j) => j !== i && other.startsWith(lower[i].slice(0, n)))) {
+            n++;
+        }
+        keys.set(id, id.slice(0, n));
+    });
+    return keys;
+}
+
+/** Pure: the live chats the person can still add: the ones no seat holds (`agent`). */
+export function joinableChats(c: Council, chats: readonly SeatableAgent[]): SeatableAgent[] {
+    const seated = new Set(chatSeatTabs(c));
+    return chats.filter((a) => !seated.has(a.id));
+}
+
+/** A live chat the `@` picker lists under the seats, with the key `insertChatMention` puts in the message. */
+export interface ChatPick {
+    chat: SeatableAgent;
+    key: string;
+}
+
+/** Pure: what the `@` picker lists while the person types, for the text before `caret`: the seats whose name, id or
+ *  (for a chat) mention key holds what follows the `@`; then the live chats from `chats` that no seat holds, whose key,
+ *  name or project holds it, each with its key; and `start`, where that `@` sits (it is replaced by the seat's name,
+ *  `insertMention`, or the chat's key, `insertChatMention`). Null when the caret is not right after an `@`, when neither
+ *  list has a match, and once a whole seat name, seat key or chat key and a space follow it, so the picker closes after
+ *  a pick. */
 export function mentionPicker(
     c: Council,
     text: string,
-    caret: number
-): { start: number; seats: CouncilExpert[] } | null {
+    caret: number,
+    chats: readonly SeatableAgent[] = []
+): { start: number; seats: CouncilExpert[]; chats: ChatPick[] } | null {
     const found = MENTION.exec(text.slice(0, caret));
     if (found == null) {
         return null;
     }
     const query = found[2].toLowerCase();
     const seats = panel(c);
-    if (seats.some((e) => [e.name, e.id].some((word) => word !== "" && query === `${word.toLowerCase()} `))) {
+    const joinable = joinableChats(c, chats);
+    const keys = chatMentionKeys([...chatSeatTabs(c), ...joinable.map((a) => a.id)]);
+    // a key too short to be mentioned is no word of a seat's
+    const keyOf = (tab: string | undefined) => {
+        const key = tab ? (keys.get(tab) ?? "") : "";
+        return key.length >= MIN_CHAT_KEY ? key : "";
+    };
+    const wordsOf = (e: CouncilExpert) => [e.name, e.id, keyOf(e.agent)];
+    const whole = (word: string) => word !== "" && query === `${word.toLowerCase()} `;
+    if (seats.some((e) => wordsOf(e).some(whole)) || joinable.some((a) => whole(keyOf(a.id)))) {
         return null;
     }
-    const matching = seats.filter(
-        (e) => query === "" || e.name.toLowerCase().includes(query) || e.id.toLowerCase().includes(query)
-    );
-    return matching.length > 0 ? { start: caret - found[2].length - 1, seats: matching } : null;
+    const holds = (word: string) => word.toLowerCase().includes(query);
+    const matching = seats.filter((e) => query === "" || wordsOf(e).some(holds));
+    const listed = joinable
+        .filter((a) => query === "" || [keys.get(a.id) ?? "", a.name, a.project].some(holds))
+        .map((a) => ({ chat: a, key: keys.get(a.id) ?? "" }));
+    return matching.length > 0 || listed.length > 0
+        ? { start: caret - found[2].length - 1, seats: matching, chats: listed }
+        : null;
 }
 
 /** Pure: `text` with the `@…` typed between `start` and `caret` replaced by `@<seat's name>` and a space (the one that
@@ -864,6 +917,26 @@ export function insertMention(
         text: text.slice(0, start) + (rest.startsWith(" ") ? mention : `${mention} `) + rest,
         caret: start + mention.length + 1,
     };
+}
+
+/** Pure: `text` with the `@…` typed between `start` and `caret` replaced by `@<chat's key>` and a space (the one that
+ *  already follows the caret, if there is one), and where the caret goes: after that space. */
+export function insertChatMention(
+    text: string,
+    start: number,
+    caret: number,
+    key: string
+): { text: string; caret: number } {
+    return insertMention(text, start, caret, { name: key });
+}
+
+/** Pure: the live chats a message adds: the ones from `chats` that no seat holds whose mention key is in `text` (the
+ *  same reading of an @ a seat is reached by, `mentionsChat`, told apart from the chat seats and the other chats in
+ *  `chats`). Send passes their ids as `agents`; deleting the mention before Send drops the pick. In the order of `chats`. */
+export function pickedChats(c: Council, text: string, chats: readonly SeatableAgent[]): SeatableAgent[] {
+    const joinable = joinableChats(c, chats);
+    const tabs = [...chatSeatTabs(c), ...joinable.map((a) => a.id)];
+    return joinable.filter((a) => mentionsChat(text, a.id, tabs));
 }
 
 // ---- what to ask next ----
