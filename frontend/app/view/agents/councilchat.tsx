@@ -37,6 +37,7 @@ import {
     FileText,
     Loader2,
     Plus,
+    SendHorizontal,
     ThumbsDown,
     ThumbsUp,
     X,
@@ -110,9 +111,11 @@ import {
     jumpPills,
     keepPlace,
     keptPlace,
+    ownPosts,
     placeOf,
     readingRow,
     returnTop,
+    sentSince,
     stillLanded,
     topFor,
     type JumpPills,
@@ -1462,7 +1465,8 @@ function Composer({
                     )}
                 </ul>
             )}
-            <div className="flex flex-col gap-[8px] rounded-[14px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
+            {/* 23px: the round send button's 15 plus the 8 around it, so the corners run with it and one line is a pill */}
+            <div className="flex flex-col gap-[8px] rounded-[23px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
                 <DraftImages councilId={c.id} boxKey={proposalId} images={images} />
                 <div className="flex items-end gap-[8px]">
                     <textarea
@@ -1481,21 +1485,27 @@ function Composer({
                         onKeyDown={onKeyDown}
                         onPaste={onPaste}
                         className={cn(
-                            // a line (21px) padded to the Send button's 30px, so one line sits level with its label
-                            // and not at the foot of the row; more lines grow above the button, which stays at the foot
+                            // a line (21px) padded to the send button's 30px, so one line sits level with it and
+                            // not at the foot of the row; more lines grow above the button, which stays at the foot
                             "box-border min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-[4.5px] text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted",
                             rows < 5 ? "overflow-hidden" : "overflow-y-auto"
                         )}
                     />
+                    {/* a round send button, as a messenger has: the icon alone, its name for a screen reader and the tooltip */}
                     <button
                         type="button"
                         data-council-composer-send
                         disabled={text.trim() === "" || busy || uploading}
                         onClick={() => void send()}
-                        title={uploading ? "Waiting for an image to finish uploading" : "Send (Enter)"}
-                        className={cn(primaryButton, "h-[30px] px-[14px] text-[13.5px]")}
+                        aria-label={busy ? "Sending…" : sendLabel}
+                        title={uploading ? "Waiting for an image to finish uploading" : `${sendLabel} (Enter)`}
+                        className="flex h-[30px] w-[30px] flex-none cursor-pointer items-center justify-center rounded-full border-0 bg-accent text-background outline-none hover:bg-accenthover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50"
                     >
-                        {busy ? "Sending…" : sendLabel}
+                        {busy ? (
+                            <Loader2 size={15} aria-hidden className="animate-spin motion-reduce:animate-none" />
+                        ) : (
+                            <SendHorizontal size={15} strokeWidth={2.2} aria-hidden />
+                        )}
                     </button>
                 </div>
             </div>
@@ -1617,7 +1627,12 @@ function ThreadPanel({
 }) {
     const idea = thread.idea;
     const scroller = useRef<HTMLDivElement>(null);
-    const onScroll = useKeptScroll(scroller, `thread:${c.id}:${idea.id}`);
+    const onScroll = useKeptScroll(scroller, `thread:${c.id}:${idea.id}`, {
+        follow: true,
+        start: "top",
+        count: thread.items.length,
+        sent: ownPosts(thread.items),
+    });
     const entering = useEntering(
         `${c.id}:${idea.id}`,
         thread.items.map((item) => item.id)
@@ -1722,20 +1737,30 @@ function ThreadPanel({
 
 /** Keeps a council scroller where the reader left it, under `key` (councilscroll.ts): back there after a remount (another
  *  council, the Summary, another agent) and after the surface comes back from display:none, which drops an element's
- *  offset. With `follow`, a reader at the bottom stays at the bottom as `count` grows, and a scroller with nothing kept
- *  starts there; without it, at the top. Returns the scroller's onScroll. */
+ *  offset. With `follow`, a reader at the bottom stays at the bottom as `count` grows. A scroller with nothing kept
+ *  starts at `start`: the end by default when it follows, else the top. One more of the person's own posts (`sent`,
+ *  councilscroll.ownPosts) brings the end into view wherever the reader was, so what they just sent shows. Returns the
+ *  scroller's onScroll. */
 export function useKeptScroll(
     ref: RefObject<HTMLElement | null>,
     key: string,
-    { follow = false, count = 0 }: { follow?: boolean; count?: number } = {}
+    {
+        follow = false,
+        count = 0,
+        start,
+        sent = 0,
+    }: { follow?: boolean; count?: number; start?: "top" | "end"; sent?: number } = {}
 ): () => void {
+    const startAtEnd = (start ?? (follow ? "end" : "top")) === "end";
     const place = useRef<ScrollPlace | undefined>(undefined);
     const restore = useCallback(() => {
         const el = ref.current;
         if (el != null && el.clientHeight > 0) {
-            el.scrollTop = topFor(place.current, el, follow);
+            el.scrollTop = topFor(place.current, el, startAtEnd);
+            // measured where it opened, so one that opens at the top follows new lines only once the reader is at the end
+            place.current ??= placeOf(el);
         }
-    }, [ref, follow]);
+    }, [ref, startAtEnd]);
     useLayoutEffect(() => {
         place.current = keptPlace(key);
         restore();
@@ -1745,6 +1770,17 @@ export function useKeptScroll(
             restore();
         }
     }, [count, follow, restore]);
+    const sentWas = useRef({ key, n: sent });
+    useLayoutEffect(() => {
+        const was = sentWas.current;
+        sentWas.current = { key, n: sent };
+        const el = ref.current;
+        if (sentSince(was, key, sent) && el != null && el.clientHeight > 0) {
+            el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+            place.current = placeOf(el);
+            keepPlace(key, place.current);
+        }
+    }, [ref, key, sent]);
     // shown again (its offset is gone), or resized while following (the thread opening rewraps the channel)
     useEffect(() => {
         const el = ref.current;
@@ -1955,16 +1991,18 @@ function Channel({
     councilId,
     view,
     count,
+    sent,
     boxRef,
 }: {
     children: ReactNode;
     councilId: string;
     view: string;
     count: number;
+    sent: number; // the person's own posts in it (councilscroll.ownPosts)
     boxRef: RefObject<HTMLDivElement | null>;
 }) {
     const rowsRef = useRef<HTMLDivElement>(null);
-    const onKeptScroll = useKeptScroll(boxRef, `channel:${councilId}`, { follow: true, count });
+    const onKeptScroll = useKeptScroll(boxRef, `channel:${councilId}`, { follow: true, count, sent });
     const jumps = useChannelJumps(boxRef, rowsRef, `${councilId}:${view}`, count, onKeptScroll);
     return (
         <div className="relative flex min-h-0 flex-1 flex-col">
@@ -2162,6 +2200,7 @@ export function CouncilChat({
                     councilId={c.id}
                     view={onlyId ?? ""}
                     count={items.length + (asks.length > 0 ? 1 : 0)}
+                    sent={ownPosts(items)}
                 >
                     {items.map((item) => {
                         switch (item.kind) {

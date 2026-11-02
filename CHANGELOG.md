@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council's reply box sends from a round button with a send icon, in a box whose corners follow it, as a messenger's
+  does. The tooltip still names Reply or Send and Enter.
 - A council's Discussion header shows its seats as one stack of avatars instead of a row that cut a seat in half on a
   narrow pane: hover or click it for the list of every seat, with what each is doing and its message count, and pick
   one to see only its messages. Close is now an X (Reopen an arrow).
@@ -185,6 +187,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A reply you send in a council's thread or channel scrolls into view, wherever you had scrolled to, and a thread you
+  are reading at its end keeps up with the seats' new replies instead of leaving them below the fold.
 - Translate keeps working when Google turns it away ("429 Too Many Requests") or cannot be reached: on a Mac, Apple
   Translation answers on the device instead (macOS 26 or later, with the language pair downloaded in System Settings →
   General → Language & Region → Translation Languages; it adds no phonetics or word classes). After a 429, arcterm

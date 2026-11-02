@@ -8,9 +8,11 @@ import {
     jumpPills,
     keepPlace,
     keptPlace,
+    ownPosts,
     placeOf,
     readingRow,
     returnTop,
+    sentSince,
     stillLanded,
     topFor,
 } from "./councilscroll";
@@ -39,7 +41,7 @@ describe("topFor", () => {
         expect(topFor({ top: 1800, bottom: false }, box(0), false)).toBe(1500);
     });
 
-    it("with nothing kept, starts a following scroller at the end and any other at the top", () => {
+    it("with nothing kept, starts at the end when asked to (the channel), else at the top (a thread)", () => {
         expect(topFor(undefined, box(0), true)).toBe(1500);
         expect(topFor(undefined, box(0), false)).toBe(0);
         expect(topFor(undefined, box(0, 300), true)).toBe(0);
@@ -53,6 +55,35 @@ describe("followsEnd", () => {
         expect(followsEnd({ top: 300, bottom: false }, true)).toBe(false);
         expect(followsEnd(undefined, false)).toBe(false);
         expect(followsEnd({ top: 1500, bottom: true }, false)).toBe(false);
+    });
+});
+
+describe("ownPosts", () => {
+    it("counts the person's own replies, not the seats' or the other lines", () => {
+        expect(
+            ownPosts([
+                { kind: "question" },
+                { kind: "reply", mine: true },
+                { kind: "reply", mine: false },
+                { kind: "draft" },
+                { kind: "typing" },
+                { kind: "reply", mine: true },
+            ])
+        ).toBe(2);
+        expect(ownPosts([])).toBe(0);
+    });
+});
+
+describe("sentSince", () => {
+    it("is a post the person just sent: one more own post under the same key", () => {
+        expect(sentSince({ key: "thread:c:i", n: 2 }, "thread:c:i", 3)).toBe(true);
+        expect(sentSince({ key: "thread:c:i", n: 2 }, "thread:c:i", 2)).toBe(false);
+        // a post the person removed is not a send
+        expect(sentSince({ key: "thread:c:i", n: 2 }, "thread:c:i", 1)).toBe(false);
+    });
+
+    it("never fires on opening another thread or council, which may hold more of their posts", () => {
+        expect(sentSince({ key: "thread:c:i", n: 0 }, "thread:c:j", 4)).toBe(false);
     });
 });
 
