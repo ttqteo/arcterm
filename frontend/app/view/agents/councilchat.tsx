@@ -2,12 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The council's discussion as a channel of speech bubbles with threads (boards J-chat-bubbles and J3-seat-filter-panel in
-// .superpowers/design/council-report; councilchatmodel.ts derives what it draws). Under the header the discussion draws
-// (councildiscussion.tsx): Everyone and a filter for each seat (its letters, short name and how many messages it wrote;
-// a click shows its messages alone; while it works, waits or failed its dot and what it is doing; an agent's terminal
-// and a failed seat's Retry beside it), then the channel, one column: the person's question on the right in their
-// bubble, folded to three lines and two of its limits; a divider for each round; every idea as a bubble in its seat's
-// colour with its reply chip; the ideas and replies a seat wrote that wait for the person (amber, Send to the others,
+// .superpowers/design/council-report; councilchatmodel.ts derives what it draws). The seat filters sit in the
+// discussion's header (councilseats.tsx); here, while one is on, an Only line with Show everyone, and with two or more
+// seats failed a Retry all bar with a model pick per seat; then the channel, one column: the person's question on the
+// right in their bubble, folded to three lines and two of its limits; a divider for each round; every idea as a bubble
+// in its seat's colour with its reply chip; the ideas and replies a seat wrote that wait for the person (amber, Send to the others,
 // Edit, Drop); the line where an agent skipped a turn, a failure with Retry, and a typing row for whoever is at work;
 // under it the composer, which posts to everyone, and `@` lists the seats (a pick asks that one), the project's files
 // (a pick names the file; the seats that answer read it) and the live claude and pi chats no seat holds under Add a live
