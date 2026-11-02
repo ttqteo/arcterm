@@ -17,6 +17,7 @@
 // again, the Discussion on one direction's thread, and a new agent started on it.
 
 import { launchAgent } from "@/app/cockpit/cockpit-actions";
+import { Tooltip } from "@/app/element/tooltip";
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -833,21 +834,22 @@ function Panel({ c }: { c: Council }) {
                         </span>
                     </>
                 );
+                // the hint sits at the row's right, not under it where the browser's title would cover the next seat
                 return filter ? (
-                    <button
-                        key={e.id}
-                        type="button"
-                        data-council-expert={e.id}
-                        aria-label={`${e.name}, ${line}. Show only their messages in the Discussion`}
-                        title="Show their messages in the Discussion"
-                        onClick={() => showCouncil(c.id, "discussion", undefined, e.id)}
-                        className={cn(
-                            "group flex w-full cursor-pointer items-start gap-2 rounded-[6px] p-[6px] text-left text-secondary hover:bg-surface-hover hover:text-primary",
-                            FOCUS
-                        )}
-                    >
-                        {body}
-                    </button>
+                    <Tooltip key={e.id} content="Show their messages in the Discussion" placement="right" hideOnClick>
+                        <button
+                            type="button"
+                            data-council-expert={e.id}
+                            aria-label={`${e.name}, ${line}. Show only their messages in the Discussion`}
+                            onClick={() => showCouncil(c.id, "discussion", undefined, e.id)}
+                            className={cn(
+                                "group flex w-full cursor-pointer items-start gap-2 rounded-[6px] p-[6px] text-left text-secondary hover:bg-surface-hover hover:text-primary",
+                                FOCUS
+                            )}
+                        >
+                            {body}
+                        </button>
+                    </Tooltip>
                 ) : (
                     <div key={e.id} data-council-expert={e.id} className="flex items-start gap-2 p-[6px]">
                         {body}
