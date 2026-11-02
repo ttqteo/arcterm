@@ -4,8 +4,10 @@
 // The pieces every brainstorm view shares: the class constants, the toolbar, the question and its answers, the
 // working view and the was/now diff.
 
+import { foldReveal } from "@/app/element/motiontokens";
 import { getApi } from "@/app/store/global";
 import { cn } from "@/util/util";
+import { AnimatePresence, motion } from "motion/react";
 import { Fragment, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentVM } from "./agentsviewmodel";
 import {
@@ -875,6 +877,9 @@ function QuestionHead({ f, goTo, children }: { f: BrainstormFile; goTo: (id: str
     );
 }
 
+// wide enough for "Hide facts ▴" and "12 facts ▾" alike, margins included
+const FACTS_SLOT = "mx-[10px] w-[104px]";
+
 // one approach the judge is weighing: the row sends it as the answer; its facts stay behind their own button, closed
 // until opened, so reading them never answers. The row's border lights only over the part that answers, so the facts
 // button never reads as part of it
@@ -919,38 +924,46 @@ function ApproachRow({
                     </span>
                     <span className="min-w-0 flex-1 text-[12.5px] leading-[1.45] text-ink-mid">{a.description}</span>
                 </button>
-                {n > 0 ? (
-                    <button
-                        type="button"
-                        data-brainstorm-facts-toggle={i}
-                        aria-expanded={open}
-                        aria-label={`${open ? "Hide" : "Show"} facts for ${a.name}`}
-                        onClick={onToggle}
-                        className={cn(
-                            "mx-[10px] flex flex-none cursor-pointer items-center gap-[6px] rounded-[6px] border px-[10px] py-[5px] text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                            open
-                                ? "border-accent/45 bg-accent/12 text-primary hover:bg-accent/20"
-                                : "border-edge-mid bg-surface-raised text-secondary hover:border-edge-strong hover:text-primary"
-                        )}
-                    >
-                        {open ? "Hide facts" : plural(n, "fact", "facts")}
-                        <span aria-hidden className="text-[10px] text-muted">
-                            {open ? "▴" : "▾"}
-                        </span>
-                    </button>
-                ) : null}
+                {/* one fixed-width slot on every row, facts or not, so the label swap and a row without facts
+                    never change the description's measure */}
+                <div className={cn(FACTS_SLOT, "flex-none")}>
+                    {n > 0 ? (
+                        <button
+                            type="button"
+                            data-brainstorm-facts-toggle={i}
+                            aria-expanded={open}
+                            aria-label={`${open ? "Hide" : "Show"} facts for ${a.name}`}
+                            onClick={onToggle}
+                            className={cn(
+                                "flex w-full cursor-pointer items-center justify-center gap-[6px] rounded-[6px] border px-[8px] py-[5px] text-[12px] whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                                open
+                                    ? "border-accent/45 bg-accent/12 text-primary hover:bg-accent/20"
+                                    : "border-edge-mid bg-surface-raised text-secondary hover:border-edge-strong hover:text-primary"
+                            )}
+                        >
+                            {open ? "Hide facts" : plural(n, "fact", "facts")}
+                            <span aria-hidden className="text-[10px] text-muted">
+                                {open ? "▴" : "▾"}
+                            </span>
+                        </button>
+                    ) : null}
+                </div>
             </div>
-            {open && n > 0 ? (
-                <ul
-                    data-brainstorm-facts={i}
-                    aria-label={`Facts for ${a.name}`}
-                    className="m-0 flex list-disc flex-col gap-[4px] border-t border-edge-faint py-[10px] pl-[70px] pr-[16px] text-[12.5px] leading-[1.5] text-secondary"
-                >
-                    {a.facts.map((fact, k) => (
-                        <li key={k}>{fact}</li>
-                    ))}
-                </ul>
-            ) : null}
+            <AnimatePresence initial={false}>
+                {open && n > 0 ? (
+                    <motion.div key="facts" variants={foldReveal} initial="initial" animate="animate" exit="exit">
+                        <ul
+                            data-brainstorm-facts={i}
+                            aria-label={`Facts for ${a.name}`}
+                            className="m-0 flex list-disc flex-col gap-[4px] border-t border-edge-faint py-[10px] pl-[70px] pr-[16px] text-[12.5px] leading-[1.5] text-secondary"
+                        >
+                            {a.facts.map((fact, k) => (
+                                <li key={k}>{fact}</li>
+                            ))}
+                        </ul>
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
         </div>
     );
 }

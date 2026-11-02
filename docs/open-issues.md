@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Brainstorm judging facts: while the judge weighs approaches, click a row's facts button and Show all
+  facts → the facts fold open and shut (height + fade, not a snap), and every row's description keeps one width
+  whether its button reads "N facts", "Hide facts" or the row has no facts. `brainstormui.tsx` `ApproachRow`,
+  "fix(brainstorm): judging facts fold open…".
 - [ ] (arcterm) Council Retry with…: in a council whose coordinator failed, Retry with… → Retry on sonnet reruns the
   summary on sonnet (the strip still reads Coordinator opus), and the saved document's run facts gain `- Retried:
   Coordinator in round 3 on sonnet (its seat is opus)`. Do the same on a failed expert from the Discussion's failure
