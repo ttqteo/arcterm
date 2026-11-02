@@ -740,6 +740,29 @@ describe("brainstorm pane Escape", () => {
         expect(back().when!(nav)).toBe(true);
     });
 
+    it("on a full-size board [ ] and ← → step its boards, never the surfaces or the agents", () => {
+        const claims = (key: string) =>
+            all()
+                .filter((b) => b.keys === key && b.when?.(nav) !== false)
+                .map((b) => b.id);
+        attachCanvas("a1", { topic: "oncall", dir: "C:\\p\\d", projectDir: "C:\\p", board: "Split.dc.html" }, 0);
+        updateCanvas("a1", (s) => ({ ...s, status: "ready" }));
+        openBrainstormBoard("a1", "Split.dc.html");
+        expect(claims("[")).toEqual(["agent:canvas-prev"]);
+        expect(claims("]")).toEqual(["agent:canvas-next"]);
+        expect(claims("ArrowLeft")).toEqual(["agent:canvas-prev-arrow"]);
+        expect(claims("ArrowRight")).toEqual(["agent:canvas-next-arrow"]);
+        // marking holds the board: neither the board nor the surface switch takes [ ], nor the agent switch ← →
+        setMarking("a1", true);
+        expect(claims("]")).toEqual([]);
+        expect(claims("ArrowRight")).toEqual([]);
+        setMarking("a1", false);
+        // back on the question there are no boards to step: [ ] switch surfaces and ← → agents again
+        openBrainstormBoard("a1", null);
+        expect(claims("]")).toEqual(["surface:next"]);
+        expect(claims("ArrowRight")).toEqual(["agent:next"]);
+    });
+
     it("stands down in the terminal, and while a subagent holds Escape", () => {
         openBrainstormBoard("a1", "Split.dc.html");
         setAgentView("a1", "terminal", 2);
@@ -1500,11 +1523,17 @@ describe("agent canvas mode keys", () => {
         }
     });
 
-    it("← → move between agents again once the board is not ready to step", () => {
+    it("← → stay the canvas's while its board is not ready: they do nothing, never move to another agent", () => {
         setCanvasMode("a1", "canvas", 1);
-        updateCanvas("a1", (s) => ({ ...s, status: "probing" }));
-        expect(active("agent:canvas-next-arrow")).toBe(false);
-        expect(active("agent:next")).toBe(true);
+        for (const status of ["probing", "server-down", "removed"] as const) {
+            updateCanvas("a1", (s) => ({ ...s, status }));
+            expect(active("agent:canvas-next-arrow"), status).toBe(false);
+            expect(active("agent:next"), status).toBe(false);
+            expect(active("agent:prev"), status).toBe(false);
+            expect(active("surface:next"), status).toBe(false);
+            // up and down still move between agents
+            expect(active("agent:next-down"), status).toBe(true);
+        }
     });
 
     it("the surface switch still works on other surfaces while an agent is in canvas mode", () => {
@@ -1528,6 +1557,10 @@ describe("agent canvas mode keys", () => {
         expect(active("agent:canvas-prev")).toBe(false);
         expect(active("agent:canvas-next")).toBe(false);
         expect(active("agent:canvas-close")).toBe(true);
+        // ← → stay off the agents too: one press mid-marking must not leave the board
+        expect(active("agent:prev")).toBe(false);
+        expect(active("agent:next")).toBe(false);
+        expect(active("agent:next-down")).toBe(true);
         find("agent:mark-stop").run(nav);
         expect(getCanvas("a1")!.marking).toBe(false);
     });

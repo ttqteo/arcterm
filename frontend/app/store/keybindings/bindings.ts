@@ -23,6 +23,7 @@ import {
     paneBack,
     paneView,
     pickableOptions,
+    procExited,
     type BrainstormAction,
     type ReviewRow,
 } from "@/app/view/agents/brainstormmodel";
@@ -243,12 +244,27 @@ const terminalSwapped = (model: AgentsViewModel) => {
 const galleryViewerOpen = () =>
     globalStore.get(centerModeAtom) === "canvases" && globalStore.get(canvasGalleryAtom).view === "viewer";
 
-// `[` `]` belong to the boards in canvas mode (and in the gallery's viewer) and to the tabs in review mode, so the
-// surface switch stands down while the focused agent shows either. The agent switches stay live: the tree stays on
-// screen beside them. The brainstorm pane has no use for them, so its mode leaves the surface switch alone.
+// A full-size board the brainstorm pane opened draws the agent's canvas (the same CanvasPane), so it takes the canvas's
+// board keys: `[` `]` and ← → step its boards there, as its tabs' tooltip says.
+const brainstormBoardOpen = (model: AgentsViewModel): boolean => {
+    const s = focusedBrainstorm(model);
+    if (s?.mode !== "brainstorm") {
+        return false;
+    }
+    const id = globalStore.get(model.focusIdAtom);
+    const agent = globalStore.get(model.agentsAtom).find((a) => a.id === id);
+    const exit = agent != null ? globalStore.get(getProcExitAtom(agent.blockId ?? "")) : undefined;
+    return paneView({ ...s, file: shownBrainstormFile(s), exited: procExited(exit, agent?.sleeping) }) === "board";
+};
+
+// `[` `]` belong to the boards in canvas mode (and in the gallery's viewer, and on the brainstorm's full-size board) and
+// to the tabs in review mode, so the surface switch stands down while the focused agent shows either. The agent switches
+// stay live: the tree stays on screen beside them. The rest of the brainstorm pane has no use for them, so it leaves the
+// surface switch alone.
 const inAgentSwap = (model: AgentsViewModel, ctx: KeyContext) =>
     ctx.surface === "agent" &&
-    ((terminalSwapped(model) && focusedBrainstorm(model)?.mode !== "brainstorm") || galleryViewerOpen());
+    ((terminalSwapped(model) && (focusedBrainstorm(model)?.mode !== "brainstorm" || brainstormBoardOpen(model))) ||
+        galleryViewerOpen());
 
 // The close-agent chord closes the tab the keys were typed in: the pane that took them (paneId), which is not the selected
 // agent when they went to the terminal docked under it (terminaldock.ts); the selected agent when the pane names none. A
@@ -1210,6 +1226,18 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
     const toggleTerminalFullscreen = () =>
         globalStore.set(terminalFullscreenAtom, !globalStore.get(terminalFullscreenAtom));
     const boardReady = (ctx: KeyContext) => inCanvas(ctx) && !canvas()!.marking && paneState(canvas()!) === "board";
+    // the canvas drawn in the terminal's place: the agent's canvas mode, or the brainstorm's full-size board, which draws
+    // the same CanvasPane
+    const boardCanvas = () =>
+        canvas()?.mode === "canvas" ? canvas() : brainstormBoardOpen(model) ? focusedCanvas(model) : null;
+    // While a canvas is on screen, [ ] and ← → are its keys in every state: they step the boards once a board has loaded
+    // and nothing is being marked, and otherwise do nothing (loading, server down, removed, marking). They never move to
+    // another surface or agent there.
+    const onCanvas = (ctx: KeyContext) => agentNav(ctx) && boardCanvas() != null;
+    const boardStepReady = (ctx: KeyContext) => {
+        const c = onCanvas(ctx) ? boardCanvas()! : null;
+        return c != null && paneState(c) === "board" && !c.marking;
+    };
     const docReview = () => focusedDocReview(model);
     // the focused agent when the header offers its ✓ Close (donesuggest.ts), else undefined
     const doneAgent = (): AgentVM | undefined => {
@@ -1481,8 +1509,8 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowLeft",
             group: "Agent",
             label: "Previous agent",
-            // on a canvas board left and right step the boards; up, down, j and k still move between agents
-            when: (ctx) => agentNav(ctx) && !boardReady(ctx),
+            // on a canvas left and right are the board's (onCanvas); up, down, j and k still move between agents
+            when: (ctx) => agentNav(ctx) && !onCanvas(ctx),
             run: () => step(-1),
         },
         {
@@ -1490,7 +1518,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowRight",
             group: "Agent",
             label: "Next agent",
-            when: (ctx) => agentNav(ctx) && !boardReady(ctx),
+            when: (ctx) => agentNav(ctx) && !onCanvas(ctx),
             run: () => step(1),
         },
         // the tree lists agents top to bottom, so up and down move through it; left and right are the older keys
@@ -1873,7 +1901,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "[",
             group: "Agent",
             label: "Previous board",
-            when: boardReady,
+            when: boardStepReady,
             run: () => stepCanvasBoard(focusId(), -1),
         },
         {
@@ -1881,7 +1909,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "]",
             group: "Agent",
             label: "Next board",
-            when: boardReady,
+            when: boardStepReady,
             run: () => stepCanvasBoard(focusId(), 1),
         },
         {
@@ -1889,7 +1917,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowLeft",
             group: "Agent",
             label: "Previous board",
-            when: boardReady,
+            when: boardStepReady,
             run: () => stepCanvasBoard(focusId(), -1),
         },
         {
@@ -1897,7 +1925,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             keys: "ArrowRight",
             group: "Agent",
             label: "Next board",
-            when: boardReady,
+            when: boardStepReady,
             run: () => stepCanvasBoard(focusId(), 1),
         },
         {

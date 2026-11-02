@@ -30,6 +30,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Run start with an empty harness catalog: after a launch failed "Selected route is unavailable", press
   ↻ on its toast (or Approve a brainstorm again) → the run starts on the project's route instead of failing again.
   `runactions.ts` `resolveChannelLaunchRoute`, commit "fix(runs): an empty harness catalog…"
+- [ ] (arcterm) Brainstorm board keys: open a brainstorm board full size (one with 2+ boards), press `]`, `[`, → and ←
+  → each steps the board tabs; the surface stays Agent and the selected agent stays put. Then press m (marking) and
+  ← → → nothing moves; same on an agent's canvas while it says it is loading or its server is down.
+  `bindings.ts` `onCanvas` / `boardStepReady` / `brainstormBoardOpen`, "fix(agent): [ ] and ← → stay the canvas's…".
 - [ ] (arcterm) Brainstorm judging facts: while the judge weighs approaches, click a row's facts button and Show all
   facts → the facts fold open and shut (height + fade, not a snap), and every row's description keeps one width
   whether its button reads "N facts", "Hide facts" or the row has no facts. `brainstormui.tsx` `ApproachRow`,

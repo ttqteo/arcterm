@@ -46,6 +46,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 - Starting a run no longer fails over and over with "Selected route is unavailable" when the list of installed agents
   had not loaded: arcterm loads it again and starts the run on the project's route.
+- On a brainstorm board opened full size, `[` `]` and ← → step through its boards as on an agent's canvas, instead of
+  switching to another surface or another agent. While any canvas is shown, ← → never jump to another agent: when its
+  board is loading, unreachable or being marked they do nothing.
 - A council's Summary failed panel has a close button; it comes back only when the summary fails again, and the
   Coordinator's Retry stays in the strip above.
 - While the brainstorm judge weighs a question's approaches, an approach's facts open from a clear button set apart
