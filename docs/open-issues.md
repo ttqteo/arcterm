@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council header on one line and gliding jumps: open a council with a long question. The header is one
+  row (mode chip, the question cut with "…", the status chip, then the cost, Summarize and Stop on the right). In a
+  long discussion, Top, Latest and Back glide there in under half a second; a wheel turn mid-glide stops it where it
+  is, and Top then Latest at once still leaves Back pointing at where you were reading. The commit that adds this line.
 - [ ] (arcterm) Council answers one at a time: in a finished council, send a message For everyone that only steers
   (e.g. "that's a given, not the point"). The first seat on the panel answers first; the others answer after it and
   add only what is new, and one with nothing to add shows as a green "<seat> agrees" chip under that first answer,

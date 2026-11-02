@@ -24,6 +24,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Changed
+
+- A council's header fits on one line: the mode leads, a long question shortens to fit instead of pushing the status
+  onto a second row, and Top, Latest and Back in its discussion glide to their place instead of jumping.
+
 ### Fixed
 
 - While the brainstorm judge weighs a question's approaches, an approach's facts open from a clear button set apart

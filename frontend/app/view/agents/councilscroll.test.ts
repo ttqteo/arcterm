@@ -3,6 +3,8 @@ import {
     NO_PILLS,
     clearKeptPlaces,
     followsEnd,
+    glideAt,
+    glideMs,
     jumpPills,
     keepPlace,
     keptPlace,
@@ -134,5 +136,22 @@ describe("jumpPills", () => {
         expect(jumpPills(box(1500), 1200).back).toBe(true);
         expect(jumpPills(box(1000), 1200).back).toBe(false);
         expect(jumpPills(box(1250), 1000).back).toBe(false);
+    });
+});
+
+describe("glideMs", () => {
+    it("is quick for a short hop and capped for a long one", () => {
+        expect(glideMs(0)).toBe(220);
+        expect(glideMs(-1000)).toBe(260);
+        expect(glideMs(100_000)).toBe(450);
+    });
+});
+
+describe("glideAt", () => {
+    it("starts at from, ends at to, and is past halfway at half time", () => {
+        expect(glideAt(1000, 0, 0)).toBe(1000);
+        expect(glideAt(1000, 0, 1)).toBe(0);
+        expect(glideAt(0, 1000, 0.5)).toBeGreaterThan(500);
+        expect(glideAt(0, 1000, 2)).toBe(1000);
     });
 });

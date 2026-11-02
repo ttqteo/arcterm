@@ -72,6 +72,8 @@ import { answerers, draftsWaitWord, followupLabel } from "./councilmodel";
 import {
     NO_PILLS,
     followsEnd,
+    glideAt,
+    glideMs,
     jumpPills,
     keepPlace,
     keptPlace,
@@ -1310,6 +1312,8 @@ function useChannelJumps(
 ) {
     const saved = useRef<SavedPlace | null>(null);
     const landing = useRef<Landing | null>(null);
+    // the glide in flight: its frame, and the scrollTop it last set (a scroll the reader makes moves off it, and stops it)
+    const flight = useRef<{ frame: number; at: number } | null>(null);
     const [pills, setPills] = useState<JumpPills>(NO_PILLS);
     const backTop = useCallback((el: HTMLElement): number | null => {
         const p = saved.current;
@@ -1325,8 +1329,8 @@ function useChannelJumps(
             return;
         }
         const next = jumpPills(el, backTop(el));
-        // the reader came back to the saved place by hand: nothing left to go back to
-        if (saved.current != null && !next.back) {
+        // the reader came back to the saved place by hand: nothing left to go back to (a glide leaving it is not that)
+        if (saved.current != null && !next.back && flight.current == null) {
             saved.current = null;
             landing.current = null;
         }
@@ -1334,11 +1338,57 @@ function useChannelJumps(
             prev.top === next.top && prev.latest === next.latest && prev.back === next.back ? prev : next
         );
     }, [boxRef, backTop]);
+    const land = useCallback(() => {
+        if (flight.current != null) {
+            cancelAnimationFrame(flight.current.frame);
+            flight.current = null;
+        }
+    }, []);
+    /** Scrolls the channel to `target()` (read each frame, so Latest follows a line that lands meanwhile) with a short
+     *  ease-out glide, or at once under reduced motion; a scroll the reader makes stops it where it is. */
+    const glide = useCallback(
+        (el: HTMLElement, target: () => number) => {
+            land();
+            const from = el.scrollTop;
+            const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+            const ms = glideMs(target() - from);
+            if (reduce || Math.abs(target() - from) < 2) {
+                el.scrollTop = target();
+                onKeptScroll();
+                sync();
+                return;
+            }
+            const start = performance.now();
+            const step = (now: number) => {
+                const f = flight.current;
+                // the reader scrolled meanwhile: theirs wins
+                if (f == null || Math.abs(el.scrollTop - f.at) > 2) {
+                    flight.current = null;
+                    sync();
+                    return;
+                }
+                const t = (now - start) / ms;
+                el.scrollTop = glideAt(from, target(), t);
+                f.at = el.scrollTop;
+                if (t >= 1) {
+                    flight.current = null;
+                    onKeptScroll();
+                    sync();
+                    return;
+                }
+                f.frame = requestAnimationFrame(step);
+            };
+            flight.current = { frame: requestAnimationFrame(step), at: from };
+        },
+        [land, onKeptScroll, sync]
+    );
+    useEffect(() => land, [land]);
     useEffect(() => {
+        land();
         saved.current = null;
         landing.current = null;
         sync();
-    }, [reset, sync]);
+    }, [reset, sync, land]);
     // a new line can take the reader off the end without a scroll
     useEffect(sync, [count, sync]);
     const jump = useCallback(
@@ -1347,7 +1397,8 @@ function useChannelJumps(
             if (el == null) {
                 return;
             }
-            if (saved.current == null || !stillLanded(landing.current, el)) {
+            // mid-glide the place the first jump saved still stands (Top then Latest at once goes back to it)
+            if (saved.current == null || (flight.current == null && !stillLanded(landing.current, el))) {
                 const rows = Array.from(rowsRef.current?.children ?? []);
                 const i = readingRow(
                     rows.map((row) => contentBox(row, el)),
@@ -1360,27 +1411,24 @@ function useChannelJumps(
                 };
             }
             landing.current = to;
-            el.scrollTop = to === "top" ? 0 : el.scrollHeight - el.clientHeight;
             // the pill clicked may go away: the channel keeps focus, and with it j and k
             el.focus({ preventScroll: true });
-            onKeptScroll();
-            sync();
+            glide(el, () => (to === "top" ? 0 : Math.max(0, el.scrollHeight - el.clientHeight)));
         },
-        [boxRef, rowsRef, onKeptScroll, sync]
+        [boxRef, rowsRef, glide]
     );
     const back = useCallback(() => {
         const el = boxRef.current;
-        const top = el == null ? null : backTop(el);
-        if (el == null || top == null) {
+        const p = saved.current;
+        if (el == null || p == null || backTop(el) == null) {
             return;
         }
         saved.current = null;
         landing.current = null;
-        el.scrollTop = top;
         el.focus({ preventScroll: true });
-        onKeptScroll();
-        sync();
-    }, [boxRef, backTop, onKeptScroll, sync]);
+        // the row is read again each frame, so lines landing above it meanwhile do not throw the glide off
+        glide(el, () => returnTop(p, p.row?.isConnected ? contentBox(p.row, el).top : null, el));
+    }, [boxRef, backTop, glide]);
     const onScroll = useCallback(() => {
         onKeptScroll();
         sync();

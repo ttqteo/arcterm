@@ -254,20 +254,22 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
     // the call bar is the first step's and the pause's; the chat's seat chips say who is at work
     const showBar = body !== "chat" && ((c.state === "running" && c.round <= 1) || c.state === "awaiting-you");
     return (
-        <header className="flex flex-none flex-col gap-3 border-b border-edge-faint px-8 pb-3 pt-4">
+        <header className="flex flex-none flex-col gap-2 border-b border-edge-faint px-8 py-[10px]">
+            {/* one row: the title takes what is left and truncates, so the chips stay beside it rather than wrapping
+                to a second line; the row wraps only when under ~240px is left for the title */}
             <div className="flex min-w-0 flex-wrap items-center gap-x-[10px] gap-y-2">
-                <span className="text-[13px] text-muted">Council</span>
-                <h1
-                    data-council-title
-                    title={c.feature}
-                    className="m-0 min-w-0 truncate text-[16px] font-semibold tracking-[-0.01em] text-primary"
-                >
-                    {c.feature}
-                </h1>
-                <StatusChip c={c} />
-                <ModeChip c={c} />
-                {body !== "chat" && <AvatarStack c={c} />}
-                <div className="flex-1" />
+                <div className="flex min-w-0 flex-1 basis-[240px] items-center gap-[10px]">
+                    <ModeChip c={c} />
+                    <h1
+                        data-council-title
+                        title={c.feature}
+                        className="m-0 min-w-0 truncate text-[15px] font-semibold tracking-[-0.01em] text-primary"
+                    >
+                        {c.feature}
+                    </h1>
+                    <StatusChip c={c} />
+                    {body !== "chat" && <AvatarStack c={c} />}
+                </div>
                 {c.state !== "not-run" && !isQueued(c) && (
                     <span data-council-cost className="whitespace-nowrap text-[12.5px] tabular-nums text-muted">
                         {headerCost(c, now)}
@@ -289,10 +291,11 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
                         type="button"
                         data-council-stop
                         disabled={acts.busy.has("stop")}
+                        title="Stop council"
                         onClick={() => void acts.run("stop", "Stop council", () => stopCouncil(c.id))}
-                        className="h-[28px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[12px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
+                        className="h-[28px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[10px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
                     >
-                        {acts.busy.has("stop") ? "Stopping…" : "Stop council"}
+                        {acts.busy.has("stop") ? "Stopping…" : "Stop"}
                     </button>
                 )}
                 {canRemoveCouncil(c) && (

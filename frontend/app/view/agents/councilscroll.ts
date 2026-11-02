@@ -104,6 +104,19 @@ export function stillLanded(landing: Landing | null, el: Scroller): boolean {
     return landing === "latest" && placeOf(el).bottom;
 }
 
+// ---- the glide a jump scrolls with ----
+
+/** How long a jump glides over `distance` px: a short hop quick, a long one a little longer, never past 450ms. */
+export function glideMs(distance: number): number {
+    return Math.round(Math.min(450, 220 + Math.abs(distance) / 25));
+}
+
+/** Where a glide from `from` to `to` is at `t` (0 to 1 of its time): ease-out cubic, fast off the mark and settling. */
+export function glideAt(from: number, to: number, t: number): number {
+    const k = Math.min(1, Math.max(0, t));
+    return from + (to - from) * (1 - Math.pow(1 - k, 3));
+}
+
 export interface JumpPills {
     top: boolean;
     latest: boolean;
