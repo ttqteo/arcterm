@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A council that already exists, running or done, can take a live claude or pi chat into it: type `@` in its message
+  box, pick the chat under Add a live chat (its short id, title, project and how much context it holds are listed) and
+  send. The chat joins the council, answers that message from its own context, and stays a seat.
 - An agent you ask for a council on named chats now seats those chats in it, beside a Skeptic and a coordinator, and
   the council runs to the report without holding drafts for you to send: `wsh council start --agent <tab id>`, and
   `--agent self` for the chat that asks.

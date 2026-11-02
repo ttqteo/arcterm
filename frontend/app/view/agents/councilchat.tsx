@@ -9,7 +9,9 @@
 // bubble, folded to three lines and two of its limits; a divider for each round; every idea as a bubble in its seat's
 // colour with its reply chip; the ideas and replies a seat wrote that wait for the person (amber, Send to the others,
 // Edit, Drop); the line where an agent skipped a turn, a failure with Retry, and a typing row for whoever is at work;
-// under it the composer, which posts to everyone, and `@` asks one seat. A click on an idea's reply chip, or Enter on
+// under it the composer, which posts to everyone, and `@` asks one seat, or lists the live claude and pi chats no seat
+// holds under Add a live chat (a pick puts its mention key in the message; Send seats the chats the text still names
+// and posts the message to them). A click on an idea's reply chip, or Enter on
 // the idea the keyboard cursor is on, slides its thread in from the right (sheetPanel): the idea on top, then its
 // replies with their stance pills, the replies held as drafts, and a reply box that names who will answer. j and k move
 // the cursor over the ideas, Enter opens the thread and Escape closes it, while focus is inside the channel or the
@@ -25,7 +27,7 @@ import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Check, ChevronDown, ChevronUp, CornerDownRight, SquareTerminal, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, CornerDownRight, Plus, SquareTerminal, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
     useCallback,
@@ -42,17 +44,21 @@ import type { Actions } from "./councilactions";
 import {
     DRAFT_WAIT,
     askChips,
+    contextLabel,
     councilChannel,
     councilThread,
     ideaOrder,
+    insertChatMention,
     insertMention,
     mentionPicker,
     onlyLine,
+    pickedChats,
     readsFiles,
     replyReach,
     seatChips,
     type AskChip,
     type ChannelItem,
+    type ChatPick,
     type ChatThread,
     type DraftPost,
     type FailureLine,
@@ -68,7 +74,7 @@ import {
 import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { markSpans } from "./councilmarks";
-import { answerers, draftsWaitWord, followupLabel } from "./councilmodel";
+import { answerers, councilProjectName, draftsWaitWord, followupLabel, type SeatableAgent } from "./councilmodel";
 import { RetryWithButton } from "./councilretrymenu";
 import {
     NO_PILLS,
@@ -89,6 +95,7 @@ import {
     type RowBox,
     type ScrollPlace,
 } from "./councilscroll";
+import { basename } from "./councilsetupmodel";
 import { CouncilSourcesPanel, EvidenceChips } from "./councilsourcespanel";
 import {
     closeCouncilSources,
@@ -102,6 +109,7 @@ import {
     useEstimate,
 } from "./councilstore";
 import { MarkdownMessage } from "./markdownmessage";
+import { projectsAtom } from "./projectsstore";
 
 // ---- shared pieces ----
 
@@ -916,6 +924,7 @@ function Composer({
     sendLabel,
     labelledBy,
     returnTo,
+    chats,
 }: {
     c: Council;
     scope: "channel" | "thread";
@@ -924,25 +933,52 @@ function Composer({
     sendLabel: string;
     labelledBy: string;
     returnTo: () => HTMLElement | null;
+    chats: readonly SeatableAgent[]; // the live chats `@` lists under Add a live chat (the ones no seat holds)
 }) {
     const [drafts, setDrafts] = useAtom(councilChatDraftAtom(c.id));
     const text = drafts.texts[proposalId] ?? "";
     const setText = (t: string) => setDrafts((d) => ({ ...d, texts: { ...d.texts, [proposalId]: t } }));
     const box = useRef<HTMLTextAreaElement>(null);
+    const list = useRef<HTMLUListElement>(null);
+    const projects = useAtomValue(projectsAtom);
     const [caret, setCaret] = useState(0);
     const [pick, setPick] = useState(0);
     const [dismissed, setDismissed] = useState(-1);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const found = mentionPicker(c, text, caret);
+    const found = mentionPicker(c, text, caret, chats);
     const picker = found != null && found.start !== dismissed ? found : null;
-    const who = answerers(c, proposalId, "", text);
+    // the chats this message adds: the ones whose `@<key>` is still in the text, so deleting it drops the pick
+    const joining = pickedChats(c, text, chats);
+    const who = answerers(c, proposalId, "", text, joining);
     const followUp = isFollowUp(c);
     const k = followUp ? who.length : 0;
+    // a chat answerer (seated, or joining) is priced at its context, a role expert at the flat price
+    const chatTabs = who.flatMap((e) => (e.agent ? [e.agent] : []));
+    const experts = who.length - chatTabs.length;
     const reads = readsFiles(drafts.tools, text);
-    const est = useEstimate(k > 0 ? { id: c.id, followup: k, tools: reads.on } : null);
-    const hint = k > 0 ? followupLabel(est, k, reads.on) : replyReach(c, proposalId, "", text).label;
+    const est = useEstimate(
+        k > 0
+            ? {
+                  id: c.id,
+                  followup: experts > 0 ? experts : undefined,
+                  agents: chatTabs.length > 0 ? chatTabs : undefined,
+                  tools: reads.on,
+              }
+            : null
+    );
+    const hint =
+        k > 0
+            ? followupLabel(est, experts, reads.on, chatTabs.length)
+            : replyReach(c, proposalId, "", text, joining).label;
+    // the picker's rows are one list for the arrow keys: the seats, then the chats
+    const rowCount = picker == null ? 0 : picker.seats.length + picker.chats.length;
+
+    // the row the arrow keys moved to stays in view of a list that scrolls
+    useEffect(() => {
+        list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest" });
+    }, [pick, rowCount]);
 
     const send = async () => {
         const body = text.trim();
@@ -956,6 +992,7 @@ function Composer({
             proposalid: proposalId || undefined,
             text: body,
             tools: followUp && reads.on ? true : undefined,
+            agents: joining.length > 0 ? joining.map((a) => a.id) : undefined,
         });
         setBusy(false);
         if (r.ok === false) {
@@ -965,11 +1002,8 @@ function Composer({
             setDrafts((d) => ({ ...d, texts: { ...d.texts, [proposalId]: "" }, tools: null }));
         }
     };
-    const choose = (seat: CouncilExpert) => {
-        if (picker == null) {
-            return;
-        }
-        const next = insertMention(text, picker.start, caret, seat);
+    // a seat is put in by its name, a chat by its mention key (`@82faafca`), the word wavesrv reaches its seat by
+    const put = (next: { text: string; caret: number }) => {
         setText(next.text);
         setCaret(next.caret);
         setPick(0);
@@ -978,20 +1012,46 @@ function Composer({
             box.current?.setSelectionRange(next.caret, next.caret);
         });
     };
+    const chooseSeat = (seat: CouncilExpert) => {
+        if (picker != null) {
+            put(insertMention(text, picker.start, caret, seat));
+        }
+    };
+    const chooseChat = (chat: ChatPick) => {
+        if (picker != null) {
+            put(insertChatMention(text, picker.start, caret, chat.key));
+        }
+    };
+    // the row the keys are on, counted across the seats and then the chats
+    const active = Math.min(pick, Math.max(rowCount - 1, 0));
+    const chooseRow = (i: number) => {
+        if (picker == null) {
+            return;
+        }
+        const seat = picker.seats[i];
+        if (seat != null) {
+            chooseSeat(seat);
+        } else {
+            const chat = picker.chats[i - picker.seats.length];
+            if (chat != null) {
+                chooseChat(chat);
+            }
+        }
+    };
     const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.nativeEvent.isComposing) {
             return;
         }
         if (picker != null) {
-            const n = picker.seats.length;
+            const n = rowCount;
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                 e.preventDefault();
-                setPick((p) => (p + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+                setPick((p) => (Math.min(p, n - 1) + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
                 return;
             }
             if (e.key === "Enter" || e.key === "Tab") {
                 e.preventDefault();
-                choose(picker.seats[Math.min(pick, n - 1)]);
+                chooseRow(active);
                 return;
             }
             if (e.key === "Escape") {
@@ -1017,30 +1077,100 @@ function Composer({
         <div data-council-composer={scope} data-composer-for={proposalId} className="relative flex flex-col gap-[6px]">
             {picker != null && (
                 <ul
+                    ref={list}
                     role="listbox"
                     data-council-mentions
-                    aria-label="Seats"
-                    className="absolute bottom-full left-0 z-10 m-0 mb-[4px] flex max-h-[200px] min-w-[220px] list-none flex-col overflow-y-auto rounded-[8px] border border-edge-strong bg-surface-raised p-[4px]"
+                    aria-label={picker.chats.length > 0 ? "Ask a seat or add a chat" : "Seats"}
+                    className={cn(
+                        "absolute bottom-full left-0 z-10 m-0 mb-[4px] flex max-h-[280px] min-w-[220px] list-none flex-col overflow-y-auto rounded-[8px] border border-edge-strong bg-surface-raised p-[4px]",
+                        picker.chats.length > 0 && "w-[460px] max-w-full"
+                    )}
                 >
+                    {picker.seats.length > 0 && picker.chats.length > 0 && (
+                        <li role="presentation" className="px-[8px] pb-[2px] pt-[4px] text-[12px] text-muted">
+                            Seats
+                        </li>
+                    )}
                     {picker.seats.map((s, i) => (
                         <li
                             key={s.id}
                             role="option"
-                            aria-selected={i === pick}
+                            aria-selected={i === active}
+                            data-selected={i === active}
                             data-council-mention={s.id}
                             onMouseDown={(e) => {
                                 e.preventDefault();
-                                choose(s);
+                                chooseSeat(s);
                             }}
                             className={cn(
                                 "flex cursor-pointer items-center gap-[8px] rounded-[6px] px-[8px] py-[5px] text-[13px]",
-                                i === pick ? "bg-surface-hover text-primary" : "text-secondary"
+                                i === active ? "bg-surface-hover text-primary" : "text-secondary"
                             )}
                         >
                             <span className="font-semibold">{s.name}</span>
                             <span className="text-[12px] text-muted">{s.agent ? "agent" : "expert"}</span>
                         </li>
                     ))}
+                    {picker.chats.length > 0 && (
+                        <li
+                            role="presentation"
+                            data-council-add-chat
+                            className={cn(
+                                "flex flex-col",
+                                picker.seats.length > 0 && "mt-[4px] border-t border-edge-mid pt-[4px]"
+                            )}
+                        >
+                            <span className="px-[8px] pb-[2px] pt-[2px] text-[12px] text-muted">
+                                Add a live chat · it joins and answers this message
+                            </span>
+                            <ul role="group" aria-label="Add a live chat" className="m-0 flex list-none flex-col p-0">
+                                {picker.chats.map((p, j) => {
+                                    const i = picker.seats.length + j;
+                                    const meta = [
+                                        p.chat.harness,
+                                        councilProjectName(projects, p.chat.project) ?? basename(p.chat.project),
+                                        p.chat.context > 0 ? contextLabel(p.chat.context) : "",
+                                    ].filter((part) => part !== "");
+                                    return (
+                                        <li
+                                            key={p.chat.id}
+                                            role="option"
+                                            aria-selected={i === active}
+                                            data-selected={i === active}
+                                            data-council-chat-row={p.chat.id}
+                                            onMouseDown={(e) => {
+                                                e.preventDefault();
+                                                chooseChat(p);
+                                            }}
+                                            className={cn(
+                                                "flex cursor-pointer items-center gap-[10px] rounded-[6px] px-[8px] py-[6px] text-[13px]",
+                                                i === active ? "bg-surface-hover text-primary" : "text-secondary"
+                                            )}
+                                        >
+                                            <Plus
+                                                size={14}
+                                                strokeWidth={1.8}
+                                                aria-hidden
+                                                className="flex-none text-muted"
+                                            />
+                                            <span
+                                                data-council-chat-key
+                                                className="min-w-[70px] flex-none font-mono text-[12px] text-secondary"
+                                            >
+                                                {p.key}
+                                            </span>
+                                            <span data-council-chat-name className="min-w-0 flex-1 truncate">
+                                                {p.chat.name}
+                                            </span>
+                                            <span data-council-chat-meta className="flex-none text-[12px] text-muted">
+                                                {meta.join(" · ")}
+                                            </span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </li>
+                    )}
                 </ul>
             )}
             <div className="flex items-end gap-[8px] rounded-[14px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
@@ -1107,7 +1237,12 @@ function Composer({
                 {hint}
             </span>
             {error != null && (
-                <span role="alert" data-council-composer-error className="text-[12.5px] text-error-soft">
+                // a refusal that lists the live chats runs over several lines: each stays a line of its own
+                <span
+                    role="alert"
+                    data-council-composer-error
+                    className="min-w-0 whitespace-pre-line break-words text-[12.5px] text-error-soft"
+                >
                     {error}
                 </span>
             )}
@@ -1157,11 +1292,13 @@ function ThreadPanel({
     thread,
     acts,
     onClose,
+    chats,
 }: {
     c: Council;
     thread: ChatThread;
     acts: Actions;
     onClose: () => void;
+    chats: readonly SeatableAgent[];
 }) {
     const idea = thread.idea;
     const scroller = useRef<HTMLDivElement>(null);
@@ -1249,6 +1386,7 @@ function ThreadPanel({
                     sendLabel="Reply"
                     labelledBy="council-thread-reply-label"
                     returnTo={() => document.querySelector<HTMLElement>("[data-council-thread]")}
+                    chats={chats}
                 />
             </div>
         </aside>
@@ -1539,16 +1677,20 @@ function Channel({
 }
 
 /** The council's discussion as a channel with threads. `notes` is what the discussion draws above the channel (the failed
- *  summary and its Retry); `onOpenTerminal` takes an agent's tab id. */
+ *  summary and its Retry); `onOpenTerminal` takes an agent's tab id; `chats` are the live claude and pi chats the
+ *  composers' `@` can add to the council (the cockpit's roster by the one seat rule, seated ones included: the picker
+ *  lists the ones no seat holds). */
 export function CouncilChat({
     c,
     acts,
+    chats,
     notes,
     onOpenTerminal,
     onOpenFile,
 }: {
     c: Council;
     acts: Actions;
+    chats: readonly SeatableAgent[];
     notes?: ReactNode;
     onOpenTerminal: (tab: string) => void;
     onOpenFile?: (path: string, line?: number) => void;
@@ -1705,6 +1847,7 @@ export function CouncilChat({
                         sendLabel="Send"
                         labelledBy="council-channel-label"
                         returnTo={() => channel.current}
+                        chats={chats}
                     />
                 </div>
             </div>
@@ -1721,7 +1864,7 @@ export function CouncilChat({
                         className="flex min-h-0 flex-none"
                     >
                         {thread != null ? (
-                            <ThreadPanel c={c} thread={thread} acts={acts} onClose={close} />
+                            <ThreadPanel c={c} thread={thread} acts={acts} onClose={close} chats={chats} />
                         ) : sources != null ? (
                             <CouncilSourcesPanel c={c} view={sources} onClose={closeSources} onOpenFile={onOpenFile} />
                         ) : null}

@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A live chat joins a council that already exists: open a Done council, type `@` in its message box →
+  the seats, then **Add a live chat** with each real claude or pi chat (short id, title, harness, project, context
+  size; none of the seated ones). Pick one and send a question → the line under the box counts it ("… and 1 chat
+  answer" with a figure that includes its context) before Send; after Send it shows on the seat bar, answers from its
+  own context (it read the report and what came after it, not the whole discussion), and the council still holds no
+  drafts if it held none before. Then pick a chat and close its tab before Send → the send is refused with the live
+  tabs listed, and the message stays in the box. No scenario starts a real agent (`councilchat.tsx` `Composer`, spec
+  `2026-11-02-council-add-chat-design.md`).
 - [ ] (arcterm) The Agent panel's counts scroll: open an agent's details panel on Overview (300px) with enough counts
   to overflow (Subagents, Files, Servers…) → the wheel over the counts slides them sideways, the hidden edge fades,
   and the last count is reachable (`agentrailpanel.tsx` `RailStats`).

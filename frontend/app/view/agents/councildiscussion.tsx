@@ -16,9 +16,9 @@
 import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
-import { atomFamily } from "jotai/utils";
+import { atomFamily, selectAtom } from "jotai/utils";
 import { Check, ListChecks, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { useActions, type Actions } from "./councilactions";
@@ -59,9 +59,11 @@ import {
     panel,
     queuedLine,
     summarizeHold,
+    type SeatableAgent,
     type SegmentState,
 } from "./councilmodel";
 import { RetryWithButton } from "./councilretrymenu";
+import { seatableAgents } from "./councilsetupmodel";
 import { EvidenceChips } from "./councilsourcespanel";
 import {
     closeCouncil,
@@ -74,6 +76,7 @@ import {
     useCouncil,
     useEstimate,
 } from "./councilstore";
+import { projectsAtom } from "./projectsstore";
 
 const ROOT = "flex min-h-0 min-w-0 flex-1 flex-col bg-background text-[14px] text-primary";
 
@@ -126,9 +129,37 @@ export function CouncilDiscussion({ model }: { model: AgentsViewModel }) {
     return <Discussion key={c.id} c={c} model={model} />;
 }
 
+const sameChats = (a: readonly SeatableAgent[], b: readonly SeatableAgent[]) =>
+    a.length === b.length &&
+    a.every(
+        (x, i) =>
+            x.id === b[i].id &&
+            x.name === b[i].name &&
+            x.project === b[i].project &&
+            x.harness === b[i].harness &&
+            x.context === b[i].context
+    );
+
+// The live claude and pi chats a message in the council can add with `@` (the cockpit's roster, which Setup's Add agent
+// reads too, by the one seat rule). The roster changes on every agent's state tick, so the list is picked out of it
+// and the view re-renders only when a chat, its name, project or context changes.
+function useLiveChats(model: AgentsViewModel, project: string): readonly SeatableAgent[] {
+    const chatsAtom = useMemo(
+        () =>
+            selectAtom(
+                atom((get) => seatableAgents(get(model.agentsAtom), get(projectsAtom), project)),
+                (chats) => chats,
+                sameChats
+            ),
+        [model.agentsAtom, project]
+    );
+    return useAtomValue(chatsAtom);
+}
+
 function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
     const now = useClock(c.state === "running");
     const acts = useActions();
+    const chats = useLiveChats(model, c.project);
     const body = discussionBody(c);
     return (
         <div data-council-discussion={c.id} data-council-id={c.id} data-council-state={c.state} className={ROOT}>
@@ -145,6 +176,7 @@ function Discussion({ c, model }: { c: Council; model: AgentsViewModel }) {
                 <CouncilChat
                     c={c}
                     acts={acts}
+                    chats={chats}
                     notes={<FailureNotes c={c} acts={acts} withExperts={false} />}
                     onOpenTerminal={(tab) => model.openTerminal(tab)}
                     onOpenFile={(path, line) => fireAndForget(() => openFileInCode(model, path, false, line))}

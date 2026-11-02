@@ -13,6 +13,8 @@
 //   stubRpc, resolveStub, rejectStub, rpcCalls, unstubRpc  the page-side stand-ins for RpcApi commands
 //   ROOM_AGENTS, writeRoomRoster, restoreRoomRoster  the two live agents the `room` fixtures seat, as the cockpit's
 //                          fixture roster (the agent seats' tab ids are theirs, so the tree and Setup know them)
+//   JOIN_AGENTS            two live chats no fixture seats, `writeRoomRoster(h, { extra: JOIN_AGENTS })` adds them to
+//                          the roster for the steps that add a chat to a council with @
 //   teardownCouncilProject  the reverse of all of it
 //
 // scenarios.mjs hands the helpers it owns in through `fx`: waitForProjectInConfig, polishReload, openRailTerminal,
@@ -99,17 +101,44 @@ export const ROOM_AGENTS = [
     },
 ];
 
+// Two live chats no fixture council seats, for the steps that add a chat to a council that exists (`@` in its message
+// box): one claude and one pi, in different projects (the second sits in a folder no project is registered for, which
+// is where its `cwd` points), with tab ids that start differently from each other and from `fx-room-`, so each is its
+// own mention key (`@82faafca`, `@3e19c0d2`). Pass them as `writeRoomRoster(h, { extra: JOIN_AGENTS })`.
+export const JOIN_AGENTS = [
+    {
+        id: "recap",
+        tabId: "82faafca-4b1e-4c57-9d0a-3c5e8f1a2b61",
+        name: "Tour video recap",
+        project: COUNCIL_PROJECT,
+        harness: "claude",
+        context: 182_000,
+        task: "Recap the home page tour video",
+    },
+    {
+        id: "charts",
+        tabId: "3e19c0d2-7a55-4f0b-8c4d-91e6b2a0d7f3",
+        name: "Chart pass",
+        project: `${COUNCIL_PROJECT}-ux`,
+        cwd: "/work/vnstock-js",
+        harness: "pi",
+        context: 21_000,
+        task: "Rework the price chart",
+    },
+];
+
 const ROOM_CONTEXT_MAX = 1_000_000;
 const ROOM_MODELS = { claude: "opus", pi: "sonnet" };
 const ROOM_TASKS = { witness: "Synthesise the witness transcripts", uxaudit: "Audit the rail apps flow" };
 
-/** The cockpit roster (AgentVM[]) of the room's agents, each with the context the council seats it with. */
-export function roomRoster(now = Date.now()) {
-    return ROOM_AGENTS.map((a, i) => ({
+// one agent of a fixture roster as the cockpit's AgentVM, the `i`th of its list
+function rosterEntry(a, i, now) {
+    return {
         id: a.tabId,
         name: a.name,
         project: a.project,
-        task: ROOM_TASKS[a.id],
+        ...(a.cwd ? { cwd: a.cwd } : {}),
+        task: a.task ?? ROOM_TASKS[a.id],
         state: "working",
         agent: a.harness,
         model: ROOM_MODELS[a.harness],
@@ -121,7 +150,13 @@ export function roomRoster(now = Date.now()) {
             contextmax: ROOM_CONTEXT_MAX,
             costusd: 3.2 - i,
         },
-    }));
+    };
+}
+
+/** The cockpit roster (AgentVM[]) of the room's agents, each with the context the council seats it with. `extra` is more
+ *  agents (JOIN_AGENTS) listed after them; the default is the room's two alone. */
+export function roomRoster(now = Date.now(), extra = []) {
+    return [...ROOM_AGENTS, ...extra].map((a, i) => rosterEntry(a, i, now));
 }
 
 // the roster the DEV app reads instead of the live one (frontend/app/view/agents/devmock.ts), which the agent-tree-rail
@@ -152,12 +187,12 @@ function putRosterBack(roster) {
 /** Writes the room's agents as the fixture roster, in place of whatever roster was there, and reloads the page so the
  *  cockpit reads it. Answers what restoreRoomRoster needs (`{ h, file, prev, restored }`); a reload that fails puts
  *  the previous roster back and throws. `opts.file` writes somewhere else, `opts.now` fixes the clock the agents' state
- *  ages are read from. */
+ *  ages are read from, `opts.extra` is more agents after the room's (JOIN_AGENTS). */
 export async function writeRoomRoster(h, opts = {}) {
     const file = opts.file ?? ROSTER_FILE;
     const roster = { h, file, prev: existsSync(file) ? readFileSync(file, "utf8") : null, restored: false };
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, JSON.stringify(roomRoster(opts.now), null, 2));
+    writeFileSync(file, JSON.stringify(roomRoster(opts.now, opts.extra), null, 2));
     try {
         await reloadApp(h);
     } catch (e) {

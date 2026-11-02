@@ -28,6 +28,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { waitFor } from "../attach.mjs";
 import {
+    JOIN_AGENTS,
     arrangeCouncilProject,
     councilFixtureId,
     loadCouncilFixture,
@@ -839,11 +840,12 @@ async function sources(h, ctx, rec) {
 
 // ---- the room: two live agents seated beside two experts ----
 
-// writes the room's agents as the cockpit's fixture roster once, for every room phase (it reloads the page, so no stub
-// can be in place), and goes back to the Agent surface; teardown puts the previous roster back
+// writes the room's agents, and the two unseated chats the add-chat phases offer (JOIN_AGENTS), as the cockpit's fixture
+// roster once, for every room phase and every add-chat phase (it reloads the page, so no stub can be in place), and goes
+// back to the Agent surface; teardown puts the previous roster back, once
 async function withRoster(h, ctx) {
     if (ctx.roster == null) {
-        ctx.roster = await writeRoomRoster(h);
+        ctx.roster = await writeRoomRoster(h, { extra: JOIN_AGENTS });
         // the reload lands on Jarvis; the keys and the focus below are the Agent surface's
         await h.goto("agent");
     }
@@ -1184,6 +1186,277 @@ async function roomAwaiting(h, ctx, rec) {
     );
 }
 
+// ---- add a live chat: @ in a council's message box ----
+
+// The roster holds JOIN_AGENTS beside the room's two agents (withRoster); no fixture council seats them. Every phase stubs
+// CouncilReplyCommand and CouncilEstimateCommand, so nothing seats a chat, posts a message or spends a token: what
+// wavesrv does with `agents` is covered in Go.
+const [RECAP, CHARTS] = JOIN_AGENTS;
+const keyOf = (a) => a.tabId.slice(0, 8);
+const CHAT_INPUT = `${CHANNEL_COMPOSER} [data-council-composer-input]`;
+const CHAT_HINT = `${CHANNEL_COMPOSER} [data-council-composer-hint]`;
+const CHAT_SEND = `${CHANNEL_COMPOSER} [data-council-composer-send]`;
+const pressArrowDown = (h) => press(h, "ArrowDown", "ArrowDown", 40);
+
+const selectedChat = (h) =>
+    h.ev(`document.querySelector('[data-council-mentions] [data-council-chat-row][data-selected="true"]')?.getAttribute("data-council-chat-row") ?? null`);
+
+// ArrowDown over the picker's rows (the seats, then the chats, one list) until the chat row `tab` is the one selected
+async function arrowToChat(h, tab) {
+    for (let i = 0; i < 12; i++) {
+        if ((await selectedChat(h)) === tab) return true;
+        await pressArrowDown(h);
+    }
+    return (await selectedChat(h)) === tab;
+}
+
+const seatRowIds = (h) =>
+    h.ev(`[...document.querySelectorAll("[data-council-mentions] [data-council-mention]")].map((e) => e.getAttribute("data-council-mention"))`);
+
+const chatRows = (h) =>
+    h.ev(`[...document.querySelectorAll("[data-council-mentions] [data-council-chat-row]")].map((e) => ({
+        id: e.getAttribute("data-council-chat-row"),
+        selected: e.getAttribute("data-selected") === "true",
+        key: (e.querySelector("[data-council-chat-key]")?.textContent ?? "")${NORM},
+        name: (e.querySelector("[data-council-chat-name]")?.textContent ?? "")${NORM},
+        meta: (e.querySelector("[data-council-chat-meta]")?.textContent ?? "")${NORM},
+    }))`);
+
+const selectedRows = (h) => count(h, '[data-council-mentions] [data-selected="true"]');
+
+// the seat a reply's `agents` seats a chat as (Reply stores it as councilAgentSeats gives it: Id `agent-<tab>`)
+const joinedSeat = (a) => ({
+    id: `agent-${a.tabId}`,
+    name: a.name,
+    brief: "",
+    model: "",
+    agent: a.tabId,
+    harness: a.harness,
+    context: a.context,
+});
+
+async function openRoomToChat(h, ctx, suffix, stubs) {
+    await withRoster(h, ctx);
+    const id = await openFixture(h, ctx, "room", { id: `${councilFixtureId("room")}-${suffix}` });
+    await until(h, `!!document.querySelector("[data-council-channel]")`);
+    await stubRpc(h, ["CouncilReplyCommand", "CouncilEstimateCommand"], stubs);
+    await focusOn(h, CHAT_INPUT);
+    return id;
+}
+
+// `@` lists the seats, then the live chats no seat holds under Add a live chat, each with its key, name, harness, project
+// and context; the arrow keys move over both lists as one
+async function addChatPicker(h, ctx, rec) {
+    await openRoomToChat(h, ctx, "addchat-picker");
+    await typeInto(h, CHAT_INPUT, "@");
+    const opened = await until(h, `!!document.querySelector("[data-council-add-chat]")`);
+    const first = await arrowToChat(h, RECAP.tabId);
+
+    const seats = await seatRowIds(h);
+    const rows = await chatRows(h);
+    const picker = await text(h, "[data-council-mentions]");
+    const want = [
+        [RECAP, "claude", "council-fixture", "182k"],
+        [CHARTS, "pi", "vnstock-js", "21k"],
+    ];
+    const selected = await selectedRows(h);
+    rec(
+        "add-chat-picker: @ lists the four seats, then Add a live chat with both joinable chats, each with its key, title, harness, project and context size; one row is selected, a chat's, and no seated chat has a row",
+        opened &&
+            first &&
+            seats.join(",") === "witness,uxaudit,security,skeptic" &&
+            picker.includes("Seats") &&
+            picker.includes("Add a live chat") &&
+            rows.length === 2 &&
+            want.every(
+                ([a, harness, project, context], i) =>
+                    rows[i].id === a.tabId &&
+                    rows[i].key === keyOf(a) &&
+                    rows[i].name === a.name &&
+                    rows[i].meta === `${harness} · ${project} · ${context}`
+            ) &&
+            selected === 1 &&
+            rows[0].selected === true &&
+            !(await exists(h, '[data-council-chat-row="fx-room-witness"]')) &&
+            !(await exists(h, '[data-council-chat-row="fx-room-uxaudit"]')),
+        { opened, first, seats, rows, selected }
+    );
+    await h.shot("cdp-shots/council-discussion-add-chat-picker.png");
+
+    // the arrow keys run on from the last chat row back to the first seat
+    for (let i = 0; i < 2; i++) await pressArrowDown(h);
+    const wrapped = await h.ev(`document.querySelector('[data-council-mentions] [data-selected="true"]')?.getAttribute("data-council-mention") ?? null`);
+    rec("add-chat-picker: the arrow keys wrap from the last chat row to the first seat", wrapped === "witness", wrapped);
+    await typeInto(h, CHAT_INPUT, "");
+}
+
+// picking both chats puts `@<key>` in the message and names them as the only answerers; Send carries both tab ids as
+// `agents`; once they are seated they are on the seat bar and `@` lists them under Seats, not as chats
+async function addChatSend(h, ctx, rec) {
+    const id = await openRoomToChat(h, ctx, "addchat-send");
+    await typeInto(h, CHAT_INPUT, "@");
+    await until(h, `!!document.querySelector("[data-council-add-chat]")`);
+    await arrowToChat(h, RECAP.tabId);
+    await pressEnter(h);
+    const firstPick = await h.ev(`document.querySelector(${sel(CHAT_INPUT)})?.value ?? ""`);
+    const closed = !(await exists(h, "[data-council-mentions]"));
+
+    // the second: another @ after the first, and the other chat's row
+    await typeInto(h, CHAT_INPUT, `${firstPick}@`);
+    await until(h, `!!document.querySelector("[data-council-add-chat]")`);
+    const second = await arrowToChat(h, CHARTS.tabId);
+    await pressEnter(h);
+    const both = await h.ev(`document.querySelector(${sel(CHAT_INPUT)})?.value ?? ""`);
+    rec(
+        "add-chat-send: Enter on a chat row writes `@<key> ` and closes the list; a second @ and the other chat's row write both keys",
+        firstPick === `@${keyOf(RECAP)} ` && closed && second && both === `@${keyOf(RECAP)} @${keyOf(CHARTS)} `,
+        { firstPick, closed, second, both }
+    );
+
+    const BODY = `@${keyOf(RECAP)} @${keyOf(CHARTS)} v5 is out, pick up from the report and weigh in`;
+    await typeInto(h, CHAT_INPUT, BODY);
+    const hint = await settledText(h, CHAT_HINT, /^Answered by/);
+    rec(
+        "add-chat-send: before Send the line under the box names the two chats and no other seat: `Answered by: <chat>, <chat>`",
+        hint === `Answered by: ${RECAP.name}, ${CHARTS.name}`,
+        hint
+    );
+
+    await click(h, CHAT_SEND);
+    await until(h, `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilReplyCommand")`);
+    const calls = await rpcCalls(h, "CouncilReplyCommand");
+    const data = calls[0]?.data;
+    const cleared = await until(h, `document.querySelector(${sel(CHAT_INPUT)})?.value === ""`);
+    rec(
+        "add-chat-send: the send (stubbed) records CouncilReplyCommand with both tab ids as `agents` and the text, and the box empties",
+        calls.length === 1 &&
+            data?.id === id &&
+            data.text === BODY &&
+            data.proposalid === undefined &&
+            JSON.stringify(data.agents) === JSON.stringify([RECAP.tabId, CHARTS.tabId]) &&
+            cleared,
+        { calls, cleared }
+    );
+
+    // wavesrv would now hold the council with the two chats seated before the coordinator
+    await seedCouncil(h, ctx, "room", {
+        id,
+        edit: (c) => {
+            c.experts.splice(
+                c.experts.findIndex((e) => e.coordinator),
+                0,
+                ...JOIN_AGENTS.map(joinedSeat)
+            );
+        },
+    });
+    await until(h, `document.querySelectorAll("[data-council-expert-chip]").length === 7`);
+    const chips = await seatChips(h);
+    const byId = Object.fromEntries(chips.map((c) => [c.id, c]));
+    rec(
+        "add-chat-send: the seat bar shows both chats as seats of their own, after the four seats and before the coordinator, each an agent with its context",
+        chips.map((c) => c.id).join(",") ===
+            `witness,uxaudit,security,skeptic,agent-${RECAP.tabId},agent-${CHARTS.tabId},coordinator` &&
+            byId[`agent-${RECAP.tabId}`].open === RECAP.tabId &&
+            byId[`agent-${CHARTS.tabId}`].open === CHARTS.tabId &&
+            byId[`agent-${RECAP.tabId}`].title.includes(`${RECAP.name} · agent · 182k`) &&
+            byId[`agent-${CHARTS.tabId}`].title.includes(`${CHARTS.name} · agent · 21k`),
+        chips.map((c) => `${c.id}: ${c.text}`).join(" ; ")
+    );
+    await h.shot("cdp-shots/council-discussion-add-chat-seated.png");
+
+    // now seats: `@` lists them under Seats and offers no chat to add; their key reaches each one
+    await focusOn(h, CHAT_INPUT);
+    await typeInto(h, CHAT_INPUT, "@");
+    await until(h, `!!document.querySelector("[data-council-mentions]")`);
+    const seats = await seatRowIds(h);
+    const noChats = !(await exists(h, "[data-council-add-chat]")) && (await count(h, "[data-council-chat-row]")) === 0;
+    await typeInto(h, CHAT_INPUT, `@${keyOf(CHARTS)} and now?`);
+    const reached = await settledText(h, CHAT_HINT, /^Answered by/);
+    rec(
+        "add-chat-send: once seated, @ lists the two chats under Seats with no Add a live chat section, and `@<key>` reaches only its own seat",
+        seats.includes(`agent-${RECAP.tabId}`) && seats.includes(`agent-${CHARTS.tabId}`) && noChats && reached === `Answered by: ${CHARTS.name}`,
+        { seats, noChats, reached }
+    );
+    await typeInto(h, CHAT_INPUT, "");
+}
+
+// on a council that has met the line under the box counts the picked chat among the answerers and prices it at its
+// context: the estimate request names its tab id
+async function addChatFollowup(h, ctx, rec) {
+    await withRoster(h, ctx);
+    const id = await openFixture(h, ctx, "done", { id: `${councilFixtureId("done")}-addchat` });
+    await until(h, `!!document.querySelector("[data-council-channel]")`);
+    // the stub answers what the flat 20k of the expert and the chat's whole context would come to
+    await stubRpc(h, ["CouncilReplyCommand", "CouncilEstimateCommand"], {
+        CouncilEstimateCommand: { value: { calls: 2, tokens: 20_000 + RECAP.context, minutes: 3 } },
+    });
+    await focusOn(h, CHAT_INPUT);
+
+    await typeInto(h, CHAT_INPUT, "@UX @");
+    await until(h, `!!document.querySelector("[data-council-add-chat]")`);
+    const onRow = await arrowToChat(h, RECAP.tabId);
+    await pressEnter(h);
+    const picked = await h.ev(`document.querySelector(${sel(CHAT_INPUT)})?.value ?? ""`);
+    await typeInto(h, CHAT_INPUT, `${picked}Does this hold on a Mac?`);
+    const hint = await settledText(h, CHAT_HINT, /^1 expert and 1 chat answer · /);
+    await until(h, `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilEstimateCommand" && (c.data?.agents ?? []).length > 0)`);
+    const asked = (await rpcCalls(h, "CouncilEstimateCommand")).filter((c) => (c.data?.agents ?? []).length > 0);
+    const req = asked[asked.length - 1]?.data;
+    rec(
+        "add-chat-followup: on a council that has met, the line under the box counts the picked chat (`1 expert and 1 chat answer`) at the chat-priced figure, and the estimate request names its tab id in `agents`",
+        onRow &&
+            picked === `@UX @${keyOf(RECAP)} ` &&
+            hint === "1 expert and 1 chat answer · ≈ 2 calls · ~0.2M tokens" &&
+            req?.id === id &&
+            req.followup === 1 &&
+            JSON.stringify(req.agents) === JSON.stringify([RECAP.tabId]),
+        { onRow, picked, hint, req }
+    );
+    await h.shot("cdp-shots/council-discussion-add-chat-followup.png");
+
+    // deleting the mention drops the pick: the chat is no answerer and the request no longer names it
+    await typeInto(h, CHAT_INPUT, "@UX Does this hold on a Mac?");
+    const dropped = await settledText(h, CHAT_HINT, /^1 expert answers · /);
+    rec("add-chat-followup: deleting the chat's mention drops it from the answerers (`1 expert answers`)", /^1 expert answers · /.test(dropped), dropped);
+    await typeInto(h, CHAT_INPUT, "");
+}
+
+// a send wavesrv refuses (an unknown chat: its error lists the live ones over several lines) shows whole in the box's
+// error line, and the message stays in the box to send again
+async function addChatRefused(h, ctx, rec) {
+    const id = await openRoomToChat(h, ctx, "addchat-refused", {
+        CouncilReplyCommand: {
+            reject: `no live agent tab starts with "${keyOf(RECAP)}"\nlive claude and pi tabs: fx-room-witness, fx-room-uxaudit`,
+        },
+    });
+    const BODY = `@${keyOf(RECAP)} join us and pick up from the report`;
+    await typeInto(h, CHAT_INPUT, BODY);
+    await settledText(h, CHAT_HINT, /^Answered by/);
+    await click(h, CHAT_SEND);
+    const errorLine = `${CHANNEL_COMPOSER} [data-council-composer-error]`;
+    const shown = await until(h, `!!document.querySelector(${sel(errorLine)})`);
+    const lines = await h.ev(
+        `(document.querySelector(${sel(errorLine)})?.innerText ?? "").split("\\n").map((l) => l.trim()).filter(Boolean)`
+    );
+    const calls = await rpcCalls(h, "CouncilReplyCommand");
+    const kept = await h.ev(`document.querySelector(${sel(CHAT_INPUT)})?.value ?? ""`);
+    const sendEnabled = await h.ev(`!document.querySelector(${sel(CHAT_SEND)})?.disabled`);
+    rec(
+        "add-chat-refused: a refused send shows both lines of the error in the box's error line, keeps the message in the box and leaves Send ready",
+        shown &&
+            calls.length === 1 &&
+            calls[0].data?.id === id &&
+            JSON.stringify(calls[0].data?.agents) === JSON.stringify([RECAP.tabId]) &&
+            lines.length === 2 &&
+            lines[0] === `no live agent tab starts with "${keyOf(RECAP)}"` &&
+            lines[1] === "live claude and pi tabs: fx-room-witness, fx-room-uxaudit" &&
+            kept === BODY &&
+            sendEnabled,
+        { shown, lines, kept, sendEnabled }
+    );
+    await h.shot("cdp-shots/council-discussion-add-chat-refused.png");
+}
+
 // ---- the hooks ----
 
 const PHASES = [
@@ -1203,6 +1476,10 @@ const PHASES = [
     ["room composer", roomComposer],
     ["room waiting on drafts", roomAwaiting],
     ["room terminals", roomTerminals],
+    ["add-chat-picker", addChatPicker],
+    ["add-chat-send", addChatSend],
+    ["add-chat-followup", addChatFollowup],
+    ["add-chat-refused", addChatRefused],
 ];
 
 export const councilDiscussion = {
