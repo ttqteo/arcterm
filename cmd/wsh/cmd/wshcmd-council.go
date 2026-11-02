@@ -28,11 +28,9 @@ import (
 // ideas panel for a brainstorm; with --agent, the Skeptic's panel for a review and the Contrarian's for a brainstorm.
 // All four ship with arcterm, and a councilroles.json group of the same id replaces rather than removes them.
 const (
-	councilDefaultGroup     = "ui-feature"
-	councilBrainstormGroup  = "product-ideas"
-	councilAgentsGroup      = "agents"
-	councilAgentsIdeasGroup = "agents-ideas"
-	councilAgentSelf        = "self" // what --agent takes for the tab running the command
+	councilDefaultGroup    = "ui-feature"
+	councilBrainstormGroup = "product-ideas"
+	councilAgentSelf       = "self" // what --agent takes for the tab running the command
 )
 
 const (
@@ -76,9 +74,9 @@ func councilGroupFor(group, mode string, withAgents bool) string {
 	case group != "":
 		return group
 	case withAgents && mode == council.ModeBrainstorm:
-		return councilAgentsIdeasGroup
+		return council.AgentsIdeasGroupId
 	case withAgents:
-		return councilAgentsGroup
+		return council.AgentsGroupId
 	case mode == council.ModeBrainstorm:
 		return councilBrainstormGroup
 	}
@@ -1120,7 +1118,7 @@ func addCouncilPanelFlags(cmd *cobra.Command) {
 	f.String("feature", "", "what the council looks at: the feature, or the problem or goal")
 	f.String("files", "", "the files or folders the experts read, comma-separated")
 	f.String("group", "", "the expert group (default "+councilDefaultGroup+", or "+councilBrainstormGroup+" for --mode brainstorm; with --agent, "+
-		councilAgentsGroup+", or "+councilAgentsIdeasGroup+" for --mode brainstorm; see Setup in the app for the others)")
+		council.AgentsGroupId+", or "+council.AgentsIdeasGroupId+" for --mode brainstorm; see Setup in the app for the others)")
 	f.StringArray("agent", nil, "seat a live chat the person named: a tab id from `wsh agents list --all` (a unique prefix will do), or "+councilAgentSelf+" for this chat; repeat the flag for more")
 	f.StringArray("expert", nil, "add this role from the role library before the coordinator (repeat the flag for more); an unknown or repeated id, or a coordinator role, fails and lists the ids it takes")
 	f.String("project", "", "the project folder (default: the registered project holding the working directory, else its git top level)")
