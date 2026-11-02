@@ -390,13 +390,17 @@ func TestAnswersPromptShowsTheAnswersAlreadyGiven(t *testing.T) {
 	p := AnswersPrompt(c, skeptic, []CouncilReply{c.Replies[3]})
 	reply := section(t, p, "## Reply r4")
 	mustContain(t, "reply r4", reply, "Already answered by others in the council:", "- UX: Text-r20 UX answered Mac first",
-		"- RAM: agrees, with nothing to add")
+		"- RAM: agrees, with nothing to add", writeAnswered)
 	mustNotContain(t, "reply r4", reply, "Text-r21 dropped")
 	mustContain(t, "answers prompt", p, othersAnsweredRule)
+	// the rule comes after the voice rule, last before the shape: "say the point first" read as "agree first"
+	if strings.Index(p, othersAnsweredRule) < strings.Index(p, voiceRule) || strings.Index(p, othersAnsweredRule) > strings.Index(p, answersShape) {
+		t.Errorf("othersAnsweredRule should sit between the voice rule and the shape:\n%s", p)
+	}
 
 	ux, _ := seatOf(c, "ux")
 	first := AnswersPrompt(c, ux, []CouncilReply{c.Replies[2]}) // r3 has no answer yet
-	mustNotContain(t, "first answer", first, "Already answered", othersAnsweredRule)
+	mustNotContain(t, "first answer", first, "Already answered", othersAnsweredRule, writeAnswered)
 }
 
 // An agent seat answering the person after another seat did is shown that answer under the ask, and the same rule.
@@ -409,7 +413,7 @@ func TestAgentFollowUpShowsTheAnswersAlreadyGiven(t *testing.T) {
 	)
 	p := AgentLaterPrompt(c, c.Experts[0], round) // Witness
 	asks := section(t, p, "## What the person asks you")
-	mustContain(t, "asks section", asks, "- [r8] to the whole council: Text-r8 to everyone", "  - UX already answered it: Text-r9 UX answered first")
+	mustContain(t, "asks section", asks, "- [r8] to the whole council: Text-r8 to everyone", "  - UX already answered it: Text-r9 UX answered first", writeAnswered)
 	mustContain(t, "follow-up prompt", p, othersAnsweredRule, answersShape)
 	mustNotContain(t, "asks section", asks, "- [r9]")
 }

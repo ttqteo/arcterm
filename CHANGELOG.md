@@ -62,6 +62,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- In a council, when you ask everyone something, the experts who answer after the first one no longer open with the
+  same "Right, agreed…" and repeat its point: they add only what is new, or show as agreeing.
 - A council an agent starts inside a project registered at a repo's subfolder (such as `apps/website`) now shows
   under that project in the Agent tree, instead of nowhere.
 - A council expert whose answer breaks a line inside its JSON no longer fails with "invalid character '\n' in string

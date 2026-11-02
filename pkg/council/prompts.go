@@ -295,11 +295,20 @@ const (
 
 	// othersAnsweredRule is in an answers prompt where another seat answered a reply first (answersPass). Answered at
 	// once, three seats each opened a steer of the person's with the same concession ("You're right, …"), which read as
-	// one message three times.
+	// one message three times. Stated once in the middle of the task, it was not enough: on 2026-11-02 the three seats
+	// shown UX's answer still opened with "Đúng/Mình đồng ý, đợi v5 xong…" and each repeated UX's "I haven't seen what
+	// 82faafca rendered". So it names the openers, comes last before the shape (voiceRule's "say the point first" read as
+	// "say whether you agree first"), and the reply itself says where the seat's answer starts (writeAnswered).
 	othersAnsweredRule = "Others in the council answered some of these replies before you; their answers are under " +
-		"each one. Do not say again what they said, agreeing with the person included: answer only with what your own " +
-		"angle adds, in fewer words. When you have nothing to add, give that reply an entry with an empty \"text\" and " +
-		"no stance: you show as agreeing with them."
+		"each one, and the person reads them right above yours. The person's question is already answered, so do not " +
+		"answer it again: no yes or no, and no opening that agrees, such as \"Right\", \"Agreed\", \"Đúng\" or \"Mình " +
+		"đồng ý\". Do not repeat a fact, a caveat or a plan they already gave, even in other words. Your first sentence " +
+		"is the new point your own angle brings, in fewer words than theirs. When everything you would say is already " +
+		"there, give that reply an entry with an empty \"text\" and no stance: you show as agreeing with them, which is " +
+		"the right answer more often than not."
+
+	// writeAnswered follows the answers already given under a reply of the person's, where a seat reads them.
+	writeAnswered = "Your answer starts where theirs ends: add only what they did not say, or leave \"text\" empty."
 
 	// markRule is in every prompt whose fields the Discussion shows as messages: it draws a sentence wrapped in ==…==
 	// highlighted, so a long argument or reply shows first the line the person must read.
@@ -919,7 +928,7 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 			for _, a := range given {
 				fmt.Fprintf(&b, "- %s: %s\n", speaker(c, a.Author), answerWords(a))
 			}
-			b.WriteString("\n")
+			b.WriteString("\n" + writeAnswered + "\n\n")
 		}
 	}
 
@@ -983,14 +992,14 @@ func answersTask(c *Council, others bool) string {
 	var b strings.Builder
 	b.WriteString("Answer every reply above with one entry in \"answers\", by its replyid. If an answer changes your " +
 		"view of the proposal it sits on, add a \"stance\". " + stanceRule + "\n\n")
-	if others {
-		b.WriteString(othersAnsweredRule + "\n\n")
-	}
 	b.WriteString(titleRule + "\n\n")
 	if !isBrainstorm(c) { // a Brainstorm asks for no evidence
 		b.WriteString(evidenceRule + "\n\n")
 	}
 	b.WriteString(messageRules + "\n\n")
+	if others { // last before the shape, so the voice rule's "say the point first" does not read as "agree first"
+		b.WriteString(othersAnsweredRule + "\n\n")
+	}
 	b.WriteString(jsonRule + "\n```json\n" + answersShape + "\n```\n")
 	return b.String()
 }
@@ -1187,6 +1196,9 @@ func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, 
 			}
 		}
 		b.WriteString("\n")
+		if others {
+			b.WriteString(writeAnswered + "\n\n")
+		}
 	}
 	b.WriteString("## What to do\n\n")
 	if round >= last {

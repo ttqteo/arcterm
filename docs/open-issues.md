@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council follow-up answers don't echo the first one: in a council that has a report, send a yes/no
+  question to Everyone → the first seat answers it; the others open with their own new point (no "Đúng" / "Mình đồng
+  ý" / "Agreed", no repeat of the first seat's caveat) or show as "X agrees". Seen failing in council 7096c31c (r64–r67)
+  before the fix; `pkg/council/prompts.go` (`othersAnsweredRule`, `writeAnswered`), "fix(council): later answers
+  to a question everyone was asked no longer echo the first one".
 - [ ] (arcterm) Council seat chips flat, tables wrap: open a council's Discussion → the Everyone / seat chips are flat
   rows (6px corners, no coloured border or tint; the selected one grey); a seat at work shows only its dot, no
   "Replying to …" text, which its hover says; a reply with a Markdown table wraps its cells to the bubble's width, no
