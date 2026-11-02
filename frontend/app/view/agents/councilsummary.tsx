@@ -811,16 +811,23 @@ function Panel({ c }: { c: Council }) {
                                 <span className="flex-none text-[12px] text-muted">{e.model}</span>
                             </span>
                             {line !== "" ? (
-                                <span
-                                    data-council-expert-activity
-                                    className="text-[12px] leading-[1.4] tabular-nums text-muted"
-                                >
-                                    {line}
-                                </span>
-                            ) : null}
-                            {filter ? (
-                                <span className="hidden text-[12px] text-primary group-hover:block group-focus-visible:block">
-                                    Show their messages →
+                                <span className="flex items-center gap-[6px]">
+                                    <span
+                                        data-council-expert-activity
+                                        className="min-w-0 flex-1 text-[12px] leading-[1.4] tabular-nums text-muted"
+                                    >
+                                        {line}
+                                    </span>
+                                    {/* the way to their messages: it holds its room always and only shows on hover, so
+                                        the row never changes size */}
+                                    {filter ? (
+                                        <ArrowRight
+                                            size={12}
+                                            strokeWidth={2}
+                                            aria-hidden
+                                            className="flex-none text-primary opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+                                        />
+                                    ) : null}
                                 </span>
                             ) : null}
                         </span>
@@ -832,6 +839,7 @@ function Panel({ c }: { c: Council }) {
                         type="button"
                         data-council-expert={e.id}
                         aria-label={`${e.name}, ${line}. Show only their messages in the Discussion`}
+                        title="Show their messages in the Discussion"
                         onClick={() => showCouncil(c.id, "discussion", undefined, e.id)}
                         className={cn(
                             "group flex w-full cursor-pointer items-start gap-2 rounded-[6px] p-[6px] text-left text-secondary hover:bg-surface-hover hover:text-primary",
