@@ -177,6 +177,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A running task's mark in a run's graph sits back in the middle of its pulsing ring, and every task's mark lines up
+  with its title again, instead of sitting a few pixels low.
 - A brainstorm's Approve stays off while the run it started is still starting, with "The run is starting" beside it,
   so pressing it again in the minute before the agent records the run no longer starts the same run twice.
 - A brainstorm's "What you handed over" list keeps its text readable: where each decision came from now sits under the
