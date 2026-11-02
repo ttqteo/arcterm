@@ -13,7 +13,15 @@ import { MOTION } from "@/app/element/motiontokens";
 import { atoms } from "@/app/store/global";
 import { DEFAULT_PET_CHARACTER, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { DEFAULT_PET_OUTFIT, petOutfitChoice } from "@/app/view/jarvis/petoutfit";
-import { DEFAULT_PET_QUOTES, petCharacterAtom, petOutfitChoiceAtom, petQuotesOnAtom } from "@/app/view/jarvis/petstore";
+import { shownStayChoice } from "@/app/view/jarvis/petstay";
+import {
+    DEFAULT_PET_QUOTES,
+    petCharacterAtom,
+    petOutfitChoiceAtom,
+    petQuotesOnAtom,
+    petStayAtom,
+    setPetStay,
+} from "@/app/view/jarvis/petstore";
 import { cn } from "@/util/util";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { Search } from "lucide-react";
@@ -98,6 +106,7 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
     const [rail, setRail] = useAtom(railVisibleAtom);
     const [character, setCharacter] = useAtom(petCharacterAtom);
     const [outfit, setOutfit] = useAtom(petOutfitChoiceAtom);
+    const stay = useAtomValue(petStayAtom);
     const [quotes, setQuotes] = useAtom(petQuotesOnAtom);
     const [officeAnim, setOfficeAnim] = useAtom(officeAnimationAtom);
     const [officeHrs, setOfficeHrs] = useAtom(officeHoursAtom);
@@ -129,6 +138,11 @@ function useRowBindings(sections: SettingSectionDef[], flagRuntime: Runtime) {
         "appearance.petoutfit": {
             changed: petOutfitChoice(outfit) !== DEFAULT_PET_OUTFIT,
             revert: () => setOutfit(DEFAULT_PET_OUTFIT),
+        },
+        // read through shownStayChoice: an ended timed stay is already roam, whatever the atom still holds
+        "appearance.petstay": {
+            changed: shownStayChoice(stay, Date.now()) !== "roam",
+            revert: () => setPetStay("roam"),
         },
         "appearance.petquotes": { changed: quotes !== DEFAULT_PET_QUOTES, revert: () => setQuotes(DEFAULT_PET_QUOTES) },
         "appearance.officeanimation": {

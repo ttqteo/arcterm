@@ -8,7 +8,14 @@ import { getSettingsKeyAtom } from "@/app/store/global";
 import { PET_CHARACTER_NAME, petCharacter } from "@/app/view/jarvis/petcharacter";
 import { petOutfitChoice, type PetOutfitChoice } from "@/app/view/jarvis/petoutfit";
 import type { PetCharacter } from "@/app/view/jarvis/petsprite";
-import { petCharacterAtom, petOutfitChoiceAtom, petQuotesOnAtom } from "@/app/view/jarvis/petstore";
+import { PET_STAY_CHOICES, shownStayChoice, stayUntilLabel, type PetStayChoice } from "@/app/view/jarvis/petstay";
+import {
+    petCharacterAtom,
+    petOutfitChoiceAtom,
+    petQuotesOnAtom,
+    petStayAtom,
+    setPetStay,
+} from "@/app/view/jarvis/petstore";
 import { isMacOS } from "@/util/platformutil";
 import { fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
@@ -41,6 +48,7 @@ export function JarvisPage() {
             <SettingCard id="jarvis" label="Jarvis">
                 <PetCharacterRow />
                 <PetOutfitRow />
+                <PetStayRow />
                 <PetQuotesRow />
             </SettingCard>
             <SettingCard id="folding" label="Folding">
@@ -144,6 +152,25 @@ function PetOutfitRow() {
                 value={petOutfitChoice(outfit)}
                 onChange={(id) => setOutfit(id)}
             />
+        </SettingRow>
+    );
+}
+
+const PET_STAY_OPTIONS: { id: PetStayChoice; label: string }[] = PET_STAY_CHOICES.map(({ id, label }) => ({
+    id,
+    label,
+}));
+
+// Read through shownStayChoice, never the raw atom: an ended timed stay sits in the atom until the expiry timer
+// clears it, and the row must already say Roam then. A timed stay also says when it ends, muted beside the control.
+function PetStayRow() {
+    const stay = useAtomValue(petStayAtom);
+    const shown = shownStayChoice(stay, Date.now());
+    const until = shown === stay.choice ? stayUntilLabel(stay) : null;
+    return (
+        <SettingRow id="appearance.petstay">
+            {until != null ? <span className="whitespace-nowrap text-[12px] text-muted">{until}</span> : null}
+            <Segmented<PetStayChoice> options={PET_STAY_OPTIONS} value={shown} onChange={(id) => setPetStay(id)} />
         </SettingRow>
     );
 }
