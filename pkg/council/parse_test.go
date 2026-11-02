@@ -273,6 +273,28 @@ func TestParseAnswers(t *testing.T) {
 	}
 }
 
+// An answer's asks are the replies the thread offers the person next: trimmed, each once, the long and the empty left
+// out, at most MaxReplyAsks; an answer with no words offers none.
+func TestParseAnswersAsks(t *testing.T) {
+	long := strings.Repeat("x", maxAskRunes+1)
+	got, err := ParseAnswers(jsonFence(`{"answers": [
+	  {"replyid": "r3", "text": "Yes.", "asks": ["  Run it on  M5? ", "", "Run it on M5?", "` + long + `", "Which tier first?", "Why not M4?", "One more"]},
+	  {"replyid": "r4", "text": "", "asks": ["Ignored"]},
+	  {"replyid": "r5", "text": "No."}
+	]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Answer{
+		{ReplyId: "r3", Text: "Yes.", Asks: []string{"Run it on M5?", "Which tier first?", "Why not M4?"}},
+		{ReplyId: "r4"},
+		{ReplyId: "r5", Text: "No."},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+}
+
 // An answer with no words is a seat that has nothing to add to what another already answered: it agrees. A doubt or an
 // objection still needs its words.
 func TestParseAnswersTakesAnAnswerWithNoWords(t *testing.T) {

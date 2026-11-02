@@ -26,6 +26,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council's chat reads more like a messenger. Your own messages have no name line above them (the time shows on
+  hover), and under the newest one Sent turns to Seen, with the small avatars of the seats on it, a second after you
+  send; only then do their typing bubbles of three rising dots appear, in place of the "… is writing" line. A seat's
+  reply names its stance only when it takes one, with its time on hover, and "For …" shows only when your message goes
+  to someone other than the usual seats.
 - A council's reply box sends from a round button with a send icon, in a box whose corners follow it, as a messenger's
   does. The tooltip still names Reply or Send and Enter.
 - A council's Discussion header shows its seats as one stack of avatars instead of a row that cut a seat in half on a
@@ -50,6 +55,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A seat's answer in a council thread suggests two or three replies you might send next, as chips over the thread's
+  box: a click puts one in the box to edit and send.
 - Like or dislike a council's messages: 👍 and 👎 sit under every idea, and in the line over each seat's reply when
   you hover it. The seats read what you liked and disliked in their next turns and the summary weighs it as your own
   view, so you can steer the discussion without typing; press the same thumb again to take it back.

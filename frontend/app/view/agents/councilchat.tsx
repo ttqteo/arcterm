@@ -75,6 +75,7 @@ import {
     readsFiles,
     replyReach,
     seatChips,
+    threadAsks,
     type AskChip,
     type ChannelItem,
     type ChatPick,
@@ -93,6 +94,7 @@ import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { markSpans } from "./councilmarks";
 import {
+    ANSWERING,
     answerers,
     councilProjectName,
     draftsWaitWord,
@@ -124,6 +126,7 @@ import {
     type RowBox,
     type ScrollPlace,
 } from "./councilscroll";
+import { sendState, shownItems, type SendState, type SendStatus } from "./councilseen";
 import { basename } from "./councilsetupmodel";
 import { CouncilSourcesPanel, EvidenceChips } from "./councilsourcespanel";
 import {
@@ -526,6 +529,29 @@ function IdeaMessage({
 
 // the pill and the time beside a reply's author; a thread's reply drawn in the channel (one seat's messages) also names
 // the idea it is on, a click opening that thread
+// a reply's way to its idea's thread, in the channel: `↳` and the idea's title
+function ReplyOn({ item, onOpenIdea }: { item: ReplyPost; onOpenIdea?: (id: string) => void }) {
+    if (onOpenIdea == null || item.on === "") {
+        return null;
+    }
+    return (
+        <button
+            type="button"
+            data-council-reply-on={item.proposalid}
+            onClick={() => onOpenIdea(item.proposalid)}
+            className="flex min-w-0 cursor-pointer items-center gap-[5px] rounded-[4px] text-[12px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+        >
+            <CornerDownRight size={11} aria-hidden className="flex-none" />
+            <span className="min-w-0 truncate">{item.on}</span>
+        </button>
+    );
+}
+
+// shown while its reply is hovered or focused: a post's time, which says little at a glance
+const HOVER_ONLY = "opacity-0 group-hover/reply:opacity-100 group-focus-within/reply:opacity-100";
+
+// a seat's byline: its name, its stance when it takes one (a plain `replies` says nothing), and on hover its time and
+// the thumbs
 function ReplyHeader({
     item,
     onOpenIdea,
@@ -537,24 +563,64 @@ function ReplyHeader({
 }) {
     return (
         <Byline who={item}>
-            <CouncilPill word={item.label} tone={item.pill} />
-            <PostTime at={item.at} when={item.when} />
+            {item.pill !== "neutral" && <CouncilPill word={item.label} tone={item.pill} />}
             {item.edited && <span className="text-muted">edited</span>}
-            {item.reaches !== "" && <span className="text-muted">{item.reaches}</span>}
-            {item.pending !== "" && <span className="text-muted">{item.pending}</span>}
-            {onOpenIdea != null && item.on !== "" && (
-                <button
-                    type="button"
-                    data-council-reply-on={item.proposalid}
-                    onClick={() => onOpenIdea(item.proposalid)}
-                    className="flex min-w-0 cursor-pointer items-center gap-[5px] rounded-[4px] text-[12px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    <CornerDownRight size={11} aria-hidden className="flex-none" />
-                    <span className="min-w-0 truncate">{item.on}</span>
-                </button>
-            )}
+            <ReplyOn item={item} onOpenIdea={onOpenIdea} />
+            <span className={HOVER_ONLY}>
+                <PostTime at={item.at} when={item.when} />
+            </span>
             {thumbs}
         </Byline>
+    );
+}
+
+// under the person's own post, as a messenger has it: who it reaches when not the usual ones, `edited`, what it waits
+// on, and on the newest one Sent or Seen; nothing at all when none of them applies
+function MineLine({
+    item,
+    status,
+    onOpenIdea,
+}: {
+    item: ReplyPost;
+    status?: SendStatus;
+    onOpenIdea?: (id: string) => void;
+}) {
+    const reach = item.reachIsDefault ? "" : item.reaches;
+    const waits = item.pending === ANSWERING ? "" : item.pending;
+    const on = onOpenIdea != null && item.on !== "";
+    if (reach === "" && waits === "" && !item.edited && status == null && !on) {
+        return null;
+    }
+    return (
+        <div
+            data-council-mine-line
+            className="flex flex-wrap items-center justify-end gap-x-[7px] gap-y-[2px] text-[12px] text-muted"
+        >
+            <ReplyOn item={item} onOpenIdea={onOpenIdea} />
+            {reach !== "" && <span data-council-reaches>{reach}</span>}
+            {item.edited && <span>edited</span>}
+            {waits !== "" && <span data-council-waits>{waits}</span>}
+            {status != null && <SendLine status={status} />}
+        </div>
+    );
+}
+
+// Sent, then Seen with the small avatars of the seats working on it
+function SendLine({ status }: { status: SendStatus }) {
+    return (
+        <span role="status" data-council-send-status={status.word} className="flex items-center gap-[4px]">
+            {status.seen.map((who) => (
+                <CouncilAvatar
+                    key={who.author}
+                    tone={who.tone}
+                    name={who.name}
+                    initials={who.initials}
+                    title={`${who.name} has seen it`}
+                    className="h-[14px] w-[14px] text-[6.5px]"
+                />
+            ))}
+            {status.word}
+        </span>
     );
 }
 
@@ -612,6 +678,7 @@ function ReplyMessage({
     inThread,
     onOpenIdea,
     rise,
+    status,
 }: {
     councilId: string;
     item: ReplyPost;
@@ -619,7 +686,9 @@ function ReplyMessage({
     inThread?: boolean;
     onOpenIdea?: (id: string) => void;
     rise?: boolean; // the person's post that just arrived: it rises in from the composer (sentRise)
+    status?: SendStatus; // the person's newest post: its Sent or Seen (councilseen.ts)
 }) {
+    const openIdea = inThread ? undefined : onOpenIdea;
     return (
         <motion.article
             data-council-item
@@ -636,16 +705,17 @@ function ReplyMessage({
         >
             {!item.mine && <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} />}
             <div className={cn("flex min-w-0 max-w-[680px] flex-col gap-[5px]", item.mine && "items-end")}>
-                <ReplyHeader
-                    item={item}
-                    onOpenIdea={inThread ? undefined : onOpenIdea}
-                    thumbs={
-                        // a seat's reply only; in its byline, shown on hover or focus until one is on, so a reply is no taller
-                        item.mine ? undefined : (
+                {/* the person's own post has no byline, as a messenger draws it: the lines it needs go under it */}
+                {!item.mine && (
+                    <ReplyHeader
+                        item={item}
+                        onOpenIdea={openIdea}
+                        thumbs={
+                            // in its byline, shown on hover or focus until one is on, so a reply is no taller
                             <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} quiet />
-                        )
-                    }
-                />
+                        }
+                    />
+                )}
                 <div
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] border px-[14px] py-[10px]",
@@ -675,7 +745,14 @@ function ReplyMessage({
                         ))}
                     </div>
                 )}
+                {item.mine && <MineLine item={item} status={status} onOpenIdea={openIdea} />}
             </div>
+            {item.mine && (
+                // the time beside the bubble, on hover
+                <span className={cn("flex-none self-center text-[12px]", HOVER_ONLY)}>
+                    <PostTime at={item.at} when={item.when} />
+                </span>
+            )}
         </motion.article>
     );
 }
@@ -975,7 +1052,10 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
     );
 }
 
-function TypingLine({ item }: { item: TypingRow }) {
+// a seat at work: its avatar and a bubble of three dots that rise in turn, as a messenger shows someone typing (the
+// words stay for a screen reader); a seat waiting on its own agent says what it waits for instead. In a thread the
+// idea it replies on goes without saying.
+function TypingLine({ item, inThread }: { item: TypingRow; inThread?: boolean }) {
     return (
         <div
             data-council-item
@@ -983,13 +1063,35 @@ function TypingLine({ item }: { item: TypingRow }) {
             data-council-typing-row={item.author}
             data-waiting={item.waiting ? "true" : undefined}
             data-item-on={item.proposalid || undefined}
-            className="flex items-center gap-[9px] px-[10px] py-[6px]"
+            className="flex items-center gap-[8px]"
         >
-            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} dashed />
-            <span data-council-typing className="text-[13px] text-muted">
-                {item.text}
-            </span>
-            {item.on !== "" && (
+            <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} dashed={item.waiting} />
+            {item.waiting ? (
+                <span data-council-typing className="text-[13px] text-muted">
+                    {item.text}
+                </span>
+            ) : (
+                <span
+                    data-council-typing
+                    role="status"
+                    className={cn(
+                        "flex items-center gap-[4px] rounded-[4px_14px_14px_14px] border px-[13px] py-[11px]",
+                        TONE_BUBBLE[item.tone],
+                        TONE_TEXT[item.tone]
+                    )}
+                >
+                    <span className="sr-only">{item.text}</span>
+                    {TYPING_LAGS.map((lag) => (
+                        <span
+                            key={lag}
+                            aria-hidden
+                            data-pulse-lag={lag}
+                            className="pulse-typing h-[6px] w-[6px] rounded-full bg-current"
+                        />
+                    ))}
+                </span>
+            )}
+            {!inThread && item.on !== "" && (
                 <span className="flex min-w-0 items-center gap-[5px] text-[12px] text-muted">
                     <CornerDownRight size={11} aria-hidden className="flex-none" />
                     <span className="min-w-0 truncate">{item.on}</span>
@@ -998,6 +1100,9 @@ function TypingLine({ item }: { item: TypingRow }) {
         </div>
     );
 }
+
+// each typing dot's step behind the first, in ms of pulse.ts's 1.2 s pulse-typing
+const TYPING_LAGS = [0, 160, 320];
 
 // ---- the composer ----
 
@@ -1598,6 +1703,58 @@ function AskNext({ c, asks }: { c: Council; asks: AskChip[] }) {
     );
 }
 
+// what the newest seat answer in a thread suggests the person send next (threadAsks), over the thread's box: a click
+// puts it in the box to edit and send, as Ask next does; sending at once would spend a seat's turn on a guess
+function ThreadAsks({ c, proposalId, asks }: { c: Council; proposalId: string; asks: string[] }) {
+    const setDrafts = useSetAtom(councilChatDraftAtom(c.id));
+    const fill = (t: string) => {
+        setDrafts((d) => ({ ...d, texts: { ...d.texts, [proposalId]: t } }));
+        requestAnimationFrame(() => {
+            const box = document.querySelector<HTMLTextAreaElement>(
+                '[data-council-composer="thread"] [data-council-composer-input]'
+            );
+            box?.focus();
+            box?.setSelectionRange(t.length, t.length);
+        });
+    };
+    return (
+        <div
+            role="group"
+            aria-label="Suggested replies"
+            data-council-thread-asks
+            className="flex flex-none flex-wrap justify-end gap-[6px] px-3 pt-[8px]"
+        >
+            {asks.map((a, i) => (
+                <button
+                    key={a}
+                    type="button"
+                    data-council-thread-ask={i}
+                    onClick={() => fill(a)}
+                    title="Put it in the box to edit and send"
+                    className="max-w-full cursor-pointer truncate rounded-full border border-edge-mid bg-transparent px-[12px] py-[4px] text-left text-[13px] text-secondary outline-none hover:border-edge-strong hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    {a}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+// the person's newest post's Sent / Seen and whether the typing bubbles wait (councilseen.ts), drawn again when either
+// changes by itself, a second after the send
+function useSendState(items: readonly (ChannelItem | ThreadItem)[]): SendState {
+    const [, redraw] = useState(0);
+    const state = sendState(items, Date.now());
+    useEffect(() => {
+        if (state.nextMs <= 0) {
+            return;
+        }
+        const t = setTimeout(() => redraw((n) => n + 1), state.nextMs);
+        return () => clearTimeout(t);
+    }, [state.nextMs]);
+    return state;
+}
+
 // ---- the thread ----
 
 // the ids that arrived while `key` (the council and its view) stayed put. no-cascade guard: opening a council, a seat's
@@ -1627,11 +1784,16 @@ function ThreadPanel({
 }) {
     const idea = thread.idea;
     const scroller = useRef<HTMLDivElement>(null);
+    const send = useSendState(thread.items);
+    const items = useMemo(() => shownItems(thread.items, send.holdTyping), [thread.items, send.holdTyping]);
+    const draft = useAtomValue(councilChatDraftAtom(c.id)).texts[idea.id] ?? "";
+    // what the newest seat answer suggests sending next, while the box is empty
+    const asks = draft.trim() === "" ? threadAsks(items) : [];
     const onScroll = useKeptScroll(scroller, `thread:${c.id}:${idea.id}`, {
         follow: true,
         start: "top",
-        count: thread.items.length,
-        sent: ownPosts(thread.items),
+        count: items.length,
+        sent: ownPosts(items),
     });
     const entering = useEntering(
         `${c.id}:${idea.id}`,
@@ -1697,7 +1859,7 @@ function ThreadPanel({
                     {idea.thread.label}
                     <span aria-hidden className="h-px flex-1 bg-edge-faint" />
                 </div>
-                {thread.items.map((item: ThreadItem) =>
+                {items.map((item: ThreadItem) =>
                     item.kind === "reply" ? (
                         <ReplyMessage
                             key={item.id}
@@ -1706,14 +1868,16 @@ function ThreadPanel({
                             acts={acts}
                             inThread
                             rise={item.mine && entering.has(item.id)}
+                            status={send.status?.postId === item.id ? send.status : undefined}
                         />
                     ) : item.kind === "draft" ? (
                         <DraftCard key={item.id} c={c} item={item} acts={acts} />
                     ) : (
-                        <TypingLine key={item.id} item={item} />
+                        <TypingLine key={item.id} item={item} inThread />
                     )
                 )}
             </div>
+            {asks.length > 0 && <ThreadAsks c={c} proposalId={idea.id} asks={asks} />}
             <div className="flex-none px-3 pb-4 pt-[10px]">
                 <span id="council-thread-reply-label" className="sr-only">
                     Reply in the thread
@@ -2082,7 +2246,10 @@ export function CouncilChat({
     // one seat's messages only, when the Summary's column asked for them (a seat no longer on the panel shows everyone)
     const [only, setOnly] = useAtom(councilOnlyAtom(c.id));
     const onlyId = only != null && c.experts.some((e) => e.id === only) ? only : null;
-    const items = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
+    const all = useMemo(() => councilChannel(c, onlyId ?? undefined), [c, onlyId]);
+    // the person's newest post's Sent / Seen, and the typing bubbles held a moment after it (councilseen.ts)
+    const send = useSendState(all);
+    const items = useMemo(() => shownItems(all, send.holdTyping), [all, send.holdTyping]);
     const channelDraft = useAtomValue(councilChatDraftAtom(c.id)).texts[""] ?? "";
     const asks = isFollowUp(c) && channelDraft === "" ? askChips(c) : [];
     const seats = useMemo(() => seatChips(c), [c]);
@@ -2231,6 +2398,7 @@ export function CouncilChat({
                                         acts={acts}
                                         onOpenIdea={open}
                                         rise={item.mine && entering.has(item.id)}
+                                        status={send.status?.postId === item.id ? send.status : undefined}
                                     />
                                 );
                             case "skip":

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cubicBezier, pulseOpacity, PULSES, type PulseSpec } from "./pulse";
+import { cubicBezier, pulseOpacity, PULSES, pulseStart, type PulseSpec } from "./pulse";
 
 describe("cubicBezier", () => {
     it("pins the endpoints", () => {
@@ -59,5 +59,27 @@ describe("PULSES", () => {
         expect(pulseOpacity(glow, 0)).toBeCloseTo(1, 5);
         expect(pulseOpacity(glow, 1200)).toBeCloseTo(0, 5);
         expect(PULSES["pulse-dot"].prop).toBeUndefined();
+    });
+});
+
+describe("pulseStart", () => {
+    const spec = PULSES["pulse-typing"];
+
+    it("starts at once with no lag, or one it cannot read", () => {
+        expect(pulseStart(5_000, spec, undefined)).toBe(5_000);
+        expect(pulseStart(5_000, spec, "")).toBe(5_000);
+        expect(pulseStart(5_000, spec, "soon")).toBe(5_000);
+        expect(pulseStart(5_000, spec, "-200")).toBe(5_000);
+    });
+
+    it("puts a lagging dot that far behind in its cycle, never before the top", () => {
+        const lead = pulseOpacity(spec, 300);
+        // 200 ms behind: at the leader's 300 ms it is where the leader was at 100 ms
+        const start = pulseStart(5_000, spec, "200");
+        expect(5_000 - start).toBeGreaterThanOrEqual(0);
+        expect(pulseOpacity(spec, 5_000 + 300 - start)).toBeCloseTo(pulseOpacity(spec, 100), 6);
+        expect(pulseOpacity(spec, 5_000 + 300 - start)).not.toBeCloseTo(lead, 3);
+        // a whole period behind is no lag at all
+        expect(pulseStart(5_000, spec, String(spec.periodMs))).toBe(5_000 - spec.periodMs);
     });
 });

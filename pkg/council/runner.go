@@ -1360,7 +1360,7 @@ func applyAnswers(c *Council, e CouncilExpert, answers []Answer, round int, now 
 		}
 		c.Replies = append(c.Replies, CouncilReply{
 			Id: nextReplyId(c), ProposalId: pr.ProposalId, ParentId: pr.Id, Author: e.Id, Stance: a.Stance,
-			Text: a.Text, Evidence: a.Evidence, Round: round, Ts: now, Draft: draft,
+			Text: a.Text, Evidence: a.Evidence, Asks: a.Asks, Round: round, Ts: now, Draft: draft,
 		})
 	}
 }

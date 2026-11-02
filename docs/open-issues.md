@@ -365,6 +365,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   System Settings → Translation Languages, and no macOS download sheet opens over arcterm. Not seen in the app: Google's
   429 path and the helper were only run from Go tests and the shell. (commit "feat(translate): fall back to Apple
   Translation on the device when Google cannot answer")
+- [ ] (arcterm) A council's chat as a messenger, after a build: in a done council's thread, send a follow-up. The thread
+  scrolls to it; your bubble has no name line, its time shows on hover beside it; under it Sent turns to Seen with the
+  seat's small avatar about a second later, then the seat's bubble of three dots rising in turn shows (still with
+  Reduce motion on: the dots rest). When the answer lands, Seen goes and two or three suggestion chips show over the
+  box; a click puts one in the box, typing hides them. A seat's plain reply has no `replies` pill, a doubt keeps `has
+  doubts`. The send button is round with a send icon. No CDP scenario covers these yet, and the dev app was not run.
+  (commit "feat(council): the chat as a messenger: Sent then Seen, typing dots, fewer labels, suggested replies")
 - [ ] (arcterm) The File tab's Back to the top button: open a long `.md` file in an agent's File tab (Preview), scroll
   down and press the arrow-to-line button in the header; the document glides back to its top. Do the same with a long
   `.html` file (needs a wavesrv built after this change). Source and Diff show no such button.

@@ -23,6 +23,7 @@ import {
     replyReach,
     seatChips,
     stepChip,
+    threadAsks,
     type ChannelItem,
 } from "./councilchatmodel";
 import type { SeatableAgent } from "./councilmodel";
@@ -470,6 +471,28 @@ describe("councilChannel: the person's posts", () => {
         expect(byId(items, "r1")).toMatchObject({ reaches: "For Witness synthesis and UX audit" });
         expect(byId(items, "r2")).toMatchObject({ reaches: "For Skeptic" });
         expect(byId(items, "r3")).toMatchObject({ reaches: "" });
+    });
+
+    it("knows when a post reaches whom it would anyway: everyone from the channel, the idea's seat in its thread", () => {
+        const c = room({
+            replies: [
+                ...room().replies,
+                reply("r10", "you", 240, { to: ["sec"] }),
+                reply("r11", "you", 250, { proposalid: "", to: ["sk"] }),
+            ],
+        });
+        const items = councilChannel(c);
+        expect(byId(items, "r1")).toMatchObject({ reaches: "For everyone", reachIsDefault: true });
+        expect(byId(items, "r11")).toMatchObject({ reaches: "For Skeptic", reachIsDefault: false });
+        const thread = councilThread(c, "P1")!.items;
+        // P1 is Security's: a reply to Witness is worth saying, one to Security goes without saying
+        expect(thread.find((i) => i.id === "r5")).toMatchObject({
+            reaches: "For Witness synthesis",
+            reachIsDefault: false,
+        });
+        expect(thread.find((i) => i.id === "r10")).toMatchObject({ reaches: "For Security", reachIsDefault: true });
+        // a seat's reply carries neither
+        expect(thread.find((i) => i.id === "r3")).toMatchObject({ reaches: "", reachIsDefault: false, asks: [] });
     });
 
     it("says a post waits for the next step while the council waits on the person", () => {
@@ -1617,5 +1640,35 @@ describe("councilChannel: a person's reply with attachments", () => {
         });
         const thread = councilThread(c, "P1")!;
         expect(thread.items[0]).toMatchObject({ kind: "reply", attachments: [IMG] });
+    });
+});
+
+describe("threadAsks", () => {
+    const followUp = (replies: ReturnType<typeof reply>[]) =>
+        councilThread(
+            council({ proposals: [prop("P1", "sec", 60)], replies, activity: { sec: { text: "", proposalid: "P1" } } }),
+            "P1"
+        )!.items;
+
+    it("offers what the newest seat answer suggests while it is the thread's last post", () => {
+        const items = followUp([
+            reply("r1", "you", 150, { to: ["sec"] }),
+            reply("r2", "sec", 160, { parentid: "r1", asks: ["Run it on M5?", "Which tier first?"] }),
+        ]);
+        expect(threadAsks(items)).toEqual(["Run it on M5?", "Which tier first?"]);
+    });
+
+    it("offers nothing once the person replied after it, or for an answer that suggests none", () => {
+        expect(
+            threadAsks(
+                followUp([
+                    reply("r1", "you", 150, { to: ["sec"] }),
+                    reply("r2", "sec", 160, { parentid: "r1", asks: ["Run it on M5?"] }),
+                    reply("r3", "you", 170, { to: ["sec"] }),
+                ])
+            )
+        ).toEqual([]);
+        expect(threadAsks(followUp([reply("r1", "you", 150, { to: ["sec"] }), reply("r2", "sec", 160)]))).toEqual([]);
+        expect(threadAsks([])).toEqual([]);
     });
 });

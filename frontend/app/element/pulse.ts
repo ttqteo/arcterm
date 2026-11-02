@@ -42,7 +42,20 @@ export const PULSES: Record<string, PulseSpec> = {
     "pulse-soft": { periodMs: 2_000, low: 0.5, ease: cubicBezier(0.4, 0, 0.6, 1) },
     // breatheGlow 2.4s ease-in-out: tailwindsetup.css's .pulse-glow reads the curve as the glow's strength
     "pulse-glow": { periodMs: 2_400, low: 0, ease: cubicBezier(0.42, 0, 0.58, 1), prop: "--pulse" },
+    // a council seat's typing bubble (councilchat.tsx TypingDots): three dots, each a step behind the one before it
+    // (data-pulse-lag); tailwindsetup.css's .pulse-typing reads the curve as each dot's lift and brightness
+    "pulse-typing": { periodMs: 1_200, low: 0.35, ease: cubicBezier(0.42, 0, 0.58, 1), prop: "--typing" },
 };
+
+/** When a pulse that runs `lag` ms (an element's data-pulse-lag) behind one seen at `now` started: already that far
+ *  behind in its cycle, so it never waits at the top the way a CSS animation-delay does. `now` for no lag. */
+export function pulseStart(now: number, spec: PulseSpec, lag: string | undefined): number {
+    const ms = Number(lag);
+    if (!Number.isFinite(ms) || ms <= 0) {
+        return now;
+    }
+    return now - (spec.periodMs - (ms % spec.periodMs));
+}
 
 /** Opacity `elapsedMs` into a dot's pulse: 1 down to `low` over the first half, back up over the second. */
 export function pulseOpacity(spec: PulseSpec, elapsedMs: number): number {

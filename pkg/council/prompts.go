@@ -60,7 +60,8 @@ const (
       "replyid": "r3",
       "text": "your answer to the person, in about 50 words",
       "stance": "accept",
-      "evidence": [{"ref": "pkg/services/idle.go:42"}]
+      "evidence": [{"ref": "pkg/services/idle.go:42"}],
+      "asks": ["a reply the person might send next", "another"]
     }
   ]
 }`
@@ -247,6 +248,13 @@ const (
 		`checked, or a view the panel was missing. Write each as the person would type it into the chat, at most 25 ` +
 		`words, and name an idea by what it says. "to" is the id of the expert best placed to answer it, or "" for the ` +
 		`whole panel.`
+
+	// replyAsksRule is in the answers prompt: the replies the thread offers the person above its reply box, after a
+	// seat's answer.
+	replyAsksRule = `In "asks", write two or three short replies the person might send you next in this thread, each as ` +
+		`they would type it: a follow-up question, a check to run, or a choice to make, each one that moves the thread ` +
+		`on rather than thanking or agreeing. At most 12 words each, in the language the person's reply is written in. ` +
+		`Leave "asks" out of an answer with no words.`
 
 	// changeRule is in both round 2 prompts: a revision's reply shows its one-line change, and the new argument only
 	// on the proposal itself.
@@ -1118,6 +1126,7 @@ func answersTask(c *Council, others bool) string {
 		b.WriteString(evidenceRule + "\n\n")
 	}
 	b.WriteString(messageRules + "\n\n")
+	b.WriteString(replyAsksRule + "\n\n")
 	if others { // last before the shape, so the voice rule's "say the point first" does not read as "agree first"
 		b.WriteString(othersAnsweredRule + "\n\n")
 	}

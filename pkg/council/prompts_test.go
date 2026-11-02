@@ -235,7 +235,7 @@ func TestAnswersPromptCarriesOnlyTheBranchAndTheExpertsOwnProposals(t *testing.T
 	r3 := c.Replies[2]
 	p := AnswersPrompt(c, c.Experts[0], []CouncilReply{r3}) // UX answers r3
 
-	mustContain(t, "answers prompt", p, "You are UX", "Can someone use it without being told how?", "Which direction first?", evidenceRule, answersShape, stanceRule)
+	mustContain(t, "answers prompt", p, "You are UX", "Can someone use it without being told how?", "Which direction first?", evidenceRule, answersShape, stanceRule, replyAsksRule)
 	// the branch: its proposal and the replies above it, the farthest first
 	mustContain(t, "answers prompt", p, "## Reply r3", "Argument-one", "Text-r1 it breaks", "Text-r2 fair point", "The person's reply [r3]: Text-r3 why does it break?")
 	if i, j := strings.Index(p, "Text-r1"), strings.Index(p, "Text-r2"); i < 0 || j < i {

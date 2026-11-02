@@ -2611,6 +2611,7 @@ declare global {
         edited?: boolean;
         thumb?: string;
         attachments?: string[];
+        asks?: string[];
         revision?: CouncilRevision;
     };
 

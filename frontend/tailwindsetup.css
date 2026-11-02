@@ -482,6 +482,14 @@ svg [aria-label="tip"] g path {
     }
 }
 
+/* A council seat's typing dots (councilchat.tsx TypingDots): pulsedriver.tsx sets --typing (1 at the top of a dot's
+   step, 0.35 at rest) at 12fps, so a dot lifts 3px and brightens in turn. Without the driver (reduced motion) the
+   dots rest, half lit. */
+.pulse-typing {
+    opacity: var(--typing, 0.6);
+    translate: 0 calc((var(--typing, 0.35) - 0.35) / 0.65 * -3px);
+}
+
 /* Asking attention (moment 3): a slow, persistent amber breathing glow. drop-shadow
    (not box-shadow) so it never clashes with the card's cursor-ring box-shadow, and
    is not clipped by the card's overflow-hidden. Amber comes from the status token.

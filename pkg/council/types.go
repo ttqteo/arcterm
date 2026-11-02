@@ -181,6 +181,9 @@ type CouncilReply struct {
 	// each a file the composer kept under ~/.arc/attachments. Only the person's replies carry any; a reply with any is
 	// stored and answered with Tools on, and each seat's tools prompt lists them after the reply's text.
 	Attachments []string `json:"attachments,omitempty"`
+	// Asks are a seat's answer's suggestions: up to MaxReplyAsks short replies the person might send next, which the
+	// thread offers above its reply box. Only a seat's answer to the person carries any.
+	Asks []string `json:"asks,omitempty"`
 	// Revision is the change to its own idea a held reply carries: it takes effect when the reply is sent, and a dropped
 	// reply cancels it. Nil on every reply that is sent or never held.
 	Revision *CouncilRevision `json:"revision,omitempty"`

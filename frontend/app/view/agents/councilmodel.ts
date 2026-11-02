@@ -532,12 +532,15 @@ export function answerers(
 /** Pure: the label under the person's own reply while it waits for an answer; empty once it is answered, and for
  *  anyone else's reply. A reply posted before the last seat round reaches the seats at the next one; one posted in the
  *  last round or while the summary is written is answered in the follow-up pass, after the summary. */
+// the person's follow-up while the seats answer it (councilseen.ts reads it as Sent, then Seen)
+export const ANSWERING = "Answering…";
+
 export function replyLabel(c: Council, reply: CouncilReply): string {
     if (reply.author !== YOU || reply.answered) {
         return "";
     }
     if (reply.round >= firstFollowRound(c)) {
-        return c.state === "running" ? "Answering…" : "";
+        return c.state === "running" ? ANSWERING : "";
     }
     if (reply.round < roundsOf(c) || c.state === "awaiting-you") {
         return "Queued for the next step";
