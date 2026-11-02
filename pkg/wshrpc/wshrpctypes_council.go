@@ -33,6 +33,7 @@ type CouncilCommands interface {
 	CouncilRolesCommand(ctx context.Context) (*CouncilRolesRtnData, error)
 	CouncilSaveGroupCommand(ctx context.Context, data council.CouncilGroup) error
 	CouncilRateCommand(ctx context.Context, data CommandCouncilRateData) error
+	CouncilThumbCommand(ctx context.Context, data CommandCouncilThumbData) error
 	CouncilBenchCommand(ctx context.Context, data CommandCouncilBenchData) (*CouncilBenchRtnData, error)
 	CouncilBenchResultsCommand(ctx context.Context) (*CouncilBenchResultsRtnData, error)
 	CouncilBenchStopCommand(ctx context.Context) (*CouncilBenchStopRtnData, error)
@@ -197,6 +198,15 @@ type CouncilRolesRtnData struct {
 type CommandCouncilRateData struct {
 	Id     string `json:"id"`
 	Rating string `json:"rating"`
+}
+
+// CommandCouncilThumbData is the person's like or dislike on one of a council's sent ideas or seat replies: Item is its
+// id (P1, r3) and Thumb council.ThumbLike or council.ThumbDislike, or empty to take it back. Any other word, the
+// person's own reply and a draft are refused. The seats' later prompts and the summary read it as the person's view.
+type CommandCouncilThumbData struct {
+	Id    string `json:"id"`
+	Item  string `json:"item"`
+	Thumb string `json:"thumb,omitempty"`
 }
 
 // CommandCouncilBenchData picks a benchmark: the cases (all when empty), the variants (solo and council when empty) and

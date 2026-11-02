@@ -32,6 +32,7 @@ import {
     latestStances,
     matrixRows,
     mentionsChat,
+    nextThumb,
     outdatedCount,
     panel,
     pickCount,
@@ -48,7 +49,9 @@ import {
     summaryFacts,
     synthesisRound,
     threadTree,
+    thumbOf,
     treeMeta,
+    withThumb,
     type SeatableAgent,
 } from "./councilmodel";
 
@@ -1668,5 +1671,37 @@ describe("proseOf", () => {
 
     it("is empty for a message that is only a table", () => {
         expect(proseOf("| a |\n|---|\n| 1 |")).toBe("");
+    });
+});
+
+describe("thumbs", () => {
+    it("reads a known thumb and nothing else", () => {
+        expect(thumbOf({ thumb: "like" })).toBe("like");
+        expect(thumbOf({ thumb: "dislike" })).toBe("dislike");
+        expect(thumbOf({})).toBe("");
+        expect(thumbOf({ thumb: "love" })).toBe("");
+    });
+
+    it("a press puts the thumb on, swaps the other one, and a second press takes it back", () => {
+        expect(nextThumb("", "like")).toBe("like");
+        expect(nextThumb("dislike", "like")).toBe("like");
+        expect(nextThumb("like", "like")).toBe("");
+        expect(nextThumb("dislike", "dislike")).toBe("");
+    });
+
+    it("sets one idea's or reply's thumb and leaves the rest of the record alone", () => {
+        const c = council({ replies: [reply("r1", "ram"), reply("r2", "sk", { thumb: "like" })] });
+        const liked = withThumb(c, "P3", "like");
+        expect(liked.proposals.find((p) => p.id === "P3")?.thumb).toBe("like");
+        expect(liked.proposals.filter((p) => p.thumb != null)).toHaveLength(1);
+        expect(liked.replies).toBe(c.replies);
+        expect(c.proposals.find((p) => p.id === "P3")?.thumb).toBeUndefined();
+
+        const off = withThumb(c, "r2", "");
+        expect(off.replies.find((r) => r.id === "r2")?.thumb).toBeUndefined();
+        expect(off.replies.find((r) => r.id === "r1")).toBe(c.replies[0]);
+        expect(off.proposals).toBe(c.proposals);
+
+        expect(withThumb(c, "P9", "like")).toBe(c);
     });
 });

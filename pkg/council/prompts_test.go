@@ -864,3 +864,47 @@ func TestPromptsAskForTheMustReadMark(t *testing.T) {
 		mustContain(t, name+" synthesis prompt", SynthesisPrompt(c), askRule)
 	}
 }
+
+// The person's likes and dislikes reach every prompt after round 1 as the person's view: the cross-review, the summary
+// and the answers. A thumb on a draft or on the person's own reply is not listed, and with none there is no section.
+func TestPromptsListThePersonsThumbs(t *testing.T) {
+	const heading = "## What the person liked and disliked"
+	c := promptCouncil()
+	c.Proposals[1].Thumb = ThumbLike    // P2
+	c.Proposals[2].Thumb = ThumbDislike // P3
+	c.Replies[0].Thumb = ThumbDislike   // r1, Skeptic's challenge on P1
+	c.Replies[3].Thumb = ThumbLike      // r4, the person's own: never listed
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r8", ProposalId: "P2", Author: "ux", Text: "Text-r8 held", Round: 2, Draft: DraftHeld, Thumb: ThumbLike},
+		CouncilReply{Id: "r9", Author: "ram", Text: "Text-r9 to everyone", Round: 2, Thumb: ThumbLike},
+	)
+	ux, _ := seatOf(c, "ux")
+	for name, p := range map[string]string{
+		"round 2":   Round2Prompt(c, ux),
+		"synthesis": SynthesisPrompt(c),
+		"answers":   AnswersPrompt(c, ux, []CouncilReply{c.Replies[2]}),
+	} {
+		got := section(t, p, heading)
+		mustContain(t, name, got, thumbsRule, "- P2 · RAM · Title-two: liked", "- P3 · Skeptic · Title-three: disliked",
+			"- [r1] Skeptic's reply on P1: disliked", "- [r9] RAM's reply to the whole council: liked")
+		mustNotContain(t, name, got, "[r4]", "[r8]", "P1 ·")
+	}
+	mustContain(t, "synthesis", SynthesisPrompt(c), "Treat the person's replies, and what they liked or disliked, as the person's own view")
+	mustContain(t, "brainstorm synthesis", SynthesisPrompt(brainstormCouncil()), "and what they liked or disliked")
+	mustNotContain(t, "round 2 with no thumbs", Round2Prompt(promptCouncil(), ux), heading)
+}
+
+// A live agent reads every thumb each later turn, not only the ones on what is new to it: the person often marks a
+// message the seat read turns ago, and one taken back must stop counting.
+func TestAgentLaterPromptListsEveryThumb(t *testing.T) {
+	c := agentPromptCouncil()
+	witness := c.Experts[0]
+	c.Proposals[0].Thumb = ThumbDislike // P1, Witness's own idea, read in round 1
+	c.Proposals[2].Thumb = ThumbLike    // P3 is held: not listed
+	got := section(t, AgentLaterPrompt(c, witness, 3), "## What the person liked and disliked")
+	mustContain(t, "round 3", got, "- P1 · Witness · Title-own: disliked")
+	mustNotContain(t, "round 3", got, "P3")
+
+	c.Proposals[0].Thumb = ""
+	mustNotContain(t, "thumb taken back", AgentLaterPrompt(c, witness, 3), "## What the person liked and disliked")
+}

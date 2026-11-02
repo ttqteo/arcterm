@@ -46,6 +46,8 @@ import {
     roundsOf,
     sentProposals,
     sentReplies,
+    thumbOf,
+    type CouncilThumb,
     type HeldDraft,
     type SeatableAgent,
 } from "./councilmodel";
@@ -177,6 +179,7 @@ export interface ReplyPost extends Who {
     evidence: string[];
     weak: string; // a claim marked weak, as the chip reads (`Weak · no measurement`)
     mine: boolean;
+    thumb: CouncilThumb | ""; // the person's like or dislike on a seat's reply; always "" on the person's own
     reaches: string; // the person's reply: `For everyone`, `For UX and RAM`
     agrees: string[]; // `RAM agrees`: the seats that answered the person's post with no words (answerAgrees)
     pending: string; // the person's reply: `Queued for the next step` until it is answered
@@ -200,6 +203,7 @@ function replyPost(c: Council, r: CouncilReply): ReplyPost {
         attachments: r.attachments ?? [],
         ...evidenceOf(r.evidence),
         mine,
+        thumb: mine ? "" : thumbOf(r),
         reaches: mine ? reachOf(c, r) : "",
         agrees: answerAgrees(c, r),
         pending: mine ? replyLabel(c, r) : "",
@@ -313,6 +317,7 @@ export interface IdeaPost extends Who {
     evidence: string[];
     weak: string;
     agrees: string[]; // `Skeptic agrees`: the seats that agreed with nothing to add
+    thumb: CouncilThumb | ""; // the person's like or dislike
     picks: { count: number; label: string; title: string } | null; // `Picked by 2`; null when no seat picked it
     edited: boolean;
     at: string;
@@ -338,6 +343,7 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
         text: p.argument,
         ...evidenceOf(p.evidence),
         agrees: reactions(view, p.id),
+        thumb: thumbOf(p),
         picks:
             picked != null && picked > 0
                 ? {

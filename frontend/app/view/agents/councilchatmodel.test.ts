@@ -245,6 +245,16 @@ describe("councilChannel: an idea", () => {
         });
     });
 
+    it("carries the person's thumb, and none when there is none or the word is unknown", () => {
+        const c = room();
+        c.proposals[0].thumb = "like";
+        c.proposals[1].thumb = "love";
+        const items = councilChannel(c);
+        expect(byId(items, "P1")).toMatchObject({ thumb: "like" });
+        expect(byId(items, "P2")).toMatchObject({ thumb: "" });
+        expect(byId(items, "P3")).toMatchObject({ thumb: "" });
+    });
+
     it("tags a live agent's idea as an agent's", () => {
         expect(byId(councilChannel(room()), "P3")).toMatchObject({ author: "ux", name: "UX audit", tag: "agent" });
     });
@@ -424,6 +434,15 @@ describe("councilChannel: held drafts", () => {
 });
 
 describe("councilChannel: the person's posts", () => {
+    it("never carries a thumb on the person's own post, and does on a seat's reply", () => {
+        const c = room();
+        c.replies[0].thumb = "like"; // r1, the person's
+        c.replies[3].thumb = "dislike"; // r4, UX's
+        const items = councilChannel(c);
+        expect(byId(items, "r1")).toMatchObject({ mine: true, thumb: "" });
+        expect(byId(items, "r4")).toMatchObject({ mine: false, thumb: "dislike" });
+    });
+
     it("shows a post to the whole council as a message of theirs that steers, and reaches everyone", () => {
         expect(byId(councilChannel(room()), "r1")).toMatchObject({
             kind: "reply",

@@ -14,7 +14,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-02.2"
+const HarnessVersion = "2026-11-02.3"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -747,6 +747,7 @@ func round2PromptFor(c *Council, e CouncilExpert, round int) string {
 			writeWithThread(p)
 		}
 	}
+	writeThumbs(&b, c)
 
 	if len(asks) > 0 {
 		b.WriteString("## What the person asks you\n\n")
@@ -791,6 +792,47 @@ func writeThread(b *strings.Builder, c *Council, proposalId string) {
 		}
 		b.WriteString("\n")
 	}
+}
+
+// thumbsRule opens the person's likes and dislikes in every prompt that lists them.
+const thumbsRule = "The person marked these messages with a like or a dislike, and no words. Take each as the person's own " +
+	"view of that message, and weigh it."
+
+// thumbWord is how a prompt says a thumb; empty for none or an unknown word.
+func thumbWord(thumb string) string {
+	switch thumb {
+	case ThumbLike:
+		return "liked"
+	case ThumbDislike:
+		return "disliked"
+	}
+	return ""
+}
+
+// writeThumbs lists what the person liked and disliked: the sent ideas first, then the seats' sent replies, in the order
+// the record keeps them. It writes nothing when the person marked none.
+func writeThumbs(b *strings.Builder, c *Council) {
+	var lines []string
+	for _, p := range sentProposals(c) {
+		if w := thumbWord(p.Thumb); w != "" {
+			lines = append(lines, fmt.Sprintf("- %s · %s · %s: %s", p.Id, speaker(c, p.Author), p.Title, w))
+		}
+	}
+	for _, r := range c.Replies {
+		w := thumbWord(r.Thumb)
+		if w == "" || r.Author == YouId || !Sent(r.Draft) {
+			continue
+		}
+		on := "to the whole council"
+		if p := findProposal(c, r.ProposalId); p != nil {
+			on = "on " + p.Id
+		}
+		lines = append(lines, fmt.Sprintf("- [%s] %s's reply %s: %s", r.Id, speaker(c, r.Author), on, w))
+	}
+	if len(lines) == 0 {
+		return
+	}
+	b.WriteString("## What the person liked and disliked\n\n" + thumbsRule + "\n\n" + strings.Join(lines, "\n") + "\n\n")
 }
 
 // SynthesisPrompt asks the coordinator for round 3: every proposal and everything said about it, the person's
@@ -859,6 +901,7 @@ func SynthesisPrompt(c *Council) string {
 	if whole.Len() > 0 {
 		b.WriteString("### To the whole council\n\n" + whole.String() + "\n")
 	}
+	writeThumbs(&b, c)
 
 	b.WriteString("## What to do\n\n")
 	if isBrainstorm(c) {
@@ -881,7 +924,7 @@ func SynthesisPrompt(c *Council) string {
 		outcomeWords(c, "Direction N", "Merged into direction N", "Also raised") + ".\n")
 	b.WriteString("8. In \"weak\", mark any claim that cites no evidence, or whose evidence does not show what it says. " +
 		"\"ref\" is a proposal id, a reply id or an evidence ref; \"note\" says what is missing.\n")
-	b.WriteString("9. Treat the person's replies as the person's own view and weigh them.\n")
+	b.WriteString("9. Treat the person's replies, and what they liked or disliked, as the person's own view and weigh them.\n")
 	b.WriteString("10. " + askRule + "\n")
 	shape, summary := synthesisShapeNoQuestion, summaryRuleNoQuestion
 	if strings.TrimSpace(c.Question) != "" {
@@ -912,7 +955,7 @@ func writeBrainstormSynthesisTask(b *strings.Builder, c *Council) string {
 		"line on why it is worth remembering, and its ids in \"from\". Leave \"kept\" empty when there are none.\n")
 	b.WriteString("6. In \"outcomes\", give every idea its fate: " +
 		outcomeWords(c, "Direction N", "Merged into direction N", "Kept aside", "Not picked") + ".\n")
-	b.WriteString("7. Treat the person's replies as the person's own view and weigh them.\n")
+	b.WriteString("7. Treat the person's replies, and what they liked or disliked, as the person's own view and weigh them.\n")
 	b.WriteString("8. " + askRule + "\n")
 	shape, summary := brainstormSynthesisShapeNoQuestion, summaryRuleNoQuestion
 	if strings.TrimSpace(c.Question) != "" {
@@ -978,6 +1021,7 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 			}
 		}
 	}
+	writeThumbs(&b, c)
 
 	for _, r := range replies {
 		fmt.Fprintf(&b, "## Reply %s\n\n", r.Id)
@@ -1311,6 +1355,9 @@ func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, 
 		}
 		b.WriteString("\n")
 	}
+	// all of them each turn, not only the new ones: a thumb is often put on a message the seat read turns ago, and one
+	// taken back must stop counting
+	writeThumbs(b, c)
 	others := false // a seat answered one of the asks before this one
 	if len(asks) > 0 {
 		b.WriteString("## What the person asks you\n\n")

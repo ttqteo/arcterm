@@ -40,6 +40,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Like or dislike a council's messages: 👍 and 👎 sit under every idea, and in the line over each seat's reply when
+  you hover it. The seats read what you liked and disliked in their next turns and the summary weighs it as your own
+  view, so you can steer the discussion without typing; press the same thumb again to take it back.
 - A council that already exists, running or done, can take a live claude or pi chat into it: type `@` in its message
   box, pick the chat under Add a live chat (its short id, title, project and how much context it holds are listed) and
   send. The chat joins the council, answers that message from its own context, and stays a seat.

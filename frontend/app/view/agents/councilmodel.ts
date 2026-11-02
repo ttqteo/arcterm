@@ -152,6 +152,34 @@ export function isReaction(r: CouncilReply): boolean {
     return r.author !== YOU && (r.stance === "accept" || !r.stance) && r.text.trim() === "";
 }
 
+/** The person's like or dislike on a seat's sent idea or reply (Go council.ThumbLike, council.ThumbDislike); the seats'
+ *  later prompts and the summary read it as the person's view. Not a reaction: that is a seat's agreement. */
+export type CouncilThumb = "like" | "dislike";
+
+/** Pure: an idea's or a reply's thumb, "" for none or a word the cockpit does not know. */
+export function thumbOf(x: { thumb?: string }): CouncilThumb | "" {
+    return x.thumb === "like" || x.thumb === "dislike" ? x.thumb : "";
+}
+
+/** Pure: the thumb a press leaves: the one pressed, or none when it was already on (a second press takes it back). */
+export function nextThumb(current: CouncilThumb | "", pressed: CouncilThumb): CouncilThumb | "" {
+    return current === pressed ? "" : pressed;
+}
+
+/** Pure: `c` with the thumb of the idea or reply `item` set ("" takes it off), the rest of the record as it was; `c`
+ *  itself when it has no such item. */
+export function withThumb(c: Council, item: string, thumb: CouncilThumb | ""): Council {
+    const set = <T extends { id: string; thumb?: string }>(xs: T[] | undefined): T[] | undefined =>
+        xs?.map((x) => (x.id === item ? { ...x, thumb: thumb === "" ? undefined : thumb } : x));
+    if ((c.proposals ?? []).some((p) => p.id === item)) {
+        return { ...c, proposals: set(c.proposals) };
+    }
+    if ((c.replies ?? []).some((r) => r.id === item)) {
+        return { ...c, replies: set(c.replies) };
+    }
+    return c;
+}
+
 /** Pure: the replies a person reads as replies, which leaves out the reactions and every reply that is still a draft
  *  or was dropped. */
 export function readableReplies(c: Council): CouncilReply[] {

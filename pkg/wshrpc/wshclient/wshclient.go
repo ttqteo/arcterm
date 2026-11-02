@@ -458,6 +458,12 @@ func CouncilSummarizeCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilIdData
 	return err
 }
 
+// command "councilthumb", wshserver.CouncilThumbCommand
+func CouncilThumbCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilThumbData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilthumb", data, opts)
+	return err
+}
+
 // command "createblock", wshserver.CreateBlockCommand
 func CreateBlockCommand(w *wshutil.WshRpc, data wshrpc.CommandCreateBlockData, opts *wshrpc.RpcOpts) (waveobj.ORef, error) {
 	resp, err := sendRpcRequestCallHelper[waveobj.ORef](w, "createblock", data, opts)

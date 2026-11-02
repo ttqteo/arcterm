@@ -139,7 +139,15 @@ type CouncilProposal struct {
 	Wild      bool              `json:"wild,omitempty"`   // a Brainstorm wild idea
 	Draft     string            `json:"draft,omitempty"`  // DraftHeld or DraftDropped; empty once sent, and on an idea that was never held
 	Edited    bool              `json:"edited,omitempty"` // the person edited it before sending
+	Thumb     string            `json:"thumb,omitempty"`  // the person's ThumbLike or ThumbDislike; empty for none
 }
+
+// The person's thumb on a seat's sent idea or reply. The seats' later prompts and the summary read it (writeThumbs),
+// as the person's view.
+const (
+	ThumbLike    = "like"
+	ThumbDislike = "dislike"
+)
 
 // The two states of a held draft. A proposal or reply with no Draft is sent (Sent), and only a sent one reaches a seat's
 // prompt or the synthesis.
@@ -168,6 +176,7 @@ type CouncilReply struct {
 	Ts         int64             `json:"ts"`
 	Draft      string            `json:"draft,omitempty"`  // DraftHeld or DraftDropped; empty once sent, and on a reply that was never held
 	Edited     bool              `json:"edited,omitempty"` // the person edited it before sending
+	Thumb      string            `json:"thumb,omitempty"`  // the person's ThumbLike or ThumbDislike on a seat's reply; empty for none
 	// Attachments are the absolute paths of the images the person attached to this reply, in the order they were added,
 	// each a file the composer kept under ~/.arc/attachments. Only the person's replies carry any; a reply with any is
 	// stored and answered with Tools on, and each seat's tools prompt lists them after the reply's text.
