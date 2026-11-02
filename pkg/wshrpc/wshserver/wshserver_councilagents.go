@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/wavetermdev/waveterm/pkg/agentmsg"
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
@@ -44,10 +46,83 @@ func (liveAgentLink) find(ctx context.Context, tabId string) ([]agentRow, *agent
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", errNoSeat, err)
 	}
-	if !seatHarnesses[row.Harness] {
-		return nil, nil, fmt.Errorf("agent %q runs %s, and only claude and pi sessions can sit in a council", row.Name, row.Harness)
+	if err := seatable(row); err != nil {
+		return nil, nil, err
 	}
 	return rows, row, nil
+}
+
+// seatable is nil when the agent's harness can sit in a council.
+func seatable(row *agentRow) error {
+	if !seatHarnesses[row.Harness] {
+		return fmt.Errorf("agent %q (tab %s) runs %s, and only claude and pi sessions can sit in a council", row.Name, row.TabId, row.Harness)
+	}
+	return nil
+}
+
+// The widths wsh agents list gives a tab id and a title, which the list in a refused seat's error follows.
+const (
+	seatShortIdLen = 8
+	seatTitleMax   = 60
+)
+
+// councilAgentSeats turns the tabs a council names (ids or unique prefixes) into its agent seats, in the order given,
+// from one read of the roster: the seat Setup builds for a picked agent, with the tab's name, harness and the context it
+// holds now. A tab named twice (by id, by prefix, or both) sits once; a tab from another project is welcome. A name that
+// is no live tab, several, or a harness a council cannot seat fails the whole call, with the live claude and pi tabs
+// listed so the caller can ask the person which they meant. No tabs, no roster read.
+func councilAgentSeats(ctx context.Context, tabs []string) ([]council.CouncilExpert, error) {
+	if len(tabs) == 0 {
+		return nil, nil
+	}
+	facts, err := loadAgentRosterFacts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows := buildAgentRoster(facts)
+	var seats []council.CouncilExpert
+	for _, tab := range tabs {
+		row, err := resolveAgentTab(rows, tab)
+		if err == nil {
+			err = seatable(row)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%w\nlive claude and pi tabs:\n%s", err, seatableTabs(rows))
+		}
+		if slices.ContainsFunc(seats, func(s council.CouncilExpert) bool { return s.Agent == row.TabId }) {
+			continue
+		}
+		seats = append(seats, council.CouncilExpert{
+			Id: "agent-" + row.TabId, Name: row.Name, Agent: row.TabId, Harness: row.Harness, Context: seatContext(ctx, row),
+		})
+	}
+	return seats, nil
+}
+
+// seatableTabs is the live claude and pi tabs, a line each: short id, project and title, as wsh agents list --all prints
+// them.
+func seatableTabs(rows []agentRow) string {
+	var buf strings.Builder
+	w := tabwriter.NewWriter(&buf, 0, 4, 2, ' ', 0)
+	for _, r := range rows {
+		if !seatHarnesses[r.Harness] {
+			continue
+		}
+		title := []rune(strings.Join(strings.Fields(r.Title), " "))
+		if len(title) > seatTitleMax {
+			title = append(title[:seatTitleMax-1], '…')
+		}
+		fmt.Fprintf(w, "  %s\t%s\t%s\n", r.TabId[:min(seatShortIdLen, len(r.TabId))], r.Project, string(title))
+	}
+	w.Flush()
+	if buf.Len() == 0 {
+		return "  none"
+	}
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Seat is the agent's state, folded into the council's five, and, for a seat at rest, its context in tokens. A tab that

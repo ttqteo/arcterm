@@ -107,12 +107,22 @@ var builtInRoles = []CouncilExpert{
 	},
 }
 
-// builtInGroups are the three groups that ship.
+// builtInGroups are the five groups that ship. The last two are the panel around chats the person names: one outside
+// voice and a fresh writer, for a review and for a brainstorm. With no chat seated each is a panel of one, so Suggest
+// never offers them.
 var builtInGroups = []CouncilGroup{
 	{Id: "ui-feature", Name: "Review a UI feature", Roles: []string{"ux", "ram", "newuser", "skeptic"}, Coordinator: "coordinator"},
 	{Id: "paper", Name: "Paper review", Roles: []string{"reviewer-a", "reviewer-b", "reader"}, Coordinator: "areachair"},
 	{Id: "product-ideas", Name: "Product ideas", Roles: []string{"newuser", "designer", "builder", "contrarian"}, Coordinator: "facilitator"},
+	{Id: AgentsGroupId, Name: "Chats with a Skeptic", Roles: []string{"skeptic"}, Coordinator: "coordinator"},
+	{Id: AgentsIdeasGroupId, Name: "Chats with a Contrarian", Roles: []string{"contrarian"}, Coordinator: "facilitator"},
 }
+
+// The ids of the two groups made for seated chats.
+const (
+	AgentsGroupId      = "agents"
+	AgentsIdeasGroupId = "agents-ideas"
+)
 
 // userRoles reads councilroles.json; a file that does not parse leaves the built-ins alone, and says so in the log.
 func userRoles() wconfig.CouncilRolesConfig {

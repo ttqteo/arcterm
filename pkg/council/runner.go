@@ -52,7 +52,9 @@ const (
 	actSummary  = "Writing the summary"
 	actPerson   = "Replying to the person"
 
-	// maxPasses stops a run that keeps finding replies to answer, which only a store that cannot save can cause.
+	// maxPasses stops a run whose answers passes in a row answer none of the person's replies, which only a store that
+	// cannot save can cause. A pass that answers some starts the count again, so a person who keeps posting while the
+	// passes run is never left with a reply nobody answers.
 	maxPasses = 8
 
 	stopWait = 15 * time.Second
@@ -654,6 +656,7 @@ func (r *Runner) drive(ctx context.Context, rn *run, id string, w work) {
 	if ctx.Err() == nil { // a Stop can land between the launch and the goroutine's first step
 		end = w(ctx, rn, id)
 	}
+	answered := -1 // the person's replies answered when the last answers pass began
 	for passes := 0; ; passes++ {
 		r.mu.Lock()
 		if end.heldRound > 0 && ctx.Err() == nil {
@@ -666,6 +669,9 @@ func (r *Runner) drive(ctx context.Context, rn *run, id string, w work) {
 		}
 		if end.answers && ctx.Err() == nil && passes < maxPasses {
 			if c, err := Load(id); err == nil && hasOpenReplies(c) {
+				if n := answeredReplies(c); n > answered {
+					passes, answered = 0, n
+				}
 				r.mu.Unlock()
 				if err := r.answersPass(ctx, rn, id); err != nil {
 					log.Printf("[council] %s: answers pass: %v", id, err)
@@ -734,16 +740,17 @@ func awaitingDrafts(round int) ending {
 }
 
 // roundsWork runs the rounds from round `from` on: the ideas (round 1), then each reply pass, then the synthesis. A
-// council with no agent seated runs round 1, the pause after it when it has one, one reply pass and the synthesis. One
-// with agents holds every answer as a draft, so a round whose answers left a draft held ends the run awaiting-you at
-// that round: settling the last of them starts the next, and the council holds no slot while it waits.
+// council that holds no drafts (no agent seated, or one an agent started) runs round 1, the pause after it when it has
+// one, one reply pass and the synthesis. One that holds drafts (agents seated, started from the app) holds every answer,
+// so a round whose answers left a draft held ends the run awaiting-you at that round: settling the last of them starts
+// the next, and the council holds no slot while it waits.
 func (r *Runner) roundsWork(from int) work {
 	return func(ctx context.Context, rn *run, id string) ending {
 		snap, err := Load(id)
 		if err != nil {
 			return loadFailed(err)
 		}
-		synth, held, at := SynthesisRound(snap), HasAgents(snap), snap.Round
+		synth, held, at := SynthesisRound(snap), HoldsDrafts(snap), snap.Round
 		for round := from; round < synth; round++ {
 			if round != at {
 				r.setRound(rn, id, round)
@@ -766,7 +773,7 @@ func (r *Runner) roundsWork(from int) work {
 				return ending{set: func(c *Council) { c.State, c.Error = StateFailed, noOneAnsweredRound1(c) }}
 			case held && HeldDrafts(cur) > 0:
 				return awaitingDrafts(round)
-			case round == 1 && !held && cur.PauseAfterRound1: // with agents seated the held drafts are the pause
+			case round == 1 && !held && cur.PauseAfterRound1: // when drafts are held they are the pause
 				return ending{set: func(c *Council) { c.State, c.Round, c.Error = StateAwaiting, 1, "" }}
 			}
 		}
@@ -964,10 +971,10 @@ func nextReplyId(c *Council) string {
 
 // ---- round 1 ----
 
-// heldFor is the Draft state of what a seat answers: held when an agent is seated (every answer then waits for the
-// person), sent at once otherwise.
+// heldFor is the Draft state of what a seat answers: held when the council holds drafts (an agent is seated and no
+// agent started it, so every answer waits for the person), sent at once otherwise.
 func heldFor(c *Council) string {
-	if HasAgents(c) {
+	if HoldsDrafts(c) {
 		return DraftHeld
 	}
 	return ""
@@ -1312,6 +1319,16 @@ func owed(c *Council, e CouncilExpert, openOnly bool) []CouncilReply {
 
 func hasOpenReplies(c *Council) bool {
 	return slices.ContainsFunc(c.Replies, func(pr CouncilReply) bool { return pr.Author == YouId && !pr.Answered })
+}
+
+func answeredReplies(c *Council) int {
+	n := 0
+	for _, pr := range c.Replies {
+		if pr.Author == YouId && pr.Answered {
+			n++
+		}
+	}
+	return n
 }
 
 func markAnswered(c *Council, ids []string) {
@@ -1877,9 +1894,9 @@ func (r *Runner) summarizeLocked(id string, model string) (*Council, func(), err
 
 // heldRoundAfter is the heldRound a job that hands a council back awaiting-you ends with: the round its drafts belong to,
 // so that drive goes on to the next round when the person settled them all while the job ran. 0 for anything else, and
-// for the pause after round 1 of a council with no agent, which waits on a Continue.
+// for the pause after round 1 of a council that holds no drafts, which waits on a Continue.
 func heldRoundAfter(prev prevState, snap *Council) int {
-	if prev.state == StateAwaiting && HasAgents(snap) {
+	if prev.state == StateAwaiting && HoldsDrafts(snap) {
 		return prev.round
 	}
 	return 0
@@ -2451,7 +2468,8 @@ func parseSuggestion(reply string, roles []CouncilExpert, groups []CouncilGroup)
 
 // Suggest makes the one sonnet call behind Setup's dashed rows: it reads the project with the read-only tools and
 // names the files the experts should read, up to two extra roles, the group that fits the feature best, and the mode
-// the question reads as with its reason. A group or a mode it names that does not exist comes back empty.
+// the question reads as with its reason. A group or a mode it names that does not exist comes back empty. The groups
+// made for seated chats are neither offered nor accepted: Setup has seated none yet, and each is a panel of one.
 func (r *Runner) Suggest(ctx context.Context, project, feature, question string, files []string) (CouncilSuggestion, error) {
 	if r.Caller == nil {
 		return CouncilSuggestion{}, errors.New("the council runner has no caller")
@@ -2459,7 +2477,8 @@ func (r *Runner) Suggest(ctx context.Context, project, feature, question string,
 	if strings.TrimSpace(project) == "" || strings.TrimSpace(feature) == "" {
 		return CouncilSuggestion{}, errors.New("a suggestion needs a project folder and a feature")
 	}
-	roles, groups := Roles(), Groups()
+	roles := Roles()
+	groups := slices.DeleteFunc(Groups(), func(g CouncilGroup) bool { return g.Id == AgentsGroupId || g.Id == AgentsIdeasGroupId })
 	asker := CouncilExpert{Id: "suggest", Name: "Coordinator", Model: ModelExpert}
 	res, err := r.Caller.Call(ctx, CallReq{
 		Expert: asker, Cwd: project, Tools: true,

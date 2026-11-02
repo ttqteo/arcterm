@@ -795,6 +795,7 @@ declare global {
         followup?: number;
         tools?: boolean;
         rounds?: number;
+        agents?: string[];
     };
 
     // wshrpc.CommandCouncilIdData
@@ -851,6 +852,8 @@ declare global {
         mode?: string;
         modewhy?: string;
         rounds?: number;
+        agents?: string[];
+        byagent?: boolean;
     };
 
     // wshrpc.CommandCouncilSuggestData
@@ -2406,6 +2409,7 @@ declare global {
         pauseafterround1?: boolean;
         rounds?: number;
         sessionid?: string;
+        byagent?: boolean;
         state: string;
         round: number;
         error?: string;

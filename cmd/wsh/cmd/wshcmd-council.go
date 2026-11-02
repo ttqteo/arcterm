@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -24,11 +25,12 @@ import (
 )
 
 // The groups a start or an estimate takes when --group is left out: the UI feature panel for a review and the Product
-// ideas panel for a brainstorm. Both ship with arcterm, and a councilroles.json group of the same id replaces rather
-// than removes them.
+// ideas panel for a brainstorm; with --agent, the Skeptic's panel for a review and the Contrarian's for a brainstorm.
+// All four ship with arcterm, and a councilroles.json group of the same id replaces rather than removes them.
 const (
 	councilDefaultGroup    = "ui-feature"
 	councilBrainstormGroup = "product-ideas"
+	councilAgentSelf       = "self" // what --agent takes for the tab running the command
 )
 
 const (
@@ -64,15 +66,96 @@ func councilModeFlag(word string) (string, error) {
 	return "", fmt.Errorf("unknown --mode %q: use %s or %s", word, council.ModeReview, council.ModeBrainstorm)
 }
 
-// councilGroupFor is the group of a start or an estimate: the one --group names, else the group that fits the mode.
-func councilGroupFor(group, mode string) string {
+// councilGroupFor is the group of a start or an estimate: the one --group names, else the group that fits the mode,
+// and with chats seated (--agent) the one that sits beside them: a Skeptic and a coordinator for a review, a
+// Contrarian and the Facilitator for a brainstorm.
+func councilGroupFor(group, mode string, withAgents bool) string {
 	switch {
 	case group != "":
 		return group
+	case withAgents && mode == council.ModeBrainstorm:
+		return council.AgentsIdeasGroupId
+	case withAgents:
+		return council.AgentsGroupId
 	case mode == council.ModeBrainstorm:
 		return councilBrainstormGroup
 	}
 	return councilDefaultGroup
+}
+
+// councilRepeated reads a repeatable flag. pflag reads a lone --flag "" back as no value at all, so a flag that was
+// given but holds nothing is returned as one empty value, which the caller refuses instead of dropping.
+func councilRepeated(cmd *cobra.Command, name string) []string {
+	values, _ := cmd.Flags().GetStringArray(name)
+	if len(values) == 0 && cmd.Flags().Changed(name) {
+		return []string{""}
+	}
+	return values
+}
+
+// councilAgentFlags reads --agent (repeatable): the tab ids to seat in the order given, "self" being the tab this
+// command runs in. An empty value is refused like self outside an agent's terminal, never dropped: a council must not
+// start without a seat the person named. wavesrv checks that each id is a live claude or pi tab.
+func councilAgentFlags(cmd *cobra.Command) ([]string, error) {
+	var agents []string
+	for _, a := range councilRepeated(cmd, "agent") {
+		switch a = strings.TrimSpace(a); a {
+		case "":
+			return nil, errors.New("--agent needs a tab id (`wsh agents list --all` prints them) or self")
+		case councilAgentSelf:
+			if a = getTabIdFromEnv(); a == "" {
+				return nil, errors.New("--agent self runs only inside an agent's terminal")
+			}
+		}
+		agents = append(agents, a)
+	}
+	return agents, nil
+}
+
+// councilAddExperts adds the --expert roles to a panel, each from the roles answer and before the coordinator (the
+// panel's last seat), in the order given. An unknown id, one already in the panel (a role the group has, or one named
+// twice) or a coordinator role is refused, and the error lists the role ids --expert takes.
+func councilAddExperts(roles *wshrpc.CouncilRolesRtnData, panel []council.CouncilExpert, ids []string) ([]council.CouncilExpert, error) {
+	if len(ids) == 0 {
+		return panel, nil
+	}
+	last := len(panel) - 1
+	experts := slices.Clone(panel[:last])
+	taken := map[string]bool{panel[last].Id: true}
+	for _, e := range experts {
+		taken[e.Id] = true
+	}
+	byId := map[string]council.CouncilExpert{}
+	for _, r := range roles.Roles {
+		byId[r.Id] = r
+	}
+	takes := func() string {
+		var usable []string
+		for _, r := range roles.Roles {
+			if !r.Coordinator && !taken[r.Id] {
+				usable = append(usable, r.Id)
+			}
+		}
+		if len(usable) == 0 {
+			return "none"
+		}
+		return strings.Join(usable, ", ")
+	}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		r, ok := byId[id]
+		switch {
+		case !ok:
+			return nil, fmt.Errorf("--expert %q is not a role; roles it takes: %s", id, takes())
+		case r.Coordinator:
+			return nil, fmt.Errorf("--expert %q writes the report and cannot sit as an expert; roles it takes: %s", id, takes())
+		case taken[id]:
+			return nil, fmt.Errorf("--expert %q is already in the panel; roles it takes: %s", id, takes())
+		}
+		taken[id] = true
+		experts = append(experts, r)
+	}
+	return append(experts, panel[last]), nil
 }
 
 // ---- pure parts ----
@@ -156,8 +239,8 @@ func councilFiles(files []string, cwd, project string) []string {
 	return out
 }
 
-// councilPanelSize counts the experts that propose and review, which is all but the coordinator; it is the n of the
-// gate's card, the estimate and the "<n> experts" of the started line.
+// councilPanelSize counts the experts that propose and review, which is all but the coordinator; it is the role
+// experts of the gate's card and the "<n> experts" of a started line with no chat seated.
 func councilPanelSize(experts []council.CouncilExpert) int {
 	n := 0
 	for _, e := range experts {
@@ -249,8 +332,9 @@ func councilEstimateLine(group council.CouncilGroup, experts []council.CouncilEx
 		name, councilModelsText(experts), est.Calls, council.FormatTokens(est.Tokens), est.Minutes)
 }
 
-// councilSpawn is the spawn the gate is asked about: a Council of the panel's experts, priced at the council's own
-// estimate. A zero estimate would fall back to PerAgentTokens an expert, far above what a council costs.
+// councilSpawn is the spawn the gate is asked about: a Council of the panel's role experts, priced at the council's own
+// estimate (the chats seated are added to the count by the caller). A zero estimate would fall back to PerAgentTokens
+// an expert, far above what a council costs.
 func councilSpawn(experts []council.CouncilExpert, est *wshrpc.CouncilEstimateRtnData) tokengate.Spawn {
 	return tokengate.Spawn{Tool: "Council", Agents: councilPanelSize(experts), EstimateTokens: est.Tokens}
 }
@@ -271,10 +355,43 @@ func councilDraftsText(n int) string {
 	return fmt.Sprintf("%d drafts", n)
 }
 
-// councilStartedLine is the line a started council prints: the mode and the group it works in, then the cost.
-func councilStartedLine(id, feature, mode, group string, n int, est *wshrpc.CouncilEstimateRtnData) string {
+func councilChatsText(n int) string {
+	if n == 1 {
+		return "1 chat"
+	}
+	return fmt.Sprintf("%d chats", n)
+}
+
+// councilSeatsText names who sits in a started council, counted from the council wavesrv returned: "4 experts" when no
+// chat is seated, else the chats and the role experts beside them, "2 chats + Skeptic".
+func councilSeatsText(experts []council.CouncilExpert) string {
+	chats := 0
+	var names []string
+	for _, e := range experts {
+		switch {
+		case council.IsAgent(e):
+			chats++
+		case !e.Coordinator:
+			name := e.Name
+			if name == "" {
+				name = e.Id
+			}
+			names = append(names, name)
+		}
+	}
+	switch {
+	case chats == 0:
+		return councilExpertsText(councilPanelSize(experts))
+	case len(names) == 0:
+		return councilChatsText(chats)
+	}
+	return councilChatsText(chats) + " + " + strings.Join(names, ", ")
+}
+
+// councilStartedLine is the line a started council prints: the mode and the group it works in, who sits, then the cost.
+func councilStartedLine(c *council.Council, feature, mode, group string, est *wshrpc.CouncilEstimateRtnData) string {
 	return fmt.Sprintf("council %s started: %s · %s · %s · %s · ≈ %d calls · ~%s tokens",
-		id, councilOneLine(feature), mode, group, councilExpertsText(n), est.Calls, council.FormatTokens(est.Tokens))
+		c.Id, councilOneLine(feature), mode, group, councilSeatsText(c.Experts), est.Calls, council.FormatTokens(est.Tokens))
 }
 
 // councilQueuedLine is the line a start prints when another council runs: the council it waits for (running is that
@@ -361,13 +478,15 @@ func councilListLine(c *council.Council) string {
 
 // ---- commands ----
 
-// councilPlan is a council as priced: the project, the files, the mode, the group and its panel, and the estimate.
+// councilPlan is a council as priced: the project, the files, the mode, the group and its role experts (the chats
+// seated are only tab ids here: wavesrv resolves them into seats), and the estimate.
 type councilPlan struct {
 	project string
 	files   []string
 	mode    string
 	group   council.CouncilGroup
 	experts []council.CouncilExpert
+	agents  []string
 	est     *wshrpc.CouncilEstimateRtnData
 }
 
@@ -376,18 +495,22 @@ func councilPrepare(cmd *cobra.Command) (councilPlan, error) {
 	if err != nil {
 		return councilPlan{}, err
 	}
+	agents, err := councilAgentFlags(cmd)
+	if err != nil {
+		return councilPlan{}, err
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return councilPlan{}, fmt.Errorf("reading the working directory: %w", err)
 	}
-	plan := councilPlan{mode: mode}
+	plan := councilPlan{mode: mode, agents: agents}
 	var registered map[string]wconfig.ProjectKeywords
 	if mustFlagString(cmd, "project") == "" {
 		registered = councilRegisteredProjects()
 	}
 	plan.project = councilProjectFor(mustFlagString(cmd, "project"), cwd, registered)
 	plan.files = councilFiles(splitCouncilList(mustFlagString(cmd, "files")), cwd, plan.project)
-	groupId := councilGroupFor(mustFlagString(cmd, "group"), mode)
+	groupId := councilGroupFor(mustFlagString(cmd, "group"), mode, len(agents) > 0)
 	roles, err := wshclient.CouncilRolesCommand(RpcClient, nil)
 	if err != nil {
 		return councilPlan{}, fmt.Errorf("reading the council roles: %w", err)
@@ -395,10 +518,15 @@ func councilPrepare(cmd *cobra.Command) (councilPlan, error) {
 	if plan.group, plan.experts, err = councilPanel(roles, groupId); err != nil {
 		return councilPlan{}, err
 	}
+	if plan.experts, err = councilAddExperts(roles, plan.experts, councilRepeated(cmd, "expert")); err != nil {
+		return councilPlan{}, err
+	}
+	// a tab id that is no live claude or pi tab fails here, in wavesrv, before the Token burn gate is asked
 	plan.est, err = wshclient.CouncilEstimateCommand(RpcClient, wshrpc.CommandCouncilEstimateData{
 		Project: plan.project,
 		Files:   plan.files,
 		Experts: plan.experts,
+		Agents:  plan.agents,
 	}, &wshrpc.RpcOpts{Timeout: councilStartTimeoutMs})
 	if err != nil {
 		return councilPlan{}, fmt.Errorf("estimating the council: %w", err)
@@ -412,7 +540,12 @@ var councilEstimateCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	Long: `Print one line: the group, each expert's model, and the estimate. It starts nothing and asks nothing. The files are
 the ones the experts would read, whose size is part of the estimate. With no --group, --mode brainstorm prices the
-product-ideas group and review (the default) the ui-feature one.`,
+product-ideas group and review (the default) the ui-feature one.
+
+--agent <tab id> (repeatable) prices a live chat as a seat: its current context times the rounds. --agent self is the
+tab this command runs in. With --agent and no --group, review prices the agents group (a Skeptic and the coordinator)
+and brainstorm the agents-ideas group (a Contrarian and the Facilitator). --expert <role id> (repeatable) adds that role
+from the role library before the coordinator. A tab id that is not a live claude or pi tab fails, listing the live ones.`,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		plan, err := councilPrepare(cmd)
@@ -443,6 +576,19 @@ takes the product-ideas group and review the ui-feature one.
 --question is the person's question in their own words, with the constraints they stated. --files are the files the
 experts read; --screenshot <png> (repeatable) puts a screenshot in front of them, which they open with Read.
 
+--agent <tab id> (repeatable; ids from "wsh agents list --all", a unique prefix is enough) seats a live chat the person
+named: it speaks from its own context, in its own tab, not from a summary written for the panel. --agent self seats the
+chat running this command, and only when the person named it ("this chat"); a council with no chat named stays
+expert-only. A tab named twice sits once. An id that is not a live claude or pi tab fails before the Token burn gate,
+listing the live tabs: ask the person which they meant, and never start without a seat they named. With --agent and no
+--group, review takes the agents group (a Skeptic beside the chats, then the coordinator) and brainstorm the
+agents-ideas group (a Contrarian, then the Facilitator); an explicit --group adds its roles beside the chats.
+--expert <role id> (repeatable) adds one more role from the role library before the coordinator, when the question
+needs a view no seat has; an unknown or repeated id, or a coordinator role, fails, listing the ids it takes. A council
+"wsh council start" starts never holds drafts: it runs to the report by itself, chats seated or not, and a person can
+still post to a seat in the room. A starter seated with --agent self runs "wsh council wait <id> --timeout 0" in the
+background (a pi agent has no background shell, so it does not seat itself): each round reaches it as a prompt.
+
 One council runs at a time across all projects: a start while another council runs is queued, prints
 "Queued after <id> (<feature>)" with the new council's own id, and starts by itself when the running one ends (a council
 waiting on the person holds no slot). "wsh council wait <id>" waits through the queue. --queue is still accepted and does
@@ -453,7 +599,8 @@ and ask a question before the next rounds.`,
 }
 
 // councilStartData is the start request of a prepared plan: the plan, the flags that do not change what it costs
-// (question, pause, session, the reason for the mode) and the screenshots.
+// (question, pause, session, the reason for the mode) and the screenshots. It always carries ByAgent: a council this
+// command starts never holds an answer as a draft, chats seated or not.
 func councilStartData(cmd *cobra.Command, plan councilPlan, feature string, screenshots []string) wshrpc.CommandCouncilStartData {
 	pause, _ := cmd.Flags().GetBool("pause")
 	return wshrpc.CommandCouncilStartData{
@@ -464,6 +611,8 @@ func councilStartData(cmd *cobra.Command, plan councilPlan, feature string, scre
 		Screenshots: screenshots,
 		Group:       plan.group.Id,
 		Experts:     plan.experts,
+		Agents:      plan.agents,
+		ByAgent:     true,
 		Pause:       pause,
 		SessionId:   councilSession(cmd),
 		Mode:        plan.mode,
@@ -485,8 +634,9 @@ func councilStartRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	data := councilStartData(cmd, plan, feature, screenshots)
-	n := councilPanelSize(plan.experts)
-	verdict, gateErr := tokengateDecide(context.Background(), councilSpawn(plan.experts, plan.est), "", func(hold any) {
+	spawn := councilSpawn(plan.experts, plan.est)
+	spawn.Agents += len(plan.agents) // a seated chat is an agent at work too, beside the role experts
+	verdict, gateErr := tokengateDecide(context.Background(), spawn, "", func(hold any) {
 		if h, ok := hold.(tokengate.Hold); ok {
 			fmt.Println(h.Hold)
 		}
@@ -522,7 +672,7 @@ func councilStartRun(cmd *cobra.Command, args []string) error {
 	if group == "" {
 		group = plan.group.Id
 	}
-	fmt.Println(councilStartedLine(c.Id, feature, plan.mode, group, n, plan.est))
+	fmt.Println(councilStartedLine(c, feature, plan.mode, group, plan.est))
 	return nil
 }
 
@@ -967,7 +1117,10 @@ func addCouncilPanelFlags(cmd *cobra.Command) {
 	f := cmd.Flags()
 	f.String("feature", "", "what the council looks at: the feature, or the problem or goal")
 	f.String("files", "", "the files or folders the experts read, comma-separated")
-	f.String("group", "", "the expert group (default "+councilDefaultGroup+", or "+councilBrainstormGroup+" for --mode brainstorm; see Setup in the app for the others)")
+	f.String("group", "", "the expert group (default "+councilDefaultGroup+", or "+councilBrainstormGroup+" for --mode brainstorm; with --agent, "+
+		council.AgentsGroupId+", or "+council.AgentsIdeasGroupId+" for --mode brainstorm; see Setup in the app for the others)")
+	f.StringArray("agent", nil, "seat a live chat the person named: a tab id from `wsh agents list --all` (a unique prefix will do), or "+councilAgentSelf+" for this chat; repeat the flag for more")
+	f.StringArray("expert", nil, "add this role from the role library before the coordinator (repeat the flag for more); an unknown or repeated id, or a coordinator role, fails and lists the ids it takes")
 	f.String("project", "", "the project folder (default: the registered project holding the working directory, else its git top level)")
 	f.String("mode", "", "how the council works: "+council.ModeReview+" (default) judges a thing that exists, "+council.ModeBrainstorm+" looks for ideas for a problem or goal")
 }

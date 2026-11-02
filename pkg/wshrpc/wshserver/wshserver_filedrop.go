@@ -83,6 +83,10 @@ func dropCreate(path string, unique bool, bytes []byte) (string, error) {
 			continue
 		}
 		if err != nil {
+			// a folder of that name is there: Windows says "is a directory", not that it exists
+			if _, serr := os.Lstat(p); serr == nil {
+				continue
+			}
 			return "", fmt.Errorf("drop write: %w", err)
 		}
 		_, werr := f.Write(bytes)

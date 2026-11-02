@@ -89,8 +89,33 @@ func TestBuiltInGroups(t *testing.T) {
 	if paper.Coordinator != "areachair" {
 		t.Errorf("paper coordinator = %q", paper.Coordinator)
 	}
-	if got := len(Groups()); got != 3 {
-		t.Errorf("Groups() holds %d, want only the three that ship", got)
+	if got := len(Groups()); got != 5 {
+		t.Errorf("Groups() holds %d, want only the five that ship", got)
+	}
+}
+
+func TestAgentsGroups(t *testing.T) {
+	useTempConfig(t)
+	for _, tc := range []struct {
+		id, name string
+		want     []string
+	}{
+		{"agents", "Chats with a Skeptic", []string{"skeptic", "coordinator"}},
+		{"agents-ideas", "Chats with a Contrarian", []string{"contrarian", "facilitator"}},
+	} {
+		if g := groupById(t, tc.id); g.Name != tc.name {
+			t.Errorf("%s name = %q, want %q", tc.id, g.Name, tc.name)
+		}
+		es, err := ExpertsFor(tc.id)
+		if err != nil {
+			t.Fatalf("ExpertsFor(%s): %v", tc.id, err)
+		}
+		if !reflect.DeepEqual(expertIds(es), tc.want) {
+			t.Errorf("%s experts = %v, want %v", tc.id, expertIds(es), tc.want)
+		}
+		if last := es[len(es)-1]; !last.Coordinator || last.Model != "opus" {
+			t.Errorf("%s ends with %+v, want the coordinator on opus", tc.id, last)
+		}
 	}
 }
 
@@ -261,7 +286,7 @@ func TestUserFileCanAddARoleAndReplaceABuiltInGroup(t *testing.T) {
 	if paper.Name != "My paper review" {
 		t.Errorf("a user group of a built-in's id replaces it: %+v", paper)
 	}
-	if got := len(Groups()); got != 3 {
+	if got := len(Groups()); got != 5 {
 		t.Errorf("replacing must not duplicate: %d groups", got)
 	}
 	es, err := ExpertsFor("paper")
@@ -299,8 +324,8 @@ func TestAMalformedUserFileLeavesTheBuiltIns(t *testing.T) {
 	if got := len(Roles()); got != 13 {
 		t.Errorf("Roles() = %d with a broken file, want the 13 built-ins", got)
 	}
-	if got := len(Groups()); got != 3 {
-		t.Errorf("Groups() = %d with a broken file, want the 3 built-ins", got)
+	if got := len(Groups()); got != 5 {
+		t.Errorf("Groups() = %d with a broken file, want the 5 built-ins", got)
 	}
 }
 

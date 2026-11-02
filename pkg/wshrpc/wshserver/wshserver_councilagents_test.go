@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,9 @@ import (
 // claudeTurn is an assistant line of a claude transcript: a text answer at ts, from a request that carried the context
 // tokens it names (input 10, 90000 read from the cache and 5000 written to it: 95,010).
 const claudeTurn = `{"type":"assistant","timestamp":"2026-10-06T10:00:00.000Z","message":{"content":[{"type":"text","text":"ship it"}],"usage":{"input_tokens":10,"cache_read_input_tokens":90000,"cache_creation_input_tokens":5000}}}`
+
+// claudeSmallTurn is claudeTurn from a smaller conversation: 40,010 tokens of context.
+const claudeSmallTurn = `{"type":"assistant","timestamp":"2026-10-06T10:00:00.000Z","message":{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":10,"cache_read_input_tokens":40000,"cache_creation_input_tokens":0}}}`
 
 func TestLiveAgentLinkSeatStates(t *testing.T) {
 	asking := agentFacts(agentsTabA, "asker", agentsBlockA, "claude", baseds.AgentState_Working)
@@ -138,6 +142,119 @@ func TestLiveAgentLinkSeatContext(t *testing.T) {
 	scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{claude}})
 	if st, err := (liveAgentLink{}).Seat(ctx, agentsTabA); err != nil || st.Context != 0 {
 		t.Errorf("seat with an unreadable transcript = %+v, %v, want an unknown context and no failure", st, err)
+	}
+}
+
+func TestCouncilAgentSeatsResolve(t *testing.T) {
+	lead := agentFacts(agentsTabA, "review lead", agentsBlockA, "claude", baseds.AgentState_Idle)
+	lead.Status.TranscriptPath = writeTranscript(t, "lead", claudeTurn)
+	design := agentFacts(agentsTabB, "design", agentsBlockB, "claude", baseds.AgentState_Idle)
+	design.Status.TranscriptPath = writeTranscript(t, "design", claudeSmallTurn)
+	design.ProjectPath = "/work/website" // a tab from another project than its neighbours is seated like any other
+	scout := agentFacts(agentsTabC, "scout", agentsBlockC, "pi", baseds.AgentState_Idle)
+	scout.Status.TranscriptPath = writeTranscript(t, "scout", claudeTurn)
+	scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{lead, design, scout}})
+
+	loads, reads := 0, 0
+	loadScripted, readReal := loadAgentRosterFacts, readTranscriptEnd
+	swap(t, &loadAgentRosterFacts, func(ctx context.Context) (*agentRosterFacts, error) { loads++; return loadScripted(ctx) })
+	swap(t, &readTranscriptEnd, func(path string, max int64) ([]string, error) { reads++; return readReal(path, max) })
+
+	// a unique prefix, an id, the same tab by its prefix and by its id again, and one more tab
+	got, err := councilAgentSeats(context.Background(), []string{"bbbb3", agentsTabA, "aaaa", " " + agentsTabB + " ", agentsTabA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []council.CouncilExpert{
+		{Id: "agent-" + agentsTabC, Name: "scout", Agent: agentsTabC, Harness: "pi"},
+		{Id: "agent-" + agentsTabA, Name: "review lead", Agent: agentsTabA, Harness: "claude", Context: 95_010},
+		{Id: "agent-" + agentsTabB, Name: "design", Agent: agentsTabB, Harness: "claude", Context: 40_010},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("seats = %+v, want %+v: in the order named, a tab named twice once, with the name, harness and context of each", got, want)
+	}
+	if loads != 1 {
+		t.Errorf("roster reads = %d, want one for all the names", loads)
+	}
+	if reads != 2 {
+		t.Errorf("transcript reads = %d, want one for each claude seat (a pi seat's figure is not read, a tab named twice once)", reads)
+	}
+
+	// no tab named, no seat and no read of the roster
+	if got, err := councilAgentSeats(context.Background(), nil); err != nil || got != nil || loads != 1 {
+		t.Errorf("seats of no tabs = %+v, %v after %d roster reads, want none and no read", got, err, loads)
+	}
+}
+
+func TestCouncilAgentSeatsRefuseAndList(t *testing.T) {
+	lead := agentFacts(agentsTabA, "review lead", agentsBlockA, "claude", baseds.AgentState_Idle)
+	lead.Status.Title = "Build the shaper"
+	design := agentFacts(agentsTabB, "design", agentsBlockB, "claude", baseds.AgentState_Idle)
+	design.Status.Title = strings.Repeat("w", 100)
+	scout := agentFacts(agentsTabC, "scout", agentsBlockC, "pi", baseds.AgentState_Idle)
+	agy := agentFacts("dddd4444-tab", "antigravity", "d0000000-0000-4000-8000-000000000004", "agy", baseds.AgentState_Idle)
+	scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{lead, design, scout, agy}})
+
+	cases := []struct {
+		name string
+		tabs []string
+		want []string
+	}{
+		{"an id that is no tab", []string{"zzzz"}, []string{`"zzzz"`, "not a live agent session"}},
+		{"a prefix that matches two tabs", []string{"bbbb"}, []string{`"bbbb"`, "matches several", agentsTabB, agentsTabC}},
+		{"a harness a council cannot seat", []string{"dddd4444"}, []string{"dddd4444-tab", "runs agy", "only claude and pi"}},
+		{"one bad name fails the others too", []string{agentsTabA, "zzzz", agentsTabB}, []string{`"zzzz"`}},
+		{"a blank name", []string{agentsTabA, " "}, []string{"a tab id is required"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			seats, err := councilAgentSeats(context.Background(), c.tabs)
+			if err == nil {
+				t.Fatalf("seats = %+v, want the call to fail", seats)
+			}
+			if seats != nil {
+				t.Errorf("seats = %+v with the failure, want none", seats)
+			}
+			for _, part := range c.want {
+				if !strings.Contains(err.Error(), part) {
+					t.Errorf("error %q lacks %q", err, part)
+				}
+			}
+			// after the reason, the live claude and pi tabs: short id, project and title, in tab id order
+			_, list, ok := strings.Cut(err.Error(), "live claude and pi tabs:\n")
+			if !ok {
+				t.Fatalf("error %q does not list the live tabs", err)
+			}
+			lines := strings.Split(list, "\n")
+			if len(lines) != 3 {
+				t.Fatalf("listed %d tabs %q, want the three claude and pi ones, not the agy tab", len(lines), lines)
+			}
+			for i, short := range []string{"aaaa1111", "bbbb2222", "bbbb3333"} {
+				if !strings.HasPrefix(lines[i], "  "+short) {
+					t.Errorf("line %d = %q, want the tab %s", i, lines[i], short)
+				}
+			}
+			if !strings.Contains(lines[0], "review lead") || !strings.HasSuffix(lines[0], "Build the shaper") {
+				t.Errorf("first line = %q, want the project and the title after the id", lines[0])
+			}
+			// a title is cut to a row, as wsh agents list cuts it
+			if strings.Count(lines[1], "w") != seatTitleMax-1 || !strings.HasSuffix(lines[1], "…") {
+				t.Errorf("second line = %q, want its title cut to %d characters", lines[1], seatTitleMax)
+			}
+		})
+	}
+
+	// a roster that cannot be read is that failure, not a tab that is not live
+	boom := errors.New("store down")
+	swap(t, &loadAgentRosterFacts, func(context.Context) (*agentRosterFacts, error) { return nil, boom })
+	if _, err := councilAgentSeats(context.Background(), []string{agentsTabA}); !errors.Is(err, boom) || strings.Contains(err.Error(), "live claude and pi tabs") {
+		t.Errorf("seats with the roster unreadable = %v, want the failure alone", err)
+	}
+
+	// with no live claude or pi tab, the list says so
+	scriptAgents(t, &agentRosterFacts{Tabs: []agentTabFacts{agy}})
+	if _, err := councilAgentSeats(context.Background(), []string{agentsTabA}); err == nil || !strings.HasSuffix(err.Error(), "live claude and pi tabs:\n  none") {
+		t.Errorf("seats with only an agy tab live = %v, want the list to say none", err)
 	}
 }
 
