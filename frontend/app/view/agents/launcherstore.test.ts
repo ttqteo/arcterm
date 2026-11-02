@@ -243,7 +243,7 @@ describe("closing, clearing and launching", () => {
         clearLauncherDraft();
         expect(globalStore.get(launcherResumeAtom)).toBeNull();
     });
-    it("a reopen within two minutes keeps the resume pick; a later one starts on New session but keeps the text", () => {
+    it("a reopen within 30 seconds keeps the resume pick; a later one starts on New session but keeps the text", () => {
         vi.useFakeTimers();
         try {
             const m = model();

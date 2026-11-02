@@ -52,6 +52,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   still deletes one for good, into ~/.arc/trash, and `wsh council close` / `wsh council close --reopen` do the same.
 - A council's header fits on one line: the mode leads, a long question shortens to fit instead of pushing the status
   onto a second row, and Top, Latest and Back in its discussion glide to their place instead of jumping.
+- New dialog: a session picked to resume is forgotten once the dialog has been closed for 30 seconds, not two minutes.
 
 ### Fixed
 

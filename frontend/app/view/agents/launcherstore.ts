@@ -85,7 +85,7 @@ function keptDraft() {
 
 // A resume pick outlives a close only this long: enough to reopen after a stray click outside, short enough that a
 // later New is not a resume the person forgot they picked. One click picks it again; typed text is kept.
-export const RESUME_PICK_KEEP_MS = 2 * 60 * 1000;
+export const RESUME_PICK_KEEP_MS = 30 * 1000;
 let closedAt: number | null = null;
 
 // Every way in. A door picks its own half of the Start list; the agent row and the run shape inside it stay as the
