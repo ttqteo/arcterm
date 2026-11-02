@@ -437,7 +437,11 @@ func writeRunFacts(b *strings.Builder, c *Council) {
 		fmt.Fprintf(b, "- Skipped: %s in round %d: %s\n", docName(c, s.Expert), s.Round, oneLine(s.Reason))
 	}
 	for _, rt := range c.Retries {
-		fmt.Fprintf(b, "- Retried: %s in round %d on %s (its seat is %s)\n", docName(c, rt.Expert), rt.Round, rt.Model, rt.Was)
+		why := ""
+		if rt.Auto {
+			why = "; Claude's safeguards flagged it"
+		}
+		fmt.Fprintf(b, "- Retried: %s in round %d on %s (its seat is %s%s)\n", docName(c, rt.Expert), rt.Round, rt.Model, rt.Was, why)
 	}
 	fmt.Fprintf(b, "- Tokens: %s in %d calls\n", FormatTokens(c.Tokens), c.Calls)
 	if c.Started > 0 && c.Updated > c.Started {

@@ -2588,6 +2588,7 @@ declare global {
         model: string;
         was: string;
         ts: number;
+        auto?: boolean;
     };
 
     // council.CouncilRevision

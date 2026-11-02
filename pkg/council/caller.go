@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/consult"
@@ -26,6 +27,18 @@ type CallReq struct {
 type CallRes struct {
 	Text   string
 	Tokens int64
+
+	fellBack string // set by the runner: the model a safeguard-flagged call was run again on, and answered
+}
+
+// SafeguardFallback is the model a call Claude's safeguards flagged is run again on, once: Opus 4.8, the model Claude
+// Code itself falls back to, which the newer models' stronger safeguards (Opus 5.5, Sonnet 5.5) do not cover.
+const SafeguardFallback = "claude-opus-4-8"
+
+// IsSafeguardFlag says err is the claude CLI's safeguard refusal: "API Error: Opus 5.5's safeguards flagged this
+// session …".
+func IsSafeguardFlag(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "safeguards flagged")
 }
 
 // Caller makes the one-shot calls a council is made of. The runner never starts a process itself, so a test hands it a

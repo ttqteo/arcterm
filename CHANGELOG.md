@@ -38,6 +38,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council call that failed can be retried on another model: Retry with… beside Retry picks opus, Opus 4.8, sonnet,
   fable or haiku for that one call, the seat keeps its own model, and the saved document notes the retry. A call
   Claude's safeguards flagged offers Opus 4.8 first, the model Claude Code itself falls back to.
+- A council call Claude's safeguards flag runs again once on Opus 4.8 by itself, as Claude Code does, so a flagged
+  summary no longer fails the council; the saved document notes it. An agent can retry a failed council call too:
+  `wsh council retry <id> [--expert <seat>] [--model <model>]`.
 
 ### Changed
 

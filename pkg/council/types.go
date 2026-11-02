@@ -186,7 +186,7 @@ type CouncilSkip struct {
 	Ts     int64  `json:"ts"`
 }
 
-// CouncilRetry is one failed call that a retry on another model answered: the seat keeps its own Model for the calls
+// CouncilRetry is one failed call that a retry on another model answered, by hand or, after a safeguard flag, on its own: the seat keeps its own Model for the calls
 // after it, and the document names the model that wrote this round.
 type CouncilRetry struct {
 	Expert string `json:"expert"` // the seat's expert id
@@ -194,6 +194,7 @@ type CouncilRetry struct {
 	Model  string `json:"model"` // the model the retry ran on
 	Was    string `json:"was"`   // the seat's own model
 	Ts     int64  `json:"ts"`
+	Auto   bool   `json:"auto,omitempty"` // the runner ran it again on SafeguardFallback after Claude's safeguards flagged it
 }
 
 type CouncilExpertStat struct {

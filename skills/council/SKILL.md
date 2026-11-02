@@ -90,7 +90,9 @@ A council's directions are only in its report. Its document is saved under the p
 - **A council waiting on the person** (`wait` says it paused after round 1) is theirs to continue in the app. Tell
   them, and carry on; do not call `wait` in a loop.
 - **A failed council** makes `wait` exit non-zero with the reason. Report it and carry on; do not start another to
-  retry, which would spend the tokens again.
+  retry, which would spend the tokens again. When the person asks to retry it, `wsh council retry <id>` reruns only the
+  failed call (the summary, or `--expert <seat>`), on another model with `--model` (`claude-opus-4-8` for a call
+  Claude's safeguards flagged, though such a call already ran once more on it by itself), then `wsh council wait <id>`.
 - **A stopped council** prints what its finished rounds hold. Use it as it is.
 - **A timeout** (`wait` gives up after 30 minutes by default) leaves the council as it is, running or still queued.
   Say so, and run `wsh council wait <id>` again later if you need the answer.
@@ -99,4 +101,5 @@ A council's directions are only in its report. Its document is saved under the p
 
 - `wsh council list` — the project's councils, newest first: id, state, round and feature.
 - `wsh council show <id>` — a council's report and matrix as markdown, without waiting.
+- `wsh council retry <id> [--expert <seat>] [--model <model>]` — run a failed call again, once; the discussion stays.
 - `wsh council stop <id>` — stop a running or queued council; the rounds that finished stay. Only when the person asks.

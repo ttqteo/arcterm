@@ -672,3 +672,39 @@ func TestCouncilBenchResultsTable(t *testing.T) {
 		t.Errorf("empty table = %q, want it to say there are no results", got)
 	}
 }
+
+func TestCouncilRetryTarget(t *testing.T) {
+	c := &council.Council{
+		Id: "c1",
+		Experts: []council.CouncilExpert{
+			{Id: "cm", Name: "Committee member"},
+			{Id: "pl", Name: "Planner"},
+			{Id: "me", Name: "Mentor", Coordinator: true},
+		},
+		Failed: map[string]council.CouncilFailure{"cm": {Round: 2}, "pl": {Round: 2}, "me": {Round: 3}},
+	}
+	if e, err := councilRetryTarget(c, ""); err != nil || e.Id != "me" {
+		t.Fatalf("no --expert: %v %v, want the failed summary's coordinator", e.Id, err)
+	}
+	if e, err := councilRetryTarget(c, "planner"); err != nil || e.Id != "pl" {
+		t.Fatalf("--expert planner: %v %v, want pl by name", e.Id, err)
+	}
+	delete(c.Failed, "me")
+	if _, err := councilRetryTarget(c, ""); err == nil || !strings.Contains(err.Error(), "--expert (cm, pl)") {
+		t.Fatalf("two failed and no --expert: %v, want a refusal naming them", err)
+	}
+	delete(c.Failed, "cm")
+	if e, err := councilRetryTarget(c, ""); err != nil || e.Id != "pl" {
+		t.Fatalf("one failed: %v %v, want it", e.Id, err)
+	}
+	if _, err := councilRetryTarget(c, "me"); err == nil {
+		t.Fatalf("a seat with no failed call was taken")
+	}
+	if _, err := councilRetryTarget(c, "nobody"); err == nil {
+		t.Fatalf("an unknown seat was taken")
+	}
+	delete(c.Failed, "pl")
+	if _, err := councilRetryTarget(c, ""); err == nil {
+		t.Fatalf("a council with nothing failed was retried")
+	}
+}

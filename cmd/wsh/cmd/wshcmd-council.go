@@ -644,6 +644,83 @@ var councilRmCmd = &cobra.Command{
 	},
 }
 
+var councilRetryCmd = &cobra.Command{
+	Use:   "retry <id>",
+	Short: "run a failed council call again, once, optionally on another model; the discussion so far stays",
+	Args:  cobra.ExactArgs(1),
+	Long: `Run one failed call of a council again: the coordinator's summary when it failed, else the one expert that failed;
+with several failed, name one with --expert (its id or name). The rounds and replies that finished stay, so a retried
+summary costs one call, not a new council. --model runs this retry once on another model (opus, sonnet, fable, haiku, or
+a full id such as claude-opus-4-8); the seat keeps its own model. A call Claude's safeguards flagged already ran once
+more on claude-opus-4-8 by itself before it failed. A running council cannot be retried; wait for it or stop it. Read
+the outcome back with "wsh council wait <id>".`,
+	PreRunE: preRunSetupRpcClient,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		want, _ := cmd.Flags().GetString("expert")
+		model, _ := cmd.Flags().GetString("model")
+		c, err := wshclient.CouncilGetCommand(RpcClient, wshrpc.CommandCouncilIdData{Id: args[0]}, nil)
+		if err != nil {
+			return err
+		}
+		e, err := councilRetryTarget(c, want)
+		if err != nil {
+			return err
+		}
+		data := wshrpc.CommandCouncilRetryData{Id: c.Id, ExpertId: e.Id, Model: strings.TrimSpace(model)}
+		if err := wshclient.CouncilRetryCommand(RpcClient, data, nil); err != nil {
+			return err
+		}
+		what := e.Name + "'s call"
+		if e.Coordinator {
+			what = "the summary (" + e.Name + ")"
+		}
+		on := ""
+		if data.Model != "" {
+			on = " on " + data.Model
+		}
+		fmt.Printf("council %s: retrying %s%s; run `wsh council wait %s` for the outcome\n", c.Id, what, on, c.Id)
+		return nil
+	},
+}
+
+// councilRetryTarget is the seat `wsh council retry` reruns: the one named by want (an id or a name, any case), else
+// the coordinator when its summary failed, else the only seat that failed. A seat that has no failed call is refused.
+func councilRetryTarget(c *council.Council, want string) (council.CouncilExpert, error) {
+	want = strings.TrimSpace(want)
+	if want != "" {
+		for _, e := range c.Experts {
+			if strings.EqualFold(e.Id, want) || strings.EqualFold(e.Name, want) {
+				if _, ok := c.Failed[e.Id]; !ok {
+					return e, fmt.Errorf("%s has no failed call in council %s", e.Name, c.Id)
+				}
+				return e, nil
+			}
+		}
+		return council.CouncilExpert{}, fmt.Errorf("council %s has no expert %q", c.Id, want)
+	}
+	var failed []council.CouncilExpert
+	for _, e := range c.Experts {
+		if _, ok := c.Failed[e.Id]; !ok {
+			continue
+		}
+		if e.Coordinator {
+			return e, nil
+		}
+		failed = append(failed, e)
+	}
+	switch len(failed) {
+	case 0:
+		return council.CouncilExpert{}, fmt.Errorf("council %s has no failed call to retry", c.Id)
+	case 1:
+		return failed[0], nil
+	}
+	names := make([]string, len(failed))
+	for i, e := range failed {
+		names[i] = e.Id
+	}
+	return council.CouncilExpert{}, fmt.Errorf("council %s has %d failed calls: name one with --expert (%s)", c.Id, len(failed), strings.Join(names, ", "))
+}
+
 // ---- bench ----
 
 // The three calls and the gate of `wsh council bench`, as variables so a test stands in for wavesrv and the person.
@@ -862,7 +939,9 @@ func init() {
 	councilBenchCmd.Flags().StringArray("variant", nil, "run only this variant: solo or council (repeatable; default both)")
 	councilBenchCmd.Flags().Int("runs", 1, "runs of each case × variant (the full first pass uses 2)")
 	councilBenchResultsCmd.Flags().Bool("json", false, "JSON output")
+	councilRetryCmd.Flags().String("expert", "", "the seat to retry, by id or name (default: the failed summary, else the one failed seat)")
+	councilRetryCmd.Flags().String("model", "", "run this retry once on another model (opus, sonnet, fable, haiku, claude-opus-4-8); the seat keeps its own")
 	councilBenchCmd.AddCommand(councilBenchResultsCmd, councilBenchStopCmd)
-	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilWaitCmd, councilStopCmd, councilRmCmd, councilBenchCmd)
+	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilWaitCmd, councilStopCmd, councilRetryCmd, councilRmCmd, councilBenchCmd)
 	rootCmd.AddCommand(councilCmd)
 }

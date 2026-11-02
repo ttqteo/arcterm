@@ -4,6 +4,7 @@
 package council
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -825,13 +826,38 @@ func (r *Runner) callerFor(e CouncilExpert) (Caller, error) {
 }
 
 // call makes one expert call: it starts the expert's clock, shows what it is doing, and keeps that current from the
-// call's tool events (and, for an agent seat, from the wait for its session). It returns what the Caller returned.
+// call's tool events (and, for an agent seat, from the wait for its session). It returns what the Caller returned. A
+// role seat's call that Claude's safeguards flagged runs again once on SafeguardFallback, as Claude Code does; when
+// that answers, the result's fellBack names it, and finishCall keeps a CouncilRetry.
 func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, snap *Council, prompt string, tools bool, first CouncilActivity) (CallRes, error) {
 	caller, err := r.callerFor(e)
 	if err != nil {
 		return CallRes{}, err
 	}
 	rn.begin(e.Id, callClock{start: r.now(), base: snap.Stats[e.Id].Ms})
+	res, err := r.callOnce(ctx, rn, id, caller, e, snap, prompt, tools, first)
+	if err == nil || ctx.Err() != nil || !IsSafeguardFlag(err) || IsAgent(e) || strings.EqualFold(e.Model, SafeguardFallback) {
+		return res, err
+	}
+	log.Printf("[council] %s: %s was flagged by safeguards on %s; running it again on %s", id, e.Id, cmp.Or(e.Model, "its default"), SafeguardFallback)
+	act := first
+	act.Text = "Flagged by safeguards: answering on Opus 4.8"
+	on := e
+	on.Model = SafeguardFallback
+	again, err2 := r.callOnce(ctx, rn, id, caller, on, snap, prompt, tools, act)
+	again.Tokens += res.Tokens
+	if err2 != nil {
+		if ctx.Err() != nil {
+			return again, err2
+		}
+		return again, fmt.Errorf("%s; again on %s: %s", errText(err), SafeguardFallback, errText(err2))
+	}
+	again.fellBack = SafeguardFallback
+	return again, nil
+}
+
+// callOnce is one call of e through caller: it shows first as e's activity and keeps it current from the tool events.
+func (r *Runner) callOnce(ctx context.Context, rn *run, id string, caller Caller, e CouncilExpert, snap *Council, prompt string, tools bool, first CouncilActivity) (CallRes, error) {
 	r.updateLogged(rn, id, func(c *Council) error {
 		setActivity(c, e.Id, first)
 		return nil
@@ -895,6 +921,9 @@ func (r *Runner) finishCall(ctx context.Context, rn *run, id string, e CouncilEx
 		default:
 			delete(c.Failed, e.Id)
 			apply(c)
+			if res.fellBack != "" {
+				c.Retries = append(c.Retries, CouncilRetry{Expert: e.Id, Round: round, Model: res.fellBack, Was: e.Model, Ts: r.now(), Auto: true})
+			}
 		}
 		return nil
 	})
@@ -1682,7 +1711,7 @@ func (r *Runner) synthesizeOn(ctx context.Context, rn *run, id string, model str
 	}
 	r.finishCall(ctx, rn, id, coord, res, err, SynthesisRound(snap), func(c *Council) {
 		c.Summary = &sum
-		if model != "" {
+		if model != "" && res.fellBack == "" { // a fallback past model is kept by finishCall
 			c.Retries = append(c.Retries, CouncilRetry{Expert: coord.Id, Round: SynthesisRound(snap), Model: model, Was: was, Ts: r.now()})
 		}
 		if !isBrainstorm(c) { // a Brainstorm marks nothing weak
@@ -2100,6 +2129,9 @@ func (r *Runner) retryWork(e CouncilExpert, f CouncilFailure, prev prevState, mo
 			_, err := r.update(rn, id, func(c *Council) error {
 				if _, failed := c.Failed[e.Id]; failed {
 					return errSkip
+				}
+				if n := len(c.Retries); n > 0 && c.Retries[n-1].Auto && c.Retries[n-1].Expert == e.Id {
+					return errSkip // the retry fell back past model to Opus 4.8, and finishCall kept that
 				}
 				c.Retries = append(c.Retries, CouncilRetry{Expert: e.Id, Round: f.Round, Model: model, Was: was, Ts: r.now()})
 				return nil

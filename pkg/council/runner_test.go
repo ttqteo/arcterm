@@ -49,6 +49,7 @@ type fakeCaller struct {
 	fn    map[string]func(req CallReq) string
 	gates map[string]*gate
 	tools map[string][]string
+	clean string // a model no failure is set on: a call on it answers even when its key is set to fail
 }
 
 func newFake() *fakeCaller {
@@ -106,7 +107,7 @@ func (f *fakeCaller) Call(ctx context.Context, req CallReq) (CallRes, error) {
 			return CallRes{}, ctx.Err()
 		}
 	}
-	if failure != nil {
+	if failure != nil && (f.clean == "" || req.Expert.Model != f.clean) {
 		return CallRes{}, failure
 	}
 	switch {
@@ -1272,6 +1273,74 @@ func TestRetryOnAnotherModelRunsOnceOnItAndKeepsTheSeat(t *testing.T) {
 		}
 		if len(h.f.calls("r1")) != before {
 			t.Errorf("a refused retry made a call")
+		}
+	})
+}
+
+var flagged = errors.New("API Error: Opus 5.5's safeguards flagged this session (https://www.anthropic.com/legal/aup). You may be seeing this for the first time …")
+
+func TestSafeguardFlagRunsTheCallAgainOnOpus48(t *testing.T) {
+	t.Run("coordinator", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.clean = SafeguardFallback
+		h.f.setFail("lead/r3", flagged)
+		c := h.run(testCouncil("c1"))
+		r3 := h.f.calls("r3")
+		if len(r3) != 2 || r3[0].Expert.Model != "opus" || r3[1].Expert.Model != SafeguardFallback {
+			t.Fatalf("synthesis calls %d, want one on opus then one on %s", len(r3), SafeguardFallback)
+		}
+		if c.State != StateDone || c.Summary == nil || len(c.Failed) != 0 {
+			t.Fatalf("%s summary %v failed %v, want done with a summary", c.State, c.Summary, c.Failed)
+		}
+		if lead := c.Experts[len(c.Experts)-1]; lead.Model != "opus" {
+			t.Errorf("the coordinator's model is %q, want its seat kept on opus", lead.Model)
+		}
+		if len(c.Retries) != 1 || c.Retries[0] != (CouncilRetry{Expert: "lead", Round: 3, Model: SafeguardFallback, Was: "opus", Ts: c.Retries[0].Ts, Auto: true}) {
+			t.Fatalf("retries %+v, want the fallback kept", c.Retries)
+		}
+		mustContain(t, "document", Document(c), "- Retried: Lead in round 3 on claude-opus-4-8 (its seat is opus; Claude's safeguards flagged it)")
+	})
+	t.Run("expert", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.clean = SafeguardFallback
+		h.f.setFail("ram/r1", flagged)
+		c := h.run(testCouncil("c1"))
+		if len(c.Failed) != 0 || len(c.Retries) != 1 || c.Retries[0].Expert != "ram" || c.Retries[0].Round != 1 || !c.Retries[0].Auto {
+			t.Fatalf("failed %v retries %+v, want ram's round 1 answered on the fallback", c.Failed, c.Retries)
+		}
+	})
+	t.Run("flagged on the fallback too is one failure", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setFail("lead/r3", flagged)
+		c := h.run(testCouncil("c1"))
+		if n := len(h.f.calls("r3")); n != 2 {
+			t.Fatalf("synthesis calls %d, want 2: the call and one fallback", n)
+		}
+		f, ok := c.Failed["lead"]
+		if c.State != StateFailed || !ok || !strings.Contains(f.Error, "again on claude-opus-4-8") || len(c.Retries) != 0 {
+			t.Fatalf("%s failed %+v retries %+v, want failed naming the fallback, no retry kept", c.State, f, c.Retries)
+		}
+	})
+	t.Run("another error is not run again", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.clean = SafeguardFallback
+		h.f.setFail("lead/r3", errors.New("opus overloaded"))
+		h.run(testCouncil("c1"))
+		if n := len(h.f.calls("r3")); n != 1 {
+			t.Fatalf("synthesis calls %d, want 1", n)
+		}
+	})
+	t.Run("a retry by hand that falls back keeps one retry", func(t *testing.T) {
+		h := newHarness(t)
+		h.f.setFail("ram/r1", flagged)
+		h.run(testCouncil("c1"))
+		h.f.clean = SafeguardFallback
+		if _, err := h.r.RetryOn("c1", "ram", "fable"); err != nil {
+			t.Fatalf("RetryOn: %v", err)
+		}
+		c := h.wait("c1")
+		if len(c.Failed) != 0 || len(c.Retries) != 1 || c.Retries[0].Model != SafeguardFallback || !c.Retries[0].Auto {
+			t.Fatalf("failed %v retries %+v, want only the fallback kept", c.Failed, c.Retries)
 		}
 	})
 }
