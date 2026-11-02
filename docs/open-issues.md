@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council seat chips flat, tables wrap: open a council's Discussion → the Everyone / seat chips are flat
+  rows (6px corners, no coloured border or tint; the selected one grey); a seat at work shows only its dot, no
+  "Replying to …" text, which its hover says; a reply with a Markdown table wraps its cells to the bubble's width, no
+  horizontal scrollbar unless a cell holds one unbreakable long word. Also check a table in a note.
 - [ ] (arcterm) Brainstorm checks fold: in Agent, a brainstorming agent whose Builder check and Judge both answered →
   no rows under it, a `› ✓ ✓` chip on its second line; click it → both rows show and the chevron turns; click again →
   they fold. Start a new builder check → its row shows while it reads. `agenttree.tsx` `ChecksChip`,

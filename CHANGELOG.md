@@ -46,6 +46,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Tables in agent messages, notes and councils wrap their cells to fit, instead of scrolling sideways.
+- A council's seat filters are short, flat buttons instead of long coloured pills: a seat at work shows only its dot,
+  and what it is doing is on hover.
 - A brainstorming agent's Builder check and Judge rows fold into a small chip on its row once they have answered, with a
   mark per check; click the chip to show them again. They stay open while one is still reading or asks you.
 - A brainstorm mockup's thumbnail opens the board full size when you click it, not only from its Open full size link.
