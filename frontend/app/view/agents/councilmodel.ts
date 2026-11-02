@@ -357,16 +357,74 @@ export function flattenThread(nodes: ThreadNode[]): ThreadNode[] {
     return out;
 }
 
+// ---- file mentions ----
+
+// What an `@` can start a file with: letters, digits and `_ - . / ~`. pkg/council reads an `@` the same way
+// (fileMentions in runner.go): the two share the example table in their tests, so change them together.
+const PATH_CHARS = "\\p{L}\\p{N}_\\-./~";
+const PATH_RUN = new RegExp(`[${PATH_CHARS}]*`, "uy");
+const PATH_WHOLE = new RegExp(`^[${PATH_CHARS}]+$`, "u");
+const AFTER_WORD = /[\p{L}\p{N}_]$/u;
+
+/** A file the person named with an `@`: where the `@` sits (`start`), where the path ends (`end`) and the path, without
+ *  the `@`. */
+export interface FileMention {
+    start: number;
+    end: number;
+    path: string;
+}
+
+/** Pure: the files a message names. An `@` that does not follow a letter, digit or `_` (an address's `@` sits inside a
+ *  word) starts one when the longest run of path characters after it, less the dots that end a sentence, holds a `/` or a
+ *  `.`: `@ux/plan.md`, `@ram.go`, `@./x`, `@~/x`; `@UX.` is the seat UX and a full stop. A seat or a chat is never named
+ *  by an `@` that starts a file mention (`mentions`, `mentionsChat`), so `@ux/plan.md` is no mention of UX. */
+export function fileMentions(text: string): FileMention[] {
+    const out: FileMention[] = [];
+    for (let at = text.indexOf("@"); at >= 0; at = text.indexOf("@", at + 1)) {
+        if (at > 0 && AFTER_WORD.test(text.slice(Math.max(0, at - 2), at))) {
+            continue;
+        }
+        PATH_RUN.lastIndex = at + 1;
+        const run = PATH_RUN.exec(text)?.[0] ?? "";
+        const path = run.replace(/\.+$/, "");
+        if (/[/.]/.test(path)) {
+            out.push({ start: at, end: at + 1 + path.length, path });
+        }
+    }
+    return out;
+}
+
+/** Pure: whether `path` is a file `@<path>` names whole: every character is one a path run holds, it holds a `/` or a
+ *  `.` and does not end in a dot. A project file that is not (a space, a bracket, no slash or dot in `Makefile`) would
+ *  be cut short or left unread, so the `@` list does not offer it. */
+export function isMentionablePath(path: string): boolean {
+    return PATH_WHOLE.test(path) && /[/.]/.test(path) && !path.endsWith(".");
+}
+
+// `text` with the `@` of each file mention turned into a `#`, so the seat and chat readers below, which look for an
+// `@`, pass over the files. Nothing else moves: an `@` right after a file mention's last character still has a word
+// before it, as it does in the Go reader.
+function withoutFileMentions(text: string): string {
+    let out = "";
+    let from = 0;
+    for (const m of fileMentions(text)) {
+        out += `${text.slice(from, m.start)}#`;
+        from = m.start + 1;
+    }
+    return from === 0 ? text : out + text.slice(from);
+}
+
 // ---- who answers a reply ----
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // `@RAM` or `@new user` or `@nu`: the expert's name or id after an @ that does not sit inside a word, and does not
-// run on into a longer one
+// run on into a longer one; not an @ that starts a file (`@ram.go`)
 function mentions(text: string, e: CouncilExpert): boolean {
+    const said = withoutFileMentions(text);
     return [e.name, e.id].some((word) => {
         const w = word.trim();
-        return w !== "" && new RegExp(`(^|[^\\p{L}\\p{N}_])@${escapeRe(w)}(?![\\p{L}\\p{N}_])`, "iu").test(text);
+        return w !== "" && new RegExp(`(^|[^\\p{L}\\p{N}_])@${escapeRe(w)}(?![\\p{L}\\p{N}_])`, "iu").test(said);
     });
 }
 
@@ -379,15 +437,16 @@ const MENTIONED_WORD = /(^|[^\p{L}\p{N}_])@([\p{L}\p{N}_-]+)/gu;
 
 /** Pure: whether `text` @-mentions the chat whose tab id is `tabId` by its mention key: `@` and a whole word of
  *  {@link MIN_CHAT_KEY} characters or more that starts the tab id (any case) and starts no other tab id in `tabIds`
- *  (the chats it must be told apart from: the chat seats' and, in the composer, the ones joining). It is the rule
- *  wavesrv reads a chat seat's mention by, so what the composer shows is what Send reaches. */
+ *  (the chats it must be told apart from: the chat seats' and, in the composer, the ones joining). An `@` that starts a
+ *  file mention (`@3e19c0d2-a/x.ts`) names no chat. It is the rule wavesrv reads a chat seat's mention by, so what the
+ *  composer shows is what Send reaches. */
 export function mentionsChat(text: string, tabId: string, tabIds: readonly string[]): boolean {
     const own = tabId.toLowerCase();
     if (own.length < MIN_CHAT_KEY) {
         return false;
     }
     const others = tabIds.map((t) => t.toLowerCase()).filter((t) => t !== own);
-    for (const found of text.toLowerCase().matchAll(MENTIONED_WORD)) {
+    for (const found of withoutFileMentions(text).toLowerCase().matchAll(MENTIONED_WORD)) {
         const word = found[2];
         if (word.length >= MIN_CHAT_KEY && own.startsWith(word) && !others.some((t) => t.startsWith(word))) {
             return true;

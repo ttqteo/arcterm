@@ -19,6 +19,7 @@ import {
     estimateLabel,
     estimateTokens,
     expertStat,
+    fileMentions,
     firstFollowRound,
     flattenThread,
     followupLabel,
@@ -26,9 +27,11 @@ import {
     headerChip,
     heldDrafts,
     isAgentSeat,
+    isMentionablePath,
     isSent,
     latestStances,
     matrixRows,
+    mentionsChat,
     outdatedCount,
     panel,
     pickCount,
@@ -491,6 +494,137 @@ describe("answerers: live chats by their mention key", () => {
             `agent-${NEAR_A}`,
             `agent-${sibling.id}`,
         ]);
+    });
+});
+
+// the one example table the Go tests (pkg/council) read too: what an `@…` is, a file or a name
+const TWIN_A = "3e19c0d2-a1c4-4b7e-9d20-5f8a6c3e1b07";
+const TWIN_B = "3e19c0d2-b7e0-4a91-8c3d-2e6f1a9b5d08";
+const FILE_TABLE: { text: string; file: string; names: "" | "ux" | "ram" | "chat" }[] = [
+    { text: "@ux/plan.md", file: "ux/plan.md", names: "" },
+    { text: "@ram.go", file: "ram.go", names: "" },
+    { text: "@./x", file: "./x", names: "" },
+    { text: "@~/x", file: "~/x", names: "" },
+    { text: "@3e19c0d2-a/x.ts", file: "3e19c0d2-a/x.ts", names: "" },
+    { text: "@UX", file: "", names: "ux" },
+    { text: "@UX.", file: "", names: "ux" },
+    { text: "@UX..", file: "", names: "ux" },
+    { text: "@UX,", file: "", names: "ux" },
+    { text: "@3e19c0d2-a", file: "", names: "chat" },
+];
+
+describe("fileMentions: an @ that names a file", () => {
+    it.each(FILE_TABLE)("$text is the file `$file` (or none)", ({ text, file }) => {
+        expect(fileMentions(text).map((m) => m.path)).toEqual(file === "" ? [] : [file]);
+    });
+
+    it("says where each one sits, the @ included, the path without it", () => {
+        expect(fileMentions("see @ux/plan.md now")).toEqual([{ start: 4, end: 15, path: "ux/plan.md" }]);
+        expect(fileMentions("@a.ts and @b/c.go")).toEqual([
+            { start: 0, end: 5, path: "a.ts" },
+            { start: 10, end: 17, path: "b/c.go" },
+        ]);
+    });
+
+    it("leaves the dots that end a sentence out of the path", () => {
+        expect(fileMentions("read @src/a.ts.")).toEqual([{ start: 5, end: 14, path: "src/a.ts" }]);
+        expect(fileMentions("read @src/a.ts..")).toEqual([{ start: 5, end: 14, path: "src/a.ts" }]);
+        expect(fileMentions("read @src/a.ts, then @b.md.")).toMatchObject([{ path: "src/a.ts" }, { path: "b.md" }]);
+    });
+
+    it("stops the path at whatever is not a path character", () => {
+        expect(fileMentions("(@src/a.ts)")).toEqual([{ start: 1, end: 10, path: "src/a.ts" }]);
+        expect(fileMentions('"@a.ts"')).toEqual([{ start: 1, end: 6, path: "a.ts" }]);
+        expect(fileMentions("@a.ts:12")).toEqual([{ start: 0, end: 5, path: "a.ts" }]);
+        // a space ends the path: what follows is no part of it
+        expect(fileMentions("@src/my file.ts")).toEqual([{ start: 0, end: 7, path: "src/my" }]);
+        const path = "trước/kế-hoạch.md";
+        expect(fileMentions(`@${path}`)).toEqual([{ start: 0, end: 1 + path.length, path }]);
+    });
+
+    it("does not read an address, or an @ inside a word, as one", () => {
+        expect(fileMentions("mail a@ram.com")).toEqual([]);
+        expect(fileMentions("é@x.io and 3@a.b and _@c.d")).toEqual([]);
+        expect(fileMentions("@@a.ts")).toEqual([{ start: 1, end: 6, path: "a.ts" }]);
+        expect(fileMentions("@a/b@c/d")).toEqual([{ start: 0, end: 4, path: "a/b" }]);
+    });
+
+    it("reads an @ that follows a path's own dot or slash as a new one", () => {
+        expect(fileMentions("@a/b.@c/d")).toEqual([
+            { start: 0, end: 4, path: "a/b" },
+            { start: 5, end: 9, path: "c/d" },
+        ]);
+    });
+
+    it("is empty for a bare @, a lone dot run and no text", () => {
+        expect(fileMentions("")).toEqual([]);
+        expect(fileMentions("@")).toEqual([]);
+        expect(fileMentions("@.. @...")).toEqual([]);
+        expect(fileMentions("@-")).toEqual([]);
+    });
+
+    it("reads a path from `isMentionablePath` the way it reads the whole mention", () => {
+        const paths = [
+            "a/b.ts",
+            "x.md",
+            "./x",
+            "~/x",
+            "src/trước.md",
+            "a/b/",
+            "Makefile",
+            "app/[id]/p.tsx",
+            "a b.ts",
+            "a.",
+        ];
+        for (const path of paths) {
+            expect(isMentionablePath(path)).toBe(fileMentions(`@${path}`).some((m) => m.path === path));
+        }
+        expect(isMentionablePath("a/b.ts")).toBe(true);
+        expect(isMentionablePath("Makefile")).toBe(false);
+        expect(isMentionablePath("app/[id]/p.tsx")).toBe(false);
+    });
+});
+
+describe("a file mention names no seat and no chat", () => {
+    const c = council();
+    const ids = (list: CouncilExpert[]) => list.map((e) => e.id);
+    const everyone = ["ux", "ram", "nu", "sk"];
+    const withTwins = council({
+        experts: [...experts.slice(0, 4), agentOf(TWIN_A, "Perf notes"), agentOf(TWIN_B, "Perf notes"), experts[4]],
+    });
+
+    it.each(FILE_TABLE.filter((row) => row.names !== "chat"))("$text reaches the seat it names, if any", (row) => {
+        expect(ids(answerers(c, "", "", row.text))).toEqual(row.names === "" ? everyone : [row.names]);
+    });
+
+    it.each(FILE_TABLE.filter((row) => row.names === "chat" || row.file.startsWith("3e19")))(
+        "$text reaches the chat it names, if any",
+        (row) => {
+            const got = ids(answerers(withTwins, "", "", row.text));
+            expect(got).toEqual(
+                row.names === "chat" ? [`agent-${TWIN_A}`] : [...everyone, `agent-${TWIN_A}`, `agent-${TWIN_B}`]
+            );
+        }
+    );
+
+    it.each(FILE_TABLE)("$text: mentionsChat says the same", (row) => {
+        expect(mentionsChat(row.text, TWIN_A, [TWIN_A, TWIN_B])).toBe(row.names === "chat");
+    });
+
+    it("keeps a seat's own mention beside a file mention", () => {
+        expect(ids(answerers(c, "", "", "@RAM read @ux/plan.md and @src/a.ts"))).toEqual(["ram"]);
+        expect(ids(answerers(c, "", "", "@ux/plan.md and @RAM"))).toEqual(["ram"]);
+        expect(ids(answerers(withTwins, "", "", "@3e19c0d2-a read @3e19c0d2-b/x.ts"))).toEqual([`agent-${TWIN_A}`]);
+    });
+
+    it("reads an @ that sits right after a file mention's end as a word of its own", () => {
+        expect(ids(answerers(c, "", "", "@a/b.@RAM"))).toEqual(["ram"]);
+        expect(ids(answerers(c, "", "", "@a/b@RAM"))).toEqual(everyone);
+    });
+
+    it("falls back to the thread's path when only files are named", () => {
+        const thread = council({ replies: [reply("r1", "sk", { ts: 1 })] });
+        expect(ids(answerers(thread, "P2", "r1", "@ux/plan.md"))).toEqual(["ux", "sk"]);
     });
 });
 
