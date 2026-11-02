@@ -88,6 +88,11 @@ Bấm một chunk (hoặc `Enter` trên nó) mở panel của chunk. Khi Brief r
 
 Run và chunk nối với nhau thế nào, và ai đóng chunk khi run xong: [Orchestrator → Initiative qua nhiều run](orchestrator.md#initiative-qua-nhiều-run).
 
+## Councils
+
+Vùng **Councils** nằm dưới **Runs**: mọi council còn đang chạy ở mọi project, cùng các council đã kết thúc trong tuần,
+cái đang chờ bạn lên đầu. Bấm một hàng để mở council, mở thẳng báo cáo khi đã có. Xem [Council](council.md).
+
 ## Run sheet
 
 Mở một run từ **Waiting on you**, **Runs**, **Shipped**, hoặc Conversation History. Từ trên xuống:

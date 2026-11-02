@@ -146,7 +146,10 @@ Cột trái 248 px, từ trên xuống: nút **Conversation History**, rồi hai
 
 ### Cây project — agent và terminal
 
-Mỗi project là một **thư mục**; bấm tên thư mục để gấp/mở. Trong thư mục là các hàng agent, một **đường kẻ mảnh**, rồi các **terminal và tool** của project, cái dùng gần nhất lên trước. Terminal là hàng ngang hàng với agent: chọn nó (bấm, `j` / `k`, `Ctrl+Tab`, `Ctrl+P`) thì nó chiếm trung tâm, xem [Terminal thường và tool ở giữa](#terminal-thường-và-tool-ở-giữa). Thư mục đang gấp ghi nó chứa gì, ví dụ `2 agents · 1 terminal`.
+Mỗi project là một **thư mục**: mũi tên hoặc biểu tượng thư mục gấp/mở nó, còn bấm tên thì mở **Overview** của project
+(xem [Overview của project](#overview-của-project)). Biểu tượng thư mục ghi số mục đang chờ bạn trong Jarvis (gate, run
+chờ xác nhận hay land, escalation) thuộc project đó. Chuột phải thư mục: **New agent…** (hộp New với project đã chọn sẵn)
+và **Open overview**. Trong thư mục là các hàng agent, một **đường kẻ mảnh**, rồi các **terminal và tool** của project, cái dùng gần nhất lên trước. Terminal là hàng ngang hàng với agent: chọn nó (bấm, `j` / `k`, `Ctrl+Tab`, `Ctrl+P`) thì nó chiếm trung tâm, xem [Terminal thường và tool ở giữa](#terminal-thường-và-tool-ở-giữa). Thư mục đang gấp ghi nó chứa gì, ví dụ `2 agents · 1 terminal`.
 
 - Terminal thuộc project mà thư mục hiện tại của nó nằm trong (`cd` sang project khác thì nó chuyển thư mục theo), không thì project của tab đã mở nó. **Home** là thư mục cuối, chứa terminal và tool không thuộc project nào (btop chẳng hạn); agent không có project nằm ở thư mục `ungrouped` riêng.
 - Mỗi project có [split](#lưới-terminal-2x2) từ hai ô trở lên (cả split đã lưu của project không hiện trên màn hình) có **một hàng split** trong thư mục của nó, ở chỗ hàng trên cùng trong các ô (hoặc đầu thư mục khi không ô nào có hàng hiện). Các ô rời hàng riêng của mình vào hàng split, xếp như lưới trên màn hình. Mỗi ô chỉ có biểu tượng trạng thái, tên, chấm `asking` hoặc số chưa đọc, chữ số `Alt` khi giữ `Alt`, và `×` khi rê chuột (bỏ ô khỏi split, agent vẫn chạy). Split đang hiện có viền accent và ô đang focus được tô như hàng đang chọn; split đã lưu của project khác có viền thường. Bấm một ô để focus nó; chuột phải mở menu của chính hàng đó (có **Remove from split** và **End split**); kéo ô thả lên lưới như kéo hàng. `j` / `k` và `Alt`+số đi qua các ô theo thứ tự đọc.
@@ -168,7 +171,8 @@ Mỗi hàng agent: biểu tượng harness và **tên** ở dòng trên; dòng d
 Thao tác trên hàng:
 
 - Bấm: chọn agent và hiện terminal của nó. Bấm hai lần vào hàng lead hoặc hàng có subagent: gấp/mở worker hoặc subagent.
-- Chuột phải: **Rename** (sửa tại chỗ, `Enter` lưu, `Esc` hủy), **Duplicate** (mở tab mới chạy lại cùng agent ở cùng thư mục), **Open in split**, **Copy name**, **Close agent**.
+- Chuột phải: **Rename** (sửa tại chỗ, `Enter` lưu, `Esc` hủy), **Duplicate** (mở tab mới chạy lại cùng agent ở cùng thư mục), **Open in split**, **Copy name**, **Copy id** (id trần, dán vào tin nhắn để nói với một agent về agent khác), **Mark for later** (đánh dấu để quay lại; hội thoại đứng đầu project cho tới khi bạn chọn **Done**), **Sleep**, **Close agent**.
+- `Ctrl`+click hoặc `Shift`+click để chọn nhiều agent; chuột phải một agent đã chọn → **Discuss together** mở [Council](council.md) với các agent đó được xếp ghế.
 - Kéo hàng thả lên một ô terminal để chia lưới (xem [Lưới terminal](#lưới-terminal-2x2)).
 - Chip **N subagents** gấp/mở subagent của agent; bấm một subagent để xem phần bên trong của nó thay cho terminal cha (`Esc` hoặc "back to <agent>" để quay lại).
 
@@ -289,9 +293,22 @@ Khi không có agent nào đang focus (Open a tool luôn đi theo agent đang fo
 - Tiêu đề hộp thoại đổi theo hàng đã chọn (**Open a tool**) và nút chính ghi tên tool (**Open lazygit**); tool chưa có trên `PATH` thì nút chính mờ và chân hộp thoại nói lý do.
 - Tool mở ra chiếm trung tâm và nằm trong thư mục của project ở cây, như khi mở từ chỗ khác. Nút **+ New** ở app bar giữ nguyên; tooltip của nó là *New agent, terminal, run or tool*.
 
+## Overview của project
+
+Bấm tên một thư mục project trong cây (hoặc chuột phải → **Open overview**) để mở trang tổng quan của project ở giữa:
+
+- **Needs you**: những gì trong project đang chờ bạn; từ ba mục cùng loại trở lên thì gấp thành một hàng.
+- **Running now**: các run của project, worker được đếm như trong cây.
+- **Branches**: các commit mới nhất của mọi branch vẽ trên đồ thị commit, thay đổi chưa commit nằm trên cùng.
+- **Activity**: lịch hoạt động cả năm theo màu của theme (`Tab` vào lưới, `←` / `→` đổi tuần, `↑` / `↓` đổi ngày).
+- **History**: các phiên, council và run, có tìm kiếm (`/`) và tải thêm khi cuộn. Mỗi phiên ghi model của nó và liệt kê các
+  run và council nó đã mở ngay bên dưới. Chuột phải một phiên: mở transcript, resume, copy tiêu đề hay đường dẫn
+  transcript, xóa; một run hay council: mở hoặc copy tiêu đề. Bấm một council để mở ngay tại chỗ (câu hỏi, câu trả lời,
+  các hướng đầu), **Open council** để tới council đó.
+
 ## Rail chi tiết bên phải
 
-Rail có ba tab: **Overview**, **Files** (cây thư mục làm việc của agent, chỉ có khi agent có thư mục) và **File** (chỉ có khi một file đang mở). Thanh tab có thêm sáu biểu tượng đếm — **Subagents**, **Files changed**, **Artifacts**, **Uploads**, **Servers**, **Background tasks** — luôn theo đúng thứ tự đó để rail không đổi hình dạng giữa các agent; bấm một biểu tượng có số thì mở và cuộn tới mục đó. Phần thân chỉ liệt kê mục nào đang có nội dung.
+Rail có tới năm tab: **Overview**, **Files** (cây thư mục làm việc của agent, chỉ có khi agent có thư mục; kéo file hay thư mục từ Explorer/Finder thả vào để copy vào thư mục dưới con trỏ), **Changes** (mọi file đã đổi với công tắc Session / Branch, các commit trên đồ thị, commit file đã tick ngay tại đó), **Transcript** (cả cuộc trò chuyện vẽ lại cạnh terminal, tải thêm khi cuộn lên; `Ctrl+Shift+F` mở nó từ bất cứ đâu trên Agent, nút **Compactions** đi ngược qua từng lần compact; agent đang ngủ thì không có tab này vì hội thoại đã nằm chỗ terminal) và **File** (chỉ có khi một file đang mở; file tự cập nhật khi thay đổi trên đĩa). Thanh tab có thêm sáu biểu tượng đếm — **Subagents**, **Files changed**, **Artifacts**, **Uploads**, **Servers**, **Background tasks** — luôn theo đúng thứ tự đó để rail không đổi hình dạng giữa các agent; bấm một biểu tượng có số thì mở và cuộn tới mục đó. Phần thân chỉ liệt kê mục nào đang có nội dung.
 
 Nhấn `d` (hoặc bấm mũi tên ở rail) để thu rail thành một dải 44 px hiện huy hiệu số câu hỏi đang chờ và thanh context. **Settings → General → Show details rail by default** đặt trạng thái ban đầu. Terminal thường không có rail.
 

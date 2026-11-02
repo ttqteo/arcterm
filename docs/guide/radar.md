@@ -1,6 +1,14 @@
 # Radar
 
-**Radar** tìm lỗi anh em của những lỗi bạn vừa sửa. Mỗi lần quét, nó chọn vài commit `fix:` gần đây của một repository, và với mỗi commit chạy một phiên agent chỉ-đọc: đọc quanh chỗ đã sửa, tìm xem cùng một lỗi có còn ở nơi khác không (các chỗ gọi cùng hàm, các nhánh code song song, các handler cùng họ). Một commit chỉ được audit một lần. Phần lớn lần quét kết thúc bằng "không có lỗi anh em nào", và đó là kết quả bình thường.
+**Radar** tìm lỗi còn sót trong code dựa trên lịch sử commit của 30 ngày qua. Mỗi lần quét chạy các phiên agent chỉ-đọc theo ba loại audit:
+
+| Loại | Đọc gì | Tìm gì | Tối đa mỗi lần quét |
+|---|---|---|---|
+| **Sibling bug** | Một commit sửa lỗi | Cùng lỗi đó còn ở nơi khác không: chỗ gọi cùng hàm, nhánh code song song, handler cùng họ | 8 |
+| **Introduced bug** | Một commit đổi hành vi (`feat`, `perf`…) dài 50–1500 dòng | Lỗi mà chính thay đổi đó đưa vào và vẫn còn | 3 |
+| **Hotspot** | Một file code bị sửa lỗi từ hai lần trở lên trong 30 ngày (tối đa 1500 dòng), ở bản hiện tại | Lỗi tiềm ẩn mà các lần sửa trước chưa chạm tới | 2 |
+
+Một commit (hay một bản của file hotspot) chỉ được audit một lần. Phần lớn lần quét kết thúc bằng "không có lỗi nào", và đó là kết quả bình thường.
 
 Radar không bao giờ tự sửa file, tự chạy test hay tự khởi động agent. Quét chỉ chạy khi bạn bấm. Hành động duy nhất mở một Run là **Start investigation** trên một finding, và bạn xem lại mục tiêu trước khi chạy.
 
@@ -24,18 +32,22 @@ Radar có project riêng của nó, chọn ở ô **project** bên cạnh tiêu 
 
 1. Chọn project ở ô **project**.
 2. Lần đầu: bấm **Scan repository** trên màn "`<project>` hasn't been scanned". Các lần sau: **Re-scan** ở góc phải thanh tiêu đề.
-3. Theo dõi danh sách commit đang audit. Mỗi dòng đi qua các trạng thái: chờ (`queued`), `auditing`, `clean`, `N hits`, hoặc `failed`; dưới có tổng "N of M audited · K hits · 2m 05s elapsed".
+3. Theo dõi danh sách đang audit, chia nhóm theo loại: **Fix commits**, **Behavior changes**, **Hot files**. Mỗi dòng đi qua các trạng thái: chờ (`queued`), `auditing`, `clean`, `N hits`, hoặc `failed`; dưới có tổng "N of M audited · K hits · 2m 05s elapsed".
 4. Bấm **Cancel scan** nếu muốn dừng. Các audit đã xong trước lúc hủy bị bỏ ("Audits that finished before you cancelled were discarded").
 
 ![Radar giữa lúc quét: tiêu đề "Auditing fix commits", bảng "Fix commits" với các dòng ở trạng thái clean / auditing (biểu tượng quay) / queued / hits, dòng tổng "N of M audited · hits · elapsed", nút Cancel scan](images/radar-scanning.png)
 
 Một lần quét hoạt động thế này:
 
-- **Chọn commit**: lấy các commit không phải merge trong 30 ngày qua có subject theo kiểu conventional `fix:`, `fix(scope):` (có thể kèm `!`) và có đụng vào file code (bỏ commit chỉ sửa docs, `.md`, `.txt`, `.rst`, hay test). Commit đã được audit thành công ở lần quét trước thì loại ra. Còn lại xếp theo file nào bị sửa lỗi nhiều nhất, rồi theo thời gian, và lấy **tối đa 8 commit** cho mỗi lần quét.
-- **Audit**: mỗi commit một phiên chỉ-đọc (chỉ được đọc, grep và liệt kê file; không có shell), ba phiên chạy cùng lúc, mỗi phiên tối đa 10 phút. Phiên báo về lỗi gốc đã được sửa và các chỗ anh em còn mắc lỗi đó.
+- **Phân loại commit**: lấy các commit không phải merge trong 30 ngày qua có đụng vào file code (bỏ commit chỉ sửa docs, `.md`, `.txt`, `.rst`, test, hay file sinh tự động). Commit có tiền tố conventional được phân loại theo tiền tố: `fix` là sửa lỗi; `feat`, `perf` là đổi hành vi; `refactor`, `docs`, `test`, `chore`, `style`, `build`, `ci`, `revert` thì không audit. Commit không có tiền tố được một lượt gọi model duy nhất mỗi lần quét phân loại (**Commit classifier**), và nhãn của nó được nhớ cho lần quét sau.
+- **Chọn mục tiêu**: mỗi loại audit xếp hạng các ứng viên của nó, bỏ những gì đã audit thành công, rồi lấy tới mức trần trong bảng trên. Sibling xếp theo file bị sửa lỗi nhiều nhất rồi theo thời gian; Introduced theo số dòng đổi rồi mới nhất; Hotspot theo số lần sửa lỗi rồi lần sửa mới nhất.
+- **Project là thư mục con của repository** (ví dụ `apps/website`): Radar chỉ đọc các commit đụng tới thư mục đó, với đường dẫn tính từ project.
+- **Audit**: mỗi mục tiêu một phiên chỉ-đọc (chỉ được đọc, grep và liệt kê file; không có shell), ba phiên chạy cùng lúc, mỗi phiên tối đa 10 phút. Phiên báo về nguyên nhân (lỗi gốc, ý định của thay đổi, hay chỗ dễ vỡ của file) và các chỗ còn mắc lỗi.
 - **Kiểm tra**: một chỗ nghi ngờ chỉ được giữ khi file nằm trong project và tồn tại, số dòng nằm trong file, và có mô tả điều kiện kích hoạt. Phiên audit được dặn rằng "không có chỗ anh em nào" là một câu trả lời hợp lệ và báo nhầm còn tệ hơn không báo.
 
-Route của phiên audit chọn ở **Settings → Background AI → Radar → Radar audit**: chạy bằng `claude` (mặc định, model `sonnet`) hoặc `pi`. OpenRouter không dùng được vì nó không có công cụ đọc file. Thiếu binary hoặc runtime sai thì cả lần quét báo lỗi, không lặng lẽ chuyển sang runtime khác.
+Route của phiên audit chọn ở **Settings → Background AI → Radar → Radar audit**: chạy bằng `claude` (mặc định, model `sonnet`) hoặc `pi`. OpenRouter không dùng được vì nó không có công cụ đọc file. Thiếu binary hoặc runtime sai thì cả lần quét báo lỗi, không lặng lẽ chuyển sang runtime khác. **Commit classifier** ngay dưới đó chọn model cho lượt phân loại, chạy trên cùng runtime; để trống thì là haiku trên claude, hoặc model mặc định của pi.
+
+Nếu project có [tài khoản Claude riêng](settings.md#đổi-tài-khoản-claude-hoặc-thêm-một-tài-khoản), audit của nó chạy trên tài khoản đó.
 
 ## Đọc kết quả
 
@@ -48,14 +60,14 @@ Nội dung bên dưới phụ thuộc vào bản quét mới nhất của projec
 | "`<project>` hasn't been scanned" | Chưa quét lần nào |
 | "Auditing fix commits" | Đang quét |
 | Danh sách finding bên trái, chi tiết bên phải | Có finding |
-| "No sibling bugs in N fix commits" | Quét xong, mọi audit sạch |
-| "No sibling bugs found" kèm audit lỗi | Có audit lỗi: "không có lỗi anh em" chỉ đúng với các commit đã đọc được |
-| "No new fix commits to audit" | Không còn commit nào chưa audit trong 30 ngày qua |
+| "No bugs found in N audits" | Quét xong, mọi audit sạch |
+| "No bugs found" kèm audit lỗi | Có audit lỗi: "không có lỗi" chỉ đúng với những gì đã đọc được |
+| "Nothing new to audit" | Không còn mục tiêu nào chưa audit trong 30 ngày qua |
 | "The scan failed" | Lỗi cả lần quét, kèm thông báo lỗi; nút **Scan again** |
 | "Scan cancelled" | Bạn đã hủy |
 | "This report was written by an older Radar" | Bản quét từ định dạng cũ, không hiển thị được; **Re-scan** để thay thế |
 
-Khi một số audit lỗi, một dải cảnh báo hiện dưới tiêu đề: "The audit of `abc12345` failed. Sibling bugs of that fix may be missing." Nút **Retry failed audits** chạy lại đúng các commit lỗi, không chọn lại commit khác; finding tìm được thêm xuất hiện như finding mới, còn phần còn lại của bản quét giữ nguyên.
+Khi một số audit lỗi, một dải cảnh báo hiện dưới tiêu đề: "The audit of `abc12345` failed. Sibling bugs of that fix may be missing." Nếu lượt phân loại commit lỗi, một dải ghi "Commit classification failed, so … not considered. Re-scan tries them again.": các commit không có tiền tố bị bỏ qua ở lần quét này. Nút **Retry failed audits** chạy lại đúng các audit lỗi, không chọn lại commit khác; finding tìm được thêm xuất hiện như finding mới, còn phần còn lại của bản quét giữ nguyên.
 
 ![Radar có kết quả: dòng tóm tắt "last scan … · N fix commits audited … · N findings", danh sách finding bên trái chia nhóm Open (có chữ "new" và nhãn điều tra) và Dismissed (mờ), chi tiết bên phải với đường dẫn file:dòng màu nhấn, tiêu đề rủi ro, nút "Start investigation" và "Dismiss", thẻ "Sibling site" có Actual / Expected / Fix gap, "Root cause"](images/radar-results.png)
 
@@ -65,7 +77,7 @@ Bên trái, hai nhóm gập được: **Open** (kèm "N new in the latest scan")
 
 - đường dẫn `thư-mục/file:dòng` của chỗ nghi ngờ, kèm `+N site` nếu còn chỗ khác trong cùng file;
 - câu mô tả rủi ro (hai dòng);
-- nhãn mức độ `HIGH` / `MEDIUM` / `LOW`, `fix <8 ký tự hash>` của commit đã dẫn tới finding, trạng thái điều tra (xem dưới), và nhãn `new` nếu mới xuất hiện ở lần quét gần nhất.
+- nhãn mức độ `HIGH` / `MEDIUM` / `LOW`, nguồn của finding (commit đã dẫn tới nó, hoặc với hotspot là `Hotspot · N fixes`), trạng thái điều tra (xem dưới), và nhãn `new` nếu mới xuất hiện ở lần quét gần nhất.
 
 Cuối danh sách có gợi ý phím: `j` `k` di chuyển, `Enter` thực hiện hành động chính của finding đang chọn (tên hành động hiện ngay cạnh).
 
@@ -74,9 +86,14 @@ Cuối danh sách có gợi ý phím: `j` `k` di chuyển, `Enter` thực hiện
 - Hàng nhãn: nhóm (Open / Dismissed), "new in the latest scan", mức độ, và subsystem suy ra từ file.
 - **Đường dẫn `file:dòng`**: bấm để mở chỗ đó trong [Code](code.md), tại đúng dòng.
 - **Tiêu đề** là câu mô tả rủi ro.
-- **Sibling site(s)**: với mỗi chỗ nghi ngờ có `line N` cùng điều kiện kích hoạt (trigger), ô **Actual** (hành vi thực tế), ô **Expected** (hành vi đáng ra), và **Fix gap**: vì sao bản sửa không phủ tới đây.
-- **Root cause**: lỗi gốc mà commit đã sửa.
-- **Found by auditing this fix**: hash, subject và ngày của commit nguồn (ở cột phải khi pane rộng từ 1300 px, nếu không thì nằm dưới).
+- **Các chỗ nghi ngờ**: với mỗi chỗ có `line N` cùng điều kiện kích hoạt (trigger), ô **Actual** (hành vi thực tế), ô **Expected** (hành vi đáng ra), và một ô giải thích vì sao lỗi còn đó.
+- **Nguyên nhân** và **nguồn** (ở cột phải khi pane rộng từ 1300 px, nếu không thì nằm dưới). Tên các mục đổi theo loại audit:
+
+| Loại | Chỗ nghi ngờ | Vì sao còn | Nguyên nhân | Nguồn |
+|---|---|---|---|---|
+| Sibling bug | **Sibling site(s)** | **Fix gap**: vì sao bản sửa không phủ tới đây | **Root cause**: lỗi gốc mà commit đã sửa | **Found by auditing this fix** |
+| Introduced bug | **Site(s)** | **Introduced**: thay đổi đã đưa lỗi vào thế nào | **Intent of the change** | **Found by reviewing this change** |
+| Hotspot | **Site(s)** | **Missed by fixes** | **Fragility**: vì sao file này hay hỏng | **Found by reviewing this file** (kèm số lần sửa lỗi) |
 - Mã nhận dạng `RAD-…` ở góc phải hàng nút. Nó được tính từ project, commit nguồn và file, không tính từ số dòng, nên dòng code xê dịch không làm finding mất danh tính.
 - Nếu finding đã từng được điều tra bằng một run, các mục **Relevant past decisions** liên quan tới run đó (nếu có) hiện thêm.
 
@@ -88,7 +105,7 @@ Khi một commit cho ra nhiều chỗ nghi ngờ trong cùng một file, chúng 
 
 1. Chọn một finding.
 2. Bấm **Start investigation**, hoặc nhấn `Enter` với finding đang chọn.
-3. Radar chuyển sang [Jarvis](jarvis.md), mở run launcher của channel thuộc project này (nếu project chưa có channel, một channel được tạo). Ô mục tiêu đã điền sẵn nội dung "Fix commit … fixed a bug; root cause: … The same bug may remain at: …", mỗi chỗ kèm trigger, actual và expected.
+3. Radar chuyển sang [Jarvis](jarvis.md), mở run launcher của channel thuộc project này (nếu project chưa có channel, một channel được tạo). Ô mục tiêu đã điền sẵn theo loại audit, ví dụ "Fix commit … fixed a bug; root cause: … The same bug may remain at: …" cho sibling, "Commit … changed behavior: … It introduced a defect still present at: …" cho introduced, "<file> took N fix commits in the last 30 days … A latent bug remains at: …" cho hotspot; mỗi chỗ kèm trigger, actual và expected.
 4. Sửa mục tiêu nếu muốn, chọn kiểu run và route như mọi run khác, rồi chạy. Chi tiết về launcher ở [Jarvis](jarvis.md) và [Orchestrator](orchestrator.md).
 
 Run mang theo nguồn gốc Radar của nó, nên kết quả được ghi ngược vào finding khi run kết thúc. Thẻ trạng thái điều tra trong chi tiết và nhãn nhỏ trên dòng danh sách cho thấy:
@@ -139,6 +156,6 @@ Các phím này hoạt động trong danh sách finding khi bạn không gõ tro
 ## Giới hạn
 
 - Quét chỉ chạy khi bạn bấm; Radar không có lịch tự quét.
-- Mỗi lần quét audit tối đa 8 commit, chỉ trong 30 ngày qua, và chỉ commit có subject `fix…:`. Nó không phải trình lint toàn repo và không đọc lịch sử cũ hơn.
+- Mỗi lần quét audit tối đa 8 + 3 + 2 mục tiêu, chỉ trong 30 ngày qua. Nó không phải trình lint toàn repo và không đọc lịch sử cũ hơn.
 - Radar không sửa gì. Mọi thay đổi code đều đi qua một run mà bạn tự bắt đầu.
 - Một project có thể có nhiều bản quét cũ; surface luôn hiện bản mới nhất.
