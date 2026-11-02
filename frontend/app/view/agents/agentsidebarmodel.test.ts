@@ -939,6 +939,9 @@ describe("projectTree", () => {
             created,
             meta: "Done",
             tone: "muted",
+            seats: [],
+            dot: null,
+            lastAt: created,
             unread: false,
             ...over,
         });
@@ -1395,6 +1398,8 @@ describe("councilRowsByProject", () => {
         updated: 2000,
         ...over,
     });
+    // a council with no seats and no message: no picture, timed from when it was created
+    const noPicture = (created: number) => ({ seats: [], dot: null, lastAt: created });
 
     it("files each council under the registered project whose root it ran in, however the path is spelled", () => {
         const rows = councilRowsByProject(
@@ -1440,9 +1445,26 @@ describe("councilRowsByProject", () => {
             roots
         );
         expect(rows.get("loom")).toEqual([
-            { id: "run", feature: "feature run", created: 7, meta: "Running", tone: "working", unread: false },
-            { id: "ask", feature: "feature ask", created: 1000, meta: "Waiting on you", tone: "asking", unread: false },
             {
+                ...noPicture(7),
+                id: "run",
+                feature: "feature run",
+                created: 7,
+                meta: "Running",
+                tone: "working",
+                unread: false,
+            },
+            {
+                ...noPicture(1000),
+                id: "ask",
+                feature: "feature ask",
+                created: 1000,
+                meta: "Waiting on you",
+                tone: "asking",
+                unread: false,
+            },
+            {
+                ...noPicture(1000),
                 id: "done",
                 feature: "feature done",
                 created: 1000,
@@ -1452,6 +1474,7 @@ describe("councilRowsByProject", () => {
                 removable: true,
             },
             {
+                ...noPicture(1000),
                 id: "nr",
                 feature: "feature nr",
                 created: 1000,
@@ -1461,6 +1484,7 @@ describe("councilRowsByProject", () => {
                 removable: true,
             },
             {
+                ...noPicture(1000),
                 id: "bad",
                 feature: "feature bad",
                 created: 1000,
@@ -1531,6 +1555,7 @@ describe("councilRowsByProject", () => {
             );
             const queued = rows.get("loom")?.find((r) => r.id === "wait");
             expect(queued).toEqual({
+                ...noPicture(1000),
                 id: "wait",
                 feature: "feature wait",
                 created: 1000,
@@ -1694,6 +1719,76 @@ describe("councilRowsByProject", () => {
                 roots
             );
             expect(rows.get("loom")?.[0]).toMatchObject({ meta: "Running", tone: "working" });
+        });
+    });
+
+    describe("the chat-list picture and time", () => {
+        const seat = (id: string, name: string, coordinator = false): CouncilExpert => ({
+            id,
+            name,
+            brief: "",
+            model: "sonnet",
+            ...(coordinator ? { coordinator } : {}),
+        });
+        const one = (over: Partial<Council>) =>
+            councilRowsByProject([council("x", "/home/u/loom", over)], roots).get("loom")![0];
+        const five = [
+            seat("co", "Coordinator", true),
+            seat("sk", "Skeptic"),
+            seat("nu", "New user"),
+            seat("sec", "Security"),
+            seat("ops", "Operator"),
+            seat("ux", "Designer"),
+        ];
+
+        it("shows the first two panel seats, in order, never the coordinator, however many sit", () => {
+            expect(one({ experts: five }).seats).toEqual([
+                { name: "Skeptic", initials: "SK", tone: "conn-1" },
+                { name: "New user", initials: "NU", tone: "conn-2" },
+            ]);
+            expect(one({ experts: five.slice(0, 3) }).seats.map((s) => s.name)).toEqual(["Skeptic", "New user"]);
+        });
+
+        it("takes the coordinator as the second circle when the panel has one seat", () => {
+            expect(one({ experts: [seat("co", "Coordinator", true), seat("sk", "Skeptic")] }).seats).toEqual([
+                { name: "Skeptic", initials: "SK", tone: "conn-1" },
+                { name: "Coordinator", initials: "CO", tone: "coordinator" },
+            ]);
+        });
+
+        it("shows one circle for a council of a single seat", () => {
+            expect(one({ experts: [seat("sk", "Skeptic")] }).seats).toEqual([
+                { name: "Skeptic", initials: "SK", tone: "conn-1" },
+            ]);
+        });
+
+        it("dots the picture green while any seat writes, red when a call failed, and not otherwise", () => {
+            const busy = { nu: { text: "Replying to Skeptic" } };
+            const fail = { sec: { round: 2, error: "timeout" } };
+            expect(one({ experts: five, state: "running", activity: busy }).dot).toBe("working");
+            expect(one({ experts: five, state: "running", activity: busy, failed: fail }).dot).toBe("working");
+            expect(one({ experts: five, state: "failed", failed: fail }).dot).toBe("failed");
+            // activity left on a council that no longer runs is no one writing
+            expect(one({ experts: five, state: "done", activity: busy }).dot).toBeNull();
+            expect(one({ experts: five, state: "done" }).dot).toBeNull();
+        });
+
+        it("times the row from the newest message, not from the file's last save", () => {
+            const idea = (ts: number) =>
+                ({ id: `P${ts}`, author: "sk", title: "t", argument: "a", ts }) as CouncilProposal;
+            const reply = (ts: number) =>
+                ({ id: `r${ts}`, proposalid: "P1", author: "nu", text: "x", round: 2, ts }) as CouncilReply;
+            // no message yet: when it started, else when it was created
+            expect(one({ created: 100, updated: 9000 }).lastAt).toBe(100);
+            expect(one({ created: 100, started: 300, updated: 9000 }).lastAt).toBe(300);
+            // ideas and replies: the newest of them
+            expect(
+                one({ started: 300, proposals: [idea(500), idea(400)], replies: [reply(700), reply(600)] }).lastAt
+            ).toBe(700);
+            expect(one({ started: 300, proposals: [idea(800)], replies: [reply(700)] }).lastAt).toBe(800);
+            // a summary after them
+            const summary = { text: "s", directions: [], outcomes: {}, at: 950 } as CouncilSummary;
+            expect(one({ started: 300, proposals: [idea(800)], summary, updated: 9999 }).lastAt).toBe(950);
         });
     });
 });
@@ -1877,7 +1972,19 @@ describe("treeNavIds", () => {
             councils: new Map([
                 [
                     "waveterm",
-                    [{ id: "c1", feature: "f", created: 1, meta: "Done", tone: "muted" as const, unread: false }],
+                    [
+                        {
+                            id: "c1",
+                            feature: "f",
+                            created: 1,
+                            meta: "Done",
+                            tone: "muted" as const,
+                            seats: [],
+                            dot: null,
+                            lastAt: 1,
+                            unread: false,
+                        },
+                    ],
                 ],
             ]),
         });

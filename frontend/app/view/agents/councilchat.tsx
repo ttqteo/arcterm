@@ -181,6 +181,7 @@ export function CouncilAvatar({
     dashed,
     dim,
     dot,
+    dotClassName,
     title,
     className,
     ...rest
@@ -193,6 +194,8 @@ export function CouncilAvatar({
     dashed?: boolean;
     dim?: boolean;
     dot?: AvatarDot;
+    /** the dot's ring when the avatar sits on another ground than the page's (a tree row's fill) */
+    dotClassName?: string;
     title?: string;
     className?: string;
 } & Record<`data-${string}`, string | undefined>) {
@@ -218,7 +221,8 @@ export function CouncilAvatar({
                 <span
                     className={cn(
                         "absolute -bottom-[2px] -right-[2px] box-border h-[7px] w-[7px] rounded-full border-[1.5px] border-background",
-                        dot === "working" ? "bg-working pulse-dot" : "bg-error"
+                        dot === "working" ? "bg-working pulse-dot" : "bg-error",
+                        dotClassName
                     )}
                 />
             )}

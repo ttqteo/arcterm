@@ -51,6 +51,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council in the Agent sidebar now reads like a group chat in a chat list: two of its seats as overlapping circles
+  (a green dot while one writes, a red one when a call failed), its title, and under it its state and how long ago
+  its last message came.
 - Once a brainstorm's Approve starts its run, the agent that ran the brainstorm goes to sleep 15 seconds after it
   records the run, freeing its RAM; Wake or any message brings it back. It stays awake when Sleep idle agents is off.
 - A sleeping agent's side panel no longer offers a Transcript tab: its conversation already fills the terminal's place, and the tab comes back when it wakes.
