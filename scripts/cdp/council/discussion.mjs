@@ -197,18 +197,22 @@ async function round2(h, ctx, rec) {
         { kinds: kinds.slice(0, 3), marks }
     );
 
-    // every idea is a message with a reply chip, and the withdrawn P6 is one too; a reply is in its idea's thread only
+    // every idea is a message with a reply chip, and the withdrawn P6 is one too; the channel draws every reply a person
+    // reads as a message of its own as well, and each is in its idea's thread
     const counts = readableCounts("round2");
     const ideas = await ideaIds(h);
     const chipsOf = await h.ev(`[...document.querySelectorAll("[data-council-thread-open]")].map((b) => [b.getAttribute("data-council-thread-open"), b.getAttribute("data-replies")])`);
     const replyPosts = await count(h, "[data-council-channel] [data-council-reply-post]");
+    // every reply of this fixture is on an idea, so the chips' counts add up to the replies in the channel
+    const readable = Object.values(counts).reduce((a, b) => a + b, 0);
     rec(
-        "round 2: six ideas in the channel (in the order they were posted), each with a reply chip counting the replies a person reads, and no reply of its own in the channel",
-        [...ideas].sort().join(",") === "P1,P2,P3,P4,P5,P6" &&
+        "round 2: six ideas in the channel with the seats taking turns, each with a reply chip counting the replies a person reads, and each of those replies a message of its own in the channel",
+        // UX's first, New user's, RAM's, Skeptic's, then UX's second and Skeptic's second (takeTurns, councilchatmodel.ts)
+        ideas.join(",") === "P1,P4,P3,P5,P2,P6" &&
             chipsOf.length === 6 &&
             chipsOf.every(([p, n]) => Number(n) === (counts[p] ?? 0)) &&
-            replyPosts === 0,
-        { ideas, chipsOf, counts, replyPosts }
+            replyPosts === readable,
+        { ideas, chipsOf, counts, replyPosts, readable }
     );
 
     const typing = await typingLines(h);
@@ -879,9 +883,10 @@ async function room(h, ctx, rec) {
     const marks = await dividers(h);
     const ideas = await ideaIds(h);
     rec(
-        "room: dividers `Round 1 · ideas` and `Round 2 · replies`, four ideas (the dropped P5 is gone), and the person's post to everyone as a `steers` message",
+        "room: dividers `Round 1 · ideas` and `Round 2 · replies`, four ideas with the seats taking turns (the dropped P5 is gone), and the person's post to everyone as a `steers` message",
         marks.join("|") === "Round 1 · ideas|Round 2 · replies" &&
-            ideas.join(",") === "P1,P2,P3,P4" &&
+            // Security's first, Skeptic's, UX audit's, then Security's second (takeTurns, councilchatmodel.ts)
+            ideas.join(",") === "P1,P3,P4,P2" &&
             (await attr(h, '[data-council-channel] [data-council-reply-post="r1"]', "data-item-label")) === "steers",
         { marks, ideas }
     );
@@ -897,8 +902,15 @@ async function room(h, ctx, rec) {
     })()`);
     const p4 = await text(h, '[data-council-thread-open="P4"]');
     const agrees = await h.ev(`[...document.querySelectorAll('[data-council-idea="P1"] [data-council-reaction]')].map((e) => (e.textContent ?? "")${NORM})`);
+    // councilChannel draws every reply, a held one as a draft card, so Skeptic's held reply on P4 is in the channel too,
+    // marked as waiting and quoting the idea it is on
+    const p4Title = loadCouncilFixture("room").proposals.find((p) => p.id === "P4").title;
+    const p4Draft = await h.ev(`(() => {
+        const d = document.querySelector('[data-council-channel] [data-council-draft="r4"]');
+        return d && { of: d.getAttribute("data-draft-of"), text: (d.textContent ?? "")${NORM} };
+    })()`);
     rec(
-        "room: P2's chip reads `1 reply` with Skeptic's avatar and its last time, P1's `No replies yet` with a `Skeptic agrees` reaction, P4's names its waiting draft",
+        "room: P2's chip reads `1 reply` with Skeptic's avatar and its last time, P1's `No replies yet` with a `Skeptic agrees` reaction, P4's names its waiting draft, which sits in the channel as a draft reply quoting P4",
         p2?.replies === "1" &&
             p2.text.includes("1 reply") &&
             /Last reply \d+:\d\d/.test(p2.text) &&
@@ -907,8 +919,10 @@ async function room(h, ctx, rec) {
             p1.text.includes("No replies yet") &&
             agrees.join("|") === "Skeptic agrees" &&
             p4.includes("1 draft waits for you") &&
-            !(await exists(h, '[data-council-channel] [data-council-draft="r4"]')),
-        { p2, p1, p4, agrees }
+            p4Draft?.of === "reply" &&
+            p4Draft.text.includes("Waiting for you") &&
+            p4Draft.text.includes(p4Title),
+        { p2, p1, p4, agrees, p4Draft }
     );
 
     const skip = await text(h, '[data-council-skip="witness"]');
@@ -1001,24 +1015,25 @@ async function roomKeys(h, ctx, rec) {
         seen.push(await focusedIdea(h));
     }
     rec(
-        "keys: j moves nothing with focus outside the channel; in it j / k move over the ideas (P1, P2, P1, P2, P3, P4) and stop at the last",
-        idle === null && seen.join(",") === "P1,P2,P1,P2,P3,P4,P4",
+        "keys: j moves nothing with focus outside the channel; in it j / k move over the ideas in the channel's order (P1, P3, P1, P3, P4, P2) and stop at the last",
+        idle === null && seen.join(",") === "P1,P3,P1,P3,P4,P2,P2",
         { idle, seen }
     );
 
+    // the cursor is on P2, the last idea of the channel's order (P1, P3, P4, P2)
     await pressEnter(h);
-    const opened = await until(h, `!!document.querySelector('[data-council-thread="P4"]')`);
+    const opened = await until(h, `!!document.querySelector('[data-council-thread="P2"]')`);
     rec(
-        "keys: Enter opens the thread of the idea under the cursor (P4)",
-        opened && (await attr(h, '[data-council-idea="P4"]', "data-open")) === "true",
+        "keys: Enter opens the thread of the idea under the cursor (P2)",
+        opened && (await attr(h, '[data-council-idea="P2"]', "data-open")) === "true",
         opened
     );
     await pressEscape(h);
     const closed = await until(h, `!document.querySelector("[data-council-thread]")`);
     await pressK(h);
     rec(
-        "keys: Esc closes it, and k moves the cursor again (to P3)",
-        closed && (await focusedIdea(h)) === "P3",
+        "keys: Esc closes it, and k moves the cursor again (to P4, the idea before P2)",
+        closed && (await focusedIdea(h)) === "P4",
         { closed, focused: await focusedIdea(h) }
     );
 }
@@ -1110,7 +1125,7 @@ async function roomAwaiting(h, ctx, rec) {
         of: d.getAttribute("data-draft-of"),
         label: d.getAttribute("aria-label"),
         text: (d.textContent ?? "")${NORM},
-        buttons: [...d.querySelectorAll("button")].map((b) => (b.textContent ?? "")${NORM}),
+        buttons: ["send", "edit", "drop"].map((k) => (d.querySelector("[data-council-draft-" + k + "]")?.textContent ?? "")${NORM}),
         tint: getComputedStyle(d).backgroundColor,
     }))`);
     rec(
