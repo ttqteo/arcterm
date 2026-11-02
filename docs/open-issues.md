@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Jarvis Councils region: open Jarvis with a council running and one done this week → a Councils
+  region sits under Runs, the waiting/running ones first, each row `council` · title · project · N experts · age and
+  its state word; clicking a row (or Open / Report) lands on that council in Agent; j/k walks into it; with none in
+  seven days it says so and offers New council. `briefsurface.tsx`, `briefcouncils.ts`, "feat(jarvis): a Councils
+  region…".
 - [ ] (arcterm) Conversation History: Resume a claude conversation, then Resume it again before its terminal draws;
   the toast reads "<name> is still starting", not "already open", and no second tab opens. `cockpit-actions.ts` `goToHolder`.
 - [ ] (arcterm) Cockpit → Cards with a card showing its pinned prompt bar: open the header's All projects menu; every

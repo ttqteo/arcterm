@@ -35,6 +35,7 @@ import { formatAge } from "@/app/view/agents/agentsviewmodel";
 import { attentionAtom } from "@/app/view/agents/attentionstore";
 import { jumpToAgent } from "@/app/view/agents/channelsprimitives";
 import { channelsAtom, createChannel, loadChannels, runAtom } from "@/app/view/agents/channelsstore";
+import { useCouncils } from "@/app/view/agents/councilstore";
 import { openLauncher } from "@/app/view/agents/launcherstore";
 import { projectsAtom } from "@/app/view/agents/projectsstore";
 import { RollingCount } from "@/app/view/agents/rollingcount";
@@ -70,6 +71,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { runAttentionAct } from "./attentionrun";
 import { AutonomyLadder } from "./autonomyladderview";
 import { briefFleet } from "./brieffleet";
+import { COUNCIL_CAP, councilLines, councilsMeta } from "./briefcouncils";
 import { BRIEFING_FIXTURES } from "./briefingfixtures";
 import {
     ackableRuns,
@@ -136,6 +138,7 @@ import {
     type RunKindFilter,
 } from "./briefrows";
 import {
+    CouncilRowView,
     DeltaRowView,
     IdeaRow,
     InitiativeRow,
@@ -269,6 +272,11 @@ const REGIONS = {
     initiatives: {
         label: "Initiatives",
         absent: "No initiative yet. Work bigger than one run lives here as a list of chunks that agents tick off.",
+        ok: false,
+    },
+    councils: {
+        label: "Councils",
+        absent: "No council in the last seven days. A council puts several models on one question and writes a report.",
         ok: false,
     },
     behind: { label: "Since you looked", absent: "Nothing new since you last looked.", ok: false },
@@ -1082,6 +1090,10 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
             flush();
         };
     }, []);
+    // every project's councils, the Councils region's rows (briefcouncils.ts); `council:changed` keeps the list fresh
+    const councilList = useCouncils("");
+    const councilProjects = useAtomValue(projectsAtom);
+    const councilsOpen = expanded.councils === true;
     const lines = useMemo(() => {
         const now = Date.now();
         // trackers and ideas are drawn apart (an ideas section in the side column), so j/k has to read them apart
@@ -1103,6 +1115,7 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                 sessions.rows.map((r) => sessionLine(r, now)),
                 query
             ),
+            councils: filterLines(councilLines(councilList, councilProjects, now), query),
             behind: behindGroups(deltaGroups, shipped.rows, now)
                 .map((g) => ({ ...g, lines: filterLines(g.lines, query) }))
                 .filter((g) => g.lines.length > 0),
@@ -1118,12 +1131,19 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         shipped,
         query,
         pendingDeletes,
+        councilList,
+        councilProjects,
     ]);
     const staleCount = lines.sessions.filter((l) => l.stale).length;
     // Waiting's window: the first three rows, the rest behind "+N more"; a filter shows every match
     const waitingWindow = useMemo(
         () => capRegion(lines.waiting, WAITING_CAP, waitingOpen || filtering),
         [lines.waiting, waitingOpen, filtering]
+    );
+    // Councils' window, as Waiting's: the first five, the rest behind "+N more"
+    const councilWindow = useMemo(
+        () => capRegion(lines.councils, COUNCIL_CAP, councilsOpen || filtering),
+        [lines.councils, councilsOpen, filtering]
     );
     const view = useMemo(() => {
         const shows = (id: RegionId) => only == null || only === id;
@@ -1135,18 +1155,19 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
         const sessionLines = withQueuedLines(runLines, queued, runKind, query, Date.now());
         const behindLines = lines.behind.filter((g) => g.label !== SHIPPED_LABEL).flatMap((g) => g.lines);
         const shippedLines = lines.behind.find((g) => g.label === SHIPPED_LABEL)?.lines ?? NO_LINES;
-        // j/k walks the rows in the order they are drawn: the main column (Waiting, Runs, Initiatives), then the
-        // side column (Since you looked, Shipped, Ideas)
+        // j/k walks the rows in the order they are drawn: the main column (Waiting, Runs, Councils, Initiatives), then
+        // the side column (Since you looked, Shipped, Ideas)
         const visible: BriefLine[] = [
             ...(shows("waiting") ? waitingWindow.rows : []),
             ...(shows("sessions") ? sessionLines : []),
+            ...(shows("councils") ? councilWindow.rows : []),
             ...(shows("initiatives") ? lines.trackers : []),
             ...(shows("behind") ? behindLines : []),
             ...(sideShown ? shippedLines : []),
             ...(sideShown ? lines.ideas : []),
         ];
         return { shows, sideShown, sessionLines, shippedLines, visible };
-    }, [lines, only, staleOpen, filtering, waitingWindow, queued, runKind, query]);
+    }, [lines, only, staleOpen, filtering, waitingWindow, councilWindow, queued, runKind, query]);
 
     // --- inline tracker -----------------------------------------------------------------------------
     // The expanded initiative's plan is spliced into the SAME row list the cursor walks, so j/k falls
@@ -2435,6 +2456,46 @@ export function BriefSurface({ model }: { model: AgentsViewModel }) {
                                                     expanded={sessionsOpen}
                                                     onToggle={() => toggleRegion("sessions")}
                                                 />
+                                            </div>
+                                        </Region>
+                                    ) : null}
+                                    {view.shows("councils") ? (
+                                        <Region
+                                            id="councils"
+                                            count={lines.councils.length || undefined}
+                                            empty={lines.councils.length === 0 && !filtering}
+                                            gap="gap-[9px]"
+                                            meta={councilsMeta(lines.councils)}
+                                            only={only === "councils"}
+                                            onOnly={() => toggleOnly("councils")}
+                                            act={
+                                                <button
+                                                    type="button"
+                                                    data-jarvis-empty-act="council"
+                                                    onClick={() => openLauncher(model, "council")}
+                                                    className={EMPTY_ACT}
+                                                >
+                                                    New council
+                                                </button>
+                                            }
+                                        >
+                                            <div className="flex flex-col">
+                                                {lines.councils.length === 0 ? <NoMatch /> : null}
+                                                {councilWindow.rows.map((l) => (
+                                                    <CouncilRowView
+                                                        key={l.id}
+                                                        line={l}
+                                                        focused={cursor === l.id}
+                                                        onOpen={(e) => openLine(l.target, e)}
+                                                    />
+                                                ))}
+                                                {!filtering ? (
+                                                    <MoreControl
+                                                        n={councilWindow.more}
+                                                        expanded={councilsOpen}
+                                                        onToggle={() => toggleRegion("councils")}
+                                                    />
+                                                ) : null}
                                             </div>
                                         </Region>
                                     ) : null}

@@ -9,6 +9,7 @@
 import { cn } from "@/util/util";
 import { ArrowLeft, ArrowRight, Clock, CornerDownRight, Ellipsis, Lightbulb } from "lucide-react";
 import type { ReactNode } from "react";
+import type { CouncilLine } from "./briefcouncils";
 import type { QueueAct } from "./briefingmodel";
 import { initiativeLine, type BriefLine, type RunRowFace } from "./briefrows";
 import { CURSOR_RING, cursorAttrs, FAINT_TEXT, REGION_LABEL, ROW_BORDER, SMALL_BTN, TONE_TEXT } from "./briefstyle";
@@ -850,6 +851,63 @@ export function RunRowView({
                     </button>
                 ) : null}
             </div>
+        </div>
+    );
+}
+
+// A council in the Councils region (briefcouncils.ts): the Runs row's anatomy, with the council's project and panel
+// size where a run has its project and elapsed time. The row and its button both open the council through the router,
+// on the view it was last shown on; the button says Report once it has one.
+export function CouncilRowView({
+    line,
+    focused,
+    onOpen,
+}: {
+    line: CouncilLine;
+    focused: boolean;
+    onOpen: (e?: React.MouseEvent) => void;
+}) {
+    return (
+        <div
+            data-jarvis-brief-row="council"
+            {...cursorAttrs(focused)}
+            onClick={onOpen}
+            className={cn(
+                "flex cursor-pointer items-center gap-3 py-[7px] hover:bg-surface-hover",
+                ROW_BORDER,
+                focused && CURSOR_RING
+            )}
+        >
+            <span className={cn("h-[7px] w-[7px] flex-none rounded-full", DOT[line.dot])} />
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <div className="flex min-w-0 items-center gap-2">
+                    <span className="flex-none rounded-[5px] border border-edge-mid px-1.5 text-[10.5px] leading-[17px] text-ink-mid">
+                        council
+                    </span>
+                    <span
+                        title={line.title}
+                        className={cn("min-w-0 truncate text-[13px]", line.live ? "text-ink-hi" : "text-ink-mid")}
+                    >
+                        {line.title}
+                    </span>
+                </div>
+                <span className={cn("truncate whitespace-nowrap", FAINT_TEXT)}>
+                    {line.meta} · {line.age}
+                </span>
+            </div>
+            <span className={cn("flex-none text-right text-[11px] font-semibold", TONE_TEXT[line.stateTone])}>
+                {line.state}
+            </span>
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onOpen(e);
+                }}
+                className={cn(SMALL_BTN, "flex-none")}
+            >
+                {line.hasReport && !line.live ? "Report" : "Open"}
+            </button>
         </div>
     );
 }
