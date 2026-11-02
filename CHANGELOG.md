@@ -74,6 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run started from a brainstorm now shows in History by its feature ("Build …"), with its spec's file name on the
+  line under it, instead of a title cut off halfway through the spec's full path.
 - In a council, when you ask everyone something, the experts who answer after the first one no longer open with the
   same "Right, agreed…" and repeat its point: they add only what is new, or show as agreeing.
 - A council an agent starts inside a project registered at a repo's subfolder (such as `apps/website`) now shows

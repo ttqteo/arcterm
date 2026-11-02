@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) History names a spec run by its feature: open a project's History that lists a run started from a
+  brainstorm → its row reads "Build <feature>" with no path, and the line under it ends `· <spec file>.md`
+  (`projectoverviewmodel.ts` `runHeadline`).
 - [ ] (arcterm) Council seats the chats you name: from a claude chat, ask for a council on "this chat + <another tab
   id>" → `wsh council start` runs with `--agent self --agent <id>` and prints `… · 2 chats + Skeptic · …`; both tabs
   answer each round in their own transcript, nothing is held as a draft, and the starter's background `wsh council wait
