@@ -6,7 +6,7 @@
 
 import type { NewRunPrefill } from "@/app/view/jarvis/newrun";
 import type { AgentVM } from "./agentsviewmodel";
-import { canvasDir, canvasProjectDir, join } from "./canvasmodel";
+import { canvasDir, canvasProjectDir, join, type CanvasBoard } from "./canvasmodel";
 
 export const BRAINSTORM_POLL_MS = 3000;
 export const BUILDER_PART = "builder";
@@ -641,6 +641,117 @@ export function questionBoards(f: BrainstormFile, base: string | null): string[]
     const id = f.question?.part;
     const p = id ? f.parts.find((x) => x.id === id) : undefined;
     return partBoards(f, p, base);
+}
+
+// The brainstorm's right rail: the Boards tab beside the second tab (Decided so far, or the builder check's own rail),
+// one width the user drags. Everything the rail decides without a DOM is here; brainstormrail.tsx draws it.
+
+// the rail's smallest width: today's Decided so far, and the builder check's own rail
+export const RAIL_MIN_W = 280;
+export const RAIL_MIN_W_CHECK = 460;
+// what the question keeps beside the rail, even when the rail is dragged or widened to its largest
+export const QUESTION_MIN_W = 360;
+// a board's tile in the rail (MIN_TILE_W, 560, would need a rail the pane rarely has room for) and the gap between two
+export const RAIL_TILE_W = 380;
+export const RAIL_TILE_GAP = 16;
+// the rail opens at this share of the pane until the user drags it
+export const RAIL_DEFAULT_FRAC = 0.32;
+
+// the rail's width: the stored one, else its default share, kept between the smallest rail and what leaves the
+// question its 360px. A pane too narrow for both gets the smallest rail, which the pane stacks under the question
+// (railStacks)
+export function clampRailWidth(stored: number | null, paneWidth: number, min: number): number {
+    const max = paneWidth - QUESTION_MIN_W;
+    if (max <= min) {
+        return min;
+    }
+    const width = stored != null && Number.isFinite(stored) ? stored : paneWidth * RAIL_DEFAULT_FRAC;
+    return Math.min(max, Math.max(min, width));
+}
+
+// "widened" is the rail's largest: all the pane but the question's 360px, and never under the smallest rail
+export function railMaxWidth(paneWidth: number, min: number): number {
+    return Math.max(min, paneWidth - QUESTION_MIN_W);
+}
+
+// the pane cannot hold the question and the smallest rail side by side (640px in the design, 820px in the check): the
+// rail goes under the question. The pane's container query says the same; this is the one place the cutoffs are tested
+export function railStacks(paneWidth: number, min: number): boolean {
+    return paneWidth < QUESTION_MIN_W + min;
+}
+
+// two columns once the rail's inner width fits two tiles and the gap between them; a single board is always one column
+export function railColumns(innerWidth: number, boardCount: number): 1 | 2 {
+    return boardCount >= 2 && innerWidth >= 2 * RAIL_TILE_W + RAIL_TILE_GAP ? 2 : 1;
+}
+
+// the quiet line beside the tabs: the columns and the rail's share of the pane
+export function railReadout(columns: 1 | 2, railWidth: number, paneWidth: number): string {
+    const share = paneWidth > 0 ? Math.round((railWidth / paneWidth) * 100) : 0;
+    return `${columns === 2 ? "2 columns" : "1 column"} · ${share}%`;
+}
+
+// what heads a board in the rail. letter, label and option name the option the board shows, or are the board's own
+// title when it shows none: a letter and the hover link exist only where the board's place among the part's boards
+// says which option it is
+export type RailBoardHead = { name: string; letter: string | null; label: string; option: number | null };
+
+// A part's boards in the order the agent lists them, each headed by its option when the open question is about this
+// part, offers options, and the part has as many boards as options (two or more): board i then shows option i. Any
+// other count leaves the match a guess, so the head is the board's title in canvas.json (boards), else its file name,
+// and the board is linked to no option
+export function railBoardHeads(f: BrainstormFile, partId: string, boards: CanvasBoard[]): RailBoardHead[] {
+    const names = f.parts.find((p) => p.id === partId)?.boards ?? [];
+    const q = f.question;
+    const options = q != null && q.part === partId ? q.options : undefined;
+    const linked = options != null && names.length >= 2 && options.length === names.length;
+    return names.map((name, i) => {
+        if (linked) {
+            return { name, letter: optionLetter(i), label: options[i].label, option: i };
+        }
+        const title = boards.find((b) => b.name === name)?.title?.trim();
+        return { name, letter: null, label: title ? title : name, option: null };
+    });
+}
+
+// a part's boards and spikes as the rail lists them: the spikes are links under the group's boards
+export type RailGroup = { partId: string; title: string; boards: string[]; spikes: string[] };
+
+// The parts that have boards or spikes, in the design's order (the decisions, the builder's last, then the notes), or
+// only partId's group. Nothing until the canvas is named and served, as for partBoards
+export function railGroups(f: BrainstormFile, base: string | null, partId?: string): RailGroup[] {
+    const groups: RailGroup[] = [];
+    for (const p of [...decisionParts(f), ...noteParts(f)]) {
+        if (partId != null && p.id !== partId) {
+            continue;
+        }
+        const boards = partBoards(f, p, base) ?? [];
+        const spikes = partSpikes(f, p, base) ?? [];
+        if (boards.length > 0 || spikes.length > 0) {
+            groups.push({ partId: p.id, title: p.title, boards, spikes });
+        }
+    }
+    return groups;
+}
+
+// "second" is whatever the shell is given for its other tab: Decided so far in the design, the builder check's own rail in
+// the check
+export type RailTab = "boards" | "second";
+
+// The tabs the rail draws and the one it opens on. With a question open, Boards exists only when the question's part has
+// boards, and opens first, in the check too; a question with no boards leaves the second tab alone. With no question open
+// (the design, the judge's wait, the agent writing, the review), Boards exists when any part has a board, and opens
+// first in the design, but in the check the check's tab does
+export function railTabs(
+    f: BrainstormFile,
+    base: string | null,
+    at: { question: boolean; check: boolean }
+): { tabs: RailTab[]; first: RailTab } {
+    const boards = at.question ? questionBoards(f, base) != null : f.parts.some((p) => partBoards(f, p, base) != null);
+    if (!boards) {
+        return { tabs: ["second"], first: "second" };
+    }
+    return { tabs: ["boards", "second"], first: !at.question && at.check ? "second" : "boards" };
 }
 
 export type HistoryRow = {

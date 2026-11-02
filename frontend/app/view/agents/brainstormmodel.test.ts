@@ -5,6 +5,12 @@ import { describe, expect, it } from "vitest";
 import type { AgentVM } from "./agentsviewmodel";
 import {
     BUILDER_PART,
+    QUESTION_MIN_W,
+    RAIL_DEFAULT_FRAC,
+    RAIL_MIN_W,
+    RAIL_MIN_W_CHECK,
+    RAIL_TILE_GAP,
+    RAIL_TILE_W,
     answerLine,
     answeredQuestions,
     approveBlocker,
@@ -24,6 +30,7 @@ import {
     checkReview,
     checkSpan,
     checkUnder,
+    clampRailWidth,
     clockText,
     compactedSummary,
     confirmableGuesses,
@@ -63,6 +70,13 @@ import {
     progressView,
     questionBoards,
     questionTrack,
+    railBoardHeads,
+    railColumns,
+    railGroups,
+    railMaxWidth,
+    railReadout,
+    railStacks,
+    railTabs,
     resumePrompt,
     reviewHead,
     runLine,
@@ -90,6 +104,7 @@ import {
     type PartState,
     type SentLine,
 } from "./brainstormmodel";
+import type { CanvasBoard } from "./canvasmodel";
 
 const part = (id: string, state: PartState, over: Partial<BrainstormPart> = {}): BrainstormPart => ({
     id,
@@ -2492,5 +2507,346 @@ describe("the builder check's wait", () => {
         expect(c.note).toBe(
             "The builder finished. The agent is sorting its questions into yours, its calls and what the design already answers."
         );
+    });
+});
+
+describe("the rail's width", () => {
+    it("has the sizes the spec fixes", () => {
+        expect(RAIL_MIN_W).toBe(280);
+        expect(RAIL_MIN_W_CHECK).toBe(460);
+        expect(QUESTION_MIN_W).toBe(360);
+        expect(RAIL_TILE_W).toBe(380);
+        expect(RAIL_TILE_GAP).toBe(16);
+        expect(RAIL_DEFAULT_FRAC).toBe(0.32);
+    });
+
+    it("opens at a third of the pane when nothing is stored", () => {
+        expect(clampRailWidth(null, 1000, RAIL_MIN_W)).toBeCloseTo(320);
+        expect(clampRailWidth(null, 1500, RAIL_MIN_W)).toBeCloseTo(480);
+    });
+
+    it("keeps a stored width between the smallest and what leaves the question 360px", () => {
+        expect(clampRailWidth(500, 1200, RAIL_MIN_W)).toBe(500);
+        expect(clampRailWidth(100, 1200, RAIL_MIN_W)).toBe(280);
+        expect(clampRailWidth(900, 1200, RAIL_MIN_W)).toBe(840);
+        expect(clampRailWidth(280, 1200, RAIL_MIN_W)).toBe(280);
+        expect(clampRailWidth(840, 1200, RAIL_MIN_W)).toBe(840);
+    });
+
+    it("clamps the default too: a pane whose third is under the smallest rail still gets the smallest", () => {
+        expect(clampRailWidth(null, 700, RAIL_MIN_W)).toBe(280);
+        expect(clampRailWidth(null, 700, RAIL_MIN_W_CHECK)).toBe(460);
+    });
+
+    it("the check's rail is no narrower than 460px", () => {
+        expect(clampRailWidth(300, 1400, RAIL_MIN_W_CHECK)).toBe(460);
+        expect(clampRailWidth(null, 1400, RAIL_MIN_W_CHECK)).toBe(460);
+        expect(clampRailWidth(700, 1400, RAIL_MIN_W_CHECK)).toBe(700);
+    });
+
+    it("gives the smallest rail when the pane is too narrow for both it and the question", () => {
+        expect(clampRailWidth(500, 600, RAIL_MIN_W)).toBe(280);
+        expect(clampRailWidth(null, 600, RAIL_MIN_W)).toBe(280);
+        expect(clampRailWidth(700, 639, RAIL_MIN_W)).toBe(280);
+        expect(clampRailWidth(700, 700, RAIL_MIN_W_CHECK)).toBe(460);
+        expect(clampRailWidth(null, 0, RAIL_MIN_W)).toBe(280);
+    });
+
+    it("treats a stored width that is not a number as nothing stored", () => {
+        expect(clampRailWidth(Number.NaN, 1000, RAIL_MIN_W)).toBeCloseTo(320);
+        expect(clampRailWidth(Number.POSITIVE_INFINITY, 1000, RAIL_MIN_W)).toBeCloseTo(320);
+    });
+
+    it("widens to what leaves the question 360px", () => {
+        expect(railMaxWidth(1200, RAIL_MIN_W)).toBe(840);
+        expect(railMaxWidth(1200, RAIL_MIN_W_CHECK)).toBe(840);
+        expect(railMaxWidth(1000, RAIL_MIN_W)).toBe(640);
+    });
+
+    it("widens no narrower than the smallest rail, however narrow the pane", () => {
+        expect(railMaxWidth(500, RAIL_MIN_W)).toBe(280);
+        expect(railMaxWidth(700, RAIL_MIN_W_CHECK)).toBe(460);
+        expect(railMaxWidth(0, RAIL_MIN_W)).toBe(280);
+    });
+
+    it("stacks under the question below 640px in the design and 820px in the check", () => {
+        expect(railStacks(639, RAIL_MIN_W)).toBe(true);
+        expect(railStacks(640, RAIL_MIN_W)).toBe(false);
+        expect(railStacks(819, RAIL_MIN_W_CHECK)).toBe(true);
+        expect(railStacks(820, RAIL_MIN_W_CHECK)).toBe(false);
+        // the same pane is wide enough for the design's rail and too narrow for the check's
+        expect(railStacks(700, RAIL_MIN_W)).toBe(false);
+        expect(railStacks(700, RAIL_MIN_W_CHECK)).toBe(true);
+    });
+});
+
+describe("the rail's columns", () => {
+    const TWO = 2 * RAIL_TILE_W + RAIL_TILE_GAP;
+
+    it("lays two boards in two columns at exactly two tiles and their gap", () => {
+        expect(TWO).toBe(776);
+        expect(railColumns(TWO, 2)).toBe(2);
+        expect(railColumns(TWO - 1, 2)).toBe(1);
+        expect(railColumns(TWO + 200, 3)).toBe(2);
+    });
+
+    it("keeps a single board, or none, in one column however wide the rail is", () => {
+        expect(railColumns(2000, 1)).toBe(1);
+        expect(railColumns(2000, 0)).toBe(1);
+    });
+
+    it("reads the readout in the columns and the rail's share of the pane", () => {
+        expect(railReadout(2, 624, 1200)).toBe("2 columns · 52%");
+        expect(railReadout(1, 384, 1200)).toBe("1 column · 32%");
+    });
+
+    it("rounds the share to a whole percent, and reads 0% for a pane that has no width", () => {
+        expect(railReadout(1, 333, 1000)).toBe("1 column · 33%");
+        expect(railReadout(1, 335, 1000)).toBe("1 column · 34%");
+        expect(railReadout(1, 280, 0)).toBe("1 column · 0%");
+    });
+});
+
+describe("the rail's board heads", () => {
+    const names = ["A.dc.html", "B.dc.html", "C.dc.html"];
+    const opts = (n: number) =>
+        Array.from({ length: n }, (_, i) => ({ label: `Option ${i} label`, detail: `detail ${i}` }));
+    const asked = (n: number | null, partId = "layout"): BrainstormFile =>
+        file({
+            canvas: "topic",
+            parts: [part("layout", "asked", { boards: names }), part("copy", "open")],
+            question: { n: 3, text: "Which layout?", part: partId, ...(n != null ? { options: opts(n) } : {}) },
+        });
+    const sized = (name: string, title?: string): CanvasBoard => ({ name, x: 0, y: 0, w: 1440, h: 900, title });
+    const BOARDS = names.map((n) => sized(n));
+
+    it("ties each board to its option when the question has as many options as the part has boards", () => {
+        expect(railBoardHeads(asked(3), "layout", BOARDS)).toEqual([
+            { name: "A.dc.html", letter: "A", label: "Option 0 label", option: 0 },
+            { name: "B.dc.html", letter: "B", label: "Option 1 label", option: 1 },
+            { name: "C.dc.html", letter: "C", label: "Option 2 label", option: 2 },
+        ]);
+    });
+
+    it("takes the option's label even when canvas.json gives the board a title", () => {
+        const titled = names.map((n, i) => sized(n, `Title ${i}`));
+        expect(railBoardHeads(asked(3), "layout", titled).map((h) => h.label)).toEqual([
+            "Option 0 label",
+            "Option 1 label",
+            "Option 2 label",
+        ]);
+    });
+
+    it("ties two boards to two options", () => {
+        const two = file({
+            canvas: "topic",
+            parts: [part("layout", "asked", { boards: names.slice(0, 2) })],
+            question: { n: 1, text: "Which?", part: "layout", options: opts(2) },
+        });
+        expect(railBoardHeads(two, "layout", BOARDS).map((h) => [h.letter, h.option])).toEqual([
+            ["A", 0],
+            ["B", 1],
+        ]);
+    });
+
+    it("links nothing for one board and three options", () => {
+        const one = file({
+            canvas: "topic",
+            parts: [part("layout", "asked", { boards: ["A.dc.html"] })],
+            question: { n: 1, text: "Which?", part: "layout", options: opts(3) },
+        });
+        expect(railBoardHeads(one, "layout", BOARDS)).toEqual([
+            { name: "A.dc.html", letter: null, label: "A.dc.html", option: null },
+        ]);
+    });
+
+    it("links nothing for one board and one option: a single board has nothing to compare", () => {
+        const one = file({
+            canvas: "topic",
+            parts: [part("layout", "asked", { boards: ["A.dc.html"] })],
+            question: { n: 1, text: "Which?", part: "layout", options: opts(1) },
+        });
+        expect(railBoardHeads(one, "layout", BOARDS)[0]).toMatchObject({ letter: null, option: null });
+    });
+
+    it("links nothing for boards on a question with no options", () => {
+        expect(railBoardHeads(asked(null), "layout", BOARDS).map((h) => [h.letter, h.option, h.label])).toEqual([
+            [null, null, "A.dc.html"],
+            [null, null, "B.dc.html"],
+            [null, null, "C.dc.html"],
+        ]);
+    });
+
+    it("links nothing for more boards than options", () => {
+        expect(railBoardHeads(asked(2), "layout", BOARDS).every((h) => h.letter == null && h.option == null)).toBe(
+            true
+        );
+    });
+
+    it("links nothing for fewer boards than options", () => {
+        expect(railBoardHeads(asked(4), "layout", BOARDS).every((h) => h.letter == null && h.option == null)).toBe(
+            true
+        );
+    });
+
+    it("links nothing when the open question is about another part", () => {
+        const f = file({
+            canvas: "topic",
+            parts: [part("layout", "yours", { boards: names }), part("copy", "asked")],
+            question: { n: 4, text: "Which copy?", part: "copy", options: opts(3) },
+        });
+        expect(railBoardHeads(f, "layout", BOARDS).every((h) => h.letter == null && h.option == null)).toBe(true);
+    });
+
+    it("links nothing with no question open", () => {
+        const f = file({ canvas: "topic", parts: [part("layout", "yours", { boards: names })] });
+        expect(railBoardHeads(f, "layout", BOARDS).every((h) => h.letter == null && h.option == null)).toBe(true);
+    });
+
+    it("heads an unlinked board with its title from canvas.json", () => {
+        const titled = [sized("A.dc.html", "Lag trend first"), sized("B.dc.html"), sized("C.dc.html", "")];
+        expect(railBoardHeads(asked(null), "layout", titled).map((h) => h.label)).toEqual([
+            "Lag trend first",
+            "B.dc.html",
+            "C.dc.html",
+        ]);
+    });
+
+    it("heads an unlinked board with its file name when canvas.json lists no such board", () => {
+        expect(railBoardHeads(asked(null), "layout", []).map((h) => h.label)).toEqual(names);
+    });
+
+    it("heads nothing for a part with no boards or one the file does not define", () => {
+        expect(railBoardHeads(asked(3), "copy", BOARDS)).toEqual([]);
+        expect(railBoardHeads(asked(3), "ghost", BOARDS)).toEqual([]);
+    });
+});
+
+describe("the rail's groups", () => {
+    const BASE = "http://127.0.0.1:1234";
+    const parts = [
+        part("layout", "yours", { boards: ["A.dc.html", "B.dc.html"] }),
+        part("motion", "guess", { spikes: ["spike/motion.html"] }),
+        part("copy", "open"),
+        part("page", "asked", { boards: ["Page.dc.html"], spikes: ["spike/page.html", "spike/page2.html"] }),
+    ];
+    const f = file({ canvas: "topic", parts });
+
+    it("lists the parts that have boards or spikes, each with both", () => {
+        expect(railGroups(f, BASE)).toEqual([
+            { partId: "layout", title: "Title layout", boards: ["A.dc.html", "B.dc.html"], spikes: [] },
+            { partId: "motion", title: "Title motion", boards: [], spikes: ["spike/motion.html"] },
+            {
+                partId: "page",
+                title: "Title page",
+                boards: ["Page.dc.html"],
+                spikes: ["spike/page.html", "spike/page2.html"],
+            },
+        ]);
+    });
+
+    it("lists only the named part's group", () => {
+        expect(railGroups(f, BASE, "page").map((g) => g.partId)).toEqual(["page"]);
+        expect(railGroups(f, BASE, "layout")[0].boards).toEqual(["A.dc.html", "B.dc.html"]);
+    });
+
+    it("lists nothing for a named part that has no boards or spikes, or is unknown", () => {
+        expect(railGroups(f, BASE, "copy")).toEqual([]);
+        expect(railGroups(f, BASE, "ghost")).toEqual([]);
+    });
+
+    it("lists nothing until the canvas is named and served", () => {
+        expect(railGroups(f, null)).toEqual([]);
+        expect(railGroups(file({ parts }), BASE)).toEqual([]);
+    });
+
+    it("keeps the design's order: the decisions with the builder's last, then the notes", () => {
+        const ordered = file({
+            canvas: "topic",
+            parts: [
+                part("builder", "guess", { boards: ["Builder.dc.html"] }),
+                part("recon", "yours", { kind: "note", boards: ["Recon.dc.html"] }),
+                part("layout", "yours", { boards: ["A.dc.html"] }),
+            ],
+        });
+        expect(railGroups(ordered, BASE).map((g) => g.partId)).toEqual(["layout", "builder", "recon"]);
+    });
+});
+
+describe("the rail's tabs", () => {
+    const BASE = "http://127.0.0.1:1234";
+    const parts = [part("layout", "asked", { boards: ["A.dc.html", "B.dc.html"] }), part("copy", "open")];
+    const ask = (p: string) => ({ n: 3, text: "Which?", part: p });
+    const withQ = (p: string) => file({ canvas: "topic", parts, question: ask(p) });
+    const open = { question: true, check: false };
+    const designView = { question: false, check: false };
+    const checkView = { question: false, check: true };
+    const BOTH = ["boards", "second"];
+
+    it("opens on Boards when the open question's part has boards", () => {
+        expect(railTabs(withQ("layout"), BASE, open)).toEqual({ tabs: BOTH, first: "boards" });
+    });
+
+    it("opens on Boards in the builder check too, when its question's part has boards", () => {
+        expect(railTabs(withQ("layout"), BASE, { question: true, check: true })).toEqual({
+            tabs: BOTH,
+            first: "boards",
+        });
+    });
+
+    it("has only the second tab when the question's part has no boards", () => {
+        expect(railTabs(withQ("copy"), BASE, open)).toEqual({ tabs: ["second"], first: "second" });
+        expect(railTabs(withQ("copy"), BASE, { question: true, check: true })).toEqual({
+            tabs: ["second"],
+            first: "second",
+        });
+    });
+
+    it("has only the second tab for a question on an unknown part, or with no part", () => {
+        expect(railTabs(withQ("ghost"), BASE, open)).toEqual({ tabs: ["second"], first: "second" });
+        expect(railTabs(withQ(""), BASE, open)).toEqual({ tabs: ["second"], first: "second" });
+    });
+
+    it("has only the second tab for a question the caller says is open when the file has none", () => {
+        expect(railTabs(file({ canvas: "topic", parts }), BASE, open)).toEqual({ tabs: ["second"], first: "second" });
+    });
+
+    it("has only the second tab until the canvas is named and served", () => {
+        expect(railTabs(file({ parts, question: ask("layout") }), BASE, open)).toEqual({
+            tabs: ["second"],
+            first: "second",
+        });
+        expect(railTabs(withQ("layout"), null, open)).toEqual({ tabs: ["second"], first: "second" });
+    });
+
+    it("with no question open, has Boards when any part has a board, and opens on it in the design", () => {
+        const f = file({ canvas: "topic", parts });
+        expect(railTabs(f, BASE, designView)).toEqual({ tabs: BOTH, first: "boards" });
+    });
+
+    it("with no question open, opens on the check's tab in the check", () => {
+        const f = file({ canvas: "topic", parts });
+        expect(railTabs(f, BASE, checkView)).toEqual({ tabs: BOTH, first: "second" });
+    });
+
+    it("with no question open and no board in the design, has only the second tab, in both", () => {
+        const none = file({ canvas: "topic", parts: [part("copy", "open"), part("motion", "yours")] });
+        expect(railTabs(none, BASE, designView)).toEqual({ tabs: ["second"], first: "second" });
+        expect(railTabs(none, BASE, checkView)).toEqual({ tabs: ["second"], first: "second" });
+        expect(railTabs(file({ parts }), BASE, designView)).toEqual({ tabs: ["second"], first: "second" });
+        expect(railTabs(file({ canvas: "topic", parts }), null, designView)).toEqual({
+            tabs: ["second"],
+            first: "second",
+        });
+    });
+
+    it("counts a board on any part, the builder's and a note's too, but not a spike", () => {
+        const spiked = file({ canvas: "topic", parts: [part("motion", "yours", { spikes: ["spike/motion.html"] })] });
+        expect(railTabs(spiked, BASE, designView).tabs).toEqual(["second"]);
+        const noted = file({
+            canvas: "topic",
+            parts: [part("recon", "yours", { kind: "note", boards: ["Recon.dc.html"] })],
+        });
+        expect(railTabs(noted, BASE, designView).tabs).toEqual(BOTH);
     });
 });
