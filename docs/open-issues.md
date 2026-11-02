@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) History run/council rows carry their badge on the meta line: Project Overview → History → a Run or
+  Council row's title starts at the same left edge as a session's, and its second line reads "◆ Run · …" /
+  "● Council · …"; unfold a council → the peek lines up under the title. `projecthistory.tsx` `KindLabel`,
+  "fix(agents): History's run and council badge moves to the meta line".
 - [ ] (arcterm) Council follow-up answers don't echo the first one: in a council that has a report, send a yes/no
   question to Everyone → the first seat answers it; the others open with their own new point (no "Đúng" / "Mình đồng
   ý" / "Agreed", no repeat of the first seat's caveat) or show as "X agrees". Seen failing in council 7096c31c (r64–r67)
