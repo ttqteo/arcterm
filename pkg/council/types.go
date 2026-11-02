@@ -67,9 +67,16 @@ type CouncilExpert struct {
 // IsAgent says a seat is a live agent's, not a role expert's.
 func IsAgent(e CouncilExpert) bool { return e.Agent != "" }
 
-// HasAgents says at least one live agent is seated: the council then holds every answer as a draft.
+// HasAgents says at least one live agent is seated: the council then honours Rounds, and its estimate counts the
+// agents' turns. Whether it also holds every answer as a draft is HoldsDrafts.
 func HasAgents(c *Council) bool {
 	return c != nil && slices.ContainsFunc(c.Experts, IsAgent)
+}
+
+// HoldsDrafts says the council holds every answer as a draft for the person's Send, Edit or Drop: an agent is seated and
+// the council was not started by `wsh council start`, which runs to the report with nothing held.
+func HoldsDrafts(c *Council) bool {
+	return HasAgents(c) && !c.ByAgent
 }
 
 type CouncilGroup struct {
