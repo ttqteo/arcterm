@@ -49,6 +49,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   safeguards flagged this session", the menu's header reads "Safeguards flagged <seat> on opus" and its first item is
   Retry on Opus 4.8; picking it reruns the call on `claude-opus-4-8` and the call goes through. Untried in the app;
   unit-tested in `councilretry.test.ts`. The commit that adds this line.
+- [ ] (arcterm) Council safeguard fallback + `wsh council retry`: in the installed build, `wsh council retry
+  b421b5d4e7674e67` reruns that council's failed summary (Mentor); if Opus 5.5 flags it again, the seat's activity reads
+  "Flagged by safeguards: answering on Opus 4.8" and the summary lands, with `- Retried: Mentor in round 3 on
+  claude-opus-4-8 (its seat is opus; Claude's safeguards flagged it)` in the document. Unit-tested
+  (`TestSafeguardFlagRunsTheCallAgainOnOpus48`, `TestCouncilRetryTarget`); no real flagged call tried. 13f4c1c6b.
 - [ ] (arcterm) Summary failed panel closes: open a council whose summary failed. The panel's header ends with an ✕;
   clicking it hides the panel while the strip's Coordinator chip keeps its Retry. Retry, and when it fails again the
   panel is back. The commit that adds this line.
