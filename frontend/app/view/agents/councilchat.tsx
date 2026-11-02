@@ -30,17 +30,7 @@ import { useKeybindings } from "@/app/store/keybindings/store";
 import { reloadFileIndex } from "@/app/view/code/codestore";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import {
-    Check,
-    ChevronDown,
-    ChevronUp,
-    CornerDownRight,
-    FileText,
-    Loader2,
-    Plus,
-    SquareTerminal,
-    X,
-} from "lucide-react";
+import { Check, ChevronDown, ChevronUp, CornerDownRight, FileText, Loader2, Plus, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
     useCallback,
@@ -83,7 +73,6 @@ import {
     type IdeaPost,
     type PillTone,
     type ReplyPost,
-    type SeatChip,
     type SkipLine,
     type ThreadItem,
     type TypingRow,
@@ -317,126 +306,6 @@ const secondaryButton =
     "h-[26px] cursor-pointer rounded-[6px] border border-edge-mid bg-surface-raised px-[10px] text-[13px] text-secondary outline-none hover:border-edge-strong hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
 const ghostButton =
     "h-[26px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[10px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50";
-
-// ---- the seats ----
-
-const SEAT_DOT: Record<SeatChip["dot"], string> = {
-    working: "bg-working pulse-dot",
-    waiting: "bg-asking",
-    failed: "bg-error",
-    idle: "bg-ink-faint",
-};
-
-// A seat as a filter (board J3-seat-filter-panel.dc.html): its letters, short name and how many messages it wrote; a
-// click shows its messages alone, again shows everyone. While it works, waits or failed, its dot shows beside the
-// name, and what it is doing is on hover with its kind and tooltip. An agent's terminal and a failed seat's Retry sit
-// beside it.
-// With two or more seats failed, each failed seat holds a model pick instead (RetryModelPick) and the strip ends in one
-// Retry all: one Retry each would be refused while the first runs.
-function SeatFilter({
-    c,
-    chip,
-    on,
-    acts,
-    onToggle,
-    onOpenTerminal,
-    pick,
-}: {
-    c: Council;
-    chip: SeatChip;
-    on: boolean;
-    acts: Actions;
-    onToggle: () => void;
-    onOpenTerminal: (tab: string) => void;
-    pick: { picked: string | undefined; onPick: (model: string | undefined) => void } | null; // set under Retry all
-}) {
-    const key = `retry:${chip.id}`;
-    const running = c.state === "running";
-    const expert = c.experts.find((e) => e.id === chip.id);
-    const count = chip.ideas + chip.replies;
-    const live = chip.dot !== "idle";
-    return (
-        <div
-            role="listitem"
-            data-council-expert-chip={chip.id}
-            data-lit={chip.dot === "working" || chip.dot === "waiting" ? "true" : "false"}
-            data-dot={chip.dot}
-            title={`${chip.name} · ${chip.kind}${live ? `: ${chip.doing}` : ""}. ${chip.title}`}
-            className="flex max-w-[420px] items-center gap-[4px]"
-        >
-            <button
-                type="button"
-                data-council-filter={chip.id}
-                aria-pressed={on}
-                disabled={count === 0}
-                onClick={onToggle}
-                className={cn(
-                    // flat, like a row: the seat's colour stays in its avatar and name, never a tinted, bordered pill
-                    "flex h-[28px] min-w-0 cursor-pointer items-center gap-[7px] rounded-[6px] border py-0 pl-[3px] pr-[10px] text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default",
-                    on
-                        ? "border-edge-mid bg-surface-selected font-semibold"
-                        : "border-transparent bg-transparent hover:bg-surface-hover disabled:hover:bg-transparent",
-                    TONE_TEXT[chip.tone]
-                )}
-            >
-                <CouncilAvatar tone={chip.tone} name={chip.name} initials={chip.initials} />
-                <span className="flex-none">{chip.short}</span>
-                {count > 0 && <span className="flex-none font-normal tabular-nums text-muted">{count}</span>}
-                {live && (
-                    <span aria-hidden className={cn("h-[6px] w-[6px] flex-none rounded-full", SEAT_DOT[chip.dot])} />
-                )}
-                {/* the dot says it; the words are in the hover, and the header and the writing rows already say them */}
-                <span data-council-seat-doing className="sr-only">
-                    {chip.doing}
-                </span>
-            </button>
-            {chip.agent && (
-                <button
-                    type="button"
-                    data-council-chip-open={chip.tab}
-                    aria-label={`Open the terminal of ${chip.name}`}
-                    title={`Open the terminal of ${chip.name}`}
-                    onClick={() => onOpenTerminal(chip.tab)}
-                    className="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    <SquareTerminal size={15} strokeWidth={1.8} aria-hidden />
-                </button>
-            )}
-            {chip.retry && pick != null && (
-                <RetryModelPick
-                    expert={expert}
-                    error={c.failed?.[chip.id]?.error}
-                    picked={pick.picked}
-                    onPick={pick.onPick}
-                    disabled={running}
-                    className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
-                />
-            )}
-            {chip.retry && pick == null && (
-                <button
-                    type="button"
-                    data-council-chip-retry={chip.id}
-                    aria-label={`Retry ${chip.name}`}
-                    disabled={running || acts.busy.has(key)}
-                    title={running ? "The council is running: retry once it is done" : undefined}
-                    onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, chip.id))}
-                    className={cn(secondaryButton, "h-[24px] px-[8px] text-[12px]")}
-                >
-                    {acts.busy.has(key) ? "Retrying…" : "Retry"}
-                </button>
-            )}
-            {chip.retry && pick == null && (
-                <RetryWithButton
-                    expert={expert}
-                    error={c.failed?.[chip.id]?.error}
-                    disabled={running || acts.busy.has(key)}
-                    onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, chip.id, model))}
-                    className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
-                />
-            )}
-        </div>
-    );
-}
 
 // ---- messages ----
 
@@ -983,6 +852,7 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
                 data-council-retry={item.author}
                 aria-label={`Retry ${item.name}`}
                 disabled={running || acts.busy.has(key)}
+                title={running ? "The council is running: retry once it is done" : undefined}
                 onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, item.author))}
                 className={cn(secondaryButton, "h-[22px] px-[8px] text-[12px]")}
             >
@@ -2129,43 +1999,40 @@ export function CouncilChat({
     return (
         <div className="flex min-h-0 flex-1">
             <div data-council-main className="flex min-h-0 min-w-0 flex-1 flex-col">
-                <div
-                    data-council-experts
-                    role="list"
-                    aria-label="Seats: a click shows one seat's messages"
-                    className="flex flex-none flex-wrap items-center gap-[6px] border-b border-edge-faint px-6 py-[10px]"
-                >
-                    <button
-                        type="button"
-                        data-council-action="show-everyone"
-                        aria-pressed={onlyId == null}
-                        onClick={() => setOnly(null)}
-                        className={cn(
-                            "h-[28px] cursor-pointer rounded-[6px] border px-[10px] text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                            onlyId == null
-                                ? "border-edge-mid bg-surface-selected font-semibold text-primary"
-                                : "border-transparent bg-transparent text-secondary hover:bg-surface-hover hover:text-primary"
-                        )}
+                {onlySeat != null && (
+                    <div className="flex flex-none items-center gap-2 border-b border-edge-faint px-6 py-2 text-[13px] text-muted">
+                        <span role="status" data-council-only={onlySeat.id}>
+                            {onlyLine(onlySeat)}
+                        </span>
+                        <button
+                            type="button"
+                            data-council-action="show-everyone"
+                            onClick={() => setOnly(null)}
+                            className="h-[24px] cursor-pointer rounded-[6px] border-0 bg-transparent px-[8px] text-[13px] text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            Show everyone
+                        </button>
+                    </div>
+                )}
+                {retryAll && (
+                    <div
+                        data-council-retry-all-bar
+                        className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b border-edge-faint px-6 py-2 text-[13px] text-muted"
                     >
-                        Everyone
-                    </button>
-                    {seats.map((chip) => (
-                        <SeatFilter
-                            key={chip.id}
-                            c={c}
-                            chip={chip}
-                            on={chip.id === onlyId}
-                            acts={acts}
-                            onToggle={() => setOnly(chip.id === onlyId ? null : chip.id)}
-                            onOpenTerminal={onOpenTerminal}
-                            pick={
-                                retryAll && chip.retry && !coordinators.has(chip.id)
-                                    ? { picked: picks[chip.id], onPick: (m) => setPick(chip.id, m) }
-                                    : null
-                            }
-                        />
-                    ))}
-                    {retryAll && (
+                        <span>{retryAllSeats(c).length} seats failed</span>
+                        {retryAllSeats(c).map((e) => (
+                            <span key={e.id} className="flex items-center gap-[6px]">
+                                <span className="text-secondary">{e.name}</span>
+                                <RetryModelPick
+                                    expert={e}
+                                    error={c.failed?.[e.id]?.error}
+                                    picked={picks[e.id]}
+                                    onPick={(m) => setPick(e.id, m)}
+                                    disabled={c.state === "running"}
+                                    className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
+                                />
+                            </span>
+                        ))}
                         <button
                             type="button"
                             data-council-action="retry-all"
@@ -2184,13 +2051,8 @@ export function CouncilChat({
                         >
                             {acts.busy.has("retry:all") ? "Retrying…" : `Retry all ${retryAllSeats(c).length}`}
                         </button>
-                    )}
-                    {onlySeat != null && (
-                        <span role="status" data-council-only={onlySeat.id} className="ml-[6px] text-[13px] text-muted">
-                            {onlyLine(onlySeat)}
-                        </span>
-                    )}
-                </div>
+                    </div>
+                )}
                 {notes}
                 <Channel
                     boxRef={channel}
