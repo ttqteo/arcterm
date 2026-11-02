@@ -210,14 +210,49 @@ func TestEstimateRemainingExpertOnlyIgnoresRounds(t *testing.T) {
 }
 
 func TestEstimateFollowup(t *testing.T) {
-	if got, want := EstimateFollowup(3, false), (CouncilEstimate{Calls: 3, Tokens: 60_000, Minutes: 1}); got != want {
+	if got, want := EstimateFollowup(3, nil, false), (CouncilEstimate{Calls: 3, Tokens: 60_000, Minutes: 1}); got != want {
 		t.Errorf("without tools = %+v, want %+v", got, want)
 	}
-	if got, want := EstimateFollowup(3, true), (CouncilEstimate{Calls: 3, Tokens: 330_000, Minutes: 2}); got != want {
+	if got, want := EstimateFollowup(3, nil, true), (CouncilEstimate{Calls: 3, Tokens: 330_000, Minutes: 2}); got != want {
 		t.Errorf("with tools = %+v, want %+v", got, want)
 	}
-	if got := EstimateFollowup(0, true); got.Calls != 0 || got.Tokens != 0 {
+	if got := EstimateFollowup(0, nil, true); got.Calls != 0 || got.Tokens != 0 {
 		t.Errorf("no experts cost nothing: %+v", got)
+	}
+}
+
+// TestEstimateFollowupPricesChatsAtContext: a chat answering a follow-up costs what it holds, as Estimate gives a chat's
+// turn, while a role expert keeps the flat price; a chat whose context is unknown (0: a pi chat, or no transcript yet)
+// takes the flat price instead of costing nothing.
+func TestEstimateFollowupPricesChatsAtContext(t *testing.T) {
+	chat := func(id string, context int64) CouncilExpert {
+		return CouncilExpert{Id: "agent-" + id, Agent: id, Harness: "claude", Context: context}
+	}
+	for _, tc := range []struct {
+		name  string
+		k     int
+		chats []CouncilExpert
+		tools bool
+		want  CouncilEstimate
+	}{
+		{"two role experts and a chat of 182k", 2, []CouncilExpert{chat("tab-1", 182_000)}, false,
+			CouncilEstimate{Calls: 3, Tokens: 2*20_000 + 182_000, Minutes: 1, AgentTokens: 182_000}},
+		{"tools on: the role experts take the tools price, the chat keeps its context", 2, []CouncilExpert{chat("tab-1", 182_000)}, true,
+			CouncilEstimate{Calls: 3, Tokens: 2*110_000 + 182_000, Minutes: 2, AgentTokens: 182_000}},
+		{"two chats and no role expert", 0, []CouncilExpert{chat("tab-1", 100_000), chat("tab-2", 300_000)}, false,
+			CouncilEstimate{Calls: 2, Tokens: 400_000, Minutes: 1, AgentTokens: 400_000}},
+		{"a chat of unknown context takes the flat price", 1, []CouncilExpert{chat("tab-1", 0)}, false,
+			CouncilEstimate{Calls: 2, Tokens: 2 * 20_000, Minutes: 1, AgentTokens: 20_000}},
+		{"a chat of unknown context takes the tools price with tools on", 1, []CouncilExpert{chat("tab-1", 0), chat("tab-2", 50_000)}, true,
+			CouncilEstimate{Calls: 3, Tokens: 110_000 + 110_000 + 50_000, Minutes: 2, AgentTokens: 110_000 + 50_000}},
+		{"a pi chat with no context is flat too", 0, []CouncilExpert{{Id: "agent-tab-3", Agent: "tab-3", Harness: "pi"}}, false,
+			CouncilEstimate{Calls: 1, Tokens: 20_000, Minutes: 1, AgentTokens: 20_000}},
+		{"no chats is the role experts alone", 2, nil, false,
+			CouncilEstimate{Calls: 2, Tokens: 40_000, Minutes: 1}},
+	} {
+		if got := EstimateFollowup(tc.k, tc.chats, tc.tools); got != tc.want {
+			t.Errorf("%s: EstimateFollowup = %+v, want %+v", tc.name, got, tc.want)
+		}
 	}
 }
 

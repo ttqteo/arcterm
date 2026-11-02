@@ -98,14 +98,29 @@ func EstimateRemaining(c *Council) CouncilEstimate {
 	}
 }
 
-// EstimateFollowup prices a follow-up round of k expert calls, each answering from text, or with the read-only
-// tools on.
-func EstimateFollowup(k int, tools bool) CouncilEstimate {
+// EstimateFollowup prices a follow-up round: k role experts, each answering from text (or with the read-only tools on) at
+// the flat price, and each chat in agents answering at the context it holds, the cost Estimate gives a chat's turn. A
+// chat whose Context is unknown (0: a pi chat, or a claude chat with no transcript yet) takes the flat price too, never
+// nothing. Calls counts both; AgentTokens is the chats' share of Tokens.
+func EstimateFollowup(k int, agents []CouncilExpert, tools bool) CouncilEstimate {
 	per, minutes := int64(followupTokens), followupMinutes
 	if tools {
 		per, minutes = followupToolsTokens, followupToolsMinutes
 	}
-	return CouncilEstimate{Calls: k, Tokens: int64(k) * per, Minutes: minutes}
+	var agentTokens int64
+	for _, a := range agents {
+		if a.Context > 0 {
+			agentTokens += a.Context
+		} else {
+			agentTokens += per
+		}
+	}
+	return CouncilEstimate{
+		Calls:       k + len(agents),
+		Tokens:      int64(k)*per + agentTokens,
+		Minutes:     minutes,
+		AgentTokens: agentTokens,
+	}
 }
 
 // FormatTokens is a token count as wsh prints it: 84k, 0.3M, 1.2M (a round 1M has no decimal). From 100k up it counts

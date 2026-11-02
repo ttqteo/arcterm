@@ -1506,16 +1506,69 @@ func mentions(text, token string) bool {
 	return false
 }
 
-// mentioned are the experts a reply @-mentions by name or id, in the council's order.
-func mentioned(c *Council, text string) []string {
-	lower := strings.ToLower(text)
+// minChatKey is the fewest characters of its tab id with which a mention reaches a chat seat.
+const minChatKey = 8
+
+// atWords are the words that follow an @ in lower, an @ inside a longer word (an address) left out. A word runs over
+// letters, digits, _ and -: a UUID tab id has a dash at its 9th character, so the key that tells two chats apart (such as
+// 3e19c0d2-a) runs past it.
+func atWords(lower string) []string {
 	var out []string
-	for _, e := range panelOf(c) {
-		for _, key := range []string{e.Name, e.Id} {
-			if key != "" && mentions(lower, "@"+strings.ToLower(key)) {
-				out = append(out, e.Id)
+	for i := 0; i < len(lower); i++ {
+		if lower[i] != '@' {
+			continue
+		}
+		if before, _ := utf8.DecodeLastRuneInString(lower[:i]); i > 0 && isWordRune(before) {
+			continue
+		}
+		end := i + 1
+		for end < len(lower) {
+			r, n := utf8.DecodeRuneInString(lower[end:])
+			if !isWordRune(r) && r != '-' {
 				break
 			}
+			end += n
+		}
+		if end > i+1 {
+			out = append(out, lower[i+1:end])
+		}
+		i = end - 1
+	}
+	return out
+}
+
+// reachesChat says an @-word (lower case) reaches the chat seat: it holds 8 characters or more, starts the seat's tab id,
+// and starts no other chat seat's. So a key that is unique among the chats always reaches its own seat.
+func reachesChat(word string, seat CouncilExpert, chats []CouncilExpert) bool {
+	if utf8.RuneCountInString(word) < minChatKey || !strings.HasPrefix(strings.ToLower(seat.Agent), word) {
+		return false
+	}
+	return !slices.ContainsFunc(chats, func(o CouncilExpert) bool {
+		return o.Agent != seat.Agent && strings.HasPrefix(strings.ToLower(o.Agent), word)
+	})
+}
+
+// mentioned are the experts a reply @-mentions by name or id, in the council's order. A chat seat is also reached by the
+// first characters of its tab id (reachesChat).
+func mentioned(c *Council, text string) []string {
+	lower := strings.ToLower(text)
+	words := atWords(lower)
+	panel := panelOf(c)
+	chats := slices.DeleteFunc(slices.Clone(panel), func(e CouncilExpert) bool { return !IsAgent(e) })
+	var out []string
+	for _, e := range panel {
+		hit := false
+		for _, key := range []string{e.Name, e.Id} {
+			if key != "" && mentions(lower, "@"+strings.ToLower(key)) {
+				hit = true
+				break
+			}
+		}
+		if !hit && IsAgent(e) {
+			hit = slices.ContainsFunc(words, func(w string) bool { return reachesChat(w, e, chats) })
+		}
+		if hit {
+			out = append(out, e.Id)
 		}
 	}
 	return out
@@ -1553,9 +1606,63 @@ func replyTargets(c *Council, proposalId string, parent *CouncilReply, text stri
 	return out
 }
 
-// appendPersonReply adds the person's reply to c, in the round c is in. A reply to a reply takes the proposal of its
-// parent; it is an error to name a proposal or a parent that is not there.
-func appendPersonReply(c *Council, proposalId, parentId, text string, tools bool, now int64) error {
+// withJoined is to with the chats that joined with this reply added, in the council's order, each once: a chat seated by a
+// message is a target of it whether or not the text @s it.
+func withJoined(c *Council, to, joined []string) []string {
+	if len(joined) == 0 {
+		return to
+	}
+	var out []string
+	for _, e := range panelOf(c) {
+		if slices.Contains(to, e.Id) || slices.Contains(joined, e.Id) {
+			out = append(out, e.Id)
+		}
+	}
+	return out
+}
+
+// joiningSeats are the chats a reply seats in c: the ones in seats that do not sit there already, each once. A seat that
+// is not a chat a council can hold (no tab, the coordinator, a harness other than claude or pi, an id another seat has) is
+// an error, and so nothing is saved.
+func joiningSeats(c *Council, seats []CouncilExpert) ([]CouncilExpert, error) {
+	var out []CouncilExpert
+	sits := func(list []CouncilExpert, s CouncilExpert) bool {
+		return slices.ContainsFunc(list, func(e CouncilExpert) bool { return IsAgent(e) && e.Agent == s.Agent })
+	}
+	for _, s := range seats {
+		switch {
+		case !IsAgent(s) || s.Coordinator:
+			return nil, fmt.Errorf("%q is not a live chat: only a chat can join a council in a reply", s.Name)
+		case s.Harness != HarnessClaude && s.Harness != HarnessPi:
+			return nil, fmt.Errorf("agent %q runs %q: only a %s or %s agent can take a seat", s.Name, s.Harness, HarnessClaude, HarnessPi)
+		case sits(c.Experts, s) || sits(out, s):
+			continue
+		case s.Id == "" || s.Id == YouId || slices.ContainsFunc(c.Experts, func(e CouncilExpert) bool { return e.Id == s.Id }) ||
+			slices.ContainsFunc(out, func(e CouncilExpert) bool { return e.Id == s.Id }):
+			return nil, fmt.Errorf("expert %q is listed twice", s.Id)
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// seatBeforeCoordinator puts seats after the seats c has and before its coordinator, which stays last.
+func seatBeforeCoordinator(c *Council, seats []CouncilExpert) {
+	var panel, coordinators []CouncilExpert
+	for _, e := range c.Experts {
+		if e.Coordinator {
+			coordinators = append(coordinators, e)
+		} else {
+			panel = append(panel, e)
+		}
+	}
+	c.Experts = append(append(panel, seats...), coordinators...)
+}
+
+// appendPersonReply adds the person's reply to c, in the round c is in, addressed also to the chats in joined (the ids of
+// the seats this reply just seated). A reply to a reply takes the proposal of its parent; it is an error to name a
+// proposal or a parent that is not there.
+func appendPersonReply(c *Council, proposalId, parentId, text string, tools bool, joined []string, now int64) error {
 	var parent *CouncilReply
 	if parentId != "" {
 		if parent = findReply(c, parentId); parent == nil {
@@ -1571,7 +1678,7 @@ func appendPersonReply(c *Council, proposalId, parentId, text string, tools bool
 	if proposalId != "" && findProposal(c, proposalId) == nil {
 		return fmt.Errorf("council %s has no proposal %s", c.Id, proposalId)
 	}
-	to := replyTargets(c, proposalId, parent, text)
+	to := withJoined(c, replyTargets(c, proposalId, parent, text), joined)
 	c.Replies = append(c.Replies, CouncilReply{
 		Id: nextReplyId(c), ProposalId: proposalId, ParentId: parentId, Author: YouId, Text: text,
 		To: to, Tools: tools, Round: c.Round, Ts: now,
@@ -1594,8 +1701,13 @@ func followRound(c *Council) int {
 // the council waits on the person, it is answered in the next reply pass (a seat that is a live agent gets it at its
 // next turn); posted while a run is on, it is answered by the pass after the synthesis; posted to a council that is
 // done, stopped or failed, it starts a follow-up round at once, with tools when the person turned Let them read files
-// on, and the council returns to the state it was in.
-func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool) (*Council, error) {
+// on, and the council returns to the state it was in. seats are live chats the reply brings into the council (nil for a
+// plain reply): in the same save that posts it, the ones not seated yet take their places after the seats there and
+// before the coordinator, and each is a target of the reply even when its text does not @ it. A council that stored no
+// draft mode keeps the one its seats gave before the chat joined (freezeDraftMode). A chat seated while round 1 runs sits
+// that round out, since the round read its panel when it began, and takes part from round 2; a reply that fails seats
+// nobody.
+func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats []CouncilExpert) (*Council, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil, errors.New("a reply needs some text")
@@ -1612,7 +1724,17 @@ func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool) (*Coun
 		r.mu.Unlock()
 		return nil, err
 	}
-	add := func(c *Council) error { return appendPersonReply(c, proposalId, parentId, text, tools, r.now()) }
+	add := func(c *Council) error {
+		joined, err := joiningSeats(c, seats)
+		if err != nil {
+			return err
+		}
+		if len(joined) > 0 {
+			freezeDraftMode(c) // before the chat sits, so the mode is the one the council had
+			seatBeforeCoordinator(c, joined)
+		}
+		return appendPersonReply(c, proposalId, parentId, text, tools, idsOf(joined), r.now())
+	}
 	var (
 		saved *Council
 		start func()
