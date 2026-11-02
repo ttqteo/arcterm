@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- An agent you ask for a council on named chats now seats those chats in it, beside a Skeptic and a coordinator, and
+  the council runs to the report without holding drafts for you to send: `wsh council start --agent <tab id>`, and
+  `--agent self` for the chat that asks.
 - Jarvis has a Councils region under Runs: every council still at work across your projects, and the ones that ended
   this week, with the ones waiting on you first. A row opens the council, on its report once it has one.
 - Right-click a project folder in the Agent sidebar → New agent… opens the New dialog with that project already
