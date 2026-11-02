@@ -169,10 +169,36 @@ func TestNewFieldsLeaveAnOldCouncilsJSONAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"agent"`, `"harness"`, `"context"`, `"rounds"`, `"skips"`, `"draft"`, `"edited"`, `"draftmode"`} {
+	for _, key := range []string{`"agent"`, `"harness"`, `"context"`, `"rounds"`, `"skips"`, `"draft"`, `"edited"`, `"draftmode"`, `"attachments"`} {
 		if strings.Contains(string(b), key) {
 			t.Errorf("an old council writes %s: %s", key, b)
 		}
+	}
+
+	// An old council's JSON (no attachments key) reads back with none, and writes out again with no attachments key.
+	var back Council
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if len(back.Replies) != 1 || back.Replies[0].Attachments != nil {
+		t.Errorf("an old reply reads back with attachments %v", back.Replies)
+	}
+	again, err := json.Marshal(&back)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(again) != string(b) {
+		t.Errorf("an old council changed on a round trip:\n%s\n%s", b, again)
+	}
+
+	// A reply that carries attachments writes them, in order.
+	r := CouncilReply{Id: "r2", Author: YouId, Attachments: []string{"/a/1.png", "/a/2.png"}}
+	rb, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rb), `"attachments":["/a/1.png","/a/2.png"]`) {
+		t.Errorf("a reply with attachments writes %s", rb)
 	}
 
 	held := CouncilProposal{Id: "P2", Draft: DraftHeld, Edited: true}

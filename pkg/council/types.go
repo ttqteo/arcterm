@@ -168,6 +168,10 @@ type CouncilReply struct {
 	Ts         int64             `json:"ts"`
 	Draft      string            `json:"draft,omitempty"`  // DraftHeld or DraftDropped; empty once sent, and on a reply that was never held
 	Edited     bool              `json:"edited,omitempty"` // the person edited it before sending
+	// Attachments are the absolute paths of the images the person attached to this reply, in the order they were added,
+	// each a file the composer kept under ~/.arc/attachments. Only the person's replies carry any; a reply with any is
+	// stored and answered with Tools on, and each seat's tools prompt lists them after the reply's text.
+	Attachments []string `json:"attachments,omitempty"`
 	// Revision is the change to its own idea a held reply carries: it takes effect when the reply is sent, and a dropped
 	// reply cancels it. Nil on every reply that is sent or never held.
 	Revision *CouncilRevision `json:"revision,omitempty"`
