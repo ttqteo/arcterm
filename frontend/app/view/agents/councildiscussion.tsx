@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The council Discussion (Main.dc.html, Running.dc.html, Paused.dc.html, M1-discussion-tab.dc.html): a header in one 52px
-// row (the Report / Discussion tabs, the mode, the feature, the step chip, the seats as filters once the chat shows, the
-// cost line, Summarize while there is a summary to make, Stop council, or Close once it ended), and a body that depends on where the
-// council is. Once the seats have proposed it is the chat (councilchat.tsx): a Slack-style channel with threads, for a
+// row (the Report / Discussion tabs, the mode, the feature, the step chip, the seats' stack once the chat shows, its
+// list the filters, the cost line, Summarize while there is a summary to make, Stop council, or Close once it ended),
+// and a body that depends on where the council is. Once the seats have proposed it is the chat (councilchat.tsx): a Slack-style channel with threads, for a
 // council that runs its replies or its summary, one that is over, and one that waits on the drafts of its seats; while
 // the experts first read and propose it is each expert's card with what it is reading and the ideas as they arrive; at
 // the pause it is the ticks and the question for the argument; a council the token gate did not run offers Start
@@ -18,7 +18,7 @@ import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily, selectAtom } from "jotai/utils";
-import { Check, ListChecks, X } from "lucide-react";
+import { Check, ListChecks, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -307,9 +307,9 @@ function Header({
     const costRest = costParts.slice(1).join(" · ");
     return (
         <header className="@container flex flex-none flex-col border-b border-border bg-surface">
-            {/* one 52px row that never wraps: the tabs and the cost and Close keep their width, the title truncates and
-                the seat strip scrolls sideways before anything leaves the row. Under 1000px of pane the mode chip goes,
-                under 900px Summarize keeps its icon alone. The Report tab is where a summary opens. */}
+            {/* one 52px row that never wraps: the tabs, the seats' stack, the cost and Close (an X, Reopen an arrow) keep
+                their width and the title truncates before anything leaves the row. Under 1000px of pane the mode chip goes,
+                under 900px Summarize keeps its icon alone and the stack three avatars. The Report tab is where a summary opens. */}
             <div className="flex h-[52px] min-w-0 items-stretch gap-3 px-6 @max-[900px]:gap-2 @max-[900px]:px-4">
                 <CouncilTabs c={c} view="discussion" className="flex-none @max-[900px]:gap-3" />
                 <div aria-hidden className="h-5 w-px flex-none self-center bg-edge-mid" />
@@ -375,10 +375,15 @@ function Header({
                                     ? "Put this council back in the tree"
                                     : "Take this council off the tree; Councils still lists it, nothing is deleted"
                             }
+                            aria-label={isClosedCouncil(c) ? "Reopen council" : "Close council"}
                             onClick={() => void closeCouncil(c.id, !isClosedCouncil(c))}
-                            className="h-[28px] flex-none cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[12px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
+                            className="flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center rounded-[6px] border border-transparent bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
                         >
-                            {isClosedCouncil(c) ? "Reopen" : "Close"}
+                            {isClosedCouncil(c) ? (
+                                <RotateCcw size={14} strokeWidth={2} aria-hidden />
+                            ) : (
+                                <X size={16} strokeWidth={2} aria-hidden />
+                            )}
                         </button>
                     )}
                 </div>

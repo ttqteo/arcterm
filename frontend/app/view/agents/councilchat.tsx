@@ -212,7 +212,7 @@ const TONE_BUBBLE_ON: Record<AvatarTone, string> = {
 
 /** The dot on an avatar's corner: an expert writing is green, one whose call failed red. Its word is in the avatar's
  *  title, so the colour never stands alone. */
-type AvatarDot = "working" | "failed" | null;
+type AvatarDot = "working" | "waiting" | "failed" | null;
 
 export function CouncilAvatar({
     tone,
@@ -263,7 +263,7 @@ export function CouncilAvatar({
                 <span
                     className={cn(
                         "absolute -bottom-[2px] -right-[2px] box-border h-[7px] w-[7px] rounded-full border-[1.5px] border-background",
-                        dot === "working" ? "bg-working pulse-dot" : "bg-error",
+                        dot === "working" ? "bg-working pulse-dot" : dot === "waiting" ? "bg-asking" : "bg-error",
                         dotClassName
                     )}
                 />

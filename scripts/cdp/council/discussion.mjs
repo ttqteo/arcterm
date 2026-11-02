@@ -144,9 +144,23 @@ const threadReplies = (h) =>
         text: (m.textContent ?? "")${NORM},
     }))`);
 
-// the seats live in the Discussion's header, one row with the tabs, the title and the cost
-const seatChips = (h) =>
-    h.ev(`[...document.querySelectorAll("[data-council-discussion] header [data-council-expert-chip]")].map((c) => ({
+// the seats are a stack of avatars in the Discussion's header (one row with the tabs, the title and the cost); a click or
+// a hover on it opens the list of every seat, each row a filter, in a popover outside the header
+const SEATS = "[data-council-discussion] header [data-council-seats]";
+const SEAT_LIST = "[data-council-seat-list]";
+
+// open (true) or close (false) the seat list by a click on the stack, which toggles it; true once it is as asked
+async function setSeats(h, want) {
+    await until(h, `!!document.querySelector(${sel(SEATS)})`);
+    await h.ev(`(() => {
+        const b = document.querySelector(${sel(SEATS)});
+        if (b && (b.getAttribute("aria-expanded") === "true") !== ${want}) b.click();
+    })()`);
+    return until(h, want ? `!!document.querySelector(${sel(SEAT_LIST)})` : `!document.querySelector(${sel(SEAT_LIST)})`);
+}
+
+const readSeatChips = (h) =>
+    h.ev(`[...document.querySelectorAll(${sel(`${SEAT_LIST} [data-council-expert-chip]`)})].map((c) => ({
         id: c.getAttribute("data-council-expert-chip"),
         lit: c.getAttribute("data-lit") === "true",
         dot: c.getAttribute("data-dot"),
@@ -155,6 +169,14 @@ const seatChips = (h) =>
         title: c.getAttribute("title"),
         open: c.querySelector("[data-council-chip-open]")?.getAttribute("data-council-chip-open") ?? null,
     }))`);
+
+// every seat's row, read from the opened list, which is closed again after
+async function seatChips(h) {
+    await setSeats(h, true);
+    const chips = await readSeatChips(h);
+    await setSeats(h, false);
+    return chips;
+}
 
 const focusedIdea = (h) => h.ev(`document.querySelector('[data-council-idea][data-focused="true"]')?.getAttribute("data-council-idea") ?? null`);
 
@@ -298,7 +320,7 @@ const headerRow = (h) =>
             return b.width > 0 && b.left >= rootBox.left - 1 && b.right <= rootBox.right + 1;
         };
         const title = head.querySelector("[data-council-title]");
-        const strip = head.querySelector('[role="list"]');
+        const stack = [...head.querySelectorAll("[data-council-seat-avatar]")];
         const last = [...row.querySelectorAll(":scope > div:last-child > *")].pop();
         const lastBox = last?.getBoundingClientRect();
         return {
@@ -307,11 +329,12 @@ const headerRow = (h) =>
             title: !!title,
             truncated: !!title && title.scrollWidth > title.clientWidth,
             titleW: title ? Math.round(title.clientWidth) : 0,
-            seats: head.querySelectorAll("[data-council-filter]").length,
+            seats: stack.length,
+            seatsShown: stack.filter((e) => e.getBoundingClientRect().width > 0).length,
+            seatsIn: within("[data-council-seats]"),
             cost: !!head.querySelector("[data-council-cost]"),
             costIn: within("[data-council-cost]"),
             lastIn: !!lastBox && lastBox.left >= rootBox.left - 1 && lastBox.right <= rootBox.right + 1,
-            scrolls: !!strip && getComputedStyle(strip).overflowX === "auto",
             rootW: Math.round(rootBox.width),
             parts: [...row.querySelectorAll(":scope > *, :scope > div:last-child > *")].map((e) => Math.round(e.getBoundingClientRect().width)),
             oldRow: !!document.querySelector("[data-council-experts]"),
@@ -329,12 +352,13 @@ async function header(h, ctx, rec) {
     await until(h, `!!document.querySelector("[data-council-channel]")`);
     const wide = await headerRow(h);
     rec(
-        "header: the header is one 52px row holding the tabs, the title, the seats and the cost",
+        "header: the header is one 52px row holding the tabs, the title, the seats' stack (an avatar for each of the five) and the cost",
         wide != null &&
             Math.abs(wide.height - 52) <= 1 &&
             wide.tab &&
             wide.title &&
             wide.seats === 5 &&
+            wide.seatsShown === 5 &&
             wide.cost &&
             !wide.oldRow,
         wide
@@ -349,12 +373,13 @@ async function header(h, ctx, rec) {
         await new Promise((r) => setTimeout(r, 400));
         const narrow = await headerRow(h);
         rec(
-            "header: at a 1000px window the row is still 52px, the title truncates and keeps at least 60px, the seat strip scrolls sideways, and the cost and the last control stay in the pane",
+            "header: at a 1000px window the row is still 52px, the title truncates and keeps at least 60px, the seats' stack stays whole in the pane (no seat cut in half), and the cost and the last control stay in the pane",
             narrow != null &&
                 Math.abs(narrow.height - 52) <= 1 &&
                 narrow.truncated &&
                 narrow.titleW >= 60 &&
-                narrow.scrolls &&
+                narrow.seatsIn === true &&
+                narrow.seatsShown >= 3 &&
                 narrow.costIn === true &&
                 narrow.lastIn,
             narrow
@@ -371,24 +396,54 @@ async function header(h, ctx, rec) {
 async function seatFilter(h, ctx, rec) {
     await openFixture(h, ctx, "round2", { id: `${councilFixtureId("round2")}-filter` });
     await until(h, `!!document.querySelector("[data-council-channel]")`);
-    const chip = "[data-council-discussion] header [data-council-filter='ux']";
+    // a hover on the stack opens the list, with no click; the pointer moving far off closes it again
+    const box = await h.ev(`(() => {
+        const r = document.querySelector(${sel(SEATS)})?.getBoundingClientRect();
+        return r && r.width > 0 ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
+    })()`);
+    let hovered = false;
+    let left = false;
+    if (box) {
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+        hovered = await until(h, `!!document.querySelector(${sel(SEAT_LIST)})`);
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y + 400 });
+        left = await until(h, `!document.querySelector(${sel(SEAT_LIST)})`);
+    }
+    rec("seat filter: a hover on the seats' stack opens the list of every seat, and the pointer leaving closes it", hovered && left, { box, hovered, left });
+
+    const listed = await setSeats(h, true);
+    const chip = `${SEAT_LIST} [data-council-filter='ux']`;
     const before = await attr(h, chip, "aria-pressed");
     await click(h, chip);
     const shown = await until(h, `!!document.querySelector("[data-council-only='ux']")`);
     const line = await text(h, "[data-council-only]");
     const pressed = await attr(h, chip, "aria-pressed");
+    const stackOnly = await attr(h, SEATS, "data-only");
+    await h.shot("cdp-shots/council-discussion-seats.png");
     // the chip's count is the line's ideas and replies added
     const counted = Number(await h.ev(`/, (\\d+) messages/.exec(document.querySelector(${sel(chip)})?.getAttribute("aria-label") ?? "")?.[1] ?? NaN`));
     const nums = (/^Only .+: (\d+) ideas? and (\d+) repl(?:y|ies)$/.exec(line) ?? []).slice(1).map(Number);
     rec(
-        "seat filter: a click on a seat's chip presses it and shows the `Only …` line for that seat, its ideas and replies adding up to the chip's count",
-        before === "false" && shown && pressed === "true" && nums.length === 2 && nums[0] + nums[1] === counted,
-        { before, shown, line, pressed, counted }
+        "seat filter: a click on a seat's row in the list presses it, marks the stack with that seat and shows the `Only …` line for it, its ideas and replies adding up to the row's count",
+        listed &&
+            before === "false" &&
+            shown &&
+            pressed === "true" &&
+            stackOnly === "ux" &&
+            nums.length === 2 &&
+            nums[0] + nums[1] === counted,
+        { listed, before, shown, line, pressed, stackOnly, counted }
     );
     await click(h, "[data-council-action='show-everyone']");
     const gone = await until(h, `!document.querySelector("[data-council-only]")`);
     const after = await attr(h, chip, "aria-pressed");
-    rec("seat filter: Show everyone releases it, the line goes and the chip is not pressed", gone && after === "false", { gone, after });
+    const stackAfter = await attr(h, SEATS, "data-only");
+    await setSeats(h, false);
+    rec(
+        "seat filter: Show everyone releases it, the line goes, the row is not pressed and the stack names no seat",
+        gone && after === "false" && stackAfter === null,
+        { gone, after, stackAfter }
+    );
 }
 
 // ---- the experts' picks: the chip, the reaction ----
@@ -1267,10 +1322,11 @@ async function roomTerminals(h, ctx, rec) {
         );
 
     await openFixture(h, ctx, "room");
+    await setSeats(h, true);
     await until(h, `!!document.querySelector('[data-council-chip-open="fx-room-witness"]')`);
     await click(h, '[data-council-chip-open="fx-room-witness"]');
     const viaChip = await terminalOf("fx-room-witness");
-    rec("room: a click on Witness synthesis's chip lands on its terminal", viaChip, viaChip);
+    rec("room: a click on the terminal button of Witness synthesis's row in the seat list lands on its terminal", viaChip, viaChip);
 
     await openFixture(h, ctx, "room");
     await until(h, `!!document.querySelector('[data-council-open-terminal="fx-room-witness"]')`);
@@ -1541,7 +1597,8 @@ async function addChatSend(h, ctx, rec) {
             );
         },
     });
-    await until(h, `document.querySelectorAll("[data-council-expert-chip]").length === 7`);
+    await setSeats(h, true);
+    await until(h, `document.querySelectorAll(${sel(`${SEAT_LIST} [data-council-expert-chip]`)}).length === 7`);
     const chips = await seatChips(h);
     const byId = Object.fromEntries(chips.map((c) => [c.id, c]));
     rec(

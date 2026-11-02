@@ -331,7 +331,7 @@ export const councilSummary = {
                 ideas: [...document.querySelectorAll("[data-council-channel] [data-council-idea]")].map((e) => e.dataset.councilIdea),
                 on: [...document.querySelectorAll("[data-council-channel] [data-council-reply-on]")].map((e) => e.dataset.councilReplyOn),
                 bar: document.querySelector("[data-council-only]")?.innerText.replace(/\\s+/g, " ").trim() ?? null,
-                pressed: document.querySelector("[data-council-filter='ux']")?.getAttribute("aria-pressed") ?? null,
+                pressed: document.querySelector("[data-council-seats]")?.getAttribute("data-only") ?? null,
             })`);
             await h.shot("cdp-shots/council-discussion-only.png");
             await click(h, "[data-council-channel] [data-council-reply-on='P3']");
@@ -344,7 +344,7 @@ export const councilSummary = {
                 only.ideas.join("|") === "P1|P2" &&
                 [...only.on].sort().join("|") === "P3|P4|P5|P6" &&
                 only.bar === "Only UX: 2 ideas and 4 replies" &&
-                only.pressed === "true" &&
+                only.pressed === "ux" &&
                 thread &&
                 all;
             return { ok, detail: JSON.stringify({ shown, only, thread, all }) };

@@ -26,6 +26,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council's Discussion header shows its seats as one stack of avatars instead of a row that cut a seat in half on a
+  narrow pane: hover or click it for the list of every seat, with what each is doing and its message count, and pick
+  one to see only its messages. Close is now an X (Reopen an arrow).
 - A council's report now reads like one: a cover holds the question, the answer and the council at a glance (its
   state, experts, time and tokens, who did what, the saved document), the ideas worth trying are cards with their
   first step, and a click on one opens why it was picked and who weighed in under them. Report and Discussion are two
