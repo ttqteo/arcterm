@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council report under a cover, in the real app (WebKit; the run checked only headless Chrome): open a
+  Done council → a cover with the question, the answer and the glance box on the right, Report | Discussion tabs that
+  stay at the top when you scroll, the ideas as cards with one open at a time and its detail under the row; click
+  Discussion → one 52px header row with the tabs, title, seats as avatars with counts, cost and Close; click a seat →
+  only its messages and a Show everyone line; narrow the pane → the title keeps a readable width. (e31de04bd)
 - [ ] (arcterm) New project search reads paths from `~`: open Agent → New project, type your user name → both
   sections empty; type `cuscofi` → the folders named cuscofi first, then any that hold it only in their path; type
   `~/Workspaces/dev` → only the folders under it. (daa601e82)
