@@ -27,6 +27,8 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Agent sidebar: right-click a project folder → New agent… is the first item; picking it opens the New
+  dialog on the agent half with that project picked (Home's folder has no menu). 638834b86
 - [ ] (arcterm) Run start with an empty harness catalog: after a launch failed "Selected route is unavailable", press
   ↻ on its toast (or Approve a brainstorm again) → the run starts on the project's route instead of failing again.
   `runactions.ts` `resolveChannelLaunchRoute`, commit "fix(runs): an empty harness catalog…"
