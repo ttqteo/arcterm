@@ -315,10 +315,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   hover (its folder is read off the line above, `nearbyFolders`); Ctrl+click it: the panel reads "Binary file" with
   Open and Show in Explorer; Open starts PowerPoint on it, Show in Explorer
   selects it. A `.exe` path offers neither. `src-tauri/src/commands.rs` `open_path`, `filetab.tsx`, commit
-- [ ] (arcterm) Remove council: in the Agent tree hover a Failed or Done council row: an × covers its state word;
-  click it (or right-click → Remove council), confirm: the row goes and `wsh council list` no longer has it. Open
-  another ended council and click Remove in its header: the centre moves to the project's Overview. A Running or
-  Waiting on you row has no ×. `pkg/council/runner.go` `Delete`, `councilremove.ts`, commit
+- [ ] (arcterm) Close council, not delete: in the Agent tree hover a Failed or Done council row and click its ×: no
+  confirm, the row moves into a `Closed councils (1)` fold at the end of the project's Councils, and `wsh council list`
+  shows it `(closed)`. Open the fold: the row's hover button is ↺ Reopen, which puts it back. Close it again and press
+  Retry on it (or `wsh council retry`): it comes back by itself. Right-click → Remove council… asks, then its file is in
+  `~/.arc/trash/<ms>-council-<id>/`. The Discussion header's button reads Close / Reopen. A Running or Waiting on you
+  row has no ×. `pkg/council/runner.go` `SetClosed`, `agenttree.tsx` `ClosedCouncilsRow`, commit
 - [ ] (arcterm) A slow wake clears its sleep marks: after installing a build with this fix, the `arcterm` tab whose
   block `027015dd` runs while its meta still holds `agent:sleeping` (a 2026-10-22 20:26 wake whose 10s write clock had
   run out) shows asleep; click Wake (or send from its composer): the row and terminal read awake, no restart, and
