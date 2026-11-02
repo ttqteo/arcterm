@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Summary failed panel closes: open a council whose summary failed. The panel's header ends with an ✕;
+  clicking it hides the panel while the strip's Coordinator chip keeps its Retry. Retry, and when it fails again the
+  panel is back. The commit that adds this line.
 - [ ] (arcterm) History right-click menu and model: open a project's Overview. Each session row's second line reads
   `branch · Claude Code · Opus 4.8 · 2.2M tokens` (the model shown when known). Right-click a session: Open transcript,
   Resume, Copy title, Copy transcript path, then Delete session (Claude only) with a confirm, after which the row

@@ -17,7 +17,7 @@ import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
-import { Check, ListChecks } from "lucide-react";
+import { Check, ListChecks, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { showCouncil } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
@@ -370,7 +370,26 @@ function ExpertFailureCard({ c, f, acts }: { c: Council; f: FailedExpert; acts: 
     );
 }
 
-function SummaryFailedPanel({ c, f, acts }: { c: Council; f: FailedExpert; acts: Actions }) {
+// A Summary failed panel closed with its ✕, per council: the failure it closed (its round and error), so a new failure
+// shows again. The strip's Coordinator chip keeps its Retry. Kept for the app's session, outside the surface, which
+// unmounts on switch.
+const dismissedSummaryFailureAtom = atom<Record<string, string>>({});
+
+function summaryFailureKey(f: FailedExpert): string {
+    return `${f.round}|${f.error}`;
+}
+
+function SummaryFailedPanel({
+    c,
+    f,
+    acts,
+    onDismiss,
+}: {
+    c: Council;
+    f: FailedExpert;
+    acts: Actions;
+    onDismiss: () => void;
+}) {
     return (
         <div
             data-council-summary-failed
@@ -387,6 +406,16 @@ function SummaryFailedPanel({ c, f, acts }: { c: Council; f: FailedExpert; acts:
                     <span aria-hidden className="h-[6px] w-[6px] rounded-full bg-error" />
                     {failedWhile(c, f.round)}
                 </span>
+                <button
+                    type="button"
+                    data-council-summary-dismiss
+                    aria-label="Close"
+                    title="Close"
+                    onClick={onDismiss}
+                    className="ml-auto flex h-[22px] w-[22px] flex-none cursor-pointer items-center justify-center rounded-[5px] text-muted hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    <X size={14} aria-hidden />
+                </button>
             </div>
             <span data-council-failed-error className="break-words text-[13px] leading-[1.5] text-secondary">
                 {f.error}
@@ -399,11 +428,13 @@ function SummaryFailedPanel({ c, f, acts }: { c: Council; f: FailedExpert; acts:
 
 // what went wrong and can be retried, above the thread (the experts' own cards show theirs in round 1)
 function FailureNotes({ c, acts, withExperts }: { c: Council; acts: Actions; withExperts: boolean }) {
-    const coordinator = coordinatorFailure(c);
+    const [dismissed, setDismissed] = useAtom(dismissedSummaryFailureAtom);
+    const failure = coordinatorFailure(c);
+    const coordinator = failure != null && dismissed[c.id] !== summaryFailureKey(failure) ? failure : null;
     const experts = withExperts ? failedExperts(c) : [];
     const note = retriedOut(c)
         ? "Every failed call was retried. Summarize to finish this council."
-        : c.state === "failed" && c.error && coordinator == null && failedExperts(c).length === 0
+        : c.state === "failed" && c.error && failure == null && failedExperts(c).length === 0
           ? c.error
           : null;
     if (coordinator == null && experts.length === 0 && note == null) {
@@ -415,7 +446,14 @@ function FailureNotes({ c, acts, withExperts }: { c: Council; acts: Actions; wit
             {experts.map((f) => (
                 <ExpertFailureCard key={f.expert.id} c={c} f={f} acts={acts} />
             ))}
-            {coordinator != null && <SummaryFailedPanel c={c} f={coordinator} acts={acts} />}
+            {coordinator != null && (
+                <SummaryFailedPanel
+                    c={c}
+                    f={coordinator}
+                    acts={acts}
+                    onDismiss={() => setDismissed((d) => ({ ...d, [c.id]: summaryFailureKey(coordinator) }))}
+                />
+            )}
         </div>
     );
 }
