@@ -69,6 +69,9 @@ wsh council start --mode <review|brainstorm> --mode-why "<one line: why this mod
   rather than leave the panel to guess.
 - `--agent <tab id>` and `--expert <role id>` (each repeatable) name who sits; they are for a council on chats the
   person named, see Seating chats below. With neither, the council is experts only.
+- `--model` sets the role seats' models for this council only, when the person asks for one: `--model sonnet` for every
+  role seat, `--model skeptic=opus` for one (repeatable; a named seat wins). `estimate` takes it too, so quote the price
+  with the same flags. A seated chat answers on its own session's model.
 - `--group` is optional: `brainstorm` takes `product-ideas` and `review` takes `ui-feature` (a UI feature, a spec or a
   plan) when you leave it out; with `--agent`, `brainstorm` takes `agents-ideas` (a Contrarian and the Facilitator) and
   `review` takes `agents` (a Skeptic and the coordinator). Use `--group paper` ("Paper review") for a `.tex` draft. An
@@ -146,6 +149,8 @@ to wait in. It tells the person so and passes only the other tabs they named, le
   retry, which would spend the tokens again. When the person asks to retry it, `wsh council retry <id>` reruns only the
   failed call (the summary, or `--expert <seat>`), on another model with `--model` (`claude-opus-4-8` for a call
   Claude's safeguards flagged, though such a call already ran once more on it by itself), then `wsh council wait <id>`.
+  Several failed seats go together with `--all` (one run, the seats at once; one `retry` each is refused while the
+  first runs), `--model <seat>=<model>` per seat; a failed summary is retried after them, on its own.
 - **A stopped council** prints what its finished rounds hold. Use it as it is.
 - **A timeout** (`wait` gives up after 30 minutes by default) leaves the council as it is, running or still queued.
   Say so, and run `wsh council wait <id>` again later if you need the answer.
@@ -155,4 +160,5 @@ to wait in. It tells the person so and passes only the other tabs they named, le
 - `wsh council list` — the project's councils, newest first: id, state, round and feature.
 - `wsh council show <id>` — a council's report and matrix as markdown, without waiting.
 - `wsh council retry <id> [--expert <seat>] [--model <model>]` — run a failed call again, once; the discussion stays.
+  `--all [--model <seat>=<model>]...` reruns every failed seat but the summary at once.
 - `wsh council stop <id>` — stop a running or queued council; the rounds that finished stay. Only when the person asks.

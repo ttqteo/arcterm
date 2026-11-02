@@ -891,6 +891,28 @@ func TestCouncilBenchResultsTable(t *testing.T) {
 	}
 }
 
+func TestCouncilSeatModels(t *testing.T) {
+	seats := []council.CouncilExpert{{Id: "ux", Name: "UX"}, {Id: "skeptic", Name: "Skeptic"}, {Id: "lead", Name: "Coordinator", Coordinator: true}}
+	got, err := councilSeatModels(seats, []string{"Skeptic=opus", "sonnet"})
+	if err != nil || len(got) != 3 || got["ux"] != "sonnet" || got["skeptic"] != "opus" || got["lead"] != "sonnet" {
+		t.Fatalf("bare + named = %v %v, want every seat on sonnet but skeptic on opus", got, err)
+	}
+	if got, err := councilSeatModels(seats, []string{" ux = claude-opus-4-8 "}); err != nil || len(got) != 1 || got["ux"] != "claude-opus-4-8" {
+		t.Fatalf("one named seat = %v %v, want ux alone", got, err)
+	}
+	if got, err := councilSeatModels(seats, nil); err != nil || len(got) != 0 {
+		t.Fatalf("no --model = %v %v, want none", got, err)
+	}
+	for _, bad := range [][]string{{"sonnet", "opus"}, {"ux=opus", "UX=haiku"}, {"nobody=opus"}, {"ux=not a model"}, {""}} {
+		if _, err := councilSeatModels(seats, bad); err == nil {
+			t.Errorf("--model %q worked, want a refusal", bad)
+		}
+	}
+	if _, err := councilSeatModels(seats, []string{"nobody=opus"}); err == nil || !strings.Contains(err.Error(), "ux, skeptic, lead") {
+		t.Errorf("unknown seat = %v, want the seats listed", err)
+	}
+}
+
 func TestCouncilRetryTarget(t *testing.T) {
 	c := &council.Council{
 		Id: "c1",

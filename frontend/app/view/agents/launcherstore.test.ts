@@ -24,7 +24,7 @@ import {
     launcherGoalAtom,
     launcherImagesAtom,
     launcherKindAtom,
-    launcherOnStartedAtom,
+    launcherHandbackAtom,
     launcherOwnProjectAtom,
     launcherPageAtom,
     launcherPrefillAtom,
@@ -44,7 +44,7 @@ import {
     removeTaskImage,
     reopenLauncher,
     RESUME_PICK_KEEP_MS,
-    takeLauncherOnStarted,
+    takeLauncherHandback,
 } from "./launcherstore";
 import { planPathAtom, resetRunConfig, runShapeAtom, setRunShape, startAtom } from "./runconfigstore";
 
@@ -75,7 +75,7 @@ beforeEach(() => {
     globalStore.set(launcherRuntimeAtom, null);
     globalStore.set(launcherProjectAtom, "");
     globalStore.set(launcherPrefillAtom, null);
-    globalStore.set(launcherOnStartedAtom, null);
+    globalStore.set(launcherHandbackAtom, null);
     globalStore.set(launcherOwnProjectAtom, null);
     globalStore.set(launcherBusyAtom, false);
     endLauncherDraft();
@@ -356,44 +356,46 @@ describe("applyLauncherPrefill", () => {
         expect(applyLauncherPrefill(["arcterm"])).toBe(false);
     });
 
-    describe("the handback of the run it starts (onStarted)", () => {
-        it("keeps the prefill's onStarted after the prefill itself is consumed, until it is taken", () => {
-            const onStarted = vi.fn();
-            globalStore.set(launcherPrefillAtom, { ...prefill, onStarted });
+    describe("the handback of the run it starts", () => {
+        const handback = () => ({ handedOff: vi.fn(), started: vi.fn(), stopped: vi.fn() });
+        it("keeps the prefill's handback after the prefill itself is consumed, until it is taken", () => {
+            const h = handback();
+            globalStore.set(launcherPrefillAtom, { ...prefill, handback: h });
             expect(applyLauncherPrefill(["arcterm"])).toBe(true);
             expect(globalStore.get(launcherPrefillAtom)).toBeNull();
-            expect(globalStore.get(launcherOnStartedAtom)).toBe(onStarted);
-            expect(takeLauncherOnStarted()).toBe(onStarted);
+            expect(globalStore.get(launcherHandbackAtom)).toBe(h);
+            expect(takeLauncherHandback()).toBe(h);
             // taken once: the run it was for has started
-            expect(takeLauncherOnStarted()).toBeNull();
-            expect(globalStore.get(launcherOnStartedAtom)).toBeNull();
+            expect(takeLauncherHandback()).toBeNull();
+            expect(globalStore.get(launcherHandbackAtom)).toBeNull();
+            // taking it tells it nothing: the start does
+            expect(h.handedOff).not.toHaveBeenCalled();
         });
         it("keeps nothing for a prefill with none, replacing an earlier prefill's", () => {
-            globalStore.set(launcherPrefillAtom, { ...prefill, onStarted: vi.fn() });
+            globalStore.set(launcherPrefillAtom, { ...prefill, handback: handback() });
             applyLauncherPrefill(["arcterm"]);
             globalStore.set(launcherPrefillAtom, prefill);
             applyLauncherPrefill(["arcterm"]);
-            expect(takeLauncherOnStarted()).toBeNull();
+            expect(takeLauncherHandback()).toBeNull();
         });
         it("is kept while the project list is still empty, so a late list does not lose it", () => {
-            const onStarted = vi.fn();
-            globalStore.set(launcherPrefillAtom, { ...prefill, onStarted });
+            const h = handback();
+            globalStore.set(launcherPrefillAtom, { ...prefill, handback: h });
             expect(applyLauncherPrefill([])).toBe(false);
             expect(applyLauncherPrefill(["arcterm"])).toBe(true);
-            expect(takeLauncherOnStarted()).toBe(onStarted);
+            expect(takeLauncherHandback()).toBe(h);
         });
         it("goes when the launcher closes: the next New is no handback's run", () => {
-            const onStarted = vi.fn();
-            globalStore.set(launcherPrefillAtom, { ...prefill, onStarted });
+            globalStore.set(launcherPrefillAtom, { ...prefill, handback: handback() });
             applyLauncherPrefill(["arcterm"]);
             closeLauncher(model());
-            expect(globalStore.get(launcherOnStartedAtom)).toBeNull();
+            expect(globalStore.get(launcherHandbackAtom)).toBeNull();
         });
         it("goes when another open starts without it", () => {
-            globalStore.set(launcherPrefillAtom, { ...prefill, onStarted: vi.fn() });
+            globalStore.set(launcherPrefillAtom, { ...prefill, handback: handback() });
             applyLauncherPrefill(["arcterm"]);
             openLauncher(model(), "run");
-            expect(globalStore.get(launcherOnStartedAtom)).toBeNull();
+            expect(globalStore.get(launcherHandbackAtom)).toBeNull();
         });
     });
 });

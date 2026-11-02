@@ -5,7 +5,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { RunConfig } from "@/app/view/jarvis/newrun";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createChannel } from "./channelsstore";
-import { handBackStartedRun, startLauncherRun } from "./launcherrun";
+import { handBack, startLauncherRun } from "./launcherrun";
 import { noteRecentProject } from "./projectsstore";
 import { createRun, resolveChannelLaunchRoute, resolvedProfileAtom } from "./runactions";
 import { endRunConfigDraft } from "./runconfigstore";
@@ -101,24 +101,29 @@ describe("startLauncherRun", () => {
     });
 });
 
-describe("handBackStartedRun", () => {
-    it("tells the caller that filled the dialog the run's id", () => {
-        const onStarted = vi.fn();
-        handBackStartedRun(onStarted, "run-1");
-        expect(onStarted).toHaveBeenCalledTimes(1);
-        expect(onStarted).toHaveBeenCalledWith("run-1");
+describe("handBack", () => {
+    it("tells the caller that filled the dialog each step of its run's start", () => {
+        const h = { handedOff: vi.fn(), started: vi.fn(), stopped: vi.fn() };
+        handBack(h, { kind: "handedOff" });
+        expect(h.handedOff).toHaveBeenCalledTimes(1);
+        handBack(h, { kind: "started", runId: "run-1" });
+        expect(h.started).toHaveBeenCalledTimes(1);
+        expect(h.started).toHaveBeenCalledWith("run-1");
+        handBack(h, { kind: "stopped" });
+        expect(h.stopped).toHaveBeenCalledTimes(1);
     });
 
-    it("does nothing for a start no caller follows", () => {
-        expect(() => handBackStartedRun(null, "run-1")).not.toThrow();
-        expect(() => handBackStartedRun(undefined, "run-1")).not.toThrow();
+    it("does nothing for a start no caller follows, or a step the caller does not hear", () => {
+        expect(() => handBack(null, { kind: "started", runId: "run-1" })).not.toThrow();
+        expect(() => handBack(undefined, { kind: "handedOff" })).not.toThrow();
+        expect(() => handBack({ started: vi.fn() }, { kind: "stopped" })).not.toThrow();
     });
 
     it("swallows a handback that throws: the run exists either way", () => {
-        const onStarted = vi.fn(() => {
+        const started = vi.fn(() => {
             throw new Error("agent gone");
         });
-        expect(() => handBackStartedRun(onStarted, "run-1")).not.toThrow();
-        expect(onStarted).toHaveBeenCalledWith("run-1");
+        expect(() => handBack({ started }, { kind: "started", runId: "run-1" })).not.toThrow();
+        expect(started).toHaveBeenCalledWith("run-1");
     });
 });

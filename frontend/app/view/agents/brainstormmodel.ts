@@ -1415,11 +1415,26 @@ function capitalize(s: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+// A run Arc is starting from this design, from the launcher's Start until the file records it: CreateRun takes up to a
+// minute, and the agent hears the run's id only once it returns, so without this Approve reads as on in between and
+// starts the same run twice. runId is set once CreateRun has returned.
+export type StartingRunMark = { runId: string | null };
+
+export const RUN_STARTING = "The run is starting";
+
+// the file with the run Arc started from it, before the agent has recorded that run itself
+export function withStartingRun(f: BrainstormFile, starting: StartingRunMark | null): BrainstormFile {
+    return f.run == null && starting?.runId != null ? { ...f, run: starting.runId } : f;
+}
+
 // why Approve is off, said in words beside it; null when it is on. The design is settled only once the builder is
 // answered, no talk question is open, and every decision is yours
-export function approveBlocker(f: BrainstormFile): string | null {
+export function approveBlocker(f: BrainstormFile, starting: StartingRunMark | null = null): string | null {
     if (f.run != null) {
         return null;
+    }
+    if (starting != null) {
+        return RUN_STARTING;
     }
     if (f.working != null) {
         return "The agent is writing; this opens when it is done";

@@ -235,12 +235,20 @@ function HandedRow({ f, p }: { f: BrainstormFile; p: BrainstormPart }) {
     return (
         <div
             data-brainstorm-handed-row={p.id}
-            className="grid grid-cols-[7px_minmax(120px,230px)_minmax(0,1fr)_max-content] items-start gap-x-[12px] border-t border-edge-faint px-[14px] py-[8px]"
+            className="grid grid-cols-[7px_minmax(120px,230px)_minmax(0,1fr)] items-start gap-x-[12px] border-t border-edge-faint px-[14px] py-[8px]"
         >
             <span className={cn(PART_DOT[p.state], "mt-[6px]")} />
             <span className="text-[13.5px] font-semibold leading-[1.45] text-primary">{p.title}</span>
-            <span className="min-w-0 text-[13.5px] leading-[1.45] text-secondary">{partGist(f, p)}</span>
-            <span className="mt-[2px] font-mono text-[10.5px] text-muted">{p.from ?? ""}</span>
+            {/* the from line sits under the gist, as on the brainstorm's part row: a column of its own sized to
+                max-content took the row's width and squeezed the gist to one word a line */}
+            <span className="flex min-w-0 flex-col gap-[2px]">
+                <span className="text-[13.5px] leading-[1.45] text-secondary">{partGist(f, p)}</span>
+                {p.from ? (
+                    <span title={p.from} className="truncate font-mono text-[10.5px] text-muted">
+                        {p.from}
+                    </span>
+                ) : null}
+            </span>
         </div>
     );
 }

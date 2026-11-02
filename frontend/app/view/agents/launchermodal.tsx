@@ -109,7 +109,7 @@ import {
     pickLauncherProject,
     pickLauncherRuntime,
     pickLauncherTool,
-    takeLauncherOnStarted,
+    takeLauncherHandback,
 } from "./launcherstore";
 import { ToolFields, ToolList } from "./launchertoolfields";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
@@ -638,7 +638,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         // A run can take minutes to start (CreateRun builds the landing tree and the lead before it returns), so the
         // dialog hands it to a Starting row in its project's folder and closes at once; that row is where it is cancelled
         // or reads why it failed. Read before close(), which drops it: the prefill's caller still hears the run's id.
-        const onStarted = takeLauncherOnStarted();
+        const handback = takeLauncherHandback();
         const pickedRoute = routeTouched ? runRoute : null;
         startRunInBackground({
             project: p.name,
@@ -655,12 +655,12 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
                     goal,
                     pickedRoute,
                 }),
-            onStarted,
+            handback,
         });
         endLauncherDraft();
         close();
         // the row is in the Agent tree, as a new agent's is; a caller that filled the dialog keeps the person where it is
-        if (onStarted == null) {
+        if (handback == null) {
             globalStore.set(model.surfaceAtom, "agent");
         }
     };

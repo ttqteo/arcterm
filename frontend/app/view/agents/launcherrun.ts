@@ -5,7 +5,13 @@
 // run window's start handler so the dialog stays thin; what a launch dispatches is unchanged.
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { launchGoal, launchOptsFromConfig, type ChannelTarget, type RunConfig } from "@/app/view/jarvis/newrun";
+import {
+    launchGoal,
+    launchOptsFromConfig,
+    type ChannelTarget,
+    type RunConfig,
+    type RunHandback,
+} from "@/app/view/jarvis/newrun";
 import { createChannel } from "./channelsstore";
 import { noteRecentProject } from "./projectsstore";
 import { createRun, resolveChannelLaunchRoute, resolvedProfileAtom } from "./runactions";
@@ -39,16 +45,23 @@ export async function startLauncherRun(input: LauncherRunInput): Promise<{ chann
     return { channelId, run };
 }
 
-/** A started run's handback: the caller that filled the dialog (a brainstorm's Approve, through the prefill's
- *  onStarted) hears the run's id and follows the run itself. A throwing handback is logged and goes no further: the run
- *  exists either way. */
-export function handBackStartedRun(onStarted: ((runId: string) => void) | null | undefined, runId: string): void {
-    if (onStarted == null) {
+/** Tells the caller that filled the dialog (a brainstorm's Approve, through the prefill's handback) how its run's start
+ *  went: handed off, started with the run's id, or stopped. A throwing handback is logged and goes no further: the
+ *  start goes on either way. */
+export function handBack(
+    handback: RunHandback | null | undefined,
+    event: { kind: "handedOff" } | { kind: "started"; runId: string } | { kind: "stopped" }
+): void {
+    if (handback == null) {
         return;
     }
     try {
-        onStarted(runId);
+        if (event.kind === "started") {
+            handback.started(event.runId);
+        } else {
+            handback[event.kind]?.();
+        }
     } catch (e) {
-        console.warn("the caller that filled the launcher failed to take its run's id", runId, e);
+        console.warn("the caller that filled the launcher failed to take its run's start", event, e);
     }
 }

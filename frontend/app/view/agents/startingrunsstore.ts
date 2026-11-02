@@ -6,9 +6,10 @@
 // CreateRun, so a reload drops the row, and the run, once it exists, shows as its lead.
 
 import { globalStore } from "@/app/store/jotaiStore";
+import type { RunHandback } from "@/app/view/jarvis/newrun";
 import { fireAndForget } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
-import { handBackStartedRun } from "./launcherrun";
+import { handBack } from "./launcherrun";
 import { cancelRun } from "./runactions";
 import { patchStarting, type StartingRun } from "./startingrunsmodel";
 
@@ -16,7 +17,7 @@ export const startingRunsAtom = atom<StartingRun[]>([]) as PrimitiveAtom<Startin
 
 type Launch = {
     start: () => Promise<{ channelId: string; run: Run }>;
-    onStarted?: ((runId: string) => void) | null;
+    handback?: RunHandback | null;
 };
 
 // each row's start, kept for Try again; it goes with the row
@@ -36,6 +37,7 @@ function stateOf(id: string): StartingRun["state"] | undefined {
 }
 
 function run(id: string, launch: Launch): void {
+    handBack(launch.handback, { kind: "handedOff" });
     fireAndForget(async () => {
         let started: { channelId: string; run: Run };
         try {
@@ -46,6 +48,7 @@ function run(id: string, launch: Launch): void {
             } else {
                 patch(id, { state: "failed", error: String(e) });
             }
+            handBack(launch.handback, { kind: "stopped" });
             return;
         }
         if (stateOf(id) === "cancelling") {
@@ -53,22 +56,23 @@ function run(id: string, launch: Launch): void {
                 await cancelRun(started.channelId, started.run.id);
             } finally {
                 drop(id);
+                handBack(launch.handback, { kind: "stopped" });
             }
             return;
         }
         drop(id);
-        handBackStartedRun(launch.onStarted, started.run.id);
+        handBack(launch.handback, { kind: "started", runId: started.run.id });
     });
 }
 
 /** Starts a run behind a row: the row reads Starting until CreateRun returns, then goes, and the run's lead takes its
  *  place in the folder. A start cancelled meanwhile cancels the run it made when that returns; a start that fails keeps
- *  its row, Failed with the reason, for Try again or Dismiss. `onStarted` is the caller that filled the dialog (a
- *  brainstorm's Approve), told the run's id. */
+ *  its row, Failed with the reason, for Try again or Dismiss. `handback` is the caller that filled the dialog (a
+ *  brainstorm's Approve), told the start is on its way, then the run's id, or that it stopped. */
 export function startRunInBackground(input: { project: string; title: string } & Launch): void {
     const id = crypto.randomUUID();
     const row: StartingRun = { id, project: input.project, title: input.title, ts: Date.now(), state: "starting" };
-    const launch: Launch = { start: input.start, onStarted: input.onStarted };
+    const launch: Launch = { start: input.start, handback: input.handback };
     launches.set(id, launch);
     globalStore.set(startingRunsAtom, (prev) => [...prev, row]);
     run(id, launch);

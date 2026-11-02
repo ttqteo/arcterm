@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- When two or more council seats failed, the seat strip offers Retry all: pick a model beside each failed seat (its own
+  by default), and they all run again together instead of one Retry refusing the next while the first runs.
+- An agent can pick the experts' models when it starts a council for you: `wsh council start --model sonnet`, or
+  `--model skeptic=opus` for one seat, and `wsh council retry --all` reruns every failed seat at once.
 - An agent you ask for a council on named chats now seats those chats in it, beside a Skeptic and a coordinator, and
   the council runs to the report without holding drafts for you to send: `wsh council start --agent <tab id>`, and
   `--agent self` for the chat that asks.
@@ -54,6 +58,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council in the Agent sidebar now reads like a group chat in a chat list: two of its seats as overlapping circles
   (a green dot while one writes, a red one when a call failed), its title, and under it its state and how long ago
   its last message came.
+- A council's message box now lines up with the messages above it instead of running the full width, and a message
+  you send rises into the chat from the box.
 - Once a brainstorm's Approve starts its run, the agent that ran the brainstorm goes to sleep 15 seconds after it
   records the run, freeing its RAM; Wake or any message brings it back. It stays awake when Sleep idle agents is off.
 - A sleeping agent's side panel no longer offers a Transcript tab: its conversation already fills the terminal's place, and the tab comes back when it wakes.
@@ -77,10 +83,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
-- A brainstorm whose design waits on you to confirm the agent's guesses now pulses its agent and says "confirm N
-  decisions" in the tree, as an open question does, instead of reading "in progress".
+- A brainstorm's Approve stays off while the run it started is still starting, with "The run is starting" beside it,
+  so pressing it again in the minute before the agent records the run no longer starts the same run twice.
+- A brainstorm's "What you handed over" list keeps its text readable: where each decision came from now sits under the
+  text instead of in a column of its own that squeezed it to one word a line.
 - The counts beside the Agent panel's tabs scroll sideways with the mouse wheel when the panel is too narrow for them
   all, with a fade on the edge that hides some, instead of the last ones being cut off out of reach.
+- A brainstorm whose design waits on you to confirm the agent's guesses now pulses its agent and says "confirm N
+  decisions" in the tree, as an open question does, instead of reading "in progress".
 - A run started from a brainstorm now shows in History by its feature ("Build …"), with its spec's file name on the
   line under it, instead of a title cut off halfway through the spec's full path.
 - In a council, when you ask everyone something, the experts who answer after the first one no longer open with the

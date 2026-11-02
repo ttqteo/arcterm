@@ -256,6 +256,16 @@ export function retryExpert(id: string, expertId: string, model?: string): Promi
     return call("retry", () => RpcApi.CouncilRetryCommand(TabRpcClient, data));
 }
 
+/** Reruns every failed seat but the coordinator in one run, the seats at once; models picks a seat's model for this
+ *  retry only, by expert id (`retryAllModels`). */
+export function retryAllExperts(id: string, models: Record<string, string>): Promise<CouncilCall<void>> {
+    const data: CommandCouncilRetryData = { id, all: true };
+    if (Object.keys(models).length > 0) {
+        data.models = models;
+    }
+    return call("retry", () => RpcApi.CouncilRetryCommand(TabRpcClient, data));
+}
+
 /** Asks the coordinator which files to read and which roles fit the feature: one model call, so Setup waits for it. */
 export function suggestCouncil(data: CommandCouncilSuggestData): Promise<CouncilCall<CouncilSuggestion>> {
     return call("suggest", () => RpcApi.CouncilSuggestCommand(TabRpcClient, data));
