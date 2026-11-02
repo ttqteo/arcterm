@@ -345,6 +345,7 @@ function RetryButton({ expertId, label, acts, c }: { expertId: string; label: st
             </button>
             <RetryWithButton
                 expert={c.experts.find((e) => e.id === expertId)}
+                error={c.failed?.[expertId]?.error}
                 disabled={busy}
                 onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, expertId, model))}
                 className={cn(secondaryButton, "h-[26px] px-[8px] text-[12.5px]")}

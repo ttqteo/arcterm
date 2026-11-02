@@ -370,6 +370,7 @@ function SeatFilter({
             {chip.retry && (
                 <RetryWithButton
                     expert={c.experts.find((e) => e.id === chip.id)}
+                    error={c.failed?.[chip.id]?.error}
                     disabled={acts.busy.has(key)}
                     onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, chip.id, model))}
                     className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
@@ -869,6 +870,7 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
             </button>
             <RetryWithButton
                 expert={c.experts.find((e) => e.id === item.author)}
+                error={c.failed?.[item.author]?.error}
                 disabled={acts.busy.has(key)}
                 onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, item.author, model))}
                 className={cn(secondaryButton, "h-[22px] px-[6px] text-[12px]")}

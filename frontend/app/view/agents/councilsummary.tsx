@@ -1018,6 +1018,7 @@ function NoSummary({ c, busy, onSummarize }: { c: Council; busy: boolean; onSumm
                             </button>
                             <RetryWithButton
                                 expert={coordinator}
+                                error={c.failed?.[coordinator.id]?.error}
                                 onPick={(model) => void retryExpert(c.id, coordinator.id, model)}
                                 className={BUTTON}
                             />
@@ -1263,6 +1264,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                             </button>
                             <RetryWithButton
                                 expert={coordinator}
+                                error={c.failed?.[coordinator.id]?.error}
                                 onPick={(model) => void retryExpert(c.id, coordinator.id, model)}
                                 className={BUTTON}
                             />

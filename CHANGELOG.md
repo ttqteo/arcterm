@@ -33,8 +33,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A project's History list opens a menu on right-click: a session can open its transcript, resume, copy its title or
   transcript path, or be deleted; a run or a council can be opened or have its title copied. Each session row also
   names its model.
-- A council call that failed can be retried on another model: Retry with… beside Retry picks opus, sonnet, fable or
-  haiku for that one call, the seat keeps its own model, and the saved document notes the retry.
+- A council call that failed can be retried on another model: Retry with… beside Retry picks opus, Opus 4.8, sonnet,
+  fable or haiku for that one call, the seat keeps its own model, and the saved document notes the retry. A call
+  Claude's safeguards flagged offers Opus 4.8 first, the model Claude Code itself falls back to.
 
 ### Changed
 

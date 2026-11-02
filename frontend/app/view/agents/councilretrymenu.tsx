@@ -4,29 +4,37 @@
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { cn } from "@/util/util";
 import { ChevronDown } from "lucide-react";
-import { retryModelChoices, retryModelLabel } from "./councilretry";
+import { isSafeguardFlag, retryModelChoices, retryModelLabel } from "./councilretry";
 
 /** "Retry with…" beside a Retry button: a menu of the other models the failed call can run on once (the seat keeps its
- *  own). Nothing for a live agent's seat, which answers with its own session. */
+ *  own). A call the safeguards flagged offers Opus 4.8 first, as Claude Code falls back to it. Nothing for a live
+ *  agent's seat, which answers with its own session. */
 export function RetryWithButton({
     expert,
+    error,
     onPick,
     disabled,
     className,
 }: {
     expert: CouncilExpert | null | undefined;
+    error?: string; // the failed call's error, which says whether the safeguards flagged it
     onPick: (model: string) => void;
     disabled?: boolean;
     className?: string;
 }) {
-    const choices = retryModelChoices(expert);
+    const choices = retryModelChoices(expert, error);
     if (expert == null || choices.length === 0) {
         return null;
     }
     const open = (e: React.MouseEvent) => {
         ContextMenuModel.getInstance().showContextMenu(
             [
-                { type: "header", label: `${expert.name} runs on ${expert.model || "its default"}` },
+                {
+                    type: "header",
+                    label: isSafeguardFlag(error)
+                        ? `Safeguards flagged ${expert.name} on ${expert.model || "its default"}`
+                        : `${expert.name} runs on ${expert.model || "its default"}`,
+                },
                 ...choices.map((m) => ({ label: retryModelLabel(m), click: () => onPick(m) })),
             ],
             e
