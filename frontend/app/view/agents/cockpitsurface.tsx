@@ -1045,7 +1045,9 @@ export function CockpitSurface({ model }: { model: AgentsViewModel }) {
             <div className="flex min-w-0 flex-1 flex-col bg-background">
                 {/* one row: the tabs carry the counts a subtitle used to repeat; Office has them in its HUD bar */}
                 {view !== "office" ? (
-                    <div className="sticky top-0 z-[5] shrink-0 bg-background">
+                    // z-40: the header is a stacking context, so its project menu (z-60 inside it) only clears the
+                    // cards when the header itself sits above their pinned prompt bars (z-10) and popovers (z-30)
+                    <div className="sticky top-0 z-40 shrink-0 bg-background">
                         <div className="flex flex-wrap items-end gap-x-5 gap-y-1 border-b border-border px-5 pt-2.5">
                             <h1 className={cn(SURFACE_TITLE_CLASS, "pb-2.5 leading-none")}>Cockpit</h1>
                             <div className="-mb-px flex flex-wrap gap-0.5">
