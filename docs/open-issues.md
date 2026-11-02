@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A project folder carries its share of the Jarvis badge: with a run waiting to land or a gate open in
+  a project, the Agent sidebar's folder icon for that project shows a count in the Jarvis badge's colour at its top
+  right, the counts across folders add up to Jarvis's (less what names no run: due chunks, learn proposals), and it
+  clears with the item. `agenttree.tsx` `FolderRow` `jarvis`, `jarvisCountsByProject`.
 - [ ] (arcterm) A sleeping agent's rail has no Transcript tab: put an agent to sleep while its rail sits on Transcript
   → the strip drops the Transcript icon and shows Overview; Ctrl+Shift+F does nothing; Wake → the tab returns and is
   selected again. `agentdetailsrail.tsx` `hasTranscript`, "fix(agents): a sleeping agent's rail drops its Transcript

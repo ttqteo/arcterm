@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- A project folder in the Agent sidebar shows on its icon how many of Jarvis's waiting items (a gate, a run to confirm
+  or land, an escalation) are that project's.
 - Jarvis has a Councils region under Runs: every council still at work across your projects, and the ones that ended
   this week, with the ones waiting on you first. A row opens the council, on its report once it has one.
 - Right-click a project folder in the Agent sidebar → New agent… opens the New dialog with that project already
