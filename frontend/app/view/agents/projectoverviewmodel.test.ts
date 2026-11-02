@@ -12,6 +12,7 @@ import {
     finishedRows,
     firstRows,
     historyRows,
+    historySessionLine,
     isQuiet,
     overviewRows,
     projectSessions,
@@ -555,5 +556,24 @@ describe("firstRows", () => {
 
     it("returns every row when the limit is past the end", () => {
         expect(firstRows(ROWS, 50)).toHaveLength(6);
+    });
+});
+
+describe("historySessionLine", () => {
+    it("names the branch, runtime, model and tokens", () => {
+        expect(
+            historySessionLine({
+                branch: "master",
+                runtime: "claude",
+                model: "claude-opus-4-8",
+                tokenstotal: 2_200_000,
+            })
+        ).toBe("master · Claude Code · Opus 4.8 · 2.2M tokens");
+    });
+
+    it("leaves out what is not known", () => {
+        expect(historySessionLine({ branch: "", runtime: "claude", model: "", tokenstotal: 0 })).toBe(
+            "Claude Code · 0 tokens"
+        );
     });
 });

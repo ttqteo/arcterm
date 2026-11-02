@@ -27,6 +27,11 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) History right-click menu and model: open a project's Overview. Each session row's second line reads
+  `branch · Claude Code · Opus 4.8 · 2.2M tokens` (the model shown when known). Right-click a session: Open transcript,
+  Resume, Copy title, Copy transcript path, then Delete session (Claude only) with a confirm, after which the row
+  leaves the list. Right-click a run or council row: Open run / Open council and Copy title. The commit that adds this
+  line.
 - [ ] (arcterm) Council header on one line and gliding jumps: open a council with a long question. The header is one
   row (mode chip, the question cut with "…", the status chip, then the cost, Summarize and Stop on the right). In a
   long discussion, Top, Latest and Back glide there in under half a second; a wheel turn mid-glide stops it where it

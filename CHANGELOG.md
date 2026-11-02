@@ -24,6 +24,12 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ## Unreleased
 
+### Added
+
+- A project's History list opens a menu on right-click: a session can open its transcript, resume, copy its title or
+  transcript path, or be deleted; a run or a council can be opened or have its title copied. Each session row also
+  names its model.
+
 ### Changed
 
 - A council's header fits on one line: the mode leads, a long question shortens to fit instead of pushing the status

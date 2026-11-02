@@ -6,10 +6,12 @@
 // and runs of the last 7 days, a session's runs and councils nested under it) with the words the header and the rows
 // read. Pure; projectoverview.tsx draws it.
 
-import { projectOf, sortAgents, type AgentVM } from "./agentsviewmodel";
+import { formatTokens, projectOf, sortAgents, type AgentVM } from "./agentsviewmodel";
 import { groupRunAgents, runningAgents, UNGROUPED_PROJECT } from "./agenttreemodel";
 import { normProjectPath } from "./channelderive";
+import { prettyModel } from "./modellabel";
 import { NO_LINEAGE, roleRunId, type Lineage, type RunInfo } from "./runlineage";
+import { runtimeMeta } from "./runtimemeta";
 import type { LiveSession } from "./sessionsarchivestore";
 import { sessionKey } from "./sessionsruns";
 
@@ -389,4 +391,16 @@ export function firstRows(rows: readonly HistoryRow[], limit: number): HistoryRo
         }
     }
     return rows.slice(0, end);
+}
+
+// A History session row's second line: its branch, runtime, model and tokens, each only when known.
+export function historySessionLine(s: Pick<LiveSession, "branch" | "runtime" | "model" | "tokenstotal">): string {
+    return [
+        s.branch,
+        runtimeMeta(s.runtime).label,
+        s.model ? prettyModel(s.model) : "",
+        `${formatTokens(s.tokenstotal)} tokens`,
+    ]
+        .filter(Boolean)
+        .join(" · ");
 }

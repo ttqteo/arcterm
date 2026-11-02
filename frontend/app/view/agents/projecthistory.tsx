@@ -7,24 +7,28 @@
 // once and hands the result in, so the Activity card's session count and this column read one list.
 
 import { Skeleton, SkeletonLine } from "@/app/element/skeleton";
+import { ContextMenuModel } from "@/app/store/contextmenu";
 import { openTarget } from "@/app/view/jarvis/openref";
 import { cn, fireAndForget } from "@/util/util";
 import { useAtom, useAtomValue } from "jotai";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Copy, ExternalLink, FileText, Play, Trash2 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { showHistory, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
-import { formatAgeShort, formatTokens } from "./agentsviewmodel";
+import { formatAgeShort } from "./agentsviewmodel";
 import { historyQueryAtom, type ProjectHistory } from "./projecthistorystore";
 import {
     firstRows,
     HISTORY_PAGE,
     historyRows,
+    historySessionLine,
     projectSessions,
     type CouncilPeek,
     type HistoryItem,
 } from "./projectoverviewmodel";
-import { runtimeMeta } from "./runtimemeta";
+import { canDeleteSession, confirmDeleteSession, DELETE_SESSION_LABEL } from "./sessiondelete";
+import type { LiveSession } from "./sessionsarchivestore";
+import { runSessionPrimary } from "./sessionsdetail";
 
 const PANEL = "overflow-hidden rounded-[8px] border border-edge-mid bg-surface-raised";
 const ROW =
@@ -91,6 +95,49 @@ function Note({ attr, children }: { attr: "data-history-empty" | "data-history-n
             {children}
         </div>
     );
+}
+
+function copyTitleItem(title: string): ContextMenuItem {
+    return {
+        label: "Copy title",
+        icon: <Copy size={15} />,
+        click: () => void navigator.clipboard.writeText(title),
+    };
+}
+
+// A session row's menu: open its transcript, resume it, copy its title, and delete it when it can be (an ended
+// Claude session; sessiondelete.ts).
+function sessionMenu(model: AgentsViewModel, key: string, s: LiveSession, e: React.MouseEvent) {
+    const items: ContextMenuItem[] = [
+        { label: "Open transcript", icon: <FileText size={15} />, click: () => showSession(model, key) },
+    ];
+    if (s.resumecommand || (s.live && s.liveId)) {
+        items.push({
+            label: s.live ? "Go to agent" : "Resume",
+            icon: <Play size={15} />,
+            click: () => runSessionPrimary(model, s),
+        });
+    }
+    items.push(copyTitleItem(s.task || "(untitled session)"));
+    if (s.transcriptpath) {
+        items.push({
+            label: "Copy transcript path",
+            icon: <Copy size={15} />,
+            click: () => void navigator.clipboard.writeText(s.transcriptpath),
+        });
+    }
+    if (canDeleteSession(s)) {
+        items.push(
+            { type: "separator" },
+            {
+                label: DELETE_SESSION_LABEL,
+                icon: <Trash2 size={15} />,
+                danger: true,
+                click: () => confirmDeleteSession(s),
+            }
+        );
+    }
+    ContextMenuModel.getInstance().showContextMenu(items, e);
 }
 
 // a run's rotated square or a council's dot, beside its kind word
@@ -267,16 +314,15 @@ export function HistoryColumn({
             {shown.map((row) => {
                 if (row.kind === "session") {
                     const s = row.session;
-                    const line = [s.branch, runtimeMeta(s.runtime).label, `${formatTokens(s.tokenstotal)} tokens`]
-                        .filter(Boolean)
-                        .join(" · ");
                     return (
                         <button
                             key={row.key}
                             type="button"
                             data-history-row={row.key}
                             data-history-kind="session"
+                            title={s.task || undefined}
                             onClick={() => showSession(model, row.key)}
+                            onContextMenu={(e) => sessionMenu(model, row.key, s, e)}
                             className={`${ROW} flex-col items-stretch gap-[2px]`}
                         >
                             <span className="flex items-baseline gap-2">
@@ -287,7 +333,7 @@ export function HistoryColumn({
                                     {formatAgeShort(now - s.lastactivets)}
                                 </span>
                             </span>
-                            <span className="truncate text-[12px] text-muted">{line}</span>
+                            <span className="truncate text-[12px] text-muted">{historySessionLine(s)}</span>
                         </button>
                     );
                 }
@@ -301,6 +347,19 @@ export function HistoryColumn({
                         data-history-parent={row.parent}
                         aria-expanded={isCouncil ? open : undefined}
                         onClick={() => (isCouncil ? setUnfolded(open ? null : row.key) : openItem(row))}
+                        onContextMenu={(e) =>
+                            ContextMenuModel.getInstance().showContextMenu(
+                                [
+                                    {
+                                        label: isCouncil ? "Open council" : "Open run",
+                                        icon: <ExternalLink size={15} />,
+                                        click: () => openItem(row),
+                                    },
+                                    copyTitleItem(row.title),
+                                ],
+                                e
+                            )
+                        }
                         className={cn(row.nested ? NESTED_ROW : ROW, open && "hover:bg-transparent")}
                     >
                         <KindLabel kind={row.kind} />
