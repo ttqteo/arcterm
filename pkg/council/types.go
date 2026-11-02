@@ -242,6 +242,7 @@ type Council struct {
 	PauseAfterRound1 bool                         `json:"pauseafterround1,omitempty"`
 	Rounds           int                          `json:"rounds,omitempty"`    // 1 to 3 seat rounds, the ideas round included; 0 reads as 2 (RoundsOf)
 	SessionId        string                       `json:"sessionid,omitempty"` // the agent session that started it
+	ByAgent          bool                         `json:"byagent,omitempty"`   // started by `wsh council start`: it never holds an answer as a draft, agents seated or not
 	State            CouncilState                 `json:"state"`
 	Round            int                          `json:"round"`
 	Error            string                       `json:"error,omitempty"`
