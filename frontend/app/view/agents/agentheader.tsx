@@ -54,7 +54,7 @@ import type { AgentsViewModel } from "./agents";
 import { askingLabel, askSentKey, formatTokens, projectOf, type AgentVM } from "./agentsviewmodel";
 import { setAgentView, type AgentView } from "./agentview";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
-import { isAsking } from "./brainstormmodel";
+import { waitsOnUser } from "./brainstormmodel";
 import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
@@ -351,7 +351,7 @@ export function AgentHeader({ model, agent }: { model: AgentsViewModel; agent: A
     const hasCanvas = canvas != null && brainstorm == null;
     // the roster overlay already turned a question the file asks into state "asking"
     const brainstormFile = shownBrainstormFile(brainstorm);
-    const brainstormAsking = brainstormFile != null && isAsking(brainstormFile) && agent.state === "asking";
+    const brainstormAsking = brainstormFile != null && waitsOnUser(brainstormFile) && agent.state === "asking";
     const lineage = useRunLineage(model, agent);
     const project = agentProject(useAtomValue(model.lineageAtom), useAtomValue(model.agentsAtom), agent);
     const name =

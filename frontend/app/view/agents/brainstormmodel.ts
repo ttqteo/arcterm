@@ -510,8 +510,27 @@ export function isAsking(f: BrainstormFile): boolean {
     return f.question != null && f.working == null;
 }
 
+// the decisions Confirm the design waits on: guesses to confirm and changed ones to keep or restore
+function toReview(f: BrainstormFile): number {
+    return decisionParts(f).filter((p) => {
+        const v = partView(f, p);
+        return v === "guess" || v === "changed";
+    }).length;
+}
+
+// the design waits on the user's review, not on a question: no question open, nothing being written, no builder check
+// or run yet, and a decision still the agent's guess or changed since the user confirmed it
+export function awaitsReview(f: BrainstormFile): boolean {
+    return f.question == null && f.working == null && f.check == null && f.run == null && toReview(f) > 0;
+}
+
+// the file waits on the user: a question to answer, or guesses to confirm
+export function waitsOnUser(f: BrainstormFile): boolean {
+    return isAsking(f) || awaitsReview(f);
+}
+
 export function asksUser(f: BrainstormFile | null, agent: Pick<AgentVM, "state" | "atPrompt">): boolean {
-    return f != null && isAsking(f) && (agent.state === "idle" || agent.atPrompt === true);
+    return f != null && waitsOnUser(f) && (agent.state === "idle" || agent.atPrompt === true);
 }
 
 // the file knows a question the agent's own status does not: its turn ended on a prose question
@@ -533,6 +552,9 @@ export type TreeLine = { text: string; runId?: string };
 export function treeLine(f: BrainstormFile, asking: boolean, runText?: string): TreeLine {
     if (f.run != null) {
         return { text: runText ?? `run ${f.run.slice(0, RUN_ID_CHARS)}`, runId: f.run };
+    }
+    if (asking && f.question == null && awaitsReview(f)) {
+        return { text: `confirm ${plural(toReview(f), "decision", "decisions")}` };
     }
     if (asking) {
         return { text: `asking question ${f.question?.n ?? ""}`.trim() };
@@ -1641,12 +1663,14 @@ export function brainstormAttention(
     a: { agentId: string; agentName: string; topic: string },
     f: BrainstormFile
 ): AttentionItem {
+    // a review has no question: its own key, so the flash fires once when the design comes up for confirming
+    const review = f.question == null && awaitsReview(f);
     const q = f.question ?? { n: 0, text: "", part: "" };
     return {
         kind: "brainstorm",
-        key: `brainstorm:${a.agentId}:${q.n}`,
+        key: review ? `brainstorm:${a.agentId}:review` : `brainstorm:${a.agentId}:${q.n}`,
         source: a.agentName,
-        text: q.text,
+        text: review ? reviewHead(f).line : q.text,
         action: "brainstorm",
         oref: `brainstorm:${a.topic}`,
         phaseidx: 0,

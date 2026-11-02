@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A brainstorm waiting on confirms asks for you: leave a brainstorm at Confirm the design with guesses
+  and no question open, the agent idle → its tree row pulses like an asking agent and reads "confirm N decisions",
+  the Brainstorm tab shows the amber dot, and the taskbar flashes once (`brainstormmodel.ts` `awaitsReview`).
 - [ ] (arcterm) The Agent panel's counts scroll: open an agent's details panel on Overview (300px) with enough counts
   to overflow (Subagents, Files, Servers…) → the wheel over the counts slides them sideways, the hidden edge fades,
   and the last count is reachable (`agentrailpanel.tsx` `RailStats`).

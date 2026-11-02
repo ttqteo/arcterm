@@ -93,7 +93,7 @@ import {
 import { setAgentView } from "./agentview";
 import { waitMap } from "./agentwaits";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
-import { isAsking, treeLine, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
+import { treeLine, waitsOnUser, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
 import { runStepView, runTreeText } from "./brainstormrunmodel";
 import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
@@ -1012,8 +1012,8 @@ function ParentRow({
     const unread = unreadCount > 0 || step != null;
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
-    // the roster overlay already turned a question the file asks into state "asking"; isAsking says the question is the
-    // brainstorm's, not a permission prompt
+    // the roster overlay already turned a question the file asks, or a design waiting on confirms, into state "asking";
+    // waitsOnUser says the wait is the brainstorm's, not a permission prompt
     const brainstormFile = shownBrainstormFile(useAtomValue(brainstormAtom(agent.id)));
     const mark = lead != null ? leadMark(lead.run, agent) : null;
     // its heavy command waiting its turn in the job queue, whose tag takes the working dot's place
@@ -1281,7 +1281,7 @@ function ParentRow({
                             <BrainstormTreeLine
                                 model={model}
                                 f={brainstormFile}
-                                asking={asking && isAsking(brainstormFile)}
+                                asking={asking && waitsOnUser(brainstormFile)}
                             />
                         ) : (
                             <>

@@ -74,6 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A brainstorm whose design waits on you to confirm the agent's guesses now pulses its agent and says "confirm N
+  decisions" in the tree, as an open question does, instead of reading "in progress".
 - The counts beside the Agent panel's tabs scroll sideways with the mouse wheel when the panel is too narrow for them
   all, with a fade on the edge that hides some, instead of the last ones being cut off out of reach.
 - A run started from a brainstorm now shows in History by its feature ("Build …"), with its spec's file name on the

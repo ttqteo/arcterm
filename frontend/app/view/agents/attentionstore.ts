@@ -59,7 +59,8 @@ export function cockpitWaitingCount(cockpit: AttentionItem[], agents: AgentVM[],
     return asking.length + cockpit.filter((i) => !(i.kind === "ask" && askKeys.has(i.key))).length;
 }
 
-// brainstormAttentionItems are the questions asked in brainstorms, for the list the taskbar reads. The server list has
+// brainstormAttentionItems are the questions asked in brainstorms, and designs waiting on confirms, for the list the
+// taskbar reads. The server list has
 // no such item: a brainstorm's question lives in the agent's file, which the frontend reads. An agent asks when its file
 // shows a question (a line Arc sent and the agent has not taken counts as it writing) and its turn ended. `roster` is the
 // un-overlaid one: the overlay (withBrainstorm) already reads an asking brainstorm as state "asking", which asksUser
