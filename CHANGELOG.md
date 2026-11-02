@@ -26,6 +26,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- Right-click a project folder in the Agent sidebar → New agent… opens the New dialog with that project already
+  picked.
 - A project can run on a Claude account of its own: Settings → Agents → Claude account → + Project account. Agents
   and terminals opened in that project use its account, and so do a council, a Radar audit or a background AI call
   run in its folder; every other project keeps using the checked one, and the New dialog's footer names the account a

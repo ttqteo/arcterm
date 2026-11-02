@@ -58,6 +58,7 @@ import {
     Pencil,
     PenTool,
     Play,
+    Plus,
     RotateCcw,
     Square,
     SquareTerminal,
@@ -98,6 +99,7 @@ import { isUnseen } from "./canvasmodel";
 import { canvasStateAtom } from "./canvasstore";
 import { laterFirst, laterSince, laterTitle, type LaterMarks } from "./latermodel";
 import { laterMarksAtom, setLater } from "./laterstore";
+import { openLauncher } from "./launcherstore";
 import { machineServersReadingAtom } from "./machineserversstore";
 import { RenameBox, startRowRename } from "./rowrename";
 import { dockedTerminalAtom } from "./railstore";
@@ -2094,14 +2096,20 @@ function FoldBody({ open, children }: { open: boolean; children: React.ReactNode
     );
 }
 
-// A project folder's right-click menu: its Overview, then its path's copy and reveal (the Code tree's items). Home has
-// none: it is no project and has no path. Shift+F10 on the focused row raises the same contextmenu event.
-function openFolderMenu(project: string, e: React.MouseEvent): void {
+// A project folder's right-click menu: a new agent in it (the launcher with the project picked), its Overview, then its
+// path's copy and reveal (the Code tree's items). Home has none: it is no project and has no path. Shift+F10 on the
+// focused row raises the same contextmenu event.
+function openFolderMenu(model: AgentsViewModel, project: string, e: React.MouseEvent): void {
     if (project === HOME_PROJECT) {
         return;
     }
     const root = globalStore.get(projectsAtom)?.[project]?.path;
     const items: ContextMenuItem[] = [
+        {
+            label: "New agent…",
+            icon: <Plus size={13} strokeWidth={1.8} />,
+            click: () => openLauncher(model, "agent", undefined, project),
+        },
         {
             label: "Open overview",
             icon: <LayoutDashboard size={13} strokeWidth={1.8} />,
@@ -2120,6 +2128,7 @@ function openFolderMenu(project: string, e: React.MouseEvent): void {
 // chevron and the folder icon fold it (Home, which has no Overview, folds from anywhere on the row); a right-click
 // opens its menu (openFolderMenu).
 function FolderRow({
+    model,
     section,
     project,
     label,
@@ -2128,6 +2137,7 @@ function FolderRow({
     trailing,
     selected,
 }: {
+    model: AgentsViewModel;
     section: SidebarSection;
     project: string;
     label?: string;
@@ -2149,7 +2159,7 @@ function FolderRow({
                     activate();
                 }
             }}
-            onContextMenu={(e) => openFolderMenu(project, e)}
+            onContextMenu={(e) => openFolderMenu(model, project, e)}
             aria-expanded={open}
             data-agent-folder={project}
             data-agent-folder-section={section}
@@ -2943,6 +2953,7 @@ function ConversationsSection({ model }: { model: AgentsViewModel }) {
                             <Fragment key={head?.kind === "folder" ? `f-${head.project}` : "flat"}>
                                 {head?.kind === "folder" ? (
                                     <FolderRow
+                                        model={model}
                                         section="conversations"
                                         project={head.project}
                                         selected={mode === "project" && overviewProject === head.project}
@@ -3282,6 +3293,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             className={i > 0 ? "mt-[4px]" : undefined}
                                         >
                                             <FolderRow
+                                                model={model}
                                                 section="active"
                                                 project={r.project}
                                                 selected={center === "project" && overviewProject === r.project}
