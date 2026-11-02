@@ -95,12 +95,14 @@ async function menuClick(h, action) {
 const FIRST_SENTENCE = loadCouncilFixture("done").summary.text.match(/^.*?[.!?](?=\s|$)/)[0];
 
 // a direction opened (the open ones are kept in an atom, so a reopened Summary may have it open already)
+// (the card is the toggle; its detail sits under the grid, one card open at a time)
+const DETAIL = (rank) => `${SUMMARY} [data-council-direction-detail="${rank}"]`;
 async function openDirection(h, rank) {
-    const toggle = `${DIRECTION(rank)} [data-council-direction-toggle]`;
+    const toggle = `${DIRECTION(rank)}[data-council-direction-toggle]`;
     if ((await h.ev(`document.querySelector(${q(toggle)})?.getAttribute("aria-expanded")`)) !== "true") {
         await click(h, toggle);
     }
-    if (!(await until(h, `!!document.querySelector(${q(`${DIRECTION(rank)} [data-council-direction-body]`)})`))) {
+    if (!(await until(h, `!!document.querySelector(${q(DETAIL(rank))})`))) {
         throw new Error(`direction ${rank} did not open`);
     }
 }
@@ -150,6 +152,13 @@ const BRAINSTORM_FACTS = `(() => {
             title: t(k.querySelector("[data-council-title]")),
             meta: t(k.querySelector("[data-council-meta]")),
         })),
+        jumps: all("[data-council-jump]").map((j) => j.dataset.councilJump).join(","),
+        keptGrid: root.querySelector("[data-council-kept] [data-council-kept-idea]")?.parentElement
+            ? getComputedStyle(root.querySelector("[data-council-kept] [data-council-kept-idea]").parentElement).display
+            : null,
+        keptBorder: root.querySelector("[data-council-kept-idea]")
+            ? getComputedStyle(root.querySelector("[data-council-kept-idea]")).borderTopWidth
+            : null,
         dropped: t(root.querySelector("[data-council-dropped]")),
         docpath: t(root.querySelector("[data-council-docpath]")),
         docSaved: !!root.querySelector("[data-council-doc-saved]"),
@@ -207,74 +216,102 @@ export const councilSummary = {
         };
         await openSummary(h, ctx);
 
-        await step("the header: title, Show the discussion and the ⋯ menu; the column beside the report: the state, its cost and each expert with its model and what it did", async () => {
-            const header = await h.ev(`(() => {
+        await step("the cover: the title, the tabs and the ⋯ menu; the glance: the state, its figures and each expert with its model and what it did", async () => {
+            const cover = await h.ev(`(() => {
                 const root = document.querySelector(${q(SUMMARY)});
                 const t = (s) => root.querySelector(s)?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
+                const bar = root.querySelector("[data-council-tabbar]");
                 return {
-                    back: t("[data-council-action='discussion']"),
-                    menu: !!root.querySelector("[data-council-menu]"),
                     title: t("h1"),
-                    state: t("[data-council-facts-column] [data-council-state]"),
-                    facts: t("[data-council-facts-column] [data-council-facts]"),
-                    inHeader: !!root.querySelector("header [data-council-expert], header [data-council-state]"),
+                    eyebrow: t("[data-council-cover] [data-council-eyebrow]"),
+                    summaryTab: !!root.querySelector("[data-council-tab='summary'][aria-selected='true']"),
+                    discussionTab: !!root.querySelector("[data-council-tab='discussion']"),
+                    menu: !!root.querySelector("[data-council-cover] [data-council-menu]"),
+                    state: t("[data-council-glance] [data-council-state]"),
+                    facts: root.querySelector("[data-council-glance] [data-council-facts]")?.getAttribute("aria-label") ?? null,
+                    inBar: !!bar?.querySelector("[data-council-expert], [data-council-state], [data-council-facts]"),
                     written: t("[data-council-written]"),
-                    experts: [...root.querySelectorAll("[data-council-facts-column] [data-council-expert] [data-council-expert-who]")].map((e) => e.innerText.replace(/\\s+/g, " ").trim()),
+                    experts: [...root.querySelectorAll("[data-council-glance] [data-council-expert] [data-council-expert-who]")].map((e) => e.innerText.replace(/\\s+/g, " ").trim()),
                     ux: t("[data-council-expert='ux'] [data-council-expert-activity]"),
                     coordinator: t("[data-council-expert='coordinator'] [data-council-expert-activity]"),
                     uxButton: root.querySelector("[data-council-expert='ux']")?.tagName ?? null,
                     coordinatorButton: root.querySelector("[data-council-expert='coordinator']")?.tagName ?? null,
+                    showDiscussion: !!root.querySelector("[data-council-action='discussion']"),
                 };
             })()`);
+            await h.shot("cdp-shots/council-summary-cover.png");
             const want = ["UX sonnet", "RAM sonnet", "New user sonnet", "Skeptic sonnet", "Coordinator opus"];
+            const mode = loadCouncilFixture("done").mode === "brainstorm" ? "Brainstorm" : "Review";
             const ok =
-                header.back === "Show the discussion" &&
-                header.menu &&
-                header.title === "Council · Rail apps" &&
-                header.state === "Done" &&
-                /^4 experts · \d+ min · [\d.]+M tokens$/.test(header.facts ?? "") &&
-                !header.inHeader &&
-                /^Written by the coordinator at \d\d:\d\d from 18 replies$/.test(header.written ?? "") &&
-                header.experts.length === want.length &&
-                want.every((w, i) => header.experts[i] === w) &&
-                header.ux === "2 ideas, 2 in the summary · 4 replies" &&
-                header.coordinator === "Wrote the summary" &&
-                header.uxButton === "BUTTON" &&
-                header.coordinatorButton === "DIV";
-            return { ok, detail: JSON.stringify(header) };
+                cover.title === "Rail apps" &&
+                cover.eyebrow === `Council · ${mode}` &&
+                cover.summaryTab &&
+                cover.discussionTab &&
+                cover.menu &&
+                cover.state === "Done" &&
+                /^4 experts · \d+ min · [\d.]+M tokens$/.test(cover.facts ?? "") &&
+                !cover.inBar &&
+                !cover.showDiscussion &&
+                /^Written by the coordinator at \d\d:\d\d from 18 replies$/.test(cover.written ?? "") &&
+                cover.experts.length === want.length &&
+                want.every((w, i) => cover.experts[i] === w) &&
+                cover.ux === "2 ideas, 2 in the summary · 4 replies" &&
+                cover.coordinator === "Wrote the summary" &&
+                cover.uxButton === "BUTTON" &&
+                cover.coordinatorButton === "DIV";
+            return { ok, detail: JSON.stringify(cover) };
         });
 
-        await step("the column's outline lists the answer, the four directions and the matrix, follows the report as it scrolls and scrolls to a direction on a click", async () => {
-            const OUTLINE = `${SUMMARY} [data-council-outline]`;
-            const entries = await h.ev(`[...document.querySelectorAll(${q(`${OUTLINE} [data-council-outline-entry]`)})].map((e) => e.dataset.councilOutlineEntry)`);
-            const sticky = await h.ev(`getComputedStyle(document.querySelector(${q(`${SUMMARY} [data-council-facts-column]`)})).position`);
-            await click(h, `${OUTLINE} [data-council-outline-entry='direction:3']`);
-            const current = await until(h, `document.querySelector(${q(`${OUTLINE} [aria-current='location']`)})?.dataset.councilOutlineEntry === "direction:3"`);
+        await step("the tab bar sticks and its jump links scroll the box", async () => {
+            const BAR = `${SUMMARY} [data-council-tabbar]`;
+            const BOX = `${SUMMARY} [data-council-scroll]`;
+            const entries = await h.ev(`[...document.querySelectorAll(${q(`${BAR} [data-council-jump]`)})].map((e) => e.dataset.councilJump + ":" + e.innerText.replace(/\\s+/g, " ").trim())`);
+            const sticky = await h.ev(`getComputedStyle(document.querySelector(${q(BAR)})).position`);
+            // the matrix first: it unfolds under the cards, which gives the box the room to scroll as far as the
+            // directions' link asks (folded, a report this short cannot scroll its bar into place). It is last in the box,
+            // so its heading cannot land 12px under the bar: it only has to be in view.
+            await click(h, `${BAR} [data-council-jump='matrix']`);
+            const unfolded = await until(h, `document.querySelectorAll("#council-matrix tbody tr").length > 0`);
+            await sleep(600);
+            const matrix = await h.ev(`(() => {
+                const box = document.querySelector(${q(BOX)});
+                const bar = document.querySelector(${q(BAR)});
+                const head = document.querySelector("[data-council-matrix-toggle]").getBoundingClientRect();
+                return { head: Math.round(head.top), barBottom: Math.round(bar.getBoundingClientRect().bottom), boxBottom: Math.round(box.getBoundingClientRect().bottom) };
+            })()`);
+            await h.ev(`document.querySelector(${q(BOX)}).scrollTop = 0`);
+            // where the directions' section would put the box's scrollTop: its top in the content, less the bar and 12px
+            const expected = await h.ev(`(() => {
+                const box = document.querySelector(${q(BOX)});
+                const bar = document.querySelector(${q(BAR)});
+                const el = box.querySelector("[data-council-directions-heading]") ?? box.querySelector("[data-council-direction]");
+                const target = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - bar.offsetHeight - 12;
+                return Math.max(0, Math.min(target, box.scrollHeight - box.clientHeight));
+            })()`);
+            await click(h, `${BAR} [data-council-jump='directions']`);
+            await sleep(600);
             const placed = await h.ev(`(() => {
-                const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
-                const card = box.querySelector("[data-council-direction='3']");
-                const column = document.querySelector(${q(`${SUMMARY} [data-council-facts-column]`)});
-                return { cardTop: Math.round(card.getBoundingClientRect().top - box.getBoundingClientRect().top), columnTop: Math.round(column.getBoundingClientRect().top - box.getBoundingClientRect().top), scrolled: box.scrollTop };
+                const box = document.querySelector(${q(BOX)});
+                const bar = document.querySelector(${q(BAR)});
+                return { scrollTop: box.scrollTop, barTop: Math.round(bar.getBoundingClientRect().top), boxTop: Math.round(box.getBoundingClientRect().top) };
             })()`);
             await h.shot("cdp-shots/council-summary-outline.png");
-            await click(h, `${OUTLINE} [data-council-outline-entry='answer']`);
-            const back = await until(h, `document.querySelector(${q(`${OUTLINE} [aria-current='location']`)})?.dataset.councilOutlineEntry === "answer"`);
-            const want = ["answer", "directions", "direction:1", "direction:2", "direction:3", "direction:4", "matrix"];
+            // fold the matrix again for the steps after
+            await click(h, "[data-council-matrix-toggle]");
+            await h.ev(`document.querySelector(${q(BOX)}).scrollTop = 0`);
             const ok =
-                entries.join("|") === want.join("|") &&
+                entries.join("|") === ["directions:Directions 4", "matrix:Every expert on every idea 6"].join("|") &&
                 sticky === "sticky" &&
-                current &&
-                placed.scrolled > 0 &&
-                placed.cardTop >= 0 &&
-                placed.cardTop < 60 &&
-                placed.columnTop >= 0 &&
-                placed.columnTop < 40 &&
-                back;
-            return { ok, detail: JSON.stringify({ entries, sticky, current, placed, back }) };
+                Math.abs(placed.scrollTop - expected) <= 4 &&
+                placed.barTop === placed.boxTop &&
+                unfolded &&
+                matrix.head >= matrix.barBottom &&
+                matrix.head < matrix.boxBottom;
+            return { ok, detail: JSON.stringify({ entries, sticky, expected, placed, matrix }) };
         });
 
-        await step("a seat in the column opens the Discussion on its messages alone (its filter on), each thread reply naming its idea, and Everyone brings the rest back", async () => {
-            await click(h, `${SUMMARY} [data-council-facts-column] [data-council-expert='ux']`);
+        await step("a seat in the glance opens the Discussion on its messages alone (its filter on), each thread reply naming its idea, and Everyone brings the rest back", async () => {
+            await click(h, `${SUMMARY} [data-council-glance] [data-council-expert='ux']`);
             const shown = await until(h, `!!document.querySelector("[data-council-only='ux']")`);
             const only = await h.ev(`({
                 ideas: [...document.querySelectorAll("[data-council-channel] [data-council-idea]")].map((e) => e.dataset.councilIdea),
@@ -299,19 +336,23 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ shown, only, thread, all }) };
         });
 
-        await step("Show the discussion goes back to the Discussion", async () => {
-            await click(h, "[data-council-action='discussion']");
+        await step("the Discussion tab opens the Discussion", async () => {
+            await click(h, "[data-council-tab='discussion']");
             const shown = await until(h, `!!document.querySelector("[data-council-discussion]")`);
             await openSummary(h, ctx);
             return { ok: shown, detail: shown ? "the Discussion showed" : "[data-council-discussion] did not show" };
         });
 
         await step("a finished council opened from its tree row lands on the Summary, asking what was asked and opening on the first sentence", async () => {
+            // a council never shown opens on its report from the tree (one left on its Discussion reopens there, reopenView),
+            // so this one is seeded fresh: the council of the steps above was left on a view by every one of them
+            const fresh = await seedCouncil(h, ctx, "done", { id: "fx-council-fresh" });
             await openCouncil(h, ctx.councilId, "discussion");
-            const row = `[data-council-row="${ctx.councilId}"]`;
+            const row = `[data-council-row="${fresh}"]`;
             const rowShown = await until(h, `!!document.querySelector(${q(row)})`);
             await click(h, row);
-            const landed = await until(h, `document.querySelector(${q(SUMMARY)})?.dataset.councilId === ${q(ctx.councilId)}`);
+            const landed = await until(h, `document.querySelector(${q(SUMMARY)})?.dataset.councilId === ${q(fresh)}`);
+            await until(h, `!!document.querySelector(${q(`${SUMMARY} [data-council-answer]`)})`);
             const asked = await textOf(h, `${SUMMARY} [data-council-asked]`);
             const answer = await h.ev(`(() => {
                 const el = document.querySelector(${q(`${SUMMARY} [data-council-answer]`)});
@@ -369,7 +410,7 @@ export const councilSummary = {
                 title: d.querySelector("[data-council-title]")?.innerText ?? null,
                 tag: d.querySelector("[data-council-tag]")?.innerText ?? null,
                 chips: d.querySelectorAll("[data-council-chip]").length,
-                open: d.querySelector("[data-council-direction-toggle]")?.getAttribute("aria-expanded"),
+                open: d.getAttribute("aria-expanded"),
             }))`);
             const ok =
                 dirs.length === 4 &&
@@ -383,8 +424,12 @@ export const councilSummary = {
             await openDirection(h, 3);
             const open = await h.ev(`(() => {
                 const d = document.querySelector(${q(DIRECTION(3))});
-                const body = d.querySelector("[data-council-direction-body]");
+                const body = document.querySelector(${q(DETAIL(3))});
                 return {
+                    expanded: d.getAttribute("aria-expanded"),
+                    controls: d.getAttribute("aria-controls") === body.id,
+                    underGrid: !d.contains(body),
+                    heading: body.firstElementChild?.innerText ?? null,
                     reasoning: body.querySelector("[data-council-reasoning]")?.innerText ?? null,
                     positions: [...body.querySelectorAll("[data-council-position]")].map((p) => p.dataset.councilPosition),
                     weak: [...body.querySelectorAll('[data-council-evidence="weak"]')].map((e) => e.innerText.trim()),
@@ -395,7 +440,24 @@ export const councilSummary = {
                     chips: Object.fromEntries([...d.querySelectorAll("[data-council-chip]")].map((c) => [c.dataset.councilChip, c.innerText.replace(/\\s+/g, " ").trim()])),
                 };
             })()`);
+            // a click on card 1 opens it and closes 3: one detail under the grid
+            await openDirection(h, 1);
+            const swapped = await until(h, `document.querySelectorAll(${q(`${SUMMARY} [data-council-direction-body]`)}).length === 1 && !document.querySelector(${q(DETAIL(3))})`);
+            const one = await h.ev(`({
+                one: document.querySelector(${q(DIRECTION(1))}).getAttribute("aria-expanded"),
+                three: document.querySelector(${q(DIRECTION(3))}).getAttribute("aria-expanded"),
+            })`);
+            await h.shot("cdp-shots/council-summary-open-card.png");
+            // reopen 3 for the checks that follow, then it closes 1
+            await openDirection(h, 3);
             const ok =
+                open.expanded === "true" &&
+                open.controls &&
+                open.underGrid &&
+                swapped &&
+                one.one === "true" &&
+                one.three === "false" &&
+                /Idea 3/.test(open.heading ?? "") &&
                 /P2 and P3 meet in one step/.test(open.reasoning ?? "") &&
                 open.positions.join() === "ux,ram,newuser,skeptic" &&
                 open.weak.length === 1 &&
@@ -410,7 +472,7 @@ export const councilSummary = {
                 open.chips.newuser.endsWith(" Agrees") &&
                 open.chips.ux.endsWith(" Proposed");
             await h.shot("cdp-shots/council-summary.png");
-            return { ok, detail: JSON.stringify(open) };
+            return { ok, detail: JSON.stringify({ open, swapped, one }) };
         });
 
         await step("Ask next lists the report's three questions with whom each is for, and a click opens the Discussion with it in the box", async () => {
@@ -418,6 +480,8 @@ export const councilSummary = {
             const rows = await h.ev(
                 `[...document.querySelectorAll(${q(`${SUMMARY} [data-council-summary-ask]`)})].map((b) => b.innerText.replace(/\\s+/g, " ").trim())`
             );
+            const tiles = await h.ev(`getComputedStyle(document.querySelector(${q(`${SUMMARY} [data-council-summary-ask]`)}).parentElement).display`);
+            await h.ev(`document.querySelector(${q(`${SUMMARY} [data-council-asks-next]`)}).scrollIntoView({ block: "center" })`);
             await h.shot("cdp-shots/council-summary-asknext.png");
             await click(h, `${SUMMARY} [data-council-summary-ask="1"]`);
             const box = q('[data-council-composer="channel"] [data-council-composer-input]');
@@ -433,11 +497,12 @@ export const councilSummary = {
             await openSummary(h, ctx);
             const ok =
                 rows.length === 3 &&
-                rows[0].endsWith("RAM") &&
-                rows[2].endsWith("Everyone") &&
+                rows[0].endsWith("To RAM") &&
+                rows[2].endsWith("To everyone") &&
+                tiles === "grid" &&
                 opened &&
                 filled.endsWith("Would a new user find the pin hint without being told?");
-            return { ok, detail: JSON.stringify({ rows, filled }) };
+            return { ok, detail: JSON.stringify({ rows, tiles, filled }) };
         });
 
         await step("the matrix is folded under Every expert on every idea, and unfolds to six rows by idea title, Withdrawn on the sixth", async () => {
@@ -567,6 +632,13 @@ export const councilSummary = {
             const writingShown = await until(h, `!!document.querySelector("[data-council-nosummary]")`);
             const writing = await textOf(h, "[data-council-nosummary]");
             const ratingWithoutSummary = await exists(h, RATING);
+            // the cover still draws: NoSummary in its answer slot, the glance, the Report tab selected, no jump links
+            const cover = await h.ev(`({
+                inCover: !!document.querySelector("[data-council-cover] [data-council-nosummary]"),
+                state: !!document.querySelector("[data-council-glance] [data-council-state]"),
+                tab: !!document.querySelector("[data-council-tab='summary'][aria-selected='true']"),
+                jumps: document.querySelectorAll("[data-council-jump]").length,
+            })`);
             await openSummary(h, ctx);
             const ok =
                 bannerShown &&
@@ -576,8 +648,12 @@ export const councilSummary = {
                 writingShown &&
                 writing === "The coordinator is writing the summary…" &&
                 !ratingWhileRunning &&
-                !ratingWithoutSummary;
-            return { ok, detail: JSON.stringify({ withOld, writing, ratingWhileRunning, ratingWithoutSummary }) };
+                !ratingWithoutSummary &&
+                cover.inCover &&
+                cover.state &&
+                cover.tab &&
+                cover.jumps === 0;
+            return { ok, detail: JSON.stringify({ withOld, writing, ratingWhileRunning, ratingWithoutSummary, cover }) };
         });
 
         // after a failed synthesis the council is failed with the old summary kept: Retry reruns the coordinator's call
@@ -716,7 +792,7 @@ export const councilSummary = {
         await step("Ask the experts again on direction 1 opens the Discussion's chat with that proposal's thread open", async () => {
             await openDirection(h, 1);
             const before = await h.ev(`window.__arcCouncil.openProposal(${q(ctx.councilId)})`);
-            await click(h, `${DIRECTION(1)} [data-council-action='ask-again']`);
+            await click(h, `${DETAIL(1)} [data-council-action='ask-again']`);
             const shown = await until(h, `!!document.querySelector("[data-council-discussion]")`);
             const open = await h.ev(`window.__arcCouncil.openProposal(${q(ctx.councilId)})`);
             // the chat opens that idea's thread: its panel carries the idea on top, and the channel marks it open
@@ -732,7 +808,7 @@ export const councilSummary = {
             await stubRpc(h, ["SetMetaCommand", "AgentSyncApplyCommand"]);
             await openDirection(h, 3);
             const tabsBefore = new Set(await tabIds(h, ctx));
-            const clicked = await click(h, `${DIRECTION(3)} [data-council-action='brainstorm']`);
+            const clicked = await click(h, `${DETAIL(3)} [data-council-action='brainstorm']`);
             // the launch writes the block's meta, then the tab's
             const wrote = await callSeen(h, "SetMetaCommand", (c) => String(c.data?.oref).startsWith("tab:"), 15_000);
             // whatever tab the click made goes at teardown, however far the launch got
@@ -793,7 +869,7 @@ export const councilSummary = {
             // the saved line in the column beside the report opens the same document
             await h.goto("agent");
             await openBrainstormSummary(h, id);
-            await click(h, `${SUMMARY} [data-council-facts-column] [data-council-docpath]`);
+            await click(h, `${SUMMARY} [data-council-glance] [data-council-docpath]`);
             const lineOpens = await until(h, `document.querySelector("[data-code-path]")?.getAttribute("data-code-path") === ${q(DOC_REL)}`);
             // back on the Agent surface for the steps that follow
             await h.goto("agent");
@@ -802,7 +878,10 @@ export const councilSummary = {
                 facts.heading === "Ideas worth trying, best first" &&
                 facts.titles.join("|") === TITLES.slice(0, 3).join("|") &&
                 facts.steps.length === 3 &&
-                facts.steps.every((s) => s === "First step: Try it on one screen") &&
+                facts.steps.every((s) => s === "First step Try it on one screen") &&
+                facts.jumps === "directions,kept,matrix" &&
+                facts.keptGrid === "grid" &&
+                facts.keptBorder === "0px" &&
                 facts.meta[0].startsWith("Had it: Skeptic · built on by New user") &&
                 facts.meta[1].startsWith("Had it: UX") &&
                 !facts.meta[1].includes("built on by") &&
@@ -849,11 +928,44 @@ export const councilSummary = {
                 !items.some((i) => i.startsWith("open-doc=")) &&
                 review.heading == null &&
                 review.steps.length === 0 &&
+                review.jumps === "directions,matrix" &&
                 review.keptHeading == null &&
                 review.dropped == null &&
                 review.docpath == null &&
                 reviewItems.includes("save-doc=Save as doc");
             return { ok, detail: JSON.stringify({ facts, items, review, reviewItems }) };
+        });
+
+        await step("on a narrow pane the glance wraps under the text and the cards keep their width", async () => {
+            try {
+                await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1000, height: 950, deviceScaleFactor: 1, mobile: false });
+                await openSummary(h, ctx);
+                await sleep(400);
+                const m = await h.ev(`(() => {
+                    const root = document.querySelector(${q(SUMMARY)});
+                    const box = root.querySelector("[data-council-scroll]");
+                    const glance = root.querySelector("[data-council-glance]").getBoundingClientRect();
+                    const column = root.querySelector("h1").parentElement.getBoundingClientRect();
+                    return {
+                        glanceTop: Math.round(glance.top),
+                        columnBottom: Math.round(column.bottom),
+                        widths: [...root.querySelectorAll("[data-council-direction]")].map((d) => Math.round(d.getBoundingClientRect().width)),
+                        scrollWidth: box.scrollWidth,
+                        clientWidth: box.clientWidth,
+                    };
+                })()`);
+                await h.shot("cdp-shots/council-summary-narrow.png");
+                const ok =
+                    m.glanceTop >= m.columnBottom &&
+                    m.widths.length === 4 &&
+                    m.widths.every((w) => w >= 250) &&
+                    m.scrollWidth <= m.clientWidth + 1;
+                return { ok, detail: JSON.stringify(m) };
+            } finally {
+                // clearDeviceMetricsOverride drops to the native window size, and verify.mjs pins 1600x950 only between
+                // scenarios: set it back
+                await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+            }
         });
 
         return steps;

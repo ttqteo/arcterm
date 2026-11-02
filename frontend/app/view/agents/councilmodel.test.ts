@@ -23,6 +23,7 @@ import {
     firstFollowRound,
     flattenThread,
     followupLabel,
+    glanceFigures,
     hasAgents,
     headerChip,
     heldDrafts,
@@ -1668,5 +1669,35 @@ describe("proseOf", () => {
 
     it("is empty for a message that is only a table", () => {
         expect(proseOf("| a |\n|---|\n| 1 |")).toBe("");
+    });
+});
+
+describe("glanceFigures", () => {
+    const started = 1_000_000;
+
+    it("gives the experts, the minutes and the tokens of a done council", () => {
+        const c = council({
+            state: "done",
+            round: 3,
+            tokens: 860_000,
+            started,
+            updated: started + 40 * MIN,
+            summary: { text: "", directions: [], outcomes: {}, at: started + 11 * MIN },
+        });
+        expect(glanceFigures(c, started + 99 * MIN)).toEqual([
+            { value: "4", label: "experts" },
+            { value: "11", label: "min" },
+            { value: "0.86M", label: "tokens" },
+        ]);
+    });
+
+    it("leaves the minutes out of a council that never started", () => {
+        const notRun = council({ state: "not-run", round: 0 });
+        expect(glanceFigures(notRun, started).map((f) => f.label)).toEqual(["experts", "tokens"]);
+    });
+
+    it("says expert for a panel of one", () => {
+        const one = council({ experts: [council().experts[0]] });
+        expect(glanceFigures(one, started)[0]).toEqual({ value: "1", label: "expert" });
     });
 });
