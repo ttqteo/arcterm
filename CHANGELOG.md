@@ -22,7 +22,7 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## Unreleased
+## 0.15.20 — 2026-11-02
 
 ### Added
 
@@ -32,16 +32,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council's message boxes, the channel's and an idea's thread, take images and files: paste or drop an image and it
   waits as a thumbnail above the text, and type `@` then a few letters of a project file to name it. The seats that
   answer read what you attached, and your message shows the image as a thumbnail and each file as a chip you can open.
-
-### Changed
-
-- A council's message box is more compact: Let them read files and the cost line share one row under it, and the
-  channel's Top, Back and Latest buttons sit side by side with shorter labels.
-
-## 0.15.20 — 2026-11-02
-
-### Added
-
 - When two or more council seats failed, the seat strip offers Retry all: pick a model beside each failed seat (its own
   by default), and they all run again together instead of one Retry refusing the next while the first runs.
 - An agent can pick the experts' models when it starts a council for you: `wsh council start --model sonnet`, or
@@ -101,6 +91,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council's message box is more compact: Let them read files and the cost line share one row under it, and the
+  channel's Top, Back and Latest buttons sit side by side with shorter labels.
 - A council in the Agent sidebar now reads like a group chat in a chat list: two of its seats as overlapping circles
   (a green dot while one writes, a red one when a call failed), its title, and under it its state and how long ago
   its last message came.
