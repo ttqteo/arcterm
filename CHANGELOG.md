@@ -51,6 +51,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- Once a brainstorm's Approve starts its run, the agent that ran the brainstorm goes to sleep 15 seconds after it
+  records the run, freeing its RAM; Wake or any message brings it back. It stays awake when Sleep idle agents is off.
 - A sleeping agent's side panel no longer offers a Transcript tab: its conversation already fills the terminal's place, and the tab comes back when it wakes.
 - A run or council in a project's History names its kind on its second line, so its title lines up with the sessions'.
 - Tables in agent messages, notes and councils wrap their cells to fit, instead of scrolling sideways.

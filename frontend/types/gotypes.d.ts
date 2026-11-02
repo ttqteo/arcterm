@@ -550,6 +550,13 @@ declare global {
         tabids: string[];
     };
 
+    // wshrpc.CommandAgentsSleepAfterRunData
+    type CommandAgentsSleepAfterRunData = {
+        tab: string;
+        runid: string;
+        path: string;
+    };
+
     // wshrpc.CommandAgentsSleepData
     type CommandAgentsSleepData = {
         tab: string;

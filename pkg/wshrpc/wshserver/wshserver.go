@@ -202,6 +202,7 @@ func publishEvent(ctx context.Context, data wps.WaveEvent) {
 		orchestrate.NoteWorkerSession(ctx, &data)
 		noteAgentTurnEnded(ctx, &data)
 		noteAgentInTurn(ctx, &data)
+		noteRunSleepStatus(ctx, &data)
 	}
 }
 
