@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) New project search reads paths from `~`: open Agent → New project, type your user name → both
+  sections empty; type `cuscofi` → the folders named cuscofi first, then any that hold it only in their path; type
+  `~/Workspaces/dev` → only the folders under it. (daa601e82)
 - [ ] (arcterm) Jump buttons are arrows only: scroll a council's Discussion off both ends → round ↑ / ↩ / ↓ buttons in
   its bottom right, no words, each with its tooltip on hover; scroll up in an agent's transcript (a card's or the
   rail's) → a round ↓ at the bottom centre, no "Latest". (aff9e9b80, b640846da)
