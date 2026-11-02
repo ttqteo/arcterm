@@ -53,10 +53,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   so close it with Escape or a pick. Not run by `float-mini` step 4:
   the Final's dev window never resizes, so the scenario stops at Minimize. `petpeek.tsx`, "feat(pet): the pin and its
   stay menu in the peek header".
-- [ ] (arcterm) Quiet Jarvis peek title beside the stay pin: with nothing waiting, click Sprout → the header reads
-  "Nothing waiting on you" in full, then the pin, Full view and close, with no "…". Or run
-  `task verify:ui -- pet-stay jarvis-peek` (pet-stay step 5, jarvis-peek step 3): run 72f2cf48's round-2 Final never
-  booted its dev app. `petpeek.tsx` quiet cap 332 px, "fix(pet): The quiet peek's title fits beside the stay pin".
 - [ ] (arcterm) The council composer sits in the message column: open a council's Discussion on a wide window → the
   message box's left and right edges line up with the messages' 860px column (with and without a scrollbar), and
   sending a message (in the channel and in a thread) makes your bubble rise in from below; reopening the council or
@@ -221,12 +217,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   4 MB: the whole tree arrives, byte-identical (`cmp`), and the strip shows "Copying … · N%" meanwhile. Dragging a
   tree row onto a terminal still types its path. Not run in any app; on WKWebView the folder walk
   (`webkitGetAsEntry`) is unproven. (52f334394)
-- [ ] (arcterm) New dialog, Task on top: Mod+N opens with the caret in the Task box above the columns; type and Enter
-  starts the agent, Shift+Enter adds a line; Alt+2 (Option+2 on a Mac) picks another Start row without leaving the box,
-  and Alt onto Terminal draws the dashed "takes no task" line with focus on Start; Mod+Shift+R opens in the Goal; an IME
-  (Telex) Enter commits the word and does not launch. The `launcher`, `launcher-resume`, `launcher-images` and
-  `new-run-window` scenarios were updated but not run. (commit "feat(launcher): the New dialog opens in its Task box,
-  now at the top")
+- [ ] (arcterm) New dialog, Task on top, the parts no scenario types: with Telex on, type a word in the Task box and
+  press Enter → the word commits and nothing launches; on a Mac, Option+2 picks another Start row without leaving the
+  box. The `launcher`, `launcher-resume` and `launcher-images` scenarios pass on main (2026-11-02). (commit
+  "feat(launcher): the New dialog opens in its Task box, now at the top")
 - [ ] (arcterm) New dialog `@` files: with a project picked, type `@` in the Task box: a dropdown of the project's files
   floats under the box, over the columns, which do not move ("Listing files…" first on a cold repo); typing after the
   `@` narrows it, ↑↓ move, Enter or Tab puts `@<path> ` in the task without launching, a click does the same, Esc
@@ -235,17 +229,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Agent badge: run a brainstorm until its Judge (or Builder check) answers, while looking at another
   agent: the Agent nav badge does not go up for the Judge, and every number it shows matches a count on a tree row.
   (commit "fix(agents): a brainstorm's judge and builder check do not count as unread")
-- [ ] (arcterm) Kael sync (2026-10-30): in Code, open a file in a repo on a feature branch with a commit ahead of
-  main, press `d` three times: HEAD diff, then the branch-base diff (the header names the base, the left side holds
-  main's copy), then the single editor; on main the base step is skipped. The `code-diff` scenario was extended but
-  not run. (commit "feat(code): diff the open file against the branch base")
-- [ ] (arcterm) Kael sync: in Code, the Blame icon on the path bar (or `b` with the tree focused) opens a column of
-  sha · age · run goal beside the editor, lined up with the code while scrolling, wrapping included; a click on a row
-  a run landed opens that run, another row copies its sha; in a plain folder the icon is disabled. The `code-blame`
-  scenario is new and the `code-plain-dir` step added, neither run. (commit "feat(code): blame column that leads to
-  the landing run")
-- [ ] (arcterm) Kael sync: Ctrl+P, switch scope tabs: the accent underline slides between them, and reopening the
-  palette on another surface draws it in place without sliding. `palette-scope-indicator` not run.
 - [ ] (arcterm) Kael sync: motion pass: a DAG task card settles when it turns done or failed, live timeline rows fade
   in (a run switch or filter does not cascade them), a code block's Copy cross-fades to Copied, the Jarvis peek's
   reply shows a flow bar while it streams and an × once done, and the brainstorm pane fades on a view swap.
@@ -253,15 +236,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Kael sync: the next orchestrator run's plan review shows two round-1 reviewers (Full review, Second
   pass) in its DAG and timeline, and a Claude task worker that skips a test gets a goalpost finding its reviewer
   passes or fails by name (`task-goalpost` in the run's events). Needs wavesrv/wsh rebuilt (next dev start or install).
-- [ ] (arcterm) A brainstorm whose run merged with its final check passed: Close the brainstorm deletes
-  `.superpowers/brainstorm/<topic>` only, the agent's row leaves the Agent tree (an idle agent; a working one stays),
-  and the canvas still shows in the Canvas gallery. The `brainstorm-run-landed` scenario was updated but not run.
-  (commit "feat(agents): closing a brainstorm ends its agent and keeps its canvas")
-- [ ] (arcterm) A project folder in the Agent sidebar (the project tree and Conversations): a click on its name opens
-  its Overview in the centre without folding it, the chevron alone folds and unfolds it, and Home still folds from
-  anywhere on its row; Tab reaches the row and its chevron, Enter on the row opens the Overview. The
-  `project-overview` and `tools-tree` scenarios were updated but not run. (commit "feat(agents): a project folder's
-  click opens its Overview, its chevron folds it")
 - [ ] (arcterm) A council with a live agent seated: pick an idle claude agent and a pi agent in the Agent tree
   (Ctrl+click), choose Discuss together, set Rounds to 2 and start. Setup's estimate should show the agents' share. In
   the council chat, each agent's ideas come back as amber drafts with Send to the others / Edit / Drop. The chip reads
@@ -277,16 +251,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   rows below. All three rows (the one between included) read selected and Discuss together seats all three; on a Mac
   the same with Cmd+click. The CDP scenario ranged over two adjacent rows on Windows only. (run f46b61f9, task 10)
 
-- [ ] (arcterm) New dialog, Task on top: `Mod+N` should open with the Task box (three lines) above the three columns and
-  the cursor in it; type, Enter starts the agent, Shift+Enter is a new line, a Telex word's Enter does not launch.
-  Alt+1–9 picks a Start row from the box (Option+digit on a Mac); onto Terminal, Tool or Council the box turns to a
-  dashed "takes no task" line and focus goes to Start. `Mod+Shift+R` opens in the Goal. `task verify:ui -- launcher
-  launcher-resume launcher-images new-run-window` (scenarios updated, never run). Uncommitted, 2026-10-30.
-- [ ] (arcterm) New dialog, Start column back: `Mod+N` should open three columns (Start 236px, Project, Session or the
-  pick's list), focus on Start, no chip; every Start, Project, Session row draws its digit (Home 0, tools a–z), and the
-  focused column's label shows its keys. Enter in Start launches; Esc closes. `task verify:ui -- launcher
-  launcher-resume tools-launcher new-run-window agy-harness brainstorm-approve-run council-tree` (scenarios updated,
-  never run). (commit "fix(launcher): the New dialog shows its Start column and keys again")
 - [ ] (arcterm) Replay at the drawn size: start an engine run and open its lead only after it has drawn a
   question or a few turns (the pane never shown before). The terminal should read cleanly, its text in the left
   80 columns, with no second frame of another width over it. `frontend/app/view/term/termwrap.ts`
@@ -316,18 +280,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Its rendered check so far is the Transcript tab's scenario (`rail-transcript-tab`, steps 2, 3, 4 and 6); nothing has run
   `agy-harness` or the sleeping overlay on it. (commit "feat(agents): the compact reader draws earlier items on reaching
   the top, and scrolls to an entry")
-- [ ] (arcterm) The Transcript tab's scenarios pass on `main`: once memory allows, run
-  `node scripts/cdp/final-verify.mjs rail-transcript-tab agent-rail-tabs surface-smoke`. Run 66c39bd5 landed without
-  them: its final stage ran out of RAM, so no scenario ran on the merged result, and the last Transcript edit (a
-  Compactions jump leaves the marker just below the pinned prompt's band, step 4) never ran at all. (commit
-  "feat(agents): the Transcript tab reads the whole conversation back, with its scenario and docs")
-- [ ] (arcterm) A brainstorm approach's facts: while the judge weighs a question's approaches, each row with facts
-  ends in a bordered "3 facts ▾" button set apart from the row; hovering it does not light the row's border. Click it:
-  the facts list opens under that row and the button reads "Hide facts ▴", with nothing sent to the agent. "Show all
-  facts" at the right of the list's heading opens every row's facts and reads "Hide all facts", which closes them.
-  Clicking the rest of the row still answers with that approach. Scenario step 2b of `brainstorm-judge-wait` covers it
-  but has not run. (commit "fix(brainstorm): an approach's facts open from a button, and Show all facts opens them
-  all")
 - [ ] (arcterm) Quick translate on the nav rail: click the Translate button above Setup (or Ctrl+Shift+D, also from a
   focused terminal). A narrow panel slides out beside the rail, the box focused; typing translates after a pause, a
   single word shows its phonetic and word class, ⇄ moves the translation into the box, Esc or an outside click closes
@@ -357,11 +309,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
   shows cancelled (no lead left running). A start that fails (e.g. a route not installed) stays **Failed · …** with
   Try again and Dismiss on hover. Not tried live: the dev app was not running. (commit "feat(launcher): a run starts
   behind a Starting row")
-- [ ] (arcterm) A council in a project Overview's History unfolds before it opens: open a project's Overview (its row
-  in the Agent tree) and click a Council row in History. It is titled as in the Agent tree's Councils, and it unfolds in
-  place (question, answer, up to three directions by rank, a chevron turned down) without leaving the Overview; Open
-  council opens it and selects its tree row. CDP: `task verify:ui -- project-overview-history` step 7. (commit "feat(overview): a History
-  council unfolds before it opens")
 - [ ] (arcterm) Vietnamese draws whole in Hack: with Settings → Appearance mono font (and the terminal font) set to
   Hack, a brainstorm part's `from` column and a terminal line holding "ảnh Google Dịch ở" show no gap after ả, ị or
   ở. Checked in headless Edge with the bundled font files, not yet in the app. (commit "fix(fonts): Vietnamese letters
@@ -553,10 +500,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Mouse Back/Forward in an app's page (Windows): open a pinned app, follow a link or two in it, then
   press the mouse's Back and Forward buttons over the page and over the cockpit; nothing moves, no app shows an error
   page, and the header's Back still goes back a page.
-- [ ] (arcterm) App page loading line: open a pinned app whose page is slow to answer, press Home, then the header's
-  Reload: a thin accent line sweeps along the page's top until it loads, the old page staying in view under it, and is
-  gone once it has. With reduced motion the line stays still. `apppane.tsx` `AppLoadingBar`; `task verify:ui --
-  tools-app` step 3d checks it on a slow start page.
 - [ ] (arcterm) Shortcuts from inside an app's page (Windows, after a restart of `task dev` or the next install: the
   host changed): click into a pinned app's page, then Ctrl+K opens the palette, Ctrl+Tab switches as from anywhere and
   closes when Ctrl is let go, and Ctrl+1..9 change surface. Ctrl+C, Ctrl+V, Ctrl+A and Ctrl+Z still copy, paste,
@@ -836,8 +779,6 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Agent sidebar → a project's Conversations: an ended orchestrator run whose lead landed in `arc-wt`
   shows as one run entry under that project, not missing (counted in "elsewhere") or under a key like `006c403f`.
   `agentsidebarmodel.ts` `projectKeyResolver`, `sessionruns.go` `fillEngineTreeRoots`.
-- [ ] (arcterm) A Claude agent's background command (`run_in_background`) that redirects stdout to a file is refused
-  with the "Claude Code already saves…" reason; `2>&1`, `> $null` and a foreground redirect pass. `guard-core.ts`.
 - [ ] (arcterm) Settings → Storage → Run worktrees lists the trees under `%LOCALAPPDATA%rc-wt` with their project and
   run status; one whose run the dev app's store lacks shows guarded, and Clean all leaves it. `pkg/storage/worktrees.go`.
 - [ ] (arcterm) Agent rail → Background tasks: a running command has a red Stop; two clicks end it (the row reads
@@ -914,13 +855,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   full screen (green button) over arcterm: it folds and Sprout shows over that app (the one case `CGSSpaceGetType`
   must answer 4, not checked by hand yet); click it: arcterm comes back on a Desktop (note which: AppKit picks it).
   `foreground.rs` desktop_on_screen, `macwindow.rs` folded_behavior.
-
-**2026-10-14 (merge of the Mac's Setup → Skills edit work into main)**
-
-- [ ] (arcterm) Setup → Skills after the merge: a vault skill with accepted lines shows its `+N` chip and, while its
-  editor holds unsaved text, `edited` beside it; its rail lists **Your additions** under SKILL.md and, for a skill
-  under Your skills, the Edit footer; a skill under Ships with arcterm has no footer. The merge joined both sides by
-  hand in `setupsurface.tsx`; `setup-skill-edit` and `setup-skill-additions` were not run on the merged tree.
 
 **2026-10-14 (land queue, run 33724b1d)**
 
@@ -1045,12 +979,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   toast. Leave it unanswered 30 s: the Windows toast follows. Answer within 30 s, or click arcterm, and no toast
   comes. Commit "fix(notify): a folded Sprout says needs-you first, the OS toast only if it still waits".
 
-**2026-10-14 (Jarvis graph peek removed)**
-
-- [ ] On Jarvis, open a record's peek (from the Brief and from Sprout's popup): its footer shows only the log line, no
-  "Where it sits on the map"; `Shift+G` on Jarvis does nothing and the footer hints list no "graph"; Escape still
-  closes the record peek, then leaves Jarvis. Commit "refactor(jarvis): remove the vault graph peek".
-
 **2026-10-14 (Sprout names the project)**
 
 - [ ] In Float or folded, let an agent finish a turn: Sprout's bubble reads "NOTICE · <project>" above "<agent>
@@ -1072,10 +1000,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-13 (kaeltran16 sync: cherry-picked fixes and features)**
 
-- [ ] Code → project picker, type a folder that is not a git repo (one with a `node_modules`): the tree lists its
-  files without `node_modules`, a footer names the skip set, the header path ends "· not a git repository", the
-  Changed tab and a file's Diff toggle are greyed out with "Not a git repository — no change tracking", and Search
-  finds text in it. Scenario `code-plain-dir`. `codestore.ts` `codePlainAtom`, `pkg/gitinfo/walk.go`.
 - [ ] A run with a Final stage: once Check/Verify finish, click the step in the final stage pane and in the run's
   rail: its kept output opens. `finalstagepane.tsx`, `pkg/orchestrate/final.go` `<round>-steps/`.
 - [ ] Sessions → an ended session → Resume: the new agent tab is named after the session's task, not the project.
@@ -1124,12 +1048,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   with Resume. Check the card is not cut off at the top with four agents listed (the folded window grew to 320x336),
   and that typing keeps the card open when the cursor leaves it. (`sprout-mini.tsx` `FoldPauseRow`, `foldpause.ts`)
 
-**2026-10-13 (arcterm's RAM broken down in the compact popup)**
-
-- [ ] (arcterm) **The compact RAM popup lists what arcterm's figure is made of.** Open the RAM chip on Windows: under
-  the agent list one line reads `Agents … · Interface … · Server … · Host … · Terminals …`, and the parts add up to
-  the header's `arcterm …`. CDP `consumers-popover` step 20 checks it. (`consumerspanel.tsx` `CompactOwn`)
-
 **2026-10-13 (Sleeping and background-task rows in the sidebar)**
 
 - [ ] (arcterm) **Sleeping rows read apart from idle ones; rows carry fewer marks.** In the Agent sidebar a sleeping
@@ -1154,13 +1072,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 - [ ] (arcterm) **Usage fills in after a fresh start.** Restart arcterm (the build with this fix), open Usage at once:
   the stat tiles, By session and Subagent cost replace their placeholders within a few seconds and never stay on
   them; switching 7 days / All time is not needed. commit "scans get a 60s RPC timeout and share in-flight reads".
-
-**2026-10-13 (canvas arrows with few boards)**
-
-- [ ] (arcterm) **A canvas with five tabs or fewer has ‹ and › too.** Open a canvas with two to four boards (Canvas in
-  the header): ‹ and › sit either side of the All / board tabs, and each steps one board as `[` and `]` do; so do `←`
-  / `→`, while `↑` / `↓` still change agent. CDP scenario `canvas-tabs` step 4 checks ‹; it has not run in the app
-  yet. commits "a canvas with few boards gets ‹ › too" and "← → step canvas boards".
 
 **2026-10-13 (close hands focus to the neighbour)**
 
@@ -1197,10 +1108,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   the project name ("portal"). Holds after an arcterm restart too, once the Conversations scan has loaded.
 
 **2026-10-13 (Alt+Tab grows Sprout back; Jarvis card link)**
-
-- [ ] (arcterm) **Spider-Man shows Sprout's working dots.** With Spider-Man as the pet and an agent working, fold into
-  Sprout: the pill at his top right shows three pulsing green dots and the count, no web; the same in Float, and the
-  dots alone while Jarvis thinks. `task verify:ui -- jarvis-pet` (steps 15b, 22) checks it.
 
 - [ ] (arcterm) **Alt+Tab grows any fold back, maximized (Windows).** Fold with the Sprout button (not Fold when you
   leave) from a restored (not maximized) Full window, click into another app, Alt+Tab back to arcterm: the window opens
@@ -1326,14 +1233,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   Settings → Terminal → Right-click to paste off: one right-click opens the menu again. Also try it on a Mac (no word
   gets selected under the pointer). `term.tsx` handleContextMenu, `termrightclick.ts`.
 
-**2026-10-13 (Canvas: three board tabs and arrows)**
-
-- [ ] (arcterm) **Three tabs and ‹ › on a canvas with many boards.** Open a canvas with more boards than fit a tab
-  row (terminal-tui, 8): on LibraryAdd the bar reads `‹ Library [LibraryAdd] Main 2/8 ⌄ ›`, the open board underlined in
-  the middle; › moves to the next board and the three tabs slide with it, ‹ back, a click on a neighbour opens it, and
-  4/8 opens the menu. Mark and Build this… stay whole in the bar. `canvaspane.tsx` BoardPicker, `canvasmodel.ts`
-  stripWindow; CDP `canvas-many-boards` steps 1–5, not yet run.
-
 **2026-10-13 (Canvases reopen from the palette)**
 
 - [ ] (arcterm) **Open a canvas after a restart.** Restart arcterm, select an agent in this repo, open the palette
@@ -1392,9 +1291,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   or a popup that takes the focus does not fold it; neither does coming back within 3 s. Alt+Tab or click back to
   arcterm: it grows back (`[fold] main window took the foreground`). `foreground.rs` covered_on_windows,
   raise_topmost, main-foreground; `floatstore.ts` setupAutoSprout.
-- [ ] (arcterm) **One click on the folded Sprout opens the chat, a double-click restores.** Fold with `Ctrl+M`: one
-  click opens the Jarvis chat beside Sprout (a second click closes it); a double-click grows the window back without
-  the chat flashing open. `sprout-mini.tsx` onClick.
 
 **2026-10-12 (folded Sprout: a click restores, every Space)**
 
@@ -1573,6 +1469,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
+| (arcterm) `rail-transcript-tab` step 4 fails on `main` (2026-11-02, twice, the dev app alone): Compactions does not leave the newest marker at the top clear of the pinned prompt's band, then load an earlier chunk. This is the last Transcript edit of run 66c39bd5, whose Final ran out of RAM and never ran it; steps 1–3 and 5–8, `agent-rail-tabs` and `surface-smoke` pass | bug | S | `frontend/app/view/agents/` Transcript tab; commit "feat(agents): the Transcript tab reads the whole conversation back, with its scenario and docs" |
+| (arcterm) CDP scenarios failing on `main` in the Windows dev app (2026-11-02, each rerun alone): `rail-translate` a, g, j, k, l (step a: the box is not empty on open, `"empty":false`; j: the terminal does not get the keys back) and `float-note` 1, 5, 6a–c, 7, 8d–f (the hand checks of Translate and the float's Note stay open above); `whats-new` 5 (the fold's note does not grow on click) and 6 (no `go:usage` note in the releases shown); `dag-motion` throws `dagPeekPublish is not defined` (scenario bug); `code-diff` base step fails only on its own text read (the shot shows main's copy on the left: the selector `.editor.original .view-lines` misses and falls back to both sides); `new-run-window` 8 ("the window did not open"); `agent-sleep` 1; `jarvis-peek` 6; `jarvis-pet` 8; `project-overview-history` 3; `tools-tree` 4; `tools-found` 2; `tools-app` 8–9; `agy-harness` 2, 5–7, 9; `run-queue` 1b–6 (the store held queued plans from older runs, so this one may be leftover state). Triage each: fix the app, or the scenario | bug | M | `scripts/cdp/scenarios.mjs`; open-issues hand-check pass of 2026-11-02 |
 | (arcterm) A run's sheet timeline shows the raw event kind `queued-start` where `run-queue` step 6 expects "Started from the queue": no frontend label exists for the kind (`runEventKindQueuedStart`, `pkg/wshrpc/wshserver/wshserver_runqueue.go:40`). Not from the project Overview run, whose diff reaches no run-sheet code (not rerun on the base) | bug | S | run 3d198707 Final, `data/final-shots/bd35362c-a6b5-4df7-9d46-6f522a0bca94/1/shots.json` |
 | (arcterm) `TestRepliesPostedAsARunEndsAreNeverLost` in `pkg/council` is flaky: it failed, then passed on a rerun, in run 74b368ce's Verify after merging its t-10 | bug | S | run 74b368ce final report; `pkg/council/runner_test.go` |
 | (arcterm) `pkg/council` `TestRepliesPostedAsARunEndsAreNeverLost` is flaky: it failed, then passed on a rerun, in the Verify after a merge of run 74b368ce, which left that run's Final unverified | bug | S | run 74b368ce report; `pkg/council/runner_test.go` |
