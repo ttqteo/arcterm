@@ -166,6 +166,18 @@ const GRAPH = { id: "graph", title: "Graph model", state: "asked", body: "" };
 const PICKED_LINE = `brainstorm: builder answer: ${OPTIONS[1].label}`;
 const TYPED_ANSWER = "Count a missing day as zero.";
 const RAIL = `document.querySelector("[data-brainstorm-pane] [data-brainstorm-check-rail]")`;
+// a pane between the design's 640px cutoff and the check's 820px (the question's 360px + the check rail's 460px): the row
+// of the question and the rail has to be stacked there, and used to be side by side. ~720px is the middle of that span
+const NARROW_PANE_W = 720;
+const NARROW_TOLERANCE = 30;
+const NARROW_PASSES = 4;
+const NARROW_NAP_MS = 800;
+const STACK_FROM_PANE_W = 640;
+const STACK_UNTIL_PANE_W = 820;
+// how far the rail's width may miss the pane's (the stacked row scrolls, and a classic scrollbar takes ~17px of it), and how
+// tall a question column left to its content has to be
+const FULL_WIDTH_SLACK = 20;
+const QUESTION_MIN_H = 300;
 
 export default function (kit) {
     const {
@@ -343,6 +355,28 @@ export default function (kit) {
             t.click();
             return "clicked";
         })()`);
+    // The window narrowed with Emulation.setDeviceMetricsOverride until the pane is about `want` px wide. The pane follows
+    // the window's width while the layout around it holds, so each pass moves the window by the miss; the layout may also
+    // change on the way (a rail folds), which the passes absorb. The window the harness set is kept on ctx for restoreWindow.
+    // Says the pane's width then
+    const paneWidth = (h) => h.ev(`Math.round(${BS_PANE}?.getBoundingClientRect().width ?? 0)`);
+    const narrowPane = async (h, ctx, want) => {
+        ctx.viewport ??= await h.ev("({ width: window.innerWidth, height: window.innerHeight })");
+        let width = ctx.viewport.width;
+        let pane = await paneWidth(h);
+        for (let pass = 0; pass < NARROW_PASSES && Math.abs(pane - want) > NARROW_TOLERANCE; pass++) {
+            width += want - pane;
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width, height: ctx.viewport.height, deviceScaleFactor: 1, mobile: false });
+            await polishNap(NARROW_NAP_MS);
+            pane = await paneWidth(h);
+        }
+        return pane;
+    };
+    const restoreWindow = async (h, ctx) => {
+        if (ctx.viewport == null) return;
+        await h.cdp("Emulation.setDeviceMetricsOverride", { ...ctx.viewport, deviceScaleFactor: 1, mobile: false });
+        ctx.viewport = null;
+    };
     const designLabel = (f) => {
         const decisions = f.parts.filter((p) => p.kind !== "note");
         return `The design · ${decisions.filter((p) => p.state === "yours").length} of ${decisions.length} yours`;
@@ -695,6 +729,62 @@ export default function (kit) {
                         checkContent,
                     { railHidden, roomy, toggled, tileShown, secondPicked, checkContent, ...mockups }
                 );
+
+                // 3a2. check rail stacks when narrow: with 3a's row still open, the window is narrowed until the pane is between
+                // the design's 640px cutoff and the check's 820px. The row has to stack there, as its rail does: the question on
+                // top and the rail under it, each the pane's width, with no handle. Side by side, the full-width rail left the
+                // question column no width at all
+                const narrowW = await narrowPane(h, ctx, NARROW_PANE_W);
+                const readStack = () =>
+                    h.ev(`(() => {
+                        const box = (el) => {
+                            const r = el?.getBoundingClientRect();
+                            return r && r.width > 0 ? { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), b: Math.round(r.bottom) } : null;
+                        };
+                        const rail = ${RAIL_BOARDS};
+                        const question = rail?.previousElementSibling ?? null;
+                        return {
+                            pane: box(${BS_PANE}),
+                            rail: box(rail),
+                            question: box(question),
+                            handle: box(rail?.querySelector("[data-brainstorm-rail-handle]")),
+                            holdsBuilder: (question?.innerText ?? "").includes(${JSON.stringify(YOURS[0].q)}),
+                        };
+                    })()`);
+                const stacked = await polishWaitFor(
+                    h,
+                    `(() => {
+                        const rail = ${RAIL_BOARDS};
+                        const question = rail?.previousElementSibling;
+                        return !!rail && !!question && rail.getBoundingClientRect().top >= question.getBoundingClientRect().bottom - 1;
+                    })()`,
+                    3000
+                );
+                const stack = await readStack();
+                // the stacked row scrolls as a whole and the review is long, so the rail is under the fold: bring it into
+                // view for the shot, then put the row back at its top
+                await h.ev(`${RAIL_BOARDS}?.scrollIntoView({ block: "end" })`);
+                await polishNap(300);
+                await h.shot("cdp-shots/brainstorm-builder-ask-3a2-narrow.png");
+                await h.ev(`(() => { const row = ${RAIL_BOARDS}?.parentElement; if (row) row.scrollTop = 0; })()`);
+                await restoreWindow(h, ctx);
+                const roomyAgain = await polishWaitFor(h, `(${BS_PANE}?.getBoundingClientRect().width ?? 0) >= ${STACK_UNTIL_PANE_W}`, 5000);
+                rec(
+                    "3a2. check rail stacks when narrow: with 3a's row open in a window narrowed until the pane is between 640 and 820px, the question sits on top and the rail under it, both the pane's full width, with no handle",
+                    narrowW >= STACK_FROM_PANE_W &&
+                        narrowW < STACK_UNTIL_PANE_W &&
+                        stacked &&
+                        stack.pane != null &&
+                        stack.rail != null &&
+                        stack.question != null &&
+                        stack.rail.y >= stack.question.b - 1 &&
+                        stack.rail.w >= stack.pane.w - FULL_WIDTH_SLACK &&
+                        stack.question.w >= stack.pane.w - FULL_WIDTH_SLACK &&
+                        (stack.question.h >= QUESTION_MIN_H || stack.holdsBuilder) &&
+                        stack.handle == null &&
+                        roomyAgain,
+                    { narrowW, stacked, ...stack, roomyAgain }
+                );
                 await h.ev(`${ROLE_ROW}?.querySelector("[data-brainstorm-review-toggle]")?.click()`);
 
                 const closed = await bsCloseDesign(h);
@@ -797,6 +887,8 @@ export default function (kit) {
                 };
                 await step("close the New run window", () => h.ev(`${NEW_RUN} ? (${PEEKS_ESC}, true) : false`));
                 await step("stop recording sent lines", () => h.ev(TYPED_REMOVE));
+                // 3a2 narrowed the window; a failed assert must not leave it narrow
+                await step("restore the window", () => restoreWindow(h, ctx));
                 // 3a hid the details rail to give the pane the width the check's rail sits beside the question in
                 if (ctx.detailsRailWasOpen) await step("show the details rail", () => setDetailsRail(h, true));
                 if (ctx.project) await step("delete the project", () => h.rpc("deleteproject", { name: ctx.project }));
