@@ -113,9 +113,14 @@ arcterm mang theo vài skill dạy agent dùng `wsh` và quy ước của cockpi
 | `arc:cockpit` | Cho người dùng xem một run, terminal, record hay surface; đọc họ đang nhìn gì |
 | `arc:initiatives` | Theo dõi việc lớn bằng initiative và chunk (`wsh effort`), và đề xuất chunk mới bằng `--proposed` thay vì thêm thẳng |
 | `arc:doc-review` | Xin người dùng review một bản sửa tài liệu (`.tex`, `.md`) rồi dừng |
-| `arc:design` | Làm mockup `.dc.html` nhiều artboard trong thư mục nháp bị gitignore |
+| `arc:design` | Làm mockup `.dc.html` nhiều artboard trong thư mục nháp bị gitignore; vẽ mỗi phương án UI thành một board thay vì ASCII |
+| `arc:brainstorm` | Giữ trạng thái brainstorm trong `.superpowers/brainstorm/<chủ đề>/brainstorm.json` để arcterm hiện pane [Brainstorm](brainstorm.md) cạnh terminal |
+| `arc:council` | Tự mở một [Council](council.md) khi cuộc trò chuyện có câu hỏi thật sự còn bỏ ngỏ, hoặc khi bạn bảo; tóm tắt báo cáo khi xong |
+| `arc:detach` | Chạy dev server, database hay watcher bằng `wsh detach` để nó sống tiếp khi terminal đóng hay arcterm khởi động lại |
+| `arc:learn` | Ghi lại lời sửa hay lời dặn lặp lại của bạn (`wsh learn note`) để nó thành một luật bạn duyệt |
+| `arc:notes` | Viết một ghi chú khi bạn bảo "note lại" (`wsh note add`); ghi chú nằm trong Search → Notes |
 
-Với Claude Code, các skill này nằm trong arc mod (`~/.arc/claude-mod/skills/`, kèm luật bạn đã duyệt qua `wsh learn`) nên hiện tên `arc:<skill>`; harness khác (codex, pi…) đọc chúng từ vault với tên không có prefix (`runs`, `cockpit`, `initiatives`, `doc-review`, `design`, `ideas`, `learn`, `notes`).
+Với Claude Code, các skill này nằm trong arc mod (`~/.arc/claude-mod/skills/`, kèm luật bạn đã duyệt qua `wsh learn`) nên hiện tên `arc:<skill>`; harness khác (codex, pi…) đọc chúng từ vault với tên không có prefix (`runs`, `cockpit`, `initiatives`, `doc-review`, `design`, `brainstorm`, `council`, `detach`, `learn`, `notes`).
 
 ## Xem thêm
 

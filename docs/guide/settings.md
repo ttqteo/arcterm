@@ -26,6 +26,8 @@ Trang **Agents**, thẻ **Claude account**. Mỗi tài khoản là một dòng: 
 4. Bước cuối đặt **Name** và, nếu arcterm đã biết các email, **Same account as** (xem dưới). Bấm **Done**. Token mới chưa được chọn: bạn bấm vào dòng của nó khi muốn dùng.
 5. Menu **⋯** của một tài khoản token: **Rename**; **Same account as…** (chọn một email arcterm đã thấy, **Other email…**, hoặc **None**: nối tài khoản token với tài khoản `/login` cùng email để chúng dùng chung số quota và không bị đếm là hai); **Remove** (xóa token khỏi máy sau khi hỏi; nếu đang chọn thì agent mới quay về tài khoản `/login`).
 
+**Tài khoản riêng cho một project**: **+ Project account** gắn một tài khoản cho một project. Agent và terminal mở trong project đó dùng tài khoản này, council, audit Radar và lệnh AI nền chạy trong thư mục đó cũng vậy; các project khác vẫn dùng tài khoản đang được chọn. Footer của hộp New ghi tên tài khoản mà lần khởi chạy sẽ dùng.
+
 Quota Claude là của tài khoản đang chọn. Tài khoản thêm bằng token không đọc được quota khi không có session chạy; số của nó có sau khi một session của nó báo về.
 
 ### Chọn model cho run mới

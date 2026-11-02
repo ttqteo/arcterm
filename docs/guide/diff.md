@@ -1,10 +1,14 @@
 # Diff
 
-**Diff** là mặt phẳng review Git của arcterm: chọn một repository, chọn một khoảng lịch sử, đi qua từng commit và đọc thay đổi của từng file. Bạn cũng có thể để lại comment theo dòng và gửi cả loạt cho agent trong một tin nhắn. Diff không bao giờ ghi vào repository của bạn (không stage, không checkout, không commit); thứ duy nhất nó ghi ra ngoài là tin nhắn gửi vào terminal của agent khi bạn bấm gửi comment.
+**Diff** là nơi review Git của arcterm: chọn một repository, đi qua từng commit, đọc thay đổi của từng file, đánh dấu
+file đã review, để lại comment theo dòng rồi gửi cả loạt cho agent trong một tin nhắn. Từ 0.15.9, Diff cũng **commit và
+sync** được: commit những file đã tick, rồi Fetch, Pull, Push nhánh với upstream của nó.
 
-Nhãn trên giao diện là **Diff**, còn khóa nội bộ của surface là `files` (ví dụ `wsh ui reveal surface:files`, hoặc `Ctrl+G` `f`).
+Nhãn trên giao diện là **Diff**, còn khóa nội bộ của surface là `files` (ví dụ `wsh ui reveal surface:files`, hoặc
+`Ctrl+G` `f`).
 
-Các trang liên quan: [Agent](agent.md) (File tab trong rail của agent), [Code](code.md) (sửa file, diff với HEAD), [Cockpit](cockpit.md), [Orchestrator](orchestrator.md) (diff của một run).
+Các trang liên quan: [Agent](agent.md) (tab Changes và File trên rail của agent), [Code](code.md) (sửa file, Blame,
+diff với `HEAD` hay base của branch), [Cockpit](cockpit.md), [Orchestrator](orchestrator.md) (diff của một run).
 
 ## Mở Diff
 
@@ -13,179 +17,216 @@ Các trang liên quan: [Agent](agent.md) (File tab trong rail của agent), [Cod
 | Nav rail → **Diff** | Mục thứ hai trong nhóm công cụ (Code, Diff, Radar) |
 | `Ctrl+6` (`Cmd+6` trên Mac) | Nhảy theo vị trí trong nav rail |
 | `Ctrl+G` rồi `f` | Chuỗi "go to" |
-| `[` / `]` | Chuyển sang surface trước / sau |
 
-Khi Diff được mở mà chưa có nguồn nào được chọn và chưa agent nào đang được focus, nó lấy agent đầu tiên trong roster; nếu chỉ có project thì bạn chọn nguồn ở sidebar worktree bên trái. Không có agent nào và cũng không có project nào thì bạn thấy màn "No changes to show" với nút **New agent**.
+Khi Diff mở mà chưa chọn nguồn nào và cũng không có agent nào đang được focus, nó lấy agent đầu tiên trong roster; nếu
+chỉ có project thì bạn chọn nguồn trong dropdown. Không có agent lẫn project thì bạn thấy màn "No changes to show" với
+nút **New agent**.
 
-Surface này bị gỡ khỏi màn hình mỗi khi bạn chuyển đi, nhưng vị trí cuộn, bộ lọc, commit và file đang chọn được giữ lại. Quay lại là về đúng chỗ cũ.
+Surface này bị gỡ khỏi màn hình mỗi khi bạn chuyển đi, nhưng vị trí cuộn, bộ lọc, commit và file đang chọn được giữ lại.
+Rời đi hơn hai phút rồi quay lại thì một banner **Back where you left off** cho biết đã khôi phục những gì, có nút **Start
+from the top**, và tự tắt sau 6 giây.
 
 ### Những chỗ khác trong app mở Diff sẵn
 
 | Từ đâu | Thao tác | Diff mở ở |
 |---|---|---|
-| Thẻ agent trong Cockpit | Menu của dòng → **Review changes** (chỉ có khi agent có thay đổi) | Agent đó, range **Since session start** |
-| Rail của agent → **Files changed** → bấm một file | Mở ngay | File tab cạnh terminal, dạng diff từ lúc session bắt đầu (chưa phải surface Diff) |
-| File tab của agent | Nút **Open in Diff** (biểu tượng so sánh) | Agent đó, đúng file đó |
-| Rail của agent → **View diff** | Bấm nút | Agent đó, chưa chọn file |
+| Thẻ agent trong Cockpit | Menu của thẻ → **Review changes** (chỉ có khi agent có thay đổi) | Agent đó, range **Since session start** |
+| Rail của agent → **Files changed** hay tab **Changes** → bấm một file | Mở ngay | Tab File cạnh terminal, dạng diff (chưa phải surface Diff) |
+| Tab File của agent | Nút **Open in Diff** | Agent đó, đúng file đó |
+| Rail của agent → **View diff** | Bấm nút | Agent đó; với công tắc Branch thì là phép so sánh cả branch với `main` |
+| Hộp thoại của Office | **Diff** trong menu ▶ | Các file agent đó đã đổi |
+| Hàng của run trong cây Agent | Chuột phải → **Open the diff** | Run đó, range **This run** |
 | Run sheet, màn hoàn tất run | Một file trong danh sách, hoặc **Open repository diff** / **Open the diff** | Run đó, range **This run**, có thể kèm file |
 | Transcript của một session đã kết thúc | Nút **Review** ở thanh files | Project của session, range **Working tree** |
 
-Lúc đi vào từ một file cụ thể, lần chọn file đó chỉ có tác dụng một lần: các lần quay lại sau không kéo bạn về file ấy nữa.
+Khi đi vào từ một file cụ thể, việc chọn file đó chỉ có tác dụng một lần: các lần quay lại sau không kéo bạn về file ấy
+nữa.
+
+## Bố cục
+
+Bên trái là **một panel**, bên phải là **diff rộng**.
+
+- **Thanh trên của panel**: dropdown **nguồn** (biểu tượng branch, tên project hoặc agent, tên nhánh) và cụm **sync**
+  (số commit đi trước / sau upstream, cùng các nút Fetch, Pull, Push).
+- **Hai tab**: **Commit** (`Shift+C`) để tick file và commit, **Log** (`Shift+H`) để xem lịch sử.
+- **Diff** bên phải: header một dòng, rồi một trình diff Monaco (chế độ **File**) hoặc danh sách mọi file để comment
+  (chế độ **Review**).
+
+`Shift+B` ẩn hoặc hiện panel. Ở cửa sổ hẹp panel bắt đầu ở trạng thái ẩn, và lựa chọn của bạn được nhớ. Khi panel ẩn,
+header của diff mang luôn các lối vào của panel (nguồn, số đi trước / sau, hai tab) cùng nút chuyển file trước / sau.
+
+![Diff surface: panel bên trái với dropdown nguồn, nút Publish và tab Log; đồ thị lịch sử với commit đang chọn, thông tin commit và danh sách file bên dưới; diff rộng bên phải với Mark reviewed và hai chế độ File / Review](images/diff-history.png)
 
 ## Chọn nguồn và range
 
-Bên trái là **sidebar worktree**; hàng trên cùng của phần còn lại có tiêu đề **Diff**, dải range, và một dòng tóm tắt bên phải.
+**Dropdown nguồn** là nơi duy nhất chọn repository đang đọc (**Choose a project, worktree or agent**). Nó mở một cây gồm
+mọi project đã đăng ký, trong mỗi project là checkout chính rồi các linked worktree theo thứ tự của `git worktree list`:
 
-**Sidebar worktree** là nơi duy nhất chọn bạn đang đọc repository nào. Nó liệt kê mọi project đã đăng ký, mỗi project là một nhóm thu/mở được; trong nhóm là checkout chính rồi các linked worktree theo thứ tự của `git worktree list`. Nhóm chứa nguồn đang xem tự mở; các nhóm khác mở khi bạn bấm vào header, và bấm lần nữa thì thu lại.
+- **Dòng worktree** ghi nhánh (hoặc `detached <commit>`), số file chưa commit, và `↑` / `↓` số commit đi trước / sau
+  nhánh của checkout chính. Worktree đọc lỗi mang dấu cảnh báo; project đọc lỗi ghi "Couldn't read worktrees" nhưng
+  checkout chính của nó vẫn chọn được.
+- **Dòng agent** nằm dưới worktree mà agent đang chạy trong đó; agent có thư mục ngoài mọi worktree đã liệt kê nằm ở
+  nhóm **Other agents** cuối cây. Chọn một agent cũng chuyển focus của cockpit sang agent đó.
+- **Ô lọc** ở đầu (**Filter worktrees and agents**) lọc theo tên project, nhánh, đường dẫn và tên agent.
 
-- **Dòng worktree** hiện nhánh (hoặc `detached <commit>`), số file chưa commit, và `↑`/`↓` số commit đi trước/sau nhánh của checkout chính. Huy hiệu chỉ hiện khi đã đọc được và khác 0. Một worktree đọc lỗi mang dấu cảnh báo; một project đọc lỗi hiện "Couldn't read worktrees" nhưng checkout chính của nó vẫn chọn được. Thư mục không phải repo hiện `not a repository`.
-- **Dòng agent** nằm dưới worktree mà agent đang chạy trong đó. Agent có thư mục làm việc ngoài mọi worktree đã liệt kê, hoặc không xác định được, nằm trong nhóm **Other agents** ở cuối. Chọn một agent cũng chuyển focus của cockpit sang agent đó.
-- **Ô lọc** ở đầu sidebar lọc theo tên project, nhánh, đường dẫn và tên agent, trong mọi project kể cả nhóm đang thu.
+Khi nguồn là một agent, Diff đi theo focus của cockpit: đổi agent được chọn ở nơi khác thì Diff đổi theo. Chọn hẳn một
+project hay worktree, hoặc đi vào từ một run, thì focus không kéo Diff đi nữa. Run không có trong cây: bạn chỉ vào đó
+từ chứng cứ của một run (bảng trên).
 
-Chọn checkout chính là đọc project đó; chọn một linked worktree là đọc worktree đó với range **Working tree**. `r` đọc lại trạng thái của các nhóm đang mở.
+**Range** là khoảng lịch sử đang xem. Nó do cách bạn đi vào quyết định, không có dải chip riêng:
 
-**Thu sidebar**: nút ở đầu sidebar hoặc `Shift+B` thu nó thành một rail 36 px, trên đó checkout nào có thay đổi chưa commit mang một chấm. Khi bạn chưa tự quyết, sidebar tự thu khi bề rộng surface dưới 1000 px (nên ở cửa sổ mặc định 1000×700 nó mở dưới dạng rail); lựa chọn rõ ràng của bạn thắng và được nhớ qua các lần mở app.
-
-Có loại nguồn không nằm trong sidebar: **run**. Bạn chỉ vào đó từ chứng cứ của một run (bảng trên), và dòng tóm tắt nói về range **This run** của nó.
-
-Khi nguồn là một agent, Diff đi theo focus của cockpit: đổi agent được chọn ở nơi khác thì Diff đổi theo. Ghim một project hay một worktree, hoặc đến từ một run, thì focus không kéo Diff đi nữa.
-
-**Dải range** là khoảng lịch sử cần xem:
-
-| Chip | Hiện khi | Nghĩa |
+| Range | Khi nào | Nghĩa |
 |---|---|---|
-| **Working tree** | Luôn luôn | Công việc chưa commit so với `HEAD` |
+| **Working tree** | Mặc định | Công việc chưa commit so với `HEAD` |
 | **Since session start** | Nguồn là agent | Worktree so với commit đang là `HEAD` lúc session của agent bắt đầu |
-| **This run** | Nguồn là run | Từ base commit của run đến `HEAD` |
-| **Compare** | Luôn luôn | Hai ref so với nhau, xem [So sánh hai ref](#so-sánh-hai-ref) |
+| **This run** | Đi vào từ một run | Từ base commit của run đến `HEAD` (hàng đầu ghi **Run changes**) |
+| **Compare** | Bấm **Compare…** trong tab Log, hoặc `c` | Hai ref so với nhau, xem [So sánh hai ref](#so-sánh-hai-ref) |
 
-Chip nào có thể dùng nhưng tạm thời chưa dùng được thì bị làm mờ kèm tooltip giải thích. Ví dụ **Since session start** mờ với lý do "no session-start commit recorded yet" cho đến khi transcript của agent cho ra commit gốc. Chip nào không bao giờ áp dụng cho nguồn này thì không hiện.
+## Tab Log: lịch sử
 
-**Dòng tóm tắt** bên phải là chữ, không phải nút. Nó nhắc lại range theo cách nói của git cùng tổng số, ví dụ `12 uncommitted files on main · +340 −86`. Nó đi theo lựa chọn hiện tại: chọn một commit thì dòng này nói về commit đó.
+Nửa trên của tab là đồ thị lịch sử, nửa dưới là commit đang chọn và danh sách file của nó; kéo vạch ngăn để đổi tỉ lệ.
 
-![Diff surface ở cửa sổ rộng (>= 1600x950) trên một project có thay đổi chưa commit: dòng "Uncommitted changes" ở đầu cột lịch sử, graph lane bên trái, cột file, và diff Monaco ở bên phải](images/diff-history.png)
+**Lịch sử**, commit mới nhất ở trên. Mỗi dòng có hash ngắn, chip ref (thừa thì gộp thành `+2`), subject, một vòng tròn
+mang chữ cái đầu tên tác giả, và tuổi; rê chuột để xem tên, email và ngày chính xác.
 
-## Đọc lịch sử: ba cột
+- **Dòng đầu là working tree** khi có file thay đổi: hash vẽ thành vòng nét đứt, thời gian là `now`, nhãn theo range
+  (**Uncommitted changes**, **Since session start** hay **Run changes**).
+- **Dải phân cách** đánh dấu điểm neo của range (`session start` hoặc `run base`); các commit trước điểm neo bị làm mờ.
+- **Graph** vẽ tối đa 7 lane, lane thừa gộp vào một cột xám. `Shift+G` bật hoặc tắt nó. Graph tự tắt khi có bộ lọc.
+- Lịch sử nạp 50 commit mỗi trang và nạp thêm khi bạn cuộn tới gần đáy. Lần đọc đầu kéo dài quá 10 giây thì cột báo
+  "Still reading history" kèm **Retry**.
 
-Từ trái sang phải, cùng một trục thời gian.
+**Lọc lịch sử** (`/`): ô "Filter by message" (`git log --grep`), chip **author** (`--author`), chip **path** (`-- <path>`).
+Gõ có độ trễ 250 ms. Khi có lọc, tiêu đề ghi số commit khớp và có **Clear filters** (`Esc`).
 
-### Cột 1: lịch sử
+**Commit đang chọn**: hash (có **Copy hash**), tuổi, subject, tác giả, chip ref. Với dòng working tree thì ghi đo từ đâu,
+ví dụ `On main, measured from 3e1f31e`. Bên dưới là số file với `+thêm −xóa` rồi danh sách file; **tree** / **flat**
+chuyển giữa nhóm theo thư mục và danh sách phẳng.
 
-Commit mới nhất ở trên. Mỗi dòng gồm hash ngắn, chip ref (nhánh, tag; chip thừa gộp thành `+2`), subject, tác giả (khi dòng không có ref) và thời gian.
+- Chọn một commit là file đầu tiên của nó mở luôn; `↓` / `↑` trong danh sách file mở file kế / trước mà không cần `Enter`.
+- File git không đếm được theo dòng ghi `bin` (nhị phân), `repo` (repository lồng bên trong) hoặc `dirty` (submodule có
+  thay đổi bên trong) thay cho `+0 −0`. Commit đang nạp file thì ghi "Reading this commit's files…", đọc lỗi thì có
+  **Retry**, và commit thật sự không đổi file nào thì ghi "This commit changes no files".
 
-- **Dòng đầu là working tree** khi có file thay đổi. Hash vẽ thành vòng tròn nét đứt, subject màu cảnh báo, thời gian là `now`. Chữ trên dòng phụ thuộc range: **Uncommitted changes**, **Since session start** hoặc **Run changes**. Công việc chưa commit là một dòng trong lịch sử, không phải một chế độ riêng.
-- **Dải phân cách** đánh dấu điểm neo của range (`session start` hoặc `run base`). Các commit trước điểm neo bị làm mờ, nên thấy ngay cái gì nằm trong range mà không cần đếm.
-- **Graph** (lane) vẽ phía sau các dòng, tối đa 7 lane; lane thừa gộp vào một cột xám và tiêu đề ghi `8 lanes · 1 folded`. Bật/tắt bằng nút **Graph** hoặc `Shift+G`. Graph tự tắt khi đang có bộ lọc, vì tập đã lọc thường thiếu cha của chính nó và lane sẽ vẽ cạnh nối đến commit không có trên màn hình.
-- Lịch sử nạp **50 commit mỗi trang** và nạp thêm khi bạn cuộn đến gần đáy.
+Khi Diff đang hiện, danh sách thay đổi được đọc lại mỗi 10 giây, và một commit mới (agent commit trong worktree đang xem)
+làm lịch sử tự đọc lại một lần. `r` đọc lại tất cả ngay.
 
-**Lọc lịch sử**: hàng lọc nằm dưới tiêu đề cột (không có khi đang Compare).
+## Tab Commit: commit và sync
 
-| Ô | Tương ứng |
+Tab **Commit** (`Shift+C`, focus vào ô message) liệt kê các file trong working tree, mỗi file một ô tick: nhóm
+**Changes** được tick sẵn, nhóm **Unversioned files** thì không.
+
+1. Bấm một hàng (hoặc `↓` / `↑`) để mở diff của file đó so với `HEAD`; `Space` để tick hay bỏ tick.
+2. Viết message, rồi bấm **Commit** hoặc `Ctrl+Enter`. **Chỉ những file đã tick được commit**, nên những gì một phiên
+   khác đã stage vẫn ở nguyên trong stage.
+3. **Amend** nạp message của commit cuối để viết lại nó; nút này tắt khi commit đó đã được push ("Already pushed: amending
+   would need a force push").
+
+Một hook chặn commit thì panel ghi "A hook stopped the commit" kèm output của hook; commit lỗi vì lý do khác thì ghi "The
+commit did not go through".
+
+![Tab Commit: nhóm Changes với hai file đã tick, nhóm Unversioned files gấp lại, ô Commit message và Amend ở đáy panel, nút "Commit 2 files", và diff của file đang chọn so với HEAD](images/diff-commit-tab.png)
+
+**Sync**: cụm nút ở thanh trên làm việc trên nhánh hiện tại so với upstream của nó, kèm số `↑ đi trước ↓ đi sau`
+(chuyển màu hổ phách khi nhánh vừa đi trước vừa đi sau, tức là đã phân kỳ).
+
+| Nút | Việc nó làm |
 |---|---|
-| Ô văn bản "Filter by message" | `git log --grep` trên subject |
-| Chip **author** | `git log --author` |
-| Chip **path** | `git log -- <path>` |
+| **Fetch** | Cập nhật các ref remote-tracking |
+| **Pull** | Chỉ fast-forward. Có agent đang làm việc trong thư mục đó thì hỏi trước (**Confirm pull**), kèm tên các agent mà pull sẽ đổi file dưới chân |
+| **Push** | Không bao giờ force. Nhánh chưa có upstream thì nút là **Publish** |
 
-Bấm chip để biến nó thành ô nhập. Gõ có độ trễ 250 ms, nên mỗi lần gõ xong mới chạy git một lần; xóa thì có hiệu lực ngay. Khi có lọc, tiêu đề cột báo số commit khớp và hiện nút **Clear filters** (phím tắt `Esc`). Nếu không có gì khớp, bạn thấy "No commits match" kèm câu mô tả bộ lọc.
-
-Nếu lần đọc lịch sử đầu tiên kéo dài quá 10 giây, cột báo "Still reading history" kèm nút **Retry**.
-
-**Thu cột lịch sử**: cửa sổ hẹp thì ba cột không đủ chỗ cho diff. Khi bề rộng surface dưới 1280 px, cột 1 tự thu thành một rail 44 px, mỗi commit là một chấm. Bấm nút thu/mở ở đầu cột hoặc `Shift+H` để tự quyết; lựa chọn rõ ràng của bạn thắng việc tự động theo bề rộng. Bấm một chấm trên rail để chọn commit đó.
-
-![Diff ở cửa sổ mặc định 1000x700: cột lịch sử đã thu thành rail chấm hẹp, cột file và diff còn đủ chỗ đọc](images/diff-history-rail.png)
-
-**Banner "Back where you left off"**: nếu bạn rời Diff hơn hai phút rồi quay lại và Diff khôi phục một lựa chọn bạn đã để lại (một commit không phải dòng đầu, vị trí cuộn, hoặc bộ lọc), một banner viết rõ đã khôi phục gì, ví dụ `Back where you left off: commit 3e1f31e, your scroll position and 2 filters.` Banner có nút **Start from the top** và tự tắt sau 6 giây. Vắng mặt ít hơn hai phút thì khôi phục lặng lẽ.
-
-### Cột 2: commit đang chọn và danh sách file
-
-Ai, khi nào, file nào. Với một commit: hash (có nút **Copy hash**), tuổi, subject, tác giả kèm hai chữ cái đầu, các chip ref. Với dòng working tree: nhãn **Working tree** và một câu cho biết đo từ đâu, ví dụ `On main, measured from 3e1f31e` (hoặc `Detached HEAD`, `measured from session start …`, `measured from run base …`).
-
-Bên dưới là số file với `+thêm −xóa`, rồi danh sách file thay đổi. Mỗi dòng có chữ trạng thái (M, A, D, ?…) tô màu, đường dẫn, và `+/−` riêng. Nút **tree** / **flat** ở đầu danh sách chuyển giữa nhóm theo thư mục (mặc định, bấm thư mục để gập) và danh sách đường dẫn phẳng. Bấm một file để nạp nó vào cột 3.
-
-Danh sách file của working tree và lịch sử được làm tươi khi bạn đang xem: khi Diff đang hiện trên màn hình, danh sách thay đổi được đọc lại mỗi 10 giây, và một commit mới xuất hiện dưới chân bạn (agent commit trong worktree đang xem) làm cột lịch sử tự đọc lại một lần. `r` buộc đọc lại cả hai cột ngay.
-
-### Cột 3: diff của file
-
-Xem tiếp ở phần dưới.
+Git từ chối một lần Pull hay Push thì một dải dưới thanh trên giải thích lý do (có **Open a terminal here** để bạn tự xử
+lý), và repository không bị đổi gì.
 
 ## Đọc diff của một file
 
-Cột 3 là một trình diff Monaco duy nhất cho mọi trạng thái (working tree, một commit, một phép so sánh). Chúng chỉ khác nhau ở hai ref được nạp vào hai phía:
+Một trình diff Monaco dùng cho mọi trạng thái; chúng chỉ khác ở hai ref được nạp vào hai phía:
 
 | Đang chọn | Bên trái | Bên phải |
 |---|---|---|
-| Dòng working tree | Ref gốc của range (`HEAD`, commit bắt đầu session, hoặc base của run) | File trên đĩa, nên sửa đổi đang diễn ra hiện ngay |
-| Một commit | Cha đầu tiên của commit (`<hash>^`) | Commit |
-| Aggregate của Compare | Merge base hoặc base, tùy dạng so sánh | `head` |
+| Dòng working tree | Ref gốc của range (`HEAD`, commit lúc session bắt đầu, base của run) | File trên đĩa, nên sửa đổi đang diễn ra hiện ngay |
+| Một commit | Cha đầu tiên (`<hash>^`) | Commit |
+| **All changes** của Compare | Merge base hoặc base, tùy dạng so sánh | `head` |
 
-Với working tree, nội dung bên phải được đọc lại theo nhịp thăm dò 10 giây, nên diff không cũ đi khi agent đang sửa file.
+**Header** là một dòng: đường dẫn (thư mục mờ, tên file đậm) và nó được đo so với gì, bộ chuyển thay đổi ▲ / ▼ kèm
+`change 2/5` (`Shift+P` / `Shift+N`), **Mark reviewed**, công tắc **File** / **Review**, và menu **⋯** (**View
+options**) chứa:
 
-Header của cột có: đường dẫn (thư mục mờ, tên file đậm), `+thêm −xóa`, và các điều khiển. Khi cột rộng từ 1100 px nút có nhãn chữ; hẹp hơn thì chỉ còn biểu tượng.
-
-| Điều khiển | Việc nó làm |
-|---|---|
-| ▲ / ▼ kèm `change 2/5` | Đi tới thay đổi trước / sau trong file (`Shift+P` / `Shift+N`) |
-| **File** / **Review** | Một file, hoặc mọi file thay đổi để comment; xem [phần sau](#review-comment-theo-dòng-và-gửi-cho-agent) |
-| **Unified** / **Split** | Chỉ hiện khi cột rộng từ 900 px (`Shift+D`). Mặc định Unified |
-| **Hide whitespace** | Ẩn thay đổi chỉ khác khoảng trắng đầu/cuối dòng (`Shift+W`). Mặc định tắt để diff khớp với số `+/−` trong header |
-| **Wrap** | Bọc dòng dài (`Alt+Z`), chọn riêng theo file và dùng chung với Code và File tab của agent |
-| **Open in Code** | Mở file trong [Code](code.md) tại dòng đầu tiên khác nhau. Code luôn hiện file ở cây làm việc, không phải bản của commit đang xem; file đã bị xóa thì Code báo "File no longer exists" |
-| Biểu tượng mở ngoài (tooltip "Open in editor") | Giao đường dẫn cho hệ điều hành mở. Chỉ có ở dòng working tree, vì chỉ file đó chắc chắn tồn tại trên đĩa |
+- **Split** / **Unified** (`Shift+D`), chỉ có khi pane đủ rộng.
+- **Hide whitespace** (`Shift+W`).
+- **Wrap** (`Alt+Z`): mọi file mặc định đã bọc dòng; lựa chọn này theo từng file và dùng chung với Code và tab File của
+  agent.
 
 Các vùng không đổi được gập lại, chỉ giữ 3 dòng ngữ cảnh quanh mỗi thay đổi; bấm dải gập để mở thêm.
 
-**Khi không có gì để vẽ**, cột nói rõ lý do thay vì để trống:
+**Khi không có gì để vẽ**, pane nói rõ lý do:
 
 | Trạng thái | Câu hiện ra |
 |---|---|
 | Chưa chọn file | "Pick a file to see its changes" |
 | Compare không có khác biệt file | "Nothing to compare" |
-| Một phía quá 2 MB | "Too large to show here": Diff dừng ở 2 MB, mở file trong Code để đọc |
-| File nhị phân | "Binary file" |
+| Một phía quá 2 MB | "Too large to show here": mở file trong Code để đọc |
+| File nhị phân (chế độ File) | "Binary file" |
 | Nội dung giống nhau | "Contents unchanged": chỉ đổi tên hoặc mode của file |
 
-File chưa được git theo dõi (untracked) không có bản `HEAD`, nên được hiện như file toàn dòng thêm.
+File chưa được git theo dõi không có bản `HEAD`, nên hiện như file toàn dòng thêm.
+
+## Đánh dấu file đã review
+
+Đây là cách đi qua một commit hay một branch lớn mà không đọc sót file nào.
+
+- `v` (hoặc **Mark reviewed** trên header) đánh dấu file đang mở là đã review rồi mở file chưa review kế tiếp. Nhấn `v`
+  lần nữa trên một file đã đánh dấu thì bỏ dấu.
+- Mỗi file trong danh sách có dấu tick ở đầu bên phải; một thư mục có tick để đánh dấu, hay bỏ đánh dấu, mọi file trong
+  nó.
+- Dưới dòng đếm file có thanh **n/m reviewed** (đổi thành **all N reviewed** khi xong).
+- Một file thay đổi sau khi bạn đã review sẽ thành **stale** ("Changed since you reviewed it"), không còn tính là đã
+  review.
+
+Dấu được nhớ theo từng commit hay từng range, qua cả lần khởi động lại app.
 
 ## Review: comment theo dòng và gửi cho agent
 
-Đây là cách trả lời một agent bằng đúng dòng code mà bạn có ý kiến, thay vì mô tả bằng lời.
+Đây là cách trả lời agent bằng đúng dòng code mà bạn có ý kiến, thay vì mô tả bằng lời.
 
-Khi bạn chọn dòng working tree hoặc một commit (không phải Compare), header của cột 3 có công tắc **File** / **Review**. **Review** thay trình diff Monaco bằng một danh sách cuộn: mọi file thay đổi của lựa chọn đó xếp chồng nhau, mỗi file là một khối diff unified với số dòng cũ và mới. Đầu cột ghi "Every uncommitted change" hoặc "Every file in this commit".
+Khi chọn dòng working tree hoặc một commit (không phải Compare), công tắc **Review** thay trình diff bằng một danh sách
+cuộn: mọi file thay đổi xếp chồng nhau, mỗi file một khối diff unified với số dòng cũ và mới. Đầu pane ghi "Every
+uncommitted change" hoặc "Every file in this commit".
 
-- Bấm tên file trong cột 2 sẽ cuộn Review đến file đó. Bấm tiêu đề một file trong Review để gập/mở nó.
-- Những đoạn không đổi dài được gập thành dải `⋯ N unchanged lines`; bấm để mở.
-- Khi cây làm việc đổi, Review tự đọc lại mà không làm trắng màn hình.
-- `Alt+Z` (Wrap) chỉ dùng cho chế độ **File**; Review luôn bọc dòng.
+- Bấm tên file trong danh sách sẽ cuộn Review tới file đó; bấm tiêu đề một file trong Review để gập / mở nó.
+- Đoạn không đổi dài gập thành `⋯ N unchanged lines`; bấm để mở.
+- **Ảnh** (PNG, JPG, GIF, WebP) hiện bản trước và sau cạnh nhau (**Before** | **After**) trên nền ô cờ, kèm kích thước
+  pixel và dung lượng file của mỗi bản.
+- Review luôn bọc dòng, và tự đọc lại khi cây làm việc đổi mà không làm trắng màn hình.
 
 ### Làm thế nào để comment một dòng
 
 1. Chọn **Review**.
-2. Rê chuột vào một dòng, bấm nút `+` ở mép phải của dòng.
+2. Rê chuột vào một dòng, bấm nút `+` ở mép phải dòng đó.
 3. Gõ vào ô "Leave a comment".
-4. Bấm **Add Comment**, hoặc `Ctrl+Enter`. `Esc` hoặc **Cancel** bỏ ô.
+4. Bấm **Add Comment** hoặc `Ctrl+Enter`. `Esc` hoặc **Cancel** bỏ ô đó.
 
-Để comment nhiều dòng: bấm `+` rồi **shift-click** một `+` khác trong cùng file, hoặc nhấn `+` và kéo qua các dòng. Một khoảng không thể bắc qua hai phía (dòng đã xóa thuộc phía cũ, các dòng khác thuộc phía mới). Comment trên dòng đã xóa được ghi là `removed line`.
+Để comment nhiều dòng: bấm `+` rồi **shift-click** một `+` khác trong cùng file, hoặc nhấn `+` và kéo qua các dòng. Một
+khoảng không bắc qua hai phía được (dòng đã xóa thuộc phía cũ). Comment trên dòng đã xóa được ghi là `removed line`.
 
-Mỗi comment hiện thành thẻ đánh số dưới dòng cuối của khoảng. Bấm vào lời ghi chú để sửa, bấm × để xóa. Chỉ có một ô comment mở một lúc. Ô nào đang chứa chữ thì không bị mất hay bị ẩn: mở comment khác sẽ đưa bạn về ô đang dở.
-
-Comment được giữ trong bộ nhớ theo repository: sống sót khi bạn chuyển surface, nhưng mất khi khởi động lại app.
-
-![Chế độ Review: các file xếp chồng, một thẻ comment đánh số dưới một dòng, ô "Leave a comment" đang mở ở dòng khác, và khay ở đáy với "2 comments on 1 file" cùng nút "Send 2 comments"](images/diff-review.png)
+Mỗi comment hiện thành thẻ đánh số dưới dòng cuối của khoảng; bấm vào lời ghi chú để sửa, × để xóa. Mỗi lúc chỉ mở một ô
+comment, và ô đang có chữ thì không bị mất. Comment được giữ trong bộ nhớ theo repository: còn nguyên khi bạn chuyển
+surface, nhưng mất khi khởi động lại app.
 
 ### Khay gửi comment
 
-Khay dán ở đáy cột 3, ở cả hai chế độ **File** và **Review** (comment chỉ được tạo trong Review). Nó cho biết có bao nhiêu comment ("3 comments on 2 files") và có một nút gửi duy nhất, `Ctrl+Enter`. Một lần gửi đưa toàn bộ comment đến agent dưới dạng một tin nhắn.
-
-Gửi cho ai:
+Khay dán ở đáy pane, ở cả hai chế độ, ghi có bao nhiêu comment ("3 comments on 2 files") và có một nút gửi
+(`Ctrl+Enter`). Một lần gửi đưa toàn bộ comment tới agent trong một tin nhắn.
 
 | Tình huống | Nút | Việc xảy ra |
 |---|---|---|
-| Nguồn của Diff là một agent | **Send N comments** | Gửi cho agent đó |
-| Nguồn là project/run, và project có đúng một agent sống | **Send N comments** | Gửi cho agent đó |
-| Project có nhiều agent sống | **Send N comments** ▴ | Mở menu "Send to" để chọn agent; agent đang hỏi câu hỏi bị mờ |
-| Không có agent nào | **Copy** | Chép tin nhắn vào clipboard để bạn dán vào agent |
+| Nguồn là một agent | **Send N comments** | Gửi cho agent đó |
+| Nguồn là project / run, project có đúng một agent đang sống | **Send N comments** | Gửi cho agent đó |
+| Project có nhiều agent đang sống | **Send N comments** ▴ | Mở menu "Send to" để chọn; agent đang hỏi bị mờ |
+| Không có agent nào | **Copy** | Chép tin nhắn vào clipboard để bạn tự dán |
 
-Tin nhắn được dán vào terminal của agent (để nhiều dòng đến nguyên vẹn) rồi gửi `Enter`. Nó có dạng:
+Tin nhắn được dán vào terminal của agent rồi gửi `Enter`, có dạng:
 
 ```
 Review comments on your changes (2):
@@ -199,101 +240,96 @@ Review comments on your changes (2):
    …
 ```
 
-Trích dẫn cắt ở 3 dòng và mỗi dòng 120 ký tự. Nếu comment thuộc nhiều nguồn (working tree và một số commit), tin nhắn ghi nguồn của từng comment (`in commit abc1234 (subject)`).
+Trích dẫn cắt ở 3 dòng, mỗi dòng 120 ký tự. Comment thuộc nhiều nguồn thì tin nhắn ghi nguồn của từng comment (`in commit
+abc1234 (subject)`).
 
-Nút gửi bị khóa, kèm dòng giải thích, trong hai trường hợp: agent đích đang chờ bạn trả lời một câu hỏi ("<tên> is waiting on a question — answer it first") hoặc còn một ô comment chưa bấm **Add Comment** ("A comment is not added yet"). Gửi xong, các comment bị xóa và khay hiện "Sent to <tên>". **Copy** (khay hiện "Copied — paste it to an agent") hoặc một lần gửi lỗi thì giữ nguyên comment để bạn thử lại ("Couldn't reach <tên> — comments kept", "Couldn't copy — comments kept"). Một agent chưa mở terminal cũng là lỗi gửi: "<tên>'s terminal is not open".
+Nút gửi bị khóa, kèm dòng giải thích, khi agent đích đang chờ bạn trả lời một câu hỏi, hoặc còn một ô comment chưa bấm
+**Add Comment**. Gửi xong thì comment bị xóa và khay ghi "Sent to <tên>"; **Copy** hay một lần gửi lỗi thì comment được
+giữ lại để thử lại.
 
 ## So sánh hai ref
 
 Dùng khi câu hỏi là "nhánh này khác nhánh kia chỗ nào", ví dụ trước khi merge.
 
-1. Bấm chip **Compare** trong dải range, hoặc nhấn `c`.
-2. Ô chọn ref mở ra, tiêu điểm nằm ở ô **base**. Mặc định `base` là nhánh mặc định của repo (`origin/HEAD` nếu remote công bố, nếu không thì `main`, rồi `master`) và `head` là nhánh đang checkout; nếu trước đó bạn đã so sánh trong repo này thì mở với cặp bạn đã dùng lần trước.
-3. Gõ ref vào hai ô (thứ tự luôn là **base … head**) hoặc chọn từ gợi ý. Gợi ý chia nhóm **Local** và **Remote**, kèm tuổi của commit; ref là văn bản tự do nên tag hay SHA đều dùng được.
-4. `Enter` hoặc nút **Compare** để áp dụng. `Esc` chỉ hủy việc sửa ô, không rời Compare.
+1. Trong tab **Log**, bấm **Compare…** hoặc nhấn `c`.
+2. Ô chọn ref mở với focus ở ô **base**. Mặc định `base` là nhánh mặc định của repo (`origin/HEAD` nếu remote công bố,
+   không thì `main`, rồi `master`) và `head` là nhánh đang checkout; nếu trước đó bạn đã so sánh trong repo này thì nó mở
+   lại đúng cặp lần trước.
+3. Gõ ref vào hai ô (thứ tự luôn là **base … head**) hoặc chọn từ gợi ý (nhóm **Local** và **Remote**, kèm tuổi của
+   commit). Tag hay SHA đều dùng được.
+4. `Enter` hoặc **Compare** để áp dụng.
 
-Đóng lại, ô ref thu thành chip `base … head`; bấm chip (hoặc `c`) để sửa. Nút đảo (`Shift+S`) hoán đổi base và head.
+Đóng lại, ô ref thu thành chip `base … head`; bấm chip (hoặc `c`) để sửa. `Shift+S` hoán đổi base và head. **Fetch** cập
+nhật các ref remote; một ref remote chỉ mới bằng lần fetch cuối.
 
-Khi so sánh, thanh chủ đề có thêm nút **Fetch** ("Update remote-tracking refs") và đồng hồ `fetched 2m ago` sau lần fetch đầu tiên. Đây là lệnh chạm mạng duy nhất của Diff: một ref remote chỉ mới bằng lần fetch cuối. Fetch lỗi thì có banner "Fetch failed · showing refs as of the last fetch" với **Retry**; phép so sánh vẫn giữ nguyên.
-
-**Cột Compare** thay cho cột lịch sử:
+Ở trạng thái so sánh, nửa trên của tab Log thay đồ thị bằng:
 
 | Dòng | Là gì |
 |---|---|
-| Đầu cột: `split at abc1234 · 3d ago` | Merge base của hai ref |
-| **All changes** (dòng không) | Tổng thể thay đổi của hai ref, kèm số file và `+/−` |
-| Nhóm mang tên ref head, ghi "N ahead" | Commit có trên head mà không có trên base |
-| Nhóm mang tên ref base, ghi "N behind" | Commit có trên base mà không có trên head |
+| Đầu: `split at abc1234 · 3d ago` | Merge base của hai ref |
+| **All changes** | Tổng thay đổi của hai ref, kèm số file và `+/−` |
+| Nhóm mang tên ref head, "N ahead" | Commit có trên head mà base không có |
+| Nhóm mang tên ref base, "N behind" | Commit có trên base mà head không có |
 
-Hai ref không phân kỳ thì cột ghi "These refs do not diverge."
+Dưới chip ref là số "N ahead · N behind" và công tắc **since it left `<base>`** (mặc định, `base...head`: chỉ những gì
+head thêm từ lúc tách nhánh) / **tip to tip** (`base..head`: mọi khác biệt giữa hai đầu mút). `Tab` nhảy giữa hai phía. Review không có trong
+Compare. `Esc` (hoặc **Leave compare**) thoát Compare và trả về **đúng range bạn đang xem trước đó**.
 
-Chọn **All changes** thì cột 2 hiện ô công tắc **Since the split** / **Tip to tip**:
-
-- **Since the split** (mặc định, `base...head`): chỉ những gì head đã thêm kể từ lúc hai nhánh tách, bỏ phần base có thêm về sau.
-- **Tip to tip** (`base..head`): mọi khác biệt giữa hai đầu mút, kể cả phần base đã có thêm.
-
-Danh sách file và cột diff đọc cùng một dạng, nên không thể mâu thuẫn nhau; dòng tóm tắt ghi rõ dạng đang dùng. Chọn một commit trong cột thì cột 2 và 3 hiện commit đó như trong lịch sử thường. `Tab` nhảy giữa hai phía (đến commit đầu của phía còn lại). Review không có trong Compare.
-
-`Esc` thoát Compare và trả về **đúng range bạn đang xem trước đó**, không đoán mặc định. Bấm Compare lúc đang Compare không lồng thêm một tầng: nó giữ range gốc làm chỗ quay về.
-
-![Compare đang mở: ô chọn ref ở dạng chip `main … feature` với nút đảo, nút Fetch, cột Compare có dòng "All changes" cùng nhóm "N ahead", ô công tắc "Since the split / Tip to tip" ở cột 2, và diff của một file ở cột 3](images/diff-compare.png)
+![Compare đang mở ở cửa sổ hẹp: chip `main … feature` với nút đảo, "1 ahead · 0 behind" cùng công tắc "since it left main / tip to tip", dòng "All changes", nhóm "feature 1 ahead", danh sách file và diff của một file](images/diff-compare.png)
 
 ## Khi có sự cố
 
-Hai màn hình chiếm cả surface, cố ý khác nhau:
-
-- **"This folder isn't a Git repository"**: một sự thật bình thường về nguồn bạn chọn. Nút **Choose a source** mở sidebar worktree và đặt con trỏ vào ô lọc.
-- **"Couldn't read this repository"**: một lỗi. Màn hình in lệnh git đã hỏng, mã thoát (hoặc "no exit code" nếu là timeout hay thiếu git), stderr nguyên văn trong khối chọn được, nút chép và nút **Retry**. Không có gì bị đổi nên thử lại là an toàn.
-
-Một repository đọc hỏng được kiểm tra trước, vì đọc hỏng cũng báo "không phải repo"; hiện nó như vắng mặt sẽ che mất nguyên nhân.
+- **"This folder isn't a Git repository"**: một sự thật bình thường về nguồn bạn chọn. **Choose a source** mở panel (nếu
+  đang ẩn) và dropdown nguồn, focus vào ô lọc. (Ở [Code](code.md), một thư mục không phải repo vẫn duyệt và tìm file
+  được.)
+- **"Couldn't read this repository"**: một lỗi thật. Màn hình in lệnh git đã hỏng, mã thoát, stderr nguyên văn, nút chép
+  và **Retry**. Không có gì bị đổi nên thử lại là an toàn.
 
 ## Phím tắt
 
-Các phím này có hiệu lực khi Diff đang hiện và bạn không gõ trong ô nhập hay hộp thoại. Thanh gợi ý ở chân cửa sổ là bản trực tiếp của bảng này: nó chỉ liệt kê các phím đang áp dụng, nên đổi giữa lịch sử và Compare, và mờ đi khi tiêu điểm ở trong ô nhập. `Ctrl` là `Cmd` trên Mac, `Alt` là `Option`. Toàn bộ phím của app: [keyboard-shortcuts](../keyboard-shortcuts.md).
+Có hiệu lực khi Diff đang hiện và bạn không gõ trong ô nhập. Thanh gợi ý ở chân cửa sổ chỉ liệt kê các phím đang áp
+dụng. Toàn bộ phím của app: [Phím tắt](../keyboard-shortcuts.md#diff).
 
-| Phím | Việc | Khi nào |
+| Phím | Việc |
+|---|---|
+| `j` / `k`, `↓` / `↑` | Commit kế / trước; trong danh sách file, `↓` / `↑` mở file kế / trước |
+| `Space` | Trong tab Commit: tick hay bỏ tick file đang chọn |
+| `Enter` | Mở file dưới con trỏ |
+| `/` | Lọc lịch sử (`Esc` xóa lọc) |
+| `Shift+G` | Bật / tắt graph |
+| `Ctrl+G` `g` | Về đầu lịch sử |
+| `Shift+C` | Tab Commit, focus vào ô message |
+| `Shift+H` | Tab Log |
+| `Shift+B` | Ẩn / hiện panel bên trái |
+| `Shift+N` / `Shift+P` | Thay đổi kế / trước trong diff đang mở |
+| `Shift+D` | Split / unified |
+| `Shift+W` | Bỏ qua khoảng trắng |
+| `Alt+Z` | Bọc dòng cho file đang mở (dùng chung với Code) |
+| `v` | Đánh dấu (hoặc bỏ dấu) file đang mở là đã review, rồi mở file chưa review kế tiếp |
+| `r` | Đọc lại thay đổi, lịch sử và cây nguồn |
+| `c` | Trong Log: mở Compare; trong Compare: sửa hai ref |
+| `Shift+S` | Đảo base và head (trong Compare) |
+| `Tab` | Nhảy giữa hai phía (trong Compare) |
+| `Ctrl+Enter` | Gửi comment cho agent (trong ô comment thì thêm comment); trong ô message của tab Commit thì commit |
+| `Esc` | Xóa bộ lọc; nếu không thì thoát Compare; nếu không thì về Cockpit |
+
+## Diff ở đây và diff của Code
+
+[Code](code.md) cũng có diff (`d`), trả lời một câu hỏi khác.
+
+| | Surface Diff | Diff của Code |
 |---|---|---|
-| `j` / `k`, `↓` / `↑` | Di con trỏ commit; di chuyển là chọn, nên các cột đi theo | Luôn luôn |
-| `Enter` | Mở file đang chọn bằng ứng dụng mặc định của hệ điều hành | Có file được chọn |
-| `/` | Focus ô lọc lịch sử | Chế độ lịch sử |
-| `Shift+G` | Bật/tắt graph | Chế độ lịch sử |
-| `Ctrl+G` `g` | Về đầu lịch sử | Chế độ lịch sử |
-| `Shift+H` | Thu/mở cột lịch sử | Luôn luôn |
-| `Shift+B` | Thu/mở sidebar worktree | Luôn luôn |
-| `Shift+N` / `Shift+P` | Thay đổi kế / trước trong diff đang mở | Có diff Monaco |
-| `Shift+D` | Split / Unified | Luôn luôn |
-| `Shift+W` | Hide whitespace | Luôn luôn |
-| `Alt+Z` | Wrap file đang mở (dùng chung với Code) | Chế độ File |
-| `r` | Đọc lại danh sách thay đổi, lịch sử và sidebar worktree | Luôn luôn |
-| `c` | Lịch sử: mở Compare. Trong Compare: sửa hai ref | Luôn luôn |
-| `Shift+S` | Đảo base và head | Trong Compare |
-| `Tab` | Nhảy giữa hai phía | Trong Compare |
-| `Ctrl+Enter` | Gửi comment cho agent (trong ô comment thì nó thêm comment) | Có comment chờ gửi |
-| `Esc` | Xóa bộ lọc; nếu không thì thoát Compare; nếu không thì về Cockpit | Theo đúng thứ tự đó |
-
-`Shift+G` cố ý không phải `g` trần. Từ bản 0.15.6, mọi chuỗi "go to" mở bằng `Ctrl+G` rồi một chữ; một `g` trần không mở gì.
-
-Chưa có phím để di chuyển trong danh sách file của một commit: chọn commit bằng bàn phím, nhưng chọn file thì bằng chuột.
-
-## Diff ở đây và chế độ Diff của Code
-
-[Code](code.md) cũng có diff, trả lời một câu hỏi khác.
-
-| | Surface Diff | Chế độ **diff** của Code |
-|---|---|---|
-| Câu hỏi | "Commit / range này đã đổi gì?" | "Tôi sắp commit gì trong file này?" |
-| So với | Bất kỳ commit nào, hoặc hai ref | Chỉ `HEAD` |
-| Phía phải | Nội dung đã commit hoặc file trên đĩa | **Bản nháp chưa lưu của bạn** |
+| Câu hỏi | "Commit / range này đã đổi gì?" | "File này đã đổi gì so với `HEAD`, hay so với base của branch?" |
+| So với | Bất kỳ commit nào, hoặc hai ref | `HEAD`, rồi base của branch |
 | Phạm vi | Cả repository | Đúng một file đang mở |
-| Comment cho agent | Có | Không |
+| Comment cho agent, đánh dấu đã review, commit | Có | Không |
 
-Quy tắc thực dụng: viết code thì dùng diff của Code, review thì dùng Diff.
+Quy tắc thực dụng: đang viết code thì dùng diff của Code, review thì dùng Diff.
 
 ## Giới hạn
 
-- **Chỉ đọc.** Không stage, checkout, cherry-pick hay revert.
-- **Comment chỉ tạo trong Review**, và chỉ cho dòng working tree hoặc một commit; không cho Compare. Chúng mất khi khởi động lại app.
-- **Không có đánh dấu "đã xem"** cho từng file của một nhánh.
-- **Trình diff Monaco đọc hai bản đầy đủ của file** nên một phía quá 2 MB thì không hiện.
-- **Chỉ chạy trên máy cục bộ.** Worker qua SSH hay WSL chạy git ở nơi khác, và các lệnh git của Diff không đăng ký trên đường đó.
-- **Cửa sổ nhỏ thì chật.** App mở ở 1000×700; sidebar worktree tự thu thành rail dưới 1000 px, cột lịch sử tự thu thành rail dưới 1280 px, cột file rộng 300 px, còn lại là diff. Phóng to cửa sổ trước khi review nghiêm túc.
+- Diff không stage tay, checkout, cherry-pick hay revert; Pull chỉ fast-forward và Push không bao giờ force.
+- Comment chỉ tạo được trong Review, chỉ cho dòng working tree hoặc một commit (không cho Compare), và mất khi khởi động
+  lại app.
+- Trình diff Monaco đọc hai bản đầy đủ của file, nên một phía quá 2 MB thì không hiện.
+- Chỉ chạy trên máy cục bộ: worker qua SSH hay WSL chạy git ở nơi khác.
