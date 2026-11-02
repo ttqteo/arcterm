@@ -672,6 +672,33 @@ describe("brainstorm pane Escape", () => {
         const s = getBrainstorm("a1")!;
         return { board: s.board, designOpen: s.designOpen };
     };
+    const claims = (key: string, c: KeyContext = nav) =>
+        all()
+            .filter((b) => b.keys === key && b.when?.(c) !== false)
+            .map((b) => b.id);
+    const find = (id: string) => all().find((b) => b.id === id)!;
+    // a board the canvas has loaded, which the rail draws widened
+    const loadBoard = () => {
+        attachCanvas("a1", { topic: "oncall", dir: "C:\\p\\d", projectDir: "C:\\p", board: "Split.dc.html" }, 0);
+        updateCanvas("a1", (s) => ({ ...s, status: "ready" }));
+    };
+    const choosing: BrainstormFile = {
+        ...asking,
+        question: {
+            ...q,
+            options: [
+                { label: "One", detail: "" },
+                { label: "Two", detail: "" },
+                { label: "Three", detail: "" },
+            ],
+        },
+    };
+    // the builder check with nothing left to ask: its review fills the main area
+    const reviewing: BrainstormFile = {
+        ...asking,
+        question: null,
+        check: { yours: [], calls: [], answered: [] },
+    };
 
     beforeEach(() => {
         vi.stubGlobal("document", { activeElement: null });
@@ -692,13 +719,26 @@ describe("brainstorm pane Escape", () => {
         vi.unstubAllGlobals();
     });
 
-    it("a board opened full size from the question: Esc goes back to the question, and is the only Escape claim", () => {
+    it("a board widened in the rail over the question: Esc shrinks it, and is the only Escape claim", () => {
         openBrainstormBoard("a1", "Split.dc.html");
         expect(claiming()).toEqual(["agent:brainstorm-back"]);
         back().run(nav);
         expect(pane()).toEqual({ board: null, designOpen: false });
         // the question is the top: nothing claims Esc there, as before
         expect(claiming()).toEqual([]);
+    });
+
+    it("Esc shrinks a board widened in the builder check too, over its question or its review", () => {
+        updateBrainstorm("a1", (s) => ({ ...s, file: { ...asking, check: { yours: [], calls: [], answered: [] } } }));
+        openBrainstormBoard("a1", "Split.dc.html");
+        expect(claiming()).toEqual(["agent:brainstorm-back"]);
+        back().run(nav);
+        expect(pane()).toEqual({ board: null, designOpen: false });
+        updateBrainstorm("a1", (s) => ({ ...s, file: reviewing }));
+        openBrainstormBoard("a1", "Split.dc.html");
+        expect(claiming()).toEqual(["agent:brainstorm-back"]);
+        back().run(nav);
+        expect(pane()).toEqual({ board: null, designOpen: false });
     });
 
     it("one level per press: a board opened off the design goes back to the design, and the design back to the question", () => {
@@ -729,7 +769,7 @@ describe("brainstorm pane Escape", () => {
         expect(back().when!(nav)).toBe(true);
     });
 
-    it("on the board, a drawn mark's note owns Esc (it drops the mark), even with its field unfocused", () => {
+    it("on the widened board, a drawn mark's note owns Esc (it drops the mark), even with its field unfocused", () => {
         attachCanvas("a1", { topic: "oncall", dir: "C:\\p\\d", projectDir: "C:\\p", board: "Split.dc.html" }, 0);
         openBrainstormBoard("a1", "Split.dc.html");
         setMarking("a1", true);
@@ -740,13 +780,8 @@ describe("brainstorm pane Escape", () => {
         expect(back().when!(nav)).toBe(true);
     });
 
-    it("on a full-size board [ ] and ← → step its boards, never the surfaces or the agents", () => {
-        const claims = (key: string) =>
-            all()
-                .filter((b) => b.keys === key && b.when?.(nav) !== false)
-                .map((b) => b.id);
-        attachCanvas("a1", { topic: "oncall", dir: "C:\\p\\d", projectDir: "C:\\p", board: "Split.dc.html" }, 0);
-        updateCanvas("a1", (s) => ({ ...s, status: "ready" }));
+    it("on a board widened in the rail [ ] and ← → step its boards, never the surfaces or the agents", () => {
+        loadBoard();
         openBrainstormBoard("a1", "Split.dc.html");
         expect(claims("[")).toEqual(["agent:canvas-prev"]);
         expect(claims("]")).toEqual(["agent:canvas-next"]);
@@ -761,6 +796,82 @@ describe("brainstorm pane Escape", () => {
         openBrainstormBoard("a1", null);
         expect(claims("]")).toEqual(["surface:next"]);
         expect(claims("ArrowRight")).toEqual(["agent:next"]);
+    });
+
+    it("a board cleared (the rail no longer shows Boards for it) leaves [ ], ← → and Esc to their other owners", () => {
+        loadBoard();
+        openBrainstormBoard("a1", "Split.dc.html");
+        expect(claims("[")).toEqual(["agent:canvas-prev"]);
+        expect(claims("Escape")).toEqual(["agent:brainstorm-back"]);
+        openBrainstormBoard("a1", null);
+        expect(claims("[")).toEqual(["surface:prev"]);
+        expect(claims("]")).toEqual(["surface:next"]);
+        expect(claims("ArrowLeft")).toEqual(["agent:prev"]);
+        expect(claims("ArrowRight")).toEqual(["agent:next"]);
+        // Esc is the design's back when the design is open over the question, and nobody's on the question itself
+        expect(claims("Escape")).toEqual([]);
+        openBrainstormDesign("a1", true);
+        expect(claims("Escape")).toEqual(["agent:brainstorm-back"]);
+        back().run(nav);
+        expect(pane()).toEqual({ board: null, designOpen: false });
+    });
+
+    it("the board keys follow the pane: a run, or the agent's exit, shows no rail, so a stale board holds no keys", () => {
+        loadBoard();
+        openBrainstormBoard("a1", "Split.dc.html");
+        expect(claims("]")).toEqual(["agent:canvas-next"]);
+        updateBrainstorm("a1", (s) => ({ ...s, file: { ...asking, run: "r1" } }));
+        expect(claims("]")).toEqual(["surface:next"]);
+        expect(claims("Escape")).toEqual([]);
+    });
+
+    it("a letter key picks its answer while a board is widened, and stands down while that board is marked", () => {
+        loadBoard();
+        updateBrainstorm("a1", (s) => ({ ...s, file: choosing }));
+        const pick = (key: string) => find(`agent:brainstorm-option-${key}`);
+        expect(pick("b").when!(nav)).toBe(true);
+        openBrainstormBoard("a1", "Split.dc.html");
+        // one, two and three offered: a, b and c pick, d has no answer to pick
+        expect([pick("a"), pick("b"), pick("c"), pick("d")].map((b) => b.when!(nav))).toEqual([true, true, true, false]);
+        // b picks B here, rather than leaving for the terminal
+        expect(claims("b")).toEqual(["agent:brainstorm-option-b"]);
+        setMarking("a1", true);
+        expect([pick("a"), pick("b"), pick("c")].map((b) => b.when!(nav))).toEqual([false, false, false]);
+        setMarking("a1", false);
+        expect(pick("b").when!(nav)).toBe(true);
+    });
+
+    it("a marking left on with no board widened does not hold the letter keys", () => {
+        loadBoard();
+        updateBrainstorm("a1", (s) => ({ ...s, file: choosing }));
+        openBrainstormBoard("a1", "Split.dc.html");
+        setMarking("a1", true);
+        openBrainstormBoard("a1", null);
+        expect(find("agent:brainstorm-option-a").when!(nav)).toBe(true);
+    });
+
+    it("in the check's review j, k, y, u and Enter stay live over a widened board, and stand down while it is marked", () => {
+        loadBoard();
+        updateBrainstorm("a1", (s) => ({ ...s, file: reviewing }));
+        const ids = [
+            "agent:brainstorm-review-next",
+            "agent:brainstorm-review-prev",
+            "agent:brainstorm-review-open",
+            "agent:brainstorm-review-keep",
+            "agent:brainstorm-review-restore",
+        ];
+        const live = () => ids.map((id) => find(id).when!(nav));
+        expect(live()).toEqual([true, true, true, true, true]);
+        openBrainstormBoard("a1", "Split.dc.html");
+        expect(live()).toEqual([true, true, true, true, true]);
+        expect(claims("j")).toEqual(["agent:brainstorm-review-next"]);
+        // marking holds them: j and k go back to moving between agents, as on any canvas in marking mode
+        setMarking("a1", true);
+        expect(live()).toEqual([false, false, false, false, false]);
+        expect(claims("j")).toEqual(["agent:next-j"]);
+        expect(claims("k")).toEqual(["agent:prev-k"]);
+        setMarking("a1", false);
+        expect(live()).toEqual([true, true, true, true, true]);
     });
 
     it("stands down in the terminal, and while a subagent holds Escape", () => {

@@ -56,6 +56,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An ended council's × in the Agent tree now closes it instead of deleting it: it folds into its project's Closed
   councils, where Reopen brings it back (a retry or a reply reopens it too). Remove council… on its right-click menu
   still deletes one for good, into ~/.arc/trash, and `wsh council close` / `wsh council close --reopen` do the same.
+- A brainstorm's boards now sit in a resizable right rail beside the question instead of small thumbnails in it: drag
+  the rail wider and they lie side by side, each headed by its option and lit with it when you point at either, and a
+  click opens a board large in the rail while the question stays on screen, with marking still there.
 - A council's header fits on one line: the mode leads, a long question shortens to fit instead of pushing the status
   onto a second row, and Top, Latest and Back in its discussion glide to their place instead of jumping.
 - New dialog: a session picked to resume is forgotten once the dialog has been closed for 30 seconds, not two minutes.
@@ -72,7 +75,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   open" over an empty terminal.
 - Starting a run no longer fails over and over with "Selected route is unavailable" when the list of installed agents
   had not loaded: arcterm loads it again and starts the run on the project's route.
-- On a brainstorm board opened full size, `[` `]` and ← → step through its boards as on an agent's canvas, instead of
+- On a brainstorm board opened large in the rail, `[` `]` and ← → step through its boards as on an agent's canvas, instead of
   switching to another surface or another agent. While any canvas is shown, ← → never jump to another agent: when its
   board is loading, unreachable or being marked they do nothing.
 - A council's Summary failed panel has a close button; it comes back only when the summary fails again, and the
