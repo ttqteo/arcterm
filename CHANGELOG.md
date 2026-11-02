@@ -26,6 +26,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- When two or more council seats failed, the seat strip offers Retry all: pick a model beside each failed seat (its own
+  by default), and they all run again together instead of one Retry refusing the next while the first runs.
+- An agent can pick the experts' models when it starts a council for you: `wsh council start --model sonnet`, or
+  `--model skeptic=opus` for one seat, and `wsh council retry --all` reruns every failed seat at once.
+- An agent you ask for a council on named chats now seats those chats in it, beside a Skeptic and a coordinator, and
+  the council runs to the report without holding drafts for you to send: `wsh council start --agent <tab id>`, and
+  `--agent self` for the chat that asks.
+- A project folder in the Agent sidebar shows on its icon how many of Jarvis's waiting items (a gate, a run to confirm
+  or land, an escalation) are that project's.
 - Jarvis has a Councils region under Runs: every council still at work across your projects, and the ones that ended
   this week, with the ones waiting on you first. A row opens the council, on its report once it has one.
 - Right-click a project folder in the Agent sidebar → New agent… opens the New dialog with that project already
@@ -48,6 +57,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council in the Agent sidebar now reads like a group chat in a chat list: two of its seats as overlapping circles
+  (a green dot while one writes, a red one when a call failed), its title, and under it its state and how long ago
+  its last message came.
+- A council's message box now lines up with the messages above it instead of running the full width, and a message
+  you send rises into the chat from the box.
+- Once a brainstorm's Approve starts its run, the agent that ran the brainstorm goes to sleep 15 seconds after it
+  records the run, freeing its RAM; Wake or any message brings it back. It stays awake when Sleep idle agents is off.
+- A sleeping agent's side panel no longer offers a Transcript tab: its conversation already fills the terminal's place, and the tab comes back when it wakes.
+- A run or council in a project's History names its kind on its second line, so its title lines up with the sessions'.
 - Tables in agent messages, notes and councils wrap their cells to fit, instead of scrolling sideways.
 - The must-read sentence highlighted in a message is yellow, so it shows on a blue bubble too.
 - A council's seat filters are short, flat buttons instead of long coloured pills: a seat at work shows only its dot,
@@ -58,12 +76,25 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An ended council's × in the Agent tree now closes it instead of deleting it: it folds into its project's Closed
   councils, where Reopen brings it back (a retry or a reply reopens it too). Remove council… on its right-click menu
   still deletes one for good, into ~/.arc/trash, and `wsh council close` / `wsh council close --reopen` do the same.
+- A brainstorm's boards now sit in a resizable right rail beside the question instead of small thumbnails in it: drag
+  the rail wider and they lie side by side, each headed by its option and lit with it when you point at either, and a
+  click opens a board large in the rail while the question stays on screen, with marking still there.
 - A council's header fits on one line: the mode leads, a long question shortens to fit instead of pushing the status
   onto a second row, and Top, Latest and Back in its discussion glide to their place instead of jumping.
 - New dialog: a session picked to resume is forgotten once the dialog has been closed for 30 seconds, not two minutes.
 
 ### Fixed
 
+- A brainstorm's Approve stays off while the run it started is still starting, with "The run is starting" beside it,
+  so pressing it again in the minute before the agent records the run no longer starts the same run twice.
+- A brainstorm's "What you handed over" list keeps its text readable: where each decision came from now sits under the
+  text instead of in a column of its own that squeezed it to one word a line.
+- The counts beside the Agent panel's tabs scroll sideways with the mouse wheel when the panel is too narrow for them
+  all, with a fade on the edge that hides some, instead of the last ones being cut off out of reach.
+- A brainstorm whose design waits on you to confirm the agent's guesses now pulses its agent and says "confirm N
+  decisions" in the tree, as an open question does, instead of reading "in progress".
+- A run started from a brainstorm now shows in History by its feature ("Build …"), with its spec's file name on the
+  line under it, instead of a title cut off halfway through the spec's full path.
 - In a council, when you ask everyone something, the experts who answer after the first one no longer open with the
   same "Right, agreed…" and repeat its point: they add only what is new, or show as agreeing.
 - A council an agent starts inside a project registered at a repo's subfolder (such as `apps/website`) now shows
@@ -74,7 +105,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   open" over an empty terminal.
 - Starting a run no longer fails over and over with "Selected route is unavailable" when the list of installed agents
   had not loaded: arcterm loads it again and starts the run on the project's route.
-- On a brainstorm board opened full size, `[` `]` and ← → step through its boards as on an agent's canvas, instead of
+- On a brainstorm board opened large in the rail, `[` `]` and ← → step through its boards as on an agent's canvas, instead of
   switching to another surface or another agent. While any canvas is shown, ← → never jump to another agent: when its
   board is loading, unreachable or being marked they do nothing.
 - A council's Summary failed panel has a close button; it comes back only when the summary fails again, and the

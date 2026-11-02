@@ -563,6 +563,22 @@ func TestAgentPrompts(t *testing.T) {
 	}
 }
 
+func TestAgentFirstPromptSaysWhetherDraftsAreHeld(t *testing.T) {
+	const heldWords = "Nothing you say reaches the others until the person sends it, and they may edit or drop it first."
+	const sentWords = "What you say reaches the others as you write it. The person is in the room too and may post or @ a seat."
+	c := agentPromptCouncil()
+	witness := c.Experts[0]
+
+	held := AgentFirstPrompt(c, witness, 1)
+	mustContain(t, "a council that holds drafts", held, heldWords)
+	mustNotContain(t, "a council that holds drafts", held, "as you write it", "may post or @ a seat")
+
+	c.ByAgent = true
+	sent := AgentFirstPrompt(c, witness, 1)
+	mustContain(t, "a council an agent started", sent, sentWords, "The seats answer each round at once")
+	mustNotContain(t, "a council an agent started", sent, "until the person sends it", "edit or drop it first")
+}
+
 func TestRound2PromptShowsWhatWasSaidInALaterPass(t *testing.T) {
 	c := agentPromptCouncil()
 	ux := c.Experts[2]

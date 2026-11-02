@@ -14,9 +14,11 @@ import {
     brainstormFilePath,
     seenMark,
     shownFile,
+    withStartingRun,
     type BrainstormFile,
     type SeenMark,
     type SentLine,
+    type StartingRunMark,
 } from "./brainstormmodel";
 import type { CanvasBoard } from "./canvasmodel";
 
@@ -50,11 +52,20 @@ export type BrainstormState = {
     // the check review's cursor row and the rows opened to their was/now; here because the keybindings and the
     // asking rail's links act on them from outside the review
     review: { cursor: string | null; open: Record<string, boolean> };
+    // a run Approve is starting, until the file records it (withStartingRun); in memory, so a reload drops it
+    starting: StartingRunMark | null;
 };
 
-// what every view draws: the file, with a pending sent line read as the agent writing
+// what every view draws: the file, with a pending sent line read as the agent writing, and the run Arc started from
+// it before the agent has written it down
 export function shownBrainstormFile(s: BrainstormState | null | undefined): BrainstormFile | null {
-    return s?.file != null ? shownFile(s.file, s.sent) : null;
+    return s?.file != null ? withStartingRun(shownFile(s.file, s.sent), s.starting ?? null) : null;
+}
+
+// the run's start, for the brainstorm at `path` only: a brainstorm attached in its place meanwhile is not the one
+// that was approved
+export function setStartingRun(agentId: string, path: string, starting: StartingRunMark | null): void {
+    updateBrainstorm(agentId, (s) => (s.path === path ? { ...s, starting } : s));
 }
 
 // the tab meta key holding the attached brainstorm.json's absolute path
@@ -121,6 +132,7 @@ export function attachBrainstorm(agentId: string, a: { topic: string; cwd: strin
         sent: null,
         sentCheckAt: null,
         review: { cursor: null, open: {} },
+        starting: null,
     };
     globalStore.set(brainstormsAtom, { ...globalStore.get(brainstormsAtom), [agentId]: next });
 }

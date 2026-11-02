@@ -550,6 +550,13 @@ declare global {
         tabids: string[];
     };
 
+    // wshrpc.CommandAgentsSleepAfterRunData
+    type CommandAgentsSleepAfterRunData = {
+        tab: string;
+        runid: string;
+        path: string;
+    };
+
     // wshrpc.CommandAgentsSleepData
     type CommandAgentsSleepData = {
         tab: string;
@@ -788,6 +795,7 @@ declare global {
         followup?: number;
         tools?: boolean;
         rounds?: number;
+        agents?: string[];
     };
 
     // wshrpc.CommandCouncilIdData
@@ -818,8 +826,10 @@ declare global {
     // wshrpc.CommandCouncilRetryData
     type CommandCouncilRetryData = {
         id: string;
-        expertid: string;
+        expertid?: string;
         model?: string;
+        all?: boolean;
+        models?: {[key: string]: string};
     };
 
     // wshrpc.CommandCouncilSaveDocData
@@ -844,6 +854,8 @@ declare global {
         mode?: string;
         modewhy?: string;
         rounds?: number;
+        agents?: string[];
+        byagent?: boolean;
     };
 
     // wshrpc.CommandCouncilSuggestData
@@ -2399,6 +2411,7 @@ declare global {
         pauseafterround1?: boolean;
         rounds?: number;
         sessionid?: string;
+        byagent?: boolean;
         state: string;
         round: number;
         error?: string;

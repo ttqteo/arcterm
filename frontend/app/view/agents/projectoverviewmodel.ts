@@ -262,19 +262,34 @@ function unverifiedCount(r: Run): number {
     return (v?.state === "unverified" ? (v.reasons?.length ?? 0) : 0) + (r.land?.notes?.length ?? 0);
 }
 
+// the goal a brainstorm's run starts with (runPrefill, brainstormmodel.ts): "Build <title> as specified in <path>."
+const SPEC_GOAL = /^(.+?) as specified in (.+?)\.?$/;
+
+// a run's row title and the spec file it names, if any: the absolute spec path would take the whole row
+function runHeadline(goal: string): { title: string; spec: string } {
+    const first = goal.trim().split("\n")[0];
+    const m = SPEC_GOAL.exec(first);
+    if (m == null) {
+        return { title: first || "Orchestrator run", spec: "" };
+    }
+    return { title: m[1], spec: m[2].split(/[\\/]/).pop() ?? "" };
+}
+
 function runItem(r: Run): HistoryItem {
     const land = r.land?.state;
-    const line =
+    const state =
         land === "landed"
             ? `Landed on ${r.basebranch || "its base"}`
             : land === "held"
               ? "Land held"
               : (RUN_STATUS[r.status] ?? r.status);
+    const { title, spec } = runHeadline(r.goal);
+    const line = spec ? `${state} · ${spec}` : state;
     const unverified = unverifiedCount(r);
     return {
         kind: "run",
         key: `run:${r.id}`,
-        title: r.goal.trim().split("\n")[0] || "Orchestrator run",
+        title,
         line,
         warn: unverified > 0 ? `${unverified} not verified` : "",
         ts: r.completedts || r.createdts,

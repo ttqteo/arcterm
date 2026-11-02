@@ -306,15 +306,56 @@ export function RailStats({
     onOpen: (id: AgentRailStatId) => void;
     onAttach: () => void;
 }) {
+    const ref = useRef<HTMLDivElement>(null);
+    // when the panel is too narrow for every count, the group scrolls sideways: the mouse wheel moves it (the scrollbar
+    // is hidden), and a fade on the edge that hides some says there is more
+    const [fade, setFade] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
+    useEffect(() => {
+        const el = ref.current;
+        if (el == null) {
+            return;
+        }
+        const measure = () => {
+            const left = el.scrollLeft > 0;
+            const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+            setFade((f) => (f.left === left && f.right === right ? f : { left, right }));
+        };
+        const onWheel = (e: WheelEvent) => {
+            if (el.scrollWidth <= el.clientWidth || e.deltaX !== 0) {
+                return;
+            }
+            e.preventDefault();
+            el.scrollLeft += e.deltaY;
+        };
+        measure();
+        const ro = new ResizeObserver(measure);
+        ro.observe(el);
+        el.addEventListener("scroll", measure, { passive: true });
+        el.addEventListener("wheel", onWheel, { passive: false });
+        return () => {
+            ro.disconnect();
+            el.removeEventListener("scroll", measure);
+            el.removeEventListener("wheel", onWheel);
+        };
+    }, [stats.length]);
     if (stats.length === 0) {
         return null;
     }
+    const mask =
+        fade.left || fade.right
+            ? `linear-gradient(to right, ${fade.left ? "transparent, black 14px" : "black"}, ${fade.right ? "black calc(100% - 14px), transparent" : "black"})`
+            : undefined;
     return (
         <div
+            ref={ref}
             role="group"
             aria-label="Agent counts"
             data-owns-keys
-            className={cn("ml-[8px] flex min-w-0 items-center overflow-hidden", hold && "shrink-0")}
+            style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
+            className={cn(
+                "ml-[8px] flex min-w-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                hold && "shrink-0"
+            )}
         >
             <span aria-hidden className="mr-[4px] h-[18px] w-px shrink-0 bg-edge-strong" />
             {stats.map((s) => {

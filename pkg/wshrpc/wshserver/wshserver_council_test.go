@@ -178,6 +178,54 @@ func TestCouncilEstimateWholeCouncil(t *testing.T) {
 	}
 }
 
+// TestCouncilEstimatePricesAgentSeats: an estimate that names tabs prices each seat as its context a round, as
+// council.Estimate does for a seat with Context, so the gate counts what the chats cost.
+func TestCouncilEstimatePricesAgentSeats(t *testing.T) {
+	useCouncilStore(t)
+	facts := threeAgents()
+	facts.Tabs[0].Status.TranscriptPath = writeTranscript(t, "lead", claudeTurn)        // 95,010 tokens of context
+	facts.Tabs[1].Status.TranscriptPath = writeTranscript(t, "design", claudeSmallTurn) // 40,010
+	scriptAgents(t, facts)
+	ws := &WshServer{}
+	ctx := context.Background()
+	roles, err := council.ExpertsFor("ui-feature")
+	if err != nil {
+		t.Fatalf("ExpertsFor: %v", err)
+	}
+	panel := []council.CouncilExpert{roles[3], roles[4]} // the Skeptic and the coordinator
+
+	for _, tc := range []struct {
+		name   string
+		rounds int
+		want   wshrpc.CouncilEstimateRtnData
+	}{
+		// the Skeptic's 140k and 45k, two chats' 135,020 a round, the summary's 80k; 3 calls a round and the summary
+		{"two rounds, the default", 0, wshrpc.CouncilEstimateRtnData{Calls: 7, Tokens: 140_000 + 45_000 + 2*135_020 + 80_000, Minutes: 6, AgentTokens: 2 * 135_020}},
+		{"three rounds", 3, wshrpc.CouncilEstimateRtnData{Calls: 10, Tokens: 140_000 + 2*45_000 + 3*135_020 + 80_000, Minutes: 8, AgentTokens: 3 * 135_020}},
+	} {
+		got, err := ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{
+			Experts: panel, Agents: []string{agentsTabA, agentsTabB}, Rounds: tc.rounds,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if *got != tc.want {
+			t.Errorf("%s = %+v, want %+v", tc.name, *got, tc.want)
+		}
+	}
+
+	// the same panel with no tabs named is priced as it always was: the Skeptic and the summary
+	got, err := ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Experts: panel})
+	if want := (wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 140_000 + 45_000 + 80_000, Minutes: 6}); err != nil || *got != want {
+		t.Errorf("no tabs named = %+v, %v, want %+v", got, err, want)
+	}
+
+	// a tab that cannot be seated fails the estimate, before the gate asks anyone
+	if got, err := ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Experts: panel, Agents: []string{"zzzz"}}); err == nil || !strings.Contains(err.Error(), `"zzzz"`) {
+		t.Errorf("estimate with a bad tab id = %+v, %v, want an error naming the id", got, err)
+	}
+}
+
 func TestCouncilEstimateOfASavedCouncil(t *testing.T) {
 	useCouncilStore(t)
 	ws := &WshServer{}
@@ -952,6 +1000,84 @@ func TestCouncilStartRefusesAnUnknownMode(t *testing.T) {
 	}
 	if list, _ := council.List(""); len(list) != 0 || fake.total() != 0 {
 		t.Errorf("a refused start left %d councils and %d calls", len(list), fake.total())
+	}
+}
+
+// TestCouncilStartSeatsAgentsAndRecordsByAgent: the tabs a start names sit in front of the panel it sends, the
+// coordinator stays last, and ByAgent rides on the saved council whether it runs or is saved not-run.
+func TestCouncilStartSeatsAgentsAndRecordsByAgent(t *testing.T) {
+	scriptAgents(t, threeAgents()) // before the rig: its cleanup stops the council while the roster is still scripted
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	ws := &WshServer{}
+	ctx := context.Background()
+	roles, err := council.ExpertsFor("ui-feature")
+	if err != nil {
+		t.Fatalf("ExpertsFor: %v", err)
+	}
+	panel := []council.CouncilExpert{roles[3], roles[4]} // the Skeptic and the coordinator
+	ids := func(c *council.Council) []string {
+		out := make([]string, len(c.Experts))
+		for i, e := range c.Experts {
+			out[i] = e.Id
+		}
+		return out
+	}
+	wantIds := []string{"agent-" + agentsTabB, "agent-" + agentsTabC, "skeptic", "coordinator"}
+
+	// a bad id saves nothing and calls nothing, run or not-run, and names the id and the tabs to choose from
+	for _, notRun := range []bool{false, true} {
+		c, err := ws.CouncilStartCommand(ctx, wshrpc.CommandCouncilStartData{
+			Project: t.TempDir(), Feature: "Idle sleep", Experts: panel, Agents: []string{"bbbb2", "zzzz"}, ByAgent: true, NotRun: notRun,
+		})
+		if err == nil || !strings.Contains(err.Error(), `"zzzz"`) || !strings.Contains(err.Error(), "aaaa1111") {
+			t.Errorf("start (not run %v) with a bad tab id = %+v, %v, want an error naming the id and listing the live tabs", notRun, c, err)
+		}
+	}
+	if list, _ := council.List(""); len(list) != 0 || fake.total() != 0 {
+		t.Fatalf("a refused start left %d councils and %d calls", len(list), fake.total())
+	}
+
+	// saved not-run: the seats first (an id and a prefix), the coordinator last, ByAgent kept
+	saved, err := ws.CouncilStartCommand(ctx, wshrpc.CommandCouncilStartData{
+		Project: t.TempDir(), Feature: "Idle sleep", Experts: panel, Agents: []string{"bbbb2", agentsTabC, agentsTabB}, ByAgent: true, NotRun: true,
+	})
+	if err != nil {
+		t.Fatalf("not-run start with agents: %v", err)
+	}
+	if !reflect.DeepEqual(ids(saved), wantIds) || !saved.ByAgent || saved.State != council.StateNotRun {
+		t.Errorf("not-run start = %v by agent %v (%s), want %v by agent, not run", ids(saved), saved.ByAgent, saved.State, wantIds)
+	}
+	if seat := saved.Experts[0]; seat.Agent != agentsTabB || seat.Name != "design" || seat.Harness != "claude" || council.IsAgent(saved.Experts[2]) {
+		t.Errorf("first seat = %+v, want the design tab's, and the Skeptic a role expert", seat)
+	}
+	if got, err := council.Load(saved.Id); err != nil || !got.ByAgent || !reflect.DeepEqual(ids(got), wantIds) {
+		t.Errorf("the saved council = %+v, %v, want the seats and ByAgent on disk", got, err)
+	}
+
+	// the same start from Setup's route sets no ByAgent, and it stays unset
+	setup, err := ws.CouncilStartCommand(ctx, wshrpc.CommandCouncilStartData{
+		Project: t.TempDir(), Feature: "Idle sleep", Experts: panel, Agents: []string{agentsTabB}, NotRun: true,
+	})
+	if err != nil || setup.ByAgent {
+		t.Errorf("a start without ByAgent = %+v, %v, want ByAgent false", setup, err)
+	}
+
+	// run: the council returned is running with the same panel and ByAgent; stop it before a seat is waited on
+	started, err := ws.CouncilStartCommand(ctx, wshrpc.CommandCouncilStartData{
+		Project: t.TempDir(), Feature: "Idle sleep", Experts: panel, Agents: []string{"bbbb2", agentsTabC}, ByAgent: true,
+	})
+	if err != nil {
+		t.Fatalf("start with agents: %v", err)
+	}
+	if !reflect.DeepEqual(ids(started), wantIds) || !started.ByAgent || started.Experts[3].Id != "coordinator" || !started.Experts[3].Coordinator {
+		t.Errorf("start = %v by agent %v, want %v by agent, the coordinator last", ids(started), started.ByAgent, wantIds)
+	}
+	if err := ws.CouncilStopCommand(ctx, wshrpc.CommandCouncilIdData{Id: started.Id}); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if got := waitCouncil(t, started.Id); !got.ByAgent || got.State != council.StateStopped {
+		t.Errorf("the stopped council = %s by agent %v, want stopped and still by agent", got.State, got.ByAgent)
 	}
 }
 

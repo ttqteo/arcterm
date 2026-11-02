@@ -1100,8 +1100,12 @@ func AgentFirstPrompt(c *Council, e CouncilExpert, round int) string {
 			fmt.Fprintf(&b, "- %s · expert · a fresh model call that reviews from its own angle\n", s.Name)
 		}
 	}
-	b.WriteString("\nThe person is in the room too. Nothing you say reaches the others until the person sends it, and they may " +
-		"edit or drop it first. The seats answer each round at once, so what the others say in a round reaches you in the next.\n\n")
+	room := "The person is in the room too. Nothing you say reaches the others until the person sends it, and they may " +
+		"edit or drop it first."
+	if !HoldsDrafts(c) { // a council an agent started holds nothing back
+		room = "What you say reaches the others as you write it. The person is in the room too and may post or @ a seat."
+	}
+	b.WriteString("\n" + room + " The seats answer each round at once, so what the others say in a round reaches you in the next.\n\n")
 	writeAgentTurn(&b, c, e, round, true)
 	return b.String()
 }

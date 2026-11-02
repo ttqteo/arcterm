@@ -16,13 +16,20 @@ import {
     stopsJudge,
     type BrainstormAction,
 } from "./brainstormmodel";
-import { getBrainstorm, shownBrainstormFile, updateBrainstorm, type BrainstormState } from "./brainstormstore";
+import {
+    getBrainstorm,
+    setStartingRun,
+    shownBrainstormFile,
+    updateBrainstorm,
+    type BrainstormState,
+} from "./brainstormstore";
 import { openLauncher } from "./launcherstore";
 
 type PromptIO = {
     prompt(blockId: string, text: string): Promise<void>;
     wake(tabId: string, text: string): Promise<void>;
     stopJudge(blockId: string): Promise<void>;
+    sleepAfterRun(tabId: string, runId: string, path: string): Promise<void>;
 };
 
 // a session whose arc mod holds a control stream runs the line as a prompt, leaving the user's draft in the
@@ -37,6 +44,9 @@ const tauriPromptIO: PromptIO = {
     },
     async stopJudge(blockId) {
         await RpcApi.BrainstormJudgeStopCommand(TabRpcClient, { blockid: blockId });
+    },
+    async sleepAfterRun(tabId, runId, path) {
+        await RpcApi.AgentsSleepAfterRunCommand(TabRpcClient, { tab: tabId, runid: runId, path });
     },
 };
 
@@ -85,11 +95,20 @@ export async function sendBrainstorm(
     updateBrainstorm(agent.id, (s) => ({ ...s, sent: { at: now, modifiedMs, kind: sentKind(action) } }));
 }
 
-// the run's id goes back to the agent, which records it in the file: the tree and the pane then show the run
-function notifyRun(agent: AgentVM, runId: string, io: PromptIO): void {
-    sendBrainstorm(agent, { kind: "run", runId }, io).catch((e) =>
-        console.warn("brainstorm: telling the agent its run id failed", agent.id, runId, e)
-    );
+// the run's id goes back to the agent, which records it in the file: the tree and the pane then show the run. The
+// agent's sleep is armed first, so it is in place before the turn that records the run ends: once that turn ends, the
+// agent sleeps 15 seconds later. A failed arm leaves the agent to the 30-minute rule and still sends the line
+async function notifyRun(agent: AgentVM, runId: string, path: string, io: PromptIO): Promise<void> {
+    try {
+        await io.sleepAfterRun(agent.id, runId, path);
+    } catch (e) {
+        console.warn("brainstorm: arming the agent's sleep after its run failed", agent.id, runId, e);
+    }
+    try {
+        await sendBrainstorm(agent, { kind: "run", runId }, io);
+    } catch (e) {
+        console.warn("brainstorm: telling the agent its run id failed", agent.id, runId, e);
+    }
 }
 
 // Change on the approve bar: the launcher prefilled, with nothing typed into the agent
@@ -102,9 +121,19 @@ export function openRunLauncher(
     if (s.file == null) {
         return;
     }
+    // Approve stays off from the launcher's Start until the agent records the run: the agent hears the run's id only
+    // once CreateRun returns, up to a minute later, and an Approve lit in between starts the same run again
+    const path = s.path;
     openLauncher(model, "run", {
         ...runPrefill(s.file, { projectName: projectOf(agent), cwd: s.cwd }),
-        onStarted: (runId: string) => notifyRun(agent, runId, io),
+        handback: {
+            handedOff: () => setStartingRun(agent.id, path, { runId: null }),
+            started: (runId: string) => {
+                setStartingRun(agent.id, path, { runId });
+                void notifyRun(agent, runId, path, io);
+            },
+            stopped: () => setStartingRun(agent.id, path, null),
+        },
     });
 }
 

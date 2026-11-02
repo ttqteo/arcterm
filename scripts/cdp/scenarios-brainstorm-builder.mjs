@@ -166,6 +166,18 @@ const GRAPH = { id: "graph", title: "Graph model", state: "asked", body: "" };
 const PICKED_LINE = `brainstorm: builder answer: ${OPTIONS[1].label}`;
 const TYPED_ANSWER = "Count a missing day as zero.";
 const RAIL = `document.querySelector("[data-brainstorm-pane] [data-brainstorm-check-rail]")`;
+// a pane between the design's 640px cutoff and the check's 820px (the question's 360px + the check rail's 460px): the row
+// of the question and the rail has to be stacked there, and used to be side by side. ~720px is the middle of that span
+const NARROW_PANE_W = 720;
+const NARROW_TOLERANCE = 30;
+const NARROW_PASSES = 4;
+const NARROW_NAP_MS = 800;
+const STACK_FROM_PANE_W = 640;
+const STACK_UNTIL_PANE_W = 820;
+// how far the rail's width may miss the pane's (the stacked row scrolls, and a classic scrollbar takes ~17px of it), and how
+// tall a question column left to its content has to be
+const FULL_WIDTH_SLACK = 20;
+const QUESTION_MIN_H = 300;
 
 export default function (kit) {
     const {
@@ -186,6 +198,7 @@ export default function (kit) {
         bsOpenDesign,
         bsCloseDesign,
         bsTermText,
+        bsRailOpen,
         polishWaitFor,
         polishNap,
         skipStep,
@@ -317,6 +330,52 @@ export default function (kit) {
             if (PROMPT.test(prompt)) break;
         }
         return prompt;
+    };
+    // the agent's details rail (the `d` binding's atom), shown or hidden. At the dev window's size it leaves the pane about
+    // 514px wide, under the 820px (360 + the check rail's 460) at which the check's rail sits beside the question. Resolves
+    // to the atom's value after the write, or null when the app's modules cannot be reached
+    const setDetailsRail = (h, open) =>
+        h.ev(`(async () => {
+            const names = performance.getEntriesByType("resource").map((e) => e.name.split("?")[0]);
+            const base = names.find((n) => n.endsWith("/app/store/jotaiStore.ts"));
+            if (base == null) return null;
+            const store = names.filter((n) => n.endsWith("/app/view/agents/railstore.ts")).pop();
+            const { globalStore } = await import(base);
+            const { railVisibleAtom } = await import(store ?? base.replace("app/store/jotaiStore.ts", "app/view/agents/railstore.ts"));
+            globalStore.set(railVisibleAtom, ${open ? "true" : "false"});
+            return globalStore.get(railVisibleAtom) === true;
+        })()`);
+    // the rail's tab, clicked unless it is the selected one (only the selected tab's content is mounted); "missing" when
+    // the rail has no such tab, which is the case of a rail with no Boards tab (no tab strip at all)
+    const pickRailTab = (h, tab) =>
+        h.ev(`(() => {
+            const t = ${BS_PANE}?.querySelector('[data-brainstorm-board-rail] [data-brainstorm-rail-tab="${tab}"]');
+            if (!t) return "missing";
+            if (t.getAttribute("aria-selected") === "true") return "selected";
+            t.click();
+            return "clicked";
+        })()`);
+    // The window narrowed with Emulation.setDeviceMetricsOverride until the pane is about `want` px wide. The pane follows
+    // the window's width while the layout around it holds, so each pass moves the window by the miss; the layout may also
+    // change on the way (a rail folds), which the passes absorb. The window the harness set is kept on ctx for restoreWindow.
+    // Says the pane's width then
+    const paneWidth = (h) => h.ev(`Math.round(${BS_PANE}?.getBoundingClientRect().width ?? 0)`);
+    const narrowPane = async (h, ctx, want) => {
+        ctx.viewport ??= await h.ev("({ width: window.innerWidth, height: window.innerHeight })");
+        let width = ctx.viewport.width;
+        let pane = await paneWidth(h);
+        for (let pass = 0; pass < NARROW_PASSES && Math.abs(pane - want) > NARROW_TOLERANCE; pass++) {
+            width += want - pane;
+            await h.cdp("Emulation.setDeviceMetricsOverride", { width, height: ctx.viewport.height, deviceScaleFactor: 1, mobile: false });
+            await polishNap(NARROW_NAP_MS);
+            pane = await paneWidth(h);
+        }
+        return pane;
+    };
+    const restoreWindow = async (h, ctx) => {
+        if (ctx.viewport == null) return;
+        await h.cdp("Emulation.setDeviceMetricsOverride", { ...ctx.viewport, deviceScaleFactor: 1, mobile: false });
+        ctx.viewport = null;
     };
     const designLabel = (f) => {
         const decisions = f.parts.filter((p) => p.kind !== "note");
@@ -600,42 +659,131 @@ export default function (kit) {
                     opened && s3.ok && s3.back === "Back to the question",
                     { opened, ...bsBrief(s3), back: s3.back, builder: s3.builder.slice(0, 80) }
                 );
-                // 3a. the check's review keeps a part's mockups: the guess row opens to its board and spike
+                // 3a. check rail boards tab: a part's board and spike are in the rail's Boards tab, not in its review row. The
+                // rail sits beside the question only in a pane of 820px or more (360 + the check rail's 460), which the details
+                // rail's width takes away: it is hidden from here to teardown, which shows it again
+                ctx.detailsRailWasOpen = (await bsRailOpen(h)) === true;
+                const railHidden = (await setDetailsRail(h, false)) === false;
+                const roomy = await polishWaitFor(h, `(${BS_PANE}?.getBoundingClientRect().width ?? 0) >= 820`, 3000);
                 const ROLE_ROW = `${BS_PANE}?.querySelector('[data-brainstorm-review-row="role"]')`;
+                const RAIL_BOARDS = `${BS_PANE}?.querySelector("[data-brainstorm-board-rail]")`;
                 const toggled = await h.ev(`(() => {
                     const t = ${ROLE_ROW}?.querySelector("[data-brainstorm-review-toggle]");
                     if (!t) return "missing";
                     t.click();
                     return "clicked";
                 })()`);
-                const thumbShown = await polishWaitFor(
+                const tileShown = await polishWaitFor(
                     h,
-                    `!!${ROLE_ROW}?.querySelector('[data-brainstorm-thumb="${BOARD}"] iframe') && !!${ROLE_ROW}?.querySelector("[data-brainstorm-spike]")`,
+                    `!!${RAIL_BOARDS}?.querySelector('[data-brainstorm-rail-board="${BOARD}"] iframe') && !!${RAIL_BOARDS}?.querySelector("[data-brainstorm-spike]")`,
                     5000
                 );
                 // the link's title is parked by the tooltip while hovered, and the canvas server sends no CORS headers,
                 // so the spike is fetched from here, from the folder the board is served from
                 const mockups = await h.ev(`(() => {
-                    const row = ${ROLE_ROW};
+                    const flat = (el) => (el?.innerText ?? "").replace(/\\s+/g, " ").trim();
+                    const pane = ${BS_PANE};
+                    const rail = ${RAIL_BOARDS};
+                    const question = rail?.previousElementSibling ?? null;
+                    const rr = rail?.getBoundingClientRect();
+                    const qr = question?.getBoundingClientRect();
                     return {
-                        src: row?.querySelector('[data-brainstorm-thumb="${BOARD}"] iframe')?.getAttribute("src") ?? "",
-                        open: !!row?.querySelector("[data-brainstorm-open-board]"),
-                        spikePath: row?.querySelector("[data-brainstorm-spike]")?.getAttribute("data-brainstorm-spike") ?? "",
+                        paneW: Math.round(pane?.getBoundingClientRect().width ?? 0),
+                        railW: Math.round(rr?.width ?? 0),
+                        // beside the question: on its line and past its right edge, not under it
+                        beside: rr != null && qr != null && Math.abs(rr.top - qr.top) < 2 && rr.left >= qr.right - 1,
+                        handle: !!rail?.querySelector("[data-brainstorm-rail-handle]"),
+                        boardsTab: flat(rail?.querySelector('[data-brainstorm-rail-tab="boards"]')),
+                        boardsSelected: rail?.querySelector('[data-brainstorm-rail-tab="boards"]')?.getAttribute("aria-selected") === "true",
+                        secondTab: flat(rail?.querySelector('[data-brainstorm-rail-tab="second"]')),
+                        src: rail?.querySelector('[data-brainstorm-rail-board="${BOARD}"] iframe')?.getAttribute("src") ?? "",
+                        spikePath: rail?.querySelector("[data-brainstorm-spike]")?.getAttribute("data-brainstorm-spike") ?? "",
+                        rowThumbs: ${ROLE_ROW}?.querySelectorAll("[data-brainstorm-thumb]").length ?? -1,
+                        paneThumbs: pane?.querySelectorAll("[data-brainstorm-thumb]").length ?? -1,
                     };
                 })()`);
                 mockups.served = mockups.src.slice(0, mockups.src.lastIndexOf("/project/")) + `/${SPIKE}`;
                 const spikePage = mockups.src === "" ? "" : await fetch(mockups.served).then((r) => (r.ok ? r.text() : "")).catch(() => "");
                 mockups.spikeServed = spikePage.includes(`<h1>${SPIKE}</h1>`);
-                await h.shot("cdp-shots/brainstorm-builder-ask-3a-mockups.png");
+                await h.shot("cdp-shots/brainstorm-builder-ask-3a-rail.png");
+                // only the selected tab is mounted: the check's own content is read by selecting its tab
+                const secondPicked = await pickRailTab(h, "second");
+                const checkContent = await polishWaitFor(h, `(${RAIL_BOARDS}?.innerText ?? "").includes("A builder read the design")`, 3000);
                 rec(
-                    "3a. in the check's review, the row of a part with a board opens to its thumbnail, Open full size, and its spike link under the canvas folder",
-                    toggled === "clicked" &&
-                        thumbShown &&
+                    "3a. check rail boards tab: opening the guess row shows its board tile and spike in the rail's Boards tab, the row holds no thumbnail, the rail is 460px or more beside the question with its handle, and the second tab reads Builder check over A builder read the design",
+                    railHidden &&
+                        roomy &&
+                        toggled === "clicked" &&
+                        tileShown &&
+                        mockups.beside &&
+                        mockups.handle &&
+                        mockups.railW >= 460 &&
+                        mockups.boardsSelected &&
                         mockups.src.endsWith(`/${TOPIC}/project/${BOARD}`) &&
-                        mockups.open &&
                         mockups.spikePath === SPIKE &&
-                        mockups.spikeServed,
-                    { toggled, thumbShown, ...mockups }
+                        mockups.spikeServed &&
+                        mockups.rowThumbs === 0 &&
+                        mockups.paneThumbs === 0 &&
+                        mockups.secondTab === "Builder check" &&
+                        secondPicked === "clicked" &&
+                        checkContent,
+                    { railHidden, roomy, toggled, tileShown, secondPicked, checkContent, ...mockups }
+                );
+
+                // 3a2. check rail stacks when narrow: with 3a's row still open, the window is narrowed until the pane is between
+                // the design's 640px cutoff and the check's 820px. The row has to stack there, as its rail does: the question on
+                // top and the rail under it, each the pane's width, with no handle. Side by side, the full-width rail left the
+                // question column no width at all
+                const narrowW = await narrowPane(h, ctx, NARROW_PANE_W);
+                const readStack = () =>
+                    h.ev(`(() => {
+                        const box = (el) => {
+                            const r = el?.getBoundingClientRect();
+                            return r && r.width > 0 ? { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), b: Math.round(r.bottom) } : null;
+                        };
+                        const rail = ${RAIL_BOARDS};
+                        const question = rail?.previousElementSibling ?? null;
+                        return {
+                            pane: box(${BS_PANE}),
+                            rail: box(rail),
+                            question: box(question),
+                            handle: box(rail?.querySelector("[data-brainstorm-rail-handle]")),
+                            holdsBuilder: (question?.innerText ?? "").includes(${JSON.stringify(YOURS[0].q)}),
+                        };
+                    })()`);
+                const stacked = await polishWaitFor(
+                    h,
+                    `(() => {
+                        const rail = ${RAIL_BOARDS};
+                        const question = rail?.previousElementSibling;
+                        return !!rail && !!question && rail.getBoundingClientRect().top >= question.getBoundingClientRect().bottom - 1;
+                    })()`,
+                    3000
+                );
+                const stack = await readStack();
+                // the stacked row scrolls as a whole and the review is long, so the rail is under the fold: bring it into
+                // view for the shot, then put the row back at its top
+                await h.ev(`${RAIL_BOARDS}?.scrollIntoView({ block: "end" })`);
+                await polishNap(300);
+                await h.shot("cdp-shots/brainstorm-builder-ask-3a2-narrow.png");
+                await h.ev(`(() => { const row = ${RAIL_BOARDS}?.parentElement; if (row) row.scrollTop = 0; })()`);
+                await restoreWindow(h, ctx);
+                const roomyAgain = await polishWaitFor(h, `(${BS_PANE}?.getBoundingClientRect().width ?? 0) >= ${STACK_UNTIL_PANE_W}`, 5000);
+                rec(
+                    "3a2. check rail stacks when narrow: with 3a's row open in a window narrowed until the pane is between 640 and 820px, the question sits on top and the rail under it, both the pane's full width, with no handle",
+                    narrowW >= STACK_FROM_PANE_W &&
+                        narrowW < STACK_UNTIL_PANE_W &&
+                        stacked &&
+                        stack.pane != null &&
+                        stack.rail != null &&
+                        stack.question != null &&
+                        stack.rail.y >= stack.question.b - 1 &&
+                        stack.rail.w >= stack.pane.w - FULL_WIDTH_SLACK &&
+                        stack.question.w >= stack.pane.w - FULL_WIDTH_SLACK &&
+                        (stack.question.h >= QUESTION_MIN_H || stack.holdsBuilder) &&
+                        stack.handle == null &&
+                        roomyAgain,
+                    { narrowW, stacked, ...stack, roomyAgain }
                 );
                 await h.ev(`${ROLE_ROW}?.querySelector("[data-brainstorm-review-toggle]")?.click()`);
 
@@ -647,7 +795,10 @@ export default function (kit) {
                     ...bsBrief(s3b),
                 });
 
-                // 4. a part link in the rail opens the review with that decision as the cursor row
+                // 4. a part link in the rail opens the review with that decision as the cursor row. The rail may be on its
+                // Boards tab (3a opened a row with a board), and only the selected tab is mounted, so the check's tab comes first
+                const tabPicked = await pickRailTab(h, "second");
+                await polishWaitFor(h, `!!${RAIL}`, 3000);
                 const linked = await bsClick(h, `${RAIL}?.querySelector('[data-brainstorm-call-group="model"]')`, PART.model.title);
                 const cursorRow = await polishWaitFor(
                     h,
@@ -658,6 +809,7 @@ export default function (kit) {
                     `[...(${BS_PANE}?.querySelectorAll("[data-brainstorm-review-row][data-cursor]") ?? [])].map((r) => r.getAttribute("data-brainstorm-review-row"))`
                 );
                 rec("4. the rail's part link The forecast model opens the review with its row as the cursor row", linked === "clicked" && cursorRow && JSON.stringify(cursorRows) === JSON.stringify(["model"]), {
+                    tabPicked,
                     linked,
                     cursorRow,
                     cursorRows,
@@ -735,6 +887,10 @@ export default function (kit) {
                 };
                 await step("close the New run window", () => h.ev(`${NEW_RUN} ? (${PEEKS_ESC}, true) : false`));
                 await step("stop recording sent lines", () => h.ev(TYPED_REMOVE));
+                // 3a2 narrowed the window; a failed assert must not leave it narrow
+                await step("restore the window", () => restoreWindow(h, ctx));
+                // 3a hid the details rail to give the pane the width the check's rail sits beside the question in
+                if (ctx.detailsRailWasOpen) await step("show the details rail", () => setDetailsRail(h, true));
                 if (ctx.project) await step("delete the project", () => h.rpc("deleteproject", { name: ctx.project }));
                 await bsTeardownAgent(h, ctx, "brainstorm-builder-ask");
             },

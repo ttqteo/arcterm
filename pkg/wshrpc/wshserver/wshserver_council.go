@@ -80,7 +80,8 @@ func councilPanel(group string, experts []council.CouncilExpert) ([]council.Coun
 
 // CouncilStartCommand starts a council and returns it as saved: the rounds run in the background, so the council it
 // returns is running at round 1 (or not-run), and the council:changed events carry the rest. Id alone starts the saved
-// not-run council of that id.
+// not-run council of that id. Agents are live tabs to seat, in front of the panel (see councilAgentSeats); a tab that
+// cannot be seated fails the start before anything is saved.
 func (ws *WshServer) CouncilStartCommand(ctx context.Context, data wshrpc.CommandCouncilStartData) (*council.Council, error) {
 	// the rounds outlive this request, so they get their own context: Stop is what ends them
 	if data.Id != "" {
@@ -93,6 +94,11 @@ func (ws *WshServer) CouncilStartCommand(ctx context.Context, data wshrpc.Comman
 	if err != nil {
 		return nil, err
 	}
+	// the tabs named sit in front of the role experts, the coordinator last
+	seats, err := councilAgentSeats(ctx, data.Agents)
+	if err != nil {
+		return nil, err
+	}
 	c := &council.Council{
 		Project:          data.Project,
 		Feature:          data.Feature,
@@ -102,10 +108,11 @@ func (ws *WshServer) CouncilStartCommand(ctx context.Context, data wshrpc.Comman
 		Group:            data.Group,
 		Mode:             data.Mode,
 		ModeWhy:          data.ModeWhy,
-		Experts:          experts,
+		Experts:          append(seats, experts...),
 		PauseAfterRound1: data.Pause,
 		Rounds:           data.Rounds,
 		SessionId:        data.SessionId,
+		ByAgent:          data.ByAgent,
 	}
 	if data.NotRun {
 		return councilRunner.Record(c)
@@ -183,6 +190,10 @@ func (ws *WshServer) CouncilCloseCommand(ctx context.Context, data wshrpc.Comman
 }
 
 func (ws *WshServer) CouncilRetryCommand(ctx context.Context, data wshrpc.CommandCouncilRetryData) error {
+	if data.All {
+		_, err := councilRunner.RetryAll(data.Id, data.Models)
+		return err
+	}
 	_, err := councilRunner.RetryOn(data.Id, data.ExpertId, data.Model)
 	return err
 }
@@ -226,7 +237,11 @@ func (ws *WshServer) CouncilEstimateCommand(ctx context.Context, data wshrpc.Com
 		}
 		est = council.EstimateRemaining(c)
 	default:
-		est = council.Estimate(data.Experts, councilFileBytes(data.Project, data.Files), data.Rounds)
+		seats, err := councilAgentSeats(ctx, data.Agents)
+		if err != nil {
+			return nil, err
+		}
+		est = council.Estimate(append(seats, data.Experts...), councilFileBytes(data.Project, data.Files), data.Rounds)
 	}
 	return &wshrpc.CouncilEstimateRtnData{Calls: est.Calls, Tokens: est.Tokens, Minutes: est.Minutes, AgentTokens: est.AgentTokens}, nil
 }

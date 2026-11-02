@@ -1125,6 +1125,55 @@ func TestRoundTwoFailureRetryRerunsRoundTwo(t *testing.T) {
 	}
 }
 
+func TestRetryAllRerunsEveryFailedSeatInOneRun(t *testing.T) {
+	h := newHarness(t)
+	h.f.setFail("ram/r1", errors.New("boom"))
+	h.f.setFail("skeptic/r2", errors.New("timed out"))
+	c := h.run(testCouncil("c1"))
+	if len(c.Failed) != 2 || c.State != StateDone {
+		t.Fatalf("failed %v, state %s, want ram and skeptic failed in a done council", c.Failed, c.State)
+	}
+	if _, err := h.r.RetryAll("c1", map[string]string{"nobody": "sonnet"}); err == nil || !strings.Contains(err.Error(), "no expert nobody") {
+		t.Errorf("RetryAll with an unknown seat = %v, want an error naming it", err)
+	}
+	if _, err := h.r.RetryAll("c1", map[string]string{"ram": "not a model"}); err == nil {
+		t.Errorf("RetryAll with a malformed model worked")
+	}
+	h.f.setFail("ram/r1", nil)
+	h.f.setFail("skeptic/r2", nil)
+	r1, r2 := len(h.f.calls("r1")), len(h.f.calls("r2"))
+	saved, err := h.r.RetryAll("c1", map[string]string{"ram": " fable ", "skeptic": "sonnet"})
+	if err != nil {
+		t.Fatalf("RetryAll: %v", err)
+	}
+	if saved.State != StateRunning {
+		t.Fatalf("RetryAll returned %s, want running", saved.State)
+	}
+	// a single Retry while that run is on is refused, which is why the seats go in one run
+	if _, err := h.r.Retry("c1", "skeptic"); err == nil || !strings.Contains(err.Error(), "is running") {
+		t.Errorf("Retry during RetryAll = %v, want the council busy", err)
+	}
+	c = h.wait("c1")
+	if got := h.f.calls("r1"); len(got) != r1+1 || got[r1].Expert.Id != "ram" || got[r1].Expert.Model != "fable" {
+		t.Fatalf("round 1 calls %d, want ram's rerun on fable", len(got))
+	}
+	if got := h.f.calls("r2"); len(got) != r2+1 || got[r2].Expert.Id != "skeptic" {
+		t.Fatalf("round 2 calls %d, want skeptic's rerun", len(got))
+	}
+	if len(c.Failed) != 0 || c.State != StateDone {
+		t.Fatalf("after RetryAll: failed %v, state %s, want none and done", c.Failed, c.State)
+	}
+	if len(c.Retries) != 1 || c.Retries[0].Expert != "ram" || c.Retries[0].Model != "fable" || c.Retries[0].Round != 1 {
+		t.Errorf("retries %+v, want ram's on fable kept and skeptic's own-model retry not", c.Retries)
+	}
+	if n := len(h.f.calls("r3")); n != 1 {
+		t.Errorf("RetryAll reran the synthesis (%d calls)", n)
+	}
+	if _, err := h.r.RetryAll("c1", nil); err == nil || !strings.Contains(err.Error(), "no failed seat") {
+		t.Errorf("RetryAll with nothing failed = %v, want an error saying so", err)
+	}
+}
+
 func TestACallThatReturnsNothingUsableIsAFailure(t *testing.T) {
 	for _, tc := range []struct{ name, text, want string }{
 		{"an empty reply", "", "empty reply"},
@@ -2782,6 +2831,21 @@ func TestSuggest(t *testing.T) {
 	}
 }
 
+func TestSuggestLeavesOutAgentGroups(t *testing.T) {
+	h := newHarness(t)
+	project := t.TempDir()
+	for _, named := range []string{"agents", "agents-ideas"} {
+		h.f.setText("suggest/suggest", fence(mustJSON(map[string]any{"files": []string{}, "roles": []any{}, "group": named})))
+		got, err := h.r.Suggest(context.Background(), project, "Idle sleep", "Which first?", nil)
+		if err != nil || got.Group != "" {
+			t.Errorf("a reply naming %q = group %q, %v, want it empty: with no chat seated the group is a panel of one", named, got.Group, err)
+		}
+	}
+	prompt := h.f.calls("suggest")[0].Prompt
+	mustContain(t, "suggest prompt", prompt, "ui-feature: Review a UI feature", "product-ideas: Product ideas")
+	mustNotContain(t, "suggest prompt", prompt, "agents:", "agents-ideas:", "Chats with a")
+}
+
 func TestSuggestMode(t *testing.T) {
 	h := newHarness(t)
 	project := t.TempDir()
@@ -3817,6 +3881,76 @@ func TestFollowupDraftKeepsDone(t *testing.T) {
 	}
 	if c = h.wait("a"); c.State != StateDone || HeldDrafts(c) != 0 || len(h.prompts()) != calls {
 		t.Errorf("after settling: %s with %d held and %d new calls, want done, settled and nothing rerun", c.State, HeldDrafts(c), len(h.prompts())-calls)
+	}
+}
+
+// ranToTheReport checks a council that holds nothing ran its rounds to the report: done, nothing held or dropped, every
+// seat's idea and the reply pass sent, and it never stopped awaiting-you on the way.
+func (h *harness) ranToTheReport(c *Council) {
+	h.t.Helper()
+	if c.State != StateDone || c.Round != SynthesisRound(c) || c.Summary == nil {
+		h.t.Fatalf("council = %s at round %d (summary %v), want done at the synthesis round", c.State, c.Round, c.Summary != nil)
+	}
+	if len(c.Proposals) != 2 || len(c.Replies) == 0 || HeldDrafts(c) != 0 {
+		h.t.Errorf("proposals %d, replies %d, held %d: want an idea from each seat, a reply pass and nothing held", len(c.Proposals), len(c.Replies), HeldDrafts(c))
+	}
+	for _, p := range c.Proposals {
+		if p.Draft != "" {
+			h.t.Errorf("idea %s is %q, want it sent as written", p.Id, p.Draft)
+		}
+	}
+	for _, x := range c.Replies {
+		if x.Draft != "" {
+			h.t.Errorf("reply %s is %q, want it sent as written", x.Id, x.Draft)
+		}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, seen := range h.seen {
+		if seen.Id == c.Id && seen.State == StateAwaiting {
+			h.t.Errorf("council %s stopped awaiting-you at round %d", c.Id, seen.Round)
+		}
+	}
+}
+
+// A council an agent started (ByAgent) holds no draft with a chat seated: its rounds run to the report by themselves,
+// also when it was saved not-run and started later. TestAgentSeatsHoldDrafts is the same council without ByAgent.
+func TestAgentCouncilByAgentHoldsNothing(t *testing.T) {
+	h := newHarness(t)
+	c := agentCouncil("a")
+	c.ByAgent = true
+	h.ranToTheReport(h.run(c))
+	// the chat took its turn in the reply pass: it reviewed UX's idea, which nobody dropped
+	if len(h.agents.calls("r2")) != 1 || len(h.f.calls("r2")) != 1 {
+		t.Errorf("reply pass calls: Witness %d, UX %d, want one each", len(h.agents.calls("r2")), len(h.f.calls("r2")))
+	}
+
+	saved := agentCouncil("b")
+	saved.ByAgent = true
+	rec, err := h.r.Record(saved)
+	if err != nil || rec.State != StateNotRun || !rec.ByAgent {
+		t.Fatalf("Record = %+v, %v, want it saved not-run and still started by an agent", rec, err)
+	}
+	if _, err := h.r.StartSaved(context.Background(), "b"); err != nil {
+		t.Fatalf("StartSaved: %v", err)
+	}
+	h.ranToTheReport(h.wait("b"))
+}
+
+// --pause pauses an agent council after round 1 as it does an expert-only one: with nothing held, a Continue ends it.
+func TestAgentCouncilByAgentPausesAfterRound1(t *testing.T) {
+	h := newHarness(t)
+	c := agentCouncil("a")
+	c.ByAgent, c.PauseAfterRound1 = true, true
+	got := h.run(c)
+	if got.State != StateAwaiting || got.Round != 1 || HeldDrafts(got) != 0 || len(got.Proposals) != 2 {
+		t.Fatalf("after round 1: %s at round %d with %d held and %d ideas, want the pause with both ideas sent", got.State, got.Round, HeldDrafts(got), len(got.Proposals))
+	}
+	if _, err := h.r.Continue("a", nil, ""); err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	if got = h.wait("a"); got.State != StateDone || got.Summary == nil || HeldDrafts(got) != 0 {
+		t.Errorf("after Continue: %s with %d held, want done", got.State, HeldDrafts(got))
 	}
 }
 

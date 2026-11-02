@@ -508,6 +508,19 @@ describe("historyRows", () => {
         expect(item([acked], "run:r").warn).toBe("");
     });
 
+    it("names a run built from a spec by its feature, and its spec file on the line", () => {
+        const fromSpec = run({
+            goal: "Build Sleep the agent once its run starts as specified in D:\\proj\\docs\\specs\\2026-11-02-sleep-design.md.\nmore",
+            land: { state: "held" },
+            origintranscript: "/elsewhere.jsonl",
+        });
+        const r = item(historyRows([], [], [fromSpec], P, now, ""), "run:r");
+        expect(r.title).toBe("Build Sleep the agent once its run starts");
+        expect(r.line).toBe("Land held · 2026-11-02-sleep-design.md");
+        const posix = run({ goal: "Build Lag alerts as specified in /p/docs/specs/lag.md." });
+        expect(item(historyRows([], [], [posix], P, now, ""), "run:r").title).toBe("Build Lag alerts");
+    });
+
     it("counts the land's notes on a verified run, and warns on a done run only", () => {
         const notesOnly = run({ land: { state: "landed", notes: ["base moved"] } });
         expect(item(historyRows([], [], [notesOnly], P, now, ""), "run:r").warn).toBe("1 not verified");

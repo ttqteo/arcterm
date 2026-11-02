@@ -336,13 +336,14 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
 function RetryButton({ expertId, label, acts, c }: { expertId: string; label: string; acts: Actions; c: Council }) {
     const key = `retry:${expertId}`;
     const busy = acts.busy.has(key);
+    const running = c.state === "running"; // a retry while it runs is refused: one job at a time
     return (
         <span className="flex items-center gap-[6px] self-start">
             <button
                 type="button"
                 data-council-retry={expertId}
                 aria-label={label}
-                disabled={busy}
+                disabled={busy || running}
                 onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, expertId))}
                 className={cn(secondaryButton, "h-[26px] px-[10px] text-[12.5px]")}
             >
@@ -351,7 +352,7 @@ function RetryButton({ expertId, label, acts, c }: { expertId: string; label: st
             <RetryWithButton
                 expert={c.experts.find((e) => e.id === expertId)}
                 error={c.failed?.[expertId]?.error}
-                disabled={busy}
+                disabled={busy || running}
                 onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, expertId, model))}
                 className={cn(secondaryButton, "h-[26px] px-[8px] text-[12.5px]")}
             />

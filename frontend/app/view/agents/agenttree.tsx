@@ -93,7 +93,7 @@ import {
 import { setAgentView } from "./agentview";
 import { waitMap } from "./agentwaits";
 import { backgroundActivity, launchedServers, shownState, type ShownState } from "./bgactivity";
-import { isAsking, treeLine, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
+import { treeLine, waitsOnUser, type BrainstormFile, type BuilderCheckRecord } from "./brainstormmodel";
 import { runStepView, runTreeText } from "./brainstormrunmodel";
 import { brainstormAtom, shownBrainstormFile } from "./brainstormstore";
 import { isUnseen } from "./canvasmodel";
@@ -144,6 +144,7 @@ import {
     folderBlocks,
     folderCounts,
     HOME_PROJECT,
+    jarvisCountsByProject,
     liveBranches,
     notableBranch,
     projectLabel,
@@ -157,6 +158,7 @@ import {
     terminalShows,
     treeNavIds,
     type ConversationEntry,
+    type CouncilRowSeat,
     type CouncilRowVM,
     type EndedRunRow,
     type EndedSessionRow,
@@ -165,6 +167,7 @@ import {
     type TerminalRowState,
     type TerminalShows,
 } from "./agentsidebarmodel";
+import { CouncilAvatar } from "./councilchat";
 import { type CouncilTone } from "./councilmodel";
 import { confirmRemoveCouncil } from "./councilremove";
 import {
@@ -252,6 +255,7 @@ import { useSubagentTracking } from "./subagenttracking";
 import { rowFieldsAtom } from "./rowfieldsstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
+import { attentionAtom, splitAttention } from "./attentionstore";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showServiceMenu } from "./servicemenu";
 import { canRestart, serviceRowWords, treeServiceInput } from "./servicesmodel";
@@ -1010,8 +1014,8 @@ function ParentRow({
     const unread = unreadCount > 0 || step != null;
     const asking = agent.state === "asking";
     const review = asking ? parseDocReview(agent.ask) : null;
-    // the roster overlay already turned a question the file asks into state "asking"; isAsking says the question is the
-    // brainstorm's, not a permission prompt
+    // the roster overlay already turned a question the file asks, or a design waiting on confirms, into state "asking";
+    // waitsOnUser says the wait is the brainstorm's, not a permission prompt
     const brainstormFile = shownBrainstormFile(useAtomValue(brainstormAtom(agent.id)));
     const mark = lead != null ? leadMark(lead.run, agent) : null;
     // its heavy command waiting its turn in the job queue, whose tag takes the working dot's place
@@ -1279,7 +1283,7 @@ function ParentRow({
                             <BrainstormTreeLine
                                 model={model}
                                 f={brainstormFile}
-                                asking={asking && isAsking(brainstormFile)}
+                                asking={asking && waitsOnUser(brainstormFile)}
                             />
                         ) : (
                             <>
@@ -2183,6 +2187,7 @@ function FolderRow({
     onToggle,
     trailing,
     selected,
+    jarvis = 0,
 }: {
     model: AgentsViewModel;
     section: SidebarSection;
@@ -2192,6 +2197,9 @@ function FolderRow({
     onToggle: () => void;
     trailing?: React.ReactNode;
     selected?: boolean;
+    // the project's share of the nav rail's Jarvis badge (jarvisCountsByProject), drawn on the folder icon as the rail
+    // draws its own
+    jarvis?: number;
 }) {
     const hasOverview = project !== HOME_PROJECT;
     const activate = hasOverview ? () => showProjectOverview(project) : onToggle;
@@ -2228,11 +2236,23 @@ function FolderRow({
                 className="group/fold -m-[3px] flex shrink-0 cursor-pointer items-center gap-[7px] rounded-[4px] p-[3px] text-ink-faint outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-1 focus-visible:ring-accent"
             >
                 <ChevronRight size={12} aria-hidden className={cn("transition-transform", open && "rotate-90")} />
-                {open ? (
-                    <FolderOpen size={14} aria-hidden className="shrink-0 text-muted group-hover/fold:text-secondary" />
-                ) : (
-                    <Folder size={14} aria-hidden className="shrink-0 text-muted group-hover/fold:text-secondary" />
-                )}
+                <span className="relative flex shrink-0">
+                    {open ? (
+                        <FolderOpen size={14} aria-hidden className="text-muted group-hover/fold:text-secondary" />
+                    ) : (
+                        <Folder size={14} aria-hidden className="text-muted group-hover/fold:text-secondary" />
+                    )}
+                    {jarvis > 0 ? (
+                        <span
+                            data-folder-jarvis={jarvis}
+                            title={`${jarvis} waiting on you in Jarvis`}
+                            aria-label={`${jarvis} waiting on you in Jarvis`}
+                            className="absolute -right-[7px] -top-[6px] flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-asking px-[3px] text-[8px] font-bold tabular-nums text-background ring-2 ring-surface"
+                        >
+                            {unreadLabel(jarvis)}
+                        </span>
+                    ) : null}
+                </span>
             </button>
             {/* the name keeps a few letters however much the far end holds */}
             <span
@@ -2615,11 +2635,11 @@ function ServiceRow({
     );
 }
 
-const COUNCIL_TONE: Record<CouncilTone, { text: string; dot: string }> = {
-    working: { text: "text-working", dot: "bg-working" },
-    asking: { text: "text-asking", dot: "bg-asking" },
-    muted: { text: "text-muted", dot: "bg-muted" },
-    error: { text: "text-error", dot: "bg-error" },
+const COUNCIL_TONE: Record<CouncilTone, { text: string }> = {
+    working: { text: "text-working" },
+    asking: { text: "text-asking" },
+    muted: { text: "text-muted" },
+    error: { text: "text-error" },
 };
 
 // The councils block of a project's folder (projectTree's councilhead and council rows), after its agents.
@@ -2662,14 +2682,77 @@ function ClosedCouncilsRow({ project, count, open }: { project: string; count: n
     );
 }
 
-// One council: a dot, its feature and its state in a word. The word is in the state's tone token and carries the state
-// whatever the color, `Waiting on you` in the amber one. A primary-ink dot before it says it ended while you were away.
+// The picture a council row leads with, as a chat list draws a group chat: two seat avatars overlapped in a 32px square,
+// the back one top right, the front one bottom left ringed in the row's fill so the overlap reads; one 26px circle for a
+// council of a single seat. Each disc sits on the row's ground, so the seat tone's faint fill reads opaque. The front
+// circle carries the corner dot (a seat writes, a seat's call failed), worded in its title. The row's state word says
+// the same, so the picture is hidden from a screen reader. `ground` is the row's fill: the tree's, or the selected one;
+// a hover fill comes from the row's `group/council`.
+function CouncilSeatPair({
+    seats,
+    dot,
+    selected,
+}: {
+    seats: CouncilRowSeat[];
+    dot: CouncilRowVM["dot"];
+    selected: boolean;
+}) {
+    const ground = selected
+        ? "bg-surface-selected ring-surface-selected"
+        : "bg-surface ring-surface group-hover/council:bg-surface-hover group-hover/council:ring-surface-hover";
+    const dotRing = selected ? "border-surface-selected" : "border-surface group-hover/council:border-surface-hover";
+    const dotWord = dot === "working" ? "a seat is writing" : dot === "failed" ? "a seat's call failed" : null;
+    const disc = (seat: CouncilRowSeat, front: boolean, className: string) => (
+        <span
+            data-council-seat={seat.initials}
+            className={cn(
+                "absolute flex-none rounded-full transition-[background-color,box-shadow] duration-[140ms]",
+                ground,
+                front && "ring-2",
+                className
+            )}
+        >
+            <CouncilAvatar
+                tone={seat.tone}
+                name={seat.name}
+                initials={seat.initials}
+                dot={front ? dot : null}
+                dotClassName={dotRing}
+                title={front && dotWord != null ? `${seat.name} · ${dotWord}` : seat.name}
+                className={seats.length === 1 ? "h-[26px] w-[26px] text-[10px]" : undefined}
+            />
+        </span>
+    );
+    const [back, front] = seats;
+    return (
+        <span
+            data-council-seats={seats.length}
+            data-council-dot={dot ?? undefined}
+            aria-hidden
+            className="relative h-[32px] w-[32px] flex-none"
+        >
+            {seats.length === 1 ? (
+                disc(back, true, "left-[3px] top-[3px]")
+            ) : seats.length === 2 ? (
+                <>
+                    {disc(back, false, "right-0 top-0")}
+                    {disc(front, true, "bottom-0 left-0")}
+                </>
+            ) : null}
+        </span>
+    );
+}
+
+// One council, as a chat list draws a group chat: its seats' picture, its feature, and under it its state in a word,
+// then the time since its newest message. The word is in the state's tone token and carries the state whatever the
+// color, `Waiting on you` in the amber one. A primary-ink dot after the feature says it ended while you were away.
 // A queued council also offers Remove from queue (hover, and the menu): it stops the council before it ever starts, as
 // the queued run's row does. An ended one (done, failed, stopped, not run) offers Close the same way, which deletes
 // nothing: the row moves into its project's Closed councils fold, where its × reopens it. The menu also offers Remove,
 // behind a confirm, which moves the council's file to ~/.arc/trash. The button cannot hold the action, so such a row
 // sits in a wrapper beside it. Every row's menu starts with Copy id, the full id `wsh council show|wait|stop|rm` take.
-function CouncilRow({ row }: { row: CouncilRowVM }) {
+function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM }) {
+    const now = useAtomValue(model.nowAtom);
     const center = useAtomValue(centerModeAtom);
     const view = useAtomValue(councilViewAtom);
     const open = useAtomValue(councilSelAtom);
@@ -2731,36 +2814,19 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
             // a wrapped row's wrapper holds the menu, over its Remove button too
             onContextMenu={wrapped ? undefined : onContextMenu}
             className={cn(
-                "flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] text-left transition-colors duration-[140ms]",
+                "group/council flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] text-left transition-colors duration-[140ms]",
                 // a wrapped row's wrapper holds the hover and selected backgrounds, under the Remove button too
                 wrapped ? "min-w-0 flex-1" : "w-full",
                 wrapped ? null : selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
-            <Slot>
-                <span aria-hidden className={cn("h-[6px] w-[6px] rounded-full", tone.dot)} />
-            </Slot>
-            {queued ? (
-                // `Queued · after <feature>` is too long to share a line with the feature in a narrow sidebar, so
-                // the queued run's row's two lines are used: the feature, then the word under it, which wraps (to
-                // three lines at most) rather than cutting off the agent it names (`· waiting for Witness synthesis`)
-                <div className="min-w-0 flex-1">
-                    <div
-                        data-council-feature
-                        className={cn("truncate text-[13px]", selected ? "text-primary" : "text-secondary")}
-                    >
-                        {row.feature}
-                    </div>
-                    <div data-council-meta title={row.meta} className={cn("line-clamp-3 text-[11px]", tone.text)}>
-                        {row.meta}
-                    </div>
-                </div>
-            ) : (
-                <>
+            <CouncilSeatPair seats={row.seats} dot={row.dot} selected={selected} />
+            <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-[6px]">
                     <span
                         data-council-feature
                         className={cn(
-                            "min-w-0 flex-1 truncate text-[13px]",
+                            "min-w-0 flex-1 truncate text-[13px] leading-[16px]",
                             selected ? "text-primary" : "text-secondary"
                         )}
                     >
@@ -2774,11 +2840,29 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
                             className="h-[6px] w-[6px] flex-none rounded-full bg-primary"
                         />
                     ) : null}
-                    <span data-council-meta className={cn("flex-none whitespace-nowrap text-[11px]", tone.text)}>
+                </div>
+                {queued ? (
+                    // `Queued · after <feature>` is too long for one line in a narrow sidebar, so it wraps (to three
+                    // lines at most) rather than cutting off the agent it names (`· waiting for Witness synthesis`);
+                    // a council that has not started has no time to show
+                    <div
+                        data-council-meta
+                        title={row.meta}
+                        className={cn("mt-[2px] line-clamp-3 text-[11px] leading-[14px]", tone.text)}
+                    >
                         {row.meta}
-                    </span>
-                </>
-            )}
+                    </div>
+                ) : (
+                    <div className="mt-[2px] flex min-w-0 text-[11px] leading-[14px]">
+                        <span data-council-meta className={cn("truncate", tone.text)}>
+                            {row.meta}
+                        </span>
+                        <span data-council-age className="flex-none whitespace-nowrap text-muted">
+                            &nbsp;· {formatAgeShort(now - row.lastAt)}
+                        </span>
+                    </div>
+                )}
+            </div>
         </button>
     );
     if (!wrapped) {
@@ -2788,7 +2872,8 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
         <div
             onContextMenu={onContextMenu}
             className={cn(
-                "group relative flex items-center rounded-[6px] transition-colors duration-[140ms]",
+                // group/council: the seat picture's ring follows this row's hover fill, over the Remove button too
+                "group group/council relative flex items-center rounded-[6px] transition-colors duration-[140ms]",
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
         >
@@ -3253,6 +3338,12 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         councils,
         openClosedCouncils,
     });
+    // each folder's share of the nav rail's Jarvis badge, on its icon (jarvisCountsByProject)
+    const attention = useAtomValue(attentionAtom);
+    const jarvisCounts = useMemo(
+        () => jarvisCountsByProject(splitAttention(attention).jarvis, lineage.runs, agents, queue),
+        [attention, lineage.runs, agents, queue]
+    );
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));
     // The multi-selection: Ctrl/Cmd+click and Shift+click pick agent rows (agenttreemodel.ts) beside the focused agent.
@@ -3388,6 +3479,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                 section="active"
                                                 project={r.project}
                                                 selected={center === "project" && overviewProject === r.project}
+                                                jarvis={jarvisCounts.get(r.project) ?? 0}
                                                 label={projectLabel(r.project)}
                                                 open={r.open}
                                                 onToggle={() =>
@@ -3428,7 +3520,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                 case "councilhead":
                                     return plain(`council-head-${r.project}`, <CouncilHeadRow project={r.project} />);
                                 case "council":
-                                    return plain(`council-${r.id}`, <CouncilRow row={r} />);
+                                    return plain(`council-${r.id}`, <CouncilRow model={model} row={r} />);
                                 case "councilclosed":
                                     return plain(
                                         `council-closed-${r.project}`,

@@ -39,6 +39,45 @@ does not, say what you saw and it becomes a bug row under Actionable.
   "Nothing waiting on you" in full, then the pin, Full view and close, with no "…". Or run
   `task verify:ui -- pet-stay jarvis-peek` (pet-stay step 5, jarvis-peek step 3): run 72f2cf48's round-2 Final never
   booted its dev app. `petpeek.tsx` quiet cap 332 px, "fix(pet): The quiet peek's title fits beside the stay pin".
+- [ ] (arcterm) The council composer sits in the message column: open a council's Discussion on a wide window → the
+  message box's left and right edges line up with the messages' 860px column (with and without a scrollbar), and
+  sending a message (in the channel and in a thread) makes your bubble rise in from below; reopening the council or
+  switching the seat filter animates nothing. `councilchat.tsx`, "feat(council): composer in the message column".
+- [ ] (arcterm) The handed-over rows keep their text wide: open a brainstorm whose run has started, with parts that
+  have a long "from" ("agent's call, from answers 2 and 6") → in What you handed over, each part's text fills the
+  column and the from line sits under it in small mono, cut with an ellipsis (full text on hover), not a column of
+  its own squeezing the text to a word a line. `HandedRow`, `brainstormrun.tsx`; commit "the handed-over list keeps its text wide".
+- [ ] (arcterm) A brainstorm waiting on confirms asks for you: leave a brainstorm at Confirm the design with guesses
+  and no question open, the agent idle → its tree row pulses like an asking agent and reads "confirm N decisions",
+  the Brainstorm tab shows the amber dot, and the taskbar flashes once (`brainstormmodel.ts` `awaitsReview`).
+- [ ] (arcterm) The Agent panel's counts scroll: open an agent's details panel on Overview (300px) with enough counts
+  to overflow (Subagents, Files, Servers…) → the wheel over the counts slides them sideways, the hidden edge fades,
+  and the last count is reachable (`agentrailpanel.tsx` `RailStats`).
+- [ ] (arcterm) A brainstorm's agent sleeps once its run starts: with Sleep idle agents on, Approve a brainstorm in a
+  claude chat and Start the run from the launcher → the agent records the run in `brainstorm.json`, its turn ends, and
+  ~15s later its row shows the moon and a `Put <name> to sleep` notice. Type into it within those 15s instead → it
+  stays awake. Approve stays off while the run is starting (the WIP handback, uncommitted). `aafac19`.
+- [ ] (arcterm) History names a spec run by its feature: open a project's History that lists a run started from a
+  brainstorm → its row reads "Build <feature>" with no path, and the line under it ends `· <spec file>.md`
+  (`projectoverviewmodel.ts` `runHeadline`).
+- [ ] (arcterm) Council seats the chats you name: from a claude chat, ask for a council on "this chat + <another tab
+  id>" → `wsh council start` runs with `--agent self --agent <id>` and prints `… · 2 chats + Skeptic · …`; both tabs
+  answer each round in their own transcript, nothing is held as a draft, and the starter's background `wsh council wait
+  <id> --timeout 0` brings the report, which the chat sums up. Then name a wrong tab id → the start fails before the
+  Token burn card and lists the live tabs. `skills/council/SKILL.md` "Seating chats", spec
+  `2026-11-02-council-agent-seats-design.md`.
+- [ ] (arcterm) A project folder carries its share of the Jarvis badge: with a run waiting to land or a gate open in
+  a project, the Agent sidebar's folder icon for that project shows a count in the Jarvis badge's colour at its top
+  right, the counts across folders add up to Jarvis's (less what names no run: due chunks, learn proposals), and it
+  clears with the item. `agenttree.tsx` `FolderRow` `jarvis`, `jarvisCountsByProject`.
+- [ ] (arcterm) A sleeping agent's rail has no Transcript tab: put an agent to sleep while its rail sits on Transcript
+  → the strip drops the Transcript icon and shows Overview; Ctrl+Shift+F does nothing; Wake → the tab returns and is
+  selected again. `agentdetailsrail.tsx` `hasTranscript`, "fix(agents): a sleeping agent's rail drops its Transcript
+  tab".
+- [ ] (arcterm) History run/council rows carry their badge on the meta line: Project Overview → History → a Run or
+  Council row's title starts at the same left edge as a session's, and its second line reads "◆ Run · …" /
+  "● Council · …"; unfold a council → the peek lines up under the title. `projecthistory.tsx` `KindLabel`,
+  "fix(agents): History's run and council badge moves to the meta line".
 - [ ] (arcterm) Council follow-up answers don't echo the first one: in a council that has a report, send a yes/no
   question to Everyone → the first seat answers it; the others open with their own new point (no "Đúng" / "Mình đồng
   ý" / "Agreed", no repeat of the first seat's caveat) or show as "X agrees". Seen failing in council 7096c31c (r64–r67)
@@ -82,6 +121,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Coordinator in round 3 on sonnet (its seat is opus)`. Do the same on a failed expert from the Discussion's failure
   card and the chat's seat chip. CDP `council-summary` clicks the summary banner's menu with the RPC stubbed; no real
   call on another model and neither Discussion site was tried. The commit that adds this line.
+- [ ] (arcterm) Council Retry all: needs a wavesrv + wsh build (the RPC gained `all`/`models`). In a council where
+  two or more seats failed (the HarnessX brainstorm had New user, Designer and Builder), the seat strip shows a model
+  pick ("Own model ▾") beside each failed seat instead of Retry / Retry with…, and one "Retry all 3" at its end; pick
+  sonnet for one seat, Retry all → every failed seat reruns at once (no "council … is running" error), the picked one
+  on sonnet, and while it runs every Retry button is disabled. A council with one failed seat keeps Retry / Retry
+  with…. Also `wsh council start --model sonnet --model skeptic=opus` → `wsh council show` names those models, and
+  `wsh council estimate` with the same flags quotes them. Runner and CLI parser unit-tested; untried in the app. The
+  commit that adds this line.
 - [ ] (arcterm) Council Retry with… after a safeguard flag: on a call that failed with "API Error: Opus 5.5's
   safeguards flagged this session", the menu's header reads "Safeguards flagged <seat> on opus" and its first item is
   Retry on Opus 4.8; picking it reruns the call on `claude-opus-4-8` and the call goes through. Untried in the app;

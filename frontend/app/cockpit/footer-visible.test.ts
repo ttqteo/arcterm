@@ -197,12 +197,40 @@ describe("agent brainstorm mode chips", () => {
         ]);
     });
 
-    it("with a board or the design open over the question, esc back joins the list", () => {
+    it("with a board widened in the rail or the design open over the question, esc back joins the list", () => {
         setAgentView("a1", "brainstorm", 1);
         openBrainstormBoard("a1", "Split.dc.html");
         expect(chips()).toContain("esc back");
         openBrainstormBoard("a1", null);
         expect(chips()).not.toContain("esc back");
+    });
+
+    it("a widened board adds [ ] board to the pane's keys, the question's way back to the terminal stays, and marking drops the board keys", () => {
+        setAgentView("a1", "brainstorm", 1);
+        attachCanvas("a1", { topic: "t", dir: "/p/.superpowers/design/t", projectDir: "/p", board: "Split.dc.html" }, 0);
+        updateCanvas("a1", (s) => ({ ...s, status: "ready" }));
+        try {
+            expect(chips()).not.toContain("[ ] board");
+            openBrainstormBoard("a1", "Split.dc.html");
+            expect(chips()).toEqual([
+                "↑↓ move",
+                "Alt:c switch view",
+                "Ctrl:Shift:b brainstorm",
+                "esc back",
+                "Ctrl:Tab switch",
+                "[ ] board",
+                "b terminal",
+                ...globals(),
+            ]);
+            setMarking("a1", true);
+            expect(chips()).not.toContain("[ ] board");
+            expect(chips()).toContain("esc back");
+            setMarking("a1", false);
+            openBrainstormBoard("a1", null);
+            expect(chips()).not.toContain("[ ] board");
+        } finally {
+            detachCanvas("a1");
+        }
     });
 
     it("typing in the pane's answer box shows Enter send, and the chord that still leaves", () => {

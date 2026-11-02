@@ -52,7 +52,9 @@ const (
 	actSummary  = "Writing the summary"
 	actPerson   = "Replying to the person"
 
-	// maxPasses stops a run that keeps finding replies to answer, which only a store that cannot save can cause.
+	// maxPasses stops a run whose answers passes in a row answer none of the person's replies, which only a store that
+	// cannot save can cause. A pass that answers some starts the count again, so a person who keeps posting while the
+	// passes run is never left with a reply nobody answers.
 	maxPasses = 8
 
 	stopWait = 15 * time.Second
@@ -654,6 +656,7 @@ func (r *Runner) drive(ctx context.Context, rn *run, id string, w work) {
 	if ctx.Err() == nil { // a Stop can land between the launch and the goroutine's first step
 		end = w(ctx, rn, id)
 	}
+	answered := -1 // the person's replies answered when the last answers pass began
 	for passes := 0; ; passes++ {
 		r.mu.Lock()
 		if end.heldRound > 0 && ctx.Err() == nil {
@@ -666,6 +669,9 @@ func (r *Runner) drive(ctx context.Context, rn *run, id string, w work) {
 		}
 		if end.answers && ctx.Err() == nil && passes < maxPasses {
 			if c, err := Load(id); err == nil && hasOpenReplies(c) {
+				if n := answeredReplies(c); n > answered {
+					passes, answered = 0, n
+				}
 				r.mu.Unlock()
 				if err := r.answersPass(ctx, rn, id); err != nil {
 					log.Printf("[council] %s: answers pass: %v", id, err)
@@ -734,16 +740,17 @@ func awaitingDrafts(round int) ending {
 }
 
 // roundsWork runs the rounds from round `from` on: the ideas (round 1), then each reply pass, then the synthesis. A
-// council with no agent seated runs round 1, the pause after it when it has one, one reply pass and the synthesis. One
-// with agents holds every answer as a draft, so a round whose answers left a draft held ends the run awaiting-you at
-// that round: settling the last of them starts the next, and the council holds no slot while it waits.
+// council that holds no drafts (no agent seated, or one an agent started) runs round 1, the pause after it when it has
+// one, one reply pass and the synthesis. One that holds drafts (agents seated, started from the app) holds every answer,
+// so a round whose answers left a draft held ends the run awaiting-you at that round: settling the last of them starts
+// the next, and the council holds no slot while it waits.
 func (r *Runner) roundsWork(from int) work {
 	return func(ctx context.Context, rn *run, id string) ending {
 		snap, err := Load(id)
 		if err != nil {
 			return loadFailed(err)
 		}
-		synth, held, at := SynthesisRound(snap), HasAgents(snap), snap.Round
+		synth, held, at := SynthesisRound(snap), HoldsDrafts(snap), snap.Round
 		for round := from; round < synth; round++ {
 			if round != at {
 				r.setRound(rn, id, round)
@@ -766,7 +773,7 @@ func (r *Runner) roundsWork(from int) work {
 				return ending{set: func(c *Council) { c.State, c.Error = StateFailed, noOneAnsweredRound1(c) }}
 			case held && HeldDrafts(cur) > 0:
 				return awaitingDrafts(round)
-			case round == 1 && !held && cur.PauseAfterRound1: // with agents seated the held drafts are the pause
+			case round == 1 && !held && cur.PauseAfterRound1: // when drafts are held they are the pause
 				return ending{set: func(c *Council) { c.State, c.Round, c.Error = StateAwaiting, 1, "" }}
 			}
 		}
@@ -964,10 +971,10 @@ func nextReplyId(c *Council) string {
 
 // ---- round 1 ----
 
-// heldFor is the Draft state of what a seat answers: held when an agent is seated (every answer then waits for the
-// person), sent at once otherwise.
+// heldFor is the Draft state of what a seat answers: held when the council holds drafts (an agent is seated and no
+// agent started it, so every answer waits for the person), sent at once otherwise.
 func heldFor(c *Council) string {
-	if HasAgents(c) {
+	if HoldsDrafts(c) {
 		return DraftHeld
 	}
 	return ""
@@ -1312,6 +1319,16 @@ func owed(c *Council, e CouncilExpert, openOnly bool) []CouncilReply {
 
 func hasOpenReplies(c *Council) bool {
 	return slices.ContainsFunc(c.Replies, func(pr CouncilReply) bool { return pr.Author == YouId && !pr.Answered })
+}
+
+func answeredReplies(c *Council) int {
+	n := 0
+	for _, pr := range c.Replies {
+		if pr.Author == YouId && pr.Answered {
+			n++
+		}
+	}
+	return n
 }
 
 func markAnswered(c *Council, ids []string) {
@@ -1877,9 +1894,9 @@ func (r *Runner) summarizeLocked(id string, model string) (*Council, func(), err
 
 // heldRoundAfter is the heldRound a job that hands a council back awaiting-you ends with: the round its drafts belong to,
 // so that drive goes on to the next round when the person settled them all while the job ran. 0 for anything else, and
-// for the pause after round 1 of a council with no agent, which waits on a Continue.
+// for the pause after round 1 of a council that holds no drafts, which waits on a Continue.
 func heldRoundAfter(prev prevState, snap *Council) int {
-	if prev.state == StateAwaiting && HasAgents(snap) {
+	if prev.state == StateAwaiting && HoldsDrafts(snap) {
 		return prev.round
 	}
 	return 0
@@ -2106,49 +2123,147 @@ func (r *Runner) retryLocked(id, expertId, model string) (*Council, func(), erro
 // retryWork reruns e's failed call f; with a model it runs on that model and, when the failure clears, keeps a
 // CouncilRetry.
 func (r *Runner) retryWork(e CouncilExpert, f CouncilFailure, prev prevState, model string) work {
-	was := e.Model
-	if model != "" {
-		e.Model = model
-	}
 	return func(ctx context.Context, rn *run, id string) ending {
 		snap, err := Load(id)
 		if err != nil {
 			return loadFailed(err)
 		}
-		called := true
-		switch {
-		case f.Round <= 1:
-			r.round1(ctx, rn, id, snap, e)
-		case f.Round < SynthesisRound(snap):
-			r.round2(ctx, rn, id, snap, e, f.Round)
-		default:
-			if replies := owed(snap, e, false); len(replies) > 0 {
-				r.answerCall(ctx, rn, id, snap, e, replies, f.Round)
-			} else {
-				called = false
-				r.updateLogged(rn, id, func(c *Council) error {
-					delete(c.Failed, e.Id)
-					return nil
-				})
-			}
-		}
-		if model != "" && called && ctx.Err() == nil {
-			_, err := r.update(rn, id, func(c *Council) error {
-				if _, failed := c.Failed[e.Id]; failed {
-					return errSkip
-				}
-				if n := len(c.Retries); n > 0 && c.Retries[n-1].Auto && c.Retries[n-1].Expert == e.Id {
-					return errSkip // the retry fell back past model to Opus 4.8, and finishCall kept that
-				}
-				c.Retries = append(c.Retries, CouncilRetry{Expert: e.Id, Round: f.Round, Model: model, Was: was, Ts: r.now()})
-				return nil
-			})
-			if err != nil && !errors.Is(err, errSkip) {
-				log.Printf("[council] %s: save failed: %v", id, err)
-			}
-		}
+		r.retrySeat(ctx, rn, id, snap, e, f, model)
 		return ending{set: prev.restore, answers: prev.state != StateAwaiting, heldRound: heldRoundAfter(prev, snap)}
 	}
+}
+
+// retrySeat reruns e's failed call f in the round it failed in, on model when it is set, and keeps a CouncilRetry when
+// that answers. Several seats' retries run at once (RetryAll), so it reads snap and never writes it.
+func (r *Runner) retrySeat(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, f CouncilFailure, model string) {
+	was := e.Model
+	if model != "" {
+		e.Model = model
+	}
+	start := r.now()
+	called := true
+	switch {
+	case f.Round <= 1:
+		r.round1(ctx, rn, id, snap, e)
+	case f.Round < SynthesisRound(snap):
+		r.round2(ctx, rn, id, snap, e, f.Round)
+	default:
+		if replies := owed(snap, e, false); len(replies) > 0 {
+			r.answerCall(ctx, rn, id, snap, e, replies, f.Round)
+		} else {
+			called = false
+			r.updateLogged(rn, id, func(c *Council) error {
+				delete(c.Failed, e.Id)
+				return nil
+			})
+		}
+	}
+	if model == "" || !called || ctx.Err() != nil {
+		return
+	}
+	_, err := r.update(rn, id, func(c *Council) error {
+		if _, failed := c.Failed[e.Id]; failed {
+			return errSkip
+		}
+		if slices.ContainsFunc(c.Retries, func(k CouncilRetry) bool { return k.Auto && k.Expert == e.Id && k.Ts >= start }) {
+			return errSkip // the retry fell back past model to Opus 4.8, and finishCall kept that
+		}
+		c.Retries = append(c.Retries, CouncilRetry{Expert: e.Id, Round: f.Round, Model: model, Was: was, Ts: r.now()})
+		return nil
+	})
+	if err != nil && !errors.Is(err, errSkip) {
+		log.Printf("[council] %s: save failed: %v", id, err)
+	}
+}
+
+// RetryAll reruns every failed call but the coordinator's (the synthesis keeps its own Retry, as it reads what these
+// bring back) in one run, the seats at once: one Retry each would be refused while the first runs. models picks a seat's
+// model for this retry only, by expert id; a seat it leaves out, or names its own model for, retries on its own. A
+// live agent's seat takes no model.
+func (r *Runner) RetryAll(id string, models map[string]string) (*Council, error) {
+	clean := map[string]string{}
+	for k, m := range models {
+		if m = strings.TrimSpace(m); m != "" {
+			if !retryModel.MatchString(m) {
+				return nil, fmt.Errorf("%q is not a model name", m)
+			}
+			clean[k] = m
+		}
+	}
+	r.mu.Lock()
+	saved, start, err := r.retryAllLocked(id, clean)
+	r.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	r.changed(saved)
+	start()
+	return saved, nil
+}
+
+// retrySeatJob is one seat a RetryAll reruns: the seat, its failure and the model it retries on ("" for its own).
+type retrySeatJob struct {
+	e     CouncilExpert
+	f     CouncilFailure
+	model string
+}
+
+func (r *Runner) retryAllLocked(id string, models map[string]string) (*Council, func(), error) {
+	if r.Caller == nil {
+		return nil, nil, errors.New("the council runner has no caller")
+	}
+	cur, err := Load(id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if r.active[id] != nil {
+		return nil, nil, busy(id)
+	}
+	byId := map[string]CouncilExpert{}
+	for _, e := range cur.Experts {
+		byId[e.Id] = e
+	}
+	for k := range models {
+		if _, ok := byId[k]; !ok {
+			return nil, nil, fmt.Errorf("council %s has no expert %s", id, k)
+		}
+	}
+	var jobs []retrySeatJob
+	for _, e := range cur.Experts { // in panel order, so the seats start as the council lists them
+		f, failed := cur.Failed[e.Id]
+		if !failed || e.Coordinator {
+			continue
+		}
+		model := models[e.Id]
+		if model == e.Model {
+			model = ""
+		}
+		if model != "" && IsAgent(e) {
+			return nil, nil, fmt.Errorf("%s is a live agent: it answers with its own session's model", e.Name)
+		}
+		jobs = append(jobs, retrySeatJob{e: e, f: f, model: model})
+	}
+	if len(jobs) == 0 {
+		return nil, nil, fmt.Errorf("council %s has no failed seat to retry (a failed summary is retried on its own)", id)
+	}
+	prev := prevOf(cur)
+	return r.launchLocked(context.Background(), id, func() (*Council, error) {
+		return Update(id, func(c *Council) error {
+			c.State, c.Error = StateRunning, ""
+			return nil
+		})
+	}, func(ctx context.Context, rn *run, id string) ending {
+		snap, err := Load(id)
+		if err != nil {
+			return loadFailed(err)
+		}
+		var wg sync.WaitGroup
+		for _, j := range jobs {
+			wg.Go(func() { r.retrySeat(ctx, rn, id, snap, j.e, j.f, j.model) })
+		}
+		wg.Wait()
+		return ending{set: prev.restore, answers: prev.state != StateAwaiting, heldRound: heldRoundAfter(prev, snap)}
+	})
 }
 
 // Stop cancels the calls in flight, keeps the rounds that finished, and leaves the council stopped. It returns when the
@@ -2451,7 +2566,8 @@ func parseSuggestion(reply string, roles []CouncilExpert, groups []CouncilGroup)
 
 // Suggest makes the one sonnet call behind Setup's dashed rows: it reads the project with the read-only tools and
 // names the files the experts should read, up to two extra roles, the group that fits the feature best, and the mode
-// the question reads as with its reason. A group or a mode it names that does not exist comes back empty.
+// the question reads as with its reason. A group or a mode it names that does not exist comes back empty. The groups
+// made for seated chats are neither offered nor accepted: Setup has seated none yet, and each is a panel of one.
 func (r *Runner) Suggest(ctx context.Context, project, feature, question string, files []string) (CouncilSuggestion, error) {
 	if r.Caller == nil {
 		return CouncilSuggestion{}, errors.New("the council runner has no caller")
@@ -2459,7 +2575,8 @@ func (r *Runner) Suggest(ctx context.Context, project, feature, question string,
 	if strings.TrimSpace(project) == "" || strings.TrimSpace(feature) == "" {
 		return CouncilSuggestion{}, errors.New("a suggestion needs a project folder and a feature")
 	}
-	roles, groups := Roles(), Groups()
+	roles := Roles()
+	groups := slices.DeleteFunc(Groups(), func(g CouncilGroup) bool { return g.Id == AgentsGroupId || g.Id == AgentsIdeasGroupId })
 	asker := CouncilExpert{Id: "suggest", Name: "Coordinator", Model: ModelExpert}
 	res, err := r.Caller.Call(ctx, CallReq{
 		Expert: asker, Cwd: project, Tools: true,

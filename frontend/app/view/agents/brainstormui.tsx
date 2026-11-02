@@ -5,8 +5,8 @@
 // working view and the was/now diff.
 
 import { foldReveal } from "@/app/element/motiontokens";
-import { getApi } from "@/app/store/global";
 import { cn } from "@/util/util";
+import { useAtomValue, useSetAtom } from "jotai";
 import { AnimatePresence, motion } from "motion/react";
 import { Fragment, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentVM } from "./agentsviewmodel";
@@ -16,8 +16,6 @@ import {
     hasProsCons,
     judgeWork,
     optionLetter,
-    partBoards,
-    partSpikes,
     partTitle,
     phaseSteps,
     pickedLine,
@@ -27,7 +25,6 @@ import {
     questionTrack,
     sendPickedLabel,
     sentenceDiff,
-    spikeUrl,
     togglePick,
     type AnswerOption,
     type Approach,
@@ -42,15 +39,9 @@ import {
     type PartState,
     type TrackSegment,
 } from "./brainstormmodel";
+import { optionHoverAtom } from "./brainstormrail";
 import { sendBrainstorm } from "./brainstormsend";
-import { openBrainstormBoard, type BrainstormState } from "./brainstormstore";
-import { boardUrl, canvasDir, DEFAULT_BOARD_H, DEFAULT_BOARD_W, type CanvasBoard } from "./canvasmodel";
-import { attachCanvas } from "./canvasstore";
-
-const THUMB_W = 300;
-// beside a question's answers, where the label goes under the board so both fit the main column
-const THUMB_W_COMPACT = 220;
-const THUMB_MAX_H = 200;
+import type { BrainstormState } from "./brainstormstore";
 
 export const WORKING_TITLE = "The agent is writing; this opens when it asks again";
 const CHECK_LOCK_TITLE = "Locked while the builder check runs; this opens when the agent has taken in its questions";
@@ -317,13 +308,29 @@ export function useAnswer(agent: AgentVM, kind: "answer" | "builder-answer" = "a
 
 export type Answer = ReturnType<typeof useAnswer>;
 
-// the read over the answers, with the one toggle for every answer's pros and cons, shown until hidden. On a question
-// the judge weighed, the read and pick are the judge's; the judge's work goes under the answers
-export function QuestionAnswers({ q, ans, compact }: { q: BrainstormQuestion; ans: Answer; compact: boolean }) {
-    const [shown, setShown] = useState(true);
+// the read over the answers, with the one toggle for every answer's pros and cons, shown until hidden (folded until
+// shown when foldReasons: the question's boards sit in the rail, so the column stays short). On a question the judge
+// weighed, the read and pick are the judge's; the judge's work goes under the answers. With an agentId a row is tied to
+// its board in the rail (optionHoverAtom)
+export function QuestionAnswers({
+    q,
+    ans,
+    compact,
+    agentId,
+    foldReasons = false,
+}: {
+    q: BrainstormQuestion;
+    ans: Answer;
+    compact: boolean;
+    agentId?: string;
+    foldReasons?: boolean;
+}) {
+    // null until the toggle is used, so the boards arriving after the question still fold what the user left alone
+    const [toggled, setToggled] = useState<boolean | null>(null);
     if (q.options == null) {
         return null;
     }
+    const shown = toggled ?? !foldReasons;
     const reasons = hasProsCons(q);
     const work = judgeWork(q);
     const who = work?.judged ? "Judge’s" : "Agent’s";
@@ -335,6 +342,7 @@ export function QuestionAnswers({ q, ans, compact }: { q: BrainstormQuestion; an
             reasons={reasons && shown}
             pickLabel={`${who} pick`}
             multi={q.multi === true}
+            agentId={agentId}
         />
     );
     if (!q.read && !reasons && work == null) {
@@ -358,7 +366,7 @@ export function QuestionAnswers({ q, ans, compact }: { q: BrainstormQuestion; an
                             type="button"
                             data-brainstorm-proscons-toggle
                             aria-expanded={shown}
-                            onClick={() => setShown(!shown)}
+                            onClick={() => setToggled(!shown)}
                             className={cn(CHIP, "flex-none")}
                         >
                             {shown ? "Hide pros and cons" : "Show pros and cons"}
@@ -522,6 +530,7 @@ export function Options({
     reasons,
     pickLabel,
     multi,
+    agentId,
 }: {
     options: AnswerOption[];
     ans: Answer;
@@ -529,6 +538,8 @@ export function Options({
     reasons: boolean;
     pickLabel: string;
     multi: boolean;
+    // the agent whose rail holds this question's boards: with it a row is tied to its board there
+    agentId?: string;
 }) {
     const picks = usePicks(
         ans,
@@ -543,7 +554,16 @@ export function Options({
                 className={cn("flex flex-col", compact ? "gap-[6px]" : "gap-[10px]")}
             >
                 {options.map((o, i) => (
-                    <OptionRow key={i} o={o} i={i} ans={ans} compact={compact} reasons={reasons} pickLabel={pickLabel}>
+                    <OptionRow
+                        key={i}
+                        o={o}
+                        i={i}
+                        ans={ans}
+                        compact={compact}
+                        reasons={reasons}
+                        pickLabel={pickLabel}
+                        agentId={agentId}
+                    >
                         {multi ? <TickBox i={i} picks={picks} ans={ans} compact={compact} /> : null}
                     </OptionRow>
                 ))}
@@ -551,6 +571,22 @@ export function Options({
             {multi ? <SendPicked picks={picks} ans={ans} /> : null}
         </div>
     );
+}
+
+// A row tied to a board in the rail: hovering or focusing it sets the agent's hover atom (the rail outlines the board and
+// scrolls to it), leaving or blurring clears it, and the row reads the atom back to light up while the board under the
+// pointer is its own. A row with no agent (the builder check's own question has no board) is tied to nothing
+function useOptionLink(agentId: string | undefined, i: number) {
+    // the "" atom is nobody's: it is never set, so a row with no agent still calls the same hooks
+    const hover = optionHoverAtom(agentId ?? "");
+    const lit = useAtomValue(hover) === i;
+    const setHover = useSetAtom(hover);
+    if (agentId == null) {
+        return { linked: false, handlers: {} };
+    }
+    const on = () => setHover(i);
+    const off = () => setHover((h) => (h === i ? null : h));
+    return { linked: lit, handlers: { onMouseEnter: on, onMouseLeave: off, onFocus: on, onBlur: off } };
 }
 
 // one answer row: its tick box (children) before the button that sends it alone, and its pros and cons under both
@@ -561,6 +597,7 @@ function OptionRow({
     compact,
     reasons,
     pickLabel,
+    agentId,
     children,
 }: {
     o: AnswerOption;
@@ -569,14 +606,27 @@ function OptionRow({
     compact: boolean;
     reasons: boolean;
     pickLabel: string;
+    agentId?: string;
     children?: ReactNode;
 }) {
+    const link = useOptionLink(agentId, i);
     return (
         <div
             data-brainstorm-option-row={i}
+            data-linked={link.linked ? "" : undefined}
+            {...link.handlers}
             className={cn(
                 OPTION_ROW,
-                o.pick ? "border-accent/55 bg-accent/8 has-[button:enabled:hover]:bg-accentbg" : OPTION_ROW_PLAIN
+                // the board under the pointer lights its row's border, which replaces the hover border it would share
+                // with it
+                o.pick
+                    ? cn(
+                          "bg-accent/8 has-[button:enabled:hover]:bg-accentbg",
+                          link.linked ? "border-accent" : "border-accent/55"
+                      )
+                    : link.linked
+                      ? "border-accent bg-surface"
+                      : OPTION_ROW_PLAIN
             )}
         >
             <div className="flex">
@@ -772,8 +822,12 @@ export function QuestionMain({
     // guessing or skipping means something only for a question about a part of the design
     const chips = q.part !== "";
     const ans = useAnswer(agent);
-    const boards = questionBoards(f, s.base);
-    const answers = <QuestionAnswers key={q.n} q={q} ans={ans} compact={false} />;
+    // the question's boards sit in the rail, each tied to its option, so the options carry less here: their pros and
+    // cons start folded
+    const hasBoards = questionBoards(f, s.base) != null;
+    const answers = (
+        <QuestionAnswers key={q.n} q={q} ans={ans} compact={false} agentId={agent.id} foldReasons={hasBoards} />
+    );
     return (
         <div data-brainstorm-question className="flex min-h-0 flex-1 flex-col">
             <Track segments={questionTrack(f)} />
@@ -791,21 +845,7 @@ export function QuestionMain({
                         </button>
                     ) : null}
                 </QuestionHead>
-                {boards != null ? (
-                    <div data-brainstorm-question-boards className="flex flex-wrap items-start gap-[24px]">
-                        {q.options != null ? <div className="min-w-[360px] flex-1">{answers}</div> : null}
-                        <Thumbnails
-                            agentId={agent.id}
-                            s={s}
-                            canvas={f.canvas!}
-                            base={s.base!}
-                            boards={boards}
-                            compact
-                        />
-                    </div>
-                ) : (
-                    answers
-                )}
+                {answers}
                 <AnswerBox ans={ans} options={q.options != null} />
                 <div className="flex flex-col gap-[10px]">
                     <div className="flex items-center gap-[10px]">
@@ -1074,117 +1114,6 @@ export function JudgingMain({
                     {ans.act.error != null ? <span className={ERROR_LINE}>{ans.act.error}</span> : null}
                 </div>
             </MainBody>
-        </div>
-    );
-}
-
-// what a part shows to look at, wherever its body opens: the talk's part rows and the check's review
-export function PartMockups({
-    agentId,
-    s,
-    f,
-    part,
-}: {
-    agentId: string;
-    s: BrainstormState;
-    f: BrainstormFile;
-    part: BrainstormPart;
-}) {
-    const boards = partBoards(f, part, s.base);
-    const spikes = partSpikes(f, part, s.base);
-    return (
-        <>
-            {boards != null ? (
-                <Thumbnails agentId={agentId} s={s} canvas={f.canvas!} base={s.base!} boards={boards} />
-            ) : null}
-            {spikes != null ? <Spikes base={s.base!} canvas={f.canvas!} spikes={spikes} /> : null}
-        </>
-    );
-}
-
-// a spike is a live page to feel, not a board to look at, so it opens in the browser rather than the canvas
-function Spikes({ base, canvas, spikes }: { base: string; canvas: string; spikes: string[] }) {
-    return (
-        <div data-brainstorm-spikes className="flex flex-wrap items-baseline gap-x-[14px] gap-y-[4px]">
-            <span className="text-[11.5px] text-muted">{spikes.length > 1 ? "Live spikes" : "Live spike"}</span>
-            {spikes.map((path) => (
-                <button
-                    key={path}
-                    type="button"
-                    data-brainstorm-spike={path}
-                    title={spikeUrl(base, canvas, path)}
-                    onClick={() => getApi().openExternal(spikeUrl(base, canvas, path))}
-                    className={cn(LINK, "border-0 bg-transparent p-0 font-mono text-[11.5px]")}
-                >
-                    {path}
-                </button>
-            ))}
-        </div>
-    );
-}
-
-// a part's boards, each as a scaled live thumbnail with its option letter and a way to open it full size
-export function Thumbnails({
-    agentId,
-    s,
-    canvas,
-    base,
-    boards,
-    compact = false,
-}: {
-    agentId: string;
-    s: BrainstormState;
-    canvas: string;
-    base: string;
-    boards: string[];
-    compact?: boolean;
-}) {
-    const thumbW = compact ? THUMB_W_COMPACT : THUMB_W;
-    const open = (board: string) => {
-        attachCanvas(agentId, { topic: canvas, dir: canvasDir(s.cwd, canvas), projectDir: s.cwd, board }, Date.now());
-        openBrainstormBoard(agentId, board);
-    };
-    return (
-        <div className={cn("flex flex-none flex-col", compact ? "gap-[14px]" : "gap-[10px]")}>
-            {boards.map((name, i) => {
-                const b: CanvasBoard | undefined = s.boards.find((x) => x.name === name);
-                const w = b?.w ?? DEFAULT_BOARD_W;
-                const h = b?.h ?? DEFAULT_BOARD_H;
-                const scale = thumbW / w;
-                return (
-                    <div key={name} className={cn("flex", compact ? "flex-col gap-[6px]" : "items-start gap-[12px]")}>
-                        <div
-                            data-brainstorm-thumb={name}
-                            className="pointer-events-none relative flex-none overflow-hidden rounded-[8px] border border-edge-mid bg-background"
-                            style={{ width: thumbW, height: Math.min(THUMB_MAX_H, Math.round(h * scale)) }}
-                        >
-                            <iframe
-                                src={boardUrl(base, canvas, name)}
-                                title={name}
-                                tabIndex={-1}
-                                sandbox="allow-scripts allow-same-origin"
-                                className="absolute left-0 top-0 border-0"
-                                style={{ width: w, height: h, transform: `scale(${scale})`, transformOrigin: "0 0" }}
-                            />
-                        </div>
-                        <div className={cn("flex flex-col", compact ? "gap-[2px]" : "gap-[6px] pt-[2px]")}>
-                            <span className="font-mono text-[10.5px] text-muted">
-                                {boards.length > 1
-                                    ? `${name} · option ${String.fromCharCode(65 + i)} of ${boards.length}`
-                                    : name}
-                            </span>
-                            <button
-                                type="button"
-                                data-brainstorm-open-board
-                                onClick={() => open(name)}
-                                className={cn(LINK, "text-left text-[12px] font-semibold")}
-                            >
-                                Open full size
-                            </button>
-                        </div>
-                    </div>
-                );
-            })}
         </div>
     );
 }

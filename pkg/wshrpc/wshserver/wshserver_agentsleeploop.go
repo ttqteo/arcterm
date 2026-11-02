@@ -366,9 +366,10 @@ func formatFreed(bytes uint64) string {
 }
 
 // StartAgentSleepLoop starts the sleep check, once a minute for the life of ctx. notify raises the one notice a
-// check that slept anything makes.
+// check that slept anything makes, and the notice of a brainstorm's agent slept after its run started.
 func StartAgentSleepLoop(ctx context.Context, notify func(wshrpc.NotifyCommandData)) {
 	loop := newSleepLoop(notify)
+	setRunSleepNotify(notify)
 	go func() {
 		ticker := time.NewTicker(sleepLoopEvery)
 		defer ticker.Stop()

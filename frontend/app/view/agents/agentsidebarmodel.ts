@@ -18,10 +18,12 @@
 import { placesOf, splitGrids, type CellPlacement, type GridState, type ProjectGrids } from "./agentgrid";
 import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
 import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
+import { avatarTone, isLit, seatInitials, type AvatarTone } from "./councildiscussionmodel";
 import {
     canRemoveCouncil,
     isClosedCouncil,
     councilProjectKey,
+    panel,
     queuedLine,
     treeMeta,
     UNTITLED_COUNCIL,
@@ -314,14 +316,28 @@ export const HOME_PROJECT = "~home";
 // the agent body rows buildAgentTree emits under a project's group row (parent, lead, run, worker, ...)
 type AgentBodyRow = Exclude<AgentTreeRow, { kind: "group" }>;
 
-// A council as the tree draws its row: its feature, its state in a word (`meta`) and the tone that word is drawn in.
-// `created` (epoch ms) is the order: a running council saves constantly, so its `updated` would reshuffle the rows.
+/** A seat in a council row's picture: its name (the avatar's title), its letters and its identity colour. */
+export interface CouncilRowSeat {
+    name: string;
+    initials: string;
+    tone: AvatarTone;
+}
+
+// A council as the tree draws its row, a chat-list row: its seats' picture, its feature, its state in a word (`meta`)
+// in the tone that word is drawn in, and the time since its newest message (`lastAt`). `created` (epoch ms) is the
+// order: a running council saves constantly, so its `updated` would reshuffle the rows.
 export interface CouncilRowVM {
     id: string;
     feature: string;
     created: number;
     meta: string;
     tone: CouncilTone;
+    /** the picture's seats, back one first (councilSeatPair): two, or one for a council of a single seat */
+    seats: CouncilRowSeat[];
+    /** the front circle's corner dot: a seat writes, a seat's call failed, or neither */
+    dot: "working" | "failed" | null;
+    /** when the newest message came (councilLastAt), epoch ms */
+    lastAt: number;
     /** it ended while the person was elsewhere and they have not opened it since (councilUnreadAtom) */
     unread: boolean;
     /** it waits for the one council that runs: the row offers Remove from queue. Set only on a queued council. */
@@ -331,6 +347,44 @@ export interface CouncilRowVM {
     removable?: true;
     /** the person closed it (isClosedCouncil): it sits in its project's Closed councils fold and offers Reopen. */
     closed?: true;
+}
+
+/** Pure: the two seats a council row's picture shows, so each council keeps one picture: its first two panel seats in
+ *  order, the coordinator standing in for the second when the panel has one seat, and the one seat alone when the
+ *  council has a single seat. */
+export function councilSeatPair(c: Council): CouncilRowSeat[] {
+    const seats = panel(c).slice(0, 2);
+    if (seats.length < 2) {
+        const coordinator = c.experts.find((e) => e.coordinator);
+        if (coordinator != null) {
+            seats.push(coordinator);
+        }
+    }
+    return seats.map((e) => ({ name: e.name, initials: seatInitials(c, e.id), tone: avatarTone(c, e.id) }));
+}
+
+/** Pure: the corner dot of a council row's picture: `working` while any seat writes (isLit), `failed` when a seat's
+ *  call failed, none otherwise. */
+export function councilRowDot(c: Council): "working" | "failed" | null {
+    if (c.experts.some((e) => isLit(c, e.id))) {
+        return "working";
+    }
+    return Object.keys(c.failed ?? {}).length > 0 ? "failed" : null;
+}
+
+/** Pure: when a council's newest message came: the latest of its ideas' and replies' `ts` and its summary's `at`;
+ *  before any, when it started, else when it was created. Not `updated`, which every save of the council file stamps,
+ *  so a running council would always read "just now" and Close or Reopen would reset it. */
+export function councilLastAt(c: Council): number {
+    const times = [
+        ...(c.proposals ?? []).map((p) => p.ts),
+        ...(c.replies ?? []).map((r) => r.ts),
+        ...(c.summary != null ? [c.summary.at] : []),
+    ].filter((t) => t > 0);
+    if (times.length > 0) {
+        return Math.max(...times);
+    }
+    return c.started || c.created;
 }
 
 /** Pure: the councils (councilListAtom("")) as tree rows, by the registered project each one ran in. The folders of
@@ -367,6 +421,9 @@ export function councilRowsByProject(
             created: c.created,
             meta: c.state === "queued" ? queuedLine(c.queuedafter ? byId.get(c.queuedafter) : undefined) : text,
             tone,
+            seats: councilSeatPair(c),
+            dot: councilRowDot(c),
+            lastAt: councilLastAt(c),
             unread: unread.has(c.id),
         };
         if (c.state === "queued") {
@@ -699,6 +756,38 @@ export function projectTree(input: {
         }
         body.push(...held, ...termRows(project, list));
         out.push(...fold(project, body));
+    }
+    return out;
+}
+
+/** Pure: how many of Jarvis's items (splitAttention's `jarvis` share: gates, runs to confirm or land, escalations)
+ *  each project folder holds, so the folder's icon carries the part of the nav rail's Jarvis badge that is its own. An
+ *  item belongs to its run's project: the run as the tree knows it (`runs`, the lineage's), else the project of an agent
+ *  working for that run; a blocked queue entry, to its queued row's folder. An item naming neither (a due chunk, a learn
+ *  proposal) is in no folder. */
+export function jarvisCountsByProject(
+    items: readonly AttentionItem[],
+    runs: Readonly<Record<string, RunInfo>>,
+    agents: readonly AgentVM[],
+    queue: readonly QueuedRow[] = []
+): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const i of items) {
+        let project = "";
+        if (i.runid) {
+            project = runs[i.runid]?.project || "";
+            if (!project) {
+                const a = agents.find((x) => x.runId === i.runid && projectOf(x) !== "");
+                project = a != null ? projectOf(a) : "";
+            }
+        }
+        if (!project && i.queueid) {
+            const q = queue.find((r) => r.entry.id === i.queueid);
+            project = q != null ? q.project || HOME_PROJECT : "";
+        }
+        if (project) {
+            out.set(project, (out.get(project) ?? 0) + 1);
+        }
     }
     return out;
 }

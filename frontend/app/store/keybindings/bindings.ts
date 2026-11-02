@@ -244,20 +244,27 @@ const terminalSwapped = (model: AgentsViewModel) => {
 const galleryViewerOpen = () =>
     globalStore.get(centerModeAtom) === "canvases" && globalStore.get(canvasGalleryAtom).view === "viewer";
 
-// A full-size board the brainstorm pane opened draws the agent's canvas (the same CanvasPane), so it takes the canvas's
-// board keys: `[` `]` and ← → step its boards there, as its tabs' tooltip says.
+// A board widened in the brainstorm's rail (BrainstormState.board, in the design or the check) is drawn from the agent's
+// canvas state, so it takes the canvas's board keys: `[` `]` and ← → step its boards there. The question stays on
+// screen beside it, so this only moves the board keys, not the pane's other ones.
 const brainstormBoardOpen = (model: AgentsViewModel): boolean => {
     const s = focusedBrainstorm(model);
-    if (s?.mode !== "brainstorm") {
+    if (s?.mode !== "brainstorm" || s.board == null) {
         return false;
     }
     const id = globalStore.get(model.focusIdAtom);
     const agent = globalStore.get(model.agentsAtom).find((a) => a.id === id);
     const exit = agent != null ? globalStore.get(getProcExitAtom(agent.blockId ?? "")) : undefined;
-    return paneView({ ...s, file: shownBrainstormFile(s), exited: procExited(exit, agent?.sleeping) }) === "board";
+    const view = paneView({ ...s, file: shownBrainstormFile(s), exited: procExited(exit, agent?.sleeping) });
+    return view === "design" || view === "check";
 };
 
-// `[` `]` belong to the boards in canvas mode (and in the gallery's viewer, and on the brainstorm's full-size board) and
+// The widened board is being marked: the question's own keys (a letter picks an answer, the check review's j k y u
+// Enter) stand down, as they do over any canvas in marking mode, so a stray key does not answer for a mark.
+const brainstormBoardMarking = (model: AgentsViewModel): boolean =>
+    brainstormBoardOpen(model) && focusedCanvas(model)?.marking === true;
+
+// `[` `]` belong to the boards in canvas mode (and in the gallery's viewer, and on a board widened in the brainstorm) and
 // to the tabs in review mode, so the surface switch stands down while the focused agent shows either. The agent switches
 // stay live: the tree stays on screen beside them. The rest of the brainstorm pane has no use for them, so it leaves the
 // surface switch alone.
@@ -1163,9 +1170,10 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         return agent != null && globalStore.get(getProcExitAtom(agent.blockId ?? "")) != null;
     };
     // the check's review fills the main area: j and k move its cursor instead of the agents, and y, u and Enter act
-    // on the cursor row
+    // on the cursor row. A board widened in the rail leaves the review on screen, so they stay live; marking that board
+    // holds them (as it holds a letter's pick), and j and k move the agents then
     const inBrainstormReview = (ctx: KeyContext) => {
-        if (!inBrainstorm(ctx)) {
+        if (!inBrainstorm(ctx) || brainstormBoardMarking(model)) {
             return false;
         }
         const s = brainstorm()!;
@@ -1205,7 +1213,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
         return s == null ? 0 : pickableOptions(shownBrainstormFile(s), s);
     };
     // the step the brainstorm pane's back control takes, which Esc takes too. A drawn mark's note owns Esc on the
-    // board (it drops the mark there), so the board's step waits for it even while the note's field is unfocused
+    // widened board (it drops the mark there), so the board's step waits for it even while the note's field is unfocused
     const paneStep = () => {
         const s = brainstorm();
         if (s?.mode !== "brainstorm") {
@@ -1226,8 +1234,8 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
     const toggleTerminalFullscreen = () =>
         globalStore.set(terminalFullscreenAtom, !globalStore.get(terminalFullscreenAtom));
     const boardReady = (ctx: KeyContext) => inCanvas(ctx) && !canvas()!.marking && paneState(canvas()!) === "board";
-    // the canvas drawn in the terminal's place: the agent's canvas mode, or the brainstorm's full-size board, which draws
-    // the same CanvasPane
+    // the canvas drawn in the terminal's place: the agent's canvas mode, or the board widened in the brainstorm's rail,
+    // which draws from the same canvas state
     const boardCanvas = () =>
         canvas()?.mode === "canvas" ? canvas() : brainstormBoardOpen(model) ? focusedCanvas(model) : null;
     // While a canvas is on screen, [ ] and ← → are its keys in every state: they step the boards once a board has loaded
@@ -1324,7 +1332,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             id: "agent:brainstorm-back",
             keys: "Escape",
             group: "Agent",
-            label: "Back in the brainstorm: from a full-size board, or from the design to the question",
+            label: "Back in the brainstorm: from a widened board, or from the design to the question",
             when: (ctx) => agentNavStrict(ctx) && globalStore.get(focusSubagentAtom) == null && paneStep() != null,
             run: () => {
                 const step = paneStep();
@@ -1715,7 +1723,8 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             // The focused agent's conversation in the rail's Transcript tab. Deliberately NOT gated on !editable, like
             // fullscreen's chords: it is reached from inside the terminal. The agent is in the model's atoms, which a
             // when() cannot read (whenstate.ts), so run() looks it up and lets the key pass when it has no transcript
-            // (a plain terminal, or an agent that is not writing one yet).
+            // (a plain terminal, or an agent that is not writing one yet), or when it sleeps: its conversation is
+            // already in the terminal's place, and the rail has no Transcript tab then.
             id: "agent:transcript",
             keys: "Mod:Shift:f",
             group: "Agent",
@@ -1723,7 +1732,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             when: fullscreenChordActive,
             run: () => {
                 const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
-                if (!agent?.transcriptPath) {
+                if (!agent?.transcriptPath || agent.sleeping) {
                     return false;
                 }
                 openRailTranscript(agent.id);
@@ -1830,7 +1839,8 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 document.activeElement?.closest?.("[data-brainstorm-pane]") != null,
             run: () => false, // never consume: the field sends itself
         },
-        // a letter focuses its answer row, so Enter, the row's own key, sends it
+        // a letter focuses its answer row, so Enter, the row's own key, sends it. It stays live over a board widened in the
+        // rail (the question is still on screen), and stands down while that board is being marked
         ...OPTION_KEYS.map(
             (key, i): Binding => ({
                 id: `agent:brainstorm-option-${key}`,
@@ -1838,7 +1848,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
                 group: "Agent",
                 label: `Pick answer ${optionLetter(i)} of the brainstorm's question`,
                 paletteHidden: true,
-                when: (ctx) => inBrainstorm(ctx) && pickable() > i,
+                when: (ctx) => inBrainstorm(ctx) && pickable() > i && !brainstormBoardMarking(model),
                 run: () => {
                     const row = document.querySelector<HTMLElement>(
                         `[data-brainstorm-pane] [data-brainstorm-option="${i}"]`
