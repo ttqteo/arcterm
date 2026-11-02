@@ -29,6 +29,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council that already exists, running or done, can take a live claude or pi chat into it: type `@` in its message
   box, pick the chat under Add a live chat (its short id, title, project and how much context it holds are listed) and
   send. The chat joins the council, answers that message from its own context, and stays a seat.
+- A council's message boxes, the channel's and an idea's thread, take images and files: paste or drop an image and it
+  waits as a thumbnail above the text, and type `@` then a few letters of a project file to name it. The seats that
+  answer read what you attached, and your message shows the image as a thumbnail and each file as a chip you can open.
 
 ### Changed
 

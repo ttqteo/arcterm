@@ -846,13 +846,13 @@ func (r *Runner) callerFor(e CouncilExpert) (Caller, error) {
 // call's tool events (and, for an agent seat, from the wait for its session). It returns what the Caller returned. A
 // role seat's call that Claude's safeguards flagged runs again once on SafeguardFallback, as Claude Code does; when
 // that answers, the result's fellBack names it, and finishCall keeps a CouncilRetry.
-func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, snap *Council, prompt string, tools bool, first CouncilActivity) (CallRes, error) {
+func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, snap *Council, prompt string, tools bool, dirs []string, first CouncilActivity) (CallRes, error) {
 	caller, err := r.callerFor(e)
 	if err != nil {
 		return CallRes{}, err
 	}
 	rn.begin(e.Id, callClock{start: r.now(), base: snap.Stats[e.Id].Ms})
-	res, err := r.callOnce(ctx, rn, id, caller, e, snap, prompt, tools, first)
+	res, err := r.callOnce(ctx, rn, id, caller, e, snap, prompt, tools, dirs, first)
 	if err == nil || ctx.Err() != nil || !IsSafeguardFlag(err) || IsAgent(e) || strings.EqualFold(e.Model, SafeguardFallback) {
 		return res, err
 	}
@@ -861,7 +861,7 @@ func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, 
 	act.Text = "Flagged by safeguards: answering on Opus 4.8"
 	on := e
 	on.Model = SafeguardFallback
-	again, err2 := r.callOnce(ctx, rn, id, caller, on, snap, prompt, tools, act)
+	again, err2 := r.callOnce(ctx, rn, id, caller, on, snap, prompt, tools, dirs, act)
 	again.Tokens += res.Tokens
 	if err2 != nil {
 		if ctx.Err() != nil {
@@ -873,13 +873,14 @@ func (r *Runner) call(ctx context.Context, rn *run, id string, e CouncilExpert, 
 	return again, nil
 }
 
-// callOnce is one call of e through caller: it shows first as e's activity and keeps it current from the tool events.
-func (r *Runner) callOnce(ctx context.Context, rn *run, id string, caller Caller, e CouncilExpert, snap *Council, prompt string, tools bool, first CouncilActivity) (CallRes, error) {
+// callOnce is one call of e through caller: it shows first as e's activity and keeps it current from the tool events. dirs
+// are the folders outside the project the call may also read (readsOf).
+func (r *Runner) callOnce(ctx context.Context, rn *run, id string, caller Caller, e CouncilExpert, snap *Council, prompt string, tools bool, dirs []string, first CouncilActivity) (CallRes, error) {
 	r.updateLogged(rn, id, func(c *Council) error {
 		setActivity(c, e.Id, first)
 		return nil
 	})
-	req := CallReq{Expert: e, Cwd: snap.Project, Prompt: prompt, Tools: tools}
+	req := CallReq{Expert: e, Cwd: snap.Project, Prompt: prompt, Tools: tools, AddDirs: dirs}
 	if tools || IsAgent(e) {
 		req.OnTool = func(text string) {
 			act := first
@@ -998,7 +999,7 @@ func (r *Runner) round1(ctx context.Context, rn *run, id string, snap *Council, 
 	if IsAgent(e) {
 		prompt = agentPrompt(snap, e, 1)
 	}
-	res, err := r.call(ctx, rn, id, e, snap, prompt, true, CouncilActivity{Text: actStarting})
+	res, err := r.call(ctx, rn, id, e, snap, prompt, true, nil, CouncilActivity{Text: actStarting})
 	var (
 		props []CouncilProposal
 		plain string
@@ -1098,7 +1099,8 @@ func round2Target(c *Council, e CouncilExpert) *CouncilActivity {
 
 // round2 is one seat's turn in reply pass round (2, or 3 in a council with three rounds). A live agent is sent its own
 // prompt, and what it answers that holds no JSON is heard as one plain reply. After the first pass a seat with nothing
-// new to answer sits the pass out.
+// new to answer sits the pass out. The call has no tools, except a seat owed a reply of the person's that asked for them
+// (it attaches files or names one): that call has the tools and the folders of the attached images (readsOf).
 func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, round int) {
 	view := withOpenAsks(snap, e)
 	target := round2Target(view, e)
@@ -1112,7 +1114,8 @@ func (r *Runner) round2(ctx context.Context, rn *run, id string, snap *Council, 
 	if IsAgent(e) {
 		prompt = agentPrompt(view, e, round)
 	}
-	res, err := r.call(ctx, rn, id, e, view, prompt, false, *target)
+	tools, dirs := readsOf(unansweredFor(view, e.Id))
+	res, err := r.call(ctx, rn, id, e, view, prompt, tools, dirs, *target)
 	var (
 		out   Round2Result
 		plain string
@@ -1363,19 +1366,18 @@ func applyAnswers(c *Council, e CouncilExpert, answers []Answer, round int, now 
 }
 
 // answerCall asks one expert to answer the replies it owes, and saves its answers as replies of the given round. It has
-// the read-only tools when a reply asked for them (Let them read files). A live agent is sent its own prompt, and what it
-// answers that holds no JSON is heard as one plain reply under the first reply it owes.
+// the read-only tools when a reply its prompt carries asked for them (Let them read files, or an attachment or an @ file),
+// the person's replies above an owed one included, and may read the folders of the images those replies attach
+// (readsOf). A live agent is sent its own prompt, and what it answers that holds no JSON is heard as one plain reply under
+// the first reply it owes.
 func (r *Runner) answerCall(ctx context.Context, rn *run, id string, snap *Council, e CouncilExpert, replies []CouncilReply, round int) {
-	tools := false
-	for _, pr := range replies {
-		tools = tools || pr.Tools
-	}
+	tools, dirs := readsOf(personRepliesIn(snap, replies))
 	first := CouncilActivity{Text: actPerson, ProposalId: replies[0].ProposalId, ParentId: replies[0].Id}
 	prompt := AnswersPrompt(snap, e, replies)
 	if IsAgent(e) {
 		prompt = agentPrompt(withOpenAsks(snap, e), e, round)
 	}
-	res, err := r.call(ctx, rn, id, e, snap, prompt, tools, first)
+	res, err := r.call(ctx, rn, id, e, snap, prompt, tools, dirs, first)
 	var (
 		answers []Answer
 		plain   string
@@ -1487,7 +1489,58 @@ func (r *Runner) answerAll(ctx context.Context, rn *run, id string, snap *Counci
 
 func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' }
 
-// mentions reports whether text holds token as a whole word, not inside an address or a longer name.
+// isPathRune is a character a file mention's path runs over: the word characters and - . / ~
+func isPathRune(r rune) bool { return isWordRune(r) || r == '-' || r == '.' || r == '/' || r == '~' }
+
+// opensAt says the @ at text[at] opens a mention: it does not follow a letter, a digit or _ (so an address such as
+// x@ram.com opens none).
+func opensAt(text string, at int) bool {
+	before, _ := utf8.DecodeLastRuneInString(text[:at])
+	return at == 0 || !isWordRune(before)
+}
+
+// filePathAt is the path of the file mention the @ at text[at] starts, and where its run ends. The run is the longest
+// one of path characters after the @, with its trailing dots dropped (the dot that ends a sentence); it is a file mention
+// when what is left holds a / or a . The path is "" when the @ starts none. The frontend carries the same rule, and both
+// sides' tests hold the same table of examples, so the seats it predicts are the seats the backend reaches.
+func filePathAt(text string, at int) (path string, end int) {
+	end = at + 1
+	for end < len(text) {
+		r, n := utf8.DecodeRuneInString(text[end:])
+		if !isPathRune(r) {
+			break
+		}
+		end += n
+	}
+	run := strings.TrimRight(text[at+1:end], ".")
+	if !strings.ContainsAny(run, "/.") {
+		return "", end
+	}
+	return run, end
+}
+
+// fileMentions are the paths of the files text names with an @, in order, each @ one: "@src/a.go and @b.md." names
+// src/a.go and b.md. A seat or a chat is never named by an @ that starts one (mentions, atWords).
+func fileMentions(text string) []string {
+	var out []string
+	for i := 0; i < len(text); i++ {
+		if text[i] != '@' || !opensAt(text, i) {
+			continue
+		}
+		path, end := filePathAt(text, i)
+		if path != "" {
+			out = append(out, path)
+		}
+		i = end - 1
+	}
+	return out
+}
+
+// fileMentioned says text names at least one file with an @: the reply is then answered with tools, so the seat can read it.
+func fileMentioned(text string) bool { return len(fileMentions(text)) > 0 }
+
+// mentions reports whether text holds token as a whole word, not inside an address or a longer name. A token that starts
+// with @ is not found in an @ that starts a file mention: @ux/plan.md and @ram.go name files, not UX or RAM.
 func mentions(text, token string) bool {
 	for from := 0; from < len(text); {
 		i := strings.Index(text[from:], token)
@@ -1499,7 +1552,12 @@ func mentions(text, token string) bool {
 		before, _ := utf8.DecodeLastRuneInString(text[:i])
 		after, _ := utf8.DecodeRuneInString(text[end:])
 		if (i == 0 || !isWordRune(before)) && (end == len(text) || !isWordRune(after)) {
-			return true
+			if !strings.HasPrefix(token, "@") {
+				return true
+			}
+			if path, _ := filePathAt(text, i); path == "" {
+				return true
+			}
 		}
 		from = i + 1
 	}
@@ -1509,16 +1567,20 @@ func mentions(text, token string) bool {
 // minChatKey is the fewest characters of its tab id with which a mention reaches a chat seat.
 const minChatKey = 8
 
-// atWords are the words that follow an @ in lower, an @ inside a longer word (an address) left out. A word runs over
-// letters, digits, _ and -: a UUID tab id has a dash at its 9th character, so the key that tells two chats apart (such as
-// 3e19c0d2-a) runs past it.
+// atWords are the words that follow an @ in lower, an @ inside a longer word (an address) and an @ that starts a file
+// mention (@3e19c0d2-a/x.ts is a file, not the chat keyed 3e19c0d2-a) left out. A word runs over letters, digits, _ and
+// -: a UUID tab id has a dash at its 9th character, so the key that tells two chats apart (such as 3e19c0d2-a) runs past it.
 func atWords(lower string) []string {
 	var out []string
 	for i := 0; i < len(lower); i++ {
 		if lower[i] != '@' {
 			continue
 		}
-		if before, _ := utf8.DecodeLastRuneInString(lower[:i]); i > 0 && isWordRune(before) {
+		if !opensAt(lower, i) {
+			continue
+		}
+		if path, end := filePathAt(lower, i); path != "" {
+			i = end - 1
 			continue
 		}
 		end := i + 1
@@ -1661,8 +1723,9 @@ func seatBeforeCoordinator(c *Council, seats []CouncilExpert) {
 
 // appendPersonReply adds the person's reply to c, in the round c is in, addressed also to the chats in joined (the ids of
 // the seats this reply just seated). A reply to a reply takes the proposal of its parent; it is an error to name a
-// proposal or a parent that is not there.
-func appendPersonReply(c *Council, proposalId, parentId, text string, tools bool, joined []string, now int64) error {
+// proposal or a parent that is not there. A reply that attaches files or names one with an @ is stored with tools on,
+// whatever tools says: the seat that answers it has to be able to read them.
+func appendPersonReply(c *Council, proposalId, parentId, text string, tools bool, attachments []string, joined []string, now int64) error {
 	var parent *CouncilReply
 	if parentId != "" {
 		if parent = findReply(c, parentId); parent == nil {
@@ -1679,9 +1742,14 @@ func appendPersonReply(c *Council, proposalId, parentId, text string, tools bool
 		return fmt.Errorf("council %s has no proposal %s", c.Id, proposalId)
 	}
 	to := withJoined(c, replyTargets(c, proposalId, parent, text), joined)
+	if len(attachments) == 0 {
+		attachments = nil // stored as no key at all, and never the caller's slice
+	} else {
+		attachments = slices.Clone(attachments)
+	}
 	c.Replies = append(c.Replies, CouncilReply{
 		Id: nextReplyId(c), ProposalId: proposalId, ParentId: parentId, Author: YouId, Text: text,
-		To: to, Tools: tools, Round: c.Round, Ts: now,
+		To: to, Tools: tools || len(attachments) > 0 || fileMentioned(text), Attachments: attachments, Round: c.Round, Ts: now,
 	})
 	return nil
 }
@@ -1706,8 +1774,10 @@ func followRound(c *Council) int {
 // before the coordinator, and each is a target of the reply even when its text does not @ it. A council that stored no
 // draft mode keeps the one its seats gave before the chat joined (freezeDraftMode). A chat seated while round 1 runs sits
 // that round out, since the round read its panel when it began, and takes part from round 2; a reply that fails seats
-// nobody.
-func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats []CouncilExpert) (*Council, error) {
+// nobody. attachments are the absolute paths of the files the person attached (the caller has checked them): the reply
+// stores them, and one with any, or with a file named by an @ in its text, is stored and answered with tools on whatever
+// tools says, in a round or a follow-up.
+func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats []CouncilExpert, attachments ...string) (*Council, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil, errors.New("a reply needs some text")
@@ -1733,7 +1803,7 @@ func (r *Runner) Reply(id, proposalId, parentId, text string, tools bool, seats 
 			freezeDraftMode(c) // before the chat sits, so the mode is the one the council had
 			seatBeforeCoordinator(c, joined)
 		}
-		return appendPersonReply(c, proposalId, parentId, text, tools, idsOf(joined), r.now())
+		return appendPersonReply(c, proposalId, parentId, text, tools, attachments, idsOf(joined), r.now())
 	}
 	var (
 		saved *Council
@@ -1843,7 +1913,7 @@ func (r *Runner) synthesizeOn(ctx context.Context, rn *run, id string, model str
 		coord.Model = model
 	}
 	at := r.now() // the Summary reads what was said up to now; a reply posted while it is written reads as newer
-	res, err := r.call(ctx, rn, id, coord, snap, SynthesisPrompt(snap), false, CouncilActivity{Text: actSummary})
+	res, err := r.call(ctx, rn, id, coord, snap, SynthesisPrompt(snap), false, nil, CouncilActivity{Text: actSummary})
 	var (
 		sum  CouncilSummary
 		weak []WeakNote

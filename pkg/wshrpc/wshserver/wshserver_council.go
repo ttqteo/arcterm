@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -143,16 +144,64 @@ func (ws *WshServer) CouncilGetCommand(ctx context.Context, data wshrpc.CommandC
 	return council.Load(data.Id)
 }
 
+// checkCouncilAttachments says every path in paths is a file the composer kept, so that no reply makes a seat read
+// anything else: an absolute path to an existing regular file whose parent folder sits directly in root, which is
+// root/<folder>/<name> (WriteTempFileCommand with Keep gives each kept file a folder of its own). Symlinks are resolved
+// before the comparison, and it ignores case on Windows. The first path that fails refuses all of them, and the error
+// names it.
+func checkCouncilAttachments(root string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	realRoot, rootErr := filepath.EvalSymlinks(root)
+	for _, p := range paths {
+		refuse := func(why string) error {
+			return fmt.Errorf("attachment %q %s: a reply attaches only an image the composer kept in a folder under %s", p, why, root)
+		}
+		switch {
+		case !filepath.IsAbs(p):
+			return refuse("is not an absolute path")
+		case strings.ContainsAny(p, "\r\n"):
+			return refuse("has a line break in its name")
+		case rootErr != nil:
+			return refuse("has no kept folder to sit in")
+		}
+		resolved, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			return refuse("is not there")
+		}
+		if info, err := os.Stat(resolved); err != nil || !info.Mode().IsRegular() {
+			return refuse("is not a file")
+		}
+		if !samePath(filepath.Dir(filepath.Dir(resolved)), realRoot) {
+			return refuse("is not directly in one of its folders")
+		}
+	}
+	return nil
+}
+
+// samePath compares two paths that name a folder already resolved, ignoring case on Windows.
+func samePath(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
 // CouncilReplyCommand posts the person's reply; the runner checks the proposal and the parent exist and answers it. The
 // chats it names (Agents) are resolved first, as a start's are (see councilAgentSeats): a tab that is gone, ambiguous or
 // cannot be seated fails the command with the live tabs listed, and nothing is posted or seated. The runner seats them in
-// the save that posts the reply.
+// the save that posts the reply. Its Attachments are checked first (checkCouncilAttachments): one that is not a file the
+// composer kept refuses the whole reply, and the runner stores a reply that has any with Tools on.
 func (ws *WshServer) CouncilReplyCommand(ctx context.Context, data wshrpc.CommandCouncilReplyData) error {
+	if err := checkCouncilAttachments(keptAttachmentsDir(), data.Attachments); err != nil {
+		return err
+	}
 	seats, err := councilAgentSeats(ctx, data.Agents)
 	if err != nil {
 		return err
 	}
-	_, err = councilRunner.Reply(data.Id, data.ProposalId, data.ParentId, data.Text, data.Tools, seats)
+	_, err = councilRunner.Reply(data.Id, data.ProposalId, data.ParentId, data.Text, data.Tools, seats, data.Attachments...)
 	return err
 }
 

@@ -87,14 +87,17 @@ type CommandCouncilCloseData struct {
 // CommandCouncilReplyData is the person's reply. ProposalId and ParentId empty is "Ask the whole council"; a
 // ParentId answers that reply, else the proposal itself. Tools turns on Let them read files for the answers. Agents are
 // the tab ids (or unique prefixes) of the live chats the message seats: they are seated before the message is posted, a
-// gone or unseatable id fails the send, and an id named twice or already seated sits once.
+// gone or unseatable id fails the send, and an id named twice or already seated sits once. Attachments are the absolute
+// paths of the images the person attached: each must be a file the composer kept under ~/.arc/attachments (one per
+// upload folder), and a reply carrying any is stored and answered with Tools on, whatever Tools says.
 type CommandCouncilReplyData struct {
-	Id         string   `json:"id"`
-	ProposalId string   `json:"proposalid,omitempty"`
-	ParentId   string   `json:"parentid,omitempty"`
-	Text       string   `json:"text"`
-	Tools      bool     `json:"tools,omitempty"`
-	Agents     []string `json:"agents,omitempty"`
+	Id          string   `json:"id"`
+	ProposalId  string   `json:"proposalid,omitempty"`
+	ParentId    string   `json:"parentid,omitempty"`
+	Text        string   `json:"text"`
+	Tools       bool     `json:"tools,omitempty"`
+	Agents      []string `json:"agents,omitempty"`
+	Attachments []string `json:"attachments,omitempty"`
 }
 
 // CommandCouncilContinueData resumes a council paused after round 1: Cut lists the proposals the person unticked

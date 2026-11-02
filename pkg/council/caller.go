@@ -20,7 +20,10 @@ type CallReq struct {
 	Cwd    string
 	Prompt string
 	Tools  bool // round 1, the Setup suggestion, a follow-up with Let them read files on
-	OnTool func(text string)
+	// AddDirs are the folders outside Cwd a call with Tools may also read: the folder of each image the person attached
+	// to a reply the prompt carries, nothing wider. Empty for every call that carries none.
+	AddDirs []string
+	OnTool  func(text string)
 }
 
 // CallRes is what a call returned: the whole reply, and the tokens it used (cache reads included).
@@ -82,7 +85,8 @@ func (ConsultCaller) Call(ctx context.Context, req CallReq) (CallRes, error) {
 	}
 	runCtx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	text, usage, err := runClaude(runCtx, req.Cwd, req.Prompt, consult.CallOpts{Model: req.Expert.Model, Tools: tools}, req.OnTool)
+	opts := consult.CallOpts{Model: req.Expert.Model, Tools: tools, AddDirs: req.AddDirs}
+	text, usage, err := runClaude(runCtx, req.Cwd, req.Prompt, opts, req.OnTool)
 	res := CallRes{Text: text, Tokens: int64(usage.TotalTokens)}
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 		return res, fmt.Errorf("timed out after %s", callTimeout)

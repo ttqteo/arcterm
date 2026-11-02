@@ -29,8 +29,21 @@ import { fileURLToPath } from "node:url";
 import { waitFor } from "../attach.mjs";
 
 export const COUNCIL_PROJECT = "council-fixture";
-// `room` is a running council with two live agents seated, `room-awaiting` the same room waiting on two held ideas
-export const COUNCIL_FIXTURES = ["round1", "round2", "awaiting", "done", "failed", "notrun", "room", "room-awaiting"];
+// `room` is a running council with two live agents seated, `room-awaiting` the same room waiting on two held ideas,
+// `room-attached` a running council (no live agent) whose person's post carries an image and names a project file: the
+// post's `attachments` holds a placeholder the step patches to the PNG it wrote (`ATTACHMENT_PLACEHOLDER`)
+export const COUNCIL_FIXTURES = [
+    "round1",
+    "round2",
+    "awaiting",
+    "done",
+    "failed",
+    "notrun",
+    "room",
+    "room-awaiting",
+    "room-attached",
+];
+export const ATTACHMENT_PLACEHOLDER = "<PNG>";
 export const COUNCIL_ID_PREFIX = "fx-council-";
 export const councilFixtureId = (name) => `${COUNCIL_ID_PREFIX}${name}`;
 
@@ -50,6 +63,7 @@ const PLACE = {
     notrun: { createdAgoMs: 60 * MINUTE },
     room: { updatedAgoMs: 0 },
     "room-awaiting": { createdAgoMs: 18 * MINUTE },
+    "room-attached": { updatedAgoMs: 0 },
 };
 
 /** The fixture as authored (project empty, times around 2026-10-21 09:00 UTC). */

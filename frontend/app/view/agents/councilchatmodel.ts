@@ -32,9 +32,11 @@ import {
     authorName,
     chatSeatTabs,
     draftsWaitWord,
+    fileMentions,
     headerChip,
     heldDrafts,
     isAgentSeat,
+    isMentionablePath,
     isReaction,
     mentionsChat,
     panel,
@@ -47,6 +49,9 @@ import {
     type HeldDraft,
     type SeatableAgent,
 } from "./councilmodel";
+import { fileMentionMatches, insertFileMention } from "./launchermention";
+
+export { insertFileMention };
 
 const YOU = "you";
 
@@ -168,6 +173,7 @@ export interface ReplyPost extends Who {
     label: string; // `builds on it`, `has doubts`, `is against it`, `replies`, `steers`
     pill: PillTone;
     text: string;
+    attachments: string[]; // the images the person attached (absolute paths, in the order sent); empty for none
     evidence: string[];
     weak: string; // a claim marked weak, as the chip reads (`Weak · no measurement`)
     mine: boolean;
@@ -191,6 +197,7 @@ function replyPost(c: Council, r: CouncilReply): ReplyPost {
         ...whoIs(c, r.author),
         ...replyPill(r),
         text: r.text,
+        attachments: r.attachments ?? [],
         ...evidenceOf(r.evidence),
         mine,
         reaches: mine ? reachOf(c, r) : "",
@@ -829,8 +836,9 @@ export function replyReach(
 
 // ---- the @ picker ----
 
-// an @ that does not sit inside a word, and what has been typed after it up to the caret
-const MENTION = /(^|[^\p{L}\p{N}_])@([^@\n]{0,40})$/u;
+// an @ that does not sit inside a word, and what has been typed after it up to the caret: a seat's name, or a path (the
+// New dialog's `@` list reads one as far as 200 characters)
+const MENTION = /(^|[^\p{L}\p{N}_])@([^@\n]{0,200})$/u;
 
 /** Pure: each chat's mention key, by tab id: the shortest start of the tab id, {@link MIN_CHAT_KEY} characters or more,
  *  that no other chat in `tabIds` shares (any case). `@82faafca` for a lone chat; for two whose ids start alike the key
@@ -863,18 +871,29 @@ export interface ChatPick {
     key: string;
 }
 
+/** What the `@` picker lists: the seats, the project's files and the live chats that match, and where the `@` sits. */
+export interface MentionPicker {
+    start: number;
+    seats: CouncilExpert[];
+    files: string[]; // project paths, relative to the project, best match first
+    chats: ChatPick[];
+}
+
 /** Pure: what the `@` picker lists while the person types, for the text before `caret`: the seats whose name, id or
- *  (for a chat) mention key holds what follows the `@`; then the live chats from `chats` that no seat holds, whose key,
- *  name or project holds it, each with its key; and `start`, where that `@` sits (it is replaced by the seat's name,
- *  `insertMention`, or the chat's key, `insertChatMention`). Null when the caret is not right after an `@`, when neither
- *  list has a match, and once a whole seat name, seat key or chat key and a space follow it, so the picker closes after
- *  a pick. */
+ *  (for a chat) mention key holds what follows the `@`; the project's files from `files` that match it (the New dialog's
+ *  ranking and cap, `fileMentionMatches`; none for a bare `@`, and only the ones an `@` can name whole,
+ *  `isMentionablePath`); then the live chats from `chats` that no seat holds, whose key, name or project holds it, each
+ *  with its key; and `start`, where that `@` sits (it is replaced by the seat's name, `insertMention`, the file's path,
+ *  `insertFileMention`, or the chat's key, `insertChatMention`). A query that holds a `/` or a `.` is a path, and lists
+ *  files alone. Null when the caret is not right after an `@`, when no list has a match, and once a whole seat name, seat
+ *  key or chat key, or a path, and a space follow it, so the picker closes after a pick. */
 export function mentionPicker(
     c: Council,
     text: string,
     caret: number,
-    chats: readonly SeatableAgent[] = []
-): { start: number; seats: CouncilExpert[]; chats: ChatPick[] } | null {
+    chats: readonly SeatableAgent[] = [],
+    files: readonly string[] = []
+): MentionPicker | null {
     const found = MENTION.exec(text.slice(0, caret));
     if (found == null) {
         return null;
@@ -894,13 +913,34 @@ export function mentionPicker(
         return null;
     }
     const holds = (word: string) => word.toLowerCase().includes(query);
-    const matching = seats.filter((e) => query === "" || wordsOf(e).some(holds));
-    const listed = joinable
-        .filter((a) => query === "" || [keys.get(a.id) ?? "", a.name, a.project].some(holds))
-        .map((a) => ({ chat: a, key: keys.get(a.id) ?? "" }));
-    return matching.length > 0 || listed.length > 0
-        ? { start: caret - found[2].length - 1, seats: matching, chats: listed }
+    const isPath = /[/.]/.test(query);
+    const matching = isPath ? [] : seats.filter((e) => query === "" || wordsOf(e).some(holds));
+    // a path ends at whitespace: once a space follows it the `@` is done
+    const named = query === "" || /\s/.test(query) ? [] : fileMentionMatches(found[2], files.filter(isMentionablePath));
+    const listed = isPath
+        ? []
+        : joinable
+              .filter((a) => query === "" || [keys.get(a.id) ?? "", a.name, a.project].some(holds))
+              .map((a) => ({ chat: a, key: keys.get(a.id) ?? "" }));
+    return matching.length > 0 || named.length > 0 || listed.length > 0
+        ? { start: caret - found[2].length - 1, seats: matching, files: named, chats: listed }
         : null;
+}
+
+/** One row of the `@` list: a seat, a file or a live chat to add. */
+export type PickerRow =
+    | { kind: "seat"; seat: CouncilExpert }
+    | { kind: "file"; path: string }
+    | { kind: "chat"; chat: ChatPick };
+
+/** Pure: the one list the arrow keys walk, in the order the list draws it: the Seats, then the Files, then Add a live
+ *  chat. The cursor starts on the first row: a seat when any matches. */
+export function pickerRows(picker: Pick<MentionPicker, "seats" | "files" | "chats">): PickerRow[] {
+    return [
+        ...picker.seats.map((seat): PickerRow => ({ kind: "seat", seat })),
+        ...picker.files.map((path): PickerRow => ({ kind: "file", path })),
+        ...picker.chats.map((chat): PickerRow => ({ kind: "chat", chat })),
+    ];
 }
 
 /** Pure: `text` with the `@…` typed between `start` and `caret` replaced by `@<seat's name>` and a space (the one that
@@ -988,12 +1028,43 @@ export function namedFile(text: string): string {
     return "";
 }
 
-/** Pure: whether a follow-up lets the seats read files: the person's own choice when they flipped Let them read files
- *  (`choice`), else on exactly when the question names a file or a path, `why` naming it. */
-export function readsFiles(choice: boolean | null, text: string): { on: boolean; why: string } {
+/** Pure: whether a message lets the seats read files, `why` and `locked` with it. It is on, and `locked` (the person
+ *  cannot turn it off), when `attached` images go with it or its text has an `@file` (the first one is `why`, else
+ *  "an image"): the seats cannot read what they cannot open. Otherwise it is the person's own choice when they flipped
+ *  Let them read files (`choice`), else on exactly when the question names a file or a path, `why` naming it. */
+export function readsFiles(
+    choice: boolean | null,
+    text: string,
+    attached = 0
+): { on: boolean; why: string; locked: boolean } {
+    const mention = fileMentions(text)[0];
+    if (attached > 0 || mention != null) {
+        return { on: true, why: mention?.path ?? "an image", locked: true };
+    }
     if (choice != null) {
-        return { on: choice, why: "" };
+        return { on: choice, why: "", locked: false };
     }
     const file = namedFile(text);
-    return { on: file !== "", why: file };
+    return { on: file !== "", why: file, locked: false };
+}
+
+/** A piece of a sent message: plain text, or the file an `@path` named (drawn as a chip in place of the `@path`). */
+export type MessageSegment = { kind: "text"; text: string } | { kind: "file"; path: string };
+
+/** Pure: a message's text cut at its file mentions, in order, with no empty text between or around them; the text
+ *  of the segments, with `@path` for each file, is the message again. An `@` that names a seat stays in the text. */
+export function messageSegments(text: string): MessageSegment[] {
+    const out: MessageSegment[] = [];
+    let from = 0;
+    for (const m of fileMentions(text)) {
+        if (m.start > from) {
+            out.push({ kind: "text", text: text.slice(from, m.start) });
+        }
+        out.push({ kind: "file", path: m.path });
+        from = m.end;
+    }
+    if (from < text.length) {
+        out.push({ kind: "text", text: text.slice(from) });
+    }
+    return out;
 }

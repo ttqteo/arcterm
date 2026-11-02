@@ -9,13 +9,16 @@ import {
     councilThread,
     ideaOrder,
     insertChatMention,
+    insertFileMention,
     insertMention,
     joinableChats,
     mentionPicker,
+    messageSegments,
     moveIdea,
     namedFile,
     onlyLine,
     pickedChats,
+    pickerRows,
     readsFiles,
     replyReach,
     seatChips,
@@ -1374,9 +1377,226 @@ describe("namedFile and readsFiles: a follow-up reads files when the question na
     });
 
     it("is on when the question names a file, says which, and the person's own choice wins", () => {
-        expect(readsFiles(null, "Trong rail-apps.json có gì?")).toEqual({ on: true, why: "rail-apps.json" });
-        expect(readsFiles(null, "Làm hướng nào trước?")).toEqual({ on: false, why: "" });
-        expect(readsFiles(false, "Trong rail-apps.json có gì?")).toEqual({ on: false, why: "" });
-        expect(readsFiles(true, "Làm hướng nào trước?")).toEqual({ on: true, why: "" });
+        expect(readsFiles(null, "Trong rail-apps.json có gì?")).toEqual({
+            on: true,
+            why: "rail-apps.json",
+            locked: false,
+        });
+        expect(readsFiles(null, "Làm hướng nào trước?")).toEqual({ on: false, why: "", locked: false });
+        expect(readsFiles(false, "Trong rail-apps.json có gì?")).toEqual({ on: false, why: "", locked: false });
+        expect(readsFiles(true, "Làm hướng nào trước?")).toEqual({ on: true, why: "", locked: false });
+    });
+
+    it("is on and locked for an attached image, whatever the person chose and the text says", () => {
+        const image = { on: true, why: "an image", locked: true };
+        expect(readsFiles(null, "Làm hướng nào trước?", 1)).toEqual(image);
+        expect(readsFiles(false, "Làm hướng nào trước?", 2)).toEqual(image);
+        expect(readsFiles(true, "", 1)).toEqual(image);
+        expect(readsFiles(null, "Làm hướng nào trước?", 0)).toEqual({ on: false, why: "", locked: false });
+    });
+
+    it("is on and locked for an @file mention, naming the first file", () => {
+        const first = { on: true, why: "ux/plan.md", locked: true };
+        expect(readsFiles(null, "see @ux/plan.md and @b.go")).toEqual(first);
+        expect(readsFiles(false, "see @ux/plan.md")).toEqual(first);
+        expect(readsFiles(false, "@ux/plan.md", 1)).toEqual(first);
+    });
+
+    it("is not locked by an @ that names a seat, or by a file named without an @", () => {
+        expect(readsFiles(false, "@UX. what next?")).toEqual({ on: false, why: "", locked: false });
+        expect(readsFiles(false, "mail a@ram.com")).toEqual({ on: false, why: "", locked: false });
+        expect(readsFiles(false, "see ux/plan.md")).toEqual({ on: false, why: "", locked: false });
+    });
+});
+
+describe("mentionPicker: the project's files between the seats and the chats", () => {
+    const FILES = ["ux/plan.md", "src/ux.ts", "docs/readme.md", "Makefile", "app/[id]/page.tsx", "a b/c.ts", "go.mod"];
+    const paths = (picker: ReturnType<typeof mentionPicker>) => picker!.files;
+
+    // a live chat that "ux" also matches, so one query lists all three kinds
+    const uxChat = chat("9a8b7c6d-1111-4222-8333-444455556666", "UX review");
+
+    it("lists the files that match what follows the @, with the seats and the chats", () => {
+        const picker = mentionPicker(room(), "@ux", 3, [far], FILES)!;
+        expect(picker.seats.map((e) => e.id)).toEqual(["ux"]);
+        expect([...picker.files].sort()).toEqual(["src/ux.ts", "ux/plan.md"]);
+        expect(picker.chats).toEqual([]);
+        expect(picker.start).toBe(0);
+    });
+
+    it("lists the seats, then the files, then the chats through pickerRows, one row each", () => {
+        const picker = mentionPicker(room(), "@ux", 3, [uxChat, far], FILES)!;
+        const rows = pickerRows(picker);
+        expect(rows.map((r) => r.kind)).toEqual(["seat", "file", "file", "chat"]);
+        expect(rows[0]).toEqual({ kind: "seat", seat: picker.seats[0] });
+        expect(rows[1]).toEqual({ kind: "file", path: picker.files[0] });
+        expect(rows[2]).toEqual({ kind: "file", path: picker.files[1] });
+        expect(rows[3]).toEqual({ kind: "chat", chat: { chat: uxChat, key: "9a8b7c6d" } });
+    });
+
+    it("has pickerRows hold every pick of the picker once, and none for an empty one", () => {
+        const picker = mentionPicker(room(), "@wit", 4, [], [])!;
+        expect(pickerRows(picker)).toEqual([{ kind: "seat", seat: picker.seats[0] }]);
+        expect(pickerRows({ seats: [], files: [], chats: [] })).toEqual([]);
+        const onlyFiles = mentionPicker(room(), "@plan.", 6, [uxChat], FILES)!;
+        expect(pickerRows(onlyFiles)).toEqual([{ kind: "file", path: "ux/plan.md" }]);
+    });
+
+    it("starts on a seat when any matches, else on the first file", () => {
+        expect(pickerRows(mentionPicker(room(), "@sec", 4, [], FILES)!)[0]).toMatchObject({ kind: "seat" });
+        expect(pickerRows(mentionPicker(room(), "@docs", 5, [], FILES)!)[0]).toEqual({
+            kind: "file",
+            path: "docs/readme.md",
+        });
+    });
+
+    it("lists only files for a query that holds a / or a .", () => {
+        const picker = mentionPicker(room(), "@ux/", 4, [far], FILES)!;
+        expect(picker.seats).toEqual([]);
+        expect(picker.chats).toEqual([]);
+        expect(picker.files).toEqual(["ux/plan.md"]);
+        expect(paths(mentionPicker(room(), "@foo/", 5, [], ["foo/a.ts", "foo/b.ts", "bar/c.ts"]))).toEqual([
+            "foo/a.ts",
+            "foo/b.ts",
+        ]);
+        // the finder's ranking is fuzzy: the file whose name holds the dot comes first
+        const dotted = mentionPicker(room(), "@ux.", 4, [uxChat], FILES)!;
+        expect(dotted.seats).toEqual([]);
+        expect(dotted.chats).toEqual([]);
+        expect(dotted.files[0]).toBe("src/ux.ts");
+        expect(mentionPicker(room(), "@wit.", 5, [], ["x.md"])).toBeNull();
+    });
+
+    it("stays shut with no match anywhere, and lists no file for a bare @", () => {
+        expect(mentionPicker(room(), "@zzz", 4, [far], FILES)).toBeNull();
+        const bare = mentionPicker(room(), "@", 1, [far], FILES)!;
+        expect(bare.files).toEqual([]);
+        expect(bare.seats.map((e) => e.id)).toEqual(["witness", "ux", "sec", "sk"]);
+        expect(mentionPicker(room(), "mail a@b.md", 11, [], ["b.md"])).toBeNull();
+    });
+
+    it("lists only files the @ rule can name whole", () => {
+        // a bracket or a space would cut the path short, and a name with no / or . is no file mention: not listed
+        expect(mentionPicker(room(), "@page", 5, [], FILES)).toBeNull();
+        expect(mentionPicker(room(), "@a b", 4, [], FILES)).toBeNull();
+        expect(mentionPicker(room(), "@make", 5, [], FILES)).toBeNull();
+        expect(paths(mentionPicker(room(), "@go", 3, [], FILES))).toEqual(["go.mod"]);
+    });
+
+    it("caps the files at the New dialog's limit", () => {
+        const many = Array.from({ length: 30 }, (_, i) => `src/file${i}.ts`);
+        expect(paths(mentionPicker(room(), "@file", 5, [], many))).toHaveLength(8);
+    });
+
+    it("keeps listing files while a long path is typed", () => {
+        const long = "frontend/app/view/agents/councilchatmodel.ts";
+        const text = `@${long.slice(0, 43)}`;
+        expect(text.length).toBeGreaterThan(41);
+        expect(paths(mentionPicker(room(), text, text.length, [], [long, "other.ts"]))).toEqual([long]);
+    });
+
+    it("closes after an inserted path and a space, and while no file matches a path with a space after it", () => {
+        const put = insertFileMention("@ux", 0, 3, "ux/plan.md");
+        expect(put).toEqual({ text: "@ux/plan.md ", caret: 12 });
+        expect(mentionPicker(room(), put.text, put.caret, [far], FILES)).toBeNull();
+        expect(mentionPicker(room(), "@ux/plan.md", 11, [], FILES)).toMatchObject({ files: ["ux/plan.md"] });
+        expect(mentionPicker(room(), "@ux/plan.md read", 16, [], FILES)).toBeNull();
+    });
+
+    it("puts @<path> and a space where the @ was, the rest of the word too", () => {
+        expect(insertFileMention("see @ux/pl now", 4, 10, "ux/plan.md")).toEqual({
+            text: "see @ux/plan.md now",
+            caret: 16,
+        });
+        expect(insertFileMention("@ux/pl|an.md", 0, 6, "ux/plan.md").text).toBe("@ux/plan.md ");
+    });
+
+    it("makes a mention that replyReach reads as no seat and readsFiles reads as a file", () => {
+        const text = insertFileMention("@ux", 0, 3, "ux/plan.md").text;
+        expect(replyReach(room(), "", "", text).names).toEqual([
+            "Witness synthesis",
+            "UX audit",
+            "Security",
+            "Skeptic",
+        ]);
+        expect(readsFiles(false, text).why).toBe("ux/plan.md");
+    });
+
+    it("keeps today's cases: no files passed, no files listed", () => {
+        expect(mentionPicker(room(), "@ux", 3)!.files).toEqual([]);
+        expect(mentionPicker(room(), "@ux", 3, [far], [])!.files).toEqual([]);
+        expect(mentionPicker(room(), "@zzz", 4, [], [])).toBeNull();
+    });
+});
+
+describe("messageSegments: a sent message cut at its file mentions", () => {
+    it("cuts `see @ux/plan.md now` into text, file, text", () => {
+        expect(messageSegments("see @ux/plan.md now")).toEqual([
+            { kind: "text", text: "see " },
+            { kind: "file", path: "ux/plan.md" },
+            { kind: "text", text: " now" },
+        ]);
+    });
+
+    it("starts and ends on a file with no empty text around it, and keeps a sentence's dot", () => {
+        expect(messageSegments("@a.ts")).toEqual([{ kind: "file", path: "a.ts" }]);
+        expect(messageSegments("@a.ts @b/c.go")).toEqual([
+            { kind: "file", path: "a.ts" },
+            { kind: "text", text: " " },
+            { kind: "file", path: "b/c.go" },
+        ]);
+        expect(messageSegments("read @src/a.ts.")).toEqual([
+            { kind: "text", text: "read " },
+            { kind: "file", path: "src/a.ts" },
+            { kind: "text", text: "." },
+        ]);
+    });
+
+    it("leaves a seat's @ and an address in the text", () => {
+        expect(messageSegments("@UX what about a@ram.com?")).toEqual([
+            { kind: "text", text: "@UX what about a@ram.com?" },
+        ]);
+        expect(messageSegments("")).toEqual([]);
+    });
+
+    it("joins back to the text it was cut from", () => {
+        const text = "A @x/y.ts, then (@z.md) and @UX.. done";
+        const back = messageSegments(text)
+            .map((s) => (s.kind === "file" ? `@${s.path}` : s.text))
+            .join("");
+        expect(back).toBe(text);
+    });
+});
+
+describe("councilChannel: a person's reply with attachments", () => {
+    const IMG = "C:\\Users\\me\\.arc\\attachments\\ab12\\shot.png";
+    const IMG2 = "C:\\Users\\me\\.arc\\attachments\\cd34\\other.png";
+
+    it("builds a ReplyPost holding the attachments, in the reply's order", () => {
+        const c = council({
+            replies: [reply("r1", "you", 150, { proposalid: "", attachments: [IMG, IMG2], text: "see @ux/plan.md" })],
+        });
+        expect(byId(councilChannel(c), "r1")).toMatchObject({ kind: "reply", attachments: [IMG, IMG2] });
+    });
+
+    it("holds none for a reply with none, a seat's and an old council's", () => {
+        const c = council({
+            replies: [
+                reply("r1", "you", 150, { proposalid: "", to: ["sk"] }),
+                reply("r2", "sk", 160, { proposalid: "", parentid: "r1", round: 3 }),
+            ],
+        });
+        const items = councilChannel(c);
+        expect(byId(items, "r1")).toMatchObject({ attachments: [] });
+        expect(byId(items, "r2")).toMatchObject({ attachments: [] });
+    });
+
+    it("carries them into the idea's thread too", () => {
+        const c = council({
+            proposals: [prop("P1", "sec", 60)],
+            replies: [reply("r1", "you", 150, { attachments: [IMG] })],
+        });
+        const thread = councilThread(c, "P1")!;
+        expect(thread.items[0]).toMatchObject({ kind: "reply", attachments: [IMG] });
     });
 });

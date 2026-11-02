@@ -13,8 +13,10 @@
 // a file not in the project), and the `room`
 // fixtures: two live agents seated beside two experts (the seat chips with their context, a skipped turn, a failed seat's
 // Retry, drafts waiting for the person with Send to the others, Edit and Drop, a thread with its stance pills and its
-// held reply, j / k / Enter / Esc, the composer and its @, a click on an agent's chip or on Open its terminal). Each
-// phase seeds its own fixture council and takes its own shot.
+// held reply, j / k / Enter / Esc, the composer and its @, a click on an agent's chip or on Open its terminal), and the
+// images and @files of the message boxes (2026-11-02-council-attachments.md, Task 4: paste, drop, remove, the draft kept,
+// the three-group @ list, the locked Let them read files switch, the send's `attachments` and `tools`, and the sent
+// bubble's thumbnail and file chip). Each phase seeds its own fixture council and takes its own shot.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). Nothing here
 // spends a token or starts an agent: Summarize (on the stopped council), Continue, Retry, Start council, a draft's
@@ -26,13 +28,16 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { deflateSync } from "node:zlib";
 import { waitFor } from "../attach.mjs";
 import {
+    ATTACHMENT_PLACEHOLDER,
     JOIN_AGENTS,
     arrangeCouncilProject,
     councilFixtureId,
     loadCouncilFixture,
     openCouncil,
+    resolveStub,
     restoreRoomRoster,
     rpcCalls,
     seedCouncil,
@@ -591,6 +596,20 @@ async function failed(h, ctx, rec) {
             calls[1].data?.expertid === "coordinator",
         calls
     );
+
+    // the stopped council is not running, so Skeptic's chip in the strip draws its own Retry (one failed seat besides the
+    // coordinator, so Retry all does not replace it); its click, in a stub window of its own, sends the same command
+    await unstubRpc(h);
+    await stubRpc(h, ["CouncilRetryCommand"]);
+    const chipOn = await h.ev(`document.querySelector('[data-council-chip-retry="skeptic"]')?.disabled === false`);
+    await click(h, '[data-council-chip-retry="skeptic"]');
+    await until(h, `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilRetryCommand")`);
+    const chipCalls = await rpcCalls(h, "CouncilRetryCommand");
+    rec(
+        "failed: Skeptic's Retry on its seat chip (stubbed) is enabled and records one CouncilRetryCommand with that expert's id",
+        chipOn && chipCalls.length === 1 && chipCalls[0].data?.id === id && chipCalls[0].data?.expertid === "skeptic",
+        { chipOn, chipCalls }
+    );
 }
 
 // ---- not run ----
@@ -941,16 +960,28 @@ async function room(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-room.png");
 
-    // a failed seat's Retry, on its chip and on its failure line
+    // a failed seat's Retry, on its chip and on its failure line, is off while the council runs (a retry then is refused:
+    // one job at a time), and the chip says why; a click on either does nothing. A Retry that works is the `failed` phase's.
+    const retryOff = await h.ev(`(() => {
+        const chip = document.querySelector('[data-council-chip-retry="security"]');
+        const line = document.querySelector('[data-council-channel] [data-council-retry="security"]');
+        return {
+            chip: chip && { disabled: chip.disabled, title: chip.getAttribute("title") },
+            line: line && { disabled: line.disabled },
+        };
+    })()`);
     await stubRpc(h, ["CouncilRetryCommand"]);
     await click(h, '[data-council-chip-retry="security"]');
     await click(h, '[data-council-channel] [data-council-retry="security"]');
-    await until(h, `(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilRetryCommand").length >= 2`);
+    // nothing is awaited: a disabled button runs no handler, so a call that came would already be recorded
     const retries = await rpcCalls(h, "CouncilRetryCommand");
     rec(
-        "room: Security's Retry, on its chip and on its failure line (stubbed), records CouncilRetryCommand with its expert id",
-        retries.length === 2 && retries.every((c) => c.data?.id === id && c.data?.expertid === "security"),
-        retries
+        "room: while the council runs, Security's Retry on its chip and on its failure line is disabled (the chip says why), and a click records no CouncilRetryCommand",
+        retryOff.chip?.disabled === true &&
+            retryOff.chip.title === "The council is running: retry once it is done" &&
+            retryOff.line?.disabled === true &&
+            retries.length === 0,
+        { retryOff, retries }
     );
     await unstubRpc(h);
 
@@ -1472,6 +1503,554 @@ async function addChatRefused(h, ctx, rec) {
     await h.shot("cdp-shots/council-discussion-add-chat-refused.png");
 }
 
+// ---- images and @file in the message boxes ----
+
+// What the phases below paste, drop and seed. Nothing reaches the person's disk or wavesrv's temp store: WriteTempFileCommand
+// is replaced in the page (stubRpc) and answers the path of a PNG this file wrote under the scenario's own temp folder (so
+// a thumbnail can load it), or stays pending, or rejects, as a step says; CouncilReplyCommand is replaced as everywhere
+// else in this file, so a Send writes no council. The sent-message steps open a seeded council (room-attached) instead.
+
+// a flat-colour PNG, 320 x 200: the bubble's thumbnail is at most 160 px tall, so its full size (200) tells the two apart
+const CRC_TABLE = (() => {
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+        table[n] = c >>> 0;
+    }
+    return table;
+})();
+const crc32 = (buf) => {
+    let c = 0xffffffff;
+    for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+};
+function pngChunk(type, data) {
+    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc32(body), 8 + data.length);
+    return out;
+}
+function makePng(w, h, [r, g, b]) {
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(w, 0);
+    ihdr.writeUInt32BE(h, 4);
+    ihdr[8] = 8; // bit depth
+    ihdr[9] = 2; // colour type: RGB
+    const row = Buffer.alloc(1 + w * 3); // filter 0, then the pixels
+    for (let x = 0; x < w; x++) row.set([r, g, b], 1 + x * 3);
+    const raw = Buffer.concat(Array.from({ length: h }, () => row));
+    const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    return Buffer.concat([signature, pngChunk("IHDR", ihdr), pngChunk("IDAT", deflateSync(raw)), pngChunk("IEND", Buffer.alloc(0))]);
+}
+const PNG = makePng(320, 200, [64, 140, 200]);
+const PNG_B64 = PNG.toString("base64");
+
+// the project file the picker offers and the sent message names; each line names its own number
+// (its name holds `ec`, which the Security seat and the recap chat hold too, so one `@ec` lists all three groups)
+const ATTACH_FILE = "docs/recap-notes.md";
+const TEN_MB = 10 * 1024 * 1024;
+
+// writes the PNG under the scenario's temp folder (teardown removes it with the rest) and the project file; answers the
+// PNG's path as WriteTempFileCommand would
+function writeAttachFiles(ctx) {
+    if (ctx.attach == null) {
+        const dir = join(ctx.base, "attach");
+        mkdirSync(dir, { recursive: true });
+        const path = join(dir, "shot.png");
+        writeFileSync(path, PNG);
+        ctx.attach = { path };
+    }
+    const file = join(ctx.repo, ATTACH_FILE);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, Array.from({ length: 30 }, (_, i) => `${ATTACH_FILE} line ${i + 1}`).join("\n") + "\n");
+    return ctx.attach;
+}
+
+// page side: a File made from the PNG (padded past a limit, or not an image at all) and the events a browser makes for a
+// paste, a drag over and a drop; dispatchEvent answers false when the handler took the event (preventDefault)
+const attachPage = `(() => {
+    const png = (name, pad) => {
+        const bytes = Uint8Array.from(atob(${sel(PNG_B64)}), (c) => c.charCodeAt(0));
+        return new File(pad > 0 ? [bytes, new Uint8Array(pad)] : [bytes], name, { type: "image/png" });
+    };
+    const holding = (...files) => {
+        const dt = new DataTransfer();
+        for (const f of files) dt.items.add(f);
+        return dt;
+    };
+    const on = (el, event) => el.dispatchEvent(event);
+    return {
+        png,
+        holding,
+        paste: (el, dt) => on(el, new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })),
+        over: (el, dt) => on(el, new DragEvent("dragover", { dataTransfer: dt, bubbles: true, cancelable: true })),
+        drop: (el, dt) => on(el, new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true })),
+    };
+})()`;
+
+// a paste of the PNG (`pad` bytes of it over, for a file past a limit) into the input at `input`
+const pasteImage = (h, input, pad = 0) =>
+    h.ev(`(() => {
+        const p = ${attachPage};
+        const el = document.querySelector(${sel(input)});
+        if (!el) return null;
+        el.focus();
+        return { notPrevented: p.paste(el, p.holding(p.png("shot.png", ${pad}))) };
+    })()`);
+
+// a drag of `kind` ("image" or "text": a notes.txt) over the input, then its drop; answers whether each was taken
+const dropOn = (h, input, kind) =>
+    h.ev(`(() => {
+        const p = ${attachPage};
+        const el = document.querySelector(${sel(input)});
+        if (!el) return null;
+        const file = ${sel(kind)} === "image" ? p.png("dropped.png", 0) : new File(["hello"], "notes.txt", { type: "text/plain" });
+        const before = location.href;
+        const overTaken = !p.over(el, p.holding(file));
+        const dropTaken = !p.drop(el, p.holding(file));
+        return { overTaken, dropTaken, stayed: location.href === before };
+    })()`);
+
+// the chips of a box: where each is on its way, whether its thumbnail drew, its spinner
+const chipsOf = (h, scope) =>
+    h.ev(`[...document.querySelectorAll(${sel(`${scope} [data-council-image]`)})].map((e) => ({
+        state: e.getAttribute("data-council-image-state"),
+        spinner: !!e.querySelector("[data-council-image-spinner]"),
+        shows: (e.querySelector("img")?.naturalWidth ?? 0) > 0,
+    }))`);
+const chipErrors = (h, scope) =>
+    h.ev(`[...document.querySelectorAll(${sel(`${scope} [data-council-image-error]`)})].map((e) => (e.textContent ?? "")${NORM})`);
+const chipsOnly = (h, scope, state) => count(h, `${scope} [data-council-image-state="${state}"]`);
+const clearChips = (h, scope) =>
+    h.ev(`document.querySelectorAll(${sel(`${scope} [data-council-image-remove]`)}).forEach((b) => b.click())`);
+const sendDisabled = (h, send = CHAT_SEND) => h.ev(`document.querySelector(${sel(send)})?.disabled ?? null`);
+const valueOf = (h, input) => h.ev(`document.querySelector(${sel(input)})?.value ?? ""`);
+const toolsSwitch = (h, scope) =>
+    h.ev(`(() => {
+        const b = document.querySelector(${sel(`${scope} [data-council-tools]`)});
+        return b ? { on: b.getAttribute("aria-checked") === "true", disabled: b.disabled === true, why: b.getAttribute("data-council-tools-why") } : null;
+    })()`);
+const replyCalls = (h) => rpcCalls(h, "CouncilReplyCommand");
+
+// opens a fixture as its own council (an id of its own, so its draft is its own), with the upload and the post stood in for
+async function openForAttach(h, ctx, name, suffix, stubs = {}) {
+    const files = writeAttachFiles(ctx);
+    const id = await openFixture(h, ctx, name, { id: `${councilFixtureId(name)}-${suffix}` });
+    await until(h, `!!document.querySelector("[data-council-channel]")`);
+    await stubRpc(h, ["WriteTempFileCommand", "CouncilReplyCommand", "CouncilEstimateCommand"], {
+        WriteTempFileCommand: { value: files.path },
+        CouncilEstimateCommand: { value: { calls: 1, tokens: 20_000, minutes: 1 } },
+        ...stubs,
+    });
+    await focusOn(h, CHAT_INPUT);
+    return { id, files };
+}
+
+// a paste into the channel's box, a chip with its thumbnail, from uploading to ready, in the box above the text
+async function attachPaste(h, ctx, rec) {
+    const { id, files } = await openForAttach(h, ctx, "done", "attach");
+    const placeholder = await attr(h, CHAT_INPUT, "placeholder");
+    const pasted = await pasteImage(h, CHAT_INPUT);
+    await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-state="ready"]`)})`);
+    const chips = await chipsOf(h, CHANNEL_COMPOSER);
+    const writes = await rpcCalls(h, "WriteTempFileCommand");
+    const above = await h.ev(`(() => {
+        const box = document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-images]`)})?.getBoundingClientRect();
+        const input = document.querySelector(${sel(CHAT_INPUT)})?.getBoundingClientRect();
+        return !!box && !!input && box.bottom <= input.top + 1;
+    })()`);
+    rec(
+        "attach-paste: a pasted image waits above the text as a thumbnail chip that reaches ready, its upload (stubbed) is kept (`keep`), and the placeholder says `paste an image · @ for a file`",
+        pasted?.notPrevented === false &&
+            chips.length === 1 &&
+            chips[0].state === "ready" &&
+            chips[0].shows &&
+            above &&
+            writes.length === 1 &&
+            writes[0].data?.keep === true &&
+            /^waveterm_paste_/.test(writes[0].data?.filename ?? "") &&
+            (placeholder ?? "").includes("paste an image · @ for a file"),
+        { pasted, chips, above, writes: writes.map((w) => w.data?.filename), keep: writes[0]?.data?.keep, placeholder }
+    );
+    await h.shot("cdp-shots/council-discussion-attach-paste.png");
+    await clearChips(h, CHANNEL_COMPOSER);
+
+    // while the write is out the chip spins and Send waits; once it lands the chip is ready and Send takes the message
+    await stubRpc(h, ["WriteTempFileCommand"], { WriteTempFileCommand: { pending: true } });
+    await typeInto(h, CHAT_INPUT, "What does this show?");
+    await pasteImage(h, CHAT_INPUT);
+    await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-state="pending"]`)})`);
+    const during = { chips: await chipsOf(h, CHANNEL_COMPOSER), disabled: await sendDisabled(h) };
+    await h.shot("cdp-shots/council-discussion-attach-uploading.png");
+    await resolveStub(h, "WriteTempFileCommand", files.path);
+    await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-state="ready"]`)})`);
+    const after = { chips: await chipsOf(h, CHANNEL_COMPOSER), disabled: await sendDisabled(h) };
+    rec(
+        "attach-uploading: with the upload pending the chip shows its spinner and Send is disabled; once it resolves the chip is ready and Send is enabled",
+        during.chips.length === 1 &&
+            during.chips[0].state === "pending" &&
+            during.chips[0].spinner &&
+            during.disabled === true &&
+            after.chips.length === 1 &&
+            after.chips[0].state === "ready" &&
+            !after.chips[0].spinner &&
+            after.disabled === false,
+        { during, after }
+    );
+    await clearChips(h, CHANNEL_COMPOSER);
+    await typeInto(h, CHAT_INPUT, "");
+
+    // a file over 10 MB is refused before any upload; an upload that fails says why on its chip
+    await stubRpc(h, ["WriteTempFileCommand"], { WriteTempFileCommand: { value: files.path } });
+    const before = (await rpcCalls(h, "WriteTempFileCommand")).length;
+    await pasteImage(h, CHAT_INPUT, TEN_MB);
+    await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-error]`)})`);
+    const big = {
+        chips: await chipsOf(h, CHANNEL_COMPOSER),
+        errors: await chipErrors(h, CHANNEL_COMPOSER),
+        writes: (await rpcCalls(h, "WriteTempFileCommand")).length - before,
+    };
+    await h.shot("cdp-shots/council-discussion-attach-oversize.png");
+    await clearChips(h, CHANNEL_COMPOSER);
+    await stubRpc(h, ["WriteTempFileCommand"], { WriteTempFileCommand: { reject: "disk full" } });
+    await typeInto(h, CHAT_INPUT, "Is this readable?");
+    await pasteImage(h, CHAT_INPUT);
+    await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-error]`)})`);
+    const failed = {
+        chips: await chipsOf(h, CHANNEL_COMPOSER),
+        errors: await chipErrors(h, CHANNEL_COMPOSER),
+        disabled: await sendDisabled(h),
+    };
+    rec(
+        "attach-oversize: a paste over 10 MB shows an error chip that says so and makes no WriteTempFileCommand call; a paste whose upload rejects shows the error chip with its message and leaves Send ready",
+        big.chips.length === 1 &&
+            big.chips[0].state === "error" &&
+            big.errors.length === 1 &&
+            /10 MB/.test(big.errors[0]) &&
+            big.writes === 0 &&
+            failed.chips.length === 1 &&
+            failed.chips[0].state === "error" &&
+            failed.errors.join("|") === "disk full" &&
+            failed.disabled === false,
+        { big, failed }
+    );
+    await clearChips(h, CHANNEL_COMPOSER);
+    await typeInto(h, CHAT_INPUT, "");
+    await stubRpc(h, ["WriteTempFileCommand"], { WriteTempFileCommand: { value: files.path } });
+
+    // the chip's x takes it away
+    await pasteImage(h, CHAT_INPUT);
+    await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-state="ready"]`)})`);
+    const had = (await chipsOf(h, CHANNEL_COMPOSER)).length;
+    await clearChips(h, CHANNEL_COMPOSER);
+    const gone = await until(h, `!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image]`)})`);
+    rec(
+        "attach-remove: the chip's x removes the image, and the strip above the text goes with it",
+        had === 1 && gone && !(await exists(h, `${CHANNEL_COMPOSER} [data-council-images]`)),
+        { had, gone }
+    );
+
+    // an image dropped on the box is kept; a file that is no image is ignored, and the page stays on the council
+    const image = await dropOn(h, CHAT_INPUT, "image");
+    await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-state="ready"]`)})`);
+    const dropped = await chipsOf(h, CHANNEL_COMPOSER);
+    await clearChips(h, CHANNEL_COMPOSER);
+    const notes = await dropOn(h, CHAT_INPUT, "text");
+    await new Promise((r) => setTimeout(r, 300));
+    const none = await count(h, `${CHANNEL_COMPOSER} [data-council-image]`);
+    rec(
+        "attach-drop: dropping an image on the box adds a chip (the drag over it is allowed); dropping a text file adds none, is still taken so the webview does not navigate, and the page stays on the council",
+        image?.overTaken === true &&
+            image.dropTaken === true &&
+            dropped.length === 1 &&
+            dropped[0].state === "ready" &&
+            notes?.overTaken === true &&
+            notes.dropTaken === true &&
+            notes.stayed === true &&
+            none === 0 &&
+            (await exists(h, rootOf(id))),
+        { image, dropped, notes, none }
+    );
+    await h.shot("cdp-shots/council-discussion-attach-drop.png");
+
+    // a paste into an idea's thread box lands in that box, not in the channel's
+    await click(h, '[data-council-thread-open="P2"]');
+    await until(h, `!!document.querySelector(${sel(`${THREAD_COMPOSER} [data-council-composer-input]`)})`);
+    const threadInput = `${THREAD_COMPOSER} [data-council-composer-input]`;
+    await pasteImage(h, threadInput);
+    await until(h, `!!document.querySelector(${sel(`${THREAD_COMPOSER} [data-council-image-state="ready"]`)})`);
+    const inThread = await chipsOf(h, THREAD_COMPOSER);
+    const inChannel = await chipsOf(h, CHANNEL_COMPOSER);
+    const threadPlaceholder = await attr(h, threadInput, "placeholder");
+    rec(
+        "attach-thread: a paste into an idea thread's box adds a chip there and none in the channel's box",
+        inThread.length === 1 && inThread[0].state === "ready" && inThread[0].shows && inChannel.length === 0,
+        { inThread, inChannel, threadPlaceholder }
+    );
+    await h.shot("cdp-shots/council-discussion-attach-thread.png");
+    await clearChips(h, THREAD_COMPOSER);
+    await click(h, "[data-council-thread-close]");
+
+    // leaving the council keeps the draft: its text and its chip are there when it is opened again
+    await typeInto(h, CHAT_INPUT, "Keep this draft");
+    await pasteImage(h, CHAT_INPUT);
+    await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-state="ready"]`)})`);
+    await openFixture(h, ctx, "notrun", { id: `${councilFixtureId("notrun")}-attach` });
+    const left = !(await exists(h, rootOf(id)));
+    await openCouncil(h, id, "discussion");
+    await until(h, `!!document.querySelector(${sel(rootOf(id))}) && !!document.querySelector(${sel(CHAT_INPUT)})`);
+    const kept = { chips: await chipsOf(h, CHANNEL_COMPOSER), text: await valueOf(h, CHAT_INPUT) };
+    rec(
+        "attach-draft-kept: with a chip in the channel box, opening another council and coming back finds the chip (its thumbnail drawn) and the text still there",
+        left && kept.chips.length === 1 && kept.chips[0].state === "ready" && kept.chips[0].shows && kept.text === "Keep this draft",
+        { left, kept }
+    );
+    await h.shot("cdp-shots/council-discussion-attach-draft-kept.png");
+
+    // Send: the post (stubbed) carries the image's path as `attachments`, reads files, and the box empties
+    await focusOn(h, CHAT_INPUT);
+    await click(h, CHAT_SEND);
+    await until(h, `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilReplyCommand")`);
+    const sent = (await replyCalls(h))[0]?.data;
+    const emptied = await until(
+        h,
+        `document.querySelector(${sel(CHAT_INPUT)})?.value === "" && !document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image]`)})`
+    );
+    rec(
+        "attach-send-call: Send (stubbed) records CouncilReplyCommand with the image's path in `attachments` and `tools: true`, and the box (text and chips) is empty after",
+        sent?.id === id &&
+            sent.text === "Keep this draft" &&
+            JSON.stringify(sent.attachments) === JSON.stringify([files.path]) &&
+            sent.tools === true &&
+            sent.proposalid === undefined &&
+            emptied,
+        { sent, emptied }
+    );
+}
+
+// on a council that has met, an image or an @file locks Let them read files on, and the estimate counts the reading
+async function attachLocked(h, ctx, rec) {
+    await openForAttach(h, ctx, "done", "attach-locked");
+    // one expert is named, so the line under the box prices a follow-up and the switch shows
+    await typeInto(h, CHAT_INPUT, "@UX Does this hold on a Mac?");
+    await settledText(h, CHAT_HINT, /^1 expert answers · /);
+    const plain = await toolsSwitch(h, CHANNEL_COMPOSER);
+
+    await pasteImage(h, CHAT_INPUT);
+    await until(h, `!!document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-image-state="ready"]`)})`);
+    const image = await toolsSwitch(h, CHANNEL_COMPOSER);
+    await h.ev(`document.querySelector(${sel(`${CHANNEL_COMPOSER} [data-council-tools]`)})?.click()`);
+    const afterClick = await toolsSwitch(h, CHANNEL_COMPOSER);
+    const priced = await until(
+        h,
+        `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilEstimateCommand" && c.data?.tools === true)`
+    );
+    await h.shot("cdp-shots/council-discussion-attach-locked-switch.png");
+    await clearChips(h, CHANNEL_COMPOSER);
+    const released = await toolsSwitch(h, CHANNEL_COMPOSER);
+
+    await typeInto(h, CHAT_INPUT, `Look at @${ATTACH_FILE} for this`);
+    const file = await toolsSwitch(h, CHANNEL_COMPOSER);
+    rec(
+        "attach-locked-switch: Let them read files is off and free for a plain question; with an image attached, or an @file in the text, it is on and disabled (a click leaves it on), the estimate is asked with `tools: true`, and without them it is free again",
+        plain?.on === false &&
+            plain.disabled === false &&
+            image?.on === true &&
+            image.disabled === true &&
+            image.why === "an image" &&
+            afterClick?.on === true &&
+            priced &&
+            released?.on === false &&
+            released.disabled === false &&
+            file?.on === true &&
+            file.disabled === true &&
+            file.why === ATTACH_FILE,
+        { plain, image, afterClick, priced, released, file }
+    );
+    await typeInto(h, CHAT_INPUT, "");
+}
+
+// `@` lists Seats, then Files, then Add a live chat; the arrows cross the three, Enter and Tab pick a file's row
+async function attachPicker(h, ctx, rec) {
+    writeAttachFiles(ctx);
+    const id = await openRoomToChat(h, ctx, "attach-picker");
+    const rowsOf = () =>
+        h.ev(`[...document.querySelectorAll("[data-council-mentions] [role='option']")].map((e) => ({
+            kind: e.hasAttribute("data-council-mention") ? "seat" : e.hasAttribute("data-council-file-row") ? "file" : "chat",
+            id: e.getAttribute("data-council-mention") ?? e.getAttribute("data-council-file-row") ?? e.getAttribute("data-council-chat-row"),
+            selected: e.getAttribute("data-selected") === "true",
+        }))`);
+    const selectedRow = async () => (await rowsOf()).find((r) => r.selected) ?? null;
+    // ArrowDown until the row `rowId` is the selected one
+    const arrowToRow = async (rowId) => {
+        for (let i = 0; i < 12; i++) {
+            if ((await selectedRow())?.id === rowId) return true;
+            await pressArrowDown(h);
+        }
+        return (await selectedRow())?.id === rowId;
+    };
+    const pressTab = () => press(h, "Tab", "Tab", 9);
+    // `@ec` is in Security's name, the recap chat's title and docs/recap-notes.md
+    const openFor = async () => {
+        await typeInto(h, CHAT_INPUT, "@ec");
+        // the project's files are listed on the first @, so the Files group lands a moment after the seats
+        return until(h, `!!document.querySelector("[data-council-file-row]")`);
+    };
+
+    const listed = await openFor();
+    const rows = await rowsOf();
+    const kinds = rows.map((r) => r.kind);
+    const picker = await text(h, "[data-council-mentions]");
+    const heading = await text(h, "[data-council-files-heading]");
+    rec(
+        "attach-file-picker: `@ec` lists the Seats group (Security), then a Files heading with docs/recap-notes.md, then Add a live chat (the recap chat), in that order, with the first row selected",
+        listed &&
+            /^s+f+c+$/.test(kinds.map((k) => k[0]).join("")) &&
+            rows[0].id === "security" &&
+            rows.some((r) => r.kind === "file" && r.id === ATTACH_FILE) &&
+            rows.some((r) => r.kind === "chat" && r.id === RECAP.tabId) &&
+            rows.filter((r) => r.selected).length === 1 &&
+            rows[0].selected &&
+            heading === "Files" &&
+            picker.indexOf("Seats") >= 0 &&
+            picker.indexOf("Seats") < picker.indexOf("Files") &&
+            picker.indexOf("Files") < picker.indexOf("Add a live chat"),
+        { rows, heading }
+    );
+    await h.shot("cdp-shots/council-discussion-attach-file-picker.png");
+
+    // one ArrowDown per row walks every row in the order drawn and comes round to the first; ArrowUp from it goes to the last
+    const walk = [(await selectedRow())?.kind];
+    for (let i = 0; i < rows.length; i++) {
+        await pressArrowDown(h);
+        walk.push((await selectedRow())?.kind);
+    }
+    await press(h, "ArrowUp", "ArrowUp", 38);
+    const back = (await selectedRow())?.kind;
+    rec(
+        "attach-file-picker: the arrow keys cross the groups (seat, files, chat, then round to the seat), and ArrowUp from the seat goes round to the chat",
+        walk.join(",") === [...kinds, kinds[0]].join(",") && back === "chat" && kinds[kinds.length - 1] === "chat",
+        { walk, back }
+    );
+
+    // Enter on the file row writes `@<path> ` and closes the list
+    await typeInto(h, CHAT_INPUT, "");
+    await openFor();
+    const onFile = await arrowToRow(ATTACH_FILE);
+    const fileKind = (await selectedRow())?.kind;
+    await pressEnter(h);
+    const byEnter = await valueOf(h, CHAT_INPUT);
+    const closedByEnter = !(await exists(h, "[data-council-mentions]"));
+    // Tab on a file row does the same
+    await typeInto(h, CHAT_INPUT, "");
+    await openFor();
+    await arrowToRow(ATTACH_FILE);
+    await pressTab();
+    const byTab = await valueOf(h, CHAT_INPUT);
+    const closedByTab = !(await exists(h, "[data-council-mentions]"));
+    rec(
+        "attach-file-picker: Enter on the file row inserts `@docs/recap-notes.md ` and closes the list, and Tab on it does the same",
+        onFile &&
+            fileKind === "file" &&
+            byEnter === `@${ATTACH_FILE} ` &&
+            closedByEnter &&
+            byTab === `@${ATTACH_FILE} ` &&
+            closedByTab,
+        { onFile, fileKind, byEnter, closedByEnter, byTab, closedByTab }
+    );
+
+    // a message that names a file is sent with the seats reading it, in a round as in a follow-up, and it names no seat
+    const BODY = `@${ATTACH_FILE} what do you make of this plan?`;
+    await typeInto(h, CHAT_INPUT, BODY);
+    const hint = await settledText(h, CHAT_HINT, /^Everyone answers/);
+    await click(h, CHAT_SEND);
+    await until(h, `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilReplyCommand")`);
+    const sent = (await replyCalls(h))[0]?.data;
+    rec(
+        "attach-send-call: in a round, a message that names @docs/recap-notes.md reaches everyone, and Send (stubbed) records `tools: true` with the text as typed and no attachments",
+        hint === "Everyone answers" &&
+            sent?.id === id &&
+            sent.text === BODY &&
+            sent.tools === true &&
+            sent.attachments === undefined &&
+            sent.proposalid === undefined,
+        { hint, sent }
+    );
+}
+
+// the person's sent message: the image as a thumbnail under the text, the @file as a chip in place of its path; a click
+// on the thumbnail shows it full size, a click on the chip opens the file in Sources
+async function attachSent(h, ctx, rec) {
+    const files = writeAttachFiles(ctx);
+    const id = await openFixture(h, ctx, "room-attached", {
+        edit: (c) => {
+            for (const r of c.replies ?? []) {
+                r.attachments = (r.attachments ?? []).map((p) => (p === ATTACHMENT_PLACEHOLDER ? files.path : p));
+            }
+        },
+    });
+    const post = '[data-council-reply-post="r1"]';
+    await until(h, `!!document.querySelector(${sel(post)})`);
+    const loaded = await until(h, `(document.querySelector(${sel(`${post} [data-prompt-images] img`)})?.naturalWidth ?? 0) > 0`);
+    const bubble = await h.ev(`(() => {
+        const post = document.querySelector(${sel(post)});
+        const chip = post?.querySelector("[data-council-file-chip]");
+        const img = post?.querySelector("[data-prompt-images] img");
+        return {
+            thumbs: post?.querySelectorAll("[data-prompt-images] img").length ?? 0,
+            thumbH: Math.round(img?.getBoundingClientRect().height ?? 0),
+            text: (post?.textContent ?? "")${NORM},
+            chip: chip?.getAttribute("data-council-file-chip") ?? null,
+            chipText: (chip?.textContent ?? "")${NORM},
+            chipInLine: chip?.parentElement?.tagName === "P",
+            gone: !!post?.querySelector("[data-prompt-image-gone]"),
+        };
+    })()`);
+    const pngName = files.path.split(/[\\/]/).pop();
+    rec(
+        "attach-sent-bubble: the person's message shows its image as a thumbnail under the text (no attachment path in the text), and its @docs/recap-notes.md as a file chip in the line in place of `@path`",
+        loaded &&
+            bubble.thumbs === 1 &&
+            bubble.thumbH > 0 &&
+            bubble.thumbH <= 160 &&
+            !bubble.gone &&
+            !bubble.text.includes(files.path) &&
+            !bubble.text.includes(pngName) &&
+            !bubble.text.includes("@docs") &&
+            !bubble.text.includes(ATTACHMENT_PLACEHOLDER) &&
+            bubble.chip === ATTACH_FILE &&
+            bubble.chipText === "recap-notes.md" &&
+            bubble.chipInLine &&
+            bubble.text.includes("my notes in recap-notes.md. Judge each idea"),
+        { loaded, bubble }
+    );
+    await h.shot("cdp-shots/council-discussion-attach-sent-bubble.png");
+
+    // a click on the thumbnail shows it at its own size (200 px tall), another click shrinks it back
+    const thumb = `${post} [data-prompt-images] img`;
+    const heightOf = () => h.ev(`Math.round(document.querySelector(${sel(thumb)})?.getBoundingClientRect().height ?? 0)`);
+    await click(h, thumb);
+    await until(h, `document.querySelector(${sel(thumb)})?.classList.contains("cursor-zoom-out")`);
+    const open = await heightOf(); // the PNG's 200 and the thumbnail's border
+    await h.shot("cdp-shots/council-discussion-attach-bubble-open.png");
+    await click(h, thumb);
+    await until(h, `!document.querySelector(${sel(thumb)})?.classList.contains("cursor-zoom-out")`);
+    const shut = await heightOf();
+    // a click on the file chip opens the file in Sources, its first lines drawn
+    await click(h, `${post} [data-council-file-chip]`);
+    const read = await until(h, `document.querySelector("[data-council-sources-body]")?.getAttribute("data-state") === "ok"`);
+    const lines = await text(h, "[data-council-sources-body]");
+    rec(
+        "attach-bubble-open: a click on the thumbnail opens it full size (200 px and its 1 px border) and another shrinks it back; a click on the file chip opens docs/recap-notes.md in Sources, its lines drawn",
+        open >= 200 && open <= 204 && open > bubble.thumbH && shut === bubble.thumbH && read && lines.includes(`${ATTACH_FILE} line 1`),
+        { open, shut, read, lines: lines.slice(0, 80) }
+    );
+    await click(h, "[data-council-sources-close]");
+}
+
 // ---- the hooks ----
 
 const PHASES = [
@@ -1495,6 +2074,10 @@ const PHASES = [
     ["add-chat-send", addChatSend],
     ["add-chat-followup", addChatFollowup],
     ["add-chat-refused", addChatRefused],
+    ["attach-paste", attachPaste],
+    ["attach-locked-switch", attachLocked],
+    ["attach-file-picker", attachPicker],
+    ["attach-sent", attachSent],
 ];
 
 export const councilDiscussion = {

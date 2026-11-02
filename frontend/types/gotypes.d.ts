@@ -822,6 +822,7 @@ declare global {
         text: string;
         tools?: boolean;
         agents?: string[];
+        attachments?: string[];
     };
 
     // wshrpc.CommandCouncilRetryData
@@ -2600,6 +2601,7 @@ declare global {
         ts: number;
         draft?: string;
         edited?: boolean;
+        attachments?: string[];
         revision?: CouncilRevision;
     };
 

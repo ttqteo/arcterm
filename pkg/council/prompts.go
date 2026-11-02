@@ -5,6 +5,7 @@ package council
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -13,7 +14,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-02.1"
+const HarnessVersion = "2026-11-02.2"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -554,8 +555,70 @@ func unansweredFor(c *Council, id string) []CouncilReply {
 	return out
 }
 
-// askLine is one of the person's replies, with where it was posted.
-func askLine(c *Council, r CouncilReply) string {
+// attachmentBlock is what follows a person's reply with attachments in a prompt for a call that reads files: a heading
+// and one line per absolute path, in the order the person attached them. It has no final line break.
+func attachmentBlock(paths []string) string {
+	var b strings.Builder
+	b.WriteString("Attachments (read these files):")
+	for _, p := range paths {
+		b.WriteString("\n- " + p)
+	}
+	return b.String()
+}
+
+// personText is the person's reply r as a prompt writes its words: the text, then, when the call reads files (reads) and
+// the reply attached some, the attachment block on the lines after it. A prompt for a call with no tools writes the text
+// alone, so a seat that cannot open a file is never told to. It has no final line break.
+func personText(r CouncilReply, reads bool) string {
+	text := strings.TrimSpace(r.Text)
+	if reads && len(r.Attachments) > 0 {
+		text += "\n" + attachmentBlock(r.Attachments)
+	}
+	return text
+}
+
+// personRepliesIn are the person's replies a prompt that answers replies carries: each of them, and the person's replies
+// in the branch above each (the ones AnswersPrompt writes under "The replies above it"), once each, in the order met.
+func personRepliesIn(c *Council, replies []CouncilReply) []CouncilReply {
+	var out []CouncilReply
+	add := func(r CouncilReply) {
+		if r.Author == YouId && !slices.ContainsFunc(out, func(x CouncilReply) bool { return x.Id == r.Id }) {
+			out = append(out, r)
+		}
+	}
+	for _, r := range replies {
+		for _, above := range branchOf(c, r) {
+			add(above)
+		}
+		add(r)
+	}
+	return out
+}
+
+// readsOf says what the call for a prompt that carries these replies of the person's may read. It has tools when any of
+// them asked for them: Let them read files, or an attachment or an @ file, which store Tools on. Then it may also read the
+// folder of each image they attach, each folder once in the order met, nothing wider. A call that carries none has no
+// folders, and neither has one without tools.
+func readsOf(carried []CouncilReply) (tools bool, dirs []string) {
+	for _, r := range carried {
+		tools = tools || r.Tools
+	}
+	if !tools {
+		return false, nil
+	}
+	for _, r := range carried {
+		for _, p := range r.Attachments {
+			if dir := filepath.Dir(p); !slices.Contains(dirs, dir) {
+				dirs = append(dirs, dir)
+			}
+		}
+	}
+	return true, dirs
+}
+
+// askLine is one of the person's replies, with where it was posted. reads says the call has tools: the reply's attachment
+// block then follows its text.
+func askLine(c *Council, r CouncilReply, reads bool) string {
 	where := "to the whole council"
 	if p := findProposal(c, r.ProposalId); p != nil {
 		where = fmt.Sprintf("on %s (%s)", p.Id, p.Title)
@@ -563,7 +626,7 @@ func askLine(c *Council, r CouncilReply) string {
 	if parent := findReply(c, r.ParentId); parent != nil {
 		where += fmt.Sprintf(", replying to %s's %s", speaker(c, parent.Author), parent.Id)
 	}
-	return fmt.Sprintf("- [%s] %s: %s\n", r.Id, where, strings.TrimSpace(r.Text))
+	return fmt.Sprintf("- [%s] %s: %s\n", r.Id, where, personText(r, reads))
 }
 
 // Round2Prompt asks one expert to cross-review. It is given the other experts' proposals the person did not cut, with no
@@ -578,9 +641,15 @@ const laterPassNote = `Your stances from the earlier rounds stand. Give an entry
 	`said since gives you reason to speak: it needs a reason, and it answers the latest reply to that proposal. Leave ` +
 	`"stances" empty otherwise.`
 
+// round2ReadsNote replaces the line that says a reply pass has no tools, for a seat owed a reply of the person's that
+// attaches files or names one (the call then has the read-only tools and the attached images' folders).
+const round2ReadsNote = "You have Read, Grep and Glob this round, only for the files the person attached or named in a " +
+	"question below: otherwise work from the text below."
+
 // round2Task is what a reply pass asks, and the shape of the answer: the end of the round 2 prompt, and of an agent
-// seat's turn in a reply pass. A pass after the first opens with laterPassNote.
-func round2Task(c *Council, round int) string {
+// seat's turn in a reply pass. A pass after the first opens with laterPassNote. reads says a reply the seat is owed has
+// files to read: it may cite them.
+func round2Task(c *Council, round int, reads bool) string {
 	var b strings.Builder
 	if round > 2 {
 		b.WriteString(laterPassNote + "\n\n")
@@ -605,10 +674,14 @@ func round2Task(c *Council, round int) string {
 		b.WriteString(jsonRule + "\n```json\n" + brainstormRound2Shape + "\n```\n")
 		return b.String()
 	}
+	cite := "You cannot read the code in this round, so cite only evidence that appears in the text above."
+	if reads {
+		cite = "You cannot read the code in this round except the files the person attached or named in a question " +
+			"above, so cite only evidence that appears in the text above or in those files."
+	}
 	b.WriteString(`Give every proposal under "Proposals to review" one entry in "stances". ` + stanceRule +
 		" Add one line of reason, and the evidence it rests on. An accept needs no reason: leave \"reason\" empty. " +
-		"A challenge or an oppose always needs one. You cannot read the code in this round, so cite " +
-		"only evidence that appears in the text above.\n\n")
+		"A challenge or an oppose always needs one. " + cite + "\n\n")
 	b.WriteString(`Then name your picks in "picks": the 3 proposals under "Proposals to review" most worth doing, best ` +
 		"first, by proposal id. Never pick one of your own. Name fewer than 3 only when fewer are worth doing.\n\n")
 	b.WriteString(`If reading the others changed your mind about one of your own proposals, add an entry to "revisions": ` +
@@ -627,11 +700,17 @@ func round2Task(c *Council, round int) string {
 // the first shows what was said under each proposal, which the first pass has none of.
 func round2PromptFor(c *Council, e CouncilExpert, round int) string {
 	var b strings.Builder
+	asks := unansweredFor(c, e.Id)
+	reads, _ := readsOf(asks)
+	toolsLine := "You have no tools in this round: work from the text below."
+	if reads {
+		toolsLine = round2ReadsNote
+	}
 	writeContext(&b, c, e, "one expert on")
 	if isBrainstorm(c) {
-		fmt.Fprintf(&b, "\nThis is round %d of %d: build on each other. You have no tools in this round: work from the text below.\n\n", round, SynthesisRound(c))
+		fmt.Fprintf(&b, "\nThis is round %d of %d: build on each other. %s\n\n", round, SynthesisRound(c), toolsLine)
 	} else {
-		fmt.Fprintf(&b, "\nThis is round %d of %d: cross-review. You have no tools in this round: work from the text below.\n\n", round, SynthesisRound(c))
+		fmt.Fprintf(&b, "\nThis is round %d of %d: cross-review. %s\n\n", round, SynthesisRound(c), toolsLine)
 	}
 	writeWithThread := func(p CouncilProposal) {
 		writeProposal(&b, c, p, "###")
@@ -669,16 +748,16 @@ func round2PromptFor(c *Council, e CouncilExpert, round int) string {
 		}
 	}
 
-	if asks := unansweredFor(c, e.Id); len(asks) > 0 {
+	if len(asks) > 0 {
 		b.WriteString("## What the person asks you\n\n")
 		for _, r := range asks {
-			b.WriteString(askLine(c, r))
+			b.WriteString(askLine(c, r, reads))
 		}
 		b.WriteString("\n")
 	}
 
 	b.WriteString("## What to do\n\n")
-	b.WriteString(round2Task(c, round))
+	b.WriteString(round2Task(c, round, reads))
 	return b.String()
 }
 
@@ -865,13 +944,11 @@ func branchOf(c *Council, r CouncilReply) []CouncilReply {
 
 // AnswersPrompt asks one expert to answer the person's replies, the pass after the synthesis and a follow-up. For
 // each reply it carries only the branch the reply sits in (its proposal and the replies above it), then the
-// expert's own proposals. The expert has tools when any of the replies asked for them (Let them read files), and is
-// told to open a file only when an answer needs it (readWhenNeeded).
+// expert's own proposals. The expert has tools when any of the person's replies it carries asked for them (Let them read
+// files, or an attachment or an @ file), the ones above an owed reply included, and is told to open a file only when an
+// answer needs it (readWhenNeeded). With tools, each of the person's replies it carries ends with its attachment block.
 func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
-	tools := false
-	for _, r := range replies {
-		tools = tools || r.Tools
-	}
+	tools, _ := readsOf(personRepliesIn(c, replies))
 	var (
 		b      strings.Builder
 		others bool // a seat answered one of the replies before this one: say not to repeat it
@@ -917,11 +994,11 @@ func AnswersPrompt(c *Council, e CouncilExpert, replies []CouncilReply) string {
 				if a.Stance != "" {
 					fmt.Fprintf(&b, " (%s)", a.Stance)
 				}
-				fmt.Fprintf(&b, ": %s\n", strings.TrimSpace(a.Text))
+				fmt.Fprintf(&b, ": %s\n", personText(a, tools))
 			}
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "The person's reply [%s]: %s\n\n", r.Id, strings.TrimSpace(r.Text))
+		fmt.Fprintf(&b, "The person's reply [%s]: %s\n\n", r.Id, personText(r, tools))
 		if given := answersTo(c, r); len(given) > 0 {
 			others = true
 			b.WriteString("Already answered by others in the council:\n\n")
@@ -1238,7 +1315,8 @@ func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, 
 	if len(asks) > 0 {
 		b.WriteString("## What the person asks you\n\n")
 		for _, r := range asks {
-			b.WriteString(askLine(c, r))
+			// a live agent reads an attachment with its own tools, so the block always follows the ask
+			b.WriteString(askLine(c, r, true))
 			for _, a := range answersTo(c, r) { // indented: an ask's line is the only one that starts "- ["
 				others = true
 				fmt.Fprintf(b, "  - %s already answered it: %s\n", speaker(c, a.Author), answerWords(a))
@@ -1253,7 +1331,8 @@ func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, 
 	if round >= last {
 		b.WriteString(answersTask(c, others))
 	} else {
-		b.WriteString(round2Task(c, round))
+		reads, _ := readsOf(asks)
+		b.WriteString(round2Task(c, round, reads))
 	}
 }
 
@@ -1292,7 +1371,7 @@ func writeSinceReport(b *strings.Builder, c *Council, e CouncilExpert, round int
 }
 
 // personLine is one of the person's messages as a seat it was not put to is shown it: who it went to, what it is on, and
-// its words.
+// its words, with the attachment block when it has files (only a live agent is shown one, and reads with its own tools).
 func personLine(c *Council, r CouncilReply) string {
 	to := "the whole council"
 	if len(r.To) > 0 {
@@ -1309,7 +1388,7 @@ func personLine(c *Council, r CouncilReply) string {
 	if parent := findReply(c, r.ParentId); parent != nil {
 		where += fmt.Sprintf(", replying to %s's %s", speaker(c, parent.Author), parent.Id)
 	}
-	return fmt.Sprintf("- [%s] the person to %s%s: %s\n", r.Id, to, where, strings.TrimSpace(r.Text))
+	return fmt.Sprintf("- [%s] the person to %s%s: %s\n", r.Id, to, where, personText(r, true))
 }
 
 // saidLine is one reply another seat sent, as a seat is shown it: who, its stance, what it is on, and its words.

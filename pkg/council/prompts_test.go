@@ -4,6 +4,7 @@
 package council
 
 import (
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -256,6 +257,126 @@ func TestAnswersPromptSaysWhenToolsAreGiven(t *testing.T) {
 	// the tools, and to open a file only when the text does not hold the answer
 	mustContain(t, "answers prompt", p, readWhenNeeded)
 	mustNotContain(t, "answers prompt", p, "no tools")
+}
+
+// attachmentBlockOf is the block a seat's prompt carries after a person's reply with attachments, written out by hand.
+func attachmentBlockOf(paths ...string) string {
+	return "Attachments (read these files):\n- " + strings.Join(paths, "\n- ") + "\n"
+}
+
+// A prompt for a call with tools ends the person's reply with the block, in the reply's order, and the replies of the
+// person above it in the branch carry theirs; a reply with no attachment has none, and a call with no tools has none.
+func TestAnswersPromptAttachmentBlock(t *testing.T) {
+	c := promptCouncil()
+	one, two := filepath.Join("home", "att", "a1", "one.png"), filepath.Join("home", "att", "b2", "two.png")
+	c.Replies[2].Attachments, c.Replies[2].Tools = []string{one, two}, true // r3, the person's reply under UX's r2
+	ux := c.Experts[0]
+
+	p := AnswersPrompt(c, ux, []CouncilReply{c.Replies[2]})
+	mustContain(t, "answers prompt", p, "The person's reply [r3]: Text-r3 why does it break?\n"+attachmentBlockOf(one, two)+"\n", readWhenNeeded)
+	if n := strings.Count(p, "read these files"); n != 1 {
+		t.Errorf("the block is written %d times, want once", n)
+	}
+
+	// an ancestor of the person's replies shows its block in the branch above the reply being answered
+	c.Replies = append(c.Replies, CouncilReply{Id: "r8", ProposalId: "P1", ParentId: "r3", Author: YouId, Text: "Text-r8 and the rest?", To: []string{"ux"}})
+	child := AnswersPrompt(c, ux, []CouncilReply{c.Replies[len(c.Replies)-1]})
+	above := section(t, child, "## Reply r8")
+	mustContain(t, "the replies above r8", above, "Text-r3 why does it break?\n"+attachmentBlockOf(one, two))
+	mustContain(t, "answers prompt", child, "The person's reply [r8]: Text-r8 and the rest?\n\n", readWhenNeeded) // the ancestor's Tools turn the call's on
+	if n := strings.Count(child, "read these files"); n != 1 {
+		t.Errorf("the block is written %d times, want once, under the ancestor only", n)
+	}
+
+	// no attachment, no block
+	plain := promptCouncil()
+	mustNotContain(t, "answers prompt without attachments", AnswersPrompt(plain, ux, []CouncilReply{plain.Replies[2]}), "read these files", "Attachments")
+
+	// a call that runs with no tools never says "read these files", whatever the reply carries
+	c.Replies[2].Tools = false
+	noTools := AnswersPrompt(c, ux, []CouncilReply{c.Replies[2]})
+	mustNotContain(t, "answers prompt with no tools", noTools, "read these files", one)
+	mustContain(t, "answers prompt with no tools", noTools, "You have no tools this time")
+}
+
+// An agent seat is sent the same block as its next turn, with its own tools to read it: under each ask, and in the
+// messages it is shown that went to the others.
+func TestAgentPromptAttachmentBlock(t *testing.T) {
+	c := agentPromptCouncil()
+	img := filepath.Join("home", "att", "a1", "shot.png")
+	for i := range c.Replies {
+		if c.Replies[i].Id == "r5" { // to Witness, round 2
+			c.Replies[i].Attachments, c.Replies[i].Tools = []string{img}, true
+		}
+	}
+	witness, scout := c.Experts[0], c.Experts[1]
+
+	later := AgentLaterPrompt(c, witness, 3)
+	asks := section(t, later, "## What the person asks you")
+	mustContain(t, "asks section", asks, "[r5] to the whole council: Text-r5 to Witness\n"+attachmentBlockOf(img))
+	if n := strings.Count(later, "read these files"); n != 1 {
+		t.Errorf("the later prompt writes the block %d times, want once", n)
+	}
+
+	// a seat that has not spoken is brought in whole, and its asks carry it as well
+	first := AgentFirstPrompt(c, witness, 2)
+	mustContain(t, "first prompt", first, "Text-r5 to Witness\n"+attachmentBlockOf(img))
+
+	// after the report a joining seat is shown the person's messages sent to the others, block included
+	joined := agentPromptCouncil()
+	joined.Summary = &CouncilSummary{Text: "Done.", At: 10}
+	joined.Replies = []CouncilReply{{
+		Id: "r1", Author: YouId, Text: "Text-r1 to UX", To: []string{"ux"}, Round: 4, Ts: 20,
+		Attachments: []string{img}, Tools: true,
+	}}
+	seen := AgentFirstPrompt(joined, scout, SynthesisRound(joined)+1)
+	mustContain(t, "joining seat's prompt", seen, "Text-r1 to UX\n"+attachmentBlockOf(img))
+
+	// a reply with none carries none
+	plain := agentPromptCouncil()
+	mustNotContain(t, "agent prompt without attachments", AgentLaterPrompt(plain, plain.Experts[0], 3), "read these files")
+}
+
+// A reply pass is a call without tools, except for the seats owed a reply with attachments: only their prompt carries the
+// block, and only theirs says the files may be opened.
+func TestRound2PromptAttachmentBlock(t *testing.T) {
+	c := promptCouncil()
+	one, two := filepath.Join("home", "att", "a1", "one.png"), filepath.Join("home", "att", "b2", "two.png")
+	c.Replies[2].Attachments, c.Replies[2].Tools = []string{one, two}, true // r3, to UX and Skeptic
+
+	ux := section(t, Round2Prompt(c, c.Experts[0]), "## What the person asks you")
+	mustContain(t, "UX's asks", ux, "- [r3] on P1 (Title-one), replying to UX's r2: Text-r3 why does it break?\n"+attachmentBlockOf(one, two)+"- [r4]")
+	full := Round2Prompt(c, c.Experts[0])
+	mustContain(t, "UX's round 2 prompt", full, round2ReadsNote, "This is round 2 of 3: cross-review")
+	mustNotContain(t, "UX's round 2 prompt", full, "You have no tools in this round", "You cannot read the code in this round, so")
+
+	// a seat the reply was not to has no block, and keeps the sentence that says it has no tools
+	ram := Round2Prompt(c, c.Experts[1])
+	mustNotContain(t, "RAM's round 2 prompt", ram, "read these files", one, round2ReadsNote)
+	mustContain(t, "RAM's round 2 prompt", ram, "You have no tools in this round", "You cannot read the code in this round, so")
+
+	// a brainstorm's reply pass says the same
+	c.Mode = ModeBrainstorm
+	b := Round2Prompt(c, c.Experts[0])
+	mustContain(t, "brainstorm round 2 prompt", b, round2ReadsNote, attachmentBlockOf(one, two))
+	mustNotContain(t, "brainstorm round 2 prompt", b, "You have no tools in this round")
+
+	// no attachment, no change to the prompt at all
+	was, plain := promptCouncil(), promptCouncil()
+	plain.Replies[2].Tools = false
+	if Round2Prompt(plain, plain.Experts[0]) != Round2Prompt(was, was.Experts[0]) {
+		t.Error("a reply with no attachment changed the round 2 prompt")
+	}
+}
+
+// The synthesis is written from text and has no tools: it quotes a reply's words and never the block.
+func TestSynthesisPromptNoAttachmentBlock(t *testing.T) {
+	c := promptCouncil()
+	img := filepath.Join("home", "att", "a1", "one.png")
+	c.Replies[2].Attachments, c.Replies[2].Tools = []string{img}, true
+	p := SynthesisPrompt(c)
+	mustContain(t, "synthesis prompt", p, "Text-r3 why does it break?")
+	mustNotContain(t, "synthesis prompt", p, "read these files", "Attachments", img)
 }
 
 func TestAnswersPromptCarriesTheReport(t *testing.T) {
