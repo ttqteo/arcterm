@@ -144,6 +144,7 @@ import {
     folderBlocks,
     folderCounts,
     HOME_PROJECT,
+    jarvisCountsByProject,
     liveBranches,
     notableBranch,
     projectLabel,
@@ -252,6 +253,7 @@ import { useSubagentTracking } from "./subagenttracking";
 import { rowFieldsAtom } from "./rowfieldsstore";
 import { runningBackgroundTasks } from "./transcriptprojection";
 import { unreadLabel } from "./unreadagents";
+import { attentionAtom, splitAttention } from "./attentionstore";
 import { unreadAgentsAtom } from "./unreadagentsstore";
 import { showServiceMenu } from "./servicemenu";
 import { canRestart, serviceRowWords, treeServiceInput } from "./servicesmodel";
@@ -2183,6 +2185,7 @@ function FolderRow({
     onToggle,
     trailing,
     selected,
+    jarvis = 0,
 }: {
     model: AgentsViewModel;
     section: SidebarSection;
@@ -2192,6 +2195,9 @@ function FolderRow({
     onToggle: () => void;
     trailing?: React.ReactNode;
     selected?: boolean;
+    // the project's share of the nav rail's Jarvis badge (jarvisCountsByProject), drawn on the folder icon as the rail
+    // draws its own
+    jarvis?: number;
 }) {
     const hasOverview = project !== HOME_PROJECT;
     const activate = hasOverview ? () => showProjectOverview(project) : onToggle;
@@ -2228,11 +2234,23 @@ function FolderRow({
                 className="group/fold -m-[3px] flex shrink-0 cursor-pointer items-center gap-[7px] rounded-[4px] p-[3px] text-ink-faint outline-none hover:bg-surface-hover hover:text-secondary focus-visible:ring-1 focus-visible:ring-accent"
             >
                 <ChevronRight size={12} aria-hidden className={cn("transition-transform", open && "rotate-90")} />
-                {open ? (
-                    <FolderOpen size={14} aria-hidden className="shrink-0 text-muted group-hover/fold:text-secondary" />
-                ) : (
-                    <Folder size={14} aria-hidden className="shrink-0 text-muted group-hover/fold:text-secondary" />
-                )}
+                <span className="relative flex shrink-0">
+                    {open ? (
+                        <FolderOpen size={14} aria-hidden className="text-muted group-hover/fold:text-secondary" />
+                    ) : (
+                        <Folder size={14} aria-hidden className="text-muted group-hover/fold:text-secondary" />
+                    )}
+                    {jarvis > 0 ? (
+                        <span
+                            data-folder-jarvis={jarvis}
+                            title={`${jarvis} waiting on you in Jarvis`}
+                            aria-label={`${jarvis} waiting on you in Jarvis`}
+                            className="absolute -right-[7px] -top-[6px] flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-asking px-[3px] text-[8px] font-bold tabular-nums text-background ring-2 ring-surface"
+                        >
+                            {unreadLabel(jarvis)}
+                        </span>
+                    ) : null}
+                </span>
             </button>
             {/* the name keeps a few letters however much the far end holds */}
             <span
@@ -3253,6 +3271,12 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         councils,
         openClosedCouncils,
     });
+    // each folder's share of the nav rail's Jarvis badge, on its icon (jarvisCountsByProject)
+    const attention = useAtomValue(attentionAtom);
+    const jarvisCounts = useMemo(
+        () => jarvisCountsByProject(splitAttention(attention).jarvis, lineage.runs, agents, queue),
+        [attention, lineage.runs, agents, queue]
+    );
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));
     // The multi-selection: Ctrl/Cmd+click and Shift+click pick agent rows (agenttreemodel.ts) beside the focused agent.
@@ -3388,6 +3412,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                                 section="active"
                                                 project={r.project}
                                                 selected={center === "project" && overviewProject === r.project}
+                                                jarvis={jarvisCounts.get(r.project) ?? 0}
                                                 label={projectLabel(r.project)}
                                                 open={r.open}
                                                 onToggle={() =>

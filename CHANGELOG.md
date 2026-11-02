@@ -29,6 +29,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - An agent you ask for a council on named chats now seats those chats in it, beside a Skeptic and a coordinator, and
   the council runs to the report without holding drafts for you to send: `wsh council start --agent <tab id>`, and
   `--agent self` for the chat that asks.
+- A project folder in the Agent sidebar shows on its icon how many of Jarvis's waiting items (a gate, a run to confirm
+  or land, an escalation) are that project's.
 - Jarvis has a Councils region under Runs: every council still at work across your projects, and the ones that ended
   this week, with the ones waiting on you first. A row opens the council, on its report once it has one.
 - Right-click a project folder in the Agent sidebar → New agent… opens the New dialog with that project already
@@ -49,18 +51,29 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A sleeping agent's side panel no longer offers a Transcript tab: its conversation already fills the terminal's place, and the tab comes back when it wakes.
+- A run or council in a project's History names its kind on its second line, so its title lines up with the sessions'.
+- Tables in agent messages, notes and councils wrap their cells to fit, instead of scrolling sideways.
+- The must-read sentence highlighted in a message is yellow, so it shows on a blue bubble too.
+- A council's seat filters are short, flat buttons instead of long coloured pills: a seat at work shows only its dot,
+  and what it is doing is on hover.
 - A brainstorming agent's Builder check and Judge rows fold into a small chip on its row once they have answered, with a
   mark per check; click the chip to show them again. They stay open while one is still reading or asks you.
 - A brainstorm mockup's thumbnail opens the board full size when you click it, not only from its Open full size link.
 - An ended council's × in the Agent tree now closes it instead of deleting it: it folds into its project's Closed
   councils, where Reopen brings it back (a retry or a reply reopens it too). Remove council… on its right-click menu
   still deletes one for good, into ~/.arc/trash, and `wsh council close` / `wsh council close --reopen` do the same.
+- A brainstorm's boards now sit in a resizable right rail beside the question instead of small thumbnails in it: drag
+  the rail wider and they lie side by side, each headed by its option and lit with it when you point at either, and a
+  click opens a board large in the rail while the question stays on screen, with marking still there.
 - A council's header fits on one line: the mode leads, a long question shortens to fit instead of pushing the status
   onto a second row, and Top, Latest and Back in its discussion glide to their place instead of jumping.
 - New dialog: a session picked to resume is forgotten once the dialog has been closed for 30 seconds, not two minutes.
 
 ### Fixed
 
+- In a council, when you ask everyone something, the experts who answer after the first one no longer open with the
+  same "Right, agreed…" and repeat its point: they add only what is new, or show as agreeing.
 - A council an agent starts inside a project registered at a repo's subfolder (such as `apps/website`) now shows
   under that project in the Agent tree, instead of nowhere.
 - A council expert whose answer breaks a line inside its JSON no longer fails with "invalid character '\n' in string
@@ -69,7 +82,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   open" over an empty terminal.
 - Starting a run no longer fails over and over with "Selected route is unavailable" when the list of installed agents
   had not loaded: arcterm loads it again and starts the run on the project's route.
-- On a brainstorm board opened full size, `[` `]` and ← → step through its boards as on an agent's canvas, instead of
+- On a brainstorm board opened large in the rail, `[` `]` and ← → step through its boards as on an agent's canvas, instead of
   switching to another surface or another agent. While any canvas is shown, ← → never jump to another agent: when its
   board is loading, unreachable or being marked they do nothing.
 - A council's Summary failed panel has a close button; it comes back only when the summary fails again, and the

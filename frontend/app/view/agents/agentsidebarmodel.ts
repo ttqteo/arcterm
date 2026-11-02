@@ -703,6 +703,38 @@ export function projectTree(input: {
     return out;
 }
 
+/** Pure: how many of Jarvis's items (splitAttention's `jarvis` share: gates, runs to confirm or land, escalations)
+ *  each project folder holds, so the folder's icon carries the part of the nav rail's Jarvis badge that is its own. An
+ *  item belongs to its run's project: the run as the tree knows it (`runs`, the lineage's), else the project of an agent
+ *  working for that run; a blocked queue entry, to its queued row's folder. An item naming neither (a due chunk, a learn
+ *  proposal) is in no folder. */
+export function jarvisCountsByProject(
+    items: readonly AttentionItem[],
+    runs: Readonly<Record<string, RunInfo>>,
+    agents: readonly AgentVM[],
+    queue: readonly QueuedRow[] = []
+): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const i of items) {
+        let project = "";
+        if (i.runid) {
+            project = runs[i.runid]?.project || "";
+            if (!project) {
+                const a = agents.find((x) => x.runId === i.runid && projectOf(x) !== "");
+                project = a != null ? projectOf(a) : "";
+            }
+        }
+        if (!project && i.queueid) {
+            const q = queue.find((r) => r.entry.id === i.queueid);
+            project = q != null ? q.project || HOME_PROJECT : "";
+        }
+        if (project) {
+            out.set(project, (out.get(project) ?? 0) + 1);
+        }
+    }
+    return out;
+}
+
 /** Pure: the folder a terminal runs in, as the row names it beside the project: the last folder of its `cwd`, or
  *  undefined when that is the project's root (the paths compared without case, separator or trailing separator), and
  *  when there is no cwd or no root to compare it with. */

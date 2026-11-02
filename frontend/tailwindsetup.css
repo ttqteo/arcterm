@@ -458,7 +458,7 @@ svg [aria-label="tip"] g path {
 
 /* ==text== in a markdown source (monaco-react.tsx): the text tinted as the Preview's <mark>, the marks faint. */
 .monaco-editor .md-mark {
-    background-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
+    background-color: color-mix(in srgb, var(--color-warning) 25%, transparent);
     border-radius: 2px;
 }
 .monaco-editor .md-mark-delim {
@@ -650,7 +650,8 @@ svg [aria-label="tip"] g path {
     color: var(--color-secondary);
     font-style: italic;
 }
-/* wide tables scroll inside the panel instead of forcing it wider (see markdownmessage.tsx) */
+/* cells wrap, so a table fits its panel; one still too wide (a long path or code) scrolls inside it instead of
+   forcing the panel wider (see markdownmessage.tsx) */
 .agent-table-wrap {
     overflow-x: auto;
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -660,7 +661,11 @@ svg [aria-label="tip"] g path {
 .agent-md table {
     border-collapse: collapse;
     font-size: 0.92em;
-    white-space: nowrap;
+    white-space: normal;
+}
+.agent-md th,
+.agent-md td {
+    vertical-align: top;
 }
 .agent-md th {
     text-align: left;

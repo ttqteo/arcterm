@@ -33,6 +33,27 @@ does not, say what you saw and it becomes a bug row under Actionable.
   <id> --timeout 0` brings the report, which the chat sums up. Then name a wrong tab id → the start fails before the
   Token burn card and lists the live tabs. `skills/council/SKILL.md` "Seating chats", spec
   `2026-11-02-council-agent-seats-design.md`.
+- [ ] (arcterm) A project folder carries its share of the Jarvis badge: with a run waiting to land or a gate open in
+  a project, the Agent sidebar's folder icon for that project shows a count in the Jarvis badge's colour at its top
+  right, the counts across folders add up to Jarvis's (less what names no run: due chunks, learn proposals), and it
+  clears with the item. `agenttree.tsx` `FolderRow` `jarvis`, `jarvisCountsByProject`.
+- [ ] (arcterm) A sleeping agent's rail has no Transcript tab: put an agent to sleep while its rail sits on Transcript
+  → the strip drops the Transcript icon and shows Overview; Ctrl+Shift+F does nothing; Wake → the tab returns and is
+  selected again. `agentdetailsrail.tsx` `hasTranscript`, "fix(agents): a sleeping agent's rail drops its Transcript
+  tab".
+- [ ] (arcterm) History run/council rows carry their badge on the meta line: Project Overview → History → a Run or
+  Council row's title starts at the same left edge as a session's, and its second line reads "◆ Run · …" /
+  "● Council · …"; unfold a council → the peek lines up under the title. `projecthistory.tsx` `KindLabel`,
+  "fix(agents): History's run and council badge moves to the meta line".
+- [ ] (arcterm) Council follow-up answers don't echo the first one: in a council that has a report, send a yes/no
+  question to Everyone → the first seat answers it; the others open with their own new point (no "Đúng" / "Mình đồng
+  ý" / "Agreed", no repeat of the first seat's caveat) or show as "X agrees". Seen failing in council 7096c31c (r64–r67)
+  before the fix; `pkg/council/prompts.go` (`othersAnsweredRule`, `writeAnswered`), "fix(council): later answers
+  to a question everyone was asked no longer echo the first one".
+- [ ] (arcterm) Council seat chips flat, tables wrap: open a council's Discussion → the Everyone / seat chips are flat
+  rows (6px corners, no coloured border or tint; the selected one grey); a seat at work shows only its dot, no
+  "Replying to …" text, which its hover says; a reply with a Markdown table wraps its cells to the bubble's width, no
+  horizontal scrollbar unless a cell holds one unbreakable long word. Also check a table in a note.
 - [ ] (arcterm) Brainstorm checks fold: in Agent, a brainstorming agent whose Builder check and Judge both answered →
   no rows under it, a `› ✓ ✓` chip on its second line; click it → both rows show and the chevron turns; click again →
   they fold. Start a new builder check → its row shows while it reads. `agenttree.tsx` `ChecksChip`,

@@ -54,7 +54,19 @@ wsh council start --mode <review|brainstorm> --mode-why "<one line: why this mod
   scope, what is already decided), add them after "Keep to:"; leave "Keep to:" out when they stated none.
 - `--files` are the files the experts read (the spec or plan, the source it touches), comma-separated, relative to the
   working directory or absolute. Their size is part of the cost, so name what matters, not the whole tree.
-- `--screenshot <png>` (repeatable) for a UI the experts should see.
+- `--screenshot <png>` (repeatable) for a UI the experts should see. The role experts only read (Read, Grep, Glob): they
+  cannot run the app, a browser or ffmpeg, so a picture they need comes from you, before `start`. When the question is
+  about something seen (a UI, a mockup, an animation, a video), capture it first and attach it, or the panel judges
+  markup and guesses (its claims come back weak: "an estimate from the mockup"):
+  - a video or an animation: a few frames at the moments the question is about, not an even sweep, e.g.
+    `ffmpeg -ss 42 -i tour.mp4 -frames:v 1 f-042s.png`, the second in the file name so a claim can cite
+    `screenshot:f-042s.png#top`;
+  - a running UI: a screenshot of it (in arcterm's own dev app, `node scripts/cdp-shot.mjs <out.png>`);
+  - a `.dc.html` mockup: a screenshot of the board it is about.
+
+  Keep it to about six images in a scratch folder, not the project: each one is read by every expert, so it costs
+  like a file. If you cannot capture (no ffmpeg, the app is not running), say so in `--question` ("no frames attached")
+  rather than leave the panel to guess.
 - `--agent <tab id>` and `--expert <role id>` (each repeatable) name who sits; they are for a council on chats the
   person named, see Seating chats below. With neither, the council is experts only.
 - `--group` is optional: `brainstorm` takes `product-ideas` and `review` takes `ui-feature` (a UI feature, a spec or a

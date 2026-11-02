@@ -140,10 +140,11 @@ function sessionMenu(model: AgentsViewModel, key: string, s: LiveSession, e: Rea
     ContextMenuModel.getInstance().showContextMenu(items, e);
 }
 
-// a run's rotated square or a council's dot, beside its kind word
+// a run's rotated square or a council's dot, beside its kind word; it leads the row's meta line, so the title lines up
+// with a session's
 function KindLabel({ kind }: { kind: HistoryItem["kind"] }) {
     return (
-        <span className="flex w-[68px] flex-none items-center gap-[6px] text-[11px] font-semibold text-ink-mid">
+        <span className="inline-flex items-center gap-[5px] font-semibold text-ink-mid">
             <span
                 aria-hidden="true"
                 className={
@@ -164,7 +165,7 @@ function CouncilPeekBody({ peek, nested, onOpen }: { peek: CouncilPeek; nested: 
     return (
         <div
             data-history-peek
-            className={cn("flex flex-col items-start gap-[10px] pb-3 pr-3", nested ? "pl-[118px]" : "pl-[90px]")}
+            className={cn("flex flex-col items-start gap-[10px] pb-3 pr-3", nested ? "pl-10" : "pl-3")}
         >
             {peek.question !== "" ? (
                 <p className="whitespace-pre-wrap break-words text-[12.5px] leading-[1.5] text-secondary">
@@ -362,10 +363,11 @@ export function HistoryColumn({
                         }
                         className={cn(row.nested ? NESTED_ROW : ROW, open && "hover:bg-transparent")}
                     >
-                        <KindLabel kind={row.kind} />
                         <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
                             <span className="truncate text-[13px] text-primary">{marked(row.title, q)}</span>
                             <span className="truncate text-[12px] text-muted">
+                                <KindLabel kind={row.kind} />
+                                {" · "}
                                 {row.line}
                                 {row.warn !== "" ? (
                                     <>

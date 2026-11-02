@@ -51,7 +51,7 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["agent:brainstorm-open"], glyph: "b", label: "brainstorm" }, // terminal mode with a brainstorm
         { ids: ["agent:view-cycle"], keys: "Alt:c", label: "switch view" }, // a canvas, brainstorm or review, also in the terminal
         { ids: ["agent:view-chord"], keys: "Ctrl:Shift:b", label: "brainstorm" }, // reachable in the terminal, and in the pane while b picks an answer
-        { ids: ["agent:back", "agent:brainstorm-back"], glyph: "esc", label: "back" },
+        { ids: ["agent:back", "agent:brainstorm-back"], glyph: "esc", label: "back" }, // also: shrink a board widened in the brainstorm's rail
         { ids: ["agent:leave-center"], glyph: "esc", label: "terminal" }, // History or a session only, via its binding
         { ids: ["switcher:next", "switcher:prev"], keys: "Ctrl:Tab", label: "switch" },
         { ids: ["agent:return-nav"], keys: "Shift:Escape", label: "leave" }, // editable-only via its binding
@@ -59,11 +59,11 @@ export const SURFACE_HINTS: Partial<Record<SurfaceKey, FooterHint[]>> = {
         { ids: ["agent:canvas-send"], keys: "Mod:Enter", label: "send" },
         { ids: ["agent:mark-stop"], glyph: "m", label: "stop marking" },
         { ids: ["agent:canvas-close"], glyph: "c", label: "terminal" },
-        { ids: ["agent:canvas-prev", "agent:canvas-next"], glyph: "[ ]", label: "board" },
+        { ids: ["agent:canvas-prev", "agent:canvas-next"], glyph: "[ ]", label: "board" }, // canvas mode, and a board widened in the brainstorm's rail
         { ids: ["agent:mark-start"], glyph: "m", label: "mark" },
         // brainstorm pane: the keys it answers to, first the one that sends what is typed, then the way back
         { ids: ["agent:brainstorm-send"], glyph: "⏎", label: "send" }, // while a field of the pane has focus
-        { ids: ["agent:brainstorm-close"], glyph: "b", label: "terminal" },
+        { ids: ["agent:brainstorm-close"], glyph: "b", label: "terminal" }, // not while the question offers a B: b picks it, widened board or not
         // review mode: Ctrl+Enter names the tray's accent answer
         { ids: ["agent:review-approve"], keys: "Mod:Enter", label: "approve" },
         { ids: ["agent:review-request"], keys: "Mod:Enter", label: "request changes" },

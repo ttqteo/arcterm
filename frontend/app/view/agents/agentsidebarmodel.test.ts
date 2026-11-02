@@ -18,6 +18,7 @@ import {
     folderBlocks,
     folderCounts,
     HOME_PROJECT,
+    jarvisCountsByProject,
     liveBranches,
     newCouncilRoot,
     notableBranch,
@@ -45,6 +46,7 @@ import {
 } from "./agentsidebarmodel";
 import type { AgentVM } from "./agentsviewmodel";
 import { buildAgentTree, UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
+import type { RunInfo } from "./runlineage";
 import { queuedRows } from "./runqueuemodel";
 import { treeServiceInput } from "./servicesmodel";
 import type { StartingRun } from "./startingrunsmodel";
@@ -2037,5 +2039,40 @@ describe("folderBlocks", () => {
     it("makes a flat list one block with no head", () => {
         expect(folderBlocks([i("1"), i("2")])).toEqual([{ head: null, body: [i("1"), i("2")] }]);
         expect(folderBlocks([])).toEqual([]);
+    });
+});
+
+describe("jarvisCountsByProject", () => {
+    const item = (over: Partial<AttentionItem>): AttentionItem => ({
+        kind: "dag-gate",
+        key: Math.random().toString(),
+        source: "",
+        text: "",
+        action: "Review",
+        phaseidx: 0,
+        waitingsince: 0,
+        ...over,
+    });
+    const run = (runId: string, project: string) => ({ runId, channelId: "", title: "", project }) as RunInfo;
+
+    it("files an item under its run's project, from the lineage first, then an agent of that run", () => {
+        const worker = { ...agent("w", undefined, "arcterm"), runId: "r2" };
+        const counts = jarvisCountsByProject(
+            [item({ runid: "r1" }), item({ runid: "r1" }), item({ runid: "r2" })],
+            { r1: run("r1", "portal") },
+            [worker]
+        );
+        expect(Object.fromEntries(counts)).toEqual({ portal: 2, arcterm: 1 });
+    });
+
+    it("files a blocked queue entry under its queued row's folder, and leaves out what names no run", () => {
+        const queue = [{ project: "portal", entry: { id: "q1" } as RunQueueEntry, place: 1 }];
+        const counts = jarvisCountsByProject(
+            [item({ queueid: "q1" }), item({ kind: "learn-proposal" }), item({ runid: "gone" })],
+            {},
+            [],
+            queue
+        );
+        expect(Object.fromEntries(counts)).toEqual({ portal: 1 });
     });
 });
