@@ -45,6 +45,10 @@ const CHUNK_LINES = 2000;
 // the room it needs
 const MARKER_GAP_PX = 8;
 const MARKER_SETTLE_MS = [0, 120, 320];
+// the band can draw later than those timers on a long transcript, so the tree is also watched this long for it, ending
+// at the reader's own wheel, key or click
+const MARKER_WATCH_MS = 1500;
+const READER_INPUT = ["wheel", "keydown", "pointerdown"] as const;
 const NO_ENTRIES: AgentEntry[] = [];
 
 // the tab's loaded part and what is drawn from it. `entries` are the projection of every loaded line, `keyOffset` how many
@@ -414,9 +418,29 @@ export function RailTranscript({ agent, surfaceAtom }: { agent: AgentVM; surface
         };
         const frame = requestAnimationFrame(clearBand);
         const timers = MARKER_SETTLE_MS.map((ms) => window.setTimeout(clearBand, ms));
+        // The band is drawn once the scroll's measure lands, and on a long transcript (hundreds of items drawn) that can be
+        // after the last timer: the marker then sits under it for good. So the tree is watched for the band, and for the
+        // items drawn above the marker, until MARKER_WATCH_MS passes or the reader scrolls themselves.
+        const scroller = scrollRef.current;
+        const watch = scroller == null ? null : new MutationObserver(clearBand);
+        const stopWatch = () => {
+            watch?.disconnect();
+            for (const type of READER_INPUT) {
+                scroller?.removeEventListener(type, stopWatch);
+            }
+        };
+        if (scroller != null) {
+            watch?.observe(scroller, { childList: true, subtree: true });
+            for (const type of READER_INPUT) {
+                scroller.addEventListener(type, stopWatch, { passive: true });
+            }
+        }
+        const watchTimer = window.setTimeout(stopWatch, MARKER_WATCH_MS);
         return () => {
             cancelAnimationFrame(frame);
             timers.forEach((t) => window.clearTimeout(t));
+            window.clearTimeout(watchTimer);
+            stopWatch();
         };
     }, [scrollNonce]);
 

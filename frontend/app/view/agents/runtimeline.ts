@@ -69,6 +69,9 @@ const KIND_TITLE: Record<string, string> = {
     landed: "Run landed",
     "stage-session-started": "Judging session started",
     "plan-reviewed": "Plan reviewed",
+    "queued-start": "Started from the queue",
+    "land-queued": "Land in line",
+    "land-resolving": "Resolving conflicts with the base",
 };
 
 // KIND_TONE stays inside the existing status tone utilities. No new colors: success = progress, warning =
@@ -119,6 +122,8 @@ const KIND_TONE: Record<string, string> = {
     "review-overruled": "text-muted",
     "task-amended": "text-muted",
     "task-lead-told": "text-muted",
+    "land-queued": "text-muted",
+    "land-resolving": "text-asking",
     "child-cancelled": "text-muted",
     "run-cancelled": "text-muted",
     "dag-cancelled": "text-muted",
@@ -182,6 +187,7 @@ export function eventText(event: RunEvent): string {
         text?: string;
         held?: number;
         reason?: string;
+        entryid?: string;
     }>(event);
     const task = d?.taskid ?? "";
     switch (event.kind) {
@@ -204,6 +210,8 @@ export function eventText(event: RunEvent): string {
             return [`${eventTitle(event)} · ${task}`, d?.note?.replace(/\s+/g, " ")].filter(Boolean).join(" · ");
         case "merge-held":
             return [`${d?.held ?? 0} merge(s) held`, d?.reason].filter(Boolean).join(" · ");
+        case "queued-start":
+            return [eventTitle(event), d?.entryid].filter(Boolean).join(" · ");
         default:
             return task ? `${eventTitle(event)} · ${task}` : eventTitle(event);
     }

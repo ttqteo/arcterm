@@ -22,6 +22,13 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Fixed
+
+- The Transcript tab's Compactions button no longer leaves the compaction marker hidden behind the pinned prompt on a long conversation.
+- A run's timeline reads "Started from the queue", "Land in line" and "Resolving conflicts with the base" again, where it showed the raw event names.
+
 ## 0.15.20 — 2026-11-02
 
 ### Added

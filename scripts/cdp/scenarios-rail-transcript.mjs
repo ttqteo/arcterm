@@ -340,13 +340,16 @@ export default function (kit) {
                 const press = () => h.ev(`document.querySelector("[data-rail-compactions]")?.click()`);
                 const control = await h.ev(`!!document.querySelector("[data-rail-compactions]")`);
                 await press();
+                // the band draws a frame or more after the scroll: a marker read before it counts as clear of nothing, so the
+                // wait is for the band to be drawn and the marker below it
+                const newestClear = await polishWaitFor(h, `(${MARKERS}).some((m) => m.text.includes("181") && m.band > 0 && (${CLEAR_AT_TOP_JS})(m))`, 5000);
                 await polishNap(900);
                 const newest = await h.ev(MARKERS);
                 await h.shot("cdp-shots/rail-transcript-tab-compaction-newest.png");
                 const atTop = (list, digits) => list.some((m) => m.text.includes(digits) && CLEAR_AT_TOP(m));
                 const start4 = await h.ev(LOADED_START);
                 await press();
-                const older = await polishWaitFor(h, `(${MARKERS}).some((m) => m.text.includes("142") && (${CLEAR_AT_TOP_JS})(m))`, 90000);
+                const older = await polishWaitFor(h, `(${MARKERS}).some((m) => m.text.includes("142") && m.band > 0 && (${CLEAR_AT_TOP_JS})(m))`, 90000);
                 await polishNap(500);
                 const olderMarkers = await h.ev(MARKERS);
                 const start4b = await h.ev(LOADED_START);
@@ -360,8 +363,8 @@ export default function (kit) {
                 await h.shot("cdp-shots/rail-transcript-tab-compaction-none.png");
                 rec(
                     "4. Compactions: the first press puts the newest marker at the top, clear of the pinned prompt's band, the second loads an earlier chunk (the loaded start moves back) and puts the older marker there, the third says No earlier compactions at the start of the file",
-                    control && atTop(newest, "181") && start4b < start4 && older && atTop(olderMarkers, "142") && none && noneText === "No earlier compactions" && atStart?.start === 0 && atStart.lines === ctx.lines,
-                    JSON.stringify({ control, markers0: markers0.map((m) => m.text.slice(0, 40)), newest: newest.map((m) => ({ off: m.off, band: m.band })), start4, start4b, older, olderOffsets: olderMarkers.map((m) => ({ off: m.off, band: m.band })), none, noneText, atStart, fileLines: ctx.lines, heapMbAfterLoadingBackToTheStart: heap4 })
+                    control && newestClear && atTop(newest, "181") && start4b < start4 && older && atTop(olderMarkers, "142") && none && noneText === "No earlier compactions" && atStart?.start === 0 && atStart.lines === ctx.lines,
+                    JSON.stringify({ control, markers0: markers0.map((m) => m.text.slice(0, 40)), newestClear, newest: newest.map((m) => ({ off: m.off, band: m.band })), start4, start4b, older, olderOffsets: olderMarkers.map((m) => ({ off: m.off, band: m.band })), none, noneText, atStart, fileLines: ctx.lines, heapMbAfterLoadingBackToTheStart: heap4 })
                 );
 
                 // 5. Mod+Shift+F from the agent's terminal opens Transcript and takes focus; Esc gives it back

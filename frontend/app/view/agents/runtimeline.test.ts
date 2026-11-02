@@ -42,9 +42,21 @@ describe("eventTitle by kind", () => {
     });
 
     it("titles every kind the engine writes, never the raw kind", () => {
-        for (const kind of ["land-held", "landed", "stage-session-started", "plan-reviewed"]) {
+        for (const kind of [
+            "land-held",
+            "landed",
+            "stage-session-started",
+            "plan-reviewed",
+            "queued-start",
+            "land-queued",
+            "land-resolving",
+        ]) {
             expect(kindTitle(kind)).not.toBe(kind);
         }
+    });
+
+    it("says a run started from the queue as a sentence", () => {
+        expect(kindTitle("queued-start")).toBe("Started from the queue");
     });
 });
 
@@ -101,6 +113,14 @@ describe("eventText", () => {
         expect(
             eventText(eventWith("6", 1, "task-told", { taskid: "t-3", text: "keep closed-session\nlinks clickable" }))
         ).toBe("you told t-3 · keep closed-session links clickable");
+    });
+
+    it("names the queue entry a run started from, or just the title when the detail has none", () => {
+        expect(eventText(eventWith("7", 1, "queued-start", { entryid: "q-ab12" }))).toBe(
+            "Started from the queue · q-ab12"
+        );
+        expect(eventText(eventWith("8", 1, "queued-start"))).toBe("Started from the queue");
+        expect(eventText(eventWith("9", 1, "queued-start", {}))).toBe("Started from the queue");
     });
 });
 
