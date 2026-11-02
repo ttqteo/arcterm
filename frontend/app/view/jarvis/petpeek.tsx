@@ -12,6 +12,7 @@
 // The derivations live in petpeekmodel.ts and petcondition.ts. This file is a renderer.
 
 import { computeEntrances, initialEntranceState, MOTION, paneReveal, popoverReveal } from "@/app/element/motiontokens";
+import { PopoverReveal } from "@/app/element/popoverreveal";
 import { globalStore } from "@/app/store/jotaiStore";
 import type { AgentsViewModel } from "@/app/view/agents/agents";
 import { askSentKey, type AgentVM } from "@/app/view/agents/agentsviewmodel";
@@ -24,6 +25,7 @@ import { projectListAtom, rowsWithChannel } from "@/app/view/agents/projectsstor
 import { cn, fireAndForget } from "@/util/util";
 import {
     autoUpdate,
+    flip,
     FloatingFocusManager,
     FloatingPortal,
     offset,
@@ -32,7 +34,7 @@ import {
     type Placement,
 } from "@floating-ui/react";
 import { useAtomValue } from "jotai";
-import { ArrowUpRight, ChevronDown, ChevronRight, ChevronUp, PictureInPicture2, X } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown, ChevronRight, ChevronUp, PictureInPicture2, Pin, X } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import {
     useCallback,
@@ -74,7 +76,8 @@ import {
     rowPeekTarget,
     type PeekRow,
 } from "./petpeekmodel";
-import { petActStateAtom, petPeekDestAtom, petPeekOpenAtom, petSaidAtom } from "./petstore";
+import { PET_STAY_CHOICES, shownStayChoice, stayUntilLabel, type PetStayChoice } from "./petstay";
+import { petActStateAtom, petPeekDestAtom, petPeekOpenAtom, petSaidAtom, petStayAtom, setPetStay } from "./petstore";
 import { eventLabel, type PetEvent } from "./petvoice";
 import { ageLabel } from "./recallderive";
 import { reviewCards, reviewQueue, reviewSummary, reviewSummaryLine } from "./reviewmodel";
@@ -629,6 +632,167 @@ function KeyHints({ hints }: { hints: { keys: string[]; label: string }[] }) {
     );
 }
 
+// The pin menu lists the three stays, then Roam again last; PET_STAY_CHOICES is in the Settings order (Roam first).
+const STAY_MENU = [
+    ...PET_STAY_CHOICES.filter((choice) => choice.id !== "roam"),
+    ...PET_STAY_CHOICES.filter((choice) => choice.id === "roam"),
+];
+
+// The header's pin: tells the pet to stay at its home for an hour, four hours or until turned off (pet stay put spec §2),
+// and is lit while it does. It reads the stay through shownStayChoice, never the raw atom, so a timed stay that has just
+// ended already reads Roam here before the expiry timer clears it.
+//
+// The menu is portaled, as the harness picker's is: the panel's overflow-hidden would clip it on a short quiet card,
+// and a portal nests in the peek's own portal node, which the focus manager counts as inside the dialog. That puts it
+// outside the panel's data-mini-hit, so it carries its own for the folded click-through poll. It has its own
+// transparent backdrop rather than useDismiss's outside press: that closes on pointerdown, and the click which
+// follows would then land on the peek's backdrop and close the peek with it. Escape is stopped here too, or the panel's
+// own Escape would close the peek over an open menu.
+function PetStayPin({ folded }: { folded: boolean }) {
+    const stay = useAtomValue(petStayAtom);
+    const shown = shownStayChoice(stay, Date.now());
+    const staying = shown !== "roam";
+    // a stay's end time belongs to the stay in force: an ended one reads Roam and has no time to show
+    const until = staying ? stayUntilLabel(stay) : null;
+    const [open, setOpen] = useState(false);
+    const menuRef = useRef<HTMLDivElement | null>(null);
+    const triggerId = useId();
+    const { refs, floatingStyles } = useFloating({
+        open,
+        placement: "bottom-end",
+        strategy: "fixed",
+        // flip and shift keep it in the viewport, which in the folded float is the whole of the window
+        middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
+        whileElementsMounted: autoUpdate,
+    });
+    const focusTrigger = () => (refs.domReference.current as HTMLElement | null)?.focus();
+    const close = () => {
+        setOpen(false);
+        // the menu unmounts with its focus in it: put it back in the dialog, or it falls to the body
+        focusTrigger();
+    };
+    const pick = (choice: PetStayChoice) => {
+        setPetStay(choice);
+        close();
+    };
+
+    useEffect(() => {
+        if (open) {
+            const menu = menuRef.current;
+            // preventScroll: the menu is still being placed on its first frame, and nothing here should scroll for it
+            (
+                menu?.querySelector<HTMLElement>('[aria-checked="true"]') ??
+                menu?.querySelector<HTMLElement>('[role="menuitemradio"]')
+            )?.focus({ preventScroll: true });
+        }
+    }, [open]);
+
+    const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        if (!open) {
+            return;
+        }
+        if (event.key === "Escape" || event.key === "Tab") {
+            event.preventDefault();
+            event.stopPropagation();
+            close();
+            return;
+        }
+        if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
+            event.preventDefault();
+            event.stopPropagation();
+            const rows = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? []);
+            if (rows.length === 0) {
+                return;
+            }
+            const at = rows.indexOf(document.activeElement as HTMLElement);
+            const next =
+                event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? rows.length - 1
+                      : (at + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+            rows[next].focus();
+        }
+    };
+
+    return (
+        <div className="flex flex-none" onKeyDown={onKeyDown}>
+            <button
+                ref={refs.setReference}
+                id={triggerId}
+                type="button"
+                data-pet-stay-pin
+                data-staying={staying ? "true" : undefined}
+                aria-label="Pet stays put"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={() => setOpen((prior) => !prior)}
+                className={cn(
+                    "flex h-7 w-7 flex-none items-center justify-center rounded-[7px]",
+                    FOCUS_RING,
+                    staying
+                        ? "bg-accentbg text-accent"
+                        : cn(
+                              "text-muted hover:bg-surface-hover hover:text-primary",
+                              open && "bg-surface-hover text-primary"
+                          )
+                )}
+            >
+                {/* upright while it stays, tilted while it roams: the float bar's pin reads the same way, so the
+                    state is not carried by colour alone */}
+                <Pin aria-hidden="true" size={14} strokeWidth={2} className={staying ? undefined : "rotate-45"} />
+            </button>
+            <FloatingPortal>
+                {open ? <div data-pet-stay-backdrop className="fixed inset-0 z-[80]" onClick={() => close()} /> : null}
+                {/* above the peek's z-[65]; rendered always and driven by `open` so PopoverReveal's exit plays */}
+                <div
+                    ref={refs.setFloating}
+                    style={floatingStyles}
+                    data-mini-hit={open ? "chat" : undefined}
+                    className="z-[81]"
+                >
+                    <PopoverReveal
+                        open={open}
+                        origin="top right"
+                        className={cn(
+                            "min-w-[212px] rounded-[10px] border bg-surface-raised p-[4px]",
+                            // folded: no drop shadow, which smears the app behind the see-through window
+                            folded ? "border-edge-strong" : "border-edge-mid shadow-popover-md"
+                        )}
+                    >
+                        <div ref={menuRef} role="menu" aria-labelledby={triggerId} data-pet-stay-menu>
+                            {STAY_MENU.map((choice) => {
+                                const checked = choice.id === shown;
+                                return (
+                                    <button
+                                        key={choice.id}
+                                        type="button"
+                                        role="menuitemradio"
+                                        aria-checked={checked}
+                                        data-pet-stay-choice={choice.id}
+                                        onClick={() => pick(choice.id)}
+                                        className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-[6px] px-2 text-left text-[12px] text-primary outline-none hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent"
+                                    >
+                                        <span className="flex w-3 flex-none items-center justify-center text-accent">
+                                            {checked ? <Check aria-hidden="true" size={12} strokeWidth={2.4} /> : null}
+                                        </span>
+                                        <span className="min-w-0 flex-1 truncate">{choice.menuLabel}</span>
+                                        {checked && until != null ? (
+                                            <span className="flex-none text-[10.5px] tabular-nums text-muted">
+                                                {until}
+                                            </span>
+                                        ) : null}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </PopoverReveal>
+                </div>
+            </FloatingPortal>
+        </div>
+    );
+}
+
 export function PetPeek({
     model,
     anchor,
@@ -1096,6 +1260,8 @@ export function PetPeek({
                                                             ? "Nothing waiting on you"
                                                             : `${rows.length} waiting on you`}
                                                     </h2>
+                                                    {/* before Full view, and before Terminal folded */}
+                                                    <PetStayPin folded={folded} />
                                                     {onRestore != null ? (
                                                         // no titles: over the see-through folded window, the tooltip
                                                         // chip's popover shadow smears the app behind
