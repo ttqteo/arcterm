@@ -2782,6 +2782,21 @@ func TestSuggest(t *testing.T) {
 	}
 }
 
+func TestSuggestLeavesOutAgentGroups(t *testing.T) {
+	h := newHarness(t)
+	project := t.TempDir()
+	for _, named := range []string{"agents", "agents-ideas"} {
+		h.f.setText("suggest/suggest", fence(mustJSON(map[string]any{"files": []string{}, "roles": []any{}, "group": named})))
+		got, err := h.r.Suggest(context.Background(), project, "Idle sleep", "Which first?", nil)
+		if err != nil || got.Group != "" {
+			t.Errorf("a reply naming %q = group %q, %v, want it empty: with no chat seated the group is a panel of one", named, got.Group, err)
+		}
+	}
+	prompt := h.f.calls("suggest")[0].Prompt
+	mustContain(t, "suggest prompt", prompt, "ui-feature: Review a UI feature", "product-ideas: Product ideas")
+	mustNotContain(t, "suggest prompt", prompt, "agents:", "agents-ideas:", "Chats with a")
+}
+
 func TestSuggestMode(t *testing.T) {
 	h := newHarness(t)
 	project := t.TempDir()
@@ -3817,6 +3832,76 @@ func TestFollowupDraftKeepsDone(t *testing.T) {
 	}
 	if c = h.wait("a"); c.State != StateDone || HeldDrafts(c) != 0 || len(h.prompts()) != calls {
 		t.Errorf("after settling: %s with %d held and %d new calls, want done, settled and nothing rerun", c.State, HeldDrafts(c), len(h.prompts())-calls)
+	}
+}
+
+// ranToTheReport checks a council that holds nothing ran its rounds to the report: done, nothing held or dropped, every
+// seat's idea and the reply pass sent, and it never stopped awaiting-you on the way.
+func (h *harness) ranToTheReport(c *Council) {
+	h.t.Helper()
+	if c.State != StateDone || c.Round != SynthesisRound(c) || c.Summary == nil {
+		h.t.Fatalf("council = %s at round %d (summary %v), want done at the synthesis round", c.State, c.Round, c.Summary != nil)
+	}
+	if len(c.Proposals) != 2 || len(c.Replies) == 0 || HeldDrafts(c) != 0 {
+		h.t.Errorf("proposals %d, replies %d, held %d: want an idea from each seat, a reply pass and nothing held", len(c.Proposals), len(c.Replies), HeldDrafts(c))
+	}
+	for _, p := range c.Proposals {
+		if p.Draft != "" {
+			h.t.Errorf("idea %s is %q, want it sent as written", p.Id, p.Draft)
+		}
+	}
+	for _, x := range c.Replies {
+		if x.Draft != "" {
+			h.t.Errorf("reply %s is %q, want it sent as written", x.Id, x.Draft)
+		}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, seen := range h.seen {
+		if seen.Id == c.Id && seen.State == StateAwaiting {
+			h.t.Errorf("council %s stopped awaiting-you at round %d", c.Id, seen.Round)
+		}
+	}
+}
+
+// A council an agent started (ByAgent) holds no draft with a chat seated: its rounds run to the report by themselves,
+// also when it was saved not-run and started later. TestAgentSeatsHoldDrafts is the same council without ByAgent.
+func TestAgentCouncilByAgentHoldsNothing(t *testing.T) {
+	h := newHarness(t)
+	c := agentCouncil("a")
+	c.ByAgent = true
+	h.ranToTheReport(h.run(c))
+	// the chat took its turn in the reply pass: it reviewed UX's idea, which nobody dropped
+	if len(h.agents.calls("r2")) != 1 || len(h.f.calls("r2")) != 1 {
+		t.Errorf("reply pass calls: Witness %d, UX %d, want one each", len(h.agents.calls("r2")), len(h.f.calls("r2")))
+	}
+
+	saved := agentCouncil("b")
+	saved.ByAgent = true
+	rec, err := h.r.Record(saved)
+	if err != nil || rec.State != StateNotRun || !rec.ByAgent {
+		t.Fatalf("Record = %+v, %v, want it saved not-run and still started by an agent", rec, err)
+	}
+	if _, err := h.r.StartSaved(context.Background(), "b"); err != nil {
+		t.Fatalf("StartSaved: %v", err)
+	}
+	h.ranToTheReport(h.wait("b"))
+}
+
+// --pause pauses an agent council after round 1 as it does an expert-only one: with nothing held, a Continue ends it.
+func TestAgentCouncilByAgentPausesAfterRound1(t *testing.T) {
+	h := newHarness(t)
+	c := agentCouncil("a")
+	c.ByAgent, c.PauseAfterRound1 = true, true
+	got := h.run(c)
+	if got.State != StateAwaiting || got.Round != 1 || HeldDrafts(got) != 0 || len(got.Proposals) != 2 {
+		t.Fatalf("after round 1: %s at round %d with %d held and %d ideas, want the pause with both ideas sent", got.State, got.Round, HeldDrafts(got), len(got.Proposals))
+	}
+	if _, err := h.r.Continue("a", nil, ""); err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	if got = h.wait("a"); got.State != StateDone || got.Summary == nil || HeldDrafts(got) != 0 {
+		t.Errorf("after Continue: %s with %d held, want done", got.State, HeldDrafts(got))
 	}
 }
 

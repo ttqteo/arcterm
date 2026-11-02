@@ -85,6 +85,25 @@ func TestHasAgents(t *testing.T) {
 	}
 }
 
+func TestHoldsDrafts(t *testing.T) {
+	experts := []CouncilExpert{{Id: "ux"}, {Id: "chair", Coordinator: true}}
+	seated := append([]CouncilExpert{{Id: "witness", Agent: "tab-1", Harness: "claude"}}, experts...)
+	for name, tc := range map[string]struct {
+		c    *Council
+		want bool
+	}{
+		"nil":                            {nil, false},
+		"no agents":                      {&Council{Experts: experts}, false},
+		"no agents, started by an agent": {&Council{Experts: experts, ByAgent: true}, false},
+		"agents":                         {&Council{Experts: seated}, true},
+		"agents, started by an agent":    {&Council{Experts: seated, ByAgent: true}, false},
+	} {
+		if got := HoldsDrafts(tc.c); got != tc.want {
+			t.Errorf("%s: HoldsDrafts = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
 func TestSent(t *testing.T) {
 	for draft, want := range map[string]bool{"": true, DraftHeld: false, DraftDropped: false} {
 		if got := Sent(draft); got != want {

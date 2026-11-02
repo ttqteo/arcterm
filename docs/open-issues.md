@@ -27,6 +27,12 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council seats the chats you name: from a claude chat, ask for a council on "this chat + <another tab
+  id>" → `wsh council start` runs with `--agent self --agent <id>` and prints `… · 2 chats + Skeptic · …`; both tabs
+  answer each round in their own transcript, nothing is held as a draft, and the starter's background `wsh council wait
+  <id> --timeout 0` brings the report, which the chat sums up. Then name a wrong tab id → the start fails before the
+  Token burn card and lists the live tabs. `skills/council/SKILL.md` "Seating chats", spec
+  `2026-11-02-council-agent-seats-design.md`.
 - [ ] (arcterm) A project folder carries its share of the Jarvis badge: with a run waiting to land or a gate open in
   a project, the Agent sidebar's folder icon for that project shows a count in the Jarvis badge's colour at its top
   right, the counts across folders add up to Jarvis's (less what names no run: due chunks, learn proposals), and it

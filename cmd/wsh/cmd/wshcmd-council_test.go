@@ -113,7 +113,7 @@ func TestCouncilModeDefaultGroup(t *testing.T) {
 		{"an explicit group wins over brainstorm", "paper", council.ModeBrainstorm, "paper"},
 		{"an explicit group wins over review", "solo", council.ModeReview, "solo"},
 	} {
-		if got := councilGroupFor(tc.group, tc.mode); got != tc.want {
+		if got := councilGroupFor(tc.group, tc.mode, false); got != tc.want {
 			t.Errorf("%s: group = %q, want %q", tc.name, got, tc.want)
 		}
 	}
@@ -125,6 +125,144 @@ func TestCouncilModeDefaultGroup(t *testing.T) {
 		if got, err := councilModeFlag(word); err != nil || got != want {
 			t.Errorf("--mode %q = %q, %v; want %q", word, got, err, want)
 		}
+	}
+}
+
+func TestCouncilGroupForAgents(t *testing.T) {
+	for _, tc := range []struct {
+		name, group, mode string
+		withAgents        bool
+		want              string
+	}{
+		{"review with chats", "", council.ModeReview, true, "agents"},
+		{"no mode with chats is a review", "", "", true, "agents"},
+		{"brainstorm with chats", "", council.ModeBrainstorm, true, "agents-ideas"},
+		{"an explicit group wins over review with chats", "paper", council.ModeReview, true, "paper"},
+		{"an explicit group wins over brainstorm with chats", "solo", council.ModeBrainstorm, true, "solo"},
+		{"review without chats", "", council.ModeReview, false, "ui-feature"},
+		{"brainstorm without chats", "", council.ModeBrainstorm, false, "product-ideas"},
+		{"an explicit group without chats", "paper", council.ModeReview, false, "paper"},
+	} {
+		if got := councilGroupFor(tc.group, tc.mode, tc.withAgents); got != tc.want {
+			t.Errorf("%s: group = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// councilTestCmd is a start command with its flags parsed from args.
+func councilTestCmd(t *testing.T, args ...string) *cobra.Command {
+	t.Helper()
+	cmd := &cobra.Command{Use: "start"}
+	addCouncilPanelFlags(cmd)
+	addCouncilStartFlags(cmd)
+	if err := cmd.Flags().Parse(args); err != nil {
+		t.Fatal(err)
+	}
+	return cmd
+}
+
+func TestCouncilAgentFlags(t *testing.T) {
+	t.Setenv("WAVETERM_TABID", "tab-self")
+	t.Setenv("WAVETERM_BLOCKID", "")
+	got, err := councilAgentFlags(councilTestCmd(t, "--agent", "5065bd8c", "--agent", "self", "--agent", "71d93e40"))
+	if err != nil || !reflect.DeepEqual(got, []string{"5065bd8c", "tab-self", "71d93e40"}) {
+		t.Fatalf("--agent twice and self = %v, %v; want the ids in the order given, self as this terminal's tab", got, err)
+	}
+	if got, err := councilAgentFlags(councilTestCmd(t)); err != nil || len(got) != 0 {
+		t.Fatalf("no --agent = %v, %v", got, err)
+	}
+
+	// self outside an agent's terminal: refused, never a council with the seat left out
+	t.Setenv("WAVETERM_TABID", "")
+	if _, err := councilAgentFlags(councilTestCmd(t, "--agent", "self")); err == nil || !strings.Contains(err.Error(), "--agent self runs only inside an agent's terminal") {
+		t.Fatalf("--agent self with no tab = %v", err)
+	}
+	// an empty id is a refusal too (a shell variable that was never set), not a seat dropped, alone or beside others
+	for _, args := range [][]string{{"--agent", ""}, {"--agent", "a1", "--agent", " "}} {
+		if _, err := councilAgentFlags(councilTestCmd(t, args...)); err == nil || !strings.Contains(err.Error(), "--agent needs a tab id") {
+			t.Fatalf("%v = %v", args, err)
+		}
+	}
+	// ids pass through without self
+	if got, err := councilAgentFlags(councilTestCmd(t, "--agent", " a1 ", "--agent", "b2")); err != nil || !reflect.DeepEqual(got, []string{"a1", "b2"}) {
+		t.Fatalf("ids = %v, %v", got, err)
+	}
+	for _, name := range []string{"agent", "expert"} {
+		for _, cmd := range []*cobra.Command{councilStartCmd, councilEstimateCmd} {
+			if cmd.Flags().Lookup(name) == nil {
+				t.Errorf("%s has no --%s", cmd.Name(), name)
+			}
+		}
+	}
+}
+
+func TestCouncilExpertFlag(t *testing.T) {
+	roles := councilTestRoles()
+	roles.Roles = append(roles.Roles,
+		council.CouncilExpert{Id: "contrarian", Name: "Contrarian", Model: "sonnet"},
+		council.CouncilExpert{Id: "facilitator", Name: "Facilitator", Model: "opus", Coordinator: true})
+	_, panel, err := councilPanel(roles, "ui-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := councilAddExperts(roles, panel, []string{"contrarian", "reader"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"ux", "ram", "newuser", "skeptic", "contrarian", "reader", "coordinator"}; !reflect.DeepEqual(councilNames(got), want) {
+		t.Fatalf("panel = %v, want the roles before the coordinator in the order given: %v", councilNames(got), want)
+	}
+	if !got[6].Coordinator || got[4].Coordinator || got[5].Coordinator {
+		t.Fatalf("coordinator flags wrong: %+v", got)
+	}
+	if len(panel) != 5 || panel[4].Id != "coordinator" {
+		t.Fatalf("the group's own panel was changed: %v", councilNames(panel))
+	}
+	if same, err := councilAddExperts(roles, panel, nil); err != nil || !reflect.DeepEqual(same, panel) {
+		t.Fatalf("no --expert = %v, %v", councilNames(same), err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		ids   []string
+		want  string // what the error names
+		takes string // the role ids it lists as usable
+	}{
+		{"an unknown role", []string{"ghost"}, `"ghost"`, "reader, contrarian"},
+		{"a role already in the group", []string{"ux"}, `"ux"`, "reader, contrarian"},
+		{"a role named twice", []string{"reader", "reader"}, `"reader"`, "contrarian"},
+		{"the group's coordinator", []string{"coordinator"}, `"coordinator"`, "reader, contrarian"},
+		{"another coordinator role", []string{"facilitator"}, `"facilitator"`, "reader, contrarian"},
+		{"an empty id (a lone --expert \"\" reaches here as one empty value)", councilRepeated(councilTestCmd(t, "--expert", ""), "expert"), `""`, "reader, contrarian"},
+	} {
+		_, err := councilAddExperts(roles, panel, tc.ids)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: --expert %v = %v, want an error naming %s", tc.name, tc.ids, err, tc.want)
+			continue
+		}
+		_, takes, ok := strings.Cut(err.Error(), "roles it takes: ")
+		if !ok || takes != tc.takes {
+			t.Errorf("%s: the error lists %q, want only the roles it takes: %q (%v)", tc.name, takes, tc.takes, err)
+		}
+	}
+}
+
+func TestCouncilStartDataByAgent(t *testing.T) {
+	_, experts, err := councilPanel(councilTestRoles(), "ui-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := councilPlan{project: "/p", mode: council.ModeReview, group: council.CouncilGroup{Id: "agents"}, experts: experts, agents: []string{"5065bd8c", "tab-self"}}
+	cmd := councilTestCmd(t, "--session", "s1")
+	data := councilStartData(cmd, plan, "F", nil)
+	if !data.ByAgent || !reflect.DeepEqual(data.Agents, []string{"5065bd8c", "tab-self"}) {
+		t.Errorf("start data = %+v, want ByAgent and the agents in seat order", data)
+	}
+	// wsh council start always marks the council as an agent's, chats seated or not
+	plan.agents = nil
+	if data = councilStartData(cmd, plan, "F", nil); !data.ByAgent || len(data.Agents) != 0 {
+		t.Errorf("start data with no chat = %+v, want ByAgent and no agents", data)
 	}
 }
 
@@ -366,13 +504,56 @@ func TestTokengateCappedLeavesACouncil(t *testing.T) {
 
 func TestCouncilStartedLine(t *testing.T) {
 	est := &wshrpc.CouncilEstimateRtnData{Calls: 9, Tokens: 820_000, Minutes: 6}
-	got := councilStartedLine("abc123", "Council\n  for the cockpit", council.ModeReview, "Review a UI feature", 4, est)
+	_, experts, err := councilPanel(councilTestRoles(), "ui-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &council.Council{Id: "abc123", Experts: experts}
+	got := councilStartedLine(c, "Council\n  for the cockpit", council.ModeReview, "Review a UI feature", est)
 	want := "council abc123 started: Council for the cockpit · review · Review a UI feature · 4 experts · ≈ 9 calls · ~0.8M tokens"
 	if got != want {
 		t.Fatalf("started line\n got %s\nwant %s", got, want)
 	}
-	if got := councilStartedLine("abc123", "f", council.ModeBrainstorm, "Product ideas", 1, est); !strings.Contains(got, "· brainstorm · Product ideas · 1 expert ·") {
+	one := &council.Council{Id: "abc123", Experts: experts[3:]} // the Skeptic and the coordinator
+	if got := councilStartedLine(one, "f", council.ModeBrainstorm, "Product ideas", est); !strings.Contains(got, "· brainstorm · Product ideas · 1 expert ·") {
 		t.Fatalf("a brainstorm of one expert = %s", got)
+	}
+}
+
+func TestCouncilStartedLineWithChats(t *testing.T) {
+	_, panel, err := councilPanel(councilTestRoles(), "ui-feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	skeptic, coordinator := panel[3], panel[4]
+	chat := func(tab string) council.CouncilExpert {
+		return council.CouncilExpert{Id: "agent-" + tab, Name: "Chat " + tab, Agent: tab, Harness: "claude"}
+	}
+	est := &wshrpc.CouncilEstimateRtnData{Calls: 7, Tokens: 1_400_000, Minutes: 9}
+	line := func(experts ...council.CouncilExpert) string {
+		return councilStartedLine(&council.Council{Id: "abc123", Experts: experts}, "Council\n  for the cockpit", council.ModeReview, "Chats with a Skeptic", est)
+	}
+
+	if got, want := line(chat("t1"), chat("t2"), skeptic, coordinator),
+		"council abc123 started: Council for the cockpit · review · Chats with a Skeptic · 2 chats + Skeptic · ≈ 7 calls · ~1.4M tokens"; got != want {
+		t.Errorf("two chats\n got %s\nwant %s", got, want)
+	}
+	if got := line(chat("t1"), skeptic, coordinator); !strings.Contains(got, " · 1 chat + Skeptic · ") {
+		t.Errorf("one chat = %s", got)
+	}
+	// role experts are named in panel order, joined with ", ", whatever else sits beside the chats
+	if got := line(chat("t1"), skeptic, panel[0], coordinator); !strings.Contains(got, " · 1 chat + Skeptic, UX · ") {
+		t.Errorf("a chat with a Skeptic and UX = %s", got)
+	}
+	// no chat seated: the line is the one a council had before chats could sit
+	if got, want := line(panel...),
+		"council abc123 started: Council for the cockpit · review · Chats with a Skeptic · 4 experts · ≈ 7 calls · ~1.4M tokens"; got != want {
+		t.Errorf("no chat\n got %s\nwant %s", got, want)
+	}
+	// N and X are the estimate's, not a constant
+	other := &wshrpc.CouncilEstimateRtnData{Calls: 11, Tokens: 2_600_000, Minutes: 15}
+	if got := councilStartedLine(&council.Council{Id: "x", Experts: []council.CouncilExpert{chat("t1"), skeptic, coordinator}}, "f", council.ModeReview, "g", other); !strings.HasSuffix(got, "≈ 11 calls · ~2.6M tokens") {
+		t.Errorf("the estimate passed is not the one printed: %s", got)
 	}
 }
 
