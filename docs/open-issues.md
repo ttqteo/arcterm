@@ -43,6 +43,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Coordinator in round 3 on sonnet (its seat is opus)`. Do the same on a failed expert from the Discussion's failure
   card and the chat's seat chip. CDP `council-summary` clicks the summary banner's menu with the RPC stubbed; no real
   call on another model and neither Discussion site was tried. The commit that adds this line.
+- [ ] (arcterm) Council Retry with… after a safeguard flag: on a call that failed with "API Error: Opus 5.5's
+  safeguards flagged this session", the menu's header reads "Safeguards flagged <seat> on opus" and its first item is
+  Retry on Opus 4.8; picking it reruns the call on `claude-opus-4-8` and the call goes through. Untried in the app;
+  unit-tested in `councilretry.test.ts`. The commit that adds this line.
 - [ ] (arcterm) Summary failed panel closes: open a council whose summary failed. The panel's header ends with an ✕;
   clicking it hides the panel while the strip's Coordinator chip keeps its Retry. Retry, and when it fails again the
   panel is back. The commit that adds this line.
