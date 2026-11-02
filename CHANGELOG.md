@@ -26,8 +26,6 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
-- Open in split follows the shape of the cell you are on: in a cell taller than it is wide (a portrait monitor, a
-  narrow window) the new agent goes under it instead of beside it, so neither half is too narrow for its terminal.
 - A council's Discussion header shows its seats as one stack of avatars instead of a row that cut a seat in half on a
   narrow pane: hover or click it for the list of every seat, with what each is doing and its message count, and pick
   one to see only its messages. Close is now an X (Reopen an arrow).

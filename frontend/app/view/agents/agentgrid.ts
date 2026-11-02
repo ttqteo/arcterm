@@ -340,30 +340,6 @@ export function splitZones(state: GridState, index: number): DropZone[] {
     return zones;
 }
 
-// How much taller than wide (in px) a cell must be before "Open in split" stacks the new cell under it instead of beside
-// it: 1 splits along the longer side, as a tiling window manager does (Hyprland's dwindle, i3's auto split).
-export const STACK_RATIO = 1;
-
-export interface GridArea {
-    width: number;
-    height: number;
-}
-
-// The edge "Open in split" splits the cell at `index` along, in a grid area `area` px in size (the cells' rows, the
-// dock's row left out): the cell's own size is its share of the area, so the choice follows the cell, not the screen.
-// A cell more than STACK_RATIO times taller than wide is stacked (bottom), any other gets the new cell beside it
-// (right), so the narrow column of a portrait monitor is not cut into two columns too narrow for a TUI. An area not
-// measured yet reads as wide. splitOff still turns the zone across when the cell is one square on that axis.
-export function splitZoneFor(state: GridState, index: number, area: GridArea): DropZone {
-    const p = placesOf(normalizeGrid(state))[index] ?? placementFor(1)[0];
-    if (!(area.width > 0 && area.height > 0)) {
-        return "right";
-    }
-    const w = (area.width * p.colSpan) / 2;
-    const h = (area.height * p.rowSpan) / 2;
-    return h > w * STACK_RATIO ? "bottom" : "right";
-}
-
 const ACROSS: Record<DropZone, DropZone> = {
     left: "top",
     right: "bottom",

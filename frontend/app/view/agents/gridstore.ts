@@ -21,10 +21,8 @@ import {
     reconcileProjectGrids,
     removeCell,
     shownGrid,
-    splitZoneFor,
     withShownGrid,
     type DropZone,
-    type GridArea,
     type GridState,
     type ProjectGrids,
 } from "./agentgrid";
@@ -229,20 +227,15 @@ export function canOpenInSplit(model: GridModel, id: string): boolean {
     return !s.ids.includes(id) && s.ids.length < MAX_CELLS;
 }
 
-// The cells' area on screen, in px (the dock's row left out), as the Agent surface last measured it while the grid
-// showed: "Open in split" reads it to split the focused cell along its longer side. Not persisted; 0 until measured.
-export const gridAreaAtom = atom<GridArea>({ width: 0, height: 0 });
-
-// "Open in split": the agent becomes a new cell right after the focused one, beside it, or under it when that cell is
-// taller than wide (splitZoneFor). False when it cannot (it already has a cell, the grid is full, it is not live, it is
-// another project's); the caller then falls back to plain focus, which for another project's tab shows that project's
-// grid.
+// "Open in split": the agent becomes a new cell right after the focused one. False when it cannot (it already
+// has a cell, the grid is full, it is not live, it is another project's); the caller then falls back to plain focus,
+// which for another project's tab shows that project's grid.
 export function openInSplit(model: GridModel, id: string): boolean {
     if (!canOpenInSplit(model, id)) {
         return false;
     }
     const s = currentGrid(model);
     const at = s.focused == null ? 0 : s.ids.indexOf(s.focused);
-    commit(model, addCell(s, id, at, splitZoneFor(s, at, globalStore.get(gridAreaAtom))));
+    commit(model, addCell(s, id, at, "right"));
     return true;
 }

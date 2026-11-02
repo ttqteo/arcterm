@@ -20,7 +20,6 @@ import {
     removeCell,
     replaceFocused,
     splitGrids,
-    splitZoneFor,
     splitZones,
     swapCells,
     visibleCells,
@@ -584,31 +583,5 @@ describe("splitGrids", () => {
             grids: { a: { ids: ["x", "y"], focused: "x" }, b: { ids: ["z"], focused: "z" } },
         };
         expect([...splitGrids(state).keys()]).toEqual(["a"]);
-    });
-});
-
-describe("splitZoneFor", () => {
-    const tall = { width: 700, height: 1700 };
-    const wide = { width: 1500, height: 900 };
-    it("stacks a lone cell in a tall area and puts it beside in a wide one", () => {
-        expect(splitZoneFor(g(["a"]), 0, tall)).toBe("bottom");
-        expect(splitZoneFor(g(["a"]), 0, wide)).toBe("right");
-    });
-    it("reads the cell's own share of the area, not the area's", () => {
-        // side by side in a wide area, each half is 750 x 900: taller than wide, so the next split stacks
-        expect(splitZoneFor(g(["a", "b"]), 0, wide)).toBe("bottom");
-        // stacked in a tall area, each half is 700 x 850: still taller, but it is one square tall, so splitOff turns it
-        expect(splitZoneFor(gp(["a", "b"], "a", [TOP, BOTTOM]), 0, tall)).toBe("bottom");
-        // stacked in a square area, each half is 1000 x 500: wider, so beside
-        expect(splitZoneFor(gp(["a", "b"], "a", [TOP, BOTTOM]), 0, { width: 1000, height: 1000 })).toBe("right");
-    });
-    it("puts a square cell beside, and reads an unmeasured area as wide", () => {
-        expect(splitZoneFor(g(["a"]), 0, { width: 1000, height: 1000 })).toBe("right");
-        expect(splitZoneFor(g(["a"]), 0, { width: 0, height: 0 })).toBe("right");
-        expect(splitZoneFor(g(["a"]), 0, { width: 0, height: 900 })).toBe("right");
-    });
-    it("stacks the new cell under a tall one when addCell takes its zone", () => {
-        const s = g(["a"]);
-        expect(addCell(s, "b", 0, splitZoneFor(s, 0, tall))).toEqual(gp(["a", "b"], "b", [TOP, BOTTOM]));
     });
 });

@@ -72,7 +72,6 @@ import {
     agentGridAtom,
     currentGrid,
     eligibleIds,
-    gridAreaAtom,
     gridProjects,
     openInSplit,
     projectGridsAtom,
@@ -294,16 +293,12 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     }, [terminals, paneMounts]);
     const gridRef = useRef<HTMLDivElement>(null);
     const [gridHeight, setGridHeight] = useState(0);
-    const [gridWidth, setGridWidth] = useState(0);
     useEffect(() => {
         const el = gridRef.current;
         if (el == null) {
             return;
         }
-        const ro = new ResizeObserver(() => {
-            setGridHeight(el.clientHeight);
-            setGridWidth(el.clientWidth);
-        });
+        const ro = new ResizeObserver(() => setGridHeight(el.clientHeight));
         ro.observe(el);
         return () => ro.disconnect();
     }, [agent == null]);
@@ -312,14 +307,6 @@ export function AgentSurface({ model, tabId }: { model: AgentsViewModel; tabId: 
     const dockHeight = clampDockHeight(dragDockHeight ?? storedDockHeight, gridHeight);
     // folded, the row is the strip; untiled it keeps a 6px margin around it, as the cells do when tiled
     const dockRowPx = dockFolded ? DOCK_STRIP_PX + (tiled ? 0 : 12) : dockHeight;
-    // the cells' area for "Open in split" (gridAreaAtom), the dock's row left out; a hidden grid measures 0 and keeps
-    // the last size it had on screen
-    const cellsHeight = gridHeight - (docked != null ? dockRowPx : 0);
-    useEffect(() => {
-        if (gridWidth > 0 && cellsHeight > 0) {
-            globalStore.set(gridAreaAtom, { width: gridWidth, height: cellsHeight });
-        }
-    }, [gridWidth, cellsHeight]);
 
 
     // the stage's row becomes its verifier's session once that is in the roster, and the focus goes with the row

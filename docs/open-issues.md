@@ -27,10 +27,6 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
-- [ ] (arcterm) Open in split on a tall screen, in the real app: on the portrait monitor, with one agent filling the
-  Agent column, open another agent in split (header Split menu or a tree row's Open in split) → it opens under the
-  first, both full width; on a landscape window it still opens beside; with a terminal in the panel under the agent
-  the choice still follows the cells' height, not the panel's. (f60eafe78)
 - [ ] (arcterm) Council report under a cover, in the real app (WebKit; the run checked only headless Chrome): open a
   Done council → a cover with the question, the answer and the glance box on the right, Report | Discussion tabs that
   stay at the top when you scroll, the ideas as cards with one open at a time and its detail under the row; click
