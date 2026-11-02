@@ -22,6 +22,13 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
+## Unreleased
+
+### Changed
+
+- A council's message box is more compact: Let them read files and the cost line share one row under it, and the
+  channel's Top, Back and Latest buttons sit side by side with shorter labels.
+
 ## 0.15.20 — 2026-11-02
 
 ### Added

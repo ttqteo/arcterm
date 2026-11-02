@@ -8,7 +8,7 @@
 // and a composer, Summarize off while they do), on a council whose experts gave their picks, as a Brainstorm, queued (a
 // line that names the council it waits for), while they first propose (the experts' cards and the call bar), at the pause
 // (the ticks, Ask the experts, Continue), stopped at the pause (Summarize), failed (Retry on an expert and on the
-// coordinator), not run (Start council), a done council as a channel (its Top, Latest and Back to where you were) with a
+// coordinator), not run (Start council), a done council as a channel (its Top, Latest and Back) with a
 // follow-up in a thread, its sources (a link per cited file, the Sources panel a click opens, Escape, back to a thread,
 // a file not in the project), and the `room`
 // fixtures: two live agents seated beside two experts (the seat chips with their context, a skipped turn, a failed seat's

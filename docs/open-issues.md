@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Compact council composer: open a done council's Discussion → Let them read files sits on the left and
+  `4 experts answer · ≈ 4 calls · ~80k tokens` on the right of one row under the box; scroll up, press Top → Back and
+  Latest show side by side in the channel's bottom right, Back's label one word. Open a thread → in the narrow panel the
+  cost line wraps under the switch rather than clipping. The commit that adds this line.
 - [ ] (arcterm) Pet stay pin in the folded Sprout window: float a terminal (Shift+F out of the terminal), Minimize into
   Sprout, open the hover card's chat → the peek header shows the pin before Terminal; click it → the Stay menu (1 hour,
   4 hours, until I turn it off, Roam again) opens fully inside the window and its rows take clicks; pick Stay 1 hour →

@@ -1106,36 +1106,40 @@ function Composer({
                     {busy ? "Sending…" : sendLabel}
                 </button>
             </div>
-            {followUp && (
-                <button
-                    type="button"
-                    role="switch"
-                    aria-checked={reads.on}
-                    data-council-tools
-                    data-council-tools-why={reads.why}
-                    onClick={() => setDrafts((d) => ({ ...d, tools: !reads.on }))}
-                    className="flex w-fit cursor-pointer items-center gap-[7px] rounded-[6px] border-0 bg-transparent py-px text-[12.5px] text-secondary outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    <span
-                        className={cn(
-                            "relative h-[14px] w-[24px] flex-none rounded-full",
-                            reads.on ? "bg-accent" : "bg-edge-strong"
-                        )}
+            {/* the switch and the cost line share one row under the box; the cost line wraps under the switch when
+                the thread panel is too narrow for both */}
+            <div className="flex flex-wrap items-center gap-x-[14px] gap-y-[2px]">
+                {followUp && (
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={reads.on}
+                        data-council-tools
+                        data-council-tools-why={reads.why}
+                        onClick={() => setDrafts((d) => ({ ...d, tools: !reads.on }))}
+                        className="flex w-fit cursor-pointer items-center gap-[7px] rounded-[6px] border-0 bg-transparent py-px text-[12.5px] text-secondary outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                         <span
                             className={cn(
-                                "absolute top-[2px] h-[10px] w-[10px] rounded-full bg-background",
-                                reads.on ? "left-[12px]" : "left-[2px]"
+                                "relative h-[14px] w-[24px] flex-none rounded-full",
+                                reads.on ? "bg-accent" : "bg-edge-strong"
                             )}
-                        />
-                    </span>
-                    Let them read files
-                    {reads.why !== "" && <span className="text-muted">· it names {reads.why}</span>}
-                </button>
-            )}
-            <span data-council-composer-hint className="min-w-0 text-[12px] tabular-nums text-muted">
-                {hint}
-            </span>
+                        >
+                            <span
+                                className={cn(
+                                    "absolute top-[2px] h-[10px] w-[10px] rounded-full bg-background",
+                                    reads.on ? "left-[12px]" : "left-[2px]"
+                                )}
+                            />
+                        </span>
+                        Let them read files
+                        {reads.why !== "" && <span className="text-muted">· it names {reads.why}</span>}
+                    </button>
+                )}
+                <span data-council-composer-hint className="ml-auto min-w-0 text-[12px] tabular-nums text-muted">
+                    {hint}
+                </span>
+            </div>
             {error != null && (
                 <span role="alert" data-council-composer-error className="text-[12.5px] text-error-soft">
                     {error}
@@ -1571,7 +1575,7 @@ function Channel({
                     {children}
                 </div>
             </div>
-            <div className="pointer-events-none absolute bottom-3 right-4 z-20 flex flex-col items-end gap-[6px]">
+            <div className="pointer-events-none absolute bottom-3 right-4 z-20 flex items-center gap-[6px]">
                 <JumpPill show={jumps.pills.top} jump="top" label="Jump to the top" onClick={jumps.toTop}>
                     <span aria-hidden>↑</span> Top
                 </JumpPill>
@@ -1581,7 +1585,7 @@ function Channel({
                     label="Back to the message you were reading"
                     onClick={jumps.back}
                 >
-                    <span aria-hidden>↩</span> Back to where you were
+                    <span aria-hidden>↩</span> Back
                 </JumpPill>
                 <JumpPill show={jumps.pills.latest} jump="latest" label="Jump to the latest" onClick={jumps.toLatest}>
                     <span aria-hidden>↓</span> Latest
