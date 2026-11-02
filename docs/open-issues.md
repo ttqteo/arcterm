@@ -229,10 +229,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
 - [ ] (arcterm) Agent badge: run a brainstorm until its Judge (or Builder check) answers, while looking at another
   agent: the Agent nav badge does not go up for the Judge, and every number it shows matches a count on a tree row.
   (commit "fix(agents): a brainstorm's judge and builder check do not count as unread")
-- [ ] (arcterm) Kael sync: motion pass: a DAG task card settles when it turns done or failed, live timeline rows fade
-  in (a run switch or filter does not cascade them), a code block's Copy cross-fades to Copied, the Jarvis peek's
-  reply shows a flow bar while it streams and an × once done, and the brainstorm pane fades on a view swap.
-  `dag-motion` not run.
+- [ ] (arcterm) Kael sync: motion pass, the parts `dag-motion` does not cover (it passes on main 2026-11-02: card
+  settle, timeline rows fading in, a filter not cascading them): a code block's Copy cross-fades to Copied, the Jarvis
+  peek's reply shows a flow bar while it streams and an × once done, and the brainstorm pane fades on a view swap.
 - [ ] (arcterm) Kael sync: the next orchestrator run's plan review shows two round-1 reviewers (Full review, Second
   pass) in its DAG and timeline, and a Claude task worker that skips a test gets a goalpost finding its reviewer
   passes or fails by name (`task-goalpost` in the run's events). Needs wavesrv/wsh rebuilt (next dev start or install).
@@ -280,14 +279,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Its rendered check so far is the Transcript tab's scenario (`rail-transcript-tab`, steps 2, 3, 4 and 6); nothing has run
   `agy-harness` or the sleeping overlay on it. (commit "feat(agents): the compact reader draws earlier items on reaching
   the top, and scrolls to an entry")
-- [ ] (arcterm) Quick translate on the nav rail: click the Translate button above Setup (or Ctrl+Shift+D, also from a
-  focused terminal). A narrow panel slides out beside the rail, the box focused; typing translates after a pause, a
-  single word shows its phonetic and word class, ⇄ moves the translation into the box, Esc or an outside click closes
-  it and the keyboard goes back to the terminal. In Float, the Translate tab shows the same panel over the terminal,
-  and the Note tab or any agent tab closes it. Check the dark-mode select popup too. CDP: `task verify:ui --
-  rail-translate float-note agent-rail-tabs surface-smoke` (never ran: the run's Final dev app did not finish
-  building). Cmd+Shift+D on a Mac is untried. (commit "feat(translate): the Translate panel on the rail, and
-  Ctrl+Shift+D")
+- [ ] (arcterm) Quick translate, the parts no scenario reaches: the language select's popup in dark mode, and
+  Cmd+Shift+D on a Mac. `rail-translate`, `float-note`, `agent-rail-tabs` and `surface-smoke` pass on main
+  (2026-11-02). (commit "feat(translate): the Translate panel on the rail, and Ctrl+Shift+D")
 - [ ] (arcterm) Translate's history and listen buttons: translate a few words, pausing on each, then empty the box. The
   list shows them newest first (a half-typed word you kept typing past is not there); a row puts its text back and
   translates it, ☆ fills and Starred lists it, × removes a row, and the list is still there after a restart. The
@@ -886,10 +880,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   lands, and waits while you are mid-turn with it. No scenario can bring a deferred run to a messaged outcome, so this is
   tried only in unit tests with a scripted roster; neither has the `--queue` path (CLI → `RunQueueAdd` → the loop →
   `CreateRun`) been tried in the running app.
-- [ ] (arcterm) Run handoff: hovering a queued row on the Agent tree fades in its Start now and Remove buttons (another
-  row's stay hidden). Run 973afb5b's Final failed only this step (`run-queue` step 2, opacity read 0) while its
-  screenshots came out blank, so it was force-landed as `df5f68488`; try `task verify:ui -- run-queue` or hover a
-  `wsh runs start --queue` row by hand.
 
 **2026-10-14 (leadless run row)**
 
@@ -954,11 +944,9 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-14 (What's new: highlight cards, the rest folded)**
 
-- [ ] In the dev app (`task verify:ui -- whats-new`, then by eye), open What's new from the footer's version: each
-  release shows 4–5 cards (title, two lines of text, Try it at the bottom right), then one "N more changes · M fixes"
-  line. A cut card opens to its whole note on click; one that fits shows no pointer. In the fold, a note with no bold
-  lead that fits two lines (0.15.11 "A new waiting item flashes…") has no chevron and stays aligned with the rows
-  above. Check the cards read well on the Light theme too. `frontend/app/cockpit/whatsnewsheet.tsx`.
+- [ ] What's new by eye (`whats-new` passes on main, 2026-11-02): the cards read well on the Light theme, and in the
+  fold a note with no bold lead that fits two lines has no chevron and stays aligned with the rows above.
+  `frontend/app/cockpit/whatsnewsheet.tsx`.
 
 **2026-10-14 (Claude memory lint in the Claude mod)**
 
@@ -1050,12 +1038,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-13 (Sleeping and background-task rows in the sidebar)**
 
-- [ ] (arcterm) **Sleeping rows read apart from idle ones; rows carry fewer marks.** In the Agent sidebar a sleeping
-  agent shows a moon in place of its ✳, a faded name and meta, and a bare age (`19m`); an idle one keeps its ✳ and
-  `text-secondary` name. Selected or unread, a sleeping row's name is bright again. An agent with a background command
-  shows no mark (and no ✓ while it runs); one with a canvas shows a grid icon after its name (accent dot when
-  updated; a click shows the canvas, again goes back to the terminal); a finished one a bare green ✓; the Later
-  bookmark is grey. `agenttree.tsx` (`SleepGlyph`, `CanvasTag`); scenarios `agent-sleep`, `sidebar-agent-glyph`.
 - [ ] (arcterm) **Settings → Appearance → Agent sidebar hides row meta.** Turn off Model, then Tokens, then Age,
   then Branch: each disappears from every agent row in the sidebar at once and comes back when turned on; the card's
   changed dot shows while one is off, and Revert turns it back on. It survives a reload. `rowfields.ts`,
@@ -1382,10 +1364,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 **2026-10-12 (images in File tab and Code)**
 
-- [ ] (arcterm) **An image opens instead of "Binary file".** Open a `.png` (e.g. `docs/guide/images/agent-rail.png`)
-  from the Agent panel's Files list, in Code, and in Code's side column: it shows fitted with "W × H · size" under it;
-  a click shows it at its own size with scrollbars, a second click fits it again. Try an `.svg` too. (`imageframe.tsx`,
-  `codeclassify.ts`)
+- [ ] (arcterm) **An image opens instead of "Binary file", outside Code.** Open a `.png` from the Agent panel's Files
+  list and in Code's side column: it shows fitted with "W × H · size" under it; a click shows it at its own size, a
+  second click fits it again. Code itself does this for a PNG (tried 2026-11-02); an `.svg` is an Actionable bug.
+  (`imageframe.tsx`, `codeclassify.ts`)
 
 **2026-10-12 (File tab header)**
 
@@ -1402,10 +1384,8 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   (Shift+Enter still makes a new line); `Ctrl`+`Shift`+`W` asks to close the agent. `d80e14b74` and the commit after it
 - [ ] (arcterm) **Mac chords.** `⌘=` / `⌘-` / `⌘0` zoom (not Control any more); `⌘⇧Enter` toggles terminal
   fullscreen from inside the terminal; `⌘K` clears the terminal (Mac only). `cc7a43629`
-- [ ] (arcterm) **The `?` button**, both machines: at the bottom bar's right end on every surface, also while typing in a
-  terminal; it opens the cheat sheet. `cc7a43629`
-- [ ] (arcterm) **VS Code keys.** `Mod`+`,` opens Settings; on Code, `Mod`+`Shift`+`E` focuses the file tree.
-  `cc7a43629`
+- [ ] (arcterm, Mac) **The `?` button** at the bottom bar's right end on every surface opens the cheat sheet (tried on
+  Windows 2026-11-02). `cc7a43629`
 - [ ] (arcterm) **Auto fold, Windows** (Settings → Jarvis & Office → Folding → Fold when you leave, on): a maximized or full-screen
   app on arcterm's screen folds it after ~1 s; a small window, a half-screen snap, the Start menu or a window on the
   other screen leaves it be. `d80e14b74`
@@ -1469,9 +1449,10 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
 
 | Item | Kind | Effort | Source / notes |
 |---|---|---|---|
-| (arcterm) `rail-transcript-tab` step 4 fails on `main` (2026-11-02, twice, the dev app alone): Compactions does not leave the newest marker at the top clear of the pinned prompt's band, then load an earlier chunk. This is the last Transcript edit of run 66c39bd5, whose Final ran out of RAM and never ran it; steps 1–3 and 5–8, `agent-rail-tabs` and `surface-smoke` pass | bug | S | `frontend/app/view/agents/` Transcript tab; commit "feat(agents): the Transcript tab reads the whole conversation back, with its scenario and docs" |
-| (arcterm) CDP scenarios failing on `main` in the Windows dev app (2026-11-02, each rerun alone): `rail-translate` a, g, j, k, l (step a: the box is not empty on open, `"empty":false`; j: the terminal does not get the keys back) and `float-note` 1, 5, 6a–c, 7, 8d–f (the hand checks of Translate and the float's Note stay open above); `whats-new` 5 (the fold's note does not grow on click) and 6 (no `go:usage` note in the releases shown); `dag-motion` throws `dagPeekPublish is not defined` (scenario bug); `code-diff` base step fails only on its own text read (the shot shows main's copy on the left: the selector `.editor.original .view-lines` misses and falls back to both sides); `new-run-window` 8 ("the window did not open"); `agent-sleep` 1; `jarvis-peek` 6; `jarvis-pet` 8; `project-overview-history` 3; `tools-tree` 4; `tools-found` 2; `tools-app` 8–9; `agy-harness` 2, 5–7, 9; `run-queue` 1b–6 (the store held queued plans from older runs, so this one may be leftover state). Triage each: fix the app, or the scenario | bug | M | `scripts/cdp/scenarios.mjs`; open-issues hand-check pass of 2026-11-02 |
-| (arcterm) A run's sheet timeline shows the raw event kind `queued-start` where `run-queue` step 6 expects "Started from the queue": no frontend label exists for the kind (`runEventKindQueuedStart`, `pkg/wshrpc/wshserver/wshserver_runqueue.go:40`). Not from the project Overview run, whose diff reaches no run-sheet code (not rerun on the base) | bug | S | run 3d198707 Final, `data/final-shots/bd35362c-a6b5-4df7-9d46-6f522a0bca94/1/shots.json` |
+| (arcterm) An `.svg` does not draw in Code: opening `figures/box.svg` (a valid 113-byte SVG, `<svg xmlns=… width="120" height="60"><rect …/></svg>`) in a fresh repo shows "Cannot show this image · 113 B", where a PNG beside it draws fitted with its size (tried 2026-11-02 in the Windows dev app). wavesrv maps `.svg` to `image/svg+xml` (`pkg/util/fileutil/mimetypes.go:1000`); a fetch hook in the page saw no stream-file request when the SVG was opened, so look first at whether Code routes an SVG to `ImageFrame` at all and whether `useBlobSrc` or the `<img>` onError marks it failed | bug | S | `frontend/app/view/agents/imageframe.tsx`, `frontend/app/view/code/codeclassify.ts`, `codeviewer.tsx` |
+| (arcterm) Sprout can rest half out of the Float ledge: in about 5 of 11 runs of `jarvis-modes` step 5 (Windows dev app, 2026-11-02) the sprite stood 26 px above its stand line, its top ~25 px over the ledge, for 6 s and more (sprite 645–693 against ledge 670–721); a synthetic `resize` put it right (671–719). A resting walker stops ticking (`petwalk.ts` `nextTick`, `delayMs` null), so only an input like `resize` re-measures the ledge (`petview.tsx` ~647): Float entry seems to measure it mid-resize and nothing measures again. Re-measure when the ledge box moves (a ResizeObserver, or once the window settles after Float entry). Breaks spec 2026-10-10-jarvis-modes "the ledge holds the whole sprite" | bug | S | `frontend/app/view/jarvis/petview.tsx`, `petwalk.ts`; `jarvis-modes` step 5 detail carries the geometry |
+| (arcterm) The float window may grow 16×9 px per float cycle: across repeated `jarvis-modes` runs on the dev app (2026-11-02) it went from 1088×667 to 1248×757. Other float scenarios ran on the same app meanwhile, so unconfirmed: float and unfloat a few times by hand and compare the saved rect | bug | S | `frontend/app/cockpit/floatstore.ts` / `floatwindow.ts` (the float rect save and restore) |
+| (arcterm) `float-mini` is stale on Windows: it asserts the folded box `h <= 264` (`MINI_REST_SIZE` is 320×336 since cf5e94b19), reads `window.innerHeight` under the pinned 1600×950 viewport (clear it with `Emulation.clearDeviceMetricsOverride` as `jarvis-modes` now does), and clicks only `[data-float-minimize]`, which renders on a Mac only (Windows folds from the bar's "Fold into <pet>"). Port it as `jarvis-modes` was; the Pet stay pin hand check above waits on it | bug | S | `scripts/cdp/scenarios.mjs` ~45080 |
 | (arcterm) `TestRepliesPostedAsARunEndsAreNeverLost` in `pkg/council` is flaky: it failed, then passed on a rerun, in run 74b368ce's Verify after merging its t-10 | bug | S | run 74b368ce final report; `pkg/council/runner_test.go` |
 | (arcterm) `pkg/council` `TestRepliesPostedAsARunEndsAreNeverLost` is flaky: it failed, then passed on a rerun, in the Verify after a merge of run 74b368ce, which left that run's Final unverified | bug | S | run 74b368ce report; `pkg/council/runner_test.go` |
 | (arcterm) Two vitest cases are flaky: `gridstore.persist.test.ts` "starts empty for a profile that never stored a grid" and `railstore.test.ts` "is on for a profile that never stored a choice" each failed, then passed on a rerun, in run 3f0ba255's Verify after merging its t-5; both read a profile's stored state, so a store left by an earlier test is the first suspect | bug | S | run 3f0ba255 final report; `frontend/app/view/agents/gridstore.persist.test.ts`, `railstore.test.ts` |
