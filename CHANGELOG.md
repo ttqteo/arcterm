@@ -74,12 +74,14 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
-- A brainstorm whose design waits on you to confirm the agent's guesses now pulses its agent and says "confirm N
-  decisions" in the tree, as an open question does, instead of reading "in progress".
+- A brainstorm's Approve stays off while the run it started is still starting, with "The run is starting" beside it,
+  so pressing it again in the minute before the agent records the run no longer starts the same run twice.
 - A brainstorm's "What you handed over" list keeps its text readable: where each decision came from now sits under the
   text instead of in a column of its own that squeezed it to one word a line.
 - The counts beside the Agent panel's tabs scroll sideways with the mouse wheel when the panel is too narrow for them
   all, with a fade on the edge that hides some, instead of the last ones being cut off out of reach.
+- A brainstorm whose design waits on you to confirm the agent's guesses now pulses its agent and says "confirm N
+  decisions" in the tree, as an open question does, instead of reading "in progress".
 - A run started from a brainstorm now shows in History by its feature ("Build …"), with its spec's file name on the
   line under it, instead of a title cut off halfway through the spec's full path.
 - In a council, when you ask everyone something, the experts who answer after the first one no longer open with the

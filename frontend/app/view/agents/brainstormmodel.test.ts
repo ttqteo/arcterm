@@ -14,6 +14,8 @@ import {
     answerLine,
     answeredQuestions,
     approveBlocker,
+    RUN_STARTING,
+    withStartingRun,
     asksUser,
     awaitsReview,
     bodyBeyondGist,
@@ -1582,6 +1584,21 @@ describe("approveBlocker", () => {
     it("is null once everything is yours and answered, or once a run started", () => {
         expect(approveBlocker(file({ parts: yoursAll, check: answered }))).toBeNull();
         expect(approveBlocker(file({ check, run: "r1", working: "w" }))).toBeNull();
+    });
+
+    it("stays off while a run Approve started has not reached the file", () => {
+        const settled = file({ parts: yoursAll, check: answered });
+        expect(approveBlocker(settled, { runId: null })).toBe(RUN_STARTING);
+        expect(approveBlocker(withStartingRun(settled, { runId: "r1" }), { runId: "r1" })).toBeNull();
+    });
+});
+
+describe("withStartingRun", () => {
+    it("shows the run Arc started until the file names one, and the file's own run after", () => {
+        expect(withStartingRun(file({}), { runId: "r1" }).run).toBe("r1");
+        expect(withStartingRun(file({}), { runId: null }).run).toBeNull();
+        expect(withStartingRun(file({}), null).run).toBeNull();
+        expect(withStartingRun(file({ run: "r0" }), { runId: "r1" }).run).toBe("r0");
     });
 });
 

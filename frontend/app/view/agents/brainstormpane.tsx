@@ -131,7 +131,7 @@ export function BrainstormPane({ model, agent }: { model: AgentsViewModel; agent
     }
     const f = shownBrainstormFile(s);
     const view = paneView({
-        file: s.file,
+        file: f,
         error: s.error,
         removed: s.removed,
         exited: procExited(exit, agent.sleeping),

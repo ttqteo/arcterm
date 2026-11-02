@@ -16,7 +16,13 @@ import {
     stopsJudge,
     type BrainstormAction,
 } from "./brainstormmodel";
-import { getBrainstorm, shownBrainstormFile, updateBrainstorm, type BrainstormState } from "./brainstormstore";
+import {
+    getBrainstorm,
+    setStartingRun,
+    shownBrainstormFile,
+    updateBrainstorm,
+    type BrainstormState,
+} from "./brainstormstore";
 import { openLauncher } from "./launcherstore";
 
 type PromptIO = {
@@ -115,9 +121,19 @@ export function openRunLauncher(
     if (s.file == null) {
         return;
     }
+    // Approve stays off from the launcher's Start until the agent records the run: the agent hears the run's id only
+    // once CreateRun returns, up to a minute later, and an Approve lit in between starts the same run again
+    const path = s.path;
     openLauncher(model, "run", {
         ...runPrefill(s.file, { projectName: projectOf(agent), cwd: s.cwd }),
-        onStarted: (runId: string) => void notifyRun(agent, runId, s.path, io),
+        handback: {
+            handedOff: () => setStartingRun(agent.id, path, { runId: null }),
+            started: (runId: string) => {
+                setStartingRun(agent.id, path, { runId });
+                void notifyRun(agent, runId, path, io);
+            },
+            stopped: () => setStartingRun(agent.id, path, null),
+        },
     });
 }
 

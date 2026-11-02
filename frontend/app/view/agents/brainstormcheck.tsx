@@ -362,7 +362,7 @@ function ApproveBar({
 }) {
     const act = useAction();
     const working = f.working != null;
-    const blocker = approveBlocker(f);
+    const blocker = approveBlocker(f, s.starting);
     // @container: the title column (240 at least), the blocker's reason and the two buttons need ~700px in one line, so
     // a narrower bar (the builder rail takes 460px of the pane) stacks them: the run, the reason, the buttons at the end
     return (
@@ -377,7 +377,12 @@ function ApproveBar({
                     </span>
                     <span className="truncate font-mono text-[11px] text-muted">
                         {runLine(projectOf(agent))} ·{" "}
-                        <button type="button" onClick={() => openRunLauncher(model, agent, s)} className={LINK}>
+                        <button
+                            type="button"
+                            disabled={s.starting != null}
+                            onClick={() => openRunLauncher(model, agent, s)}
+                            className={cn(LINK, "disabled:cursor-default disabled:opacity-50")}
+                        >
                             Change
                         </button>
                     </span>
