@@ -15,7 +15,6 @@ import {
     answeredQuestions,
     approveBlocker,
     asksUser,
-    boardBackLabel,
     bodyBeyondGist,
     brainstormAttention,
     brainstormCounts,
@@ -1012,28 +1011,12 @@ describe("mainView", () => {
     });
 });
 
-describe("boardBackLabel", () => {
-    it("goes back to the question during the judge's wait", () => {
-        expect(boardBackLabel(waitFile(), false)).toBe("Back to the question");
-        expect(boardBackLabel(waitFile(), true)).toBe("Back to the design");
-        expect(boardBackLabel(waitFile(), false, true)).toBe("Back to the design");
-    });
-
-    const q = { n: 1, text: "Q", part: "a" };
-
-    it("goes back to the question it was opened from, else to the design", () => {
-        expect(boardBackLabel(file({ question: q }), false)).toBe("Back to the question");
-        expect(boardBackLabel(file({ question: q }), true)).toBe("Back to the design");
-        expect(boardBackLabel(file({ question: q, working: "w" }), false)).toBe("Back to the design");
-        expect(boardBackLabel(file(), false)).toBe("Back to the design");
-        expect(boardBackLabel(null, false)).toBe("Back to the design");
-    });
-});
-
 describe("pickableOptions", () => {
     const options = ["A", "B", "C", "D", "E"].map((label) => ({ label, detail: "" }));
     const q = { n: 1, text: "Q", part: "a", options: options.slice(0, 3) };
-    const s = { designOpen: false, board: null, removed: false };
+    const s = { designOpen: false, removed: false };
+    // what the pane passes: its whole state, with a board widened in the rail
+    const widened = { ...s, board: "B.dc.html" };
     const check = { yours: [], calls: [], answered: [] };
 
     it("is the options the question view draws", () => {
@@ -1045,12 +1028,27 @@ describe("pickableOptions", () => {
         expect(pickableOptions(file({ question: { ...q, options } }), s)).toBe(4);
     });
 
-    it("is none when nothing draws them: no file, the agent writing, the design or a board open, the file gone", () => {
+    it("is none when nothing draws them: no file, the agent writing, the design open, the file gone", () => {
         expect(pickableOptions(null, s)).toBe(0);
         expect(pickableOptions(file({ question: q, working: "w" }), s)).toBe(0);
         expect(pickableOptions(file({ question: q }), { ...s, designOpen: true })).toBe(0);
-        expect(pickableOptions(file({ question: q }), { ...s, board: "B.dc.html" })).toBe(0);
         expect(pickableOptions(file({ question: q }), { ...s, removed: true })).toBe(0);
+    });
+
+    it("is the same while a board is widened in the rail: the question stays on screen, so a letter key still picks", () => {
+        expect(pickableOptions(file({ question: q }), widened)).toBe(3);
+        expect(pickableOptions(file({ question: { ...q, options } }), widened)).toBe(4);
+        expect(pickableOptions(file({ question: { ...q, options: undefined } }), widened)).toBe(0);
+        // the rest of the rules hold under a widened board
+        expect(pickableOptions(file({ question: q }), { ...widened, designOpen: true })).toBe(0);
+        expect(pickableOptions(file({ question: q, working: "w" }), widened)).toBe(0);
+        expect(pickableOptions(file({ question: q }), { ...widened, removed: true })).toBe(0);
+    });
+
+    it("in the check, a widened board leaves the talk question's and the builder question's options pickable", () => {
+        const builder = { q: "B?", options: options.slice(0, 2) };
+        expect(pickableOptions(file({ question: q, check: { ...check, yours: [builder] } }), widened)).toBe(3);
+        expect(pickableOptions(file({ check: { ...check, yours: [builder] } }), widened)).toBe(2);
     });
 
     it("in the check, is the talk question's options while it is the main area", () => {
@@ -1086,12 +1084,15 @@ describe("pickableOptions", () => {
         expect(pickableOptions(waitFile({ check, question: waitQuestion(3) }), s)).toBe(3);
     });
 
-    it("is none during the wait with a line sent, the design open or a board open", () => {
+    it("is none during the wait with a line sent or the design open, and a widened board changes neither", () => {
         const sent = { at: 1, modifiedMs: 1, kind: "line" } as const;
         expect(pickableOptions(waitFile(), { ...s, sent })).toBe(0);
         expect(pickableOptions(waitFile({ check }), { ...s, sent })).toBe(0);
         expect(pickableOptions(waitFile(), { ...s, designOpen: true })).toBe(0);
-        expect(pickableOptions(waitFile(), { ...s, board: "B.dc.html" })).toBe(0);
+        expect(pickableOptions(waitFile(), { ...widened, sent })).toBe(0);
+        expect(pickableOptions(waitFile(), { ...widened, designOpen: true })).toBe(0);
+        // the approaches are still the rows a key picks while a board is widened
+        expect(pickableOptions(waitFile(), widened)).toBe(4);
     });
 });
 
@@ -1853,14 +1854,22 @@ describe("paneView", () => {
         expect(paneView({ ...s, exited: true, file: file({ run: "r1" }) })).toBe("run");
     });
 
-    it("board beats run beats check beats design", () => {
+    it("run beats check beats design", () => {
         const withCheck = file({ check: { yours: [], calls: [], answered: [] } });
         const withRun = { ...withCheck, run: "r1" };
-        expect(paneView({ ...s, file: withRun, board: "B.dc.html" })).toBe("board");
         expect(paneView({ ...s, file: withRun })).toBe("run");
         expect(paneView({ ...s, file: file({ run: "r1" }) })).toBe("run");
-        expect(paneView({ ...s, file: withCheck, board: "B.dc.html" })).toBe("board");
         expect(paneView({ ...s, file: withCheck })).toBe("check");
+    });
+
+    it("a board widened in the rail does not change the view: the question stays on screen", () => {
+        const withCheck = file({ check: { yours: [], calls: [], answered: [] } });
+        const widened = { ...s, board: "B.dc.html" };
+        expect(paneView(widened)).toBe("design");
+        expect(paneView({ ...widened, file: withCheck })).toBe("check");
+        expect(paneView({ ...widened, file: { ...withCheck, run: "r1" } })).toBe("run");
+        expect(paneView({ ...widened, exited: true })).toBe("exited");
+        expect(paneView({ ...widened, file: null, error: "bad" })).toBe("error");
     });
 });
 
@@ -1917,10 +1926,36 @@ describe("paneBack", () => {
         return paneBack(x, x.file);
     };
 
-    it("a full-size board steps back to where it was opened, the question or the design", () => {
+    it("a board widened in the rail steps back first, in the design and in the check, over the question or the design", () => {
         expect(back({ board: "B.dc.html" })).toBe("board");
         expect(back({ board: "B.dc.html", designOpen: true })).toBe("board");
         expect(back({ board: "B.dc.html", file: file({ question: q, check }) })).toBe("board");
+        expect(back({ board: "B.dc.html", file: file({ check }) })).toBe("board");
+        expect(back({ board: "B.dc.html", file: file() })).toBe("board");
+        expect(back({ board: "B.dc.html", file: file({ working: "w" }) })).toBe("board");
+    });
+
+    it("a widened board is the step before the design's: one level per press, the board first", () => {
+        expect(back({ board: "B.dc.html", designOpen: true })).toBe("board");
+        expect(back({ designOpen: true })).toBe("design");
+    });
+
+    it("a widened board holds the step when the file is still being read", () => {
+        expect(back({ board: "B.dc.html", file: null })).toBe("board");
+    });
+
+    it("steps back from a board only where the rail draws one: not on a run, the exited card, or an unreadable or removed file", () => {
+        expect(back({ board: "B.dc.html", file: file({ question: q, run: "r1" }) })).toBeNull();
+        expect(back({ board: "B.dc.html", exited: true })).toBeNull();
+        expect(back({ board: "B.dc.html", file: null, error: "bad" })).toBeNull();
+        expect(back({ board: "B.dc.html", removed: true })).toBeNull();
+    });
+
+    it("a cleared board leaves the step to the design's own, or none", () => {
+        // the rail clears the board when it no longer shows Boards for it: Esc and [ ] then belong to their other owners
+        expect(back({ board: null })).toBeNull();
+        expect(back({ board: null, file: file({ question: q, check }) })).toBeNull();
+        expect(back({ board: null, designOpen: true })).toBe("design");
     });
 
     it("the design opened over the question or the working note steps back to it", () => {
@@ -2840,13 +2875,36 @@ describe("the rail's tabs", () => {
         });
     });
 
-    it("counts a board on any part, the builder's and a note's too, but not a spike", () => {
-        const spiked = file({ canvas: "topic", parts: [part("motion", "yours", { spikes: ["spike/motion.html"] })] });
-        expect(railTabs(spiked, BASE, designView).tabs).toEqual(["second"]);
+    it("counts a board on any part, the builder's and a note's too", () => {
         const noted = file({
             canvas: "topic",
             parts: [part("recon", "yours", { kind: "note", boards: ["Recon.dc.html"] })],
         });
         expect(railTabs(noted, BASE, designView).tabs).toEqual(BOTH);
+    });
+
+    it("a design with only spikes still has Boards: the spikes are the group's links", () => {
+        const spiked = file({ canvas: "topic", parts: [part("motion", "yours", { spikes: ["spike/motion.html"] })] });
+        expect(railTabs(spiked, BASE, designView)).toEqual({ tabs: BOTH, first: "boards" });
+        expect(railTabs(spiked, BASE, checkView)).toEqual({ tabs: BOTH, first: "second" });
+        // the count the tab shows is boards, and this design has none
+        const groups = railGroups(spiked, BASE);
+        expect(groups.flatMap((g) => g.boards)).toEqual([]);
+        expect(groups.flatMap((g) => g.spikes)).toEqual(["spike/motion.html"]);
+    });
+
+    it("a spike counts only once the canvas is named and served, as a board does", () => {
+        const parts = [part("motion", "yours", { spikes: ["spike/motion.html"] })];
+        expect(railTabs(file({ parts }), BASE, designView).tabs).toEqual(["second"]);
+        expect(railTabs(file({ canvas: "topic", parts }), null, designView).tabs).toEqual(["second"]);
+    });
+
+    it("with a question open, a part with only spikes opens the rail on Boards, in the check too", () => {
+        const spiked = [part("motion", "asked", { spikes: ["spike/motion.html"] }), part("copy", "open")];
+        const at = (p: string) => file({ canvas: "topic", parts: spiked, question: ask(p) });
+        expect(railTabs(at("motion"), BASE, open)).toEqual({ tabs: BOTH, first: "boards" });
+        expect(railTabs(at("motion"), BASE, { question: true, check: true })).toEqual({ tabs: BOTH, first: "boards" });
+        // another part's spike does not give a question about a part with nothing a Boards tab
+        expect(railTabs(at("copy"), BASE, open)).toEqual({ tabs: ["second"], first: "second" });
     });
 });

@@ -7,6 +7,7 @@
 import { foldReveal } from "@/app/element/motiontokens";
 import { getApi } from "@/app/store/global";
 import { cn } from "@/util/util";
+import { useAtomValue, useSetAtom } from "jotai";
 import { AnimatePresence, motion } from "motion/react";
 import { Fragment, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentVM } from "./agentsviewmodel";
@@ -42,6 +43,7 @@ import {
     type PartState,
     type TrackSegment,
 } from "./brainstormmodel";
+import { optionHoverAtom } from "./brainstormrail";
 import { sendBrainstorm } from "./brainstormsend";
 import { openBrainstormBoard, type BrainstormState } from "./brainstormstore";
 import { boardUrl, canvasDir, DEFAULT_BOARD_H, DEFAULT_BOARD_W, type CanvasBoard } from "./canvasmodel";
@@ -317,13 +319,29 @@ export function useAnswer(agent: AgentVM, kind: "answer" | "builder-answer" = "a
 
 export type Answer = ReturnType<typeof useAnswer>;
 
-// the read over the answers, with the one toggle for every answer's pros and cons, shown until hidden. On a question
-// the judge weighed, the read and pick are the judge's; the judge's work goes under the answers
-export function QuestionAnswers({ q, ans, compact }: { q: BrainstormQuestion; ans: Answer; compact: boolean }) {
-    const [shown, setShown] = useState(true);
+// the read over the answers, with the one toggle for every answer's pros and cons, shown until hidden (folded until
+// shown when foldReasons: the question's boards sit in the rail, so the column stays short). On a question the judge
+// weighed, the read and pick are the judge's; the judge's work goes under the answers. With an agentId a row is tied to
+// its board in the rail (optionHoverAtom)
+export function QuestionAnswers({
+    q,
+    ans,
+    compact,
+    agentId,
+    foldReasons = false,
+}: {
+    q: BrainstormQuestion;
+    ans: Answer;
+    compact: boolean;
+    agentId?: string;
+    foldReasons?: boolean;
+}) {
+    // null until the toggle is used, so the boards arriving after the question still fold what the user left alone
+    const [toggled, setToggled] = useState<boolean | null>(null);
     if (q.options == null) {
         return null;
     }
+    const shown = toggled ?? !foldReasons;
     const reasons = hasProsCons(q);
     const work = judgeWork(q);
     const who = work?.judged ? "Judge’s" : "Agent’s";
@@ -335,6 +353,7 @@ export function QuestionAnswers({ q, ans, compact }: { q: BrainstormQuestion; an
             reasons={reasons && shown}
             pickLabel={`${who} pick`}
             multi={q.multi === true}
+            agentId={agentId}
         />
     );
     if (!q.read && !reasons && work == null) {
@@ -358,7 +377,7 @@ export function QuestionAnswers({ q, ans, compact }: { q: BrainstormQuestion; an
                             type="button"
                             data-brainstorm-proscons-toggle
                             aria-expanded={shown}
-                            onClick={() => setShown(!shown)}
+                            onClick={() => setToggled(!shown)}
                             className={cn(CHIP, "flex-none")}
                         >
                             {shown ? "Hide pros and cons" : "Show pros and cons"}
@@ -522,6 +541,7 @@ export function Options({
     reasons,
     pickLabel,
     multi,
+    agentId,
 }: {
     options: AnswerOption[];
     ans: Answer;
@@ -529,6 +549,8 @@ export function Options({
     reasons: boolean;
     pickLabel: string;
     multi: boolean;
+    // the agent whose rail holds this question's boards: with it a row is tied to its board there
+    agentId?: string;
 }) {
     const picks = usePicks(
         ans,
@@ -543,7 +565,16 @@ export function Options({
                 className={cn("flex flex-col", compact ? "gap-[6px]" : "gap-[10px]")}
             >
                 {options.map((o, i) => (
-                    <OptionRow key={i} o={o} i={i} ans={ans} compact={compact} reasons={reasons} pickLabel={pickLabel}>
+                    <OptionRow
+                        key={i}
+                        o={o}
+                        i={i}
+                        ans={ans}
+                        compact={compact}
+                        reasons={reasons}
+                        pickLabel={pickLabel}
+                        agentId={agentId}
+                    >
                         {multi ? <TickBox i={i} picks={picks} ans={ans} compact={compact} /> : null}
                     </OptionRow>
                 ))}
@@ -551,6 +582,22 @@ export function Options({
             {multi ? <SendPicked picks={picks} ans={ans} /> : null}
         </div>
     );
+}
+
+// A row tied to a board in the rail: hovering or focusing it sets the agent's hover atom (the rail outlines the board and
+// scrolls to it), leaving or blurring clears it, and the row reads the atom back to light up while the board under the
+// pointer is its own. A row with no agent (the builder check's own question has no board) is tied to nothing
+function useOptionLink(agentId: string | undefined, i: number) {
+    // the "" atom is nobody's: it is never set, so a row with no agent still calls the same hooks
+    const hover = optionHoverAtom(agentId ?? "");
+    const lit = useAtomValue(hover) === i;
+    const setHover = useSetAtom(hover);
+    if (agentId == null) {
+        return { linked: false, handlers: {} };
+    }
+    const on = () => setHover(i);
+    const off = () => setHover((h) => (h === i ? null : h));
+    return { linked: lit, handlers: { onMouseEnter: on, onMouseLeave: off, onFocus: on, onBlur: off } };
 }
 
 // one answer row: its tick box (children) before the button that sends it alone, and its pros and cons under both
@@ -561,6 +608,7 @@ function OptionRow({
     compact,
     reasons,
     pickLabel,
+    agentId,
     children,
 }: {
     o: AnswerOption;
@@ -569,14 +617,27 @@ function OptionRow({
     compact: boolean;
     reasons: boolean;
     pickLabel: string;
+    agentId?: string;
     children?: ReactNode;
 }) {
+    const link = useOptionLink(agentId, i);
     return (
         <div
             data-brainstorm-option-row={i}
+            data-linked={link.linked ? "" : undefined}
+            {...link.handlers}
             className={cn(
                 OPTION_ROW,
-                o.pick ? "border-accent/55 bg-accent/8 has-[button:enabled:hover]:bg-accentbg" : OPTION_ROW_PLAIN
+                // the board under the pointer lights its row's border, which replaces the hover border it would share
+                // with it
+                o.pick
+                    ? cn(
+                          "bg-accent/8 has-[button:enabled:hover]:bg-accentbg",
+                          link.linked ? "border-accent" : "border-accent/55"
+                      )
+                    : link.linked
+                      ? "border-accent bg-surface"
+                      : OPTION_ROW_PLAIN
             )}
         >
             <div className="flex">
@@ -772,8 +833,12 @@ export function QuestionMain({
     // guessing or skipping means something only for a question about a part of the design
     const chips = q.part !== "";
     const ans = useAnswer(agent);
-    const boards = questionBoards(f, s.base);
-    const answers = <QuestionAnswers key={q.n} q={q} ans={ans} compact={false} />;
+    // the question's boards sit in the rail, each tied to its option, so the options carry less here: their pros and
+    // cons start folded
+    const hasBoards = questionBoards(f, s.base) != null;
+    const answers = (
+        <QuestionAnswers key={q.n} q={q} ans={ans} compact={false} agentId={agent.id} foldReasons={hasBoards} />
+    );
     return (
         <div data-brainstorm-question className="flex min-h-0 flex-1 flex-col">
             <Track segments={questionTrack(f)} />
@@ -791,21 +856,7 @@ export function QuestionMain({
                         </button>
                     ) : null}
                 </QuestionHead>
-                {boards != null ? (
-                    <div data-brainstorm-question-boards className="flex flex-wrap items-start gap-[24px]">
-                        {q.options != null ? <div className="min-w-[360px] flex-1">{answers}</div> : null}
-                        <Thumbnails
-                            agentId={agent.id}
-                            s={s}
-                            canvas={f.canvas!}
-                            base={s.base!}
-                            boards={boards}
-                            compact
-                        />
-                    </div>
-                ) : (
-                    answers
-                )}
+                {answers}
                 <AnswerBox ans={ans} options={q.options != null} />
                 <div className="flex flex-col gap-[10px]">
                     <div className="flex items-center gap-[10px]">

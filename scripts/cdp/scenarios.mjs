@@ -28863,16 +28863,30 @@ const BS_Q2_OPTIONS = [
     { label: "Tell the channel only, page no one", detail: "" },
 ];
 const BS_Q5 = { n: 5, text: "If on-call could read only one number in the page, which would it be?", part: "page" };
-// the same part asked between its two mockups: the question shows them beside the answers
+// the same part asked between its two mockups: the rail shows them, each headed by and tied to its answer
 const BS_Q5_LAYOUT = {
     n: 5,
     text: "Which layout should the page use?",
     part: "page",
     options: [
-        { label: "Lag first", detail: "The lag number leads; the trend and the stuck partitions sit under it.", pick: true },
-        { label: "Trend first", detail: "The trend chart leads; the number sits in its corner." },
+        {
+            label: "Lag first",
+            detail: "The lag number leads; the trend and the stuck partitions sit under it.",
+            pick: true,
+            pros: ["The number on-call needs sits at the top"],
+            cons: ["The trend sits below the first screen"],
+        },
+        {
+            label: "Trend first",
+            detail: "The trend chart leads; the number sits in its corner.",
+            pros: ["A stalled consumer shows as a flat line"],
+            cons: ["The number is small in the corner"],
+        },
     ],
 };
+// a second part's board, for the design's Boards tab to group: arrange writes the file, but only the design step's own
+// file (BS_TWO_GROUPS) lists it under a part, so every other step still sees one part with boards
+const BS_GOALS_BOARD = "Goals.dc.html";
 // oldest first, as the agent appends them and the pane draws them
 const BS_HISTORY = [
     {
@@ -28980,6 +28994,12 @@ const BS_FILES = {
         history: BS_HISTORY_Q4,
     }),
 };
+// question 5 with a board under two parts, Goals and What on-call sees: the design's Boards tab then has two groups
+const BS_TWO_GROUPS = bsFile({
+    question: BS_Q5,
+    parts: bsParts({ ...BS_MID_STATES, thresholds: "guess" }, { goals: { boards: [BS_GOALS_BOARD] } }),
+    history: BS_HISTORY_Q4,
+});
 const BS_HANDOFF_PARTS = bsParts(Object.fromEntries(Object.keys(BS_PART).map((id) => [id, "yours"])), {
     intent: { body: "When a consumer group falls behind, the people who own it hear first, not an analyst downstream." },
     thresholds: {
@@ -29072,38 +29092,29 @@ const bsRead = (h, ctx) =>
                 picked: [...r.querySelectorAll("li[data-picked]")].map(flat),
                 unpicked: [...r.querySelectorAll("li:not([data-picked])")].map(flat),
             })),
-            rail: flat(pane?.querySelector("[data-brainstorm-rail] h2")),
+            // Decided so far: the second tab's label when the rail has a tab strip (the Boards tab exists), else the heading
+            // it keeps as the whole rail. Its entries below are drawn only while it is the shown tab
+            rail: flat(
+                pane?.querySelector('[data-brainstorm-board-rail] [data-brainstorm-rail-tab="second"]') ??
+                    pane?.querySelector("[data-brainstorm-rail] h2")
+            ),
             railText: flat(pane?.querySelector("[data-brainstorm-rail]")),
+            // the rail's tabs, the shown one marked
+            railTabs: [...(pane?.querySelectorAll("[data-brainstorm-rail-tab]") ?? [])].map(
+                (t) => t.getAttribute("data-brainstorm-rail-tab") + (t.getAttribute("aria-selected") === "true" ? "*" : "")
+            ),
+            // the old thumbnails: a question's boards and a part row's are the rail's now, so none may be drawn in the pane
+            thumbs: pane?.querySelectorAll("[data-brainstorm-thumb], [data-brainstorm-open-board], [data-brainstorm-question-boards]").length ?? 0,
             why: flat(pane?.querySelector("[data-brainstorm-why]")),
-            // the asked part's mockups in the question view: each thumbnail, its label, whether it sits right of the answers
-            // or under them (flex-wrap drops the boards under the answers when the row is too narrow for both side by side),
-            // and whether the pane holds it
-            qBoards: [...(pane?.querySelectorAll("[data-brainstorm-question] [data-brainstorm-thumb]") ?? [])].map((t) => {
-                const answers = pane.querySelector("[data-brainstorm-question-boards] [data-brainstorm-option]")?.parentElement;
-                const a = answers?.getBoundingClientRect();
-                const r = t.getBoundingClientRect();
-                const p = pane.getBoundingClientRect();
-                return {
-                    name: t.getAttribute("data-brainstorm-thumb"),
-                    frame: !!t.querySelector("iframe"),
-                    label: flat(t.nextElementSibling?.firstElementChild),
-                    open: flat(t.nextElementSibling?.querySelector("[data-brainstorm-open-board]")),
-                    besideAnswers: a ? a.right <= r.left : null,
-                    underAnswers: a ? a.bottom <= r.top && Math.abs(a.left - r.left) <= 1 : null,
-                    inPane: r.left >= p.left && r.right <= p.right,
-                };
-            }),
-            // the row that holds the answers and the boards: its width, the answers' least width (min-w-[360px] in
-            // QuestionMain), the row's gap and a board's width decide whether both fit side by side
-            qRow: (() => {
-                const row = pane?.querySelector("[data-brainstorm-question-boards]");
-                const thumb = row?.querySelector("[data-brainstorm-thumb]");
-                return row && thumb ? { w: Math.round(row.getBoundingClientRect().width), thumbW: Math.round(thumb.getBoundingClientRect().width) } : null;
-            })(),
             options: [...(pane?.querySelectorAll("[data-brainstorm-option]") ?? [])].map((o) => ({
                 text: flat(o),
                 pick: o.hasAttribute("data-pick"),
+                // lit while the board it is tied to is under the pointer (or the pointer is on it)
+                linked: o.closest("[data-brainstorm-option-row]")?.hasAttribute("data-linked") === true,
             })),
+            // each answer's pros and cons, and the toggle that opens them
+            prosCons: pane?.querySelectorAll("[data-brainstorm-question] [data-brainstorm-proscons]").length ?? 0,
+            prosToggle: flat(pane?.querySelector("[data-brainstorm-proscons-toggle]")),
             track: [...(pane?.querySelectorAll("[data-brainstorm-track] [data-state]") ?? [])].map((x) =>
                 x.getAttribute("data-state")
             ),
@@ -29134,10 +29145,6 @@ async function bsUntil(h, ctx, want, ms = BS_POLL_WAIT_MS) {
     } while (Date.now() - start < ms);
     return { ...s, ok: false, ms: Date.now() - start };
 }
-
-// QuestionMain's board row: the answers' min-w-[360px] and the row's gap-[24px]
-const BS_ANSWERS_MIN_W = 360;
-const BS_BOARDS_GAP = 24;
 
 const bsStates = (s) => Object.fromEntries((s?.parts ?? []).map((p) => [p.id, p.state]));
 const bsPart = (s, id) => s?.parts?.find((p) => p.id === id);
@@ -29407,6 +29414,192 @@ const bsRailOpen = (h) =>
         return globalStore.get(railVisibleAtom) === true;
     `);
 
+// --- the brainstorm's right rail (brainstormrail.tsx): Boards beside Decided so far, one width the user drags ---------
+const BS_RAIL = `document.querySelector("[data-brainstorm-pane] [data-brainstorm-board-rail]")`;
+const BS_RAIL_WIDTH_KEY = "brainstorm.railWidth";
+// the question keeps 360px, and two 380px boards with the gap, the rail's padding and its handle need ~830px more
+const BS_WIDE_PANE_MIN = 1190;
+// the rail goes under the question below the question's 360px plus the rail's smallest 280px
+const BS_STACK_BELOW = 640;
+
+// Sets the details rail (the `d` binding's atom) and the terminal's fullscreen, which hides the agent tree while the centre
+// is the terminal, as a brainstorm's is. Says what they were
+const bsSetLayout = (h, { rail, fullscreen }) =>
+    lookEval(h, `
+        const { globalStore } = await mod("app/store/jotaiStore.ts");
+        const { railVisibleAtom, terminalFullscreenAtom } = await mod("app/view/agents/railstore.ts");
+        const was = { rail: globalStore.get(railVisibleAtom), fullscreen: globalStore.get(terminalFullscreenAtom) };
+        globalStore.set(railVisibleAtom, ${JSON.stringify(rail)});
+        globalStore.set(terminalFullscreenAtom, ${JSON.stringify(fullscreen)});
+        return was;
+    `);
+
+const bsPaneWidth = (h) => h.ev(`Math.round(${BS_PANE}?.getBoundingClientRect().width ?? 0)`);
+
+// The details rail stays beside a brainstorm and takes some of the pane's width (the pane can come out under the 640px at
+// which the rail stacks under the question, depending on the window). A step that needs the rail beside the question closes
+// the details rail and, if the pane is still under 1190px, folds the agent tree. The
+// layout it found is kept on ctx for bsRestoreLayout. Says the pane's width then
+async function bsWide(h, ctx) {
+    const was = await bsSetLayout(h, { rail: false, fullscreen: false });
+    ctx.layout ??= was;
+    await polishNap(900);
+    let width = await bsPaneWidth(h);
+    if (width < BS_WIDE_PANE_MIN) {
+        await bsSetLayout(h, { rail: false, fullscreen: true });
+        await polishNap(900);
+        width = await bsPaneWidth(h);
+    }
+    return width;
+}
+
+// The details rail open and the agent tree shown in a window narrow enough that the pane is under 640px whatever width the
+// details rail has (it is ~300px at the harness's 1600px window, which leaves the pane 974px, so the window is narrowed)
+const BS_NARROW_WINDOW_W = 1100;
+async function bsNarrow(h, ctx) {
+    const was = await bsSetLayout(h, { rail: true, fullscreen: false });
+    ctx.layout ??= was;
+    ctx.viewport ??= await h.ev("({ width: window.innerWidth, height: window.innerHeight })");
+    await h.cdp("Emulation.setDeviceMetricsOverride", { width: BS_NARROW_WINDOW_W, height: ctx.viewport.height, deviceScaleFactor: 1, mobile: false });
+    await polishNap(900);
+    return bsPaneWidth(h);
+}
+
+async function bsRestoreLayout(h, ctx) {
+    if (ctx.viewport != null) {
+        await h.cdp("Emulation.setDeviceMetricsOverride", { ...ctx.viewport, deviceScaleFactor: 1, mobile: false });
+        ctx.viewport = null;
+    }
+    if (ctx.layout == null) return;
+    await bsSetLayout(h, ctx.layout);
+    ctx.layout = null;
+}
+
+// Everything a rail step judges, in one read: the pane's, the rail's and the question's boxes, the tabs, the handle, the
+// readout, each tile (its head, the option it is tied to, whether the accent lights its border), the groups, and the widened
+// view. The accent is read through the same custom property the rail's border-accent class uses
+const BS_RAIL_READ = `(() => {
+    const flat = (el) => (el?.innerText ?? "").replace(/\\s+/g, " ").trim();
+    const box = (el) => {
+        const r = el?.getBoundingClientRect();
+        return r && r.width > 0
+            ? { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), b: Math.round(r.bottom), r: Math.round(r.right) }
+            : null;
+    };
+    const pane = ${BS_PANE};
+    const rail = ${BS_RAIL};
+    const probe = document.createElement("span");
+    probe.style.color = "var(--color-accent)";
+    document.body.appendChild(probe);
+    const accent = getComputedStyle(probe).color;
+    probe.remove();
+    const tiles = [...(rail?.querySelectorAll("[data-brainstorm-rail-board]") ?? [])].map((t) => ({
+        name: t.getAttribute("data-brainstorm-rail-board"),
+        option: t.getAttribute("data-linked-option"),
+        head: flat(t.parentElement?.querySelector("[data-brainstorm-rail-board-head]")),
+        frame: !!t.querySelector("iframe"),
+        lit: getComputedStyle(t).borderTopColor === accent,
+        box: box(t),
+    }));
+    const groups = [...(rail?.querySelectorAll("[data-brainstorm-rail-group]") ?? [])].map((g) => ({
+        part: g.getAttribute("data-brainstorm-rail-group"),
+        heading: flat(g.querySelector("h3")),
+        boards: [...g.querySelectorAll("[data-brainstorm-rail-board]")].map((t) => t.getAttribute("data-brainstorm-rail-board")),
+        spikes: g.querySelectorAll("[data-brainstorm-spike]").length,
+        box: box(g),
+    }));
+    const wide = rail?.querySelector("[data-brainstorm-rail-widened]");
+    const mark = rail?.querySelector("[data-brainstorm-rail-mark]");
+    const body = rail?.querySelector(":scope > div > .overflow-y-auto");
+    const frameEl = wide?.querySelector("[data-canvas-frame]");
+    return {
+        pane: box(pane),
+        rail: box(rail),
+        question: box(pane?.querySelector("[data-brainstorm-question]")),
+        tabs: [...(rail?.querySelectorAll("[data-brainstorm-rail-tab]") ?? [])].map((t) => ({
+            tab: t.getAttribute("data-brainstorm-rail-tab"),
+            text: flat(t),
+            selected: t.getAttribute("aria-selected") === "true",
+        })),
+        handle: box(rail?.querySelector("[data-brainstorm-rail-handle]")),
+        readout: flat(rail?.querySelector("[data-brainstorm-rail-readout]")),
+        tiles,
+        groups,
+        columns: new Set(tiles.filter((t) => t.box).map((t) => t.box.x)).size,
+        scrollTop: Math.round(body?.scrollTop ?? 0),
+        widened: !!wide,
+        widenedBoard: frameEl?.getAttribute("data-canvas-frame") ?? null,
+        widenedSrc: frameEl?.querySelector("iframe")?.getAttribute("src") ?? null,
+        widenedHead: flat(wide?.querySelector("[data-brainstorm-rail-board-head]")),
+        mark: mark ? { pressed: mark.getAttribute("aria-pressed"), disabled: mark.disabled } : null,
+        spikes: rail?.querySelectorAll("[data-brainstorm-spike]").length ?? 0,
+    };
+})()`;
+
+const bsRailRead = (h) => h.ev(BS_RAIL_READ);
+
+// polls the rail until want(read) holds; the last read and whether it did
+async function bsRailUntil(h, want, ms = 4000) {
+    const start = Date.now();
+    let r;
+    do {
+        r = await bsRailRead(h).catch((e) => ({ error: String(e?.message ?? e), tabs: [], tiles: [], groups: [] }));
+        if (r.error == null && want(r)) return { ...r, ok: true };
+        await polishNap(200);
+    } while (Date.now() - start < ms);
+    return { ...r, ok: false };
+}
+
+// Selects a rail tab by clicking it, once it is there. A rail with no Boards tab has no strip and shows Decided so far
+// itself, which is what "second" means then; `strip` says the strip is expected, so its absence is not that
+async function bsRailTab(h, which, strip = false) {
+    return polishWaitFor(
+        h,
+        `(() => {
+            const rail = ${BS_RAIL};
+            if (!rail) return false;
+            const tab = rail.querySelector('[data-brainstorm-rail-tab="${which}"]');
+            if (!tab) return ${which === "second" && !strip} && !rail.querySelector("[data-brainstorm-rail-tab]");
+            if (tab.getAttribute("aria-selected") !== "true") tab.click();
+            return tab.getAttribute("aria-selected") === "true";
+        })()`,
+        5000
+    );
+}
+
+// a real pointer move, so React's mouseenter sees what a user's pointer does
+const bsHover = (h, x, y) => h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(x), y: Math.round(y), button: "none" });
+
+// the middle of the element a JS expression finds, or null when it has no box
+const bsCenter = (h, elExpr) =>
+    h.ev(`(() => {
+        const r = (${elExpr})?.getBoundingClientRect();
+        return r && r.width > 0 ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+    })()`);
+
+// Drags the rail's handle left by dx (right when negative) with real mouse events: the handle takes pointer capture. The
+// rail's width clamps, so a drag far past either end leaves it at its largest or smallest. False without a handle
+async function bsDragHandle(h, dx) {
+    const at = await bsCenter(h, `${BS_RAIL}?.querySelector("[data-brainstorm-rail-handle]")`);
+    if (at == null) return false;
+    const steps = 6;
+    // a pointer outside the window has no coordinates, so a drag past the window's edge stops 5px inside it
+    const vw = await h.ev("window.innerWidth");
+    const toX = (i) => Math.min(vw - 5, Math.max(5, Math.round(at.x - (dx * i) / steps)));
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(at.x), y: Math.round(at.y), button: "none" });
+    await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: Math.round(at.x), y: Math.round(at.y), button: "left", buttons: 1, clickCount: 1 });
+    for (let i = 1; i <= steps; i++) {
+        await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: toX(i), y: Math.round(at.y), button: "left", buttons: 1 });
+    }
+    await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: toX(steps), y: Math.round(at.y), button: "left", buttons: 0, clickCount: 1 });
+    await polishNap(400);
+    return true;
+}
+
+// the tile of the board `name`, as an expression
+const bsTileSel = (name) => `${BS_RAIL}?.querySelector('[data-brainstorm-rail-board="${name}"]')`;
+const bsOptionRow = (i) => `${BS_PANE}?.querySelector('[data-brainstorm-option-row="${i}"]')`;
+
 // The box of the element a JS expression finds, as numbers, and whether it lies wholly inside the box of the element
 // `withinExpr` finds, the pane's own by default (a button the pane clips has its right edge past it). A bar sits in the
 // pane's main column, which the rail beside it overlays or clips, so a bar's step names the bar. null when either is missing.
@@ -29497,13 +29690,17 @@ const brainstormMode = {
             mkdirSync(dirname(ctx.file), { recursive: true });
             const project = join(cwd, ".superpowers", "design", BS_TOPIC, "project");
             mkdirSync(project, { recursive: true });
+            const canvasBoards = [...BS_BOARDS, BS_GOALS_BOARD];
             writeFileSync(
                 join(project, "canvas.json"),
-                JSON.stringify({ boards: Object.fromEntries(BS_BOARDS.map((b) => [b, { w: 1440 }])), order: BS_BOARDS })
+                JSON.stringify({ boards: Object.fromEntries(canvasBoards.map((b) => [b, { w: 1440 }])), order: canvasBoards })
             );
-            for (const b of BS_BOARDS) {
+            for (const b of canvasBoards) {
                 writeFileSync(join(project, b), `<!doctype html><title>${b}</title><h1 style="font:64px sans-serif">${b}</h1>`);
             }
+            // the rail's dragged width is one number kept in localStorage: start from the default, and put back what was there
+            ctx.prevRailWidth = await h.ev(`localStorage.getItem(${JSON.stringify(BS_RAIL_WIDTH_KEY)})`);
+            await h.ev(`localStorage.removeItem(${JSON.stringify(BS_RAIL_WIDTH_KEY)})`);
             bsWrite(ctx, BS_FILES.justStarted);
             await openCanvasTerminal(h, ctx, BS_TOPIC);
             await bsPublishStatus(h, ctx);
@@ -29542,13 +29739,15 @@ const brainstormMode = {
         if (!ctx.inRoster) return steps;
         await h.ev(BS_TYPED_INSTALL);
         // tagged before any switch: a remount would drop the attribute with the node
-        const tagged = await h.ev(`(() => {
+        // (made again after the rail step that reloads the page, so step 6 still judges the node tagged since then)
+        const TAG_TERMINAL = `(() => {
             const t = ${TERM};
             t.setAttribute("data-verify-mark", "brainstorm-mode");
             const x = t.querySelector(".xterm");
             if (x) x.setAttribute("data-verify-mark", "brainstorm-mode");
             return { xterm: !!x, visible: !t.classList.contains("hidden") };
-        })()`);
+        })()`;
+        let tagged = await h.ev(TAG_TERMINAL);
 
         // 0b. the reveal attaches: the switcher appears and the tab meta names the file
         let revealError = null;
@@ -29662,15 +29861,9 @@ const brainstormMode = {
         // the design behind its button: the decisions one line each, what stands before the check, the mockups
         const opened2 = await bsOpenDesign(h);
         const pageOpened = await bsOpenRow(h, "page");
-        await polishWaitFor(h, `${bsPartSel("page")}?.querySelectorAll("[data-brainstorm-thumb] iframe").length === 2`, BS_POLL_WAIT_MS);
-        const thumbs = await h.ev(`(() => {
-            const p = ${bsPartSel("page")};
-            return {
-                frames: p?.querySelectorAll("[data-brainstorm-thumb] iframe").length ?? 0,
-                labels: [...(p?.querySelectorAll("[data-brainstorm-open-board]") ?? [])]
-                    .map((b) => (b.previousElementSibling?.textContent ?? "").trim()),
-            };
-        })()`);
+        // the part's boards are the rail's: with the design open the Boards tab is the one it opens on
+        const rail2d = await bsRailUntil(h, (r) => r.tiles.length === 2 && r.tiles.every((t) => t.frame), BS_POLL_WAIT_MS);
+        const rowFrames = await h.ev(`${bsPartSel("page")}?.querySelectorAll("iframe").length ?? -1`);
         const s2d = await bsRead(h, ctx);
         await h.shot("cdp-shots/brainstorm-mode-2-design.png");
         rec(
@@ -29715,9 +29908,18 @@ const brainstormMode = {
             { states: states2c, want: BS_MID_STATES }
         );
         rec(
-            "2d. the page part, opened, shows both mockups, the first labelled option A of 2",
-            pageOpened && thumbs.frames === 2 && thumbs.labels[0] === "Page.dc.html · option A of 2",
-            { pageOpened, ...thumbs }
+            "2d. the page part, opened, holds no thumbnails: both mockups are in the rail, on the Boards tab the design opens on, headed by their file names (the open question is about another part)",
+            pageOpened &&
+                rowFrames === 0 &&
+                s2d.thumbs === 0 &&
+                rail2d.ok &&
+                rail2d.tabs[0]?.tab === "boards" &&
+                rail2d.tabs[0].selected &&
+                rail2d.tabs[0].text === "Boards · 2" &&
+                JSON.stringify(rail2d.tiles.map((t) => t.name)) === JSON.stringify(BS_BOARDS) &&
+                JSON.stringify(rail2d.tiles.map((t) => t.head)) === JSON.stringify(BS_BOARDS) &&
+                rail2d.tiles.every((t) => t.option == null),
+            { pageOpened, rowFrames, thumbs: s2d.thumbs, tabs: rail2d.tabs, tiles: rail2d.tiles.map((t) => ({ name: t.name, head: t.head, option: t.option })) }
         );
 
         let mark = await bsMark(h, ctx, "brainstorm: confirm every guess");
@@ -29774,6 +29976,8 @@ const brainstormMode = {
         await bsAgentTook(h, ctx);
         const closed2 = await bsCloseDesign(h);
         rec("2q. Back to question 4 returns to the question", closed2 && (await bsRead(h, ctx)).question.includes(BS_Q4.text), { closed2 });
+        // Decided so far is the rail's whole content on question 4 (its part lists no boards); a tab strip would put it second
+        await bsRailTab(h, "second");
         await bsClick(h, `${BS_PANE}?.querySelector("[data-brainstorm-rail]")`, "Anti-goals");
         const railJump = await polishWaitFor(h, `!!${BS_PANE}?.querySelector("[data-brainstorm-back]") && !!${bsPartSel("anti")}`, 3000);
         rec("2r. a Went into link in the rail opens the design at its part", railJump, { railJump });
@@ -29869,7 +30073,14 @@ const brainstormMode = {
         await bsCloseDesign(h);
 
         bsWrite(ctx, BS_FILES.answered);
-        const s2b = await bsUntil(h, ctx, (s) => s.question.includes(BS_Q5.text));
+        await bsUntil(h, ctx, (s) => s.question.includes(BS_Q5.text));
+        // question 5's part lists boards, so the rail opens on them before any tab is picked: read that now, then pick
+        // Decided so far, which is drawn only while it is the shown tab
+        const rail5 = await bsRailUntil(h, (r) => r.tiles.length === 2 && r.tiles.every((t) => t.frame), BS_POLL_WAIT_MS);
+        const s5q = await bsRead(h, ctx);
+        await h.shot("cdp-shots/brainstorm-mode-2-question-boards.png");
+        await bsRailTab(h, "second", true);
+        const s2b = await bsUntil(h, ctx, (s) => s.question.includes(BS_Q5.text) && s.history.length > 0);
         await h.shot("cdp-shots/brainstorm-mode-2-answered.png");
         const q4row = s2b.history[0];
         rec(
@@ -29884,107 +30095,465 @@ const brainstormMode = {
             { ...bsBrief(s2b), question: s2b.question, rail: s2b.rail, history: q4row }
         );
 
-        // the asked part's mockups in the question: question 4's part (When it pages) lists none, question 5's two
-        const QB = `${BS_PANE}?.querySelectorAll("[data-brainstorm-question] [data-brainstorm-thumb] iframe").length === 2`;
-        await polishWaitFor(h, QB, BS_POLL_WAIT_MS);
-        const s2q = await bsRead(h, ctx);
-        await h.shot("cdp-shots/brainstorm-mode-2-question-boards.png");
-        const boardLabels = BS_BOARDS.map((b, i) => `${b} · option ${"AB"[i]} of ${BS_BOARDS.length}`);
+        // the asked part's mockups are the rail's Boards tab: question 4's part (When it pages) lists none and its rail has no
+        // tab strip, question 5's two open on Boards, headed by their file names since the question offers no answer to tie
+        // them to, and the question column holds no thumbnails
         rec(
-            "2l2. a question whose part lists boards shows them: question 5 for What on-call sees draws both thumbnails, option A and B of 2, each with Open full size; question 4, whose part lists none, drew none",
-            s2.qBoards.length === 0 &&
-                JSON.stringify(s2q.qBoards.map((b) => b.name)) === JSON.stringify(BS_BOARDS) &&
-                s2q.qBoards.every((b) => b.frame && b.open === "Open full size") &&
-                JSON.stringify(s2q.qBoards.map((b) => b.label)) === JSON.stringify(boardLabels),
-            { q4: s2.qBoards, q5: s2q.qBoards }
+            "2l2. a question whose part lists boards opens the rail on them: question 5 for What on-call sees shows Boards · 2 (shown) beside Decided so far · 4, both boards live and headed by their file names, tied to no option; question 4, whose part lists none, had no tab strip; the question column holds no thumbnails",
+            s2.railTabs.length === 0 &&
+                rail5.ok &&
+                rail5.tabs.length === 2 &&
+                rail5.tabs[0].tab === "boards" &&
+                rail5.tabs[0].selected &&
+                rail5.tabs[0].text === "Boards · 2" &&
+                rail5.tabs[1].text === "Decided so far · 4" &&
+                !rail5.tabs[1].selected &&
+                JSON.stringify(rail5.tiles.map((t) => t.name)) === JSON.stringify(BS_BOARDS) &&
+                JSON.stringify(rail5.tiles.map((t) => t.head)) === JSON.stringify(BS_BOARDS) &&
+                rail5.tiles.every((t) => t.frame && t.option == null) &&
+                s5q.thumbs === 0,
+            { q4Tabs: s2.railTabs, tabs: rail5.tabs, tiles: rail5.tiles.map((t) => ({ name: t.name, head: t.head, option: t.option, frame: t.frame })), thumbs: s5q.thumbs }
         );
+        // The layout question: the two answers, and a board for each in the rail. The pane needs to be wide for the rail to sit
+        // beside the question and lay its boards out in two columns, so the details rail is closed, and the agent tree folded
+        // if the pane is still under 1190px; teardown puts both back. The
+        // agent is writing between the two files so the rail meets this question as a new one and opens on its own first tab
+        bsWrite(ctx, BS_FILES.working);
+        await bsUntil(h, ctx, (s) => s.working !== "");
+        const paneW = await bsWide(h, ctx);
         bsWrite(ctx, BS_FILES.layout);
-        const s2o = await bsUntil(
-            h,
-            ctx,
-            (s) => s.question.includes(BS_Q5_LAYOUT.text) && s.options.length === 2 && s.qBoards.filter((b) => b.frame).length === 2
-        );
+        const s2o = await bsUntil(h, ctx, (s) => s.question.includes(BS_Q5_LAYOUT.text) && s.options.length === 2);
+        const railL = await bsRailUntil(h, (r) => r.tiles.length === 2 && r.tabs[0]?.selected === true);
         await h.shot("cdp-shots/brainstorm-mode-2-layout-question.png");
-        // The details rail stays beside a brainstorm, so the pane's question column is what the window leaves it: the boards go
-        // to the answers' right when the row holds the answers' least width (360px), the 24px gap and a board, and under the
-        // answers, in the pane, when it does not (at the dev window's 1600×950 with the rail open it does not).
-        const fitsBeside = s2o.qRow != null && s2o.qRow.w >= BS_ANSWERS_MIN_W + BS_BOARDS_GAP + s2o.qRow.thumbW;
-        const railOpen2l3 = await bsRailOpen(h);
         rec(
-            "2l3. a question between the part's layouts: the two answers, and the two boards to compare: to their right when the row has room for both, under them when it has not, inside the pane either way",
+            "2l3. rail boards tab: a question with boards opens on Boards, a tile per option headed A · Lag first and B · Trend first and tied to it, the rail beside the question, no thumbnails in the question, the pros and cons folded until Show pros and cons opens them",
             s2o.ok &&
-                railOpen2l3 === true &&
+                paneW >= BS_WIDE_PANE_MIN &&
+                railL.ok &&
+                railL.tabs[0].tab === "boards" &&
+                railL.tabs[0].text === "Boards · 2" &&
+                railL.tabs[1]?.text === "Decided so far · 4" &&
+                JSON.stringify(railL.tiles.map((t) => t.head)) ===
+                    JSON.stringify(BS_Q5_LAYOUT.options.map((o, i) => `${"AB"[i]} · ${o.label}`)) &&
+                JSON.stringify(railL.tiles.map((t) => t.option)) === JSON.stringify(["0", "1"]) &&
+                railL.tiles.every((t) => t.frame && !t.lit) &&
+                railL.rail != null &&
+                railL.question != null &&
+                railL.rail.x >= railL.question.r - 1 &&
+                railL.handle != null &&
                 JSON.stringify(s2o.options.map((o) => o.text)) === JSON.stringify(BS_Q5_LAYOUT.options.map(optionText)) &&
-                JSON.stringify(s2o.qBoards.map((b) => b.label)) === JSON.stringify(boardLabels) &&
-                s2o.qBoards.every((b) => (fitsBeside ? b.besideAnswers === true : b.underAnswers === true) && b.inPane === true),
-            { ...bsBrief(s2o), railOpen: railOpen2l3, fitsBeside, row: s2o.qRow, options: s2o.options, boards: s2o.qBoards }
+                s2o.thumbs === 0 &&
+                s2o.prosCons === 0 &&
+                s2o.prosToggle === "Show pros and cons",
+            {
+                ...bsBrief(s2o),
+                paneW,
+                tabs: railL.tabs,
+                tiles: railL.tiles.map((t) => ({ name: t.name, head: t.head, option: t.option, lit: t.lit })),
+                rail: railL.rail,
+                question: railL.question,
+                handle: railL.handle,
+                options: s2o.options,
+                thumbs: s2o.thumbs,
+                prosCons: s2o.prosCons,
+                prosToggle: s2o.prosToggle,
+            }
         );
-        await h.ev(`${BS_PANE}?.querySelector("[data-brainstorm-question] [data-brainstorm-open-board]")?.click()`);
-        const s2f = await bsUntil(h, ctx, (s) => s.view === "board", 3000);
-        const fullBack = await bsClick(h, BS_PANE, "Back to the question");
-        const s2r = await bsUntil(h, ctx, (s) => s.view === "design" && s.question.includes(BS_Q5_LAYOUT.text), 3000);
+        // the existing toggle opens the folded pros and cons, and closes them again
+        await h.ev(`${BS_PANE}?.querySelector("[data-brainstorm-proscons-toggle]")?.click()`);
+        const prosOpen = await bsUntil(h, ctx, (s) => s.prosCons === 2 && s.prosToggle === "Hide pros and cons", 2000);
+        await h.ev(`${BS_PANE}?.querySelector("[data-brainstorm-proscons-toggle]")?.click()`);
+        const prosShut = await bsUntil(h, ctx, (s) => s.prosCons === 0 && s.prosToggle === "Show pros and cons", 2000);
+        rec("2l3b. Show pros and cons opens both answers' pros and cons under them, and Hide pros and cons folds them again", prosOpen.ok && prosShut.ok, {
+            open: { prosCons: prosOpen.prosCons, toggle: prosOpen.prosToggle },
+            shut: { prosCons: prosShut.prosCons, toggle: prosShut.prosToggle },
+        });
+
+        // drag the handle: wide enough for two 380px boards makes two columns, and the readout says so; hovering an answer
+        // outlines its board in the accent; dragging back returns to one column at the width the rail had
+        const rail1 = railL;
+        await bsDragHandle(h, 2000);
+        const rail2 = await bsRailUntil(h, (r) => /^2 columns/.test(r.readout), 3000);
+        const optB = await bsCenter(h, `${bsOptionRow(1)}?.querySelector("[data-brainstorm-option]")`);
+        if (optB != null) await bsHover(h, optB.x, optB.y);
+        const hovB = await bsRailUntil(h, (r) => r.tiles[1]?.lit === true, 3000);
+        const sB = await bsRead(h, ctx);
+        await h.shot("cdp-shots/brainstorm-mode-2-rail-two-columns.png");
+        await bsHover(h, 5, 5);
+        await bsDragHandle(h, -(rail2.rail.w - rail1.rail.w));
+        const rail3 = await bsRailUntil(h, (r) => /^1 column/.test(r.readout), 3000);
+        const [tA, tB] = rail2.tiles;
         rec(
-            "2l4. Open full size from the question shows the board, and its Back to the question returns to the question",
-            s2f.ok && fullBack === "clicked" && s2r.ok && s2r.qBoards.length === 2,
-            { board: s2f.view, fullBack, back: bsBrief(s2r) }
+            "2l6. rail two columns with option hover: dragging the handle left to the largest width lays the boards out in 2 columns, side by side, and the readout says 2 columns; hovering answer B outlines board B in the accent (its tile is option 1) and lights its row; dragging back returns to 1 column at the width it had",
+            rail2.ok &&
+                rail2.columns === 2 &&
+                tA?.box != null &&
+                tB?.box != null &&
+                tA.box.y === tB.box.y &&
+                tB.box.x > tA.box.x &&
+                rail2.rail.w > rail1.rail.w + 100 &&
+                rail2.rail.w <= rail2.pane.w - 360 + 4 &&
+                hovB.ok &&
+                hovB.tiles[1].option === "1" &&
+                hovB.tiles[0].lit === false &&
+                sB.options[1]?.linked === true &&
+                sB.options[0]?.linked === false &&
+                rail3.ok &&
+                rail3.columns === 1 &&
+                Math.abs(rail3.rail.w - rail1.rail.w) <= 3,
+            {
+                readouts: [rail1.readout, rail2.readout, rail3.readout],
+                widths: [rail1.rail.w, rail2.rail.w, rail3.rail.w],
+                columns: [rail1.columns, rail2.columns, rail3.columns],
+                boxes: rail2.tiles.map((t) => t.box),
+                hovered: hovB.tiles.map((t) => ({ name: t.name, option: t.option, lit: t.lit })),
+                optionsLinked: sB.options.map((o) => o.linked),
+            }
         );
-        // Esc takes the back control's step; on the question there is no step left, so a second Esc changes nothing
-        await bsMouseClick(h, `${BS_PANE}?.querySelector("[data-brainstorm-question] [data-brainstorm-open-board]")`);
-        const s2e = await bsUntil(h, ctx, (s) => s.view === "board", 3000);
+
+        // hovering a board lights the answer it is tied to
+        const tileA = await bsCenter(h, bsTileSel(BS_BOARDS[0]));
+        if (tileA != null) await bsHover(h, tileA.x, tileA.y);
+        const hovA = await bsUntil(h, ctx, (s) => s.options[0]?.linked === true, 3000);
+        const hovATile = await bsRailRead(h);
+        await h.shot("cdp-shots/brainstorm-mode-2-board-hover.png");
+        await bsHover(h, 5, 5);
+        const hovOff = await bsUntil(h, ctx, (s) => s.options.every((o) => o.linked === false), 3000);
+        rec(
+            "2l7. board hover lights option: the pointer on board A lights answer A and not B, with its tile outlined; moved off, neither is lit",
+            hovA.ok && hovA.options[1]?.linked === false && hovATile.tiles[0]?.lit === true && hovATile.tiles[1]?.lit === false && hovOff.ok,
+            { options: hovA.options.map((o) => o.linked), tiles: hovATile.tiles.map((t) => t.lit), off: hovOff.options.map((o) => o.linked) }
+        );
+
+        // click a board: the rail widens to its largest and shows only that board, the question and its answers stay on
+        // screen, a letter key picks an answer as it does without a board, and Esc returns the rail to its width
+        const widthBefore = (await bsRailRead(h)).rail.w;
+        const openedBoard = await bsMouseClick(h, `${bsTileSel(BS_BOARDS[0])}?.querySelector("button")`);
+        const wid = await bsRailUntil(h, (r) => r.widened && r.widenedBoard === BS_BOARDS[0], 5000);
+        const sWid = await bsRead(h, ctx);
+        await h.shot("cdp-shots/brainstorm-mode-2-widened.png");
+        const lineB = BS_Q5_LAYOUT.options[1].label;
+        mark = await bsMark(h, ctx, lineB);
+        await bsMouseClick(h, `${BS_PANE}?.querySelector("h1")`);
+        // pickKeys: whether CDP key events reach the page, read at 2s
+        let focusedB = null;
+        if (pickKeys) {
+            await pressCanvasKey(h, BS_B_KEY);
+            focusedB = await h.ev(`document.activeElement?.getAttribute("data-brainstorm-option") ?? null`);
+            await bsKey(h, `${BS_PANE}?.querySelector('[data-brainstorm-option="1"]')`, "Enter", "keys");
+        } else {
+            await h.ev(`${BS_PANE}?.querySelector('[data-brainstorm-option="1"]')?.click()`);
+        }
+        const pickedB = await bsTyped(h, ctx, mark, lineB);
+        await bsAgentTook(h, ctx);
+        const stillWide = await bsRailRead(h);
+        // the page's focus is the question's, as the user's is after reading it
+        await bsMouseClick(h, `${BS_PANE}?.querySelector("h1")`);
         const escVia = await bsEscape(h);
-        const s2eq = await bsUntil(h, ctx, (s) => s.view === "design" && s.question.includes(BS_Q5_LAYOUT.text), 3000);
+        const shrunk = await bsRailUntil(h, (r) => !r.widened && r.tiles.length === 2, 3000);
         await h.shot("cdp-shots/brainstorm-mode-2-esc-board-to-question.png");
         await bsEscape(h);
         await polishNap(500);
         const s2stay = await bsRead(h, ctx);
         rec(
-            `2l5. Esc on the board opened full size from the question returns to the question, and a second Esc there leaves it be (${escVia === "keys" ? "a real Esc key" : "a keydown on the document: CDP keys did not reach the page"})`,
-            s2e.ok && s2eq.ok && s2eq.qBoards.length === 2 && s2stay.view === "design" && s2stay.question.includes(BS_Q5_LAYOUT.text),
-            { board: s2e.view, via: escVia, back: bsBrief(s2eq), again: bsBrief(s2stay) }
+            pickKeys
+                ? "2l4. widened board: clicking board A widens the rail to its largest with the question and its answers still on screen; b focuses answer B and Enter sends its label as the answer; Esc returns the rail to its width"
+                : "2l4. widened board: clicking board A widens the rail to its largest with the question and its answers still on screen; clicking answer B sends its label as the answer; Esc returns the rail to its width",
+            openedBoard !== false &&
+                wid.ok &&
+                wid.handle == null &&
+                Math.abs(wid.rail.w - (wid.pane.w - 360)) <= 4 &&
+                wid.rail.w > widthBefore + 100 &&
+                wid.question != null &&
+                wid.question.r <= wid.rail.x + 2 &&
+                sWid.options.length === 2 &&
+                sWid.view === "design" &&
+                wid.mark != null &&
+                (!pickKeys || focusedB === "1") &&
+                pickedB.ok &&
+                stillWide.widened &&
+                shrunk.ok &&
+                Math.abs(shrunk.rail.w - widthBefore) <= 3,
+            { widthBefore, widened: wid.rail, pane: wid.pane, question: wid.question, board: wid.widenedBoard, focused: focusedB, ...pickedB.detail, shrunk: shrunk.rail }
         );
+        if (!pickKeys) {
+            steps.push(skipStep("2l4b. the letter key itself", "CDP key events never reached the page; clicked the answer instead"));
+        }
+        rec(
+            `2l5. Esc on the widened board returns the rail to its width, the question stays; a second Esc there leaves the question be (${escVia === "keys" ? "a real Esc key" : "a keydown on the document: CDP keys did not reach the page"})`,
+            shrunk.ok && s2stay.view === "design" && s2stay.question.includes(BS_Q5_LAYOUT.text),
+            { via: escVia, rail: shrunk.rail, again: bsBrief(s2stay) }
+        );
+
+        // [ and ] step the part's boards while one is widened: a press that lands before the canvas has polled does nothing, so
+        // a press is repeated only while the board has not moved
+        await bsMouseClick(h, `${bsTileSel(BS_BOARDS[0])}?.querySelector("button")`);
+        await bsRailUntil(h, (r) => r.widened && r.widenedBoard === BS_BOARDS[0], 5000);
+        const bracket = { key: "]", code: "BracketRight", keyCode: 221 };
+        const bracketBack = { key: "[", code: "BracketLeft", keyCode: 219 };
+        let stepped = null;
+        if (pickKeys) {
+            for (let tries = 0; tries < 4 && stepped?.widenedBoard !== BS_BOARDS[1]; tries++) {
+                await pressCanvasKey(h, bracket);
+                stepped = await bsRailUntil(h, (r) => r.widenedBoard === BS_BOARDS[1], 1500);
+            }
+            await h.shot("cdp-shots/brainstorm-mode-2-step-boards.png");
+            let stepBack = null;
+            for (let tries = 0; tries < 4 && stepBack?.widenedBoard !== BS_BOARDS[0]; tries++) {
+                await pressCanvasKey(h, bracketBack);
+                stepBack = await bsRailUntil(h, (r) => r.widenedBoard === BS_BOARDS[0], 1500);
+            }
+            rec(
+                "2l8. step boards while widened: ] shows the next board (PageB) in the widened rail, [ the one before, the question still on screen",
+                stepped?.widened === true &&
+                    stepped.widenedBoard === BS_BOARDS[1] &&
+                    stepped.widenedSrc?.includes(BS_BOARDS[1]) === true &&
+                    stepBack?.widenedBoard === BS_BOARDS[0] &&
+                    stepped.question != null,
+                { next: stepped?.widenedBoard, src: stepped?.widenedSrc, back: stepBack?.widenedBoard }
+            );
+        } else {
+            steps.push(skipStep("2l8. step boards while widened", "CDP key events never reached the page"));
+        }
+
+        // mark in the widened rail: Mark, a box dragged over the board with real mouse events, a note, and Send, which
+        // saves a picture through the host and types one line into the agent. A browser build has no host to capture the
+        // window, so there the step stops before Send
+        await h.ev(`${BS_RAIL}?.querySelector("[data-brainstorm-rail-mark]")?.click()`);
+        const layerUp = await polishWaitFor(h, `!!${BS_RAIL}?.querySelector("[data-canvas-mark-layer]")`, 3000);
+        const layerBox = await h.ev(`(() => {
+            const r = ${BS_RAIL}?.querySelector("[data-canvas-mark-layer]")?.getBoundingClientRect();
+            return r && r.width > 0 ? { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) } : null;
+        })()`);
+        if (layerBox != null) {
+            const from = { x: layerBox.x + Math.round(layerBox.w * 0.15), y: layerBox.y + Math.round(layerBox.h * 0.3) };
+            const to = { x: layerBox.x + Math.round(layerBox.w * 0.6), y: layerBox.y + Math.round(layerBox.h * 0.7) };
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...from, button: "none" });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...from, button: "left", buttons: 1, clickCount: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round((from.x + to.x) / 2), y: Math.round((from.y + to.y) / 2), button: "left", buttons: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...to, button: "left", buttons: 1 });
+            await h.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...to, button: "left", buttons: 0, clickCount: 1 });
+        }
+        const marked = await polishWaitFor(h, `!!document.querySelector("[data-canvas-mark='1']")`, 3000);
+        const NOTE = `input[aria-label="Note for mark 1"]`;
+        const noteText = "Make the lag number larger";
+        let noteVia = null;
+        if (marked) {
+            await bsMouseClick(h, `document.querySelector(${JSON.stringify(NOTE)})`);
+            await h.cdp("Input.insertText", { text: noteText });
+            noteVia = "keys";
+            if ((await h.ev(`document.querySelector(${JSON.stringify(NOTE)})?.value ?? null`)) !== noteText) {
+                await h.ev(`(() => {
+                    const el = document.querySelector(${JSON.stringify(NOTE)});
+                    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, ${JSON.stringify(noteText)});
+                    el.dispatchEvent(new Event("input", { bubbles: true }));
+                })()`);
+                noteVia = "set";
+            }
+        }
+        const noted = await polishWaitFor(h, `document.querySelector(${JSON.stringify(NOTE)})?.value === ${JSON.stringify(noteText)}`, 2000);
+        const markRead = await h.ev(`(() => {
+            const rail = ${BS_RAIL};
+            const send = rail?.querySelector("[data-canvas-send]");
+            return {
+                pressed: rail?.querySelector("[data-brainstorm-rail-mark]")?.getAttribute("aria-pressed") ?? null,
+                tray: !!rail?.querySelector("[data-canvas-tray]"),
+                send: !!send && !send.disabled,
+                chip: (rail?.querySelector("[data-canvas-mark='1'] span")?.textContent ?? "").trim(),
+                widened: !!rail?.querySelector("[data-brainstorm-rail-widened]"),
+            };
+        })()`);
+        await h.shot("cdp-shots/brainstorm-mode-2-rail-mark.png");
+        rec(
+            "2l9. mark in rail: Mark on the widened board, a box dragged over it draws mark 1, and the tray under the board holds its note field and Send",
+            layerUp && layerBox != null && marked && noted && markRead.pressed === "true" && markRead.tray && markRead.send && markRead.chip === "1" && markRead.widened,
+            { layerUp, layerBox, marked, noted, noteVia, ...markRead }
+        );
+        const host = await h.ev(`!!window.__TAURI_INTERNALS__`);
+        if (!host) {
+            steps.push(skipStep("2l10. Send in the rail", "no Tauri host to capture the window in (the picture Send saves); the marks stay for the next step"));
+            await h.ev(`${BS_RAIL}?.querySelector("[data-brainstorm-rail-mark]")?.click()`);
+        } else {
+            const sentLine = `marks on ${BS_BOARDS[0]}: 1 ${noteText}`;
+            const termBefore = bsCount(await bsTermText(h, ctx).catch(() => ""), sentLine);
+            await h.ev(`${BS_RAIL}?.querySelector("[data-canvas-send]")?.click()`);
+            const cleared = await polishWaitFor(h, `!${BS_RAIL}?.querySelector("[data-canvas-tray]") && !document.querySelector("[data-canvas-mark]")`, 8000);
+            let reached = false;
+            for (let waited = 0; waited < BS_TYPED_WAIT_MS && !reached; waited += 250) {
+                reached = bsCount(await bsTermText(h, ctx).catch(() => ""), sentLine) > termBefore;
+                if (!reached) await polishNap(250);
+            }
+            const after = await h.ev(`(() => {
+                const rail = ${BS_RAIL};
+                return {
+                    pressed: rail?.querySelector("[data-brainstorm-rail-mark]")?.getAttribute("aria-pressed") ?? null,
+                    error: (rail?.querySelector("[data-canvas-tray] .text-error")?.textContent ?? "").trim(),
+                };
+            })()`);
+            await h.shot("cdp-shots/brainstorm-mode-2-rail-sent.png");
+            rec(
+                "2l10. Send in the rail: the tray clears with no error, marking turns off, and the agent's terminal shows the line naming the board and the note",
+                cleared && reached && after.error === "" && after.pressed !== "true",
+                { cleared, reached, line: sentLine, ...after }
+            );
+        }
+        // back to the tiles: the close control (Esc is the same step)
+        await h.ev(`${BS_RAIL}?.querySelector("[data-brainstorm-rail-close]")?.click()`);
+        await bsRailUntil(h, (r) => !r.widened && r.tiles.length === 2, 3000);
+
+        // the rail's width is kept on this machine: dragged to a width of its own, the reloaded page opens it there. The page
+        // reload drops everything the page held (the terminal marks, the sent-line recorder, the brainstorm view), so those
+        // are made again, and the pane is shown from its tab meta as the reveal does
+        await bsDragHandle(h, 90);
+        const dragged = await bsRailRead(h);
+        const storedWidth = await h.ev(`localStorage.getItem(${JSON.stringify(BS_RAIL_WIDTH_KEY)})`);
+        try {
+            await h.ev("location.reload()");
+        } catch {
+            /* the evaluate is cut off by the navigation it just started */
+        }
+        await polishWaitFor(h, "!!window.TabRpcClient && !!document.querySelector('nav button')", 60000);
+        await h.goto("agent");
+        ctx.inRoster = await polishWaitFor(
+            h,
+            `!!document.querySelector('[data-agent-terminal="${ctx.tabId}"]') && !document.querySelector('[data-tree-terminal="${ctx.tabId}"]')`,
+            60000
+        );
+        await h.ev(BS_TYPED_INSTALL);
+        if (ctx.inRoster) tagged = await h.ev(TAG_TERMINAL).catch(() => tagged);
+        const reshown = ctx.inRoster ? await bsShowFile(h, { ...ctx, topic: BS_TOPIC }) : "the terminal never became a roster agent again";
+        const paneWAfter = await bsWide(h, ctx);
+        const reloaded = await bsRailUntil(h, (r) => r.tiles.length === 2 && r.tabs[0]?.selected === true, 8000);
+        await h.shot("cdp-shots/brainstorm-mode-2-rail-reloaded.png");
+        rec(
+            "2l11. rail width survives reload: dragged to its own width, the reloaded page opens the rail at that width, not at the default share",
+            reshown == null &&
+                paneWAfter >= BS_WIDE_PANE_MIN &&
+                reloaded.ok &&
+                dragged.rail != null &&
+                Number(storedWidth) > 0 &&
+                Math.abs(reloaded.rail.w - Number(storedWidth)) <= 3 &&
+                Math.abs(reloaded.rail.w - dragged.rail.w) <= 3 &&
+                Math.abs(reloaded.rail.w - reloaded.pane.w * 0.32) > 20,
+            { reshown, stored: storedWidth, dragged: dragged.rail?.w, reloaded: reloaded.rail?.w, pane: reloaded.pane?.w }
+        );
+
+        // the design: Boards is the tab it opens on, with every part's boards under that part's title; the part rows hold
+        // none. Opening a part's row switches the rail to Boards (from Decided so far) and brings that part's group into view
+        bsWrite(ctx, BS_TWO_GROUPS);
+        await bsUntil(h, ctx, (s) => s.question.includes(BS_Q5.text));
+        await bsOpenDesign(h);
+        const dRail = await bsRailUntil(h, (r) => r.groups.length === 2 && r.tiles.length === 3, 5000);
+        const sD = await bsRead(h, ctx);
+        await h.shot("cdp-shots/brainstorm-mode-2-design-boards.png");
+        await bsRailTab(h, "second", true);
+        const goalsOpened = await bsOpenRow(h, "goals");
+        const atGoals = await bsRailUntil(h, (r) => r.tabs[0]?.selected === true && r.groups.length === 2, 3000);
+        await polishNap(600);
+        const atGoals2 = await bsRailRead(h);
+        await bsRailTab(h, "second", true);
+        const pageOpened2 = await bsOpenRow(h, "page");
+        await polishNap(900);
+        const atPage = await bsRailRead(h);
+        await h.shot("cdp-shots/brainstorm-mode-2-design-boards-scrolled.png");
+        const rowFrames2 = await h.ev(`[...document.querySelectorAll('[data-brainstorm-pane] [data-brainstorm-part]')].reduce((n, p) => n + p.querySelectorAll("iframe").length, 0)`);
+        const inView = (g, r) => g?.box != null && r.rail != null && g.box.y >= r.rail.y - 2 && g.box.y < r.rail.b;
+        rec(
+            "2l12. design boards tab: the design opens on Boards · 3, grouped under Goals and What on-call sees in the design's order, and the part rows hold no thumbnails; opening a part's row from Decided so far switches the rail to Boards and brings that part's group into view",
+            dRail.ok &&
+                dRail.tabs[0]?.selected === true &&
+                dRail.tabs[0].text === "Boards · 3" &&
+                JSON.stringify(dRail.groups.map((g) => [g.part, g.heading, g.boards])) ===
+                    JSON.stringify([["goals", "Goals", [BS_GOALS_BOARD]], ["page", "What on-call sees", BS_BOARDS]]) &&
+                dRail.groups[0].box.y < dRail.groups[1].box.y &&
+                sD.thumbs === 0 &&
+                rowFrames2 === 0 &&
+                goalsOpened &&
+                atGoals.ok &&
+                inView(atGoals2.groups[0], atGoals2) &&
+                pageOpened2 &&
+                atPage.tabs[0]?.selected === true &&
+                inView(atPage.groups[1], atPage),
+            {
+                tabs: dRail.tabs,
+                groups: dRail.groups.map((g) => ({ part: g.part, heading: g.heading, boards: g.boards, y: g.box?.y })),
+                thumbs: sD.thumbs,
+                rowFrames: rowFrames2,
+                goals: { selected: atGoals2.tabs[0]?.selected, scrollTop: atGoals2.scrollTop, group: atGoals2.groups[0]?.box, rail: atGoals2.rail },
+                page: { selected: atPage.tabs[0]?.selected, scrollTop: atPage.scrollTop, group: atPage.groups[1]?.box, rail: atPage.rail },
+            }
+        );
+        await bsCloseDesign(h);
+
         bsWrite(ctx, BS_FILES.answered);
         await bsUntil(h, ctx, (s) => s.question.includes(BS_Q5.text));
 
-        // 3. open full size, from the design
+        // 3. a board widened from the design: the design opens on the Boards tab, a click on a board widens the rail over the
+        // design without leaving it (Mark is there, the design's way back to question 5 stays), and its close control returns
+        // the rail to the tiles
         await bsOpenDesign(h);
-        await bsOpenRow(h, "page");
-        await polishWaitFor(h, `!!${bsPartSel("page")}?.querySelector("[data-brainstorm-open-board]")`, 3000);
-        await h.ev(`${bsPartSel("page")}?.querySelector("[data-brainstorm-open-board]")?.click()`);
-        const s3 = await bsUntil(h, ctx, (s) => s.view === "board", 3000);
-        const board = await h.ev(`(() => {
-            const flat = (el) => (el?.textContent ?? "").replace(/\\s+/g, " ").trim();
-            const labels = [...(${BS_PANE}?.querySelectorAll("button") ?? [])].map(flat);
-            return { mark: labels.includes("Mark"), back: labels.includes("Back to the design"), canvas: !!${BS_PANE}?.querySelector("[data-canvas-pane]") };
-        })()`);
+        const d3 = await bsRailUntil(h, (r) => r.tiles.length === 2 && r.tabs[0]?.selected === true, 5000);
+        await bsMouseClick(h, `${bsTileSel(BS_BOARDS[0])}?.querySelector("button")`);
+        const w3 = await bsRailUntil(h, (r) => r.widened && r.widenedBoard === BS_BOARDS[0], 5000);
+        const s3 = await bsRead(h, ctx);
         await h.shot("cdp-shots/brainstorm-mode-3.png");
-        await bsClick(h, BS_PANE, "Back to the design");
-        const s3back = await bsUntil(h, ctx, (s) => s.view === "design" && s.parts.length > 0, 3000);
+        await h.ev(`${BS_RAIL}?.querySelector("[data-brainstorm-rail-close]")?.click()`);
+        const s3back = await bsRailUntil(h, (r) => !r.widened && r.tiles.length === 2, 3000);
+        const s3design = await bsRead(h, ctx);
         rec(
-            "3. Open full size shows the board with Mark and Back to the design; back returns to the design, not the question",
-            s3.ok && board.mark && board.back && board.canvas && s3back.ok && s3back.back === "Back to question 5",
-            { board: s3.view, ...board, back: s3back.view, parts: s3back.parts.length, backBtn: s3back.back }
+            "3. a board widened from the design: the rail widens over the Boards tab with Mark and the board's head, the design stays open beside it with Back to question 5; the close control returns the rail to its tiles, and the design is still open",
+            d3.ok &&
+                w3.ok &&
+                w3.mark != null &&
+                w3.widenedHead === BS_BOARDS[0] &&
+                s3.view === "design" &&
+                s3.back === "Back to question 5" &&
+                s3.parts.length > 0 &&
+                s3back.ok &&
+                s3design.back === "Back to question 5" &&
+                s3design.parts.length > 0,
+            { widened: w3.widenedBoard, head: w3.widenedHead, mark: w3.mark, back: s3.back, parts: s3.parts.length, after: { back: s3design.back, parts: s3design.parts.length } }
         );
-        // Esc, one level per press: the board opened off the design back to the design, then the design to the question
-        await bsOpenRow(h, "page");
-        await polishWaitFor(h, `!!${bsPartSel("page")}?.querySelector("[data-brainstorm-open-board]")`, 3000);
-        await bsMouseClick(h, `${bsPartSel("page")}?.querySelector("[data-brainstorm-open-board]")`);
-        const s3e = await bsUntil(h, ctx, (s) => s.view === "board", 3000);
+        // Esc, one level per press: the widened board back to the tiles, then the design to the question
+        await bsMouseClick(h, `${bsTileSel(BS_BOARDS[0])}?.querySelector("button")`);
+        const s3e = await bsRailUntil(h, (r) => r.widened, 5000);
         const esc3 = await bsEscape(h);
         const s3d = await bsUntil(h, ctx, (s) => s.view === "design" && s.back === "Back to question 5" && s.parts.length > 0, 3000);
+        const s3dRail = await bsRailUntil(h, (r) => !r.widened && r.tiles.length === 2, 3000);
         await h.shot("cdp-shots/brainstorm-mode-3-esc-board-to-design.png");
         await bsEscape(h);
         const s3q = await bsUntil(h, ctx, (s) => s.view === "design" && s.back === "" && s.question.includes(BS_Q5.text), 3000);
         await h.shot("cdp-shots/brainstorm-mode-3-esc-design-to-question.png");
         rec(
-            `3b. Esc steps back one level per press: from the board opened off the design to the design, then from the design to question 5 (${esc3 === "keys" ? "a real Esc key" : "a keydown on the document: CDP keys did not reach the page"})`,
-            s3e.ok && s3d.ok && s3q.ok,
-            { board: s3e.view, via: esc3, design: { ...bsBrief(s3d), back: s3d.back }, question: { ...bsBrief(s3q), back: s3q.back } }
+            `3b. Esc steps back one level per press: from the board widened off the design to the design, then from the design to question 5 (${esc3 === "keys" ? "a real Esc key" : "a keydown on the document: CDP keys did not reach the page"})`,
+            s3e.ok && s3d.ok && s3dRail.ok && s3q.ok,
+            { board: s3e.widenedBoard, via: esc3, design: { ...bsBrief(s3d), back: s3d.back }, question: { ...bsBrief(s3q), back: s3q.back } }
         );
+
+        // a pane too narrow for the question's 360px and the rail's 280px (under 640px: the details rail open in a narrowed
+        // window) puts the rail under the question at full width, with no handle
+        const narrowW = await bsNarrow(h, ctx);
+        const stack = await bsRailUntil(h, (r) => r.tiles.length === 2 && r.question != null && r.rail != null, 4000);
+        await h.shot("cdp-shots/brainstorm-mode-3-rail-stacked.png");
+        rec(
+            "3c. rail stacks when narrow: with the details rail open in a narrowed window the pane is under 640px, and the rail sits under the question at the pane's full width with no handle",
+            narrowW < BS_STACK_BELOW &&
+                stack.ok &&
+                stack.handle == null &&
+                stack.rail.y >= stack.question.b - 1 &&
+                stack.rail.w >= stack.pane.w - 20,
+            { narrowW, rail: stack.rail, question: stack.question, pane: stack.pane, handle: stack.handle }
+        );
+        await bsRestoreLayout(h, ctx);
+        await polishNap(600);
         await bsCloseDesign(h);
 
         // 4. between questions
         bsWrite(ctx, BS_FILES.working);
-        const s4 = await bsUntil(h, ctx, (s) => s.working !== "");
+        await bsUntil(h, ctx, (s) => s.working !== "");
+        // with no question open and a board in the design the rail opens on Boards: Decided so far is its second tab
+        await bsRailTab(h, "second", true);
+        const s4 = await bsUntil(h, ctx, (s) => s.working !== "" && s.history.length > 0);
         await h.shot("cdp-shots/brainstorm-mode-4.png");
         rec(
             "4. between questions: Working in the question's place, no answer box, The design button, Q4 · just now in the rail",
@@ -30308,6 +30877,9 @@ const brainstormMode = {
             }
         };
         await step("restore document.hasFocus", () => h.ev("delete document.hasFocus"));
+        // the details rail and the agent tree, which the rail steps closed and folded to make the pane wide
+        await step("restore the details rail and the agent tree", () => bsRestoreLayout(h, ctx));
+        await step("restore the rail's dragged width", () => h.ev(restoreStorageKey(BS_RAIL_WIDTH_KEY, ctx.prevRailWidth)));
         await step("stop recording taskbar flashes", () => h.ev(BS_FLASH_REMOVE));
         await step("close the New run window", () => h.ev(`${NEW_RUN} ? (${PEEKS_ESC}, true) : false`));
         await step("stop recording sent lines", () => h.ev(BS_TYPED_REMOVE));

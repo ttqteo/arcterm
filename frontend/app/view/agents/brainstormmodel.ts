@@ -739,16 +739,18 @@ export function railGroups(f: BrainstormFile, base: string | null, partId?: stri
 export type RailTab = "boards" | "second";
 
 // The tabs the rail draws and the one it opens on. With a question open, Boards exists only when the question's part has
-// boards, and opens first, in the check too; a question with no boards leaves the second tab alone. With no question open
-// (the design, the judge's wait, the agent writing, the review), Boards exists when any part has a board, and opens
-// first in the design, but in the check the check's tab does
+// a board or a spike (a spike is a link in the part's group, so a part with only spikes still has something to list),
+// and opens first, in the check too; a question with neither leaves the second tab alone. With no question open (the
+// design, the judge's wait, the agent writing, the review), Boards exists when any part has a board or a spike, and
+// opens first in the design, but in the check the check's tab does. The tab's count is the boards, not the spikes
 export function railTabs(
     f: BrainstormFile,
     base: string | null,
     at: { question: boolean; check: boolean }
 ): { tabs: RailTab[]; first: RailTab } {
-    const boards = at.question ? questionBoards(f, base) != null : f.parts.some((p) => partBoards(f, p, base) != null);
-    if (!boards) {
+    const asked = f.question?.part ? f.parts.find((p) => p.id === f.question?.part) : undefined;
+    const listed = at.question ? hasMockups(f, asked, base) : f.parts.some((p) => hasMockups(f, p, base));
+    if (!listed) {
         return { tabs: ["second"], first: "second" };
     }
     return { tabs: ["boards", "second"], first: !at.question && at.check ? "second" : "boards" };
@@ -909,12 +911,6 @@ export function designUnder(f: BrainstormFile, designOpen: boolean, linePending 
     return designOpen ? mainView(f, false, linePending) : "design";
 }
 
-// a board opened from the question goes back to it; one opened from the design, to the design
-export function boardBackLabel(f: BrainstormFile | null, designOpen: boolean, linePending = false): string {
-    const view = f != null ? mainView(f, designOpen, linePending) : "design";
-    return view === "question" || view === "judging" ? "Back to the question" : "Back to the design";
-}
-
 // what the builder check's main area holds. The talk question comes first: the agent waits on it in the terminal, and
 // its answer may settle the builder's questions. The design opened over a question is the review
 export type CheckMain = "working" | "judging" | "question" | "builder" | "review";
@@ -1043,12 +1039,13 @@ export function checkClock(
 }
 
 // how many of the asked question's options a letter key picks: as many as the pane draws, up to the keys there are.
-// During the judge's wait the pane draws the approaches as the rows, so a key picks one of them
+// During the judge's wait the pane draws the approaches as the rows, so a key picks one of them. A board widened in the
+// rail leaves the question on screen, so it does not change the count
 export function pickableOptions(
     f: BrainstormFile | null,
-    s: { designOpen: boolean; board: string | null; removed: boolean; sent?: SentLine | null }
+    s: { designOpen: boolean; removed: boolean; sent?: SentLine | null }
 ): number {
-    if (f == null || s.board != null || s.removed) {
+    if (f == null || s.removed) {
         return 0;
     }
     const linePending = s.sent != null;
@@ -1664,8 +1661,10 @@ export function procExited(exit: { code: number; at: number } | undefined, sleep
     return exit != null && sleeping == null;
 }
 
-export type PaneView = "error" | "removed" | "exited" | "run" | "check" | "board" | "design";
+export type PaneView = "error" | "removed" | "exited" | "run" | "check" | "design";
 
+// `board` is the board widened in the rail (openBrainstormBoard): the pane keeps its view while one is, since the
+// question stays on screen beside it
 export function paneView(s: {
     file: BrainstormFile | null;
     error: string | null;
@@ -1683,17 +1682,14 @@ export function paneView(s: {
     if (s.exited && !s.showDesign && s.file?.run == null) {
         return "exited";
     }
-    if (s.board != null) {
-        return "board";
-    }
     if (s.file?.run != null) {
         return "run";
     }
     return s.file?.check != null ? "check" : "design";
 }
 
-// The one level the pane's back control steps up, or null where it draws none: a full-size board goes back to where
-// it was opened, and the design opened over the question or the working note goes back to it. Esc takes the same
+// The one level the pane's back control steps up, or null where it draws none: a widened board shrinks back to the
+// rail's width, and the design opened over the question or the working note goes back to it. Esc takes the same
 // step (agent:brainstorm-back), so the key and the controls cannot disagree on when there is one
 export type PaneBack = "board" | "design";
 
@@ -1702,7 +1698,8 @@ export function paneBack(
     f: BrainstormFile | null
 ): PaneBack | null {
     const view = paneView(s);
-    if (view === "board") {
+    // the rail draws a widened board in the design and in the check, and nowhere else
+    if (s.board != null && (view === "design" || view === "check")) {
         return "board";
     }
     if (f == null) {

@@ -22,7 +22,6 @@ import { projectOf, type AgentVM } from "./agentsviewmodel";
 import { Check } from "./brainstormcheck";
 import { BrainstormHints } from "./brainstormhintscard";
 import {
-    boardBackLabel,
     bodyBeyondGist,
     builderCheckView,
     checkClock,
@@ -56,6 +55,7 @@ import {
     type PartView,
     type Unseen,
 } from "./brainstormmodel";
+import { BrainstormRail, RailRow, type RailFocus } from "./brainstormrail";
 import { RunStep } from "./brainstormrun";
 import { sendBrainstorm } from "./brainstormsend";
 import {
@@ -63,7 +63,6 @@ import {
     brainstormSeenAtom,
     dismissBrainstorm,
     markBrainstormSeen,
-    openBrainstormBoard,
     openBrainstormDesign,
     shownBrainstormFile,
     updateBrainstorm,
@@ -87,7 +86,6 @@ import {
     lockTitle,
     onEnter,
     PART_BTN,
-    PartMockups,
     QuestionMain,
     SaidLine,
     SECTION_HEAD,
@@ -97,7 +95,7 @@ import {
     useAction,
     WorkingMain,
 } from "./brainstormui";
-import { CanvasPane, EdgeState, EXPLAINER } from "./canvaspane";
+import { EdgeState, EXPLAINER } from "./canvaspane";
 import { runtimeStartupCommand, type Runtime } from "./launch";
 import { SWAP_BTN, SWAP_PRIMARY_BTN } from "./swapbar";
 
@@ -152,23 +150,14 @@ export function BrainstormPane({ model, agent }: { model: AgentsViewModel; agent
             data-brainstorm-view={view}
             className="flex min-h-0 flex-1 flex-col"
         >
-            {/* how to use it, once per machine; not over a full-size board or a card that says the brainstorm is gone */}
-            {view === "removed" || view === "error" || view === "exited" || view === "board" ? null : (
-                <BrainstormHints />
-            )}
+            {/* how to use it, once per machine; not over a card that says the brainstorm is gone */}
+            {view === "removed" || view === "error" || view === "exited" ? null : <BrainstormHints />}
             {view === "removed" ? (
                 <Removed agent={agent} topic={s.topic} />
             ) : view === "error" ? (
                 <Unreadable s={s} />
             ) : view === "exited" ? (
                 <Exited model={model} agent={agent} s={s} exit={exit!} />
-            ) : view === "board" ? (
-                <CanvasPane
-                    model={model}
-                    agent={agent}
-                    onBack={() => openBrainstormBoard(agent.id, null)}
-                    backLabel={boardBackLabel(f, s.designOpen, s.sent != null)}
-                />
             ) : view === "run" ? (
                 <RunStep model={model} agent={agent} s={s} f={f!} />
             ) : view === "check" ? (
@@ -203,15 +192,23 @@ function Design({
     const [target, setTarget] = useState<string | null>(null);
     // the design's rows the user opened or closed; kept here so they survive the question taking the main area
     const [opened, setOpened] = useState<Record<string, boolean>>({});
+    // the part the rail is asked to show: every way a part opens sends it there, and a new nonce, even for the same
+    // part, moves the rail to that part's boards again
+    const [focus, setFocus] = useState<RailFocus | null>(null);
+    const focusRail = (partId: string) => setFocus((cur) => ({ partId, nonce: (cur?.nonce ?? 0) + 1 }));
     const check = builderCheckView(agent.builderCheck, s.sentCheckAt, s.file, s.modifiedMs, agent);
     const lock = editLock(f, check);
     const view = mainView(f, s.designOpen, s.sent != null);
     const seen = useAtomValue(brainstormSeenAtom)[s.path] ?? null;
     const unseen = unseenSince(f, seen);
+    // every question answered, newest first: the second tab's rows and its count
+    const history = historyRows(f, unseen).reverse();
+    const decided = history.filter((r) => r.kind === "question" && !r.dropped).length;
     // opens the parts' rows in the design and scrolls to the first
     const openParts = (ids: string[]) => {
         setOpened((o) => ({ ...o, ...Object.fromEntries(ids.map((id) => [id, true])) }));
         setTarget(ids[0]);
+        focusRail(ids[0]);
         openBrainstormDesign(agent.id, true);
     };
     const goTo = (id: string) => openParts([id]);
@@ -227,53 +224,80 @@ function Design({
         <>
             <Toolbar topic={s.topic} f={f} />
             <StaleBanner s={s} />
-            <div className="flex min-h-0 flex-1">
-                <div className="flex min-w-0 flex-1 flex-col bg-background">
-                    <motion.div
-                        key={view === "question" ? `question:${f.question!.n}` : view}
-                        variants={viewFade}
-                        initial="initial"
-                        animate="animate"
-                        className="flex min-h-0 flex-1 flex-col"
-                    >
-                        {view === "question" ? (
-                            <QuestionMain
-                                agent={agent}
-                                s={s}
-                                f={f}
-                                goTo={goTo}
-                                openDesign={openDesign}
-                                findings={
-                                    unseen.notes.length > 0
-                                        ? { count: unseen.notes.length, open: () => openParts(unseen.notes) }
-                                        : undefined
-                                }
-                            />
-                        ) : view === "judging" ? (
-                            <JudgingMain agent={agent} f={f} goTo={goTo} openDesign={openDesign} />
-                        ) : view === "working" ? (
-                            <WorkingMain f={f} openDesign={openDesign} />
-                        ) : (
-                            <DesignMain
-                                agent={agent}
-                                s={s}
-                                f={f}
-                                check={check}
-                                lock={lock}
-                                nowAtom={nowAtom}
-                                partsRef={partsRef}
-                                unseen={unseen}
-                                opened={opened}
-                                setOpen={(id, open) => setOpened((o) => ({ ...o, [id]: open }))}
-                            />
-                        )}
-                    </motion.div>
-                    {view === "design" ? (
-                        <LineBar agent={agent} box={lineBox(f, check.kind === "pending")} lock={lock} />
-                    ) : null}
-                </div>
-                <DecidedRail f={f} unseen={unseen} goTo={goTo} />
-            </div>
+            <RailRow
+                question={
+                    <>
+                        <motion.div
+                            key={view === "question" ? `question:${f.question!.n}` : view}
+                            variants={viewFade}
+                            initial="initial"
+                            animate="animate"
+                            className="flex min-h-0 flex-1 flex-col"
+                        >
+                            {view === "question" ? (
+                                <QuestionMain
+                                    agent={agent}
+                                    s={s}
+                                    f={f}
+                                    goTo={goTo}
+                                    openDesign={openDesign}
+                                    findings={
+                                        unseen.notes.length > 0
+                                            ? { count: unseen.notes.length, open: () => openParts(unseen.notes) }
+                                            : undefined
+                                    }
+                                />
+                            ) : view === "judging" ? (
+                                <JudgingMain agent={agent} f={f} goTo={goTo} openDesign={openDesign} />
+                            ) : view === "working" ? (
+                                <WorkingMain f={f} openDesign={openDesign} />
+                            ) : (
+                                <DesignMain
+                                    agent={agent}
+                                    s={s}
+                                    f={f}
+                                    check={check}
+                                    lock={lock}
+                                    nowAtom={nowAtom}
+                                    partsRef={partsRef}
+                                    unseen={unseen}
+                                    opened={opened}
+                                    setOpen={(id, open) => {
+                                        setOpened((o) => ({ ...o, [id]: open }));
+                                        if (open) {
+                                            focusRail(id);
+                                        }
+                                    }}
+                                />
+                            )}
+                        </motion.div>
+                        {view === "design" ? (
+                            <LineBar agent={agent} box={lineBox(f, check.kind === "pending")} lock={lock} />
+                        ) : null}
+                    </>
+                }
+                rail={
+                    <BrainstormRail
+                        agent={agent}
+                        s={s}
+                        f={f}
+                        question={view === "question"}
+                        focus={focus}
+                        second={{
+                            label: `Decided so far · ${decided}`,
+                            render: (tabbed) => (
+                                <DecidedRail
+                                    rows={history}
+                                    decided={decided}
+                                    working={f.working != null}
+                                    goTo={goTo}
+                                    heading={!tabbed}
+                                />
+                            ),
+                        }}
+                    />
+                }
+            />
         </>
     );
 }
@@ -327,7 +351,6 @@ function DesignMain({
         >
             <PartRow
                 agent={agent}
-                s={s}
                 f={f}
                 part={p}
                 lock={lock}
@@ -594,7 +617,6 @@ function Chevron({ open, onClick, className }: { open: boolean; onClick: () => v
 // a decision or a note in one line: dot, title, gist, where it came from, what to do; opened, the whole of it
 function PartRow({
     agent,
-    s,
     f,
     part,
     lock,
@@ -603,7 +625,6 @@ function PartRow({
     setOpen,
 }: {
     agent: AgentVM;
-    s: BrainstormState;
     f: BrainstormFile;
     part: BrainstormPart;
     lock: EditLock;
@@ -815,7 +836,6 @@ function PartRow({
                             {view === "changed" && !note ? <ChangeDiff part={part} /> : null}
                         </>
                     )}
-                    {view === "writing" ? null : <PartMockups agentId={agent.id} s={s} f={f} part={part} />}
                 </div>
             </PaneReveal>
             {act.error != null ? <span className={cn(ERROR_LINE, "px-[14px] pb-[8px]")}>{act.error}</span> : null}
@@ -865,32 +885,55 @@ function IntoLinks({
     );
 }
 
-// every question answered with all it offered, newest at the top, then the recon it all stood on
-function DecidedRail({ f, unseen, goTo }: { f: BrainstormFile; unseen: Unseen; goTo: (id: string) => void }) {
-    const rows = historyRows(f, unseen).reverse();
-    const decided = rows.filter((r) => r.kind === "question" && !r.dropped).length;
-    const working = f.working != null;
+// the nearest ancestor that scrolls: the rail's own aside when this is the whole rail, the tab's container when a tab
+// strip sits above it
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+    for (let p = el?.parentElement ?? null; p != null; p = p.parentElement) {
+        const overflow = getComputedStyle(p).overflowY;
+        if (overflow === "auto" || overflow === "scroll") {
+            return p;
+        }
+    }
+    return null;
+}
+
+// every question answered with all it offered, newest at the top, then the recon it all stood on. The rail around it
+// sizes and scrolls it; as a tab (heading false) the tab says what it is, so the heading line is left out
+function DecidedRail({
+    rows,
+    decided,
+    working,
+    goTo,
+    heading,
+}: {
+    rows: HistoryRow[];
+    decided: number;
+    working: boolean;
+    goTo: (id: string) => void;
+    heading: boolean;
+}) {
     const railRef = useRef<HTMLElement>(null);
     const shown = useRef(0);
     // a new entry lands at the top, so follow it
     useEffect(() => {
-        const el = railRef.current;
-        if (el != null && shown.current > 0 && rows.length > shown.current) {
-            el.scrollTo({ top: 0, behavior: "smooth" });
+        if (shown.current > 0 && rows.length > shown.current) {
+            scrollParent(railRef.current)?.scrollTo({ top: 0, behavior: "smooth" });
         }
         shown.current = rows.length;
     }, [rows.length]);
     return (
-        <aside
+        <section
             ref={railRef}
             data-brainstorm-rail
             aria-label="Decided so far"
-            className="flex w-[32%] min-w-[280px] max-w-[500px] flex-none flex-col overflow-y-auto border-l border-border bg-surface px-[24px] py-[22px]"
+            className={cn("flex flex-col px-[24px]", heading ? "py-[22px]" : "pb-[22px] pt-[14px]")}
         >
-            <div className="flex items-baseline gap-[8px] pb-[8px]">
-                <h2 className="m-0 text-[13px] font-semibold text-secondary">Decided so far · {decided}</h2>
-                <span className="text-[12px] text-muted">newest first</span>
-            </div>
+            {heading ? (
+                <div className="flex items-baseline gap-[8px] pb-[8px]">
+                    <h2 className="m-0 text-[13px] font-semibold text-secondary">Decided so far · {decided}</h2>
+                    <span className="text-[12px] text-muted">newest first</span>
+                </div>
+            ) : null}
             {rows.length === 0 ? (
                 <p className="m-0 border-t border-border pt-[12px] text-[12.5px] leading-[1.5] text-muted">
                     Each answer lands here, with the options it was picked from.
@@ -926,7 +969,7 @@ function DecidedRail({ f, unseen, goTo }: { f: BrainstormFile; unseen: Unseen; g
                     ))}
                 </AnimatePresence>
             </div>
-        </aside>
+        </section>
     );
 }
 
