@@ -1723,7 +1723,8 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             // The focused agent's conversation in the rail's Transcript tab. Deliberately NOT gated on !editable, like
             // fullscreen's chords: it is reached from inside the terminal. The agent is in the model's atoms, which a
             // when() cannot read (whenstate.ts), so run() looks it up and lets the key pass when it has no transcript
-            // (a plain terminal, or an agent that is not writing one yet).
+            // (a plain terminal, or an agent that is not writing one yet), or when it sleeps: its conversation is
+            // already in the terminal's place, and the rail has no Transcript tab then.
             id: "agent:transcript",
             keys: "Mod:Shift:f",
             group: "Agent",
@@ -1731,7 +1732,7 @@ export function buildAgentBindings(model: AgentsViewModel): Binding[] {
             when: fullscreenChordActive,
             run: () => {
                 const agent = globalStore.get(model.agentsAtom).find((a) => a.id === focusId());
-                if (!agent?.transcriptPath) {
+                if (!agent?.transcriptPath || agent.sleeping) {
                     return false;
                 }
                 openRailTranscript(agent.id);

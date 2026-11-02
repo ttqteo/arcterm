@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) A sleeping agent's rail has no Transcript tab: put an agent to sleep while its rail sits on Transcript
+  → the strip drops the Transcript icon and shows Overview; Ctrl+Shift+F does nothing; Wake → the tab returns and is
+  selected again. `agentdetailsrail.tsx` `hasTranscript`, "fix(agents): a sleeping agent's rail drops its Transcript
+  tab".
 - [ ] (arcterm) History run/council rows carry their badge on the meta line: Project Overview → History → a Run or
   Council row's title starts at the same left edge as a session's, and its second line reads "◆ Run · …" /
   "● Council · …"; unfold a council → the peek lines up under the title. `projecthistory.tsx` `KindLabel`,

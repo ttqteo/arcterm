@@ -46,6 +46,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A sleeping agent's side panel no longer offers a Transcript tab: its conversation already fills the terminal's place, and the tab comes back when it wakes.
 - A run or council in a project's History names its kind on its second line, so its title lines up with the sessions'.
 - Tables in agent messages, notes and councils wrap their cells to fit, instead of scrolling sideways.
 - The must-read sentence highlighted in a message is yellow, so it shows on a blue bubble too.
