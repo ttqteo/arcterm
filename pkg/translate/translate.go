@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package translate asks Google Translate for a text's translation and reads its answer. The rail's Quick translate
-// (wavesrv's translate command) fetches through Google; `wsh trans` fetches through translate-shell and reads the same
-// answer with Parse.
+// (wavesrv's translate command) goes through an Engine: Google first, then Apple Translation on the device when Google
+// cannot answer (engine.go, apple.go). `wsh trans` fetches through translate-shell and reads the same answer with
+// Parse.
 package translate
 
 import (
@@ -51,8 +52,8 @@ func Google(ctx context.Context, source, target, text string) (Answer, error) {
 	if strings.TrimSpace(text) == "" {
 		return Answer{}, nil
 	}
-	if n := utf8.RuneCountInString(text); n > MaxChars {
-		return Answer{}, fmt.Errorf("the text is %d characters; Google translates at most %d at a time", n, MaxChars)
+	if err := tooLong(text); err != nil {
+		return Answer{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, googleTimeout)
 	defer cancel()
@@ -67,13 +68,48 @@ func Google(ctx context.Context, source, target, text string) (Answer, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return Answer{}, fmt.Errorf("Google answered %s", resp.Status)
+		return Answer{}, &StatusError{Status: resp.Status, Code: resp.StatusCode, RetryAfter: retryAfter(resp.Header.Get("Retry-After"), time.Now())}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAnswerBytes))
 	if err != nil {
 		return Answer{}, fmt.Errorf("couldn't read Google's answer: %v", err)
 	}
 	return Parse(body)
+}
+
+// tooLong refuses text over MaxChars.
+func tooLong(text string) error {
+	if n := utf8.RuneCountInString(text); n > MaxChars {
+		return fmt.Errorf("the text is %d characters; Google translates at most %d at a time", n, MaxChars)
+	}
+	return nil
+}
+
+// StatusError is Google answering an HTTP status other than 200, such as 429 Too Many Requests.
+type StatusError struct {
+	Status     string        // "429 Too Many Requests"
+	Code       int           // 429
+	RetryAfter time.Duration // what its Retry-After header asked for; 0 when it sent none
+}
+
+func (e *StatusError) Error() string {
+	return "Google answered " + e.Status
+}
+
+// retryAfter reads a Retry-After header, a count of seconds or an HTTP date, as a wait from now; 0 for none or one it
+// cannot read.
+func retryAfter(h string, now time.Time) time.Duration {
+	h = strings.TrimSpace(h)
+	if h == "" {
+		return 0
+	}
+	if s, err := strconv.Atoi(h); err == nil {
+		return max(time.Duration(s)*time.Second, 0)
+	}
+	if t, err := http.ParseTime(h); err == nil {
+		return max(t.Sub(now), 0)
+	}
+	return 0
 }
 
 // Parse reads Google's answer, a JSON array, as it came over the wire: either the array itself or the array in HTTP

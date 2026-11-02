@@ -5,15 +5,24 @@ package wshserver
 
 import (
 	"context"
+	"sync"
 
 	"github.com/wavetermdev/waveterm/pkg/translate"
+	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
-// TranslateCommand asks Google for the text's translation. Source answers the language Google detected, or, when it
-// named none and the request did not say "auto", the request's own.
+// one engine for wavesrv's life, so a 429's rest holds across requests; made on the first request, once
+// WAVETERM_APP_PATH is read
+var translateEngine = sync.OnceValue(func() *translate.Engine {
+	return translate.NewEngine(wavebase.GetWaveAppBinPath())
+})
+
+// TranslateCommand translates through Google, or through Apple Translation on a Mac when Google cannot answer
+// (translate.Engine). Source answers the language detected, or, when none was named and the request did not say
+// "auto", the request's own.
 func (ws *WshServer) TranslateCommand(ctx context.Context, data wshrpc.CommandTranslateData) (*wshrpc.CommandTranslateRtnData, error) {
-	a, err := translate.Google(ctx, data.Source, data.Target, data.Text)
+	a, err := translateEngine().Translate(ctx, data.Source, data.Target, data.Text)
 	if err != nil {
 		return nil, err
 	}

@@ -25,6 +25,7 @@ import {
     HISTORY_SETTLE_MS,
     PAIR_KEY,
     TRANSLATE_DEBOUNCE_MS,
+    TRANSLATE_TIMEOUT_MS,
     translateErrorLine,
     type TranslateResult,
 } from "./translatemodel";
@@ -100,7 +101,11 @@ describe("setTranslateText", () => {
         expect(rpc).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(1);
         expect(rpc).toHaveBeenCalledTimes(1);
-        expect(rpc).toHaveBeenCalledWith({}, { source: "en", target: "vi", text: "compaction" });
+        expect(rpc).toHaveBeenCalledWith(
+            {},
+            { source: "en", target: "vi", text: "compaction" },
+            { timeout: TRANSLATE_TIMEOUT_MS }
+        );
         expect(result()).toEqual(answer("vi:compaction"));
     });
     it("shows the text at once, before any request", () => {
@@ -200,7 +205,11 @@ describe("setPair", () => {
         setPair({ source: "en", target: "fr" });
         await vi.advanceTimersByTimeAsync(0);
         expect(rpc).toHaveBeenCalledTimes(1);
-        expect(rpc).toHaveBeenCalledWith({}, { source: "en", target: "fr", text: "hello" });
+        expect(rpc).toHaveBeenCalledWith(
+            {},
+            { source: "en", target: "fr", text: "hello" },
+            { timeout: TRANSLATE_TIMEOUT_MS }
+        );
         expect(pair()).toEqual({ source: "en", target: "fr" });
     });
     it("sends nothing for a blank box", async () => {
@@ -246,7 +255,11 @@ describe("swapTranslate", () => {
         expect(text()).toBe("vi:hello");
         expect(result()).toBeNull();
         await vi.advanceTimersByTimeAsync(0);
-        expect(rpc).toHaveBeenCalledWith({}, { source: "vi", target: "en", text: "vi:hello" });
+        expect(rpc).toHaveBeenCalledWith(
+            {},
+            { source: "vi", target: "en", text: "vi:hello" },
+            { timeout: TRANSLATE_TIMEOUT_MS }
+        );
         expect(result()).toEqual(answer("vi:vi:hello"));
     });
     it("uses the detected language as the target when the source is Detect language", async () => {
@@ -552,7 +565,11 @@ describe("the paste suggestion", () => {
         expect(clip()).toBeNull();
         // the engine asks once its on-device check has passed: a tick, far short of TRANSLATE_DEBOUNCE_MS
         await vi.advanceTimersByTimeAsync(0);
-        expect(rpc).toHaveBeenCalledWith({}, { source: "en", target: "vi", text: "At a glance" });
+        expect(rpc).toHaveBeenCalledWith(
+            {},
+            { source: "en", target: "vi", text: "At a glance" },
+            { timeout: TRANSLATE_TIMEOUT_MS }
+        );
         expect(result()).toEqual(answer("vi:At a glance"));
     });
     it("replaces the text the box held", async () => {

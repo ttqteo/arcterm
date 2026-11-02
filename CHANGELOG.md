@@ -185,6 +185,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Translate keeps working when Google turns it away ("429 Too Many Requests") or cannot be reached: on a Mac, Apple
+  Translation answers on the device instead (macOS 26 or later, with the language pair downloaded in System Settings →
+  General → Language & Region → Translation Languages; it adds no phonetics or word classes). After a 429, arcterm
+  leaves Google alone for a few minutes instead of asking again on every edit, and the error says until when.
+  <!-- try: translate -->
 - The New project search no longer matches every folder when you type your user name: it reads paths from `~`, and
   lists the folders whose name matches before the ones that match only by path.
 - A running task's mark in a run's graph sits back in the middle of its pulsing ring, and every task's mark lines up

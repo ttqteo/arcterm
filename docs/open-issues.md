@@ -358,6 +358,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   speaker in the box reads the English word and the one beside copy reads the Vietnamese (on a Mac, the Linh voice;
   with none installed the button is off and its tooltip says so), and closing the panel stops it. Untried in WKWebView,
   which no CDP scenario reaches. (commit "feat(translate): a history with stars, and listen buttons")
+- [ ] (arcterm) Translate's Apple Translation fallback, on a Mac with macOS 26+ after a build: `ls
+  /Applications/arcterm.app/Contents/Resources/bin/apple-translate.arm64` is there. With the Wi-Fi off, type
+  "Contrarian" (English → Vietnamese): a translation comes back after a second or two, with no phonetic or word class;
+  with Detect language as the source, it names English. English → a language whose pack is not downloaded shows the error naming the pack and
+  System Settings → Translation Languages, and no macOS download sheet opens over arcterm. Not seen in the app: Google's
+  429 path and the helper were only run from Go tests and the shell. (commit "feat(translate): fall back to Apple
+  Translation on the device when Google cannot answer")
 - [ ] (arcterm) The File tab's Back to the top button: open a long `.md` file in an agent's File tab (Preview), scroll
   down and press the arrow-to-line button in the header; the document glides back to its top. Do the same with a long
   `.html` file (needs a wavesrv built after this change). Source and Diff show no such button.

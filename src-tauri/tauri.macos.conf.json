@@ -28,6 +28,7 @@
       "../dist/bin/wavesrv.x64.exe": null,
       "../dist/bin/wsh-*-windows.x64.exe": null,
       "../dist/bin/wavesrv.arm64": "bin/wavesrv.arm64",
+      "../dist/bin/apple-translate.arm64": "bin/apple-translate.arm64",
       "../dist/bin/wsh-*-darwin.arm64": "bin/"
     },
     "macOS": { "signingIdentity": "arcterm_local_mac", "minimumSystemVersion": "13.0" }
