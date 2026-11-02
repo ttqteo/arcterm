@@ -35,6 +35,10 @@ does not, say what you saw and it becomes a bug row under Actionable.
   so close it with Escape or a pick. Not run by `float-mini` step 4:
   the Final's dev window never resizes, so the scenario stops at Minimize. `petpeek.tsx`, "feat(pet): the pin and its
   stay menu in the peek header".
+- [ ] (arcterm) Quiet Jarvis peek title beside the stay pin: with nothing waiting, click Sprout → the header reads
+  "Nothing waiting on you" in full, then the pin, Full view and close, with no "…". Or run
+  `task verify:ui -- pet-stay jarvis-peek` (pet-stay step 5, jarvis-peek step 3): run 72f2cf48's round-2 Final never
+  booted its dev app. `petpeek.tsx` quiet cap 332 px, "fix(pet): The quiet peek's title fits beside the stay pin".
 - [ ] (arcterm) Council follow-up answers don't echo the first one: in a council that has a report, send a yes/no
   question to Everyone → the first seat answers it; the others open with their own new point (no "Đúng" / "Mình đồng
   ý" / "Agreed", no repeat of the first seat's caveat) or show as "X agrees". Seen failing in council 7096c31c (r64–r67)
