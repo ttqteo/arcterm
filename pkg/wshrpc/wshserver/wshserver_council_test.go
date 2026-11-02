@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -2341,5 +2342,94 @@ func TestBenchReminderIgnoresArchivedAndReportsFailures(t *testing.T) {
 	f = &fakeEfforts{mutateErr: errors.New("EC-INVALID-DUE")}
 	if err := addBenchReminder(ctx, f.api(), now); err == nil || !strings.Contains(err.Error(), "EC-INVALID-DUE") {
 		t.Errorf("mutate failure = %v, want it returned", err)
+	}
+}
+
+// A reply may attach only what the composer kept: an existing file directly inside one upload folder under the kept
+// root (<root>/<folder>/<name>). The whole reply is refused for any other path, and the error names it.
+func TestCheckCouncilAttachments(t *testing.T) {
+	root := t.TempDir()
+	write := func(path string) string {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("png"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	kept := write(filepath.Join(root, "2026-11-02-a1b2", "shot.png"))
+	other := write(filepath.Join(root, "2026-11-02-c3d4", "diagram.png"))
+	direct := write(filepath.Join(root, "loose.png"))
+	deep := write(filepath.Join(root, "2026-11-02-a1b2", "sub", "shot.png"))
+	outside := write(filepath.Join(t.TempDir(), "2026-11-02-a1b2", "shot.png"))
+	folder := filepath.Join(root, "2026-11-02-a1b2")
+	missing := filepath.Join(root, "2026-11-02-a1b2", "gone.png")
+	newline := write(filepath.Join(root, "2026-11-02-e5f6", "a.png")) + "\n- /etc/passwd"
+
+	if err := checkCouncilAttachments(root, nil); err != nil {
+		t.Errorf("no attachments = %v, want none to check", err)
+	}
+	if err := checkCouncilAttachments(root, []string{kept, other}); err != nil {
+		t.Errorf("two kept files in two folders = %v, want them accepted", err)
+	}
+	if runtime.GOOS == "windows" { // paths compare without regard to case there
+		if err := checkCouncilAttachments(strings.ToUpper(root), []string{kept}); err != nil {
+			t.Errorf("the same folder in another case = %v, want it accepted on Windows", err)
+		}
+	}
+
+	refused := []struct {
+		name, path string
+	}{
+		{"a path outside the root", outside},
+		{"a file directly in the root", direct},
+		{"a file two folders deep", deep},
+		{"a folder", folder},
+		{"a missing file", missing},
+		{"a relative path", filepath.Join("2026-11-02-a1b2", "shot.png")},
+		{"an empty path", ""},
+		{"a path that breaks the one-line block", newline},
+	}
+	for _, tc := range refused {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkCouncilAttachments(root, []string{kept, tc.path})
+			if err == nil {
+				t.Fatalf("checkCouncilAttachments accepted %q", tc.path)
+			}
+			if tc.path != "" && !strings.Contains(err.Error(), fmt.Sprintf("%q", tc.path)) {
+				t.Errorf("error = %v, want it to name %q", err, tc.path)
+			}
+		})
+	}
+
+	// a kept root that does not exist yet holds nothing
+	if err := checkCouncilAttachments(filepath.Join(root, "nope"), []string{kept}); err == nil {
+		t.Errorf("a missing root accepted a path")
+	}
+
+	// a link inside the root that leads outside it is the file it leads to
+	if link := filepath.Join(root, "2026-11-02-link", "shot.png"); os.MkdirAll(filepath.Dir(link), 0o755) == nil {
+		if err := os.Symlink(outside, link); err != nil {
+			t.Logf("no symlinks here (%v): skipping the link check", err)
+		} else if err := checkCouncilAttachments(root, []string{link}); err == nil {
+			t.Errorf("a link out of the root was accepted")
+		}
+	}
+}
+
+// The command refuses the reply before it posts or seats anything when an attachment is not a kept file.
+func TestCouncilReplyRefusesAnAttachmentThatIsNotKept(t *testing.T) {
+	useCouncilStore(t)
+	stray := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(stray, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := (&WshServer{}).CouncilReplyCommand(context.Background(), wshrpc.CommandCouncilReplyData{
+		Id: "c1", Text: "look at this", Attachments: []string{stray},
+	})
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%q", stray)) {
+		t.Errorf("CouncilReplyCommand = %v, want the refusal naming %q", err, stray)
 	}
 }

@@ -372,20 +372,25 @@ func SpecForTier(runtime string, tier Tier) (RuntimeSpec, bool) {
 }
 
 // CallOpts is what one claude call picks for itself, where a tier only picks a model class: the
-// model alias (empty keeps the operator's default) and the tools it may use (empty gives it none).
+// model alias (empty keeps the operator's default), the tools it may use (empty gives it none), and the folders
+// outside its working directory those tools may read (AddDirs; empty adds none).
 type CallOpts struct {
-	Model string
-	Tools []string
+	Model   string
+	Tools   []string
+	AddDirs []string
 }
 
 // ClaudeArgs is claude's argument list for one call (prompt excluded): the one-shot base, then
-// --model when set, then --tools and --strict-mcp-config. --tools "" is the empty list, which gives
-// the run no tools; --strict-mcp-config stops the account's connector tools loading despite --tools
-// (Radar's audit and the memory judge pass the same pair).
+// --model when set, then one --add-dir per folder in AddDirs, then --tools and --strict-mcp-config. --tools "" is
+// the empty list, which gives the run no tools; --strict-mcp-config stops the account's connector tools loading
+// despite --tools (Radar's audit and the memory judge pass the same pair).
 func ClaudeArgs(o CallOpts) []string {
 	args := append([]string{}, runtimeSpecs["claude"].BaseArgs...)
 	if o.Model != "" {
 		args = append(args, "--model", o.Model)
+	}
+	for _, dir := range o.AddDirs {
+		args = append(args, "--add-dir", dir)
 	}
 	return append(args, "--tools", strings.Join(o.Tools, ","), "--strict-mcp-config")
 }

@@ -3588,12 +3588,367 @@ func TestMentions(t *testing.T) {
 	}
 }
 
+// fileMentionTable is the one example table of the file-mention rule, the same rows the frontend's tests hold: an @ that
+// does not follow a letter, digit or _, then the longest run of letters, digits, _ - . / ~ with its trailing dots
+// dropped, is a file mention when what is left holds a / or a . A seat or a chat is never named by one.
+var fileMentionTable = []struct {
+	text string
+	path string // the file mention's path; "" when the text holds none
+	seat string // "ux" for the UX seat, "chat" for the chat keyed 3e19c0d2-a, "" for nothing
+}{
+	{"@ux/plan.md", "ux/plan.md", ""},
+	{"@ram.go", "ram.go", ""},
+	{"@./x", "./x", ""},
+	{"@~/x", "~/x", ""},
+	{"@3e19c0d2-a/x.ts", "3e19c0d2-a/x.ts", ""},
+	{"@UX", "", "ux"},
+	{"@UX.", "", "ux"},
+	{"@UX..", "", "ux"},
+	{"@UX,", "", "ux"},
+	{"@3e19c0d2-a", "", "chat"},
+}
+
+func TestFileMentioned(t *testing.T) {
+	for _, row := range fileMentionTable {
+		for _, text := range []string{row.text, "see " + row.text + " first", row.text + " and more", "(" + row.text + ")"} {
+			var want []string
+			if row.path != "" {
+				want = []string{row.path}
+			}
+			if got := fileMentions(text); !slices.Equal(got, want) {
+				t.Errorf("fileMentions(%q) = %q, want %q", text, got, want)
+			}
+			if got := fileMentioned(text); got != (row.path != "") {
+				t.Errorf("fileMentioned(%q) = %v, want %v", text, got, row.path != "")
+			}
+		}
+	}
+	for text, want := range map[string]bool{
+		"mail x@ram.com":                false, // an @ after a letter is an address
+		"a_@b.c":                        false, // and after _, and after a digit
+		"1@b.c":                         false,
+		"@.":                            false, // nothing but dots is nothing
+		"@":                             false,
+		"no mention, just a file.go":    false,
+		"@@a/b":                         true, // the second @ follows an @, which is no word character
+		"first @UX, then @docs/spec.md": true,
+		"@src/área.go":                  true, // letters are any script's
+		"look at @a/b.md":               true,
+	} {
+		if got := fileMentioned(text); got != want {
+			t.Errorf("fileMentioned(%q) = %v, want %v", text, got, want)
+		}
+	}
+	if got := fileMentions("@a/b.md, then @c.go. and @d/e/f.ts.."); !slices.Equal(got, []string{"a/b.md", "c.go", "d/e/f.ts"}) {
+		t.Errorf("fileMentions of three = %q, want the paths in order, sentence dots dropped", got)
+	}
+}
+
+func TestMentionsSkipFileMentions(t *testing.T) {
+	const chatTab = "3e19c0d2-a1b2-4c3d-8e9f-000000000001"
+	c := withChatSeats(testCouncil("c1"), chatSeat(chatTab, "Scout"))
+	chat := "agent-" + chatTab
+	for _, row := range fileMentionTable {
+		var want []string
+		switch row.seat {
+		case "ux":
+			want = []string{"ux"}
+		case "chat":
+			want = []string{chat}
+		}
+		for _, text := range []string{row.text, "see " + row.text + " first", row.text + " and more"} {
+			if got := mentioned(c, text); !slices.Equal(got, want) {
+				t.Errorf("mentioned(%q) reaches %v, want %v", text, got, want)
+			}
+		}
+	}
+
+	// the whole-word check is the same: a file's path never counts as the seat's name
+	for text, want := range map[string]bool{
+		"@ux/plan.md":      false,
+		"@ux.md":           false,
+		"@ux":              true,
+		"@ux.":             true,
+		"@ux/plan.md @ux":  true, // a real mention beside the file
+		"@ux,@ux/plan.md":  true,
+		"x@ux/plan.md":     false,
+		"@ux/plan.md in @": false,
+	} {
+		if got := mentions(strings.ToLower(text), "@ux"); got != want {
+			t.Errorf("mentions(%q, @ux) = %v, want %v", text, got, want)
+		}
+	}
+
+	// the same through a reply: a path never narrows who answers, the whole council does
+	h := newHarness(t)
+	h.save(fixtureCouncil("c2", StateAwaiting, 2))
+	got, err := h.r.Reply("c2", "", "", "What about @ux/plan.md and @ram.go?", false, nil)
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if to := got.Replies[len(got.Replies)-1].To; !slices.Equal(to, panelIds()) {
+		t.Errorf("a reply naming two files went to %v, want the whole council %v", to, panelIds())
+	}
+}
+
 func TestNextIdsIgnoreGapsAndStrangers(t *testing.T) {
 	if got := nextNumbered("P", nil); got != "P1" {
 		t.Errorf("first = %s", got)
 	}
 	if got := nextNumbered("r", []string{"r1", "r7", "x9", "r3", "rx"}); got != "r8" {
 		t.Errorf("next = %s, want one past the largest r<n>", got)
+	}
+}
+
+// ---- attachments ----
+
+// attached is a path of an image the composer kept: <root>/<folder>/<name>. Nothing checks it exists here: the server does.
+func attached(folder, name string) string {
+	return filepath.Join(os.TempDir(), "arc-attachments", folder, name)
+}
+
+func TestReplyStoresAttachments(t *testing.T) {
+	h := newHarness(t)
+	h.save(fixtureCouncil("c1", StateAwaiting, 2))
+	one, two := attached("2026-11-02-a1", "one.png"), attached("2026-11-02-b2", "two.png")
+
+	got, err := h.r.Reply("c1", "P1", "", "What is wrong in these?", false, nil, one, two)
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	stored := replyOf(t, h.load("c1"), "r3")
+	if !slices.Equal(stored.Attachments, []string{one, two}) || stored.Author != YouId || stored.Text != "What is wrong in these?" {
+		t.Errorf("stored reply = %+v, want the two paths in the order sent", stored)
+	}
+	if !reflect.DeepEqual(replyOf(t, got, "r3").Attachments, stored.Attachments) {
+		t.Errorf("Reply returned %v, want what was stored %v", replyOf(t, got, "r3").Attachments, stored.Attachments)
+	}
+
+	// a reply with none stores none, and the caller's slice is not kept by reference
+	if _, err := h.r.Reply("c1", "P1", "", "And without?", false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if plain := replyOf(t, h.load("c1"), "r4"); plain.Attachments != nil || plain.Tools {
+		t.Errorf("a reply with no attachment stored %+v, want none and Tools as sent", plain)
+	}
+	sent := []string{one}
+	if _, err := h.r.Reply("c1", "P1", "", "Mutate after?", false, nil, sent...); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	sent[0] = "changed"
+	if kept := replyOf(t, h.load("c1"), "r5").Attachments; !slices.Equal(kept, []string{one}) {
+		t.Errorf("stored attachments = %v, want them unchanged by the caller", kept)
+	}
+}
+
+// A reply with an attachment is stored with Tools on whatever the client sent, in a round and in a follow-up alike, so
+// every seat that answers it can read the file.
+func TestReplyForcesToolsForAttachments(t *testing.T) {
+	h := newHarness(t)
+	h.save(fixtureCouncil("c1", StateAwaiting, 2))
+	img := attached("2026-11-02-a1", "one.png")
+
+	got, err := h.r.Reply("c1", "P1", "", "Look at this?", false, nil, img)
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if posted := replyOf(t, got, "r3"); !posted.Tools {
+		t.Errorf("a reply with an attachment sent with Tools false was stored %+v, want Tools on", posted)
+	}
+
+	// a follow-up of a council that is done: the call that answers it has the tools
+	done := h.run(testCouncil("c2"))
+	rep, err := h.r.Reply("c2", "", "", "What do you see here?", false, nil, img)
+	if err != nil {
+		t.Fatalf("follow-up Reply: %v", err)
+	}
+	posted := repliesBy(rep, YouId)[0]
+	if !posted.Tools || posted.Round != followRound(done) {
+		t.Fatalf("follow-up reply = %+v, want Tools on in round %d", posted, followRound(done))
+	}
+	h.wait("c2")
+	ans := h.f.calls("ans")
+	if len(ans) == 0 {
+		t.Fatal("the follow-up made no answer call")
+	}
+	for _, req := range ans {
+		if !req.Tools {
+			t.Errorf("answer call for %s had Tools false, want the files readable", req.Expert.Id)
+		}
+	}
+}
+
+// An @ file in the text forces Tools too, by the same rule the seat matcher uses to leave it out.
+func TestReplyForcesToolsForFileMention(t *testing.T) {
+	for _, tc := range []struct {
+		name, text string
+		want       bool
+	}{
+		{"a path", "Is @a/b.md still right?", true},
+		{"a file with no folder", "What does @main.go do?", true},
+		{"a seat's name", "@UX is it findable?", false},
+		{"an address", "mail x@ram.com", false},
+		{"a path after a real mention", "@UX and @docs/spec.md?", true},
+		{"no @ at all", "Is a/b.md still right?", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.save(fixtureCouncil("c1", StateAwaiting, 2))
+			got, err := h.r.Reply("c1", "P1", "", tc.text, false, nil)
+			if err != nil {
+				t.Fatalf("Reply: %v", err)
+			}
+			if posted := replyOf(t, got, "r3"); posted.Tools != tc.want {
+				t.Errorf("%q stored Tools %v, want %v", tc.text, posted.Tools, tc.want)
+			}
+		})
+	}
+
+	// and a follow-up with a file in its text is answered with the tools
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	if _, err := h.r.Reply("c1", "", "", "Check @pkg/services/idle.go for me.", false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	h.wait("c1")
+	for _, req := range h.f.calls("ans") {
+		if !req.Tools {
+			t.Errorf("answer call for %s had Tools false, want it on for a file in the text", req.Expert.Id)
+		}
+	}
+}
+
+// The call that answers a reply may read the folder of each image attached to it, once each, and nothing else.
+func TestCallAddDirsFromAttachments(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	one, two, three := attached("2026-11-02-a1", "one.png"), attached("2026-11-02-b2", "two.png"), attached("2026-11-02-a1", "three.png")
+
+	if _, err := h.r.Reply("c1", "", "", "Compare these.", false, nil, one, two, three); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	asked := repliesBy(h.wait("c1"), YouId)[0].Id
+	want := []string{filepath.Dir(one), filepath.Dir(two)}
+	ans := h.f.calls("ans")
+	if len(ans) != 4 {
+		t.Fatalf("%d answer calls, want one per expert", len(ans))
+	}
+	for _, req := range ans {
+		if !req.Tools || !slices.Equal(req.AddDirs, want) {
+			t.Errorf("answer call for %s: tools %v, folders %v, want tools and exactly %v", req.Expert.Id, req.Tools, req.AddDirs, want)
+		}
+		mustContain(t, "answer prompt for "+req.Expert.Id, req.Prompt,
+			"The person's reply ["+asked+"]: Compare these.\nAttachments (read these files):\n- "+one+"\n- "+two+"\n- "+three+"\n")
+	}
+
+	// the next follow-up has no attachment: no folder, and the tools are off as the client sent
+	if _, err := h.r.Reply("c1", "", "", "Thanks, and without them?", false, nil); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	h.wait("c1")
+	for _, req := range h.f.calls("ans")[4:] {
+		if req.Tools || len(req.AddDirs) != 0 {
+			t.Errorf("a follow-up with no attachment ran with tools %v and folders %v, want neither", req.Tools, req.AddDirs)
+		}
+		mustNotContain(t, "answer prompt for "+req.Expert.Id, req.Prompt, "read these files", "arc-attachments")
+	}
+}
+
+// An answer that prints an ancestor reply of the person's with an image may read that image's folder too, and shows its
+// block, even when the new reply itself carries nothing.
+func TestCallAddDirsFromAncestorReply(t *testing.T) {
+	h := newHarness(t)
+	h.run(testCouncil("c1"))
+	img := attached("2026-11-02-a1", "one.png")
+	if _, err := h.r.Reply("c1", "P1", "", "What is wrong in this?", false, nil, img); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	c := h.wait("c1")
+	you := repliesBy(c, YouId)
+	var answer CouncilReply
+	for _, x := range c.Replies {
+		if x.ParentId == you[0].Id {
+			answer = x
+		}
+	}
+	if answer.Id == "" {
+		t.Fatal("the first reply got no answer to reply under")
+	}
+	before := len(h.f.calls("ans"))
+
+	if _, err := h.r.Reply("c1", "P1", answer.Id, "And the second part?", false, nil); err != nil {
+		t.Fatalf("second Reply: %v", err)
+	}
+	second := repliesBy(h.wait("c1"), YouId)[1].Id
+	calls := h.f.calls("ans")[before:]
+	if len(calls) == 0 {
+		t.Fatal("the second reply made no answer call")
+	}
+	for _, req := range calls {
+		if !req.Tools || !slices.Equal(req.AddDirs, []string{filepath.Dir(img)}) {
+			t.Errorf("answer call for %s: tools %v, folders %v, want tools and the first reply's folder", req.Expert.Id, req.Tools, req.AddDirs)
+		}
+		above := section(t, req.Prompt, "## Reply "+second)
+		mustContain(t, "the replies above it", above, "The replies above it", "Attachments (read these files):\n- "+img+"\n")
+		if n := strings.Count(req.Prompt, "read these files"); n != 1 {
+			t.Errorf("the prompt names the block %d times, want once, under the ancestor", n)
+		}
+	}
+}
+
+// A reply sent at the pause is answered in round 2: the seats it is addressed to get the tools and its folders, the
+// others none, and a round 2 with no such ask stays without tools.
+func TestRound2ReadsAttachedAsk(t *testing.T) {
+	h := newHarness(t)
+	c := testCouncil("c1")
+	c.PauseAfterRound1 = true
+	if got := h.run(c); got.State != StateAwaiting {
+		t.Fatalf("council = %s, want it paused after round 1", got.State)
+	}
+	img := attached("2026-11-02-a1", "one.png")
+	if _, err := h.r.Reply("c1", "", "", "@UX what does this show?", false, nil, img); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if _, err := h.r.Continue("c1", nil, ""); err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	h.wait("c1")
+
+	r2 := h.f.calls("r2")
+	if len(r2) != 4 {
+		t.Fatalf("%d round 2 calls, want one per expert", len(r2))
+	}
+	for _, req := range r2 {
+		if req.Expert.Id == "ux" {
+			if !req.Tools || !slices.Equal(req.AddDirs, []string{filepath.Dir(img)}) {
+				t.Errorf("UX's round 2 call: tools %v, folders %v, want tools and %v", req.Tools, req.AddDirs, filepath.Dir(img))
+			}
+			mustContain(t, "UX's round 2 prompt", req.Prompt, "Attachments (read these files):\n- "+img+"\n")
+			mustNotContain(t, "UX's round 2 prompt", req.Prompt, "You have no tools in this round", "You cannot read the code in this round, so")
+			continue
+		}
+		if req.Tools || len(req.AddDirs) != 0 {
+			t.Errorf("%s's round 2 call: tools %v, folders %v, want none: nothing was asked of it", req.Expert.Id, req.Tools, req.AddDirs)
+		}
+		mustContain(t, req.Expert.Id+"'s round 2 prompt", req.Prompt, "You have no tools in this round")
+		mustNotContain(t, req.Expert.Id+"'s round 2 prompt", req.Prompt, "read these files")
+	}
+	if r := replyOf(t, h.load("c1"), "r1"); !r.Answered || !r.Tools {
+		t.Errorf("the ask = %+v, want it answered, stored with Tools on", r)
+	}
+
+	// a round 2 with no ask keeps no tools and no folder
+	plain := testCouncil("c2")
+	plain.PauseAfterRound1 = true
+	h.run(plain)
+	if _, err := h.r.Continue("c2", nil, ""); err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	h.wait("c2")
+	for _, req := range h.f.calls("r2")[4:] {
+		if req.Tools || len(req.AddDirs) != 0 {
+			t.Errorf("a round 2 with no ask ran %s with tools %v and folders %v", req.Expert.Id, req.Tools, req.AddDirs)
+		}
 	}
 }
 
@@ -3660,6 +4015,34 @@ func TestConsultCallerGivesToolsAndASlotToTheCallsThatReadCode(t *testing.T) {
 	}
 	if len(opts.Tools) != 0 || len(held) != 1 {
 		t.Errorf("tools %v, slots %d, want none of either", opts.Tools, len(held))
+	}
+}
+
+// The folders a request may read outside the project reach claude as the call's --add-dir list, exactly: the attached
+// images' own folders, nothing wider, and none for a request that names none.
+func TestConsultCallerPassesAddDirs(t *testing.T) {
+	var opts consult.CallOpts
+	swapCaller(t,
+		func(ctx context.Context, c, prompt string, o consult.CallOpts, onTool func(string)) (string, consult.Usage, error) {
+			opts = o
+			return "the reply", consult.Usage{}, nil
+		},
+		func(ctx context.Context, req jobqueue.Request) (func(), error) { return func() {}, nil })
+	e := CouncilExpert{Id: "ux", Name: "UX", Model: "opus"}
+	dirs := []string{filepath.Join("home", ".arc", "attachments", "2026-11-02-a1"), filepath.Join("home", ".arc", "attachments", "2026-11-02-b2")}
+
+	if _, err := (ConsultCaller{}).Call(context.Background(), CallReq{Expert: e, Cwd: `D:\proj`, Prompt: "p", Tools: true, AddDirs: dirs}); err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if !reflect.DeepEqual(opts.AddDirs, dirs) || !reflect.DeepEqual(opts.Tools, []string{"Read", "Grep", "Glob"}) {
+		t.Errorf("claude was run with %+v, want Read, Grep and Glob and exactly the folders %v", opts, dirs)
+	}
+
+	if _, err := (ConsultCaller{}).Call(context.Background(), CallReq{Expert: e, Cwd: `D:\proj`, Prompt: "p", Tools: true}); err != nil {
+		t.Fatalf("Call with none: %v", err)
+	}
+	if len(opts.AddDirs) != 0 {
+		t.Errorf("a request with no folders ran claude with --add-dir %v", opts.AddDirs)
 	}
 }
 

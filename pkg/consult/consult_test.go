@@ -292,6 +292,29 @@ func TestClaudeArgsWithModelAndTools(t *testing.T) {
 	}
 }
 
+// A call that may read a few folders outside its working directory gets one --add-dir per folder, after --model and
+// before --tools; one with none gets no flag at all.
+func TestClaudeArgsAddDirs(t *testing.T) {
+	base, _ := SpecFor("claude")
+	got := ClaudeArgs(CallOpts{Model: "sonnet", Tools: []string{"Read"}, AddDirs: []string{`C:\att\a-1`, `C:\att\b-2`}})
+	want := append(append([]string{}, base.BaseArgs...), "--model", "sonnet",
+		"--add-dir", `C:\att\a-1`, "--add-dir", `C:\att\b-2`, "--tools", "Read", "--strict-mcp-config")
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	// with no model the folders still come before --tools
+	got = ClaudeArgs(CallOpts{Tools: []string{"Read"}, AddDirs: []string{"/x"}})
+	want = append(append([]string{}, base.BaseArgs...), "--add-dir", "/x", "--tools", "Read", "--strict-mcp-config")
+	if !slices.Equal(got, want) {
+		t.Errorf("no model: got %v, want %v", got, want)
+	}
+	for _, dirs := range [][]string{nil, {}} {
+		if got := ClaudeArgs(CallOpts{Model: "sonnet", AddDirs: dirs}); slices.Contains(got, "--add-dir") {
+			t.Errorf("AddDirs %#v still gave --add-dir: %v", dirs, got)
+		}
+	}
+}
+
 func TestOpencodeParseLine_extractsText(t *testing.T) {
 	// real `opencode run --format json` events (captured 2026-08-07)
 	skip := []string{
