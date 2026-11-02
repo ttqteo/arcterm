@@ -79,7 +79,11 @@ bạn đặt thành chip.
 - **File được trích**: mỗi file mà một tin nhắn trích là một chip nhỏ có số dòng (`huong_harness.md:65`); quá hai file
   thì phần còn lại gấp vào `+N files`. Bấm chip để mở **Sources** bên phải: các dòng được trích sáng lên, kèm một dòng
   mỗi bên, và có nút **Open in Code**. `Esc` quay về thread.
-- **Giờ**: mỗi tin ghi giờ trong ngày (`14:32`); rê chuột để xem ngày và tin đến vào lúc nào tính từ đầu council.
+- **Giờ**: rê chuột lên một tin để thấy giờ trong ngày (`14:32`); rê lên giờ để xem ngày và tin đến vào lúc nào tính
+  từ đầu council. Tin của bạn không có dòng tên phía trên; câu trả lời của chuyên gia chỉ ghi lập trường khi họ có một
+  (**has doubts**, **is against it**, **builds on it**).
+- **Sent, Seen, đang gõ**: như ứng dụng nhắn tin, tin mới nhất của bạn ghi **Sent**, khoảng một giây sau thành **Seen**
+  kèm avatar nhỏ của các ghế đang trả lời nó, rồi mỗi ghế hiện một bong bóng ba chấm cho tới khi câu trả lời đến.
 - Rời đi chỗ khác rồi quay lại, council mở đúng chỗ bạn đang đọc.
 
 Phím, khi focus đang ở trong kênh hay thread (không phải trong ô nhập): `j` / `k` chuyển giữa các ý, `Enter` mở thread
@@ -98,6 +102,8 @@ của ý đang chọn, `Esc` đóng thread, và khi không có thread mở thì 
 - **Let them read files**: bật thì các chuyên gia được đọc code khi trả lời. Một câu hỏi tiếp theo có nhắc tên file hay
   đường dẫn sẽ tự bật công tắc này và cho biết nó thấy file nào; câu không nhắc file nào thì trả lời từ chính cuộc thảo
   luận, rẻ hơn khoảng năm lần. Bạn vẫn tự gạt được công tắc.
+- **Gợi ý trả lời**: trong một thread, câu trả lời mới nhất của chuyên gia đề xuất hai ba câu bạn có thể gửi tiếp,
+  thành chip ngay trên ô trả lời khi ô còn trống; bấm một chip là câu đó vào ô để bạn sửa rồi gửi.
 - Câu hỏi gửi cho nhiều chuyên gia thì một người trả lời trước; những người sau đọc câu đó và chỉ thêm phần góc nhìn của
   họ mang lại, hoặc chỉ hiện là "agrees" dưới câu trả lời đó.
 - Người trả lời câu hỏi tiếp theo cũng thấy báo cáo, nên bạn viết "hướng 2" là họ hiểu đó là hướng thứ hai trong báo cáo.
