@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/council"
 	"github.com/wavetermdev/waveterm/pkg/tokengate"
+	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
@@ -100,19 +101,40 @@ func councilGitTop(dir string) string {
 	return filepath.Clean(filepath.FromSlash(top))
 }
 
-// councilProjectFor is the project a command works on: --project, else the git top level of the working directory,
-// else the working directory itself (a paper in a plain folder is its own project).
-func councilProjectFor(flag, cwd string) string {
+// councilProjectFor is the project a command works on: --project, else the registered project (projects.json) that
+// holds the working directory, the deepest one, else the git top level of the working directory, else the working
+// directory itself (a paper in a plain folder is its own project). The registered project comes before the git top
+// level because the Agent tree files a council under the project whose root is its path: a project registered at a
+// monorepo's apps/website would never show a council keyed to the repo's top.
+func councilProjectFor(flag, cwd string, registered map[string]wconfig.ProjectKeywords) string {
 	if flag != "" {
 		if abs, err := filepath.Abs(flag); err == nil {
 			return abs
 		}
 		return flag
 	}
+	home, _ := os.UserHomeDir()
+	if _, p, ok := wconfig.ProjectForDir(cwd, registered, home); ok {
+		path := strings.TrimSpace(p.Path)
+		if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
+			path = home + path[1:]
+		}
+		return filepath.Clean(path)
+	}
 	if top := councilGitTop(cwd); top != "" {
 		return top
 	}
 	return cwd
+}
+
+// councilRegisteredProjects is projects.json as wavesrv reads it, nil when it cannot be read: the project then falls
+// back to the git top level.
+func councilRegisteredProjects() map[string]wconfig.ProjectKeywords {
+	cfg, err := wshclient.GetFullConfigCommand(RpcClient, &wshrpc.RpcOpts{Timeout: 10_000})
+	if err != nil {
+		return nil
+	}
+	return cfg.Projects
 }
 
 // councilFiles makes the files the experts read: a relative path is taken from the working directory, as any
@@ -359,7 +381,11 @@ func councilPrepare(cmd *cobra.Command) (councilPlan, error) {
 		return councilPlan{}, fmt.Errorf("reading the working directory: %w", err)
 	}
 	plan := councilPlan{mode: mode}
-	plan.project = councilProjectFor(mustFlagString(cmd, "project"), cwd)
+	var registered map[string]wconfig.ProjectKeywords
+	if mustFlagString(cmd, "project") == "" {
+		registered = councilRegisteredProjects()
+	}
+	plan.project = councilProjectFor(mustFlagString(cmd, "project"), cwd, registered)
 	plan.files = councilFiles(splitCouncilList(mustFlagString(cmd, "files")), cwd, plan.project)
 	groupId := councilGroupFor(mustFlagString(cmd, "group"), mode)
 	roles, err := wshclient.CouncilRolesCommand(RpcClient, nil)
@@ -540,17 +566,21 @@ var councilListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "list the project's councils, newest first: id, state, round and feature",
 	Args:  cobra.NoArgs,
-	Long: `List the councils of one project, newest first. The project is --project, else the git top level of the working
-directory; outside a repository, or with --project "", every council is listed.`,
+	Long: `List the councils of one project, newest first. The project is --project, else the registered project holding
+the working directory, else its git top level; outside both, or with --project "", every council is listed.`,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		project := ""
 		if cmd.Flags().Changed("project") {
 			if p := mustFlagString(cmd, "project"); p != "" {
-				project = councilProjectFor(p, "")
+				project = councilProjectFor(p, "", nil)
 			}
 		} else if cwd, err := os.Getwd(); err == nil {
-			project = councilGitTop(cwd)
+			home, _ := os.UserHomeDir()
+			registered := councilRegisteredProjects()
+			if _, _, ok := wconfig.ProjectForDir(cwd, registered, home); ok || councilGitTop(cwd) != "" {
+				project = councilProjectFor("", cwd, registered)
+			}
 		}
 		list, err := wshclient.CouncilListCommand(RpcClient, wshrpc.CommandCouncilListData{Project: project}, nil)
 		if err != nil {
@@ -938,7 +968,7 @@ func addCouncilPanelFlags(cmd *cobra.Command) {
 	f.String("feature", "", "what the council looks at: the feature, or the problem or goal")
 	f.String("files", "", "the files or folders the experts read, comma-separated")
 	f.String("group", "", "the expert group (default "+councilDefaultGroup+", or "+councilBrainstormGroup+" for --mode brainstorm; see Setup in the app for the others)")
-	f.String("project", "", "the project folder (default: the git top level of the working directory)")
+	f.String("project", "", "the project folder (default: the registered project holding the working directory, else its git top level)")
 	f.String("mode", "", "how the council works: "+council.ModeReview+" (default) judges a thing that exists, "+council.ModeBrainstorm+" looks for ideas for a problem or goal")
 }
 
@@ -957,7 +987,7 @@ func init() {
 	addCouncilPanelFlags(councilEstimateCmd)
 	addCouncilPanelFlags(councilStartCmd)
 	addCouncilStartFlags(councilStartCmd)
-	councilListCmd.Flags().String("project", "", "the project folder (default: the git top level of the working directory; \"\" lists every council)")
+	councilListCmd.Flags().String("project", "", "the project folder (default: the registered project holding the working directory, else its git top level; \"\" lists every council)")
 	councilListCmd.Flags().Bool("json", false, "JSON output")
 	councilShowCmd.Flags().Bool("json", false, "JSON output (the whole council)")
 	councilWaitCmd.Flags().Duration("timeout", councilDefaultTimeout, "give up waiting after this long (0 waits without limit)")

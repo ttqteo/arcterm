@@ -23,6 +23,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/council/bench"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
 	"github.com/wavetermdev/waveterm/pkg/tokengate"
+	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -205,22 +206,58 @@ func TestCouncilProjectDefaultsToTheGitTopLevel(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := councilProjectFor("", sub); !same(got, repo) {
+	if got := councilProjectFor("", sub, nil); !same(got, repo) {
 		t.Fatalf("project from a subfolder = %q, want the repo %q", got, repo)
 	}
 	plain := t.TempDir()
-	if got := councilProjectFor("", plain); got != plain {
+	if got := councilProjectFor("", plain, nil); got != plain {
 		t.Fatalf("project outside a repo = %q, want the working directory %q", got, plain)
 	}
 	other := t.TempDir()
-	if got := councilProjectFor(other, sub); got != other {
+	if got := councilProjectFor(other, sub, nil); got != other {
 		t.Fatalf("--project = %q, want %q", got, other)
 	}
-	if got := councilProjectFor("rel", plain); !filepath.IsAbs(got) {
+	if got := councilProjectFor("rel", plain, nil); !filepath.IsAbs(got) {
 		t.Fatalf("a relative --project = %q, want an absolute path", got)
 	}
 	if got := councilGitTop(plain); got != "" {
 		t.Fatalf("git top of a plain folder = %q", got)
+	}
+}
+
+// A project registered at a monorepo's subfolder (apps/website) is the council's project from inside it, ahead of the
+// repo's top level, since the Agent tree files a council under the project whose root is its path.
+func TestCouncilProjectPrefersTheRegisteredProjectOverTheGitTop(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
+		t.Skipf("git init: %v: %s", err, out)
+	}
+	website := filepath.Join(repo, "apps", "website")
+	portal := filepath.Join(repo, "apps", "portal")
+	inside := filepath.Join(website, "src")
+	for _, d := range []string{inside, portal} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registered := map[string]wconfig.ProjectKeywords{
+		"website": {Path: website},
+		"portal":  {Path: portal},
+		"repo":    {Path: repo},
+	}
+	if got := councilProjectFor("", inside, registered); got != filepath.Clean(website) {
+		t.Fatalf("project from inside apps/website = %q, want the registered %q", got, website)
+	}
+	// a folder no deeper project holds falls to the registered repo
+	if got := councilProjectFor("", filepath.Join(repo, "apps"), registered); got != filepath.Clean(repo) {
+		t.Fatalf("project from apps = %q, want the registered repo %q", got, repo)
+	}
+	// --project still wins
+	if got := councilProjectFor(portal, inside, registered); got != portal {
+		t.Fatalf("--project = %q, want %q", got, portal)
 	}
 }
 

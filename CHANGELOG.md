@@ -55,6 +55,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A council an agent starts inside a project registered at a repo's subfolder (such as `apps/website`) now shows
+  under that project in the Agent tree, instead of nowhere.
 - A council expert whose answer breaks a line inside its JSON no longer fails with "invalid character '\n' in string
   literal": the answer is read as written.
 - Resuming a conversation again while its tab is still loading says the agent is still starting, instead of "already
