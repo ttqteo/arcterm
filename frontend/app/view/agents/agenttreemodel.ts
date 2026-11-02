@@ -29,8 +29,16 @@ export const UNGROUPED_PROJECT = "ungrouped";
 export type AgentTreeRow =
     | { kind: "group"; project: string; count: number; attn: number; running: number }
     // a plain agent. `nested`: it waits on the plain agent of its folder just above it, and sits under it; `waitsFor`:
-    // the name of the agent it waits on where it cannot nest (another folder, a lead, one that nests itself)
-    | { kind: "parent"; agent: AgentVM; project: string; nested?: boolean; waitsFor?: string }
+    // the name of the agent it waits on where it cannot nest (another folder, a lead, one that nests itself); `checks`:
+    // the builder check and judge sessions it started, which its row folds (their `check` rows follow it while `open`)
+    | {
+          kind: "parent";
+          agent: AgentVM;
+          project: string;
+          nested?: boolean;
+          waitsFor?: string;
+          checks?: ChecksFold;
+      }
     // a builder check's reviewer or a judge under the brainstorming agent that started it; `stageRole` is which, and
     // `state` is that agent's record of it
     | { kind: "check"; agent: AgentVM; project: string; stageRole: string; state: BuilderCheckRecord["state"] }
@@ -70,11 +78,45 @@ export type AgentTreeRow =
 // TreeFolds is what the human folded: runs whose workers are hidden, runs whose done or queued tasks are listed,
 // and tasks (by taskFoldKey) whose other tabs are listed. A done fold is keyed to how many tasks were done when it
 // opened, so the next landing closes it: left open, every landing would push the run's live workers further down.
+// `checksOpen` is a brainstorming agent's fold of its check and judge rows, by its id, keyed to the checks it held
+// (checksKey): a new check starting lapses it.
 export interface TreeFolds {
     collapsed: ReadonlySet<string>;
     doneOpen: ReadonlyMap<string, number>;
     queuedOpen: ReadonlySet<string>;
     extrasOpen: ReadonlySet<string>;
+    checksOpen?: ReadonlyMap<string, { open: boolean; key: string }>;
+}
+
+// What a brainstorming agent's row knows of the check and judge sessions under it: their states in row order, whether
+// their rows show, and `key`, the set they are, which a fold the person makes is kept against.
+export interface ChecksFold {
+    states: BuilderCheckRecord["state"][];
+    open: boolean;
+    key: string;
+}
+
+/** Pure: the identity of a set of check and judge sessions, which a fold of them is kept against. */
+export function checksKey(runIds: readonly string[]): string {
+    return runIds.join(",");
+}
+
+/** Pure: whether a brainstorming agent's check and judge rows show. One that is still reading, asks you, or holds the
+ *  focus shows them whatever was folded; otherwise the person's fold of this same set, else folded once every one has
+ *  its word, so a finished brainstorm leaves one row. */
+export function checksShown(
+    nested: readonly { agent: AgentVM; state: BuilderCheckRecord["state"] }[],
+    fold: { open: boolean; key: string } | undefined,
+    focusId: string | undefined
+): boolean {
+    if (nested.some((n) => n.agent.state === "asking" || n.agent.id === focusId)) {
+        return true;
+    }
+    const live = nested.some((n) => n.state === "reading");
+    if (fold != null && fold.key === checksKey(nested.map((n) => n.agent.runId ?? n.agent.id))) {
+        return fold.open;
+    }
+    return live;
 }
 
 const NO_FOLDS: TreeFolds = { collapsed: new Set(), doneOpen: new Map(), queuedOpen: new Set(), extrasOpen: new Set() };
@@ -386,7 +428,8 @@ const NO_WAITS: ReadonlyMap<string, string> = new Map();
  *  nests its head and a cycle nests no one. A waiter that cannot nest keeps its place and names whom it waits on.
  *
  *  A brainstorming agent's builder check and judge sessions (its `builderCheck` and `brainstormJudge` records name their
- *  runs) are `check` rows right under its row, and count in its folder; with its tab gone they are plain rows. */
+ *  runs) are `check` rows right under its row while they show (checksShown), and count in its folder either way; with
+ *  its tab gone they are plain rows. */
 export function buildAgentTree(
     agents: AgentVM[],
     order: string[],
@@ -487,9 +530,20 @@ export function buildAgentTree(
                 waiters.set(target, [...(waiters.get(target) ?? []), item.agent]);
             }
         }
-        // the check and judge rows under a brainstorming agent, counted with the agent in its own folder
-        const checkRows = (id: string): AgentTreeRow[] =>
-            (checks.get(id) ?? []).map((n) => ({ kind: "check", project: g.project, ...n }));
+        // a plain agent's row, then the check and judge rows under it while they show (counted with the agent in its
+        // own folder either way)
+        const withChecks = (row: Extract<AgentTreeRow, { kind: "parent" }>): AgentTreeRow[] => {
+            const nested = checks.get(row.agent.id);
+            if (nested == null || nested.length === 0) {
+                return [row];
+            }
+            const key = checksKey(nested.map((n) => n.agent.runId ?? n.agent.id));
+            const open = checksShown(nested, folds.checksOpen?.get(row.agent.id), focusId);
+            return [
+                { ...row, checks: { states: nested.map((n) => n.state), open, key } },
+                ...(open ? nested.map((n): AgentTreeRow => ({ kind: "check", project: g.project, ...n })) : []),
+            ];
+        };
         for (const item of g.items) {
             if (item.kind === "parent") {
                 const members = [item.agent, ...(checks.get(item.agent.id) ?? []).map((n) => n.agent)];
@@ -501,9 +555,9 @@ export function buildAgentTree(
                 }
                 const target = waits.get(item.agent.id);
                 const waitsFor = target != null ? byId.get(target)?.name : undefined;
-                body.push(waitsFor != null ? { ...item, waitsFor } : item, ...checkRows(item.agent.id));
+                body.push(...withChecks(waitsFor != null ? { ...item, waitsFor } : item));
                 for (const agent of waiters.get(item.agent.id) ?? []) {
-                    body.push({ kind: "parent", agent, project: item.project, nested: true }, ...checkRows(agent.id));
+                    body.push(...withChecks({ kind: "parent", agent, project: item.project, nested: true }));
                 }
                 continue;
             }

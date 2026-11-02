@@ -80,6 +80,15 @@ export function toggleRunQueuedOpen(runId: string): void {
     globalStore.set(treeFoldsAtom, (f) => ({ ...f, queuedOpen: toggled(f.queuedOpen, runId) }));
 }
 
+// folds or unfolds a brainstorming agent's check and judge rows; kept against `key`, the checks it holds now
+export function toggleChecksOpen(agentId: string, open: boolean, key: string): void {
+    globalStore.set(treeFoldsAtom, (f) => {
+        const checksOpen = new Map(f.checksOpen ?? []);
+        checksOpen.set(agentId, { open: !open, key });
+        return { ...f, checksOpen };
+    });
+}
+
 export function toggleTaskExtrasOpen(runId: string, taskId: string): void {
     globalStore.set(treeFoldsAtom, (f) => ({ ...f, extrasOpen: toggled(f.extrasOpen, taskFoldKey(runId, taskId)) }));
 }

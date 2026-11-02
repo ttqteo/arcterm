@@ -86,6 +86,7 @@ import {
     selectOnly,
     stageSubline,
     toggleRow,
+    type ChecksFold,
     type RowSelection,
     type StageOutcome,
 } from "./agenttreemodel";
@@ -227,6 +228,7 @@ import {
 import { planReviewLensTitle } from "./runtimeline";
 import {
     openRunFold,
+    toggleChecksOpen,
     toggleRunCollapsed,
     toggleRunDoneOpen,
     toggleRunQueuedOpen,
@@ -573,6 +575,46 @@ function FoldChip({
             {open ? <ChevronDown size={10} aria-hidden /> : <ChevronRight size={10} aria-hidden />}
             {label}
             {word ? <span className={cn("hidden", wide ? "@[250px]:inline" : "@[200px]:inline")}>{word}</span> : null}
+        </button>
+    );
+}
+
+// A brainstorming agent's fold of the builder check and judge rows under it: a chevron, then one mark per session in
+// row order (a check once it answered, a dot while it reads or after it failed or stopped), so the folded row still says
+// how its checks went
+const CHECK_DOT: Record<Exclude<BuilderCheckRecord["state"], "answered">, string> = {
+    reading: cn("bg-accent", PULSE),
+    failed: "bg-error",
+    stopped: "bg-warning",
+};
+
+function ChecksChip({ agentId, checks }: { agentId: string; checks: ChecksFold }) {
+    const { states, open, key } = checks;
+    return (
+        <button
+            type="button"
+            data-agent-checks={agentId}
+            onClick={(e) => {
+                e.stopPropagation();
+                toggleChecksOpen(agentId, open, key);
+            }}
+            aria-label={open ? "Hide checks" : "Show checks"}
+            aria-expanded={open}
+            title={`${states.length} ${states.length === 1 ? "check" : "checks"}: ${states.join(", ")}`}
+            className="inline-flex h-[18px] flex-none cursor-pointer items-center gap-[4px] rounded-[5px] border border-edge-mid bg-surface-hover pl-[3px] pr-[6px] text-ink-mid hover:border-accent hover:text-accent-soft"
+        >
+            <ChevronRight
+                size={10}
+                aria-hidden
+                className={cn("transition-transform duration-[140ms]", open && "rotate-90")}
+            />
+            {states.map((s, i) =>
+                s === "answered" ? (
+                    <Check key={i} size={10} strokeWidth={2.6} aria-hidden className="-mx-[1px] text-success" />
+                ) : (
+                    <span key={i} className={cn("h-[6px] w-[6px] rounded-full", CHECK_DOT[s])} />
+                )
+            )}
         </button>
     );
 }
@@ -932,9 +974,11 @@ function ParentRow({
     waitsFor,
     picks,
     inCouncil,
+    checks,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
+    checks?: ChecksFold; // the builder check and judge sessions it started, which its chip folds
     branch?: string; // the git branch its session is on (liveBranches); absent until the scan has seen it
     tokens?: number; // its session's token total (livetokensstore); absent until read
     lead?: { run: RunInfo; open: boolean; live: number };
@@ -1249,6 +1293,7 @@ function ParentRow({
                             </>
                         )}
                         <span className="flex-1" />
+                        {checks ? <ChecksChip agentId={agent.id} checks={checks} /> : null}
                         {subsChip}
                         {badges}
                     </div>
@@ -3434,6 +3479,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                             navDigit={digits.get(r.agent.id)}
                                             nested={r.nested}
                                             waitsFor={r.waitsFor}
+                                            checks={r.checks}
                                             picks={picksFor(r.agent.id)}
                                             inCouncil={seated.has(r.agent.id)}
                                         />

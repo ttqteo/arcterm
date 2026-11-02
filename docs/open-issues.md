@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Brainstorm checks fold: in Agent, a brainstorming agent whose Builder check and Judge both answered →
+  no rows under it, a `› ✓ ✓` chip on its second line; click it → both rows show and the chevron turns; click again →
+  they fold. Start a new builder check → its row shows while it reads. `agenttree.tsx` `ChecksChip`,
+  "feat(agents): fold a brainstorm's check and judge rows into a chip".
 - [ ] (arcterm) Council in a subfolder project: after a build with ab80bf5ac installed, from an agent in `website`
   (registered at `D:\Workspace\SIEM\apps\website`) start a council → it shows under website's Councils in the Agent
   tree, and `wsh council list --project "" --json` gives its project as `...\apps\website`, not `D:\Workspace\SIEM`.

@@ -16,6 +16,7 @@ import {
     toggleRow,
     UNGROUPED_PROJECT,
     type AgentTreeRow,
+    type TreeFolds,
 } from "./agenttreemodel";
 import type { BuilderCheckRecord } from "./brainstormmodel";
 import { seatableAgents } from "./councilsetupmodel";
@@ -160,11 +161,48 @@ describe("buildAgentTree with a builder check", () => {
         expect(shape(rows)).toEqual(["group:waveterm:3:0:1", "parent:other", "parent:bs", "  check:rv:reading"]);
     });
 
-    it("keeps the reviewer under the brainstorm after the check answers or fails", () => {
+    it("folds the reviewer into the brainstorm's row once the check answers or fails, still counted in its folder", () => {
         for (const state of ["answered", "failed"] as const) {
             const rows = buildAgentTree([brainstorm(state), reviewer("idle")], ["bs", "rv"]);
-            expect(shape(rows)).toEqual(["group:waveterm:2:0:0", "parent:bs", `  check:rv:${state}`]);
+            expect(shape(rows)).toEqual(["group:waveterm:2:0:0", "parent:bs"]);
+            expect(rows[1]).toMatchObject({ checks: { states: [state], open: false, key: "chk-1" } });
         }
+    });
+
+    it("shows a settled reviewer the person unfolded, until a new check starts", () => {
+        const opened = (key: string): TreeFolds => ({
+            collapsed: new Set(),
+            doneOpen: new Map(),
+            queuedOpen: new Set(),
+            extrasOpen: new Set(),
+            checksOpen: new Map([["bs", { open: true, key }]]),
+        });
+        const settled = [brainstorm("answered"), reviewer("idle")];
+        const rows = buildAgentTree(settled, ["bs", "rv"], undefined, opened("chk-1"));
+        expect(shape(rows)).toEqual(["group:waveterm:2:0:0", "parent:bs", "  check:rv:answered"]);
+        const stale = buildAgentTree(settled, ["bs", "rv"], undefined, opened("chk-0"));
+        expect(shape(stale)).toEqual(["group:waveterm:2:0:0", "parent:bs"]);
+    });
+
+    it("shows a reading reviewer the person folded only once it is folded against this check", () => {
+        const folds: TreeFolds = {
+            collapsed: new Set(),
+            doneOpen: new Map(),
+            queuedOpen: new Set(),
+            extrasOpen: new Set(),
+            checksOpen: new Map([["bs", { open: false, key: "chk-1" }]]),
+        };
+        const rows = buildAgentTree([brainstorm("reading"), reviewer()], ["bs", "rv"], undefined, folds);
+        expect(shape(rows)).toEqual(["group:waveterm:2:0:1", "parent:bs"]);
+        expect(rows[1]).toMatchObject({ checks: { states: ["reading"], open: false } });
+    });
+
+    it("keeps a settled reviewer shown while it asks or holds the focus", () => {
+        const asking = buildAgentTree([brainstorm("answered"), reviewer("asking")], ["bs", "rv"]);
+        expect(shape(asking)).toEqual(["group:waveterm:2:1:0", "parent:bs", "  check:rv:answered"]);
+        const settled = [brainstorm("answered"), reviewer("idle")];
+        const focused = buildAgentTree(settled, ["bs", "rv"], undefined, undefined, "rv");
+        expect(shape(focused)).toEqual(["group:waveterm:2:0:0", "parent:bs", "  check:rv:answered"]);
     });
 
     it("gives the reviewer its own row once the brainstorm's tab is gone", () => {
@@ -235,7 +273,8 @@ describe("buildAgentTree with a brainstorm judge", () => {
                 [brainstorm({ state, ts: 1, runId: "jdg-1" }), session("jd", "jdg-1", "idle")],
                 ["bs", "jd"]
             );
-            expect(shape(later)).toEqual(["group:waveterm:2:0", "parent:bs", `  check:jd:brainstorm-judge:${state}`]);
+            expect(shape(later)).toEqual(["group:waveterm:2:0", "parent:bs"]);
+            expect(later[1]).toMatchObject({ checks: { states: [state], open: false, key: "jdg-1" } });
         }
     });
 

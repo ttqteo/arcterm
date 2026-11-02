@@ -46,6 +46,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A brainstorming agent's Builder check and Judge rows fold into a small chip on its row once they have answered, with a
+  mark per check; click the chip to show them again. They stay open while one is still reading or asks you.
 - A brainstorm mockup's thumbnail opens the board full size when you click it, not only from its Open full size link.
 - An ended council's × in the Agent tree now closes it instead of deleting it: it folds into its project's Closed
   councils, where Reopen brings it back (a retry or a reply reopens it too). Remove council… on its right-click menu
