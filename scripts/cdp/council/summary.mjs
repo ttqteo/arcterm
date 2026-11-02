@@ -295,6 +295,19 @@ export const councilSummary = {
                 const bar = document.querySelector(${q(BAR)});
                 return { scrollTop: box.scrollTop, barTop: Math.round(bar.getBoundingClientRect().top), boxTop: Math.round(box.getBoundingClientRect().top) };
             })()`);
+            // every card's chevron sits at its footer's right: its right edge on the card's content box (the card's rect
+            // less its right padding) and its bottom on the footer's bottom, 2px of slack for the rounding
+            const chevrons = await h.ev(`[...document.querySelectorAll(${q(SUMMARY)} + " [data-council-direction]")].map((card) => {
+                const cr = card.getBoundingClientRect();
+                const pad = parseFloat(getComputedStyle(card).paddingRight);
+                const chev = card.querySelector("[data-council-direction-chevron]")?.getBoundingClientRect();
+                const foot = card.querySelector("[data-council-direction-footer]")?.getBoundingClientRect();
+                return chev && foot
+                    ? { rank: card.dataset.councilDirection, right: Math.round((cr.right - pad - chev.right) * 10) / 10, bottom: Math.round((foot.bottom - chev.bottom) * 10) / 10 }
+                    : { rank: card.dataset.councilDirection, missing: true };
+            })`);
+            const chevronsOk =
+                chevrons.length > 0 && chevrons.every((c) => !c.missing && Math.abs(c.right) <= 2 && Math.abs(c.bottom) <= 2);
             await h.shot("cdp-shots/council-summary-outline.png");
             // fold the matrix again for the steps after
             await click(h, "[data-council-matrix-toggle]");
@@ -306,8 +319,9 @@ export const councilSummary = {
                 placed.barTop === placed.boxTop &&
                 unfolded &&
                 matrix.head >= matrix.barBottom &&
-                matrix.head < matrix.boxBottom;
-            return { ok, detail: JSON.stringify({ entries, sticky, expected, placed, matrix }) };
+                matrix.head < matrix.boxBottom &&
+                chevronsOk;
+            return { ok, detail: JSON.stringify({ entries, sticky, expected, placed, matrix, chevrons }) };
         });
 
         await step("a seat in the glance opens the Discussion on its messages alone (its filter on), each thread reply naming its idea, and Everyone brings the rest back", async () => {
@@ -447,7 +461,36 @@ export const councilSummary = {
                 one: document.querySelector(${q(DIRECTION(1))}).getAttribute("aria-expanded"),
                 three: document.querySelector(${q(DIRECTION(3))}).getAttribute("aria-expanded"),
             })`);
+            // frame the shot on the open card and the top of its detail: card 1's row goes just under the sticky bar;
+            // if the detail's top is still below the box, the detail is centred instead
+            const FRAME = `(() => {
+                const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
+                const bar = document.querySelector(${q(`${SUMMARY} [data-council-tabbar]`)});
+                const card = document.querySelector(${q(DIRECTION(1))});
+                const detail = document.querySelector(${q(DETAIL(1))});
+                const before = box.scrollTop;
+                box.scrollTop += card.getBoundingClientRect().top - box.getBoundingClientRect().top - bar.offsetHeight - 12;
+                if (detail.getBoundingClientRect().top >= box.getBoundingClientRect().bottom - 40) {
+                    detail.scrollIntoView({ block: "center" });
+                }
+                const br = box.getBoundingClientRect();
+                const top = detail.getBoundingClientRect().top;
+                return { before, top: Math.round(top), barBottom: Math.round(bar.getBoundingClientRect().bottom), boxBottom: Math.round(br.bottom) };
+            })()`;
+            const framed = await h.ev(FRAME);
+            await sleep(300);
+            const framedAfter = await h.ev(`(() => {
+                const bar = document.querySelector(${q(`${SUMMARY} [data-council-tabbar]`)});
+                const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
+                return {
+                    top: Math.round(document.querySelector(${q(DETAIL(1))}).getBoundingClientRect().top),
+                    barBottom: Math.round(bar.getBoundingClientRect().bottom),
+                    boxBottom: Math.round(box.getBoundingClientRect().bottom),
+                };
+            })()`);
+            const detailInFrame = framedAfter.top >= framedAfter.barBottom && framedAfter.top < framedAfter.boxBottom;
             await h.shot("cdp-shots/council-summary-open-card.png");
+            await h.ev(`document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)}).scrollTop = ${Number(framed.before)}`);
             // reopen 3 for the checks that follow, then it closes 1
             await openDirection(h, 3);
             const ok =
@@ -470,9 +513,10 @@ export const councilSummary = {
                 open.chips.ram.endsWith(" Is against it") &&
                 open.chips.skeptic.endsWith(" Has doubts") &&
                 open.chips.newuser.endsWith(" Agrees") &&
-                open.chips.ux.endsWith(" Proposed");
+                open.chips.ux.endsWith(" Proposed") &&
+                detailInFrame;
             await h.shot("cdp-shots/council-summary.png");
-            return { ok, detail: JSON.stringify({ open, swapped, one }) };
+            return { ok, detail: JSON.stringify({ open, swapped, one, framedAfter }) };
         });
 
         await step("Ask next lists the report's three questions with whom each is for, and a click opens the Discussion with it in the box", async () => {
@@ -861,6 +905,21 @@ export const councilSummary = {
             });
             await openBrainstormSummary(h, id);
             const facts = await h.ev(BRAINSTORM_FACTS);
+            // frame the shot on the cards: the directions heading goes just under the sticky bar, so the First step
+            // boxes are in view
+            const stepsInFrame = await h.ev(`(() => {
+                const box = document.querySelector(${q(`${SUMMARY} [data-council-scroll]`)});
+                const bar = document.querySelector(${q(`${SUMMARY} [data-council-tabbar]`)});
+                const head = document.querySelector(${q(`${SUMMARY} [data-council-directions-heading]`)});
+                box.scrollTop += head.getBoundingClientRect().top - box.getBoundingClientRect().top - bar.offsetHeight - 12;
+                const br = box.getBoundingClientRect();
+                const bb = bar.getBoundingClientRect().bottom;
+                return [...document.querySelectorAll(${q(`${SUMMARY} [data-council-first-step]`)})].some((s) => {
+                    const r = s.getBoundingClientRect();
+                    return r.top >= bb && r.bottom <= br.bottom;
+                });
+            })()`);
+            await sleep(300);
             await h.shot("cdp-shots/council-summary-brainstorm.png");
             const items = await menuItems(h);
             await menuClick(h, "open-doc");
@@ -878,6 +937,7 @@ export const councilSummary = {
                 facts.heading === "Ideas worth trying, best first" &&
                 facts.titles.join("|") === TITLES.slice(0, 3).join("|") &&
                 facts.steps.length === 3 &&
+                stepsInFrame &&
                 facts.steps.every((s) => s === "First step Try it on one screen") &&
                 facts.jumps === "directions,kept,matrix" &&
                 facts.keptGrid === "grid" &&

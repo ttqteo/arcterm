@@ -276,37 +276,48 @@ function DirectionCard({
                     <span className="text-[13.5px] leading-[1.5] text-ink-hi">{row.step}</span>
                 </span>
             ) : null}
-            <span className="mt-auto flex w-full flex-wrap items-center gap-x-[7px] gap-y-[6px]">
-                {row.meta !== "" ? (
-                    <span data-council-meta className="text-[12.5px] text-muted">
-                        {row.meta}
-                    </span>
-                ) : null}
-                {row.chips.map((chip) => (
-                    <span
-                        key={chip.expert.id}
-                        data-council-chip={chip.expert.id}
-                        title={`${chip.expert.name}: ${STANCE_WORD[chip.stance]}`}
-                        className={cn(
-                            "flex items-center gap-1 rounded-full py-[2px] pl-[2px] pr-[7px] text-[10.5px]",
-                            STANCE_PILL[chip.stance]
-                        )}
-                    >
-                        <Avatar
-                            c={c}
-                            id={chip.expert.id}
-                            name={chip.expert.name}
-                            small
-                            className="h-[16px] w-[16px] text-[8px]"
-                        />
-                        {STANCE_WORD[chip.stance]}
-                    </span>
-                ))}
-                <span className="flex-1" />
+            <span data-council-direction-footer className="mt-auto flex w-full items-end gap-2">
+                <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-[7px] gap-y-[6px]">
+                    {row.meta !== "" ? (
+                        <span data-council-meta className="text-[12.5px] text-muted">
+                            {row.meta}
+                        </span>
+                    ) : null}
+                    {row.chips.map((chip) => (
+                        <span
+                            key={chip.expert.id}
+                            data-council-chip={chip.expert.id}
+                            title={`${chip.expert.name}: ${STANCE_WORD[chip.stance]}`}
+                            className={cn(
+                                "flex items-center gap-1 rounded-full py-[2px] pl-[2px] pr-[7px] text-[10.5px]",
+                                STANCE_PILL[chip.stance]
+                            )}
+                        >
+                            <Avatar
+                                c={c}
+                                id={chip.expert.id}
+                                name={chip.expert.name}
+                                small
+                                className="h-[16px] w-[16px] text-[8px]"
+                            />
+                            {STANCE_WORD[chip.stance]}
+                        </span>
+                    ))}
+                </span>
                 {open ? (
-                    <ChevronUp size={14} aria-hidden className="flex-none text-muted" />
+                    <ChevronUp
+                        size={14}
+                        aria-hidden
+                        data-council-direction-chevron
+                        className="mb-[1px] flex-none text-muted"
+                    />
                 ) : (
-                    <ChevronDown size={14} aria-hidden className="flex-none text-muted" />
+                    <ChevronDown
+                        size={14}
+                        aria-hidden
+                        data-council-direction-chevron
+                        className="mb-[1px] flex-none text-muted"
+                    />
                 )}
             </span>
         </button>
