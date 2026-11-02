@@ -11,7 +11,7 @@
 ### Task 1: The Discussion's title keeps a floor on a narrow pane
 
 **Depends on:** none
-**Files:** frontend/app/view/agents/councildiscussion.tsx, frontend/app/view/agents/counciltabs.tsx, scripts/cdp/council/discussion.mjs
+**Files:** `frontend/app/view/agents/councildiscussion.tsx`, `frontend/app/view/agents/counciltabs.tsx`, `scripts/cdp/council/discussion.mjs`
 
 **The defect:**
 - **Measured:** in `cdp-shots/council-discussion-header-narrow.png` (a 1000px window, a 674px pane), the h1 `[data-council-title]` is 2px wide, with no letters and no ellipsis. The row's parts measure: tabs 248, title 2, status chip 21, seats 44, cost 189, Summarize 31, Stop 50.
@@ -37,7 +37,7 @@
 ### Task 2: The card's chevron stays at the footer's right; two report shots frame what they check
 
 **Depends on:** none
-**Files:** frontend/app/view/agents/councilsummary.tsx, scripts/cdp/council/summary.mjs
+**Files:** `frontend/app/view/agents/councilsummary.tsx`, `scripts/cdp/council/summary.mjs`
 
 **The defects:**
 - **The chevron:** in `cdp-shots/council-summary-outline.png`, card 1's ChevronDown wraps onto its own line under the chips, at the bottom-left. The board draws it at the footer's right.
