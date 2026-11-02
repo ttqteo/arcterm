@@ -137,8 +137,9 @@ external browser. They no longer sit in the part row.
   toggle, reopening the same part) switches the rail to Boards and scrolls to that part's boards.
 - **Pane too narrow for both** (narrower than 360px + the rail's smallest, so 640px in the design and
   820px in the check): the rail goes under the question, full width, without the drag handle (a
-  container query, no JS measuring). A strip would hide the boards the question is about. With no
-  Boards tab the check's rail stays 460px wide, as today.
+  container query, no JS measuring). A strip would hide the boards the question is about. As built,
+  the check's rail stacks under the question below 820px even with no Boards tab: a 460px rail beside
+  it would leave the question under 360px (`docs/agents/brainstorm.md`).
 - **Code shape.** The rail shell, its tabs, the drag handle, the Boards tab and the widened view are
   one new `brainstormrail.tsx`; its pure parts (width clamp, columns, which tab opens, board heads
   and option links) are in `brainstormmodel.ts` with tests. `Thumbnails` and `PartMockups` are
