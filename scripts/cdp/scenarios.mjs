@@ -6392,11 +6392,15 @@ const diffReviewMarks = {
         };
         const pin = () =>
             h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+        // a source with uncommitted changes opens on the Commit tab, whose rows tick files for a commit; the review
+        // marks are on the Log tab's file list, under its Uncommitted changes row
+        const WT_ROW = '[data-history-row="worktree"] button';
         const pick = async () => {
-            await click("[data-files-source-picker]");
-            const option = `[data-files-source-option=${JSON.stringify(ctx.name)}]`;
-            await until(`!!${q(option)}`, 4000);
-            await click(option);
+            if (!(await pickFilesSource(h, ctx.name))) return false;
+            await until(`!!${q('[data-panel-tab="log"]')}`, 8000);
+            await showLogTab(h);
+            if (!(await until(`!!${q(WT_ROW)}`, 15000))) return false;
+            await click(WT_ROW);
             return until(`!!${q(rowSel("src/retry/backoff.go"))}`, 15000);
         };
 
@@ -6539,17 +6543,12 @@ const diffReviewMarks = {
             await h.shot("cdp-shots/diff-review-marks-commit.png");
 
             await press("c", "KeyC", 67);
+            // c opens the compare bar on the Log tab with its All changes aggregate selected (main … feature here)
             const comparing = await until(
-                `${q('[data-range-chip="compare"]')}?.getAttribute("aria-pressed") === "true" && !!${q(rowSel("src/retry/submit.go"))} && ${doneIs(0)}`,
+                `!!${q("[data-compare-bar]")} && !!${q(rowSel("src/retry/submit.go"))} && ${doneIs(0)}`,
                 10000
             );
-            // entering compare opens the ref editor on the pair it already reads; applying that pair as
-            // it stands closes the editor, whose suggestions would otherwise cover pane 2 in the shot
-            await h.ev(`(() => {
-                const root = document.querySelector('input[placeholder="base ref"]')?.parentElement?.parentElement;
-                Array.from(root?.querySelectorAll("button") ?? []).find((b) => b.textContent.trim() === "Compare")?.click();
-            })()`);
-            await until(`!document.querySelector('input[placeholder="base ref"]') && !!${q(boxSel("src/retry/submit.go"))}`, 5000);
+            await until(`!!${q(boxSel("src/retry/submit.go"))}`, 5000);
             await click(boxSel("src/retry/submit.go"));
             const oneMarked = await until(doneIs(1));
             p = await progress();
@@ -6569,11 +6568,10 @@ const diffReviewMarks = {
         return steps;
     },
     async teardown(h, ctx) {
-        // compare mode and an explicit history collapse both outlive the surface (see diff-compare)
+        // compare mode outlives the surface (see diff-compare)
         const esc = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 };
         await h.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...esc });
         await h.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...esc });
-        await h.ev(`document.querySelector('[data-history-rail] button[title="Expand history"]')?.click()`);
         await h.ev(restoreLocalStorage(REVIEW_STORAGE_KEY, ctx.prevMarks));
         try {
             await h.rpc("deleteproject", { name: ctx.name });
@@ -8439,7 +8437,14 @@ const jarvisPet = {
             };
         };
         const left8 = await side("left", 0.3);
+        // The walker keeps off every shown .xterm (petledge.ts avoidSpans), and on Agent the terminal runs from the rail to
+        // the window's right edge, so no spot in the right half is clear to rest on there (avoid [[330,1599]]: the pet
+        // walks off instead of resting, and the step never found a clear drop). The Cockpit shows no .xterm (Agent's is
+        // hidden, a zero box avoidSpans ignores), so its ledge has a clear right half: the right side is judged there.
+        await h.goto("cockpit");
+        await petWait(h, (s) => petOnLedge(s) && petInLedge(s), 8000);
         const right8 = await side("right", 0.8);
+        await h.goto("agent");
         rec(
             "8. dropped on a clear spot (resting) in the left half, a real click opens the peek no further left than the creature, in the right half no further right; Escape closes it",
             left8.ok && right8.ok,
@@ -10253,11 +10258,16 @@ const jarvisPeek = {
         await press("/", "Slash", 191);
         const composerFocused = await h.ev(`document.activeElement?.hasAttribute('data-pet-errand-input') ?? false`);
         rec(
-            "6. attention keeps the card's width and keyboard navigation moves the cursor then focuses the composer",
+            // petpeek.tsx caps the quiet card at 332px (300 plus the stay pin, 6e9b4cc1d) and the queue at 420px, and the
+            // width is read mid-scale (330 and 418), so work arriving widens the card to the queue's width. d420a399e's "one
+            // width" rule (both 420, and this step's old `=== narrow.width`) is no longer what the code does: its header
+            // comment still says so, but `quiet ? "max-w-[332px]" : "max-w-[420px]"` is what sizes the card
+            "6. attention widens the card to the queue's 420px and keyboard navigation moves the cursor then focuses the composer",
             dest.composerEnabled === true &&
                 busyArranged === true &&
                 busyBefore?.shape === "busy" &&
-                busyBefore?.width === narrow?.width &&
+                busyBefore?.width > (narrow?.width ?? Infinity) &&
+                busyBefore?.width <= 420 &&
                 busyBefore?.cursor === "dag-gate:cdp-1" &&
                 busyBefore?.focused === true &&
                 movedCursor === "ask:cdp-2" &&
@@ -11202,21 +11212,30 @@ const codeDiff = {
         );
         await press("d");
         // main's copy has only "The first line." with no edit, which HEAD on the branch no longer holds
+        // Monaco draws every space of a line as U+00A0, so the read normalizes them before it looks for words
+        const SIDES = `(() => {
+            const d = document.querySelector('.monaco-diff-editor');
+            const side = (cls) => {
+                const v = d?.querySelector('.editor.' + cls + ' .view-lines');
+                return v == null ? null : (v.textContent || '').replace(/\\u00a0/g, ' ');
+            };
+            return { original: side('original'), modified: side('modified') };
+        })()`;
         const based = await polishWaitFor(
             h,
             `(() => {
-                const d = document.querySelector('.monaco-diff-editor');
-                const o = d && (d.querySelector('.editor.original .view-lines') || d);
-                const t = (o && o.textContent) || '';
-                return !!document.querySelector('[data-code-diff-target="base"]') && t.includes('The first line.') && !t.includes('A second line');
+                const s = ${SIDES};
+                return !!document.querySelector('[data-code-diff-target="base"]') && s.original != null && s.original.includes('The first line.') && !s.original.includes('A second line');
             })()`,
             8000
         );
         const label = await h.ev(`document.querySelector('[data-code-diff-target]')?.textContent ?? ''`);
+        const sides = await h.ev(SIDES);
+        // the right side is HEAD's working copy, which holds the edits the base side lacks
         steps.push({
             step: "on a feature branch, d goes HEAD then base, and the base side holds main's copy",
-            ok: head === true && based === true,
-            detail: `head=${head} base=${based} label=${JSON.stringify(label)}`,
+            ok: head === true && based === true && sides?.modified != null && sides.modified.includes('A second line'),
+            detail: `head=${head} base=${based} label=${JSON.stringify(label)} sides=${JSON.stringify(sides)}`,
         });
         await h.shot("cdp-shots/code-diff-base.png");
         await press("d");
@@ -20757,6 +20776,27 @@ const DAG_MOTION_TASKS = [
     { id: "t-3", label: "noop 3", description: "do nothing, stop immediately", deps: ["t-1"], state: "" },
 ];
 const DAG_MOTION_LIVE_EVENT = [["task-verify-started", { taskid: "t-3" }, 0]];
+// [kind, detail, phaseidx] events published as the engine's would be: an RPC cannot write a run's events, and the
+// page appends every run:event it receives to that run's list (see fstPublishSteps)
+async function dagPeekPublish(h, ctx, events) {
+    const ts = Date.now();
+    for (const [i, [kind, detail, phaseidx]] of events.entries()) {
+        const event = {
+            id: `dagpeek-${kind}-${ts}-${i}`,
+            runid: ctx.runId,
+            channelid: ctx.channelId,
+            ts,
+            kind,
+            phaseidx,
+            detail: JSON.stringify(detail),
+        };
+        await h.rpc("eventpublish", {
+            event: "run:event",
+            scopes: [`run:${ctx.runId}`],
+            data: { channelid: ctx.channelId, runid: ctx.runId, event },
+        });
+    }
+}
 const dagMotionPrint = (dag) => JSON.stringify((dag?.tasks ?? []).map((t) => [t.id, t.state]));
 const dagMotionSeed = (doneIds) => (dag) => ({
     ...dag,
@@ -23313,42 +23353,38 @@ const openAddressExpr = (address) => `(async () => {
 // the lead idle, so the run has no dag when the run sheet step edits it.
 async function newRunWithLightReviewers(h, ctx) {
     const out = { row: null, picked: null, lead: null, run: null };
-    await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+    // the New dialog since the launcher replaced the New run window (5f91889a7): Mod+Shift+R opens it at the run door, a
+    // project is a row of the Project column, the Start column picks the orchestrator, the Goal box is a textarea, and
+    // the footer's primary button starts the run
+    await h.ev(OPEN_NEW_RUN);
     if (!(await polishWaitFor(h, `!!${NEW_RUN}`, 5000))) return { ...out, why: "the window did not open" };
-    await h.ev(`${NEW_RUN_FIELD}?.click()`);
-    await polishWaitFor(h, `!!${NEW_RUN_LIST}`, 3000);
-    await h.ev(setInputExpr(`${NEW_RUN}?.querySelector('input[aria-label="Search projects"]')`, NEW_RUN_PROJECT));
-    await polishNap(300);
-    await h.ev(`${NEW_RUN_LIST}?.querySelector('[data-project-option="${NEW_RUN_PROJECT}"]')?.click()`);
-    await polishNap(300);
-    await h.ev(
-        `[...(${NEW_RUN}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`
-    );
+    const projectRow = `${NEW_RUN}?.querySelector('[data-project-row="${NEW_RUN_PROJECT}"]')`;
+    await polishWaitFor(h, `!!${projectRow}`, 3000);
+    await h.ev(`${projectRow}?.click()`);
+    out.project = await polishWaitFor(h, `${projectRow}?.getAttribute('aria-checked') === 'true'`, 3000);
+    out.orchestrator = await launcherClickStart(h, "orchestrator");
     await polishNap(200);
     await h.ev(clickByText(`${NEW_RUN}?.querySelector('[role="group"][aria-label="Start from"]')`, "button", "Goal"));
-    await h.ev(`(() => {
-        const el = ${NEW_RUN_GOAL};
-        if (!el) return false;
-        Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(NEW_RUN_LIGHT_GOAL)});
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        return true;
-    })()`);
+    await h.ev(setFieldExpr(`${NEW_RUN}?.querySelector('textarea[aria-label="Goal"]')`, NEW_RUN_LIGHT_GOAL));
     out.lead = await pickClaudeRoute(h, `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Lead model"]')`, "haiku");
     out.picked = await pickClaudeRoute(h, `${NEW_RUN}?.querySelector('[data-light-reviewers-row] [data-testid="route-picker"]')`, "haiku");
+    // the row's label is its first span: the row itself draws no box (display: contents), its child holds the picker too
     out.row = await h.ev(`(() => {
         const row = ${NEW_RUN}?.querySelector('[data-light-reviewers-row]');
-        return row ? { label: ${flatText("row.firstElementChild")}, face: ${flatText(`row.querySelector('[data-testid="route-picker"]')`)} } : null;
+        return row ? { label: ${flatText("row.querySelector('span')")}, face: ${flatText(`row.querySelector('[data-testid="route-picker"]')`)} } : null;
     })()`);
     await h.shot("cdp-shots/new-run-window-3-light-reviewers.png");
     const before = new Set((await channelRuns(h, ctx.channelId)).map((r) => r.id));
-    await h.ev(`${NEW_RUN_START}?.click()`);
+    await h.ev(
+        `[...(${NEW_RUN}?.querySelectorAll('button') ?? [])].find((b) => /^(Start run|Starting…)/.test(b.textContent.trim()))?.click()`
+    );
     for (let waited = 0; waited < 20000 && out.run == null; waited += 500) {
         out.run = (await channelRuns(h, ctx.channelId)).find((r) => !before.has(r.id)) ?? null;
         if (out.run == null) await polishNap(500);
     }
     if (out.run == null) {
         out.why = await h.ev(flatText(NEW_RUN));
-        await h.ev(clickByText(NEW_RUN, "button", "Cancel"));
+        await h.ev(`[...(${NEW_RUN}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
     }
     ctx.createdRunId = out.run?.id;
     ctx.createdLandPath = out.run?.landpath;
@@ -23372,8 +23408,13 @@ async function editSheetLightReviewers(h, ctx) {
     await h.shot("cdp-shots/new-run-window-4-run-sheet.png");
     await h.ev(clickByText(RUN_SHEET, "button", "Save settings"));
     out.saved = await polishWaitFor(h, `!!${RUN_SHEET}?.querySelector('[data-jarvis-brief-sheet-state="saved"]')`, 8000);
+    // The write goes to the group once the run has a dag (ApplyLiveEngineSettings leaves the run's launch snapshot alone),
+    // and to the run before: the sheet itself reads group ?? run (runSettingsDraft), so does this
     for (let waited = 0; waited < 5000; waited += 250) {
-        out.after = (await runNow())?.lightreviewerroute ?? null;
+        const now = await runNow();
+        out.dagAfter = now?.dagoref ?? "";
+        const group = out.dagAfter === "" ? null : (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.createdRunId }))?.group;
+        out.after = (group ?? now)?.lightreviewerroute ?? null;
         if (out.after?.model === out.picked) break;
         await polishNap(250);
     }
@@ -23577,9 +23618,11 @@ const newRunWindow = {
 
         const edited = await editSheetLightReviewers(h, ctx);
         rec(
+            // The lead is a real haiku agent, and told to wait idle it can still submit a dag before the sheet saves (the
+            // run's first dag races this step), so the write is read from whichever owns the settings then: the run, or
+            // its group (editSheetLightReviewers); `dag` and `dagAfter` in the detail say whether one existed.
             "9. the run sheet shows and edits the Light reviewers row",
-            edited.dag === "" &&
-                edited.summary.includes("light reviewers on claude") &&
+            edited.summary.includes("light reviewers on claude") &&
                 edited.row === true &&
                 edited.picked != null &&
                 edited.saved === true &&
@@ -26572,57 +26615,57 @@ const autonomousRuns = {
             JSON.stringify(resetRow)
         );
 
-        // --- new-run (NewRun board)
-        await h.ev(`document.querySelector('[data-new-run]')?.click()`);
+        // --- new-run (NewRun board), in the New dialog since the launcher replaced the New run window (5f91889a7): the same
+        // door, project row, Start row and Goal box newRunWithLightReviewers drives. Nothing here starts the run: it ends on Cancel
+        await h.ev(OPEN_NEW_RUN);
         const windowOpen = await polishWaitFor(h, `!!${NEW_RUN}`, 5000);
-        await h.ev(`${NEW_RUN_FIELD}?.click()`);
-        await polishWaitFor(h, `!!${NEW_RUN_LIST}`, 3000);
-        await h.ev(setInputExpr(`${NEW_RUN}?.querySelector('input[aria-label="Search projects"]')`, AUTONOMOUS_PROJECT));
-        await polishNap(300);
-        await h.ev(`${NEW_RUN_LIST}?.querySelector('[data-project-option="${AUTONOMOUS_PROJECT}"]')?.click()`);
-        await polishNap(300);
-        await h.ev(
-            `[...(${NEW_RUN}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'orchestrator')?.click()`
-        );
+        const launcherProject = `${NEW_RUN}?.querySelector('[data-project-row="${AUTONOMOUS_PROJECT}"]')`;
+        await polishWaitFor(h, `!!${launcherProject}`, 3000);
+        await h.ev(`${launcherProject}?.click()`);
+        const projectPicked = await polishWaitFor(h, `${launcherProject}?.getAttribute('aria-checked') === 'true'`, 3000);
+        const orchestratorPicked = await launcherClickStart(h, "orchestrator");
         await polishNap(200);
-        await h.ev(clickByText(`${NEW_RUN}?.querySelector('[role="group"][aria-label="Start from"]')`, "button", "Goal"));
-        await h.ev(`(() => {
-            const el = ${NEW_RUN_GOAL};
-            if (!el) return false;
-            Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(`verify ${ctx.stamp}: do nothing`)});
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            return true;
-        })()`);
+        await h.ev(setFieldExpr(`${NEW_RUN}?.querySelector('textarea[aria-label="Goal"]')`, `verify ${ctx.stamp}: do nothing`));
         const NEW_RUN_APPROVALS = `${NEW_RUN}?.querySelector('[role="group"][aria-label="Approvals"]')`;
         await polishWaitFor(h, `${NEW_RUN_APPROVALS}?.querySelector('button[aria-pressed="true"]')?.textContent.trim() === 'Autonomous'`, 5000);
-        const NEW_RUN_FOOTER = `${NEW_RUN}?.querySelector('[data-new-run-footer] > span')`;
-        await polishWaitFor(h, `${flatOf(NEW_RUN_FOOTER)}.endsWith(' · autonomous')`, 3000);
+        // the launcher's footer is one line of where the run goes (footerLine in launcher.ts), with no word on approvals:
+        // the Approvals row's own note under the dial is what says the run is autonomous
+        const NEW_RUN_FOOTER = `${NEW_RUN}?.querySelector('[data-launcher-footer]')`;
         const orch = await h.ev(`(() => {
             const group = ${NEW_RUN_APPROVALS};
-            const models = [...(${NEW_RUN}?.querySelectorAll('span') ?? [])].find((s) => s.textContent.trim() === 'Models')?.parentElement;
+            const field = group?.closest('[data-launcher-approvals]');
+            // the model pickers are one grid, its Light reviewers row the last; Approvals is the next field under it
+            const models = ${NEW_RUN}?.querySelector('[data-light-reviewers-row]')?.parentElement;
             return {
                 pressed: [...(group?.querySelectorAll('button[aria-pressed="true"]') ?? [])].map((b) => b.textContent.trim()),
-                underModels: models != null && models.nextElementSibling === group?.parentElement,
+                underModels: models != null && field != null && models.nextElementSibling === field,
+                note: ${flatOf("group?.nextElementSibling")},
                 footer: ${flatOf(NEW_RUN_FOOTER)},
             };
         })()`);
         await h.shot("cdp-shots/autonomous-runs-2-new-run.png");
         rec(
-            "new-run 1. on orchestrator the Approvals field sits under Models with the profile's Autonomous selected, and the footer ends · autonomous",
-            windowOpen && orch.pressed.join(",") === "Autonomous" && orch.underModels && orch.footer.endsWith(" · autonomous"),
-            JSON.stringify({ windowOpen, ...orch })
+            "new-run 1. on orchestrator the Approvals field sits under the model pickers with the profile's Autonomous selected and its autonomous note, and the footer names the orchestrator run",
+            windowOpen &&
+                projectPicked &&
+                orchestratorPicked &&
+                orch.pressed.join(",") === "Autonomous" &&
+                orch.underModels &&
+                orch.note.startsWith("No questions: the lead decides") &&
+                orch.footer.startsWith("Orchestrator × ") &&
+                orch.footer.endsWith(` in ${AUTONOMOUS_PROJECT}`),
+            JSON.stringify({ windowOpen, projectPicked, orchestratorPicked, ...orch })
         );
-        await h.ev(
-            `[...(${NEW_RUN}?.querySelectorAll('button[aria-pressed]') ?? [])].find((b) => b.firstElementChild?.textContent.trim() === 'quick')?.click()`
-        );
+        const quickPicked = await launcherClickStart(h, "quick");
         const gone = await polishWaitFor(h, `!${NEW_RUN_APPROVALS}`, 3000);
         const quickFooter = await h.ev(flatOf(NEW_RUN_FOOTER));
         rec(
-            "new-run 2. on quick the Approvals field is gone, and so is the footer's autonomous",
-            gone && quickFooter.startsWith("quick") && !quickFooter.endsWith(" · autonomous"),
-            JSON.stringify({ gone, footer: quickFooter })
+            "new-run 2. on quick the Approvals field is gone, and the footer reads a quick run",
+            quickPicked && gone && quickFooter === `Quick run in ${AUTONOMOUS_PROJECT}`,
+            JSON.stringify({ quickPicked, gone, footer: quickFooter })
         );
-        await h.ev(clickByText(NEW_RUN, "button", "Cancel"));
+        // the Cancel button's text carries its esc hint
+        await h.ev(`[...(${NEW_RUN}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
         await polishWaitFor(h, `!${NEW_RUN}`, 3000);
 
         // --- run-sheet (RunSheet board)
@@ -39124,6 +39167,9 @@ const agentSleep = {
             const aw = ${asRow(AS_AWAKE_ID)};
             return {
                 text: sl?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+                // the row's text leaves one by one: its name, model and age sit side by side with no space between,
+                // so "sonnet" + "2h" reads "sonnet2h" as a joined string and a word-boundary match misses the age
+                leaves: sl ? [...sl.querySelectorAll("*")].filter((e) => e.children.length === 0).map((e) => e.textContent.trim()).filter(Boolean) : [],
                 moon: !!sl?.querySelector("[data-agent-sleeping]"),
                 glyph: !!sl?.querySelector("[data-agent-glyph-state]"),
                 done: !!sl?.querySelector("[data-agent-done]"),
@@ -39134,7 +39180,7 @@ const agentSleep = {
         await h.shot("cdp-shots/agent-sleep-row.png");
         rec(
             "1. the sidebar row shows the moon in its glyph's place and \"2h\", and no Close",
-            rowReady && row.moon && !row.glyph && /\b2h\b/.test(row.text ?? "") && !row.done && !row.awakeMoon,
+            rowReady && row.moon && !row.glyph && row.leaves.includes("2h") && !row.done && !row.awakeMoon,
             JSON.stringify(row)
         );
 
@@ -44088,7 +44134,11 @@ const agyHarness = {
                 )
             );
             ctx.wroteFixture = true;
-            await h.ev(`localStorage.setItem(${JSON.stringify(AGY_USAGE_KEY)}, ${JSON.stringify(JSON.stringify(agyUsageFixture()))})`);
+            // the store reads a {buckets, sessions} object (devUsageFixture in usagestore.ts since 3638ce940); a bare array is
+            // ignored and the page falls through to the real scan
+            await h.ev(
+                `localStorage.setItem(${JSON.stringify(AGY_USAGE_KEY)}, ${JSON.stringify(JSON.stringify({ buckets: agyUsageFixture(), sessions: [] }))})`
+            );
             await h.ev(`localStorage.removeItem(${JSON.stringify(TREE_COLLAPSED_KEY)})`);
             // the sidebar lists registered projects only, and createproject makes the channel the consult composer needs
             await h.rpc("createproject", { name: AGY_PROJECT, path: ctx.projectDir });
@@ -44141,20 +44191,24 @@ const agyHarness = {
             await h.ev(`[...(${LAUNCHER}?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim().startsWith('Cancel'))?.click()`);
             await polishWaitFor(h, `!${LAUNCHER}`, 3000);
 
-            // 2. the injected row on the rail: glyph, color token, title, asking
+            // 2. the injected row on the rail: glyph, title, state color, asking. Since f5de00a66 (2026-10-12) the glyph carries
+            // the agent's state: a working or asking row colours it by that state (GLYPH_COLOR) and titles it
+            // "<runtime> · <state>"; only a row with no state shows the runtime's own color (text-rt-agy)
             const rowFound = await polishWaitFor(h, `!!document.querySelector('[data-agent-row="${AGY_ROW_ID}"]')`, 8000);
             const row = await h.ev(`(() => {
                 const el = document.querySelector('[data-agent-row="${AGY_ROW_ID}"]');
                 if (!el) return null;
-                const mark = el.querySelector('span[title="Antigravity"]');
+                const mark = el.querySelector('span[data-agent-glyph-state]');
                 const probe = document.createElement("span");
-                probe.style.color = "var(--color-rt-agy)";
+                probe.style.color = "var(--color-warning)";
                 document.body.appendChild(probe);
                 const want = getComputedStyle(probe).color;
                 probe.remove();
                 return {
                     glyph: mark?.textContent.trim() ?? null,
-                    hasClass: mark?.classList.contains("text-rt-agy") ?? false,
+                    title: mark?.getAttribute("title") ?? null,
+                    state: mark?.getAttribute("data-agent-glyph-state") ?? null,
+                    hasClass: mark?.classList.contains("text-warning") ?? false,
                     colorMatches: mark != null && getComputedStyle(mark).color === want && want !== "",
                     name: el.textContent.includes(${JSON.stringify(AGY_ROW_NAME)}),
                     asking: [...el.querySelectorAll("span")].some((s) => s.textContent.trim() === "asking"),
@@ -44162,8 +44216,9 @@ const agyHarness = {
             })()`);
             await shot("2-rail-row");
             rec(
-                "2. rail shows the agy row asking",
-                rowFound && row?.glyph === "◭" && row.hasClass && row.colorMatches && row.name && row.asking,
+                "2. rail shows the agy row asking (the ◭ glyph in the asking colour, titled Antigravity · asking)",
+                rowFound && row?.glyph === "◭" && row.title === "Antigravity · asking" && row.state === "asking" &&
+                    row.hasClass && row.colorMatches && row.name && row.asking,
                 JSON.stringify(row)
             );
 
@@ -44238,6 +44293,10 @@ const agyHarness = {
             );
             await h.ev(`${CONSULT}?.click()`);
             await h.ev(`globalThis.__wavePetStore?.resetPeek()`);
+            // resetPeek empties the peek's state but leaves it open, and an open peek counts as a modal (petPeekOpenAtom in
+            // deriveKeyContext, since e11e3d621), which keeps the New run chord (`when: !modalOpen`) from opening the launcher
+            await h.ev(`document.querySelector('[data-pet-peek] button[aria-label="Close Jarvis panel"]')?.click()`);
+            await polishWaitFor(h, `!document.querySelector('[data-pet-peek]')`, 3000);
 
             // 5, 6, 9. the New run window's pickers
             const NEW_RUN_LEAD = `${NEW_RUN}?.querySelector('[data-testid="route-picker"][aria-label="Lead model"]')`;
@@ -44255,7 +44314,7 @@ const agyHarness = {
                 "5. worker picker lists Antigravity",
                 runOpen && workers.open && workers.chips.includes("agy") && workers.chips.includes("claude") &&
                     workers.rows.includes(`agy-${AGY_MODEL}`),
-                JSON.stringify(workers)
+                JSON.stringify({ runOpen, ...workers })
             );
             await agyClosePicker(h);
 
@@ -44282,7 +44341,14 @@ const agyHarness = {
 
             // 7. the usage surface's daily chart draws an agy series
             await h.goto("usage");
+            // the daily chart draws the selected provider tab's harness only (chartHarnesses in usagesurface.tsx; the tabs
+            // replaced the harness rail in 5f4f9a10a and open on the busiest provider, here Claude), so the All tab is the
+            // one that stacks every harness, agy among them
+            await polishWaitFor(h, `!!document.querySelector('[data-usage-harness="all"]')`, 10000);
+            await h.ev(`document.querySelector('[data-usage-harness="all"]')?.click()`);
+            await polishWaitFor(h, `document.querySelector('[data-usage-harness="all"]')?.getAttribute("aria-selected") === "true"`, 3000);
             const chartUp = await polishWaitFor(h, `document.querySelectorAll(".visx-axis-left .visx-axis-tick").length > 0`, 10000);
+            await polishWaitFor(h, `!!document.querySelector("svg path[fill='var(--color-rt-agy)']")`, 4000);
             const chart = await h.ev(`(() => {
                 const probe = document.createElement("span");
                 probe.style.color = "var(--color-rt-agy)";
@@ -45182,6 +45248,8 @@ const floatNote = {
             ctx.prevNote = await h.rpc("notescratchread", null);
             // the pair the Translate store holds is the one it read from here at boot, and teardown puts it back
             ctx.prevPair = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_TRANSLATE_PAIR_KEY)})`);
+            // and the history the answers below join: teardown takes those entries back out
+            ctx.prevHistory = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_TRANSLATE_HISTORY_KEY)})`);
             await h.ev(RAIL_TRANSLATE_STUB);
             await h.rpc("notescratchwrite", { body: "" });
             // the app's own notes folder: an app started with ARC_DEV_NO_GLOBAL_INSTALL keeps its vault in its store, not
@@ -45206,6 +45274,10 @@ const floatNote = {
         const editorSel = "[data-float-note-editor]";
         const noteUp = `!!document.querySelector("[data-float-note]")`;
         const noteGone = `!document.querySelector("[data-float-note]")`;
+        // Leaving Float turns floatModeAtom off first, then gives the window its frame back with `busy` held, and a float
+        // asked for meanwhile (the chord, Shift+F, the header menu) is ignored by enterFloat's guard; the restore's last
+        // step empties this key (floatstore.ts unfloatTheWindow), so a step that floats again waits for it
+        const frameBack = `sessionStorage.getItem("arc.float.restore") == null`;
         const pressed = (sel) => h.ev(`document.querySelector(${JSON.stringify(sel)})?.getAttribute("aria-pressed") ?? null`);
         const editorFocused = `document.activeElement === document.querySelector(${JSON.stringify(editorSel)})`;
         const editorValue = () => h.ev(`document.querySelector(${JSON.stringify(editorSel)})?.value ?? null`);
@@ -45219,8 +45291,9 @@ const floatNote = {
         };
 
         await h.goto("agent");
-        await wait(`!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
-        await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
+        // a plain terminal's row is a [data-tree-terminal-row], not an agent's [data-agent-row] (f38576d7d, one tree per project)
+        await wait(`!!document.querySelector('[data-tree-terminal-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-tree-terminal-row="${term.tabId}"]')?.click()`);
         await wait(floatNoteShowing(term.tabId), 3000);
 
         // 1. board Terminal: the fixed tabs are there beside the terminal's own, even with one terminal to float
@@ -45318,15 +45391,19 @@ const floatNote = {
                 `refused to lock a folder: ${notePath} is ${onDisk == null ? "missing" : "not the note the app saved"}, so the app's notes folder is somewhere else`
             );
         } else {
-            ctx.notesMode = statSync(ctx.notesDir).mode & 0o777;
-            chmodSync(ctx.notesDir, 0o555);
+            // What keeps the save out: the notes folder's mode on a Mac or Linux, where a read-only file does not stop the
+            // write's rename over it. Windows ignores a folder's mode but refuses a rename onto a read-only file, and
+            // fileutil.renameReplacing retries that for a second first, so the error line takes longer to show.
+            const win = process.platform === "win32";
+            ctx.notesLock = { path: win ? notePath : ctx.notesDir, mode: statSync(win ? notePath : ctx.notesDir).mode & 0o777 };
+            chmodSync(ctx.notesLock.path, win ? 0o444 : 0o555);
             await floatNoteKey(h, "a");
-            const failed = await wait(`!!document.querySelector("[data-float-note-error]")`, 2000);
+            const failed = await wait(`!!document.querySelector("[data-float-note-error]")`, win ? 6000 : 2000);
             const errText = await h.ev(`document.querySelector("[data-float-note-error]")?.textContent.trim() ?? null`);
             const kept = await editorValue();
             await h.shot("cdp-shots/float-note-error.png");
-            chmodSync(ctx.notesDir, ctx.notesMode);
-            ctx.notesMode = null;
+            chmodSync(ctx.notesLock.path, ctx.notesLock.mode);
+            ctx.notesLock = null;
             await floatNoteKey(h, "b");
             const cleared = await wait(`!document.querySelector("[data-float-note-error]")`, 2000);
             rec(
@@ -45378,7 +45455,7 @@ const floatNote = {
         await click('[data-float-fixed="note"]');
         await wait(noteUp, 3000);
         await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
-        const ended = await wait(`!document.querySelector("[data-float-bar]") && ${noteGone}`, 5000);
+        const ended = await wait(`!document.querySelector("[data-float-bar]") && ${noteGone} && ${frameBack}`, 8000);
         rec("6d. Float ending with the note open closes both", ended, JSON.stringify({ ended }));
 
         await floatNoteChord(h, ctx);
@@ -45386,7 +45463,7 @@ const floatNote = {
         rec("6e. Mod+Shift+N outside Float floats straight onto the note", fromOutside, JSON.stringify({ fromOutside }));
 
         await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
-        await wait(`!document.querySelector("[data-float-bar]")`, 5000);
+        await wait(`!document.querySelector("[data-float-bar]") && ${frameBack}`, 8000);
         await wait(floatNoteShowing(term.tabId), 3000);
         await floatTerminal();
         const again = await wait(`!!document.querySelector("[data-float-bar]")`, 5000);
@@ -45432,7 +45509,7 @@ const floatNote = {
                 termTab: pressedOf('[data-float-tab="${term.tabId}"]'),
                 focused: ${RAIL_TRANSLATE_INPUT_FOCUSED},
                 pair: [document.querySelector("[data-translate-source]")?.value, document.querySelector("[data-translate-target]")?.value],
-                empty: ${RAIL_TRANSLATE_OUTPUT} === "" && !document.querySelector("[data-translate-details]") && !document.querySelector("[data-translate-error]"),
+                empty: ${RAIL_TRANSLATE_EMPTY},
             };
         })()`);
         const sizePanel = await floatMiniTermSize(h, term.blockId);
@@ -45544,7 +45621,7 @@ const floatNote = {
         await click(translateTab);
         await wait(translateFloat, 3000);
         await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
-        const leftWithFloatPanel = await wait(`!document.querySelector("[data-float-bar]") && ${translateGone}`, 5000);
+        const leftWithFloatPanel = await wait(`!document.querySelector("[data-float-bar]") && ${translateGone} && ${frameBack}`, 8000);
         await wait(floatNoteShowing(term.tabId), 3000);
         await ttMouse(h, "[data-nav-translate]");
         const railUp = await wait(`!!document.querySelector("[data-translate-rail] [data-translate-panel]")`, 3000);
@@ -45555,7 +45632,7 @@ const floatNote = {
         await h.ev("new Promise((r) => setTimeout(r, 600))");
         const stillGone = await h.ev(translateGone);
         await h.ev(`document.querySelector("[data-float-exit]")?.click()`);
-        const leftAgain = await wait(`!document.querySelector("[data-float-bar]")`, 5000);
+        const leftAgain = await wait(`!document.querySelector("[data-float-bar]") && ${frameBack}`, 8000);
         await h.ev("new Promise((r) => setTimeout(r, 600))");
         const railStaysGone = await h.ev(translateGone);
         rec(
@@ -45573,8 +45650,8 @@ const floatNote = {
                 console.error(`float-note teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
-        if (ctx.notesMode != null) {
-            await step("restore the notes folder's mode", () => chmodSync(ctx.notesDir, ctx.notesMode));
+        if (ctx.notesLock != null) {
+            await step("unlock the note (step 5)", () => chmodSync(ctx.notesLock.path, ctx.notesLock.mode));
         }
         await step("leave float", () => h.ev(`document.querySelector("[data-float-exit]")?.click()`));
         await step("settle", () => h.ev("new Promise((r) => setTimeout(r, 1200))"));
@@ -45583,7 +45660,9 @@ const floatNote = {
         }
         // prevPair is undefined until arrange read it (null: nothing stored); before that nothing was changed
         if (ctx.prevPair !== undefined) {
-            await step("empty the Translate box and restore its pair", () => railTranslateReset(h, ctx.prevPair));
+            await step("empty the Translate box, restore its pair and history", () =>
+                railTranslateReset(h, ctx.prevPair, ctx.prevHistory)
+            );
         }
         await step("clear the Translate stub", () => h.ev(RAIL_TRANSLATE_CLEANUP));
         for (const t of ctx.terminals ?? []) {
@@ -45628,8 +45707,9 @@ const floatLedgeTabs = {
         const wait = (expr, ms) => floatMiniWait(h, expr, ms);
         const term = ctx.terminals[0];
         await h.goto("agent");
-        await wait(`!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
-        await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
+        // a plain terminal's row is a [data-tree-terminal-row], not an agent's [data-agent-row] (f38576d7d, one tree per project)
+        await wait(`!!document.querySelector('[data-tree-terminal-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-tree-terminal-row="${term.tabId}"]')?.click()`);
         await wait(floatNoteShowing(term.tabId), 3000);
         if (!(await pickHeaderMenu(h, "Float window"))) {
             await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
@@ -45701,6 +45781,9 @@ const floatLedgeTabs = {
 // from Sprout in all three; the terminal's PTY size never moves across a fold (the shell is hidden before the window
 // shrinks). docs/superpowers/specs/2026-10-10-jarvis-modes-design.md. Windows only: WKWebView answers no CDP.
 const JARVIS_MODES_PROJECT = "verify-jarvis-modes";
+// the folded window's rest box: MINI_REST_SIZE in floatwindow.ts, 320x336 since cf5e94b19 (the folded card holds the
+// auto fold off) grew it from 264 tall
+const JARVIS_MODES_REST = { w: 320, h: 336 };
 
 const jarvisModes = {
     name: "jarvis-modes",
@@ -45731,9 +45814,14 @@ const jarvisModes = {
         const size = () => h.ev(`({ w: window.innerWidth, h: window.innerHeight })`);
         const shown = (sel) => `!!document.querySelector(${JSON.stringify(sel)})?.offsetParent`;
 
+        // verify.mjs pins the viewport at 1600x950 (0c908bed9), which holds window.innerWidth there however the native
+        // window folds into Sprout's box: this scenario reads the real window, so it lifts the pin (the harness puts it
+        // back after teardown)
+        await h.cdp("Emulation.clearDeviceMetricsOverride", {});
         await h.goto("agent");
-        await wait(`!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
-        await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
+        // a plain terminal's row is a [data-tree-terminal-row], not an agent's [data-agent-row] (f38576d7d, one tree per project)
+        await wait(`!!document.querySelector('[data-tree-terminal-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-tree-terminal-row="${term.tabId}"]')?.click()`);
         await h.ev("new Promise((r) => setTimeout(r, 1200))");
         const fullBefore = await floatMiniTermSize(h, term.blockId);
 
@@ -45753,17 +45841,17 @@ const jarvisModes = {
         const barHidden = await h.ev(`!${shown("[data-app-bar]")}`);
         await h.shot("cdp-shots/jarvis-modes-folded-full.png");
         steps.push({
-            step: "2. the app bar's Sprout button folds Full into Sprout's 320x264 box",
-            ok: folded && barHidden && rest.w <= 320 && rest.h <= 264,
+            step: `2. the app bar's Sprout button folds Full into Sprout's ${JARVIS_MODES_REST.w}x${JARVIS_MODES_REST.h} box`,
+            ok: folded && barHidden && rest.w <= JARVIS_MODES_REST.w && rest.h <= JARVIS_MODES_REST.h,
             detail: JSON.stringify({ folded, barHidden, rest }),
         });
 
         // 3. the chat opens from the folded Sprout's hover card, and one click on Sprout holds the card
         await h.ev(MINI_OPEN_CHAT);
-        const foldedChat = await wait(`!!document.querySelector("[data-pet-peek]") && window.innerHeight > 264`);
+        const foldedChat = await wait(`!!document.querySelector("[data-pet-peek]") && window.innerHeight > ${JARVIS_MODES_REST.h}`);
         await h.shot("cdp-shots/jarvis-modes-folded-chat.png");
         await h.ev(MINI_CLOSE_CHAT);
-        await wait(`!document.querySelector("[data-pet-peek]") && window.innerHeight <= 264`);
+        await wait(`!document.querySelector("[data-pet-peek]") && window.innerHeight <= ${JARVIS_MODES_REST.h}`);
         steps.push({ step: "3. the folded Sprout's hover card opens the chat", ok: foldedChat, detail: "" });
         await h.ev(MINI_SINGLE_CLICK);
         const clickCard = await wait(
@@ -45790,15 +45878,28 @@ const jarvisModes = {
             detail: JSON.stringify({ backFull, fullBefore, fullAfter }),
         });
 
-        // 5. Float: Sprout walks the ledge and opens the chat
-        await pickHeaderMenu(h, "Float window");
+        // 5. Float: Sprout walks the ledge and opens the chat. A plain terminal's pane head has no "…" menu, so Shift+F
+        // (nav mode, out of the xterm) floats it, as the menu's row would an agent
+        if (!(await pickHeaderMenu(h, "Float window"))) {
+            await h.ev("document.activeElement instanceof HTMLElement && document.activeElement.blur()");
+            await floatNoteKey(h, "F");
+        }
         const floated = await wait(shown("[data-float-bar]"));
         await h.ev("new Promise((r) => setTimeout(r, 1500))");
-        const onLedge = await h.ev(`(() => {
-            const s = document.querySelector("[data-pet-sprite]")?.getBoundingClientRect();
-            const l = document.querySelector("[data-pet-ledge-holds]")?.getBoundingClientRect();
-            return !!s && !!l && s.top >= l.top - 1 && s.bottom <= l.bottom + 1;
+        const readLedgeGeo = () => h.ev(`(() => {
+            const box = (e) => { const r = e?.getBoundingClientRect(); return r ? { top: Math.round(r.top), bottom: Math.round(r.bottom) } : null; };
+            return {
+                sprite: box(document.querySelector("[data-pet-sprite]")),
+                ledge: box(document.querySelector("[data-pet-ledge-holds]")),
+                win: { w: window.innerWidth, h: window.innerHeight },
+            };
         })()`);
+        const ledgeGeo = await readLedgeGeo();
+        const onLedge =
+            ledgeGeo.sprite != null &&
+            ledgeGeo.ledge != null &&
+            ledgeGeo.sprite.top >= ledgeGeo.ledge.top - 1 &&
+            ledgeGeo.sprite.bottom <= ledgeGeo.ledge.bottom + 1;
         const floatBefore = await floatMiniTermSize(h, term.blockId);
         await h.ev(`document.querySelector("[data-pet-sprite]")?.click()`);
         const floatChat = await wait(`!!document.querySelector("[data-pet-peek]")`);
@@ -45808,11 +45909,15 @@ const jarvisModes = {
         steps.push({
             step: "5. in Float, Sprout stands inside the ledge and opens the chat",
             ok: floated && onLedge && floatChat,
-            detail: JSON.stringify({ floated, onLedge, floatChat }),
+            detail: JSON.stringify({ floated, onLedge, ...ledgeGeo, floatChat }),
         });
 
-        // 6. Float folds and restores to Float, the PTY untouched
-        await h.ev(`document.querySelector("[data-float-minimize]")?.click()`);
+        // 6. Float folds and restores to Float, the PTY untouched. The bar's own Fold button is a Mac's
+        // (data-float-minimize); elsewhere the window controls' − folds, labelled "Fold into <pet>" while window:minimize is
+        // Sprout (a dock setting would label it Minimize, and this finds nothing rather than minimize the window)
+        await h.ev(
+            `document.querySelector('[data-float-minimize], [data-float-bar] button[aria-label^="Fold into"]')?.click()`
+        );
         const foldedFloat = await wait(`!!document.querySelector("[data-sprout-mini]")`);
         await h.ev("new Promise((r) => setTimeout(r, 900))");
         await h.ev(MINI_CLICK);
@@ -46865,11 +46970,28 @@ const toolsTree = {
             const f = [...document.querySelectorAll("[data-project-folder]")].find((el) => ${TT_FLAT}(el).startsWith("Home"));
             return f?.getAttribute("data-project-folder") ?? null;
         })()`);
+        // Home is shared with the live store, which holds terminals of its own beside the two this scenario opened (the
+        // dev app's user terminals, and what other scenarios leave): count what the expanded Home folder holds, so the
+        // folded label is judged against its real rows, not against a fixed 2
+        const homeShape = (await h.ev(TT_TREE_SHAPE)) ?? [];
+        const homeAt = homeKey == null ? -1 : homeShape.indexOf(`folder:${homeKey}`);
+        const homeRows = homeAt < 0 ? [] : homeShape.slice(homeAt + 1);
+        const nextFolder = homeRows.findIndex((r) => r.startsWith("folder:"));
+        const homeHeld = nextFolder < 0 ? homeRows : homeRows.slice(0, nextFolder);
+        // a split of terminals is one row whose cells are inside it; the folder counts each cell as a terminal
+        const homeSplitCells = homeHeld.some((r) => r.startsWith("split:"))
+            ? await h.ev(`document.querySelectorAll('[data-split-row="${homeKey}"] [data-split-cell]').length`)
+            : 0;
+        const homeTerminals = homeHeld.filter((r) => r.startsWith("terminal:")).length + homeSplitCells;
+        const homeOnlyTerminals = homeHeld.every((r) => r.startsWith("terminal:") || r.startsWith("split:"));
         const foldedHome = homeKey == null ? null : await folded(homeKey);
         rec(
-            "4. folded-terminals-only: a folder holding only two terminals reads 2 terminals",
-            foldedHome?.expanded === "false" && foldedHome.counts === "2 terminals",
-            JSON.stringify({ homeKey, foldedHome })
+            "4. folded-terminals-only: a folder holding only terminals (at least our two) reads N terminals, and no agents",
+            homeOnlyTerminals &&
+                homeTerminals >= 2 &&
+                foldedHome?.expanded === "false" &&
+                foldedHome.counts === `${homeTerminals} terminals`,
+            JSON.stringify({ homeKey, homeTerminals, homeOnlyTerminals, foldedHome })
         );
         if (homeKey != null) await ttClick(h, `[data-project-folder="${homeKey}"] [data-agent-folder-toggle]`);
 
@@ -47678,7 +47800,12 @@ const toolsFound = {
         const up = await ttOpenLibrary(h);
         const seeded = await lookEval(h, `
             const { globalStore } = await mod("app/store/jotaiStore.ts");
-            const { toolSuggestionsAtom, hiddenToolsAtom } = await mod("app/view/agents/toolsstore.ts");
+            const { toolSuggestionsAtom, hiddenToolsAtom, loadTools } = await mod("app/view/agents/toolsstore.ts");
+            // opening the library fires a status read that replaces the suggestions when it lands; the statuses are
+            // often on screen already, so the row the scenario waited for does not mean that read is done. Await it
+            // (loadTools joins the one in flight and any read asked for meanwhile) before seeding, or the seed is
+            // overwritten by the machine's real suggestions a moment later.
+            await loadTools();
             globalStore.set(hiddenToolsAtom, []);
             globalStore.set(toolSuggestionsAtom, [${JSON.stringify(TT_FOUND_TOOL)}]);
             return until(() => document.querySelector('[data-tools-found] [data-tools-row="arc-found"]') != null, 4000);
@@ -47698,11 +47825,22 @@ const toolsFound = {
         const detail = await polishWaitFor(h, `!!document.querySelector('[data-tools-detail="arc-found"] [data-tool-suggest-add]')`, 4000);
         await polishNap(300);
         const where = await h.ev(`${TT_FLAT}(document.querySelector('[data-tools-detail="arc-found"]'))`);
+        const foundState = await lookEval(h, `
+            const { globalStore } = await mod("app/store/jotaiStore.ts");
+            const { toolSuggestionsAtom, hiddenToolsAtom } = await mod("app/view/agents/toolsstore.ts");
+            const { selectedToolAtom, toolFormAtom } = await mod("app/view/agents/setupstore.ts");
+            return {
+                suggestions: globalStore.get(toolSuggestionsAtom).map((t) => t.id),
+                hidden: globalStore.get(hiddenToolsAtom),
+                selected: globalStore.get(selectedToolAtom),
+                form: globalStore.get(toolFormAtom) != null,
+            };
+        `);
         await h.shot("cdp-shots/tools-found-2-detail.png");
         rec(
             "2. selecting it shows its command, where it was found, Add to the library and Hide",
             detail && where.includes("arc-found.exe") && where.includes("Add to the library"),
-            where.slice(0, 300)
+            JSON.stringify({ detail, where: where.slice(0, 300), ...foundState })
         );
 
         await ttClick(h, '[data-tools-found] [data-tools-row="arc-found"] [data-tool-suggest-hide]');
@@ -48090,8 +48228,17 @@ const toolsApp = {
         );
         await ttClick(h, "[data-tool-add-cancel]");
 
-        // the app's own server, still running in its terminal, pinned from the footer's Servers popover: its folder has
-        // no package.json, so the command is the process's own line
+        // a server nothing of arcterm's holds, run from the app's folder, pinned from the footer's Servers popover: its
+        // folder has no package.json, so the command is the process's own line. It is a process of this scenario's, not
+        // the held arc-app service: the popover gives a held service's server no Pin, being an app already
+        // (2ab74079a "a held service's server reads as the app, and its Stop goes through wavesrv").
+        const strayPort = await ttFreePort();
+        const strayUrl = `http://127.0.0.1:${strayPort}`;
+        ctx.stray = spawn("node", ["app.js", String(strayPort)], {
+            cwd: join(ctx.root, "app"),
+            stdio: "ignore",
+            windowsHide: true,
+        });
         await ttClick(h, "[data-machine-servers-chip]");
         // a server in a temp folder is in no repo: it sits in the folded Other group
         const listed = await polishWaitFor(
@@ -48099,11 +48246,11 @@ const toolsApp = {
             `(() => {
                 const other = document.querySelector('[data-machine-servers-other][aria-expanded="false"]');
                 if (other) other.click();
-                return !!document.querySelector('[data-machine-server-port="${ctx.port}"]');
+                return !!document.querySelector('[data-machine-server-port="${strayPort}"]');
             })()`,
-            15000
+            20000
         );
-        await h.ev(`document.querySelector('[data-machine-server-port="${ctx.port}"]')?.closest("[data-machine-server]")?.querySelector("[data-machine-server-pin]")?.click()`);
+        await h.ev(`document.querySelector('[data-machine-server-port="${strayPort}"]')?.closest("[data-machine-server]")?.querySelector("[data-machine-server-pin]")?.click()`);
         const pinned = await polishWaitFor(h, `!!document.querySelector("[data-tool-form]")`, 8000);
         await polishNap(400);
         const fromServer = await h.ev(`({
@@ -48121,8 +48268,8 @@ const toolsApp = {
                 // a Mac's temp folder is /var/..., which the process table names /private/var/...
                 String(fromServer.dir).replace(/[\\/]+$/, "").toLowerCase() === realpathSync(join(ctx.root, "app")).toLowerCase() &&
                 fromServer.name === "app" &&
-                fromServer.command === `node app.js ${ctx.port}` &&
-                fromServer.url === ctx.url &&
+                fromServer.command === `node app.js ${strayPort}` &&
+                fromServer.url === strayUrl &&
                 !fromServer.popover,
             JSON.stringify({ listed, pinned, ...fromServer })
         );
@@ -48155,6 +48302,8 @@ const toolsApp = {
         return steps;
     },
     async teardown(h, ctx) {
+        // the stray server step 8 pinned from
+        ctx.stray?.kill();
         // the entry first: removing it stops the service and closes its tab
         await h.rpc("toolssetuser", { id: "arc-app" }).catch((e) => console.error(`tools-app teardown: remove arc-app failed: ${e?.message ?? e}`));
         await ttTeardown(h, ctx, "tools-app");
@@ -50384,16 +50533,20 @@ const whatsNew = {
         // the fold opens the rest, where a note is its bold lead until it is clicked open
         await h.ev(`document.querySelector("[data-whats-new] [data-whats-new-more]").click()`);
         await briefNap(200);
+        // A note with a bold lead shows the lead alone until clicked (its text grows); one without shows its first two
+        // lines clamped (its text is whole either way, its height grows). The changelog's current lines carry no lead, so
+        // the first expandable note is read by its text and its height both.
         const ENTRY = `document.querySelector('[data-whats-new] li:not([data-whats-new-card]) button[aria-expanded]')`;
-        const before = await h.ev(`(() => { const b = ${ENTRY}; return b ? { open: b.getAttribute("aria-expanded"), len: b.textContent.length } : null })()`);
+        const readEntry = `(() => { const b = ${ENTRY}; return b ? { open: b.getAttribute("aria-expanded"), led: !!b.querySelector("strong"), len: b.textContent.length, h: Math.round(b.getBoundingClientRect().height) } : null })()`;
+        const before = await h.ev(readEntry);
         if (before != null) {
             await h.ev(`${ENTRY}.click()`);
             await briefNap(200);
         }
-        const after = before == null ? null : await h.ev(`(() => { const b = ${ENTRY}; return { open: b.getAttribute("aria-expanded"), len: b.textContent.length } })()`);
+        const after = before == null ? null : await h.ev(readEntry);
         rec(
-            "5. the fold opens the rest; a note there shows its headline until clicked, then the whole note",
-            before?.open === "false" && after?.open === "true" && after.len > before.len,
+            "5. the fold opens the rest; a note there shows its headline (or its first two lines) until clicked, then the whole note",
+            before?.open === "false" && after?.open === "true" && (after.len > before.len || after.h > before.h),
             JSON.stringify({ before, after })
         );
         await h.shot("cdp-shots/whats-new-3-opened.png");
@@ -50413,15 +50566,21 @@ const whatsNew = {
         // a Try it may sit inside a fold: open them all
         await h.ev(`document.querySelectorAll('[data-whats-new] [data-whats-new-more][aria-expanded="false"]').forEach((b) => b.click())`);
         await briefNap(200);
-        const hasUsage = await h.ev(`!!document.querySelector('[data-whats-new-try="go:usage"]')`);
-        if (!hasUsage) {
-            rec("6. Try it on a Usage note goes to Usage and closes the notes", false, "no go:usage note in the releases shown");
+        // The notes are CHANGELOG.md's latest five releases, so which notes carry a Try it moves with the changelog. Pick a
+        // note whose binding goes to a surface: go:<surface> (a Usage note when one is shown) or settings, which sets the
+        // Settings surface.
+        const tryIds = await h.ev(`[...document.querySelectorAll("[data-whats-new-try]")].map((b) => b.dataset.whatsNewTry)`);
+        const surfaceOf = (id) => (id === "settings" ? "settings" : id.startsWith("go:") ? id.slice(3) : null);
+        const tryId = tryIds.find((id) => id === "go:usage") ?? tryIds.find((id) => SURFACE_LABEL[surfaceOf(id)] != null);
+        if (tryId == null) {
+            rec("6. Try it on a note that goes to a surface lands there and closes the notes", false, `no go:<surface> or settings note in the releases shown: ${JSON.stringify([...new Set(tryIds)])}`);
             return steps;
         }
-        await h.ev(`document.querySelector('[data-whats-new-try="go:usage"]').click()`);
+        const want = SURFACE_LABEL[surfaceOf(tryId)];
+        await h.ev(`document.querySelector('[data-whats-new-try="${tryId}"]').click()`);
         await polishWaitFor(h, `!document.querySelector("[data-whats-new]")`, 4000);
-        const landed = { surface: await h.activeSurfaceLabel(), open: await h.ev(`!!document.querySelector("[data-whats-new]")`) };
-        rec("6. Try it on a Usage note goes to Usage and closes the notes", landed.surface === SURFACE_LABEL.usage && !landed.open, JSON.stringify(landed));
+        const landed = { tryId, want, surface: await h.activeSurfaceLabel(), open: await h.ev(`!!document.querySelector("[data-whats-new]")`) };
+        rec("6. Try it on a note that goes to a surface (Usage when shown) lands there and closes the notes", landed.surface === want && !landed.open, JSON.stringify(landed));
         await h.shot("cdp-shots/whats-new-4-tried.png");
         return steps;
     },
@@ -50621,6 +50780,13 @@ const runQueueScenario = {
         const ctx = { cwd: mkdtempSync(join(tmpdir(), "verify-run-queue-")), ids: {} };
         // a throw past this point still returns ctx, so teardown removes whatever was already made
         try {
+            // entries an earlier, interrupted run of this scenario left in the shared dev store: their plan's temp folder
+            // is gone, so each would sit blocked in Needs you, and a waiting one would take a place ahead of A's #1
+            for (const e of await rqList(h)) {
+                const ownPlan = (e.data?.planpath ?? "").includes("verify-run-queue-");
+                const ownGoal = Object.values(RQ_TITLES).includes(e.title) || Object.values(RQ_TITLES).includes(e.data?.goal);
+                if (ownPlan || ownGoal) await h.rpc("runqueueremove", { id: e.id });
+            }
             ctx.prevMax = (await h.rpc("getfullconfig", null))?.settings?.["runs:maxactive"] ?? null;
             await h.rpc("setconfig", { "runs:maxactive": 1 });
             const wslist = await h.rpc("workspacelist", null);
@@ -50729,10 +50895,14 @@ const runQueueScenario = {
             const ours = [...document.querySelectorAll('[data-cockpit-needs-you] [data-needs-you-row]')].filter(
                 (r) => r.dataset.needsYouRow === ${JSON.stringify(stripKey)}
             );
+            // the row is one flex line (kind, source, text, age, acts) with an optional detail under it (needsyoustrip.tsx
+            // ActRow since 565a2a92f): a row with a why draws its text as a fold button led by ▸ or ▾
+            const line = row?.children[0];
+            const textEl = line?.querySelector("[data-needs-you-expand]") ?? line?.children[2];
             return {
                 ours: ours.length,
-                kind: row?.children[0]?.textContent.trim() ?? null,
-                text: row?.children[2]?.textContent.trim() ?? null,
+                kind: line?.children[0]?.textContent.trim() ?? null,
+                text: textEl?.textContent.replace(/^\\s*[▸▾]\\s*/, "").trim() ?? null,
                 start: row?.querySelector('[data-strip-act="start-queued"]')?.textContent.trim() ?? null,
                 remove: row?.querySelector('[data-strip-act="remove-queued"]')?.textContent.trim() ?? null,
             };
@@ -54976,8 +55146,70 @@ const setupMemory = {
 // the app reaches through a real path (a palette action, a hover, a seeded record) is reached that way; one that only
 // arises from live data (a toast, a modal push, a menu) is set through the app's own module, imported from the URL
 // the app loaded it from so the import is the app's instance. graphgutter is shown by git-history.
+//
+// The url a module is imported by carries `?t=<stamp>` once the dev server has hot-updated it, and an import of the bare url is
+// then ANOTHER instance: its atoms are not the ones the app renders from. Resource timing cannot be trusted to name the url
+// (its buffer holds 250 entries, fewer than an unbundled dev page loads, and it does not hold a module fetched after a hot
+// update), so lookResolveInPage reads the url out of the transformed source of the module's importers, which is how
+// ahResolveInPage does it for the archive scenarios. It walks the import graph from main.tsx once per page (a reload clears
+// it), remembers which module imported which, and re-reads that one importer's source on every later call, so a hot update
+// made since is picked up. Runs IN THE PAGE (LOOK_LIB sends its source); returns null when the graph holds no such module.
+async function lookResolveInPage(path) {
+    const sourceOf = async (url) => {
+        try {
+            const res = await fetch(url);
+            return res.ok ? await res.text() : "";
+        } catch {
+            return "";
+        }
+    };
+    const importsIn = (source, base) => {
+        const urls = [];
+        for (const m of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)["']([^"'\s]+)["']/g)) {
+            if (/^(\/|\.\.?\/)/.test(m[1])) urls.push(new URL(m[1], base).href);
+        }
+        return urls;
+    };
+    const bare = (url) => url.split("?")[0];
+    const isCode = (url) => /\.(tsx?|jsx?|mjs)$/.test(bare(url)) && !/node_modules|\/@vite\//.test(url);
+    const graph = (window.__arcLookGraph ??= { importers: new Map(), done: null });
+    if (graph.done == null) {
+        graph.done = (async () => {
+            const entry = [...document.querySelectorAll('script[type="module"][src]')].find((s) => /\/main\.tsx(\?|$)/.test(s.src));
+            if (!entry) return;
+            const seen = new Set([bare(entry.src)]);
+            let level = [entry.src];
+            while (level.length > 0 && seen.size < 6000) {
+                const next = [];
+                for (let i = 0; i < level.length; i += 40) {
+                    const chunk = level.slice(i, i + 40);
+                    const sources = await Promise.all(chunk.map(sourceOf));
+                    sources.forEach((source, k) => {
+                        for (const url of importsIn(source, chunk[k])) {
+                            if (!isCode(url) || seen.has(bare(url))) continue;
+                            seen.add(bare(url));
+                            graph.importers.set(bare(url), chunk[k]);
+                            next.push(url);
+                        }
+                    });
+                }
+                level = next;
+            }
+        })();
+    }
+    await graph.done;
+    const key = [...graph.importers.keys()].find((k) => k.endsWith("/" + path));
+    if (key == null) return null;
+    // the importer's own url needs no query: the dev server answers any query with the current source
+    const importer = graph.importers.get(key);
+    return importsIn(await sourceOf(importer), importer).find((u) => bare(u) === key) ?? null;
+}
+
 const LOOK_LIB = `
+    const lookResolve = ${lookResolveInPage.toString()};
     const mod = async (path) => {
+        const resolved = await lookResolve(path).catch(() => null);
+        if (resolved != null) return import(resolved);
         const names = performance.getEntriesByType("resource").map((e) => e.name.split("?")[0]);
         const hit = names.filter((n) => n.endsWith("/" + path)).pop();
         const base = names.find((n) => n.endsWith("/app/store/jotaiStore.ts"));
@@ -57813,17 +58045,20 @@ const projectOverviewHistory = {
             const cockpit3 = await h.ev(ovhRowText("run:ovh-cockpit-run"));
             const warn3 = await h.ev(ovhText('[data-history-row="run:ovh-hist-run"] [data-history-warn]'));
             await shot("3");
+            // the row's kind label leads its second line ("Run · ", "Council · "), since 84986ddc2 moved the badge there
             const cockpitPrefix = "Started from the cockpit, not a session · ";
             rec(
-                "3. the nested council reads `Answer: Keep it short.` and `3 experts`, the nested run `Landed on main` and `2 not verified`, neither with the cockpit line; the cockpit's run reads `Started from the cockpit, not a session · Landed on main`",
-                (council3?.line ?? "").includes("Answer: Keep it short.") &&
+                "3. the nested council reads `Answer: Keep it short.` and `3 experts`, the nested run `Landed on main` and `2 not verified`, neither with the cockpit line; the cockpit's run reads `Run · Started from the cockpit, not a session · Landed on main`",
+                (council3?.line ?? "").startsWith("Council · ") &&
+                    (council3?.line ?? "").includes("Answer: Keep it short.") &&
                     (council3?.line ?? "").includes("3 experts") &&
-                    !(council3?.line ?? "").startsWith(cockpitPrefix) &&
+                    !(council3?.line ?? "").includes(cockpitPrefix) &&
+                    (run3?.line ?? "").startsWith("Run · ") &&
                     (run3?.line ?? "").includes("Landed on main") &&
-                    !(run3?.line ?? "").startsWith(cockpitPrefix) &&
+                    !(run3?.line ?? "").includes(cockpitPrefix) &&
                     warn3 === "2 not verified" &&
                     cockpit3?.title === "Rebuild the release for 0.15.18" &&
-                    (cockpit3?.line ?? "").startsWith(cockpitPrefix) &&
+                    (cockpit3?.line ?? "").startsWith(`Run · ${cockpitPrefix}`) &&
                     (cockpit3?.line ?? "").endsWith("Landed on main"),
                 JSON.stringify({ council3, run3, warn3, cockpit3 })
             );
@@ -58403,6 +58638,13 @@ const RAIL_TRANSLATE_INPUT = `(${railTranslateQ("[data-translate-input]")}?.valu
 const RAIL_TRANSLATE_PRESSED = `${railTranslateQ("[data-nav-translate]")}?.getAttribute("aria-pressed")`;
 const RAIL_TRANSLATE_INPUT_FOCUSED = `document.activeElement === ${railTranslateQ("[data-translate-input]")}`;
 const RAIL_TRANSLATE_SEEN = `(window.__railTranslateSeen ?? [])`;
+// An empty box: no text in it and no translation, details row or error line under it. With a history, the box's empty
+// state is the history list in the translation's place (2be8966d3), so no output element is not a translation either.
+const RAIL_TRANSLATE_EMPTY = `(${RAIL_TRANSLATE_INPUT} === "" &&
+    (${RAIL_TRANSLATE_OUTPUT} ?? "") === "" &&
+    !document.querySelector("[data-translate-details]") &&
+    !document.querySelector("[data-translate-error]"))`;
+const RAIL_TRANSLATE_HISTORY_KEY = "translate.history";
 
 // a select's value through the setter React does not wrap, then the change event it listens for
 const railTranslateSelect = (h, which, value) =>
@@ -58420,14 +58662,45 @@ async function railTranslateType(h, text) {
     await h.cdp("Input.insertText", { text });
 }
 
+// Takes the entries a scenario's translations added out of the history and leaves the ones that were there (prevHistory:
+// localStorage's string from before, null for none). The panel is up with an empty box, so the history list is showing: its
+// rows are the stored entries in their order, and a row's × drops an entry from the store's copy as well as localStorage's
+// (the store reads localStorage once, at boot, so restoring the string would not reach it).
+async function railTranslateForgetHistory(h, prevHistory) {
+    const keyOf = (e) => `${e.source}\u0000${e.target}\u0000${e.text}`;
+    const parse = (raw) => {
+        try {
+            const v = JSON.parse(raw);
+            return Array.isArray(v) ? v : [];
+        } catch {
+            return [];
+        }
+    };
+    const before = new Set(parse(prevHistory).map(keyOf));
+    const now = parse(await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_TRANSLATE_HISTORY_KEY)})`));
+    // the History tab, in case a hand left Starred showing: its rows are then every entry
+    await h.ev(
+        `[...document.querySelectorAll("[data-translate-history] [role=tab]")].find((t) => /^History/.test(t.textContent))?.click() ?? false`
+    );
+    // from the last row up, so a removal leaves the rows still to come at their indices
+    for (let i = now.length - 1; i >= 0; i--) {
+        if (before.has(keyOf(now[i]))) continue;
+        await h.ev(
+            `document.querySelectorAll("[data-translate-history] li")[${i}]?.querySelector("[data-translate-history-remove]")?.click() ?? false`
+        );
+    }
+}
+
 // Leaves the Translate store as a scenario found it: the text emptied (the store outlives a scenario, so the next one
 // would open the panel on it), then the pair put back (prevPair: localStorage's string, null for none) through the rail's
 // panel, from outside Float, so the store's copy and localStorage agree. The text goes first, so the pair change
 // translates nothing.
-async function railTranslateReset(h, prevPair) {
+async function railTranslateReset(h, prevPair, prevHistory) {
     const prev = prevPair != null ? JSON.parse(prevPair) : { source: "en", target: "vi" };
     if (!(await h.ev(RAIL_TRANSLATE_UP))) await ttMouse(h, "[data-nav-translate]");
     await h.ev(`${railTranslateQ("[data-translate-clear]")}?.click() ?? false`);
+    // the box is empty now, so the history list shows (prevHistory is undefined until arrange read it)
+    if (prevHistory !== undefined) await railTranslateForgetHistory(h, prevHistory);
     await railTranslateSelect(h, "source", prev.source);
     await railTranslateSelect(h, "target", prev.target);
     await ttMouse(h, "[data-nav-translate]");
@@ -58458,6 +58731,8 @@ const railTranslate = {
             await openRailTerminal(h, ctx, RAIL_TRANSLATE_PROJECT);
             // the pair the store holds is the one it read from here at boot, and teardown puts it back
             ctx.prevPair = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_TRANSLATE_PAIR_KEY)})`);
+            // and the history the answers below join: teardown takes those entries back out
+            ctx.prevHistory = await h.ev(`localStorage.getItem(${JSON.stringify(RAIL_TRANSLATE_HISTORY_KEY)})`);
             await h.ev(RAIL_TRANSLATE_STUB);
             await h.ev(RAIL_TRANSLATE_CLIP);
         } catch (e) {
@@ -58481,9 +58756,14 @@ const railTranslate = {
         };
 
         await h.goto("agent");
-        await wait(`!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
-        await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
-        await wait(`${railTranslateQ(termSel)}?.checkVisibility() === true`, 5000);
+        // a plain terminal's row is a [data-tree-terminal-row], not an agent's [data-agent-row] (f38576d7d, one tree per project)
+        await wait(`!!document.querySelector('[data-tree-terminal-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-tree-terminal-row="${term.tabId}"]')?.click()`);
+        const termShown = await wait(`${railTranslateQ(termSel)}?.checkVisibility() === true`, 5000);
+        if (!termShown) {
+            rec("0. the terminal's row opens it in the centre", false, `${termSel} never showed`);
+            return steps;
+        }
 
         // a. the rail's Translate button opens the panel beside the rail, over the surface that stays as it is
         const noPanel = await h.ev(RAIL_TRANSLATE_GONE);
@@ -58505,7 +58785,7 @@ const railTranslate = {
                 pair: [document.querySelector("[data-translate-source]")?.value, document.querySelector("[data-translate-target]")?.value],
                 sourceFirst: options("[data-translate-source]")[0],
                 targetHasDetect: options("[data-translate-target]").includes("Detect language"),
-                empty: ${RAIL_TRANSLATE_OUTPUT} === "" && !document.querySelector("[data-translate-details]") && !document.querySelector("[data-translate-error]"),
+                empty: ${RAIL_TRANSLATE_EMPTY},
             };
         })()`);
         const surfaceA = await h.activeSurfaceLabel();
@@ -58613,17 +58893,19 @@ const railTranslate = {
         // g. the × empties the box and the translation, and the caret stays in the box
         await ttMouse(h, "[data-translate-clear]");
         await polishNap(600);
+        // the answers so far are in the history, which takes the empty translation box's place (2be8966d3)
         const g = await h.ev(`({
             input: ${RAIL_TRANSLATE_INPUT},
             output: ${RAIL_TRANSLATE_OUTPUT},
+            history: !!document.querySelector("[data-translate-history]"),
             clear: !!document.querySelector("[data-translate-clear]"),
             copy: !!document.querySelector("[data-translate-copy]"),
             details: !!document.querySelector("[data-translate-details]"),
             focused: ${RAIL_TRANSLATE_INPUT_FOCUSED},
         })`);
         rec(
-            "g. the clear × empties the input and the translation and keeps the caret in the box",
-            g.input === "" && g.output === "" && !g.clear && !g.copy && !g.details && g.focused,
+            "g. the clear × empties the input and the translation, shows the history in its place and keeps the caret in the box",
+            g.input === "" && g.output === null && g.history && !g.clear && !g.copy && !g.details && g.focused,
             JSON.stringify(g)
         );
 
@@ -58755,7 +59037,9 @@ const railTranslate = {
                 console.error(`rail-translate teardown: ${what} failed: ${e?.message ?? e}`);
             }
         };
-        await step("empty the box and restore the pair", () => railTranslateReset(h, ctx.prevPair));
+        await step("empty the box, restore the pair and the history", () =>
+            railTranslateReset(h, ctx.prevPair, ctx.prevHistory)
+        );
         await step("clear the stubs", () => h.ev(RAIL_TRANSLATE_CLEANUP));
         for (const t of ctx.terminals ?? []) {
             await step(`close the terminal tab ${t.tabId}`, () =>
