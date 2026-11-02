@@ -9779,6 +9779,60 @@ const petStay = {
                 pin4.staying === false,
             { opened: opened4, row: row4, clickedRoam, afterRoam: rowRoam4, stored: stored4, peek: peek4, pinStaying: pin4.staying }
         );
+
+        // 5. the quiet card's title reads whole beside the pin. The pin joined the header after the card's 300px cap was
+        // set, which cut the title to "Nothing waiting o…": the cap took the pin's 28px and its 4px gap with it. Docked
+        // here, so the controls are title, pin, Full view, close; the title's scrollWidth is its text's full width, so one
+        // wider than its clientWidth is a clipped (ellipsised) title
+        const opened5 = await petStayOpenPeek(h);
+        const read5 = await h.ev(`(() => {
+            const panel = document.querySelector("[data-pet-peek]");
+            const header = panel?.querySelector("[data-pet-peek-header]");
+            const title = header?.querySelector("h2");
+            if (panel == null || header == null || title == null) return null;
+            const box = (el) => {
+                const r = el?.getBoundingClientRect();
+                return r == null ? null : { left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width) };
+            };
+            const pin = header.querySelector(${JSON.stringify(PET_STAY_PIN)});
+            const full = header.querySelector('button[aria-label="Open full Jarvis view"]');
+            const close = header.querySelector('button[aria-label="Close Jarvis panel"]');
+            const panelBox = box(panel);
+            const controls = [pin, full, close].map(box);
+            const kids = [...header.children].map((el) => el.tagName + (el === pin?.parentElement ? ":pin" : el === full ? ":full" : el === close ? ":close" : ""));
+            return {
+                text: title.textContent.trim(),
+                shape: panel.getAttribute("data-pet-peek-shape"),
+                scrollWidth: title.scrollWidth,
+                clientWidth: title.clientWidth,
+                panel: panelBox,
+                title: box(title),
+                pin: controls[0],
+                full: controls[1],
+                close: controls[2],
+                order: kids,
+                // every control drawn, none past the panel's right edge
+                controlsInside: controls.every((c) => c != null && c.width > 0 && c.right <= panelBox.right),
+                scrollsAside: panel.scrollWidth - panel.clientWidth,
+            };
+        })()`);
+        await h.shot("cdp-shots/pet-stay-5-title.png");
+        await petStayClosePeek(h);
+        rec(
+            "5. the quiet peek's title reads Nothing waiting on you in full (not clipped) beside the stay pin, Full view and close, in that order",
+            opened5 &&
+                read5 != null &&
+                read5.shape === "quiet" &&
+                read5.text === "Nothing waiting on you" &&
+                read5.scrollWidth <= read5.clientWidth &&
+                read5.order.join() === "H2,DIV:pin,BUTTON:full,BUTTON:close" &&
+                read5.controlsInside === true &&
+                read5.title.right <= read5.pin.left &&
+                read5.pin.right <= read5.full.left &&
+                read5.full.right <= read5.close.left &&
+                read5.scrollsAside <= 0,
+            { opened: opened5, read: read5 }
+        );
         return steps;
     },
     // best-effort, so one failed step does not strand the rest
@@ -9889,8 +9943,20 @@ const jarvisPeek = {
     async arrange(h) {
         // petSaidAtom is session-scoped. Reloading gives this scenario a deterministic empty feed while
         // the persisted watermark still prevents old backend facts from speaking again.
-        await h.ev("location.reload()");
-        await h.ev("new Promise((r) => setTimeout(r, 2500))");
+        // The new page is polled for, not slept on: the DEV store is set by a module that loads after the shell's first
+        // paint, and a fixed 2.5 s did not always reach it right after pet-stay's own reload (reset came back false).
+        // The marker keeps the poll off the page being replaced, which still answers until the navigation commits.
+        await h.ev("window.__arcPeekReloading = true");
+        try {
+            await h.ev("location.reload()");
+        } catch {
+            /* the evaluate is cut off by the navigation it just started (as in ahReload) */
+        }
+        const storeReady = await polishWaitFor(
+            h,
+            `!window.__arcPeekReloading && typeof globalThis.__wavePetStore?.resetPeek === 'function'`,
+            15000
+        );
         const reset = await h.ev(`(() => {
             const store = globalThis.__wavePetStore;
             if (typeof store?.resetPeek !== 'function') return false;
@@ -9898,7 +9964,7 @@ const jarvisPeek = {
             store.setAttention([]);
             return true;
         })()`);
-        return { reset };
+        return { reset, storeReady };
     },
     async assert(h, ctx) {
         const steps = [];
@@ -10014,7 +10080,7 @@ const jarvisPeek = {
                 // resting height, against the 693px the three-card panel cost. Only asserted with an empty
                 // queue: rows are real content and are allowed to make the panel taller.
                 (structure?.rows > 0 || (structure?.height > 0 && structure?.height < 320)),
-            JSON.stringify(structure)
+            JSON.stringify({ ...structure, reset: ctx.reset, storeReady: ctx.storeReady })
         );
         await h.shot("cdp-shots/jarvis-peek-empty.png");
 

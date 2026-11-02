@@ -1213,7 +1213,10 @@ export function PetPeek({
                                         corner === "mini" ? "border-edge-strong" : "border-border shadow-popover",
                                         // folded: Sprout's 80px box and the offset share the window with the panel
                                         corner === "mini" ? "max-h-[calc(100vh-104px)]" : "max-h-[calc(100vh-16px)]",
-                                        item != null ? "max-w-[560px]" : quiet ? "max-w-[300px]" : "max-w-[420px]"
+                                        // quiet: 300px, the width its title once had beside Full view and close, plus the stay
+                                        // pin's 28px and the 4px gap before it (332px), so "Nothing waiting on you" reads whole
+                                        // docked and folded (Terminal and the fold chevron take the place of Full view and close)
+                                        item != null ? "max-w-[560px]" : quiet ? "max-w-[332px]" : "max-w-[420px]"
                                     )}
                                 >
                                     {/* mark the dialog as the focus-managed element: without it FloatingFocusManager
