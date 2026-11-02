@@ -88,7 +88,7 @@ const MARK_PLUGINS = [remarkGfm, remarkMark];
 
 const MARK_COMPONENT: Components = {
     mark: ({ children }) => (
-        <mark data-council-mark className="rounded-[2px] bg-accent/24 px-px text-inherit">
+        <mark data-council-mark className="rounded-[2px] bg-warning/25 px-px text-inherit">
             {children}
         </mark>
     ),

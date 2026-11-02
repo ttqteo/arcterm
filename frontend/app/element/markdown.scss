@@ -87,10 +87,10 @@
             color: var(--color-foreground);
         }
 
-        // ==text== (remark-mark.ts): the accent tint the terminal draws a skim highlight in, not a find match's
+        // ==text== (remark-mark.ts): a yellow tint, which an accent-tinted (blue) bubble or panel does not swallow
         mark {
             color: inherit;
-            background-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
+            background-color: color-mix(in srgb, var(--color-warning) 25%, transparent);
             border-radius: 2px;
             padding: 0 1px;
         }

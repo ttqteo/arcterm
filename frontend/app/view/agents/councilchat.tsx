@@ -251,7 +251,7 @@ export function MarkedText({ text }: { text: string }) {
         <>
             {spans.map((span, i) =>
                 span.mark ? (
-                    <mark key={i} data-council-mark className="rounded-[2px] bg-accent/24 px-px text-inherit">
+                    <mark key={i} data-council-mark className="rounded-[2px] bg-warning/25 px-px text-inherit">
                         {span.text}
                     </mark>
                 ) : (

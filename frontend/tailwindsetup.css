@@ -458,7 +458,7 @@ svg [aria-label="tip"] g path {
 
 /* ==text== in a markdown source (monaco-react.tsx): the text tinted as the Preview's <mark>, the marks faint. */
 .monaco-editor .md-mark {
-    background-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
+    background-color: color-mix(in srgb, var(--color-warning) 25%, transparent);
     border-radius: 2px;
 }
 .monaco-editor .md-mark-delim {
