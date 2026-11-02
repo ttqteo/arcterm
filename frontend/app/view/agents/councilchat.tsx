@@ -1967,9 +1967,9 @@ function JumpPill({
                 title={label}
                 aria-label={label}
                 onClick={onClick}
-                className="flex cursor-pointer items-center gap-[5px] rounded-full border border-edge-strong bg-surface-raised px-[12px] py-[5px] text-[12.5px] font-medium text-secondary shadow-popover-sm outline-none hover:border-accent hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                className="flex size-[28px] cursor-pointer items-center justify-center rounded-full border border-edge-strong bg-surface-raised text-[14px] leading-none text-secondary shadow-popover-sm outline-none hover:border-accent hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
             >
-                {children}
+                <span aria-hidden>{children}</span>
             </button>
         </PopoverReveal>
     );
@@ -2011,7 +2011,7 @@ function Channel({
             </div>
             <div className="pointer-events-none absolute bottom-3 right-4 z-20 flex items-center gap-[6px]">
                 <JumpPill show={jumps.pills.top} jump="top" label="Jump to the top" onClick={jumps.toTop}>
-                    <span aria-hidden>↑</span> Top
+                    ↑
                 </JumpPill>
                 <JumpPill
                     show={jumps.pills.back}
@@ -2019,10 +2019,10 @@ function Channel({
                     label="Back to the message you were reading"
                     onClick={jumps.back}
                 >
-                    <span aria-hidden>↩</span> Back
+                    ↩
                 </JumpPill>
                 <JumpPill show={jumps.pills.latest} jump="latest" label="Jump to the latest" onClick={jumps.toLatest}>
-                    <span aria-hidden>↓</span> Latest
+                    ↓
                 </JumpPill>
             </div>
         </div>
