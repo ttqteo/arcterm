@@ -26,6 +26,11 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council's report now reads like one: a cover holds the question, the answer and the council at a glance (its
+  state, experts, time and tokens, who did what, the saved document), the ideas worth trying are cards with their
+  first step, and a click on one opens why it was picked and who weighed in under them. Report and Discussion are two
+  tabs instead of a Show the discussion button, and the Discussion's seats sit in its one-row header, so the chat gets
+  the height. <!-- try: go:councils -->
 - In the New dialog, typing a letter in the Project or Session column now starts the task, as it does in the Start
   column: focus jumps to the Task (or Goal) box with the letter in it, instead of filtering the list. Digits and the
   arrows still pick a project or a session. Only a pick with no Task box (a terminal, a tool, a council, a run from a

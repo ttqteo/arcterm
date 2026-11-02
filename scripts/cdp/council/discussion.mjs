@@ -144,15 +144,15 @@ const threadReplies = (h) =>
         text: (m.textContent ?? "")${NORM},
     }))`);
 
+// the seats live in the Discussion's header, one row with the tabs, the title and the cost
 const seatChips = (h) =>
-    h.ev(`[...document.querySelectorAll("[data-council-expert-chip]")].map((c) => ({
+    h.ev(`[...document.querySelectorAll("[data-council-discussion] header [data-council-expert-chip]")].map((c) => ({
         id: c.getAttribute("data-council-expert-chip"),
         lit: c.getAttribute("data-lit") === "true",
         dot: c.getAttribute("data-dot"),
         text: (c.textContent ?? "")${NORM},
         doing: (c.querySelector("[data-council-seat-doing]")?.textContent ?? "")${NORM},
         title: c.getAttribute("title"),
-        retry: !!c.querySelector("[data-council-chip-retry]"),
         open: c.querySelector("[data-council-chip-open]")?.getAttribute("data-council-chip-open") ?? null,
     }))`);
 
@@ -279,6 +279,116 @@ async function round2(h, ctx, rec) {
         summarize?.disabled === true && summarize.title === "The summary comes by itself when the experts finish replying",
         summarize
     );
+}
+
+// ---- the header: one 52px row ----
+
+// the header's first row, measured: its height, what it holds, and whether the title truncates and the strip scrolls
+const headerRow = (h) =>
+    h.ev(`(() => {
+        const root = document.querySelector("[data-council-discussion]");
+        const head = root?.querySelector("header");
+        const row = head?.firstElementChild;
+        if (!root || !head || !row) return null;
+        const rootBox = root.getBoundingClientRect();
+        const within = (s) => {
+            const e = head.querySelector(s);
+            if (!e) return null;
+            const b = e.getBoundingClientRect();
+            return b.width > 0 && b.left >= rootBox.left - 1 && b.right <= rootBox.right + 1;
+        };
+        const title = head.querySelector("[data-council-title]");
+        const strip = head.querySelector('[role="list"]');
+        const last = [...row.querySelectorAll(":scope > div:last-child > *")].pop();
+        const lastBox = last?.getBoundingClientRect();
+        return {
+            height: row.getBoundingClientRect().height,
+            tab: !!head.querySelector("[data-council-tab='discussion'][aria-selected='true']"),
+            title: !!title,
+            truncated: !!title && title.scrollWidth > title.clientWidth,
+            titleW: title ? Math.round(title.clientWidth) : 0,
+            seats: head.querySelectorAll("[data-council-filter]").length,
+            cost: !!head.querySelector("[data-council-cost]"),
+            costIn: within("[data-council-cost]"),
+            lastIn: !!lastBox && lastBox.left >= rootBox.left - 1 && lastBox.right <= rootBox.right + 1,
+            scrolls: !!strip && getComputedStyle(strip).overflowX === "auto",
+            rootW: Math.round(rootBox.width),
+            parts: [...row.querySelectorAll(":scope > *, :scope > div:last-child > *")].map((e) => Math.round(e.getBoundingClientRect().width)),
+            oldRow: !!document.querySelector("[data-council-experts]"),
+        };
+    })()`);
+
+async function header(h, ctx, rec) {
+    // a feature longer than the title's floor, so the narrow pane has something to truncate (the fixture's own is 9 letters)
+    await openFixture(h, ctx, "round2", {
+        id: `${councilFixtureId("round2")}-header`,
+        edit: (c) => {
+            c.feature = "Which changes to the pinned apps on the nav rail are worth making first, and in what order";
+        },
+    });
+    await until(h, `!!document.querySelector("[data-council-channel]")`);
+    const wide = await headerRow(h);
+    rec(
+        "header: the header is one 52px row holding the tabs, the title, the seats and the cost",
+        wide != null &&
+            Math.abs(wide.height - 52) <= 1 &&
+            wide.tab &&
+            wide.title &&
+            wide.seats === 5 &&
+            wide.cost &&
+            !wide.oldRow,
+        wide
+    );
+    await h.shot("cdp-shots/council-discussion-header.png");
+
+    // a narrow window: the row stays 52px, the title truncates and the strip scrolls; the cost and the last control stay in
+    // the pane (the council runs, so the last one is Stop). verify.mjs re-pins 1600x950 only between scenarios, so the
+    // viewport is put back to that size here, not cleared
+    try {
+        await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1000, height: 950, deviceScaleFactor: 1, mobile: false });
+        await new Promise((r) => setTimeout(r, 400));
+        const narrow = await headerRow(h);
+        rec(
+            "header: at a 1000px window the row is still 52px, the title truncates and keeps at least 60px, the seat strip scrolls sideways, and the cost and the last control stay in the pane",
+            narrow != null &&
+                Math.abs(narrow.height - 52) <= 1 &&
+                narrow.truncated &&
+                narrow.titleW >= 60 &&
+                narrow.scrolls &&
+                narrow.costIn === true &&
+                narrow.lastIn,
+            narrow
+        );
+        await h.shot("cdp-shots/council-discussion-header-narrow.png");
+    } finally {
+        await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+        await new Promise((r) => setTimeout(r, 400));
+    }
+}
+
+// ---- the seat filter: a chip in the header, the line in the chat ----
+
+async function seatFilter(h, ctx, rec) {
+    await openFixture(h, ctx, "round2", { id: `${councilFixtureId("round2")}-filter` });
+    await until(h, `!!document.querySelector("[data-council-channel]")`);
+    const chip = "[data-council-discussion] header [data-council-filter='ux']";
+    const before = await attr(h, chip, "aria-pressed");
+    await click(h, chip);
+    const shown = await until(h, `!!document.querySelector("[data-council-only='ux']")`);
+    const line = await text(h, "[data-council-only]");
+    const pressed = await attr(h, chip, "aria-pressed");
+    // the chip's count is the line's ideas and replies added
+    const counted = Number(await h.ev(`/, (\\d+) messages/.exec(document.querySelector(${sel(chip)})?.getAttribute("aria-label") ?? "")?.[1] ?? NaN`));
+    const nums = (/^Only .+: (\d+) ideas? and (\d+) repl(?:y|ies)$/.exec(line) ?? []).slice(1).map(Number);
+    rec(
+        "seat filter: a click on a seat's chip presses it and shows the `Only …` line for that seat, its ideas and replies adding up to the chip's count",
+        before === "false" && shown && pressed === "true" && nums.length === 2 && nums[0] + nums[1] === counted,
+        { before, shown, line, pressed, counted }
+    );
+    await click(h, "[data-council-action='show-everyone']");
+    const gone = await until(h, `!document.querySelector("[data-council-only]")`);
+    const after = await attr(h, chip, "aria-pressed");
+    rec("seat filter: Show everyone releases it, the line goes and the chip is not pressed", gone && after === "false", { gone, after });
 }
 
 // ---- the experts' picks: the chip, the reaction ----
@@ -596,19 +706,41 @@ async function failed(h, ctx, rec) {
             calls[1].data?.expertid === "coordinator",
         calls
     );
+}
 
-    // the stopped council is not running, so Skeptic's chip in the strip draws its own Retry (one failed seat besides the
-    // coordinator, so Retry all does not replace it); its click, in a stub window of its own, sends the same command
-    await unstubRpc(h);
-    await stubRpc(h, ["CouncilRetryCommand"]);
-    const chipOn = await h.ev(`document.querySelector('[data-council-chip-retry="skeptic"]')?.disabled === false`);
-    await click(h, '[data-council-chip-retry="skeptic"]');
-    await until(h, `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilRetryCommand")`);
-    const chipCalls = await rpcCalls(h, "CouncilRetryCommand");
+// ---- Retry all: two failed seats, the bar above the channel ----
+
+async function retryAll(h, ctx, rec) {
+    const id = await openFixture(h, ctx, "failed", {
+        id: `${councilFixtureId("failed")}-retryall`,
+        edit: (c) => void (c.failed.ux = { round: 1, error: "claude -p timed out after 10 minutes" }),
+    });
+    await settledText(h, "[data-council-chip]", "Failed");
+    await until(h, `!!document.querySelector("[data-council-retry-all-bar]")`);
+    const bar = await text(h, "[data-council-retry-all-bar]");
+    const picks = await h.ev(`[...document.querySelectorAll("[data-council-retry-all-bar] [data-council-retry-pick]")].map((e) => e.getAttribute("data-council-retry-pick"))`);
+    const label = await text(h, "[data-council-action='retry-all']");
+    const enabled = await h.ev(`document.querySelector("[data-council-action='retry-all']")?.disabled === false`);
     rec(
-        "failed: Skeptic's Retry on its seat chip (stubbed) is enabled and records one CouncilRetryCommand with that expert's id",
-        chipOn && chipCalls.length === 1 && chipCalls[0].data?.id === id && chipCalls[0].data?.expertid === "skeptic",
-        { chipOn, chipCalls }
+        "retry all: two failed seats read `2 seats failed` with a model pick each (not the coordinator's) and an enabled `Retry all 2`",
+        bar.startsWith("2 seats failed") &&
+            picks.includes("skeptic") &&
+            picks.includes("ux") &&
+            !picks.includes("coordinator") &&
+            label === "Retry all 2" &&
+            enabled,
+        { bar, picks, label, enabled }
+    );
+    await h.shot("cdp-shots/council-discussion-retry-all.png");
+
+    await stubRpc(h, ["CouncilRetryCommand"]);
+    await click(h, "[data-council-action='retry-all']");
+    await until(h, `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilRetryCommand")`);
+    const calls = await rpcCalls(h, "CouncilRetryCommand");
+    rec(
+        "retry all: its click (stubbed) records one CouncilRetryCommand with the council's id and `all: true`",
+        calls.length === 1 && calls[0].data?.id === id && calls[0].data?.all === true,
+        calls
     );
 }
 
@@ -775,6 +907,26 @@ async function done(h, ctx, rec) {
         calls.length === 1 && data?.id === id && post === "P2" && data?.proposalid === post && data?.text === FOLLOWUP_TEXT && data?.tools === true,
         calls
     );
+    await unstubRpc(h);
+
+    // a summary that postdates every reply is current: the header draws no Summarize (there is no call to make), and the
+    // Report tab is how a person opens it
+    const current = await openFixture(h, ctx, "done", {
+        id: `${councilFixtureId("done")}-current`,
+        edit: (c) => {
+            c.summary.at = Math.max(...(c.replies ?? []).map((r) => r.ts), ...(c.proposals ?? []).map((p) => p.ts)) + 1000;
+            delete c.failed;
+        },
+    });
+    await settledText(h, "[data-council-chip]", "Done");
+    const noButton = !(await exists(h, "[data-council-summarize]"));
+    await click(h, "[data-council-tab='summary']");
+    const opened = await until(h, `!!document.querySelector("[data-council-summary]")`);
+    rec(
+        "done: a summary newer than every reply leaves no Summarize in the header, and the Report tab opens it",
+        noButton && opened,
+        { current, noButton, opened }
+    );
 }
 
 // ---- the sources: a message's files as links, and the panel a click opens ----
@@ -885,14 +1037,14 @@ async function room(h, ctx, rec) {
     const chips = await seatChips(h);
     const byId = Object.fromEntries(chips.map((c) => [c.id, c]));
     rec(
-        "room: five seat filters; the agents read `agent · 625k` and `agent · 210k` on hover, an expert `expert · sonnet`, Witness waits for its own task, Security has Retry, and an agent's terminal opens beside its filter",
+        "room: five seat filters; the agents read `agent · 625k` and `agent · 210k` on hover, an expert `expert · sonnet`, Witness waits for its own task, Security's failure line has Retry, and an agent's terminal opens beside its filter",
         chips.length === 5 &&
             byId.witness?.title.includes("agent · 625k") &&
             byId.uxaudit?.title.includes("agent · 210k") &&
             byId.security?.title.includes("expert · sonnet") &&
             byId.witness.doing === "Waiting for Witness synthesis to finish its task" &&
             byId.witness.dot === "waiting" &&
-            byId.security.retry === true &&
+            (await exists(h, '[data-council-channel] [data-council-retry="security"]')) &&
             byId.witness.open === "fx-room-witness" &&
             byId.uxaudit.open === "fx-room-uxaudit" &&
             byId.security.open === null,
@@ -960,26 +1112,20 @@ async function room(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-room.png");
 
-    // a failed seat's Retry, on its chip and on its failure line, is off while the council runs (a retry then is refused:
-    // one job at a time), and the chip says why; a click on either does nothing. A Retry that works is the `failed` phase's.
+    // a failed seat's Retry, on its failure line, is off while the council runs (a retry then is refused: one job at a
+    // time), and its title says why; a click does nothing. A Retry that works is the `failed` phase's.
     const retryOff = await h.ev(`(() => {
-        const chip = document.querySelector('[data-council-chip-retry="security"]');
         const line = document.querySelector('[data-council-channel] [data-council-retry="security"]');
-        return {
-            chip: chip && { disabled: chip.disabled, title: chip.getAttribute("title") },
-            line: line && { disabled: line.disabled },
-        };
+        return { line: line && { disabled: line.disabled, title: line.getAttribute("title") } };
     })()`);
     await stubRpc(h, ["CouncilRetryCommand"]);
-    await click(h, '[data-council-chip-retry="security"]');
     await click(h, '[data-council-channel] [data-council-retry="security"]');
     // nothing is awaited: a disabled button runs no handler, so a call that came would already be recorded
     const retries = await rpcCalls(h, "CouncilRetryCommand");
     rec(
-        "room: while the council runs, Security's Retry on its chip and on its failure line is disabled (the chip says why), and a click records no CouncilRetryCommand",
-        retryOff.chip?.disabled === true &&
-            retryOff.chip.title === "The council is running: retry once it is done" &&
-            retryOff.line?.disabled === true &&
+        "room: while the council runs, Security's Retry on its failure line is disabled (its title says why), and a click records no CouncilRetryCommand",
+        retryOff.line?.disabled === true &&
+            retryOff.line.title === "The council is running: retry once it is done" &&
             retries.length === 0,
         { retryOff, retries }
     );
@@ -2055,6 +2201,8 @@ async function attachSent(h, ctx, rec) {
 
 const PHASES = [
     ["round 2", round2],
+    ["header", header],
+    ["seat filter", seatFilter],
     ["picks", picks],
     ["brainstorm", brainstorm],
     ["queued", queued],
@@ -2062,6 +2210,7 @@ const PHASES = [
     ["paused", awaiting],
     ["stopped", stopped],
     ["failed", failed],
+    ["retry all", retryAll],
     ["not run", notRun],
     ["done", done],
     ["sources", sources],

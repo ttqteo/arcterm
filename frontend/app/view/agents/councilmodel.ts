@@ -731,15 +731,24 @@ export function queuedLine(holder: Council | null | undefined): string {
     return agents.length > 0 ? `${line} · waiting for ${listAnd([...new Set(agents)])}` : line;
 }
 
-/** Pure: the Summary's side column opens on the state word, with `4 experts · 11 min · 0.86M tokens` under it. */
-export function summaryFacts(c: Council, nowMs: number): { state: string; facts: string } {
-    const parts = [plural(panel(c).length, "expert", "experts")];
-    const ms = elapsedMs(c, nowMs);
+/** Pure: the three figures of the report's glance box: the experts, the minutes (when the council started) and the
+ *  tokens, each a value over its label. */
+export function glanceFigures(c: Council, nowMs: number): { value: string; label: string }[] {
+    const n = panel(c).length;
+    const figures = [{ value: String(n), label: n === 1 ? "expert" : "experts" }];
     if (c.started) {
-        parts.push(`${Math.max(1, Math.round(ms / 60_000))} min`);
+        figures.push({ value: String(Math.max(1, Math.round(elapsedMs(c, nowMs) / 60_000))), label: "min" });
     }
-    parts.push(`${countTokens(c.tokens)} tokens`);
-    return { state: STATE_WORD[c.state] ?? c.state, facts: parts.join(" · ") };
+    figures.push({ value: countTokens(c.tokens), label: "tokens" });
+    return figures;
+}
+
+/** Pure: the Summary's state word, with `4 experts · 11 min · 0.86M tokens` as the glance box's label. */
+export function summaryFacts(c: Council, nowMs: number): { state: string; facts: string } {
+    const facts = glanceFigures(c, nowMs)
+        .map((f) => `${f.value} ${f.label}`)
+        .join(" · ");
+    return { state: STATE_WORD[c.state] ?? c.state, facts };
 }
 
 /** Pure: the Discussion header's cost line: `7:20 · 19 replies · 0.55M tokens` (reactions are no replies). */
