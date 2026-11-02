@@ -130,13 +130,21 @@ export function initialPick(names: string[], remembered: string | null): string 
     return names.length === 1 ? names[0] : null;
 }
 
-// onStarted hears the id of a run this launch starts, so what filled the window can follow it
+// What filled the window hears of the run its launch starts, so it can follow it: handedOff when the dialog closes on
+// its Start (CreateRun can take a minute to return), then started with the run's id, or stopped when the start fails or
+// is cancelled before the run exists. A failed start's Try again hands it off again.
+export type RunHandback = {
+    handedOff?: () => void;
+    started: (runId: string) => void;
+    stopped?: () => void;
+};
+
 export type NewRunPrefill = {
     projectName: string;
     goal: string;
     shape: RunShape;
     prototype?: string;
-    onStarted?: (runId: string) => void;
+    handback?: RunHandback;
 };
 
 // What the window opens on when something filled it (a canvas's Build this…, the palette's Quick and Orchestrate):

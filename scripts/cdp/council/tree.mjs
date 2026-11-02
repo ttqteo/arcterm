@@ -264,6 +264,56 @@ export const councilTree = {
             JSON.stringify(empty)
         );
 
+        // 4b. each row reads as a chat-list row (docs/superpowers/specs/2026-11-02-council-chat-rows-design.md): two seat
+        // circles overlapped in a 32px square (the first two panel seats, UX and RAM, the front one ringed), the feature,
+        // and under it the state word then ` · <age>`; the Running council's picture carries the working dot
+        const chat = await h.ev(`(() => {
+            const box = (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
+            return ${JSON.stringify(expected)}.map((id) => {
+                const row = document.querySelector('[data-council-row="' + id + '"]');
+                const pic = row?.querySelector("[data-council-seats]");
+                const discs = [...(pic?.querySelectorAll("[data-council-seat]") ?? [])];
+                const feature = row?.querySelector("[data-council-feature]");
+                const meta = row?.querySelector("[data-council-meta]");
+                const age = row?.querySelector("[data-council-age]");
+                return {
+                    id,
+                    row: row ? box(row).h : null,
+                    pic: pic ? box(pic) : null,
+                    seats: discs.map((d) => d.dataset.councilSeat),
+                    discs: discs.map(box),
+                    ring: discs.map((d) => getComputedStyle(d).boxShadow !== "none"),
+                    dot: pic?.dataset.councilDot ?? null,
+                    twoLines: !!feature && !!meta && box(meta).y >= box(feature).y + box(feature).h - 1,
+                    age: (age?.textContent ?? "").replace(/\\s+/g, " ").trim(),
+                };
+            });
+        })()`);
+        const chatOk = (r) =>
+            r.pic != null &&
+            Math.round(r.pic.w) === 32 &&
+            Math.round(r.pic.h) === 32 &&
+            r.seats.join() === "UX,RA" &&
+            r.discs.every((d) => Math.round(d.w) === 22) &&
+            // the back circle sits top right, the front one bottom left, and they overlap
+            r.discs[0].x > r.discs[1].x &&
+            r.discs[0].y < r.discs[1].y &&
+            r.discs[1].x + r.discs[1].w > r.discs[0].x &&
+            r.ring[0] === false &&
+            r.ring[1] === true &&
+            r.twoLines &&
+            /^· (<1m|\d+[mhd])$/.test(r.age) &&
+            r.row >= 40 &&
+            r.row <= 48;
+        rec(
+            "4b. each council row is a chat-list row: two overlapped seat circles (UX, RA; the front one ringed), the feature over `state · age`, about 44px tall, and the Running one's picture dotted working",
+            chat.length === expected.length &&
+                chat.every(chatOk) &&
+                chat.every((r, i) => r.dot === (i === 0 ? "working" : null)),
+            JSON.stringify(chat)
+        );
+        await h.shot("cdp-shots/council-tree-chat-rows.png");
+
         // 5. a council row opens its Discussion, and reads as selected there
         const round2 = councilFixtureId("round2");
         await h.ev(click(`[data-council-row="${round2}"]`));

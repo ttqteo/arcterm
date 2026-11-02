@@ -6,12 +6,20 @@ import { atom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentsViewModel } from "./agents";
 import type { AgentVM } from "./agentsviewmodel";
-import { brainstormLine, runPrefill, type BrainstormAction, type BrainstormFile } from "./brainstormmodel";
+import {
+    approveBlocker,
+    brainstormLine,
+    RUN_STARTING,
+    runPrefill,
+    type BrainstormAction,
+    type BrainstormFile,
+} from "./brainstormmodel";
 import { approveAndOpenRun, openRunLauncher, sendBrainstorm } from "./brainstormsend";
 import {
     attachBrainstorm,
     brainstormsAtom,
     getBrainstorm,
+    shownBrainstormFile,
     updateBrainstorm,
     type BrainstormState,
 } from "./brainstormstore";
@@ -323,7 +331,7 @@ describe("openRunLauncher", () => {
     it("tells the agent the id of the run the launcher starts", async () => {
         const io = fakeIO();
         openRunLauncher(fakeModel(), AGENT, STATE, io);
-        globalStore.get(launcherPrefillAtom)!.onStarted!("run-42");
+        globalStore.get(launcherPrefillAtom)!.handback!.started("run-42");
         await flush();
         expect(io.sent).toEqual([["blk-1", "brainstorm: run run-42"]]);
     });
@@ -331,7 +339,7 @@ describe("openRunLauncher", () => {
     it("arms the agent's sleep once, before the run's id is sent", async () => {
         const io = fakeIO();
         openRunLauncher(fakeModel(), AGENT, STATE, io);
-        globalStore.get(launcherPrefillAtom)!.onStarted!("run-42");
+        globalStore.get(launcherPrefillAtom)!.handback!.started("run-42");
         await flush();
         expect(io.armed).toEqual([["a1", "run-42", STATE.path]]);
         expect(io.calls).toEqual(["arm a1", "prompt blk-1"]);
@@ -340,9 +348,52 @@ describe("openRunLauncher", () => {
     it("still sends the run's id when the arm fails", async () => {
         const io = fakeIO(false, false, true);
         openRunLauncher(fakeModel(), AGENT, STATE, io);
-        globalStore.get(launcherPrefillAtom)!.onStarted!("run-42");
+        globalStore.get(launcherPrefillAtom)!.handback!.started("run-42");
         await flush();
         expect(io.armed).toEqual([]);
         expect(io.sent).toEqual([["blk-1", "brainstorm: run run-42"]]);
+    });
+
+    // the duplicate run: CreateRun took ~20s, the approved line settled when the agent's turn ended, and Approve lit
+    // again before the agent had heard the run's id
+    it("keeps Approve off from the launcher's Start until the agent records the run", async () => {
+        const io = fakeIO();
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+        openRunLauncher(fakeModel(), AGENT, getBrainstorm(AGENT.id)!, io);
+        const handback = globalStore.get(launcherPrefillAtom)!.handback!;
+        const approve = () => {
+            const s = getBrainstorm(AGENT.id)!;
+            return approveBlocker(shownBrainstormFile(s)!, s.starting);
+        };
+        expect(approve()).toBeNull();
+        handback.handedOff!();
+        expect(approve()).toBe(RUN_STARTING);
+        // CreateRun returned: the pane shows the run before the agent writes it down
+        handback.started("run-42");
+        await flush();
+        expect(shownBrainstormFile(getBrainstorm(AGENT.id))?.run).toBe("run-42");
+        expect(approve()).toBeNull();
+        // the file's own run wins once the agent has written it
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, sent: null, file: { ...FILE, run: "run-42" } }));
+        expect(shownBrainstormFile(getBrainstorm(AGENT.id))?.run).toBe("run-42");
+    });
+
+    it("turns Approve back on when the start fails or is cancelled", () => {
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+        openRunLauncher(fakeModel(), AGENT, getBrainstorm(AGENT.id)!, fakeIO());
+        const handback = globalStore.get(launcherPrefillAtom)!.handback!;
+        handback.handedOff!();
+        expect(getBrainstorm(AGENT.id)!.starting).toEqual({ runId: null });
+        handback.stopped!();
+        expect(getBrainstorm(AGENT.id)!.starting).toBeNull();
+    });
+
+    it("leaves a brainstorm attached in the approved one's place alone", () => {
+        updateBrainstorm(AGENT.id, (s) => ({ ...s, file: FILE }));
+        openRunLauncher(fakeModel(), AGENT, getBrainstorm(AGENT.id)!, fakeIO());
+        const handback = globalStore.get(launcherPrefillAtom)!.handback!;
+        attachBrainstorm(AGENT.id, { topic: "other", cwd: "/p" }, 0);
+        handback.handedOff!();
+        expect(getBrainstorm(AGENT.id)!.starting).toBeNull();
     });
 });

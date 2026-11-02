@@ -374,7 +374,9 @@ describe("settings pages", () => {
         expect(cards["headless/runtime"]).toEqual(["headless.runtime"]);
         expect(cards["headless/openrouter"]).toEqual(["headless.apikey", "headless.cheap"]);
         expect(cards["headless/radar"]).toEqual(["headless.radaraudit", "headless.radarclassify"]);
-        expect(cards["jarvis/jarvis"]).toEqual(["appearance.petcharacter", "appearance.petoutfit", "appearance.petquotes"]);
+        expect(cards["jarvis/jarvis"]).toEqual([
+            "appearance.petcharacter", "appearance.petoutfit", "appearance.petstay", "appearance.petquotes",
+        ]);
         expect(cards["jarvis/folding"]).toEqual(["window.minimize", "window.sproutcorner", "window.autosprout"]);
         expect(cards["jarvis/office"]).toEqual([
             "appearance.officeanimation", "appearance.officehours", "appearance.officesoundevents",
@@ -394,8 +396,8 @@ describe("settings pages", () => {
             .flatMap(sectionRows)
             .map((r) => r.id);
         expect(new Set(ids).size).toBe(ids.length);
-        // today's 60, the nine rows the reorganization added, and the two compaction rows
-        expect(ids).toHaveLength(71 + RUNTIME_FLAGS.claude.length);
+        // today's 60, the nine rows the reorganization added, the two compaction rows, and the pet's stay row
+        expect(ids).toHaveLength(72 + RUNTIME_FLAGS.claude.length);
     });
 
     it("finds moved rows by search", () => {

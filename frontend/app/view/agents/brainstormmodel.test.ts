@@ -14,7 +14,10 @@ import {
     answerLine,
     answeredQuestions,
     approveBlocker,
+    RUN_STARTING,
+    withStartingRun,
     asksUser,
+    awaitsReview,
     bodyBeyondGist,
     brainstormAttention,
     brainstormCounts,
@@ -353,6 +356,31 @@ describe("counts and gates", () => {
         expect(asksUser(f2, { state: "working" })).toBe(false);
         expect(asksUser(null, { state: "idle" })).toBe(false);
         expect(asksUser(file(), { state: "idle" })).toBe(false);
+    });
+
+    it("asksUser counts a design waiting on its guesses with no question open", () => {
+        const g = file({ done: true, parts: [part("a", "yours"), part("b", "guess"), part("c", "guess")] });
+        expect(awaitsReview(g)).toBe(true);
+        expect(asksUser(g, { state: "idle" })).toBe(true);
+        expect(asksUser(g, { state: "working" })).toBe(false);
+        // a changed decision waits on keep or restore just the same
+        expect(awaitsReview(file({ parts: [part("a", "guess", { was: "x" })] }))).toBe(true);
+        // nothing to confirm, the agent writing, or a builder check or run under way: not the user's turn
+        expect(awaitsReview(file({ parts: [part("a", "yours")] }))).toBe(false);
+        expect(awaitsReview({ ...g, working: "Writing" })).toBe(false);
+        expect(awaitsReview({ ...g, check: { yours: [], calls: [], answered: [] } })).toBe(false);
+        expect(awaitsReview({ ...g, run: "r1" })).toBe(false);
+        // with a question open it is the question that asks
+        expect(awaitsReview({ ...g, question: { n: 1, text: "?", part: "a" } })).toBe(false);
+    });
+
+    it("reads a design waiting on confirms in the tree and the attention item", () => {
+        const g = file({ parts: [part("a", "guess"), part("b", "guess", { was: "x" })] });
+        expect(treeLine(g, true)).toEqual({ text: "confirm 2 decisions" });
+        expect(treeLine(g, false)).toEqual({ text: "in progress" });
+        const item = brainstormAttention({ agentId: "t1", agentName: "loom", topic: "lag" }, g);
+        expect(item.key).toBe("brainstorm:t1:review");
+        expect(item.text).toContain("still the agent’s guess");
     });
 });
 
@@ -1556,6 +1584,21 @@ describe("approveBlocker", () => {
     it("is null once everything is yours and answered, or once a run started", () => {
         expect(approveBlocker(file({ parts: yoursAll, check: answered }))).toBeNull();
         expect(approveBlocker(file({ check, run: "r1", working: "w" }))).toBeNull();
+    });
+
+    it("stays off while a run Approve started has not reached the file", () => {
+        const settled = file({ parts: yoursAll, check: answered });
+        expect(approveBlocker(settled, { runId: null })).toBe(RUN_STARTING);
+        expect(approveBlocker(withStartingRun(settled, { runId: "r1" }), { runId: "r1" })).toBeNull();
+    });
+});
+
+describe("withStartingRun", () => {
+    it("shows the run Arc started until the file names one, and the file's own run after", () => {
+        expect(withStartingRun(file({}), { runId: "r1" }).run).toBe("r1");
+        expect(withStartingRun(file({}), { runId: null }).run).toBeNull();
+        expect(withStartingRun(file({}), null).run).toBeNull();
+        expect(withStartingRun(file({ run: "r0" }), { runId: "r1" }).run).toBe("r0");
     });
 });
 

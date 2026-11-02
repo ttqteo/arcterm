@@ -54,6 +54,7 @@ describe("attachBrainstorm", () => {
             base: null,
             sent: null,
             sentCheckAt: null,
+            starting: null,
             review: { cursor: null, open: {} },
         });
         expect(globalStore.get(brainstormAtom("a1"))?.topic).toBe("lag");

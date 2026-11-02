@@ -1,6 +1,17 @@
 import { globalStore } from "@/app/store/jotaiStore";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { petBubbleAtom, petEventsAtom, petHomeAtom, petSaidAtom, removePetEvent, setPetHome } from "./petstore";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PET_ROAM, type PetStay } from "./petstay";
+import {
+    clearExpiredPetStay,
+    petBubbleAtom,
+    petEventsAtom,
+    petHomeAtom,
+    petSaidAtom,
+    petStayAtom,
+    removePetEvent,
+    setPetHome,
+    setPetStay,
+} from "./petstore";
 import type { PetEvent } from "./petvoice";
 
 const lsMock = vi.hoisted(() => {
@@ -101,5 +112,135 @@ describe("petHomeAtom — where on the ledge it lives", () => {
         setPetHome(Number.NaN);
         expect(globalStore.get(petHomeAtom)).toBe(0.9);
         expect(lsMock.store.get(HOME_KEY)).toBe("0.9");
+    });
+});
+
+const STAY_KEY = "wave:pet.stay";
+const HOUR = 3_600_000;
+
+// the atom reads storage once, when the module creates it, so each case stores first and imports a fresh copy
+async function stayAtStartup(stored?: string): Promise<PetStay> {
+    lsMock.clear();
+    if (stored != null) {
+        lsMock.store.set(STAY_KEY, stored);
+    }
+    vi.resetModules();
+    const { createStore } = await import("jotai");
+    const fresh = await import("./petstore");
+    return createStore().get(fresh.petStayAtom);
+}
+
+describe("petStayAtom — whether it stays at home, and until when", () => {
+    beforeEach(() => {
+        lsMock.clear();
+        globalStore.set(petStayAtom, PET_ROAM);
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date(2026, 10, 2, 12, 0, 0));
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it("roams for a profile that never stored one", async () => {
+        expect(await stayAtStartup()).toEqual(PET_ROAM);
+    });
+
+    it("survives a relaunch: what setPetStay stores is what the next launch starts at", async () => {
+        const now = Date.now();
+        setPetStay("4h");
+        expect(globalStore.get(petStayAtom)).toEqual({ choice: "4h", until: now + 4 * HOUR });
+        expect(JSON.parse(lsMock.store.get(STAY_KEY)!)).toEqual({ choice: "4h", until: now + 4 * HOUR });
+        expect(await stayAtStartup(lsMock.store.get(STAY_KEY))).toEqual({ choice: "4h", until: now + 4 * HOUR });
+    });
+
+    it("keeps a timed stay's absolute end across a relaunch that happens before it", async () => {
+        const now = Date.now();
+        setPetStay("1h");
+        const stored = lsMock.store.get(STAY_KEY);
+        vi.setSystemTime(now + HOUR - 1000);
+        expect(await stayAtStartup(stored)).toEqual({ choice: "1h", until: now + HOUR });
+    });
+
+    it("reads a timed stay that ended while the app was closed as roam", async () => {
+        const now = Date.now();
+        setPetStay("1h");
+        const stored = lsMock.store.get(STAY_KEY);
+        vi.setSystemTime(now + HOUR + 1000);
+        expect(await stayAtStartup(stored)).toEqual(PET_ROAM);
+    });
+
+    it("keeps forever across a relaunch, however long it was closed", async () => {
+        setPetStay("forever");
+        const stored = lsMock.store.get(STAY_KEY);
+        vi.setSystemTime(Date.now() + 1000 * HOUR);
+        expect(await stayAtStartup(stored)).toEqual({ choice: "forever", until: null });
+    });
+
+    it("reads a corrupt value as roam", async () => {
+        expect(await stayAtStartup("{not json")).toEqual(PET_ROAM);
+    });
+
+    it("setPetStay roam stores roam", () => {
+        setPetStay("forever");
+        setPetStay("roam");
+        expect(globalStore.get(petStayAtom)).toEqual(PET_ROAM);
+        expect(JSON.parse(lsMock.store.get(STAY_KEY)!)).toEqual(PET_ROAM);
+    });
+
+    it("keeps the choice in memory when storage refuses the write", () => {
+        const setItem = lsMock.setItem;
+        lsMock.setItem = () => {
+            throw new Error("quota");
+        };
+        try {
+            expect(() => setPetStay("forever")).not.toThrow();
+            expect(globalStore.get(petStayAtom)).toEqual({ choice: "forever", until: null });
+        } finally {
+            lsMock.setItem = setItem;
+        }
+    });
+});
+
+describe("clearExpiredPetStay — the expiry timer's store half", () => {
+    beforeEach(() => {
+        lsMock.clear();
+        globalStore.set(petStayAtom, PET_ROAM);
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date(2026, 10, 2, 12, 0, 0));
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it("sets roam, in memory and in storage, once a timed stay has ended", () => {
+        setPetStay("1h");
+        const end = Date.now() + HOUR;
+        clearExpiredPetStay(end);
+        expect(globalStore.get(petStayAtom)).toEqual(PET_ROAM);
+        expect(JSON.parse(lsMock.store.get(STAY_KEY)!)).toEqual(PET_ROAM);
+    });
+
+    it("clears a stay long past its end", () => {
+        setPetStay("4h");
+        clearExpiredPetStay(Date.now() + 10 * HOUR);
+        expect(globalStore.get(petStayAtom)).toEqual(PET_ROAM);
+    });
+
+    it("leaves a timed stay that is still running", () => {
+        setPetStay("1h");
+        const before = globalStore.get(petStayAtom);
+        clearExpiredPetStay(Date.now() + HOUR - 1);
+        expect(globalStore.get(petStayAtom)).toBe(before);
+        expect(JSON.parse(lsMock.store.get(STAY_KEY)!)).toEqual(before);
+    });
+
+    it("leaves forever alone, however late", () => {
+        setPetStay("forever");
+        const before = globalStore.get(petStayAtom);
+        clearExpiredPetStay(Date.now() + 1000 * HOUR);
+        expect(globalStore.get(petStayAtom)).toBe(before);
+    });
+
+    it("leaves roam alone and writes nothing", () => {
+        const before = globalStore.get(petStayAtom);
+        clearExpiredPetStay(Date.now() + 1000 * HOUR);
+        expect(globalStore.get(petStayAtom)).toBe(before);
+        expect(lsMock.store.has(STAY_KEY)).toBe(false);
     });
 });

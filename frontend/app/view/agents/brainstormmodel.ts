@@ -510,8 +510,27 @@ export function isAsking(f: BrainstormFile): boolean {
     return f.question != null && f.working == null;
 }
 
+// the decisions Confirm the design waits on: guesses to confirm and changed ones to keep or restore
+function toReview(f: BrainstormFile): number {
+    return decisionParts(f).filter((p) => {
+        const v = partView(f, p);
+        return v === "guess" || v === "changed";
+    }).length;
+}
+
+// the design waits on the user's review, not on a question: no question open, nothing being written, no builder check
+// or run yet, and a decision still the agent's guess or changed since the user confirmed it
+export function awaitsReview(f: BrainstormFile): boolean {
+    return f.question == null && f.working == null && f.check == null && f.run == null && toReview(f) > 0;
+}
+
+// the file waits on the user: a question to answer, or guesses to confirm
+export function waitsOnUser(f: BrainstormFile): boolean {
+    return isAsking(f) || awaitsReview(f);
+}
+
 export function asksUser(f: BrainstormFile | null, agent: Pick<AgentVM, "state" | "atPrompt">): boolean {
-    return f != null && isAsking(f) && (agent.state === "idle" || agent.atPrompt === true);
+    return f != null && waitsOnUser(f) && (agent.state === "idle" || agent.atPrompt === true);
 }
 
 // the file knows a question the agent's own status does not: its turn ended on a prose question
@@ -533,6 +552,9 @@ export type TreeLine = { text: string; runId?: string };
 export function treeLine(f: BrainstormFile, asking: boolean, runText?: string): TreeLine {
     if (f.run != null) {
         return { text: runText ?? `run ${f.run.slice(0, RUN_ID_CHARS)}`, runId: f.run };
+    }
+    if (asking && f.question == null && awaitsReview(f)) {
+        return { text: `confirm ${plural(toReview(f), "decision", "decisions")}` };
     }
     if (asking) {
         return { text: `asking question ${f.question?.n ?? ""}`.trim() };
@@ -1393,11 +1415,26 @@ function capitalize(s: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+// A run Arc is starting from this design, from the launcher's Start until the file records it: CreateRun takes up to a
+// minute, and the agent hears the run's id only once it returns, so without this Approve reads as on in between and
+// starts the same run twice. runId is set once CreateRun has returned.
+export type StartingRunMark = { runId: string | null };
+
+export const RUN_STARTING = "The run is starting";
+
+// the file with the run Arc started from it, before the agent has recorded that run itself
+export function withStartingRun(f: BrainstormFile, starting: StartingRunMark | null): BrainstormFile {
+    return f.run == null && starting?.runId != null ? { ...f, run: starting.runId } : f;
+}
+
 // why Approve is off, said in words beside it; null when it is on. The design is settled only once the builder is
 // answered, no talk question is open, and every decision is yours
-export function approveBlocker(f: BrainstormFile): string | null {
+export function approveBlocker(f: BrainstormFile, starting: StartingRunMark | null = null): string | null {
     if (f.run != null) {
         return null;
+    }
+    if (starting != null) {
+        return RUN_STARTING;
     }
     if (f.working != null) {
         return "The agent is writing; this opens when it is done";
@@ -1641,12 +1678,14 @@ export function brainstormAttention(
     a: { agentId: string; agentName: string; topic: string },
     f: BrainstormFile
 ): AttentionItem {
+    // a review has no question: its own key, so the flash fires once when the design comes up for confirming
+    const review = f.question == null && awaitsReview(f);
     const q = f.question ?? { n: 0, text: "", part: "" };
     return {
         kind: "brainstorm",
-        key: `brainstorm:${a.agentId}:${q.n}`,
+        key: review ? `brainstorm:${a.agentId}:review` : `brainstorm:${a.agentId}:${q.n}`,
         source: a.agentName,
-        text: q.text,
+        text: review ? reviewHead(f).line : q.text,
         action: "brainstorm",
         oref: `brainstorm:${a.topic}`,
         phaseidx: 0,

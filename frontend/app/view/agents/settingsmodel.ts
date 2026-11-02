@@ -663,6 +663,13 @@ export function settingsSections(flagRuntime: Runtime): SettingSectionDef[] {
                             scope: "local",
                         },
                         {
+                            id: "appearance.petstay",
+                            title: "Pet roams",
+                            desc: "Keep Jarvis at its spot for a while, or until you let it roam again.",
+                            key: "wave:pet.stay",
+                            scope: "local",
+                        },
+                        {
                             id: "appearance.petquotes",
                             title: "Jarvis quotes",
                             desc: "Now and then, when nothing waits on you, Jarvis says a well-known line about programming. Spider-Man has a few of his own.",

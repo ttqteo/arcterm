@@ -159,6 +159,7 @@ describe("brainstormAttentionItems", () => {
         sent: null,
         sentCheckAt: null,
         review: { cursor: null, open: {} },
+        starting: null,
         ...over,
     });
 

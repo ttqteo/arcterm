@@ -827,8 +827,10 @@ declare global {
     // wshrpc.CommandCouncilRetryData
     type CommandCouncilRetryData = {
         id: string;
-        expertid: string;
+        expertid?: string;
         model?: string;
+        all?: boolean;
+        models?: {[key: string]: string};
     };
 
     // wshrpc.CommandCouncilSaveDocData

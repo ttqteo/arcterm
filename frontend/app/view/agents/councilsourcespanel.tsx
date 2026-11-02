@@ -118,7 +118,12 @@ export function EvidenceChips({
                 <span
                     data-council-evidence="weak"
                     data-weak="true"
-                    className={cn(CHIP, "border-warning/40 text-warning-soft")}
+                    className={cn(
+                        CHIP,
+                        // a weak claim is a sentence, not a file name: it wraps inside the chip instead of
+                        // spilling out of CHIP's fixed 24px height onto the row below
+                        "h-auto min-h-[24px] max-w-[520px] py-[3px] leading-[1.4] border-warning/40 text-warning-soft"
+                    )}
                 >
                     {weak}
                 </span>

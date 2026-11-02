@@ -1125,6 +1125,55 @@ func TestRoundTwoFailureRetryRerunsRoundTwo(t *testing.T) {
 	}
 }
 
+func TestRetryAllRerunsEveryFailedSeatInOneRun(t *testing.T) {
+	h := newHarness(t)
+	h.f.setFail("ram/r1", errors.New("boom"))
+	h.f.setFail("skeptic/r2", errors.New("timed out"))
+	c := h.run(testCouncil("c1"))
+	if len(c.Failed) != 2 || c.State != StateDone {
+		t.Fatalf("failed %v, state %s, want ram and skeptic failed in a done council", c.Failed, c.State)
+	}
+	if _, err := h.r.RetryAll("c1", map[string]string{"nobody": "sonnet"}); err == nil || !strings.Contains(err.Error(), "no expert nobody") {
+		t.Errorf("RetryAll with an unknown seat = %v, want an error naming it", err)
+	}
+	if _, err := h.r.RetryAll("c1", map[string]string{"ram": "not a model"}); err == nil {
+		t.Errorf("RetryAll with a malformed model worked")
+	}
+	h.f.setFail("ram/r1", nil)
+	h.f.setFail("skeptic/r2", nil)
+	r1, r2 := len(h.f.calls("r1")), len(h.f.calls("r2"))
+	saved, err := h.r.RetryAll("c1", map[string]string{"ram": " fable ", "skeptic": "sonnet"})
+	if err != nil {
+		t.Fatalf("RetryAll: %v", err)
+	}
+	if saved.State != StateRunning {
+		t.Fatalf("RetryAll returned %s, want running", saved.State)
+	}
+	// a single Retry while that run is on is refused, which is why the seats go in one run
+	if _, err := h.r.Retry("c1", "skeptic"); err == nil || !strings.Contains(err.Error(), "is running") {
+		t.Errorf("Retry during RetryAll = %v, want the council busy", err)
+	}
+	c = h.wait("c1")
+	if got := h.f.calls("r1"); len(got) != r1+1 || got[r1].Expert.Id != "ram" || got[r1].Expert.Model != "fable" {
+		t.Fatalf("round 1 calls %d, want ram's rerun on fable", len(got))
+	}
+	if got := h.f.calls("r2"); len(got) != r2+1 || got[r2].Expert.Id != "skeptic" {
+		t.Fatalf("round 2 calls %d, want skeptic's rerun", len(got))
+	}
+	if len(c.Failed) != 0 || c.State != StateDone {
+		t.Fatalf("after RetryAll: failed %v, state %s, want none and done", c.Failed, c.State)
+	}
+	if len(c.Retries) != 1 || c.Retries[0].Expert != "ram" || c.Retries[0].Model != "fable" || c.Retries[0].Round != 1 {
+		t.Errorf("retries %+v, want ram's on fable kept and skeptic's own-model retry not", c.Retries)
+	}
+	if n := len(h.f.calls("r3")); n != 1 {
+		t.Errorf("RetryAll reran the synthesis (%d calls)", n)
+	}
+	if _, err := h.r.RetryAll("c1", nil); err == nil || !strings.Contains(err.Error(), "no failed seat") {
+		t.Errorf("RetryAll with nothing failed = %v, want an error saying so", err)
+	}
+}
+
 func TestACallThatReturnsNothingUsableIsAFailure(t *testing.T) {
 	for _, tc := range []struct{ name, text, want string }{
 		{"an empty reply", "", "empty reply"},
