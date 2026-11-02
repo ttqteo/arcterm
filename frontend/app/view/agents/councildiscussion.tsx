@@ -52,6 +52,7 @@ import {
 import {
     callSegments,
     canRemoveCouncil,
+    isClosedCouncil,
     canSummarize,
     estimateLabel,
     expertStat,
@@ -60,10 +61,10 @@ import {
     summarizeHold,
     type SegmentState,
 } from "./councilmodel";
-import { confirmRemoveCouncil } from "./councilremove";
 import { RetryWithButton } from "./councilretrymenu";
 import { EvidenceChips } from "./councilsourcespanel";
 import {
+    closeCouncil,
     continueCouncil,
     councilSelAtom,
     retryExpert,
@@ -302,12 +303,16 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
                 {canRemoveCouncil(c) && (
                     <button
                         type="button"
-                        data-council-remove
-                        title="Remove this council and its discussion"
-                        onClick={() => confirmRemoveCouncil(c)}
-                        className="h-[28px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[12px] text-[13px] text-muted outline-none hover:text-error focus-visible:ring-2 focus-visible:ring-accent"
+                        data-council-close={isClosedCouncil(c) ? "reopen" : "close"}
+                        title={
+                            isClosedCouncil(c)
+                                ? "Put this council back in the tree"
+                                : "Fold this council into its project's Closed councils; nothing is deleted"
+                        }
+                        onClick={() => void closeCouncil(c.id, !isClosedCouncil(c))}
+                        className="h-[28px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[12px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                        Remove
+                        {isClosedCouncil(c) ? "Reopen" : "Close"}
                     </button>
                 )}
             </div>

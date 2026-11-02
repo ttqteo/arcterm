@@ -229,7 +229,13 @@ export function stopCouncil(id: string): Promise<CouncilCall<void>> {
     return call("stop", () => RpcApi.CouncilStopCommand(TabRpcClient, { id }));
 }
 
-/** Removes an ended council (canRemoveCouncil): its file goes, the document it wrote into the project stays. wavesrv
+/** Closes an ended council (canRemoveCouncil), or opens a closed one again (`closed` false). Nothing is deleted: the
+ *  tree moves it into its project's Closed councils fold, and council:changed brings the saved council to every atom. */
+export function closeCouncil(id: string, closed = true): Promise<CouncilCall<void>> {
+    return call(closed ? "close" : "reopen", () => RpcApi.CouncilCloseCommand(TabRpcClient, { id, closed }));
+}
+
+/** Removes an ended council (canRemoveCouncil) for good: its file goes to ~/.arc/trash, the document it wrote into the project stays. wavesrv
  *  refuses one still running, waiting on the person or queued. On success it leaves every atom at once, without
  *  waiting for `council:changed`. */
 export async function deleteCouncil(id: string): Promise<CouncilCall<void>> {

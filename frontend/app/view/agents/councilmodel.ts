@@ -188,10 +188,17 @@ export function councilProjectName(
     return null;
 }
 
-/** Pure: a council nothing works on any more (done, failed, stopped, not run), which Remove deletes. One running,
- *  waiting on the person or queued has to be stopped first; wavesrv refuses it too (Runner.Delete). */
+/** Pure: a council nothing works on any more (done, failed, stopped, not run), which Close folds away and Remove
+ *  deletes. One running, waiting on the person or queued has to be stopped first; wavesrv refuses it too
+ *  (Runner.SetClosed, Runner.Delete). */
 export function canRemoveCouncil(c: Pick<Council, "state">): boolean {
     return c.state === "done" || c.state === "failed" || c.state === "stopped" || c.state === "not-run";
+}
+
+/** Pure: a council the person closed. It counts only while it is ended: one that runs again is open (wavesrv clears the
+ *  mark when it starts it, and this holds while that save is on its way). */
+export function isClosedCouncil(c: Pick<Council, "state" | "closed">): boolean {
+    return (c.closed ?? 0) > 0 && canRemoveCouncil(c);
 }
 
 // ---- stances, score, ranking ----

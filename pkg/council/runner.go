@@ -626,6 +626,13 @@ func (r *Runner) launchLocked(parent context.Context, id string, persist func() 
 	}
 	r.active[id] = rn
 	c, err := persist()
+	if err == nil && c.Closed != 0 {
+		// a closed council that runs again (a retry, a reply, a summary) is back in the tree
+		c, err = Update(id, func(c *Council) error {
+			c.Closed = 0
+			return nil
+		})
+	}
 	if err != nil {
 		delete(r.active, id)
 		cancel()
@@ -2183,12 +2190,9 @@ func (r *Runner) Stop(id string) (*Council, error) {
 	return Load(id)
 }
 
-// Delete removes a council that nothing works on: done, failed, stopped or not-run. A council that is running, waits on
-// the person or waits in the queue is refused; stop it first. It returns the council as it was, for its project. The
-// document a council wrote into the project stays.
-func (r *Runner) Delete(id string) (*Council, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// endedLocked loads a council that nothing works on: done, failed, stopped or not-run. A council that is running, waits
+// on the person or waits in the queue is refused (`what` names the refused action); stop it first. The caller holds r.mu.
+func (r *Runner) endedLocked(id, what string) (*Council, error) {
 	if r.active[id] != nil {
 		return nil, busy(id)
 	}
@@ -2198,7 +2202,45 @@ func (r *Runner) Delete(id string) (*Council, error) {
 	}
 	switch c.State {
 	case StateRunning, StateAwaiting, StateQueued:
-		return nil, fmt.Errorf("council %s is %s: stop it before removing it", id, c.State)
+		return nil, fmt.Errorf("council %s is %s: stop it before %s it", id, c.State, what)
+	}
+	return c, nil
+}
+
+// SetClosed closes an ended council (the tree folds it under its project's Closed councils, and its file stays) or opens
+// a closed one again. Only an ended council is closed; opening one works in any state. It reports the save.
+func (r *Runner) SetClosed(id string, closed bool) (*Council, error) {
+	r.mu.Lock()
+	if closed {
+		if _, err := r.endedLocked(id, "closing"); err != nil {
+			r.mu.Unlock()
+			return nil, err
+		}
+	}
+	c, err := Update(id, func(c *Council) error {
+		if !closed {
+			c.Closed = 0
+		} else if c.Closed == 0 {
+			c.Closed = r.now()
+		}
+		return nil
+	})
+	r.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	r.changed(c)
+	return c, nil
+}
+
+// Delete removes an ended council (endedLocked): its file goes to the trash (~/.arc/trash, which empties itself after
+// a while), and the document it wrote into the project stays. It returns the council as it was, for its project.
+func (r *Runner) Delete(id string) (*Council, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, err := r.endedLocked(id, "removing")
+	if err != nil {
+		return nil, err
 	}
 	if err := Remove(id); err != nil {
 		return nil, err

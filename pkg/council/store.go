@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/sessiontrash"
 	"github.com/wavetermdev/waveterm/pkg/util/fileutil"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 )
@@ -203,8 +204,26 @@ func Update(id string, fn func(*Council) error) (*Council, error) {
 	return c, nil
 }
 
-// Remove deletes the council's file, under the id's lock so no save writes it back. A missing council is an error that
-// wraps fs.ErrNotExist.
+// trashDir is where Remove moves a council's file: the session trash (~/.arc/trash, which its purge empties after a
+// while), or <root>/trash under a test's root.
+func trashDir() string {
+	rootMu.RLock()
+	defer rootMu.RUnlock()
+	if rootOverride != "" {
+		return filepath.Join(rootOverride, "trash")
+	}
+	return sessiontrash.TrashDir()
+}
+
+// trashMeta is the meta.json the session trash writes beside an entry's files, in the same shape.
+type trashMeta struct {
+	OriginalPath string `json:"originalPath"`
+	DeletedAt    string `json:"deletedAt"` // RFC 3339
+}
+
+// Remove moves the council's file into the trash as <unix-ms>-council-<id>/<id>.json beside a meta.json saying where it
+// came from (the session trash's layout), under the id's lock so no save writes it back. Copying the file back restores
+// the council. A missing council is an error that wraps fs.ErrNotExist.
 func Remove(id string) error {
 	path, err := councilPath(id)
 	if err != nil {
@@ -213,8 +232,27 @@ func Remove(id string) error {
 	mu := idLock(id)
 	mu.Lock()
 	defer mu.Unlock()
-	if err := os.Remove(path); err != nil {
+	if _, err := os.Lstat(path); err != nil {
 		return fmt.Errorf("remove council %s: %w", id, err)
+	}
+	at := now()
+	trash := trashDir()
+	entry := filepath.Join(trash, fmt.Sprintf("%d-council-%s", at.UnixMilli(), id))
+	if err := os.MkdirAll(trash, 0o700); err != nil {
+		return fmt.Errorf("remove council %s: creating the trash: %w", id, err)
+	}
+	if err := os.Mkdir(entry, 0o700); err != nil {
+		return fmt.Errorf("remove council %s: creating the trash entry: %w", id, err)
+	}
+	// the meta first: an entry that exists says where its file came from, even if this is cut short
+	raw, _ := json.MarshalIndent(trashMeta{OriginalPath: path, DeletedAt: at.UTC().Format(time.RFC3339)}, "", "  ")
+	if err := os.WriteFile(filepath.Join(entry, "meta.json"), raw, 0o600); err != nil {
+		_ = os.RemoveAll(entry)
+		return fmt.Errorf("remove council %s: writing the trash entry: %w", id, err)
+	}
+	if err := sessiontrash.MoveEntry(path, filepath.Join(entry, id+fileExt)); err != nil {
+		_ = os.RemoveAll(entry)
+		return fmt.Errorf("remove council %s: moving it to the trash: %w", id, err)
 	}
 	return nil
 }

@@ -176,6 +176,12 @@ func (ws *WshServer) CouncilDeleteCommand(ctx context.Context, data wshrpc.Comma
 	return nil
 }
 
+// CouncilCloseCommand closes an ended council or opens a closed one; the runner publishes council:changed.
+func (ws *WshServer) CouncilCloseCommand(ctx context.Context, data wshrpc.CommandCouncilCloseData) error {
+	_, err := councilRunner.SetClosed(data.Id, data.Closed)
+	return err
+}
+
 func (ws *WshServer) CouncilRetryCommand(ctx context.Context, data wshrpc.CommandCouncilRetryData) error {
 	_, err := councilRunner.RetryOn(data.Id, data.ExpertId, data.Model)
 	return err

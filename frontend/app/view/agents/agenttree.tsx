@@ -167,6 +167,7 @@ import {
 import { type CouncilTone } from "./councilmodel";
 import { confirmRemoveCouncil } from "./councilremove";
 import {
+    closeCouncil,
     councilListAtom,
     councilSelAtom,
     councilUnreadAtom,
@@ -204,6 +205,7 @@ import {
     collapsedConversationProjectsAtom,
     collapsedProjectsAtom,
     collapsedSectionsAtom,
+    openClosedCouncilsAtom,
     toggleFold,
     type SidebarSection,
 } from "./projectfoldstore";
@@ -2592,12 +2594,36 @@ function CouncilHeadRow({ project }: { project: string }) {
     );
 }
 
+// The fold at the end of a project's councils block: the councils the person closed, folded away until opened.
+function ClosedCouncilsRow({ project, count, open }: { project: string; count: number; open: boolean }) {
+    return (
+        <button
+            type="button"
+            data-council-closed={project}
+            aria-expanded={open}
+            aria-label={`${open ? "Hide" : "Show"} ${count} closed councils of ${project}`}
+            onClick={() =>
+                globalStore.set(openClosedCouncilsAtom, toggleFold(globalStore.get(openClosedCouncilsAtom), project))
+            }
+            className={PAGER_BUTTON}
+        >
+            {open ? (
+                <ChevronDown size={11} aria-hidden className="w-[12px] flex-none" />
+            ) : (
+                <ChevronRight size={11} aria-hidden className="w-[12px] flex-none" />
+            )}
+            <span className="tabular-nums">Closed councils ({count})</span>
+        </button>
+    );
+}
+
 // One council: a dot, its feature and its state in a word. The word is in the state's tone token and carries the state
 // whatever the color, `Waiting on you` in the amber one. A primary-ink dot before it says it ended while you were away.
 // A queued council also offers Remove from queue (hover, and the menu): it stops the council before it ever starts, as
-// the queued run's row does. An ended one (done, failed, stopped, not run) offers Remove the same way, behind a confirm:
-// its file goes, the document it saved stays. The button cannot hold the action, so such a row sits in a wrapper beside it.
-// Every row's menu starts with Copy id, the full id `wsh council show|wait|stop|rm` take.
+// the queued run's row does. An ended one (done, failed, stopped, not run) offers Close the same way, which deletes
+// nothing: the row moves into its project's Closed councils fold, where its × reopens it. The menu also offers Remove,
+// behind a confirm, which moves the council's file to ~/.arc/trash. The button cannot hold the action, so such a row
+// sits in a wrapper beside it. Every row's menu starts with Copy id, the full id `wsh council show|wait|stop|rm` take.
 function CouncilRow({ row }: { row: CouncilRowVM }) {
     const center = useAtomValue(centerModeAtom);
     const view = useAtomValue(councilViewAtom);
@@ -2606,17 +2632,22 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
     const tone = COUNCIL_TONE[row.tone];
     const queued = row.queued === true;
     const wrapped = queued || row.removable === true;
-    const remove = () => {
-        if (queued) {
-            fireAndForget(() => stopCouncil(row.id));
-            return;
-        }
+    const closed = row.closed === true;
+    const removeForGood = () => {
         const c = globalStore.get(councilListAtom(""))?.find((x) => x.id === row.id);
         if (c != null) {
             confirmRemoveCouncil(c);
         }
     };
-    const removeLabel = queued ? "Remove from queue" : "Remove council";
+    // the hover button: a queued council leaves the queue, an ended one closes, a closed one reopens
+    const remove = () => {
+        if (queued) {
+            fireAndForget(() => stopCouncil(row.id));
+            return;
+        }
+        fireAndForget(() => closeCouncil(row.id, !closed));
+    };
+    const removeLabel = queued ? "Remove from queue" : closed ? "Reopen council" : "Close council";
     const onContextMenu = (e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [
             {
@@ -2625,12 +2656,22 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
                 icon: <Hash size={15} />,
                 click: () => void navigator.clipboard.writeText(row.id),
             },
-            ...(wrapped
+            ...(queued
                 ? [
                       { type: "separator" } as const,
                       { label: removeLabel, icon: <X size={15} />, danger: true, click: remove },
                   ]
-                : []),
+                : wrapped
+                  ? [
+                        { type: "separator" } as const,
+                        {
+                            label: removeLabel,
+                            icon: closed ? <RotateCcw size={15} /> : <X size={15} />,
+                            click: remove,
+                        },
+                        { label: "Remove council…", icon: <Trash2 size={15} />, danger: true, click: removeForGood },
+                    ]
+                  : []),
         ];
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
@@ -2717,13 +2758,16 @@ function CouncilRow({ row }: { row: CouncilRowVM }) {
             >
                 <button
                     type="button"
-                    data-council-act="remove"
+                    data-council-act={queued ? "remove" : closed ? "reopen" : "close"}
                     title={removeLabel}
-                    aria-label={queued ? `Remove ${row.feature} from the queue` : `Remove council ${row.feature}`}
+                    aria-label={`${removeLabel} ${row.feature}`}
                     onClick={remove}
-                    className="flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted hover:text-error"
+                    className={cn(
+                        "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted",
+                        queued ? "hover:text-error" : "hover:text-secondary"
+                    )}
                 >
-                    <X size={12} aria-hidden />
+                    {closed ? <RotateCcw size={12} aria-hidden /> : <X size={12} aria-hidden />}
                 </button>
             </span>
         </div>
@@ -3143,6 +3187,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
     // the councils (councilstore.ts), every project's, filed under the registered project each ran in; and the projects
     // whose Setup holds an unsent draft, which New council says
     const councilList = useCouncils("");
+    const openClosedCouncils = useAtomValue(openClosedCouncilsAtom);
     const councilUnread = useAtomValue(councilUnreadAtom);
     const councils = useMemo(
         () => councilRowsByProject(councilList, roots, councilUnread),
@@ -3161,6 +3206,7 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
         splits,
         roster: [...agents, ...terminals],
         councils,
+        openClosedCouncils,
     });
     // numbered as Alt+1..9 reach them: focusAgentAt walks activeNavOrder, which builds this list from the same inputs
     const digits = agentDigits(treeNavIds(rows));
@@ -3338,6 +3384,11 @@ export const AgentTree = memo(function AgentTree({ model }: { model: AgentsViewM
                                     return plain(`council-head-${r.project}`, <CouncilHeadRow project={r.project} />);
                                 case "council":
                                     return plain(`council-${r.id}`, <CouncilRow row={r} />);
+                                case "councilclosed":
+                                    return plain(
+                                        `council-closed-${r.project}`,
+                                        <ClosedCouncilsRow project={r.project} count={r.count} open={r.open} />
+                                    );
                                 case "service":
                                     return plain(
                                         `service-${r.serviceId}`,

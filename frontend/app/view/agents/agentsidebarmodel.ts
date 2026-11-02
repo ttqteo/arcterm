@@ -20,6 +20,7 @@ import { formatAgeShort, projectOf, type AgentVM } from "./agentsviewmodel";
 import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
 import {
     canRemoveCouncil,
+    isClosedCouncil,
     councilProjectKey,
     queuedLine,
     treeMeta,
@@ -325,8 +326,11 @@ export interface CouncilRowVM {
     unread: boolean;
     /** it waits for the one council that runs: the row offers Remove from queue. Set only on a queued council. */
     queued?: true;
-    /** nothing works on it any more (canRemoveCouncil): the row offers Remove. Set only on such a council. */
+    /** nothing works on it any more (canRemoveCouncil): the row offers Close, and Remove in its menu. Set only on such
+     *  a council. */
     removable?: true;
+    /** the person closed it (isClosedCouncil): it sits in its project's Closed councils fold and offers Reopen. */
+    closed?: true;
 }
 
 /** Pure: the councils (councilListAtom("")) as tree rows, by the registered project each one ran in. The folders of
@@ -371,6 +375,9 @@ export function councilRowsByProject(
         if (canRemoveCouncil(c)) {
             row.removable = true;
         }
+        if (isClosedCouncil(c)) {
+            row.closed = true;
+        }
         const list = out.get(name);
         if (list == null) {
             out.set(name, [row]);
@@ -403,6 +410,9 @@ export type ProjectTreeRow =
     // Neither is a focus target. A council is started from New (the launcher's Council row) or the palette.
     | { kind: "councilhead"; project: string }
     | ({ kind: "council"; project: string } & CouncilRowVM)
+    // the fold at the end of a project's councils block holding the councils the person closed, `count` of them; their
+    // rows follow it while it is `open`
+    | { kind: "councilclosed"; project: string; count: number; open: boolean }
     // a plan queued to start, in its project's folder right under the project's agents. Named apart from the tree's
     // "queued" row, which folds a run's queued tasks.
     | ({ kind: "queuedentry" } & QueuedRow)
@@ -517,7 +527,8 @@ export function newCouncilRoot(focus: AgentVM | undefined, projects: ProjectRegi
  *
  *  `councils` (councilRowsByProject, by project name) turns the councils block on: the folder of each registered project
  *  that has a council then holds, right after its queued plans and ahead of the divider, a Councils label and one row
- *  per council (`created`, newest first). A project with no council has no block; one whose only content is a council
+ *  per council (`created`, newest first), the councils the person closed folded into a Closed councils row at its end
+ *  (open for the projects in `openClosedCouncils`). A project with no council has no block; one whose only content is a council
  *  still gets a folder. A project with no root (Home, the agents with no registered project) has no block. The rows are
  *  no focus target, so treeNavIds skips them and j/k need no councils input.
  *
@@ -544,6 +555,7 @@ export function projectTree(input: {
     splits?: ProjectGrids; // the grids as the surface reconciles them (gridstore treeSplits)
     roster?: readonly AgentVM[];
     councils?: ReadonlyMap<string, CouncilRowVM[]>; // by project name
+    openClosedCouncils?: readonly string[]; // the projects whose Closed councils fold is open
 }): ProjectTreeRow[] {
     const { tree, filter, roots } = input;
     const services = input.services ?? [];
@@ -588,10 +600,19 @@ export function projectTree(input: {
         if (list.length === 0) {
             return [];
         }
-        return [
+        const closed = list.filter((c) => c.closed);
+        const out: ProjectTreeRow[] = [
             { kind: "councilhead", project },
-            ...list.map((c): ProjectTreeRow => ({ kind: "council", project, ...c })),
+            ...list.filter((c) => !c.closed).map((c): ProjectTreeRow => ({ kind: "council", project, ...c })),
         ];
+        if (closed.length > 0) {
+            const open = input.openClosedCouncils?.includes(project) ?? false;
+            out.push({ kind: "councilclosed", project, count: closed.length, open });
+            if (open) {
+                out.push(...closed.map((c): ProjectTreeRow => ({ kind: "council", project, ...c })));
+            }
+        }
+        return out;
     };
     const splits = input.splits != null ? splitGrids(input.splits) : new Map<string, GridState>();
     const byId = new Map((input.roster ?? []).map((a) => [a.id, a]));

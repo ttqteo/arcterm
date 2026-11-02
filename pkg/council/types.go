@@ -237,6 +237,7 @@ type Council struct {
 	DocPath          string                       `json:"docpath,omitempty"`     // the absolute path of the saved document
 	Rating           string                       `json:"rating,omitempty"`      // RatingUseful or RatingNot: the person's latest answer to "Was this useful?"; empty until given
 	RatedAt          int64                        `json:"ratedat,omitempty"`     // when Rating was given, in ms
+	Closed           int64                        `json:"closed,omitempty"`      // when the person closed it, in ms: the tree folds it under its project's Closed councils; 0 is open, and a council that runs again opens
 	Experts          []CouncilExpert              `json:"experts"`               // the coordinator last
 	PauseAfterRound1 bool                         `json:"pauseafterround1,omitempty"`
 	Rounds           int                          `json:"rounds,omitempty"`    // 1 to 3 seat rounds, the ideas round included; 0 reads as 2 (RoundsOf)

@@ -5,7 +5,7 @@
 // dialog's Council row and the palette's New council… row. The fixture project holds the round2, awaiting, done and notrun
 // councils and a terminal; a second registered project holds a terminal and no council, and so no Councils block. Nothing
 // here starts a council or calls a model: New council only opens Setup, and Remove from queue (a queued council, step 10)
-// and Remove council (an ended one, step 11) have their stop and delete commands replaced in the page.
+// and Close council (an ended one, step 11) have their stop and close commands replaced in the page.
 //
 // The hooks are called by councilscenarios.mjs as arrange(h, fx), assert(h, ctx, fx), teardown(h, ctx, fx). The tree is
 // read as one flat list (the rows of [data-agent-active-rows] in the order they are drawn), cut at each project's folder.
@@ -75,6 +75,8 @@ const TREE_ROWS = `(() => {
                 current: row.getAttribute("aria-current") === "true",
             };
         }
+        const closed = w.querySelector("[data-council-closed]");
+        if (closed) return { kind: "closed", project: closed.dataset.councilClosed, text: flat(closed), open: closed.getAttribute("aria-expanded") === "true" };
         if (w.querySelector("[data-project-divider]")) return { kind: "divider" };
         if (w.querySelector("[data-agent-terminal-row]")) return { kind: "terminal" };
         return { kind: "other" };
@@ -365,7 +367,7 @@ export const councilTree = {
         const queuedRow = (folderRows(await rows(), COUNCIL_PROJECT) ?? []).find((r) => r.kind === "council" && r.id === queued);
         const removeOf = (id) =>
             `document.querySelector(${JSON.stringify(`[data-council-row="${id}"]`)})?.parentElement?.querySelector('[data-council-act="remove"]')`;
-        // a running or waiting council offers no Remove; an ended one offers Remove council (step 11), not this
+        // a running or waiting council offers no Remove; an ended one offers Close council (step 11), not this
         const offered = await h.ev(
             `${removeOf(queued)}?.title === "Remove from queue" && !${removeOf(councilFixtureId("round2"))} && !${removeOf(councilFixtureId("awaiting"))}`
         );
@@ -391,24 +393,43 @@ export const councilTree = {
             JSON.stringify({ wording, queuedRow, offered, removed, stops })
         );
 
-        // 11. an ended council offers Remove council behind a confirm; confirming asks wavesrv to delete it and the row
-        // goes at once
+        // 11. an ended council's × closes it, with no confirm and nothing deleted; once closed it moves into the folder's
+        // Closed councils fold, which opens to show it with a Reopen button
         const doneId = councilFixtureId("done");
-        const doneRemove = await h.ev(`${removeOf(doneId)}?.title ?? null`);
-        await stubRpc(h, ["CouncilDeleteCommand"]);
-        await h.ev(`${removeOf(doneId)}?.click()`);
-        const dialog = `[...document.querySelectorAll("h2")].some((e) => e.textContent === "Remove council")`;
-        const asked = await until(dialog);
-        await h.shot("cdp-shots/council-tree-remove.png");
-        await h.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))`);
-        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilDeleteCommand").length >= 1`);
-        const deletes = await rpcCalls(h, "CouncilDeleteCommand");
-        const gone = await until(`!document.querySelector(${JSON.stringify(`[data-council-row="${doneId}"]`)})`);
+        const actOf = (id, act) =>
+            `document.querySelector(${JSON.stringify(`[data-council-row="${id}"]`)})?.parentElement?.querySelector('[data-council-act="${act}"]')`;
+        const doneClose = await h.ev(`${actOf(doneId, "close")}?.title ?? null`);
+        await stubRpc(h, ["CouncilCloseCommand", "CouncilDeleteCommand"]);
+        await h.ev(`${actOf(doneId, "close")}?.click()`);
+        await until(`(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilCloseCommand").length >= 1`);
+        const closes = await rpcCalls(h, "CouncilCloseCommand");
+        const confirmed = await h.ev(`[...document.querySelectorAll("h2")].some((e) => e.textContent === "Remove council")`);
+        const deleted = (await rpcCalls(h, "CouncilDeleteCommand")).length;
         await unstubRpc(h);
+        // what wavesrv saves for that close
+        writeCouncil(ctx, "done", { edit: (c) => (c.closed = Date.now()) });
+        await announceCouncil(h, ctx, doneId);
+        const folded = await until(`!document.querySelector(${JSON.stringify(`[data-council-row="${doneId}"]`)}) && !!document.querySelector("[data-council-closed]")`);
+        const foldRow = (folderRows(await rows(), COUNCIL_PROJECT) ?? []).find((r) => r.kind === "closed");
+        await h.ev(`document.querySelector("[data-council-closed]")?.click()`);
+        const shown = await until(`!!document.querySelector(${JSON.stringify(`[data-council-row="${doneId}"]`)})`);
+        const reopen = await h.ev(`${actOf(doneId, "reopen")}?.title ?? null`);
+        await h.shot("cdp-shots/council-tree-closed.png");
+        // fold it again for the steps that follow
+        await h.ev(`document.querySelector("[data-council-closed]")?.click()`);
         rec(
-            "11. an ended council offers Remove council, which asks first, then deletes it and drops its row",
-            doneRemove === "Remove council" && asked && deletes.length === 1 && deletes[0].data?.id === doneId && gone,
-            JSON.stringify({ doneRemove, asked, deletes, gone })
+            "11. an ended council's × closes it without asking or deleting; it folds into Closed councils (1), which opens to show it with Reopen",
+            doneClose === "Close council" &&
+                closes.length === 1 &&
+                closes[0].data?.id === doneId &&
+                closes[0].data?.closed === true &&
+                !confirmed &&
+                deleted === 0 &&
+                folded &&
+                foldRow?.text === "Closed councils (1)" &&
+                shown &&
+                reopen === "Reopen council",
+            JSON.stringify({ doneClose, closes, confirmed, deleted, folded, foldRow, shown, reopen })
         );
 
         // ---- the room's agents (steps 12 on) ----

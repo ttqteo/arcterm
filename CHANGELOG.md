@@ -47,6 +47,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - A brainstorm mockup's thumbnail opens the board full size when you click it, not only from its Open full size link.
+- An ended council's × in the Agent tree now closes it instead of deleting it: it folds into its project's Closed
+  councils, where Reopen brings it back (a retry or a reply reopens it too). Remove council… on its right-click menu
+  still deletes one for good, into ~/.arc/trash, and `wsh council close` / `wsh council close --reopen` do the same.
 - A council's header fits on one line: the mode leads, a long question shortens to fit instead of pushing the status
   onto a second row, and Top, Latest and Back in its discussion glide to their place instead of jumping.
 

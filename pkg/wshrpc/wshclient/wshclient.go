@@ -350,6 +350,12 @@ func CouncilBenchStopCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.C
 	return resp, err
 }
 
+// command "councilclose", wshserver.CouncilCloseCommand
+func CouncilCloseCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilCloseData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilclose", data, opts)
+	return err
+}
+
 // command "councilcontinue", wshserver.CouncilContinueCommand
 func CouncilContinueCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilContinueData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "councilcontinue", data, opts)

@@ -667,6 +667,8 @@ describe("projectTree", () => {
                     return `ch:${r.project}`;
                 case "council":
                     return `c:${r.id}:${r.meta}`;
+                case "councilclosed":
+                    return `cc:${r.project}:${r.count}${r.open ? ":open" : ""}`;
                 case "group":
                     return `group:${r.project}:${r.agents}a:${r.terminals}t${r.open ? "" : ":closed"}`;
                 case "divider":
@@ -958,6 +960,22 @@ describe("projectTree", () => {
                 "divider:waveterm",
                 "t:t1",
             ]);
+        });
+
+        it("folds the closed councils into a Closed councils row at the block's end, open on request", () => {
+            const councils = {
+                waveterm: [cvm("a", 1, { closed: true }), cvm("b", 2), cvm("c", 3, { closed: true })],
+            };
+            expect(shape(build([agent("a")], [], withCouncils(councils)))).toEqual([
+                "group:waveterm:1a:0t",
+                "a:a",
+                "ch:waveterm",
+                "c:b:Done",
+                "cc:waveterm:2",
+            ]);
+            expect(
+                shape(build([agent("a")], [], withCouncils(councils, { openClosedCouncils: ["waveterm"] })))
+            ).toEqual(["group:waveterm:1a:0t", "a:a", "ch:waveterm", "c:b:Done", "cc:waveterm:2:open", "c:c:Done", "c:a:Done"]);
         });
 
         it("carries what a row draws: the feature, the meta and its tone", () => {
@@ -1390,6 +1408,22 @@ describe("councilRowsByProject", () => {
         expect(rows.get("waveterm")?.map((r) => r.id)).toEqual(["a", "b"]);
         // a POSIX path is case-sensitive; only a drive path is compared without case
         expect(rows.get("loom")?.map((r) => r.id)).toEqual(["c"]);
+    });
+
+    it("marks a closed council only while it is ended: one that runs again is open", () => {
+        const rows = councilRowsByProject(
+            [
+                council("shut", "/home/u/loom", { state: "failed", closed: 5 }),
+                council("again", "/home/u/loom", { state: "running", closed: 5 }),
+                council("open", "/home/u/loom", { state: "done" }),
+            ],
+            roots
+        );
+        expect(rows.get("loom")?.map((r) => [r.id, r.closed ?? false])).toEqual([
+            ["shut", true],
+            ["again", false],
+            ["open", false],
+        ]);
     });
 
     it("words each row's meta and tone as treeMeta does, and keeps created for the tree's order", () => {

@@ -1945,6 +1945,63 @@ func TestDeleteRemovesAnEndedCouncilAndRefusesALiveOne(t *testing.T) {
 	if _, err := h.r.Delete("done"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("a second Delete = %v, want not exist", err)
 	}
+	// the file went to the trash, beside a meta.json naming where it came from, not away for good
+	moved, _ := filepath.Glob(filepath.Join(trashDir(), "*-council-done", "done.json"))
+	meta, _ := filepath.Glob(filepath.Join(trashDir(), "*-council-done", "meta.json"))
+	if len(moved) != 1 || len(meta) != 1 {
+		t.Fatalf("trash after Delete: council %v, meta %v; want one of each", moved, meta)
+	}
+	if b, err := os.ReadFile(moved[0]); err != nil || !strings.Contains(string(b), `"id": "done"`) {
+		t.Errorf("the trashed file does not hold the council: %v", err)
+	}
+}
+
+func TestCloseKeepsAnEndedCouncilAndARunOpensIt(t *testing.T) {
+	h := newHarness(t)
+	paused := testCouncil("paused")
+	paused.PauseAfterRound1 = true
+	h.run(paused)
+	if _, err := h.r.SetClosed("paused", true); err == nil {
+		t.Fatalf("closing a council waiting on the person worked")
+	}
+	if h.load("paused").Closed != 0 {
+		t.Fatalf("a refused close marked the council closed")
+	}
+
+	h.run(testCouncil("c1"))
+	c, err := h.r.SetClosed("c1", true)
+	if err != nil || c.Closed == 0 {
+		t.Fatalf("SetClosed(c1, true) = %+v, %v; want it closed", c, err)
+	}
+	at := h.load("c1").Closed
+	if at == 0 {
+		t.Fatalf("the close was not saved")
+	}
+	if c, _ := h.r.SetClosed("c1", true); c.Closed != at {
+		t.Errorf("closing it again moved Closed from %d to %d", at, c.Closed)
+	}
+	if last := h.seen[len(h.seen)-1]; last.Id != "c1" || last.Closed == 0 {
+		t.Errorf("the close was not reported: last change %s closed %d", last.Id, last.Closed)
+	}
+
+	if c, err := h.r.SetClosed("c1", false); err != nil || c.Closed != 0 || h.load("c1").Closed != 0 {
+		t.Fatalf("reopening = %+v, %v; want it open", c, err)
+	}
+
+	// closed again, then run again: the council opens by itself
+	if _, err := h.r.SetClosed("c1", true); err != nil {
+		t.Fatalf("SetClosed: %v", err)
+	}
+	saved, err := h.r.Summarize("c1")
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if saved.Closed != 0 {
+		t.Errorf("a closed council that runs again is still closed (%d)", saved.Closed)
+	}
+	if done := h.wait("c1"); done.Closed != 0 || done.State != StateDone {
+		t.Errorf("after the run: %s, closed %d; want done and open", done.State, done.Closed)
+	}
 }
 
 func TestCancellingTheContextStopsTheCouncil(t *testing.T) {

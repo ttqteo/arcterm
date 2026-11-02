@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Remove council: the tree row's menu and the Discussion header ask it of an ended council (canRemoveCouncil). Its own
+// Remove council: the tree row's menu asks it of an ended council (canRemoveCouncil); Close is the everyday action. Its own
 // module so agentcenter.ts, which many tests import, stays free of the modal and the config store.
 
 import { globalStore } from "@/app/store/jotaiStore";
@@ -17,7 +17,7 @@ import { projectsAtom } from "./projectsstore";
 export function confirmRemoveCouncil(c: Pick<Council, "id" | "feature" | "project">): void {
     modalsModel.pushModal("ConfirmModal", {
         title: "Remove council",
-        message: `Remove "${c.feature.trim() || "this council"}" and its discussion? A document it saved into the project stays.`,
+        message: `Remove "${c.feature.trim() || "this council"}" and its discussion? Its file moves to ~/.arc/trash; a document it saved into the project stays. To only hide it, close it instead.`,
         confirmLabel: "Remove",
         destructive: true,
         onConfirm: () => {

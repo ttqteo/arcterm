@@ -758,6 +758,12 @@ declare global {
         dryrun?: boolean;
     };
 
+    // wshrpc.CommandCouncilCloseData
+    type CommandCouncilCloseData = {
+        id: string;
+        closed: boolean;
+    };
+
     // wshrpc.CommandCouncilContinueData
     type CommandCouncilContinueData = {
         id: string;
@@ -2388,6 +2394,7 @@ declare global {
         docpath?: string;
         rating?: string;
         ratedat?: number;
+        closed?: number;
         experts: CouncilExpert[];
         pauseafterround1?: boolean;
         rounds?: number;
