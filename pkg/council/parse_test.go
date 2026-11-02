@@ -52,6 +52,38 @@ func TestExtractJSONUnclosedFenceIsTheRestOfTheReply(t *testing.T) {
 	}
 }
 
+func TestRawLineBreaksInsideStringsAreRead(t *testing.T) {
+	var v struct {
+		Text string `json:"text"`
+		N    int    `json:"n"`
+	}
+	// the Planner's round 1 failed on this: "invalid character '\n' in string literal"
+	fenced := "```json\n{\"text\": \"first line\nsecond\tline \\\"quoted\\\"\",\n \"n\": 2}\n```"
+	if err := decodeReply(fenced, "round 1", &v); err != nil || v.Text != "first line\nsecond\tline \"quoted\"" || v.N != 2 {
+		t.Fatalf("fenced: %+v %v, want the text with its line break and tab", v, err)
+	}
+	v.Text, v.N = "", 0
+	bare := "My answer: {\"text\": \"a\nb\", \"n\": 3} and then {stray} prose."
+	if err := decodeReply(bare, "round 1", &v); err != nil || v.Text != "a\nb" || v.N != 3 {
+		t.Fatalf("no fence: %+v %v, want the object read", v, err)
+	}
+	if err := decodeReply("```json\n{\"text\": \"a\nb\",}\n```", "round 1", &v); err == nil ||
+		!strings.Contains(err.Error(), "round 1 reply: ") {
+		t.Fatalf("a reply broken another way: %v, want the first error named", err)
+	}
+}
+
+func TestEscapeControlsMapsBackToTheOriginal(t *testing.T) {
+	s := "{\"a\": \"x\ny\"}\n"
+	fixed, at := escapeControls(s)
+	if fixed != "{\"a\": \"x\\ny\"}\n" {
+		t.Fatalf("escapeControls = %q, want only the break inside the string escaped", fixed)
+	}
+	if len(at) != len(fixed)+1 || at[len(fixed)] != len(s) || at[strings.Index(fixed, "y")] != strings.Index(s, "y") {
+		t.Fatalf("offsets %v do not map back to %q", at, s)
+	}
+}
+
 func TestParsersNameTheRoundWhenThereIsNoJSON(t *testing.T) {
 	const prose = "I have no opinion."
 	_, _, err1 := ParseRound1(prose)

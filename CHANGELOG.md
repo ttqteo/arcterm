@@ -55,6 +55,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A council expert whose answer breaks a line inside its JSON no longer fails with "invalid character '\n' in string
+  literal": the answer is read as written.
 - Resuming a conversation again while its tab is still loading says the agent is still starting, instead of "already
   open" over an empty terminal.
 - Starting a run no longer fails over and over with "Selected route is unavailable" when the list of installed agents

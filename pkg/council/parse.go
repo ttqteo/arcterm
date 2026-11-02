@@ -154,13 +154,64 @@ func lastObject(reply string) ([]byte, bool) {
 		}
 		dec := json.NewDecoder(strings.NewReader(reply[i:]))
 		var raw json.RawMessage
+		if err := dec.Decode(&raw); err == nil {
+			last = raw
+			i += int(dec.InputOffset()) - 1
+			continue
+		}
+		// an object whose strings hold raw line breaks or tabs: read it repaired, and skip the original bytes it spans
+		fixed, at := escapeControls(reply[i:])
+		dec = json.NewDecoder(strings.NewReader(fixed))
 		if err := dec.Decode(&raw); err != nil {
 			continue
 		}
 		last = raw
-		i += int(dec.InputOffset()) - 1
+		i += at[dec.InputOffset()] - 1
 	}
 	return last, last != nil
+}
+
+// escapeControls returns s with each raw control character inside a JSON string (a line break, a tab: models write them
+// in long text fields, and encoding/json rejects them) written as its escape, and, for each byte of the result and its
+// end, the offset in s it came from. Outside strings nothing changes.
+func escapeControls(s string) (string, []int) {
+	var b strings.Builder
+	at := make([]int, 0, len(s)+1)
+	put := func(text string, from int) {
+		b.WriteString(text)
+		for range len(text) {
+			at = append(at, from)
+		}
+	}
+	inStr, esc := false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case !inStr:
+			inStr = c == '"'
+		case esc:
+			esc = false
+		case c == '\\':
+			esc = true
+		case c == '"':
+			inStr = false
+		case c < 0x20:
+			switch c {
+			case '\n':
+				put(`\n`, i)
+			case '\r':
+				put(`\r`, i)
+			case '\t':
+				put(`\t`, i)
+			default:
+				put(fmt.Sprintf(`\u%04x`, c), i)
+			}
+			continue
+		}
+		put(s[i:i+1], i)
+	}
+	at = append(at, len(s))
+	return b.String(), at
 }
 
 // decodeReply finds the reply's JSON and decodes it into v. what names the round for the error.
@@ -170,7 +221,10 @@ func decodeReply(reply, what string, v any) error {
 		return fmt.Errorf("%s reply has no JSON block", what)
 	}
 	if err := json.Unmarshal(b, v); err != nil {
-		return fmt.Errorf("%s reply: %w", what, err)
+		// a raw line break inside a string is the usual slip; a reply that still fails reports the first error
+		if fixed, _ := escapeControls(string(b)); fixed == string(b) || json.Unmarshal([]byte(fixed), v) != nil {
+			return fmt.Errorf("%s reply: %w", what, err)
+		}
 	}
 	return nil
 }
