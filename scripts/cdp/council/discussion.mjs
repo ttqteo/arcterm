@@ -596,6 +596,20 @@ async function failed(h, ctx, rec) {
             calls[1].data?.expertid === "coordinator",
         calls
     );
+
+    // the stopped council is not running, so Skeptic's chip in the strip draws its own Retry (one failed seat besides the
+    // coordinator, so Retry all does not replace it); its click, in a stub window of its own, sends the same command
+    await unstubRpc(h);
+    await stubRpc(h, ["CouncilRetryCommand"]);
+    const chipOn = await h.ev(`document.querySelector('[data-council-chip-retry="skeptic"]')?.disabled === false`);
+    await click(h, '[data-council-chip-retry="skeptic"]');
+    await until(h, `(window.__arcCouncilStub?.calls ?? []).some((c) => c.name === "CouncilRetryCommand")`);
+    const chipCalls = await rpcCalls(h, "CouncilRetryCommand");
+    rec(
+        "failed: Skeptic's Retry on its seat chip (stubbed) is enabled and records one CouncilRetryCommand with that expert's id",
+        chipOn && chipCalls.length === 1 && chipCalls[0].data?.id === id && chipCalls[0].data?.expertid === "skeptic",
+        { chipOn, chipCalls }
+    );
 }
 
 // ---- not run ----
@@ -946,16 +960,28 @@ async function room(h, ctx, rec) {
     );
     await h.shot("cdp-shots/council-discussion-room.png");
 
-    // a failed seat's Retry, on its chip and on its failure line
+    // a failed seat's Retry, on its chip and on its failure line, is off while the council runs (a retry then is refused:
+    // one job at a time), and the chip says why; a click on either does nothing. A Retry that works is the `failed` phase's.
+    const retryOff = await h.ev(`(() => {
+        const chip = document.querySelector('[data-council-chip-retry="security"]');
+        const line = document.querySelector('[data-council-channel] [data-council-retry="security"]');
+        return {
+            chip: chip && { disabled: chip.disabled, title: chip.getAttribute("title") },
+            line: line && { disabled: line.disabled },
+        };
+    })()`);
     await stubRpc(h, ["CouncilRetryCommand"]);
     await click(h, '[data-council-chip-retry="security"]');
     await click(h, '[data-council-channel] [data-council-retry="security"]');
-    await until(h, `(window.__arcCouncilStub?.calls ?? []).filter((c) => c.name === "CouncilRetryCommand").length >= 2`);
+    // nothing is awaited: a disabled button runs no handler, so a call that came would already be recorded
     const retries = await rpcCalls(h, "CouncilRetryCommand");
     rec(
-        "room: Security's Retry, on its chip and on its failure line (stubbed), records CouncilRetryCommand with its expert id",
-        retries.length === 2 && retries.every((c) => c.data?.id === id && c.data?.expertid === "security"),
-        retries
+        "room: while the council runs, Security's Retry on its chip and on its failure line is disabled (the chip says why), and a click records no CouncilRetryCommand",
+        retryOff.chip?.disabled === true &&
+            retryOff.chip.title === "The council is running: retry once it is done" &&
+            retryOff.line?.disabled === true &&
+            retries.length === 0,
+        { retryOff, retries }
     );
     await unstubRpc(h);
 
