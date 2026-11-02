@@ -32,6 +32,11 @@ does not, say what you saw and it becomes a bug row under Actionable.
   stay at the top when you scroll, the ideas as cards with one open at a time and its detail under the row; click
   Discussion → one 52px header row with the tabs, title, seats as avatars with counts, cost and Close; click a seat →
   only its messages and a Show everyone line; narrow the pane → the title keeps a readable width. (e31de04bd)
+- [ ] (arcterm) Council seats and report panel, in the real app: on a council's Discussion, hover the seats' stack →
+  a list of every seat (name, kind, doing, count) opens under it, leave → it closes; click a row → only its messages,
+  the others' avatars dim; Close is an X. On the Report, hover a seat in The panel → the row does not grow, an arrow
+  shows at the end of its line and the hint sits to the row's right, not over the next seat. (c6535656e, ecf03e879,
+  9df9f5ef2)
 - [ ] (arcterm) New project search reads paths from `~`: open Agent → New project, type your user name → both
   sections empty; type `cuscofi` → the folders named cuscofi first, then any that hold it only in their path; type
   `~/Workspaces/dev` → only the folders under it. (daa601e82)
