@@ -5,6 +5,7 @@ package council
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -577,6 +578,135 @@ func TestAgentFirstPromptSaysWhetherDraftsAreHeld(t *testing.T) {
 	sent := AgentFirstPrompt(c, witness, 1)
 	mustContain(t, "a council an agent started", sent, sentWords, "The seats answer each round at once")
 	mustNotContain(t, "a council an agent started", sent, "until the person sends it", "edit or drop it first")
+}
+
+// joiningCouncil is agentPromptCouncil after the coordinator's report (at 1000 ms) with a live agent, Newbie, that has not
+// spoken and joins in round 6, the second follow-up. Everything agentPromptCouncil holds (r1 to r7, ts 0) came before the
+// report. After it: the person's follow-up to Witness (r10) with Witness's answer (r11), a sent reply (r15) and a held one
+// (r14) of round 5, the person's question to Newbie (r12), and a reply of round 6 (r13), the round Newbie's turn is.
+func joiningCouncil() (*Council, CouncilExpert) {
+	c := agentPromptCouncil()
+	newbie := CouncilExpert{Id: "newbie", Name: "Newbie", Agent: "tab-3", Harness: HarnessClaude}
+	lead := c.Experts[4]
+	c.Experts = append(c.Experts[:4:4], newbie, lead)
+	c.Summary = &CouncilSummary{
+		Answer:     "Answer-text sleep after an hour",
+		Directions: []CouncilDirection{{Rank: 1, Title: "Direction-one sleep first", FirstStep: "Step-one measure idle"}},
+		Kept:       []CouncilDirection{{Title: "Kept-title cache warm"}},
+		At:         1000,
+	}
+	c.Replies = append(c.Replies,
+		CouncilReply{Id: "r10", Author: YouId, Text: "Text-r10 follow-up to Witness", To: []string{"witness"}, Round: 5, Ts: 1100},
+		CouncilReply{Id: "r15", ProposalId: "P2", Author: "ram", Stance: StanceAccept, Text: "Text-r15 RAM before the join", Round: 5, Ts: 1150},
+		CouncilReply{Id: "r11", ParentId: "r10", Author: "witness", Text: "Text-r11 Witness answers the follow-up", Round: 5, Ts: 1200},
+		CouncilReply{Id: "r14", ProposalId: "P2", Author: "ux", Text: "Text-r14 held", Round: 5, Ts: 1250, Draft: DraftHeld},
+		CouncilReply{Id: "r12", Author: YouId, Text: "Text-r12 question to Newbie", To: []string{"newbie"}, Round: 6, Ts: 1300},
+		CouncilReply{Id: "r13", ProposalId: "P2", Author: "ram", Text: "Text-r13 same round", Round: 6, Ts: 1350},
+	)
+	return c, newbie
+}
+
+// A seat that joins after the report is briefed from the report and what was said after it, not from every idea and
+// reply: the person's messages come whoever they went to, the seat's own question comes once as its question, and a seat
+// answers a round at once, so nothing of the round it joins is in it.
+func TestAgentFirstPromptAfterTheReport(t *testing.T) {
+	c, newbie := joiningCouncil()
+	const round = 6
+	p := AgentFirstPrompt(c, newbie, round)
+	mustContain(t, "joining prompt", p, "You are Newbie", "Question for the council: Which direction first?", "## Who sits in the council", "- Witness · agent",
+		"## The council's report", "Answer: Answer-text sleep after an hour", "1. Direction-one sleep first. First step: Step-one measure idle",
+		"- Kept-title cache warm", "The council has already met", joinedLateNote, answersShape)
+	mustNotContain(t, "joining prompt", p, "- Newbie ·",
+		// from before the report: the ideas, the replies and the person's earlier messages
+		"Argument-own", "Argument-sent", "Argument-held", "## Proposals to review", "Text-r1 sent challenge", "Text-r3 its own reply",
+		"Text-r4 of the third round", "Text-r5 to Witness", "Text-r6 to UX", "[r7]",
+		// not out in the room, or of the round it joins
+		"Text-r14 held", "Text-r13 same round")
+
+	said := section(t, p, "## What was said since the report")
+	mustContain(t, "since the report", said, "- [r10] the person to Witness", "Text-r10 follow-up to Witness",
+		"[r15] RAM (accept) on P2", "Text-r15 RAM before the join", "[r11] Witness", "Text-r11 Witness answers the follow-up")
+	mustNotContain(t, "since the report", said, "r12", "Text-r12", "r13", "r14")
+	if r10, r15, r11 := strings.Index(said, "[r10]"), strings.Index(said, "[r15]"), strings.Index(said, "[r11]"); r10 > r15 || r15 > r11 {
+		t.Errorf("the messages are not in the order they came: r10 at %d, r15 at %d, r11 at %d\n%s", r10, r15, r11, said)
+	}
+
+	// its own question comes as its question, once
+	asks := section(t, p, "## What the person asks you")
+	mustContain(t, "asks section", asks, "[r12]", "Text-r12 question to Newbie")
+	if n := strings.Count(p, "Text-r12 question to Newbie"); n != 1 {
+		t.Errorf("the seat's own question is in the prompt %d times, want once\n%s", n, p)
+	}
+	if strings.Index(p, "## The council's report") > strings.Index(p, "## What was said since the report") ||
+		strings.Index(p, "## What was said since the report") > strings.Index(p, "## What the person asks you") {
+		t.Errorf("the report, what was said and the question are out of order\n%s", p)
+	}
+	if got := agentPrompt(c, newbie, round); got != p {
+		t.Error("a seat that has not spoken is not sent its first prompt")
+	}
+}
+
+// writeReport writes nothing for a report with neither directions nor kept ideas; a joining seat is still shown that the
+// report was read, with its answer, or with one line saying it kept no direction.
+func TestAgentFirstPromptReportWithoutDirections(t *testing.T) {
+	c, newbie := joiningCouncil()
+	c.Summary.Directions, c.Summary.Kept = nil, nil
+	p := AgentFirstPrompt(c, newbie, 6)
+	mustContain(t, "answer-only report", p, "## The council's report", "Answer: Answer-text sleep after an hour")
+	mustNotContain(t, "answer-only report", p, "kept no direction")
+
+	c.Summary.Answer = "  "
+	p = AgentFirstPrompt(c, newbie, 6)
+	mustContain(t, "empty report", p, "## The council's report", "kept no direction", "## What was said since the report")
+	mustNotContain(t, "empty report", p, "Answer:")
+}
+
+// No report yet, a council still running: a seat that joins is sent everything sent so far, as a seat that joins at start
+// gets today.
+func TestAgentFirstPromptBeforeAReport(t *testing.T) {
+	c := agentPromptCouncil()
+	scout := c.Experts[1]
+	p := AgentFirstPrompt(c, scout, 3)
+	mustContain(t, "first prompt", p, "You are Scout", "- Witness · agent", "P1 · Witness · Title-own", "Argument-own", "P2 · UX · Title-sent",
+		"Argument-sent", "Text-r1 sent challenge", "Text-r3 its own reply", "[r7] RAM (accept)", "## Proposals to review",
+		"## What was said since your last turn", "Question for the council")
+	mustNotContain(t, "first prompt", p, "Title-held", "Text-r2 held", "Text-r4 of the third round", "- Scout ·", "## The council's report", "since the report")
+	if got := agentPrompt(c, scout, 3); got != p {
+		t.Error("a seat that has not spoken is not sent its first prompt")
+	}
+}
+
+// A seat that joins in round 2 or later has put no idea forward, so its prompt says it came after them and asks for no
+// proposal. Round 1 and a seat with an idea of its own do not get the line.
+func TestAgentFirstPromptJoinsInRound2(t *testing.T) {
+	c := agentPromptCouncil()
+	witness, scout := c.Experts[0], c.Experts[1]
+	mustContain(t, "round 2 join", AgentFirstPrompt(c, scout, 2), joinedLateNote, "This is round 2 of 4: cross-review")
+	mustContain(t, "round 3 join", AgentFirstPrompt(c, scout, 3), joinedLateNote)
+	mustNotContain(t, "round 1", AgentFirstPrompt(c, scout, 1), joinedLateNote)
+	mustNotContain(t, "a seat with an idea of its own", AgentFirstPrompt(c, witness, 2), joinedLateNote)
+	after, newbie := joiningCouncil()
+	mustContain(t, "after the report", AgentFirstPrompt(after, newbie, 6), joinedLateNote)
+	mustNotContain(t, "before the report, round 1", AgentFirstPrompt(&Council{Feature: "F", Experts: c.Experts}, scout, 1), joinedLateNote)
+}
+
+// A seat joining after the report is asked when it has a question, or has something to read since the report; the report
+// alone is nothing to answer.
+func TestSeatHasNewsForAJoiningSeat(t *testing.T) {
+	c, newbie := joiningCouncil()
+	if !seatHasNews(c, newbie, 6) {
+		t.Error("a seat joining after the report with a question was given no news")
+	}
+	noAsk, newbie := joiningCouncil()
+	noAsk.Replies = slices.DeleteFunc(noAsk.Replies, func(r CouncilReply) bool { return r.Id == "r12" })
+	if !seatHasNews(noAsk, newbie, 6) {
+		t.Error("a seat joining after the report with messages since it was given no news")
+	}
+	quiet, newbie := joiningCouncil()
+	quiet.Replies = quiet.Replies[:7] // r1 to r7, all from before the report
+	if seatHasNews(quiet, newbie, 6) {
+		t.Error("a seat joining after the report with nothing since it and no question was given news")
+	}
 }
 
 func TestRound2PromptShowsWhatWasSaidInALaterPass(t *testing.T) {
