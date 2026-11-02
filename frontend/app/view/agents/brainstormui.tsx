@@ -875,26 +875,35 @@ function QuestionHead({ f, goTo, children }: { f: BrainstormFile; goTo: (id: str
     );
 }
 
-// one approach the judge is weighing: the row sends it as the answer; its facts stay behind their own toggle, closed
-// until opened, so reading them never answers
+// one approach the judge is weighing: the row sends it as the answer; its facts stay behind their own button, closed
+// until opened, so reading them never answers. The row's border lights only over the part that answers, so the facts
+// button never reads as part of it
 function ApproachRow({
     a,
     i,
     multi,
     picks,
     ans,
+    open,
+    onToggle,
 }: {
     a: Approach;
     i: number;
     multi: boolean;
     picks: ReturnType<typeof usePicks>;
     ans: Answer;
+    open: boolean;
+    onToggle: () => void;
 }) {
-    const [open, setOpen] = useState(false);
     const n = a.facts.length;
     return (
-        <div className={cn(OPTION_ROW, OPTION_ROW_PLAIN, "flex flex-col")}>
-            <div className="flex">
+        <div
+            className={cn(
+                OPTION_ROW,
+                "flex flex-col border-edge-mid bg-surface has-[[data-brainstorm-approach]:enabled:hover]:border-edge-strong"
+            )}
+        >
+            <div className="flex items-center">
                 {multi ? <TickBox i={i} picks={picks} ans={ans} compact /> : null}
                 <button
                     type="button"
@@ -915,10 +924,19 @@ function ApproachRow({
                         type="button"
                         data-brainstorm-facts-toggle={i}
                         aria-expanded={open}
-                        onClick={() => setOpen(!open)}
-                        className="flex-none cursor-pointer border-0 bg-transparent px-[14px] text-[12px] text-accent-soft outline-none hover:text-accent"
+                        aria-label={`${open ? "Hide" : "Show"} facts for ${a.name}`}
+                        onClick={onToggle}
+                        className={cn(
+                            "mx-[10px] flex flex-none cursor-pointer items-center gap-[6px] rounded-[6px] border px-[10px] py-[5px] text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            open
+                                ? "border-accent/45 bg-accent/12 text-primary hover:bg-accent/20"
+                                : "border-edge-mid bg-surface-raised text-secondary hover:border-edge-strong hover:text-primary"
+                        )}
                     >
-                        {open ? `Hide ${plural(n, "fact", "facts")}` : plural(n, "fact", "facts")}
+                        {open ? "Hide facts" : plural(n, "fact", "facts")}
+                        <span aria-hidden className="text-[10px] text-muted">
+                            {open ? "▴" : "▾"}
+                        </span>
                     </button>
                 ) : null}
             </div>
@@ -962,6 +980,17 @@ export function JudgingMain({
         ans,
         approaches.map((a) => a.name)
     );
+    // which rows have their facts open, by index; Show all facts opens every row that has any
+    const [openFacts, setOpenFacts] = useState<ReadonlySet<number>>(() => new Set());
+    const withFacts = approaches.flatMap((a, i) => (a.facts.length > 0 ? [i] : []));
+    const allOpen = withFacts.length > 0 && withFacts.every((i) => openFacts.has(i));
+    const toggleFacts = (i: number) =>
+        setOpenFacts((prev) => {
+            const next = new Set(prev);
+            if (next.has(i)) next.delete(i);
+            else next.add(i);
+            return next;
+        });
     return (
         <div data-brainstorm-question data-brainstorm-judging className="flex min-h-0 flex-1 flex-col">
             <Track segments={questionTrack(f)} />
@@ -985,10 +1014,30 @@ export function JudgingMain({
                                 ? "the agent’s list, unranked; pick one or more: click a row to send it alone, tick rows to send them together, or wait for the judge’s options"
                                 : "the agent’s list, unranked; pick one: click it to answer now, or wait for the judge’s options and pick"}
                         </span>
+                        {withFacts.length > 0 ? (
+                            <button
+                                type="button"
+                                data-brainstorm-facts-all
+                                aria-pressed={allOpen}
+                                onClick={() => setOpenFacts(allOpen ? new Set() : new Set(withFacts))}
+                                className={cn(CHIP, "ml-auto flex-none self-center")}
+                            >
+                                {allOpen ? "Hide all facts" : "Show all facts"}
+                            </button>
+                        ) : null}
                     </div>
                     <div role="group" aria-label="Approaches" className="flex flex-col gap-[6px]">
                         {approaches.map((a, i) => (
-                            <ApproachRow key={i} a={a} i={i} multi={multi} picks={picks} ans={ans} />
+                            <ApproachRow
+                                key={i}
+                                a={a}
+                                i={i}
+                                multi={multi}
+                                picks={picks}
+                                ans={ans}
+                                open={openFacts.has(i)}
+                                onToggle={() => toggleFacts(i)}
+                            />
                         ))}
                     </div>
                     {multi ? <SendPicked picks={picks} ans={ans} /> : null}

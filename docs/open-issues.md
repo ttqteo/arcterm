@@ -174,10 +174,13 @@ does not, say what you saw and it becomes a bug row under Actionable.
   them: its final stage ran out of RAM, so no scenario ran on the merged result, and the last Transcript edit (a
   Compactions jump leaves the marker just below the pinned prompt's band, step 4) never ran at all. (commit
   "feat(agents): the Transcript tab reads the whole conversation back, with its scenario and docs")
-- [ ] (arcterm) A brainstorm approach's facts: while the judge weighs a question's approaches, click "3 facts" at the
-  right of a row; the facts list opens under that row and the label reads "Hide 3 facts", with nothing sent to the
-  agent. Clicking the rest of the row still answers with that approach. (commit "fix(brainstorm): show an approach's
-  facts behind their count")
+- [ ] (arcterm) A brainstorm approach's facts: while the judge weighs a question's approaches, each row with facts
+  ends in a bordered "3 facts ▾" button set apart from the row; hovering it does not light the row's border. Click it:
+  the facts list opens under that row and the button reads "Hide facts ▴", with nothing sent to the agent. "Show all
+  facts" at the right of the list's heading opens every row's facts and reads "Hide all facts", which closes them.
+  Clicking the rest of the row still answers with that approach. Scenario step 2b of `brainstorm-judge-wait` covers it
+  but has not run. (commit "fix(brainstorm): an approach's facts open from a button, and Show all facts opens them
+  all")
 - [ ] (arcterm) Quick translate on the nav rail: click the Translate button above Setup (or Ctrl+Shift+D, also from a
   focused terminal). A narrow panel slides out beside the rail, the box focused; typing translates after a pause, a
   single word shows its phonetic and word class, ⇄ moves the translation into the box, Esc or an outside click closes

@@ -319,6 +319,13 @@ function judgeWaitScenario(kit) {
                     option: b.getAttribute("data-brainstorm-option"),
                     text: flat(b),
                 })),
+                toggles: [...(pane?.querySelectorAll("[data-brainstorm-facts-toggle]") ?? [])].map((b) => ({
+                    i: b.getAttribute("data-brainstorm-facts-toggle"),
+                    text: flat(b).replace(/\\s*[▾▴]$/, ""),
+                    open: b.getAttribute("aria-expanded") === "true",
+                })),
+                factLists: [...(pane?.querySelectorAll("[data-brainstorm-facts]") ?? [])].map((u) => u.getAttribute("data-brainstorm-facts")),
+                factsAll: flat(pane?.querySelector("[data-brainstorm-facts-all]")),
                 focused: document.activeElement?.getAttribute?.("data-brainstorm-option") ?? null,
                 placeholder: box?.getAttribute("placeholder") ?? null,
                 boxDisabled: box?.disabled ?? null,
@@ -329,9 +336,13 @@ function judgeWaitScenario(kit) {
                 treeLine: flat(${BS_TREE_LINE}),
             };
         })()`);
-    const rowText = (a, i) => `${String.fromCharCode(65 + i)} ${a.name} ${a.description} ${a.facts.length} ${a.facts.length === 1 ? "fact" : "facts"}`;
+    // the row's answer button holds the letter, name and description; its facts button sits beside it, outside
+    const rowText = (a, i) => `${String.fromCharCode(65 + i)} ${a.name} ${a.description}`.trim();
     const wantRows = WAIT_APPROACHES.map((a, i) => ({ option: String(i), text: rowText(a, i) }));
-    const drawn = (w) => w.judging && w.status === WAIT_WORKING && eqJson(w.rows, wantRows);
+    const factsLabel = (n) => `${n} ${n === 1 ? "fact" : "facts"}`;
+    const wantToggles = WAIT_APPROACHES.map((a, i) => ({ i: String(i), text: factsLabel(a.facts.length), open: false }));
+    const drawn = (w) => w.judging && w.status === WAIT_WORKING && eqJson(w.rows, wantRows) && eqJson(w.toggles, wantToggles);
+    const ALL_ROWS = WAIT_APPROACHES.map((_, i) => String(i));
     const ROW = (i) => `${BS_PANE}?.querySelector('[data-brainstorm-approach][data-brainstorm-option="${i}"]')`;
 
     const setReading = (h, ctx) =>
@@ -410,6 +421,26 @@ function judgeWaitScenario(kit) {
                 `2. Design over the wait shows the design with Back to question ${WAIT_Q.n}; Back returns to the wait`,
                 opened && !w2.judging && w2.back === `Back to question ${WAIT_Q.n}` && closed && w2b.ok,
                 { opened, back: w2.back, judgingUnder: w2.judging, closed, returned: w2b.ok }
+            );
+
+            // 2b. the facts buttons: one row's opens its facts, Show all facts opens every row's; nothing is sent
+            const markF = await bsMark(h, ctx, null);
+            const TOGGLE = (i) => `${BS_PANE}?.querySelector('[data-brainstorm-facts-toggle="${i}"]')`;
+            const ALL = `${BS_PANE}?.querySelector("[data-brainstorm-facts-all]")`;
+            const press = (sel) => h.ev(`(() => { const b = ${sel}; if (!b) return "missing"; b.click(); return "clicked"; })()`);
+            const one = await press(TOGGLE(1));
+            const wOne = await waitFor(h, (w) => eqJson(w.factLists, ["1"]) && w.toggles[1]?.open && w.toggles[1]?.text === "Hide facts", 3000);
+            await h.shot("cdp-shots/brainstorm-judge-wait-2b-facts-one.png");
+            const all = await press(ALL);
+            const wAll = await waitFor(h, (w) => eqJson(w.factLists, ALL_ROWS) && w.factsAll === "Hide all facts", 3000);
+            await h.shot("cdp-shots/brainstorm-judge-wait-2b-facts-all.png");
+            const none = await press(ALL);
+            const wNone = await waitFor(h, (w) => w.factLists.length === 0 && w.factsAll === "Show all facts", 3000);
+            const quietF = await bsNothingTyped(h, markF);
+            rec(
+                "2b. a row's facts button opens only its facts and reads Hide facts; Show all facts opens every row's and reads Hide all facts, which closes them all; nothing is sent",
+                wOne.ok && wAll.ok && wNone.ok && quietF.ok && one === "clicked" && all === "clicked" && none === "clicked",
+                { one: wOne.factLists, oneToggle: wOne.toggles?.[1], all: wAll.factLists, allBtn: wAll.factsAll, none: wNone.factLists, sent: quietF.sent }
             );
 
             // 3. a click on the second row sends its name and stops the judge
