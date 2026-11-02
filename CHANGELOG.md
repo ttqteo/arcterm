@@ -43,6 +43,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - A council call Claude's safeguards flag runs again once on Opus 4.8 by itself, as Claude Code does, so a flagged
   summary no longer fails the council; the saved document notes it. An agent can retry a failed council call too:
   `wsh council retry <id> [--expert <seat>] [--model <model>]`.
+- Jarvis can stay put: pin it from its panel, or from Settings → Jarvis, for an hour, four hours or until you let it
+  roam again, and it now roams at a calmer pace for everyone.
 
 ### Changed
 

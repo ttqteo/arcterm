@@ -42,6 +42,12 @@ export interface WalkerInput {
     home: number;
     // Spider-Man, with an app bar to hang from, the cursor not on him, and motion allowed: a rest may be a hang
     hangs: boolean;
+    // the person told it to stay at home (petstay.ts): it still rests and sleeps, and steps aside for a toast or a
+    // terminal, but never walks to a spot of its own choosing, and a hang does not crawl
+    staying: boolean;
+    // the DEV pace (petview.tsx's force({ quick: true })): rests last the old 5-15 s, so a CDP step sees a walk or a
+    // rest within seconds. Always false outside DEV.
+    quick: boolean;
 }
 
 export interface WalkerState {
@@ -88,11 +94,14 @@ export const STEP_PX = PET_CELL_PX;
 
 // How far a walk goes, from where it starts.
 export const TARGET_MIN_PX = 80;
-export const TARGET_MAX_PX = 400;
+export const TARGET_MAX_PX = 200;
 
-// How long a rest lasts; tired rests twice as long.
-export const REST_MIN_MS = 5_000;
-export const REST_MAX_MS = 15_000;
+// How long a rest lasts; tired rests twice as long. A calm pace: it was a distraction at 5-15 s.
+export const REST_MIN_MS = 60_000;
+export const REST_MAX_MS = 180_000;
+// ... and the DEV pace, WalkerInput.quick: the old pace, so a CDP step sees a rest end within seconds
+export const QUICK_REST_MIN_MS = 5_000;
+export const QUICK_REST_MAX_MS = 15_000;
 
 // What a rest is spent doing, picked at random as it starts: standing or sitting still, or a pastime — studying,
 // music, work, sport — whose frames loop for the length of the rest.
@@ -216,7 +225,7 @@ export function nextTick(delayMs: number | null, hidden: boolean): number | null
     return hidden ? null : delayMs;
 }
 
-// A clear left edge 80-400 px from x, uniform over every such whole px; the clear spot nearest home when
+// A clear left edge 80-200 px from x, uniform over every such whole px; the clear spot nearest home when
 // there is none.
 function pickTarget(x: number, input: WalkerInput, rand: () => number): number {
     const windows: [number, number][] = [
@@ -247,6 +256,12 @@ function pickTarget(x: number, input: WalkerInput, rand: () => number): number {
     return spots[spots.length - 1][1];
 }
 
+// Staying: where it belongs, which is home, or the clear spot nearest home while something covers it. Null when
+// roaming. Every step of a staying pet that is not at this spot is a walk to it.
+function stayingSpot(input: WalkerInput): number | null {
+    return input.staying ? clearSpot(homeX(input.home, input.ledge), input.ledge, input.avoid) : null;
+}
+
 function frameMsFor(input: WalkerInput): number {
     return wearsTired(input.expression) ? TIRED_FRAME_MS : FRAME_MS;
 }
@@ -268,7 +283,8 @@ function rest(s: WalkerState, input: WalkerInput, now: number, rand: () => numbe
     if (input.hangs && !wearsTired(input.expression) && rand() < 1 / HANG_EVERY) {
         return startHang(s, input, now, rand);
     }
-    const length = REST_MIN_MS + rand() * (REST_MAX_MS - REST_MIN_MS);
+    const [min, max] = input.quick ? [QUICK_REST_MIN_MS, QUICK_REST_MAX_MS] : [REST_MIN_MS, REST_MAX_MS];
+    const length = min + rand() * (max - min);
     return {
         ...still(s, "rest"),
         due: now + (wearsTired(input.expression) ? 2 * length : length),
@@ -277,15 +293,25 @@ function rest(s: WalkerState, input: WalkerInput, now: number, rand: () => numbe
     };
 }
 
-// A rest begun now in this pose, for its longest length: the DEV contract's force({ rest }) (petview.tsx), so a CDP
-// step can show every rest pose without waiting on the random pick.
+// A rest begun now in this pose, for the quick pace's longest length (never the calm one: a CDP step holds the pose
+// for seconds, not minutes): the DEV contract's force({ rest }) (petview.tsx), so a CDP step can show every rest pose
+// without waiting on the random pick.
 export function restIn(s: WalkerState, pose: (typeof REST_POSES)[number], now: number): WalkerState {
-    return { ...still(s, "rest"), due: now + REST_MAX_MS, restPose: pose, hang: undefined };
+    return { ...still(s, "rest"), due: now + QUICK_REST_MAX_MS, restPose: pose, hang: undefined };
+}
+
+/**
+ * A fresh standing rest with its left edge at x, kept on the ledge: the DEV contract's force({ at }) (petview.tsx),
+ * so a CDP step can put the pet away from home and watch it walk back.
+ */
+export function placeAt(s: WalkerState, x: number, ledge: Ledge, now: number): WalkerState {
+    return { ...restIn(s, "stand", now), x: clampX(x, ledge) };
 }
 
 /** A hang rest starting now, crawling toward the roomier side. Exported for the DEV force (petview.tsx). */
 export function startHang(s: WalkerState, input: WalkerInput, now: number, rand: () => number): WalkerState {
-    const crawlMs = CRAWL_MIN_MS + rand() * (CRAWL_MAX_MS - CRAWL_MIN_MS);
+    // staying, he hangs at the spot: up, hang, and down where he went up, with no crawl along the bar
+    const crawlMs = input.staying ? 0 : CRAWL_MIN_MS + rand() * (CRAWL_MAX_MS - CRAWL_MIN_MS);
     const hangMs = HANG_MIN_MS + rand() * (HANG_MAX_MS - HANG_MIN_MS);
     const [lo, hi] = travel(input.ledge);
     const dir = hi - s.x >= s.x - lo ? 1 : -1;
@@ -382,8 +408,10 @@ function arrive(s: WalkerState, input: WalkerInput, now: number, rand: () => num
 
 // Done holding, being dragged, hopping or sleeping: it stays where it is when that spot is clear (or nothing
 // is), and otherwise walks off to the nearest clear spot — it may stop over a terminal, but not stay there.
+// Staying, it goes home instead, or to the clear spot nearest home: a woken sleeper and a pet let go of a hold
+// walk back to where it belongs.
 function settle(s: WalkerState, input: WalkerInput, now: number, rand: () => number): WalkerState {
-    const spot = clearSpot(s.x, input.ledge, input.avoid);
+    const spot = stayingSpot(input) ?? clearSpot(s.x, input.ledge, input.avoid);
     return spot === s.x ? arrive(s, input, now, rand) : startWalk(s, spot, input, now);
 }
 
@@ -460,7 +488,8 @@ export function slideFrom(prev: { x: number; name: WalkerStateName } | null, nex
 
 /**
  * The walker at boot: at home, walking toward a clear target — or, under reduced motion, standing at the
- * clear spot nearest home.
+ * clear spot nearest home. Staying, it stands at home, resting, and the first step moves it only if something
+ * covers home.
  */
 export function initialWalker(input: WalkerInput, now: number, rand: () => number): WalkerState {
     const home = homeX(input.home, input.ledge);
@@ -477,6 +506,9 @@ export function initialWalker(input: WalkerInput, now: number, rand: () => numbe
     };
     if (input.reduce) {
         return { ...base, x: clearSpot(home, input.ledge, input.avoid) };
+    }
+    if (input.staying) {
+        return rest(base, input, now, rand);
     }
     return startWalk(base, pickTarget(home, input, rand), input, now);
 }
@@ -512,6 +544,16 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
         const x = clearSpot(homeX(input.home, ledge), ledge, avoid);
         const name = isHolding(input) ? "hold" : isIdle(input, now) ? "sleep" : "rest";
         return view({ ...still(s, name), x, restPose: "stand" }, input, now, null);
+    }
+
+    // The DEV pace also cuts a rest already under way, drawn at the calm one: force({ quick: true }) lands on a pet
+    // mid-way through a 1-3 minute rest, and the step it drives would otherwise wait that out. Held at the cap from
+    // the step that sets it (a later step's `now` only moves the cap out), so it holds after any force too.
+    if (input.quick && s.name === "rest") {
+        const cap = now + (wearsTired(input.expression) ? 2 : 1) * QUICK_REST_MAX_MS;
+        if (s.due > cap) {
+            s = { ...s, due: cap };
+        }
     }
 
     const frameMs = frameMsFor(input);
@@ -560,16 +602,32 @@ export function stepWalker(state: WalkerState, input: WalkerInput, now: number, 
                 s = { ...s, restPose: "stand", hang: undefined };
             }
         }
-        if (s.restPose !== "hang" && blocked(s.x, avoid) && clearSpot(s.x, ledge, avoid) !== s.x) {
+        const home = stayingSpot(input);
+        // a hang that is still under way is not on the ledge, so it is not walked home; one that has ended is a rest
+        const onBar = s.restPose === "hang" && now < s.due;
+        if (home != null && !onBar && s.x !== home) {
+            // staying, a rest anywhere but home ends now: it walks home at once (this is also the step aside from a
+            // terminal or a toast over home, since home is then the clear spot nearest it)
+            s = startWalk(s, home, input, now);
+        } else if (s.restPose !== "hang" && blocked(s.x, avoid) && clearSpot(s.x, ledge, avoid) !== s.x) {
             // a terminal opened under it: a rest is never spent on one
             s = startWalk(s, clearSpot(s.x, ledge, avoid), input, now);
         } else if (now < s.due) {
             return view(s, input, now, restDelay(s, input, now));
+        } else if (home != null) {
+            // staying, at home: a rest ending is another rest, never a walk
+            s = rest(s, input, now, rand);
         } else {
             s = startWalk(s, pickTarget(s.x, input, rand), input, now);
         }
     } else if (s.name === "walk") {
-        if (s.target != null && blocked(s.target, avoid)) {
+        const home = stayingSpot(input);
+        if (home != null) {
+            // staying: whatever it was walking to, it is walking home now
+            if (s.target !== home) {
+                s = { ...s, target: home };
+            }
+        } else if (s.target != null && blocked(s.target, avoid)) {
             s = { ...s, target: clearSpot(s.target, ledge, avoid) };
         }
     } else {

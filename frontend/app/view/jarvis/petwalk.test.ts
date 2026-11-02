@@ -18,6 +18,9 @@ import {
     initialWalker,
     nextTick,
     PASTIMES,
+    placeAt,
+    QUICK_REST_MAX_MS,
+    QUICK_REST_MIN_MS,
     REST_MAX_MS,
     REST_MIN_MS,
     REST_POSES,
@@ -27,6 +30,8 @@ import {
     startHang,
     STEP_PX,
     stepWalker,
+    TARGET_MAX_PX,
+    TARGET_MIN_PX,
     TIRED_FRAME_MS,
     type Ledge,
     type RestPose,
@@ -53,6 +58,8 @@ function input(over: Partial<WalkerInput> = {}): WalkerInput {
         lastActivityAt: T0,
         home: 0.5,
         hangs: false,
+        staying: false,
+        quick: false,
         ...over,
     };
 }
@@ -187,20 +194,21 @@ describe("targets", () => {
         [800, 1000],
     ];
 
-    it("lie 80-400 px away and never in an avoid span", () => {
+    it("lie 80-200 px away and never in an avoid span", () => {
+        expect([TARGET_MIN_PX, TARGET_MAX_PX]).toEqual([80, 200]);
         for (let r = 0; r < 1; r += 0.01) {
             const inp = input({ avoid });
             const start = initialWalker(inp, T0, () => r);
             const target = start.target!;
             expect(Math.abs(target - start.x)).toBeGreaterThanOrEqual(80);
-            expect(Math.abs(target - start.x)).toBeLessThanOrEqual(400);
+            expect(Math.abs(target - start.x)).toBeLessThanOrEqual(200);
             expect(overlaps(target, avoid), `target ${target} for r=${r}`).toBe(false);
             expect(target).toBeGreaterThanOrEqual(LEDGE.left);
             expect(target + PX).toBeLessThanOrEqual(LEDGE.right);
         }
     });
 
-    it("fall back to the clear spot nearest home when none is clear 80-400 px away", () => {
+    it("fall back to the clear spot nearest home when none is clear 80-200 px away", () => {
         const ledge = { left: 0, right: 1200 };
         // clear left edges: 80..102 and 560..1152; home (0.3 → 346) sits on the second span, nearer its right side
         const blocks: [number, number][] = [
@@ -360,26 +368,78 @@ describe("rest", () => {
         );
         expect(arrived.state.name).toBe("rest");
         expect(arrived.x).toBe(430);
-        // rand 0.1: a tenth into 5-15 s, standing still
-        expect(arrived.delayMs).toBe(6_000);
+        // rand 0.1: a tenth into 60-180 s, standing still
+        expect(arrived.delayMs).toBe(72_000);
         expect(arrived.pose).toBe("stand");
 
         const mid = stepWalker(arrived.state, input(), now + 4_000, tenth);
         expect(mid.state.name).toBe("rest");
-        expect(mid.delayMs).toBe(2_000);
+        expect(mid.delayMs).toBe(68_000);
         expect(mid.x).toBe(430);
 
-        const end = stepWalker(mid.state, input(), now + 6_000, tenth);
+        const end = stepWalker(mid.state, input(), now + 72_000, tenth);
         expect(end.state.name).toBe("walk");
         expect(end.delayMs).toBe(FRAME_MS);
     });
 
-    it("lasts 5-15 s", () => {
+    it("lasts 60-180 s", () => {
+        expect([REST_MIN_MS, REST_MAX_MS]).toEqual([60_000, 180_000]);
         const shortest = stepWalker(walker({ name: "walk", x: 400, target: 400 }), input(), T0, () => 0);
         expect(shortest.state.due - T0).toBe(REST_MIN_MS);
         const longest = stepWalker(walker({ name: "walk", x: 400, target: 400 }), input(), T0, () => 0.999_999);
         expect(longest.state.due - T0).toBeGreaterThan(REST_MAX_MS - 1);
         expect(longest.state.due - T0).toBeLessThanOrEqual(REST_MAX_MS);
+    });
+
+    // DEV pace (force({ quick: true })): the old 5-15 s, so a CDP step sees a rest end within seconds
+    it("lasts 5-15 s when quick", () => {
+        expect([QUICK_REST_MIN_MS, QUICK_REST_MAX_MS]).toEqual([5_000, 15_000]);
+        const quick = input({ quick: true });
+        const shortest = stepWalker(walker({ name: "walk", x: 400, target: 400 }), quick, T0, () => 0);
+        expect(shortest.state.due - T0).toBe(QUICK_REST_MIN_MS);
+        const longest = stepWalker(walker({ name: "walk", x: 400, target: 400 }), quick, T0, () => 0.999_999);
+        expect(longest.state.due - T0).toBeGreaterThan(QUICK_REST_MAX_MS - 1);
+        expect(longest.state.due - T0).toBeLessThanOrEqual(QUICK_REST_MAX_MS);
+        // and still twice as long when tired
+        const tired = stepWalker(
+            walker({ name: "walk", x: 400, target: 400 }),
+            input({ quick: true, expression: "tired" }),
+            T0,
+            () => 0
+        );
+        expect(tired.state.due - T0).toBe(2 * QUICK_REST_MIN_MS);
+    });
+
+    // force({ quick: true }) lands on a pet already mid-way through a 1-3 minute rest: that rest is cut short too
+    it("is cut to the quick longest once quick is set, mid-rest", () => {
+        const calm = stepWalker(walker({ name: "walk", x: 400, target: 400 }), input(), T0, () => 0.999_999);
+        expect(calm.state.due - T0).toBeGreaterThan(QUICK_REST_MAX_MS * 10);
+
+        const now = T0 + 1_000;
+        const cut = stepWalker(calm.state, input({ quick: true }), now, half);
+        expect(cut.state.name).toBe("rest");
+        expect(cut.state.due).toBe(now + QUICK_REST_MAX_MS);
+        expect(cut.delayMs).toBeLessThanOrEqual(QUICK_REST_MAX_MS);
+        // another step does not push the end back out
+        const again = stepWalker(cut.state, input({ quick: true }), now + 4_000, half);
+        expect(again.state.due).toBe(now + QUICK_REST_MAX_MS);
+        // and when it ends, it walks
+        const end = stepWalker(again.state, input({ quick: true }), now + QUICK_REST_MAX_MS, half);
+        expect(end.state.name).toBe("walk");
+    });
+
+    it("doubles the quick cut when tired, and never lengthens a rest already shorter", () => {
+        const calm = stepWalker(walker({ name: "walk", x: 400, target: 400 }), input(), T0, () => 0.999_999);
+        const tired = stepWalker(calm.state, input({ quick: true, expression: "tired" }), T0, half);
+        expect(tired.state.due).toBe(T0 + 2 * QUICK_REST_MAX_MS);
+
+        const short = walker({ name: "rest", x: 400, due: T0 + 3_000 });
+        expect(stepWalker(short, input({ quick: true }), T0, half).state.due).toBe(T0 + 3_000);
+    });
+
+    it("is left at the calm length when not quick", () => {
+        const calm = stepWalker(walker({ name: "walk", x: 400, target: 400 }), input(), T0, () => 0.999_999);
+        expect(stepWalker(calm.state, input(), T0 + 1_000, half).state.due).toBe(calm.state.due);
     });
 
     it.each(REST_POSES.map((pose, i) => [pose, (i + 0.5) / REST_POSES.length] as const))(
@@ -530,10 +590,23 @@ describe("hang (Spider-Man)", () => {
 
 // the DEV force that shows each rest pose on demand (Task 5 Step 7, Task 7's CDP steps)
 describe("restIn", () => {
-    it.each(REST_POSES)("rests now in %s, for the longest rest, where it stands", (pose) => {
+    // the quick longest (15 s), not the calm one: a CDP step holds the pose for seconds, not minutes
+    it.each(REST_POSES)("rests now in %s, for the quick longest rest, where it stands", (pose) => {
         const s = restIn(walker({ name: "walk", x: 400, target: 900 }), pose, T0);
-        expect([s.name, s.restPose, s.x, s.target, s.due]).toEqual(["rest", pose, 400, null, T0 + REST_MAX_MS]);
+        expect([s.name, s.restPose, s.x, s.target, s.due]).toEqual(["rest", pose, 400, null, T0 + QUICK_REST_MAX_MS]);
         expect(stepWalker(s, input(), T0, half).state.name).toBe("rest");
+    });
+});
+
+// the DEV force({ at }) that puts the pet away from home so a step can watch it walk back
+describe("placeAt", () => {
+    it("rests it there, clamped to the ledge", () => {
+        const s = placeAt(walker({ name: "walk", x: 400, target: 900 }), 300, LEDGE, T0);
+        expect([s.name, s.x, s.target, s.restPose]).toEqual(["rest", 300, null, "stand"]);
+        expect(s.due).toBe(T0 + QUICK_REST_MAX_MS);
+        expect(placeAt(walker(), -50, LEDGE, T0).x).toBe(100);
+        expect(placeAt(walker(), 5_000, LEDGE, T0).x).toBe(1252);
+        expect(Number.isInteger(placeAt(walker(), 300.6, LEDGE, T0).x)).toBe(true);
     });
 });
 
@@ -601,7 +674,8 @@ describe("tired", () => {
             half
         );
         expect(step.state.name).toBe("rest");
-        expect(step.delayMs).toBe(20_000);
+        // rand 0.5: halfway through 60-180 s is 120 s, doubled
+        expect(step.delayMs).toBe(240_000);
         expect(step.pose).toBe("tired");
         expect(step.marks).toEqual(["drop"]);
     });
@@ -791,6 +865,235 @@ describe("home", () => {
         expect(step.x).toBe(dropX);
         expect(step.state.name).toBe("walk");
         expect(step.state.target).toBe(clearSpot(dropX, LEDGE, avoid));
+    });
+});
+
+// pet stay put: it rests and sleeps as ever, but never walks anywhere except home (the clear spot nearest it)
+describe("staying", () => {
+    const HOME = homeX(0.5, LEDGE); // 676
+    const MIN = 60_000;
+    // awake the whole time, so only the rests and the walks are under test
+    const awake =
+        (over: Partial<WalkerInput> = {}) =>
+        (now: number) =>
+            input({ staying: true, lastActivityAt: now, ...over });
+    const atHome = (over: Partial<WalkerState> = {}) => walker({ name: "rest", x: HOME, due: T0 + 5_000, ...over });
+
+    it("never walks anywhere but home when a rest ends, minute after minute", () => {
+        const rand = seeded(11);
+        const { steps } = drive(atHome(), awake(), T0, rand, (_s, now) => now >= T0 + 30 * MIN, 100_000);
+        expect(steps.length).toBeGreaterThan(1_000);
+        expect(steps.every((s) => s.x === HOME)).toBe(true);
+        expect(steps.some((s) => s.state.name === "walk")).toBe(false);
+        // it kept resting, with its pastimes, not freezing
+        expect(new Set(steps.map((s) => s.state.restPose)).size).toBeGreaterThan(2);
+    });
+
+    it("starts a rest again at the end of one, rather than a walk in place", () => {
+        const end = stepWalker(atHome({ due: T0 }), awake()(T0), T0, half);
+        expect(end.state.name).toBe("rest");
+        expect(end.state.due).toBe(T0 + REST_MIN_MS + 0.5 * (REST_MAX_MS - REST_MIN_MS));
+        expect(end.x).toBe(HOME);
+    });
+
+    it("walks home on the very next step when it is resting away from a clear home", () => {
+        const away = walker({ name: "rest", x: 300, due: T0 + 100_000 });
+        const step = stepWalker(away, awake()(T0 + 1_000), T0 + 1_000, half);
+        expect(step.state.name).toBe("walk");
+        expect(step.state.target).toBe(HOME);
+        expect(step.delayMs).toBe(FRAME_MS);
+        // and it gets there, and rests there
+        const { step: arrived } = drive(step.state, awake(), T0 + 1_000, half, (s) => s.state.name === "rest");
+        expect(arrived.x).toBe(HOME);
+        expect(arrived.state.name).toBe("rest");
+    });
+
+    it("turns a walk elsewhere toward home", () => {
+        const roaming = walker({ name: "walk", x: 300, target: 500, due: T0 });
+        const step = stepWalker(roaming, awake()(T0), T0, half);
+        expect(step.state.name).toBe("walk");
+        expect(step.state.target).toBe(HOME);
+        expect(step.flip).toBe(false);
+        // from the right of home, it turns around
+        const back = stepWalker(walker({ name: "walk", x: 900, target: 1100, due: T0 }), awake()(T0), T0, half);
+        expect(back.state.target).toBe(HOME);
+        expect(back.flip).toBe(true);
+    });
+
+    it("roams as before when not staying: a rest away from home does not go home", () => {
+        const away = walker({ name: "rest", x: 300, due: T0 + 100_000 });
+        const step = stepWalker(away, input({ lastActivityAt: T0 + 1_000 }), T0 + 1_000, half);
+        expect(step.state.name).toBe("rest");
+        expect(step.x).toBe(300);
+    });
+
+    it("steps aside to the nearest clear spot when a toast covers home, rests there, and walks home when it goes", () => {
+        const toast: [number, number][] = [[650, 720]];
+        const aside = clearSpot(HOME, LEDGE, toast);
+        expect(aside).not.toBe(HOME);
+        expect(overlaps(aside, toast)).toBe(false);
+
+        const covered = stepWalker(atHome({ due: T0 + 100_000 }), awake({ avoid: toast })(T0), T0, half);
+        expect(covered.state.name).toBe("walk");
+        expect(covered.state.target).toBe(aside);
+
+        // it rests there, and a rest ending under the same toast never takes it anywhere else
+        const { steps } = drive(
+            covered.state,
+            awake({ avoid: toast }),
+            T0,
+            seeded(5),
+            (_s, now) => now >= T0 + 10 * MIN,
+            100_000
+        );
+        const settled = steps.filter((s) => s.state.name !== "walk");
+        expect(settled.length).toBeGreaterThan(100);
+        expect(settled.every((s) => s.x === aside)).toBe(true);
+        expect(steps.filter((s) => s.state.name === "walk").every((s) => s.state.target === aside)).toBe(true);
+
+        // the toast goes: it walks home at once, not when the rest ends
+        const rest = settled[settled.length - 1];
+        const gone = stepWalker(rest.state, awake()(T0 + 10 * MIN), T0 + 10 * MIN, half);
+        expect(gone.state.name).toBe("walk");
+        expect(gone.state.target).toBe(HOME);
+        const { step: home } = drive(gone.state, awake(), T0 + 10 * MIN, half, (s) => s.state.name === "rest");
+        expect(home.x).toBe(HOME);
+    });
+
+    it("goes home when it wakes, and sleeps where it is until then", () => {
+        const asleep = walker({ name: "sleep", x: 300 });
+        const idle = awake({ lastActivityAt: T0 - SLEEP_AFTER_MS })(T0);
+        const still = stepWalker(asleep, idle, T0, half);
+        expect([still.state.name, still.x, still.delayMs]).toEqual(["sleep", 300, null]);
+
+        const woke = stepWalker(asleep, awake()(T0), T0, half);
+        expect(woke.state.name).toBe("walk");
+        expect(woke.state.target).toBe(HOME);
+        const { step } = drive(woke.state, awake(), T0, half, (s) => s.state.name !== "walk");
+        expect([step.state.name, step.x]).toEqual(["rest", HOME]);
+    });
+
+    it("still sleeps after 10 idle minutes, at home", () => {
+        const step = stepWalker(
+            atHome({ due: T0 + 100_000 }),
+            awake({ lastActivityAt: T0 - SLEEP_AFTER_MS })(T0),
+            T0,
+            half
+        );
+        expect([step.state.name, step.x, step.pose, step.delayMs]).toEqual(["sleep", HOME, "sleep", null]);
+    });
+
+    it("walks home after a hold ends, where it had stood aside", () => {
+        const step = stepWalker(walker({ name: "hold", x: 300 }), awake()(T0), T0, half);
+        expect(step.state.name).toBe("walk");
+        expect(step.state.target).toBe(HOME);
+    });
+
+    it("holds where it is while a bubble, a posture or the peek holds it, then goes home", () => {
+        const away = walker({ name: "rest", x: 300, due: T0 + 100_000 });
+        const held = stepWalker(away, awake({ speaking: true })(T0), T0, half);
+        expect([held.state.name, held.x, held.delayMs]).toEqual(["hold", 300, null]);
+        const free = stepWalker(held.state, awake()(T0 + 1_000), T0 + 1_000, half);
+        expect(free.state.target).toBe(HOME);
+    });
+
+    it("boots standing at home, resting, rather than walking off", () => {
+        const inp = awake({ home: 0.25 })(T0);
+        const start = initialWalker(inp, T0, half);
+        expect(start.x).toBe(homeX(0.25, LEDGE));
+        expect(start.name).toBe("rest");
+        const { steps } = drive(
+            start,
+            awake({ home: 0.25 }),
+            T0,
+            seeded(2),
+            (_s, now) => now >= T0 + 20 * MIN,
+            100_000
+        );
+        expect(steps.every((s) => s.x === homeX(0.25, LEDGE) && s.state.name !== "walk")).toBe(true);
+    });
+
+    it("boots at the clear spot nearest home when something covers it", () => {
+        const toast: [number, number][] = [[650, 720]];
+        const inp = awake({ avoid: toast })(T0);
+        const start = initialWalker(inp, T0, half);
+        const { step } = drive(
+            start,
+            awake({ avoid: toast }),
+            T0,
+            half,
+            (s) => s.state.name === "rest" && s.x !== HOME
+        );
+        expect(step.x).toBe(clearSpot(HOME, LEDGE, toast));
+    });
+
+    it("lands a drop at the new home and never walks off it afterwards", () => {
+        const dropX = dropAt(900, LEDGE);
+        const newHome = homeFraction(dropX, LEDGE);
+        // held in the hand: still
+        const held = stepWalker(atHome(), input({ staying: true, dragging: true, lastActivityAt: T0 }), T0, half);
+        expect(held.state.name).toBe("dragged");
+        // let go: home is the drop, and that is where it lands
+        const landed = stepWalker(held.state, input({ staying: true, home: newHome, lastActivityAt: T0 }), T0, half);
+        expect(landed.x).toBe(dropX);
+        expect(landed.state.name).toBe("rest");
+        // and for the next half hour it never moves
+        const { steps } = drive(
+            landed.state,
+            awake({ home: newHome }),
+            T0,
+            seeded(9),
+            (_s, now) => now >= T0 + 30 * MIN,
+            100_000
+        );
+        expect(steps.every((s) => s.x === dropX && s.state.name !== "walk")).toBe(true);
+    });
+
+    it("does not move under reduced motion either, but at home", () => {
+        const step = stepWalker(walker({ x: 300 }), awake({ reduce: true })(T0), T0, half);
+        expect([step.x, step.delayMs]).toEqual([HOME, null]);
+    });
+
+    describe("Spider-Man's hang", () => {
+        const zero = () => 0;
+        const hanging = (now = T0) => awake({ hangs: true })(now);
+        const DUE = T0 + HANG_UP_MS + HANG_MIN_MS + HANG_DOWN_MS;
+
+        it("skips the crawl: it goes up, hangs, and comes down where it went up", () => {
+            const s = startHang(atHome(), hanging(), T0, zero);
+            expect(s.hang).toMatchObject({ crawlMs: 0, x0: HOME });
+            expect(s.due).toBe(DUE);
+            const phases: (string | null)[] = [];
+            let step = stepWalker(s, hanging(), T0, half);
+            for (let now = T0; now < DUE && step.delayMs != null; now += step.delayMs) {
+                step = stepWalker(step.state, hanging(now), now, half);
+                phases.push(step.hang);
+                expect(step.x).toBe(HOME);
+            }
+            expect(phases).toContain("up");
+            expect(phases).toContain("hang");
+            expect(phases).toContain("down");
+            expect(phases).not.toContain("crawl");
+            const after = stepWalker(step.state, hanging(DUE), DUE, half);
+            expect([after.hang, after.x, after.state.name]).toEqual([null, HOME, "rest"]);
+        });
+
+        it("hangs it out where it is when staying began mid-hang, then walks home", () => {
+            // began roaming, crawling away from home
+            const roaming = startHang(walker({ x: 400 }), input({ hangs: true }), T0, zero);
+            expect(roaming.hang!.crawlMs).toBeGreaterThan(0);
+            const mid = stepWalker(roaming, hanging(T0 + HANG_UP_MS + 1_000), T0 + HANG_UP_MS + 1_000, half);
+            expect(mid.hang).not.toBeNull();
+            expect(mid.state.name).toBe("rest");
+            const end = stepWalker(mid.state, hanging(roaming.due), roaming.due, half);
+            expect(end.state.name).toBe("walk");
+            expect(end.state.target).toBe(HOME);
+        });
+
+        it("still crawls when roaming", () => {
+            const s = startHang(walker({ x: 400 }), input({ hangs: true }), T0, zero);
+            expect(s.hang!.crawlMs).toBeGreaterThanOrEqual(CRAWL_MIN_MS);
+        });
     });
 });
 

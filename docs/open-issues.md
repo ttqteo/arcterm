@@ -27,6 +27,14 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Pet stay pin in the folded Sprout window: float a terminal (Shift+F out of the terminal), Minimize into
+  Sprout, open the hover card's chat → the peek header shows the pin before Terminal; click it → the Stay menu (1 hour,
+  4 hours, until I turn it off, Roam again) opens fully inside the window and its rows take clicks; pick Stay 1 hour →
+  the menu closes and the pin is lit; open it and press Escape → the menu closes and the peek stays. A click outside
+  the menu falls through to the desktop and leaves it open there (its backdrop has no `data-mini-hit`): the known gap,
+  so close it with Escape or a pick. Not run by `float-mini` step 4:
+  the Final's dev window never resizes, so the scenario stops at Minimize. `petpeek.tsx`, "feat(pet): the pin and its
+  stay menu in the peek header".
 - [ ] (arcterm) Council follow-up answers don't echo the first one: in a council that has a report, send a yes/no
   question to Everyone → the first seat answers it; the others open with their own new point (no "Đúng" / "Mình đồng
   ý" / "Agreed", no repeat of the first seat's caveat) or show as "X agrees". Seen failing in council 7096c31c (r64–r67)
