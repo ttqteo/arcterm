@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The handed-over rows keep their text wide: open a brainstorm whose run has started, with parts that
+  have a long "from" ("agent's call, from answers 2 and 6") → in What you handed over, each part's text fills the
+  column and the from line sits under it in small mono, cut with an ellipsis (full text on hover), not a column of
+  its own squeezing the text to a word a line. `HandedRow`, `brainstormrun.tsx`; commit "the handed-over list keeps its text wide".
 - [ ] (arcterm) A brainstorm waiting on confirms asks for you: leave a brainstorm at Confirm the design with guesses
   and no question open, the agent idle → its tree row pulses like an asking agent and reads "confirm N decisions",
   the Brainstorm tab shows the amber dot, and the taskbar flashes once (`brainstormmodel.ts` `awaitsReview`).
