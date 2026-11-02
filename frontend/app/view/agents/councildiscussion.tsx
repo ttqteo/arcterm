@@ -459,8 +459,8 @@ function ExpertFailureCard({ c, f, acts }: { c: Council; f: FailedExpert; acts: 
 }
 
 // A Summary failed panel closed with its ✕, per council: the failure it closed (its round and error), so a new failure
-// shows again. The strip's Coordinator chip keeps its Retry. Kept for the app's session, outside the surface, which
-// unmounts on switch.
+// shows again. The header's Summarize again still reruns the coordinator. Kept for the app's session, outside the
+// surface, which unmounts on switch.
 const dismissedSummaryFailureAtom = atom<Record<string, string>>({});
 
 function summaryFailureKey(f: FailedExpert): string {
