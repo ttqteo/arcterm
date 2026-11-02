@@ -42,6 +42,7 @@ type AgentCommands interface {
 	BrainstormCheckTimesCommand(ctx context.Context) (*BrainstormCheckTimes, error)                                                       // how long this machine's past builder checks took, for the pane's clock
 	AgentsSetModelCommand(ctx context.Context, data CommandAgentsSetModelData) (*CommandAgentsSetModelRtnData, error)                     // switch a live Claude session's model with its /model command
 	AgentsSleepCommand(ctx context.Context, data CommandAgentsSleepData) (*CommandAgentsSleepRtnData, error)                              // put an idle agent to sleep: its process ends, its tab and conversation stay
+	AgentsSleepAfterRunCommand(ctx context.Context, data CommandAgentsSleepAfterRunData) error                                            // sleep a brainstorm's agent 15s after it records the run its Approve started
 	AgentsWakeCommand(ctx context.Context, data CommandAgentsWakeData) error                                                              // relaunch a sleeping agent with --resume; with Message, deliver it once the agent reports in
 	AgentsSetViewingCommand(ctx context.Context, data CommandAgentsSetViewingData) error                                                  // the frontend's agents on screen, which the sleep loop never sleeps
 	StopProcessCommand(ctx context.Context, data CommandStopProcessData) error                                                            // end one of an agent's descendant processes and its subtree (the tray's Free up)
@@ -543,6 +544,14 @@ type CommandAgentsSetModelRtnData struct {
 type CommandAgentsSleepData struct {
 	Tab   string `json:"tab"`
 	Force bool   `json:"force,omitempty"` // stop its background tasks too (the person confirmed)
+}
+
+// CommandAgentsSleepAfterRunData arms the sleep of the agent whose brainstorm started RunId: once the agent has written
+// RunId into its brainstorm.json at Path and gone idle, it sleeps 15 seconds later.
+type CommandAgentsSleepAfterRunData struct {
+	Tab   string `json:"tab"`
+	RunId string `json:"runid"`
+	Path  string `json:"path"` // the brainstorm.json's absolute path
 }
 
 type CommandAgentsSleepRtnData struct {

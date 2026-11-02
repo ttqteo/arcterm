@@ -96,6 +96,12 @@ export class RpcApiType {
         return client.wshRpcCall("agentssleep", data, opts);
     }
 
+    // command "agentssleepafterrun" [call]
+    AgentsSleepAfterRunCommand(client: WshClient, data: CommandAgentsSleepAfterRunData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentssleepafterrun", data, opts);
+        return client.wshRpcCall("agentssleepafterrun", data, opts);
+    }
+
     // command "agentswake" [call]
     AgentsWakeCommand(client: WshClient, data: CommandAgentsWakeData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "agentswake", data, opts);

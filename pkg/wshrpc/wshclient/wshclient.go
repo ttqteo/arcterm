@@ -93,6 +93,12 @@ func AgentsSleepCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentsSleepData, o
 	return resp, err
 }
 
+// command "agentssleepafterrun", wshserver.AgentsSleepAfterRunCommand
+func AgentsSleepAfterRunCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentsSleepAfterRunData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "agentssleepafterrun", data, opts)
+	return err
+}
+
 // command "agentswake", wshserver.AgentsWakeCommand
 func AgentsWakeCommand(w *wshutil.WshRpc, data wshrpc.CommandAgentsWakeData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "agentswake", data, opts)

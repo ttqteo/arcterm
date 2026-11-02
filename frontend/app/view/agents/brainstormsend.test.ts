@@ -58,14 +58,23 @@ const WAIT: BrainstormFile = {
 };
 
 // calls holds every call in order, so a stop can be seen to come before the prompt
-function fakeIO(fail = false, stopFails = false) {
+function fakeIO(fail = false, stopFails = false, armFails = false) {
     const sent: [string, string][] = [];
+    const armed: [string, string, string][] = [];
     const woken: [string, string][] = [];
     const calls: string[] = [];
     return {
         sent,
         woken,
         calls,
+        armed,
+        sleepAfterRun: async (tabId: string, runId: string, path: string) => {
+            if (armFails) {
+                throw new Error("tab is not a live agent session");
+            }
+            calls.push(`arm ${tabId}`);
+            armed.push([tabId, runId, path]);
+        },
         wake: async (tabId: string, text: string) => {
             if (fail) {
                 throw new Error("the session file is gone");
@@ -263,6 +272,7 @@ describe("approveAndOpenRun", () => {
             },
             wake: async () => {},
             stopJudge: async () => {},
+            sleepAfterRun: async () => {},
         };
         await approveAndOpenRun(model, AGENT, STATE, io);
         expect(seen).toEqual([["blk-1", "brainstorm: approved", null, null]]);
@@ -315,6 +325,24 @@ describe("openRunLauncher", () => {
         openRunLauncher(fakeModel(), AGENT, STATE, io);
         globalStore.get(launcherPrefillAtom)!.onStarted!("run-42");
         await flush();
+        expect(io.sent).toEqual([["blk-1", "brainstorm: run run-42"]]);
+    });
+
+    it("arms the agent's sleep once, before the run's id is sent", async () => {
+        const io = fakeIO();
+        openRunLauncher(fakeModel(), AGENT, STATE, io);
+        globalStore.get(launcherPrefillAtom)!.onStarted!("run-42");
+        await flush();
+        expect(io.armed).toEqual([["a1", "run-42", STATE.path]]);
+        expect(io.calls).toEqual(["arm a1", "prompt blk-1"]);
+    });
+
+    it("still sends the run's id when the arm fails", async () => {
+        const io = fakeIO(false, false, true);
+        openRunLauncher(fakeModel(), AGENT, STATE, io);
+        globalStore.get(launcherPrefillAtom)!.onStarted!("run-42");
+        await flush();
+        expect(io.armed).toEqual([]);
         expect(io.sent).toEqual([["blk-1", "brainstorm: run run-42"]]);
     });
 });
