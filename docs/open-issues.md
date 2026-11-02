@@ -35,6 +35,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   drafts if it held none before. Then pick a chat and close its tab before Send → the send is refused with the live
   tabs listed, and the message stays in the box. No scenario starts a real agent (`councilchat.tsx` `Composer`, spec
   `2026-11-02-council-add-chat-design.md`).
+- [ ] (arcterm) Images and @file in a council's message box: open a Done council, paste a screenshot into the box → a
+  thumbnail chip with a spinner, then ready, and Let them read files turns on and locks; type `@` and part of a project
+  path → a Files group under Seats; pick a file and send → an expert's answer shows it read the image and the file
+  (the sent bubble has the thumbnail and a file chip that opens Sources). Then leave the council and come back with a
+  chip in the box → the chip and text are still there. No scenario runs a real `claude -p --add-dir` (`councilchat.tsx`
+  `Composer`, spec `2026-11-02-council-attachments-design.md`, run e799103d).
 - [ ] (arcterm) Compact council composer: open a done council's Discussion → Let them read files sits on the left and
   `4 experts answer · ≈ 4 calls · ~80k tokens` on the right of one row under the box; scroll up, press Top → Back and
   Latest show side by side in the channel's bottom right, Back's label one word. Open a thread → in the narrow panel the
