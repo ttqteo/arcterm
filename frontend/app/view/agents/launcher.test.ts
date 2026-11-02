@@ -368,10 +368,27 @@ describe("launcherKey", () => {
         expect(launcherKey({ ...at("project"), homeShown: false }, key("0"))).toEqual({ kind: "none" });
         expect(launcherKey(at("start"), key("0"))).toEqual({ kind: "none" });
     });
-    it("letters filter the Project column", () => {
-        expect(launcherKey(at("project", "ok"), key("i"))).toEqual({ kind: "filter", next: "oki" });
-        expect(launcherKey(at("project"), key("-"))).toEqual({ kind: "filter", next: "-" });
-        expect(launcherKey(at("start"), key("i"))).toEqual({ kind: "write" });
+    it("with no Task or Goal box, letters filter the Project column", () => {
+        const noBox = (filter = "") => ({ ...at("project", filter), textField: false });
+        expect(launcherKey(noBox("ok"), key("i"))).toEqual({ kind: "filter", next: "oki" });
+        expect(launcherKey(noBox(), key("-"))).toEqual({ kind: "filter", next: "-" });
+        expect(launcherKey(noBox(), key(" "))).toEqual({ kind: "filter", next: " " });
+    });
+    it("with a Task or Goal box, a letter in the Project or Session column writes into it, as in the Start column", () => {
+        expect(launcherKey(at("project"), key("i"))).toEqual({ kind: "write" });
+        expect(launcherKey(at("project"), key("F", { shift: true }))).toEqual({ kind: "write" });
+        expect(launcherKey(at("resume"), key("c"))).toEqual({ kind: "write" });
+        expect(launcherKey(at("resume"), key("-"))).toEqual({ kind: "write" });
+        // a space, a named key and a key held with Cmd, Ctrl or Alt start no task; the digits still pick
+        expect(launcherKey(at("project"), key(" "))).toEqual({ kind: "none" });
+        expect(launcherKey(at("resume"), key(" "))).toEqual({ kind: "none" });
+        expect(launcherKey(at("resume"), key("Process"))).toEqual({ kind: "none" });
+        expect(launcherKey(at("project"), key("f", { mod: true }))).toEqual({ kind: "none" });
+        expect(launcherKey(at("project"), key("2"))).toEqual({ kind: "pick-project", index: 1 });
+        // the Session column picks its own digits; none reaches the dialog
+        expect(launcherKey(at("resume"), key("2"))).toEqual({ kind: "none" });
+        // and a letter with no box to land in does nothing there
+        expect(launcherKey({ ...at("resume"), textField: false }, key("c"))).toEqual({ kind: "none" });
     });
     it("a letter in the Start column writes into the pick's Task or Goal box, when it has one", () => {
         expect(launcherKey(at("start"), key("F", { shift: true }))).toEqual({ kind: "write" });
@@ -397,7 +414,9 @@ describe("launcherKey", () => {
         expect(launcherKey({ ...at("start"), textField: false }, paste)).toEqual({ kind: "none" });
     });
     it("Backspace shortens the filter and does nothing on an empty one", () => {
-        expect(launcherKey(at("project", "oki"), key("Backspace"))).toEqual({ kind: "filter", next: "ok" });
+        const noBox = (filter = "") => ({ ...at("project", filter), textField: false });
+        expect(launcherKey(noBox("oki"), key("Backspace"))).toEqual({ kind: "filter", next: "ok" });
+        expect(launcherKey(noBox(), key("Backspace"))).toEqual({ kind: "none" });
         expect(launcherKey(at("project"), key("Backspace"))).toEqual({ kind: "none" });
     });
     it("Enter launches from a column or a one-line field, not from a textarea or a button", () => {

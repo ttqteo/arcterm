@@ -300,8 +300,8 @@ export function draftShown(draft: LauncherDraft): boolean {
     return [draft.task, draft.goal, draft.planPath, draft.prototype].some((v) => v.trim() !== "") || draft.images > 0;
 }
 
-// "resume" is the Session column: it takes its own digits, arrows and filter (launcherresumelist), so only Enter is the
-// dialog's. "tools" is the Tool column (launchertoolfields), picked by letters. "task" is the pick's Task or Goal box at
+// "resume" is the Session column: it takes its own digits and arrows (launcherresumelist), so only Enter and a letter
+// are the dialog's. "tools" is the Tool column (launchertoolfields), picked by letters. "task" is the pick's Task or Goal box at
 // the top, where the dialog opens; any other textarea is "textarea".
 export type FocusZone = "start" | "project" | "tools" | "resume" | "task" | "textarea" | "input" | "other";
 
@@ -360,6 +360,7 @@ export type LauncherKeyAction =
     | { kind: "close" };
 
 const NONE: LauncherKeyAction = { kind: "none" };
+const WRITE: LauncherKeyAction = { kind: "write" };
 
 // What a key does where focus is (spec "Keyboard"). "none" leaves the key to the browser and to ModalShell, which owns
 // Mod+Enter (submit). Tab never gets here: the dialog's focus trap takes it first.
@@ -384,7 +385,7 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
     // a paste outside a text field goes to the Task or Goal box: focus moves there and the browser's paste lands in it,
     // images included. A text field takes its own paste.
     if (k.paste) {
-        return ctx.textField && zone !== "task" && zone !== "textarea" && zone !== "input" ? { kind: "write" } : NONE;
+        return ctx.textField && zone !== "task" && zone !== "textarea" && zone !== "input" ? WRITE : NONE;
     }
     // The Task (or Goal) box is where the dialog opens: Enter launches and Shift+Enter is its newline, as in a chat box,
     // and Alt+1–9 picks a Start row without leaving it. The project and the session are a Tab away, in their columns.
@@ -420,6 +421,9 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
             ? { kind: "move", column: "tools", delta: k.key === "ArrowDown" ? 1 : -1 }
             : NONE;
     }
+    if (zone === "resume") {
+        return ctx.textField && startsTask(k.key) ? WRITE : NONE;
+    }
     if (zone !== "start" && zone !== "project") {
         return NONE;
     }
@@ -447,19 +451,28 @@ export function launcherKey(ctx: LauncherKeyCtx, k: LauncherKeyIn): LauncherKeyA
     if (k.key === "ArrowLeft") {
         return zone === "project" ? { kind: "column", to: "start" } : NONE;
     }
-    // a letter in the Start column starts the task: the dialog moves focus to the Task or Goal box and lets the key land
-    // there, so a Telex or IME key that follows edits it. A space, a named key ("Process", "Dead") and a digit are not
-    // letters.
     if (zone === "start") {
-        return ctx.textField && k.key.length === 1 && !/[0-9 ]/.test(k.key) ? { kind: "write" } : NONE;
+        return ctx.textField && startsTask(k.key) ? WRITE : NONE;
     }
     if (zone === "project") {
         if (k.key === "Backspace") {
             return ctx.filter === "" ? NONE : { kind: "filter", next: ctx.filter.slice(0, -1) };
+        }
+        // with a Task or Goal box, a letter here starts the task too; with none (a terminal, a tool, a council, a run
+        // from a plan file), letters filter the projects
+        if (ctx.textField) {
+            return startsTask(k.key) ? WRITE : NONE;
         }
         if (k.key.length === 1 && !/[0-9]/.test(k.key)) {
             return { kind: "filter", next: ctx.filter + k.key };
         }
     }
     return NONE;
+}
+
+// A letter in the Start, Project or Session column starts the task: the dialog moves focus to the Task or Goal box and
+// lets the key land there, so a Telex or IME key that follows edits it. A space, a named key ("Process", "Dead") and a
+// digit are not letters: the digits pick rows.
+function startsTask(key: string): boolean {
+    return key.length === 1 && !/[0-9 ]/.test(key);
 }

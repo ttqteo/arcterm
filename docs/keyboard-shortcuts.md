@@ -76,13 +76,13 @@ column. The Tool row is the last in Start, so the other rows keep their digits.
 | `0` | In the Project column: Home, pinned under the projects |
 | `↑` / `↓` | Move in the focused column |
 | `→` / `←` | Step Start, Project, then the Session or Tool column, and back |
-| letters | In the Start column, start typing the task (or a run's goal): focus moves to that box with the letter in it (not with the Tool row picked, which has no task box). In the Project or Session column, filter it by name; `Backspace` shortens the filter |
+| letters | In the Start, Project or Session column, start typing the task (or a run's goal): focus moves to that box with the letter in it. A pick with no such box (a terminal, a tool, a council, a run from a plan file) filters the Project column by name instead; `Backspace` shortens the filter |
 | `a`…`z` | In the Tool column (with the Tool row picked): pick the nth tool. `↑` / `↓` walk the list, `Enter` opens the tool |
 | `Tab` / `Shift`+`Tab` | Next / previous: the task or goal box, Project, the Session or Tool column, Cancel, the launch button, and round again. With a box, Start is no stop (`Alt`+`1`…`9` picks there); the Task row's + Flag, Worktree and Command are for the pointer, and the fields they open (the flag list, the command, the branch) are stops while open. A run's own fields (route, width…) sit between its goal and Project |
 | `Enter` | Launch, from the task or goal box, a column, the Tool list or a one-line field |
 | `Shift`+`Enter` | In the task or goal box: a new line. Elsewhere, with a session picked: open it asleep (or read its transcript, for an agent that cannot sleep) instead of resuming it |
 | `Mod`+`Enter` | Launch, from anywhere in the dialog |
-| `Esc` | Close the open menu or a column's filter first, then the dialog. What you typed is kept for the next open |
+| `Esc` | Close the open menu or the Project column's filter first, then the dialog. What you typed is kept for the next open |
 
 ## Open a tool (`Mod`+`Shift`+`O`)
 

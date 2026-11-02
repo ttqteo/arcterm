@@ -22,7 +22,15 @@ shows above the title: a 2:1 crop of a `task verify:ui` screenshot, as WebP, nam
 (`cwebp -q 82 -crop <x> <y> <w> <h> cdp-shots/<shot>.png -o public/whatsnew/<file>`). `whatsnew.test.ts` fails on a
 missing file, on one over 120 KB, and on a picture given to a line that is not big.
 
-## 0.15.20 — 2026-11-02
+## Unreleased
+
+### Changed
+
+- In the New dialog, typing a letter in the Project or Session column now starts the task, as it does in the Start
+  column: focus jumps to the Task (or Goal) box with the letter in it, instead of filtering the list. Digits and the
+  arrows still pick a project or a session. Only a pick with no Task box (a terminal, a tool, a council, a run from a
+  plan file) still filters the projects as you type, and the Session column no longer searches older sessions.
+  <!-- try: new-agent -->
 
 ### Added
 
