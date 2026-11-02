@@ -821,6 +821,7 @@ declare global {
         parentid?: string;
         text: string;
         tools?: boolean;
+        agents?: string[];
     };
 
     // wshrpc.CommandCouncilRetryData
@@ -2412,6 +2413,7 @@ declare global {
         rounds?: number;
         sessionid?: string;
         byagent?: boolean;
+        draftmode?: string;
         state: string;
         round: number;
         error?: string;

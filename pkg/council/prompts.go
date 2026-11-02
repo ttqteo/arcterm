@@ -13,7 +13,7 @@ import (
 // when its run begins (Council.Harness), and the benchmark groups its results by it, so a score is never read as the
 // score of a harness it did not run. Bump it, as <YYYY-MM-DD>.<n>, in the same commit as any change to a prompt, a role
 // brief or a default model.
-const HarnessVersion = "2026-11-01.5"
+const HarnessVersion = "2026-11-02.1"
 
 // The JSON each prompt asks the model to end its reply with. parse.go reads exactly these shapes, and
 // TestShapesParse feeds every one back through its parser, so the two cannot drift: change a shape here and the
@@ -1047,9 +1047,45 @@ func agentAsks(c *Council, e CouncilExpert, round int) []CouncilReply {
 	return owed(c, e, round >= SynthesisRound(c))
 }
 
+// briefedByReport says a seat's first prompt in round is written from the council's report in place of a replay of every
+// idea and reply: the council has a report, and it has already met (round is the synthesis's or a follow-up's).
+func briefedByReport(c *Council, round int) bool {
+	return c.Summary != nil && round >= SynthesisRound(c)
+}
+
+// sinceReport are the sent messages after the council's latest report, in the order they came, that a seat joining after
+// it is shown: the seats' replies of the rounds before round (the seats answer a round at once, so none of this round's
+// is there), and the person's messages whoever they went to, bar the seat's own questions, which come as its questions
+// (agentAsks). A held or dropped one is in neither. Only a council with a report has any.
+func sinceReport(c *Council, e CouncilExpert, round int) []CouncilReply {
+	if c.Summary == nil {
+		return nil
+	}
+	asks := agentAsks(c, e, round)
+	var out []CouncilReply
+	for _, r := range c.Replies {
+		if r.Ts <= c.Summary.At || !Sent(r.Draft) || r.Author == e.Id {
+			continue
+		}
+		if r.Author == YouId {
+			if slices.ContainsFunc(asks, func(a CouncilReply) bool { return a.Id == r.Id }) {
+				continue
+			}
+		} else if r.Round >= round {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // seatHasNews says whether a turn of the seat in reply pass round has anything to answer: a seat with nothing new and no
-// question is not asked.
+// question is not asked. A seat joining after the report reads the report and what was sent after it, so what was sent
+// after it is its news; the report alone is nothing to answer.
 func seatHasNews(c *Council, e CouncilExpert, round int) bool {
+	if lastTurn(c, e, round) == 0 && briefedByReport(c, round) {
+		return len(sinceReport(c, e, round))+len(agentAsks(c, e, round)) > 0
+	}
 	ideas, said := agentNews(c, e, round)
 	return len(ideas)+len(said)+len(agentAsks(c, e, round)) > 0
 }
@@ -1064,7 +1100,8 @@ func agentPrompt(c *Council, e CouncilExpert, round int) string {
 
 // AgentFirstPrompt brings a live agent into the council: the question, the other seats (each marked agent or expert),
 // and the turn of the round, with the answer shape the experts use for it. A seat that joins after round 1 gets
-// everything sent so far in it, since it has seen none of it.
+// everything sent so far in it, since it has seen none of it; once the council has its report, it gets the report and
+// what was sent after it instead (writeSinceReport).
 func AgentFirstPrompt(c *Council, e CouncilExpert, round int) string {
 	var b strings.Builder
 	if isBrainstorm(c) {
@@ -1153,9 +1190,17 @@ func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, 
 			"change nothing in the project.\n\n", round, last)
 	}
 
+	if first && round > 1 && !slices.ContainsFunc(c.Proposals, func(p CouncilProposal) bool { return p.Author == e.Id }) {
+		b.WriteString(joinedLateNote + "\n\n")
+	}
+
 	if round == 1 {
 		b.WriteString(round1Task(c))
 		return
+	}
+	if first && briefedByReport(c, round) {
+		writeSinceReport(b, c, e, round)
+		ideas, said = nil, nil // the report names the ideas it keeps; what was said since it is written above
 	}
 	if round < last {
 		b.WriteString("## Proposals to review\n\n")
@@ -1210,6 +1255,61 @@ func writeAgentTurn(b *strings.Builder, c *Council, e CouncilExpert, round int, 
 	} else {
 		b.WriteString(round2Task(c, round))
 	}
+}
+
+// joinedLateNote is the line a seat reads that joins in round 2 or later with no idea of its own, whatever else its first
+// prompt holds: the ideas are already in, and it answers what was said instead of proposing.
+const joinedLateNote = "You joined after the ideas were put forward, so you have none of your own: answer what was said below " +
+	"instead of proposing one."
+
+// writeSinceReport is what a seat joining after the council's report reads in place of every idea and reply: the report
+// as the person read it, then the messages sent after it. No ideas: the report already names the ones it keeps.
+func writeSinceReport(b *strings.Builder, c *Council, e CouncilExpert, round int) {
+	s := c.Summary
+	if len(s.Directions)+len(s.Kept) > 0 {
+		writeReport(b, c)
+	} else { // writeReport writes nothing for a report with no direction: the answer, or that it kept none, takes its place
+		b.WriteString("## The council's report\n\nThe person has read it.\n\n")
+		if a := strings.TrimSpace(s.Answer); a != "" {
+			fmt.Fprintf(b, "Answer: %s\n\n", a)
+		} else {
+			b.WriteString("The report kept no direction and gave no answer.\n\n")
+		}
+	}
+	sent := sinceReport(c, e, round)
+	if len(sent) == 0 {
+		return
+	}
+	b.WriteString("## What was said since the report\n\n")
+	for _, r := range sent {
+		if r.Author == YouId {
+			b.WriteString(personLine(c, r))
+		} else {
+			b.WriteString(saidLine(c, r))
+		}
+	}
+	b.WriteString("\n")
+}
+
+// personLine is one of the person's messages as a seat it was not put to is shown it: who it went to, what it is on, and
+// its words.
+func personLine(c *Council, r CouncilReply) string {
+	to := "the whole council"
+	if len(r.To) > 0 {
+		names := make([]string, len(r.To))
+		for i, id := range r.To {
+			names[i] = speaker(c, id)
+		}
+		to = strings.Join(names, ", ")
+	}
+	var where string
+	if p := findProposal(c, r.ProposalId); p != nil {
+		where = fmt.Sprintf(", on %s (%s)", p.Id, p.Title)
+	}
+	if parent := findReply(c, r.ParentId); parent != nil {
+		where += fmt.Sprintf(", replying to %s's %s", speaker(c, parent.Author), parent.Id)
+	}
+	return fmt.Sprintf("- [%s] the person to %s%s: %s\n", r.Id, to, where, strings.TrimSpace(r.Text))
 }
 
 // saidLine is one reply another seat sent, as a seat is shown it: who, its stance, what it is on, and its words.

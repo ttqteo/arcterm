@@ -264,6 +264,58 @@ func TestCouncilEstimateOfASavedCouncil(t *testing.T) {
 	}
 }
 
+// TestCouncilEstimateFollowupWithChats: a follow-up estimate that names live tabs prices each at the context the roster
+// reads for it, beside the role experts at the flat price; a pi chat, whose context is unknown, takes the flat price; a
+// tab that cannot be seated fails the estimate.
+func TestCouncilEstimateFollowupWithChats(t *testing.T) {
+	useCouncilStore(t)
+	facts := threeAgents()
+	facts.Tabs[0].Status.TranscriptPath = writeTranscript(t, "lead", claudeTurn)        // 95,010 tokens of context
+	facts.Tabs[1].Status.TranscriptPath = writeTranscript(t, "design", claudeSmallTurn) // 40,010
+	scriptAgents(t, facts)
+	ws := &WshServer{}
+	ctx := context.Background()
+	experts, err := council.ExpertsFor("ui-feature")
+	if err != nil {
+		t.Fatalf("ExpertsFor: %v", err)
+	}
+	saveCouncil(t, &council.Council{Id: "c1", Project: t.TempDir(), Feature: "Idle sleep", Experts: experts, State: council.StateDone, Round: 2})
+
+	for _, tc := range []struct {
+		name string
+		data wshrpc.CommandCouncilEstimateData
+		want wshrpc.CouncilEstimateRtnData
+	}{
+		{"two role experts and a chat",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2, Agents: []string{agentsTabA}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 2*20_000 + 95_010, Minutes: 1, AgentTokens: 95_010}},
+		{"a chat named by a prefix, with the experts reading code",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2, Tools: true, Agents: []string{"bbbb2"}},
+			wshrpc.CouncilEstimateRtnData{Calls: 3, Tokens: 2*110_000 + 40_010, Minutes: 2, AgentTokens: 40_010}},
+		{"chats alone, a tab named twice sits once",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Agents: []string{agentsTabA, agentsTabB, agentsTabA}},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 95_010 + 40_010, Minutes: 1, AgentTokens: 95_010 + 40_010}},
+		{"a pi chat is flat",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 1, Agents: []string{agentsTabC}},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 2 * 20_000, Minutes: 1, AgentTokens: 20_000}},
+		{"no chats is as it was",
+			wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2},
+			wshrpc.CouncilEstimateRtnData{Calls: 2, Tokens: 40_000, Minutes: 1}},
+	} {
+		got, err := ws.CouncilEstimateCommand(ctx, tc.data)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if *got != tc.want {
+			t.Errorf("%s = %+v, want %+v", tc.name, *got, tc.want)
+		}
+	}
+
+	if got, err := ws.CouncilEstimateCommand(ctx, wshrpc.CommandCouncilEstimateData{Id: "c1", Followup: 2, Agents: []string{"zzzz"}}); err == nil || !strings.Contains(err.Error(), `"zzzz"`) {
+		t.Errorf("a follow-up estimate naming an unknown tab = %+v, %v, want an error naming it", got, err)
+	}
+}
+
 // TestCouncilSaveDocWritesTheDocument: the command writes the whole document (report, discussion, run facts) at the
 // default path and keeps that path on the council, so a second save rewrites the same file. The path rules themselves
 // are council.DocPath's tests.
@@ -1207,6 +1259,189 @@ func TestCouncilReplyValidatesAndAnswers(t *testing.T) {
 	if err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{Id: done.Id, ProposalId: "P2", ParentId: mine.Id, Text: "wrong thread"}); err == nil {
 		t.Error("a parent that belongs to another proposal should be refused")
 	}
+}
+
+// deliveryLog keeps what the delivery seam is handed, safe to read while a council's run writes it.
+type deliveryLog struct {
+	mu  sync.Mutex
+	got []agentsDelivery
+}
+
+// logDeliveries replaces the delivery seam scriptAgents installed (its cleanup puts the real one back).
+func logDeliveries() *deliveryLog {
+	l := &deliveryLog{}
+	deliverAgentMessage = func(blockId, text string) {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		l.got = append(l.got, agentsDelivery{blockId, text})
+	}
+	return l
+}
+
+// to is what was delivered to a block.
+func (l *deliveryLog) to(blockId string) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []string
+	for _, d := range l.got {
+		if d.blockId == blockId {
+			out = append(out, d.text)
+		}
+	}
+	return out
+}
+
+// waitDelivery returns what was delivered to the block once something was.
+func (l *deliveryLog) waitDelivery(t *testing.T, blockId string) []string {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if got := l.to(blockId); len(got) > 0 {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("nothing was delivered to block %s", blockId)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func seatsByAgent(c *council.Council, tab string) []council.CouncilExpert {
+	var out []council.CouncilExpert
+	for _, e := range c.Experts {
+		if e.Agent == tab {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// TestCouncilReplySeatsAChat: a reply that names a live claude tab seats it in front of the coordinator, makes it a target
+// of the message, and posts the message to its session.
+func TestCouncilReplySeatsAChat(t *testing.T) {
+	scriptAgents(t, threeAgents()) // before the rig: its cleanup stops the council while the roster is still scripted
+	log := logDeliveries()
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	ws := &WshServer{}
+	ctx := context.Background()
+	done := startDoneCouncil(t, ws)
+	if council.HasAgents(done) {
+		t.Fatalf("the council began with a chat: %+v", done.Experts)
+	}
+
+	const text = "What do you make of the idle sleep?"
+	if err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{Id: done.Id, Text: text, Agents: []string{"bbbb2"}}); err != nil {
+		t.Fatalf("CouncilReplyCommand: %v", err)
+	}
+	// the chat's turn is sent to its session; it has no transcript here, so the round waits for an answer until the stop
+	sent := log.waitDelivery(t, agentsBlockB)
+	if !strings.Contains(sent[0], text) {
+		t.Errorf("what the chat was sent = %q, want the message in it", sent[0])
+	}
+	if other := log.to(agentsBlockA); len(other) != 0 {
+		t.Errorf("a chat that was not named was sent %q", other)
+	}
+
+	got, err := ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: done.Id})
+	if err != nil {
+		t.Fatalf("CouncilGetCommand: %v", err)
+	}
+	n := len(done.Experts)
+	if len(got.Experts) != n+1 || !got.Experts[n].Coordinator || got.Experts[n-1].Agent != agentsTabB {
+		t.Fatalf("seats = %v, want the chat in front of the coordinator, which stays last", got.Experts)
+	}
+	if seat := got.Experts[n-1]; seat.Id != "agent-"+agentsTabB || seat.Name != "design" || seat.Harness != "claude" {
+		t.Errorf("the new seat = %+v, want the design tab's, as a start seats it", seat)
+	}
+	if got.DraftMode != council.DraftModeFree || council.HoldsDrafts(got) {
+		t.Errorf("draft mode = %q (holds %v), want a council that began free to stay free", got.DraftMode, council.HoldsDrafts(got))
+	}
+	mine := findCouncilReply(got, func(r council.CouncilReply) bool { return r.Author == council.YouId && r.Text == text })
+	if mine == nil || len(mine.To) != n || mine.To[n-1] != "agent-"+agentsTabB {
+		t.Fatalf("the person's reply = %+v, want it addressed to the panel and the new chat", mine)
+	}
+	if err := ws.CouncilStopCommand(ctx, wshrpc.CommandCouncilIdData{Id: done.Id}); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	waitCouncil(t, done.Id)
+}
+
+// TestCouncilReplyRefusesAnUnknownChat: a tab that is gone, ambiguous or not a chat a council can seat fails the command
+// with the live tabs listed, and the council is as it was: no reply, no seat, no call.
+func TestCouncilReplyRefusesAnUnknownChat(t *testing.T) {
+	scriptAgents(t, threeAgents())
+	log := logDeliveries()
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	ws := &WshServer{}
+	ctx := context.Background()
+	done := startDoneCouncil(t, ws)
+	calls := fake.total()
+
+	for _, tc := range []struct {
+		name   string
+		agents []string
+		want   string
+	}{
+		{"an unknown tab", []string{"zzzz"}, `"zzzz"`},
+		{"a prefix of several tabs", []string{"bbbb"}, "matches several"},
+		{"a good tab and a bad one", []string{agentsTabB, "zzzz"}, `"zzzz"`},
+		{"a blank id", []string{" "}, "a tab id is required"},
+	} {
+		err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{Id: done.Id, Text: "Join us?", Agents: tc.agents})
+		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "live claude and pi tabs") || !strings.Contains(err.Error(), "aaaa1111") {
+			t.Errorf("%s: CouncilReplyCommand = %v, want an error that says %q and lists the live tabs", tc.name, err, tc.want)
+		}
+	}
+	got, err := ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: done.Id})
+	if err != nil {
+		t.Fatalf("CouncilGetCommand: %v", err)
+	}
+	if got.State != council.StateDone || len(got.Replies) != len(done.Replies) || !reflect.DeepEqual(got.Experts, done.Experts) {
+		t.Errorf("the refused replies changed the council: %s with %d replies and %d seats, was %d and %d", got.State, len(got.Replies), len(got.Experts), len(done.Replies), len(done.Experts))
+	}
+	if fake.total() != calls || len(log.to(agentsBlockB)) != 0 {
+		t.Errorf("a refused reply started a round: %d new calls, %d deliveries to the chat", fake.total()-calls, len(log.to(agentsBlockB)))
+	}
+}
+
+// TestCouncilReplySeatsARepeatedIdOnce: a tab named twice (by id, by prefix, or both) sits once, and so does one that
+// already sits when a later reply names it again.
+func TestCouncilReplySeatsARepeatedIdOnce(t *testing.T) {
+	scriptAgents(t, threeAgents())
+	log := logDeliveries()
+	fake := newCouncilFake()
+	useCouncilRig(t, fake)
+	ws := &WshServer{}
+	ctx := context.Background()
+	done := startDoneCouncil(t, ws)
+
+	if err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{Id: done.Id, Text: "Join us?", Agents: []string{agentsTabB, "bbbb2", agentsTabB}}); err != nil {
+		t.Fatalf("CouncilReplyCommand: %v", err)
+	}
+	log.waitDelivery(t, agentsBlockB)
+	got, _ := ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: done.Id})
+	if seats := seatsByAgent(got, agentsTabB); len(seats) != 1 || len(got.Experts) != len(done.Experts)+1 {
+		t.Fatalf("seats of the tab named three times = %v of %d, want one new seat", seats, len(got.Experts))
+	}
+
+	// the chat is working its turn, so the council still runs: a second reply names it again, and a new one beside it
+	if err := ws.CouncilReplyCommand(ctx, wshrpc.CommandCouncilReplyData{Id: done.Id, Text: "And you two?", Agents: []string{"bbbb2", agentsTabC}}); err != nil {
+		t.Fatalf("second CouncilReplyCommand: %v", err)
+	}
+	got, _ = ws.CouncilGetCommand(ctx, wshrpc.CommandCouncilIdData{Id: done.Id})
+	if b, c := seatsByAgent(got, agentsTabB), seatsByAgent(got, agentsTabC); len(b) != 1 || len(c) != 1 || len(got.Experts) != len(done.Experts)+2 {
+		t.Errorf("after the second reply: %d seats of the first chat, %d of the second, %d in all, want one each and %d", len(b), len(c), len(got.Experts), len(done.Experts)+2)
+	}
+	last := got.Experts[len(got.Experts)-1]
+	if !last.Coordinator {
+		t.Errorf("the last seat = %+v, want the coordinator", last)
+	}
+	if err := ws.CouncilStopCommand(ctx, wshrpc.CommandCouncilIdData{Id: done.Id}); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	waitCouncil(t, done.Id)
 }
 
 func TestCouncilRetryOfAFailedExpert(t *testing.T) {

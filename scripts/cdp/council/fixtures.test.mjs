@@ -32,6 +32,7 @@ import { contextTokens } from "../../../frontend/app/view/agents/agentrailmodel"
 import {
     COUNCIL_FIXTURES,
     COUNCIL_PROJECT,
+    JOIN_AGENTS,
     ROOM_AGENTS,
     announceCouncil,
     arrangeCouncilProject,
@@ -683,6 +684,57 @@ describe("roomRoster", () => {
                 roster.map((a, i) => [a.id, a.name, a.agent, ROOM_AGENTS[i].context])
             );
         }
+    });
+});
+
+describe("JOIN_AGENTS and the roster's extra option", () => {
+    it("are two unseated chats, one claude and one pi, in different projects, each its own mention key", () => {
+        expect(JOIN_AGENTS.map((a) => a.harness)).toEqual(["claude", "pi"]);
+        // the first 8 characters of each differ from the other's and from the room's (`fx-room-`), so `@<first 8>`
+        // reaches one chat and the room's two seats keep their own mention keys
+        const heads = [...JOIN_AGENTS.map((a) => a.tabId.slice(0, 8)), "fx-room-"];
+        expect(new Set(heads).size).toBe(heads.length);
+        expect(JOIN_AGENTS.every((a) => a.tabId.length > 8)).toBe(true);
+        const projects = JOIN_AGENTS.map((a) => a.cwd ?? a.project);
+        expect(new Set(projects).size).toBe(2);
+        // no fixture council seats them: that is what makes them the ones `@` offers
+        for (const name of COUNCIL_FIXTURES) {
+            const seated = new Set(loadCouncilFixture(name).experts.map((e) => e.agent));
+            for (const a of JOIN_AGENTS) expect(seated.has(a.tabId)).toBe(false);
+        }
+    });
+
+    it("leave the room's roster as it was, and the option appends both after it", () => {
+        const room = roomRoster(NOW);
+        expect(roomRoster(NOW, [])).toEqual(room);
+        expect(room.map((a) => a.id)).toEqual(ROOM_AGENTS.map((a) => a.tabId));
+        const both = roomRoster(NOW, JOIN_AGENTS);
+        expect(both.slice(0, ROOM_AGENTS.length)).toEqual(room);
+        expect(both.slice(ROOM_AGENTS.length).map((a) => [a.id, a.name, a.agent])).toEqual(
+            JOIN_AGENTS.map((a) => [a.tabId, a.name, a.harness])
+        );
+        expect(new Set(both.map((a) => a.blockId)).size).toBe(both.length);
+        // each shows the context the picker lists it with
+        expect(both.slice(ROOM_AGENTS.length).map((a) => contextTokens(a.usage.contextpct, a.usage.contextmax))).toEqual([
+            "182k",
+            "21k",
+        ]);
+        // the chat in a folder with no registered project says where it works
+        expect(both[ROOM_AGENTS.length].cwd).toBeUndefined();
+        expect(both[ROOM_AGENTS.length + 1].cwd).toBe("/work/vnstock-js");
+    });
+
+    it("writeRoomRoster writes the room alone by default and the room plus the extra agents with the option", async () => {
+        const dir = tempRoot();
+        const file = join(dir, "active.json");
+        const { h } = rosterPage();
+        await writeRoomRoster(h, { file, now: NOW });
+        expect(JSON.parse(readFileSync(file, "utf8")).map((a) => a.id)).toEqual(ROOM_AGENTS.map((a) => a.tabId));
+        await writeRoomRoster(h, { file, now: NOW, extra: JOIN_AGENTS });
+        expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(roomRoster(NOW, JOIN_AGENTS));
+        expect(JSON.parse(readFileSync(file, "utf8")).map((a) => a.id)).toEqual(
+            [...ROOM_AGENTS, ...JOIN_AGENTS].map((a) => a.tabId)
+        );
     });
 });
 

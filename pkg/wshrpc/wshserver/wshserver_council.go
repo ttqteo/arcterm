@@ -143,9 +143,16 @@ func (ws *WshServer) CouncilGetCommand(ctx context.Context, data wshrpc.CommandC
 	return council.Load(data.Id)
 }
 
-// CouncilReplyCommand posts the person's reply; the runner checks the proposal and the parent exist and answers it.
+// CouncilReplyCommand posts the person's reply; the runner checks the proposal and the parent exist and answers it. The
+// chats it names (Agents) are resolved first, as a start's are (see councilAgentSeats): a tab that is gone, ambiguous or
+// cannot be seated fails the command with the live tabs listed, and nothing is posted or seated. The runner seats them in
+// the save that posts the reply.
 func (ws *WshServer) CouncilReplyCommand(ctx context.Context, data wshrpc.CommandCouncilReplyData) error {
-	_, err := councilRunner.Reply(data.Id, data.ProposalId, data.ParentId, data.Text, data.Tools)
+	seats, err := councilAgentSeats(ctx, data.Agents)
+	if err != nil {
+		return err
+	}
+	_, err = councilRunner.Reply(data.Id, data.ProposalId, data.ParentId, data.Text, data.Tools, seats)
 	return err
 }
 
@@ -228,8 +235,14 @@ func (ws *WshServer) CouncilAutoGenerateCommand(ctx context.Context, data wshrpc
 func (ws *WshServer) CouncilEstimateCommand(ctx context.Context, data wshrpc.CommandCouncilEstimateData) (*wshrpc.CouncilEstimateRtnData, error) {
 	var est council.CouncilEstimate
 	switch {
-	case data.Id != "" && data.Followup > 0:
-		est = council.EstimateFollowup(data.Followup, data.Tools)
+	case data.Id != "" && (data.Followup > 0 || len(data.Agents) > 0):
+		// a follow-up: Followup counts the role experts that answer, Agents the chats, each priced at the context the
+		// roster reads for it. A chat that cannot be resolved fails the estimate; the cockpit then shows no figure.
+		seats, err := councilAgentSeats(ctx, data.Agents)
+		if err != nil {
+			return nil, err
+		}
+		est = council.EstimateFollowup(data.Followup, seats, data.Tools)
 	case data.Id != "":
 		c, err := council.Load(data.Id)
 		if err != nil {

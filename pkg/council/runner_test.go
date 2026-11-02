@@ -768,7 +768,7 @@ func TestReplyBeforeRound2IsAnsweredInRound2(t *testing.T) {
 	h.run(c)
 	author := h.load("c1").Proposals[0].Author
 
-	rep, err := h.r.Reply("c1", "P1", "", "Why is that first?", false)
+	rep, err := h.r.Reply("c1", "P1", "", "Why is that first?", false, nil)
 	if err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
@@ -810,7 +810,7 @@ func TestReplyDuringRound1WaitsForRound2(t *testing.T) {
 	h.f.gate("ux/r1")
 	h.start(testCouncil("c1"))
 	h.f.entered(t, "ux/r1")
-	rep, err := h.r.Reply("c1", "", "", "Does it work on a Mac?", false)
+	rep, err := h.r.Reply("c1", "", "", "Does it work on a Mac?", false, nil)
 	if err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
@@ -833,7 +833,7 @@ func TestRepliesPostedAsARunEndsAreNeverLost(t *testing.T) {
 	h.start(testCouncil("c1"))
 	const n = 40
 	for i := range n {
-		if _, err := h.r.Reply("c1", "", "", fmt.Sprintf("Question %d?", i), false); err != nil {
+		if _, err := h.r.Reply("c1", "", "", fmt.Sprintf("Question %d?", i), false, nil); err != nil {
 			t.Fatalf("Reply %d: %v", i, err)
 		}
 		time.Sleep(time.Millisecond)
@@ -1490,7 +1490,7 @@ func TestReplyTargets(t *testing.T) {
 			h := newHarness(t)
 			id := fmt.Sprintf("c%d", i)
 			h.save(fixtureCouncil(id, StateAwaiting, 2))
-			got, err := h.r.Reply(id, tc.proposal, tc.parent, "  "+tc.text+"  ", true)
+			got, err := h.r.Reply(id, tc.proposal, tc.parent, "  "+tc.text+"  ", true, nil)
 			if err != nil {
 				t.Fatalf("Reply: %v", err)
 			}
@@ -1504,6 +1504,74 @@ func TestReplyTargets(t *testing.T) {
 			}
 		})
 	}
+
+	// A chat seat is reached by @ and a whole word of 8 characters or more that starts its tab id and starts no other
+	// chat seat's. A word runs over letters, digits, _ and -, so the key that tells two UUID tab ids apart runs past the
+	// dash at their 9th character. A miss falls back to the branch of P1, which is UX.
+	const (
+		scoutTab  = "82faafca-1111-4222-8333-444455556666"
+		designTab = "5065bd8c-2222-4333-8444-555566667777"
+		twinA     = "3e19c0d2-a1b2-4c3d-8e9f-000000000001"
+		twinB     = "3e19c0d2-b7c8-4d9e-8f01-000000000002"
+		kinA      = "9f8e7d6c1aaaa"
+		kinB      = "9f8e7d6c2bbbb"
+	)
+	chatCases := []struct {
+		name string
+		tabs []string // the chats already seated, in order, named Scout and Design
+		text string
+		to   []string
+	}{
+		{"the first 8 of its tab id", []string{scoutTab}, "@82faafca what do you think?", []string{"agent-" + scoutTab}},
+		{"upper case", []string{scoutTab}, "@82FAAFCA what do you think?", []string{"agent-" + scoutTab}},
+		{"its whole tab id", []string{scoutTab}, "@" + scoutTab + " what do you think?", []string{"agent-" + scoutTab}},
+		{"a longer prefix, past the dash", []string{scoutTab}, "@82faafca-1111-42 what do you think?", []string{"agent-" + scoutTab}},
+		{"at the end of a sentence", []string{scoutTab}, "What would @82faafca.", []string{"agent-" + scoutTab}},
+		{"7 characters are too few", []string{scoutTab}, "@82faafc what do you think?", []string{"ux"}},
+		{"a word that is no prefix", []string{scoutTab}, "@82faafca1 what do you think?", []string{"ux"}},
+		{"a word that runs on", []string{scoutTab}, "@82faafca-x what do you think?", []string{"ux"}},
+		{"an address is no mention", []string{scoutTab}, "mail x@82faafca.com", []string{"ux"}},
+		{"its name still reaches it", []string{scoutTab}, "@Scout what do you think?", []string{"agent-" + scoutTab}},
+		{"its seat id still reaches it", []string{scoutTab}, "@agent-" + scoutTab + " what do you think?", []string{"agent-" + scoutTab}},
+		{"two chats and a role, in the council's order", []string{scoutTab, designTab}, "@5065bd8c and @82faafca and @ram", []string{"ram", "agent-" + scoutTab, "agent-" + designTab}},
+		{"UUIDs that share 8 characters: the 8 reach neither", []string{twinA, twinB}, "@3e19c0d2 thoughts?", []string{"ux"}},
+		{"UUIDs that share 8 characters: the dash reaches neither", []string{twinA, twinB}, "@3e19c0d2- thoughts?", []string{"ux"}},
+		{"UUIDs that share 8 characters: the first one's key", []string{twinA, twinB}, "@3e19c0d2-a thoughts?", []string{"agent-" + twinA}},
+		{"UUIDs that share 8 characters: the second one's key", []string{twinA, twinB}, "@3e19c0d2-b thoughts?", []string{"agent-" + twinB}},
+		{"UUIDs that share 8 characters: each by its key", []string{twinA, twinB}, "@3e19c0d2-b and @3e19c0d2-a", []string{"agent-" + twinA, "agent-" + twinB}},
+		{"ids that share 8 characters: the 8 reach neither", []string{kinA, kinB}, "@9f8e7d6c thoughts?", []string{"ux"}},
+		{"ids that share 8 characters: the 9 reach their own", []string{kinA, kinB}, "@9f8e7d6c1 thoughts?", []string{"agent-" + kinA}},
+		{"ids that share 8 characters: the other's 9", []string{kinA, kinB}, "@9f8e7d6c2 thoughts?", []string{"agent-" + kinB}},
+	}
+	for i, tc := range chatCases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			id := fmt.Sprintf("k%d", i)
+			c := fixtureCouncil(id, StateAwaiting, 2)
+			for j, tab := range tc.tabs {
+				withChatSeats(c, chatSeat(tab, []string{"Scout", "Design"}[j]))
+			}
+			h.save(c)
+			got, err := h.r.Reply(id, "P1", "", tc.text, false, nil)
+			if err != nil {
+				t.Fatalf("Reply: %v", err)
+			}
+			if to := got.Replies[len(got.Replies)-1].To; !reflect.DeepEqual(to, tc.to) {
+				t.Errorf("%q reaches %v, want %v", tc.text, to, tc.to)
+			}
+		})
+	}
+}
+
+// chatSeat is a live chat's seat as the wshserver builds it from a roster row: its seat id is "agent-" and its tab id.
+func chatSeat(tab, name string) CouncilExpert {
+	return CouncilExpert{Id: "agent-" + tab, Name: name, Agent: tab, Harness: HarnessClaude}
+}
+
+// withChatSeats seats the chats in c in front of its coordinator, as a start does.
+func withChatSeats(c *Council, seats ...CouncilExpert) *Council {
+	c.Experts = slices.Insert(c.Experts, len(c.Experts)-1, seats...)
+	return c
 }
 
 func TestReplyRefusesWhatIsNotThere(t *testing.T) {
@@ -1524,7 +1592,7 @@ func TestReplyRefusesWhatIsNotThere(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := h.r.Reply(tc.id, tc.proposal, tc.parent, tc.text, false); err == nil || !strings.Contains(err.Error(), tc.want) {
+			if _, err := h.r.Reply(tc.id, tc.proposal, tc.parent, tc.text, false, nil); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("Reply = %v, want an error naming %q", err, tc.want)
 			}
 		})
@@ -1541,7 +1609,7 @@ func TestReplyDuringRound2IsAnsweredAfterTheSummary(t *testing.T) {
 	h.f.entered(t, "skeptic/r2")
 	author := h.load("c1").Proposals[0].Author
 
-	rep, err := h.r.Reply("c1", "P1", "", "Why is this first?", false)
+	rep, err := h.r.Reply("c1", "P1", "", "Why is this first?", false, nil)
 	if err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
@@ -1595,7 +1663,7 @@ func TestReplyToADoneCouncilStartsAFollowUp(t *testing.T) {
 	callsBefore := done.Calls
 
 	h.f.gate("ux/ans")
-	rep, err := h.r.Reply("c1", "", "", "What would you do about Mac?", true)
+	rep, err := h.r.Reply("c1", "", "", "What would you do about Mac?", true, nil)
 	if err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
@@ -1642,7 +1710,7 @@ func TestReplyToADoneCouncilStartsAFollowUp(t *testing.T) {
 	}
 
 	// a second follow-up is round 5, and without tools when the person leaves Let them read files off
-	if _, err := h.r.Reply("c1", "P1", "", "And this one?", false); err != nil {
+	if _, err := h.r.Reply("c1", "P1", "", "And this one?", false, nil); err != nil {
 		t.Fatalf("second Reply: %v", err)
 	}
 	c = h.wait("c1")
@@ -1653,6 +1721,283 @@ func TestReplyToADoneCouncilStartsAFollowUp(t *testing.T) {
 	if r := replyOf(t, c, "r18"); r.Round != 5 || r.Author != YouId {
 		t.Errorf("second reply = %+v, want round 5", r)
 	}
+}
+
+// A reply that names chats seats them: they sit after the seats that were there and before the coordinator, are targets
+// of that reply whether or not it @s them, and answer it in the follow-up round. A later reply reaches a seated chat only
+// when it @s it.
+func TestReplySeatsChatsOnADoneCouncil(t *testing.T) {
+	h := newHarness(t)
+	done := h.run(testCouncil("c1"))
+	if HasAgents(done) || HoldsDrafts(done) {
+		t.Fatalf("the council began with a chat (%v) or holding drafts (%v), want neither", HasAgents(done), HoldsDrafts(done))
+	}
+	scout, design := chatSeat("tab-9", "Scout"), chatSeat("tab-8", "Design")
+
+	h.agents.gate("agent-tab-9/ans")
+	rep, err := h.r.Reply("c1", "", "", "What would you do about Mac?", false, []CouncilExpert{scout, design})
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if rep.State != StateRunning || rep.Round != 4 {
+		t.Fatalf("Reply returned %s round %d, want a running follow-up in round 4", rep.State, rep.Round)
+	}
+	wantSeats := []string{"ux", "ram", "newuser", "skeptic", "agent-tab-9", "agent-tab-8", "lead"}
+	if got := idsOf(rep.Experts); !slices.Equal(got, wantSeats) || !rep.Experts[len(rep.Experts)-1].Coordinator {
+		t.Fatalf("seats after the reply = %v, want %v with the coordinator last", got, wantSeats)
+	}
+	if got := idsOf(h.load("c1").Experts); !slices.Equal(got, wantSeats) {
+		t.Errorf("saved seats = %v, want %v", got, wantSeats)
+	}
+	if seat := rep.Experts[4]; seat.Agent != "tab-9" || seat.Harness != HarnessClaude || seat.Name != "Scout" {
+		t.Errorf("first new seat = %+v, want the chat as it was passed in", seat)
+	}
+	posted := replyOf(t, rep, "r13")
+	wantTo := append(panelIds(), "agent-tab-9", "agent-tab-8")
+	if !slices.Equal(posted.To, wantTo) || posted.Round != 4 {
+		t.Fatalf("the reply = %+v, want round 4, to the panel and both new chats %v", posted, wantTo)
+	}
+
+	h.agents.entered(t, "agent-tab-9/ans")
+	h.agents.release("agent-tab-9/ans")
+	c := h.wait("c1")
+	if c.State != StateDone || c.Error != "" {
+		t.Fatalf("after the follow-up: %s %q, want done", c.State, c.Error)
+	}
+	if HoldsDrafts(c) || HeldDrafts(c) != 0 {
+		t.Errorf("a council that began free holds drafts now: %v, %d held", HoldsDrafts(c), HeldDrafts(c))
+	}
+	asked := h.agents.calls("ans")
+	for _, id := range []string{"agent-tab-9", "agent-tab-8"} {
+		i := slices.IndexFunc(asked, func(req CallReq) bool { return req.Expert.Id == id })
+		if i < 0 {
+			t.Fatalf("%s was not asked for its turn: %d agent calls", id, len(asked))
+		}
+		mustContain(t, id+"'s first prompt", asked[i].Prompt, "What would you do about Mac?", "The council has already met")
+		answered := false
+		for _, x := range repliesBy(c, id) {
+			answered = answered || (x.ParentId == "r13" && x.Round == 4 && x.Draft == "")
+		}
+		if !answered {
+			t.Errorf("%s has no sent answer under r13: %+v", id, repliesBy(c, id))
+		}
+	}
+
+	// a seated chat is a target of a later reply only when it is @ed, and handing it over again adds nothing
+	if _, err := h.r.Reply("c1", "", "", "@UX and Scout, and the rest?", false, []CouncilExpert{scout}); err != nil {
+		t.Fatalf("second Reply: %v", err)
+	}
+	c = h.wait("c1")
+	if mine := repliesBy(c, YouId); len(mine) != 2 || !slices.Equal(mine[1].To, []string{"ux"}) {
+		t.Errorf("the person's replies = %+v, want a second that reaches UX only, not the chat already seated", mine)
+	}
+	if got := idsOf(c.Experts); !slices.Equal(got, wantSeats) {
+		t.Errorf("seats after the second reply = %v, want them unchanged", got)
+	}
+}
+
+// A chat seated while round 1 runs sits that round out (the round's panel was read when it began) and is asked in round
+// 2; one seated on a council paused after round 1 is asked in round 2 after Continue. The coordinator reads what it said.
+func TestReplySeatsAChatMidRun(t *testing.T) {
+	h := newHarness(t)
+	scout := chatSeat("tab-9", "Scout")
+
+	h.f.gate("ux/r1")
+	h.start(testCouncil("c1"))
+	h.f.entered(t, "ux/r1")
+	rep, err := h.r.Reply("c1", "", "", "Scout, join us on the Mac question.", false, []CouncilExpert{scout})
+	if err != nil {
+		t.Fatalf("Reply during round 1: %v", err)
+	}
+	if rep.State != StateRunning || rep.Round != 1 || !slices.Equal(idsOf(rep.Experts), []string{"ux", "ram", "newuser", "skeptic", "agent-tab-9", "lead"}) {
+		t.Fatalf("after the reply: %s round %d, seats %v, want a running round 1 with the chat before the coordinator", rep.State, rep.Round, idsOf(rep.Experts))
+	}
+	h.f.release("ux/r1")
+	c := h.wait("c1")
+	if c.State != StateDone || c.Round != 3 {
+		t.Fatalf("council ended %s round %d (%s), want done", c.State, c.Round, c.Error)
+	}
+	if n := len(h.agents.calls("r1")); n != 0 {
+		t.Errorf("the chat was asked %d times in round 1, want it to sit round 1 out", n)
+	}
+	r2 := h.agents.calls("r2")
+	if len(r2) != 1 || r2[0].Expert.Id != "agent-tab-9" {
+		t.Fatalf("the chat's round 2 calls = %d, want one to agent-tab-9", len(r2))
+	}
+	mustContain(t, "the chat's round 2 prompt", r2[0].Prompt, "## What the person asks you", "join us on the Mac question")
+	mustContain(t, "the coordinator's input", h.f.calls("r3")[0].Prompt, "Reason from agent-tab-9 on P1")
+	if HoldsDrafts(c) || HeldDrafts(c) != 0 {
+		t.Errorf("a council that began free holds drafts after a chat joined: %v, %d held", HoldsDrafts(c), HeldDrafts(c))
+	}
+
+	// paused after round 1: the chat joins while the council waits, and Continue runs round 2 with it
+	paused := testCouncil("c2")
+	paused.PauseAfterRound1 = true
+	if got := h.run(paused); got.State != StateAwaiting || got.Round != 1 {
+		t.Fatalf("council = %s round %d, want it paused after round 1", got.State, got.Round)
+	}
+	if _, err := h.r.Reply("c2", "", "", "Scout, join us on the Mac question.", false, []CouncilExpert{scout}); err != nil {
+		t.Fatalf("Reply on the pause: %v", err)
+	}
+	if n := len(h.agents.calls("r1")) + len(h.agents.calls("r2")); n != 1 {
+		t.Fatalf("the chat was asked %d times before Continue, want no new call", n-1)
+	}
+	if _, err := h.r.Continue("c2", nil, ""); err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	c = h.wait("c2")
+	if c.State != StateDone || c.Summary == nil {
+		t.Fatalf("after Continue: %s %q, want done with a summary", c.State, c.Error)
+	}
+	if n := len(h.agents.calls("r1")); n != 0 {
+		t.Errorf("the chat was asked %d times in round 1, want none", n)
+	}
+	if r2 = h.agents.calls("r2"); len(r2) != 2 || r2[1].Expert.Id != "agent-tab-9" {
+		t.Fatalf("round 2 calls to the chat = %d, want a second one, after Continue", len(r2))
+	}
+	mustContain(t, "the coordinator's input", h.f.calls("r3")[1].Prompt, "Reason from agent-tab-9 on P1")
+}
+
+func TestReplySeatsNoDuplicate(t *testing.T) {
+	h := newHarness(t)
+	witness, scout := chatSeat("tab-1", "Witness"), chatSeat("tab-9", "Scout")
+	h.save(withChatSeats(fixtureCouncil("c1", StateAwaiting, 2), witness))
+	last := func(c *Council) CouncilReply { return c.Replies[len(c.Replies)-1] }
+
+	// a chat that sits already: no error, no second seat, and no new target for the reply
+	got, err := h.r.Reply("c1", "P1", "", "Witness, are you still there?", false, []CouncilExpert{witness})
+	if err != nil {
+		t.Fatalf("Reply with a seated chat: %v", err)
+	}
+	seats := []string{"ux", "ram", "newuser", "skeptic", "agent-tab-1", "lead"}
+	if ids := idsOf(got.Experts); !slices.Equal(ids, seats) || !slices.Equal(last(got).To, []string{"ux"}) {
+		t.Errorf("seats = %v, reply to %v, want %v and UX only", ids, last(got).To, seats)
+	}
+
+	// the same chat twice in one reply
+	got, err = h.r.Reply("c1", "P1", "", "Scout?", false, []CouncilExpert{scout, scout})
+	if err != nil {
+		t.Fatalf("Reply with a chat twice: %v", err)
+	}
+	seats = []string{"ux", "ram", "newuser", "skeptic", "agent-tab-1", "agent-tab-9", "lead"}
+	if ids := idsOf(got.Experts); !slices.Equal(ids, seats) || !slices.Equal(last(got).To, []string{"ux", "agent-tab-9"}) {
+		t.Errorf("seats = %v, reply to %v, want %v and UX with the one new chat", ids, last(got).To, seats)
+	}
+
+	// a seated chat and a new one together, the seated one handed over again
+	again := chatSeat("tab-7", "Review")
+	got, err = h.r.Reply("c1", "P1", "", "All of you?", false, []CouncilExpert{witness, again, scout, again})
+	if err != nil {
+		t.Fatalf("Reply with both: %v", err)
+	}
+	seats = []string{"ux", "ram", "newuser", "skeptic", "agent-tab-1", "agent-tab-9", "agent-tab-7", "lead"}
+	if ids := idsOf(got.Experts); !slices.Equal(ids, seats) || !slices.Equal(last(got).To, []string{"ux", "agent-tab-7"}) {
+		t.Errorf("seats = %v, reply to %v, want %v and UX with the one chat that is new", ids, last(got).To, seats)
+	}
+	if saved := h.load("c1"); !slices.Equal(idsOf(saved.Experts), seats) || len(saved.Replies) != 5 {
+		t.Errorf("saved seats = %v with %d replies, want %v and 5", idsOf(saved.Experts), len(saved.Replies), seats)
+	}
+}
+
+// Seating a chat never changes whether a council holds drafts: the mode it had stays, and an old record that stored none
+// has it read from the seats it had just before the chat joined.
+func TestReplySeatFreezesDraftMode(t *testing.T) {
+	h := newHarness(t)
+	witness, scout := chatSeat("tab-1", "Witness"), chatSeat("tab-9", "Scout")
+
+	// an old record with no chat reads free, and still does after one joins
+	h.save(fixtureCouncil("free", StateAwaiting, 2))
+	if HoldsDrafts(h.load("free")) {
+		t.Fatal("an old record with no chat holds drafts before anything joins")
+	}
+	got, err := h.r.Reply("free", "", "", "Join us?", false, []CouncilExpert{scout})
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if got.DraftMode != DraftModeFree || !HasAgents(got) || HoldsDrafts(got) {
+		t.Errorf("after a chat joined an old chat-free record: mode %q, a chat %v, holds %v, want free and not holding", got.DraftMode, HasAgents(got), HoldsDrafts(got))
+	}
+	if saved := h.load("free"); saved.DraftMode != DraftModeFree || HoldsDrafts(saved) {
+		t.Errorf("saved mode = %q, holds %v, want free", saved.DraftMode, HoldsDrafts(saved))
+	}
+
+	// an old record with a chat at its start held drafts, and still does
+	h.save(withChatSeats(fixtureCouncil("held", StateAwaiting, 2), witness))
+	got, err = h.r.Reply("held", "", "", "Join us?", false, []CouncilExpert{scout})
+	if err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	if got.DraftMode != DraftModeHeld || !HoldsDrafts(got) {
+		t.Errorf("after a chat joined an old record with a chat at start: mode %q, holds %v, want held", got.DraftMode, HoldsDrafts(got))
+	}
+
+	// a mode that is stored is left alone: this one began free, with a chat, and the seats would say held
+	stored := withChatSeats(fixtureCouncil("stored", StateAwaiting, 2), witness)
+	stored.DraftMode = DraftModeFree
+	h.save(stored)
+	got, err = h.r.Reply("stored", "", "", "Join us?", false, []CouncilExpert{scout})
+	if err != nil || got.DraftMode != DraftModeFree || HoldsDrafts(got) {
+		t.Errorf("a council that stored free = mode %q, holds %v, %v, want free", got.DraftMode, HoldsDrafts(got), err)
+	}
+
+	// a reply that seats nobody leaves the mode as it was: an old record keeps reading from its seats
+	h.save(fixtureCouncil("plain", StateAwaiting, 2))
+	if got, err = h.r.Reply("plain", "", "", "Anyone?", false, nil); err != nil || got.DraftMode != "" {
+		t.Errorf("a reply with no chat left mode %q, %v, want it unset", got.DraftMode, err)
+	}
+
+	// on a done council the follow-up runs freely: the chat's answer is sent, not held
+	h.save(fixtureCouncil("done", StateDone, 3))
+	if _, err = h.r.Reply("done", "", "", "Join us?", false, []CouncilExpert{scout}); err != nil {
+		t.Fatalf("Reply on a done council: %v", err)
+	}
+	c := h.wait("done")
+	if c.State != StateDone || c.DraftMode != DraftModeFree || HeldDrafts(c) != 0 {
+		t.Fatalf("done council after a chat joined: %s, mode %q, %d held, want done, free, none held", c.State, c.DraftMode, HeldDrafts(c))
+	}
+	if mine := repliesBy(c, "agent-tab-9"); len(mine) != 1 || mine[0].Draft != "" {
+		t.Errorf("the chat's replies = %+v, want one that was sent as written", mine)
+	}
+}
+
+// One Update seats the chats and posts the reply, so a reply that fails seats nobody, and a chat that cannot be a seat is
+// refused before anything is saved.
+func TestReplyThatFailsSeatsNothing(t *testing.T) {
+	h := newHarness(t)
+	scout := chatSeat("tab-9", "Scout")
+	for _, state := range []CouncilState{StateAwaiting, StateDone} {
+		id := string(state)
+		h.save(fixtureCouncil(id, state, 3))
+		before := h.load(id)
+		for _, tc := range []struct {
+			name           string
+			proposal, want string
+			parent         string
+			seats          []CouncilExpert
+		}{
+			{"an unknown proposal", "P9", "no proposal P9", "", []CouncilExpert{scout}},
+			{"an unknown parent", "P1", "no reply r9", "r9", []CouncilExpert{scout}},
+			{"a role expert as a seat", "", "not a live chat", "", []CouncilExpert{{Id: "extra", Name: "Extra", Model: "sonnet"}}},
+			{"a coordinator as a seat", "", "not a live chat", "", []CouncilExpert{{Id: "agent-x", Name: "X", Agent: "x", Harness: HarnessClaude, Coordinator: true}}},
+			{"another harness", "", "only a claude or pi", "", []CouncilExpert{{Id: "agent-x", Name: "X", Agent: "x", Harness: "gemini"}}},
+			{"a seat id that is taken", "", "listed twice", "", []CouncilExpert{{Id: "ux", Name: "X", Agent: "x", Harness: HarnessClaude}}},
+		} {
+			if _, err := h.r.Reply(id, tc.proposal, tc.parent, "Join us?", false, tc.seats); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("%s council, %s: Reply = %v, want an error naming %q", state, tc.name, err, tc.want)
+			}
+			if after := h.load(id); !reflect.DeepEqual(after, before) {
+				t.Errorf("%s council, %s: the refused reply changed the council:\n%+v\nwas\n%+v", state, tc.name, after, before)
+			}
+		}
+		if len(h.f.all())+len(h.agents.all()) != 0 {
+			t.Fatalf("%s council: a refused reply made calls", state)
+		}
+	}
+	// the refusals left the done council free to run: no run was left registered
+	if _, err := h.r.Reply("done", "", "", "Join us?", false, []CouncilExpert{scout}); err != nil {
+		t.Fatalf("Reply after the refusals: %v", err)
+	}
+	h.wait("done")
 }
 
 func TestFollowUpBringsBackTheStateItFound(t *testing.T) {
@@ -1672,7 +2017,7 @@ func TestFollowUpBringsBackTheStateItFound(t *testing.T) {
 			c.Error = tc.err
 			c.Failed = map[string]CouncilFailure{"lead": {Round: 3, Error: "opus overloaded"}}
 			h.save(c)
-			if _, err := h.r.Reply("c1", "P2", "", "Why?", false); err != nil {
+			if _, err := h.r.Reply("c1", "P2", "", "Why?", false, nil); err != nil {
 				t.Fatalf("Reply: %v", err)
 			}
 			got := h.wait("c1")
@@ -1702,7 +2047,7 @@ func TestAFollowUpToEveryoneIsAnsweredByOneSeatFirst(t *testing.T) {
 		}
 		return fence(mustJSON(map[string]any{"answers": answers}))
 	})
-	if _, err := h.r.Reply("c1", "", "", "You keep missing my point.", false); err != nil {
+	if _, err := h.r.Reply("c1", "", "", "You keep missing my point.", false, nil); err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
 	c := h.wait("c1")
@@ -1747,7 +2092,7 @@ func TestAnExpertThatFailedSitsTheAnswersPassOut(t *testing.T) {
 	h := newHarness(t)
 	h.f.setFail("ram/r1", errors.New("boom"))
 	c := h.run(testCouncil("c1"))
-	if _, err := h.r.Reply("c1", "", "", "Anyone?", false); err != nil {
+	if _, err := h.r.Reply("c1", "", "", "Anyone?", false, nil); err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
 	c = h.wait("c1")
@@ -1767,7 +2112,7 @@ func TestAnAnswersPassFailureCanBeRetried(t *testing.T) {
 	h := newHarness(t)
 	h.run(testCouncil("c1"))
 	h.f.setFail("ux/ans", errors.New("rate limited"))
-	if _, err := h.r.Reply("c1", "", "", "Anyone?", false); err != nil {
+	if _, err := h.r.Reply("c1", "", "", "Anyone?", false, nil); err != nil {
 		t.Fatalf("Reply: %v", err)
 	}
 	c := h.wait("c1")
@@ -1815,7 +2160,7 @@ func TestSummarizeRerunsTheSynthesis(t *testing.T) {
 		t.Errorf("synthesis calls %d, calls %d, want only the synthesis rerun", len(h.f.calls("r3")), c.Calls)
 	}
 	// the synthesis reads everything said so far, replies included
-	if _, err := h.r.Reply("c1", "P1", "", "One more thought.", false); err != nil {
+	if _, err := h.r.Reply("c1", "P1", "", "One more thought.", false, nil); err != nil {
 		t.Fatal(err)
 	}
 	h.wait("c1")
@@ -1851,7 +2196,7 @@ func TestSummarizeAPausedCouncilStaysPaused(t *testing.T) {
 	c := testCouncil("c1")
 	c.PauseAfterRound1 = true
 	h.run(c)
-	if _, err := h.r.Reply("c1", "P1", "", "Queued for round 2.", false); err != nil {
+	if _, err := h.r.Reply("c1", "P1", "", "Queued for round 2.", false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.r.Summarize("c1"); err != nil {
@@ -2401,7 +2746,7 @@ func TestQueuedCouncilRefusesWhatNeedsARun(t *testing.T) {
 	h.holdFirst(councilAs(t, "a", ""))
 	h.start(councilAs(t, "b", "b-"))
 	for name, err := range map[string]error{
-		"Reply":      second(h.r.Reply("b", "", "", "Anyone?", false)),
+		"Reply":      second(h.r.Reply("b", "", "", "Anyone?", false, nil)),
 		"Continue":   second(h.r.Continue("b", nil, "")),
 		"Summarize":  second(h.r.Summarize("b")),
 		"Retry":      second(h.r.Retry("b", "b-ux")),
@@ -2440,7 +2785,7 @@ func TestQueuePersonActsNotQueued(t *testing.T) {
 		do func() (*Council, error)
 	}{
 		"Continue":  {"paused", func() (*Council, error) { return h.r.Continue("paused", nil, "") }},
-		"Reply":     {"done", func() (*Council, error) { return h.r.Reply("done", "P1", "", "And on a Mac?", false) }},
+		"Reply":     {"done", func() (*Council, error) { return h.r.Reply("done", "P1", "", "And on a Mac?", false, nil) }},
 		"Retry":     {"failed", func() (*Council, error) { return h.r.Retry("failed", "ram") }},
 		"Summarize": {"summed", func() (*Council, error) { return h.r.Summarize("summed") }},
 	} {
@@ -2513,7 +2858,7 @@ func TestQueueOldCouncils(t *testing.T) {
 	}
 	h.wait("new")
 	h.f.gate("ux/ans")
-	if saved, err := h.r.Reply("done", "P1", "", "Still true?", false); err != nil || saved.State != StateRunning {
+	if saved, err := h.r.Reply("done", "P1", "", "Still true?", false, nil); err != nil || saved.State != StateRunning {
 		t.Fatalf("a follow-up on an old done council = %+v, %v", saved, err)
 	}
 	h.f.entered(t, "ux/ans")
@@ -2611,7 +2956,7 @@ func TestDocPathSavedOnEnd(t *testing.T) {
 	}
 
 	// a follow-up on the done council rewrites the same file, with the new reply in it
-	if _, err := h.r.Reply("a", "P1", "", "What about the Mac?", false); err != nil {
+	if _, err := h.r.Reply("a", "P1", "", "What about the Mac?", false, nil); err != nil {
 		t.Fatal(err)
 	}
 	c = h.wait("a")
@@ -2675,6 +3020,30 @@ func TestStartRecordsHarness(t *testing.T) {
 		if c := h.wait(id); c.State != StateDone || c.Harness != HarnessVersion {
 			t.Errorf("%s ended %s with harness %q, want done with %q", id, c.State, c.Harness, HarnessVersion)
 		}
+	}
+}
+
+// A council stores the draft mode its seats give at its start: a chat seated makes it held, unless an agent started it.
+func TestStartStoresDraftMode(t *testing.T) {
+	for name, tc := range map[string]struct {
+		build func() *Council
+		want  string
+	}{
+		"a chat seated":              {func() *Council { return agentCouncil("a") }, DraftModeHeld},
+		"a chat seated, by an agent": {func() *Council { c := agentCouncil("a"); c.ByAgent = true; return c }, DraftModeFree},
+		"no chat":                    {func() *Council { return testCouncil("a") }, DraftModeFree},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			saved := h.start(tc.build())
+			if saved.DraftMode != tc.want {
+				t.Errorf("Start returned draft mode %q, want %q", saved.DraftMode, tc.want)
+			}
+			h.wait("a")
+			if got := h.load("a"); got.DraftMode != tc.want {
+				t.Errorf("the saved council has draft mode %q, want %q", got.DraftMode, tc.want)
+			}
+		})
 	}
 }
 
@@ -3856,7 +4225,7 @@ func TestFollowupDraftKeepsDone(t *testing.T) {
 	if c.State != StateDone {
 		t.Fatalf("council ended %s, want done", c.State)
 	}
-	if _, err := h.r.Reply("a", "", "", "What about the Mac?", false); err != nil {
+	if _, err := h.r.Reply("a", "", "", "What about the Mac?", false, nil); err != nil {
 		t.Fatal(err)
 	}
 	c = h.wait("a")
@@ -3984,7 +4353,7 @@ func TestPostReachesNextTurn(t *testing.T) {
 	h.start(agentCouncil("a"))
 	h.agents.entered(t, "witness/r1")
 	const ask = "@Witness does this hold on a Mac?"
-	if _, err := h.r.Reply("a", "", "", ask, false); err != nil {
+	if _, err := h.r.Reply("a", "", "", ask, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	h.agents.release("witness/r1")
@@ -4016,7 +4385,7 @@ func TestPostReachesNextTurn(t *testing.T) {
 
 	// posted while the council waits, to UX only
 	h.run(agentCouncil("b"))
-	if _, err := h.r.Reply("b", "", "", "@UX is it findable?", false); err != nil {
+	if _, err := h.r.Reply("b", "", "", "@UX is it findable?", false, nil); err != nil {
 		t.Fatal(err)
 	}
 	h.settle("b")

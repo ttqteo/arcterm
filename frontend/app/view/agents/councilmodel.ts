@@ -370,12 +370,61 @@ function mentions(text: string, e: CouncilExpert): boolean {
     });
 }
 
+/** The fewest characters of a chat's tab id that make a mention key: `@82faafca`. */
+export const MIN_CHAT_KEY = 8;
+
+// the word after an @ that does not sit inside another word, read as far as it runs over letters, digits, `_` and `-`
+// (a UUID tab id has its first `-` at character 9, so a key that tells two chats apart reads `3e19c0d2-a`)
+const MENTIONED_WORD = /(^|[^\p{L}\p{N}_])@([\p{L}\p{N}_-]+)/gu;
+
+/** Pure: whether `text` @-mentions the chat whose tab id is `tabId` by its mention key: `@` and a whole word of
+ *  {@link MIN_CHAT_KEY} characters or more that starts the tab id (any case) and starts no other tab id in `tabIds`
+ *  (the chats it must be told apart from: the chat seats' and, in the composer, the ones joining). It is the rule
+ *  wavesrv reads a chat seat's mention by, so what the composer shows is what Send reaches. */
+export function mentionsChat(text: string, tabId: string, tabIds: readonly string[]): boolean {
+    const own = tabId.toLowerCase();
+    if (own.length < MIN_CHAT_KEY) {
+        return false;
+    }
+    const others = tabIds.map((t) => t.toLowerCase()).filter((t) => t !== own);
+    for (const found of text.toLowerCase().matchAll(MENTIONED_WORD)) {
+        const word = found[2];
+        if (word.length >= MIN_CHAT_KEY && own.startsWith(word) && !others.some((t) => t.startsWith(word))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** Pure: the tab ids of the chats seated in a council, the chats a chat's mention key must be told apart from. */
+export function chatSeatTabs(c: Pick<Council, "experts">): string[] {
+    return c.experts.flatMap((e) => (e.agent ? [e.agent] : []));
+}
+
 /** Pure: the experts a reply of the person's reaches (pkg/council's `To`, worked out the same way): the ones it
- *  @-mentions by name or id, else the proposal's author and every expert on the path to the reply it answers; with no
- *  proposal (Ask the whole council), every non-coordinator expert. The coordinator never answers. */
-export function answerers(c: Council, proposalId: string, parentId: string, text: string): CouncilExpert[] {
+ *  @-mentions by name or id (a chat seat also by its mention key, `mentionsChat`), else the proposal's author and every
+ *  expert on the path to the reply it answers; with no proposal (Ask the whole council), every non-coordinator expert.
+ *  The coordinator never answers.
+ *
+ *  `joining` are the live chats the message adds to the council (the ones its @ picked): they count as named, after the
+ *  seats, each as the seat wavesrv seats it as (`agentSeat`); a chat that already is a seat is the seat, once. */
+export function answerers(
+    c: Council,
+    proposalId: string,
+    parentId: string,
+    text: string,
+    joining: readonly SeatableAgent[] = []
+): CouncilExpert[] {
     const pool = panel(c);
-    const named = pool.filter((e) => mentions(text, e));
+    const seated = new Set(chatSeatTabs(c));
+    const joined = new Set(joining.map((a) => a.id));
+    const tabs = [...seated, ...joined];
+    const named = [
+        ...pool.filter(
+            (e) => mentions(text, e) || (isAgentSeat(e) && (joined.has(e.agent) || mentionsChat(text, e.agent, tabs)))
+        ),
+        ...joining.filter((a) => !seated.has(a.id)).map(agentSeat),
+    ];
     if (named.length > 0) {
         return named;
     }
@@ -450,13 +499,18 @@ export function estimateLabel(est: CouncilEstimateRtnData, minutes = true): stri
     return parts.join(" · ");
 }
 
-/** Pure: the cost label under a follow-up's composer: who answers, whether they read files, and the estimate (which
- *  may not have come back yet). Empty when no one would answer. */
-export function followupLabel(est: CouncilEstimateRtnData | null, k: number, tools: boolean): string {
-    if (k <= 0) {
+/** Pure: the cost label under a follow-up's composer: who answers (`experts` role experts and `chats` live chats, both
+ *  counted: `1 expert and 1 chat answer`, `2 experts answer`, `1 chat answers`), whether they read files, and the
+ *  estimate (which may not have come back yet). Empty when no one would answer. */
+export function followupLabel(est: CouncilEstimateRtnData | null, experts: number, tools: boolean, chats = 0): string {
+    if (experts <= 0 && chats <= 0) {
         return "";
     }
-    const who = k === 1 ? "1 expert answers" : `${k} experts answer`;
+    const groups = [
+        experts > 0 ? plural(experts, "expert", "experts") : "",
+        chats > 0 ? plural(chats, "chat", "chats") : "",
+    ].filter((g) => g !== "");
+    const who = `${groups.join(" and ")} ${groups.length === 1 && experts + chats === 1 ? "answers" : "answer"}`;
     const head = tools ? `${who}, reading files` : who;
     return est == null ? head : `${head} · ${estimateLabel(est, false)}`;
 }

@@ -3,20 +3,26 @@ import {
     DRAFT_ACTIONS,
     DRAFT_WAIT,
     askChips,
+    chatMentionKeys,
+    contextLabel,
     councilChannel,
     councilThread,
     ideaOrder,
+    insertChatMention,
     insertMention,
+    joinableChats,
     mentionPicker,
     moveIdea,
     namedFile,
     onlyLine,
+    pickedChats,
     readsFiles,
     replyReach,
     seatChips,
     stepChip,
     type ChannelItem,
 } from "./councilchatmodel";
+import type { SeatableAgent } from "./councilmodel";
 
 // local time, so the times of day the chat shows read the same in every time zone
 const STARTED = new Date(2026, 9, 31, 14, 0, 0).getTime();
@@ -865,6 +871,223 @@ describe("mentionPicker and insertMention", () => {
     it("makes an @ that replyReach reads as the seat", () => {
         const text = insertMention("@wit", 0, 4, { name: "Witness synthesis" }).text;
         expect(replyReach(room(), "", "", text).names).toEqual(["Witness synthesis"]);
+    });
+});
+
+// live chats: tab ids are UUIDs, whose 9th character is a `-`
+const SEATED = "5b7c1d90-4e2a-4f6b-9a31-0c8d2e7f6a15";
+const FAR = "82faafca-3b1c-4d0e-8a57-9c1e6f0d2b44";
+const NEAR_A = "3e19c0d2-a1c4-4b7e-9d20-5f8a6c3e1b07";
+const NEAR_B = "3e19c0d2-b7e0-4a91-8c3d-2e6f1a9b5d08";
+const chat = (id: string, name: string, extra: Partial<SeatableAgent> = {}): SeatableAgent => ({
+    id,
+    name,
+    project: "D:\\code\\arc",
+    harness: "claude",
+    context: 182_000,
+    ...extra,
+});
+const far = chat(FAR, "Design review", { project: "D:\\code\\wave", harness: "pi", context: 48_000 });
+const nearA = chat(NEAR_A, "Perf notes");
+const nearB = chat(NEAR_B, "Perf notes");
+// the room with one of its chats on a UUID tab id, so a mention key can reach it
+const withSeatedChat = (extra: Partial<Council> = {}) =>
+    room({ experts: [agent("witness", SEATED, "Witness synthesis", 625_000), ...experts.slice(1)], ...extra });
+
+describe("chatMentionKeys", () => {
+    it("is the first 8 characters of a lone chat's tab id", () => {
+        expect([...chatMentionKeys([FAR])]).toEqual([[FAR, "82faafca"]]);
+    });
+
+    it("lengthens a key past the - until no other chat starts with it", () => {
+        const keys = chatMentionKeys([NEAR_A, NEAR_B, FAR]);
+        expect(keys.get(NEAR_A)).toBe("3e19c0d2-a");
+        expect(keys.get(NEAR_B)).toBe("3e19c0d2-b");
+        expect(keys.get(FAR)).toBe("82faafca");
+    });
+
+    it("tells apart ids that share their first 8 characters without a -", () => {
+        const keys = chatMentionKeys(["3e19c0d2a1c4", "3e19c0d2b7e0"]);
+        expect(keys.get("3e19c0d2a1c4")).toBe("3e19c0d2a");
+        expect(keys.get("3e19c0d2b7e0")).toBe("3e19c0d2b");
+    });
+
+    it("reads case and a repeated id as one chat, and keeps a short or shadowed id whole", () => {
+        expect(chatMentionKeys([FAR, FAR.toUpperCase()]).get(FAR)).toBe(FAR);
+        expect(chatMentionKeys([FAR, FAR]).get(FAR)).toBe("82faafca");
+        expect(chatMentionKeys(["t-w"]).get("t-w")).toBe("t-w");
+        const keys = chatMentionKeys(["82faafca-1", "82faafca-1234"]);
+        expect(keys.get("82faafca-1")).toBe("82faafca-1");
+        expect(keys.get("82faafca-1234")).toBe("82faafca-12");
+    });
+
+    it("is empty for no chats", () => {
+        expect(chatMentionKeys([]).size).toBe(0);
+    });
+});
+
+describe("joinableChats and contextLabel", () => {
+    it("leaves out the chats a seat holds", () => {
+        const seated = chat("t-w", "Witness synthesis");
+        expect(joinableChats(room(), [seated, far, nearA]).map((a) => a.id)).toEqual([FAR, NEAR_A]);
+        expect(joinableChats(room(), [])).toEqual([]);
+    });
+
+    it("words a context as the Agent tree does", () => {
+        expect(contextLabel(182_000)).toBe("182k");
+        expect(contextLabel(1_200_000)).toBe("1.2M");
+    });
+});
+
+describe("mentionPicker: the live chats under the seats", () => {
+    const seated = chat("t-w", "Witness synthesis");
+
+    it("lists the seats, then the chats no seat holds, each with its key", () => {
+        const picker = mentionPicker(room(), "@", 1, [seated, far, nearA])!;
+        expect(picker.start).toBe(0);
+        expect(picker.seats.map((e) => e.id)).toEqual(["witness", "ux", "sec", "sk"]);
+        expect(picker.chats).toEqual([
+            { chat: far, key: "82faafca" },
+            { chat: nearA, key: "3e19c0d2" },
+        ]);
+    });
+
+    it("keys a chat against the chats seated too", () => {
+        const c = withSeatedChat({
+            experts: [agent("near", NEAR_B, "Perf notes", 1), ...experts.slice(1)],
+        });
+        expect(mentionPicker(c, "@", 1, [nearA])!.chats).toEqual([{ chat: nearA, key: "3e19c0d2-a" }]);
+    });
+
+    it("keys the chats it lists against each other", () => {
+        const picker = mentionPicker(room(), "@", 1, [nearA, nearB, far])!;
+        expect(picker.chats.map((x) => x.key)).toEqual(["3e19c0d2-a", "3e19c0d2-b", "82faafca"]);
+    });
+
+    it("filters both lists by what follows the @: a key, a name or a project", () => {
+        const c = withSeatedChat();
+        expect(mentionPicker(c, "@5b7", 4, [far, nearA])).toMatchObject({ seats: [{ id: "witness" }], chats: [] });
+        expect(mentionPicker(c, "@82f", 4, [far, nearA])).toMatchObject({ seats: [], chats: [{ chat: far }] });
+        expect(mentionPicker(c, "@design", 7, [far, nearA])!.chats.map((x) => x.chat.id)).toEqual([FAR]);
+        expect(mentionPicker(c, "@wave", 5, [far, nearA])!.chats.map((x) => x.chat.id)).toEqual([FAR]);
+        expect(mentionPicker(c, "@PERF", 5, [far, nearA])!.chats.map((x) => x.chat.id)).toEqual([NEAR_A]);
+    });
+
+    it("lists only chats when no seat matches, and stays shut when neither list does", () => {
+        expect(mentionPicker(room(), "@82f", 4, [far])).toMatchObject({ seats: [], chats: [{ chat: far }] });
+        expect(mentionPicker(room(), "@zzz", 4, [far, nearA])).toBeNull();
+        expect(mentionPicker(room(), "@zzz", 4)).toBeNull();
+        expect(mentionPicker(room(), "@zzz", 4, [seated])).toBeNull();
+        expect(mentionPicker(room(), "mail a@b", 8, [far])).toBeNull();
+    });
+
+    it("lists only seats when no chat is passed", () => {
+        expect(mentionPicker(room(), "@", 1)!.chats).toEqual([]);
+        expect(mentionPicker(room(), "@wit", 4, [])!.chats).toEqual([]);
+    });
+
+    it("closes after a whole chat key and a space, or a chat seat's key and a space", () => {
+        expect(mentionPicker(room(), "@82faafca ", 10, [far])).toBeNull();
+        expect(mentionPicker(room(), "@82faafca", 9, [far])).toMatchObject({ chats: [{ chat: far }] });
+        expect(mentionPicker(room(), "@3e19c0d2-a ", 12, [nearA, nearB])).toBeNull();
+        expect(mentionPicker(withSeatedChat(), "@5b7c1d90 ", 10, [far])).toBeNull();
+        // a whole seat name still closes it, chats or not
+        expect(mentionPicker(room(), "@Witness synthesis ", 19, [far])).toBeNull();
+    });
+
+    it("puts @<key> and a space where the @ was, and the caret after it", () => {
+        expect(insertChatMention("hi @82f", 3, 7, "82faafca")).toEqual({ text: "hi @82faafca ", caret: 13 });
+        expect(insertChatMention("@", 0, 1, "3e19c0d2-a")).toEqual({ text: "@3e19c0d2-a ", caret: 12 });
+        expect(insertChatMention("hi @82f about it", 3, 7, "82faafca")).toEqual({
+            text: "hi @82faafca about it",
+            caret: 13,
+        });
+    });
+});
+
+describe("pickedChats", () => {
+    it("holds the chat while its key is in the message, and drops it once the mention is deleted", () => {
+        const draft = insertChatMention("@82f", 0, 4, "82faafca").text;
+        expect(pickedChats(room(), draft, [far, nearA]).map((a) => a.id)).toEqual([FAR]);
+        expect(pickedChats(room(), "what do you think?", [far, nearA])).toEqual([]);
+        expect(pickedChats(room(), "@82faafca", [far]).map((a) => a.id)).toEqual([FAR]);
+    });
+
+    it("counts two picks, whichever the message names first", () => {
+        const both = "@82faafca and @3e19c0d2-b: which first?";
+        expect(pickedChats(room(), both, [far, nearA, nearB]).map((a) => a.id)).toEqual([FAR, NEAR_B]);
+        expect(pickedChats(room(), "@3e19c0d2-b then @82faafca", [far, nearA, nearB]).map((a) => a.id)).toEqual([
+            FAR,
+            NEAR_B,
+        ]);
+    });
+
+    it("does not read a key that two chats share, a short word, or an address", () => {
+        expect(pickedChats(room(), "@3e19c0d2", [nearA, nearB])).toEqual([]);
+        expect(pickedChats(room(), "@3e19c0d2-", [nearA, nearB])).toEqual([]);
+        expect(pickedChats(room(), "@82faafc", [far])).toEqual([]);
+        expect(pickedChats(room(), "mail a@82faafca", [far])).toEqual([]);
+        expect(pickedChats(room(), "@82faafcaX", [far])).toEqual([]);
+    });
+
+    it("reads a longer start of the tab id, the whole id included, and any case", () => {
+        expect(pickedChats(room(), "@82faafca-3b1c", [far]).map((a) => a.id)).toEqual([FAR]);
+        expect(pickedChats(room(), `@${FAR}`, [far]).map((a) => a.id)).toEqual([FAR]);
+        expect(pickedChats(room(), "@82FAAFCA", [far]).map((a) => a.id)).toEqual([FAR]);
+        expect(pickedChats(room(), "@3e19c0d2-a, @3e19c0d2-b.", [nearA, nearB]).map((a) => a.id)).toEqual([
+            NEAR_A,
+            NEAR_B,
+        ]);
+    });
+
+    it("leaves out a chat a seat holds, and a prefix a seated chat shares with it", () => {
+        const seatedChat = chat(SEATED, "Witness synthesis");
+        const c = withSeatedChat();
+        expect(pickedChats(c, `@5b7c1d90 @82faafca`, [seatedChat, far]).map((a) => a.id)).toEqual([FAR]);
+        const clash = chat("82faafca-9999-4000-8000-000000000001", "Other");
+        const holder = withSeatedChat({
+            experts: [agent("held", clash.id, "Other", 1), ...experts.slice(1)],
+        });
+        expect(pickedChats(holder, "@82faafca", [far])).toEqual([]);
+        expect(pickedChats(holder, "@82faafca-3", [far]).map((a) => a.id)).toEqual([FAR]);
+    });
+});
+
+describe("replyReach: the chats a message adds and the chats it names", () => {
+    it("names a picked chat among the answerers", () => {
+        expect(replyReach(room(), "", "", "@82faafca", [far])).toEqual({
+            names: ["Design review"],
+            label: "Answered by: Design review",
+        });
+        expect(replyReach(room(), "", "", "@Skeptic and @82faafca", [far]).names).toEqual(["Skeptic", "Design review"]);
+        expect(replyReach(room(), "", "", "@Skeptic and @82faafca", [far]).label).toBe(
+            "Answered by: Skeptic, Design review"
+        );
+    });
+
+    it("never says everyone answers while a chat is joining", () => {
+        const names = "@Witness synthesis @UX audit @Security @Skeptic @82faafca";
+        expect(replyReach(room(), "", "", names, [far]).label).toBe(
+            "Answered by: Witness synthesis, UX audit, Security, Skeptic, Design review"
+        );
+        expect(replyReach(room(), "", "", "@Witness synthesis @UX audit @Security", [far]).label).toBe(
+            "Answered by: Witness synthesis, UX audit, Security, Design review"
+        );
+        expect(replyReach(room(), "", "", "").label).toBe("Everyone answers");
+    });
+
+    it("reaches a seated chat by its key, and two chats of one name apart", () => {
+        const c = withSeatedChat();
+        expect(replyReach(c, "", "", "@5b7c1d90 why?")).toEqual({
+            names: ["Witness synthesis"],
+            label: "Answered by: Witness synthesis",
+        });
+        const twins = withSeatedChat({
+            experts: [agent("a", NEAR_A, "Perf notes", 1), agent("b", NEAR_B, "Perf notes", 1), ...experts.slice(2)],
+        });
+        expect(replyReach(twins, "", "", "@3e19c0d2-a why?").names).toEqual(["Perf notes"]);
+        expect(replyReach(twins, "", "", "@3e19c0d2-b why?").names).toEqual(["Perf notes"]);
+        expect(replyReach(twins, "", "", "@3e19c0d2 why?").label).toBe("Everyone answers");
     });
 });
 
