@@ -109,6 +109,7 @@ agent's header `…` menu, and Search → Commands → "Open a tool…". The sea
 | `Mod`+`G` `r` | Radar |
 | `Mod`+`G` `s` | Conversation History (in the Agent surface) |
 | `Mod`+`G` `v` | Canvas gallery — every project's design canvases (in the Agent surface) |
+| `Mod`+`G` `o` | Councils — every project's councils, closed ones too (in the Agent surface) |
 | `Mod`+`G` `f` | Files |
 | `Mod`+`G` `u` | Usage |
 | `Mod`+`G` `b` | Code — browse source |
@@ -244,7 +245,7 @@ A link inside an item view does a full open, even with `Mod` held.
 | `Shift`+`F` | Toggle float: the window shrinks to the focused terminal, and its pin keeps it on top of other apps |
 | `Mod`+`Shift`+`N` | Float the note, from anywhere, even from inside a terminal: the window shrinks to a float showing the Note tab, the one markdown scratch note that saves itself (`Esc` or the same key goes back to the terminal). The float's strip holds the Note and Translate tabs at its left; the Translate tab opens the Translate panel over the terminal, and opening one of the two closes the other |
 | `r` | Review: open the focused lead's Spec review or Plan review dialog, or show the focused agent's Doc review in place of its terminal |
-| `Esc` | Back to where you jumped from, else to Cockpit; exits fullscreen first; from Conversation History, the Canvas gallery grid or a session transcript, back to the terminal |
+| `Esc` | Back to where you jumped from, else to Cockpit; exits fullscreen first; from Conversation History, the Canvas gallery grid, Councils or a session transcript, back to the terminal |
 | `Shift`+`Esc` | Return focus to the nav (from inside the terminal) |
 | `Ctrl`+`C` | In a terminal on Windows: copy while text is selected (the selection goes with it), else the interrupt as always. `Cmd`+`C` copies on a Mac. `Ctrl`+`Shift`+`C` copies too |
 | `←` / `→` / `Home` / `End` | Move between the panel's tabs (Overview, Files, Changes, Transcript, File) while its tab strip has focus; the agent keys stand down there |

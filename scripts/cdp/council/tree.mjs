@@ -75,8 +75,6 @@ const TREE_ROWS = `(() => {
                 current: row.getAttribute("aria-current") === "true",
             };
         }
-        const closed = w.querySelector("[data-council-closed]");
-        if (closed) return { kind: "closed", project: closed.dataset.councilClosed, text: flat(closed), open: closed.getAttribute("aria-expanded") === "true" };
         if (w.querySelector("[data-project-divider]")) return { kind: "divider" };
         if (w.querySelector("[data-agent-terminal-row]")) return { kind: "terminal" };
         return { kind: "other" };
@@ -443,8 +441,8 @@ export const councilTree = {
             JSON.stringify({ wording, queuedRow, offered, removed, stops })
         );
 
-        // 11. an ended council's × closes it, with no confirm and nothing deleted; once closed it moves into the folder's
-        // Closed councils fold, which opens to show it with a Reopen button
+        // 11. an ended council's × closes it, with no confirm and nothing deleted; once closed it leaves the tree, and
+        // Councils (the sidebar's button) lists it marked Closed; opened from there, its header offers Reopen
         const doneId = councilFixtureId("done");
         const actOf = (id, act) =>
             `document.querySelector(${JSON.stringify(`[data-council-row="${id}"]`)})?.parentElement?.querySelector('[data-council-act="${act}"]')`;
@@ -459,27 +457,29 @@ export const councilTree = {
         // what wavesrv saves for that close
         writeCouncil(ctx, "done", { edit: (c) => (c.closed = Date.now()) });
         await announceCouncil(h, ctx, doneId);
-        const folded = await until(`!document.querySelector(${JSON.stringify(`[data-council-row="${doneId}"]`)}) && !!document.querySelector("[data-council-closed]")`);
-        const foldRow = (folderRows(await rows(), COUNCIL_PROJECT) ?? []).find((r) => r.kind === "closed");
-        await h.ev(`document.querySelector("[data-council-closed]")?.click()`);
-        const shown = await until(`!!document.querySelector(${JSON.stringify(`[data-council-row="${doneId}"]`)})`);
-        const reopen = await h.ev(`${actOf(doneId, "reopen")}?.title ?? null`);
-        await h.shot("cdp-shots/council-tree-closed.png");
-        // fold it again for the steps that follow
-        await h.ev(`document.querySelector("[data-council-closed]")?.click()`);
+        const historyRow = JSON.stringify(`[data-council-history-row="${doneId}"]`);
+        const gone = await until(`!document.querySelector(${JSON.stringify(`[data-council-row="${doneId}"]`)})`);
+        const fold = await h.ev(`!!document.querySelector("[data-council-closed]")`);
+        await h.ev(`document.querySelector("[data-agent-councils-open]")?.click()`);
+        const listed = await until(`!!document.querySelector(${historyRow})?.hasAttribute("data-council-history-closed")`);
+        await h.shot("cdp-shots/council-history-closed.png");
+        await h.ev(`document.querySelector(${historyRow})?.click()`);
+        const reopen = await until(`!!document.querySelector('[data-council-close="reopen"]')`);
+        // back to the terminal for the steps that follow
+        await pressEscape(h);
         rec(
-            "11. an ended council's × closes it without asking or deleting; it folds into Closed councils (1), which opens to show it with Reopen",
+            "11. an ended council's × closes it without asking or deleting; it leaves the tree, Councils lists it as Closed, and opened from there it offers Reopen",
             doneClose === "Close council" &&
                 closes.length === 1 &&
                 closes[0].data?.id === doneId &&
                 closes[0].data?.closed === true &&
                 !confirmed &&
                 deleted === 0 &&
-                folded &&
-                foldRow?.text === "Closed councils (1)" &&
-                shown &&
-                reopen === "Reopen council",
-            JSON.stringify({ doneClose, closes, confirmed, deleted, folded, foldRow, shown, reopen })
+                gone &&
+                !fold &&
+                listed &&
+                reopen,
+            JSON.stringify({ doneClose, closes, confirmed, deleted, gone, fold, listed, reopen })
         );
 
         // ---- the room's agents (steps 12 on) ----

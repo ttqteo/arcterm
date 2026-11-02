@@ -55,6 +55,7 @@ import { CanvasPane } from "./canvaspane";
 import { useCanvasPoller } from "./canvaspoller";
 import { canvasStateAtom } from "./canvasstore";
 import { closedNeighbour, resolveShownAgent, rosterLoadPhase } from "./cockpitsurfacemodel";
+import { CouncilHistory } from "./councilhistoryview";
 import { CouncilPane } from "./councilpane";
 import { autoOpenedAskIdsAtom, shouldAutoOpen } from "./docreview";
 import { DocReviewPane } from "./docreviewpane";
@@ -889,8 +890,8 @@ function seedTerminalName(blockId: string) {
     });
 }
 
-// History, the canvases, a council, a project's Overview and a session's transcript take the centre column; the
-// terminal stack stays mounted beside them
+// History, the canvases, the councils' list, a council, a project's Overview and a session's transcript take the
+// centre column; the terminal stack stays mounted beside them
 function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclude<CenterMode, "terminal"> }) {
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -898,6 +899,8 @@ function AgentCenterPane({ model, mode }: { model: AgentsViewModel; mode: Exclud
                 <ConversationHistory model={model} />
             ) : mode === "canvases" ? (
                 <CanvasGallery model={model} />
+            ) : mode === "councils" ? (
+                <CouncilHistory model={model} />
             ) : mode === "council" ? (
                 <CouncilPane model={model} />
             ) : mode === "run" ? (

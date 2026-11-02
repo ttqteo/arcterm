@@ -31,6 +31,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
   arrows still pick a project or a session. Only a pick with no Task box (a terminal, a tool, a council, a run from a
   plan file) still filters the projects as you type, and the Session column no longer searches older sessions.
   <!-- try: new-agent -->
+- A closed council no longer stays in the Agent tree under a Closed councils fold: it leaves the tree. Every council,
+  closed ones too, is in the new Councils list at the top of the Agent sidebar (under Canvas gallery, or `Ctrl+G` `o`),
+  newest first by Today, Yesterday and Earlier, with a search; open one there and Reopen puts it back in the tree.
+  <!-- try: go:councils -->
 
 ### Added
 

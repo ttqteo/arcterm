@@ -233,7 +233,8 @@ export function stopCouncil(id: string): Promise<CouncilCall<void>> {
 }
 
 /** Closes an ended council (canRemoveCouncil), or opens a closed one again (`closed` false). Nothing is deleted: the
- *  tree moves it into its project's Closed councils fold, and council:changed brings the saved council to every atom. */
+ *  tree stops listing it, Councils (councilhistory.ts) still does, and council:changed brings the saved council to every
+ *  atom. */
 export function closeCouncil(id: string, closed = true): Promise<CouncilCall<void>> {
     return call(closed ? "close" : "reopen", () => RpcApi.CouncilCloseCommand(TabRpcClient, { id, closed }));
 }

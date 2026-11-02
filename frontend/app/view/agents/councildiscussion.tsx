@@ -339,7 +339,7 @@ function Header({ c, body, now, acts }: { c: Council; body: DiscussionBody; now:
                         title={
                             isClosedCouncil(c)
                                 ? "Put this council back in the tree"
-                                : "Fold this council into its project's Closed councils; nothing is deleted"
+                                : "Take this council off the tree; Councils still lists it, nothing is deleted"
                         }
                         onClick={() => void closeCouncil(c.id, !isClosedCouncil(c))}
                         className="h-[28px] cursor-pointer rounded-[6px] border border-transparent bg-transparent px-[12px] text-[13px] text-muted outline-none hover:text-secondary focus-visible:ring-2 focus-visible:ring-accent"
