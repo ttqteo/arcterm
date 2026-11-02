@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -81,6 +82,57 @@ func councilGroupFor(group, mode string, withAgents bool) string {
 		return councilBrainstormGroup
 	}
 	return councilDefaultGroup
+}
+
+// councilModelName is the shape of a model name a seat may take: a claude alias (sonnet, fable) or a full model id.
+var councilModelName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:\[\]-]*$`)
+
+// councilSeatModels reads --model values against the seats in experts: a bare model is every seat's, a <seat>=<model>
+// one seat's (its id or name, any case), which wins over a bare one whatever the order. It returns the model per
+// expert id. A second bare model, a seat named twice, an unknown seat or a malformed model fails, naming the seats.
+func councilSeatModels(experts []council.CouncilExpert, values []string) (map[string]string, error) {
+	out := map[string]string{}
+	all, named := "", map[string]bool{}
+	seatIds := make([]string, len(experts))
+	for i, e := range experts {
+		seatIds[i] = e.Id
+	}
+	for _, v := range values {
+		seat, model, hasSeat := strings.Cut(strings.TrimSpace(v), "=")
+		if !hasSeat {
+			seat, model = "", seat
+		}
+		seat, model = strings.TrimSpace(seat), strings.TrimSpace(model)
+		if !councilModelName.MatchString(model) {
+			return nil, fmt.Errorf("--model %q: %q is not a model name (sonnet, opus, haiku, fable, or a full id)", v, model)
+		}
+		if !hasSeat {
+			if all != "" {
+				return nil, fmt.Errorf("--model: two models for every seat (%s, %s); name a seat with <seat>=<model>", all, model)
+			}
+			all = model
+			continue
+		}
+		i := slices.IndexFunc(experts, func(e council.CouncilExpert) bool {
+			return strings.EqualFold(e.Id, seat) || strings.EqualFold(e.Name, seat)
+		})
+		if i < 0 {
+			return nil, fmt.Errorf("--model %q: no seat %q (the seats: %s)", v, seat, strings.Join(seatIds, ", "))
+		}
+		if named[experts[i].Id] {
+			return nil, fmt.Errorf("--model: %s is given two models", experts[i].Id)
+		}
+		named[experts[i].Id] = true
+		out[experts[i].Id] = model
+	}
+	if all != "" {
+		for _, e := range experts {
+			if !named[e.Id] {
+				out[e.Id] = all
+			}
+		}
+	}
+	return out, nil
 }
 
 // councilRepeated reads a repeatable flag. pflag reads a lone --flag "" back as no value at all, so a flag that was
@@ -521,6 +573,15 @@ func councilPrepare(cmd *cobra.Command) (councilPlan, error) {
 	if plan.experts, err = councilAddExperts(roles, plan.experts, councilRepeated(cmd, "expert")); err != nil {
 		return councilPlan{}, err
 	}
+	models, err := councilSeatModels(plan.experts, councilRepeated(cmd, "model"))
+	if err != nil {
+		return councilPlan{}, err
+	}
+	for i := range plan.experts { // a copy per council: the role library keeps its own models
+		if m, ok := models[plan.experts[i].Id]; ok {
+			plan.experts[i].Model = m
+		}
+	}
 	// a tab id that is no live claude or pi tab fails here, in wavesrv, before the Token burn gate is asked
 	plan.est, err = wshclient.CouncilEstimateCommand(RpcClient, wshrpc.CommandCouncilEstimateData{
 		Project: plan.project,
@@ -545,7 +606,8 @@ product-ideas group and review (the default) the ui-feature one.
 --agent <tab id> (repeatable) prices a live chat as a seat: its current context times the rounds. --agent self is the
 tab this command runs in. With --agent and no --group, review prices the agents group (a Skeptic and the coordinator)
 and brainstorm the agents-ideas group (a Contrarian and the Facilitator). --expert <role id> (repeatable) adds that role
-from the role library before the coordinator. A tab id that is not a live claude or pi tab fails, listing the live ones.`,
+from the role library before the coordinator. --model prices the seats on other models, as "wsh council start" takes it.
+A tab id that is not a live claude or pi tab fails, listing the live ones.`,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		plan, err := councilPrepare(cmd)
@@ -584,7 +646,11 @@ listing the live tabs: ask the person which they meant, and never start without 
 --group, review takes the agents group (a Skeptic beside the chats, then the coordinator) and brainstorm the
 agents-ideas group (a Contrarian, then the Facilitator); an explicit --group adds its roles beside the chats.
 --expert <role id> (repeatable) adds one more role from the role library before the coordinator, when the question
-needs a view no seat has; an unknown or repeated id, or a coordinator role, fails, listing the ids it takes. A council
+needs a view no seat has; an unknown or repeated id, or a coordinator role, fails, listing the ids it takes.
+--model sets the role seats' models for this council only, as Setup's model menus do: --model sonnet puts every role
+seat on sonnet, --model skeptic=opus one seat (its id or name), which wins over a bare one; repeat the flag for more.
+The role library keeps its own models, and a seated chat answers on its session's model. An unknown seat fails, listing
+the seats. A council
 "wsh council start" starts never holds drafts: it runs to the report by itself, chats seated or not, and a person can
 still post to a seat in the room. A starter seated with --agent self runs "wsh council wait <id> --timeout 0" in the
 background (a pi agent has no background shell, so it does not seat itself): each round reaches it as a prompt.
@@ -858,15 +924,34 @@ var councilRetryCmd = &cobra.Command{
 with several failed, name one with --expert (its id or name). The rounds and replies that finished stay, so a retried
 summary costs one call, not a new council. --model runs this retry once on another model (opus, sonnet, fable, haiku, or
 a full id such as claude-opus-4-8); the seat keeps its own model. A call Claude's safeguards flagged already ran once
-more on claude-opus-4-8 by itself before it failed. A running council cannot be retried; wait for it or stop it. Read
-the outcome back with "wsh council wait <id>".`,
+more on claude-opus-4-8 by itself before it failed. A running council cannot be retried; wait for it or stop it, and
+retry several failed seats with --all, which reruns every failed seat but the coordinator at once in one run (the
+summary keeps its own retry, as it reads what they bring back); with --all, --model <model> puts every one of them on
+that model and --model <seat>=<model> (repeatable) one seat. Read the outcome back with "wsh council wait <id>".`,
 	PreRunE: preRunSetupRpcClient,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		want, _ := cmd.Flags().GetString("expert")
-		model, _ := cmd.Flags().GetString("model")
+		all, _ := cmd.Flags().GetBool("all")
+		models := councilRepeated(cmd, "model")
 		c, err := wshclient.CouncilGetCommand(RpcClient, wshrpc.CommandCouncilIdData{Id: args[0]}, nil)
 		if err != nil {
 			return err
+		}
+		if all {
+			if strings.TrimSpace(want) != "" {
+				return errors.New("--all retries every failed seat: leave --expert out")
+			}
+			return councilRetryAll(c, models)
+		}
+		if len(models) > 1 {
+			return errors.New("--model takes one model for one retry; name seats with <seat>=<model> only with --all")
+		}
+		model := ""
+		if len(models) == 1 {
+			model = models[0]
+		}
+		if strings.Contains(model, "=") {
+			return errors.New("--model <seat>=<model> goes with --all; for one seat, use --expert <seat> --model <model>")
 		}
 		e, err := councilRetryTarget(c, want)
 		if err != nil {
@@ -887,6 +972,37 @@ the outcome back with "wsh council wait <id>".`,
 		fmt.Printf("council %s: retrying %s%s; run `wsh council wait %s` for the outcome\n", c.Id, what, on, c.Id)
 		return nil
 	},
+}
+
+// councilRetryAll is `wsh council retry --all`: every failed seat but the coordinator, at once, each on the model
+// --model gives it or its own.
+func councilRetryAll(c *council.Council, values []string) error {
+	var failed []council.CouncilExpert
+	for _, e := range c.Experts {
+		if _, ok := c.Failed[e.Id]; ok && !e.Coordinator {
+			failed = append(failed, e)
+		}
+	}
+	if len(failed) == 0 {
+		return fmt.Errorf("council %s has no failed seat to retry (a failed summary is retried with plain `wsh council retry %s`)", c.Id, c.Id)
+	}
+	models, err := councilSeatModels(failed, values)
+	if err != nil {
+		return err
+	}
+	data := wshrpc.CommandCouncilRetryData{Id: c.Id, All: true, Models: models}
+	if err := wshclient.CouncilRetryCommand(RpcClient, data, nil); err != nil {
+		return err
+	}
+	names := make([]string, len(failed))
+	for i, e := range failed {
+		names[i] = e.Name
+		if m := models[e.Id]; m != "" {
+			names[i] += " on " + m
+		}
+	}
+	fmt.Printf("council %s: retrying %s; run `wsh council wait %s` for the outcome\n", c.Id, strings.Join(names, ", "), c.Id)
+	return nil
 }
 
 // councilRetryTarget is the seat `wsh council retry` reruns: the one named by want (an id or a name, any case), else
@@ -924,7 +1040,7 @@ func councilRetryTarget(c *council.Council, want string) (council.CouncilExpert,
 	for i, e := range failed {
 		names[i] = e.Id
 	}
-	return council.CouncilExpert{}, fmt.Errorf("council %s has %d failed calls: name one with --expert (%s)", c.Id, len(failed), strings.Join(names, ", "))
+	return council.CouncilExpert{}, fmt.Errorf("council %s has %d failed calls: name one with --expert (%s), or retry them all with --all", c.Id, len(failed), strings.Join(names, ", "))
 }
 
 // ---- bench ----
@@ -1123,6 +1239,7 @@ func addCouncilPanelFlags(cmd *cobra.Command) {
 	f.StringArray("expert", nil, "add this role from the role library before the coordinator (repeat the flag for more); an unknown or repeated id, or a coordinator role, fails and lists the ids it takes")
 	f.String("project", "", "the project folder (default: the registered project holding the working directory, else its git top level)")
 	f.String("mode", "", "how the council works: "+council.ModeReview+" (default) judges a thing that exists, "+council.ModeBrainstorm+" looks for ideas for a problem or goal")
+	f.StringArray("model", nil, "a model for this council only: <model> for every role seat, <seat>=<model> for one (its id or name; it wins over a bare one); repeat the flag for more. A seated chat keeps its own session's model")
 }
 
 // addCouncilStartFlags adds the flags that only a start takes, beside the panel flags.
@@ -1150,7 +1267,8 @@ func init() {
 	councilBenchResultsCmd.Flags().Bool("json", false, "JSON output")
 	councilCloseCmd.Flags().Bool("reopen", false, "open a closed council again")
 	councilRetryCmd.Flags().String("expert", "", "the seat to retry, by id or name (default: the failed summary, else the one failed seat)")
-	councilRetryCmd.Flags().String("model", "", "run this retry once on another model (opus, sonnet, fable, haiku, claude-opus-4-8); the seat keeps its own")
+	councilRetryCmd.Flags().StringArray("model", nil, "run this retry once on another model (opus, sonnet, fable, haiku, claude-opus-4-8); the seat keeps its own. With --all, <model> for every seat or <seat>=<model> (repeatable)")
+	councilRetryCmd.Flags().Bool("all", false, "retry every failed seat but the coordinator at once, in one run")
 	councilBenchCmd.AddCommand(councilBenchResultsCmd, councilBenchStopCmd)
 	councilCmd.AddCommand(councilEstimateCmd, councilStartCmd, councilListCmd, councilShowCmd, councilWaitCmd, councilStopCmd, councilRetryCmd, councilCloseCmd, councilRmCmd, councilBenchCmd)
 	rootCmd.AddCommand(councilCmd)

@@ -190,6 +190,10 @@ func (ws *WshServer) CouncilCloseCommand(ctx context.Context, data wshrpc.Comman
 }
 
 func (ws *WshServer) CouncilRetryCommand(ctx context.Context, data wshrpc.CommandCouncilRetryData) error {
+	if data.All {
+		_, err := councilRunner.RetryAll(data.Id, data.Models)
+		return err
+	}
 	_, err := councilRunner.RetryOn(data.Id, data.ExpertId, data.Model)
 	return err
 }

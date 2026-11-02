@@ -109,6 +109,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Coordinator in round 3 on sonnet (its seat is opus)`. Do the same on a failed expert from the Discussion's failure
   card and the chat's seat chip. CDP `council-summary` clicks the summary banner's menu with the RPC stubbed; no real
   call on another model and neither Discussion site was tried. The commit that adds this line.
+- [ ] (arcterm) Council Retry all: needs a wavesrv + wsh build (the RPC gained `all`/`models`). In a council where
+  two or more seats failed (the HarnessX brainstorm had New user, Designer and Builder), the seat strip shows a model
+  pick ("Own model ▾") beside each failed seat instead of Retry / Retry with…, and one "Retry all 3" at its end; pick
+  sonnet for one seat, Retry all → every failed seat reruns at once (no "council … is running" error), the picked one
+  on sonnet, and while it runs every Retry button is disabled. A council with one failed seat keeps Retry / Retry
+  with…. Also `wsh council start --model sonnet --model skeptic=opus` → `wsh council show` names those models, and
+  `wsh council estimate` with the same flags quotes them. Runner and CLI parser unit-tested; untried in the app. The
+  commit that adds this line.
 - [ ] (arcterm) Council Retry with… after a safeguard flag: on a call that failed with "API Error: Opus 5.5's
   safeguards flagged this session", the menu's header reads "Safeguards flagged <seat> on opus" and its first item is
   Retry on Opus 4.8; picking it reruns the call on `claude-opus-4-8` and the call goes through. Untried in the app;

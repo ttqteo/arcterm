@@ -2,7 +2,46 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { isSafeguardFlag, RETRY_MODELS, retryModelChoices, retryModelLabel } from "./councilretry";
+import {
+    isSafeguardFlag,
+    offersRetryAll,
+    RETRY_MODELS,
+    retryAllModels,
+    retryAllSeats,
+    retryModelChoices,
+    retryModelLabel,
+} from "./councilretry";
+
+describe("Retry all", () => {
+    const council = (failed: string[]) =>
+        ({
+            experts: [
+                { id: "ux", name: "UX", model: "sonnet" },
+                { id: "ram", name: "RAM", model: "opus" },
+                { id: "chat", name: "Chat", model: "", agent: "tab-1" },
+                { id: "lead", name: "Lead", model: "opus", coordinator: true },
+            ],
+            failed: Object.fromEntries(failed.map((id) => [id, { round: 1, error: "boom" }])),
+        }) as unknown as Pick<Council, "experts" | "failed">;
+
+    it("reruns the failed seats but the coordinator, in panel order", () => {
+        expect(retryAllSeats(council(["lead", "ram", "ux"])).map((e) => e.id)).toEqual(["ux", "ram"]);
+    });
+
+    it("is offered from two failed seats, the coordinator not counted", () => {
+        expect(offersRetryAll(council(["ux"]))).toBe(false);
+        expect(offersRetryAll(council(["ux", "lead"]))).toBe(false);
+        expect(offersRetryAll(council(["ux", "ram"]))).toBe(true);
+    });
+
+    it("sends only the picks that change a failed seat's model", () => {
+        const c = council(["ux", "ram", "chat"]);
+        expect(retryAllModels(c, { ux: "haiku", ram: "opus", chat: "sonnet", lead: "sonnet", gone: "fable" })).toEqual({
+            ux: "haiku",
+        });
+        expect(retryAllModels(council(["ux"]), { ram: "haiku" })).toEqual({});
+    });
+});
 
 const FLAGGED =
     "API Error: Opus 5.5's safeguards flagged this session (https://www.anthropic.com/legal/aup). You may be seeing this for the first time …";

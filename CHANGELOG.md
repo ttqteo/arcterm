@@ -26,6 +26,10 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Added
 
+- When two or more council seats failed, the seat strip offers Retry all: pick a model beside each failed seat (its own
+  by default), and they all run again together instead of one Retry refusing the next while the first runs.
+- An agent can pick the experts' models when it starts a council for you: `wsh council start --model sonnet`, or
+  `--model skeptic=opus` for one seat, and `wsh council retry --all` reruns every failed seat at once.
 - An agent you ask for a council on named chats now seats those chats in it, beside a Skeptic and a coordinator, and
   the council runs to the report without holding drafts for you to send: `wsh council start --agent <tab id>`, and
   `--agent self` for the chat that asks.

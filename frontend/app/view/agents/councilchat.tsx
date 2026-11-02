@@ -69,7 +69,8 @@ import { useCouncilChatNav, type CouncilChatNav } from "./councilchatnav";
 import { initialOf, isFollowUp, type AvatarTone } from "./councildiscussionmodel";
 import { markSpans } from "./councilmarks";
 import { answerers, draftsWaitWord, followupLabel } from "./councilmodel";
-import { RetryWithButton } from "./councilretrymenu";
+import { offersRetryAll, retryAllModels, retryAllSeats } from "./councilretry";
+import { RetryModelPick, RetryWithButton } from "./councilretrymenu";
 import {
     NO_PILLS,
     followsEnd,
@@ -98,6 +99,7 @@ import {
     councilSourcesAtom,
     draftCouncil,
     replyCouncil,
+    retryAllExperts,
     retryExpert,
     useEstimate,
 } from "./councilstore";
@@ -293,6 +295,8 @@ const SEAT_DOT: Record<SeatChip["dot"], string> = {
 // click shows its messages alone, again shows everyone. While it works, waits or failed, its dot shows beside the
 // name, and what it is doing is on hover with its kind and tooltip. An agent's terminal and a failed seat's Retry sit
 // beside it.
+// With two or more seats failed, each failed seat holds a model pick instead (RetryModelPick) and the strip ends in one
+// Retry all: one Retry each would be refused while the first runs.
 function SeatFilter({
     c,
     chip,
@@ -300,6 +304,7 @@ function SeatFilter({
     acts,
     onToggle,
     onOpenTerminal,
+    pick,
 }: {
     c: Council;
     chip: SeatChip;
@@ -307,8 +312,11 @@ function SeatFilter({
     acts: Actions;
     onToggle: () => void;
     onOpenTerminal: (tab: string) => void;
+    pick: { picked: string | undefined; onPick: (model: string | undefined) => void } | null; // set under Retry all
 }) {
     const key = `retry:${chip.id}`;
+    const running = c.state === "running";
+    const expert = c.experts.find((e) => e.id === chip.id);
     const count = chip.ideas + chip.replies;
     const live = chip.dot !== "idle";
     return (
@@ -358,23 +366,34 @@ function SeatFilter({
                     <SquareTerminal size={15} strokeWidth={1.8} aria-hidden />
                 </button>
             )}
-            {chip.retry && (
+            {chip.retry && pick != null && (
+                <RetryModelPick
+                    expert={expert}
+                    error={c.failed?.[chip.id]?.error}
+                    picked={pick.picked}
+                    onPick={pick.onPick}
+                    disabled={running}
+                    className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
+                />
+            )}
+            {chip.retry && pick == null && (
                 <button
                     type="button"
                     data-council-chip-retry={chip.id}
                     aria-label={`Retry ${chip.name}`}
-                    disabled={acts.busy.has(key)}
+                    disabled={running || acts.busy.has(key)}
+                    title={running ? "The council is running: retry once it is done" : undefined}
                     onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, chip.id))}
                     className={cn(secondaryButton, "h-[24px] px-[8px] text-[12px]")}
                 >
                     {acts.busy.has(key) ? "Retrying…" : "Retry"}
                 </button>
             )}
-            {chip.retry && (
+            {chip.retry && pick == null && (
                 <RetryWithButton
-                    expert={c.experts.find((e) => e.id === chip.id)}
+                    expert={expert}
                     error={c.failed?.[chip.id]?.error}
-                    disabled={acts.busy.has(key)}
+                    disabled={running || acts.busy.has(key)}
                     onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, chip.id, model))}
                     className={cn(secondaryButton, "h-[24px] px-[6px] text-[12px]")}
                 />
@@ -854,6 +873,7 @@ function SkippedLine({ item, onOpenTerminal }: { item: SkipLine; onOpenTerminal:
 
 function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Actions }) {
     const key = `retry:${item.author}`;
+    const running = c.state === "running"; // a retry while it runs is refused: one job at a time
     return (
         <div
             role="alert"
@@ -871,7 +891,7 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
                 type="button"
                 data-council-retry={item.author}
                 aria-label={`Retry ${item.name}`}
-                disabled={acts.busy.has(key)}
+                disabled={running || acts.busy.has(key)}
                 onClick={() => void acts.run(key, "Retry", () => retryExpert(c.id, item.author))}
                 className={cn(secondaryButton, "h-[22px] px-[8px] text-[12px]")}
             >
@@ -880,7 +900,7 @@ function FailedLine({ c, item, acts }: { c: Council; item: FailureLine; acts: Ac
             <RetryWithButton
                 expert={c.experts.find((e) => e.id === item.author)}
                 error={c.failed?.[item.author]?.error}
-                disabled={acts.busy.has(key)}
+                disabled={running || acts.busy.has(key)}
                 onPick={(model) => void acts.run(key, "Retry", () => retryExpert(c.id, item.author, model))}
                 className={cn(secondaryButton, "h-[22px] px-[6px] text-[12px]")}
             />
@@ -1645,6 +1665,21 @@ export function CouncilChat({
     }, [focusedId]);
 
     const coordinators = new Set(c.experts.filter((e) => e.coordinator).map((e) => e.id));
+    // two or more failed seats retry together (Retry all), each on the model picked beside it; the picks belong to
+    // this council, so another one opened here starts from its seats' own models
+    const retryAll = offersRetryAll(c);
+    const [pickState, setPickState] = useState<{ id: string; picks: Record<string, string> }>({ id: c.id, picks: {} });
+    const picks = pickState.id === c.id ? pickState.picks : {};
+    const setPick = (seat: string, model: string | undefined) =>
+        setPickState((s) => {
+            const next = { ...(s.id === c.id ? s.picks : {}) };
+            if (model == null) {
+                delete next[seat];
+            } else {
+                next[seat] = model;
+            }
+            return { id: c.id, picks: next };
+        });
     return (
         <div className="flex min-h-0 flex-1">
             <div data-council-main className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1677,8 +1712,33 @@ export function CouncilChat({
                             acts={acts}
                             onToggle={() => setOnly(chip.id === onlyId ? null : chip.id)}
                             onOpenTerminal={onOpenTerminal}
+                            pick={
+                                retryAll && chip.retry && !coordinators.has(chip.id)
+                                    ? { picked: picks[chip.id], onPick: (m) => setPick(chip.id, m) }
+                                    : null
+                            }
                         />
                     ))}
+                    {retryAll && (
+                        <button
+                            type="button"
+                            data-council-action="retry-all"
+                            disabled={c.state === "running" || acts.busy.has("retry:all")}
+                            title={
+                                c.state === "running"
+                                    ? "The council is running: retry once it is done"
+                                    : "Run every failed seat again at once, each on the model picked beside it"
+                            }
+                            onClick={() =>
+                                void acts.run("retry:all", "Retry all", () =>
+                                    retryAllExperts(c.id, retryAllModels(c, picks))
+                                )
+                            }
+                            className={cn(secondaryButton, "h-[24px] px-[8px] text-[12px]")}
+                        >
+                            {acts.busy.has("retry:all") ? "Retrying…" : `Retry all ${retryAllSeats(c).length}`}
+                        </button>
+                    )}
                     {onlySeat != null && (
                         <span role="status" data-council-only={onlySeat.id} className="ml-[6px] text-[13px] text-muted">
                             {onlyLine(onlySeat)}

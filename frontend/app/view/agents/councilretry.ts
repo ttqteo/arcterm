@@ -49,5 +49,36 @@ export function retryModelChoices(
 
 /** The menu label of one retry model: "Retry on sonnet", "Retry on Opus 4.8". */
 export function retryModelLabel(model: string): string {
-    return `Retry on ${NAMES[model] ?? model}`;
+    return `Retry on ${modelName(model)}`;
+}
+
+/** A model as the person reads it: "Opus 4.8" for its full id, an alias as it is. */
+export function modelName(model: string): string {
+    return NAMES[model] ?? model;
+}
+
+type RetryCouncil = Pick<Council, "experts" | "failed">;
+
+/** The seats Retry all reruns, in panel order: every failed seat but the coordinator, whose summary keeps its own Retry
+ *  (it reads what the seats bring back). */
+export function retryAllSeats(c: RetryCouncil): CouncilExpert[] {
+    return c.experts.filter((e) => !e.coordinator && c.failed?.[e.id] != null);
+}
+
+/** Whether the seats offer Retry all instead of a Retry each: two or more failed, since one Retry while another runs is
+ *  refused (a council runs one job at a time). */
+export function offersRetryAll(c: RetryCouncil): boolean {
+    return retryAllSeats(c).length >= 2;
+}
+
+/** What Retry all sends as its models: each pick that differs from its seat's own model, for the seats it reruns. */
+export function retryAllModels(c: RetryCouncil, picks: Record<string, string>): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const e of retryAllSeats(c)) {
+        const m = picks[e.id];
+        if (m && m !== e.model && retryModelChoices(e).includes(m)) {
+            out[e.id] = m;
+        }
+    }
+    return out;
 }
