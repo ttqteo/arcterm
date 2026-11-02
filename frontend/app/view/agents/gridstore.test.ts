@@ -14,6 +14,7 @@ import {
     eligibleIds,
     endSplit,
     endSplitOf,
+    gridAreaAtom,
     isInSplit,
     openInSplit,
     projectGridsAtom,
@@ -37,6 +38,7 @@ function model(ids: string[], focus?: string, terminalIds: string[] = []): GridM
 beforeEach(() => {
     globalStore.set(projectGridsAtom, EMPTY_PROJECT_GRIDS);
     globalStore.set(centerModeAtom, "terminal");
+    globalStore.set(gridAreaAtom, { width: 0, height: 0 });
 });
 
 describe("agentGridAtom", () => {
@@ -258,6 +260,19 @@ describe("openInSplit", () => {
             ],
         });
         expect(globalStore.get(m.focusIdAtom)).toBe("t");
+    });
+    it("stacks the agent under the focused cell when the grid area is taller than wide", () => {
+        const m = model(["a", "b"], "a");
+        globalStore.set(agentGridAtom, g(["a"]));
+        globalStore.set(gridAreaAtom, { width: 700, height: 1700 });
+        expect(openInSplit(m, "b")).toBe(true);
+        expect(globalStore.get(agentGridAtom)).toEqual({
+            ...g(["a", "b"], "b"),
+            places: [
+                { row: 1, col: 1, rowSpan: 1, colSpan: 2 },
+                { row: 2, col: 1, rowSpan: 1, colSpan: 2 },
+            ],
+        });
     });
 });
 
