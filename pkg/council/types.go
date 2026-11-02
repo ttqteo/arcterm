@@ -73,10 +73,45 @@ func HasAgents(c *Council) bool {
 	return c != nil && slices.ContainsFunc(c.Experts, IsAgent)
 }
 
-// HoldsDrafts says the council holds every answer as a draft for the person's Send, Edit or Drop: an agent is seated and
-// the council was not started by `wsh council start`, which runs to the report with nothing held.
+// The two modes a council's answers are held in, stored in Council.DraftMode when its run begins. They are not the
+// states of one draft (DraftHeld, DraftDropped): seating a chat later never flips a council that began free to held.
+const (
+	DraftModeHeld = "held"
+	DraftModeFree = "free"
+)
+
+// draftModeFromSeats is the mode today's seats give: held when a live chat is seated and the council was not started
+// by `wsh council start`, which runs to the report with nothing held; free otherwise.
+func draftModeFromSeats(c *Council) string {
+	if HasAgents(c) && !c.ByAgent {
+		return DraftModeHeld
+	}
+	return DraftModeFree
+}
+
+// freezeDraftMode stores the draft mode when the council has none, from the seats it has now. A set mode is left alone.
+// A council's run calls it when it begins, and the seating of a joining chat calls it just before it seats one, so a
+// council that began without a chat keeps running free once a chat joins.
+func freezeDraftMode(c *Council) {
+	if c.DraftMode == "" {
+		c.DraftMode = draftModeFromSeats(c)
+	}
+}
+
+// HoldsDrafts says the council holds every answer as a draft for the person's Send, Edit or Drop. A stored DraftMode is
+// the answer; a council with none (one saved before the field) reads it from its seats: a chat is seated and the council
+// was not started by `wsh council start`.
 func HoldsDrafts(c *Council) bool {
-	return HasAgents(c) && !c.ByAgent
+	if c == nil {
+		return false
+	}
+	switch c.DraftMode {
+	case DraftModeHeld:
+		return true
+	case DraftModeFree:
+		return false
+	}
+	return draftModeFromSeats(c) == DraftModeHeld
 }
 
 type CouncilGroup struct {
@@ -250,6 +285,7 @@ type Council struct {
 	Rounds           int                          `json:"rounds,omitempty"`    // 1 to 3 seat rounds, the ideas round included; 0 reads as 2 (RoundsOf)
 	SessionId        string                       `json:"sessionid,omitempty"` // the agent session that started it
 	ByAgent          bool                         `json:"byagent,omitempty"`   // started by `wsh council start`: it never holds an answer as a draft, agents seated or not
+	DraftMode        string                       `json:"draftmode,omitempty"` // DraftModeHeld or DraftModeFree, stored when its run begins (HoldsDrafts reads it); empty on a record from before the field
 	State            CouncilState                 `json:"state"`
 	Round            int                          `json:"round"`
 	Error            string                       `json:"error,omitempty"`

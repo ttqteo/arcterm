@@ -97,10 +97,54 @@ func TestHoldsDrafts(t *testing.T) {
 		"no agents, started by an agent": {&Council{Experts: experts, ByAgent: true}, false},
 		"agents":                         {&Council{Experts: seated}, true},
 		"agents, started by an agent":    {&Council{Experts: seated, ByAgent: true}, false},
+		// a stored mode is the answer, whatever the seats are now
+		"held, no agents now":       {&Council{Experts: experts, DraftMode: DraftModeHeld}, true},
+		"held, started by an agent": {&Council{Experts: seated, ByAgent: true, DraftMode: DraftModeHeld}, true},
+		"free, agents seated":       {&Council{Experts: seated, DraftMode: DraftModeFree}, false},
 	} {
 		if got := HoldsDrafts(tc.c); got != tc.want {
 			t.Errorf("%s: HoldsDrafts = %v, want %v", name, got, tc.want)
 		}
+	}
+}
+
+func TestFreezeDraftMode(t *testing.T) {
+	experts := []CouncilExpert{{Id: "ux"}, {Id: "chair", Coordinator: true}}
+	seated := append([]CouncilExpert{{Id: "witness", Agent: "tab-1", Harness: "claude"}}, experts...)
+
+	// no chat at start: free, and a chat seated afterwards still reads free
+	c := &Council{Experts: experts}
+	freezeDraftMode(c)
+	if c.DraftMode != DraftModeFree {
+		t.Errorf("no chat at start froze %q, want %q", c.DraftMode, DraftModeFree)
+	}
+	c.Experts = seated
+	if HoldsDrafts(c) {
+		t.Error("a chat seated after a free start holds drafts")
+	}
+
+	// a chat at start: held, unless an agent started the council
+	c = &Council{Experts: seated}
+	freezeDraftMode(c)
+	if c.DraftMode != DraftModeHeld {
+		t.Errorf("a chat at start froze %q, want %q", c.DraftMode, DraftModeHeld)
+	}
+	c = &Council{Experts: seated, ByAgent: true}
+	freezeDraftMode(c)
+	if c.DraftMode != DraftModeFree {
+		t.Errorf("a chat at start of an agent's council froze %q, want %q", c.DraftMode, DraftModeFree)
+	}
+
+	// a set mode is never overwritten
+	c = &Council{Experts: seated, DraftMode: DraftModeFree}
+	freezeDraftMode(c)
+	if c.DraftMode != DraftModeFree {
+		t.Errorf("a set free mode became %q", c.DraftMode)
+	}
+	c = &Council{Experts: experts, DraftMode: DraftModeHeld}
+	freezeDraftMode(c)
+	if c.DraftMode != DraftModeHeld {
+		t.Errorf("a set held mode became %q", c.DraftMode)
 	}
 }
 
@@ -125,7 +169,7 @@ func TestNewFieldsLeaveAnOldCouncilsJSONAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"agent"`, `"harness"`, `"context"`, `"rounds"`, `"skips"`, `"draft"`, `"edited"`} {
+	for _, key := range []string{`"agent"`, `"harness"`, `"context"`, `"rounds"`, `"skips"`, `"draft"`, `"edited"`, `"draftmode"`} {
 		if strings.Contains(string(b), key) {
 			t.Errorf("an old council writes %s: %s", key, b)
 		}

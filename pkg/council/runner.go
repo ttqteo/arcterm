@@ -305,10 +305,13 @@ func (r *Runner) stampNew(c *Council) {
 
 // beginFresh is where a council's run begins, whether Start, StartSaved or the queue starts it, so it is where the
 // council records the harness it runs under, and where Rounds, which only a council with agents honours, is cleared from
-// one without: it runs today's two rounds.
+// one without: it runs today's two rounds. It is also where the draft mode is taken: cleared and frozen again from the
+// seats the council has now, so a re-run of a saved council takes the mode its seats give at that start.
 func (r *Runner) beginFresh(c *Council) {
 	c.State, c.Round, c.Started, c.Error = StateRunning, 1, r.now(), ""
 	c.Harness = HarnessVersion
+	c.DraftMode = ""
+	freezeDraftMode(c)
 	if !HasAgents(c) {
 		c.Rounds = 0
 	}

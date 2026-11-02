@@ -2629,6 +2629,30 @@ func TestStartRecordsHarness(t *testing.T) {
 	}
 }
 
+// A council stores the draft mode its seats give at its start: a chat seated makes it held, unless an agent started it.
+func TestStartStoresDraftMode(t *testing.T) {
+	for name, tc := range map[string]struct {
+		build func() *Council
+		want  string
+	}{
+		"a chat seated":              {func() *Council { return agentCouncil("a") }, DraftModeHeld},
+		"a chat seated, by an agent": {func() *Council { c := agentCouncil("a"); c.ByAgent = true; return c }, DraftModeFree},
+		"no chat":                    {func() *Council { return testCouncil("a") }, DraftModeFree},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			saved := h.start(tc.build())
+			if saved.DraftMode != tc.want {
+				t.Errorf("Start returned draft mode %q, want %q", saved.DraftMode, tc.want)
+			}
+			h.wait("a")
+			if got := h.load("a"); got.DraftMode != tc.want {
+				t.Errorf("the saved council has draft mode %q, want %q", got.DraftMode, tc.want)
+			}
+		})
+	}
+}
+
 func TestStartSavedRecordsHarness(t *testing.T) {
 	h := newHarness(t)
 	rec, err := h.r.Record(councilAs(t, "n", ""))
