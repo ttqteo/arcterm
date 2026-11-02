@@ -11,11 +11,14 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { createTempFileFromBlob, createTempFileFromFile } from "@/app/view/term/termutil";
 import { atom, useAtomValue, type PrimitiveAtom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { useEffect, useState } from "react";
+import { isOversize } from "./composerattachments";
 import { councilProjectKey, type CouncilSetupDraft, type CouncilView } from "./councilmodel";
 import type { CouncilRating, KeptCouncilView } from "./councilsummarymodel";
+import { imageRoom, type TaskImage } from "./launcherimages";
 
 const sameProject = (a: string, b: string) => councilProjectKey(a) === councilProjectKey(b);
 
@@ -353,16 +356,105 @@ export const councilOpenProposalAtom = atomFamily(
 );
 
 /** What is typed and not sent in a council's chat, so it survives a trip to the Summary: the channel's composer under
- *  `""`, a thread's under its idea's id; and Let them read files for the next follow-up: the person's own choice, or
- *  null to let the question decide (`readsFiles`). The Summary's Ask next writes the channel's. */
+ *  `""`, a thread's under its idea's id; the images pasted or dropped into each box, under the same keys; and Let them
+ *  read files for the next follow-up: the person's own choice, or null to let the question decide (`readsFiles`). The
+ *  Summary's Ask next writes the channel's text. */
 export interface CouncilChatDrafts {
     texts: Record<string, string>;
+    images: Record<string, TaskImage[]>;
     tools: boolean | null;
 }
 
 export const councilChatDraftAtom = atomFamily(
-    (_id: string) => atom<CouncilChatDrafts>({ texts: {}, tools: null }) as PrimitiveAtom<CouncilChatDrafts>
+    (_id: string) => atom<CouncilChatDrafts>({ texts: {}, images: {}, tools: null }) as PrimitiveAtom<CouncilChatDrafts>
 );
+
+// ---- the images in a message box ----
+
+/** Pure: the draft with `image` added to the end of box `key`'s images. */
+export function addDraftImage(d: CouncilChatDrafts, key: string, image: TaskImage): CouncilChatDrafts {
+    return { ...d, images: { ...d.images, [key]: [...(d.images[key] ?? []), image] } };
+}
+
+/** Pure: the draft with `patch` (the path once written, the error once failed) on image `id` of box `key`. An image
+ *  that is no longer there (a send cleared the box, an x removed it) is left gone: the draft comes back unchanged. */
+export function patchDraftImage(
+    d: CouncilChatDrafts,
+    key: string,
+    id: string,
+    patch: Partial<TaskImage>
+): CouncilChatDrafts {
+    const images = d.images[key];
+    if (images == null || !images.some((i) => i.id === id)) {
+        return d;
+    }
+    return { ...d, images: { ...d.images, [key]: images.map((i) => (i.id === id ? { ...i, ...patch } : i)) } };
+}
+
+/** Pure: the draft without image `id` of box `key`. */
+export function removeDraftImage(d: CouncilChatDrafts, key: string, id: string): CouncilChatDrafts {
+    const images = d.images[key];
+    if (images == null) {
+        return d;
+    }
+    return { ...d, images: { ...d.images, [key]: images.filter((i) => i.id !== id) } };
+}
+
+/** Pure: the draft with box `key`'s images gone; the other boxes keep theirs. */
+export function clearDraftImages(d: CouncilChatDrafts, key: string): CouncilChatDrafts {
+    if (d.images[key] == null) {
+        return d;
+    }
+    const { [key]: _gone, ...rest } = d.images;
+    return { ...d, images: rest };
+}
+
+/** What a refused image says on its chip. */
+export const IMAGE_TOO_BIG = "Image too large (over 10 MB)";
+
+const setDraft = (councilId: string, next: (d: CouncilChatDrafts) => CouncilChatDrafts) =>
+    globalStore.set(councilChatDraftAtom(councilId), next);
+
+/** Takes the images pasted or dropped into box `key` of a council's chat (`""` the channel's, else an idea's thread): each
+ *  waits at once as a chip with a preview, and is written to ~/.arc/attachments (`Keep`: the council keeps the path, and no
+ *  temp sweep takes the file) as a paste's bare blob (`createTempFileFromBlob`) or a drop's file under its own name
+ *  (`createTempFileFromFile`). A file over 10 MB is refused before any write, and a write that fails puts its reason on its
+ *  chip; either stays on show until removed. A box holds `MAX_TASK_IMAGES`; the rest are dropped. The draft is the atom's,
+ *  so a write that ends after the person left the council lands in it. */
+export function addCouncilImages(councilId: string, key: string, files: File[], from: "paste" | "drop"): void {
+    const room = imageRoom(globalStore.get(councilChatDraftAtom(councilId)).images[key]?.length ?? 0, files.length);
+    for (const f of files.slice(0, room)) {
+        const id = crypto.randomUUID();
+        const previewUrl = URL.createObjectURL(f);
+        if (isOversize(f.size)) {
+            setDraft(councilId, (d) => addDraftImage(d, key, { id, previewUrl, error: IMAGE_TOO_BIG }));
+            continue;
+        }
+        setDraft(councilId, (d) => addDraftImage(d, key, { id, previewUrl }));
+        const write = from === "paste" ? createTempFileFromBlob(f, true) : createTempFileFromFile(f, true);
+        write.then(
+            (path) => setDraft(councilId, (d) => patchDraftImage(d, key, id, { path })),
+            (e) => setDraft(councilId, (d) => patchDraftImage(d, key, id, { error: String(e?.message ?? e) }))
+        );
+    }
+}
+
+/** The x on a chip: the image goes and its preview is let go. */
+export function removeCouncilImage(councilId: string, key: string, id: string): void {
+    const img = globalStore.get(councilChatDraftAtom(councilId)).images[key]?.find((i) => i.id === id);
+    if (img != null) {
+        URL.revokeObjectURL(img.previewUrl);
+    }
+    setDraft(councilId, (d) => removeDraftImage(d, key, id));
+}
+
+/** A sent message took its box's images: they go and their previews are let go. */
+export function clearCouncilImages(councilId: string, key: string): void {
+    for (const img of globalStore.get(councilChatDraftAtom(councilId)).images[key] ?? []) {
+        URL.revokeObjectURL(img.previewUrl);
+    }
+    setDraft(councilId, (d) => clearDraftImages(d, key));
+}
 
 /** The view each council was last shown on (showCouncil keeps it), so its tree row opens it there again. */
 export const councilLastViewAtom = atomFamily(

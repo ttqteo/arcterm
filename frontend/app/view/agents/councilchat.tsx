@@ -9,9 +9,11 @@
 // bubble, folded to three lines and two of its limits; a divider for each round; every idea as a bubble in its seat's
 // colour with its reply chip; the ideas and replies a seat wrote that wait for the person (amber, Send to the others,
 // Edit, Drop); the line where an agent skipped a turn, a failure with Retry, and a typing row for whoever is at work;
-// under it the composer, which posts to everyone, and `@` asks one seat, or lists the live claude and pi chats no seat
-// holds under Add a live chat (a pick puts its mention key in the message; Send seats the chats the text still names
-// and posts the message to them). A click on an idea's reply chip, or Enter on
+// under it the composer, which posts to everyone, and `@` lists the seats (a pick asks that one), the project's files
+// (a pick names the file; the seats that answer read it) and the live claude and pi chats no seat holds under Add a live
+// chat (a pick puts its mention key in the message; Send seats the chats the text still names and posts the message to
+// them); an image pasted or dropped into the box waits above the text as a chip and goes with the message, and the
+// person's own message shows its images as thumbnails and each `@file` as a chip. A click on an idea's reply chip, or Enter on
 // the idea the keyboard cursor is on, slides its thread in from the right (sheetPanel): the idea on top, then its
 // replies with their stance pills, the replies held as drafts, and a reply box that names who will answer. j and k move
 // the cursor over the ideas, Enter opens the thread and Escape closes it, while focus is inside the channel or the
@@ -25,9 +27,20 @@ import { computeEntrances, initialEntranceState, sentRise, sheetPanel } from "@/
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
+import { reloadFileIndex } from "@/app/view/code/codestore";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Check, ChevronDown, ChevronUp, CornerDownRight, Plus, SquareTerminal, X } from "lucide-react";
+import {
+    Check,
+    ChevronDown,
+    ChevronUp,
+    CornerDownRight,
+    FileText,
+    Loader2,
+    Plus,
+    SquareTerminal,
+    X,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
     useCallback,
@@ -36,6 +49,8 @@ import {
     useMemo,
     useRef,
     useState,
+    type ClipboardEvent,
+    type DragEvent,
     type KeyboardEvent,
     type ReactNode,
     type RefObject,
@@ -49,10 +64,13 @@ import {
     councilThread,
     ideaOrder,
     insertChatMention,
+    insertFileMention,
     insertMention,
     mentionPicker,
+    messageSegments,
     onlyLine,
     pickedChats,
+    pickerRows,
     readsFiles,
     replyReach,
     seatChips,
@@ -99,18 +117,24 @@ import {
 import { basename } from "./councilsetupmodel";
 import { CouncilSourcesPanel, EvidenceChips } from "./councilsourcespanel";
 import {
+    addCouncilImages,
+    clearCouncilImages,
     closeCouncilSources,
     councilChatDraftAtom,
     councilOnlyAtom,
     councilOpenProposalAtom,
     councilSourcesAtom,
     draftCouncil,
+    openCouncilSources,
+    removeCouncilImage,
     replyCouncil,
     retryAllExperts,
     retryExpert,
     useEstimate,
 } from "./councilstore";
+import { imageFilesOf, imagesPending, type TaskImage } from "./launcherimages";
 import { MarkdownMessage } from "./markdownmessage";
+import { PromptImages } from "./narrationtimeline";
 import { projectsAtom } from "./projectsstore";
 
 // ---- shared pieces ----
@@ -570,6 +594,53 @@ function ReplyHeader({ item, onOpenIdea }: { item: ReplyPost; onOpenIdea?: (id: 
     );
 }
 
+// a file the person named with `@path`, in place of the `@path`: a click opens it in the Sources panel, as a link under a
+// seat's message opens a file it cites
+const FILE_CHIP =
+    "mx-[1px] inline-flex h-[22px] max-w-full cursor-pointer items-center gap-[4px] rounded-[6px] border border-edge-mid bg-surface px-[6px] align-middle text-[12.5px] outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-accent";
+
+function FileMentionChip({ councilId, owner, path }: { councilId: string; owner: string; path: string }) {
+    const name =
+        path
+            .split("/")
+            .filter((s) => s !== "")
+            .pop() ?? path;
+    return (
+        <button
+            type="button"
+            data-council-file-chip={path}
+            title={path}
+            onClick={() => openCouncilSources(councilId, { owner, title: "Your message", refs: [path], pick: 0 })}
+            className={cn(FILE_CHIP, "group")}
+        >
+            <FileText size={12} className="flex-none text-muted" aria-hidden />
+            <span className="min-w-0 truncate font-medium text-link underline-offset-2 group-hover:underline">
+                {name}
+            </span>
+        </button>
+    );
+}
+
+// the person's own message: Markdown like a seat's, except one that names files, which is cut at them so each `@path` is
+// a chip in the line (a chip cannot sit inside a Markdown paragraph)
+function PersonText({ councilId, item }: { councilId: string; item: ReplyPost }) {
+    const parts = useMemo(() => messageSegments(item.text), [item.text]);
+    if (!parts.some((p) => p.kind === "file")) {
+        return <CouncilText text={item.text} className="text-[14px] leading-[1.6]" />;
+    }
+    return (
+        <p className="m-0 min-w-0 whitespace-pre-wrap break-words text-[14px] leading-[1.6] text-ink-hi">
+            {parts.map((p, i) =>
+                p.kind === "text" ? (
+                    <span key={i}>{p.text}</span>
+                ) : (
+                    <FileMentionChip key={i} councilId={councilId} owner={item.id} path={p.path} />
+                )
+            )}
+        </p>
+    );
+}
+
 function ReplyMessage({
     councilId,
     item,
@@ -607,7 +678,15 @@ function ReplyMessage({
                         TONE_BUBBLE[item.tone]
                     )}
                 >
-                    <CouncilText text={item.text} className="text-[14px] leading-[1.6]" />
+                    {item.mine ? (
+                        <PersonText councilId={councilId} item={item} />
+                    ) : (
+                        <CouncilText text={item.text} className="text-[14px] leading-[1.6]" />
+                    )}
+                    {item.attachments.length > 0 && (
+                        // the paths stay out of the text: the images show as thumbnails, a click opens one full size
+                        <PromptImages paths={item.attachments} />
+                    )}
                     <EvidenceChips
                         evidence={item.evidence}
                         weak={item.weak}
@@ -946,6 +1025,99 @@ function TypingLine({ item }: { item: TypingRow }) {
 
 // ---- the composer ----
 
+// an OS file drag; the webview's own drag-drop is off, so a file dropped unhandled would navigate it to the file
+const dragHasFiles = (dt: DataTransfer | null) => Array.from(dt?.types ?? []).includes("Files");
+
+// whether the caret sits right after an `@` that is not inside a word (councilchatmodel.ts's MENTION), the moment the
+// project's files are worth listing
+const AT_OPEN = /(^|[^\p{L}\p{N}_])@[^@\n]{0,200}$/u;
+const mentionOpen = (text: string, caret: number) => AT_OPEN.test(text.slice(0, caret));
+
+const NO_FILES: readonly string[] = [];
+
+// The project's files for the `@` list, read when the first `@` opens in this box (and again for another project): there
+// is no watcher, and an agent creates files while the council runs. A failed listing leaves the Files group empty, logged.
+function useProjectFiles(project: string, wanted: boolean): readonly string[] {
+    const [listing, setListing] = useState<{ project: string; paths: string[] } | null>(null);
+    const asked = useRef<string | null>(null);
+    useEffect(() => {
+        if (!wanted || project === "" || asked.current === project) {
+            return;
+        }
+        asked.current = project;
+        reloadFileIndex(project).then(
+            (idx) => setListing({ project, paths: idx.paths }),
+            (err) => {
+                console.error(`listing the files of ${project} for the council's @ failed`, err);
+                setListing({ project, paths: [] });
+            }
+        );
+    }, [wanted, project]);
+    return listing?.project === project ? listing.paths : NO_FILES;
+}
+
+// the images waiting in a box, above its text: a thumbnail each with an x, a spinner while the file is written and the
+// reason under the row when it failed
+function DraftImages({ councilId, boxKey, images }: { councilId: string; boxKey: string; images: TaskImage[] }) {
+    if (images.length === 0) {
+        return null;
+    }
+    return (
+        <div data-council-images className="flex flex-col gap-[4px] pt-[2px]">
+            <div className="flex flex-wrap gap-[8px]">
+                {images.map((img) => {
+                    const state = img.error != null ? "error" : img.path != null ? "ready" : "pending";
+                    return (
+                        <div
+                            key={img.id}
+                            data-council-image
+                            data-council-image-state={state}
+                            className="relative h-[48px] w-[48px] shrink-0"
+                        >
+                            <img
+                                src={img.previewUrl}
+                                alt=""
+                                className={cn(
+                                    "h-full w-full rounded-[8px] border object-cover",
+                                    state === "error" ? "border-warning" : "border-edge-mid"
+                                )}
+                            />
+                            {state === "pending" && (
+                                <span
+                                    data-council-image-spinner
+                                    className="absolute inset-0 flex items-center justify-center rounded-[8px] bg-background/60"
+                                >
+                                    <Loader2
+                                        size={14}
+                                        className="animate-spin text-primary motion-reduce:animate-none"
+                                    />
+                                </span>
+                            )}
+                            <button
+                                type="button"
+                                data-council-image-remove
+                                tabIndex={-1}
+                                aria-label="Remove image"
+                                onClick={() => removeCouncilImage(councilId, boxKey, img.id)}
+                                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-edge-mid bg-surface text-muted hover:text-primary"
+                            >
+                                <X size={10} strokeWidth={2.4} />
+                            </button>
+                        </div>
+                    );
+                })}
+            </div>
+            {images.map((img) =>
+                img.error != null ? (
+                    <span key={img.id} role="alert" data-council-image-error className="text-[12px] text-warning">
+                        {img.error}
+                    </span>
+                ) : null
+            )}
+        </div>
+    );
+}
+
 function Composer({
     c,
     scope,
@@ -976,8 +1148,15 @@ function Composer({
     const [dismissed, setDismissed] = useState(-1);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // the images pasted or dropped into this box: a chip each, its file written to ~/.arc/attachments
+    const images = drafts.images[proposalId] ?? [];
+    const readyPaths = images.flatMap((i) => (i.path != null && i.error == null ? [i.path] : []));
+    // a failed image is not attached, so it does not lock the switch; one still uploading is, and holds Send
+    const attached = images.filter((i) => i.error == null).length;
+    const uploading = imagesPending(images);
+    const files = useProjectFiles(c.project, mentionOpen(text, caret));
 
-    const found = mentionPicker(c, text, caret, chats);
+    const found = mentionPicker(c, text, caret, chats, files);
     const picker = found != null && found.start !== dismissed ? found : null;
     // the chats this message adds: the ones whose `@<key>` is still in the text, so deleting it drops the pick
     const joining = pickedChats(c, text, chats);
@@ -987,7 +1166,7 @@ function Composer({
     // a chat answerer (seated, or joining) is priced at its context, a role expert at the flat price
     const chatTabs = who.flatMap((e) => (e.agent ? [e.agent] : []));
     const experts = who.length - chatTabs.length;
-    const reads = readsFiles(drafts.tools, text);
+    const reads = readsFiles(drafts.tools, text, attached);
     const est = useEstimate(
         k > 0
             ? {
@@ -1002,8 +1181,9 @@ function Composer({
         k > 0
             ? followupLabel(est, experts, reads.on, chatTabs.length)
             : replyReach(c, proposalId, "", text, joining).label;
-    // the picker's rows are one list for the arrow keys: the seats, then the chats
-    const rowCount = picker == null ? 0 : picker.seats.length + picker.chats.length;
+    // the picker's rows are one list for the arrow keys: the seats, the files, then the chats
+    const pickRows = picker == null ? [] : pickerRows(picker);
+    const rowCount = pickRows.length;
 
     // the row the arrow keys moved to stays in view of a list that scrolls
     useEffect(() => {
@@ -1012,7 +1192,7 @@ function Composer({
 
     const send = async () => {
         const body = text.trim();
-        if (body === "" || busy) {
+        if (body === "" || busy || uploading) {
             return;
         }
         setBusy(true);
@@ -1021,7 +1201,9 @@ function Composer({
             id: c.id,
             proposalid: proposalId || undefined,
             text: body,
-            tools: followUp && reads.on ? true : undefined,
+            // an image or an @file is read by the seats that answer it, in a round as in a follow-up
+            tools: reads.on ? true : undefined,
+            attachments: readyPaths.length > 0 ? readyPaths : undefined,
             agents: joining.length > 0 ? joining.map((a) => a.id) : undefined,
         });
         setBusy(false);
@@ -1030,6 +1212,7 @@ function Composer({
         } else {
             // the next question decides for itself whether the seats read files
             setDrafts((d) => ({ ...d, texts: { ...d.texts, [proposalId]: "" }, tools: null }));
+            clearCouncilImages(c.id, proposalId);
         }
     };
     // a seat is put in by its name, a chat by its mention key (`@82faafca`), the word wavesrv reaches its seat by
@@ -1052,20 +1235,22 @@ function Composer({
             put(insertChatMention(text, picker.start, caret, chat.key));
         }
     };
-    // the row the keys are on, counted across the seats and then the chats
+    // a file is put in by its path relative to the project: `@src/a.ts `
+    const chooseFile = (path: string) => {
+        if (picker != null) {
+            put(insertFileMention(text, picker.start, caret, path));
+        }
+    };
+    // the row the keys are on, counted across the seats, the files and then the chats
     const active = Math.min(pick, Math.max(rowCount - 1, 0));
     const chooseRow = (i: number) => {
-        if (picker == null) {
-            return;
-        }
-        const seat = picker.seats[i];
-        if (seat != null) {
-            chooseSeat(seat);
-        } else {
-            const chat = picker.chats[i - picker.seats.length];
-            if (chat != null) {
-                chooseChat(chat);
-            }
+        const row = pickRows[i];
+        if (row?.kind === "seat") {
+            chooseSeat(row.seat);
+        } else if (row?.kind === "file") {
+            chooseFile(row.path);
+        } else if (row?.kind === "chat") {
+            chooseChat(row.chat);
         }
     };
     const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1101,22 +1286,71 @@ function Composer({
             returnTo()?.focus();
         }
     };
+    // a paste that carries images takes them (and inserts any text beside them); a paste of text is the browser's
+    const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+        const pasted = imageFilesOf(e.clipboardData?.files);
+        if (pasted.length === 0) {
+            return;
+        }
+        e.preventDefault();
+        addCouncilImages(c.id, proposalId, pasted, "paste");
+        const beside = e.clipboardData.getData("text/plain");
+        if (beside !== "") {
+            const el = e.currentTarget;
+            el.setRangeText(beside, el.selectionStart, el.selectionEnd, "end");
+            setText(el.value);
+            setCaret(el.selectionStart);
+        }
+    };
+    // the webview's own drag-drop is off, so a file dropped unhandled would navigate it to the file: any drag that holds
+    // files is taken here, and only its images are kept
+    const onDragOver = (e: DragEvent<HTMLElement>) => {
+        if (dragHasFiles(e.dataTransfer)) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+        }
+    };
+    const onDrop = (e: DragEvent<HTMLElement>) => {
+        if (!dragHasFiles(e.dataTransfer)) {
+            return;
+        }
+        e.preventDefault();
+        const dropped = imageFilesOf(e.dataTransfer.files);
+        if (dropped.length > 0) {
+            addCouncilImages(c.id, proposalId, dropped, "drop");
+        }
+    };
     const rows = Math.min(5, Math.max(1, text.split("\n").length));
+    const seatsEnd = picker?.seats.length ?? 0;
+    const filesEnd = seatsEnd + (picker?.files.length ?? 0);
+    const groups = picker == null ? 0 : [picker.seats, picker.files, picker.chats].filter((g) => g.length > 0).length;
 
     return (
-        <div data-council-composer={scope} data-composer-for={proposalId} className="relative flex flex-col gap-[6px]">
+        <div
+            data-council-composer={scope}
+            data-composer-for={proposalId}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            className="relative flex flex-col gap-[6px]"
+        >
             {picker != null && (
                 <ul
                     ref={list}
                     role="listbox"
                     data-council-mentions
-                    aria-label={picker.chats.length > 0 ? "Ask a seat or add a chat" : "Seats"}
+                    aria-label={
+                        groups > 1
+                            ? "Ask a seat, name a file or add a chat"
+                            : picker.files.length > 0
+                              ? "Files"
+                              : "Seats"
+                    }
                     className={cn(
                         "absolute bottom-full left-0 z-10 m-0 mb-[4px] flex max-h-[280px] min-w-[220px] list-none flex-col overflow-y-auto rounded-[8px] border border-edge-strong bg-surface-raised p-[4px]",
-                        picker.chats.length > 0 && "w-[460px] max-w-full"
+                        (picker.chats.length > 0 || picker.files.length > 0) && "w-[460px] max-w-full"
                     )}
                 >
-                    {picker.seats.length > 0 && picker.chats.length > 0 && (
+                    {picker.seats.length > 0 && groups > 1 && (
                         <li role="presentation" className="px-[8px] pb-[2px] pt-[4px] text-[12px] text-muted">
                             Seats
                         </li>
@@ -1141,13 +1375,65 @@ function Composer({
                             <span className="text-[12px] text-muted">{s.agent ? "agent" : "expert"}</span>
                         </li>
                     ))}
+                    {picker.files.length > 0 && (
+                        <li
+                            role="presentation"
+                            data-council-files
+                            className={cn(
+                                "flex flex-col",
+                                picker.seats.length > 0 && "mt-[4px] border-t border-edge-mid pt-[4px]"
+                            )}
+                        >
+                            <span
+                                data-council-files-heading
+                                className="px-[8px] pb-[2px] pt-[2px] text-[12px] text-muted"
+                            >
+                                Files
+                            </span>
+                            <ul role="group" aria-label="Files" className="m-0 flex list-none flex-col p-0">
+                                {picker.files.map((path, j) => {
+                                    const i = seatsEnd + j;
+                                    const slash = path.lastIndexOf("/");
+                                    return (
+                                        <li
+                                            key={path}
+                                            role="option"
+                                            aria-selected={i === active}
+                                            data-selected={i === active}
+                                            data-council-file-row={path}
+                                            onMouseDown={(e) => {
+                                                e.preventDefault();
+                                                chooseFile(path);
+                                            }}
+                                            className={cn(
+                                                "flex cursor-pointer items-center gap-[8px] rounded-[6px] px-[8px] py-[5px] text-[13px]",
+                                                i === active ? "bg-surface-hover text-primary" : "text-secondary"
+                                            )}
+                                        >
+                                            <FileText size={14} aria-hidden className="flex-none text-muted" />
+                                            <span className="min-w-0 truncate">
+                                                <span className="font-semibold">{path.slice(slash + 1)}</span>
+                                                {slash >= 0 && (
+                                                    <span className="text-[12px] text-muted">
+                                                        {" "}
+                                                        {path.slice(0, slash)}
+                                                    </span>
+                                                )}
+                                            </span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </li>
+                    )}
                     {picker.chats.length > 0 && (
                         <li
                             role="presentation"
                             data-council-add-chat
                             className={cn(
                                 "flex flex-col",
-                                picker.seats.length > 0 && "mt-[4px] border-t border-edge-mid pt-[4px]"
+                                picker.seats.length + picker.files.length > 0 &&
+                                    "mt-[4px] border-t border-edge-mid pt-[4px]"
                             )}
                         >
                             <span className="px-[8px] pb-[2px] pt-[2px] text-[12px] text-muted">
@@ -1155,7 +1441,7 @@ function Composer({
                             </span>
                             <ul role="group" aria-label="Add a live chat" className="m-0 flex list-none flex-col p-0">
                                 {picker.chats.map((p, j) => {
-                                    const i = picker.seats.length + j;
+                                    const i = filesEnd + j;
                                     const meta = [
                                         p.chat.harness,
                                         councilProjectName(projects, p.chat.project) ?? basename(p.chat.project),
@@ -1203,38 +1489,42 @@ function Composer({
                     )}
                 </ul>
             )}
-            <div className="flex items-end gap-[8px] rounded-[14px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
-                <textarea
-                    ref={box}
-                    data-council-composer-input
-                    rows={rows}
-                    value={text}
-                    aria-labelledby={labelledBy}
-                    placeholder={placeholder}
-                    onChange={(e) => {
-                        setText(e.target.value);
-                        setCaret(e.target.selectionStart);
-                        setPick(0);
-                    }}
-                    onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-                    onKeyDown={onKeyDown}
-                    className={cn(
-                        // a line (21px) padded to the Send button's 30px, so one line sits level with its label
-                        // and not at the foot of the row; more lines grow above the button, which stays at the foot
-                        "box-border min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-[4.5px] text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted",
-                        rows < 5 ? "overflow-hidden" : "overflow-y-auto"
-                    )}
-                />
-                <button
-                    type="button"
-                    data-council-composer-send
-                    disabled={text.trim() === "" || busy}
-                    onClick={() => void send()}
-                    title="Send (Enter)"
-                    className={cn(primaryButton, "h-[30px] px-[14px] text-[13.5px]")}
-                >
-                    {busy ? "Sending…" : sendLabel}
-                </button>
+            <div className="flex flex-col gap-[8px] rounded-[14px] border border-edge-mid bg-surface py-[8px] pl-[14px] pr-[8px] focus-within:border-accent">
+                <DraftImages councilId={c.id} boxKey={proposalId} images={images} />
+                <div className="flex items-end gap-[8px]">
+                    <textarea
+                        ref={box}
+                        data-council-composer-input
+                        rows={rows}
+                        value={text}
+                        aria-labelledby={labelledBy}
+                        placeholder={placeholder}
+                        onChange={(e) => {
+                            setText(e.target.value);
+                            setCaret(e.target.selectionStart);
+                            setPick(0);
+                        }}
+                        onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+                        onKeyDown={onKeyDown}
+                        onPaste={onPaste}
+                        className={cn(
+                            // a line (21px) padded to the Send button's 30px, so one line sits level with its label
+                            // and not at the foot of the row; more lines grow above the button, which stays at the foot
+                            "box-border min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-[4.5px] text-[14px] leading-[1.5] text-primary outline-none placeholder:text-muted",
+                            rows < 5 ? "overflow-hidden" : "overflow-y-auto"
+                        )}
+                    />
+                    <button
+                        type="button"
+                        data-council-composer-send
+                        disabled={text.trim() === "" || busy || uploading}
+                        onClick={() => void send()}
+                        title={uploading ? "Waiting for an image to finish uploading" : "Send (Enter)"}
+                        className={cn(primaryButton, "h-[30px] px-[14px] text-[13.5px]")}
+                    >
+                        {busy ? "Sending…" : sendLabel}
+                    </button>
+                </div>
             </div>
             {/* the switch and the cost line share one row under the box; the cost line wraps under the switch when
                 the thread panel is too narrow for both */}
@@ -1244,10 +1534,16 @@ function Composer({
                         type="button"
                         role="switch"
                         aria-checked={reads.on}
+                        // an image or an @file is read by the seats that answer it: the switch cannot go off while one is in
+                        disabled={reads.locked}
                         data-council-tools
                         data-council-tools-why={reads.why}
+                        data-council-tools-locked={reads.locked ? "true" : undefined}
                         onClick={() => setDrafts((d) => ({ ...d, tools: !reads.on }))}
-                        className="flex w-fit cursor-pointer items-center gap-[7px] rounded-[6px] border-0 bg-transparent py-px text-[12.5px] text-secondary outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className={cn(
+                            "flex w-fit items-center gap-[7px] rounded-[6px] border-0 bg-transparent py-px text-[12.5px] text-secondary outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                            reads.locked ? "cursor-default" : "cursor-pointer"
+                        )}
                     >
                         <span
                             className={cn(
@@ -1438,7 +1734,7 @@ function ThreadPanel({
                     c={c}
                     scope="thread"
                     proposalId={idea.id}
-                    placeholder="Reply in thread · @ to ask one seat"
+                    placeholder="Reply · @ seat or file · paste an image"
                     sendLabel="Reply"
                     labelledBy="council-thread-reply-label"
                     returnTo={() => document.querySelector<HTMLElement>("[data-council-thread]")}
@@ -1954,7 +2250,7 @@ export function CouncilChat({
                             c={c}
                             scope="channel"
                             proposalId=""
-                            placeholder="Message everyone · @ to ask one seat"
+                            placeholder="Message everyone · @ to ask one seat · paste an image · @ for a file"
                             sendLabel="Send"
                             labelledBy="council-channel-label"
                             returnTo={() => channel.current}

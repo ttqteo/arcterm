@@ -16,6 +16,7 @@ import {
     canSummarize,
     costLine,
     expertStat,
+    fileMentions,
     flattenThread,
     headerChip,
     matrixRows,
@@ -30,6 +31,7 @@ import {
 } from "../../../frontend/app/view/agents/councilmodel";
 import { contextTokens } from "../../../frontend/app/view/agents/agentrailmodel";
 import {
+    ATTACHMENT_PLACEHOLDER,
     COUNCIL_FIXTURES,
     COUNCIL_PROJECT,
     JOIN_AGENTS,
@@ -66,7 +68,7 @@ const NOW = Date.UTC(2026, 9, 21, 12, 0, 0);
 const placed = (name, now = NOW) => placeCouncil(loadCouncilFixture(name), name, "/work/fixture", now);
 
 describe("the fixtures as records", () => {
-    it("has the six the plan names and the two rooms, each under its own id", () => {
+    it("has the six the plan names, the two rooms and the room with an attachment, each under its own id", () => {
         expect(COUNCIL_FIXTURES).toEqual([
             "round1",
             "round2",
@@ -76,6 +78,7 @@ describe("the fixtures as records", () => {
             "notrun",
             "room",
             "room-awaiting",
+            "room-attached",
         ]);
         for (const name of COUNCIL_FIXTURES) {
             expect(loadCouncilFixture(name).id).toBe(councilFixtureId(name));
@@ -407,6 +410,30 @@ describe("placeCouncil", () => {
         expect(placed("notrun").started).toBeUndefined();
     });
 
+    it("places room-attached as the room is: ended at now, its person's post moved with the rest, no live agent seated", () => {
+        const raw = loadCouncilFixture("room-attached");
+        const c = placed("room-attached");
+        expect(c.state).toBe("running");
+        expect(c.updated).toBe(NOW);
+        expect(c.project).toBe("/work/fixture");
+        const post = c.replies.find((r) => r.author === "you");
+        expect(post.ts - raw.replies[0].ts).toBe(c.created - raw.created);
+        expect(post.ts).toBeGreaterThan(c.started);
+        expect(post.ts).toBeLessThan(c.updated);
+        // no seat is a live agent, so the step needs no roster
+        expect(c.experts.some((e) => e.agent)).toBe(false);
+    });
+
+    it("gives room-attached's post an image to patch and a project file to name, the image's path never in the text", () => {
+        const post = loadCouncilFixture("room-attached").replies.find((r) => r.author === "you");
+        expect(post.proposalid).toBe("");
+        expect(post.attachments).toEqual([ATTACHMENT_PLACEHOLDER]);
+        expect(fileMentions(post.text).map((m) => m.path)).toEqual(["docs/recap-notes.md"]);
+        expect(post.text).not.toContain(ATTACHMENT_PLACEHOLDER);
+        // the post reaches the seats it names, so the person's reply is a message to them, not to nobody
+        expect(post.to.length).toBeGreaterThan(0);
+    });
+
     it("moves the skipped turns with everything else", () => {
         const raw = loadCouncilFixture("room");
         const c = placeCouncil(raw, "room", "/work/fixture", NOW);
@@ -418,9 +445,19 @@ describe("placeCouncil", () => {
         expect(c.skips[0].ts).toBeLessThan(c.updated);
     });
 
-    it("sorts the tree newest created first: round1, round2, awaiting, room-awaiting, room, failed, done, notrun", () => {
+    it("sorts the tree newest created first: round1, round2, awaiting, room-awaiting, room-attached, room, failed, done, notrun", () => {
         const order = [...COUNCIL_FIXTURES].sort((a, b) => placed(b).created - placed(a).created);
-        expect(order).toEqual(["round1", "round2", "awaiting", "room-awaiting", "room", "failed", "done", "notrun"]);
+        expect(order).toEqual([
+            "round1",
+            "round2",
+            "awaiting",
+            "room-awaiting",
+            "room-attached",
+            "room",
+            "failed",
+            "done",
+            "notrun",
+        ]);
         // the four Task 13 lists keep the plan's order: Running, Waiting on you, Done, Not run
         const four = ["notrun", "done", "awaiting", "round2"].sort((a, b) => placed(b).created - placed(a).created);
         expect(four.map((n) => treeMeta(placed(n)).text)).toEqual(["Running", "Waiting on you", "Done", "Not run"]);

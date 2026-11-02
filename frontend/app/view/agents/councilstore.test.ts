@@ -1,9 +1,13 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const hoisted = vi.hoisted(() => ({ handler: null as null | ((event: { data?: unknown }) => void) }));
+const hoisted = vi.hoisted(() => ({
+    handler: null as null | ((event: { data?: unknown }) => void),
+    blob: vi.fn(),
+    file: vi.fn(),
+}));
 
 vi.mock("@/app/store/wshclientapi", () => ({
     RpcApi: {
@@ -33,16 +37,26 @@ vi.mock("@/app/store/wps", () => ({
         return () => {};
     }),
 }));
+vi.mock("@/app/view/term/termutil", () => ({
+    createTempFileFromBlob: hoisted.blob,
+    createTempFileFromFile: hoisted.file,
+}));
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { MAX_ATTACHMENT_BYTES } from "./composerattachments";
 import { emptyCouncilDraft } from "./councilmodel";
 import {
+    addCouncilImages,
+    addDraftImage,
     autoGenerateCouncil,
+    clearCouncilImages,
+    clearDraftImages,
     closeCouncilSources,
     continueCouncil,
     councilAtom,
+    councilChatDraftAtom,
     councilListAtom,
     councilOpenProposalAtom,
     councilRoles,
@@ -57,7 +71,10 @@ import {
     loadCouncil,
     loadCouncils,
     openCouncilSources,
+    patchDraftImage,
     rateCouncil,
+    removeCouncilImage,
+    removeDraftImage,
     replyCouncil,
     retryExpert,
     saveCouncilDoc,
@@ -68,6 +85,7 @@ import {
     suggestCouncil,
     summarizeCouncil,
 } from "./councilstore";
+import { MAX_TASK_IMAGES, type TaskImage } from "./launcherimages";
 
 const council = (id: string, project: string, extra: Partial<Council> = {}): Council => ({
     id,
@@ -424,5 +442,183 @@ describe("UI state", () => {
         globalStore.set(councilSetupDraftAtom("D:\\code\\z"), draft);
         expect(globalStore.get(councilSetupDraftAtom("d:/code/z"))?.feature).toBe("Rail apps");
         expect(globalStore.get(councilSetupDraftAtom("D:\\code\\other"))).toBeNull();
+    });
+});
+
+describe("the images in a council's message boxes", () => {
+    const img = (id: string, extra: Partial<TaskImage> = {}): TaskImage => ({ id, previewUrl: `blob:${id}`, ...extra });
+    const empty = () => ({ texts: {}, images: {}, tools: null as boolean | null });
+    const png = (name = "shot.png") => new File([new Uint8Array([1, 2, 3])], name, { type: "image/png" });
+
+    describe("the pure helpers", () => {
+        it("keeps each box's images apart, the channel's under the empty key and a thread's under its idea", () => {
+            let d = addDraftImage(empty(), "", img("a"));
+            d = addDraftImage(d, "P1", img("b"));
+            d = addDraftImage(d, "", img("c"));
+            expect(d.images[""].map((i) => i.id)).toEqual(["a", "c"]);
+            expect(d.images["P1"].map((i) => i.id)).toEqual(["b"]);
+        });
+
+        it("leaves the texts and the switch alone", () => {
+            const d = addDraftImage({ texts: { "": "hello" }, images: {}, tools: true }, "", img("a"));
+            expect(d.texts).toEqual({ "": "hello" });
+            expect(d.tools).toBe(true);
+        });
+
+        it("patches one image of one box: its path once written, its error once failed", () => {
+            let d = addDraftImage(addDraftImage(empty(), "", img("a")), "P1", img("a"));
+            d = patchDraftImage(d, "", "a", { path: "/att/a.png" });
+            expect(d.images[""][0].path).toBe("/att/a.png");
+            expect(d.images["P1"][0].path).toBeUndefined();
+            d = patchDraftImage(d, "P1", "a", { error: "boom" });
+            expect(d.images["P1"][0].error).toBe("boom");
+        });
+
+        it("patches nothing for an image a send or a remove took away while it uploaded", () => {
+            const d = addDraftImage(empty(), "", img("a"));
+            const gone = removeDraftImage(d, "", "a");
+            expect(patchDraftImage(gone, "", "a", { path: "/att/a.png" })).toEqual(gone);
+            expect(patchDraftImage(empty(), "P9", "a", { path: "/x" })).toEqual(empty());
+        });
+
+        it("removes one image and keeps the rest of its box and the other boxes", () => {
+            let d = addDraftImage(addDraftImage(empty(), "", img("a")), "", img("b"));
+            d = addDraftImage(d, "P1", img("a"));
+            d = removeDraftImage(d, "", "a");
+            expect(d.images[""].map((i) => i.id)).toEqual(["b"]);
+            expect(d.images["P1"].map((i) => i.id)).toEqual(["a"]);
+        });
+
+        it("clears one box's images and keeps the other boxes", () => {
+            let d = addDraftImage(addDraftImage(empty(), "", img("a")), "P1", img("b"));
+            d = clearDraftImages(d, "");
+            expect(d.images[""] ?? []).toEqual([]);
+            expect(d.images["P1"].map((i) => i.id)).toEqual(["b"]);
+        });
+    });
+
+    describe("the actions", () => {
+        const realUrl = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+        let revoke: ReturnType<typeof vi.fn>;
+        let n = 0;
+        let id = 0;
+        const box = () => globalStore.get(councilChatDraftAtom(`img-${id}`));
+
+        beforeEach(() => {
+            id++;
+            n = 0;
+            URL.createObjectURL = vi.fn(() => `blob:preview-${++n}`);
+            revoke = vi.fn();
+            URL.revokeObjectURL = revoke;
+            hoisted.blob.mockReset();
+            hoisted.file.mockReset();
+        });
+
+        afterEach(() => {
+            URL.createObjectURL = realUrl.create;
+            URL.revokeObjectURL = realUrl.revoke;
+        });
+
+        it("shows a pasted image at once as a chip with no path, then keeps its file once written", async () => {
+            hoisted.blob.mockResolvedValue("/home/u/.arc/attachments/d-1/paste.png");
+            addCouncilImages(`img-${id}`, "", [png()], "paste");
+            expect(box().images[""]).toEqual([{ id: expect.any(String), previewUrl: "blob:preview-1" }]);
+            await settle();
+            expect(hoisted.blob).toHaveBeenCalledWith(expect.any(File), true);
+            expect(box().images[""][0].path).toBe("/home/u/.arc/attachments/d-1/paste.png");
+        });
+
+        it("keeps a dropped image under its own name, in the attachments folder as a paste is", async () => {
+            hoisted.file.mockResolvedValue("/home/u/.arc/attachments/d-2/shot.png");
+            addCouncilImages(`img-${id}`, "P1", [png("shot.png")], "drop");
+            await settle();
+            expect(hoisted.file).toHaveBeenCalledWith(expect.any(File), true);
+            expect(box().images["P1"][0].path).toBe("/home/u/.arc/attachments/d-2/shot.png");
+            expect(box().images[""] ?? []).toEqual([]);
+        });
+
+        it("puts the reason on the chip of an upload that failed, and keeps it on show", async () => {
+            hoisted.blob.mockRejectedValue(new Error("disk full"));
+            addCouncilImages(`img-${id}`, "", [png()], "paste");
+            await settle();
+            expect(box().images[""]).toHaveLength(1);
+            expect(box().images[""][0]).toMatchObject({ error: "disk full" });
+            expect(box().images[""][0].path).toBeUndefined();
+        });
+
+        it("refuses a file over 10 MB before any upload, as an error chip", async () => {
+            const big = png("big.png");
+            Object.defineProperty(big, "size", { value: MAX_ATTACHMENT_BYTES + 1 });
+            addCouncilImages(`img-${id}`, "", [big], "paste");
+            await settle();
+            expect(hoisted.blob).not.toHaveBeenCalled();
+            expect(hoisted.file).not.toHaveBeenCalled();
+            expect(box().images[""]).toHaveLength(1);
+            expect(box().images[""][0].error).toMatch(/10 MB/);
+        });
+
+        it("takes a file of exactly 10 MB", async () => {
+            hoisted.blob.mockResolvedValue("/att/edge.png");
+            const edge = png("edge.png");
+            Object.defineProperty(edge, "size", { value: MAX_ATTACHMENT_BYTES });
+            addCouncilImages(`img-${id}`, "", [edge], "paste");
+            await settle();
+            expect(hoisted.blob).toHaveBeenCalledTimes(1);
+            expect(box().images[""][0].path).toBe("/att/edge.png");
+        });
+
+        it("takes no more images than a box has room for", async () => {
+            hoisted.blob.mockResolvedValue("/att/x.png");
+            addCouncilImages(
+                `img-${id}`,
+                "",
+                Array.from({ length: MAX_TASK_IMAGES + 3 }, () => png()),
+                "paste"
+            );
+            await settle();
+            expect(box().images[""]).toHaveLength(MAX_TASK_IMAGES);
+        });
+
+        it("removes one image and lets go of its preview", async () => {
+            hoisted.blob.mockResolvedValue("/att/x.png");
+            addCouncilImages(`img-${id}`, "", [png(), png()], "paste");
+            await settle();
+            const [first, second] = box().images[""];
+            removeCouncilImage(`img-${id}`, "", first.id);
+            expect(box().images[""].map((i) => i.id)).toEqual([second.id]);
+            expect(revoke).toHaveBeenCalledTimes(1);
+            expect(revoke).toHaveBeenCalledWith(first.previewUrl);
+        });
+
+        it("clears one box on a send and lets go of every preview in it, and none of another box's", async () => {
+            hoisted.blob.mockResolvedValue("/att/x.png");
+            addCouncilImages(`img-${id}`, "", [png(), png()], "paste");
+            addCouncilImages(`img-${id}`, "P1", [png()], "paste");
+            await settle();
+            const kept = box().images["P1"][0];
+            clearCouncilImages(`img-${id}`, "");
+            expect(box().images[""] ?? []).toEqual([]);
+            expect(box().images["P1"]).toEqual([kept]);
+            expect(revoke).toHaveBeenCalledTimes(2);
+            expect(revoke).not.toHaveBeenCalledWith(kept.previewUrl);
+        });
+
+        it("keeps the images of a council that was left, for when it is opened again", async () => {
+            hoisted.blob.mockResolvedValue("/att/x.png");
+            addCouncilImages(`img-${id}`, "", [png()], "paste");
+            await settle();
+            // nothing in the view holds the draft: it is the atom's
+            expect(globalStore.get(councilChatDraftAtom(`img-${id}`)).images[""][0].path).toBe("/att/x.png");
+        });
+
+        it("finishes an upload into the draft after the box was left, and into no box after a send cleared it", async () => {
+            let done: (path: string) => void = () => {};
+            hoisted.blob.mockImplementation(() => new Promise<string>((resolve) => (done = resolve)));
+            addCouncilImages(`img-${id}`, "", [png()], "paste");
+            clearCouncilImages(`img-${id}`, "");
+            done("/att/late.png");
+            await settle();
+            expect(box().images[""] ?? []).toEqual([]);
+        });
     });
 });

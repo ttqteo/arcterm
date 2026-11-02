@@ -1,0 +1,83 @@
+{
+  "id": "fx-council-room-attached",
+  "project": "",
+  "feature": "Rail apps",
+  "question": "Which changes to pinned apps on the nav rail are worth making first?",
+  "files": [
+    "frontend/app/view/agents/railapps.ts",
+    "frontend/app/view/agents/railappsstore.ts",
+    "pkg/services/model.go"
+  ],
+  "experts": [
+    {
+      "id": "uxaudit",
+      "name": "UX audit",
+      "model": "sonnet",
+      "brief": ""
+    },
+    {
+      "id": "security",
+      "name": "Security",
+      "model": "sonnet",
+      "brief": "You review the feature for security. Ask what a pinned app exposes, to whom, and for how long."
+    },
+    {
+      "id": "coordinator",
+      "name": "Coordinator",
+      "model": "opus",
+      "coordinator": true,
+      "brief": "You are the coordinator. Merge the proposals that say the same thing, rank the directions that remain, and mark the claims that cite nothing as weak."
+    }
+  ],
+  "rounds": 2,
+  "state": "running",
+  "round": 2,
+  "proposals": [
+    {
+      "id": "P1",
+      "author": "security",
+      "title": "Stop a pinned app's server when its project closes",
+      "argument": "A pinned app is a dev server. Closing its project leaves it listening on its port until arcterm quits.",
+      "evidence": [
+        {
+          "ref": "pkg/services/model.go:38"
+        }
+      ],
+      "ts": 1792573328000
+    },
+    {
+      "id": "P2",
+      "author": "uxaudit",
+      "title": "Show asleep and waking on the rail icon",
+      "argument": "A sleeping app looks the same as a running one. railDot draws only error and warning, so the rail never says an app is asleep.",
+      "evidence": [
+        {
+          "ref": "railapps.ts:72"
+        }
+      ],
+      "ts": 1792573445000
+    }
+  ],
+  "replies": [
+    {
+      "id": "r1",
+      "proposalid": "",
+      "author": "you",
+      "text": "Here is the rail as it looks now, and my notes in @docs/recap-notes.md. Judge each idea against both.",
+      "attachments": [
+        "<PNG>"
+      ],
+      "to": [
+        "uxaudit",
+        "security"
+      ],
+      "round": 2,
+      "ts": 1792574215000
+    }
+  ],
+  "tokens": 90000,
+  "calls": 2,
+  "started": 1792573200000,
+  "created": 1792573172000,
+  "updated": 1792574360000
+}
