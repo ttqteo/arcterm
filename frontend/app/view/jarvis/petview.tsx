@@ -74,7 +74,9 @@ import {
     type PetCell,
     type PetMark,
 } from "./petsprite";
+import { isStaying, stayEndsInMs } from "./petstay";
 import {
+    clearExpiredPetStay,
     petBubbleAtom,
     petCharacterAtom,
     petEventsAtom,
@@ -85,6 +87,7 @@ import {
     petOutfitChoiceAtom,
     petPeekOpenAtom,
     petQuotesOnAtom,
+    petStayAtom,
     petUnreadAtom,
     petWatermarkAtom,
     rememberSaid,
@@ -101,6 +104,7 @@ import {
     homeFraction,
     initialWalker,
     nextTick,
+    placeAt,
     REST_POSES,
     restIn,
     slideFrom,
@@ -208,6 +212,12 @@ type PetForce = {
     hang?: boolean;
     // rest now in this pose, for any character, so a step can show each without waiting on the random pick
     rest?: (typeof REST_POSES)[number];
+    // place the walker at this left edge (kept on the ledge), as a fresh standing rest, so a step can put the pet away
+    // from home and watch it walk back. Applied once, by this force call; it is not an input.
+    at?: number;
+    // the DEV pace: rests last 5-15 s instead of 1-3 minutes (and one already under way is cut to that), so a step sees
+    // a walk or a rest within seconds. Holds until force(null) or a force without it.
+    quick?: boolean;
     // hold Spider-Man's web-swing still at t ms into it, in place of his cells; the others ignore it
     swing?: { kind: TeleportKind; t: number };
     // draw the working mark at this count, held or not and in Float or not
@@ -369,6 +379,28 @@ export function PetView({ model }: { model: AgentsViewModel }) {
         arm(quoteDelayMs(Math.random()));
         return () => clearTimeout(timer);
     }, [quotesOn]);
+
+    // A timed stay ends by itself: at its end time the atom goes back to roam, which steps the sprite's walker (its own
+    // subscription) so the pet roams again then, not at its next rest. Here and not in PetSprite, which is not mounted
+    // while the Cockpit office draws the boss as the creature. The walker and every control read the stay through
+    // isStaying / shownStayChoice, so none of them waits on this timer to see it over. A timer that fires a moment early
+    // finds the stay still running and arms again for what is left.
+    const stay = useAtomValue(petStayAtom);
+    useEffect(() => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const arm = () => {
+            const ms = stayEndsInMs(globalStore.get(petStayAtom), Date.now());
+            if (ms == null) {
+                return;
+            }
+            timer = setTimeout(() => {
+                clearExpiredPetStay(Date.now());
+                arm();
+            }, ms);
+        };
+        arm();
+        return () => clearTimeout(timer);
+    }, [stay]);
 
     // a quote is not news: clicking it only puts it away, and it leaves no unread marker behind
     const openPeek = useCallback(() => openPetBubble(model), [model]);
@@ -533,6 +565,10 @@ function PetSprite({
             // read from the store, not a prop: a drop persists home and steps in the same handler
             home: globalStore.get(petHomeAtom),
             hangs: live.character === "spidey" && ceiling != null && !live.reduce && !hangCutRef.current,
+            // read from the store at the moment of the step, through isStaying: a timed stay that has ended reads as
+            // roaming before the expiry timer has cleared the atom
+            staying: isStaying(globalStore.get(petStayAtom), Date.now()),
+            quick: f?.quick ?? false,
         };
         return { ledge, ceiling, avoid, input };
     }, []);
@@ -580,9 +616,12 @@ function PetSprite({
         return () => clearTimeout(timerRef.current);
     }, [run]);
 
+    // Staying is read from the store at each step (measure); this is what steps the walker when it changes: turning a stay
+    // on walks the pet home at once, and turning it off (or its time running out, which PetView clears) lets it roam.
+    const stay = useAtomValue(petStayAtom);
     useEffect(() => {
         run();
-    }, [run, expression, peekOpen, reduce, speaking, teleporting, character]);
+    }, [run, expression, peekOpen, reduce, speaking, teleporting, character, stay]);
 
     // a posture change and an utterance are activity: they wake it and push its sleep back
     useEffect(() => {
@@ -627,11 +666,15 @@ function PetSprite({
         (o: PetForce | null) => {
             forceRef.current = o;
             swingRunRef.current = o?.swing != null ? { kind: o.swing.kind, at: performance.now() } : null;
-            if (o?.hang || o?.rest) {
+            if (o?.hang || o?.rest || o?.at != null) {
                 // a rest begun now, from the walker as it stands (or as it would boot)
                 const { input } = measure();
                 const now = Date.now();
                 let w = walkerRef.current ?? initialWalker(input, now, Math.random);
+                // first, so a rest or a hang forced with it begins at that spot
+                if (o.at != null) {
+                    w = placeAt(w, o.at, input.ledge, now);
+                }
                 if (o.rest) {
                     w = restIn(w, o.rest, now);
                 }

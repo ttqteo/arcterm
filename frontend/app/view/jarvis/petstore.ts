@@ -19,9 +19,11 @@ import type { PetCorner } from "./petledge";
 import { DEFAULT_PET_OUTFIT, type PetOutfitChoice } from "./petoutfit";
 import { pruneSaid } from "./petquota";
 import type { PetCharacter } from "./petsprite";
+import { isStaying, parsePetStay, PET_ROAM, stayFor, type PetStay, type PetStayChoice } from "./petstay";
 import type { PetEvent, PetWatermark } from "./petvoice";
 
 const HOME_KEY = "wave:pet.home";
+const STAY_KEY = "wave:pet.stay";
 const WATERMARK_KEY = "wave:pet.watermark";
 
 // Best-effort reads; any failure (no localStorage, parse error, a value written by an older shape) falls
@@ -69,6 +71,42 @@ export function setPetHome(fraction: number): void {
         globalThis.localStorage?.setItem(HOME_KEY, String(home));
     } catch {
         // quota/disabled — the in-memory atom still holds it for this session
+    }
+}
+
+// Whether the pet stays at that home, and until when (petstay.ts, Settings → Jarvis and the peek's pin). Persisted
+// like the home, so a restart keeps it staying, a timed stay included: its end time is absolute. A timed stay that
+// ended while the app was closed is read as roam by parsePetStay. One that ends while the app runs stays in this
+// atom until clearExpiredPetStay, so a control reads it through shownStayChoice(stay, Date.now()), never raw.
+function readStay(): PetStay {
+    try {
+        return parsePetStay(globalThis.localStorage?.getItem(STAY_KEY) ?? null, Date.now());
+    } catch {
+        return PET_ROAM;
+    }
+}
+
+export const petStayAtom = atom<PetStay>(readStay()) as PrimitiveAtom<PetStay>;
+
+function writeStay(stay: PetStay): void {
+    globalStore.set(petStayAtom, stay);
+    try {
+        globalThis.localStorage?.setItem(STAY_KEY, JSON.stringify(stay));
+    } catch {
+        // quota/disabled — the in-memory atom still holds it for this session
+    }
+}
+
+export function setPetStay(choice: PetStayChoice): void {
+    writeStay(stayFor(choice, Date.now()));
+}
+
+// The expiry timer's store half: a timed stay whose end has come goes back to roam. Anything still staying, and
+// roam itself, is left as it is, so this can run on every timer tick without waking the atom's readers.
+export function clearExpiredPetStay(now: number): void {
+    const stay = globalStore.get(petStayAtom);
+    if (stay.choice !== "roam" && !isStaying(stay, now)) {
+        writeStay(PET_ROAM);
     }
 }
 

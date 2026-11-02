@@ -7696,9 +7696,11 @@ const PET_THEME_KEY = "cockpit.theme.preset";
 const PET_PROJECT = "verify-jarvis-pet";
 const PET_FIXTURE_AGENT = "fx-jarvis-pet";
 const PET_NOTIFY_TITLE = "cdp jarvis-pet";
-// Every force names all four inputs, so it means the same whether a later call replaces the override or merges into
-// it. Steps 1-4 hold the live signals off: a rate limit or an attention item in the profile would slow or hold the walk.
-const PET_CALM = { expression: "at-rest", posture: "none", speaking: false, idle: false };
+// Every force names all four inputs and the pace, so it means the same whether a later call replaces the override or
+// merges into it (force(o) replaces the whole object, so a force without `quick` drops the quick pace). Steps 1-4 hold
+// the live signals off: a rate limit or an attention item in the profile would slow or hold the walk. `quick` is the DEV
+// pace: roaming rests now last 1-3 minutes, and every wait here on a walk or a rest is sized for the old 5-15 s.
+const PET_CALM = { expression: "at-rest", posture: "none", speaking: false, idle: false, quick: true };
 const PET_POSTURE_MARKS = [
     ["review-gate", "gate"],
     ["escalation", "escalation"],
@@ -8742,8 +8744,8 @@ const jarvisPet = {
             web15b
         );
 
-        // 16. side-on, both ways. A walk window that caught a turn is retried on the next one, up to 90 s: the frames are
-        // kept by (flip, pose), and the left-facing one must be the right-facing one's mirror
+        // 16. side-on, both ways. A walk window that caught a turn is retried on the next one, up to 90 s (at the quick
+        // pace): the frames are kept by (flip, pose), and the left-facing one must be the right-facing one's mirror
         const seen16 = new Map();
         const poses16 = new Set();
         const zoomed16 = new Set();
@@ -8761,6 +8763,8 @@ const jarvisPet = {
         };
         let pair16 = null;
         const end16 = Date.now() + 90_000;
+        // 15b released the force, and live rests now last 1-3 minutes: the 90 s window is sized for the quick pace
+        await petForce(h, PET_CALM);
         while (Date.now() < end16 && (pair16 == null || !poses16.has("walk1") || !poses16.has("walk2"))) {
             const f = await petCatch(h, walking, end16 - Date.now());
             if (!walking(f)) break;
@@ -9371,6 +9375,502 @@ const jarvisPet = {
     },
 };
 
+// --- pet stay put: the pin that keeps the Jarvis pet at its home --------------------------------
+// docs/superpowers/specs/2026-11-02-pet-stay-put-design.md. The peek's pin button opens a menu (Stay 1 hour / Stay 4
+// hours / Stay until I turn it off / Roam again), Settings → Jarvis has the "Pet roams" row for the same choice, and a
+// pet told to stay walks home at once and holds there. It is the jarvis-pet recipe: the Final starts on an empty store,
+// so arrange supplies the fixture roster the Cockpit needs to draw its HintsBar, and window.__jarvisPet (DEV) supplies
+// the walker's x, ledge and avoid spans and force() with its `at` and `quick` levers (petview.tsx).
+const PET_STAY_KEY = "wave:pet.stay";
+const PET_STAY_PROJECT = "verify-pet-stay";
+const PET_STAY_FIXTURE_AGENT = "fx-pet-stay";
+// The home the scenario starts from, as a fraction of the ledge's travel (the app's default is 0.9). petstore.ts reads its
+// key once at module load, so arrange sets it before its reload and teardown puts the user's value back before its own.
+const PET_STAY_HOME = "0.75";
+const PET_STAY_PIN = "[data-pet-stay-pin]";
+const PET_STAY_MENU = "[data-pet-stay-menu]";
+const PET_STAY_LABELS = ["Stay 1 hour", "Stay 4 hours", "Stay until I turn it off", "Roam again"];
+const PET_STAY_CHOICES = ["1h", "4h", "forever", "roam"];
+
+// where a staying pet stands: petwalk.ts homeX for the fraction, then clearSpot (the nearest left edge whose span overlaps
+// no avoid span, which is home itself unless a toast or a terminal covers it)
+const petStayHomeAt = (ledge, avoid, fraction) => {
+    const lo = Math.ceil(ledge.left);
+    const hi = Math.max(lo, Math.floor(ledge.right - PET_PX));
+    const want = Math.min(hi, Math.max(lo, Math.round(ledge.left + fraction * (ledge.right - PET_PX - ledge.left))));
+    for (let d = 0; d <= hi - lo; d++) {
+        for (const x of [want - d, want + d]) {
+            if (x >= lo && x <= hi && petOverlaps(x, avoid).length === 0) return x;
+        }
+    }
+    return want;
+};
+
+// a clear left edge 120-400 px from home, the nearest to 260: far enough to be a real walk, and one that 24 px/s finishes
+// inside the 20 s the step allows (400 px takes 16.7 s). Null when the ledge has none.
+const petStayAwayAt = (ledge, avoid, home) => {
+    const lo = Math.ceil(ledge.left);
+    const hi = Math.max(lo, Math.floor(ledge.right - PET_PX));
+    for (const d of [260, 240, 280, 220, 300, 200, 320, 180, 340, 160, 360, 140, 380, 120, 400]) {
+        for (const x of [home - d, home + d]) {
+            if (x >= lo && x <= hi && petOverlaps(x, avoid).length === 0) return x;
+        }
+    }
+    return null;
+};
+
+// a real left click at the centre of the element the selector names; false when it is not there
+async function petStayClick(h, selector) {
+    const at = await h.ev(`(() => {
+        const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
+        return r == null || r.width === 0 ? null : { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    })()`);
+    if (at == null) return false;
+    await petMouse(h, "mouseMoved", at.x, at.y);
+    await petMouse(h, "mousePressed", at.x, at.y, { button: "left", buttons: 1, clickCount: 1 });
+    await petMouse(h, "mouseReleased", at.x, at.y, { button: "left", buttons: 0, clickCount: 1 });
+    return true;
+}
+
+// the peek, opened from the creature the way a keyboard does (jarvis-peek step 1); a click on the creature toggles it, so
+// one that is already open is left alone. True once the pin is in the panel.
+async function petStayOpenPeek(h) {
+    if (!(await h.ev(`!!document.querySelector('[data-pet-peek]')`))) {
+        await h.ev(`document.querySelector('[aria-label="Jarvis condition"]')?.focus()`);
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+        }
+    }
+    const shown = await polishWaitFor(h, `!!document.querySelector('[data-pet-peek] ${PET_STAY_PIN}')`, 5000);
+    // past the panel's own reveal, so a click lands where the pin is drawn
+    if (shown) await polishNap(500);
+    return shown;
+}
+
+// the peek closed by its close button; true once it is gone
+async function petStayClosePeek(h) {
+    await h.ev(`document.querySelector('button[aria-label="Close Jarvis panel"]')?.click()`);
+    return polishWaitFor(h, `!document.querySelector('[data-pet-peek]')`, 3000);
+}
+
+// the pin clicked, then the menu waited for until it has a box and its scale-in (PopoverReveal) has settled
+async function petStayOpenMenu(h) {
+    if (!(await petStayClick(h, PET_STAY_PIN))) return false;
+    const shown = await polishWaitFor(
+        h,
+        `(() => { const r = document.querySelector(${JSON.stringify(PET_STAY_MENU)})?.getBoundingClientRect(); return r != null && r.width > 0 && r.height > 0; })()`,
+        3000
+    );
+    if (shown) await polishNap(450);
+    return shown;
+}
+
+const petStayMenuGone = (h, ms = 3000) => polishWaitFor(h, `!document.querySelector(${JSON.stringify(PET_STAY_MENU)})`, ms);
+
+// one choice picked through the pin's menu with real clicks; true once the menu has closed behind it
+async function petStayPick(h, choice) {
+    if (!(await petStayOpenMenu(h))) return false;
+    if (!(await petStayClick(h, `[data-pet-stay-choice="${choice}"]`))) return false;
+    return petStayMenuGone(h);
+}
+
+// what the open menu and the pin show, in one read
+const PET_STAY_READ = `(() => {
+    const menu = document.querySelector(${JSON.stringify(PET_STAY_MENU)});
+    const pin = document.querySelector(${JSON.stringify(PET_STAY_PIN)});
+    const r = menu?.getBoundingClientRect();
+    let stored = null;
+    try {
+        stored = JSON.parse(localStorage.getItem(${JSON.stringify(PET_STAY_KEY)}) ?? "null");
+    } catch {}
+    return {
+        open: menu != null,
+        role: menu?.getAttribute("role") ?? null,
+        visible: r != null && r.width > 0 && r.height > 0,
+        pin: pin != null,
+        expanded: pin?.getAttribute("aria-expanded") ?? null,
+        haspopup: pin?.getAttribute("aria-haspopup") ?? null,
+        staying: pin?.hasAttribute("data-staying") ?? null,
+        peek: !!document.querySelector("[data-pet-peek]"),
+        items: [...(menu?.querySelectorAll('[role="menuitemradio"]') ?? [])].map((b) => ({
+            choice: b.getAttribute("data-pet-stay-choice"),
+            text: b.textContent.trim(),
+            checked: b.getAttribute("aria-checked") === "true",
+        })),
+        stored,
+        now: Date.now(),
+    };
+})()`;
+
+// the Settings → Jarvis row: each option with whether it is the selected (grey) one, and the "until HH:MM" it shows
+const PET_STAY_ROW_READ = `(() => {
+    const row = document.querySelector('[data-setting-row="appearance.petstay"]');
+    if (row == null) return null;
+    const options = [...row.querySelectorAll("button:not([aria-label])")].map((b) => ({
+        text: b.textContent.trim(),
+        selected: b.className.includes("bg-surface-selected"),
+    }));
+    return {
+        title: row.textContent.trim().slice(0, 40),
+        options: options.map((o) => o.text),
+        selected: options.filter((o) => o.selected).map((o) => o.text),
+        until: /until \\d\\d:\\d\\d/.exec(row.textContent ?? "")?.[0] ?? null,
+    };
+})()`;
+
+// the "until HH:MM" petstay.ts stayUntilLabel draws for the stored stay, worked out in the page (its own local time)
+const PET_STAY_LABEL = `(() => {
+    const stay = JSON.parse(localStorage.getItem(${JSON.stringify(PET_STAY_KEY)}) ?? "null");
+    if (stay?.until == null) return null;
+    const end = new Date(stay.until);
+    const two = (n) => String(n).padStart(2, "0");
+    return "until " + two(end.getHours()) + ":" + two(end.getMinutes());
+})()`;
+
+const petStay = {
+    name: "pet-stay",
+    surface: "cockpit",
+    async arrange(h) {
+        const ctx = {
+            terminals: [],
+            prevStay: await h.ev(`localStorage.getItem(${JSON.stringify(PET_STAY_KEY)})`),
+            prevHome: await h.ev(`localStorage.getItem(${JSON.stringify(PET_HOME_KEY)})`),
+            // a fixture the developer had active goes back in teardown rather than away
+            prevFixture: existsSync(TREE_RAIL_FIXTURE) ? readFileSync(TREE_RAIL_FIXTURE, "utf8") : null,
+        };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            const bootTab = String(await h.ev("window.TabRpcClient.routeId")).replace(/^tab:/, "");
+            const wslist = await h.rpc("workspacelist", null);
+            const ws = wslist.find((w) => (w.workspacedata?.tabids ?? []).includes(bootTab)) ?? wslist[0];
+            ctx.workspaceId = ws.workspacedata.oid;
+            await openRailTerminal(h, ctx, PET_STAY_PROJECT);
+            mkdirSync(new URL(".", TREE_RAIL_FIXTURE), { recursive: true });
+            writeFileSync(
+                TREE_RAIL_FIXTURE,
+                JSON.stringify(
+                    [
+                        // working with an activity, not idle, for the reason jarvis-pet gives: an idle agent leaves the
+                        // Cockpit with nothing to show and no HintsBar for the pet to stand on
+                        {
+                            id: PET_STAY_FIXTURE_AGENT,
+                            name: "pet stay agent",
+                            project: PET_STAY_PROJECT,
+                            task: "give the Cockpit a ready roster",
+                            state: "working",
+                            activity: "keeping the Cockpit roster ready",
+                            agent: "claude",
+                            model: "opus",
+                            activeMs: 60_000,
+                            blockId: "fx-blk-pet-stay",
+                        },
+                    ],
+                    null,
+                    2
+                )
+            );
+            ctx.wroteFixture = true;
+            // the fixture roster, the home and the stay are all read once at boot: no stay, a known home, then the reload
+            await h.ev(`(() => {
+                localStorage.removeItem(${JSON.stringify(PET_STAY_KEY)});
+                localStorage.setItem(${JSON.stringify(PET_HOME_KEY)}, ${JSON.stringify(PET_STAY_HOME)});
+            })()`);
+            ctx.keysSet = true;
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) =>
+            steps.push({ step, ok: ok === true, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+        const HOME_FRACTION = Number(PET_STAY_HOME);
+
+        const first = await petWait(
+            h,
+            (s) => s?.pet?.ledge != null && s.pet.force === true && petOnLedge(s) && petInLedge(s),
+            15_000
+        );
+        const stored0 = await h.ev(`localStorage.getItem(${JSON.stringify(PET_STAY_KEY)})`);
+        rec(
+            "0. arranged: a ready fixture roster, window.__jarvisPet with its ledge and force, no stay saved and the home set",
+            ctx.arrangeError == null && first?.pet?.ledge != null && stored0 == null,
+            ctx.arrangeError ?? { contract: first?.pet != null, ledge: first?.pet?.ledge, stored: stored0, home: PET_STAY_HOME }
+        );
+        if (first?.pet?.ledge == null) return steps;
+
+        // 1. walks home. Put the pet away from home while it roams, tell it to stay through the peek's pin menu, close the
+        // peek (it holds still while the peek is open), and it walks home at once and stays there. quick is forced, so a
+        // roaming rest would end within 15 s: the dwell below covers the longest one, which is what separates a pet that
+        // stays from one that was merely resting
+        const ledge1 = first.pet.ledge;
+        const homeAt = petStayHomeAt(ledge1, first.pet.avoid, HOME_FRACTION);
+        const awayAt = petStayAwayAt(ledge1, first.pet.avoid, homeAt);
+        let away1 = null;
+        let picked1 = false;
+        let closed1 = false;
+        let escaped1 = false;
+        let reached1 = null;
+        let dwell1 = [];
+        if (awayAt != null) {
+            await petForce(h, { ...PET_CALM, at: awayAt });
+            away1 = await petWait(h, (s) => s?.pet?.state === "rest" && Math.abs(s.pet.x - awayAt) <= 1, 3000, 100);
+            if (away1?.pet?.state === "rest" && (await petStayOpenPeek(h))) {
+                picked1 = await petStayPick(h, "forever");
+                // Escape closes the peek: the menu is already shut, so it is the panel's own
+                await petEscape(h);
+                escaped1 = await polishWaitFor(h, `!document.querySelector('[data-pet-peek]')`, 3000);
+                closed1 = escaped1 || (await petStayClosePeek(h));
+            }
+            if (closed1) {
+                reached1 = await petUntil(
+                    () => petSnap(h),
+                    (s) => s?.sprite != null && s.pet?.state !== "walk" && Math.abs(s.sprite.left - homeAt) <= 2,
+                    20_000,
+                    250
+                );
+                // 16 s: past the longest quick rest (15 s), where a roaming pet would have set off again
+                dwell1 = await petSamples(h, 81, 200);
+            }
+        }
+        await petShot(h, "pet-stay-1-home");
+        const left1 = reached1?.sprite?.left ?? null;
+        rec(
+            "1. told to stay (Stay until I turn it off, through the pin menu) while 120-400 px from home, the pet walks home within 20 s of the peek closing and stays there for 16 s with quick forced",
+            awayAt != null &&
+                away1?.pet?.state === "rest" &&
+                Math.abs(awayAt - homeAt) >= 120 &&
+                picked1 &&
+                closed1 &&
+                left1 != null &&
+                Math.abs(left1 - homeAt) <= 2 &&
+                dwell1.length > 0 &&
+                dwell1.every((p) => p != null && p.state !== "walk" && Math.abs(p.x - homeAt) <= 2),
+            {
+                home: homeAt,
+                awayAt,
+                placed: petBrief(away1),
+                picked: picked1,
+                escapeClosedPeek: escaped1,
+                peekClosed: closed1,
+                reachedLeft: left1,
+                reached: petBrief(reached1),
+                avoid: first.pet.avoid,
+                dwell: { samples: dwell1.length, xs: [...new Set(dwell1.map((p) => p?.x))], states: [...new Set(dwell1.map((p) => p?.state))] },
+            }
+        );
+
+        // 2. the pin menu: four items in this order, Stay until I turn it off checked; an outside click closes it and
+        // leaves the peek open
+        const opened2 = await petStayOpenPeek(h);
+        const menu2Open = opened2 && (await petStayOpenMenu(h));
+        const read2 = await h.ev(PET_STAY_READ);
+        await h.shot("cdp-shots/pet-stay-2-menu.png");
+        // a point the menu does not cover, where the menu's own backdrop is what the page hit-tests to (the title bar and the
+        // peek stand above or beside it elsewhere)
+        const outside2 = await h.ev(`(() => {
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            for (const [x, y] of [[vw / 2, vh / 2], [vw / 2, vh * 0.3], [200, vh / 2], [vw * 0.25, vh * 0.75], [8, 8]]) {
+                if (document.elementFromPoint(x, y)?.hasAttribute("data-pet-stay-backdrop")) return { x: Math.round(x), y: Math.round(y) };
+            }
+            return null;
+        })()`);
+        const backdropAt2 = outside2 != null;
+        if (outside2 != null) {
+            await petMouse(h, "mouseMoved", outside2.x, outside2.y);
+            await petMouse(h, "mousePressed", outside2.x, outside2.y, { button: "left", buttons: 1, clickCount: 1 });
+            await petMouse(h, "mouseReleased", outside2.x, outside2.y, { button: "left", buttons: 0, clickCount: 1 });
+        }
+        const outsideClosed2 = await petStayMenuGone(h);
+        const after2 = await h.ev(PET_STAY_READ);
+        rec(
+            "2. the pin opens a menu of Stay 1 hour, Stay 4 hours, Stay until I turn it off and Roam again, in that order, with Stay until I turn it off checked and the pin lit; a click outside closes it and leaves the peek open",
+            opened2 &&
+                menu2Open &&
+                read2.role === "menu" &&
+                read2.visible &&
+                read2.expanded === "true" &&
+                read2.haspopup === "menu" &&
+                read2.staying === true &&
+                read2.items.length === 4 &&
+                read2.items.every((it, i) => it.choice === PET_STAY_CHOICES[i] && it.text.startsWith(PET_STAY_LABELS[i])) &&
+                read2.items.map((it) => it.checked).join() === "false,false,true,false" &&
+                backdropAt2 &&
+                outsideClosed2 &&
+                after2.peek === true &&
+                after2.expanded === "false",
+            { opened: opened2, menuOpen: menu2Open, read: read2, backdropAt: backdropAt2, outsideClosed: outsideClosed2, after: { peek: after2.peek, expanded: after2.expanded } }
+        );
+
+        // 3. picking Stay 1 hour closes the menu, lights the pin and saves a stay that ends in about an hour; the menu
+        // then shows it checked with its end time; Escape closes the menu and not the peek
+        const picked3 = await petStayPick(h, "1h");
+        const read3 = await h.ev(PET_STAY_READ);
+        const reopened3 = await petStayOpenMenu(h);
+        const menu3 = await h.ev(PET_STAY_READ);
+        const label3 = await h.ev(PET_STAY_LABEL);
+        await h.shot("cdp-shots/pet-stay-3-chosen.png");
+        await petEscape(h);
+        const escMenuClosed3 = await petStayMenuGone(h);
+        const afterEsc3 = await h.ev(PET_STAY_READ);
+        const closed3 = await petStayClosePeek(h);
+        const ahead3 = read3.stored?.until == null ? null : read3.stored.until - read3.now;
+        const checked3 = menu3.items.find((it) => it.checked);
+        rec(
+            "3. picking Stay 1 hour closes the menu and lights the pin, saves choice 1h ending about an hour ahead, and reopening shows Stay 1 hour checked with its until HH:MM; Escape closes the menu and leaves the peek",
+            picked3 &&
+                read3.open === false &&
+                read3.staying === true &&
+                read3.stored?.choice === "1h" &&
+                ahead3 != null &&
+                Math.abs(ahead3 - 3_600_000) <= 120_000 &&
+                reopened3 &&
+                checked3?.choice === "1h" &&
+                label3 != null &&
+                checked3.text === `Stay 1 hour${label3}` &&
+                menu3.items.filter((it) => it.checked).length === 1 &&
+                escMenuClosed3 &&
+                afterEsc3.peek === true &&
+                closed3,
+            { picked: picked3, afterPick: { open: read3.open, staying: read3.staying, stored: read3.stored }, aheadMs: ahead3, reopened: reopened3, checked: checked3, label: label3, escMenuClosed: escMenuClosed3, peekAfterEscape: afterEsc3.peek, peekClosed: closed3 }
+        );
+
+        // 4. Settings → Jarvis: the "Pet roams" row shows Stay 1h selected with the same until HH:MM; choosing Roam reads
+        // Roam, and the peek's pin is no longer lit
+        await h.goto("settings");
+        const opened4 = await spOpen(h, "jarvis");
+        const row4 = opened4 ? await h.ev(PET_STAY_ROW_READ) : null;
+        await h.shot("cdp-shots/pet-stay-4-settings.png");
+        const clickedRoam = await spClick(
+            h,
+            `[...(${spRow("appearance.petstay")}?.querySelectorAll("button:not([aria-label])") ?? [])].find((b) => b.textContent.trim() === "Roam")`
+        );
+        const rowRoam4 = clickedRoam
+            ? await petUntil(
+                  () => h.ev(PET_STAY_ROW_READ),
+                  (r) => r?.selected?.join() === "Roam",
+                  3000,
+                  100
+              )
+            : null;
+        const stored4 = await h.ev(`JSON.parse(localStorage.getItem(${JSON.stringify(PET_STAY_KEY)}) ?? "null")`);
+        await h.goto("cockpit");
+        await petWait(h, (s) => s?.pet != null, 5000);
+        const peek4 = await petStayOpenPeek(h);
+        const pin4 = await h.ev(PET_STAY_READ);
+        await h.shot("cdp-shots/pet-stay-4-roam.png");
+        await petStayClosePeek(h);
+        rec(
+            "4. Settings → Jarvis → Pet roams shows Stay 1h selected with its until HH:MM; choosing Roam reads Roam and the peek's pin is no longer lit",
+            opened4 &&
+                row4?.options?.join() === "Roam,Stay 1h,Stay 4h,Stay" &&
+                row4.selected.join() === "Stay 1h" &&
+                row4.until != null &&
+                row4.until === label3 &&
+                clickedRoam &&
+                rowRoam4?.selected?.join() === "Roam" &&
+                rowRoam4.until == null &&
+                stored4?.choice === "roam" &&
+                peek4 &&
+                pin4.pin === true &&
+                pin4.staying === false,
+            { opened: opened4, row: row4, clickedRoam, afterRoam: rowRoam4, stored: stored4, peek: peek4, pinStaying: pin4.staying }
+        );
+
+        // 5. the quiet card's title reads whole beside the pin. The pin joined the header after the card's 300px cap was
+        // set, which cut the title to "Nothing waiting o…": the cap took the pin's 28px and its 4px gap with it. Docked
+        // here, so the controls are title, pin, Full view, close; the title's scrollWidth is its text's full width, so one
+        // wider than its clientWidth is a clipped (ellipsised) title
+        const opened5 = await petStayOpenPeek(h);
+        const read5 = await h.ev(`(() => {
+            const panel = document.querySelector("[data-pet-peek]");
+            const header = panel?.querySelector("[data-pet-peek-header]");
+            const title = header?.querySelector("h2");
+            if (panel == null || header == null || title == null) return null;
+            const box = (el) => {
+                const r = el?.getBoundingClientRect();
+                return r == null ? null : { left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width) };
+            };
+            const pin = header.querySelector(${JSON.stringify(PET_STAY_PIN)});
+            const full = header.querySelector('button[aria-label="Open full Jarvis view"]');
+            const close = header.querySelector('button[aria-label="Close Jarvis panel"]');
+            const panelBox = box(panel);
+            const controls = [pin, full, close].map(box);
+            const kids = [...header.children].map((el) => el.tagName + (el === pin?.parentElement ? ":pin" : el === full ? ":full" : el === close ? ":close" : ""));
+            return {
+                text: title.textContent.trim(),
+                shape: panel.getAttribute("data-pet-peek-shape"),
+                scrollWidth: title.scrollWidth,
+                clientWidth: title.clientWidth,
+                panel: panelBox,
+                title: box(title),
+                pin: controls[0],
+                full: controls[1],
+                close: controls[2],
+                order: kids,
+                // every control drawn, none past the panel's right edge
+                controlsInside: controls.every((c) => c != null && c.width > 0 && c.right <= panelBox.right),
+                scrollsAside: panel.scrollWidth - panel.clientWidth,
+            };
+        })()`);
+        await h.shot("cdp-shots/pet-stay-5-title.png");
+        await petStayClosePeek(h);
+        rec(
+            "5. the quiet peek's title reads Nothing waiting on you in full (not clipped) beside the stay pin, Full view and close, in that order",
+            opened5 &&
+                read5 != null &&
+                read5.shape === "quiet" &&
+                read5.text === "Nothing waiting on you" &&
+                read5.scrollWidth <= read5.clientWidth &&
+                read5.order.join() === "H2,DIV:pin,BUTTON:full,BUTTON:close" &&
+                read5.controlsInside === true &&
+                read5.title.right <= read5.pin.left &&
+                read5.pin.right <= read5.full.left &&
+                read5.full.right <= read5.close.left &&
+                read5.scrollsAside <= 0,
+            { opened: opened5, read: read5 }
+        );
+        return steps;
+    },
+    // best-effort, so one failed step does not strand the rest
+    async teardown(h, ctx) {
+        const step = async (what, fn) => {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(`pet-stay teardown: ${what} failed: ${e?.message ?? e}`);
+            }
+        };
+        await step("close the peek", () => petStayClosePeek(h));
+        await step("release the forced inputs", () => petForce(h, null));
+        for (const t of ctx.terminals ?? []) {
+            await step(`close the terminal tab ${t.tabId}`, () =>
+                waveService(h, "workspace", "CloseTab", [ctx.workspaceId, t.tabId, false])
+            );
+        }
+        if (ctx.wroteFixture) {
+            await step("put the fixture roster back", () =>
+                ctx.prevFixture != null
+                    ? writeFileSync(TREE_RAIL_FIXTURE, ctx.prevFixture)
+                    : rmSync(TREE_RAIL_FIXTURE, { force: true })
+            );
+        }
+        // the atoms read their keys at module load, so these land with the reload below; the pet then roams, or stays,
+        // as the run found it
+        if (ctx.keysSet) {
+            await step("restore the stay", () => h.ev(restoreStorageKey(PET_STAY_KEY, ctx.prevStay)));
+            await step("restore the creature's home", () => h.ev(restoreStorageKey(PET_HOME_KEY, ctx.prevHome)));
+        }
+        await step("reload onto the live roster", async () => {
+            if (!(await ahReload(h))) throw new Error("the page did not come back after the reload");
+        });
+        await step("go home", () => h.goto("cockpit"));
+    },
+};
+
 const JARVIS_PEEK_PROJECT = "verify-jarvis-peek";
 
 // a registered project is the composer's destination (petpeek.tsx: projectListAtom's rows with a channel), and
@@ -9443,8 +9943,20 @@ const jarvisPeek = {
     async arrange(h) {
         // petSaidAtom is session-scoped. Reloading gives this scenario a deterministic empty feed while
         // the persisted watermark still prevents old backend facts from speaking again.
-        await h.ev("location.reload()");
-        await h.ev("new Promise((r) => setTimeout(r, 2500))");
+        // The new page is polled for, not slept on: the DEV store is set by a module that loads after the shell's first
+        // paint, and a fixed 2.5 s did not always reach it right after pet-stay's own reload (reset came back false).
+        // The marker keeps the poll off the page being replaced, which still answers until the navigation commits.
+        await h.ev("window.__arcPeekReloading = true");
+        try {
+            await h.ev("location.reload()");
+        } catch {
+            /* the evaluate is cut off by the navigation it just started (as in ahReload) */
+        }
+        const storeReady = await polishWaitFor(
+            h,
+            `!window.__arcPeekReloading && typeof globalThis.__wavePetStore?.resetPeek === 'function'`,
+            15000
+        );
         const reset = await h.ev(`(() => {
             const store = globalThis.__wavePetStore;
             if (typeof store?.resetPeek !== 'function') return false;
@@ -9452,7 +9964,7 @@ const jarvisPeek = {
             store.setAttention([]);
             return true;
         })()`);
-        return { reset };
+        return { reset, storeReady };
     },
     async assert(h, ctx) {
         const steps = [];
@@ -9525,19 +10037,31 @@ const jarvisPeek = {
             JSON.stringify({ creatureFocused, structure })
         );
 
-        await press("Tab", "Tab", 9);
-        const firstTab = await h.ev(`(() => ({
+        const focusRead = `(() => ({
             label: document.activeElement?.getAttribute('aria-label') ?? null,
             inside: document.querySelector('[data-pet-peek]')?.contains(document.activeElement) ?? false,
-        }))()`);
+        }))()`;
+        // the header's first control is the pet's stay pin, right after the title; Full view is the second
+        await press("Tab", "Tab", 9);
+        const firstTab = await h.ev(focusRead);
+        await press("Tab", "Tab", 9);
+        const secondTab = await h.ev(focusRead);
+        // reverse: back onto the pin, then once more off the dialog's first control, which wraps inside it
+        await press("Tab", "Tab", 9, 8);
+        const backTab = await h.ev(focusRead);
         await press("Tab", "Tab", 9, 8);
         const wrappedInside = await h.ev(
             `document.querySelector('[data-pet-peek]')?.contains(document.activeElement) ?? false`
         );
         rec(
-            "2. Tab starts at Full view and reverse traversal stays inside the dialog",
-            firstTab.inside === true && firstTab.label === "Open full Jarvis view" && wrappedInside === true,
-            JSON.stringify({ firstTab, wrappedInside })
+            "2. Tab starts at the pin (Pet stays put) then Full view, and reverse traversal stays inside the dialog",
+            firstTab.inside === true &&
+                firstTab.label === "Pet stays put" &&
+                secondTab.inside === true &&
+                secondTab.label === "Open full Jarvis view" &&
+                backTab.label === "Pet stays put" &&
+                wrappedInside === true,
+            JSON.stringify({ firstTab, secondTab, backTab, wrappedInside })
         );
         // Each string below is one the old three-card panel rendered to report missing telemetry or repeat
         // a disabled composer state. The adaptive card states queue absence once in its title; these older
@@ -9556,7 +10080,7 @@ const jarvisPeek = {
                 // resting height, against the 693px the three-card panel cost. Only asserted with an empty
                 // queue: rows are real content and are allowed to make the panel taller.
                 (structure?.rows > 0 || (structure?.height > 0 && structure?.height < 320)),
-            JSON.stringify(structure)
+            JSON.stringify({ ...structure, reset: ctx.reset, storeReady: ctx.storeReady })
         );
         await h.shot("cdp-shots/jarvis-peek-empty.png");
 
@@ -44456,10 +44980,25 @@ const floatMini = {
         }
         const term = ctx.terminals[0];
         await h.goto("agent");
-        const chosen = await floatMiniWait(h, `!!document.querySelector('[data-agent-row="${term.tabId}"]')`);
-        await h.ev(`document.querySelector('[data-agent-row="${term.tabId}"]')?.click()`);
-        await floatMiniWait(h, `!!document.querySelector("[data-agent-header-more]")`);
-        await pickHeaderMenu(h, "Float window");
+        // a plain terminal's tree row is [data-agent-terminal-row]; [data-agent-row] is an agent's
+        const chosen = await floatMiniWait(h, `!!document.querySelector('[data-agent-terminal-row="${term.tabId}"]')`);
+        await h.ev(`document.querySelector('[data-agent-terminal-row="${term.tabId}"]')?.click()`);
+        await floatMiniWait(h, `!!document.querySelector("[data-agent-header-more]")`, 1500);
+        // a plain terminal's pane head holds only its tabs, with no "…" menu: the Float binding (Shift+F, nav mode, so out of
+        // the xterm) does what the menu's row does
+        if (!(await pickHeaderMenu(h, "Float window"))) {
+            await h.ev(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+            for (const type of ["keyDown", "keyUp"]) {
+                await h.cdp("Input.dispatchKeyEvent", {
+                    type,
+                    key: "F",
+                    code: "KeyF",
+                    windowsVirtualKeyCode: 70,
+                    modifiers: 8,
+                    ...(type === "keyDown" ? { text: "F" } : {}),
+                });
+            }
+        }
         const floated = await floatMiniWait(h, `!!document.querySelector("[data-float-bar]")`);
         await h.ev("new Promise((r) => setTimeout(r, 1200))");
         const before = await floatMiniTermSize(h, term.blockId);
@@ -44496,6 +45035,65 @@ const floatMini = {
             detail: JSON.stringify(await h.ev(`({ w: window.innerWidth, h: window.innerHeight })`)),
         });
 
+        // The folded peek's header takes the stay pin before Terminal. The folded window's click-through poll drops a
+        // click outside [data-mini-hit], so the pin's menu (portaled out of the peek) must carry its own. The outside-click
+        // close is not tried here: its backdrop takes no data-mini-hit, so in the real folded window that click falls
+        // through to the desktop; pet-stay checks it in the docked peek. Escape and a pick close the menu.
+        const pinOrder = await h.ev(`(() => {
+            const pin = document.querySelector("[data-pet-peek] [data-pet-stay-pin]");
+            const restore = document.querySelector("[data-pet-peek] [data-mini-restore]");
+            return {
+                pin: pin != null,
+                restore: restore != null,
+                before: pin != null && restore != null && (pin.compareDocumentPosition(restore) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+                sameHeader: pin != null && restore != null && pin.closest("[data-pet-peek-header]") === restore.closest("[data-pet-peek-header]"),
+            };
+        })()`);
+        await h.ev(`document.querySelector("[data-pet-stay-pin]")?.click()`);
+        const menuShown = await floatMiniWait(
+            h,
+            `(() => { const r = document.querySelector("[data-pet-stay-menu]")?.getBoundingClientRect(); return r != null && r.width > 0 && r.height > 0; })()`
+        );
+        // past PopoverReveal's scale-in, so the box read is the settled one
+        await h.ev("new Promise((r) => setTimeout(r, 500))");
+        const menu = await h.ev(`(() => {
+            const el = document.querySelector("[data-pet-stay-menu]");
+            const r = el?.getBoundingClientRect();
+            const hit = el?.closest("[data-mini-hit]");
+            return {
+                open: document.querySelector("[data-pet-stay-pin]")?.getAttribute("aria-expanded") === "true",
+                items: [...(el?.querySelectorAll('[role="menuitemradio"]') ?? [])].map((b) => b.getAttribute("data-pet-stay-choice")),
+                visible: r != null && r.width > 0 && r.height > 0,
+                inHit: hit != null,
+                hit: hit?.getAttribute("data-mini-hit") ?? null,
+                inWindow: r != null && r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight,
+            };
+        })()`);
+        await h.shot("cdp-shots/float-mini-stay-menu.png");
+        for (const type of ["keyDown", "keyUp"]) {
+            await h.cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+        }
+        const menuGone = await floatMiniWait(h, `!document.querySelector("[data-pet-stay-menu]")`);
+        // Escape closed the menu and left the peek, which step 5 still needs
+        const peekStays = await h.ev(`!!document.querySelector("[data-pet-peek]") && document.querySelector("[data-pet-stay-pin]")?.getAttribute("aria-expanded") === "false"`);
+        await h.shot("cdp-shots/float-mini-stay-menu-closed.png");
+        steps.push({
+            step: "4. the folded peek's stay pin sits before Terminal in its header, its menu opens inside a [data-mini-hit] element within the window, and Escape closes it without closing the peek",
+            ok:
+                pinOrder.pin &&
+                pinOrder.before &&
+                pinOrder.sameHeader &&
+                menuShown &&
+                menu.open &&
+                menu.visible &&
+                menu.inHit &&
+                menu.inWindow &&
+                JSON.stringify(menu.items) === JSON.stringify(["1h", "4h", "forever", "roam"]) &&
+                menuGone &&
+                peekStays,
+            detail: JSON.stringify({ pinOrder, menuShown, menu, menuGone, peekStays }),
+        });
+
         await h.ev(`document.querySelector("[data-pet-peek] [data-mini-restore]")?.click()`);
         const back = await floatMiniWait(
             h,
@@ -44505,7 +45103,7 @@ const floatMini = {
         const after = await floatMiniTermSize(h, term.blockId);
         await h.shot("cdp-shots/float-mini-restored.png");
         steps.push({
-            step: "4. Terminal gives the float window back, and the PTY size never moved",
+            step: "5. Terminal gives the float window back, and the PTY size never moved",
             ok: back && JSON.stringify(after) === JSON.stringify(before),
             detail: JSON.stringify({ back, before, after }),
         });
@@ -58197,6 +58795,7 @@ export const SCENARIOS = [
     codeTexPdf,
     codeSideColumn,
     jarvisPet,
+    petStay,
     petBubbleDismiss,
     elementPrimitives,
     briefSurface,

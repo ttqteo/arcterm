@@ -27,6 +27,18 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Pet stay pin in the folded Sprout window: float a terminal (Shift+F out of the terminal), Minimize into
+  Sprout, open the hover card's chat → the peek header shows the pin before Terminal; click it → the Stay menu (1 hour,
+  4 hours, until I turn it off, Roam again) opens fully inside the window and its rows take clicks; pick Stay 1 hour →
+  the menu closes and the pin is lit; open it and press Escape → the menu closes and the peek stays. A click outside
+  the menu falls through to the desktop and leaves it open there (its backdrop has no `data-mini-hit`): the known gap,
+  so close it with Escape or a pick. Not run by `float-mini` step 4:
+  the Final's dev window never resizes, so the scenario stops at Minimize. `petpeek.tsx`, "feat(pet): the pin and its
+  stay menu in the peek header".
+- [ ] (arcterm) Quiet Jarvis peek title beside the stay pin: with nothing waiting, click Sprout → the header reads
+  "Nothing waiting on you" in full, then the pin, Full view and close, with no "…". Or run
+  `task verify:ui -- pet-stay jarvis-peek` (pet-stay step 5, jarvis-peek step 3): run 72f2cf48's round-2 Final never
+  booted its dev app. `petpeek.tsx` quiet cap 332 px, "fix(pet): The quiet peek's title fits beside the stay pin".
 - [ ] (arcterm) The council composer sits in the message column: open a council's Discussion on a wide window → the
   message box's left and right edges line up with the messages' 860px column (with and without a scrollbar), and
   sending a message (in the channel and in a thread) makes your bubble rise in from below; reopening the council or
