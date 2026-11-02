@@ -79,6 +79,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   no rows under it, a `› ✓ ✓` chip on its second line; click it → both rows show and the chevron turns; click again →
   they fold. Start a new builder check → its row shows while it reads. `agenttree.tsx` `ChecksChip`,
   "feat(agents): fold a brainstorm's check and judge rows into a chip".
+- [ ] (arcterm) Council weak chip: open a council whose message has a long weak claim (`Weak · 'About 20 nodes…' is an
+  estimate…`) → the amber chip grows to fit its 2–3 lines, nothing spills onto the "3 replies" row below.
+  `councilsourcespanel.tsx` (uncommitted).
 - [ ] (arcterm) Council in a subfolder project: after a build with ab80bf5ac installed, from an agent in `website`
   (registered at `D:\Workspace\SIEM\apps\website`) start a council → it shows under website's Councils in the Agent
   tree, and `wsh council list --project "" --json` gives its project as `...\apps\website`, not `D:\Workspace\SIEM`.
@@ -104,6 +107,9 @@ does not, say what you saw and it becomes a bug row under Actionable.
   facts → the facts fold open and shut (height + fade, not a snap), and every row's description keeps one width
   whether its button reads "N facts", "Hide facts" or the row has no facts. `brainstormui.tsx` `ApproachRow`,
   "fix(brainstorm): judging facts fold open…".
+- [ ] (arcterm) Brainstorm thumbnail click: in a brainstorm question with mockups, click a board's thumbnail (not the
+  link) → the board opens full size, same as Open full size; the thumbnail's border brightens on hover.
+  `brainstormui.tsx` `Thumbnails`, uncommitted.
 - [ ] (arcterm) Council Retry with…: in a council whose coordinator failed, Retry with… → Retry on sonnet reruns the
   summary on sonnet (the strip still reads Coordinator opus), and the saved document's run facts gain `- Retried:
   Coordinator in round 3 on sonnet (its seat is opus)`. Do the same on a failed expert from the Discussion's failure
