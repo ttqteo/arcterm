@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Council in a subfolder project: after a build with ab80bf5ac installed, from an agent in `website`
+  (registered at `D:\Workspace\SIEM\apps\website`) start a council → it shows under website's Councils in the Agent
+  tree, and `wsh council list --project "" --json` gives its project as `...\apps\website`, not `D:\Workspace\SIEM`.
 - [ ] (arcterm) Jarvis Councils region: open Jarvis with a council running and one done this week → a Councils
   region sits under Runs, the waiting/running ones first, each row `council` · title · project · N experts · age and
   its state word; clicking a row (or Open / Report) lands on that council in Agent; j/k walks into it; with none in
