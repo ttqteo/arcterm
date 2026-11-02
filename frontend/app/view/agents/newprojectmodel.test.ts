@@ -7,6 +7,7 @@ import {
     moveCursor,
     onDiskProjects,
     projectPathKey,
+    searchPath,
     uniqueProjectName,
     unregisteredProjects,
 } from "./newprojectmodel";
@@ -40,6 +41,11 @@ describe("onDiskProjects", () => {
         expect(got.map((x) => x.name)).toEqual(["oki_backend_vip"]);
         expect(onDiskProjects(found, [], [], "dev/").map((x) => x.name)).toEqual(["lingua"]);
     });
+
+    it("does not match the home folder's own name", () => {
+        expect(onDiskProjects(found, [], [], "ws", "/ws")).toEqual([]);
+        expect(onDiskProjects(found, [], [], "~/dev", "/ws").map((x) => x.name)).toEqual(["lingua"]);
+    });
 });
 
 describe("projectPathKey", () => {
@@ -58,6 +64,39 @@ describe("filterProjects", () => {
     it("matches the name or the path, ignoring case", () => {
         expect(filterProjects(list, "ARC").map((x) => x.name)).toEqual(["arcterm"]);
         expect(filterProjects(list, "siem").map((x) => x.name)).toEqual(["website"]);
+    });
+
+    const home = "/Users/someone";
+    const mac = [
+        p("cuscofi-app", "/Users/someone/Workspaces/freelancer/cuscofi/cuscofi-app"),
+        p("arcterm", "/Users/someone/Workspaces/dev/arcterm"),
+        p("cuscofi", "/Users/someone/Workspaces/dev/cuscofi"),
+    ];
+
+    it("reads the path from ~, so the user's own name matches nothing", () => {
+        expect(filterProjects(mac, "someone", home)).toEqual([]);
+        expect(filterProjects(mac, "~/workspaces/dev", home).map((x) => x.name)).toEqual(["arcterm", "cuscofi"]);
+        expect(filterProjects(mac, "/Users/someone/Workspaces/dev/arc", home).map((x) => x.name)).toEqual(["arcterm"]);
+    });
+
+    it("lists the name matches before the path-only ones", () => {
+        const list = [p("app", "/Users/someone/w/cuscofi/app"), ...mac];
+        expect(filterProjects(list, "cuscofi", home).map((x) => x.name)).toEqual(["cuscofi-app", "cuscofi", "app"]);
+    });
+
+    it("reads a Windows path from ~ whatever its separators and case", () => {
+        const win = [p("arcterm", "C:\\Users\\Quang\\projects\\arcterm")];
+        expect(filterProjects(win, "quang", "c:/users/quang/")).toEqual([]);
+        expect(filterProjects(win, "projects\\arc", "c:/users/quang/")).toHaveLength(1);
+    });
+});
+
+describe("searchPath", () => {
+    it("starts a path under home at ~ and leaves the rest alone", () => {
+        expect(searchPath("/Users/someone/ws/a", "/Users/someone")).toBe("~/ws/a");
+        expect(searchPath("/Users/someone", "/Users/someone/")).toBe("~");
+        expect(searchPath("/Users/someone2/a", "/Users/someone")).toBe("/users/someone2/a");
+        expect(searchPath("/opt/x", "")).toBe("/opt/x");
     });
 });
 

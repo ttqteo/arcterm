@@ -177,6 +177,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The New project search no longer matches every folder when you type your user name: it reads paths from `~`, and
+  lists the folders whose name matches before the ones that match only by path.
 - A running task's mark in a run's graph sits back in the middle of its pulsing ring, and every task's mark lines up
   with its title again, instead of sitting a few pixels low.
 - A brainstorm's Approve stays off while the run it started is still starting, with "The run is starting" beside it,

@@ -19,12 +19,37 @@ export function unregisteredProjects(
     return scanned.filter((p) => !taken.has(projectPathKey(p.path)));
 }
 
-export function filterProjects(list: readonly ClaudeProjectData[], query: string): ClaudeProjectData[] {
-    const q = query.trim().toLowerCase();
-    if (q === "") {
+// A path as the search reads it: one under the home folder starts at "~", so typing your own user name (in every
+// /Users/<name>/… path) does not match every row. The query goes through it too, so a pasted full path still matches.
+export function searchPath(path: string, home: string): string {
+    const p = path.replace(/\\/g, "/").toLowerCase();
+    const h = home.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    if (h !== "" && (p === h || p.startsWith(h + "/"))) {
+        return "~" + p.slice(h.length);
+    }
+    return p;
+}
+
+// Keeps the items whose name or path holds the query, the name matches first, each part in its given order.
+function search<T extends { name: string; path: string }>(list: readonly T[], query: string, home: string): T[] {
+    const q = searchPath(query.trim(), home);
+    const byName: T[] = [];
+    const byPath: T[] = [];
+    for (const item of list) {
+        if (item.name.toLowerCase().includes(q)) {
+            byName.push(item);
+        } else if (searchPath(item.path, home).includes(q)) {
+            byPath.push(item);
+        }
+    }
+    return [...byName, ...byPath];
+}
+
+export function filterProjects(list: readonly ClaudeProjectData[], query: string, home = ""): ClaudeProjectData[] {
+    if (query.trim() === "") {
         return [...list];
     }
-    return list.filter((p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q));
+    return search(list, query, home);
 }
 
 // The search's second section: project folders found on disk near the known ones, for a folder Claude Code never ran
@@ -34,16 +59,17 @@ export function onDiskProjects(
     found: readonly ProjectFolderData[],
     claude: readonly { path: string }[],
     registered: readonly { path: string }[],
-    query: string
+    query: string,
+    home = ""
 ): ProjectFolderData[] {
-    const q = query.trim().toLowerCase();
-    if (q === "") {
+    if (query.trim() === "") {
         return [];
     }
     const taken = new Set([...claude, ...registered].map((r) => projectPathKey(r.path)));
-    return found.filter(
-        (f) =>
-            !taken.has(projectPathKey(f.path)) && (f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q))
+    return search(
+        found.filter((f) => !taken.has(projectPathKey(f.path))),
+        query,
+        home
     );
 }
 
