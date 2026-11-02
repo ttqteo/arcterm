@@ -35,7 +35,6 @@ import {
     LINK,
     onEnter,
     PART_BTN,
-    PartMockups,
     SaidLine,
     SECTION_HEAD,
     useAction,
@@ -75,11 +74,15 @@ export function CheckReview({
     agent,
     s,
     f,
+    onOpenPart,
 }: {
     model: AgentsViewModel;
     agent: AgentVM;
     s: BrainstormState;
     f: BrainstormFile;
+    // a link under the review opened this part: the rail shows its boards and spikes (a row's own arrow reaches the
+    // rail through s.review.open instead)
+    onOpenPart?: (partId: string) => void;
 }) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const r = checkReview(f);
@@ -135,8 +138,15 @@ export function CheckReview({
                         {r.fresh.map(row)}
                     </section>
                 ) : null}
-                <PartLinks kind="unchanged" label="Yours, unchanged" agent={agent} s={s} f={f} parts={r.unchanged} />
-                <PartLinks kind="notes" label="What the agent found" agent={agent} s={s} f={f} parts={r.notes} />
+                <PartLinks
+                    kind="unchanged"
+                    label="Yours, unchanged"
+                    s={s}
+                    f={f}
+                    parts={r.unchanged}
+                    onOpen={onOpenPart}
+                />
+                <PartLinks kind="notes" label="What the agent found" s={s} f={f} parts={r.notes} onOpen={onOpenPart} />
             </div>
         </div>
     );
@@ -327,7 +337,6 @@ function ReviewRowView({
                             {row.body}
                         </div>
                     )}
-                    {part != null ? <PartMockups agentId={agent.id} s={s} f={f} part={part} /> : null}
                 </div>
             ) : null}
             {editing ? (
@@ -379,21 +388,22 @@ function ReviewRowView({
     );
 }
 
-// the parts the review has nothing to ask about, as one line of titles; a title opens that part under the line
+// the parts the review has nothing to ask about, as one line of titles; a title opens that part under the line, and
+// when the part has boards or spikes the rail is asked to show them (onOpen)
 function PartLinks({
     kind,
     label,
-    agent,
     s,
     f,
     parts,
+    onOpen,
 }: {
     kind: string;
     label: string;
-    agent: AgentVM;
     s: BrainstormState;
     f: BrainstormFile;
     parts: BrainstormPart[];
+    onOpen?: (partId: string) => void;
 }) {
     const [shown, setShown] = useState<string | null>(null);
     if (parts.length === 0) {
@@ -417,7 +427,13 @@ function PartLinks({
                         type="button"
                         data-brainstorm-review-link={p.id}
                         aria-expanded={p.id === shown}
-                        onClick={() => setShown(p.id === shown ? null : p.id)}
+                        onClick={() => {
+                            setShown(p.id === shown ? null : p.id);
+                            // opening the part, not closing it: a new nonce moves the rail even for the same part
+                            if (p.id !== shown && hasMockups(f, p, s.base)) {
+                                onOpen?.(p.id);
+                            }
+                        }}
                         className={cn(
                             "cursor-pointer border-0 bg-transparent p-0 text-[12.5px] hover:underline",
                             p.id === shown ? "text-accent-soft" : "text-ink-mid"
@@ -436,7 +452,6 @@ function PartLinks({
                 </div>
             ) : null}
             {said != null ? <SaidLine said={said} open /> : null}
-            {part != null ? <PartMockups agentId={agent.id} s={s} f={f} part={part} /> : null}
         </section>
     );
 }
@@ -447,10 +462,7 @@ export function AnsweredRail({ f, agent }: { f: BrainstormFile; agent?: AgentVM 
     const r = checkReview(f);
     const hv = handoffView(f);
     return (
-        <aside
-            aria-label="The builder check"
-            className="flex w-[460px] flex-none flex-col gap-[18px] overflow-y-auto border-l border-border bg-surface px-[24px] py-[22px] *:flex-none"
-        >
+        <aside aria-label="The builder check" className="flex flex-col gap-[18px] px-[24px] py-[22px] *:flex-none">
             <div className="flex flex-col gap-[8px]">
                 <h2 className="m-0 text-[15px] font-semibold text-primary">A builder read the design</h2>
                 <p data-brainstorm-answered-line className="m-0 text-[13px] leading-[1.5] text-ink-mid">

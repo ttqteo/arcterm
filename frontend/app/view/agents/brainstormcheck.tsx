@@ -5,6 +5,7 @@
 // check changed; the rail beside it says what the builder asked, and Approve sits under the main area.
 
 import { cn } from "@/util/util";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
 import { projectOf, type AgentVM } from "./agentsviewmodel";
 import {
@@ -12,14 +13,17 @@ import {
     checkAsk,
     checkMain,
     checkUnder,
+    hasMockups,
     lineBox,
     partTitle,
+    RAIL_MIN_W_CHECK,
     runLine,
     type AskModel,
     type BrainstormFile,
     type BrainstormQuestion,
     type TrackSegment,
 } from "./brainstormmodel";
+import { BrainstormRail, RailRow, type RailFocus } from "./brainstormrail";
 import { AnsweredRail, CheckReview, ReviewHints } from "./brainstormreview";
 import { approveAndOpenRun, openRunLauncher, sendBrainstorm } from "./brainstormsend";
 import { openBrainstormDesign, setReviewCursor, type BrainstormState } from "./brainstormstore";
@@ -81,45 +85,88 @@ export function Check({
         setReviewCursor(agent.id, id);
         openDesign();
     };
+    // The rail shows a part's boards and spikes (they no longer sit in its review row). Opening a part that has some,
+    // by its row's toggle, its arrow or Enter (all end in s.review.open), by a link under the review or by the cursor
+    // key, asks the rail to switch to Boards and scroll to the part's group; a new nonce moves it even for the same part.
+    const [focus, setFocus] = useState<RailFocus | null>(null);
+    const focusPart = useCallback(
+        (partId: string) => setFocus((cur) => ({ partId, nonce: (cur?.nonce ?? 0) + 1 })),
+        []
+    );
+    const openBefore = useRef(s.review.open);
+    useEffect(() => {
+        const before = openBefore.current;
+        openBefore.current = s.review.open;
+        for (const id of Object.keys(s.review.open)) {
+            const part = f.parts.find((p) => p.id === id);
+            if (s.review.open[id] === true && before[id] !== true && hasMockups(f, part, s.base)) {
+                focusPart(id);
+            }
+        }
+        // only a change of the opened rows asks for focus; the file and the base it is read against are current then
+    }, [s.review.open]);
     return (
         <>
             <Toolbar topic={s.topic} f={f} progress={false} />
             <StaleBanner s={s} />
-            <div className="flex min-h-0 flex-1">
-                <div className="flex min-w-0 flex-1 flex-col bg-background">
-                    {under !== "review" ? (
-                        <div className="flex flex-none items-center border-b border-border px-[22px] py-[8px]">
-                            <button
-                                type="button"
-                                data-brainstorm-back
-                                onClick={() => openBrainstormDesign(agent.id, false)}
-                                className={cn(
-                                    CHIP,
-                                    "flex items-center gap-[8px]",
-                                    under !== "working" && "border-warning/45 bg-warning/12"
-                                )}
-                            >
-                                <span className={cn(SMALL_DOT, under === "working" ? "bg-success" : "bg-warning")} />
-                                {under === "working" ? "Back to what the agent is writing" : "Back to the question"}
-                            </button>
-                        </div>
-                    ) : null}
-                    {main === "question" ? (
-                        <QuestionMain agent={agent} s={s} f={f} goTo={goTo} openDesign={openDesign} skip={false} />
-                    ) : main === "builder" ? (
-                        <BuilderAsk agent={agent} f={f} goTo={goTo} openDesign={openDesign} />
-                    ) : main === "judging" ? (
-                        <JudgingMain agent={agent} f={f} goTo={goTo} openDesign={openDesign} skip={false} />
-                    ) : main === "working" ? (
-                        <WorkingMain f={f} openDesign={openDesign} />
-                    ) : (
-                        <CheckReview model={model} agent={agent} s={s} f={f} />
-                    )}
-                    {main === "review" ? <LineBar agent={agent} box={lineBox(f)} /> : null}
-                    <ApproveBar model={model} agent={agent} s={s} f={f} />
-                </div>
-                {main === "review" ? <AnsweredRail f={f} agent={agent} /> : <AskRail f={f} goTo={goTo} />}
-            </div>
+            <RailRow
+                question={
+                    <>
+                        {under !== "review" ? (
+                            <div className="flex flex-none items-center border-b border-border px-[22px] py-[8px]">
+                                <button
+                                    type="button"
+                                    data-brainstorm-back
+                                    onClick={() => openBrainstormDesign(agent.id, false)}
+                                    className={cn(
+                                        CHIP,
+                                        "flex items-center gap-[8px]",
+                                        under !== "working" && "border-warning/45 bg-warning/12"
+                                    )}
+                                >
+                                    <span
+                                        className={cn(SMALL_DOT, under === "working" ? "bg-success" : "bg-warning")}
+                                    />
+                                    {under === "working" ? "Back to what the agent is writing" : "Back to the question"}
+                                </button>
+                            </div>
+                        ) : null}
+                        {main === "question" ? (
+                            <QuestionMain agent={agent} s={s} f={f} goTo={goTo} openDesign={openDesign} skip={false} />
+                        ) : main === "builder" ? (
+                            <BuilderAsk agent={agent} f={f} goTo={goTo} openDesign={openDesign} />
+                        ) : main === "judging" ? (
+                            <JudgingMain agent={agent} f={f} goTo={goTo} openDesign={openDesign} skip={false} />
+                        ) : main === "working" ? (
+                            <WorkingMain f={f} openDesign={openDesign} />
+                        ) : (
+                            <CheckReview model={model} agent={agent} s={s} f={f} onOpenPart={focusPart} />
+                        )}
+                        {main === "review" ? <LineBar agent={agent} box={lineBox(f)} /> : null}
+                        <ApproveBar model={model} agent={agent} s={s} f={f} />
+                    </>
+                }
+                rail={
+                    <BrainstormRail
+                        agent={agent}
+                        s={s}
+                        f={f}
+                        minWidth={RAIL_MIN_W_CHECK}
+                        // only the talk question shown in the check opens Boards; the builder's own questions do not
+                        question={main === "question"}
+                        focus={focus}
+                        second={{
+                            label: "Builder check",
+                            render: () =>
+                                main === "review" ? (
+                                    <AnsweredRail f={f} agent={agent} />
+                                ) : (
+                                    <AskRail f={f} goTo={goTo} />
+                                ),
+                        }}
+                    />
+                }
+            />
             {main === "review" ? <ReviewHints /> : null}
         </>
     );
@@ -210,7 +257,7 @@ function AskRail({ f, goTo }: { f: BrainstormFile; goTo: (id: string) => void })
         <aside
             data-brainstorm-check-rail
             aria-label="The builder check"
-            className="flex w-[460px] flex-none flex-col gap-[20px] overflow-y-auto border-l border-border bg-surface px-[24px] py-[22px] *:flex-none"
+            className="flex flex-col gap-[20px] px-[24px] py-[22px] *:flex-none"
         >
             <div className="flex flex-col gap-[8px]">
                 <h2 className="m-0 text-[15px] font-semibold text-primary">A builder read the design</h2>
