@@ -55,6 +55,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Changed
 
+- A council in the Agent sidebar now reads like a group chat in a chat list: two of its seats as overlapping circles
+  (a green dot while one writes, a red one when a call failed), its title, and under it its state and how long ago
+  its last message came.
 - A council's message box now lines up with the messages above it instead of running the full width, and a message
   you send rises into the chat from the box.
 - Once a brainstorm's Approve starts its run, the agent that ran the brainstorm goes to sleep 15 seconds after it
