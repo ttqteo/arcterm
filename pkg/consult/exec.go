@@ -327,14 +327,23 @@ func mineModelError(full string) string {
 	return ""
 }
 
+// ExtraEnvFor, when set, gives KEY=value entries one launch of bin in cwd adds to its environment. wavesrv sets it so a
+// claude run in a project tied to a Claude account runs on that account; nil in tests and tools.
+var ExtraEnvFor func(bin, cwd string) []string
+
 func startCmd(ctx context.Context, spec RuntimeSpec, cwd, prompt string) (*exec.Cmd, *os.File, error) {
 	args := append([]string{}, spec.BaseArgs...)
 	if !spec.PromptViaStdin {
 		args = append(args, prompt)
 	}
 	cmd := exec.CommandContext(ctx, spec.Bin, args...)
-	if len(spec.Env) > 0 {
-		cmd.Env = append(os.Environ(), spec.Env...)
+	env := spec.Env
+	if ExtraEnvFor != nil {
+		env = append(append([]string{}, spec.Env...), ExtraEnvFor(spec.Bin, cwd)...)
+	}
+	if len(env) > 0 {
+		// a later entry wins over an inherited one of the same key
+		cmd.Env = append(os.Environ(), env...)
 	}
 	if cwd != "" {
 		cmd.Dir = cwd

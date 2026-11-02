@@ -1530,6 +1530,12 @@ func SetPeerInfoCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) er
 	return err
 }
 
+// command "setprojectclaudeaccount", wshserver.SetProjectClaudeAccountCommand
+func SetProjectClaudeAccountCommand(w *wshutil.WshRpc, data wshrpc.CommandSetProjectClaudeAccountData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "setprojectclaudeaccount", data, opts)
+	return err
+}
+
 // command "setradarfindingdisposition", wshserver.SetRadarFindingDispositionCommand
 func SetRadarFindingDispositionCommand(w *wshutil.WshRpc, data wshrpc.CommandSetRadarFindingDispositionData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "setradarfindingdisposition", data, opts)

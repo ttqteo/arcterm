@@ -19,6 +19,7 @@ import { formatAgeShort } from "../agentsviewmodel";
 import {
     defaultAccountName,
     knownClaudeEmails,
+    projectsWithOwnAccount,
     quotaLine,
     restartCandidates,
     rowQuota,
@@ -26,6 +27,7 @@ import {
 } from "../claudeaccount";
 import { RUNTIME_FLAGS, type Runtime } from "../launch";
 import { naFlagsAtom, naRememberFlagsAtom } from "../naflagsstore";
+import { projectListAtom, projectsAtom } from "../projectsstore";
 import {
     claudeIdentityAtom,
     claudeQuotaKey,
@@ -39,6 +41,7 @@ import {
     FLAG_RUNTIMES,
     Note,
     RowCtx,
+    Select,
     SettingCard,
     SettingRow,
     Stepper,
@@ -277,6 +280,8 @@ function ClaudeAccountCard({ model }: { model: AgentsViewModel }) {
     const [renaming, setRenaming] = useState<string | null>(null);
     const [emailing, setEmailing] = useState<string | null>(null);
     const known = useMemo(() => knownClaudeEmails(saved, identity), [saved, identity]);
+    const projects = useAtomValue(projectsAtom);
+    const projectRows = useAtomValue(projectListAtom);
 
     const reload = () =>
         fireAndForget(async () => {
@@ -302,7 +307,13 @@ function ClaudeAccountCard({ model }: { model: AgentsViewModel }) {
         setError(null);
         writeConfig({ "claude:activeaccount": id });
         setList((prev) => (prev == null ? prev : { ...prev, active: id }));
-        const candidates = restartCandidates(globalStore.get(model.agentsAtom), id, globalStore.get(model.lineageAtom));
+        // a project tied to its own account keeps its agents on it, so the switch does not offer to move them
+        const pinned = projectsWithOwnAccount(projects, list?.accounts ?? []);
+        const candidates = restartCandidates(
+            globalStore.get(model.agentsAtom),
+            id,
+            globalStore.get(model.lineageAtom)
+        ).filter((c) => c.project == null || !pinned.has(c.project));
         if (candidates.length > 0) {
             const accountName =
                 id === ""
@@ -381,6 +392,39 @@ function ClaudeAccountCard({ model }: { model: AgentsViewModel }) {
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
 
+    // "" unties the project: it follows the active account again. Running agents keep the account they started on.
+    const setProjectAccount = (name: string, account: string) =>
+        fireAndForget(async () => {
+            setError(null);
+            try {
+                await RpcApi.SetProjectClaudeAccountCommand(TabRpcClient, { name, account });
+            } catch (e) {
+                setError(errorText(e));
+            }
+        });
+    const usable = (list?.accounts ?? []).filter((a) => !a.notoken);
+    const accountItems = (name: string, current: string): ContextMenuItem[] => [
+        ...usable.map((a) => ({
+            label: a.label,
+            type: "checkbox" as const,
+            checked: a.id === current,
+            click: () => setProjectAccount(name, a.id),
+        })),
+        ...(current !== ""
+            ? [
+                  { type: "separator" as const },
+                  { label: "Follow the checked account", click: () => setProjectAccount(name, "") },
+              ]
+            : []),
+    ];
+    const tied = projectRows.filter((p) => (projects[p.name]?.claudeaccount ?? "") !== "");
+    const untied = projectRows.filter((p) => (projects[p.name]?.claudeaccount ?? "") === "");
+    const showTieMenu = (e: React.MouseEvent) =>
+        ContextMenuModel.getInstance().showContextMenu(
+            untied.map((p) => ({ label: p.name, type: "submenu" as const, submenu: accountItems(p.name, "") })),
+            e
+        );
+
     const now = Date.now();
     const rows: { id: string; account?: ClaudeAccountData }[] = [
         { id: "" },
@@ -400,6 +444,16 @@ function ClaudeAccountCard({ model }: { model: AgentsViewModel }) {
                     >
                         + Add account
                     </button>
+                    {usable.length > 0 && untied.length > 0 ? (
+                        <button
+                            type="button"
+                            data-claude-project-account-add
+                            onClick={showTieMenu}
+                            className="ml-3 cursor-pointer rounded text-[12px] font-semibold text-secondary transition-colors hover:text-primary"
+                        >
+                            + Project account
+                        </button>
+                    ) : null}
                 </CardFooter>
             }
         >
@@ -524,6 +578,42 @@ function ClaudeAccountCard({ model }: { model: AgentsViewModel }) {
                     );
                 })}
             </div>
+            {tied.length > 0 ? (
+                <div data-claude-project-accounts className="border-t border-edge-mid">
+                    <div className="px-4 pb-1 pt-2.5 text-[11.5px] text-muted">
+                        These projects run on their own account; the rest use the checked one.
+                    </div>
+                    {tied.map((p) => {
+                        const own = projects[p.name]?.claudeaccount ?? "";
+                        const account = list?.accounts.find((a) => a.id === own);
+                        const lost = list != null && (account == null || account.notoken);
+                        return (
+                            <div
+                                key={p.name}
+                                data-claude-project-account={p.name}
+                                className="flex items-center gap-3 px-4 py-2"
+                            >
+                                <div className="min-w-0 flex-1">
+                                    <div className="truncate text-[13px] font-semibold text-secondary">{p.name}</div>
+                                    {lost ? (
+                                        <div className="text-[11.5px] text-warning">
+                                            Its account is gone: it uses the checked one.
+                                        </div>
+                                    ) : (
+                                        <div className="truncate text-[11.5px] text-muted">{p.path}</div>
+                                    )}
+                                </div>
+                                <Select
+                                    value={own}
+                                    label={account?.label ?? "Removed account"}
+                                    ariaLabel={`Claude account for ${p.name}`}
+                                    items={accountItems(p.name, own)}
+                                />
+                            </div>
+                        );
+                    })}
+                </div>
+            ) : null}
             {error ? (
                 <div className="px-4 pb-3">
                     <Note tone="error">{error}</Note>

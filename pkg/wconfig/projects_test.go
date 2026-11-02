@@ -101,3 +101,44 @@ func TestDeleteProjectConfigValueMissingIsNoop(t *testing.T) {
 		t.Fatalf("deleting a missing project should succeed, got %v", err)
 	}
 }
+
+func TestSetProjectConfigValueNilRemovesKey(t *testing.T) {
+	wavebase.ConfigHome_VarCache = t.TempDir()
+
+	if err := SetProjectConfigValue("p", waveobj.MetaMapType{"path": "/a", "claudeaccount": "a1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetProjectConfigValue("p", waveobj.MetaMapType{"claudeaccount": nil}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := ReadWaveHomeConfigFile(ProjectsFile)
+	proj := m.GetMap("p")
+	if _, ok := proj["claudeaccount"]; ok {
+		t.Fatalf("claudeaccount still set: %v", proj)
+	}
+	if proj.GetString("path", "") != "/a" {
+		t.Fatalf("path lost: %v", proj)
+	}
+}
+
+func TestProjectForDir(t *testing.T) {
+	projects := map[string]ProjectKeywords{
+		"mono":  {Path: "/code/mono"},
+		"inner": {Path: "/code/mono/apps/web"},
+		"home":  {Path: "~/notes"},
+	}
+	cases := map[string]string{
+		"/code/mono":              "mono",
+		"/code/mono/pkg":          "mono",
+		"/code/mono/apps/web/src": "inner", // the longest path holding it
+		"/home/u/notes/today":     "home",  // ~ is home
+		"/code/monorepo":          "",      // shares a prefix only
+		"":                        "",
+	}
+	for dir, want := range cases {
+		got, _, ok := ProjectForDir(dir, projects, "/home/u")
+		if got != want || ok != (want != "") {
+			t.Errorf("ProjectForDir(%q) = %q, %v; want %q", dir, got, ok, want)
+		}
+	}
+}

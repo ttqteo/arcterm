@@ -22,6 +22,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
 	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
+	"github.com/wavetermdev/waveterm/pkg/consult"
 	"github.com/wavetermdev/waveterm/pkg/effortstore"
 	"github.com/wavetermdev/waveterm/pkg/filestore"
 	"github.com/wavetermdev/waveterm/pkg/harnessupdate"
@@ -506,6 +507,10 @@ func main() {
 	sigutil.InstallSIGUSR1Handler()
 	if err := jarvis.MigrateTierPins(context.Background()); err != nil {
 		log.Printf("error migrating route tier pins: %v\n", err)
+	}
+	// a headless claude run (council, radar, background AI) in a project tied to a Claude account runs on it
+	consult.ExtraEnvFor = func(bin, cwd string) []string {
+		return claudeaccount.HeadlessEnv(bin, cwd, wconfig.GetWatcher().GetFullConfig().Projects, wavebase.GetHomeDir())
 	}
 	wconfig.ConfigHook = func(fc wconfig.FullConfigType) {
 		wshserver.SyncProjectChannels(context.Background(), fc.Projects)

@@ -1536,6 +1536,12 @@ export class RpcApiType {
         return client.wshRpcCall("setpeerinfo", data, opts);
     }
 
+    // command "setprojectclaudeaccount" [call]
+    SetProjectClaudeAccountCommand(client: WshClient, data: CommandSetProjectClaudeAccountData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setprojectclaudeaccount", data, opts);
+        return client.wshRpcCall("setprojectclaudeaccount", data, opts);
+    }
+
     // command "setradarfindingdisposition" [call]
     SetRadarFindingDispositionCommand(client: WshClient, data: CommandSetRadarFindingDispositionData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setradarfindingdisposition", data, opts);

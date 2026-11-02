@@ -73,5 +73,14 @@ func (ws *WshServer) ClaudeAccountRemoveCommand(ctx context.Context, data wshrpc
 		// environment until it catches up
 		claudeaccount.ApplyEnv("")
 	}
+	// projects tied to it go back to following the active account (a launch would fall back anyway once the token
+	// is gone, but the setting would still name an account that no longer exists)
+	for name, p := range wconfig.GetWatcher().GetFullConfig().Projects {
+		if p.ClaudeAccount == data.Id {
+			if err := wconfig.SetProjectConfigValue(name, waveobj.MetaMapType{"claudeaccount": nil}); err != nil {
+				return fmt.Errorf("untying project %q from the account: %w", name, err)
+			}
+		}
+	}
 	return claudeaccount.Remove(data.Id)
 }

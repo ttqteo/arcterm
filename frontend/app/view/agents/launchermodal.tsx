@@ -33,7 +33,7 @@ import { showCouncilSetup, showSession } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { SLEEPABLE_AGENTS } from "./agentsleep";
 import { channelsAtom, primeChannels } from "./channelsstore";
-import { launchAccountName } from "./claudeaccount";
+import { launchAccountName, projectLaunchAccount } from "./claudeaccount";
 import { harnessesAtom, harnessPreferenceAtom, resolveDefaultRuntime } from "./harnessstore";
 import {
     askStartupCommand,
@@ -113,7 +113,14 @@ import {
 } from "./launcherstore";
 import { ToolFields, ToolList } from "./launchertoolfields";
 import { naFlagsAtom, naRememberFlagsAtom } from "./naflagsstore";
-import { noteRecentProject, projectListAtom, recentFirst, recentProjectsAtom, type ProjectRow } from "./projectsstore";
+import {
+    noteRecentProject,
+    projectListAtom,
+    projectsAtom,
+    recentFirst,
+    recentProjectsAtom,
+    type ProjectRow,
+} from "./projectsstore";
 import { activeClaudeAccountAtom, claudeIdentityAtom } from "./ratelimitstore";
 import { leadRouteSeed } from "./route";
 import { channelOverrideAtom, loadResolvedProfile, resolvedProfileAtom } from "./runactions";
@@ -293,6 +300,7 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
           : null;
     const activeAccount = useAtomValue(activeClaudeAccountAtom);
     const claudeIdentity = useAtomValue(claudeIdentityAtom);
+    const registry = useAtomValue(projectsAtom);
     const footer = footerLine({
         kind,
         shape,
@@ -300,7 +308,17 @@ export function LauncherModal({ model }: { model: AgentsViewModel }) {
         project: where,
         branchNote,
         blocker,
-        account: isAgent && runtime === "claude" ? launchAccountName(activeAccount, claudeIdentity) : "",
+        account:
+            isAgent && runtime === "claude"
+                ? launchAccountName(
+                      projectLaunchAccount(
+                          activeAccount,
+                          atHome ? undefined : registry[project?.name ?? ""]?.claudeaccount,
+                          claudeIdentity.accounts
+                      ),
+                      claudeIdentity
+                  )
+                : "",
     });
     const config: RunConfig = {
         shape,

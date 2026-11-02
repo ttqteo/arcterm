@@ -12,6 +12,8 @@ import {
     groupRestartCandidates,
     knownClaudeEmails,
     launchAccountName,
+    projectLaunchAccount,
+    projectsWithOwnAccount,
     quotaLine,
     restartCandidates,
     rowQuota,
@@ -279,6 +281,29 @@ describe("launchAccountName", () => {
         expect(launchAccountName("a1", identity)).toBe("Max 2");
         expect(launchAccountName("", identity)).toBe("user@example.com");
         expect(launchAccountName("", { ...identity, loginEmail: "" })).toBe("Claude login");
+    });
+});
+
+describe("projectLaunchAccount / projectsWithOwnAccount", () => {
+    const accounts = [{ id: "a1" }, { id: "a2", notoken: true }];
+    it("takes the project's own account when it still has its token", () => {
+        expect(projectLaunchAccount("", "a1", accounts)).toBe("a1");
+        expect(projectLaunchAccount("a2", "a1", accounts)).toBe("a1");
+    });
+    it("follows the active account when the project names none, a lost one, or one not on this machine", () => {
+        expect(projectLaunchAccount("a1", undefined, accounts)).toBe("a1");
+        expect(projectLaunchAccount("", "", accounts)).toBe("");
+        expect(projectLaunchAccount("a1", "a2", accounts)).toBe("a1");
+        expect(projectLaunchAccount("", "gone", accounts)).toBe("");
+    });
+    it("lists the projects a switch of the active account does not move", () => {
+        const projects = {
+            work: { path: "/w", claudeaccount: "a1" },
+            lost: { path: "/l", claudeaccount: "a2" },
+            plain: { path: "/p" },
+        };
+        expect([...projectsWithOwnAccount(projects, accounts)]).toEqual(["work"]);
+        expect(projectsWithOwnAccount(null, accounts).size).toBe(0);
     });
 });
 

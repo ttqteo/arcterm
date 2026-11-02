@@ -166,6 +166,9 @@ type FullConfigType struct {
 
 type ProjectKeywords struct {
 	Path string `json:"path,omitempty"`
+	// the Claude account (a pkg/claudeaccount id) agents and terminals launched into this project run on; empty
+	// follows the app's active account (claude:activeaccount)
+	ClaudeAccount string `json:"claudeaccount,omitempty"`
 }
 
 // ToolKeywords is one entry of tools.json, keyed by tool id: a terminal tool the user added, or a built-in of
@@ -778,6 +781,44 @@ func ProjectNameAtPath(path string) (string, bool) {
 	return "", false
 }
 
+// ProjectForDir is the registered project whose path holds dir (the longest such path), for a process that knows
+// only its folder; ok is false when no project holds it. home replaces a leading ~ in the paths.
+func ProjectForDir(dir string, projects map[string]ProjectKeywords, home string) (string, ProjectKeywords, bool) {
+	d := comparablePath(dir, home)
+	if d == "" {
+		return "", ProjectKeywords{}, false
+	}
+	bestName, bestLen := "", -1
+	for name, p := range projects {
+		pp := comparablePath(p.Path, home)
+		if pp == "" || (d != pp && !strings.HasPrefix(d, strings.TrimSuffix(pp, "/")+"/")) {
+			continue
+		}
+		if len(pp) > bestLen || (len(pp) == bestLen && name < bestName) {
+			bestName, bestLen = name, len(pp)
+		}
+	}
+	if bestLen < 0 {
+		return "", ProjectKeywords{}, false
+	}
+	return bestName, projects[bestName], true
+}
+
+func comparablePath(p, home string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	if p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
+		p = home + p[1:]
+	}
+	p = filepath.ToSlash(filepath.Clean(p))
+	if runtime.GOOS == "windows" {
+		p = strings.ToLower(p)
+	}
+	return p
+}
+
 func SetProjectConfigValue(projName string, toMerge waveobj.MetaMapType) error {
 	configWriteLock.Lock()
 	defer configWriteLock.Unlock()
@@ -793,6 +834,11 @@ func SetProjectConfigValue(projName string, toMerge waveobj.MetaMapType) error {
 		projData = make(waveobj.MetaMapType)
 	}
 	for configKey, val := range toMerge {
+		// nil removes the key, so a cleared field leaves no `"key": null` behind
+		if val == nil {
+			delete(projData, configKey)
+			continue
+		}
 		projData[configKey] = val
 	}
 	m[projName] = projData

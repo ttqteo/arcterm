@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/wavetermdev/waveterm/pkg/wconfig"
 )
 
 // memSecrets swaps the secretstore for a map
@@ -180,5 +182,75 @@ func TestHasTokenOnlyWhileTheTokenIsStored(t *testing.T) {
 	delete(secrets, secretName(a.Id))
 	if HasToken(a.Id) {
 		t.Fatal("HasToken = true with the token gone")
+	}
+}
+
+func TestLaunchEnv(t *testing.T) {
+	useTemp(t)
+	a, err := Add("Work", "sk-ant-oat01-work", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := LaunchEnv(a.Id)
+	if env[tokenVar] != "sk-ant-oat01-work" || env[accountVar] != a.Id {
+		t.Fatalf("LaunchEnv(%s) = %v", a.Id, env)
+	}
+	if env := LaunchEnv(""); env != nil {
+		t.Fatalf("LaunchEnv(\"\") = %v, want nil", env)
+	}
+	if env := LaunchEnv("agone"); env != nil {
+		t.Fatalf("an account with no token: %v, want nil", env)
+	}
+}
+
+func TestProjectLaunchEnv(t *testing.T) {
+	projects := map[string]wconfig.ProjectKeywords{
+		"work":     {Path: "/code/work", ClaudeAccount: "a1"},
+		"personal": {Path: "/code/personal"},
+	}
+	launchEnv := func(id string) map[string]string {
+		if id == "a1" {
+			return map[string]string{tokenVar: "t1", accountVar: "a1"}
+		}
+		return nil
+	}
+	cases := []struct {
+		name, project, dir string
+		want               string
+	}{
+		{"the named project's account", "work", "", "a1"},
+		{"the named project wins over the folder", "personal", "/code/work", ""},
+		{"no project named: the one holding the folder", "", "/code/work/sub", "a1"},
+		{"a project the store does not know: by folder", "gone", "/code/work", "a1"},
+		{"a project with no account", "personal", "", ""},
+		{"a folder no project holds", "", "/elsewhere", ""},
+		{"a sibling that only shares a prefix", "", "/code/workshop", ""},
+	}
+	for _, c := range cases {
+		got := projectLaunchEnv(c.project, c.dir, projects, "/home/u", launchEnv)[accountVar]
+		if got != c.want {
+			t.Errorf("%s: account %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestHeadlessEnv(t *testing.T) {
+	useTemp(t)
+	a, err := Add("Work", "sk-ant-oat01-work", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	projects := map[string]wconfig.ProjectKeywords{"work": {Path: "/code/work", ClaudeAccount: a.Id}}
+	want := []string{accountVar + "=" + a.Id, tokenVar + "=sk-ant-oat01-work"}
+	for _, bin := range []string{"claude", "claude.exe", `C:\tools\claude.cmd`} {
+		if got := HeadlessEnv(bin, "/code/work", projects, "/home/u"); strings.Join(got, ";") != strings.Join(want, ";") {
+			t.Errorf("%s: %v, want %v", bin, got, want)
+		}
+	}
+	if got := HeadlessEnv("codex", "/code/work", projects, "/home/u"); got != nil {
+		t.Errorf("codex: %v, want nil", got)
+	}
+	if got := HeadlessEnv("claude", "/elsewhere", projects, "/home/u"); got != nil {
+		t.Errorf("outside every project: %v, want nil", got)
 	}
 }

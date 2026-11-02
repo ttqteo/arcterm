@@ -8,6 +8,7 @@ import "context"
 type ProjectCommands interface {
 	CreateProjectCommand(ctx context.Context, data CommandCreateProjectData) error
 	DeleteProjectCommand(ctx context.Context, data CommandDeleteProjectData) error
+	SetProjectClaudeAccountCommand(ctx context.Context, data CommandSetProjectClaudeAccountData) error // "" follows the active account
 	CreateWorktreeCommand(ctx context.Context, data CommandCreateWorktreeData) (CommandCreateWorktreeRtnData, error)
 	ListBranchesCommand(ctx context.Context, data CommandListBranchesData) (CommandListBranchesRtnData, error)
 	GitChangesCommand(ctx context.Context, data CommandGitChangesData) (*CommandGitChangesRtnData, error)
@@ -20,6 +21,11 @@ type CommandCreateProjectData struct {
 
 type CommandDeleteProjectData struct {
 	Name string `json:"name"`
+}
+
+type CommandSetProjectClaudeAccountData struct {
+	Name    string `json:"name"`
+	Account string `json:"account"` // a claude account id; "" follows the active account
 }
 
 type CommandCreateWorktreeData struct {

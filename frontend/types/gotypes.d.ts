@@ -2148,6 +2148,12 @@ declare global {
         meta: MetaType;
     };
 
+    // wshrpc.CommandSetProjectClaudeAccountData
+    type CommandSetProjectClaudeAccountData = {
+        name: string;
+        account: string;
+    };
+
     // wshrpc.CommandSetRTInfoData
     type CommandSetRTInfoData = {
         oref: ORef;
@@ -3600,6 +3606,7 @@ declare global {
     // wconfig.ProjectKeywords
     type ProjectKeywords = {
         path?: string;
+        claudeaccount?: string;
     };
 
     // wshrpc.ProjectWork

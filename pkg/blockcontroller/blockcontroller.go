@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,12 +18,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
+	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
 	"github.com/wavetermdev/waveterm/pkg/filestore"
 	"github.com/wavetermdev/waveterm/pkg/shellexec"
 	"github.com/wavetermdev/waveterm/pkg/util/ds"
 	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -562,6 +565,18 @@ func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, 
 	}
 	token.Env["WAVETERM_CLIENTID"] = wstore.GetClientId()
 	token.Env["WAVETERM_CONN"] = remoteName
+	if tabId != "" && isLocalConnName(remoteName) {
+		// a project tied to a Claude account runs its agents and terminals on it; the block's own cmd:env, applied
+		// below, still wins
+		// (the tab's launch-time project, else the project holding the block's folder)
+		project := ""
+		if tab, err := wstore.DBGet[*waveobj.Tab](ctx, tabId); err == nil && tab != nil {
+			project = tab.Meta.GetString(waveobj.MetaKey_SessionProject, "")
+		}
+		cwd := blockMeta.GetString(waveobj.MetaKey_CmdCwd, "")
+		projects := wconfig.GetWatcher().GetFullConfig().Projects
+		maps.Copy(token.Env, claudeaccount.ProjectLaunchEnv(project, cwd, projects, wavebase.GetHomeDir()))
+	}
 	envMap, err := resolveEnvMap(blockId, blockMeta, remoteName)
 	if err != nil {
 		log.Printf("error resolving env map: %v\n", err)

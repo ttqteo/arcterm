@@ -27,8 +27,9 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - A project can run on a Claude account of its own: Settings → Agents → Claude account → + Project account. Agents
-  and terminals opened in that project use its account; every other project keeps using the checked one, and the New
-  dialog's footer names the account a launch will use.
+  and terminals opened in that project use its account, and so do a council, a Radar audit or a background AI call
+  run in its folder; every other project keeps using the checked one, and the New dialog's footer names the account a
+  launch will use.
 - A project's History list opens a menu on right-click: a session can open its transcript, resume, copy its title or
   transcript path, or be deleted; a run or a council can be opened or have its title copied. Each session row also
   names its model.

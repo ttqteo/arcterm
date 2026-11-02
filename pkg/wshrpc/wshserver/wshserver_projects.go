@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/wavetermdev/waveterm/pkg/claudeaccount"
 	"github.com/wavetermdev/waveterm/pkg/gitinfo"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
@@ -64,6 +65,32 @@ func (ws *WshServer) DeleteProjectCommand(ctx context.Context, data wshrpc.Comma
 		return fmt.Errorf("project name is required")
 	}
 	return wconfig.DeleteProjectConfigValue(name)
+}
+
+// SetProjectClaudeAccountCommand ties a registered project to a Claude account, so what launches into it from now on
+// runs on that account; "" unties it. Running agents keep the account they started on.
+func (ws *WshServer) SetProjectClaudeAccountCommand(ctx context.Context, data wshrpc.CommandSetProjectClaudeAccountData) error {
+	name := strings.TrimSpace(data.Name)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	if _, ok := wconfig.GetWatcher().GetFullConfig().Projects[name]; !ok {
+		return fmt.Errorf("no project %q", name)
+	}
+	account := strings.TrimSpace(data.Account)
+	if account == "" {
+		return wconfig.SetProjectConfigValue(name, waveobj.MetaMapType{"claudeaccount": nil})
+	}
+	list, err := claudeaccount.List()
+	if err != nil {
+		return fmt.Errorf("listing claude accounts: %w", err)
+	}
+	for _, a := range list {
+		if a.Id == account {
+			return wconfig.SetProjectConfigValue(name, waveobj.MetaMapType{"claudeaccount": account})
+		}
+	}
+	return fmt.Errorf("no claude account %q", account)
 }
 
 func (ws *WshServer) CreateWorktreeCommand(ctx context.Context, data wshrpc.CommandCreateWorktreeData) (wshrpc.CommandCreateWorktreeRtnData, error) {

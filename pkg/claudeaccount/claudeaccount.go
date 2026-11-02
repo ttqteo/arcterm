@@ -16,12 +16,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/secretstore"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
+	"github.com/wavetermdev/waveterm/pkg/wconfig"
 )
 
 const (
@@ -221,6 +223,67 @@ func ApplyEnv(id string) string {
 	}
 	active = id
 	return id
+}
+
+// LaunchEnv is the environment one launch adds to run on account id instead of the active one: its token and id.
+// It is nil for "" and for an account whose token is gone, and the launch then inherits wavesrv's environment
+// (the active account).
+func LaunchEnv(id string) map[string]string {
+	if id == "" {
+		return nil
+	}
+	t, ok, err := getSecret(secretName(id))
+	if err != nil || !ok || t == "" {
+		log.Printf("claude account %q has no token, using the active account: %v\n", id, err)
+		return nil
+	}
+	return map[string]string{tokenVar: t, accountVar: id}
+}
+
+// ProjectLaunchEnv is LaunchEnv for the Claude account of a launch's project: the named project, else the registered
+// project whose path holds dir. nil when that project has no account (or there is none), so the launch inherits the
+// active account.
+func ProjectLaunchEnv(project, dir string, projects map[string]wconfig.ProjectKeywords, home string) map[string]string {
+	return projectLaunchEnv(project, dir, projects, home, LaunchEnv)
+}
+
+func projectLaunchEnv(project, dir string, projects map[string]wconfig.ProjectKeywords, home string, launchEnv func(string) map[string]string) map[string]string {
+	p, ok := projects[project]
+	if project == "" || !ok {
+		if _, p, ok = wconfig.ProjectForDir(dir, projects, home); !ok {
+			return nil
+		}
+	}
+	return launchEnv(p.ClaudeAccount)
+}
+
+// HeadlessEnv is the KEY=value entries a headless run of bin in dir adds (consult.ExtraEnvFor): the account of the
+// project holding dir, for a claude binary only.
+func HeadlessEnv(bin, dir string, projects map[string]wconfig.ProjectKeywords, home string) []string {
+	if !isClaudeBin(bin) {
+		return nil
+	}
+	return envList(ProjectLaunchEnv("", dir, projects, home))
+}
+
+func isClaudeBin(bin string) bool {
+	base := strings.ToLower(filepath.Base(bin))
+	for _, ext := range []string{".exe", ".cmd", ".bat"} {
+		base = strings.TrimSuffix(base, ext)
+	}
+	return base == "claude"
+}
+
+func envList(m map[string]string) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for k, v := range m {
+		out = append(out, k+"="+v)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // HasToken reports whether account id's token is still stored; false too when the store cannot be read.

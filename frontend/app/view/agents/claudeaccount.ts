@@ -179,6 +179,36 @@ export function launchAccountName(activeId: string, identity: ClaudeIdentity): s
     return account != null ? account.label : defaultAccountName(identity.loginEmail);
 }
 
+// The account a launch into a project runs on: the project's own account (ProjectKeywords.claudeaccount) while it is
+// still on this machine with its token, else the active one. wavesrv makes the same choice at spawn time
+// (blockcontroller projectClaudeEnv).
+export function projectLaunchAccount(
+    activeId: string,
+    projectAccount: string | undefined,
+    accounts: { id: string; notoken?: boolean }[]
+): string {
+    const own = projectAccount ?? "";
+    if (own !== "" && accounts.some((a) => a.id === own && !a.notoken)) {
+        return own;
+    }
+    return activeId;
+}
+
+// The projects that run on an account of their own, by name: a switch of the active account does not move their
+// agents, so its restart dialog leaves them out.
+export function projectsWithOwnAccount(
+    projects: Record<string, ProjectKeywords> | null | undefined,
+    accounts: { id: string; notoken?: boolean }[]
+): Set<string> {
+    const out = new Set<string>();
+    for (const [name, p] of Object.entries(projects ?? {})) {
+        if (projectLaunchAccount("", p?.claudeaccount, accounts) !== "") {
+            out.add(name);
+        }
+    }
+    return out;
+}
+
 // A window at or past this is about to run out.
 export const QUOTA_WARN_PCT = 90;
 
