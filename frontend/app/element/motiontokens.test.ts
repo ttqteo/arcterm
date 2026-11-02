@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { MOTION, cardVariants, composerReveal, computeEntrances, easeFluidCss, indicatorSlide, initialEntranceState, microFade, modalBackdrop, modalPanel, paneReveal, popoverReveal, settleClass, sheetPanel, shouldFadeEntry, reflowProps, turnTransition, viewFade } from "./motiontokens";
+import { MOTION, cardVariants, composerReveal, computeEntrances, easeFluidCss, indicatorSlide, initialEntranceState, microFade, modalBackdrop, modalPanel, paneReveal, popoverReveal, settleClass, sheetPanel, shouldFadeEntry, reflowProps, sentRise, turnTransition, viewFade } from "./motiontokens";
 
 describe("motiontokens", () => {
     it("uses the Fluid feel: macro ~360ms on the chosen ease curve", () => {
@@ -54,6 +54,18 @@ describe("viewFade", () => {
         expect((viewFade.animate as any).transition.duration).toBeCloseTo(MOTION.durMacro);
         expect((viewFade.animate as any).transition.ease).toEqual(MOTION.easeFluid);
         expect(viewFade).not.toHaveProperty("exit");
+    });
+});
+
+describe("sentRise", () => {
+    it("rises up into place from below on the macro duration, and has no exit", () => {
+        expect((sentRise.initial as { y: number }).y).toBeGreaterThan(0);
+        expect((sentRise.initial as { opacity: number }).opacity).toBe(0);
+        expect((sentRise.animate as any).y).toBe(0);
+        expect((sentRise.animate as any).scale).toBe(1);
+        expect((sentRise.animate as any).transition.duration).toBeCloseTo(MOTION.durMacro);
+        expect((sentRise.animate as any).transition.ease).toEqual(MOTION.easeFluid);
+        expect(sentRise).not.toHaveProperty("exit");
     });
 });
 

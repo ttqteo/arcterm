@@ -19,7 +19,7 @@
 // `council-discussion`. The store's actions answer `{ ok, error }`; a refusal shows in the header (the `acts` the
 // discussion shares).
 
-import { sheetPanel } from "@/app/element/motiontokens";
+import { computeEntrances, initialEntranceState, sentRise, sheetPanel } from "@/app/element/motiontokens";
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
@@ -544,20 +544,26 @@ function ReplyMessage({
     item,
     inThread,
     onOpenIdea,
+    rise,
 }: {
     councilId: string;
     item: ReplyPost;
     inThread?: boolean;
     onOpenIdea?: (id: string) => void;
+    rise?: boolean; // the person's post that just arrived: it rises in from the composer (sentRise)
 }) {
     return (
-        <article
+        <motion.article
             data-council-item
             data-item-kind="reply"
             data-council-reply-post={item.id}
             data-item-label={item.label}
             data-item-mine={item.mine ? "true" : undefined}
             data-in-thread={inThread ? "true" : undefined}
+            variants={sentRise}
+            initial={rise ? "initial" : false}
+            animate="animate"
+            style={{ transformOrigin: "bottom right" }}
             className={cn("flex gap-[8px]", item.mine && "flex-row-reverse")}
         >
             {!item.mine && <CouncilAvatar tone={item.tone} name={item.name} initials={item.initials} />}
@@ -585,7 +591,7 @@ function ReplyMessage({
                     </div>
                 )}
             </div>
-        </article>
+        </motion.article>
     );
 }
 
@@ -1152,6 +1158,18 @@ function AskNext({ c, asks }: { c: Council; asks: AskChip[] }) {
 
 // ---- the thread ----
 
+// the ids that arrived while `key` (the council and its view) stayed put. no-cascade guard: opening a council, a seat's
+// view or a thread seeds silently, so only a post sent meanwhile rises in (motiontokens' computeEntrances)
+function useEntering(key: string, ids: string[]): Set<string> {
+    const ref = useRef(initialEntranceState());
+    const { animate } = computeEntrances(ref.current, key, ids);
+    const idsKey = ids.join(",");
+    useLayoutEffect(() => {
+        ref.current = computeEntrances(ref.current, key, ids).state;
+    }, [key, idsKey]);
+    return animate;
+}
+
 function ThreadPanel({
     c,
     thread,
@@ -1166,6 +1184,10 @@ function ThreadPanel({
     const idea = thread.idea;
     const scroller = useRef<HTMLDivElement>(null);
     const onScroll = useKeptScroll(scroller, `thread:${c.id}:${idea.id}`);
+    const entering = useEntering(
+        `${c.id}:${idea.id}`,
+        thread.items.map((item) => item.id)
+    );
     return (
         <aside
             data-council-thread={idea.id}
@@ -1229,7 +1251,13 @@ function ThreadPanel({
                 </div>
                 {thread.items.map((item: ThreadItem) =>
                     item.kind === "reply" ? (
-                        <ReplyMessage key={item.id} councilId={c.id} item={item} inThread />
+                        <ReplyMessage
+                            key={item.id}
+                            councilId={c.id}
+                            item={item}
+                            inThread
+                            rise={item.mine && entering.has(item.id)}
+                        />
                     ) : item.kind === "draft" ? (
                         <DraftCard key={item.id} c={c} item={item} acts={acts} />
                     ) : (
@@ -1512,7 +1540,8 @@ function Channel({
                 role="log"
                 aria-label="Council channel"
                 onScroll={jumps.onScroll}
-                className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-edge-strong"
+                // the gutter is kept with or without a scrollbar, so the column lines up with the composer's below it
+                className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5 outline-none [scrollbar-gutter:stable] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-edge-strong"
             >
                 <div ref={rowsRef} className="mx-auto flex w-full max-w-[860px] flex-col gap-[16px]">
                     {children}
@@ -1582,6 +1611,10 @@ export function CouncilChat({
     const seats = useMemo(() => seatChips(c), [c]);
     const onlySeat = onlyId == null ? null : (seats.find((chip) => chip.id === onlyId) ?? null);
     const order = useMemo(() => ideaOrder(items), [items]);
+    const entering = useEntering(
+        `${c.id}:${onlyId ?? ""}`,
+        items.map((item) => item.id)
+    );
     const open = useCallback(
         (id: string) => {
             setOpenId(id);
@@ -1679,7 +1712,15 @@ export function CouncilChat({
                             case "draft":
                                 return <DraftCard key={item.id} c={c} item={item} acts={acts} />;
                             case "reply":
-                                return <ReplyMessage key={item.id} councilId={c.id} item={item} onOpenIdea={open} />;
+                                return (
+                                    <ReplyMessage
+                                        key={item.id}
+                                        councilId={c.id}
+                                        item={item}
+                                        onOpenIdea={open}
+                                        rise={item.mine && entering.has(item.id)}
+                                    />
+                                );
                             case "skip":
                                 return <SkippedLine key={item.id} item={item} onOpenTerminal={onOpenTerminal} />;
                             case "failure":
@@ -1693,19 +1734,22 @@ export function CouncilChat({
                     })}
                     {asks.length > 0 && <AskNext c={c} asks={asks} />}
                 </Channel>
-                <div className="flex-none px-8 pb-4 pt-[10px]">
-                    <span id="council-channel-label" className="sr-only">
-                        Message the council
-                    </span>
-                    <Composer
-                        c={c}
-                        scope="channel"
-                        proposalId=""
-                        placeholder="Message everyone · @ to ask one seat"
-                        sendLabel="Send"
-                        labelledBy="council-channel-label"
-                        returnTo={() => channel.current}
-                    />
+                {/* the channel's column: its px-6, its 10px scrollbar gutter on the right, its 860px centred */}
+                <div className="flex-none pb-4 pl-6 pr-[34px] pt-[10px]">
+                    <div className="mx-auto w-full max-w-[860px]">
+                        <span id="council-channel-label" className="sr-only">
+                            Message the council
+                        </span>
+                        <Composer
+                            c={c}
+                            scope="channel"
+                            proposalId=""
+                            placeholder="Message everyone · @ to ask one seat"
+                            sendLabel="Send"
+                            labelledBy="council-channel-label"
+                            returnTo={() => channel.current}
+                        />
+                    </div>
                 </div>
             </div>
             {/* the right panel slides in from its edge and back out (sheetPanel); the thread and the Sources it opens

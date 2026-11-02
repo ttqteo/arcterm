@@ -27,6 +27,10 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The council composer sits in the message column: open a council's Discussion on a wide window → the
+  message box's left and right edges line up with the messages' 860px column (with and without a scrollbar), and
+  sending a message (in the channel and in a thread) makes your bubble rise in from below; reopening the council or
+  switching the seat filter animates nothing. `councilchat.tsx`, "feat(council): composer in the message column".
 - [ ] (arcterm) The handed-over rows keep their text wide: open a brainstorm whose run has started, with parts that
   have a long "from" ("agent's call, from answers 2 and 6") → in What you handed over, each part's text fills the
   column and the from line sits under it in small mono, cut with an ellipsis (full text on hover), not a column of

@@ -54,6 +54,14 @@ export const composerReveal: Variants = {
     exit: { opacity: 0, height: 0, transition: { duration: MOTION.durMicro, ease: MOTION.easeFluid } },
 };
 
+// Sent rise: the message the person just sent rising into the chat from the composer below it, so the eye follows
+// it from the box to the log. y is safe here: a chat row has no Reorder.Item owning its transform. Scales from the
+// bubble's tail corner (set transform-origin per site); arrive only, the row never leaves this way.
+export const sentRise: Variants = {
+    initial: { opacity: 0, y: 18, scale: 0.96 },
+    animate: { opacity: 1, y: 0, scale: 1, transition: { duration: MOTION.durMacro, ease: MOTION.easeFluid } },
+};
+
 // Pane reveal: composerReveal's signature on the macro duration. A composer strip is a few dozen
 // pixels, so durMicro reads as a reveal there; a disclosure pane is several hundred, and the same
 // 140ms on this ease covers ~90% of that distance in two frames — indistinguishable from a snap.
