@@ -27,6 +27,9 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) The Agent panel's counts scroll: open an agent's details panel on Overview (300px) with enough counts
+  to overflow (Subagents, Files, Servers…) → the wheel over the counts slides them sideways, the hidden edge fades,
+  and the last count is reachable (`agentrailpanel.tsx` `RailStats`).
 - [ ] (arcterm) History names a spec run by its feature: open a project's History that lists a run started from a
   brainstorm → its row reads "Build <feature>" with no path, and the line under it ends `· <spec file>.md`
   (`projectoverviewmodel.ts` `runHeadline`).

@@ -74,6 +74,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- The counts beside the Agent panel's tabs scroll sideways with the mouse wheel when the panel is too narrow for them
+  all, with a fade on the edge that hides some, instead of the last ones being cut off out of reach.
 - A run started from a brainstorm now shows in History by its feature ("Build …"), with its spec's file name on the
   line under it, instead of a title cut off halfway through the spec's full path.
 - In a council, when you ask everyone something, the experts who answer after the first one no longer open with the
