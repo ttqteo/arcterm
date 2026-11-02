@@ -16,7 +16,7 @@ import { fireAndForget } from "@/util/util";
 import { atom, type PrimitiveAtom } from "jotai";
 import type { PendingRunDraft } from "./radarmodel";
 import { leadRuntimes, normalizeProfileOverrideRoute, normalizeRoute, resolveEffectiveRoute } from "./route";
-import { harnessesAtom, harnessPreferenceAtom } from "./harnessstore";
+import { harnessesAtom, harnessPreferenceAtom, loadHarnesses } from "./harnessstore";
 
 // The pending Run draft handed from Radar's "Start investigation" to the Channels Run composer. Ephemeral
 // (lost on reload, which is fine for a review step); cleared on explicit Start or Discard.
@@ -231,6 +231,10 @@ export async function resolveChannelLaunchRoute(channelId: string): Promise<Rout
     const settingsModel = (globalStore.get(getSettingsKeyAtom("harness:preferredmodel")) as string) ?? "";
     const pref = globalStore.get(harnessPreferenceAtom);
     const settings = pref.route ?? normalizeRoute(settingsRuntime, settingsModel);
+    // a catalog whose boot load failed stays empty until something reloads it, and Retry alone never did
+    if (globalStore.get(harnessesAtom).length === 0) {
+        await loadHarnesses();
+    }
     const harnesses = globalStore.get(harnessesAtom);
     const effective = resolveEffectiveRoute({
         settings,
@@ -239,8 +243,10 @@ export async function resolveChannelLaunchRoute(channelId: string): Promise<Rout
         // a consult preference of Antigravity must not give a run an agy lead, which the server refuses
         allow: leadRuntimes(harnesses),
     });
-    if (effective == null || effective.capability == null) {
-        throw new Error("Selected route is unavailable");
+    // a route the catalog has no row for still goes to the server, which checks the harness is installed and says
+    // why when it is not: refusing here blocked runs the server would have started
+    if (effective == null) {
+        throw new Error("No lead route: pick a model in the Models row, or set one in Settings");
     }
     return effective.pin;
 }

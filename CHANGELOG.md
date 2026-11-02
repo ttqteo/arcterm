@@ -44,6 +44,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Starting a run no longer fails over and over with "Selected route is unavailable" when the list of installed agents
+  had not loaded: arcterm loads it again and starts the run on the project's route.
 - A council's Summary failed panel has a close button; it comes back only when the summary fails again, and the
   Coordinator's Retry stays in the strip above.
 - While the brainstorm judge weighs a question's approaches, an approach's facts open from a clear button set apart

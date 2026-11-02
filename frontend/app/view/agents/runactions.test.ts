@@ -5,6 +5,7 @@ const stopRunWorkerCommand = vi.fn();
 const cancelRunCommand = vi.fn();
 const createRunCommand = vi.fn();
 const getJarvisProfileCommand = vi.fn();
+const listHarnessesCommand = vi.fn();
 const pushModal = vi.fn();
 
 vi.mock("@/app/store/global-atoms", async () => {
@@ -18,6 +19,7 @@ vi.mock("@/app/store/wshclientapi", () => ({
         CancelRunCommand: (...args: any[]) => cancelRunCommand(...args),
         CreateRunCommand: (...args: any[]) => createRunCommand(...args),
         GetJarvisProfileCommand: (...args: any[]) => getJarvisProfileCommand(...args),
+        ListHarnessesCommand: (...args: any[]) => listHarnessesCommand(...args),
     },
 }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
@@ -300,5 +302,22 @@ describe("resolveChannelLaunchRoute", () => {
         globalStore.set(harnessPreferenceAtom, { route: { runtime: "agy" }, persistedRoute: { runtime: "agy" }, saving: false });
         getJarvisProfileCommand.mockResolvedValue({ override: { route: { runtime: "pi" } } });
         expect(await resolveChannelLaunchRoute("channel-1")).toEqual({ runtime: "pi" });
+    });
+
+    it("reloads an empty catalog before resolving, so a failed boot load does not block every launch", async () => {
+        globalStore.set(harnessesAtom, []);
+        globalStore.set(harnessPreferenceAtom, { route: null, persistedRoute: null, saving: false });
+        getJarvisProfileCommand.mockResolvedValue({ override: { route: { runtime: "claude", model: "opus" } } });
+        listHarnessesCommand.mockReset().mockResolvedValue({ harnesses: [h("claude", true)] });
+        expect(await resolveChannelLaunchRoute("channel-1")).toEqual({ runtime: "claude", model: "opus" });
+        expect(listHarnessesCommand).toHaveBeenCalled();
+    });
+
+    it("hands the server a route the catalog has no row for instead of refusing it", async () => {
+        globalStore.set(harnessesAtom, []);
+        globalStore.set(harnessPreferenceAtom, { route: null, persistedRoute: null, saving: false });
+        getJarvisProfileCommand.mockResolvedValue({ override: { route: { runtime: "claude", model: "opus" } } });
+        listHarnessesCommand.mockReset().mockRejectedValue(new Error("timeout"));
+        expect(await resolveChannelLaunchRoute("channel-1")).toEqual({ runtime: "claude", model: "opus" });
     });
 });
