@@ -306,6 +306,7 @@ const headerRow = (h) =>
             tab: !!head.querySelector("[data-council-tab='discussion'][aria-selected='true']"),
             title: !!title,
             truncated: !!title && title.scrollWidth > title.clientWidth,
+            titleW: title ? Math.round(title.clientWidth) : 0,
             seats: head.querySelectorAll("[data-council-filter]").length,
             cost: !!head.querySelector("[data-council-cost]"),
             costIn: within("[data-council-cost]"),
@@ -318,7 +319,13 @@ const headerRow = (h) =>
     })()`);
 
 async function header(h, ctx, rec) {
-    await openFixture(h, ctx, "round2", { id: `${councilFixtureId("round2")}-header` });
+    // a feature longer than the title's floor, so the narrow pane has something to truncate (the fixture's own is 9 letters)
+    await openFixture(h, ctx, "round2", {
+        id: `${councilFixtureId("round2")}-header`,
+        edit: (c) => {
+            c.feature = "Which changes to the pinned apps on the nav rail are worth making first, and in what order";
+        },
+    });
     await until(h, `!!document.querySelector("[data-council-channel]")`);
     const wide = await headerRow(h);
     rec(
@@ -342,10 +349,11 @@ async function header(h, ctx, rec) {
         await new Promise((r) => setTimeout(r, 400));
         const narrow = await headerRow(h);
         rec(
-            "header: at a 1000px window the row is still 52px, the title truncates, the seat strip scrolls sideways, and the cost and the last control stay in the pane",
+            "header: at a 1000px window the row is still 52px, the title truncates and keeps at least 60px, the seat strip scrolls sideways, and the cost and the last control stay in the pane",
             narrow != null &&
                 Math.abs(narrow.height - 52) <= 1 &&
                 narrow.truncated &&
+                narrow.titleW >= 60 &&
                 narrow.scrolls &&
                 narrow.costIn === true &&
                 narrow.lastIn,

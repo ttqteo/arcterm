@@ -300,20 +300,25 @@ function Header({
     const title = enabled ? "Rank the directions and fill the matrix from the discussion so far" : summarizeHold(c);
     // the call bar is the first step's and the pause's; the chat's seat chips say who is at work
     const showBar = body !== "chat" && ((c.state === "running" && c.round <= 1) || c.state === "awaiting-you");
+    // under 900px the cost keeps its first part (the clock, or the replies before the start); the whole line stays in its title
+    const cost = headerCost(c, now);
+    const costParts = cost.split(" · ");
+    const costFirst = costParts[0];
+    const costRest = costParts.slice(1).join(" · ");
     return (
         <header className="@container flex flex-none flex-col border-b border-border bg-surface">
             {/* one 52px row that never wraps: the tabs and the cost and Close keep their width, the title truncates and
                 the seat strip scrolls sideways before anything leaves the row. Under 1000px of pane the mode chip goes,
                 under 900px Summarize keeps its icon alone. The Report tab is where a summary opens. */}
             <div className="flex h-[52px] min-w-0 items-stretch gap-3 px-6 @max-[900px]:gap-2 @max-[900px]:px-4">
-                <CouncilTabs c={c} view="discussion" className="flex-none" />
+                <CouncilTabs c={c} view="discussion" className="flex-none @max-[900px]:gap-3" />
                 <div aria-hidden className="h-5 w-px flex-none self-center bg-edge-mid" />
                 <div className="flex min-w-0 flex-1 items-center gap-[10px] @max-[900px]:gap-2">
                     <ModeChip c={c} />
                     <h1
                         data-council-title
                         title={c.feature}
-                        className="m-0 min-w-0 flex-[0_1_auto] truncate text-[14px] font-semibold tracking-[-0.01em] text-primary"
+                        className="m-0 min-w-[72px] flex-[0_1_auto] truncate text-[14px] font-semibold tracking-[-0.01em] text-primary"
                     >
                         {c.feature}
                     </h1>
@@ -329,9 +334,11 @@ function Header({
                     {c.state !== "not-run" && !isQueued(c) && (
                         <span
                             data-council-cost
+                            title={cost}
                             className="flex-none whitespace-nowrap text-[12.5px] tabular-nums text-muted"
                         >
-                            {headerCost(c, now)}
+                            {costFirst}
+                            {costRest !== "" && <span className="@max-[900px]:hidden"> · {costRest}</span>}
                         </span>
                     )}
                     {action.call && (

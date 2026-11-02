@@ -61,7 +61,7 @@ export function CouncilTabs({
                 {count !== "" && (
                     <span
                         data-council-tab-count
-                        className="rounded-full bg-pill px-[7px] py-px text-[12px] font-medium text-muted tabular-nums"
+                        className="rounded-full bg-pill px-[7px] py-px text-[12px] font-medium text-muted tabular-nums @max-[900px]:sr-only"
                     >
                         {count}
                     </span>
