@@ -16,6 +16,8 @@ const wake = vi.fn().mockResolvedValue(undefined);
 const controllerInput = vi.fn().mockResolvedValue(undefined);
 
 const controllerStatus = vi.fn().mockResolvedValue(null);
+const toast = vi.fn();
+vi.mock("@/app/cockpit/notificationstore", () => ({ pushToast: (...a: any[]) => toast(...a) }));
 // the store's tabs and blocks by oref, as WOS has them cached
 let stored: Record<string, any> = {};
 
@@ -67,6 +69,7 @@ afterEach(() => {
     wake.mockClear();
     controllerInput.mockClear();
     controllerStatus.mockReset().mockResolvedValue(null);
+    toast.mockClear();
     stored = {};
     globalStore.set(atoms.workspace as any, { oid: "ws1", tabids: [] });
 });
@@ -212,6 +215,7 @@ describe("launchAgent", () => {
             expect(globalStore.get(model.surfaceAtom)).toBe("agent");
             expect(wake).not.toHaveBeenCalled();
             expect(controllerInput).not.toHaveBeenCalled();
+            expect(toast.mock.calls[0][0].title).toBe("Lumen is already open");
         });
 
         it("wakes a sleeping holder with the message given", async () => {
@@ -248,6 +252,8 @@ describe("launchAgent", () => {
             expect(createTab).not.toHaveBeenCalled();
             expect(controllerStatus).toHaveBeenCalledWith("blk-held");
             expect(globalStore.get(model.focusIdAtom)).toBe("tab-held");
+            // its terminal is still empty while the resume loads, so the toast says it is starting, not just "open"
+            expect(toast.mock.calls[0][0].title).toBe("arcterm is still starting");
         });
 
         it("goes to a tab the store says holds the session asleep", async () => {
@@ -255,6 +261,7 @@ describe("launchAgent", () => {
             const model = fakeModel();
             expect(await resume(model)).toBe("tab-held");
             expect(createTab).not.toHaveBeenCalled();
+            expect(toast.mock.calls[0][0].title).toBe("arcterm is already open");
         });
 
         it("opens a new tab when the tab that resumed the session has no process left", async () => {

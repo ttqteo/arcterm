@@ -27,6 +27,8 @@ Status legend:
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Conversation History: Resume a claude conversation, then Resume it again before its terminal draws;
+  the toast reads "<name> is still starting", not "already open", and no second tab opens. `cockpit-actions.ts` `goToHolder`.
 - [ ] (arcterm) Agent sidebar: right-click a project folder → New agent… is the first item; picking it opens the New
   dialog on the agent half with that project picked (Home's folder has no menu). 638834b86
 - [ ] (arcterm) Run start with an empty harness catalog: after a launch failed "Selected route is unavailable", press

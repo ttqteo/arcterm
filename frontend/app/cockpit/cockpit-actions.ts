@@ -170,7 +170,8 @@ export async function launchAgent(model: AgentsViewModel, opts: LaunchAgentOpts)
     return tabId;
 }
 
-type Holder = Pick<AgentVM, "id" | "name" | "blockId" | "sleeping">;
+// starting: its process runs but it has not reported in yet (a resume can take a minute or two to draw anything)
+type Holder = Pick<AgentVM, "id" | "name" | "blockId" | "sleeping"> & { starting?: boolean };
 
 // every block of the workspace's tabs that the store has loaded, with its meta
 function storedBlocks(): StoredAgentBlock[] {
@@ -200,7 +201,7 @@ async function storedHolder(model: AgentsViewModel, transcriptPath: string | und
             }
         }
         const name = globalStore.get(model.agentsAtom).find((a) => a.id === b.tabId)?.name || b.name;
-        return { id: b.tabId, name, blockId: b.blockId, sleeping };
+        return { id: b.tabId, name, blockId: b.blockId, sleeping, starting: !sleeping };
     }
     return undefined;
 }
@@ -215,11 +216,20 @@ async function goToHolder(model: AgentsViewModel, holder: Holder, message: strin
     if (!holder.sleeping) {
         globalStore.set(model.typingFollowsAtom, holder.id);
     }
-    pushToast({
-        title: `${holder.name} is already open`,
-        message: "Went to its tab rather than open the conversation a second time.",
-        level: "info",
-    });
+    // a tab still starting shows an empty terminal: say it is on its way, or "already open" reads as a failed resume
+    pushToast(
+        holder.starting
+            ? {
+                  title: `${holder.name} is still starting`,
+                  message: "Its conversation is loading in the tab the first resume opened. It can take a minute.",
+                  level: "info",
+              }
+            : {
+                  title: `${holder.name} is already open`,
+                  message: "Went to its tab rather than open the conversation a second time.",
+                  level: "info",
+              }
+    );
     if (message === "") {
         return;
     }

@@ -50,6 +50,8 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- Resuming a conversation again while its tab is still loading says the agent is still starting, instead of "already
+  open" over an empty terminal.
 - Starting a run no longer fails over and over with "Selected route is unavailable" when the list of installed agents
   had not loaded: arcterm loads it again and starts the run on the project's route.
 - On a brainstorm board opened full size, `[` `]` and ← → step through its boards as on an agent's canvas, instead of
