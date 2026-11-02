@@ -31,18 +31,18 @@ does not, say what you saw and it becomes a bug row under Actionable.
   Done council → a cover with the question, the answer and the glance box on the right, Report | Discussion tabs that
   stay at the top when you scroll, the ideas as cards with one open at a time and its detail under the row; click
   Discussion → one 52px header row with the tabs, title, seats as avatars with counts, cost and Close; click a seat →
-  only its messages and a Show everyone line; narrow the pane → the title keeps a readable width. (e31de04bd)
+  only its messages and a Show everyone line; narrow the pane → the title keeps a readable width. (d660217e5)
 - [ ] (arcterm) Council seats and report panel, in the real app: on a council's Discussion, hover the seats' stack →
   a list of every seat (name, kind, doing, count) opens under it, leave → it closes; click a row → only its messages,
   the others' avatars dim; Close is an X. On the Report, hover a seat in The panel → the row does not grow, an arrow
-  shows at the end of its line and the hint sits to the row's right, not over the next seat. (c6535656e, ecf03e879,
-  9df9f5ef2)
+  shows at the end of its line and the hint sits to the row's right, not over the next seat. (13008d427, a9cfb0639,
+  77011c8ce)
 - [ ] (arcterm) New project search reads paths from `~`: open Agent → New project, type your user name → both
   sections empty; type `cuscofi` → the folders named cuscofi first, then any that hold it only in their path; type
-  `~/Workspaces/dev` → only the folders under it. (daa601e82)
+  `~/Workspaces/dev` → only the folders under it. (9d23c1862)
 - [ ] (arcterm) Jump buttons are arrows only: scroll a council's Discussion off both ends → round ↑ / ↩ / ↓ buttons in
   its bottom right, no words, each with its tooltip on hover; scroll up in an agent's transcript (a card's or the
-  rail's) → a round ↓ at the bottom centre, no "Latest". (aff9e9b80, b640846da)
+  rail's) → a round ↓ at the bottom centre, no "Latest". (d059f1b58, dfadeab66)
 - [ ] (arcterm) A live chat joins a council that already exists: open a Done council, type `@` in its message box →
   the seats, then **Add a live chat** with each real claude or pi chat (short id, title, harness, project, context
   size; none of the seated ones). Pick one and send a question → the line under the box counts it ("… and 1 chat
