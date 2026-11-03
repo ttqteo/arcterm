@@ -1782,7 +1782,7 @@ func TestReplyRoutedTwoSeats(t *testing.T) {
 		t.Fatalf("answer calls to %v, want the skeptic first and then ux, and no third seat", answerIds(h.f))
 	}
 	mustNotContain(t, "the first seat's prompt", ans[0].Prompt, othersAnsweredRule)
-	mustContain(t, "the second seat's prompt", ans[1].Prompt, "- Skeptic: Answer from skeptic", othersAnsweredRule)
+	mustContain(t, "the second seat's prompt", ans[1].Prompt, "- Bug hunter: Answer from skeptic", othersAnsweredRule)
 	reply := replyOf(t, c, "r13")
 	if !slices.Equal(reply.To, []string{"skeptic", "ux"}) || !slices.Equal(reply.Routed.Chose, []string{"skeptic", "ux"}) || !reply.Answered {
 		t.Errorf("the reply = To %v routed %+v, want the router's two seats in its order, answered", reply.To, reply.Routed)
@@ -1892,7 +1892,7 @@ func TestAtAllReachesEverySeat(t *testing.T) {
 			}
 			mustNotContain(t, "the first seat's prompt", ans[0].Prompt, othersAnsweredRule)
 			for _, req := range ans[1:] {
-				mustContain(t, req.Expert.Id+"'s prompt", req.Prompt, "- UX: Answer from ux", othersAnsweredRule)
+				mustContain(t, req.Expert.Id+"'s prompt", req.Prompt, "- Ease of use: Answer from ux", othersAnsweredRule)
 			}
 		})
 	}
