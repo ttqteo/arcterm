@@ -5,9 +5,35 @@ package council
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// a council saved while Close existed holds "closed": it loads unpinned, the old value is not read
+func TestLoadIgnoresClosed(t *testing.T) {
+	root := useTempRoot(t)
+	dir := filepath.Join(root, "councils")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"id": "old", "topic": "t", "closed": 123, "experts": [], "state": "done"}`
+	if err := os.WriteFile(filepath.Join(dir, "old.json"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load("old")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Pinned != 0 {
+		t.Errorf("a closed council loaded with Pinned %d, want 0", c.Pinned)
+	}
+	b, _ := json.Marshal(c)
+	if strings.Contains(string(b), `"closed"`) {
+		t.Errorf("the closed field survived the round trip: %s", b)
+	}
+}
 
 func TestModeOf(t *testing.T) {
 	for _, tc := range []struct {

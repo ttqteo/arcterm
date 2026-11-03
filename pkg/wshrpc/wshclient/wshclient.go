@@ -356,12 +356,6 @@ func CouncilBenchStopCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.C
 	return resp, err
 }
 
-// command "councilclose", wshserver.CouncilCloseCommand
-func CouncilCloseCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilCloseData, opts *wshrpc.RpcOpts) error {
-	_, err := sendRpcRequestCallHelper[any](w, "councilclose", data, opts)
-	return err
-}
-
 // command "councilcontinue", wshserver.CouncilContinueCommand
 func CouncilContinueCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilContinueData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "councilcontinue", data, opts)
@@ -396,6 +390,12 @@ func CouncilGetCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilIdData, opts
 func CouncilListCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilListData, opts *wshrpc.RpcOpts) ([]*council.Council, error) {
 	resp, err := sendRpcRequestCallHelper[[]*council.Council](w, "councillist", data, opts)
 	return resp, err
+}
+
+// command "councilpin", wshserver.CouncilPinCommand
+func CouncilPinCommand(w *wshutil.WshRpc, data wshrpc.CommandCouncilPinData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "councilpin", data, opts)
+	return err
 }
 
 // command "councilrate", wshserver.CouncilRateCommand

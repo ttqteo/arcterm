@@ -53,7 +53,6 @@ import { openRefInCode } from "./agentrailstore";
 import type { AgentsViewModel } from "./agents";
 import { CouncilAvatar, CouncilText, MarkedText, useKeptScroll } from "./councilchat";
 import { askChips } from "./councilchatmodel";
-import { CouncilCloseButton } from "./councilclose";
 import { avatarTone, modeWord, seatInitials } from "./councildiscussionmodel";
 import {
     STANCE_WORD,
@@ -67,6 +66,7 @@ import {
     synthesisRound,
     type StanceLabel,
 } from "./councilmodel";
+import { CouncilPinButton } from "./councilpin";
 import { RetryWithButton } from "./councilretrymenu";
 import {
     councilChatDraftAtom,
@@ -1357,7 +1357,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                         <CouncilTabs c={c} view="summary" />
                         <span className="flex-1" />
                         <JumpLinks c={c} scroller={scroller} bar={tabBar} />
-                        <CouncilCloseButton c={c} className="self-center" />
+                        <CouncilPinButton c={c} className="self-center" />
                     </div>
                 </div>
                 {summary != null ? (

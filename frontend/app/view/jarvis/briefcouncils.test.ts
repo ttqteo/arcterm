@@ -89,13 +89,13 @@ describe("councilLines", () => {
         expect(councilLines(null, PROJECTS, NOW)).toEqual([]);
     });
 
-    it("leaves a closed council out", () => {
+    it("lists a pinned council like any other: a pin is the tree's, not the Brief's", () => {
         const lines = councilLines(
-            [council({ id: "closed", closed: NOW - DAY }), council({ id: "open" })],
+            [council({ id: "pinned", pinned: NOW - DAY }), council({ id: "plain" })],
             PROJECTS,
             NOW
         );
-        expect(lines.map((l) => l.id)).toEqual(["councils:open"]);
+        expect(lines.map((l) => l.id).sort()).toEqual(["councils:pinned", "councils:plain"]);
     });
 });
 

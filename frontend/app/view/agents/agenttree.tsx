@@ -57,6 +57,8 @@ import {
     Moon,
     Pencil,
     PenTool,
+    Pin,
+    PinOff,
     Play,
     Plus,
     RotateCcw,
@@ -169,14 +171,14 @@ import {
     type TerminalShows,
 } from "./agentsidebarmodel";
 import { CouncilAvatar } from "./councilchat";
-import { type CouncilTone } from "./councilmodel";
+import { isPinnedCouncil, type CouncilTone } from "./councilmodel";
 import { confirmRemoveCouncil } from "./councilremove";
 import {
-    closeCouncil,
     councilListAtom,
     councilSelAtom,
     councilUnreadAtom,
     councilViewAtom,
+    setCouncilPinned,
     stopCouncil,
     useCouncils,
 } from "./councilstore";
@@ -2730,12 +2732,11 @@ export function CouncilSeatPair({
 // One council, as a chat list draws a group chat: its seats' picture, its feature, and under it its state in a word,
 // then the time since its newest message. The word is in the state's tone token and carries the state whatever the
 // color, `Waiting on you` in the amber one. A primary-ink dot after the feature says it ended while you were away.
-// A queued council also offers Remove from queue (hover, and the menu): it stops the council before it ever starts, as
-// the queued run's row does. An ended one (done, failed, stopped, not run) offers Close the same way, which deletes
-// nothing: the row leaves the tree, and Councils (the button at the sidebar's top) still lists it, where it opens and
-// its header's Reopen puts it back. The menu also offers Remove,
-// behind a confirm, which moves the council's file to ~/.arc/trash. The button cannot hold the action, so such a row
-// sits in a wrapper beside it. Every row's menu starts with Copy id, the full id `wsh council show|wait|stop|rm` take.
+// A queued council offers Remove from queue (hover, and the menu): it stops the council before it ever starts, as
+// the queued run's row does. Every other one, running ones too, offers Pin (Unpin on a pinned one) the same way: a pinned
+// council stays at the top of its project, and Councils (the button at the sidebar's top) lists every council whatever
+// the tree keeps. An ended one's menu also offers Remove, behind a confirm, which moves the council's file to
+// ~/.arc/trash. The button cannot hold the action, so the row sits in a wrapper beside it. Every row's menu starts with Copy id, the full id `wsh council show|wait|stop|rm` take.
 function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM }) {
     const now = useAtomValue(model.nowAtom);
     const center = useAtomValue(centerModeAtom);
@@ -2744,22 +2745,23 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
     const selected = center === "council" && view !== "setup" && open === row.id;
     const tone = COUNCIL_TONE[row.tone];
     const queued = row.queued === true;
-    const wrapped = queued || row.removable === true;
+    const pinned = useAtomValue(councilListAtom(""))?.some((c) => c.id === row.id && isPinnedCouncil(c)) === true;
     const removeForGood = () => {
         const c = globalStore.get(councilListAtom(""))?.find((x) => x.id === row.id);
         if (c != null) {
             confirmRemoveCouncil(c);
         }
     };
-    // the hover button: a queued council leaves the queue, an ended one closes
-    const remove = () => {
+    // the hover button: a queued council leaves the queue, any other one pins or unpins
+    const act = () => {
         if (queued) {
             fireAndForget(() => stopCouncil(row.id));
             return;
         }
-        fireAndForget(() => closeCouncil(row.id));
+        fireAndForget(() => setCouncilPinned(row.id, !pinned));
     };
-    const removeLabel = queued ? "Remove from queue" : "Close council";
+    const actLabel = queued ? "Remove from queue" : pinned ? "Unpin" : "Pin";
+    const ActIcon = queued ? X : pinned ? PinOff : Pin;
     const onContextMenu = (e: React.MouseEvent) => {
         const items: ContextMenuItem[] = [
             {
@@ -2768,18 +2770,13 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
                 icon: <Hash size={15} />,
                 click: () => void navigator.clipboard.writeText(row.id),
             },
-            ...(queued
-                ? [
-                      { type: "separator" } as const,
-                      { label: removeLabel, icon: <X size={15} />, danger: true, click: remove },
-                  ]
-                : wrapped
-                  ? [
-                        { type: "separator" } as const,
-                        { label: removeLabel, icon: <X size={15} />, click: remove },
-                        { label: "Remove council…", icon: <Trash2 size={15} />, danger: true, click: removeForGood },
-                    ]
-                  : []),
+            { type: "separator" } as const,
+            queued
+                ? { label: actLabel, icon: <X size={15} />, danger: true, click: act }
+                : { label: actLabel, icon: <ActIcon size={15} />, click: act },
+            ...(row.removable === true
+                ? [{ label: "Remove council…", icon: <Trash2 size={15} />, danger: true, click: removeForGood }]
+                : []),
         ];
         ContextMenuModel.getInstance().showContextMenu(items, e);
     };
@@ -2791,14 +2788,8 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
             title={`${row.feature} · ${row.meta}`}
             aria-current={selected ? "true" : undefined}
             onClick={() => showCouncil(row.id)}
-            // a wrapped row's wrapper holds the menu, over its Remove button too
-            onContextMenu={wrapped ? undefined : onContextMenu}
-            className={cn(
-                "group/council flex cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] text-left transition-colors duration-[140ms]",
-                // a wrapped row's wrapper holds the hover and selected backgrounds, under the Remove button too
-                wrapped ? "min-w-0 flex-1" : "w-full",
-                wrapped ? null : selected ? "bg-surface-selected" : "hover:bg-surface-hover"
-            )}
+            // the wrapper holds the menu and the hover and selected backgrounds, under the hover button too
+            className="group/council flex min-w-0 flex-1 cursor-pointer items-center gap-[9px] rounded-[6px] px-[10px] py-[6px] text-left transition-colors duration-[140ms]"
         >
             <CouncilSeatPair seats={row.seats} dot={row.dot} selected={selected} />
             <div className="min-w-0 flex-1">
@@ -2845,14 +2836,11 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
             </div>
         </button>
     );
-    if (!wrapped) {
-        return button;
-    }
     return (
         <div
             onContextMenu={onContextMenu}
             className={cn(
-                // group/council: the seat picture's ring follows this row's hover fill, over the Remove button too
+                // group/council: the seat picture's ring follows this row's hover fill, over the hover button too
                 "group group/council relative flex items-center rounded-[6px] transition-colors duration-[140ms]",
                 selected ? "bg-surface-selected" : "hover:bg-surface-hover"
             )}
@@ -2861,23 +2849,23 @@ function CouncilRow({ model, row }: { model: AgentsViewModel; row: CouncilRowVM 
             <span
                 className={cn(
                     "flex flex-none items-center pr-[6px] opacity-0 transition-opacity duration-100 focus-within:opacity-100 group-hover:opacity-100",
-                    // an ended row's state word sits at the right edge: the button covers it on hover instead of
-                    // holding its place, so the feature keeps the room when the row is not hovered
+                    // a row's age sits at the right edge: the button covers it on hover instead of holding its place,
+                    // so the feature keeps the room when the row is not hovered
                     !queued && "absolute inset-y-0 right-0 rounded-r-[6px] bg-inherit pl-[6px]"
                 )}
             >
                 <button
                     type="button"
-                    data-council-act={queued ? "remove" : "close"}
-                    title={removeLabel}
-                    aria-label={`${removeLabel} ${row.feature}`}
-                    onClick={remove}
+                    data-council-act={queued ? "remove" : pinned ? "unpin" : "pin"}
+                    title={actLabel}
+                    aria-label={`${actLabel} ${row.feature}`}
+                    onClick={act}
                     className={cn(
                         "flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] text-muted",
                         queued ? "hover:text-error" : "hover:text-secondary"
                     )}
                 >
-                    <X size={12} aria-hidden />
+                    <ActIcon size={12} aria-hidden />
                 </button>
             </span>
         </div>

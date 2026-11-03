@@ -2362,51 +2362,66 @@ func TestDeleteRemovesAnEndedCouncilAndRefusesALiveOne(t *testing.T) {
 	}
 }
 
-func TestCloseKeepsAnEndedCouncilAndARunOpensIt(t *testing.T) {
+func TestSetPinnedOnAnEndedCouncil(t *testing.T) {
 	h := newHarness(t)
-	paused := testCouncil("paused")
-	paused.PauseAfterRound1 = true
-	h.run(paused)
-	if _, err := h.r.SetClosed("paused", true); err == nil {
-		t.Fatalf("closing a council waiting on the person worked")
-	}
-	if h.load("paused").Closed != 0 {
-		t.Fatalf("a refused close marked the council closed")
-	}
-
 	h.run(testCouncil("c1"))
-	c, err := h.r.SetClosed("c1", true)
-	if err != nil || c.Closed == 0 {
-		t.Fatalf("SetClosed(c1, true) = %+v, %v; want it closed", c, err)
+	c, err := h.r.SetPinned("c1", true)
+	if err != nil || c.Pinned == 0 {
+		t.Fatalf("SetPinned(c1, true) = %+v, %v; want it pinned", c, err)
 	}
-	at := h.load("c1").Closed
+	at := h.load("c1").Pinned
 	if at == 0 {
-		t.Fatalf("the close was not saved")
+		t.Fatalf("the pin was not saved")
 	}
-	if c, _ := h.r.SetClosed("c1", true); c.Closed != at {
-		t.Errorf("closing it again moved Closed from %d to %d", at, c.Closed)
+	if c, _ := h.r.SetPinned("c1", true); c.Pinned != at {
+		t.Errorf("pinning it again moved Pinned from %d to %d", at, c.Pinned)
 	}
-	if last := h.seen[len(h.seen)-1]; last.Id != "c1" || last.Closed == 0 {
-		t.Errorf("the close was not reported: last change %s closed %d", last.Id, last.Closed)
-	}
-
-	if c, err := h.r.SetClosed("c1", false); err != nil || c.Closed != 0 || h.load("c1").Closed != 0 {
-		t.Fatalf("reopening = %+v, %v; want it open", c, err)
+	if last := h.seen[len(h.seen)-1]; last.Id != "c1" || last.Pinned == 0 {
+		t.Errorf("the pin was not reported: last change %s pinned %d", last.Id, last.Pinned)
 	}
 
-	// closed again, then run again: the council opens by itself
-	if _, err := h.r.SetClosed("c1", true); err != nil {
-		t.Fatalf("SetClosed: %v", err)
-	}
+	// a new run (a summary) leaves the pin as it was
 	saved, err := h.r.Summarize("c1")
 	if err != nil {
 		t.Fatalf("Summarize: %v", err)
 	}
-	if saved.Closed != 0 {
-		t.Errorf("a closed council that runs again is still closed (%d)", saved.Closed)
+	if saved.Pinned != at {
+		t.Errorf("a pinned council that runs again has Pinned %d, want %d", saved.Pinned, at)
 	}
-	if done := h.wait("c1"); done.Closed != 0 || done.State != StateDone {
-		t.Errorf("after the run: %s, closed %d; want done and open", done.State, done.Closed)
+	if done := h.wait("c1"); done.Pinned != at || done.State != StateDone {
+		t.Errorf("after the run: %s, pinned %d; want done and pinned %d", done.State, done.Pinned, at)
+	}
+
+	if c, err := h.r.SetPinned("c1", false); err != nil || c.Pinned != 0 || h.load("c1").Pinned != 0 {
+		t.Fatalf("unpinning = %+v, %v; want it unpinned", c, err)
+	}
+	// unpinned, a new run leaves it unpinned
+	if _, err := h.r.Summarize("c1"); err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if done := h.wait("c1"); done.Pinned != 0 {
+		t.Errorf("an unpinned council that ran again is pinned (%d)", done.Pinned)
+	}
+}
+
+func TestSetPinnedOnARunningCouncil(t *testing.T) {
+	h := newHarness(t)
+	h.f.gate("ux/r1")
+	if _, err := h.r.Start(context.Background(), testCouncil("c1")); err != nil {
+		t.Fatal(err)
+	}
+	h.f.entered(t, "ux/r1")
+	c, err := h.r.SetPinned("c1", true)
+	if err != nil || c.Pinned == 0 {
+		t.Fatalf("SetPinned on a running council = %+v, %v; want it pinned", c, err)
+	}
+	at := c.Pinned
+	h.f.release("ux/r1")
+	if done := h.wait("c1"); done.Pinned != at {
+		t.Errorf("after the run: pinned %d, want %d (the run dropped the pin)", done.Pinned, at)
+	}
+	if c, err := h.r.SetPinned("c1", false); err != nil || c.Pinned != 0 {
+		t.Fatalf("unpinning the ended council = %+v, %v; want it unpinned", c, err)
 	}
 }
 

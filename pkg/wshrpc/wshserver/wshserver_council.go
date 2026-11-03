@@ -239,9 +239,9 @@ func (ws *WshServer) CouncilDeleteCommand(ctx context.Context, data wshrpc.Comma
 	return nil
 }
 
-// CouncilCloseCommand closes an ended council or opens a closed one; the runner publishes council:changed.
-func (ws *WshServer) CouncilCloseCommand(ctx context.Context, data wshrpc.CommandCouncilCloseData) error {
-	_, err := councilRunner.SetClosed(data.Id, data.Closed)
+// CouncilPinCommand pins or unpins a council; the runner publishes council:changed.
+func (ws *WshServer) CouncilPinCommand(ctx context.Context, data wshrpc.CommandCouncilPinData) error {
+	_, err := councilRunner.SetPinned(data.Id, data.Pinned)
 	return err
 }
 

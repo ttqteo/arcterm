@@ -57,16 +57,14 @@ function dotOf(c: Council, tone: CouncilTone): CouncilDot {
     return c.state === "done" ? "done" : "idle";
 }
 
-/** Pure: the councils the region draws, in its order. `null` (not loaded yet) is none. A closed council is left out, and
- *  so is an ended one older than seven days by its last save; a live one is kept however old. */
+/** Pure: the councils the region draws, in its order. `null` (not loaded yet) is none. An ended council older than
+ *  seven days by its last save is left out; a live one is kept however old. */
 export function councilLines(
     councils: readonly Council[] | null | undefined,
     projects: Record<string, { path?: string }> | null,
     now: number
 ): CouncilLine[] {
-    const kept = (councils ?? []).filter(
-        (c) => !c.closed && (isLiveCouncil(c) || now - (c.updated || c.created) <= SEVEN_DAYS_MS)
-    );
+    const kept = (councils ?? []).filter((c) => isLiveCouncil(c) || now - (c.updated || c.created) <= SEVEN_DAYS_MS);
     const rows = kept.map((c) => {
         const { text, tone } = treeMeta(c);
         const ts = c.updated || c.created;

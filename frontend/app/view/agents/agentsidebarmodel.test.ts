@@ -1399,21 +1399,16 @@ describe("councilRowsByProject", () => {
         expect(rows.get("loom")?.map((r) => r.id)).toEqual(["c"]);
     });
 
-    it("leaves a closed council out of the tree only while it is ended: one that runs again is back", () => {
+    it("keeps a pinned council in the tree as any other, ended or running", () => {
         const rows = councilRowsByProject(
             [
-                council("shut", "/home/u/loom", { state: "failed", closed: 5 }),
-                council("again", "/home/u/loom", { state: "running", closed: 5 }),
-                council("open", "/home/u/loom", { state: "done" }),
+                council("pinned", "/home/u/loom", { state: "failed", pinned: 5 }),
+                council("again", "/home/u/loom", { state: "running", pinned: 5 }),
+                council("plain", "/home/u/loom", { state: "done" }),
             ],
             roots
         );
-        expect(rows.get("loom")?.map((r) => r.id)).toEqual(["again", "open"]);
-    });
-
-    it("gives a project whose councils are all closed no councils at all, so no folder of its own", () => {
-        const rows = councilRowsByProject([council("shut", "/home/u/loom", { state: "done", closed: 5 })], roots);
-        expect(rows.has("loom")).toBe(false);
+        expect(rows.get("loom")?.map((r) => r.id)).toEqual(["pinned", "again", "plain"]);
     });
 
     it("words each row's meta and tone as treeMeta does, and keeps created for the tree's order", () => {

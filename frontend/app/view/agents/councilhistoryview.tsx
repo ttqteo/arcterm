@@ -151,15 +151,15 @@ export function CouncilHistory({ model }: { model: AgentsViewModel }) {
     );
 }
 
-// One council: its seats' picture, its feature, then its project, its state in a word in its tone, and Closed when the
-// person closed it; the time since its newest message at the right. A click opens it.
+// One council: its seats' picture, its feature, then its project, its state in a word in its tone, and Pinned when the
+// person pinned it; the time since its newest message at the right. A click opens it.
 function CouncilHistoryRowView({ row, now }: { row: CouncilHistoryRow; now: number }) {
     const tone = COUNCIL_TONE[row.tone];
     return (
         <button
             type="button"
             data-council-history-row={row.id}
-            data-council-history-closed={row.closed ? "" : undefined}
+            data-council-history-pinned={row.pinned ? "" : undefined}
             title={row.question !== "" ? `${row.feature}\n${row.question}` : row.feature}
             onClick={() => showCouncil(row.id)}
             className="group/council flex w-full cursor-pointer items-center gap-[12px] rounded-[8px] px-[10px] py-[8px] text-left transition-colors duration-[140ms] hover:bg-surface-hover"
@@ -184,9 +184,9 @@ function CouncilHistoryRowView({ row, now }: { row: CouncilHistoryRow; now: numb
                     </span>
                 </div>
             </div>
-            {row.closed ? (
+            {row.pinned ? (
                 <span className="flex-none rounded-full bg-pill px-[8px] py-[2px] text-[10.5px] text-muted">
-                    Closed
+                    Pinned
                 </span>
             ) : null}
             <span className="w-[44px] flex-none text-right text-[11.5px] tabular-nums text-muted">

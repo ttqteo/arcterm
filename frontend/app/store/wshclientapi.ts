@@ -360,12 +360,6 @@ export class RpcApiType {
         return client.wshRpcCall("councilbenchstop", null, opts);
     }
 
-    // command "councilclose" [call]
-    CouncilCloseCommand(client: WshClient, data: CommandCouncilCloseData, opts?: RpcOpts): Promise<void> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilclose", data, opts);
-        return client.wshRpcCall("councilclose", data, opts);
-    }
-
     // command "councilcontinue" [call]
     CouncilContinueCommand(client: WshClient, data: CommandCouncilContinueData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilcontinue", data, opts);
@@ -400,6 +394,12 @@ export class RpcApiType {
     CouncilListCommand(client: WshClient, data: CommandCouncilListData, opts?: RpcOpts): Promise<Council[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councillist", data, opts);
         return client.wshRpcCall("councillist", data, opts);
+    }
+
+    // command "councilpin" [call]
+    CouncilPinCommand(client: WshClient, data: CommandCouncilPinData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "councilpin", data, opts);
+        return client.wshRpcCall("councilpin", data, opts);
     }
 
     // command "councilrate" [call]

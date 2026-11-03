@@ -25,7 +25,6 @@ import type { AgentsViewModel } from "./agents";
 import { useActions, type Actions } from "./councilactions";
 import { CouncilAvatar, CouncilChat } from "./councilchat";
 import { stepChip } from "./councilchatmodel";
-import { CouncilCloseButton } from "./councilclose";
 import {
     avatarStackLabel,
     avatarTone,
@@ -62,6 +61,7 @@ import {
     type SeatableAgent,
     type SegmentState,
 } from "./councilmodel";
+import { CouncilPinButton } from "./councilpin";
 import { RetryWithButton } from "./councilretrymenu";
 import { CouncilSeats } from "./councilseats";
 import { seatableAgents } from "./councilsetupmodel";
@@ -364,7 +364,7 @@ function Header({
                             {acts.busy.has("stop") ? "Stopping…" : "Stop"}
                         </button>
                     )}
-                    <CouncilCloseButton c={c} />
+                    <CouncilPinButton c={c} />
                 </div>
             </div>
             {(showBar || (c.state === "running" && c.round <= 1) || acts.error != null) && (

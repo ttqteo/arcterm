@@ -21,7 +21,6 @@ import { UNGROUPED_PROJECT, type AgentTreeRow } from "./agenttreemodel";
 import { avatarTone, isLit, seatInitials, type AvatarTone } from "./councildiscussionmodel";
 import {
     canRemoveCouncil,
-    isClosedCouncil,
     councilProjectKey,
     panel,
     queuedLine,
@@ -342,7 +341,7 @@ export interface CouncilRowVM {
     unread: boolean;
     /** it waits for the one council that runs: the row offers Remove from queue. Set only on a queued council. */
     queued?: true;
-    /** nothing works on it any more (canRemoveCouncil): the row offers Close, and Remove in its menu. Set only on such
+    /** nothing works on it any more (canRemoveCouncil): the row offers Remove in its menu. Set only on such
      *  a council. */
     removable?: true;
 }
@@ -372,7 +371,7 @@ export function councilRowDot(c: Council): "working" | "failed" | null {
 
 /** Pure: when a council's newest message came: the latest of its ideas' and replies' `ts` and its summary's `at`;
  *  before any, when it started, else when it was created. Not `updated`, which every save of the council file stamps,
- *  so a running council would always read "just now" and Close or Reopen would reset it. */
+ *  so a running council would always read "just now" and Pin or Unpin would reset it. */
 export function councilLastAt(c: Council): number {
     const times = [
         ...(c.proposals ?? []).map((p) => p.ts),
@@ -431,8 +430,8 @@ export function councilRowVM(
 /** Pure: the councils (councilListAtom("")) as tree rows, by the registered project each one ran in. The folders of
  *  projectTree are keyed by project name and a council holds the project's path, so each is filed under the name whose
  *  root is the same path (projectNamesByKey). A council of a folder that is no registered project has no folder to sit
- *  in and is left out, and so is one the person closed (isClosedCouncil): Councils (councilhistory.ts) lists it, with
- *  every other. `null` is a list not loaded yet. `unread` is the ids of the councils that ended unseen. */
+ *  in and is left out: Councils (councilhistory.ts) lists it, with every other. `null` is a list not loaded yet.
+ *  `unread` is the ids of the councils that ended unseen. */
 export function councilRowsByProject(
     councils: readonly Council[] | null | undefined,
     roots: ReadonlyMap<string, string>,
@@ -443,7 +442,7 @@ export function councilRowsByProject(
     const byId = new Map((councils ?? []).map((c) => [c.id, c]));
     for (const c of councils ?? []) {
         const name = nameOf.get(councilProjectKey(c.project));
-        if (name == null || isClosedCouncil(c)) {
+        if (name == null) {
             continue;
         }
         const row = councilRowVM(c, byId, unread);
