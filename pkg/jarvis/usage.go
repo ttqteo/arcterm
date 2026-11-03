@@ -33,6 +33,9 @@ const (
 	UsageRole_BuilderCheck = "builder-check"
 	// UsageRole_BrainstormJudge is a run's StageRole as well: the one-shot judge of a brainstorm's approach question.
 	UsageRole_BrainstormJudge = "brainstorm-judge"
+	// UsageRole_WorkflowScan is the role of a scan run's Sonnet pass, recorded as a ConsultSession on the run. It is
+	// not a lens value and never a run's StageRole.
+	UsageRole_WorkflowScan = "workflow-scan"
 )
 
 // IsBrainstormSession reports the run of a brainstorm's one-shot session: a builder check or an approach judge. It
