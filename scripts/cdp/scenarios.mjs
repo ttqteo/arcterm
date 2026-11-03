@@ -59788,7 +59788,7 @@ const railTranslate = {
     },
 };
 
-// --- workflow-scan-entry: the ways into a workflow scan (docs/superpowers/plans/2026-11-03-workflow-scan-core.md, Task 4)
+// --- workflow-scan-entry: the ways into a workflow scan (docs/superpowers/specs/2026-10-26-workflow-scan-design.md)
 // The palette's Scan workflow Start row, and the address workflowscan:<runid> that the row's start opens. Step 1 never
 // fires the row: that starts a real Opus agent, so the start helper (palette-scan.ts) is unit-tested. A registered
 // project, not a bare channel: only a registered one is the palette's home project.
