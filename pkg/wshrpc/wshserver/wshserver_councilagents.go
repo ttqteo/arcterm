@@ -14,7 +14,9 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/agentmsg"
 	"github.com/wavetermdev/waveterm/pkg/agentsessions"
 	"github.com/wavetermdev/waveterm/pkg/agentsleep"
+	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/council"
+	"github.com/wavetermdev/waveterm/pkg/orchestrate"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
@@ -125,8 +127,12 @@ func seatableTabs(rows []agentRow) string {
 	return strings.Join(lines, "\n")
 }
 
-// Seat is the agent's state, folded into the council's five, and, for a seat at rest, its context in tokens. A tab that
-// is not a live agent any more is a gone seat, not a failure of the read.
+// seatActivityMax bounds the tool line a seat reports, in characters: the one line a seat card and a timeline row show.
+const seatActivityMax = orchestrate.MaxLatestToolLen
+
+// Seat is the agent's state, folded into the council's five, its working directory (the session's own, a worktree's when
+// it works in one; empty while no report named one) and, for a seat at rest, its context in tokens, or, for one that is
+// on a tool, the tool line. A tab that is not a live agent any more is a gone seat, not a failure of the read.
 func (l liveAgentLink) Seat(ctx context.Context, tabId string) (council.AgentSeatState, error) {
 	_, row, err := l.find(ctx, tabId)
 	if errors.Is(err, errNoSeat) {
@@ -135,13 +141,28 @@ func (l liveAgentLink) Seat(ctx context.Context, tabId string) (council.AgentSea
 	if err != nil {
 		return council.AgentSeatState{}, err
 	}
-	st := council.AgentSeatState{State: seatState(row.State)}
+	st := council.AgentSeatState{State: seatState(row.State), Cwd: row.Cwd, Activity: seatActivity(row)}
 	// the caller reads the context at rest only (before a turn and after it), and reading it costs a read of the
 	// transcript's end, so a seat that is working is not read
 	if st.State == council.SeatIdle || st.State == council.SeatSleeping {
 		st.Context = seatContext(ctx, row)
 	}
 	return st, nil
+}
+
+// seatActivity is the tool line an agent is on: the detail its PreToolUse (claude) or status extension (pi) report carried,
+// which the roster row's status holds until the next report replaces it. The detail of an agent that is not working is the
+// last tool's, a stale one, so only a working agent has an activity (PostToolUse reports working with no detail: between
+// two tools there is none). The line is cut to one row, as the orchestrator cuts the tool line it shows.
+func seatActivity(row *agentRow) string {
+	if row.State != wshrpc.AgentsState_Working || row.status.State != baseds.AgentState_Working {
+		return ""
+	}
+	line := []rune(strings.ToValidUTF8(strings.Join(strings.Fields(row.status.Detail), " "), ""))
+	if len(line) > seatActivityMax {
+		line = append(line[:seatActivityMax-1], '…')
+	}
+	return string(line)
 }
 
 // seatState is a roster row's state as a seat's. A state it does not know reads as working, so the seat is waited on and

@@ -32,6 +32,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { showCouncil, showTerminal } from "./agentcenter";
 import type { AgentsViewModel } from "./agents";
 import { formatTokens } from "./agentsviewmodel";
+import type { CouncilLang } from "./councillang";
 import { councilProjectKey, councilProjectName, type CouncilSetupDraft, type SeatableAgent } from "./councilmodel";
 import {
     addableRoles,
@@ -60,6 +61,7 @@ import {
     failSuggestion,
     flipMode,
     groupFromDraft,
+    groupLabel,
     groupName,
     initialPanel,
     keepAutoGenerate,
@@ -78,6 +80,7 @@ import {
     retrySuggestion,
     ROUND_CHOICES,
     seatableAgents,
+    seatName,
     seatRows,
     seatsOf,
     setExpertModel,
@@ -85,6 +88,7 @@ import {
     settleAutoGenerate,
     settleRerun,
     setupEstimate,
+    setupLang,
     splitAsk,
     startBlocker,
     startData,
@@ -417,7 +421,17 @@ function MenuButton({
     );
 }
 
-function Avatar({ expert, tone, dashed }: { expert: CouncilExpert; tone: ExpertTone; dashed?: boolean }) {
+function Avatar({
+    expert,
+    tone,
+    lang,
+    dashed,
+}: {
+    expert: CouncilExpert;
+    tone: ExpertTone;
+    lang: CouncilLang;
+    dashed?: boolean;
+}) {
     return (
         <span
             aria-hidden
@@ -426,7 +440,7 @@ function Avatar({ expert, tone, dashed }: { expert: CouncilExpert; tone: ExpertT
                 dashed ? "border-dashed border-muted text-muted" : RING[tone]
             )}
         >
-            {expertInitial(expert)}
+            {expertInitial(expert, lang)}
         </span>
     );
 }
@@ -604,7 +618,15 @@ function AddAgentMenu({ agents, onPick }: { agents: SeatableAgent[]; onPick: (ag
 }
 
 // Add expert: a pick over the library's roles that are not on the panel
-function AddExpertMenu({ roles, onPick }: { roles: CouncilExpert[]; onPick: (role: CouncilExpert) => void }) {
+function AddExpertMenu({
+    roles,
+    lang,
+    onPick,
+}: {
+    roles: CouncilExpert[];
+    lang: CouncilLang;
+    onPick: (role: CouncilExpert) => void;
+}) {
     if (roles.length === 0) {
         return (
             <button
@@ -624,7 +646,7 @@ function AddExpertMenu({ roles, onPick }: { roles: CouncilExpert[]; onPick: (rol
             ariaLabel="Add an expert"
             itemAttr="data-council-add-expert-item"
             data-council-add-expert
-            items={roles.map((r) => ({ id: r.id, label: r.name }))}
+            items={roles.map((r) => ({ id: r.id, label: seatName(r, lang) }))}
             onPick={(id) => {
                 const picked = roles.find((r) => r.id === id);
                 if (picked != null) {
@@ -807,6 +829,8 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
     const reading = readingLine(draft);
     const pending = pendingRoles(draft);
     const libraryOrEmpty = lib ?? NO_LIBRARY;
+    // the seat and group names in the language the question reads; wavesrv names the seats the same way at Start
+    const lang = setupLang(draft);
     const who = expertsLine(draft, libraryOrEmpty);
     const queueing = anyCouncilRunning(allCouncils);
 
@@ -1050,7 +1074,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                 data-council-group
                                 items={libraryOrEmpty.groups.map((g) => ({
                                     id: g.id,
-                                    label: g.name,
+                                    label: groupLabel(g, lang),
                                     checked: g.id === draft.group,
                                 }))}
                                 onPick={(id) => {
@@ -1059,7 +1083,9 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                 }}
                                 className={SECONDARY}
                             >
-                                {draft.experts.length === 0 ? "Pick a group" : groupName(libraryOrEmpty, draft.group)}
+                                {draft.experts.length === 0
+                                    ? "Pick a group"
+                                    : groupName(libraryOrEmpty, draft.group, lang)}
                                 <ChevronDown size={12} strokeWidth={2} className="text-muted" aria-hidden />
                             </MenuButton>
                             <button
@@ -1209,7 +1235,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                         data-council-suggested={r.id}
                                         className="flex items-center gap-[10px] rounded-[8px] border border-dashed border-edge-strong py-2 pl-3 pr-[10px]"
                                     >
-                                        <Avatar expert={r} tone="conn-1" dashed />
+                                        <Avatar expert={r} tone="conn-1" lang={lang} dashed />
                                         <div className="w-[130px] flex-none truncate text-[13.5px] font-semibold text-secondary">
                                             {r.name}
                                         </div>
@@ -1256,9 +1282,12 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                                 i > 0 && "border-t border-border"
                                             )}
                                         >
-                                            <Avatar expert={e} tone={expertTone(seatsOf(draft), i)} />
-                                            <span className="max-w-[220px] flex-none truncate text-[13.5px] font-semibold">
-                                                {e.name}
+                                            <Avatar expert={e} tone={expertTone(seatsOf(draft), i)} lang={lang} />
+                                            <span
+                                                data-council-seat-name
+                                                className="max-w-[220px] flex-none truncate text-[13.5px] font-semibold"
+                                            >
+                                                {row.name}
                                             </span>
                                             <span className="flex-none rounded-full bg-surface-hover px-[6px] text-[10px] font-semibold text-secondary">
                                                 {row.kind}
@@ -1280,7 +1309,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                                 <button
                                                     type="button"
                                                     data-council-seat-remove={e.id}
-                                                    aria-label={`Remove ${e.name}`}
+                                                    aria-label={`Remove ${row.name}`}
                                                     onClick={() =>
                                                         update((d) =>
                                                             e.agent ? removeAgent(d, e.agent) : removeExpert(d, e.id)
@@ -1301,6 +1330,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                 <AddAgentMenu agents={unseated} onPick={(a) => update((d) => addAgent(d, a))} />
                                 <AddExpertMenu
                                     roles={addableRoles(draft, libraryOrEmpty)}
+                                    lang={lang}
                                     onPick={(r) => update((d) => addRole(d, r))}
                                 />
                             </div>
@@ -1375,9 +1405,16 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                                         i > 0 && "border-t border-border"
                                                     )}
                                                 >
-                                                    <Avatar expert={e} tone={expertTone(draft.experts, i)} />
-                                                    <div className="w-[130px] flex-none truncate text-[13.5px] font-semibold">
-                                                        {e.name}
+                                                    <Avatar
+                                                        expert={e}
+                                                        tone={expertTone(draft.experts, i)}
+                                                        lang={lang}
+                                                    />
+                                                    <div
+                                                        data-council-expert-name
+                                                        className="w-[130px] flex-none truncate text-[13.5px] font-semibold"
+                                                    >
+                                                        {seatName(e, lang)}
                                                     </div>
                                                     <div
                                                         className="min-w-0 flex-1 truncate text-[13px] text-secondary"
@@ -1386,7 +1423,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                                         {e.brief}
                                                     </div>
                                                     <MenuButton
-                                                        ariaLabel={`Model for ${e.name}`}
+                                                        ariaLabel={`Model for ${seatName(e, lang)}`}
                                                         itemAttr="data-council-model-item"
                                                         data-council-model={e.id}
                                                         align="right"
@@ -1412,7 +1449,7 @@ function SetupForm({ project, model }: { project: string; model: Pick<AgentsView
                                                         <button
                                                             type="button"
                                                             data-council-expert-remove={e.id}
-                                                            aria-label={`Remove ${e.name}`}
+                                                            aria-label={`Remove ${seatName(e, lang)}`}
                                                             onClick={() => update((d) => removeExpert(d, e.id))}
                                                             className={ICON_BUTTON}
                                                         >

@@ -5,8 +5,11 @@
 // work, waiting or failed; the others dimmed while one seat is the filter), at most six of them, three under 900px of
 // pane, then +N. A hover or a click opens the whole list under it: each seat a row with its name, its kind, what it is
 // doing and its count of messages. A click on a row shows only the ideas that seat wrote or replied to, a click on it again
-// shows everyone; an agent's row holds a button for its terminal. A failed seat's Retry is its failure line's, over the list
-// (councilchat.tsx). The stack never scrolls or clips, so it no longer cuts a seat in half at a narrow pane.
+// shows everyone; an agent's row holds a button for its terminal and, on every row, a Timeline button that swaps the
+// popover's body for that seat's timeline (counciltimeline.tsx), with Back to the list. The popover opens whenever
+// councilTimelineAtom is set (a Timeline button, an expert card on the Map or in the Discussion) and clears it when it
+// closes. A failed seat's Retry is its failure line's, over the list (councilchat.tsx). The stack never scrolls or clips,
+// so it no longer cuts a seat in half at a narrow pane.
 
 import { PopoverReveal } from "@/app/element/popoverreveal";
 import { cn } from "@/util/util";
@@ -25,11 +28,13 @@ import {
     useInteractions,
 } from "@floating-ui/react";
 import { useAtom } from "jotai";
-import { ChevronDown, SquareTerminal } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, History, SquareTerminal } from "lucide-react";
+import { useEffect, useState } from "react";
 import { CouncilAvatar } from "./councilchat";
 import { seatChips, type SeatChip } from "./councilchatmodel";
-import { councilOnlyAtom } from "./councilstore";
+import { mapWords } from "./councilmapmodel";
+import { councilOnlyAtom, councilTimelineAtom } from "./councilstore";
+import { CouncilTimeline } from "./counciltimeline";
 
 export const SEAT_DOT: Record<SeatChip["dot"], string> = {
     working: "bg-working pulse-dot",
@@ -49,25 +54,52 @@ function avatarDot(dot: SeatChip["dot"]): "working" | "waiting" | "failed" | nul
     return dot === "idle" ? null : dot;
 }
 
+// the elements that ask for a seat's timeline (an expert card on the Map or the Discussion) mark themselves with this: a
+// press on one is not "outside", or the popover would close on the press and open again on the click
+const TIMELINE_TRIGGER = "data-council-timeline-trigger";
+
 export function CouncilSeats({ c, onOpenTerminal }: { c: Council; onOpenTerminal: (tab: string) => void }) {
     const [only, setOnly] = useAtom(councilOnlyAtom(c.id));
+    const [timeline, setTimeline] = useAtom(councilTimelineAtom(c.id));
     const [open, setOpen] = useState(false);
     const chips = seatChips(c);
+    const words = mapWords(c);
     const onlyChip = only != null ? chips.find((chip) => chip.id === only) : undefined;
+    const timelineChip = timeline != null ? chips.find((chip) => chip.id === timeline) : undefined;
+
+    // the popover opens whenever a seat's timeline is asked for (a Timeline button below, an expert card), and clearing the
+    // atom when it closes keeps a closed popover from reopening on the next render
+    useEffect(() => {
+        if (timeline != null) {
+            setOpen(true);
+        }
+    }, [timeline]);
+    // the atom outlives this view: it is let go when the view leaves, so a council opened again does not open on a timeline
+    useEffect(() => () => setTimeline(null), [setTimeline]);
+    const onOpenChange = (next: boolean) => {
+        setOpen(next);
+        if (!next) {
+            setTimeline(null);
+        }
+    };
 
     const { refs, floatingStyles, context } = useFloating({
         open,
-        onOpenChange: setOpen,
+        onOpenChange,
         placement: "bottom-end",
         strategy: "fixed",
         middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
         whileElementsMounted: autoUpdate,
     });
-    // a hover opens it and leaving closes it; a click keeps it open (stickIfOpen) until a click outside or Escape
+    // a hover opens it and leaving closes it; a click keeps it open (stickIfOpen) until a click outside or Escape. A timeline
+    // is asked for, not hovered: while one shows, leaving the popover does not close it
     const { getReferenceProps, getFloatingProps } = useInteractions([
-        useHover(context, { delay: { open: 80, close: 60 }, handleClose: safePolygon() }),
+        useHover(context, { enabled: timeline == null, delay: { open: 80, close: 60 }, handleClose: safePolygon() }),
         useClick(context),
-        useDismiss(context),
+        useDismiss(context, {
+            outsidePress: (event) =>
+                !(event.target instanceof Element && event.target.closest(`[${TIMELINE_TRIGGER}]`)),
+        }),
     ]);
 
     const label = onlyChip
@@ -126,39 +158,51 @@ export function CouncilSeats({ c, onOpenTerminal }: { c: Council; onOpenTerminal
                         <PopoverReveal
                             open={open}
                             origin="top right"
-                            className="flex w-[320px] flex-col overflow-hidden rounded-[11px] border border-border bg-surface shadow-popover-md"
+                            className={cn(
+                                "flex max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-[11px] border border-border bg-surface shadow-popover-md",
+                                // the timeline's rows hold a command and its result: wider than the list of seats
+                                timelineChip != null ? "w-[440px]" : "w-[320px]"
+                            )}
                         >
-                            <div className="flex h-[30px] flex-none items-center justify-between px-3 pt-1">
-                                <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-muted">
-                                    Seats
-                                </span>
-                                {onlyChip && (
-                                    <button
-                                        type="button"
-                                        data-council-seats-everyone
-                                        onClick={() => setOnly(null)}
-                                        className="cursor-pointer rounded-[5px] border-0 bg-transparent px-1 text-[11.5px] font-semibold text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                            {timelineChip != null ? (
+                                <CouncilTimeline c={c} chip={timelineChip} onBack={() => setTimeline(null)} />
+                            ) : (
+                                <>
+                                    <div className="flex h-[30px] flex-none items-center justify-between px-3 pt-1">
+                                        <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-muted">
+                                            Seats
+                                        </span>
+                                        {onlyChip && (
+                                            <button
+                                                type="button"
+                                                data-council-seats-everyone
+                                                onClick={() => setOnly(null)}
+                                                className="cursor-pointer rounded-[5px] border-0 bg-transparent px-1 text-[11.5px] font-semibold text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                                            >
+                                                Show everyone
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div
+                                        role="list"
+                                        data-council-seat-list
+                                        aria-label="Seats: a click shows the ideas one seat wrote or replied to"
+                                        className="sc flex max-h-[360px] flex-col gap-px overflow-y-auto px-[5px] pb-[5px]"
                                     >
-                                        Show everyone
-                                    </button>
-                                )}
-                            </div>
-                            <div
-                                role="list"
-                                data-council-seat-list
-                                aria-label="Seats: a click shows the ideas one seat wrote or replied to"
-                                className="sc flex max-h-[360px] flex-col gap-px overflow-y-auto px-[5px] pb-[5px]"
-                            >
-                                {chips.map((chip) => (
-                                    <SeatRow
-                                        key={chip.id}
-                                        chip={chip}
-                                        on={chip.id === only}
-                                        onToggle={() => setOnly(chip.id === only ? null : chip.id)}
-                                        onOpenTerminal={onOpenTerminal}
-                                    />
-                                ))}
-                            </div>
+                                        {chips.map((chip) => (
+                                            <SeatRow
+                                                key={chip.id}
+                                                chip={chip}
+                                                on={chip.id === only}
+                                                timelineWord={words.timeline}
+                                                onToggle={() => setOnly(chip.id === only ? null : chip.id)}
+                                                onTimeline={() => setTimeline(chip.id)}
+                                                onOpenTerminal={onOpenTerminal}
+                                            />
+                                        ))}
+                                    </div>
+                                </>
+                            )}
                         </PopoverReveal>
                     </FloatingFocusManager>
                 </div>
@@ -170,12 +214,16 @@ export function CouncilSeats({ c, onOpenTerminal }: { c: Council; onOpenTerminal
 function SeatRow({
     chip,
     on,
+    timelineWord,
     onToggle,
+    onTimeline,
     onOpenTerminal,
 }: {
     chip: SeatChip;
     on: boolean;
+    timelineWord: string;
     onToggle: () => void;
+    onTimeline: () => void;
     onOpenTerminal: (tab: string) => void;
 }) {
     const count = chip.ideas + chip.replies;
@@ -229,6 +277,16 @@ function SeatRow({
                 >
                     {count}
                 </span>
+            </button>
+            <button
+                type="button"
+                data-council-chip-timeline={chip.id}
+                aria-label={`${timelineWord}: ${chip.name}`}
+                title={`${timelineWord}: ${chip.name}`}
+                onClick={onTimeline}
+                className="flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+            >
+                <History size={15} strokeWidth={1.8} aria-hidden />
             </button>
             {chip.agent && (
                 <button

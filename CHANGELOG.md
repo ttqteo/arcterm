@@ -27,18 +27,32 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Added
 
 - A message to the whole council now goes to the one seat (or two) best placed to answer it, not to every seat: the answer says whom the router chose and why, Ask <seat> too has another seat weigh in, and `@all` asks everyone. Let them read files is Auto, On or Off, and in Auto the router decides for a message it takes.
+- A council checks what its experts claim. Every idea, and every reply that takes a side, is labelled by arcterm, never by a model: **Ran** when a test the expert asked for ran and came out as they said, **Disproved** when it came out the other way, **Read code** when a `path:line` it cites holds up, **Guess** when it cites nothing that holds. A cite that does not hold shows as **Wrong cite** on its chip. An expert can ask for up to two tests (`go test`, `vitest` or `cargo test` on one package, file or test), which run in a throwaway copy of your project as it stands, never in your checkout, before the pause after round 1, and every expert reads the results in round 2. <!-- big -->
+- A council has a **Map** tab beside Report and Discussion: a card per expert with what it is doing now and a bar of how many of its claims were run, disproved, read or guessed, and a table of who agrees with which idea, with each idea's label and how it ended. Click an idea to see each expert's reason. A seat's timeline of what it read, searched, ran and said opens from its card or from Seats. <!-- big -->
 
 ### Changed
 
+- A council's experts have plain names, in the language of your question: Ease of use, Memory watcher, Bug hunter, Summarizer, Final judge and Other side, or "Người lo trải nghiệm", "Người canh RAM", "Người soi lỗi" and so on for a Vietnamese question. The roles Setup suggests are named in that language too.
+- A council expert's timeline: what it read, searched, ran (a verify command in mono, with whether it passed) and proposed, newest at the bottom. It opens in the Seats popover from a seat's Timeline button, a click on an expert's card in the Map, or a click on an expert's card while the experts first read.
+
+### Changed
+
+- In a narrow pane (under 900 px) a council's Report, Discussion and Map tabs shrink to their icons, the word moving into the tooltip, and the Discussion's count stays beside its icon.
+- A like or dislike you give a council expert's message shows as a Liked or Disliked chip under it, which a press takes back; the time and the two thumbs sit together at the right end of the message's byline and show on hover.
+- An evidence chip that cites many lines of a file keeps the file's name and cuts the list of lines with an ellipsis (the tooltip holds all of them), where a long list used to push the name out.
+- The questions Ask next offers in a council, and the replies a seat suggests in a thread, stay while you type; pressing one puts its text in the box in place of what you typed.
+- The question at the top of a council's Chat folds under its text: Show more sits beneath the question and its limits, the text grows to its full height and the rest of the limits fade in, and Show less folds it back. It stays still when you ask for reduced motion.
 - Pin replaces a council's Close and Reopen: Pin (Pinned once pinned) in the Discussion header, the Report's tab bar, a tree row's hover button and Councils keeps a council at the top of its project, running ones too. The tree now keeps only live, pinned, unread or recent councils, and Councils, which marks the pinned ones, lists every other.
 - A council's Discussion is a list of its ideas, one row each with its author, a New badge and its count of agrees, doubts and objections; a Chat row on top holds your messages and the answers to them, and a click opens a row's thread beside it.
 - A council's Report says Outdated only when a new idea came, an idea was revised or an expert changed their stance since the summary, and names what changed; other replies only add "N replies since" under it.
 - A council's minutes count the time it ran, not the clock since it started, so a council chatted in the next day no longer reads hundreds of minutes.
 - A council's Discussion keeps the replies on an idea in that idea's thread, where each one also showed in the channel: the channel holds the ideas, your messages to the whole council and the answers to them, and an idea's reply chip opens its thread.
+- A run started from a spec (Build … as specified in …, as a brainstorm starts it) no longer stops for your Plan review click after the plan's second review: the lead carries the findings into the tasks and goes on, and asks you only about a finding that would change what the spec decided.
 - An app's page header on the Agent surface is tidier: Back, Forward, Reload and Home show only while the page does, and Restart moved into a ⋯ menu beside Stop (with Keep running and Pin), so its arrow no longer sits next to Reload's.
 
 ### Fixed
 
+- Deleting a session you just closed now says it was written to seconds ago and how long to wait, instead of "still running … stop it first"; a session a tab still holds says so on its own.
 - A council question that names an `.astro`, `.vue` or `.svelte` file turns on Let them read files by itself, like any other source file.
 - A council file synced in from another machine shows in the tree and in Councils on its own, without waiting for another council to change.
 - The app zoom you set with Ctrl+= / Ctrl+- is kept: arcterm opens at the same size after a restart or a reinstall.

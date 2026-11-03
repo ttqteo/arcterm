@@ -48,7 +48,7 @@ func (a AgentCaller) Call(ctx context.Context, req CallReq) (CallRes, error) {
 	if err := a.Link.Send(ctx, tab, req.Prompt); err != nil {
 		return CallRes{}, fmt.Errorf("sending the turn to %s: %w", name, err)
 	}
-	text, end, err := a.waitAnswer(ctx, tab, name, noted)
+	text, end, err := a.waitAnswer(ctx, tab, name, noted, req.OnTool)
 	if err != nil {
 		return CallRes{}, err
 	}
@@ -101,10 +101,13 @@ func (a AgentCaller) waitRest(ctx context.Context, req CallReq, name string) (Ag
 
 // waitAnswer polls until the seat is back at rest with an answer newer than noted, and returns that answer and the seat's
 // state then. The turn is over only with both: a seat reads idle for a moment after the send, before it starts working,
-// and an idle one whose last answer is the old one has not answered. TurnCap is for the whole wait.
-func (a AgentCaller) waitAnswer(ctx context.Context, tab, name string, noted int64) (string, AgentSeatState, error) {
+// and an idle one whose last answer is the old one has not answered. TurnCap is for the whole wait. Each new tool line
+// the seat shows while it works on the turn goes to onTool, which is what the seat's timeline records: the waiting for the
+// seat to rest (waitRest) reports none, since a seat that is busy there is on its own task, not the council's.
+func (a AgentCaller) waitAnswer(ctx context.Context, tab, name string, noted int64, onTool func(string)) (string, AgentSeatState, error) {
 	_, turnCap, poll := a.caps()
 	deadline := time.Now().Add(turnCap)
+	lastTool := ""
 	for {
 		st, err := a.Link.Seat(ctx, tab)
 		if err != nil {
@@ -112,6 +115,13 @@ func (a AgentCaller) waitAnswer(ctx context.Context, tab, name string, noted int
 		}
 		if st.State == SeatGone {
 			return "", st, goneErr(name)
+		}
+		// the gap between two tool calls shows none, and the line the last poll showed is the same call
+		if st.Activity != "" && st.Activity != lastTool {
+			lastTool = st.Activity
+			if onTool != nil {
+				onTool(st.Activity)
+			}
 		}
 		if st.State == SeatIdle || st.State == SeatSleeping {
 			text, ts, err := a.Link.LastAnswer(ctx, tab)

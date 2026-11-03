@@ -2451,6 +2451,9 @@ declare global {
         started?: number;
         created: number;
         updated: number;
+        timeline?: {[key: string]: CouncilStep[]};
+        lang?: string;
+        snapshot?: string;
     };
 
     // council.CouncilActivity
@@ -2553,6 +2556,9 @@ declare global {
         ref: string;
         weak?: boolean;
         note?: string;
+        quote?: string;
+        cite?: string;
+        citenote?: string;
     };
 
     // council.CouncilExpert
@@ -2566,6 +2572,7 @@ declare global {
         agent?: string;
         harness?: string;
         context?: number;
+        namevi?: string;
     };
 
     // council.CouncilExpertStat
@@ -2585,6 +2592,7 @@ declare global {
     type CouncilGroup = {
         id: string;
         name: string;
+        namevi?: string;
         roles: string[];
         coordinator: string;
     };
@@ -2603,6 +2611,8 @@ declare global {
         draft?: string;
         edited?: boolean;
         thumb?: string;
+        runs?: CouncilRun[];
+        label?: string;
     };
 
     // council.CouncilReply
@@ -2628,6 +2638,7 @@ declare global {
         asks?: string[];
         revision?: CouncilRevision;
         routed?: CouncilRouted;
+        label?: string;
     };
 
     // council.CouncilRetry
@@ -2660,6 +2671,16 @@ declare global {
         reason?: string;
         failed?: boolean;
         autotools?: boolean;
+    // council.CouncilRun
+    type CouncilRun = {
+        command: string;
+        expect: string;
+        why?: string;
+        state?: string;
+        exit?: number;
+        tail?: string;
+        matched?: boolean;
+        reason?: string;
     };
 
     // wshrpc.CouncilSaveDocRtnData
@@ -2673,6 +2694,14 @@ declare global {
         round: number;
         reason: string;
         ts: number;
+    };
+
+    // council.CouncilStep
+    type CouncilStep = {
+        ts: number;
+        kind: string;
+        target: string;
+        result?: string;
     };
 
     // council.CouncilSuggestion

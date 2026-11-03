@@ -188,10 +188,11 @@ func TestPlanReviewFailWakesTheLeadWithTheFindingsWhole(t *testing.T) {
 	}
 }
 
+// a plan with no spec has no record of the human's decisions to judge findings by, so the last round is theirs
 func TestPlanReviewAfterTheLastRoundGoesToTheHuman(t *testing.T) {
 	ctx, dag := seedPlanReviewDag(t)
 	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
-		g.PlanReview.Round = MaxPlanReviewRounds
+		g.PlanReview.Round, g.SpecPath = MaxPlanReviewRounds, ""
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -232,6 +233,67 @@ func TestPlanReviewAfterTheLastRoundGoesToTheHuman(t *testing.T) {
 	}
 	if err := AcceptPlanReview(ctx, dag.OID, "again"); err == nil {
 		t.Fatal("an accepted review cannot be accepted again")
+	}
+}
+
+// a plan that answers to a spec: after the last round the lead takes the findings that leave the spec's decisions
+// standing itself, and puts only the rest to the human; the refusal of a resubmit past it says the same
+func TestPlanReviewLastRoundOnASpecIsTheLeadsCall(t *testing.T) {
+	ctx, dag := seedPlanReviewDag(t)
+	if err := wstore.UpdateDag(ctx, dag.OID, func(g *waveobj.TaskGroup) error {
+		g.PlanReview.Round = MaxPlanReviewRounds
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	captureSpawns(t)
+	f := newFakeLead(t)
+	reviewer := startPlanReview(t, ctx, dag.OID)
+	if err := RecordPlanReviewVerdict(ctx, dag.OID, reviewer, ReviewVerdict_Fail, "still no task for 4.1", nil); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(f.sends, "\n")
+	if !strings.Contains(joined, "the last: ") || !strings.Contains(joined, jarvis.SpecPastPlanReview) {
+		t.Fatalf("the last round on a spec wakes the lead to decide, got %q", f.sends)
+	}
+	if strings.Contains(joined, "Put it to the human;") {
+		t.Fatalf("the last round on a spec does not send every finding to the human, got %q", f.sends)
+	}
+	_, err := ReplacePlanReviewProposal(ctx, dag.OID, &waveobj.TaskGroup{PlanPath: "p.md", Tasks: []waveobj.TaskNode{{ID: "t-0", Label: "a", State: TaskState_Pending}}})
+	if err == nil || !strings.Contains(err.Error(), jarvis.SpecPastPlanReview) {
+		t.Fatalf("a resubmit past the last round on a spec is refused with the lead's call, got %v", err)
+	}
+	if err := AcceptPlanReview(ctx, dag.OID, "carried 4.1 into t-0; the spec decides the rest"); err != nil {
+		t.Fatal(err)
+	}
+	if pr := loadDag(t, ctx, dag.OID).PlanReview; pr.State != PlanReviewState_Accepted {
+		t.Fatalf("the lead's accept proceeds, got %s", pr.State)
+	}
+}
+
+func TestSpecPlanReviewWake(t *testing.T) {
+	w := specPlanReviewFailedWake(2, "no task for 4.1")
+	for _, want := range []string{
+		"wake: plan review failed in round 2, the last: no task for 4.1.",
+		"would change what the spec decided",
+		"`wsh jarvis dag amend <task> \"<note>\"` first, then run `wsh jarvis dag planreview accept",
+		// the findings that do need the human still go as the one Plan review ask
+		"put it to them " + proceedPastPlanReview,
+	} {
+		if !strings.Contains(w, want) {
+			t.Fatalf("the spec wake must hold %q, got %q", want, w)
+		}
+	}
+	if strings.Index(w, "dag amend") > strings.Index(w, "dag planreview accept") {
+		t.Fatalf("amend comes before accept, which spawns the first tasks: %q", w)
+	}
+	for _, g := range []*waveobj.TaskGroup{{SpecPath: ""}, {SpecPath: "s.md", Autonomous: true}} {
+		if specDecidesPlanReview(g) {
+			t.Fatalf("only an asking run with a spec decides by it, got true for %+v", g)
+		}
+	}
+	if !specDecidesPlanReview(&waveobj.TaskGroup{SpecPath: "s.md"}) {
+		t.Fatal("an asking run with a spec decides by it")
 	}
 }
 

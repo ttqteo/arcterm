@@ -16,6 +16,10 @@
 // another council runs. The council Start council "starts" is written just before step 11's click, so no council runs
 // before it and that step still reads Start council.
 //
+// Steps 3b and 18b are the plain role names (docs/superpowers/specs/2026-11-03-council-stronger-design.md, plan Task 5): the
+// rows, the experts line, the group chip and the Seats list show the library's Vietnamese names while the typed question
+// reads Vietnamese, and the English ones again when it does not.
+//
 // Steps 14 to 19 are Setup with live agents seated (docs/superpowers/specs/2026-10-29-council-live-agents-design.md, plan
 // Task 9): the room's two agents (fixtures.mjs ROOM_AGENTS, in two projects) are written as the cockpit's roster, Setup is
 // opened from draftWithAgents of both, and the Seats list, the Rounds switch, the Add agent picker, the pause that goes
@@ -140,6 +144,7 @@ const SETUP = `(() => {
         experts: [...root.querySelectorAll("[data-council-expert]")].map((r) => ({
             id: r.dataset.councilExpert,
             coordinator: r.hasAttribute("data-council-coordinator"),
+            name: flat(r.querySelector("[data-council-expert-name]")),
             model: flat(r.querySelector("[data-council-model]")),
             remove: r.querySelector("[data-council-expert-remove]") != null,
         })),
@@ -166,6 +171,7 @@ const SETUP = `(() => {
             id: r.dataset.councilSeat,
             agent: r.dataset.councilSeatAgent ?? null,
             coordinator: r.hasAttribute("data-council-seat-coordinator"),
+            name: flat(r.querySelector("[data-council-seat-name]")),
             cost: flat(r.querySelector("[data-council-seat-cost]")),
             remove: r.querySelector("[data-council-seat-remove]") != null,
             text: flat(r),
@@ -358,8 +364,31 @@ export const councilSetup = {
                     (v?.estimate ?? "").startsWith("≈ 7 calls") &&
                     v.experts.find((e) => e.coordinator)?.remove === false &&
                     v.footnote === "3 sonnet experts read the code first; then they argue over text only" &&
-                    /^Review a UI feature: UX, RAM and Skeptic each read the code/.test(v.expertsLine ?? ""),
+                    /^Review a UI feature: Ease of use, Memory watcher and Bug hunter each read the code/.test(v.expertsLine ?? ""),
                 { experts: v?.experts.map((e) => e.id), estimate: v?.estimate, footnote: v?.footnote, line: v?.expertsLine }
+            );
+
+            // 3b. the names follow the language of the typed question: a Vietnamese one shows the library's Vietnamese names
+            // on the rows, in the experts line and on the group chip; the draft keeps its own (English) names, so typing the
+            // English question again brings them back. Nothing here is asked of wavesrv: no files, so no suggestion
+            await h.ev(setText('[data-council-input="ask"]', "Ghim ứng dụng\nCó đáng ghim vào thanh ray không?"));
+            await until(`(document.querySelector('[data-council-expert="skeptic"] [data-council-expert-name]')?.textContent ?? "").trim() === "Người soi lỗi"`);
+            const viSetup = await view();
+            await h.shot("cdp-shots/council-setup-vietnamese.png");
+            await h.ev(setText('[data-council-input="ask"]', "Rail apps\nIs the pin worth it?"));
+            await until(`(document.querySelector('[data-council-expert="skeptic"] [data-council-expert-name]')?.textContent ?? "").trim() === "Bug hunter"`);
+            const enSetup = await view();
+            rec(
+                "3b. a Vietnamese question shows Người lo trải nghiệm, Người canh RAM, Người soi lỗi and Người tổng hợp on the rows, the experts line in Vietnamese names and the group chip Soi một tính năng giao diện; the English question brings Ease of use, Memory watcher, Bug hunter and Summarizer back",
+                sameList(viSetup?.experts.map((e) => e.name), ["Người lo trải nghiệm", "Người canh RAM", "Người soi lỗi", "Người tổng hợp"]) &&
+                    viSetup.group === "Soi một tính năng giao diện" &&
+                    viSetup.inComposer.group === "Soi một tính năng giao diện" &&
+                    /^Soi một tính năng giao diện: Người lo trải nghiệm, Người canh RAM and Người soi lỗi each read the code from their own side; the Người tổng hợp writes the answer\.$/.test(viSetup.expertsLine ?? "") &&
+                    sameList(enSetup?.experts.map((e) => e.name), ["Ease of use", "Memory watcher", "Bug hunter", "Summarizer"]) &&
+                    enSetup.group === "Review a UI feature" &&
+                    /^Review a UI feature: Ease of use, Memory watcher and Bug hunter each read the code/.test(enSetup.expertsLine ?? "") &&
+                    (await calls("CouncilSuggestCommand")).length === 0,
+                { vi: { names: viSetup?.experts.map((e) => e.name), group: viSetup?.group, line: viSetup?.expertsLine }, en: { names: enSetup?.experts.map((e) => e.name), group: enSetup?.group, line: enSetup?.expertsLine } }
             );
 
             // 4. a model menu, and the group menu
@@ -481,11 +510,11 @@ export const councilSetup = {
             // 8. a rerun (Run again hands over its panel with the group counted as picked) is not asked on opening
             const beforeRerun = (await calls("CouncilSuggestCommand")).length;
             const rerunPanel = [
-                ["ux", "UX", "sonnet"],
-                ["ram", "RAM", "sonnet"],
+                ["ux", "Ease of use", "sonnet"],
+                ["ram", "Memory watcher", "sonnet"],
                 ["newuser", "New user", "sonnet"],
-                ["skeptic", "Skeptic", "sonnet"],
-                ["coordinator", "Coordinator", "opus"],
+                ["skeptic", "Bug hunter", "sonnet"],
+                ["coordinator", "Summarizer", "opus"],
             ].map(([id, name, model]) => ({ id, name, brief: `${name} brief`, model, coordinator: id === "coordinator" || undefined }));
             await openCouncilSetup(h, ctx.repo, {
                 feature: "Rail apps",
@@ -814,7 +843,7 @@ export const councilSetup = {
                     noAgents.seats.length === 0 &&
                     noAgents.agentNote == null &&
                     noAgents.project === COUNCIL_PROJECT &&
-                    /^Review a UI feature: UX, RAM, New user and Skeptic each read the code/.test(noAgents.expertsLine ?? "") &&
+                    /^Review a UI feature: Ease of use, Memory watcher, New user and Bug hunter each read the code/.test(noAgents.expertsLine ?? "") &&
                     noAgents.experts.length === 5 &&
                     noAgents.pause === "false" &&
                     noAgents.noPause == null &&
@@ -848,6 +877,22 @@ export const councilSetup = {
                     reseated.noPause != null &&
                     reseated.pause == null,
                 { offered: offered.map((o) => o.id), seats: reseated?.seats.map((s) => s.id), rounds: reseated?.rounds, project: reseated?.project, autogen: reseated?.autogen }
+            );
+
+            // 18b. the Seats list follows the question's language too: a Vietnamese question names the five experts in
+            // Vietnamese and leaves the two agents under the names they have; an English one gives the English names back
+            await h.ev(setText('[data-council-input="ask"]', "Ghim ứng dụng\nCó đáng ghim không?"));
+            await until(`(document.querySelector('[data-council-seat="skeptic"] [data-council-seat-name]')?.textContent ?? "").trim() === "Người soi lỗi"`);
+            const viSeats = await view();
+            await h.shot("cdp-shots/council-setup-vietnamese-seats.png");
+            await h.ev(setText('[data-council-input="ask"]', "Is the pin worth it?"));
+            await until(`(document.querySelector('[data-council-seat="skeptic"] [data-council-seat-name]')?.textContent ?? "").trim() === "Bug hunter"`);
+            const enSeats = await view();
+            rec(
+                "18b. with both agents seated a Vietnamese question lists Witness synthesis and UX audit under their own names, then Người lo trải nghiệm, Người canh RAM, Người dùng mới, Người soi lỗi and Người tổng hợp; an English question gives Ease of use, Memory watcher, New user, Bug hunter and Summarizer back",
+                sameList(viSeats?.seats.map((s) => s.name), ["Witness synthesis", "UX audit", "Người lo trải nghiệm", "Người canh RAM", "Người dùng mới", "Người soi lỗi", "Người tổng hợp"]) &&
+                    sameList(enSeats?.seats.map((s) => s.name), ["Witness synthesis", "UX audit", "Ease of use", "Memory watcher", "New user", "Bug hunter", "Summarizer"]),
+                { vi: viSeats?.seats.map((s) => s.name), en: enSeats?.seats.map((s) => s.name) }
             );
 
             // 19. Start council with the agents seated sends them before the panel with their harness and context, the
@@ -896,6 +941,10 @@ export const councilSetup = {
             const DURING = { topic: "Giới hạn ngữ cảnh của agent", question: "Agent nào nên được cắt ngữ cảnh trước?", mode: "review" };
             const AFTER_ERROR = { topic: "Cách ghi lại phiên họp", question: "Bản ghi nên nằm trong docs/council hay trong transcript?", mode: "review" };
             const LATE = { topic: "Một câu trả lời đến muộn", question: "Câu này không được vào ô nhập.", mode: "brainstorm" };
+            // the composer holds Vietnamese from here on (the agents were spoken to in Vietnamese), so the group chip shows the
+            // library's Vietnamese group names until the composer is emptied
+            const BRAINSTORM_GROUP_VI = "Ý tưởng sản phẩm";
+            const REVIEW_GROUP_VI = "Soi một tính năng giao diện";
             const BRAINSTORM_CHIP = "Brainstorm · picked from the conversation";
             const REVIEW_CHIP = "Review · picked from the conversation";
             const suggestBefore = (await calls("CouncilSuggestCommand")).length;
@@ -941,7 +990,7 @@ export const councilSetup = {
             const filledCalls = await calls(AUTO);
             const suggestAfterFirst = (await calls("CouncilSuggestCommand")).length;
             rec(
-                "21. the answer fills the empty composer with the topic and the question under it; the mode chip reads Brainstorm · picked from the conversation with the Brainstorm rules and the group Product ideas, the button is ready again with no Replace / Keep or error, and the call carried the project and both seated agents' tab ids without asking Suggest",
+                "21. the answer fills the empty composer with the topic and the question under it; the mode chip reads Brainstorm · picked from the conversation with the Brainstorm rules and the group Ý tưởng sản phẩm (Product ideas in the question's Vietnamese), the button is ready again with no Replace / Keep or error, and the call carried the project and both seated agents' tab ids without asking Suggest",
                 settledFirst === 1 &&
                     v?.ask === asText(FIRST) &&
                     v.mode === BRAINSTORM_CHIP &&
@@ -949,7 +998,7 @@ export const councilSetup = {
                     v.modeKey === "brainstorm" &&
                     v.modeRules === BRAINSTORM_RULES &&
                     v.modeTitle === "Click to switch to Review" &&
-                    v.group === "Product ideas" &&
+                    v.group === BRAINSTORM_GROUP_VI &&
                     v.autogen?.disabled === false &&
                     v.autogen.busy === "false" &&
                     v.autogen.spinner === false &&
@@ -970,14 +1019,14 @@ export const councilSetup = {
             await until(chipIs(REVIEW_CHIP));
             v = await view();
             rec(
-                "22. a second press with the text unchanged replaces it with the new answer without asking; the mode chip reads Review · picked from the conversation with the Review rules and the group Review a UI feature",
+                "22. a second press with the text unchanged replaces it with the new answer without asking; the mode chip reads Review · picked from the conversation with the Review rules and the group Soi một tính năng giao diện (Review a UI feature in the question's Vietnamese)",
                 replacedAtOnce === true &&
                     v?.ask === asText(SECOND) &&
                     v.confirm == null &&
                     v.mode === REVIEW_CHIP &&
                     v.modeKey === "review" &&
                     v.modeRules === REVIEW_RULES &&
-                    v.group === "Review a UI feature" &&
+                    v.group === REVIEW_GROUP_VI &&
                     v.autogen?.disabled === false &&
                     v.autogenError == null &&
                     (await calls(AUTO)).length === 2,
@@ -1003,7 +1052,7 @@ export const councilSetup = {
             await until(noConfirm);
             const replacedTyped = await view();
             rec(
-                "23. after typing into the composer a press shows Replace the text? with Replace and Keep right after the button and the typed text intact; Keep leaves the typed text, the mode and the group; a further press and Replace puts the answer in, the chip reading Brainstorm · picked from the conversation over Product ideas",
+                "23. after typing into the composer a press shows Replace the text? with Replace and Keep right after the button and the typed text intact; Keep leaves the typed text, the mode and the group; a further press and Replace puts the answer in, the chip reading Brainstorm · picked from the conversation over Ý tưởng sản phẩm",
                 confirming?.confirm?.text.startsWith("Replace the text?") === true &&
                     confirming.confirm.replace === "Replace" &&
                     confirming.confirm.keep === "Keep" &&
@@ -1014,13 +1063,13 @@ export const councilSetup = {
                     keptTyped?.confirm == null &&
                     keptTyped.ask === typedText &&
                     keptTyped.mode === REVIEW_CHIP &&
-                    keptTyped.group === "Review a UI feature" &&
+                    keptTyped.group === REVIEW_GROUP_VI &&
                     keptTyped.autogenError == null &&
                     replacedTyped?.ask === asText(THIRD) &&
                     replacedTyped.confirm == null &&
                     replacedTyped.mode === BRAINSTORM_CHIP &&
                     replacedTyped.modeKey === "brainstorm" &&
-                    replacedTyped.group === "Product ideas" &&
+                    replacedTyped.group === BRAINSTORM_GROUP_VI &&
                     (await calls(AUTO)).length === 4,
                 { asked: { confirm: confirming?.confirm, ask: confirming?.ask, mode: confirming?.mode }, kept: { ask: keptTyped?.ask, mode: keptTyped?.mode, group: keptTyped?.group }, replaced: { ask: replacedTyped?.ask, mode: replacedTyped?.mode, group: replacedTyped?.group } }
             );
@@ -1055,7 +1104,7 @@ export const councilSetup = {
                     keptDuring?.confirm == null &&
                     keptDuring.ask === duringText &&
                     keptDuring.mode === BRAINSTORM_CHIP &&
-                    keptDuring.group === "Product ideas" &&
+                    keptDuring.group === BRAINSTORM_GROUP_VI &&
                     (await calls(AUTO)).length === 5,
                 { out: { autogen: outView?.autogen, ask: outView?.ask }, settled: settledDuring, landed: { confirm: landed?.confirm, ask: landed?.ask, mode: landed?.mode }, kept: { ask: keptDuring?.ask, mode: keptDuring?.mode, group: keptDuring?.group } }
             );

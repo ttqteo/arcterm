@@ -11,7 +11,6 @@
 
 import {
     avatarTone,
-    evidenceChip,
     expertDoing,
     failedWhile as failedWhileWords,
     isLit,
@@ -47,6 +46,7 @@ import {
     type HeldDraft,
     type SeatableAgent,
 } from "./councilmodel";
+import { claimOf, type ClaimEvidence } from "./councilsources";
 import { fileMentionMatches, insertFileMention } from "./launchermention";
 
 export { insertFileMention };
@@ -109,17 +109,6 @@ function failedWhile(c: Council, round: number): string {
 }
 
 // ---- one message ----
-
-function evidenceOf(list: CouncilEvidence[] | undefined): { evidence: string[]; weak: string } {
-    const chips = (list ?? []).map(evidenceChip);
-    return {
-        evidence: chips.filter((chip) => !chip.weak && chip.text !== "").map((chip) => chip.text),
-        weak: chips
-            .filter((chip) => chip.weak)
-            .map((chip) => chip.text)
-            .join("; "),
-    };
-}
 
 function proposalLabel(c: Council, p: CouncilProposal): string {
     if (c.mode !== "brainstorm") {
@@ -211,8 +200,7 @@ export interface ReplyPost extends Who {
     pill: PillTone;
     text: string;
     attachments: string[]; // the images the person attached (absolute paths, in the order sent); empty for none
-    evidence: string[];
-    weak: string; // a claim marked weak, as the chip reads (`Weak · no measurement`)
+    claim: ClaimEvidence; // its evidence with the check label Go gave it: the chips under it (councilsources.ts `claimChips`)
     mine: boolean;
     thumb: CouncilThumb | ""; // the person's like or dislike on a seat's reply; always "" on the person's own
     reaches: string; // the person's reply: `For everyone`, `For UX and RAM`
@@ -270,7 +258,7 @@ function replyPost(c: Council, r: CouncilReply): ReplyPost {
         ...replyPill(r),
         text: r.text,
         attachments: r.attachments ?? [],
-        ...evidenceOf(r.evidence),
+        claim: claimOf(c, r),
         mine,
         thumb: mine ? "" : thumbOf(r),
         reaches: mine ? reachOf(c, r) : "",
@@ -351,8 +339,7 @@ export interface DraftPost extends Who {
     title: string; // an idea's title; empty for a reply
     on: string; // a reply's idea title, when the council has that idea
     text: string;
-    evidence: string[];
-    weak: string;
+    claim: ClaimEvidence;
     revised: boolean; // a reply that revises its seat's own idea: its `text` is the change line, and Edit changes only that
     edited: boolean;
     at: string;
@@ -373,7 +360,7 @@ function draftPost(c: Council, d: HeldDraft): DraftPost {
             title: p.title,
             on: "",
             text: p.argument,
-            ...evidenceOf(p.evidence),
+            claim: claimOf(c, p),
             revised: false,
             edited: !!p.edited,
             ...postedAt(c, p.ts),
@@ -390,7 +377,7 @@ function draftPost(c: Council, d: HeldDraft): DraftPost {
         title: "",
         on: (c.proposals ?? []).find((p) => p.id === r.proposalid)?.title ?? "",
         text: r.text,
-        ...evidenceOf(r.evidence),
+        claim: claimOf(c, r),
         revised: !!r.revised,
         edited: !!r.edited,
         ...postedAt(c, r.ts),
@@ -417,8 +404,7 @@ export interface IdeaPost extends Who {
     wild: boolean; // a Brainstorm wild idea: it gets a pill
     title: string;
     text: string;
-    evidence: string[];
-    weak: string;
+    claim: ClaimEvidence;
     agrees: string[]; // `Skeptic agrees`: the seats that agreed with nothing to add
     thumb: CouncilThumb | ""; // the person's like or dislike
     picks: { count: number; label: string; title: string } | null; // `Picked by 2`; null when no seat picked it
@@ -444,7 +430,7 @@ function ideaPost(c: Council, view: Council, p: CouncilProposal): IdeaPost {
         wild: c.mode === "brainstorm" && !!p.wild,
         title: p.title,
         text: p.argument,
-        ...evidenceOf(p.evidence),
+        claim: claimOf(c, p),
         agrees: reactions(view, p.id),
         thumb: thumbOf(p),
         picks:
@@ -495,6 +481,31 @@ export function questionPost(c: Council): QuestionPost | null {
         text: asked.question,
         limits: asked.limits,
         ...postedAt(c, c.started ?? 0),
+    };
+}
+
+/** Where the question's bubble is in folding: `folded` (three lines of text and two limits), `open` (all of it), and
+ *  `opening` / `closing` while its height moves between the two. */
+export type QuestionFold = "folded" | "opening" | "open" | "closing";
+
+/** Pure: the phase a click on the fold control starts; null while the height moves (a click then does nothing). */
+export function foldToggle(phase: QuestionFold): QuestionFold | null {
+    return phase === "folded" ? "opening" : phase === "open" ? "closing" : null;
+}
+
+/** Pure: the phase a finished move settles in. */
+export function foldSettle(phase: QuestionFold): QuestionFold {
+    return phase === "opening" ? "open" : phase === "closing" ? "folded" : phase;
+}
+
+/** Pure: what the bubble draws in a phase. `expanded` is the control's `aria-expanded` and its Show less / Show more.
+ *  `clamp` is the three-line cut, which only a settled fold has: line-clamp cannot be transitioned, so the height moves
+ *  over the whole text and the cut returns once it is back. `allLimits` is every limit, not the first two. */
+export function foldView(phase: QuestionFold): { expanded: boolean; clamp: boolean; allLimits: boolean } {
+    return {
+        expanded: phase === "opening" || phase === "open",
+        clamp: phase === "folded",
+        allLimits: phase !== "folded",
     };
 }
 

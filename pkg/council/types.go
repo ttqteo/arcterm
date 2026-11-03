@@ -62,6 +62,9 @@ type CouncilExpert struct {
 	Agent       string `json:"agent,omitempty"`   // a live agent seat: the seated agent's tab id; empty for a role expert
 	Harness     string `json:"harness,omitempty"` // an agent seat's harness, claude or pi
 	Context     int64  `json:"context,omitempty"` // an agent seat's context tokens when it was seated, for the estimate
+	// NameVi is a stock role's Vietnamese name, so Setup can show it for a Vietnamese question. Empty on a user role and
+	// on an agent seat, which keep the one name they have.
+	NameVi string `json:"namevi,omitempty"`
 }
 
 // IsAgent says a seat is a live agent's, not a role expert's.
@@ -117,15 +120,87 @@ func HoldsDrafts(c *Council) bool {
 type CouncilGroup struct {
 	Id          string   `json:"id"`
 	Name        string   `json:"name"`
+	NameVi      string   `json:"namevi,omitempty"` // the group's Vietnamese name; empty on a group the person saved
 	Roles       []string `json:"roles"`
 	Coordinator string   `json:"coordinator"`
 }
+
+// The checked state of a cite (CouncilEvidence.Cite). Go sets it, never a model; empty is a cite nothing checked: a
+// screenshot, or anything in a Brainstorm.
+const (
+	CiteOK    = "ok"    // the file exists, the line is in range, and a quoted text was found at or near the line
+	CiteWrong = "wrong" // a missing file, a line past the end, or a quote not found near the line (CiteNote says which)
+)
 
 type CouncilEvidence struct {
 	Ref  string `json:"ref"`            // "path:line", or "screenshot:<file>#<region>"
 	Weak bool   `json:"weak,omitempty"` // a claim that cites nothing
 	Note string `json:"note,omitempty"` // why it is weak: `"about 3 s" has no measurement`
+	// Quote is the exact text the expert says the cited line holds, which the citation check looks for at or near the line.
+	Quote string `json:"quote,omitempty"`
+	// Cite is CiteOK or CiteWrong once Go has checked the ref; empty when it was not checked.
+	Cite string `json:"cite,omitempty"`
+	// CiteNote says why a cite is wrong: "line 900 is past the end (412 lines)", "quote not found near line 42".
+	CiteNote string `json:"citenote,omitempty"`
 }
+
+// The label Go gives a claim, a proposal or a reply that takes a stance (CouncilProposal.Label, CouncilReply.Label). It
+// is set from what Go checked, never from a model. Empty is a claim nothing labels: a plain reply, or anything in a
+// Brainstorm.
+const (
+	LabelRan       = "ran"       // a verify command ran for it and its result matched what the expert expected
+	LabelDisproved = "disproved" // a verify command ran for it and its result contradicts what the expert expected
+	LabelRead      = "read"      // at least one cite resolves
+	LabelGuess     = "guess"     // it cites nothing, or nothing that resolves
+)
+
+// The state of a CouncilRun. Empty is a request that has not been handled yet. Only pass and fail tested the claim: a
+// run that did not (off the list, over the cap, timed out, matched no test, did not build) is RunNotRun, with its
+// Reason, and never makes a claim Ran or Disproved.
+const (
+	RunPass   = "pass"
+	RunFail   = "fail"
+	RunNotRun = "not-run"
+)
+
+// CouncilRun is one verify command an expert asked Go to run for a proposal, and what came of it. The expert's request
+// fills Command, Expect and Why; Go fills the rest.
+type CouncilRun struct {
+	Command string `json:"command"`           // `go test ./pkg/x -run TestY`: one of the three allowed forms, run with no shell
+	Expect  string `json:"expect"`            // what the expert expects: RunPass or RunFail
+	Why     string `json:"why,omitempty"`     // the expert's one-line reason for the expectation
+	State   string `json:"state,omitempty"`   // RunPass, RunFail or RunNotRun; empty while it is only a request
+	Exit    int    `json:"exit,omitempty"`    // the exit code; 0 when absent
+	Tail    string `json:"tail,omitempty"`    // the last 40 lines of its output
+	Matched bool   `json:"matched,omitempty"` // the result is what the expert expected (State equals Expect)
+	Reason  string `json:"reason,omitempty"`  // why a run did not run: "not on the list", "over the 2-command cap", "timed out after 3 min", "not a git repo"
+}
+
+// The kinds of one CouncilStep.
+const (
+	StepRead    = "read"    // a Read of a file
+	StepSearch  = "search"  // a Grep or Glob
+	StepRun     = "run"     // a verify command
+	StepPropose = "propose" // the expert posted an idea
+	StepReply   = "reply"   // the expert posted a reply
+)
+
+// MaxTimelineSteps caps one expert's timeline: the oldest row goes first.
+const MaxTimelineSteps = 200
+
+// CouncilStep is one row of an expert's timeline: what it did, when, and what came of it when that is known.
+type CouncilStep struct {
+	Ts     int64  `json:"ts"`               // when, in ms
+	Kind   string `json:"kind"`             // a Step* kind; an unrecognised tool keeps its own first word
+	Target string `json:"target"`           // the file, the search pattern, the command, or the idea or reply it posted
+	Result string `json:"result,omitempty"` // "pass", "fail", "3 matches"; empty when the step has no result
+}
+
+// The two languages a council is held in, stored in Council.Lang at Start from the question (LangOf).
+const (
+	LangEn = "en"
+	LangVi = "vi"
+)
 
 type CouncilProposal struct {
 	Id        string            `json:"id"` // P1, P2, ... in arrival order
@@ -140,6 +215,11 @@ type CouncilProposal struct {
 	Draft     string            `json:"draft,omitempty"`  // DraftHeld or DraftDropped; empty once sent, and on an idea that was never held
 	Edited    bool              `json:"edited,omitempty"` // the person edited it before sending
 	Thumb     string            `json:"thumb,omitempty"`  // the person's ThumbLike or ThumbDislike; empty for none
+	// Runs are the verify commands the author asked Go to run for this idea, and what each came to. Only a proposal in a
+	// Review council carries any.
+	Runs []CouncilRun `json:"runs,omitempty"`
+	// Label is the claim's check label, one of the Label* values; empty when nothing labels it.
+	Label string `json:"label,omitempty"`
 }
 
 // The person's thumb on a seat's sent idea or reply. The seats' later prompts and the summary read it (writeThumbs),
@@ -190,6 +270,9 @@ type CouncilReply struct {
 	// Routed is set on a whole-council message of the person's that the router takes up (no proposal, no parent, no
 	// seat @-mentioned, no @all): To then holds the seats it chose, or stays empty while Pending. Nil on every other reply.
 	Routed *CouncilRouted `json:"routed,omitempty"`
+	// Label is the check label of a reply that takes a stance, one of the Label* values; empty on a plain reply (an
+	// answer to the person) and on every reply in a Brainstorm.
+	Label string `json:"label,omitempty"`
 }
 
 // CouncilRouted records that a reply's To came from the router, for the router line and the Ask <seat> too chips under
@@ -335,6 +418,15 @@ type Council struct {
 	Started          int64                        `json:"started,omitempty"` // when round 1 began; 0 while not run
 	Created          int64                        `json:"created"`
 	Updated          int64                        `json:"updated"`
+	// Timeline is every step each expert took, expert id -> rows oldest first, at most MaxTimelineSteps each: the
+	// Seats popover and the Map's expert cards read it.
+	Timeline map[string][]CouncilStep `json:"timeline,omitempty"`
+	// Lang is the council's language, LangEn or LangVi, read from the question at Start (LangOf). Empty on a council
+	// saved before the field, which reads as English.
+	Lang string `json:"lang,omitempty"`
+	// Snapshot is the commit Start took of the project's tree as it was (HEAD plus uncommitted changes and untracked
+	// files), which the verify commands run on; empty for a Brainstorm and for a project that is not a git repo.
+	Snapshot string `json:"snapshot,omitempty"`
 }
 
 // The rounds a council with agents may run: the ideas round and up to two reply passes. A council with no Rounds, and

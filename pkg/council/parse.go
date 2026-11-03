@@ -95,8 +95,9 @@ type WeakNote struct {
 	Note string `json:"note"`
 }
 
-// evidenceList reads evidence as the prompts ask for it, [{"ref": "path:line"}], and also as bare strings, which
-// models write often enough that failing the whole reply over it would only cost a retry.
+// evidenceList reads evidence as the prompts ask for it, [{"ref": "path:line", "quote": "the line's text"}], and also as
+// bare strings, which models write often enough that failing the whole reply over it would only cost a retry. A quote is
+// what the citation check looks for at or near the line; a bare string has none.
 type evidenceList []CouncilEvidence
 
 func (l *evidenceList) UnmarshalJSON(b []byte) error {
@@ -106,19 +107,57 @@ func (l *evidenceList) UnmarshalJSON(b []byte) error {
 	}
 	out := make([]CouncilEvidence, 0, len(raw))
 	for _, r := range raw {
-		var ref string
+		var ref, quote string
 		if err := json.Unmarshal(r, &ref); err != nil {
 			var obj struct {
-				Ref string `json:"ref"`
+				Ref   string `json:"ref"`
+				Quote string `json:"quote"`
 			}
 			if err := json.Unmarshal(r, &obj); err != nil {
 				return fmt.Errorf("evidence item is neither a string nor an object: %s", r)
 			}
-			ref = obj.Ref
+			ref, quote = obj.Ref, obj.Quote
 		}
 		if ref = strings.TrimSpace(ref); ref != "" { // an item that cites nothing is no evidence
-			out = append(out, CouncilEvidence{Ref: ref})
+			out = append(out, CouncilEvidence{Ref: ref, Quote: strings.TrimSpace(quote)})
 		}
+	}
+	*l = out
+	return nil
+}
+
+// verifyList reads a proposal's "verify" requests: [{"command": "go test ./pkg/x -run TestY", "expect": "fail", "why":
+// "one line"}]. It is the most optional field of a round 1 reply, so it is read leniently: a list that is not a list, an
+// item that is not an object or whose fields are the wrong kind, a request with no command, and one whose expect is
+// neither pass nor fail (a result with nothing to be judged against labels nothing) are each left out, and the reply
+// stands. What is kept is a request with State empty; Go runs it later and caps an expert at two commands there.
+type verifyList []CouncilRun
+
+func (l *verifyList) UnmarshalJSON(b []byte) error {
+	*l = nil
+	var raw []json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil
+	}
+	var out []CouncilRun
+	for _, r := range raw {
+		var obj struct {
+			Command string `json:"command"`
+			Expect  string `json:"expect"`
+			Why     string `json:"why"`
+		}
+		if err := json.Unmarshal(r, &obj); err != nil {
+			continue
+		}
+		run := CouncilRun{
+			Command: strings.TrimSpace(obj.Command),
+			Expect:  strings.ToLower(strings.TrimSpace(obj.Expect)),
+			Why:     strings.TrimSpace(obj.Why),
+		}
+		if run.Command == "" || (run.Expect != RunPass && run.Expect != RunFail) {
+			continue
+		}
+		out = append(out, run)
 	}
 	*l = out
 	return nil
@@ -264,7 +303,8 @@ func parseStance(word string) (CouncilStance, error) {
 
 // ParseRound1 reads a round 1 reply into the expert's proposals and its overall view. A proposal that cites no
 // evidence gets one weak chip saying so; the runner takes that chip off a Brainstorm's ideas, which need none. A
-// proposal's wild flag is a Brainstorm's, and the runner clears it in a Review.
+// proposal's wild flag is a Brainstorm's, and the runner clears it in a Review. A proposal's verify list becomes its
+// Runs, each a request with State empty; a Brainstorm asks for none, and the runner clears any it is given.
 func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 	const what = "round 1"
 	var r struct {
@@ -273,6 +313,7 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Title    string       `json:"title"`
 			Argument string       `json:"argument"`
 			Evidence evidenceList `json:"evidence"`
+			Verify   verifyList   `json:"verify"`
 			Wild     bool         `json:"wild"`
 		} `json:"proposals"`
 	}
@@ -295,6 +336,7 @@ func ParseRound1(reply string) ([]CouncilProposal, string, error) {
 			Title:    strings.TrimSpace(p.Title),
 			Argument: strings.TrimSpace(p.Argument),
 			Evidence: ev,
+			Runs:     []CouncilRun(p.Verify),
 			Wild:     p.Wild,
 		})
 	}
