@@ -228,7 +228,7 @@ describe("footerLine", () => {
 });
 
 describe("the project filter", () => {
-    const rows = [{ name: "arcterm" }, { name: "thesis" }, { name: "oki_backend" }, { name: "oki_backend_vip" }];
+    const rows = [{ name: "arcterm" }, { name: "notes" }, { name: "oki_backend" }, { name: "oki_backend_vip" }];
     it("narrows by a case-insensitive substring of the name", () => {
         expect(filterProjects(rows, "OKI").map((r) => r.name)).toEqual(["oki_backend", "oki_backend_vip"]);
     });
@@ -244,7 +244,7 @@ describe("the project filter", () => {
         expect(projectAfterFilter([], "arcterm")).toBe("arcterm");
     });
     it("selects the picked project, else the first, and nothing with no projects", () => {
-        expect(selectedProject(rows, "thesis")?.name).toBe("thesis");
+        expect(selectedProject(rows, "notes")?.name).toBe("notes");
         expect(selectedProject(rows, "")?.name).toBe("arcterm");
         expect(selectedProject(rows, "unregistered")?.name).toBe("arcterm");
         expect(selectedProject([], "")).toBeNull();
@@ -266,11 +266,11 @@ describe("Home", () => {
     });
 
     it("sits after the projects and is filtered by its name", () => {
-        const rows = [{ name: "arcterm" }, { name: "thesis" }];
-        expect(projectColumnPicks(rows, true, "")).toEqual(["arcterm", "thesis", HOME_PICK]);
-        expect(projectColumnPicks(rows, false, "")).toEqual(["arcterm", "thesis"]);
+        const rows = [{ name: "arcterm" }, { name: "notes" }];
+        expect(projectColumnPicks(rows, true, "")).toEqual(["arcterm", "notes", HOME_PICK]);
+        expect(projectColumnPicks(rows, false, "")).toEqual(["arcterm", "notes"]);
         expect(projectColumnPicks([], true, "HO")).toEqual([HOME_PICK]);
-        expect(projectColumnPicks([{ name: "thesis" }], true, "the")).toEqual(["thesis"]);
+        expect(projectColumnPicks([{ name: "notes" }], true, "the")).toEqual(["notes"]);
     });
 
     it("is never the fallback pick", () => {
@@ -621,12 +621,19 @@ describe("the Tool pick", () => {
 });
 
 describe("focusLaunchProject", () => {
-    const names = ["arcterm", "thesis", "IT2058_EdgeAI"];
+    const names = ["arcterm", "notes", "IT2058_EdgeAI"];
     it("starts New on the project of the agent or terminal in focus", () => {
-        expect(focusLaunchProject("thesis", names)).toBe("thesis");
+        expect(focusLaunchProject("notes", names)).toBe("notes");
     });
     it("leaves the dialog's own pick when the focused one is in no registered project", () => {
         expect(focusLaunchProject("", names)).toBeNull();
         expect(focusLaunchProject("scratch", names)).toBeNull();
+    });
+    it("starts New on the project whose Overview is in the centre, over the focused agent's", () => {
+        expect(focusLaunchProject("arcterm", names, "notes")).toBe("notes");
+        expect(focusLaunchProject("", names, "notes")).toBe("notes");
+    });
+    it("falls back to the focused agent's project when the Overview's is not registered", () => {
+        expect(focusLaunchProject("arcterm", names, "gone")).toBe("arcterm");
     });
 });

@@ -177,10 +177,22 @@ export function selectedProject<T extends { name: string }>(rows: T[], picked: s
     return rows.find((r) => r.name === picked) ?? rows[0] ?? null;
 }
 
-// The project a New opened without one of its own starts on: the focused agent's or terminal's on the Agent surface,
-// when it is a registered project. null leaves the dialog's own pick (the last made in it, else the latest launch).
-export function focusLaunchProject(focusedProject: string, projectNames: readonly string[]): string | null {
-    return focusedProject !== "" && projectNames.includes(focusedProject) ? focusedProject : null;
+// The project a New opened without one of its own starts on, from what the Agent surface shows: the project whose
+// Overview is in the centre (`overviewProject`, "" when the centre shows none), else the focused agent's or terminal's,
+// the first of them that is a registered project. Clicking a folder opens its Overview without moving the focus, so the
+// focused agent may well sit in another project. null leaves the dialog's own pick (the last made in it, else the latest
+// launch).
+export function focusLaunchProject(
+    focusedProject: string,
+    projectNames: readonly string[],
+    overviewProject = ""
+): string | null {
+    for (const name of [overviewProject, focusedProject]) {
+        if (name !== "" && projectNames.includes(name)) {
+            return name;
+        }
+    }
+    return null;
 }
 
 // Home: the Project column's last row, which starts Claude Code (ask-only, askStartupCommand) or a terminal in the home

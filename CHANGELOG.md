@@ -91,6 +91,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 - In a project's Overview, a run's diamond in History is no longer cut off on its left, and a Branches row with long branch names shortens them instead of spilling over the History column.
 - Starting a run in a project that is one folder of a large repo no longer fails and cancels itself while its tree checks out: the run's trees check out only that folder, and a tree that still takes long finishes in the background while the run waits for it.
 - A council message that a seat failed to answer, because of a usage limit or a failed call, now says so under it (`New user could not answer: …`), where it used to read as answered with no reply.
+- New agent (⌘N or Ctrl+N, the app bar's New, the palette) opened from a project's Overview starts on that project, where it started on the project of the agent last in focus.
 
 ## 0.15.21 — 2026-11-03
 
