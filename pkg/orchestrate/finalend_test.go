@@ -4,13 +4,17 @@
 package orchestrate
 
 import (
+	"context"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/wavetermdev/waveterm/pkg/baseds"
 	"github.com/wavetermdev/waveterm/pkg/jarvis"
+	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
@@ -104,5 +108,127 @@ func TestRefusedFinalStageEnds(t *testing.T) {
 	}
 	if err := EndFinalStage(f.ctx, f.dagID, FinalState_Failed, "r"); err == nil || !strings.Contains(err.Error(), "is passed") {
 		t.Fatalf("a finished stage cannot be ended, got %v", err)
+	}
+}
+
+// a Check that failed on something outside the code (docker down) runs again once the human fixed it, in the same
+// round, and the lead woken to plan a fix round is told to drop it
+func TestAHumanRerunsAFailedFinalStage(t *testing.T) {
+	lead := newFakeLead(t)
+	marker := filepath.ToSlash(filepath.Join(t.TempDir(), "docker-up"))
+	f := finalFixture(t, passVerify, "test -f "+marker+" || { echo 'docker is not running'; exit 1; }", "")
+	if g := runFinal(t, f); g.Final.State != FinalState_Failed || len(lead.sends) != 1 {
+		t.Fatalf("setup: want a failed stage that woke the lead, got %s / %q", g.Final.State, lead.sends)
+	}
+	ackWake(lead)
+	writeFile(t, marker, "")
+
+	if err := RerunFinalStage(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+
+	g := f.dag(t)
+	if g.Final.Round != 1 || g.Final.State != "" || g.Final.Detail != "" || g.Status != DagStatus_Finalizing {
+		t.Fatalf("the stage starts over in the same round, got %s / %+v", g.Status, g.Final)
+	}
+	if len(lead.sends) != 2 || !strings.Contains(lead.sends[1], "reran the final stage of round 1") || !strings.Contains(lead.sends[1], "Drop any fix plan") {
+		t.Fatalf("the lead is told to drop its fix plan, got %q", lead.sends)
+	}
+	if g := runFinal(t, f); g.Final.State != FinalState_Passed || g.Final.Round != 1 || g.Status != DagStatus_Done {
+		t.Fatalf("the rerun passes in round 1, got %s / %+v", g.Status, g.Final)
+	}
+}
+
+// the same for a stage a kill stopped: it judged nothing, so the human's rerun is what the lead was waiting for
+func TestAHumanRerunsAKilledFinalStage(t *testing.T) {
+	lead := newFakeLead(t)
+	f := finalFixture(t, passVerify, "", "node scripts/cdp/final-verify.mjs")
+	killedNow := true
+	stubPlanCommandOutput(t, func(_ context.Context, _, command string) (string, error) {
+		if command == "node scripts/cdp/final-verify.mjs" && killedNow {
+			return "scenario 2 of 5", &planCommandError{exitCode: 0xC000013A, killed: "exit 0xc000013a"}
+		}
+		return "", nil
+	})
+	if g := runFinal(t, f); g.Final.State != FinalState_Failed || !g.Final.Killed || len(lead.sends) != 1 {
+		t.Fatalf("setup: want a killed stage that woke the lead, got %s killed=%v / %q", g.Final.State, g.Final.Killed, lead.sends)
+	}
+	ackWake(lead)
+	killedNow = false
+
+	if err := RerunFinalStage(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+
+	if g := f.dag(t); g.Final.Killed || g.Final.State != "" || g.Final.Round != 1 {
+		t.Fatalf("a rerun forgets the kill and stays in the round, got %+v", g.Final)
+	}
+	if g := runFinal(t, f); g.Final.State != FinalState_Passed || g.Final.Round != 1 || g.Status != DagStatus_Done {
+		t.Fatalf("the rerun passes in round 1, got %s / %+v", g.Status, g.Final)
+	}
+}
+
+// the lead completed after its last round failed; a rerun then wakes nobody, since nobody would read it
+func TestARerunOfADoneRunWakesNobody(t *testing.T) {
+	lead := newFakeLead(t)
+	f := finalFixture(t, passVerify, "echo 'docker is not running'; exit 1", "")
+	if g := runFinal(t, f); g.Final.State != FinalState_Failed || len(lead.sends) != 1 {
+		t.Fatalf("setup: want a failed stage that woke the lead, got %s / %q", g.Final.State, lead.sends)
+	}
+	ackWake(lead)
+	if err := wstore.UpdateRun(f.ctx, f.channel, f.ownerID, func(r *waveobj.Run) error {
+		r.Status = jarvis.RunStatus_Done
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sent := len(lead.sends)
+
+	if err := RerunFinalStage(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	runFinal(t, f)
+
+	if len(lead.sends) != sent {
+		t.Fatalf("a done run's lead gets no wake, got %q", lead.sends[sent:])
+	}
+}
+
+func TestRefusedFinalStageReruns(t *testing.T) {
+	f := finalFixture(t, passVerify, "", "")
+	if err := RerunFinalStage(f.ctx, f.dagID); err == nil || !strings.Contains(err.Error(), "has not started") {
+		t.Fatalf("a stage not started cannot be rerun, got %v", err)
+	}
+	runFinal(t, f) // TestMain's skipVerifier ends it passed
+	if err := RerunFinalStage(f.ctx, f.dagID); err == nil || !strings.Contains(err.Error(), "is passed; only a failed one") {
+		t.Fatalf("a passed stage cannot be rerun, got %v", err)
+	}
+	if err := wstore.UpdateDag(f.ctx, f.dagID, func(cur *waveobj.TaskGroup) error {
+		cur.Status, cur.Final.State = DagStatus_Cancelled, FinalState_Failed
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RerunFinalStage(f.ctx, f.dagID); err == nil || !strings.Contains(err.Error(), "is cancelled") {
+		t.Fatalf("a cancelled run's stage cannot be rerun, got %v", err)
+	}
+}
+
+// ackWake has the fake lead take its wake, working then idle, so the waker sends the next one
+func ackWake(lead *fakeLead) {
+	NoteLeadStatus(context.Background(), lead.status(baseds.AgentState_Working))
+	NoteLeadStatus(context.Background(), lead.status(baseds.AgentState_Idle))
+}
+
+// a run that never had a lead gets none launched only to be told to drop a fix plan it never wrote
+func TestARerunWakeLaunchesNoLead(t *testing.T) {
+	if !nothingToLaunchFor([]string{finalRerunWake(1)}) {
+		t.Fatal("the rerun wake alone must not launch a lead")
+	}
+	if nothingToLaunchFor([]string{finalRerunWake(1), finalFailedWake(1, "r", "Check failed", false, false)}) {
+		t.Fatal("a failed stage beside it still launches one")
+	}
+	if nothingToLaunchFor([]string{finalRerunWake(1), finalKilledWake(1, "r", "Final killed", false)}) {
+		t.Fatal("a killed stage beside it still launches one")
 	}
 }

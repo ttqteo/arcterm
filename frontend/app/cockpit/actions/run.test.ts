@@ -278,6 +278,31 @@ describe("run actions", () => {
         expect(applies("run:end-final-failed", thing(orchestrator(), [lead], cancelled))).toBe(false);
     });
 
+    it("rerunning the final stage applies once it failed", () => {
+        const failed = lineage(
+            info({ dag: { ...info().dag, status: "blocked", final: { state: "failed" } as FinalStage } })
+        );
+        expect(applies("run:rerun-final", thing(orchestrator(), [lead], failed))).toBe(true);
+        const running = lineage(info({ dag: { ...info().dag, final: { state: "verifying" } as FinalStage } }));
+        expect(applies("run:rerun-final", thing(orchestrator(), [lead], running))).toBe(false);
+        expect(applies("run:rerun-final", thing(orchestrator(), [lead], lineage(info())))).toBe(false);
+        const cancelled = lineage(
+            info({ dag: { ...info().dag, status: "cancelled", final: { state: "failed" } as FinalStage } })
+        );
+        expect(applies("run:rerun-final", thing(orchestrator(), [lead], cancelled))).toBe(false);
+    });
+
+    it("rerunning the final stage sends the final-rerun dag action, and a refusal reaches the palette", async () => {
+        const action = RUN_KIND.actions.find((a) => a.id === "run:rerun-final");
+        const send = vi.spyOn(RpcApi, "DagActionCommand").mockResolvedValueOnce(undefined);
+        await action.run(thing(orchestrator()), { model: null }, undefined);
+        expect(send.mock.lastCall[1]).toEqual({ channelid: "c1", runid: "r1", taskid: "", action: "final-rerun" });
+        send.mockRejectedValueOnce(new Error("run r1's final stage is passed; only a failed one can be rerun"));
+        await expect(action.run(thing(orchestrator()), { model: null }, undefined)).rejects.toThrow(
+            /only a failed one can be rerun/
+        );
+    });
+
     it("refuses to end the final stage without a reason", async () => {
         const action = RUN_KIND.actions.find((a) => a.id === "run:end-final-failed");
         await expect(action.run(thing(orchestrator()), { model: null }, "  ")).rejects.toThrow(/reason/);

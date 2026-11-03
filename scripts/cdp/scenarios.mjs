@@ -22917,6 +22917,154 @@ const finalStageScenario = {
     },
 };
 
+// --- final-rerun: a failed final stage runs again, from the run sheet, the Final verification pane and the palette ---
+// The dag is seeded with a failed round 1 while t-1 is still at work, so the engine leaves the stage alone
+// (docs/reference/cdp-run-fixtures.md, "A run with a final stage"). A rerun resets it to round 1 not started, which
+// the same busy dag then keeps, so the stage is reseeded as failed for each surface in turn.
+
+const FR_LABEL = "Rerun final stage";
+const FR_SHEET_BTN = `document.querySelector("[data-run-sheet] [data-final-rerun]")`;
+const FR_PANE_BTN = `document.querySelector("[data-final-pane] [data-final-rerun]")`;
+const FR_FAILED = {
+    state: "failed",
+    round: 1,
+    detail: "Check `docker info` failed (exit 1):\ndocker is not running",
+};
+const frPrint = (dag) =>
+    JSON.stringify([dag?.final?.state ?? null, dag?.final?.round ?? null, (dag?.final?.detail ?? "").length]);
+const frSeedFailed = (h, ctx) => seedDag(h, ctx, (dag) => ({ ...dag, final: FR_FAILED }), frPrint);
+const frStored = async (h, ctx) => (await waveService(h, "object", "GetObject", [`dag:${ctx.dagId}`]))?.final ?? null;
+// the stage after a rerun: round 1 again, not started, with nothing left of the failure
+const frReran = (f) => f?.state === "" && f?.round === 1 && (f?.detail ?? "") === "";
+
+// polls the stored stage until a rerun shows, and returns the last read either way
+async function frWaitReran(h, ctx, ms = 15_000) {
+    let f = null;
+    for (let waited = 0; waited <= ms; waited += 250) {
+        f = await frStored(h, ctx);
+        if (frReran(f)) break;
+        await polishNap(250);
+    }
+    return f;
+}
+
+const finalRerunScenario = {
+    name: "final-rerun",
+    surface: "jarvis",
+    async arrange(h) {
+        const stamp = `finalrerun${Date.now() % 100000}`;
+        const ctx = { stamp, cwd: mkdtempSync(join(tmpdir(), "verify-final-rerun-")) };
+        // a throw past this point still returns ctx, so teardown removes whatever was already made
+        try {
+            fstGitInit(ctx.cwd);
+            await arrangeFixtureRun(h, ctx, stamp, FST_LEAD);
+            await h.rpc("dagsubmit", {
+                channelid: ctx.channelId,
+                runid: ctx.runId,
+                title: `verify ${stamp}`,
+                parallelism: 1,
+                tasks: RUN_SHEET_POLISH_TASKS,
+            });
+            // a seed written while t-1 is still being dispatched would be overwritten by that tick
+            await waitForDispatch(h, ctx, "t-1");
+            ctx.dagId = (await h.rpc("dagstatus", { channelid: ctx.channelId, runid: ctx.runId })).group?.oid;
+            if (!ctx.dagId) throw new Error("the run has no dag");
+            // the roster and the Brief's channel list are read once, at boot: this reloads onto both, with the lead alone
+            ctx.leadFocused = await fstBoot(h, ctx, false);
+        } catch (e) {
+            ctx.arrangeError = String(e?.message ?? e);
+        }
+        return ctx;
+    },
+    async assert(h, ctx) {
+        const steps = [];
+        const rec = (step, ok, detail) => steps.push({ step, ok, detail });
+        const shot = (name) => h.shot(`cdp-shots/final-rerun-${name}.png`);
+        rec(
+            "0. a git project's run with a dispatched t-1 and a dag, and the lead focused on the Agent surface",
+            ctx.arrangeError == null && ctx.dispatched === true && ctx.leadFocused === true,
+            ctx.arrangeError ??
+                JSON.stringify({ runId: ctx.runId, dagId: ctx.dagId, dispatched: ctx.dispatched, leadFocused: ctx.leadFocused })
+        );
+        if (ctx.arrangeError != null) return steps;
+
+        // --- the run sheet's dock
+        await frSeedFailed(h, ctx);
+        await h.goto("jarvis");
+        await polishWaitFor(h, `typeof window.__openAddress === "function"`, 5000);
+        const opened = await h.ev(`window.__openAddress(${JSON.stringify(`run:${ctx.runId}`)})`);
+        const offered = await polishWaitFor(h, `${FR_SHEET_BTN} != null`, 15_000);
+        const sheetLabel = await h.ev(`${FR_SHEET_BTN}?.textContent.trim() ?? null`);
+        await shot("1-sheet-offered");
+        rec(
+            "1. the run sheet offers Rerun final stage on a dag seeded with a failed final stage",
+            offered === true && sheetLabel === FR_LABEL,
+            JSON.stringify({ opened, label: sheetLabel })
+        );
+
+        await h.ev(`${FR_SHEET_BTN}?.click()`);
+        const sheetGone = await polishWaitFor(h, `${FR_SHEET_BTN} == null`, 15_000);
+        const sheetStage = await frWaitReran(h, ctx);
+        await shot("2-sheet-rerun");
+        rec(
+            "2. clicking it reruns the stage: round 1 not started, and the button is gone",
+            sheetGone === true && frReran(sheetStage),
+            JSON.stringify({ gone: sheetGone, final: sheetStage })
+        );
+
+        const sheetError = await h.ev(`document.querySelector("[data-run-sheet-dock] .text-error")?.textContent ?? null`);
+        await shot("3-sheet-no-error");
+        rec("3. the engine refused nothing: no error beside the dock", sheetError == null, JSON.stringify({ error: sheetError }));
+
+        // --- the Final verification pane on the Agent surface
+        await frSeedFailed(h, ctx);
+        let a = await fstAgent(h, (s) => s.rows.length === 1 && s.rows[0].tone === "fail");
+        await finalShotsClick(h, FST_ROW);
+        a = await fstUntil(h, FST_AGENT, (s) => s.rows[0]?.selected && s.pane != null);
+        const paneOffered = await polishWaitFor(h, `${FR_PANE_BTN} != null`, 15_000);
+        const paneLabel = await h.ev(`${FR_PANE_BTN}?.textContent.trim() ?? null`);
+        await shot("4-pane-offered");
+        await finalShotsClick(h, FR_PANE_BTN);
+        const paneGone = await polishWaitFor(h, `${FR_PANE_BTN} == null`, 15_000);
+        const paneStage = await frWaitReran(h, ctx);
+        const paneError = await h.ev(`document.querySelector("[data-final-pane] .text-error")?.textContent ?? null`);
+        await shot("4-pane-rerun");
+        rec(
+            "4. reseeded as failed, the Final verification pane shows Rerun final stage, and clicking it reruns the stage",
+            a?.rows[0]?.tone === "fail" &&
+                paneOffered === true &&
+                paneLabel === FR_LABEL &&
+                paneGone === true &&
+                frReran(paneStage) &&
+                paneError == null,
+            JSON.stringify({ row: a?.rows, paneLabel, paneGone, final: paneStage, error: paneError })
+        );
+
+        // --- the palette's run actions
+        await frSeedFailed(h, ctx);
+        const toggle = await openRunToggle(h, ctx, FR_LABEL);
+        const steer = toggle.state?.groups.find((g) => g.label === "Steer");
+        await shot("5-palette-listed");
+        const listed =
+            toggle.opened &&
+            (steer?.rows ?? []).some((r) => r.startsWith(FR_LABEL)) &&
+            (toggle.state?.selected ?? "").startsWith(FR_LABEL);
+        await h.ev(paletteKey("Enter"));
+        const paletteStage = await frWaitReran(h, ctx);
+        await shot("5-palette-rerun");
+        rec(
+            "5. reseeded as failed, the palette lists Rerun final stage among the run's actions, and running it reruns the stage",
+            listed === true && frReran(paletteStage),
+            JSON.stringify({ opened: toggle.opened, steer, selected: toggle.state?.selected, final: paletteStage })
+        );
+        return steps;
+    },
+    async teardown(h, ctx) {
+        await h.ev(PEEKS_ESC).catch(() => {});
+        await teardownFixtureRun(h, ctx, "final-rerun");
+    },
+};
+
 // --- brief-initiatives-polish: a staged and a flat initiative, their sidebar and activity ---------
 // Two throwaway efforts made over RPC: one staged (with an unstaged tail), one flat whose feed holds a
 // note-carrying status change, a bare one, and a long note. Every surface it opens is swept for text
@@ -59195,6 +59343,7 @@ export const SCENARIOS = [
     recordBandDetachRestore,
     agentRailFileLink,
     finalShotsScenario,
+    finalRerunScenario,
     finalStageScenario,
     briefInitiativesPolish,
     briefPeeksPolish,

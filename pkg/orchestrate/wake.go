@@ -162,6 +162,10 @@ func (w *waker) runLocked(channelId, runId string) *runWake {
 // PostWake hands a judgment event to runId's lead: typed now if the lead can take it, held and joined
 // with later events if it is busy.
 func PostWake(ctx context.Context, channelId, runId, line string) {
+	// a done run's lead completed: nobody reads the wake, and a dead or absent lead would be relaunched for it
+	if run, err := wstore.GetRun(ctx, channelId, runId); err == nil && run.Status == jarvis.RunStatus_Done {
+		return
+	}
 	wakes.lock.Lock()
 	defer wakes.lock.Unlock()
 	rw := wakes.runLocked(channelId, runId)
@@ -438,7 +442,7 @@ func (w *waker) reviveLive(ctx context.Context, channelId, runId string) bool {
 // message (spec §1, G5). A clean finish is not a judgment: the engine closes a run nobody has to judge
 // (MaybeCompleteLeadFreeRun), so run finished alone starts nothing.
 func (w *waker) launchLocked(ctx context.Context, runId string, rw *runWake, asks map[string]agentask.PendingAsk, untold bool) {
-	if !untold && onlyRunFinished(rw.lines) {
+	if !untold && nothingToLaunchFor(rw.lines) {
 		rw.lines, rw.quiet, rw.caveats, rw.handoff = nil, nil, nil, false
 		return
 	}
@@ -456,11 +460,12 @@ func (w *waker) launchLocked(ctx context.Context, runId string, rw *runWake, ask
 	launchLeadFn(ctx, rw.channelId, runId, text)
 }
 
-// onlyRunFinished reports held lines that say nothing but that the run finished, whatever outcome follows on
-// the finished line's later lines. A failed final stage is its own wake, so it still launches a lead.
-func onlyRunFinished(lines []string) bool {
+// nothingToLaunchFor reports held lines that say nothing but that the run finished, whatever outcome follows on
+// the finished line's later lines, or that the human reran the final stage. A failed final stage is its own wake,
+// so it still launches a lead.
+func nothingToLaunchFor(lines []string) bool {
 	for _, l := range lines {
-		if first, _, _ := strings.Cut(l, "\n"); first != runFinishedWake {
+		if first, _, _ := strings.Cut(l, "\n"); first != runFinishedWake && !strings.HasPrefix(first, finalRerunWakeHead) {
 			return false
 		}
 	}

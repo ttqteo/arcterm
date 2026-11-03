@@ -22,6 +22,7 @@ import { ChildAskCard } from "@/app/view/agents/childaskcard";
 import { userOwnedAsks } from "@/app/view/agents/childaskmodel";
 import { childAsksAtom } from "@/app/view/agents/childaskstore";
 import { EndFinalForm } from "@/app/view/agents/endfinalform";
+import { RerunFinalStage } from "@/app/view/agents/finalstageviews";
 import { resumeRun } from "@/app/view/agents/runactions";
 import { AskCard, CancelRunButton, CancelSurvivorsCard } from "@/app/view/agents/runcards";
 import { needsEvidenceSeal, verifCounts } from "@/app/view/agents/runcompletion";
@@ -1190,6 +1191,7 @@ function Dock({
                         End final stage
                     </button>
                 ) : null}
+                <RerunFinalStage group={group} channelId={channel.oid} runId={run.id} className={DOCK_BTN} />
                 {lead != null || worker != null ? (
                     <div
                         role="group"

@@ -223,6 +223,21 @@ func TestOrchestrationRulesCompleteOnTheirOwn(t *testing.T) {
 	if strings.Index(finished, AskTool("claude")) > strings.Index(finished, "wsh jarvis complete") {
 		t.Fatalf("a question must come before complete, which closes the tab:\n%s", finished)
 	}
+	// leads filed in-feature leftovers as chunks, which became a follow-up run with its own plan review
+	// (d20dc06e, dec24c70, d276b206): round work is set by area, not age, and a second round takes what the first left
+	if strings.Contains(finished, "whatever a round left") {
+		t.Fatalf("what a round left goes to the next round while one is left:\n%s", finished)
+	}
+	for _, want := range []string{
+		"in the feature the run built or in a file it changed, even when it predates the run",
+		"a check a worker can write",
+		"a failure on the base in code the run did not touch",
+		"which says again whether a round is left",
+	} {
+		if !strings.Contains(finished, want) {
+			t.Fatalf("run-finished rule missing round-work scope %q:\n%s", want, finished)
+		}
+	}
 	// accept spawns the first tasks, so an amend after it misses them (run 6c7652be)
 	if strings.Index(r, "carry each accepted finding") > strings.Index(r, "dag planreview accept") {
 		t.Fatalf("the plan review rule must amend before accept:\n%s", r)
@@ -240,6 +255,12 @@ func TestOrchestrationRulesCompleteOnTheirOwn(t *testing.T) {
 		// run 94a265f6's lead could only offer two ways to complete, and the human had to come back to land it
 		"the question is what to do with the land",
 		"`wsh jarvis complete --report <file> --force-land`, only on that answer",
+		// run 72262859's lead read the run-finished exemptions into a failed final, fixed nothing, and the land held
+		"fix every failing step, one already on the base or outside the goal included",
+		// a failure outside the code (docker down, a killed step) is the human's rerun, not a fix round
+		"a wake that says the human reran the final stage, or that a step was killed from outside",
+		"write no fix plan for it, drop one you started",
+		"a rerun spends no round",
 	} {
 		if !strings.Contains(strings.ToLower(r), strings.ToLower(want)) {
 			t.Fatalf("rules missing %q:\n%s", want, r)

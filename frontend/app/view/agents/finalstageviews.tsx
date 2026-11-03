@@ -8,10 +8,10 @@ import * as WOS from "@/app/store/wos";
 import { finalCheckEntry } from "@/app/view/jarvis/finalshotsmodel";
 import { FinalShotsViewer } from "@/app/view/jarvis/finalshotsviewer";
 import { imageStatus, localFileUrl, type LocalImageStatus } from "@/app/view/jarvis/localimage";
-import { finalStageEndable } from "@/app/view/jarvis/runsheetmodel";
+import { finalStageEndable, finalStageRerunnable } from "@/app/view/jarvis/runsheetmodel";
 import { getWebServerEndpoint } from "@/util/endpoints";
 import { fetch } from "@/util/fetchutil";
-import { cn } from "@/util/util";
+import { cn, fireAndForget } from "@/util/util";
 import { atom, useAtomValue, type Atom } from "jotai";
 import { useEffect, useState } from "react";
 import { dockButtonClass, EndFinalForm } from "./endfinalform";
@@ -25,6 +25,7 @@ import {
     type FinalStepKey,
     type FinalTone,
 } from "./finalstage";
+import { rerunFinalStage } from "./runactions";
 import { useRunEvents } from "./runeventstore";
 
 const NO_RUN: Atom<Run | undefined> = atom(undefined as Run | undefined);
@@ -424,6 +425,55 @@ export function EndFinalStage({
                     />
                 </div>
             ) : null}
+        </div>
+    );
+}
+
+// Rerun final stage, once a stage failed on something outside the code (a service down, a tool missing, a step
+// something killed) that the human then fixed. It runs in the same round, so it spends no fix round. A refusal
+// from the engine stays beside it.
+export function RerunFinalStage({
+    group,
+    channelId,
+    runId,
+    className,
+}: {
+    group: TaskGroup | null | undefined;
+    channelId: string;
+    runId: string;
+    className: string;
+}) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    if (!finalStageRerunnable(group ?? null)) {
+        return null;
+    }
+    const rerun = () => {
+        setError(null);
+        setBusy(true);
+        fireAndForget(async () => {
+            try {
+                await rerunFinalStage(channelId, runId);
+            } catch (e) {
+                setError(String(e));
+            } finally {
+                setBusy(false);
+            }
+        });
+    };
+    return (
+        <div className="flex flex-none items-center gap-2">
+            {error != null ? <span className="text-[11px] text-error">{error}</span> : null}
+            <button
+                type="button"
+                data-final-rerun
+                disabled={busy}
+                onClick={rerun}
+                title="Run the failed final stage again in the same round, after fixing what failed outside the code"
+                className={className}
+            >
+                Rerun final stage
+            </button>
         </div>
     );
 }

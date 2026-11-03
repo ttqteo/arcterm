@@ -274,7 +274,7 @@ func TestDirtyRetryQueues(t *testing.T) {
 			if !tryTakeTurn(f.projectPath(t), "someone-else") {
 				t.Fatal("the turn was not free")
 			}
-			retryDirtyLands(f.ctx)
+			retryHeldLands(f.ctx)
 			waitStages(t)
 			land := f.landOf(t, f.ownerID)
 			if land.State != LandState_Queued || land.QueuedTs == 0 || land.Dirty || land.Force != c.force {

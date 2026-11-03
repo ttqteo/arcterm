@@ -648,6 +648,13 @@ func (ws *WshServer) DagActionCommand(ctx context.Context, data wshrpc.CommandDa
 		// the tick announces the dag done, or hands a failed stage to the lead
 		scheduleDag(run.DagORef)
 		return nil
+	case "final-rerun":
+		if err := orchestrate.RerunFinalStage(ctx, run.DagORef); err != nil {
+			return err
+		}
+		// the tick starts the stage's commands, which outlast the caller's RPC budget
+		scheduleDag(run.DagORef)
+		return nil
 	case "amend":
 		return orchestrate.AmendTask(ctx, run.DagORef, data.TaskId, data.Notes)
 	case "tell":

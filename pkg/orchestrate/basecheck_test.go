@@ -155,3 +155,61 @@ func TestABaseCheckResultForAnotherCommandIsDropped(t *testing.T) {
 		t.Fatalf("the stale result is dropped, got %+v and %q", bc, lead.sends)
 	}
 }
+
+// A Check the base tree could not finish judged nothing about the base. Read as failed, it would tell every worker
+// that Check failures are not theirs and let the final stage pass a failing Check as unverified.
+func TestABaseCheckThatDidNotFinishIsSkipped(t *testing.T) {
+	for name, cause := range map[string]*planCommandError{
+		"timed out": {exitCode: -1, timeout: VerifyTimeout},
+		"killed":    {exitCode: 0xC000013A, killed: "exit 0xc000013a"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			lead := newFakeLead(t)
+			f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+			f.setCheck(t, "tsc --noEmit")
+			var spawned []string
+			stubSpawn(t, &spawned)
+			stubPlanCommand(t, func(context.Context, string, string) error { return cause })
+			await := awaitBaseCheck(t)
+
+			if err := Schedule(f.ctx, f.dagID); err != nil {
+				t.Fatal(err)
+			}
+			await()
+
+			if bc := f.dag(t).BaseCheck; bc == nil || bc.State != BaseCheckState_Skipped || !strings.Contains(bc.Detail, "Check did not finish") {
+				t.Fatalf("want a skipped base Check that says it did not finish, got %+v", bc)
+			}
+			for _, sent := range lead.sends {
+				if strings.Contains(sent, "already fails on the base") {
+					t.Fatalf("the lead was told the base fails: %q", sent)
+				}
+			}
+		})
+	}
+}
+
+// a Check that ran and failed with an ordinary exit is still a verdict on the base
+func TestABaseCheckThatExitedNonZeroStillFails(t *testing.T) {
+	lead := newFakeLead(t)
+	f := newMergeFixture(t, []waveobj.TaskNode{{ID: "t-0", Label: "first"}})
+	f.setCheck(t, "tsc --noEmit")
+	var spawned []string
+	stubSpawn(t, &spawned)
+	stubPlanCommand(t, func(context.Context, string, string) error {
+		return &planCommandError{exitCode: 2, output: "error TS2307"}
+	})
+	await := awaitBaseCheck(t)
+
+	if err := Schedule(f.ctx, f.dagID); err != nil {
+		t.Fatal(err)
+	}
+	await()
+
+	if bc := f.dag(t).BaseCheck; bc == nil || bc.State != BaseCheckState_Failed {
+		t.Fatalf("want a failed base Check, got %+v", bc)
+	}
+	if len(lead.sends) != 1 || !strings.Contains(lead.sends[0], "already fails on the base") {
+		t.Fatalf("the lead is told the base fails, got %q", lead.sends)
+	}
+}

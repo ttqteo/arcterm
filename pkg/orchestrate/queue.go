@@ -29,8 +29,16 @@ const TakenOverNote = "taken over from the lead"
 const ForwardedByHuman = "human"
 
 // runFinishedWake is the first line of every run-finished wake. A run with no lead is not given one for it
-// (onlyRunFinished), so the outcome goes on the lines after it and this line stays fixed.
+// (nothingToLaunchFor), so the outcome goes on the lines after it and this line stays fixed.
 const runFinishedWake = "wake: run finished. wsh jarvis dag status"
+
+// finalRerunWakeHead opens the wake that tells a lead the human reran the failed final stage. It asks a lead only to
+// drop a fix plan, so a run with no lead is not given one for it (nothingToLaunchFor).
+const finalRerunWakeHead = "wake: the human reran the final stage"
+
+func finalRerunWake(round int) string {
+	return fmt.Sprintf("%s of round %d; its failure was outside the code. Drop any fix plan for it; the stage's outcome wakes you.", finalRerunWakeHead, round)
+}
 
 // RunFinishedWake states the final stage's outcome, and every reason it could not verify something in full:
 // the lead's report has to carry them.
@@ -59,7 +67,7 @@ func RunFinishedWake(f *waveobj.FinalStage) string {
 // roundLeftLine and noRoundLeftLine end a passed or unverified run-finished wake: the engine counts the rounds,
 // so the lead only judges which open issues are round work.
 const (
-	roundLeftLine   = "One round is left for the open issues inside the run's goal that a worker can fix: `wsh jarvis dag submit --round --plan <fix plan>`."
+	roundLeftLine   = "One round is left for the open issues that are round work: `wsh jarvis dag submit --round --plan <fix plan>`."
 	noRoundLeftLine = "No round is left: every open issue is an effort chunk."
 )
 
@@ -94,6 +102,10 @@ func landBlockerLines(ctx context.Context, run *waveobj.Run) string {
 	return "\n" + strings.Join(lines, "\n")
 }
 
+// fixEveryFailure keeps a lead from reading the run-finished exemptions into a failed final: a step that
+// already failed on the base holds the land as much as one the run broke (run 72262859 held on four).
+const fixEveryFailure = "Fix every failing step, one already on the base or outside the goal included, since any of them holds the land."
+
 // finalFailedWake carries the final stage's failure whole: the lead writes its fix plan from it. After the
 // last round the call is the human's, and the lead must say the land will hold: the land runs after complete
 // closes the lead's tab, so nobody else can warn the human first (run dc7d6de0 completed held and unannounced).
@@ -103,11 +115,20 @@ func finalFailedWake(round int, runID, detail string, last, autonomous bool) str
 	case last && autonomous:
 		return fmt.Sprintf("wake: the final stage failed on the merged result in round %d, the last. The run is autonomous and nobody is at the cockpit, so the call is yours: complete with the plain `wsh jarvis complete --report <file>`, never `--force-land`. A failed final stage holds the land, so the branch stays unmerged until `wsh runs land %s --force`, the human's call once the run is done; say in your report that the land is held and why:\n%s", round, runID, detail)
 	case autonomous:
-		return fmt.Sprintf("wake: the final stage failed on the merged result in round %d. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`; if the fix is a product call, make the call you would recommend and record it and why in your report:\n%s", round, detail)
+		return fmt.Sprintf("wake: the final stage failed on the merged result in round %d. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`. %s If the fix is a product call, make the call you would recommend and record it and why in your report:\n%s", round, fixEveryFailure, detail)
 	case last:
 		return fmt.Sprintf("wake: the final stage failed on the merged result in round %d, the last. Put it to the human, and say that completing will not merge the branch: a failed final stage holds the land, and only `wsh runs land %s --force`, the human's call once the run is done, lands it:\n%s", round, runID, detail)
 	}
-	return fmt.Sprintf("wake: the final stage failed on the merged result in round %d. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`, or put it to the human if the fix is a product call:\n%s", round, detail)
+	return fmt.Sprintf("wake: the final stage failed on the merged result in round %d. Write a fix plan and run `wsh jarvis dag submit --round --plan <fix plan>`. %s Put it to the human if the fix is a product call:\n%s", round, fixEveryFailure, detail)
+}
+
+// finalKilledWake hands the lead a final stage whose step something outside killed: it judged nothing, so a fix plan
+// would chase a defect nobody found. A rerun spends no round, and whoever killed it decides when to run it again.
+func finalKilledWake(round int, runID, detail string, autonomous bool) string {
+	if autonomous {
+		return fmt.Sprintf("wake: a step of the final stage was killed from outside in round %d, before it judged anything. Write no fix plan. The run is autonomous and nobody is at the cockpit: complete with the plain `wsh jarvis complete --report <file>`; the land stays held until the human reruns the stage with `wsh runs rerun-final %s`, so say that in your report:\n%s", round, runID, detail)
+	}
+	return fmt.Sprintf("wake: a step of the final stage was killed from outside in round %d, before it judged anything. Write no fix plan: put it to the human, who reruns the stage with `wsh runs rerun-final %s` once whatever killed it is gone; a rerun spends no round, and the land holds until a run of the stage passes:\n%s", round, runID, detail)
 }
 
 // taskFailedWake names the failure kind so the lead can pick retry, escalate, skip or forward before

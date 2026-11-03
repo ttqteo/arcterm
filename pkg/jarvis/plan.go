@@ -35,7 +35,8 @@ const PlanFormat = "Plan format. Verify, Setup and Check are optional, go before
 	"package or the full suite: Verify runs those at each merge and in the final stage. " +
 	"An optional Final line, also one command in backticks, runs once on the merged result after every task landed and Check " +
 	"passed, with ARC_FINAL_OUT set to a directory for its screenshots and reports: exit 0 passes, exit 3 means it could not " +
-	"verify and its last output line says why, and any other exit fails the run. It may write an optional ARC_FINAL_OUT/shots.json, " +
+	"verify and its last output line says why, and any other exit fails the run. In the final stage Check and Verify may exit 3 the same way, " +
+	"when a service or tool they need is missing; at a merge point exit 3 still fails. The Final command may write an optional ARC_FINAL_OUT/shots.json, " +
 	"a JSON array of {name, files, steps: [{step, state: pass|fail|skip, detail?}]} with file paths relative to ARC_FINAL_OUT, " +
 	"which the cockpit shows as the run's screenshots; without one it lists every PNG there. " +
 	"Final is the only check of the running app, so every task that adds or changes a rendered view, a visual state (loading, " +

@@ -1019,12 +1019,12 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 			t.Fatalf("land = %+v, want a dirty hold", land)
 		}
 
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		f.assertHeld(t, f.owner(t).Land, head, "staged changes")
 
 		gitCmd(t, f.project, "commit", "-m", "another session's work")
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed || got.Commit != gitCmd(t, f.project, "rev-parse", "HEAD") {
 			t.Fatalf("land = %+v, want landed on the checkout's new head", got)
@@ -1040,7 +1040,7 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 		}
 
 		gitCmd(t, f.project, "checkout", "--", "base.txt")
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
 			t.Fatalf("land = %+v, want landed", got)
@@ -1059,14 +1059,14 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 			t.Fatalf("land = %+v, want a dirty hold", land)
 		}
 
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		f.assertHeld(t, f.owner(t).Land, head, "a cherry-pick is in progress")
 
 		if err := os.Remove(pick); err != nil {
 			t.Fatal(err)
 		}
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
 			t.Fatalf("land = %+v, want landed", got)
@@ -1082,10 +1082,50 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 		}
 
 		gitCmd(t, f.project, "commit", "-m", "staged")
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
 			t.Fatalf("land = %+v, want landed past the failed final stage", got)
+		}
+	})
+	// a final stage that failed outside the code holds the land; the human reruns it, and a pass lifts the hold
+	t.Run("a failed final stage's hold lands once a rerun passed", func(t *testing.T) {
+		f, _ := landFixture(t)
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Failed, Round: 1, Detail: "docker is not running"})
+		head := gitCmd(t, f.project, "rev-parse", "main")
+		f.assertHeld(t, f.landRun(t, false), head, finalFailedHold)
+
+		// nothing reran it yet: the hold stays
+		retryHeldLands(f.ctx)
+		waitStages(t)
+		f.assertHeld(t, f.owner(t).Land, head, finalFailedHold)
+
+		// the rerun is still running: nothing lands yet
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Checking, Round: 1})
+		retryHeldLands(f.ctx)
+		waitStages(t)
+		f.assertHeld(t, f.owner(t).Land, head, finalFailedHold)
+
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Passed, Round: 1})
+		retryHeldLands(f.ctx)
+		waitStages(t)
+		f.driveLandLineUntil(t, f.ownerID)
+		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed after the rerun passed", got)
+		}
+	})
+	t.Run("a failed final stage that ended unverified on a rerun lands too", func(t *testing.T) {
+		f, _ := landFixture(t)
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Failed, Round: 1, Detail: "docker is not running"})
+		head := gitCmd(t, f.project, "rev-parse", "main")
+		f.assertHeld(t, f.landRun(t, false), head, finalFailedHold)
+
+		f.setFinal(t, &waveobj.FinalStage{State: FinalState_Unverified, Round: 1, Unverified: []string{"Check `x` could not verify: docker is not running"}})
+		retryHeldLands(f.ctx)
+		waitStages(t)
+		f.driveLandLineUntil(t, f.ownerID)
+		if got := f.owner(t).Land; got == nil || got.State != LandState_Landed {
+			t.Fatalf("land = %+v, want landed", got)
 		}
 	})
 	t.Run("a hold that is not a dirty checkout waits for the human", func(t *testing.T) {
@@ -1097,7 +1137,7 @@ func TestADirtyHoldLandsOnceTheCheckoutIsClean(t *testing.T) {
 		}
 
 		gitCmd(t, f.project, "checkout", "main")
-		retryDirtyLands(f.ctx)
+		retryHeldLands(f.ctx)
 		waitStages(t)
 		f.assertHeld(t, f.owner(t).Land, head, "checkout is on x, not main")
 	})

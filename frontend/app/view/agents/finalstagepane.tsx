@@ -9,6 +9,7 @@ import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import type { AgentsViewModel } from "./agents";
+import { dockButtonClass } from "./endfinalform";
 import { shownStep, type FinalStepKey } from "./finalstage";
 import {
     EndFinalStage,
@@ -17,6 +18,7 @@ import {
     FinalOutput,
     FinalShotsLink,
     FinalStepCells,
+    RerunFinalStage,
     useFinalStageView,
 } from "./finalstageviews";
 import { stageLabel, type RunInfo } from "./runlineage";
@@ -49,6 +51,12 @@ export function FinalStagePane({ model, run }: { model: AgentsViewModel; run: Ru
                 <span className="min-w-0 truncate text-[10.5px] tabular-nums text-ink-mid">{view.headline}</span>
                 <span className="flex-1" />
                 <EndFinalStage group={run.dag} channelId={run.channelId} runId={run.runId} />
+                <RerunFinalStage
+                    group={run.dag}
+                    channelId={run.channelId}
+                    runId={run.runId}
+                    className={dockButtonClass()}
+                />
             </div>
             {view.steps.length > 0 ? (
                 <div className="flex-none border-b border-edge-faint px-[22px] py-[12px]">

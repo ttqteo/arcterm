@@ -638,6 +638,7 @@ type FinalStage struct {
 	Commit        string   `json:"commit,omitempty"`        // the tree HEAD it verified
 	OutDir        string   `json:"outdir,omitempty"`        // ARC_FINAL_OUT
 	Detail        string   `json:"detail,omitempty"`        // the failure's output tail or defects, whole
+	Killed        bool     `json:"killed,omitempty"`        // the failed step was killed from outside: it judged nothing, so a rerun, not a fix round, is next
 	Unverified    []string `json:"unverified,omitempty"`    // what could not be verified, and why
 	VerifierRunID string   `json:"verifierrunid,omitempty"` // the verifier session's child run
 	Respawns      int      `json:"respawns,omitempty"`
