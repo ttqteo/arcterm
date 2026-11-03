@@ -6,6 +6,13 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Close on an ended council's tree row, and Pin only off the tree: in the Agent tree, hover a Done council
+  that is not pinned → one X (title "Close · Councils keeps it"), no Pin; click it → the row leaves the tree at once and
+  Councils still lists it. A running or pinned council's row shows no hover button. In a project's Overview → History,
+  unfold a council row → Pin sits beside Open council, and right-click offers Pin / Unpin. The `council-tree` scenario's
+  steps 11b, 11g and 11h cover the tree but were not run (no dev app up); unit tests and the typecheck only
+  (`councilopened.ts`, `agentsidebarmodel.ts`, `agenttree.tsx`, `projecthistory.tsx`).
+
 - [ ] (arcterm) A council's status chip keeps its word beside a long title: open a council with a long question on
   Discussion and on Map in a narrow pane → the title ends in an ellipsis first and the chip still reads "Stopped" (or
   its step) in full; it truncates only once the title is down to its 72px floor. Not tried in the app

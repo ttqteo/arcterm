@@ -5,8 +5,9 @@
 // it to tell an ended council the person has not looked at yet (unread), and the Discussion to badge the ideas that came
 // since. It needs no list of councils to seed it: the first read stores `seededAt`, and a council never opened counts as
 // opened then, so only councils that end (or arrive by a sync) after that read count as unread. councilpane.tsx marks a
-// council opened when the person leaves it. Every storage read and write is wrapped: a failure logs and the page goes on
-// with the map in memory.
+// council opened when the person leaves it. The same map keeps the councils the person closed (Close on a tree row):
+// an ended council closed after it ended leaves the Agent tree at once, and comes back if it runs and ends again.
+// Every storage read and write is wrapped: a failure logs and the page goes on with the map in memory.
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
@@ -16,6 +17,7 @@ export const COUNCIL_OPENED_KEY = "council.opened";
 export interface CouncilOpenedMap {
     seededAt: number; // ms: the first time the map was read; a council never opened counts as opened then
     opened: Record<string, number>; // council id → ms the person last left it
+    closed?: Record<string, number>; // council id → ms the person closed it (took it off the tree); absent when none
 }
 
 /** The two calls of localStorage this file uses, so a test can hand it a map. */
@@ -28,7 +30,21 @@ function isTime(v: unknown): v is number {
     return typeof v === "number" && Number.isFinite(v);
 }
 
-// What localStorage hands back: anything. A map whose seededAt reads is kept, each opened time that is a number with it.
+// the entries of `src` whose value is a time
+function timesOf(src: unknown): Record<string, number> {
+    const out: Record<string, number> = {};
+    if (src != null && typeof src === "object") {
+        for (const [id, t] of Object.entries(src)) {
+            if (isTime(t)) {
+                out[id] = t;
+            }
+        }
+    }
+    return out;
+}
+
+// What localStorage hands back: anything. A map whose seededAt reads is kept, each opened (and closed) time that is a
+// number with it.
 function parseOpened(raw: string | null): CouncilOpenedMap | null {
     if (raw == null) {
         return null;
@@ -42,16 +58,15 @@ function parseOpened(raw: string | null): CouncilOpenedMap | null {
     if (v == null || typeof v !== "object" || !isTime((v as CouncilOpenedMap).seededAt)) {
         return null;
     }
-    const opened: Record<string, number> = {};
-    const src = (v as { opened?: unknown }).opened;
-    if (src != null && typeof src === "object") {
-        for (const [id, t] of Object.entries(src)) {
-            if (isTime(t)) {
-                opened[id] = t;
-            }
-        }
+    const map: CouncilOpenedMap = {
+        seededAt: (v as CouncilOpenedMap).seededAt,
+        opened: timesOf((v as { opened?: unknown }).opened),
+    };
+    const closed = timesOf((v as { closed?: unknown }).closed);
+    if (Object.keys(closed).length > 0) {
+        map.closed = closed;
     }
-    return { seededAt: (v as CouncilOpenedMap).seededAt, opened };
+    return map;
 }
 
 /** Write the map to `store`; a failure logs and is otherwise ignored (the map stays in memory). */
@@ -106,7 +121,22 @@ export function isUnreadCouncil(
 
 /** Pure: the map with council `id` opened at `now`. */
 export function markOpened(map: CouncilOpenedMap, id: string, now: number): CouncilOpenedMap {
-    return { seededAt: map.seededAt, opened: { ...map.opened, [id]: now } };
+    return { ...map, opened: { ...map.opened, [id]: now } };
+}
+
+/** Pure: whether the person closed council `c` since it last ended: it has ended (not running, waiting on the person
+ *  or queued) and was closed at or after its end. A council closed, then run again, is not closed once it ends anew. */
+export function isClosedCouncil(
+    c: Pick<Council, "id" | "state" | "summary" | "updated">,
+    map: CouncilOpenedMap
+): boolean {
+    const at = map.closed?.[c.id];
+    return at != null && !NOT_ENDED.has(c.state) && at >= endedAt(c);
+}
+
+/** Pure: the map with council `id` closed at `now`, and opened then too, so closing it also reads it. */
+export function markClosed(map: CouncilOpenedMap, id: string, now: number): CouncilOpenedMap {
+    return { ...markOpened(map, id, now), closed: { ...map.closed, [id]: now } };
 }
 
 // the browser's store, or none where the page has none (a test, or a hardened profile that throws on the property read)
@@ -132,4 +162,9 @@ export function saveOpenedMap(map: CouncilOpenedMap): void {
 /** Mark council `id` opened now, and persist the map. */
 export function markCouncilOpened(id: string, now = Date.now()): void {
     saveOpenedMap(markOpened(globalStore.get(councilOpenedAtom), id, now));
+}
+
+/** Close council `id` now (it leaves the Agent tree; Councils keeps it), and persist the map. */
+export function closeCouncil(id: string, now = Date.now()): void {
+    saveOpenedMap(markClosed(globalStore.get(councilOpenedAtom), id, now));
 }

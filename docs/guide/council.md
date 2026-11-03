@@ -235,12 +235,16 @@ dòng "See who agrees with which idea in Map" mở nó.
 ## Ghim, xóa
 
 - **Pin** ở đầu Discussion và trên thanh tab của báo cáo **ghim** council, ở bất kỳ trạng thái nào, kể cả đang chạy: nút
-  đổi thành **Pinned**, và council nằm trên cùng trong project của nó ở cây Agent. Bấm **Pinned** để bỏ ghim. Hover một
-  hàng council trong cây (hay chuột phải) cũng có **Pin**, hay **Unpin** trên council đã ghim. Chỉ bạn ghim và bỏ ghim:
+  đổi thành **Pinned**, và council nằm trên cùng trong project của nó ở cây Agent. Bấm **Pinned** để bỏ ghim. Ngoài ra
+  chỉ ghim được từ **Councils** và từ History của Overview project (mở một hàng council, hay chuột phải): cây không có
+  nút Pin. Chỉ bạn ghim và bỏ ghim:
   Retry, Summarize again hay một câu trả lời mới không đụng tới.
 - Cây chỉ giữ những council đang chạy, đang chờ bạn hay đang xếp hàng; council đã ghim; council kết thúc chưa tới một
   ngày; và council đã kết thúc mà bạn chưa mở. Một council đã kết thúc, không ghim, quá một ngày thì tự rời cây; bỏ ghim
   một council như thế là nó rời cây ngay.
+- **Close** (hover một council đã kết thúc và không ghim, hay chuột phải) đưa nó ra khỏi cây ngay, không
+  phải chờ một ngày, và không xóa gì: **Councils** vẫn giữ nó. Nếu council đó chạy lại (một câu hỏi tiếp), nó trở lại
+  cây. Việc Close được nhớ theo máy này, không ghi vào file council.
 - **Councils** ở đầu sidebar liệt kê mọi council: hàng được ghim có dấu ghim, và mỗi hàng có **Pin** / **Unpin** khi
   hover hay chuột phải. Đây là chỗ tìm lại một council đã rời cây.
 - **Remove council…** trong menu chuột phải xóa hẳn: file của council vào `~/.arc/trash`, còn tài liệu nó đã viết vẫn
