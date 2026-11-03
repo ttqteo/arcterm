@@ -1194,7 +1194,7 @@ function SummaryView({ model, c }: { model: AgentsViewModel; c: Council }) {
                         </div>
                         <div className="flex flex-wrap items-start gap-12 pb-[30px]">
                             <div className="flex min-w-0 flex-[1_1_480px] flex-col gap-5">
-                                <h1 className="m-0 text-[24px] font-semibold leading-[1.34] tracking-[-0.018em] text-primary">
+                                <h1 className="m-0 text-title font-semibold leading-[1.4] tracking-[-0.01em] text-secondary">
                                     {c.feature}
                                 </h1>
                                 <AskedCard key={c.id} question={c.question} />
