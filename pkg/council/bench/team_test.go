@@ -330,7 +330,7 @@ func TestTeamPrompt(t *testing.T) {
 
 	for _, want := range []string{
 		"FEATURE-X", "QUESTION-X?", "f1.go, f2.go", "run on leadm", "each role teammate on matem",
-		"This team needs 4: one for each of UX, RAM, Newuser, Skeptic.",
+		"This team needs 4: one for each of Easeofuse, Memorywatcher, Newuser, Bughunter.",
 		"Spawn name: Newuser", roles[0].Brief, roles[3].Brief,
 		"Answer: <one sentence", "## What to do, most important first", "Why: <why it matters, with path:line>", "Disagrees: <who disagrees",
 		"keep at most 5", "you add no findings of your own",
