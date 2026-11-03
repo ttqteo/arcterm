@@ -274,6 +274,7 @@ function headStatus(
     members: RunMember[],
     live: boolean,
     dag: TaskGroup | undefined,
+    runStatus: string | undefined,
     lastactivets: number,
     now: number
 ): Status {
@@ -292,7 +293,8 @@ function headStatus(
     if (running > 0) {
         return { key: "running", text: `${running} running` };
     }
-    if (dag?.status === "cancelled") {
+    // a done run's cancelled dag is the dag the engine closed when the run ended (endedRunSettles), not a cancel
+    if (dag?.status === "cancelled" && runStatus !== "done") {
         return { key: "muted", text: "cancelled" };
     }
     if (live) {
@@ -359,7 +361,7 @@ export function runView(input: RunViewInput): RunView {
         plan: basename(dag?.planpath),
         runtime: run?.runtime || lead?.runtime || "claude",
         live: group.live,
-        head: headStatus(members, group.live, dag, group.lastactivets, now),
+        head: headStatus(members, group.live, dag, run?.status, group.lastactivets, now),
         complete: runComplete({ dag, status: run?.status, land: run?.land }),
         segs: taskMembers.map((m) => m.status.key),
         landed: taskMembers.filter((m) => m.status.key === "done").length,

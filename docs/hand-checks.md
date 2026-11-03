@@ -23,6 +23,12 @@ does not, say what you saw and it becomes a bug row under Actionable.
   comes to you as a Plan review ask. Unit tests only (`pkg/orchestrate/planreview.go`, `pkg/jarvis/leadprompt.go`,
   3520d3a3f); no live run yet.
 
+- [ ] (arcterm) A done run's closed dag reads done, not cancelled: `wsh runs show 40deb36e` and `c06ba9cb` print
+  `status=closed (the run ended done)`; in Conversations, run 40deb36e's group head and a brainstorm whose Run step
+  points at a landed run with a failed task do not read cancelled. Unit tests only (`sessionsruns.ts`,
+  `brainstormrunmodel.ts`, `wshcmd-runs.go`); the app was not opened, and the installed wsh still prints the old line
+  until the next build.
+
 - [ ] (arcterm) A merge's Verify no longer typechecks: in the same run, `wsh runs show` → each merge's Verify output
   has no tsc step, and a merge that changed only TS files verifies in about a minute instead of 3 to 9; the final
   stage's Verify does run tsc. Unit tests and one scoped run by hand only (`scripts/verify.mjs`, b47694219).

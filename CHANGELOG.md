@@ -52,6 +52,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A run that finished and landed with one task still failed no longer reads Cancelled in its Conversations group or a brainstorm's Run step, and `wsh runs show` says its plan was closed when the run ended instead of `status=cancelled`.
 - Deleting a session you just closed now says it was written to seconds ago and how long to wait, instead of "still running … stop it first"; a session a tab still holds says so on its own.
 - A council question that names an `.astro`, `.vue` or `.svelte` file turns on Let them read files by itself, like any other source file.
 - A council file synced in from another machine shows in the tree and in Councils on its own, without waiting for another council to change.

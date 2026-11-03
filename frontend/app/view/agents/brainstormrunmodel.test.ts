@@ -146,6 +146,15 @@ describe("runStepView", () => {
         expect(at({ done: 3, total: 10, status: "cancelled" }).tree).toBe("cancelled");
         expect(at({ done: 0, total: 0, status: "planning" }).tree).toBe("planning");
     });
+
+    it("reads a landed run whose leftover dag the engine closed as merged, not cancelled", () => {
+        const run = runOf(BLOCKED_ID, { done: 9, total: 10, status: "done", land: { state: "landed" } });
+        run.dag = { ...run.dag, status: "cancelled" } as TaskGroup;
+        expect(runStepView(BLOCKED_ID, run, true).state).toBe("merged");
+        const cancelled = runOf(BLOCKED_ID, { done: 3, total: 10 });
+        cancelled.dag = { ...cancelled.dag, status: "cancelled" } as TaskGroup;
+        expect(runStepView(BLOCKED_ID, cancelled, true).state).toBe("cancelled");
+    });
 });
 
 describe("runTreeText", () => {
