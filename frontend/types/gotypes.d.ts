@@ -2671,6 +2671,8 @@ declare global {
         reason?: string;
         failed?: boolean;
         autotools?: boolean;
+    };
+
     // council.CouncilRun
     type CouncilRun = {
         command: string;
