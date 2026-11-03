@@ -28,14 +28,28 @@ type JudgeFunc func(ctx context.Context, c Case, report *council.Council) (Verdi
 // RemindFunc adds the re-measure reminder a full bench ends with.
 type RemindFunc func(ctx context.Context) error
 
-// Run runs the plan opts picks over the cases in dataDir, one council at a time: it builds the item's council, starts
-// it, waits for its end, judges a done one, appends its row to the results file and goes on to the next. Councils never
-// overlap, so a council the start queued behind the person's own is waited on, and nothing else starts meanwhile.
+// Funcs are the calls a bench makes: the real ones in wavesrv, fakes in a test. Start, Wait and Judge run a council
+// variant; Team runs the team variant (a nil Team makes every team item a failed row); Remind may be nil.
+type Funcs struct {
+	Start  StartFunc
+	Wait   WaitFunc
+	Judge  JudgeFunc
+	Remind RemindFunc
+	Team   TeamFunc
+}
+
+// Run runs the plan opts picks over the cases in dataDir, one item at a time: a council variant builds its council,
+// starts it, waits for its end; the team variant runs its team; a done one is judged, its row appended to the results
+// file, and the next item follows. Items never overlap, so a council the start queued behind the person's own is waited
+// on, and nothing else starts meanwhile.
 //
-// A case whose project folder or key is gone is skipped with a log line (LoadCases). A council that fails or is stopped
-// still gets its row, with its state and spend and no scores. When opts.Cases is empty and every item has run, remind is
-// called once. Run returns early, without it, when ctx ends or the results file cannot be written.
-func Run(ctx context.Context, dataDir string, opts Options, start StartFunc, wait WaitFunc, judge JudgeFunc, remind RemindFunc) error {
+// A case whose project folder or key is gone is skipped with a log line (LoadCases). An item that fails or is stopped
+// still gets its row, with its state and spend and no scores. Before each item Run sums the tokens of the rows it has
+// written (the judge's calls too); at opts.Cap (TokenCap when 0) or past it nothing more starts, one log line says what
+// was spent and how many items did not run, and Run returns nil without the reminder: an item already running is never
+// cut short by the cap. When opts.Cases is empty and every item has run, Remind is called once. Run returns early,
+// without it, when ctx ends or the results file cannot be written.
+func Run(ctx context.Context, dataDir string, opts Options, f Funcs) error {
 	cases, warnings, err := LoadCases(dataDir)
 	if err != nil {
 		return err
@@ -54,23 +68,33 @@ func Run(ctx context.Context, dataDir string, opts Options, start StartFunc, wai
 	for _, c := range cases {
 		byId[c.Id] = c
 	}
+	limit := opts.Cap
+	if limit == 0 {
+		limit = TokenCap
+	}
 
-	for _, item := range items {
+	var spent int64
+	for i, item := range items {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		row, err := runItem(ctx, byId[item.Case], item, start, wait, judge)
+		if spent >= limit {
+			log.Printf("[council-bench] the token cap is reached: %d tokens spent of %d, %d of %d items not run", spent, limit, len(items)-i, len(items))
+			return nil
+		}
+		row, err := runItem(ctx, byId[item.Case], item, f)
 		if err != nil {
 			return err
 		}
 		if err := AppendResult(dataDir, row); err != nil {
 			return fmt.Errorf("saving the bench result for %s: %w", itemName(item), err)
 		}
+		spent += row.Tokens + row.JudgeTokens
 		log.Printf("[council-bench] %s: %s", itemName(item), describeRow(row))
 	}
 
-	if len(opts.Cases) == 0 && remind != nil {
-		if err := remind(ctx); err != nil {
+	if len(opts.Cases) == 0 && f.Remind != nil {
+		if err := f.Remind(ctx); err != nil {
 			return fmt.Errorf("the bench finished and its results are saved, but its re-measure reminder was not added: %w", err)
 		}
 	}
@@ -88,20 +112,58 @@ func describeRow(r CouncilBenchResult) string {
 	return fmt.Sprintf("done, recall %d/%d", r.Recall, r.Keys)
 }
 
-// runItem is one council of the plan, as a row. Its error is ctx's, the one thing that stops the bench: every other
-// failure becomes a failed row, because a council that did not finish is a result, and one case's trouble must not end
+// runItem is one item of the plan, as a row. Its error is ctx's, the one thing that stops the bench: every other
+// failure becomes a failed row, because an item that did not finish is a result, and one case's trouble must not end
 // the bench for the rest.
-func runItem(ctx context.Context, c Case, item CouncilBenchPlanItem, start StartFunc, wait WaitFunc, judge JudgeFunc) (CouncilBenchResult, error) {
-	name := itemName(item)
-	// a council that never began has no harness version of its own: it is the one this binary runs
+func runItem(ctx context.Context, c Case, item CouncilBenchPlanItem, f Funcs) (CouncilBenchResult, error) {
+	// an item that never began has no harness version of its own: it is the one this binary runs
 	row := CouncilBenchResult{Harness: council.HarnessVersion, Case: item.Case, Variant: item.Variant, Run: item.Run, State: string(council.StateFailed)}
+	if item.Variant == VariantTeam {
+		return runTeamItem(ctx, c, item, f, row)
+	}
+	return runCouncilItem(ctx, c, item, f, row)
+}
 
+// runTeamItem is a team item as a row. A nil f.Team and an outcome that is not done are rows with no scores (the
+// outcome's state, failed when it names none); a done one is judged on its report, wrapped as the council the Judge
+// reads. Like a start's, TeamFunc's error ends the bench only when it is ctx's.
+func runTeamItem(ctx context.Context, c Case, item CouncilBenchPlanItem, f Funcs, row CouncilBenchResult) (CouncilBenchResult, error) {
+	name := itemName(item)
+	if f.Team == nil {
+		log.Printf("[council-bench] %s not run: the bench has no team runner", name)
+		return row, nil
+	}
+	out, err := f.Team(ctx, c)
+	if err != nil {
+		if ctx.Err() != nil {
+			return row, ctx.Err()
+		}
+		log.Printf("[council-bench] %s not run: %v", name, err)
+		return row, nil
+	}
+	row.Council = out.Session
+	row.Tokens = out.Tokens
+	row.Minutes = out.Minutes
+	row.Messages = out.Messages
+	if out.State != "" {
+		row.State = out.State
+	}
+	if out.State != TeamDone {
+		return row, nil
+	}
+	err = judgeRow(ctx, f, c, name, &council.Council{Id: out.Session, Mode: c.Mode, Summary: out.Summary}, &row)
+	return row, err
+}
+
+// runCouncilItem is a solo or council item as a row: its council built, started and waited on, then judged when done.
+func runCouncilItem(ctx context.Context, c Case, item CouncilBenchPlanItem, f Funcs, row CouncilBenchResult) (CouncilBenchResult, error) {
+	name := itemName(item)
 	bc, err := benchCouncil(c, item.Variant)
 	if err != nil {
 		log.Printf("[council-bench] %s not run: %v", name, err)
 		return row, nil
 	}
-	started, err := start(ctx, bc)
+	started, err := f.Start(ctx, bc)
 	if err != nil {
 		if ctx.Err() != nil {
 			return row, ctx.Err()
@@ -111,7 +173,7 @@ func runItem(ctx context.Context, c Case, item CouncilBenchPlanItem, start Start
 	}
 	row.Council = started.Id
 
-	ended, err := wait(ctx, started.Id)
+	ended, err := f.Wait(ctx, started.Id)
 	if err != nil && ctx.Err() != nil {
 		return row, ctx.Err()
 	}
@@ -138,21 +200,29 @@ func runItem(ctx context.Context, c Case, item CouncilBenchPlanItem, start Start
 		return row, nil
 	}
 
-	verdict, err := judge(ctx, c, ended)
+	err = judgeRow(ctx, f, c, name, ended, &row)
+	return row, err
+}
+
+// judgeRow judges a done item's report and puts the verdict's scores in its row, with what the judge's call spent (the
+// bench's cap counts it). A judge that fails leaves the row failed with no scores: done but unscored is not a result to
+// read as done with nothing found. Its error is ctx's.
+func judgeRow(ctx context.Context, f Funcs, c Case, name string, report *council.Council, row *CouncilBenchResult) error {
+	verdict, err := f.Judge(ctx, c, report)
+	row.JudgeTokens = verdict.Tokens // spent whether or not the reply could be read
 	if err != nil {
 		if ctx.Err() != nil {
-			return row, ctx.Err()
+			return ctx.Err()
 		}
-		// done but unscored is not a result to read as done with nothing found
-		log.Printf("[council-bench] %s: judging council %s failed: %v", name, ended.Id, err)
+		log.Printf("[council-bench] %s: judging report %s failed: %v", name, report.Id, err)
 		row.State = string(council.StateFailed)
-		return row, nil
+		return nil
 	}
 	row.Keys = len(c.KeyLines)
 	row.Recall = verdict.Recall()
 	row.Kept = verdict.KeptMatched()
 	row.Wrong = verdict.Wrong()
-	return row, nil
+	return nil
 }
 
 // benchCouncil is the council a plan item starts: the case's project, files and question, on the variant's panel. It is

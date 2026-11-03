@@ -28,22 +28,37 @@ const BenchDir = "council-bench"
 const CasesFile = "cases.json"
 
 // The variants. A variant is a way of running a case: solo is one agent (Phase 0's V0, the case's solo_group), council
-// is today's harness (V2, the case's group). A new variant is one more name in variantTokens and one more branch in
-// the run, nothing else.
+// is today's harness (V2, the case's group), team is a Claude Code agent team with the council's roles (V3). A new
+// variant is one more name in variantTokens and variantOrder and one more branch in the run, nothing else.
 const (
 	VariantSolo    = "solo"
 	VariantCouncil = "council"
+	VariantTeam    = "team"
 )
 
-// Phase 0's measured cost of one run of a case, in pkg/consult's token count: solo came to 0.54M, a council to 1.4M.
-// `wsh council estimate` reads low (a flat 0.3M for solo), so the plan prices from these.
+// TeamPassTag marks the cases built for the pass that weighs the council against an agent team; the verdict reads only
+// the cases that carry it.
+const TeamPassTag = "team-bench-2026-11"
+
+// TokenCap is the most a bench spends when Options.Cap names none: it starts no new item once its rows' tokens (judge
+// calls included) reach it. An item already running when the cap is reached finishes.
+const TokenCap int64 = 50_000_000
+
+// The cost of one run of a case, in pkg/consult's token count, from Phase 0b's measured means (docs/council-phase0.md):
+// solo 2.3M (V0), council 8.8M (V2) and team 4.5M (V3). The council's mean is pulled up by one 17.5M run; its median is
+// 4.4M. `wsh council estimate` reads low (a flat 0.3M for solo), so the plan prices from these.
 var variantTokens = map[string]int64{
-	VariantSolo:    550_000,
-	VariantCouncil: 1_400_000,
+	VariantSolo:    2_300_000,
+	VariantCouncil: 8_800_000,
+	VariantTeam:    4_500_000,
 }
 
-// AllVariants are the variants a bench runs when none is named, in the order they run.
-func AllVariants() []string { return []string{VariantSolo, VariantCouncil} }
+// variantOrder is every variant a plan accepts, in the order a results table lists them.
+var variantOrder = []string{VariantSolo, VariantCouncil, VariantTeam}
+
+// AllVariants are the variants a bench runs when none is named, in the order they run: the council, then the team it is
+// weighed against. Solo stays runnable when named in Options.Variants.
+func AllVariants() []string { return []string{VariantCouncil, VariantTeam} }
 
 // KeyLine is one line of a case's answer key: the id the judge answers with (K1) and what the line says.
 type KeyLine struct {
@@ -60,8 +75,10 @@ type Case struct {
 	SoloGroup string `json:"solo_group"` // the one-agent panel of the solo variant
 	Feature   string `json:"feature"`
 	Question  string `json:"question"`
-	Files     string `json:"files"` // comma-separated, as `wsh council start --files` takes them
-	Key       string `json:"key"`   // the key file's path
+	Files     string `json:"files"`             // comma-separated, as `wsh council start --files` takes them
+	Key       string `json:"key"`               // the key file's path
+	Retired   bool   `json:"retired,omitempty"` // set aside: a bare bench skips it, one that names it with Options.Cases runs it
+	Tag       string `json:"tag,omitempty"`     // names the pass the case was built for (TeamPassTag)
 
 	KeyLines []KeyLine `json:"-"`
 }
@@ -104,7 +121,7 @@ func LoadCases(dataDir string) ([]Case, []string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil, fmt.Errorf("no benchmark cases at %s; Phase 0b's tasks 1–2 build them: %w", path, err)
+			return nil, nil, fmt.Errorf("no benchmark cases at %s; scripts/council-bench-cases.mjs builds them: %w", path, err)
 		}
 		return nil, nil, fmt.Errorf("reading %s: %w", path, err)
 	}
@@ -163,11 +180,13 @@ func caseName(c Case, i int) string {
 	return fmt.Sprintf("#%d", i+1)
 }
 
-// Options picks what a bench runs. Empty Cases means every case, empty Variants all of AllVariants, and Runs 0 reads as 1.
+// Options picks what a bench runs. Empty Cases means every case that is not retired, empty Variants all of AllVariants,
+// Runs 0 reads as 1 and Cap 0 reads as TokenCap.
 type Options struct {
 	Cases    []string
 	Variants []string
 	Runs     int
+	Cap      int64
 }
 
 // CouncilBenchPlanItem is one run of the plan: a case, a variant and which run of that pair this is (from 1). It
@@ -178,19 +197,28 @@ type CouncilBenchPlanItem struct {
 	Run     int    `json:"run"`
 }
 
-// Plan lists the runs in order, case by case, each case's variants in turn, each variant's runs in turn, and the sum
-// of their token estimates. A case or variant name that is not known is an error; a name given twice counts once.
+// Plan lists the runs in order, run by run: run 1 of every case and variant before any run 2, each run's cases in turn and
+// each case's variants in turn, so a case's council and team are back to back and a bench cut short leaves whole pairs.
+// It also returns the sum of the items' token estimates. A retired case is left out unless opts.Cases names it. A case or
+// variant name that is not known is an error; a name given twice counts once.
 func Plan(cases []Case, opts Options) ([]CouncilBenchPlanItem, int64, error) {
 	if opts.Runs < 0 {
 		return nil, 0, fmt.Errorf("runs must be 1 or more, got %d", opts.Runs)
 	}
+	if opts.Cap < 0 {
+		return nil, 0, fmt.Errorf("the token cap must be 0 (the default) or more, got %d", opts.Cap)
+	}
 	runs := max(opts.Runs, 1)
 
 	ids := make([]string, len(cases))
+	var current []string // the cases a bare plan runs
 	for i, c := range cases {
 		ids[i] = c.Id
+		if !c.Retired {
+			current = append(current, c.Id)
+		}
 	}
-	selected := ids
+	selected := current
 	if len(opts.Cases) > 0 {
 		selected = nil
 		for _, name := range dedupe(opts.Cases) {
@@ -205,7 +233,7 @@ func Plan(cases []Case, opts Options) ([]CouncilBenchPlanItem, int64, error) {
 		variants = nil
 		for _, name := range dedupe(opts.Variants) {
 			if _, ok := variantTokens[name]; !ok {
-				return nil, 0, fmt.Errorf("unknown variant %q (variants: %s)", name, strings.Join(AllVariants(), ", "))
+				return nil, 0, fmt.Errorf("unknown variant %q (variants: %s)", name, strings.Join(variantOrder, ", "))
 			}
 			variants = append(variants, name)
 		}
@@ -213,9 +241,9 @@ func Plan(cases []Case, opts Options) ([]CouncilBenchPlanItem, int64, error) {
 
 	var items []CouncilBenchPlanItem
 	var estimate int64
-	for _, id := range selected {
-		for _, v := range variants {
-			for r := 1; r <= runs; r++ {
+	for r := 1; r <= runs; r++ {
+		for _, id := range selected {
+			for _, v := range variants {
 				items = append(items, CouncilBenchPlanItem{Case: id, Variant: v, Run: r})
 				estimate += variantTokens[v]
 			}

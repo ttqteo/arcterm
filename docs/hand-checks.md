@@ -513,15 +513,14 @@ does not, say what you saw and it becomes a bug row under Actionable.
   checked); Save as doc (in the ⋯ menu) writes `docs/council/YYYY-MM-DD-<feature>.md` and shows the path; Create initiative makes one
   chunk per direction; Ask the experts again opens that direction's thread; a reply after the summary marks the
   Summary `Outdated · N replies since` and Summarize again clears it. `frontend/app/view/agents/councilsummary.tsx`.
-- [ ] (arcterm) Council benchmark, a smoke check (the tests own the logic): Phase 0b built the cases in this machine's
-  data dir (bare `wsh council bench` would also run the dropped agents-bugs), so run `wsh council bench --case
-  newcomer` on the installed app and allow the Token burn card. It starts at once
-  and the councils run one at a time, with no row, toast or dot in the app and no `docs/council/` file in the case's
-  project. When it ends, `wsh council bench results` shows the row (council and solo, under the harness version); the
-  judge's matches agree with the newcomer key read by hand (the spec's spot check); and `Council benchmark` gained no
-  chunk (a single case adds no reminder; only a bench with no `--case` moves its re-measure chunk). Refuse the card
-  once: it prints `Not run: …` and nothing is saved. `cmd/wsh/cmd/wshcmd-council.go`, `pkg/council/bench`; spec
-  `docs/superpowers/specs/2026-10-22-council-agent-team-design.md` ("Benchmark").
+- [ ] (arcterm) Council bench, council against a Claude Code agent team: on the installed app run `wsh council bench`
+  (no flags: the two `team-bench-2026-11` cases, council and team, twice each; the four 0b cases are retired) and
+  allow the Token burn card. The plan line reads `8 runs (4 council, 4 team) over 2 cases` and the runs go one at a
+  time, with no row, toast or dot in the app. A team cell runs `claude -p` on a temp copy of the case and leaves no
+  folder behind; one that read the key or worked alone is a failed row. The estimate (~53.2M) is above the 50M cap,
+  so the last cell may be cut. `wsh council bench results` then shows the rows and `verdict: go | no-go | not
+  decided: <reason>`. `pkg/council/bench`, `cmd/wsh/cmd/wshcmd-council.go`; spec
+  `docs/superpowers/specs/2026-11-03-council-bench-team-design.md`.
 - [ ] (arcterm) Council "Was this useful?": on a real finished council's report, click Useful: the row turns into a
   thanks line with Change. Click Change and answer Not really. `wsh council bench results` then counts that council
   once, as not really, in the ratings table under its harness version and mode (the file keeps both answers; only the
