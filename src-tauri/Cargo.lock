@@ -4289,7 +4289,7 @@ dependencies = [
 
 [[package]]
 name = "wave-tauri"
-version = "0.15.20"
+version = "0.15.21"
 dependencies = [
  "block2",
  "chrono",
