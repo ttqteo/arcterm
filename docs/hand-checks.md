@@ -6,6 +6,10 @@ no build here compiled). Split out of `docs/open-issues.md` on 2026-11-03; that 
 Each line: what to do, what you should see, where, and the commit. Tick it when it holds, then remove it; when it
 does not, say what you saw and it becomes a bug row under Actionable.
 
+- [ ] (arcterm) Zoom is kept: press Ctrl+= twice, quit arcterm and open it again, then install a new build over it →
+  the app opens at 120% both times; Ctrl+0 → 100%, and it stays 100% after the next restart. The factor is saved in
+  localStorage `cockpit.zoom` (`frontend/tauri/chrome.ts` `restoreZoom`, run from `installChromeListeners` at boot).
+
 - [ ] (arcterm) Float keeps its size on a Mac: float a terminal, leave Float, float again a few times, then fold into
   Sprout from Float and restore → the Float window is the same size each time, and Full (not maximized) comes back at
   the size it left. The float's frames now read the window's inner size (`floatstore.ts` `shadowedFrameOf`), taken on

@@ -22,10 +22,33 @@ export function getZoomFactor(): number {
 export function onZoomFactorChange(cb: (f: number) => void) {
     zoomSubs.push(cb);
 }
+// the zoom is kept in localStorage like the theme (themestore.ts), so it survives a restart and a reinstall.
+const ZoomStorageKey = "cockpit.zoom";
+function saveZoom(f: number) {
+    try {
+        globalThis.localStorage?.setItem(ZoomStorageKey, String(f));
+    } catch {
+        // storage blocked: the zoom still applies, it just is not kept
+    }
+}
+function loadSavedZoom(): number | null {
+    try {
+        const f = Number(globalThis.localStorage?.getItem(ZoomStorageKey));
+        return Number.isFinite(f) && f >= MinZoom && f <= MaxZoom ? f : null;
+    } catch {
+        return null;
+    }
+}
 function applyZoom(f: number) {
     zoomFactor = Math.min(MaxZoom, Math.max(MinZoom, Math.round(f * 100) / 100));
     getCurrentWebview().setZoom(zoomFactor).catch(noop);
+    saveZoom(zoomFactor);
     for (const cb of zoomSubs) cb(zoomFactor);
+}
+// applies the saved zoom at boot; a missing or bad value leaves the webview at 1.
+export function restoreZoom() {
+    const f = loadSavedZoom();
+    if (f != null && f !== 1) applyZoom(f);
 }
 export function zoomIn() {
     applyZoom(zoomFactor + ZoomDelta);
@@ -71,6 +94,7 @@ export function applyKeyToCtrlShift(e: { type: string; ctrl: boolean; shift: boo
 
 // DOM wiring (verified by observe-gates, not unit tests). Called once at boot from main.tsx.
 export function installChromeListeners() {
+    restoreZoom();
     // macOS enters fullscreen from the green traffic light and the View menu too, never through F11;
     // every route resizes the window, so the resize is what keeps the state current.
     const win = getCurrentWindow();

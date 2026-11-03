@@ -38,6 +38,39 @@ describe("zoom controller", () => {
     });
 });
 
+describe("zoom persistence", () => {
+    const store = new Map<string, string>();
+    beforeEach(() => {
+        store.clear();
+        vi.stubGlobal("localStorage", {
+            getItem: (k: string) => store.get(k) ?? null,
+            setItem: (k: string, v: string) => void store.set(k, v),
+        });
+    });
+    it("saves each change and restores it in a fresh module", async () => {
+        chrome.zoomIn();
+        chrome.zoomIn();
+        expect(store.get("cockpit.zoom")).toBe("1.2");
+        vi.resetModules();
+        h.setZoom.mockClear();
+        const fresh = await import("./chrome");
+        expect(fresh.getZoomFactor()).toBe(1);
+        fresh.restoreZoom();
+        expect(fresh.getZoomFactor()).toBeCloseTo(1.2);
+        expect(h.setZoom).toHaveBeenCalledWith(expect.closeTo(1.2));
+    });
+    it("ignores a missing, out-of-range or garbage value", () => {
+        for (const v of [undefined, "9", "abc"]) {
+            if (v == null) store.delete("cockpit.zoom");
+            else store.set("cockpit.zoom", v);
+            h.setZoom.mockClear();
+            chrome.restoreZoom();
+            expect(chrome.getZoomFactor()).toBe(1);
+            expect(h.setZoom).not.toHaveBeenCalled();
+        }
+    });
+});
+
 describe("fullscreen toggle", () => {
     it("toggles from the current state and notifies", async () => {
         const cb = vi.fn();
