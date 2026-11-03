@@ -28,7 +28,7 @@ import {
     ThumbsUp,
     type LucideIcon,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import type { AgentsViewModel } from "./agents";
 import { CouncilAvatar, MarkedText } from "./councilchat";
 import { stepChip } from "./councilchatmodel";
@@ -537,11 +537,83 @@ function IdeaRow({
     );
 }
 
+function MatrixCols({ seats }: { seats: CouncilExpert[] }) {
+    return (
+        <colgroup>
+            <col style={{ width: IDEA_COL }} />
+            {seats.map((e) => (
+                <col key={e.id} style={{ width: SEAT_COL }} />
+            ))}
+            <col style={{ width: AGREEMENT_COL }} />
+            <col style={{ width: OUTCOME_COL }} />
+        </colgroup>
+    );
+}
+
+// the matrix's column heads. Drawn twice: once as the visible header that sticks to the top of the page while the rows
+// scroll (`shown`, which carries the data-council-map-* marks), and once hidden inside the rows' own table, so a screen
+// reader still reads each cell under its column
+function MatrixHead({
+    c,
+    seats,
+    words,
+    shown,
+}: {
+    c: Council;
+    seats: CouncilExpert[];
+    words: MapWords;
+    shown: boolean;
+}) {
+    return (
+        <thead className={shown ? undefined : "sr-only"}>
+            <tr>
+                <th scope="col" className={cn("bg-surface px-3 py-[9px] text-[12px] font-medium text-muted", STICKY)}>
+                    {words.headIdea}
+                </th>
+                {seats.map((e) => (
+                    <th
+                        key={e.id}
+                        scope="col"
+                        data-council-map-head={shown ? e.id : undefined}
+                        className="bg-surface px-[6px] py-[9px] text-center text-[12px] font-medium text-secondary"
+                    >
+                        <span className="inline-flex items-center gap-[6px] text-left">
+                            <CouncilAvatar
+                                small
+                                tone={avatarTone(c, e.id)}
+                                name={e.name}
+                                initials={seatInitials(c, e.id)}
+                            />
+                            <span data-council-map-head-name={shown ? "" : undefined} className="min-w-0 break-words">
+                                {e.name}
+                            </span>
+                        </span>
+                    </th>
+                ))}
+                <th scope="col" className="bg-surface px-3 py-[9px] text-[12px] font-medium text-muted">
+                    {words.headAgreement}
+                </th>
+                <th scope="col" className="bg-surface px-3 py-[9px] text-[12px] font-medium text-muted">
+                    {words.headOutcome}
+                </th>
+            </tr>
+        </thead>
+    );
+}
+
 function Matrix({ c, rows, words }: { c: Council; rows: MatrixRow[]; words: MapWords }) {
     const [openId, setOpenId] = useAtom(councilMapOpenAtom(c.id));
     const seats = panel(c);
     const minWidth = IDEA_COL + seats.length * SEAT_COL + AGREEMENT_COL + OUTCOME_COL;
     const revisedShown = rows.some((row) => row.cells.some((cell) => cell.note !== ""));
+    // the header sits outside the rows' box (a box that scrolls sideways can't let a head stick to the page's top), so it
+    // follows the rows' sideways scroll by hand
+    const headBox = useRef<HTMLDivElement>(null);
+    const followScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        if (headBox.current != null) {
+            headBox.current.scrollLeft = e.currentTarget.scrollLeft;
+        }
+    };
     return (
         <section data-council-map-matrix aria-label={words.matrixTitle} className="flex flex-col gap-[10px]">
             <div className="flex flex-wrap items-baseline gap-x-[10px] gap-y-1">
@@ -559,71 +631,47 @@ function Matrix({ c, rows, words }: { c: Council; rows: MatrixRow[]; words: MapW
                     {words.noIdeas}
                 </p>
             ) : (
-                <div data-council-map-box className="overflow-x-auto rounded-lg border border-edge-mid bg-background">
-                    <table
-                        data-council-map-table
-                        className="w-full table-fixed border-separate border-spacing-0 text-left"
-                        style={{ minWidth }}
+                <div data-council-map-frame>
+                    <div
+                        ref={headBox}
+                        data-council-map-headbox
+                        aria-hidden
+                        className="sticky -top-5 z-[2] overflow-hidden rounded-t-lg border border-edge-mid bg-surface"
                     >
-                        <colgroup>
-                            <col style={{ width: IDEA_COL }} />
-                            {seats.map((e) => (
-                                <col key={e.id} style={{ width: SEAT_COL }} />
-                            ))}
-                            <col style={{ width: AGREEMENT_COL }} />
-                            <col style={{ width: OUTCOME_COL }} />
-                        </colgroup>
-                        <thead>
-                            <tr>
-                                <th
-                                    scope="col"
-                                    className={cn(
-                                        "bg-surface px-3 py-[9px] text-[12px] font-medium text-muted",
-                                        STICKY
-                                    )}
-                                >
-                                    {words.headIdea}
-                                </th>
-                                {seats.map((e) => (
-                                    <th
-                                        key={e.id}
-                                        scope="col"
-                                        data-council-map-head={e.id}
-                                        className="bg-surface px-[6px] py-[9px] text-center text-[12px] font-medium text-secondary"
-                                    >
-                                        <span className="inline-flex items-center gap-[6px] text-left">
-                                            <CouncilAvatar
-                                                small
-                                                tone={avatarTone(c, e.id)}
-                                                name={e.name}
-                                                initials={seatInitials(c, e.id)}
-                                            />
-                                            <span data-council-map-head-name className="min-w-0 break-words">
-                                                {e.name}
-                                            </span>
-                                        </span>
-                                    </th>
+                        <table
+                            data-council-map-table
+                            className="w-full table-fixed border-separate border-spacing-0 text-left"
+                            style={{ minWidth }}
+                        >
+                            <MatrixCols seats={seats} />
+                            <MatrixHead c={c} seats={seats} words={words} shown />
+                        </table>
+                    </div>
+                    <div
+                        data-council-map-box
+                        onScroll={followScroll}
+                        className="overflow-x-auto rounded-b-lg border border-t-0 border-edge-mid bg-background"
+                    >
+                        <table
+                            aria-label={words.matrixTitle}
+                            className="w-full table-fixed border-separate border-spacing-0 text-left"
+                            style={{ minWidth }}
+                        >
+                            <MatrixCols seats={seats} />
+                            <MatrixHead c={c} seats={seats} words={words} shown={false} />
+                            <tbody>
+                                {rows.map((row) => (
+                                    <IdeaRow
+                                        key={row.proposal.id}
+                                        row={row}
+                                        open={openId === row.proposal.id}
+                                        onToggle={() => setOpenId(openId === row.proposal.id ? null : row.proposal.id)}
+                                        words={words}
+                                    />
                                 ))}
-                                <th scope="col" className="bg-surface px-3 py-[9px] text-[12px] font-medium text-muted">
-                                    {words.headAgreement}
-                                </th>
-                                <th scope="col" className="bg-surface px-3 py-[9px] text-[12px] font-medium text-muted">
-                                    {words.headOutcome}
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {rows.map((row) => (
-                                <IdeaRow
-                                    key={row.proposal.id}
-                                    row={row}
-                                    open={openId === row.proposal.id}
-                                    onToggle={() => setOpenId(openId === row.proposal.id ? null : row.proposal.id)}
-                                    words={words}
-                                />
-                            ))}
-                        </tbody>
-                    </table>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
             {revisedShown && (
