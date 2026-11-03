@@ -872,12 +872,12 @@ describe("seatChips", () => {
         expect(idea).toMatchObject({ name: "UX audit · t-u", tab: "t-u" });
         expect(seatLink(idea, [{ id: "t-u", task: "Audit the rail's spacing" }])).toEqual({
             tab: "t-u",
-            title: "Audit the rail's spacing · click to open its terminal",
+            title: "Audit the rail's spacing · click to go to it",
             reopen: "",
         });
         expect(seatLink(idea, [{ id: "t-u" }])).toEqual({
             tab: "t-u",
-            title: "Open the terminal of UX audit · t-u",
+            title: "Go to UX audit · t-u",
             reopen: "",
         });
         // a chat whose tab is gone and whose session the council never kept, and a role expert, open nothing
@@ -890,7 +890,7 @@ describe("seatChips", () => {
         // its session reopened in another tab (Resume, Open asleep): that tab opens
         expect(seatLink(seat, [{ id: "t-new", task: "Ideas", transcript: "/s/notes.jsonl" }])).toEqual({
             tab: "t-new",
-            title: "Ideas · click to open its terminal",
+            title: "Ideas · click to go to it",
             reopen: "",
         });
         // open nowhere: a click opens its session again, so Retry finds it there
@@ -913,7 +913,7 @@ describe("seatChips", () => {
         expect(s.witness).toMatchObject({
             agent: true,
             tab: "t-w",
-            title: "Witness synthesis · t-w (live agent). Click to open its terminal.",
+            title: "Witness synthesis · t-w (live agent). Click to go to it.",
         });
         expect(s.sec).toMatchObject({
             agent: false,

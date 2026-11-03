@@ -114,7 +114,7 @@ export function seatLink(
     const task = (chat.task ?? "").trim();
     return {
         tab: chat.id,
-        title: task === "" ? `Open the terminal of ${who.name}` : `${task} · click to open its terminal`,
+        title: task === "" ? `Go to ${who.name}` : `${task} · click to go to it`,
         reopen: "",
     };
 }
@@ -1038,7 +1038,7 @@ function seatKind(e: CouncilExpert): string {
 
 function seatTitle(c: Council, e: CouncilExpert): string {
     if (isAgentSeat(e)) {
-        return `${authorName(c, e.id)} (live agent). Click to open its terminal.`;
+        return `${authorName(c, e.id)} (live agent). Click to go to it.`;
     }
     return e.coordinator ? "Writes the summary at the end." : "Role expert, a fresh session that sees only this chat.";
 }

@@ -28,7 +28,7 @@ import {
     useInteractions,
 } from "@floating-ui/react";
 import { useAtom } from "jotai";
-import { ChevronDown, History, SquareTerminal } from "lucide-react";
+import { Bot, ChevronDown, History } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CouncilAvatar } from "./councilchat";
 import { seatChips, type SeatChip } from "./councilchatmodel";
@@ -292,12 +292,13 @@ function SeatRow({
                 <button
                     type="button"
                     data-council-chip-open={chip.tab}
-                    aria-label={`Open the terminal of ${chip.name}`}
-                    title={`Open the terminal of ${chip.name}`}
+                    aria-label={`Go to ${chip.name}`}
+                    title={`Go to ${chip.name}`}
                     onClick={() => onOpenTerminal(chip.tab)}
                     className="flex h-[28px] w-[28px] flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted outline-none hover:bg-surface-hover hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                    <SquareTerminal size={15} strokeWidth={1.8} aria-hidden />
+                    {/* the agent itself, not a terminal: Bot is the tree's mark for an agent */}
+                    <Bot size={15} strokeWidth={1.8} aria-hidden />
                 </button>
             )}
         </div>

@@ -31,6 +31,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - In a council, a chat seat's chip in your message (`@82faafca`) opens that chat's terminal, as its name on a message does, and the message an answer's quote takes you back to rings for two seconds where it lands.
+- A chat seat's button in a council's Seats list shows the agent mark and reads Go to <name>, where it showed a terminal icon; its name's hover says the same.
 
 ### Fixed
 
