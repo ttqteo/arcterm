@@ -66,6 +66,7 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 
 ### Fixed
 
+- A Claude session begun on another computer and synced over now lists under this computer's copy of its project, in the Overview's History and Activity and in Conversation History, and resumes there, instead of under the other computer's path.
 - A final step that something outside killed holds the land but asks for a rerun, not a fix round, since it judged nothing; a base Check that timed out or was killed no longer lets the run's own Check failures pass as shared.
 - The lead fixes every failing final step, one already failing on the base included, instead of reading the run-finished exemptions into it and leaving the land held.
 - A skip, retry, escalate or stop that cannot finish no longer cancels the whole dag: the task shows failed (worker-stopped), the other workers go on and the lead is woken.

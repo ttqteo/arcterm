@@ -145,6 +145,32 @@ func TestScanRoot_projectIsTheCwdOfItsTranscriptFolder(t *testing.T) {
 	}
 }
 
+// A session begun on another machine and never resumed here (its transcript synced over) has only that machine's
+// cwds, none of which names the folder Claude Code files it under. When the folder's directory exists on this disk,
+// the session belongs to it: that is where it is listed and where it resumes.
+func TestScanRoot_syncedSessionBelongsToItsFolderOnThisDisk(t *testing.T) {
+	project := filepath.Join(t.TempDir(), "notes")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, agentobserve.SlugifyCwd(project))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONL(t, dir, "synced.jsonl",
+		`{"type":"user","cwd":"/d/work/other/notes","message":{"role":"user","content":"begun on the other machine"}}`,
+		`{"type":"user","cwd":"D:\\work\\other\\notes","message":{"role":"user","content":"and only there"}}`,
+	)
+	got := scanProvider(claudeProvider(root), 0, 10)
+	if len(got) != 1 {
+		t.Fatalf("want 1 session, got %d", len(got))
+	}
+	if got[0].ProjectPath != project || got[0].ProjectName != "notes" {
+		t.Errorf("project = %q (%q), want %q (notes)", got[0].ProjectPath, got[0].ProjectName, project)
+	}
+}
+
 func TestScanRoot_skipsFilesWithoutHumanPrompt(t *testing.T) {
 	dir := t.TempDir()
 	// content is an array (a tool result), not a human string prompt

@@ -169,7 +169,8 @@ func claudeSessionFrom(id, folder string, recs []claudeLine) *SessionInfo {
 		}
 		// the project is the cwd the store folder is named for: a session begun on another machine and resumed here
 		// opens on that machine's checkout, but it is filed, and resumes, under this one. The first cwd stands in when
-		// none matches the folder (a slug Claude Code shortened, or no folder known).
+		// none matches the folder (a slug Claude Code shortened, no folder known, or a session never resumed here,
+		// which claudeProvider then files under the folder's directory when this disk has it).
 		if !atHome && rec.Cwd != "" && rec.Cwd != s.ProjectPath {
 			atHome = folder != "" && strings.EqualFold(agentobserve.SlugifyCwd(rec.Cwd), folder)
 			if atHome || s.ProjectPath == "" {
@@ -709,9 +710,17 @@ func claudeProvider(root string) provider {
 		// one shared unmarshal pass for both derivations — claude transcripts dominate the scan cost
 		fused: func(path string, id string, lines []string) (*SessionInfo, sessionEvents) {
 			recs := parseClaudeLines(lines)
-			s := claudeSessionFrom(id, filepath.Base(filepath.Dir(path)), recs)
+			folder := filepath.Base(filepath.Dir(path))
+			s := claudeSessionFrom(id, folder, recs)
 			if s == nil {
 				return nil, sessionEvents{}
+			}
+			// none of its cwds names the folder (begun on another machine, its transcript synced over and never
+			// resumed here): it belongs to the folder's directory when that is on this disk, where it lists and resumes
+			if !strings.EqualFold(agentobserve.SlugifyCwd(s.ProjectPath), folder) {
+				if p, ok := pathOfSlug(folder, runtime.GOOS, map[string][]string{}); ok {
+					s.ProjectPath, s.ProjectName = p, filepath.Base(p)
+				}
 			}
 			return s, claudeEventsFrom(recs)
 		},
