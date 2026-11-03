@@ -18,6 +18,8 @@ export type OpenTarget =
     | { kind: "canvas"; topic: string; board?: string }
     | { kind: "brainstorm"; topic: string }
     | { kind: "memhygiene"; project: string }
+    // a workflow scan's run: its live agent, else the run's own sheet (openref.ts)
+    | { kind: "workflowscan"; runId: string }
     // a council, opened on its Discussion (openref.ts)
     | { kind: "council"; councilId: string };
 
@@ -72,6 +74,8 @@ export function parseAddress(address: string, hint?: AddressHint): OpenTarget | 
                 : { kind: "unsupported", message: CANNOT_OPEN };
         case "council":
             return { kind: "council", councilId: id };
+        case "workflowscan":
+            return { kind: "workflowscan", runId: id };
         default:
             return { kind: "unsupported", message: CANNOT_OPEN };
     }

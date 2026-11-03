@@ -100,6 +100,20 @@ describe("parseAddress", () => {
         });
     });
 
+    describe("workflowscan:", () => {
+        it("reads a scan run's id", () => {
+            expect(parseAddress("workflowscan:r-1")).toEqual({ kind: "workflowscan", runId: "r-1" });
+        });
+
+        it("refuses an empty id", () => {
+            expect(parseAddress("workflowscan:")).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+        });
+
+        it("stays on the two-part rule", () => {
+            expect(parseAddress("workflowscan:a:b")).toEqual({ kind: "unsupported", message: CANNOT_OPEN });
+        });
+    });
+
     describe("brainstorm:", () => {
         it("reads a topic", () => {
             expect(parseAddress("brainstorm:consumer-lag-alerts")).toEqual({
