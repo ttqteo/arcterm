@@ -15,10 +15,16 @@ const (
 	SeatGone     = "gone" // the tab closed or its session ended
 )
 
-// AgentSeatState is what the link knows of a seated agent's tab: its state, and its context size in tokens.
+// AgentSeatState is what the link knows of a seated agent's tab: its state, its context size in tokens, its working
+// directory and the tool line it is on now.
 type AgentSeatState struct {
 	State   string
 	Context int64
+	// Cwd is the agent's working directory, empty when unknown: the citation check reads the seat's cites against it.
+	Cwd string
+	// Activity is the agent's current tool line from the roster ("Read pkg/x/y.go"), empty when it has none: while a turn
+	// waits, each new one is a step of the seat's timeline.
+	Activity string
 }
 
 // AgentLink is the council's view of the live agents, so pkg/council imports nothing from wshserver: wshserver
