@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-    avatarStackLabel,
     avatarTone,
     callBarLabel,
     canContinue,
@@ -489,15 +488,6 @@ describe("isQueued and modeWord", () => {
         expect(modeWord(council())).toBe("Review");
         expect(modeWord(council({ mode: "brainstorm" }))).toBe("Brainstorm");
         expect(modeWord(council({ mode: "debate" }))).toBe("Review");
-    });
-});
-
-describe("avatarStackLabel", () => {
-    it("names the panel and who is writing", () => {
-        expect(avatarStackLabel(council())).toBe("UX, RAM, New user, Skeptic, Coordinator");
-        const busy = council({ activity: { ram: { text: "a" }, sk: { text: "b" } } });
-        expect(avatarStackLabel(busy)).toBe("UX, RAM, New user, Skeptic, Coordinator; RAM and Skeptic are writing");
-        expect(avatarStackLabel(council({ activity: { ux: { text: "a" } } }))).toMatch(/; UX is writing$/);
     });
 });
 

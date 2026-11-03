@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The council Discussion (Main.dc.html, Running.dc.html, Paused.dc.html, M1-discussion-tab.dc.html): a header in one 52px
-// row (the Report / Discussion tabs, the mode, the feature, the step chip, the seats' stack once the chat shows, its
-// list the filters, the cost line, Summarize while there is a summary to make, Stop council, and Pin), and a body that
+// row (the Report / Discussion / Map tabs, the mode, the feature, the step chip, the seats' stack, its list the filters
+// and each seat's timeline, the cost line, Summarize while there is a summary to make, Stop council, and Pin), and a body that
 // depends on where the council is. Once the seats have proposed it is the list of ideas (councilchat.tsx): a Chat row and
 // a row per idea, each opening its thread on the right, for a council that runs its replies or its summary, one that is
 // over, and one that waits on the drafts of its seats; while
-// the experts first read and propose it is each expert's card with what it is reading and the ideas as they arrive; at
+// the experts first read and propose it is each expert's card with what it is reading (a button: it opens that seat's
+// timeline) and the ideas as they arrive; at
 // the pause it is the ticks and the question for the argument; a council the token gate did not run offers Start
 // council, and one that waits for the running council says so. The words are plain ones: no proposal id or stance word
 // is drawn (the wire's stay in the data-council-* attributes). A failed expert shows its error with Retry, a failed
@@ -17,7 +18,7 @@
 
 import { openFileInCode } from "@/app/cockpit/openfilestore";
 import { cn, fireAndForget } from "@/util/util";
-import { atom, useAtom, useAtomValue, type PrimitiveAtom } from "jotai";
+import { atom, useAtom, useAtomValue, useSetAtom, type PrimitiveAtom } from "jotai";
 import { atomFamily, selectAtom } from "jotai/utils";
 import { Check, ListChecks, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -27,19 +28,15 @@ import { useActions, type Actions } from "./councilactions";
 import { CouncilAvatar, CouncilChat } from "./councilchat";
 import { stepChip } from "./councilchatmodel";
 import {
-    avatarStackLabel,
     avatarTone,
     callBarLabel,
     canContinue,
     coordinatorFailure,
     discussionBody,
-    evidenceChip,
     expertCard,
-    expertDoing,
     failedExperts,
     failedWhile,
     headerCost,
-    isLit,
     isQueued,
     keptProposals,
     modeWord,
@@ -51,6 +48,7 @@ import {
     type DiscussionBody,
     type FailedExpert,
 } from "./councildiscussionmodel";
+import { mapWords } from "./councilmapmodel";
 import {
     callSegments,
     canSummarize,
@@ -66,10 +64,12 @@ import { CouncilPinButton } from "./councilpin";
 import { RetryWithButton } from "./councilretrymenu";
 import { CouncilSeats } from "./councilseats";
 import { seatableAgents } from "./councilsetupmodel";
+import { claimOf } from "./councilsources";
 import { EvidenceChips } from "./councilsourcespanel";
 import {
     continueCouncil,
     councilSelAtom,
+    councilTimelineAtom,
     retryExpert,
     startSavedCouncil,
     stopCouncil,
@@ -230,32 +230,6 @@ function ModeChip({ c }: { c: Council }) {
     );
 }
 
-function AvatarStack({ c }: { c: Council }) {
-    const running = c.state === "running";
-    return (
-        <div data-council-avatars role="group" aria-label={avatarStackLabel(c)} className="flex items-center pl-[4px]">
-            {c.experts.map((e) => {
-                const lit = isLit(c, e.id);
-                const failed = c.failed?.[e.id] != null;
-                return (
-                    <CouncilAvatar
-                        key={e.id}
-                        tone={avatarTone(c, e.id)}
-                        name={e.name}
-                        initials={seatInitials(c, e.id)}
-                        dim={running && !lit}
-                        dot={lit ? "working" : failed ? "failed" : null}
-                        title={`${e.name}: ${expertDoing(c, e)}`}
-                        className="-ml-[5px]"
-                        data-council-avatar={e.id}
-                        data-lit={lit ? "true" : "false"}
-                    />
-                );
-            })}
-        </div>
-    );
-}
-
 const SEGMENT: Record<SegmentState, string> = {
     done: "bg-success/45",
     running: "bg-working",
@@ -321,14 +295,10 @@ function Header({
                         {c.feature}
                     </h1>
                     <StatusChip c={c} />
-                    {body !== "chat" && <AvatarStack c={c} />}
                     <div className="min-w-6 flex-1 @max-[900px]:hidden" />
-                    {body === "chat" && (
-                        <>
-                            <CouncilSeats c={c} onOpenTerminal={onOpenTerminal} />
-                            <div aria-hidden className="h-5 w-px flex-none bg-edge-mid @max-[900px]:hidden" />
-                        </>
-                    )}
+                    {/* in every body, round 1's too: a round-1 expert card asks the Seats popover for its seat's timeline */}
+                    <CouncilSeats c={c} onOpenTerminal={onOpenTerminal} />
+                    <div aria-hidden className="h-5 w-px flex-none bg-edge-mid @max-[900px]:hidden" />
                     {c.state !== "not-run" && !isQueued(c) && (
                         <span
                             data-council-cost
@@ -539,15 +509,27 @@ const DOT: Record<CardDot, string> = {
     waiting: "bg-ink-faint",
 };
 
+// A round-1 expert's card is a button that opens that seat's timeline in the Seats popover, like the Map's cards. The button
+// is the card's invisible cover (a button cannot hold another: a failed seat's Retry sits on top of it, so a press on Retry
+// retries and never opens the timeline). The card keeps its look; hover and focus are the cover's.
 function ExpertCard({ c, e, acts }: { c: Council; e: CouncilExpert; acts: Actions }) {
     const state = expertCard(c, e);
     const failure = c.failed?.[e.id];
     const stat = expertStat(c, e.id);
+    const setTimeline = useSetAtom(councilTimelineAtom(c.id));
     return (
         <div
             data-council-expert-card={e.id}
-            className="flex min-w-0 flex-col gap-2 rounded-[10px] border border-edge-mid bg-surface-raised px-3 py-[10px]"
+            className="relative flex min-w-0 flex-col gap-2 rounded-[10px] border border-edge-mid bg-surface-raised px-3 py-[10px] hover:border-edge-strong hover:bg-surface-hover"
         >
+            <button
+                type="button"
+                data-council-expert-card-open={e.id}
+                data-council-timeline-trigger
+                aria-label={mapWords(c).openTimeline(e.name)}
+                onClick={() => setTimeline(e.id)}
+                className="absolute inset-0 cursor-pointer rounded-[10px] border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            />
             <div className="flex items-center gap-2">
                 <CouncilAvatar tone={avatarTone(c, e.id)} name={e.name} initials={seatInitials(c, e.id)} />
                 <span className="truncate text-[13.5px] font-semibold">{e.name}</span>
@@ -570,7 +552,11 @@ function ExpertCard({ c, e, acts }: { c: Council; e: CouncilExpert; acts: Action
                 </span>
             </div>
             {failure != null && (
-                <span data-council-failed-error className="break-words text-[12.5px] leading-[1.45] text-secondary">
+                // above the cover, so the error can be selected and copied
+                <span
+                    data-council-failed-error
+                    className="relative break-words text-[12.5px] leading-[1.45] text-secondary"
+                >
                     {failure.error}
                 </span>
             )}
@@ -579,7 +565,11 @@ function ExpertCard({ c, e, acts }: { c: Council; e: CouncilExpert; acts: Action
                     {stat}
                 </span>
             )}
-            {failure != null && <RetryButton expertId={e.id} label={`Retry ${e.name}`} acts={acts} c={c} />}
+            {failure != null && (
+                <div className="relative self-start">
+                    <RetryButton expertId={e.id} label={`Retry ${e.name}`} acts={acts} c={c} />
+                </div>
+            )}
         </div>
     );
 }
@@ -608,13 +598,7 @@ function ProposalsSoFar({ c }: { c: Council }) {
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                         <span className="text-[14px] font-semibold">{p.title}</span>
                         <span className="text-[13px] leading-[1.5] text-secondary">{p.argument}</span>
-                        <EvidenceChips
-                            evidence={(p.evidence ?? []).filter((e) => !e.weak).map((e) => evidenceChip(e).text)}
-                            weak={(p.evidence ?? [])
-                                .filter((e) => e.weak)
-                                .map((e) => evidenceChip(e).text)
-                                .join("; ")}
-                        />
+                        <EvidenceChips {...claimOf(c, p)} />
                     </div>
                 </div>
             ))}

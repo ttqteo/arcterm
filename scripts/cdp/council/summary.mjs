@@ -3,7 +3,8 @@
 //
 // council-summary (docs/superpowers/plans/2026-10-21-council.md, Task 15; the report: docs/superpowers/plans/
 // 2026-10-22-council-v1-ui.md, Task 4): the Summary of the `done` council, the report it opens on (what was asked, the
-// answer, the ranked directions and the matrix folded under them), and what it hands on. The hooks are called by councilscenarios.mjs as arrange(h, fx),
+// answer, the ranked directions and, at the bottom, the one line that opens the Map tab where the matrix now lives), and
+// what it hands on. The hooks are called by councilscenarios.mjs as arrange(h, fx),
 // assert(h, ctx, fx), teardown(h, ctx, fx).
 //
 // Nothing here calls a model. Summarize again, and the Setup that Run again opens (it may suggest roles when it shows),
@@ -267,18 +268,10 @@ export const councilSummary = {
             const BOX = `${SUMMARY} [data-council-scroll]`;
             const entries = await h.ev(`[...document.querySelectorAll(${q(`${BAR} [data-council-jump]`)})].map((e) => e.dataset.councilJump + ":" + e.innerText.replace(/\\s+/g, " ").trim())`);
             const sticky = await h.ev(`getComputedStyle(document.querySelector(${q(BAR)})).position`);
-            // the matrix first: it unfolds under the cards, which gives the box the room to scroll as far as the
-            // directions' link asks (folded, a report this short cannot scroll its bar into place). It is last in the box,
-            // so its heading cannot land 12px under the bar: it only has to be in view.
-            await click(h, `${BAR} [data-council-jump='matrix']`);
-            const unfolded = await until(h, `document.querySelectorAll("#council-matrix tbody tr").length > 0`);
+            // direction 1 open: its detail under the grid gives the box the room to scroll as far as the directions' link
+            // asks (with every card closed a report this short cannot scroll its bar into place)
+            await openDirection(h, 1);
             await sleep(600);
-            const matrix = await h.ev(`(() => {
-                const box = document.querySelector(${q(BOX)});
-                const bar = document.querySelector(${q(BAR)});
-                const head = document.querySelector("[data-council-matrix-toggle]").getBoundingClientRect();
-                return { head: Math.round(head.top), barBottom: Math.round(bar.getBoundingClientRect().bottom), boxBottom: Math.round(box.getBoundingClientRect().bottom) };
-            })()`);
             await h.ev(`document.querySelector(${q(BOX)}).scrollTop = 0`);
             // where the directions' section would put the box's scrollTop: its top in the content, less the bar and 12px
             const expected = await h.ev(`(() => {
@@ -309,19 +302,17 @@ export const councilSummary = {
             const chevronsOk =
                 chevrons.length > 0 && chevrons.every((c) => !c.missing && Math.abs(c.right) <= 2 && Math.abs(c.bottom) <= 2);
             await h.shot("cdp-shots/council-summary-outline.png");
-            // fold the matrix again for the steps after
-            await click(h, "[data-council-matrix-toggle]");
+            // close the direction again for the steps after
+            await click(h, `${DIRECTION(1)}[data-council-direction-toggle]`);
             await h.ev(`document.querySelector(${q(BOX)}).scrollTop = 0`);
+            // the matrix is no section of the Report any more (the Map tab holds it): the directions are the only link
             const ok =
-                entries.join("|") === ["directions:Directions 4", "matrix:Every expert on every idea 6"].join("|") &&
+                entries.join("|") === ["directions:Directions 4"].join("|") &&
                 sticky === "sticky" &&
                 Math.abs(placed.scrollTop - expected) <= 4 &&
                 placed.barTop === placed.boxTop &&
-                unfolded &&
-                matrix.head >= matrix.barBottom &&
-                matrix.head < matrix.boxBottom &&
                 chevronsOk;
-            return { ok, detail: JSON.stringify({ entries, sticky, expected, placed, matrix, chevrons }) };
+            return { ok, detail: JSON.stringify({ entries, sticky, expected, placed, chevrons }) };
         });
 
         await step("a seat in the glance opens the Discussion's list on the ideas it wrote or replied to (its filter on), a row opens that idea's thread with the seat's reply in it, and Everyone brings the rest back", async () => {
@@ -418,7 +409,7 @@ export const councilSummary = {
             return { ok: drawn && !asked && !/You asked/.test(text), detail: JSON.stringify({ drawn, asked }) };
         });
 
-        await step("no proposal id shows anywhere in the Summary's text, directions closed and the matrix folded", async () => {
+        await step("no proposal id shows anywhere in the Summary's text, directions closed", async () => {
             const text = await h.ev(`document.querySelector(${q(SUMMARY)}).innerText`);
             const ids = text.match(/\bP\d+\b/g) ?? [];
             return { ok: ids.length === 0 && text.length > 0, detail: JSON.stringify({ ids }) };
@@ -555,32 +546,126 @@ export const councilSummary = {
             return { ok, detail: JSON.stringify({ rows, tiles, filled }) };
         });
 
-        await step("the matrix is folded under Every expert on every idea, and unfolds to six rows by idea title, Withdrawn on the sixth", async () => {
-            const toggle = "[data-council-matrix-toggle]";
-            const label = await textOf(h, toggle);
-            const foldedRows = await h.ev(`document.querySelectorAll("#council-matrix tbody tr").length`);
-            const before = await h.ev(`document.querySelector(${q(toggle)})?.getAttribute("aria-expanded")`);
-            await click(h, toggle);
-            const unfolded = await until(h, `document.querySelectorAll("#council-matrix tbody tr").length === 6`);
-            const rows = await h.ev(`[...document.querySelectorAll("#council-matrix tbody tr")].map((r) => ({
-                id: r.dataset.councilMatrixRow,
-                first: r.querySelector("td")?.innerText?.replace(/\\s+/g, " ").trim() ?? null,
-                text: r.innerText,
-                outcome: r.querySelector("[data-council-matrix-outcome]")?.innerText?.trim() ?? null,
-                cells: r.querySelectorAll("[data-council-matrix-cell]").length,
-            }))`);
-            await h.ev(`document.getElementById("council-matrix").scrollIntoView({ block: "start" })`);
-            await h.shot("cdp-shots/council-summary-matrix.png");
+        // Who agrees with which idea moved to the Map tab (docs/superpowers/plans/2026-11-03-council-stronger.md, Task 10): the
+        // Report keeps one line in the table's place, and it opens the Map on the same council
+        await step("the matrix table is gone from the Report: one line, See who agrees with which idea in Map, opens the Map tab on this council with its six ideas, the withdrawn one dim", async () => {
+            const LINK = "[data-council-map-link]";
+            const text = await h.ev(`document.querySelector(${q(SUMMARY)}).innerText`);
+            const gone = {
+                section: await exists(h, "[data-council-matrix]"),
+                toggle: await exists(h, "[data-council-matrix-toggle]"),
+                table: await exists(h, `${SUMMARY} table`),
+                jump: await exists(h, `${SUMMARY} [data-council-jump='matrix']`),
+                heading: /Every expert on every idea/.test(text),
+            };
+            const label = await textOf(h, LINK);
+            await h.ev(`document.querySelector(${q(LINK)})?.scrollIntoView({ block: "center" })`);
+            await h.shot("cdp-shots/council-summary-map-link.png");
+            const clicked = await click(h, LINK);
+            const opened = await until(
+                h,
+                `document.querySelector("[data-council-map]")?.dataset.councilId === ${q(ctx.councilId)} && document.querySelectorAll("[data-council-map-row]").length === 6`
+            );
+            const map = await h.ev(`(() => {
+                const t = (el) => el?.innerText?.replace(/\\s+/g, " ").trim() ?? null;
+                const p6 = document.querySelector("[data-council-map-row='P6']");
+                return {
+                    tab: !!document.querySelector("[data-council-map] [data-council-tab='map'][aria-selected='true']"),
+                    summaryGone: !document.querySelector("[data-council-summary]"),
+                    p6: p6 ? { title: t(p6.querySelector("[data-council-map-title]")), dimmed: p6.dataset.dimmed, outcome: t(p6.querySelector("[data-council-map-outcome]")) } : null,
+                };
+            })()`);
+            await h.shot("cdp-shots/council-summary-map-opened.png");
+            // back on the Report for the steps after
+            await openSummary(h, ctx);
             const ok =
-                label?.startsWith("Every expert on every idea") &&
-                foldedRows === 0 &&
-                before === "false" &&
-                unfolded &&
-                rows.map((r) => r.id).join() === "P5,P1,P2,P3,P4,P6" &&
-                rows.every((r) => r.cells === 4 && !/\bP\d+\b/.test(r.text)) &&
-                rows.find((r) => r.id === "P6")?.first?.startsWith("Drop the cap of 3 apps") &&
-                rows.find((r) => r.id === "P6")?.outcome === "Withdrawn";
-            return { ok, detail: JSON.stringify({ label, foldedRows, before, rows: rows.map((r) => [r.id, r.first?.slice(0, 40), r.outcome]) }) };
+                !gone.section &&
+                !gone.toggle &&
+                !gone.table &&
+                !gone.jump &&
+                !gone.heading &&
+                label === "See who agrees with which idea in Map" &&
+                clicked &&
+                opened &&
+                map.tab &&
+                map.summaryGone &&
+                map.p6?.title?.startsWith("Drop the cap of 3 apps") &&
+                map.p6?.dimmed === "true" &&
+                map.p6?.outcome === "Withdrawn";
+            return { ok, detail: JSON.stringify({ gone, label, clicked, opened, map }) };
+        });
+
+        // The check badge and the Wrong cite chip on the positions of a direction (docs/superpowers/plans/2026-11-03-council-
+        // stronger.md, Task 11). Direction 3 shows UX's P2 (Read code, one cite that holds, one that does not, a weak claim),
+        // RAM's opposing reply r4 (Ran), Skeptic's challenge r5 (Guess, it cites nothing) and New user's plain accept.
+        await step("a position wears the badge of its claim in the Report: Read code with a Wrong cite chip and Go's note beside the cite that holds, Ran, Guess, and none for a claim Go did not label; in a Vietnamese council the words are Vietnamese", async () => {
+            const NOTE = "line 900 is past the end (412 lines)";
+            const checked = (lang) => (c) => {
+                if (lang) c.lang = lang;
+                const p2 = c.proposals.find((p) => p.id === "P2");
+                p2.label = "read";
+                p2.evidence = [
+                    { ref: "pkg/services/model.go:38", cite: "ok" },
+                    { ref: "pkg/services/model.go:900", cite: "wrong", citenote: NOTE },
+                    { ref: "", weak: true, note: '"about 3 s" has no measurement' },
+                ];
+                const r4 = c.replies.find((r) => r.id === "r4");
+                r4.label = "ran";
+                r4.evidence = [{ ref: "pkg/services/model.go:36", cite: "ok" }];
+                c.replies.find((r) => r.id === "r5").label = "guess";
+            };
+            const positions = () =>
+                h.ev(`(() => {
+                    const words = (el) => (el?.innerText ?? "").replace(/\\s+/g, " ").trim();
+                    return Object.fromEntries([...document.querySelectorAll(${q(`${DETAIL(3)} [data-council-position]`)})].map((p) => {
+                        const badge = p.querySelector('[data-council-evidence="badge"]');
+                        return [p.dataset.councilPosition, {
+                            badge: badge ? words(badge) : null,
+                            check: badge?.dataset.check ?? null,
+                            icon: !!badge?.querySelector("svg"),
+                            first: badge ? !badge.previousElementSibling : null,
+                            refs: [...p.querySelectorAll('[data-council-evidence="ref"]')].map(words),
+                            wrong: [...p.querySelectorAll('[data-council-evidence="wrong"]')].map(words),
+                            wrongIcon: [...p.querySelectorAll('[data-council-evidence="wrong"]')].map((e) => !!e.querySelector("svg")),
+                            weak: [...p.querySelectorAll('[data-council-evidence="weak"]')].map(words),
+                        }];
+                    }));
+                })()`);
+            const en = await seedCouncil(h, ctx, "done", { id: "fx-council-summary-checked", edit: checked() });
+            await openSummary(h, ctx, en);
+            await openDirection(h, 3);
+            const e = await positions();
+            await h.ev(`document.querySelector(${q(DETAIL(3))}).scrollIntoView({ block: "center" })`);
+            await h.shot("cdp-shots/council-summary-badges.png");
+            const vi = await seedCouncil(h, ctx, "done", { id: "fx-council-summary-checked-vi", edit: checked("vi") });
+            await openSummary(h, ctx, vi);
+            await openDirection(h, 3);
+            const v = await positions();
+            await h.shot("cdp-shots/council-summary-badges-vi.png");
+            // back on the Report of the scenario's own council for the steps after
+            await openSummary(h, ctx);
+            const ok =
+                e.ux?.badge === "Read code" &&
+                e.ux.check === "read" &&
+                e.ux.icon &&
+                e.ux.first &&
+                e.ux.refs.join() === "pkg/services/model.go:38" &&
+                e.ux.wrong.join() === `Wrong cite model.go:900 · ${NOTE}` &&
+                e.ux.wrongIcon[0] &&
+                e.ux.weak.length === 1 &&
+                e.ram?.badge === "Ran" &&
+                e.ram.refs.join() === "pkg/services/model.go:36" &&
+                e.ram.wrong.length === 0 &&
+                e.skeptic?.badge === "Guess" &&
+                e.skeptic.refs.length === 0 &&
+                e.newuser != null &&
+                e.newuser.badge === null &&
+                v.ux?.badge === "Đã đọc code" &&
+                v.ux.wrong.join() === `Trích sai model.go:900 · ${NOTE}` &&
+                v.ram?.badge === "Đã chạy" &&
+                v.skeptic?.badge === "Chỉ đoán" &&
+                v.newuser?.badge === null;
+            return { ok, detail: JSON.stringify({ en: e, vi: v }) };
         });
 
         // the fixture's one reply after the summary is the person's own (r19): that leaves the summary current
@@ -992,7 +1077,7 @@ export const councilSummary = {
                 facts.steps.length === 3 &&
                 stepsInFrame &&
                 facts.steps.every((s) => s === "First step Try it on one screen") &&
-                facts.jumps === "directions,kept,matrix" &&
+                facts.jumps === "directions,kept" &&
                 facts.keptGrid === "grid" &&
                 facts.keptBorder === "0px" &&
                 facts.meta[0].startsWith("Had it: Skeptic · built on by New user") &&
@@ -1041,7 +1126,7 @@ export const councilSummary = {
                 !items.some((i) => i.startsWith("open-doc=")) &&
                 review.heading == null &&
                 review.steps.length === 0 &&
-                review.jumps === "directions,matrix" &&
+                review.jumps === "directions" &&
                 review.keptHeading == null &&
                 review.dropped == null &&
                 review.docpath == null &&
@@ -1078,6 +1163,70 @@ export const councilSummary = {
                 // clearDeviceMetricsOverride drops to the native window size, and verify.mjs pins 1600x950 only between
                 // scenarios: set it back
                 await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+            }
+        });
+
+        // Task 11's narrow header: under 900px of pane the Report's tabs are icon-only, the word in title and aria-label
+        await step("at a 1000px window the Report's tabs are icon-only (the word in each title and aria-label, the Discussion's count kept), nothing in the bar is cut off, and a Vietnamese council reads Bản đồ on the Map's", async () => {
+            const tabs = () =>
+                h.ev(`(() => {
+                    const bar = document.querySelector("[data-council-tabbar]");
+                    const barBox = bar.getBoundingClientRect();
+                    const row = bar.firstElementChild;
+                    const tabs = [...bar.querySelectorAll("[data-council-tab]")].map((b) => {
+                        const word = b.querySelector("[data-council-tab-label]");
+                        const wb = word.getBoundingClientRect();
+                        const count = b.querySelector("[data-council-tab-count]");
+                        return {
+                            id: b.dataset.councilTab,
+                            word: word.textContent.trim(),
+                            wordShown: wb.width > 2 && wb.height > 2,
+                            title: b.getAttribute("title"),
+                            aria: b.getAttribute("aria-label"),
+                            icon: !!b.querySelector("svg"),
+                            count: count ? count.textContent.trim() : null,
+                            countShown: count ? count.getBoundingClientRect().width > 2 : null,
+                            width: Math.round(b.getBoundingClientRect().width),
+                        };
+                    });
+                    const nav = bar.querySelector("nav");
+                    return {
+                        tabs,
+                        // every part of the bar's row ends inside the pane, and the jump links' strip holds all of its links
+                        parts: [...row.children].map((e) => Math.round(e.getBoundingClientRect().right) <= Math.round(barBox.right) + 1),
+                        navFits: nav ? nav.scrollWidth <= nav.clientWidth + 1 : true,
+                        barW: Math.round(barBox.width),
+                    };
+                })()`);
+            try {
+                await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1000, height: 950, deviceScaleFactor: 1, mobile: false });
+                await openSummary(h, ctx);
+                await sleep(400);
+                const en = await tabs();
+                await h.shot("cdp-shots/council-summary-tabs-narrow.png");
+                const vi = await seedCouncil(h, ctx, "done", { id: "fx-council-summary-tabs-vi", edit: (c) => void (c.lang = "vi") });
+                await openSummary(h, ctx, vi);
+                await sleep(400);
+                const v = await tabs();
+                await h.shot("cdp-shots/council-summary-tabs-narrow-vi.png");
+                const iconOnly = (f) =>
+                    f.tabs.length === 3 &&
+                    f.tabs.every((t) => !t.wordShown && t.icon && t.title === t.word) &&
+                    f.tabs[1].countShown === true &&
+                    f.tabs[1].aria === `Discussion ${f.tabs[1].count}` &&
+                    f.parts.every(Boolean) &&
+                    f.navFits &&
+                    f.barW < 900;
+                const ok =
+                    iconOnly(en) &&
+                    en.tabs.map((t) => t.word).join("|") === "Report|Discussion|Map" &&
+                    iconOnly(v) &&
+                    v.tabs.map((t) => t.word).join("|") === "Report|Discussion|Bản đồ" &&
+                    v.tabs[2].aria === "Bản đồ";
+                return { ok, detail: JSON.stringify({ en, vi: v }) };
+            } finally {
+                await h.cdp("Emulation.setDeviceMetricsOverride", { width: 1600, height: 950, deviceScaleFactor: 1, mobile: false });
+                await openSummary(h, ctx);
             }
         });
 

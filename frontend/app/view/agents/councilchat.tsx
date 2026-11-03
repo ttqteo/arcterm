@@ -23,7 +23,7 @@
 // Every part carries a data-council-* attribute for the CDP scenario `council-discussion`. The store's actions answer
 // `{ ok, error }`; a refusal shows in the header (the `acts` the discussion shares).
 
-import { computeEntrances, initialEntranceState, sentRise, sheetPanel } from "@/app/element/motiontokens";
+import { MOTION, computeEntrances, initialEntranceState, sentRise, sheetPanel } from "@/app/element/motiontokens";
 import { buildCouncilBindings } from "@/app/store/keybindings/bindings";
 import { useKeybindings } from "@/app/store/keybindings/store";
 import { reloadFileIndex } from "@/app/view/code/codestore";
@@ -43,7 +43,7 @@ import {
     ThumbsUp,
     X,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, animate, motion } from "motion/react";
 import {
     useCallback,
     useEffect,
@@ -57,6 +57,7 @@ import {
     type ReactNode,
     type RefObject,
 } from "react";
+import { flushSync } from "react-dom";
 import type { Actions } from "./councilactions";
 import {
     DRAFT_WAIT,
@@ -64,6 +65,9 @@ import {
     contextLabel,
     councilThread,
     failureLines,
+    foldSettle,
+    foldToggle,
+    foldView,
     insertChatMention,
     insertFileMention,
     insertMention,
@@ -82,6 +86,7 @@ import {
     type DraftPost,
     type FailureLine,
     type PillTone,
+    type QuestionFold,
     type QuestionPost,
     type ReplyPost,
     type ThreadItem,
@@ -344,25 +349,31 @@ const Reaction = ({ text }: { text: string }) => (
     </span>
 );
 
-// the person's like and dislike on a seat's idea or reply: quiet until one is on, which takes its tint; a press on the
-// one that is on takes it back. The seats' later prompts and the summary read it, so it steers them with no words.
-const THUMBS: { thumb: CouncilThumb; Icon: typeof ThumbsUp; word: string; on: string }[] = [
-    { thumb: "like", Icon: ThumbsUp, word: "Like", on: "bg-success/12 text-success-soft" },
-    { thumb: "dislike", Icon: ThumbsDown, word: "Dislike", on: "bg-error/12 text-error-soft" },
+// the person's like and dislike on a seat's idea or reply. The two buttons sit at the right end of its byline with its time and
+// show while it is hovered or focused (HoverEnd); one that is on also shows as a chip under the message (ThumbChip), which
+// stays and takes it back. A press on the one that is on takes it back too. The seats' later prompts and the summary read
+// it, so it steers them with no words.
+const THUMBS: { thumb: CouncilThumb; Icon: typeof ThumbsUp; word: string; done: string; on: string }[] = [
+    { thumb: "like", Icon: ThumbsUp, word: "Like", done: "Liked", on: "bg-success/12 text-success-soft" },
+    { thumb: "dislike", Icon: ThumbsDown, word: "Dislike", done: "Disliked", on: "bg-error/12 text-error-soft" },
 ];
+
+// a byline's right end: its time and the thumbs, seen while the message is hovered or focused. They are only dimmed out,
+// so they keep their width and nothing moves when the pointer comes
+function HoverEnd({ children }: { children: ReactNode }) {
+    return <span className={cn("ml-auto flex flex-none items-center gap-[7px]", HOVER_ONLY)}>{children}</span>;
+}
 
 function Thumbs({
     councilId,
     item,
     thumb,
     acts,
-    quiet,
 }: {
     councilId: string;
     item: string;
     thumb: CouncilThumb | "";
     acts: Actions;
-    quiet?: boolean; // a reply's byline: smaller, and hidden until its reply is hovered or focused while neither is on
 }) {
     const key = `thumb:${item}`;
     const busy = acts.busy.has(key);
@@ -370,12 +381,7 @@ function Thumbs({
         <span
             data-council-thumbs={item}
             data-thumb={thumb === "" ? undefined : thumb}
-            className={cn(
-                "inline-flex gap-[2px]",
-                quiet &&
-                    thumb === "" &&
-                    "opacity-0 group-hover/reply:opacity-100 focus-within:opacity-100 group-focus-within/reply:opacity-100"
-            )}
+            className="inline-flex gap-[2px]"
         >
             {THUMBS.map(({ thumb: t, Icon, word, on }) => {
                 const pressed = thumb === t;
@@ -392,12 +398,11 @@ function Thumbs({
                             void acts.run(key, word, () => thumbCouncil(councilId, item, nextThumb(thumb, t)))
                         }
                         className={cn(
-                            "flex cursor-pointer items-center justify-center rounded-[6px] border-0 outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default",
-                            quiet ? "h-[20px] w-[22px]" : "h-[24px] w-[26px]",
+                            "flex h-[20px] w-[22px] cursor-pointer items-center justify-center rounded-[6px] border-0 outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default",
                             pressed ? on : "bg-transparent text-muted hover:bg-surface-hover hover:text-secondary"
                         )}
                     >
-                        <Icon size={quiet ? 12 : 13} strokeWidth={2} aria-hidden />
+                        <Icon size={12} strokeWidth={2} aria-hidden />
                     </button>
                 );
             })}
@@ -405,20 +410,60 @@ function Thumbs({
     );
 }
 
-// shown while its reply is hovered or focused: a post's time, which says little at a glance
+// the like or dislike that is on, as a small tinted chip under the message it is on; a press takes it back, as a press on
+// the thumb that is on does. Nothing when neither is on.
+function ThumbChip({
+    councilId,
+    item,
+    thumb,
+    acts,
+}: {
+    councilId: string;
+    item: string;
+    thumb: CouncilThumb | "";
+    acts: Actions;
+}) {
+    const key = `thumb:${item}`;
+    const spec = THUMBS.find((t) => t.thumb === thumb);
+    if (spec == null) {
+        return null;
+    }
+    const take = `Take back your ${spec.word.toLowerCase()}`;
+    return (
+        <button
+            type="button"
+            data-council-thumb-chip={spec.thumb}
+            aria-pressed
+            title={take}
+            disabled={acts.busy.has(key)}
+            onClick={() =>
+                void acts.run(key, spec.word, () => thumbCouncil(councilId, item, nextThumb(thumb, spec.thumb)))
+            }
+            className={cn(
+                "inline-flex w-fit cursor-pointer items-center gap-[4px] rounded-full border-0 px-[8px] py-px text-[12px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default",
+                spec.on
+            )}
+        >
+            <spec.Icon size={11} strokeWidth={2.2} aria-hidden />
+            {spec.done}
+        </button>
+    );
+}
+
+// shown while its message is hovered or focused: a post's time, which says little at a glance, and the thumbs
 const HOVER_ONLY = "opacity-0 group-hover/reply:opacity-100 group-focus-within/reply:opacity-100";
 
-// a seat's byline: its name, its stance when it takes one (a plain `replies` says nothing), and on hover its time and
-// the thumbs
+// a seat's byline: its name, its stance when it takes one (a plain `replies` says nothing), and at the right end, on hover
+// or focus, its time and the thumbs
 function ReplyHeader({ item, thumbs }: { item: ReplyPost; thumbs?: ReactNode }) {
     return (
         <Byline who={item}>
             {item.pill !== "neutral" && <CouncilPill word={item.label} tone={item.pill} />}
             {item.edited && <span className="text-muted">edited</span>}
-            <span className={HOVER_ONLY}>
+            <HoverEnd>
                 <PostTime at={item.at} when={item.when} />
-            </span>
-            {thumbs}
+                {thumbs}
+            </HoverEnd>
         </Byline>
     );
 }
@@ -545,12 +590,13 @@ function ReplyMessage({
                     <ReplyHeader
                         item={item}
                         thumbs={
-                            // in its byline, shown on hover or focus until one is on, so a reply is no taller
-                            <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} quiet />
+                            // at the right end of its byline with the time, shown on hover or focus, so a reply is no taller
+                            <Thumbs councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />
                         }
                     />
                 )}
                 <div
+                    data-council-bubble
                     className={cn(
                         "flex min-w-0 flex-col gap-[6px] border px-[14px] py-[10px]",
                         item.mine ? "rounded-[14px_14px_4px_14px]" : "rounded-[4px_14px_14px_14px]",
@@ -567,11 +613,11 @@ function ReplyMessage({
                         <PromptImages paths={item.attachments} />
                     )}
                     <EvidenceChips
-                        evidence={item.evidence}
-                        weak={item.weak}
+                        {...item.claim}
                         source={{ councilId, owner: item.id, title: `${item.name}'s reply` }}
                     />
                 </div>
+                {!item.mine && <ThumbChip councilId={councilId} item={item.id} thumb={item.thumb} acts={acts} />}
                 {item.agrees.length > 0 && (
                     <div className="flex flex-wrap items-center gap-[6px]">
                         {item.agrees.map((text, i) => (
@@ -666,8 +712,7 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
                     <CouncilText text={item.text} className="text-[13.5px] leading-[1.5]" />
                 )}
                 <EvidenceChips
-                    evidence={item.evidence}
-                    weak={item.weak}
+                    {...item.claim}
                     source={{ councilId: c.id, owner: item.id, title: item.title || `${item.name}'s reply` }}
                 />
                 <div className="flex flex-wrap gap-[6px]">
@@ -732,18 +777,68 @@ function DraftCard({ c, item, acts }: { c: Council; item: DraftPost; acts: Actio
 }
 
 // the person's question as their message on the right, on top of the Chat's thread: three lines and two of the limits
-// it set until Show all opens the rest
+// it set until Show more opens the rest, with Show more / Show less under them. line-clamp cannot be transitioned, so the
+// fold moves the height of the text's wrapper, and of the limits' row, between two measured values: over the whole text,
+// clipped at the wrapper, and the three-line cut comes back once the height is down. The limits past the second fade with
+// it. Reduced motion skips all of it.
 const QUESTION_FOLD = 280;
 const LIMITS_FOLDED = 2;
 
 function QuestionMessage({ item }: { item: QuestionPost }) {
-    const [open, setOpen] = useState(false);
+    const [phase, setPhase] = useState<QuestionFold>("folded");
+    const textBox = useRef<HTMLDivElement>(null);
+    const limitsBox = useRef<HTMLDivElement>(null);
+    const moving = useRef<{ stop: () => void } | null>(null);
     const hidden = item.limits.length - LIMITS_FOLDED;
     const foldable = hidden > 0 || item.text.length > QUESTION_FOLD;
-    const limits = open ? item.limits : item.limits.slice(0, LIMITS_FOLDED);
+    const view = foldView(phase);
+    const limits = view.allLimits ? item.limits : item.limits.slice(0, LIMITS_FOLDED);
+    useEffect(() => () => moving.current?.stop(), []);
+    const toggle = () => {
+        const next = foldToggle(phase);
+        if (next == null) {
+            return;
+        }
+        const parts = [textBox.current, limitsBox.current].filter((e): e is HTMLDivElement => e != null);
+        // read at the click: useReducedMotion keeps the value of the first render, and the setting can change while open
+        const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (parts.length === 0 || reduce) {
+            setPhase(foldSettle(next));
+            return;
+        }
+        // each part's height now, and the height it will have, read off the settled layout of the other fold. Closing draws
+        // the folded layout for the read and puts the whole one back, both before anything is painted.
+        const from = parts.map((e) => e.getBoundingClientRect().height);
+        flushSync(() => setPhase(next === "opening" ? "opening" : "folded"));
+        const to = parts.map((e) => e.getBoundingClientRect().height);
+        flushSync(() => setPhase(next));
+        parts.forEach((e, i) => {
+            e.style.height = `${from[i]}px`;
+            e.style.overflow = "hidden";
+        });
+        const timing = { duration: MOTION.durMacro, ease: MOTION.easeFluid };
+        const extra = [...(limitsBox.current?.querySelectorAll<HTMLElement>("[data-council-limit-extra]") ?? [])];
+        const controls = [
+            ...parts.map((e, i) => animate(e, { height: [from[i], to[i]] }, timing)),
+            ...(extra.length > 0 ? [animate(extra, { opacity: next === "opening" ? [0, 1] : [1, 0] }, timing)] : []),
+        ];
+        moving.current = { stop: () => controls.forEach((c) => c.stop()) };
+        void controls[0].then(() => {
+            // the settled phase is drawn before the heights are let go: unpinned while still closing, the whole text would
+            // flash back for a frame, and a cut text is what the folded height is measured on
+            flushSync(() => setPhase((p) => foldSettle(p)));
+            parts.forEach((e) => {
+                e.style.height = "";
+                e.style.overflow = "";
+            });
+            extra.forEach((e) => (e.style.opacity = ""));
+            moving.current = null;
+        });
+    };
     return (
         <article data-council-item data-item-kind="question" className="flex justify-end">
             <div
+                data-council-question-fold={phase}
                 className={cn(
                     "flex min-w-0 max-w-[640px] flex-col gap-[8px] rounded-[16px_16px_4px_16px] border px-4 py-3",
                     TONE_BUBBLE[item.tone]
@@ -753,50 +848,51 @@ function QuestionMessage({ item }: { item: QuestionPost }) {
                     <span className={cn("font-semibold", TONE_TEXT[item.tone])}>{item.name}</span>
                     <span className="text-muted">{item.label}</span>
                     <PostTime at={item.at} when={item.when} />
-                    {foldable && (
-                        <button
-                            type="button"
-                            data-council-question-toggle
-                            aria-expanded={open}
-                            onClick={() => setOpen(!open)}
-                            className="ml-auto flex cursor-pointer items-center gap-[4px] rounded-[4px] border-0 bg-transparent p-0 text-[12.5px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                            {open ? "Show less" : "Show all"}
-                            {open ? <ChevronUp size={13} aria-hidden /> : <ChevronDown size={13} aria-hidden />}
-                        </button>
-                    )}
                 </div>
-                <span
-                    data-council-question
-                    className={cn(
-                        "whitespace-pre-wrap break-words text-[15px] leading-[1.55] text-primary",
-                        !open && "line-clamp-3"
-                    )}
-                >
-                    {item.text}
-                </span>
+                {/* the type sits on the wrapper, so its line box and the text's agree and the height it moves is the text's */}
+                <div ref={textBox} data-council-question-box className="text-[15px] leading-[1.55] text-primary">
+                    <span
+                        data-council-question
+                        className={cn("whitespace-pre-wrap break-words", view.clamp && "line-clamp-3")}
+                    >
+                        {item.text}
+                    </span>
+                </div>
                 {item.limits.length > 0 && (
-                    <div data-council-limits className="flex flex-wrap items-center gap-[6px]">
+                    <div ref={limitsBox} data-council-limits className="flex flex-wrap items-center gap-[6px]">
                         <span className="mr-[2px] text-[12.5px] font-semibold text-muted">Keep to</span>
                         {limits.map((limit, i) => (
                             <span
                                 key={i}
                                 data-council-limit
+                                data-council-limit-extra={i >= LIMITS_FOLDED ? "" : undefined}
                                 className="rounded-[6px] bg-accent/12 px-[8px] py-[2px] text-[13px] leading-[1.45] text-secondary"
                             >
                                 {limit}
                             </span>
                         ))}
-                        {!open && hidden > 0 && (
+                        {phase === "folded" && hidden > 0 && (
                             <button
                                 type="button"
-                                onClick={() => setOpen(true)}
+                                onClick={toggle}
                                 className="cursor-pointer rounded-[4px] border-0 bg-transparent px-[4px] text-[13px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
                             >
                                 +{hidden} more
                             </button>
                         )}
                     </div>
+                )}
+                {foldable && (
+                    <button
+                        type="button"
+                        data-council-question-toggle
+                        aria-expanded={view.expanded}
+                        onClick={toggle}
+                        className="flex w-fit cursor-pointer items-center gap-[4px] rounded-[4px] border-0 bg-transparent p-0 text-[12.5px] text-muted outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        {view.expanded ? "Show less" : "Show more"}
+                        {view.expanded ? <ChevronUp size={13} aria-hidden /> : <ChevronDown size={13} aria-hidden />}
+                    </button>
                 )}
             </div>
         </article>
@@ -1552,39 +1648,41 @@ function useEntering(key: string, ids: string[]): Set<string> {
     return animate;
 }
 
-// the idea on top of its thread: its title and argument as the board draws them, then its evidence, the seats that
-// agreed with it, the person's thumbs and the seats that picked it
+// the idea on top of its thread: its title and argument as the board draws them, with its time and the person's thumbs at the
+// right end of its header on hover or focus, then its evidence, and under it the seats that agreed with it, the like or
+// dislike that is on and the seats that picked it
 function ThreadIdea({ c, thread, acts }: { c: Council; thread: Extract<ChatThread, { kind: "idea" }>; acts: Actions }) {
     const idea = thread.idea;
     return (
-        <article data-council-post={idea.id} className="flex flex-col gap-[8px]">
+        <article data-council-post={idea.id} className="group/reply flex flex-col gap-[8px]">
             <h2 className="m-0 text-[15px] font-semibold leading-[1.4] text-primary">{idea.title}</h2>
             <div className="flex flex-wrap items-center gap-[7px] text-[12px] text-muted">
                 {idea.wild ? <CouncilPill word={idea.label} tone="neutral" /> : <span>{idea.label}</span>}
-                <PostTime at={idea.at} when={idea.when} />
                 {idea.edited && <span>edited</span>}
+                <HoverEnd>
+                    <PostTime at={idea.at} when={idea.when} />
+                    <Thumbs councilId={c.id} item={idea.id} thumb={idea.thumb} acts={acts} />
+                </HoverEnd>
             </div>
             <CouncilText text={idea.text} className="text-[13.5px] leading-[1.55]" />
-            <EvidenceChips
-                evidence={idea.evidence}
-                weak={idea.weak}
-                source={{ councilId: c.id, owner: idea.id, title: idea.title }}
-            />
-            <div className="flex flex-wrap items-center gap-[6px]">
-                {idea.agrees.map((text, i) => (
-                    <Reaction key={i} text={text} />
-                ))}
-                <Thumbs councilId={c.id} item={idea.id} thumb={idea.thumb} acts={acts} />
-                {idea.picks != null && (
-                    <span
-                        data-council-picks
-                        title={idea.picks.title}
-                        className="rounded-full bg-pill px-[8px] py-px text-[12px] font-semibold text-secondary"
-                    >
-                        {idea.picks.label}
-                    </span>
-                )}
-            </div>
+            <EvidenceChips {...idea.claim} source={{ councilId: c.id, owner: idea.id, title: idea.title }} />
+            {(idea.agrees.length > 0 || idea.thumb !== "" || idea.picks != null) && (
+                <div className="flex flex-wrap items-center gap-[6px]">
+                    {idea.agrees.map((text, i) => (
+                        <Reaction key={i} text={text} />
+                    ))}
+                    <ThumbChip councilId={c.id} item={idea.id} thumb={idea.thumb} acts={acts} />
+                    {idea.picks != null && (
+                        <span
+                            data-council-picks
+                            title={idea.picks.title}
+                            className="rounded-full bg-pill px-[8px] py-px text-[12px] font-semibold text-secondary"
+                        >
+                            {idea.picks.label}
+                        </span>
+                    )}
+                </div>
+            )}
         </article>
     );
 }
@@ -1620,11 +1718,10 @@ function ThreadPanel({
     const scroller = useRef<HTMLDivElement>(null);
     const send = useSendState(thread.items);
     const items = useMemo(() => shownItems(thread.items, send.holdTyping), [thread.items, send.holdTyping]);
-    const draft = useAtomValue(councilChatDraftAtom(c.id)).texts[thread.id] ?? "";
     // a reply box only on a sent idea: a held one has no thread yet, and the Chat's box is the one under the list
     const replies = thread.kind === "idea";
-    // what the newest seat answer suggests sending next, while the box is empty
-    const asks = replies && draft.trim() === "" ? threadAsks(items) : [];
+    // what the newest seat answer suggests sending next: it stays while the person types, and a click replaces the text
+    const asks = replies ? threadAsks(items) : [];
     const onScroll = useKeptScroll(scroller, `thread:${c.id}:${thread.id}`, {
         follow: true,
         start: "top",
@@ -2071,8 +2168,8 @@ export function CouncilChat({
     const list = useMemo(() => councilList(c, since, onlyId ?? undefined), [c, since, onlyId]);
     // an idea's number is the same whatever the filter: read from the whole list
     const numbers = useMemo(() => new Map(councilList(c, 0).ideas.map((r) => [r.id, r.n])), [c]);
-    const channelDraft = useAtomValue(councilChatDraftAtom(c.id)).texts[""] ?? "";
-    const asks = isFollowUp(c) && channelDraft === "" ? askChips(c) : [];
+    // Ask next stays while the person types: a click replaces what is in the box
+    const asks = isFollowUp(c) ? askChips(c) : [];
     const seats = useMemo(() => seatChips(c), [c]);
     const onlySeat = onlyId == null ? null : (seats.find((chip) => chip.id === onlyId) ?? null);
     const order = useMemo(() => listNavOrder(list), [list]);

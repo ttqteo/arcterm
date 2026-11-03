@@ -483,6 +483,19 @@ export const councilLastViewAtom = atomFamily(
  *  sets it (showCouncil's `only`); every other way into a council clears it. */
 export const councilOnlyAtom = atomFamily((_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>);
 
+/** The seat whose timeline a council's Seats popover shows, by expert id; null shows the list of seats. A seat's Timeline
+ *  button and an expert card on the Map set it; the popover clears it when it closes. */
+export const councilTimelineAtom = atomFamily(
+    (_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>
+);
+
+/** The idea whose row is open in a council's Map matrix (the reasons under each seat's column), by proposal id; null while
+ *  none is. One row is open at a time: a second click on it closes it. Kept per council so it survives a trip to the
+ *  Report or the Discussion, which unmount the Map. */
+export const councilMapOpenAtom = atomFamily(
+    (_id: string) => atom<string | null>(null) as PrimitiveAtom<string | null>
+);
+
 /** What a council chat's Sources panel shows: the evidence of the message whose link was clicked, the file picked
  *  among it, and the thread it was opened from, which closing the panel goes back to. */
 export interface CouncilSourcesView {

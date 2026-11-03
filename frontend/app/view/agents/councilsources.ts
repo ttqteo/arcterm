@@ -4,7 +4,13 @@
 // Pure: what a council message's evidence draws and what the Sources panel shows (A-links-panel.dc.html in the
 // council-evidence-chips canvas). A message's `path:line` refs fold into one link per file, named by the shortest tail
 // of its path no other link shares, its cited lines after it (`:45, 49`); a click opens the panel on that file, which
-// shows the cited lines lit with one line of context each side, runs that touch merged. No React, no Wave runtime imports.
+// shows the cited lines lit with one line of context each side, runs that touch merged. A claim's chips also carry its check
+// badge (Ran, Disproved, Read code, Guess) and a Wrong cite chip for each cite Go found wrong (`claimChips`). No React, no
+// Wave runtime imports.
+
+import { evidenceChip } from "./councildiscussionmodel";
+import { mapWords } from "./councilmapmodel";
+import { checkLabelOf, checkWord, councilLang, wrongCiteWord, type CheckLabel, type CouncilLang } from "./councilmodel";
 
 /** A run of cited lines, 1-based and inclusive. */
 export interface CitedLines {
@@ -107,6 +113,98 @@ export function groupSources(refs: readonly string[]): EvidenceView {
         return { path, name: names[i], lines, label: linesLabel(lines) };
     });
     return { groups, others };
+}
+
+// ---- a claim's chips: the badge, the files, the wrong cites ----
+
+/** A claim's evidence as the chips under it read it: the items Go checked, the label it gave the claim, and the language the
+ *  words follow. A message of the chat, a proposal of the Discussion and a position of the Report each carry one. */
+export interface ClaimEvidence {
+    evidence: CouncilEvidence[];
+    label: CheckLabel | ""; // Go's check label; "" for a plain reply or a Brainstorm, which draw no badge
+    lang: CouncilLang;
+}
+
+/** Pure: a proposal's or a reply's claim, in the council's language (English when the council has none). */
+export function claimOf(
+    c: Pick<Council, "lang"> | null | undefined,
+    x: { evidence?: CouncilEvidence[]; label?: string }
+): ClaimEvidence {
+    return { evidence: x.evidence ?? [], label: checkLabelOf(x), lang: councilLang(c) };
+}
+
+/** The badge a labelled claim wears: an icon (councilchecks.tsx) and the word, with what the word means as its tooltip. */
+export interface ClaimBadge {
+    label: CheckLabel;
+    word: string;
+    meaning: string;
+}
+
+/** A cite Go found wrong, as its own chip: `Wrong cite`, the file and lines, and why (`line 900 is past the end`). */
+export interface WrongCite {
+    ref: string;
+    name: string; // the file's name
+    label: string; // the cited lines after it (`:900`, `:12–20`), "" for none
+    word: string; // `Wrong cite` / `Trích sai`
+    note: string; // Go's `citenote`, "" when it gave none
+}
+
+export interface ClaimChips {
+    badge: ClaimBadge | null;
+    refs: string[]; // what the file links fold (groupSources): every cite that is neither weak nor wrong
+    weak: string; // the weak claims, as the amber chip reads them
+    wrong: WrongCite[];
+}
+
+/** Pure: what a claim's evidence row draws. A cite Go found wrong (`cite: "wrong"`) leaves the file links, so it does not
+ *  look like a source, and is a Wrong cite chip instead; a cite nobody checked (a screenshot, a Brainstorm's) stays a
+ *  link; a weak claim is the amber chip. A labelled claim wears its badge, even with no evidence at all (a Guess). */
+export function claimChips(
+    evidence: readonly CouncilEvidence[] | undefined,
+    label: string | undefined,
+    lang: CouncilLang
+): ClaimChips {
+    const items = evidence ?? [];
+    return {
+        badge: claimBadge(label, lang),
+        refs: items.filter((e) => !e.weak && !isWrongCite(e) && e.ref !== "").map((e) => e.ref),
+        weak: items
+            .filter((e) => e.weak)
+            .map((e) => evidenceChip(e).text)
+            .join("; "),
+        wrong: items.filter(isWrongCite).map((e) => wrongCiteOf(e, lang)),
+    };
+}
+
+/** Pure: the badge of a claim's label in the council's language; null for a claim Go did not label (or a word it does not
+ *  know). */
+export function claimBadge(label: string | undefined, lang: CouncilLang): ClaimBadge | null {
+    const kind = checkLabelOf({ label });
+    if (kind === "") {
+        return null;
+    }
+    return {
+        label: kind,
+        word: checkWord(kind, lang),
+        meaning: mapWords({ lang }).legend.find((l) => l.label === kind)?.meaning ?? "",
+    };
+}
+
+/** Pure: whether Go found this cite wrong. A weak claim is a claim without evidence, so it is never a cite. */
+export function isWrongCite(e: CouncilEvidence): boolean {
+    return !e.weak && e.cite === "wrong";
+}
+
+/** Pure: a wrong cite as its chip reads it. */
+export function wrongCiteOf(e: CouncilEvidence, lang: CouncilLang): WrongCite {
+    const ref = parseSourceRef(e.ref);
+    return {
+        ref: e.ref,
+        name: ref?.path.split("/").pop() || e.ref,
+        label: ref?.lines == null ? "" : linesLabel([ref.lines]),
+        word: wrongCiteWord(lang),
+        note: e.citenote ?? "",
+    };
 }
 
 /** How many of a message's files show as chips; the rest fold into one `+N files` that opens the Sources panel, which

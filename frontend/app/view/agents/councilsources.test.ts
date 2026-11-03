@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import { mapWords } from "./councilmapmodel";
 import {
+    claimChips,
+    claimOf,
     foldSources,
     groupSources,
     hunkLabel,
@@ -172,6 +175,109 @@ describe("sourceExcerpt", () => {
         const x = sourceExcerpt("a\r\nb\r\nc\r\n", [{ start: 2, end: 2 }]);
         expect(x.hunks[0].rows.map((r) => r.text)).toEqual(["a", "b", "c"]);
         expect(x.lineCount).toBe(3);
+    });
+});
+
+describe("claimChips", () => {
+    const wrongNote = "line 900 is past the end (412 lines)";
+
+    it("splits a claim's evidence into file refs, wrong cites and the weak claim", () => {
+        const chips = claimChips(
+            [
+                { ref: "pkg/a.go:12", cite: "ok" },
+                { ref: "pkg/b.go:900", cite: "wrong", citenote: wrongNote },
+                { ref: "", weak: true, note: "no measurement" },
+                { ref: "screenshot:s.png#top" },
+                { ref: "c.ts:3" },
+            ],
+            "read",
+            "en"
+        );
+        // a wrong cite is not a file link: it is its own chip, and does not count as a source
+        expect(chips.refs).toEqual(["pkg/a.go:12", "screenshot:s.png#top", "c.ts:3"]);
+        expect(chips.weak).toBe("Weak · no measurement");
+        expect(chips.wrong).toEqual([
+            { ref: "pkg/b.go:900", name: "b.go", label: ":900", word: "Wrong cite", note: wrongNote },
+        ]);
+    });
+
+    it("joins several weak claims the way the weak chip has always read them", () => {
+        const chips = claimChips(
+            [
+                { ref: "", weak: true, note: "one" },
+                { ref: "x.ts:1", weak: true },
+            ],
+            "",
+            "en"
+        );
+        expect(chips.weak).toBe("Weak · one; Weak · x.ts:1");
+        expect(chips.refs).toEqual([]);
+    });
+
+    it("keeps a weak item out of the wrong cites even when its cite is wrong", () => {
+        const chips = claimChips([{ ref: "", weak: true, note: "n", cite: "wrong" }], "", "en");
+        expect(chips.weak).toBe("Weak · n");
+        expect(chips.wrong).toEqual([]);
+    });
+
+    it("names a wrong cite by its file and lines, a range with the en dash, and keeps no note when Go gave none", () => {
+        const chips = claimChips(
+            [
+                { ref: "docs/a/b.md:12-20", cite: "wrong", citenote: "quote not found near line 12" },
+                { ref: "gone.ts", cite: "wrong" },
+            ],
+            "guess",
+            "en"
+        );
+        expect(chips.wrong.map((w) => [w.name, w.label, w.note])).toEqual([
+            ["b.md", ":12–20", "quote not found near line 12"],
+            ["gone.ts", "", ""],
+        ]);
+    });
+
+    it("gives the badge of each label, with its word and meaning, in the council's language", () => {
+        const en = mapWords({ lang: "en" });
+        const vi = mapWords({ lang: "vi" });
+        const words = (lang: "en" | "vi") =>
+            (["ran", "disproved", "read", "guess"] as const).map((l) => claimChips([], l, lang).badge?.word);
+        expect(words("en")).toEqual(["Ran", "Disproved", "Read code", "Guess"]);
+        expect(words("vi")).toEqual(["Đã chạy", "Bị bác", "Đã đọc code", "Chỉ đoán"]);
+        expect(claimChips([], "disproved", "en").badge).toEqual({
+            label: "disproved",
+            word: "Disproved",
+            meaning: en.legend.find((l) => l.label === "disproved")?.meaning,
+        });
+        expect(claimChips([], "ran", "vi").badge?.meaning).toBe(vi.legend.find((l) => l.label === "ran")?.meaning);
+        expect(claimChips([{ ref: "a.ts:1", cite: "wrong", citenote: "n" }], "read", "vi").wrong[0].word).toBe(
+            "Trích sai"
+        );
+    });
+
+    it("has no badge for a claim Go did not label (a plain reply, a Brainstorm) or a label it does not know", () => {
+        expect(claimChips([{ ref: "a.ts:1" }], "", "en").badge).toBeNull();
+        expect(claimChips([{ ref: "a.ts:1" }], undefined, "en").badge).toBeNull();
+        expect(claimChips([{ ref: "a.ts:1" }], "certain", "en").badge).toBeNull();
+    });
+
+    it("is empty for no evidence and no label, and a Guess with no evidence is only its badge", () => {
+        expect(claimChips(undefined, "", "en")).toEqual({ badge: null, refs: [], weak: "", wrong: [] });
+        const guess = claimChips([], "guess", "en");
+        expect(guess.badge?.word).toBe("Guess");
+        expect(guess.refs).toEqual([]);
+        expect(guess.wrong).toEqual([]);
+    });
+});
+
+describe("claimOf", () => {
+    it("takes a proposal's or a reply's evidence and label with the council's language, English when it has none", () => {
+        const ev = [{ ref: "a.ts:1", cite: "ok" }];
+        expect(claimOf({ lang: "vi" }, { evidence: ev, label: "read" })).toEqual({
+            evidence: ev,
+            label: "read",
+            lang: "vi",
+        });
+        expect(claimOf({}, { evidence: undefined, label: undefined })).toEqual({ evidence: [], label: "", lang: "en" });
+        expect(claimOf({ lang: "vi" }, { label: "certain" }).label).toBe("");
     });
 });
 

@@ -32,6 +32,15 @@ missing file, on one over 120 KB, and on a picture given to a line that is not b
 ### Changed
 
 - A council's experts have plain names, in the language of your question: Ease of use, Memory watcher, Bug hunter, Summarizer, Final judge and Other side, or "Người lo trải nghiệm", "Người canh RAM", "Người soi lỗi" and so on for a Vietnamese question. The roles Setup suggests are named in that language too.
+- A council expert's timeline: what it read, searched, ran (a verify command in mono, with whether it passed) and proposed, newest at the bottom. It opens in the Seats popover from a seat's Timeline button, a click on an expert's card in the Map, or a click on an expert's card while the experts first read.
+
+### Changed
+
+- In a narrow pane (under 900 px) a council's Report, Discussion and Map tabs shrink to their icons, the word moving into the tooltip, and the Discussion's count stays beside its icon.
+- A like or dislike you give a council expert's message shows as a Liked or Disliked chip under it, which a press takes back; the time and the two thumbs sit together at the right end of the message's byline and show on hover.
+- An evidence chip that cites many lines of a file keeps the file's name and cuts the list of lines with an ellipsis (the tooltip holds all of them), where a long list used to push the name out.
+- The questions Ask next offers in a council, and the replies a seat suggests in a thread, stay while you type; pressing one puts its text in the box in place of what you typed.
+- The question at the top of a council's Chat folds under its text: Show more sits beneath the question and its limits, the text grows to its full height and the rest of the limits fade in, and Show less folds it back. It stays still when you ask for reduced motion.
 - Pin replaces a council's Close and Reopen: Pin (Pinned once pinned) in the Discussion header, the Report's tab bar, a tree row's hover button and Councils keeps a council at the top of its project, running ones too. The tree now keeps only live, pinned, unread or recent councils, and Councils, which marks the pinned ones, lists every other.
 - A council's Discussion is a list of its ideas, one row each with its author, a New badge and its count of agrees, doubts and objections; a Chat row on top holds your messages and the answers to them, and a click opens a row's thread beside it.
 - A council's Report says Outdated only when a new idea came, an idea was revised or an expert changed their stance since the summary, and names what changed; other replies only add "N replies since" under it.
