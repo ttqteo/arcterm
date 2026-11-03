@@ -1585,4 +1585,6 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   `docs/deferred.md`; a fix whose project is another one is only shown as text, never applied. Start a second scan
   while the first is live → refused naming its project and run. Go tests with a scripted Sonnet reply only: the
   consult call, the AskUserQuestion flow, and the Apply/Drop commits have not run against a real agent
-  (`wshserver_workflowscan.go`, `wshcmd-workflow.go`, `pkg/workflowscan/goal.go`, run 12a23f8b Task 3).
+  (`wshserver_workflowscan.go`, `wshcmd-workflow.go`, `pkg/workflowscan/goal.go`, run 12a23f8b Task 3). From the
+  palette's row, the open waits up to 15 s for the scan's agent to show in the roster and then lands on it, not on the
+  run's sheet (`palette-scan.ts`, unit tests with fake timers only; run 12a23f8b fix round Task 1).
