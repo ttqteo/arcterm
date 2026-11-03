@@ -1586,3 +1586,13 @@ The Final judged only the popover's page in headless Chrome; the icon and the wi
   it. With 7 seats in a narrow pane, scroll the table sideways: the head follows the columns and its Idea cell stays
   put. `frontend/app/view/agents/councilmap.tsx` (`Matrix`); no dev app was running to try it, and the
   `council-map` CDP scenario was not rerun.
+- [ ] (arcterm) **A council seat's failure sits under the message it failed on.** In a council where a seat failed on
+  one of your messages (a usage limit), send another message to a different seat: the seat's failure line (with Retry
+  and Retry with…) stays right under the first message, the first message no longer repeats the error, and nothing
+  red sits under the new one. `frontend/app/view/agents/councilchatmodel.ts` (`councilChannel`), commit 1fb4035cd; no
+  dev app was running to try it.
+- [ ] (arcterm) **A chat seat reads as its name and key, and its name opens it.** Seat a live chat in a council (@ its
+  key): its messages, chip, "For …" line and failure line read `notes · 0976023f`, not `notes`. Hover its name or
+  avatar on a message: the tooltip is the chat's session title; click either: the Agent surface opens on that chat's
+  terminal. Close the chat's tab: the name and avatar stop being buttons. `frontend/app/view/agents/councilchat.tsx`
+  (`Byline`, `SeatAvatar`), commit be7c8b9a7; no dev app was running to try it.
