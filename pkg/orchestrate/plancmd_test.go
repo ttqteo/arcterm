@@ -72,6 +72,10 @@ func TestPlanCommandRunsInAPosixShell(t *testing.T) {
 // its own $0. In Git Bash that is a POSIX path (/c/...), which only works if bash converts it on the way to
 // the program: run 810fbc02's Setup failed on pnpm, whose node was handed /c/Program Files/... unconverted.
 func TestPlanCommandShimPassesItsOwnPathToANativeProgram(t *testing.T) {
+	// a Verify run by an engine from before this fix inherits its MSYS_NO_PATHCONV=1, which turns the conversion
+	// under test off; clear it so the test judges the runner, not the shell it was started from
+	t.Setenv("MSYS_NO_PATHCONV", "")
+	os.Unsetenv("MSYS_NO_PATHCONV")
 	bin := t.TempDir()
 	shim := "#!/bin/sh\nexec git config --file \"$(dirname \"$0\")/probe.cfg\" wave.probe yes\n"
 	if err := os.WriteFile(filepath.Join(bin, "probe"), []byte(shim), 0o755); err != nil {
