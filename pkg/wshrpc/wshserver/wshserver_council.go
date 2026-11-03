@@ -42,11 +42,26 @@ func publishCouncilChanged(c *council.Council) {
 
 // StartCouncilRunner is called once at startup: a council left running when wavesrv last quit has no run behind it, so
 // it is marked stopped. A council with a live run is left alone. A council that was queued when wavesrv quit stays
-// queued, and the oldest one starts now.
+// queued, and the oldest one starts now. Then the councils folder is watched, so a council synced in from another
+// machine, or a file changed or removed by hand, shows in the cockpit without waiting for an unrelated change.
 func StartCouncilRunner() {
 	councilRunner.MarkStale()
 	stopQueuedBenchCouncils()
 	councilRunner.StartNext()
+	startCouncilWatch()
+}
+
+// startCouncilWatch watches the councils folder for the life of wavesrv, publishing council:changed for each file
+// that appears, changes or goes away there. A save of the runner's own publishes at most once more. The council
+// tests replace it with a no-op, so a watch never adds events to the ones a test counts.
+var startCouncilWatch = func() {
+	dir := council.Dir()
+	err := council.Watch(context.Background(), dir, func(id, project string, deleted bool) {
+		wps.Broker.Publish(wps.WaveEvent{Event: wps.Event_CouncilChanged, Data: wshrpc.CouncilChangedData{Id: id, Project: project, Deleted: deleted}})
+	})
+	if err != nil {
+		log.Printf("[council] the councils folder is not watched, so a synced council shows only after the next change: %v", err)
+	}
 }
 
 // stopQueuedBenchCouncils stops the bench councils left queued when wavesrv last quit. The bench that queued them ended
