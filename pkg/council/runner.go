@@ -37,6 +37,10 @@ type Runner struct {
 	Caller Caller
 	// Agents is the caller for the seats with Agent set, an AgentCaller over the live agents; Caller serves the rest.
 	Agents Caller
+	// Trees makes and removes the throwaway tree the verify commands run in (RunVerifies). pkg/orchestrate implements it
+	// and wavesrv wires it: orchestrate imports this package, so this one cannot import it. Nil runs no command, and the
+	// timeline says so.
+	Trees TreeMaker
 	// OnChange is told after each save, with the council as saved. It may be called from several goroutines at once, and
 	// the council is the callee's to read, not to change.
 	OnChange func(c *Council)
