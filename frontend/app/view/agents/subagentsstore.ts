@@ -13,6 +13,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atom, type PrimitiveAtom } from "jotai";
 import { bgTaskStopNote } from "./agentrailsections";
+import { outputTail } from "./monitortasks";
 import type { SubagentVM } from "./session-models/sessionviewmodel";
 import { correlateSubagents } from "./subagentcorrelate";
 import { extractBackgroundTasks, extractSubagentSpawns, type BackgroundTask } from "./transcriptprojection";
@@ -30,6 +31,27 @@ export const subagentsByIdAtom = atom<Record<string, SubagentVM[]>>({}) as Primi
 export const backgroundTasksByIdAtom = atom<Record<string, BackgroundTask[]>>({}) as PrimitiveAtom<
     Record<string, BackgroundTask[]>
 >;
+
+/** The background task whose peek (Events and Output) is open beside the Agent tree: its agent and its task id. */
+export interface MonitorPeekRef {
+    agentId: string;
+    taskId: string;
+}
+// an atom, not row state, so one peek is open at a time and dropSubagents can close it when its agent leaves
+export const monitorPeekAtom = atom<MonitorPeekRef | null>(null) as PrimitiveAtom<MonitorPeekRef | null>;
+
+const OUTPUT_TAIL_LINES = 1000;
+/** The last lines of a background task's output file, trimmed for the peek. A missing or unreadable file reads as no
+ *  output rather than an error: a task that has written nothing yet has no file. */
+export async function readBackgroundTaskOutput(path: string): Promise<string[]> {
+    try {
+        const tr = await RpcApi.GetAgentTranscriptCommand(TabRpcClient, { path, maxlines: OUTPUT_TAIL_LINES });
+        return outputTail(tr.lines ?? []);
+    } catch {
+        return [];
+    }
+}
+
 /** Stop a background task's processes in its agent's terminal block (pkg/resmon KillShellTask). A stopped task reads
  *  stopped at once; claude then reports it, so the next transcript read agrees, and a task still running comes back. */
 export async function stopBackgroundTask(agentId: string, blockId: string, task: BackgroundTask): Promise<void> {
@@ -97,7 +119,8 @@ export async function refreshSubagents(id: string, transcriptPath: string | unde
         if (loadSeq.get(id) !== seq) {
             return;
         }
-        setIn(backgroundTasksByIdAtom, id, extractBackgroundTasks(tr.lines ?? []));
+        // now on every read, so a Monitor past its timeout reads stopped at the next poll
+        setIn(backgroundTasksByIdAtom, id, extractBackgroundTasks(tr.lines ?? [], { now: Date.now() }));
         const files = subs.subagents ?? [];
         if (files.length === 0) {
             setIn(subagentsByIdAtom, id, null);
@@ -128,7 +151,7 @@ export function scheduleSubagents(id: string, transcriptPath: string | undefined
 }
 
 /** Stop tracking a parent that left the rendered set: cancel pending work, invalidate in-flight loads,
- *  drop its list, and close the interior if it belonged to this parent. */
+ *  drop its list, and close the interior and the task peek if they belonged to this parent. */
 export function dropSubagents(id: string): void {
     const existing = timers.get(id);
     if (existing) {
@@ -141,5 +164,8 @@ export function dropSubagents(id: string): void {
     const fs = globalStore.get(focusSubagentAtom);
     if (fs && fs.parentId === id) {
         globalStore.set(focusSubagentAtom, null);
+    }
+    if (globalStore.get(monitorPeekAtom)?.agentId === id) {
+        globalStore.set(monitorPeekAtom, null);
     }
 }
